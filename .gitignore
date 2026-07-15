@@ -1,0 +1,6 @@
+/agent-manager
+/am
+*.db
+*.db-*
+.DS_Store
+/dist/
