@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type mode int
@@ -158,7 +159,9 @@ func (m *Model) refreshCmd() tea.Cmd {
 			newStatus := status.Dead
 			if m.tmux.Exists(sess.ID) {
 				if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
-					newStatus = m.engine.Derive(sess.Tool, pane)
+					// The capture carries ANSI escapes for the preview;
+					// status rules match against plain text.
+					newStatus = m.engine.Derive(sess.Tool, ansi.Strip(pane))
 					if sess.ID == selectedID {
 						preview = pane
 					}

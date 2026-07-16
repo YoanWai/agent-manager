@@ -2,10 +2,12 @@ package ui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m *Model) View() string {
@@ -165,8 +167,9 @@ func (m *Model) viewDetail(width int) string {
 	return b.String()
 }
 
-// viewPreview renders the tail of the selected session's tmux pane,
-// clipped to the panel: the freshest output.
+// viewPreview renders the tail of the selected session's tmux pane with
+// its original ANSI colors, clipped to the panel. Each line is sanitized
+// and closed with an SGR reset so pane colors never leak into the layout.
 func (m *Model) viewPreview(width, height int) string {
 	var b strings.Builder
 	b.WriteString(groupHeaderStyle.Render("Preview") + "\n")
@@ -176,17 +179,54 @@ func (m *Model) viewPreview(width, height int) string {
 		return padToHeight(b.String(), height)
 	}
 	for _, line := range lines {
-		b.WriteString(mutedStyle.Render(clipLine(line, width)) + "\n")
+		b.WriteString(previewLine(line, width) + "\n")
 	}
 	return padToHeight(strings.TrimRight(b.String(), "\n"), height)
 }
 
-// paneTail returns the last n lines of pane text, dropping trailing blanks.
+// eraseSeqs matches CSI K (erase in line) and CSI J (erase in display).
+// Captured panes carry them, and passed through they make the outer
+// terminal paint the current background past the clip point.
+var eraseSeqs = regexp.MustCompile(`\x1b\[[0-9]*[KJ]`)
+
+func previewLine(line string, width int) string {
+	line = eraseSeqs.ReplaceAllString(line, "")
+	line = strings.Map(func(r rune) rune {
+		if r < 0x20 && r != 0x1b && r != '\t' {
+			return -1
+		}
+		return r
+	}, line)
+	if ansi.StringWidth(line) > width {
+		line = ansi.Truncate(line, width-1, "…")
+	}
+	if strings.ContainsRune(line, 0x1b) {
+		line += "\x1b[0m"
+	}
+	return line
+}
+
+// paneTail returns the last n lines of pane text. Trailing blanks are
+// dropped and interior runs of blank lines collapse to one, so sparse
+// TUI panes (claude leaves most rows empty) show their real content
+// instead of a window of whitespace. ANSI-only lines count as blank.
 func paneTail(pane string, n int) []string {
 	if n <= 0 || pane == "" {
 		return nil
 	}
-	lines := strings.Split(strings.TrimRight(pane, "\n \t"), "\n")
+	blank := func(line string) bool {
+		return strings.TrimSpace(ansi.Strip(line)) == ""
+	}
+	var lines []string
+	for _, line := range strings.Split(pane, "\n") {
+		if blank(line) && len(lines) > 0 && blank(lines[len(lines)-1]) {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	for len(lines) > 0 && blank(lines[len(lines)-1]) {
+		lines = lines[:len(lines)-1]
+	}
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
 	}

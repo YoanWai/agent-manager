@@ -3,7 +3,11 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
+
+func lipglossWidth(s string) int { return lipgloss.Width(s) }
 
 func TestScrollWindow(t *testing.T) {
 	cases := []struct {
@@ -41,6 +45,54 @@ func TestPaneTail(t *testing.T) {
 	}
 	if paneTail("x", 0) != nil {
 		t.Fatal("zero budget should return nil")
+	}
+	ansiBlank := "real\n\x1b[38;5;42m   \x1b[0m\n"
+	got = paneTail(ansiBlank, 5)
+	if len(got) != 1 || got[0] != "real" {
+		t.Fatalf("ANSI-only blank lines should be trimmed, got %v", got)
+	}
+	sparse := "top\n\n\n\n\nmiddle\n\n\n\nbottom\n\n\n"
+	got = paneTail(sparse, 10)
+	want := []string{"top", "", "middle", "", "bottom"}
+	if len(got) != len(want) {
+		t.Fatalf("blank runs should collapse to one: %q", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("blank runs should collapse to one: %q", got)
+		}
+	}
+}
+
+func TestPreviewLine(t *testing.T) {
+	colored := "\x1b[38;5;42mgreen text\x1b[39m"
+	got := previewLine(colored, 80)
+	if !strings.Contains(got, "\x1b[38;5;42m") {
+		t.Fatalf("color escapes should survive: %q", got)
+	}
+	if !strings.HasSuffix(got, "\x1b[0m") {
+		t.Fatalf("line with ANSI must end in SGR reset: %q", got)
+	}
+
+	erased := "abc\x1b[K\x1b[2Jdef"
+	if got := previewLine(erased, 80); got != "abcdef" {
+		t.Fatalf("erase sequences should be stripped: %q", got)
+	}
+
+	control := "a\rb\bc"
+	if got := previewLine(control, 80); got != "abc" {
+		t.Fatalf("control chars should be dropped: %q", got)
+	}
+
+	wide := "\x1b[31m" + strings.Repeat("x", 100) + "\x1b[0m"
+	clipped := previewLine(wide, 20)
+	if w := lipglossWidth(clipped); w > 20 {
+		t.Fatalf("clipped ANSI line renders %d cells, want <= 20", w)
+	}
+
+	plain := previewLine("plain", 80)
+	if strings.Contains(plain, "\x1b") {
+		t.Fatalf("plain line should gain no escapes: %q", plain)
 	}
 }
 

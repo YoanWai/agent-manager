@@ -85,8 +85,10 @@ func (d *Driver) Exists(id string) bool {
 	return err == nil
 }
 
+// CapturePane returns the visible pane content with ANSI escapes intact
+// (-e), so previews keep the session's real colors. Strip before regex use.
 func (d *Driver) CapturePane(id string) (string, error) {
-	return d.run("capture-pane", "-p", "-t", sessionName(id))
+	return d.run("capture-pane", "-p", "-e", "-t", sessionName(id))
 }
 
 func (d *Driver) PanePID(id string) (int, error) {
