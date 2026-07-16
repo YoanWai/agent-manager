@@ -196,3 +196,31 @@ func TestRecapBelowSummary(t *testing.T) {
 		t.Fatalf("recap below summary should still be finished, got %q", got)
 	}
 }
+
+func TestQuotedSignalsDoNotTrigger(t *testing.T) {
+	engine := defaultEngine(t)
+	cases := []struct {
+		name string
+		tool string
+		pane string
+		want string
+	}{
+		{"claude quoting spinner and esc text in a finished turn", "claude",
+			"  The rule matches \"esc to interrupt\" in the pane.\n" +
+				"  Example spinner: ✳ Drizzling… (6s · thinking)\n" +
+				"  Menu sample:\n ❯ 1. Yes, I trust this folder\n Enter to confirm\n" +
+				"✻ Crunched for 2m 2s\n────\n❯ \n────\n  ⏵⏵ bypass permissions on", Finished},
+		{"claude quoting menu text then real question", "claude",
+			"  We match \" ❯ 1.\" for dialogs. Should I apply it?\n" +
+				"✻ Crunched for 1m 5s\n────\n❯ \n────", Waiting},
+		{"claude real spinner during turn still working", "claude",
+			"  old output\n✻ Crunched for 2m 2s\n  streaming new answer\n✳ Drizzling… (6s · thinking)\n────\n❯ ", Working},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := engine.Derive(tc.tool, tc.pane); got != tc.want {
+				t.Fatalf("Derive(%s) = %q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}

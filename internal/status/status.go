@@ -83,15 +83,16 @@ func (e *Engine) Derive(tool, pane string) string {
 
 // Match derives a status and reports whether any signal matched, so the
 // caller can distinguish a real signal from the default fallback. Rules
-// run first; when none hit, the newest turn in the content region decides
-// finished versus waiting.
+// run first, scoped to the current turn; when none hit, the newest turn
+// in the content region decides finished versus waiting.
 func (e *Engine) Match(tool, pane string) (string, bool) {
 	tr, ok := e.tools[tool]
 	if !ok {
 		return Idle, false
 	}
+	scope := tr.matchScope(pane)
 	for _, r := range tr.rules {
-		if r.re.MatchString(pane) {
+		if r.re.MatchString(scope) {
 			return r.state, true
 		}
 	}
@@ -99,6 +100,29 @@ func (e *Engine) Match(tool, pane string) (string, bool) {
 		return state, true
 	}
 	return tr.defaultStatus, false
+}
+
+// matchScope narrows rule matching to the current turn: the text after
+// the newest turn_end marker in the content region. Completed turns can
+// quote spinner lines or dialog text verbatim (any session working on
+// terminal tooling will), and whole-pane matching would read those
+// echoes as live signals. Panes without a marker (fresh sessions,
+// dialogs that replace the input box) match in full.
+func (tr toolRules) matchScope(pane string) string {
+	if tr.turnEnd == nil {
+		return pane
+	}
+	region, ok := tr.activityRegion(pane)
+	if !ok {
+		return pane
+	}
+	lines := strings.Split(region, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if tr.turnEnd.MatchString(strings.TrimRight(lines[i], " \t")) {
+			return strings.Join(lines[i+1:], "\n")
+		}
+	}
+	return pane
 }
 
 // ActivityRegion returns the pane content above the tool's input box
