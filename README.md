@@ -1,5 +1,7 @@
 # Agent Manager
 
+![agent-manager demo](docs/demo.gif)
+
 A terminal UI to manage AI coding-agent sessions on your machine. Create and enter sessions, organize them in a nested group tree with manual ordering, archive finished ones, and watch live status, a live pane preview, the combined footprint of your agents, and machine resource gauges.
 
 ## Supported tools
