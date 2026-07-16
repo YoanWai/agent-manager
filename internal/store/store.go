@@ -63,9 +63,19 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS groups (
 	name       TEXT PRIMARY KEY,
 	collapsed  INTEGER NOT NULL DEFAULT 0,
-	sort_order INTEGER NOT NULL DEFAULT 0
+	sort_order INTEGER NOT NULL DEFAULT 0,
+	path       TEXT NOT NULL DEFAULT ''
 );`)
-	return err
+	if err != nil {
+		return err
+	}
+	// Migrate older databases that predate the group default-path column.
+	if _, err := s.db.Exec(`ALTER TABLE groups ADD COLUMN path TEXT NOT NULL DEFAULT ''`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) CreateSession(sess Session) error {
@@ -84,17 +94,29 @@ func (s *Store) CreateSession(sess Session) error {
 	if err != nil {
 		return err
 	}
-	return s.CreateGroup(sess.Group)
+	return s.ensureGroup(sess.Group)
 }
 
-// CreateGroup registers a group path like "backend/api/auth".
-// The empty path is the root and is never stored.
-func (s *Store) CreateGroup(name string) error {
+// ensureGroup registers a group by name if it does not exist, leaving any
+// existing default path untouched. The empty root is never stored.
+func (s *Store) ensureGroup(name string) error {
 	if name == "" {
 		return nil
 	}
 	_, err := s.db.Exec(
 		`INSERT INTO groups (name) VALUES (?) ON CONFLICT(name) DO NOTHING`, name)
+	return err
+}
+
+// CreateGroup registers a group path like "backend/api/auth" with an
+// optional default working directory, updating the path if it already exists.
+func (s *Store) CreateGroup(name, path string) error {
+	if name == "" {
+		return nil
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO groups (name, path) VALUES (?, ?)
+		 ON CONFLICT(name) DO UPDATE SET path = excluded.path`, name, path)
 	return err
 }
 
@@ -237,7 +259,7 @@ func (s *Store) MoveSession(id, group string) error {
 	if err := requireRow(res, id); err != nil {
 		return err
 	}
-	return s.CreateGroup(group)
+	return s.ensureGroup(group)
 }
 
 // RenameSession changes a session's display name.
@@ -262,21 +284,26 @@ func (s *Store) DeleteGroup(path string) error {
 	return err
 }
 
-func (s *Store) Groups() ([]string, error) {
-	rows, err := s.db.Query(`SELECT name FROM groups ORDER BY sort_order, name`)
+type Group struct {
+	Name string
+	Path string
+}
+
+func (s *Store) Groups() ([]Group, error) {
+	rows, err := s.db.Query(`SELECT name, path FROM groups ORDER BY sort_order, name`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var names []string
+	var groups []Group
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var g Group
+		if err := rows.Scan(&g.Name, &g.Path); err != nil {
 			return nil, err
 		}
-		names = append(names, name)
+		groups = append(groups, g)
 	}
-	return names, rows.Err()
+	return groups, rows.Err()
 }
 
 func requireRow(res sql.Result, id string) error {

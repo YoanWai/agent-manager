@@ -19,6 +19,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRenameKey(msg)
 	case modeMove:
 		return m.handleMoveKey(msg)
+	case modeGroupForm:
+		return m.handleGroupFormKey(msg)
 	case modeHelp:
 		m.mode = modeList
 		return m, nil
@@ -43,6 +45,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.attachSelected()
 	case "n":
 		m.openForm()
+	case "g":
+		m.openGroupForm()
 	case "a":
 		return m.archiveSelected()
 	case "u":
@@ -263,16 +267,12 @@ func (m *Model) openMove() {
 		return
 	}
 	m.moveID = sess.ID
-	m.form.newGroup = newGroupInput()
 	m.rebuildGroupOptions(sess.Group)
 	m.mode = modeMove
 	m.err = ""
 }
 
 func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.form.creatingGroup {
-		return m.handleNewGroupKey(msg)
-	}
 	switch msg.String() {
 	case "esc":
 		m.mode = modeList
@@ -283,13 +283,8 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down":
 		m.moveGroupCursor(1)
 		return m, nil
-	case "n":
-		m.form.creatingGroup = true
-		m.form.newGroup.SetValue("")
-		m.form.newGroup.Focus()
-		return m, nil
 	case "enter":
-		group := m.form.groups[m.form.groupIndex].path
+		group := m.selectedGroupPath()
 		if err := m.store.MoveSession(m.moveID, group); err != nil {
 			m.err = err.Error()
 			return m, nil

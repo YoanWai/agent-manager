@@ -23,6 +23,8 @@ func (m *Model) View() string {
 		return m.viewRename()
 	case modeMove:
 		return m.viewMove()
+	case modeGroupForm:
+		return m.viewGroupForm()
 	}
 
 	leftWidth := m.width * 34 / 100
@@ -208,8 +210,8 @@ func divider(label string, width int) string {
 func (m *Model) viewSidebar(width, height int) string {
 	detailWidth := width * 55 / 100
 	statsWidth := width - detailWidth - 3
-	detail := m.viewDetail(detailWidth)
-	computer := m.viewComputer(statsWidth)
+	detail := divider("Details", detailWidth) + "\n" + m.viewDetail(detailWidth)
+	computer := divider("Computer", statsWidth) + "\n" + m.viewComputer(statsWidth)
 	top := lipgloss.JoinHorizontal(lipgloss.Top,
 		lipgloss.NewStyle().Width(detailWidth).Render(detail),
 		subtleStyle.Render(" │ "),
@@ -346,7 +348,7 @@ func (m *Model) viewComputer(width int) string {
 
 func (m *Model) viewFooter() string {
 	pairs := [][2]string{
-		{"n", "new"}, {"↵", "attach"}, {"m", "move"}, {"r", "rename"},
+		{"n", "new"}, {"g", "group"}, {"↵", "attach"}, {"m", "move"}, {"r", "rename"},
 		{"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
 		{"t", "archived"}, {"?", "help"}, {"q", "quit"},
 	}
@@ -398,10 +400,7 @@ func (m *Model) viewForm() string {
 
 	hint := "tab/↑↓ move · ←→ tool · ↵ create · esc cancel"
 	if m.form.focus == fieldGroup {
-		hint = "↑↓ pick · n new subgroup · tab next · ↵ create · esc cancel"
-	}
-	if m.form.creatingGroup {
-		hint = "↵ create group · esc cancel"
+		hint = "↑↓ pick group · tab next field · ↵ create · esc cancel"
 	}
 	return m.card("◆ New Session", strings.TrimRight(b.String(), "\n"), hint)
 }
@@ -428,11 +427,22 @@ func (m *Model) viewGroupPicker() string {
 		}
 		b.WriteString("  " + marker + style.Render(label) + "\n")
 	}
-	if m.form.creatingGroup {
-		parent := displayGroup(m.form.groups[m.form.groupIndex].path)
-		b.WriteString("\n  " + labelStyle.Render("new under "+parent+":") + " " + m.form.newGroup.View())
-	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func (m *Model) viewGroupForm() string {
+	var b strings.Builder
+	b.WriteString(formField("name", m.groupForm.name.View(), m.groupForm.focus == gfName))
+	b.WriteString(formField("parent", groupBadge(displayGroup(m.selectedGroupPath())), m.groupForm.focus == gfParent))
+	b.WriteString(formField("path", m.groupForm.path.View(), m.groupForm.focus == gfPath))
+	if m.groupForm.focus == gfParent {
+		b.WriteString("\n" + m.viewGroupPicker())
+	}
+	hint := "tab/↑↓ move · ↵ create · esc cancel"
+	if m.groupForm.focus == gfParent {
+		hint = "↑↓ pick parent · tab next field · ↵ create · esc cancel"
+	}
+	return m.card("✦ New Group", strings.TrimRight(b.String(), "\n"), hint)
 }
 
 func displayGroup(path string) string {
@@ -456,11 +466,7 @@ func (m *Model) viewRename() string {
 }
 
 func (m *Model) viewMove() string {
-	hint := "↑↓ pick · n new subgroup · ↵ move · esc cancel"
-	if m.form.creatingGroup {
-		hint = "↵ create group · esc cancel"
-	}
-	return m.card("⇄ Move to group", m.viewGroupPicker(), hint)
+	return m.card("⇄ Move to group", m.viewGroupPicker(), "↑↓ pick · ↵ move · esc cancel")
 }
 
 func (m *Model) viewHelp() string {
@@ -469,6 +475,7 @@ func (m *Model) viewHelp() string {
 		{"↵", "attach session / fold group"},
 		{"ctrl+q", "inside a session: back to manager"},
 		{"m", "move session to another group"},
+		{"g", "new group (name, parent, default path)"},
 		{"r", "rename session / group"},
 		{"a / u", "archive / restore"},
 		{"d", "delete session, or group + subtree"},

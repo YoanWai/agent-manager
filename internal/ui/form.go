@@ -18,59 +18,48 @@ const (
 	fieldCount
 )
 
+const (
+	gfName = iota
+	gfParent
+	gfPath
+	gfCount
+)
+
 type groupOption struct {
 	path  string
 	depth int
 }
 
-func newGroupInput() textinput.Model {
-	input := textinput.New()
-	input.Placeholder = "group-name"
-	input.CharLimit = 60
-	return input
-}
-
 type form struct {
-	name          textinput.Model
-	dir           textinput.Model
-	newGroup      textinput.Model
-	toolNames     []string
-	toolIndex     int
-	groups        []groupOption
-	groupIndex    int
-	creatingGroup bool
-	focus         int
+	name       textinput.Model
+	dir        textinput.Model
+	dirAuto    bool
+	toolNames  []string
+	toolIndex  int
+	groups     []groupOption
+	groupIndex int
+	focus      int
 }
 
-func (m *Model) openForm() {
-	tools := m.cfg.ToolNames()
-	sort.Strings(tools)
+type groupForm struct {
+	name  textinput.Model
+	path  textinput.Model
+	focus int
+}
 
-	name := textinput.New()
-	name.Placeholder = "my-session"
-	name.CharLimit = 60
-	name.Focus()
-
-	dir := textinput.New()
-	cwd, err := os.Getwd()
-	if err != nil {
-		cwd = ""
+// sessionLabel renders a session's identity for the tmux status bar.
+func sessionLabel(group, name string) string {
+	if group == "" {
+		return name
 	}
-	dir.SetValue(cwd)
-	dir.CharLimit = 400
+	return group + " · " + name
+}
 
-	newGroup := newGroupInput()
-
-	m.form = form{
-		name:      name,
-		dir:       dir,
-		newGroup:  newGroup,
-		toolNames: tools,
-		focus:     fieldName,
-	}
-	m.rebuildGroupOptions(m.contextGroup())
-	m.mode = modeForm
-	m.err = ""
+func textField(placeholder string, limit int) textinput.Model {
+	in := textinput.New()
+	in.Placeholder = placeholder
+	in.CharLimit = limit
+	return in
 }
 
 // contextGroup is the group the cursor currently sits in: a highlighted
@@ -81,6 +70,50 @@ func (m *Model) contextGroup() string {
 			return r.group
 		}
 		return r.sess.Group
+	}
+	return ""
+}
+
+// groupDefaultDir resolves the working directory for a group: its configured
+// default path if set and valid, otherwise the current directory.
+func (m *Model) groupDefaultDir(group string) string {
+	if p := m.groupPaths[group]; p != "" {
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			return p
+		}
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return cwd
+}
+
+func (m *Model) openForm() {
+	tools := m.cfg.ToolNames()
+	sort.Strings(tools)
+
+	name := textField("my-session", 60)
+	name.Focus()
+
+	dir := textField("", 400)
+
+	m.form = form{
+		name:      name,
+		dir:       dir,
+		dirAuto:   true,
+		toolNames: tools,
+		focus:     fieldName,
+	}
+	m.rebuildGroupOptions(m.contextGroup())
+	m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
+	m.mode = modeForm
+	m.err = ""
+}
+
+func (m *Model) selectedGroupPath() string {
+	if m.form.groupIndex >= 0 && m.form.groupIndex < len(m.form.groups) {
+		return m.form.groups[m.form.groupIndex].path
 	}
 	return ""
 }
@@ -104,22 +137,16 @@ func (m *Model) rebuildGroupOptions(selectPath string) {
 	}
 
 	m.form.groups = options
+	m.form.groupIndex = 0
 	for i, opt := range options {
 		if selectPath != "" && opt.path == selectPath {
 			m.form.groupIndex = i
 			return
 		}
 	}
-	if m.form.groupIndex >= len(options) {
-		m.form.groupIndex = 0
-	}
 }
 
 func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.form.creatingGroup {
-		return m.handleNewGroupKey(msg)
-	}
-
 	switch msg.String() {
 	case "esc":
 		m.mode = modeList
@@ -154,13 +181,6 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cycleTool(1)
 			return m, nil
 		}
-	case "n":
-		if m.form.focus == fieldGroup {
-			m.form.creatingGroup = true
-			m.form.newGroup.SetValue("")
-			m.form.newGroup.Focus()
-			return m, nil
-		}
 	case "enter":
 		return m.submitForm()
 	}
@@ -171,45 +191,8 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form.name, cmd = m.form.name.Update(msg)
 	case fieldDir:
 		m.form.dir, cmd = m.form.dir.Update(msg)
+		m.form.dirAuto = false
 	}
-	return m, cmd
-}
-
-func (m *Model) handleNewGroupKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.form.creatingGroup = false
-		return m, nil
-	case "enter":
-		name := strings.TrimSpace(m.form.newGroup.Value())
-		name = strings.ReplaceAll(name, "/", "-")
-		if name == "" {
-			m.form.creatingGroup = false
-			return m, nil
-		}
-		parent := m.form.groups[m.form.groupIndex].path
-		path := name
-		if parent != "" {
-			path = parent + "/" + name
-		}
-		if err := m.store.CreateGroup(path); err != nil {
-			m.err = err.Error()
-			m.form.creatingGroup = false
-			return m, nil
-		}
-		groups, err := m.store.Groups()
-		if err != nil {
-			m.err = err.Error()
-			m.form.creatingGroup = false
-			return m, nil
-		}
-		m.groups = groups
-		m.form.creatingGroup = false
-		m.rebuildGroupOptions(path)
-		return m, nil
-	}
-	var cmd tea.Cmd
-	m.form.newGroup, cmd = m.form.newGroup.Update(msg)
 	return m, cmd
 }
 
@@ -220,6 +203,9 @@ func (m *Model) moveGroupCursor(delta int) {
 	}
 	if m.form.groupIndex >= len(m.form.groups) {
 		m.form.groupIndex = len(m.form.groups) - 1
+	}
+	if m.mode == modeForm && m.form.dirAuto {
+		m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	}
 }
 
@@ -263,7 +249,7 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		m.err = "working directory does not exist: " + dir
 		return m, nil
 	}
-	group := m.form.groups[m.form.groupIndex].path
+	group := m.selectedGroupPath()
 
 	id := newID()
 	if err := m.tmux.Create(id, dir, tool.Command); err != nil {
@@ -290,10 +276,93 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	return m, m.refreshCmd()
 }
 
-// sessionLabel renders a session's identity for the tmux status bar.
-func sessionLabel(group, name string) string {
-	if group == "" {
-		return name
+func (m *Model) openGroupForm() {
+	name := textField("group-name", 60)
+	name.Focus()
+	m.groupForm = groupForm{
+		name:  name,
+		path:  textField("default working directory (optional)", 400),
+		focus: gfName,
 	}
-	return group + " · " + name
+	m.rebuildGroupOptions(m.contextGroup())
+	m.mode = modeGroupForm
+	m.err = ""
+}
+
+func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = modeList
+		return m, nil
+	case "tab":
+		m.groupFormFocus(1)
+		return m, nil
+	case "shift+tab":
+		m.groupFormFocus(-1)
+		return m, nil
+	case "up":
+		if m.groupForm.focus == gfParent {
+			m.moveGroupCursor(-1)
+		} else {
+			m.groupFormFocus(-1)
+		}
+		return m, nil
+	case "down":
+		if m.groupForm.focus == gfParent {
+			m.moveGroupCursor(1)
+		} else {
+			m.groupFormFocus(1)
+		}
+		return m, nil
+	case "enter":
+		return m.submitGroupForm()
+	}
+
+	var cmd tea.Cmd
+	switch m.groupForm.focus {
+	case gfName:
+		m.groupForm.name, cmd = m.groupForm.name.Update(msg)
+	case gfPath:
+		m.groupForm.path, cmd = m.groupForm.path.Update(msg)
+	}
+	return m, cmd
+}
+
+func (m *Model) groupFormFocus(delta int) {
+	m.groupForm.focus = (m.groupForm.focus + delta + gfCount) % gfCount
+	m.groupForm.name.Blur()
+	m.groupForm.path.Blur()
+	switch m.groupForm.focus {
+	case gfName:
+		m.groupForm.name.Focus()
+	case gfPath:
+		m.groupForm.path.Focus()
+	}
+}
+
+func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
+	name := strings.TrimSpace(m.groupForm.name.Value())
+	name = strings.ReplaceAll(name, "/", "-")
+	if name == "" {
+		m.err = "group name cannot be empty"
+		return m, nil
+	}
+	parent := m.selectedGroupPath()
+	full := name
+	if parent != "" {
+		full = parent + "/" + name
+	}
+	path := strings.TrimSpace(m.groupForm.path.Value())
+	if path != "" {
+		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+			m.err = "default path does not exist: " + path
+			return m, nil
+		}
+	}
+	if err := m.store.CreateGroup(full, path); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	m.mode = modeList
+	return m, m.refreshCmd()
 }

@@ -165,7 +165,7 @@ func TestNestedGroupsTree(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.store.CreateGroup("backend/api/auth"); err != nil {
+	if err := m.store.CreateGroup("backend/api/auth", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -224,7 +224,7 @@ func TestDeleteGroupSubtree(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.store.CreateGroup("zone/inner"); err != nil {
+	if err := m.store.CreateGroup("zone/inner", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -274,8 +274,8 @@ func TestDeleteGroupSubtree(t *testing.T) {
 	}
 	groups, _ := m.store.Groups()
 	for _, g := range groups {
-		if g == "zone" || g == "zone/inner" {
-			t.Fatalf("group %s should be deleted", g)
+		if g.Name == "zone" || g.Name == "zone/inner" {
+			t.Fatalf("group %s should be deleted", g.Name)
 		}
 	}
 }
@@ -284,7 +284,7 @@ func TestRenameGroupCascades(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.store.CreateGroup("old/inner"); err != nil {
+	if err := m.store.CreateGroup("old/inner", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -320,7 +320,7 @@ func TestRenameGroupCascades(t *testing.T) {
 	}
 	groups, _ := m.store.Groups()
 	for _, g := range groups {
-		if strings.HasPrefix(g, "old") {
+		if strings.HasPrefix(g.Name, "old") {
 			t.Fatalf("old group path survived rename: %v", groups)
 		}
 	}
@@ -342,7 +342,7 @@ func TestRenameSession(t *testing.T) {
 func TestMoveSession(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("target/deep"); err != nil {
+	if err := m.store.CreateGroup("target/deep", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -366,7 +366,7 @@ func TestMoveSession(t *testing.T) {
 func TestNewSessionPreselectsContextGroup(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
-	if err := m.store.CreateGroup("alpha/beta"); err != nil {
+	if err := m.store.CreateGroup("alpha/beta", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -392,26 +392,47 @@ func TestNewSessionPreselectsContextGroup(t *testing.T) {
 	}
 }
 
-func TestInlineGroupCreation(t *testing.T) {
+func TestGroupFormCreatesUnderParent(t *testing.T) {
 	m := buildModel(t)
+	if err := m.store.CreateGroup("projects", ""); err != nil {
+		t.Fatalf("seed group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.openGroupForm()
+	pickGroup(t, m, "projects")
+	m.groupForm.name.SetValue("sub/one")
+	m.groupForm.path.SetValue(t.TempDir())
+	_, cmd := m.submitGroupForm()
+	if m.mode != modeList {
+		t.Fatalf("group form should close, err=%q", m.err)
+	}
+	m.applyCmd(t, cmd)
+
+	groups, _ := m.store.Groups()
+	found := ""
+	for _, g := range groups {
+		if strings.HasSuffix(g.Name, "sub-one") {
+			found = g.Name
+		}
+	}
+	if found != "projects/sub-one" {
+		t.Fatalf("slash should be sanitized and nested under parent, got %q", found)
+	}
+}
+
+func TestGroupDefaultPathFillsSessionDir(t *testing.T) {
+	m := buildModel(t)
+	groupDir := t.TempDir()
+	if err := m.store.CreateGroup("workspace", groupDir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
 
 	m.openForm()
-	m.form.focus = fieldGroup
-	pickGroup(t, m, "")
-	m.form.creatingGroup = true
-	m.form.newGroup.SetValue("projects")
-	_, _ = m.handleNewGroupKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if m.form.creatingGroup {
-		t.Fatal("creatingGroup should reset after enter")
-	}
-	if got := m.form.groups[m.form.groupIndex].path; got != "projects" {
-		t.Fatalf("new group should be selected, got %q", got)
-	}
-
-	m.form.creatingGroup = true
-	m.form.newGroup.SetValue("sub/one")
-	_, _ = m.handleNewGroupKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if got := m.form.groups[m.form.groupIndex].path; got != "projects/sub-one" {
-		t.Fatalf("slash should be sanitized, got %q", got)
+	pickGroup(t, m, "workspace")
+	m.moveGroupCursor(0) // re-resolve dir for the selected group
+	if got := m.form.dir.Value(); got != groupDir {
+		t.Fatalf("session dir should default to the group path %q, got %q", groupDir, got)
 	}
 }

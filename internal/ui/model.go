@@ -26,6 +26,7 @@ const (
 	modeHelp
 	modeRename
 	modeMove
+	modeGroupForm
 )
 
 type row struct {
@@ -41,13 +42,14 @@ type Model struct {
 	tmux   *tmux.Driver
 	engine *status.Engine
 
-	sessions []store.Session
-	rows     []row
-	groups   []string
-	snap     sysstat.Snapshot
-	proc     sysstat.ProcStat
-	procFor  string
-	preview  string
+	sessions   []store.Session
+	rows       []row
+	groups     []string
+	groupPaths map[string]string
+	snap       sysstat.Snapshot
+	proc       sysstat.ProcStat
+	procFor    string
+	preview    string
 
 	cursor       int
 	mode         mode
@@ -56,10 +58,11 @@ type Model struct {
 	search       string
 	searching    bool
 
-	form    form
-	confirm confirmTarget
-	rename  renameTarget
-	moveID  string
+	form      form
+	groupForm groupForm
+	confirm   confirmTarget
+	rename    renameTarget
+	moveID    string
 
 	width    int
 	height   int
@@ -85,12 +88,13 @@ type renameTarget struct {
 type tickMsg time.Time
 
 type refreshMsg struct {
-	sessions []store.Session
-	groups   []string
-	snap     sysstat.Snapshot
-	proc     sysstat.ProcStat
-	procFor  string
-	preview  string
+	sessions   []store.Session
+	groups     []string
+	groupPaths map[string]string
+	snap       sysstat.Snapshot
+	proc       sysstat.ProcStat
+	procFor    string
+	preview    string
 }
 
 type errMsg struct{ err error }
@@ -181,14 +185,21 @@ func (m *Model) refreshCmd() tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
+		names := make([]string, len(groups))
+		paths := make(map[string]string, len(groups))
+		for i, g := range groups {
+			names[i] = g.Name
+			paths[g.Name] = g.Path
+		}
 
 		return refreshMsg{
-			sessions: sessions,
-			groups:   groups,
-			snap:     sysstat.Sample(diskPath),
-			proc:     proc,
-			procFor:  selectedID,
-			preview:  preview,
+			sessions:   sessions,
+			groups:     names,
+			groupPaths: paths,
+			snap:       sysstat.Sample(diskPath),
+			proc:       proc,
+			procFor:    selectedID,
+			preview:    preview,
 		}
 	}
 }
@@ -207,6 +218,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshMsg:
 		m.sessions = msg.sessions
 		m.groups = msg.groups
+		m.groupPaths = msg.groupPaths
 		m.snap = msg.snap
 		m.proc = msg.proc
 		m.procFor = msg.procFor
