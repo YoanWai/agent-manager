@@ -15,8 +15,9 @@ func TestSample(t *testing.T) {
 	}
 }
 
-func TestProcSelf(t *testing.T) {
-	stat := Proc(os.Getpid())
+func TestTreesSelf(t *testing.T) {
+	pid := os.Getpid()
+	stat := Trees([]int{pid})[pid]
 	if !stat.OK {
 		t.Fatal("expected OK stat for current process")
 	}
@@ -25,11 +26,11 @@ func TestProcSelf(t *testing.T) {
 	}
 }
 
-func TestProcInvalid(t *testing.T) {
-	if Proc(-1).OK {
+func TestTreesInvalid(t *testing.T) {
+	if Trees([]int{-1})[-1].OK {
 		t.Fatal("negative pid should not be OK")
 	}
-	if Proc(0).OK {
-		t.Fatal("zero pid should not be OK")
+	if len(Trees(nil)) != 0 {
+		t.Fatal("no pids should yield no stats")
 	}
 }

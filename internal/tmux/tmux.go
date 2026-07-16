@@ -132,6 +132,33 @@ func (d *Driver) PanePID(id string) (int, error) {
 	return strconv.Atoi(line)
 }
 
+// Panes returns every managed session's pane pid in a single tmux call,
+// which doubles as a liveness check: a session absent from the map is gone.
+func (d *Driver) Panes() (map[string]int, error) {
+	out, err := exec.Command(d.bin, "list-panes", "-a", "-F", "#{session_name} #{pane_pid}").CombinedOutput()
+	if err != nil {
+		if strings.Contains(string(out), "no server running") {
+			return map[string]int{}, nil
+		}
+		return nil, fmt.Errorf("tmux list-panes: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	panes := map[string]int{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		name, pidText, ok := strings.Cut(line, " ")
+		if !ok || !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		id := strings.TrimPrefix(name, prefix)
+		if _, taken := panes[id]; taken {
+			continue
+		}
+		if pid, err := strconv.Atoi(pidText); err == nil {
+			panes[id] = pid
+		}
+	}
+	return panes, nil
+}
+
 func (d *Driver) List() ([]string, error) {
 	out, err := exec.Command(d.bin, "list-sessions", "-F", "#{session_name}").CombinedOutput()
 	if err != nil {

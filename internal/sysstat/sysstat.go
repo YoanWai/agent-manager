@@ -1,13 +1,14 @@
 package sysstat
 
 import (
-	"sync"
+	"os/exec"
+	"strconv"
+	"strings"
 
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/shirou/gopsutil/v4/net"
-	"github.com/shirou/gopsutil/v4/process"
 )
 
 type Snapshot struct {
@@ -79,69 +80,63 @@ func Sample(diskPath string) Snapshot {
 	return snap
 }
 
-// procCache keeps one handle per pid across polls so Percent(0) returns
-// usage since the previous poll instead of an average since process start.
-var (
-	procMu    sync.Mutex
-	procCache = map[int32]*process.Process{}
-)
-
-func cachedProc(pid int32) (*process.Process, error) {
-	procMu.Lock()
-	defer procMu.Unlock()
-	if proc, ok := procCache[pid]; ok {
-		return proc, nil
+// Trees reports the combined CPU and resident memory of each requested
+// process and all of its descendants, from a single ps invocation. tmux
+// pane pids are shells whose real work happens in child processes, so a
+// tree sum is the only honest number. ps %cpu is a recent decaying
+// average, which suits a 2s poll.
+func Trees(rootPIDs []int) map[int]ProcStat {
+	stats := make(map[int]ProcStat, len(rootPIDs))
+	if len(rootPIDs) == 0 {
+		return stats
 	}
-	proc, err := process.NewProcess(pid)
+	out, err := exec.Command("ps", "-axo", "pid=,ppid=,pcpu=,rss=").Output()
 	if err != nil {
-		return nil, err
+		return stats
 	}
-	procCache[pid] = proc
-	return proc, nil
-}
 
-func dropProc(pid int32) {
-	procMu.Lock()
-	delete(procCache, pid)
-	procMu.Unlock()
-}
-
-// Proc reports the combined CPU and resident memory of a process and all
-// of its descendants. tmux pane pids are shells whose real work happens
-// in child processes, so a tree sum is the only honest number.
-func Proc(pid int) ProcStat {
-	if pid <= 0 {
-		return ProcStat{}
+	type proc struct {
+		cpu float64
+		rss uint64
 	}
-	var stat ProcStat
-	seen := map[int32]bool{}
-	var walk func(pid int32)
-	walk = func(pid int32) {
-		if seen[pid] {
-			return
+	procs := map[int]proc{}
+	children := map[int][]int{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 4 {
+			continue
 		}
-		seen[pid] = true
-		proc, err := cachedProc(pid)
-		if err != nil {
-			return
+		pid, err1 := strconv.Atoi(fields[0])
+		ppid, err2 := strconv.Atoi(fields[1])
+		cpuPct, err3 := strconv.ParseFloat(fields[2], 64)
+		rssKB, err4 := strconv.ParseUint(fields[3], 10, 64)
+		if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+			continue
 		}
-		if running, err := proc.IsRunning(); err != nil || !running {
-			dropProc(pid)
-			return
+		procs[pid] = proc{cpu: cpuPct, rss: rssKB * 1024}
+		children[ppid] = append(children[ppid], pid)
+	}
+
+	for _, root := range rootPIDs {
+		if _, alive := procs[root]; !alive {
+			continue
 		}
-		stat.OK = true
-		if cpuPct, err := proc.Percent(0); err == nil {
-			stat.CPUPercent += cpuPct
-		}
-		if memInfo, err := proc.MemoryInfo(); err == nil && memInfo != nil {
-			stat.RSS += memInfo.RSS
-		}
-		if children, err := proc.Children(); err == nil {
-			for _, child := range children {
-				walk(child.Pid)
+		stat := ProcStat{OK: true}
+		seen := map[int]bool{}
+		var walk func(pid int)
+		walk = func(pid int) {
+			if seen[pid] {
+				return
+			}
+			seen[pid] = true
+			stat.CPUPercent += procs[pid].cpu
+			stat.RSS += procs[pid].rss
+			for _, child := range children[pid] {
+				walk(child)
 			}
 		}
+		walk(root)
+		stats[root] = stat
 	}
-	walk(int32(pid))
-	return stat
+	return stats
 }

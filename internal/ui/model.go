@@ -60,6 +60,7 @@ type Model struct {
 	prevNetAt   time.Time
 	prevNetOK   bool
 
+	pollTick     int
 	cursor       int
 	mode         mode
 	showArchived bool
@@ -109,6 +110,7 @@ type refreshMsg struct {
 	groups     []string
 	groupPaths map[string]string
 	snap       sysstat.Snapshot
+	snapOK     bool
 	proc       sysstat.ProcStat
 	procFor    string
 	preview    string
@@ -168,7 +170,7 @@ func (m *Model) previewCmd(sessID string) tea.Cmd {
 				msg.preview = pane
 			}
 			if pid, err := m.tmux.PanePID(sessID); err == nil {
-				msg.proc = sysstat.Proc(pid)
+				msg.proc = sysstat.Trees([]int{pid})[pid]
 			}
 		}
 		return msg
@@ -177,18 +179,35 @@ func (m *Model) previewCmd(sessID string) tea.Cmd {
 
 // refreshCmd polls every live session's pane once, deriving status and
 // grabbing the selected session's pane text as the preview, then samples
-// system stats. It runs off the render loop as a tea command.
+// system stats. It runs off the render loop as a tea command. Liveness
+// and pane pids come from one tmux call, and every process tree from one
+// ps call, so the poll cost stays flat as sessions are added.
 func (m *Model) refreshCmd() tea.Cmd {
 	includeArchived := m.showArchived
 	selectedID := ""
 	if sess, ok := m.selected(); ok {
 		selectedID = sess.ID
 	}
+	// Machine gauges change slowly; sample them every other poll.
+	sampleStats := m.pollTick%2 == 0
+	m.pollTick++
 	return func() tea.Msg {
 		sessions, err := m.store.ListSessions(includeArchived)
 		if err != nil {
 			return errMsg{err}
 		}
+
+		panes, err := m.tmux.Panes()
+		if err != nil {
+			return errMsg{err}
+		}
+		var livePIDs []int
+		for _, sess := range sessions {
+			if !sess.Archived && panes[sess.ID] > 0 {
+				livePIDs = append(livePIDs, panes[sess.ID])
+			}
+		}
+		trees := sysstat.Trees(livePIDs)
 
 		preview := ""
 		var proc sysstat.ProcStat
@@ -198,15 +217,13 @@ func (m *Model) refreshCmd() tea.Cmd {
 				continue
 			}
 			newStatus := status.Dead
-			if m.tmux.Exists(sess.ID) {
-				if pid, err := m.tmux.PanePID(sess.ID); err == nil {
-					if stat := sysstat.Proc(pid); stat.OK {
-						agents.count++
-						agents.cpu += stat.CPUPercent
-						agents.rss += stat.RSS
-						if sess.ID == selectedID {
-							proc = stat
-						}
+			if pid := panes[sess.ID]; pid > 0 {
+				if stat := trees[pid]; stat.OK {
+					agents.count++
+					agents.cpu += stat.CPUPercent
+					agents.rss += stat.RSS
+					if sess.ID == selectedID {
+						proc = stat
 					}
 				}
 				if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
@@ -237,16 +254,20 @@ func (m *Model) refreshCmd() tea.Cmd {
 			paths[g.Name] = g.Path
 		}
 
-		return refreshMsg{
+		msg := refreshMsg{
 			sessions:   sessions,
 			groups:     names,
 			groupPaths: paths,
-			snap:       sysstat.Sample("/"),
 			proc:       proc,
 			procFor:    selectedID,
 			preview:    preview,
 			agents:     agents,
 		}
+		if sampleStats {
+			msg.snap = sysstat.Sample("/")
+			msg.snapOK = true
+		}
+		return msg
 	}
 }
 
@@ -265,12 +286,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions = msg.sessions
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
-		m.snap = msg.snap
 		m.proc = msg.proc
 		m.procFor = msg.procFor
 		m.preview = msg.preview
 		m.agents = msg.agents
-		m.updateNetRates(msg.snap)
+		if msg.snapOK {
+			m.snap = msg.snap
+			m.updateNetRates(msg.snap)
+		}
 		m.rebuildRows()
 		return m, nil
 
