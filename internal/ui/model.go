@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -41,6 +42,7 @@ type Model struct {
 	store  *store.Store
 	tmux   *tmux.Driver
 	engine *status.Engine
+	hooks  *hooks.Manager
 
 	sessions   []store.Session
 	rows       []treeRow
@@ -125,13 +127,18 @@ type errMsg struct{ err error }
 
 type attachDoneMsg struct{ err error }
 
-func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine) *Model {
+func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager) *Model {
+	statusSources := make(map[string]string, len(cfg.Tools))
+	for name, tool := range cfg.Tools {
+		statusSources[name] = tool.StatusSource
+	}
 	return &Model{
 		cfg:       cfg,
 		store:     st,
 		tmux:      driver,
 		engine:    engine,
-		poller:    newPoller(st, driver, engine, cfg.PollInterval.Duration),
+		hooks:     hookManager,
+		poller:    newPoller(st, driver, engine, hookManager, statusSources, cfg.PollInterval.Duration),
 		collapsed: map[string]bool{},
 		mode:      modeList,
 	}

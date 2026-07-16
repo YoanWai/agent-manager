@@ -311,6 +311,9 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.err = err.Error()
 				return m, nil
 			}
+			if err := m.hooks.Remove(sess.ID); err != nil {
+				m.err = err.Error()
+			}
 		}
 		if m.confirm.isGroup {
 			if err := m.store.DeleteGroup(m.confirm.path); err != nil {

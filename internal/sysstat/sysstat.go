@@ -34,6 +34,7 @@ type Snapshot struct {
 type ProcStat struct {
 	CPUPercent float64
 	RSS        uint64
+	Procs      int
 	OK         bool
 }
 
@@ -129,6 +130,7 @@ func Trees(rootPIDs []int) map[int]ProcStat {
 				return
 			}
 			seen[pid] = true
+			stat.Procs++
 			stat.CPUPercent += procs[pid].cpu
 			stat.RSS += procs[pid].rss
 			for _, child := range children[pid] {

@@ -3,6 +3,7 @@ package tmux
 import (
 	"fmt"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -33,7 +34,7 @@ func (d *Driver) run(args ...string) (string, error) {
 	return string(out), nil
 }
 
-func (d *Driver) Create(id, cwd, command string) error {
+func (d *Driver) Create(id, cwd, command string, env map[string]string) error {
 	name := sessionName(id)
 	if _, err := d.run("new-session", "-d", "-s", name, "-c", cwd); err != nil {
 		return err
@@ -41,12 +42,29 @@ func (d *Driver) Create(id, cwd, command string) error {
 	if err := d.installSessionUX(name); err != nil {
 		return err
 	}
-	if command != "" {
-		if _, err := d.run("send-keys", "-t", name, command, "Enter"); err != nil {
-			return err
-		}
+	if command == "" {
+		return nil
 	}
-	return nil
+	// env rides the command line as VAR=value prefixes because
+	// new-session -e needs tmux >= 3.2
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var line strings.Builder
+	for _, key := range keys {
+		line.WriteString(key + "=" + ShellQuote(env[key]) + " ")
+	}
+	line.WriteString(command)
+	_, err := d.run("send-keys", "-t", name, line.String(), "Enter")
+	return err
+}
+
+// ShellQuote wraps a string in single quotes for POSIX sh; the config
+// dir on macOS contains a space, so paths sent into panes must be quoted.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // installSessionUX adds a status-bar hint and a Ctrl+Q detach binding.

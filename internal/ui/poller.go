@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -17,11 +18,13 @@ import (
 // inside a tmux attach. The UI receives the results as refreshMsg values
 // and merely renders them.
 type poller struct {
-	store    *store.Store
-	tmux     *tmux.Driver
-	engine   *status.Engine
-	interval time.Duration
-	poke     chan struct{}
+	store         *store.Store
+	tmux          *tmux.Driver
+	engine        *status.Engine
+	hooks         *hooks.Manager
+	statusSources map[string]string
+	interval      time.Duration
+	poke          chan struct{}
 
 	mu              sync.Mutex
 	includeArchived bool
@@ -34,14 +37,16 @@ type poller struct {
 	tick       int
 }
 
-func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, interval time.Duration) *poller {
+func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, statusSources map[string]string, interval time.Duration) *poller {
 	return &poller{
-		store:      st,
-		tmux:       driver,
-		engine:     engine,
-		interval:   interval,
-		poke:       make(chan struct{}, 1),
-		paneHashes: map[string]uint64{},
+		store:         st,
+		tmux:          driver,
+		engine:        engine,
+		hooks:         hookManager,
+		statusSources: statusSources,
+		interval:      interval,
+		poke:          make(chan struct{}, 1),
+		paneHashes:    map[string]uint64{},
 	}
 }
 
@@ -136,7 +141,8 @@ func (p *poller) refreshOnce() tea.Msg {
 		}
 		newStatus := status.Dead
 		if pid := panes[sess.ID]; pid > 0 {
-			if stat := trees[pid]; stat.OK {
+			stat := trees[pid]
+			if stat.OK {
 				agents.count++
 				agents.cpu += stat.CPUPercent
 				agents.rss += stat.RSS
@@ -144,8 +150,16 @@ func (p *poller) refreshOnce() tea.Msg {
 					proc = stat
 				}
 			}
+			// The pane pid is the shell; the agent runs as its child. A
+			// tree of one process means the agent is gone. A failed ps
+			// sample proves nothing, so it counts as alive.
+			agentAlive := !stat.OK || stat.Procs > 1
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
-				newStatus = p.derivePaneStatus(sess, pane, paneHashes)
+				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
+				if err != nil {
+					return errMsg{err}
+				}
+				newStatus = derived
 				// Any real transition re-arms the finished alert.
 				if sess.Acked && newStatus != status.Idle && newStatus != status.Finished {
 					if err := p.store.SetAcked(sess.ID, false); err != nil {
@@ -201,20 +215,57 @@ func (p *poller) refreshOnce() tea.Msg {
 // since the previous poll, the session counts as working. Finished is an
 // alert: entering the session acknowledges it (acked), and the pane keeps
 // deriving finished until the next turn, so acked maps it back to idle.
-func (p *poller) derivePaneStatus(sess store.Session, pane string, paneHashes map[string]uint64) string {
+func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
 	text := ansi.Strip(pane)
-	newStatus, matched := p.engine.Match(sess.Tool, text)
-	if region, ok := p.engine.ActivityRegion(sess.Tool, text); ok {
-		hash := hashString(region)
-		paneHashes[sess.ID] = hash
-		if !matched {
-			if previous, seen := p.paneHashes[sess.ID]; seen && previous != hash {
-				newStatus = status.Working
+	region, hasRegion := p.engine.ActivityRegion(sess.Tool, text)
+	var regionHash uint64
+	if hasRegion {
+		regionHash = hashString(region)
+		paneHashes[sess.ID] = regionHash
+	}
+	if p.statusSources[sess.Tool] == hooks.StatusSourceClaude {
+		if hookStatus, ok := p.hooks.Read(sess.ID); ok {
+			if agentAlive {
+				return p.applyHookStatus(sess, text, hookStatus), nil
 			}
+			// The agent died without its SessionEnd cleanup hook
+			// (crash, SIGKILL); a stale file must not mask the pane.
+			if err := p.hooks.Remove(sess.ID); err != nil {
+				return "", err
+			}
+		}
+	}
+	newStatus, matched := p.engine.Match(sess.Tool, text)
+	if hasRegion && !matched {
+		if previous, seen := p.paneHashes[sess.ID]; seen && previous != regionHash {
+			newStatus = status.Working
 		}
 	}
 	if newStatus == status.Finished && sess.Acked {
 		newStatus = status.Idle
 	}
-	return newStatus
+	return newStatus, nil
+}
+
+// applyHookStatus trusts the hook-reported status over pane heuristics
+// for the states hooks can see. They cannot see a plain-text question,
+// an interrupt banner, or an error line, so a matched pane verdict
+// upgrades finished to waiting or errored, and working to waiting (an
+// Esc interrupt fires no Stop event).
+func (p *poller) applyHookStatus(sess store.Session, text, hookStatus string) string {
+	paneStatus, matched := p.engine.Match(sess.Tool, text)
+	switch hookStatus {
+	case status.Finished:
+		if matched && (paneStatus == status.Waiting || paneStatus == status.Errored) {
+			return paneStatus
+		}
+		if sess.Acked {
+			return status.Idle
+		}
+	case status.Working:
+		if matched && paneStatus == status.Waiting {
+			return status.Waiting
+		}
+	}
+	return hookStatus
 }
