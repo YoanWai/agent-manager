@@ -664,6 +664,76 @@ func TestReviveRefusesMissingDir(t *testing.T) {
 	}
 }
 
+func TestQuickPromptDeadSessionSetsError(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "gone", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	m.selectSessionRow(t, "gone")
+
+	m.openQuickPrompt(sess)
+	if m.mode != modeList {
+		t.Fatal("quick prompt on a dead session should not open the modal")
+	}
+	if m.err != "session is dead - press v to revive" {
+		t.Fatalf("err = %q", m.err)
+	}
+}
+
+func TestQuickPromptSendClearsAcked(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.store.SetAcked(sess.ID, true); err != nil {
+		t.Fatalf("set acked: %v", err)
+	}
+	m.selectSessionRow(t, "answer-me")
+
+	m.openQuickPrompt(sess)
+	if m.mode != modeQuickPrompt {
+		t.Fatalf("quick prompt should open, err = %q", m.err)
+	}
+	m.quickPrompt.input.SetValue("carry on with the plan")
+	if _, _ = m.handleQuickPromptKey(tea.KeyMsg{Type: tea.KeyEnter}); m.err != "" {
+		t.Fatalf("send: %q", m.err)
+	}
+	if m.mode != modeList {
+		t.Fatal("modal should close after send")
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Acked {
+		t.Fatal("quick prompt send should clear the acked flag")
+	}
+}
+
+func TestFormPromptComposesWithSettings(t *testing.T) {
+	m := buildModel(t)
+	tool := m.cfg.Tools["claude-hooked"]
+
+	command, _, err := m.buildLaunch(tool, withPrompt(tool, tool.Command, "fix the bug"), "prompt01")
+	if err != nil {
+		t.Fatalf("buildLaunch: %v", err)
+	}
+	if !strings.HasPrefix(command, "cat 'fix the bug' --settings '") {
+		t.Fatalf("command = %q", command)
+	}
+
+	flagged := config.Tool{Command: "opencode", PromptFlag: "--prompt"}
+	if got := withPrompt(flagged, flagged.Command, "do it"); got != "opencode --prompt 'do it'" {
+		t.Fatalf("flagged compose = %q", got)
+	}
+	if got := withPrompt(tool, tool.Command, ""); got != "cat" {
+		t.Fatalf("empty prompt should leave the command untouched, got %q", got)
+	}
+}
+
 func TestRefreshWithStaleSelectionFetchesPreview(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "fresh-one", t.TempDir(), "")
@@ -684,5 +754,24 @@ func TestRefreshWithStaleSelectionFetchesPreview(t *testing.T) {
 	}
 	if m.preview != "pane text" {
 		t.Fatalf("preview = %q want %q", m.preview, "pane text")
+	}
+}
+
+func TestFormRejectsDashLeadingPrompt(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.name.SetValue("flagged")
+	m.form.dir.SetValue(t.TempDir())
+	m.form.toolIndex = 0
+	m.form.prompt.SetValue("--version")
+
+	if _, _ = m.submitForm(); m.err == "" {
+		t.Fatal("dash-leading prompt should be rejected")
+	}
+	if m.mode != modeForm {
+		t.Fatalf("form should stay open, mode = %v", m.mode)
+	}
+	if len(m.sessionRows()) != 0 {
+		t.Fatalf("no session should be created, got %d", len(m.sessionRows()))
 	}
 }

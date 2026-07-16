@@ -42,6 +42,7 @@ func (m *Model) viewForm() string {
 	if m.form.focus == fieldDir && m.pathSugg.active() {
 		b.WriteString(m.viewPathSuggestions() + "\n")
 	}
+	b.WriteString(formField("prompt", m.form.prompt.View(), m.form.focus == fieldPrompt))
 	b.WriteString(formField("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), m.form.focus == fieldGroup))
 
 	if m.form.focus == fieldGroup {
@@ -140,6 +141,11 @@ func (m *Model) viewRename() string {
 	return m.card("✎ Rename "+what, body, "↵ apply · esc cancel")
 }
 
+func (m *Model) viewQuickPrompt() string {
+	body := mutedStyle.Render(m.quickPrompt.sessName) + "\n\n" + m.quickPrompt.input.View()
+	return m.card("▷ Quick Prompt", body, "↵ send · esc cancel")
+}
+
 func (m *Model) viewMove() string {
 	return m.card("⇄ Move to group", m.viewGroupPicker(), "↑↓ pick · ↵ move · esc cancel")
 }
@@ -156,7 +162,7 @@ func (m *Model) viewHelp() string {
 		{"a / u", "archive / restore"},
 		{"d", "delete session, or group + subtree"},
 		{"shift+↑↓", "reorder row up / down"},
-		{"space", "collapse / expand group"},
+		{"space", "quick prompt to session / fold group"},
 		{"t", "toggle archived view"},
 		{"/", "search"},
 		{"ctrl+r", "force refresh"},

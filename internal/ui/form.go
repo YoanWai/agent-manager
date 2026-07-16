@@ -18,6 +18,7 @@ const (
 	fieldName = iota
 	fieldTool
 	fieldDir
+	fieldPrompt
 	fieldGroup
 	fieldCount
 )
@@ -37,6 +38,7 @@ type groupOption struct {
 type form struct {
 	name       textinput.Model
 	dir        textinput.Model
+	prompt     textinput.Model
 	dirAuto    bool
 	toolNames  []string
 	toolIndex  int
@@ -118,10 +120,12 @@ func (m *Model) openForm() {
 	name.Focus()
 
 	dir := textField("", 400)
+	prompt := textField("first task (optional)", 2000)
 
 	m.form = form{
 		name:      name,
 		dir:       dir,
+		prompt:    prompt,
 		dirAuto:   true,
 		toolNames: tools,
 		focus:     fieldName,
@@ -232,6 +236,8 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form.dir, cmd = m.form.dir.Update(msg)
 		m.form.dirAuto = false
 		m.pathSugg.recompute(m.form.dir.Value())
+	case fieldPrompt:
+		m.form.prompt, cmd = m.form.prompt.Update(msg)
 	}
 	return m, cmd
 }
@@ -257,11 +263,14 @@ func (m *Model) formFocus(delta int) {
 	m.form.focus = (m.form.focus + delta + fieldCount) % fieldCount
 	m.form.name.Blur()
 	m.form.dir.Blur()
+	m.form.prompt.Blur()
 	switch m.form.focus {
 	case fieldName:
 		m.form.name.Focus()
 	case fieldDir:
 		m.form.dir.Focus()
+	case fieldPrompt:
+		m.form.prompt.Focus()
 	}
 }
 
@@ -297,9 +306,14 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	group := m.selectedGroupPath()
+	prompt := strings.TrimSpace(m.form.prompt.Value())
+	if strings.HasPrefix(prompt, "-") {
+		m.err = `prompt cannot start with "-": the tool would read it as a flag`
+		return m, nil
+	}
 
 	id := newID()
-	command, env, err := m.buildLaunch(tool, tool.Command, id)
+	command, env, err := m.buildLaunch(tool, withPrompt(tool, tool.Command, prompt), id)
 	if err != nil {
 		m.err = err.Error()
 		return m, nil
@@ -327,6 +341,19 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	}
 	m.mode = modeList
 	return m, m.refreshCmd()
+}
+
+// withPrompt embeds an optional starting prompt into a tool's launch
+// command; tools whose positional argument is not a prompt route it
+// through their prompt_flag.
+func withPrompt(tool config.Tool, command, prompt string) string {
+	if prompt == "" {
+		return command
+	}
+	if tool.PromptFlag != "" {
+		return command + " " + tool.PromptFlag + " " + tmux.ShellQuote(prompt)
+	}
+	return command + " " + tmux.ShellQuote(prompt)
 }
 
 // buildLaunch resolves the shell command and environment a session

@@ -22,6 +22,8 @@ func (m *Model) View() string {
 		return m.viewHelp()
 	case modeRename:
 		return m.viewRename()
+	case modeQuickPrompt:
+		return m.viewQuickPrompt()
 	case modeMove:
 		return m.viewMove()
 	case modeGroupForm:
@@ -386,7 +388,7 @@ func padToHeight(s string, height int) string {
 func (m *Model) viewFooter() string {
 	pairs := [][2]string{
 		{"↑↓", "navigate"}, {"↵", "attach"}, {"n", "new"}, {"g", "group"},
-		{"⇧↑↓", "reorder"}, {"space", "fold"}, {"m", "move"}, {"r", "rename"},
+		{"⇧↑↓", "reorder"}, {"space", "prompt/fold"}, {"m", "move"}, {"r", "rename"},
 		{"v", "revive"}, {"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
 		{"t", "archived"}, {"ctrl+r", "refresh"}, {"?", "help"}, {"q", "quit"},
 	}

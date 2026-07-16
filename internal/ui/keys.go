@@ -20,6 +20,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKey(msg)
 	case modeRename:
 		return m.handleRenameKey(msg)
+	case modeQuickPrompt:
+		return m.handleQuickPromptKey(msg)
 	case modeMove:
 		return m.handleMoveKey(msg)
 	case modeGroupForm:
@@ -62,7 +64,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.restoreSelected()
 	case "d":
 		m.prepareDelete()
-	case "space":
+	case " ", "space":
+		if entry, ok := m.selectedRow(); ok && !entry.isGroup {
+			m.openQuickPrompt(entry.sess)
+			return m, nil
+		}
 		m.toggleCollapse()
 	case "t":
 		m.showArchived = !m.showArchived
@@ -449,6 +455,48 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.rename.input, cmd = m.rename.input.Update(msg)
+	return m, cmd
+}
+
+func (m *Model) openQuickPrompt(sess store.Session) {
+	if !m.tmux.Exists(sess.ID) {
+		m.err = "session is dead - press v to revive"
+		return
+	}
+	input := textinput.New()
+	input.CharLimit = 2000
+	input.Focus()
+	m.quickPrompt = quickPromptTarget{sessID: sess.ID, sessName: sess.Name, input: input}
+	m.mode = modeQuickPrompt
+	m.err = ""
+}
+
+func (m *Model) handleQuickPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = modeList
+		return m, nil
+	case "enter":
+		text := strings.TrimSpace(m.quickPrompt.input.Value())
+		if text == "" {
+			m.err = "prompt cannot be empty"
+			return m, nil
+		}
+		if err := m.tmux.SendText(m.quickPrompt.sessID, text); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		// A queued answer means the user expects a fresh finished alert.
+		if err := m.store.SetAcked(m.quickPrompt.sessID, false); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.mode = modeList
+		m.requestRefresh()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.quickPrompt.input, cmd = m.quickPrompt.input.Update(msg)
 	return m, cmd
 }
 

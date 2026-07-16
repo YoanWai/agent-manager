@@ -46,6 +46,36 @@ func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	}
 }
 
+func TestSendText(t *testing.T) {
+	driver := requireTmux(t)
+	id := "send" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "cat", nil); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	if err := driver.SendText(id, "hello world"); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	var pane string
+	for time.Now().Before(deadline) {
+		var err error
+		pane, err = driver.CapturePane(id)
+		if err != nil {
+			t.Fatalf("CapturePane: %v", err)
+		}
+		if strings.Count(pane, "hello world") >= 2 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if strings.Count(pane, "hello world") < 2 {
+		t.Fatalf("cat should echo the sent line, pane: %q", pane)
+	}
+}
+
 func TestLifecycle(t *testing.T) {
 	driver := requireTmux(t)
 	id := "test" + time.Now().Format("150405.000000")

@@ -28,6 +28,7 @@ const (
 	modeRename
 	modeMove
 	modeGroupForm
+	modeQuickPrompt
 )
 
 type treeRow struct {
@@ -70,12 +71,13 @@ type Model struct {
 	search       string
 	searching    bool
 
-	form      form
-	groupForm groupForm
-	pathSugg  pathComplete
-	confirm   confirmTarget
-	rename    renameTarget
-	moveID    string
+	form        form
+	groupForm   groupForm
+	pathSugg    pathComplete
+	confirm     confirmTarget
+	rename      renameTarget
+	quickPrompt quickPromptTarget
+	moveID      string
 
 	width    int
 	height   int
@@ -96,6 +98,12 @@ type renameTarget struct {
 	path    string
 	sessID  string
 	input   textinput.Model
+}
+
+type quickPromptTarget struct {
+	sessID   string
+	sessName string
+	input    textinput.Model
 }
 
 // agentStats aggregates process-tree usage across all live sessions.

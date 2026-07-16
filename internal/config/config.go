@@ -17,6 +17,7 @@ type Rule struct {
 type Tool struct {
 	Command        string `toml:"command"`
 	ReviveCommand  string `toml:"revive_command"`
+	PromptFlag     string `toml:"prompt_flag"`
 	StatusSource   string `toml:"status_source"`
 	DefaultStatus  string `toml:"default_status"`
 	ActivityCutoff string `toml:"activity_cutoff"`
@@ -168,6 +169,9 @@ rules = [
 [tools.opencode]
 command = "opencode"
 revive_command = "opencode --continue"
+# opencode's positional argument is the project path, so the optional
+# session prompt travels behind this flag
+prompt_flag = "--prompt"
 default_status = "idle"
 activity_cutoff = "(?m)^\\s*╹"
 turn_end = "^\\s*▣ +.+· [\\dhms. ]+\\s*$"
