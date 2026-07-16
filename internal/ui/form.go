@@ -141,7 +141,7 @@ func (m *Model) selectedGroupPath() string {
 // Index 0 is always the root; selectPath moves the highlight when given.
 func (m *Model) rebuildGroupOptions(selectPath string) {
 	paths := groupClosure(m.groups, m.sessions)
-	children := childIndex(paths)
+	children := childIndex(paths, m.groups)
 
 	options := []groupOption{{path: "", depth: 0}}
 	var walk func(path string, depth int)

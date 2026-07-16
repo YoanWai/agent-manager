@@ -50,6 +50,15 @@ type Model struct {
 	proc       sysstat.ProcStat
 	procFor    string
 	preview    string
+	agents     agentStats
+
+	netUp       uint64
+	netDown     uint64
+	netRates    bool
+	prevNetSent uint64
+	prevNetRecv uint64
+	prevNetAt   time.Time
+	prevNetOK   bool
 
 	cursor       int
 	mode         mode
@@ -86,6 +95,13 @@ type renameTarget struct {
 	input   textinput.Model
 }
 
+// agentStats aggregates process-tree usage across all live sessions.
+type agentStats struct {
+	count int
+	cpu   float64
+	rss   uint64
+}
+
 type tickMsg time.Time
 
 type refreshMsg struct {
@@ -96,6 +112,13 @@ type refreshMsg struct {
 	proc       sysstat.ProcStat
 	procFor    string
 	preview    string
+	agents     agentStats
+}
+
+type previewMsg struct {
+	sessID  string
+	preview string
+	proc    sysstat.ProcStat
 }
 
 type errMsg struct{ err error }
@@ -135,6 +158,23 @@ func (m *Model) selectedRow() (row, bool) {
 	return m.rows[m.cursor], true
 }
 
+// previewCmd captures one session's pane and process stats right away,
+// off the render loop, for instant sidebar updates on cursor moves.
+func (m *Model) previewCmd(sessID string) tea.Cmd {
+	return func() tea.Msg {
+		msg := previewMsg{sessID: sessID}
+		if m.tmux.Exists(sessID) {
+			if pane, err := m.tmux.CapturePane(sessID); err == nil {
+				msg.preview = pane
+			}
+			if pid, err := m.tmux.PanePID(sessID); err == nil {
+				msg.proc = sysstat.Proc(pid)
+			}
+		}
+		return msg
+	}
+}
+
 // refreshCmd polls every live session's pane once, deriving status and
 // grabbing the selected session's pane text as the preview, then samples
 // system stats. It runs off the render loop as a tea command.
@@ -151,20 +191,24 @@ func (m *Model) refreshCmd() tea.Cmd {
 		}
 
 		preview := ""
-		diskPath := "/"
 		var proc sysstat.ProcStat
+		var agents agentStats
 		for i, sess := range sessions {
-			if sess.ID == selectedID {
-				diskPath = sess.Cwd
-				if pid, err := m.tmux.PanePID(sess.ID); err == nil {
-					proc = sysstat.Proc(pid)
-				}
-			}
 			if sess.Archived {
 				continue
 			}
 			newStatus := status.Dead
 			if m.tmux.Exists(sess.ID) {
+				if pid, err := m.tmux.PanePID(sess.ID); err == nil {
+					if stat := sysstat.Proc(pid); stat.OK {
+						agents.count++
+						agents.cpu += stat.CPUPercent
+						agents.rss += stat.RSS
+						if sess.ID == selectedID {
+							proc = stat
+						}
+					}
+				}
 				if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
 					// The capture carries ANSI escapes for the preview;
 					// status rules match against plain text.
@@ -197,10 +241,11 @@ func (m *Model) refreshCmd() tea.Cmd {
 			sessions:   sessions,
 			groups:     names,
 			groupPaths: paths,
-			snap:       sysstat.Sample(diskPath),
+			snap:       sysstat.Sample("/"),
 			proc:       proc,
 			procFor:    selectedID,
 			preview:    preview,
+			agents:     agents,
 		}
 	}
 }
@@ -224,7 +269,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.proc = msg.proc
 		m.procFor = msg.procFor
 		m.preview = msg.preview
+		m.agents = msg.agents
+		m.updateNetRates(msg.snap)
 		m.rebuildRows()
+		return m, nil
+
+	case previewMsg:
+		if sess, ok := m.selected(); ok && sess.ID == msg.sessID {
+			m.preview = msg.preview
+			m.proc = msg.proc
+			m.procFor = msg.sessID
+		}
 		return m, nil
 
 	case errMsg:
@@ -241,6 +296,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 	return m, nil
+}
+
+// updateNetRates diffs cumulative interface counters between polls into
+// bytes-per-second rates. Counters can reset (sleep, interface changes),
+// so a backwards jump just reseeds the baseline.
+func (m *Model) updateNetRates(snap sysstat.Snapshot) {
+	now := time.Now()
+	if m.prevNetOK && snap.NetOK &&
+		snap.NetSent >= m.prevNetSent && snap.NetRecv >= m.prevNetRecv {
+		if dt := now.Sub(m.prevNetAt).Seconds(); dt > 0 {
+			m.netUp = uint64(float64(snap.NetSent-m.prevNetSent) / dt)
+			m.netDown = uint64(float64(snap.NetRecv-m.prevNetRecv) / dt)
+			m.netRates = true
+		}
+	}
+	m.prevNetSent = snap.NetSent
+	m.prevNetRecv = snap.NetRecv
+	m.prevNetAt = now
+	m.prevNetOK = snap.NetOK
 }
 
 // ageError clears a status message after it has survived a couple of poll
@@ -278,6 +352,8 @@ func (m *Model) rebuildRows() {
 	}
 	query := strings.ToLower(strings.TrimSpace(m.search))
 
+	// m.sessions arrives ordered by the store (group, sort_order), so
+	// per-group slices inherit the user's manual order.
 	sessionsByGroup := map[string][]store.Session{}
 	for _, sess := range m.sessions {
 		if query != "" && !matchesSearch(sess, query) {
@@ -285,17 +361,12 @@ func (m *Model) rebuildRows() {
 		}
 		sessionsByGroup[sess.Group] = append(sessionsByGroup[sess.Group], sess)
 	}
-	for _, group := range sessionsByGroup {
-		sort.SliceStable(group, func(i, j int) bool {
-			return group[i].CreatedAt.Before(group[j].CreatedAt)
-		})
-	}
 
 	paths := groupClosure(m.groups, m.sessions)
 	if query != "" {
 		paths = pathsWithSessions(paths, sessionsByGroup)
 	}
-	children := childIndex(paths)
+	children := childIndex(paths, m.groups)
 
 	rows := make([]row, 0, len(m.sessions)+len(paths))
 	for _, sess := range sessionsByGroup[""] {
@@ -371,7 +442,13 @@ func pathsWithSessions(paths map[string]bool, sessionsByGroup map[string][]store
 	return kept
 }
 
-func childIndex(paths map[string]bool) map[string][]string {
+// childIndex maps each group to its ordered children: stored groups in
+// the user's manual order, synthesized ancestors alphabetically after.
+func childIndex(paths map[string]bool, ordered []string) map[string][]string {
+	rank := make(map[string]int, len(ordered))
+	for i, name := range ordered {
+		rank[name] = i
+	}
 	children := map[string][]string{}
 	for path := range paths {
 		parent := ""
@@ -381,7 +458,17 @@ func childIndex(paths map[string]bool) map[string][]string {
 		children[parent] = append(children[parent], path)
 	}
 	for _, siblings := range children {
-		sort.Strings(siblings)
+		sort.SliceStable(siblings, func(i, j int) bool {
+			ri, oki := rank[siblings[i]]
+			rj, okj := rank[siblings[j]]
+			if oki && okj {
+				return ri < rj
+			}
+			if oki != okj {
+				return oki
+			}
+			return siblings[i] < siblings[j]
+		})
 	}
 	return children
 }

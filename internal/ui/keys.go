@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -34,9 +35,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "up", "k":
-		m.moveCursor(-1)
+		return m, m.moveCursor(-1)
 	case "down", "j":
-		m.moveCursor(1)
+		return m, m.moveCursor(1)
+	case "shift+up":
+		return m.reorderSelected(-1)
+	case "shift+down":
+		return m.reorderSelected(1)
 	case "enter":
 		if r, ok := m.selectedRow(); ok && r.isGroup {
 			m.toggleCollapse()
@@ -73,13 +78,121 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) moveCursor(delta int) {
+// moveCursor shifts the selection and kicks off an immediate preview
+// fetch for the newly selected session, so the sidebar follows the
+// cursor without waiting for the next poll tick.
+func (m *Model) moveCursor(delta int) tea.Cmd {
+	previous := m.cursor
 	m.cursor += delta
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
 	if m.cursor >= len(m.rows) {
 		m.cursor = len(m.rows) - 1
+	}
+	if m.cursor == previous {
+		return nil
+	}
+	sess, ok := m.selected()
+	if !ok {
+		m.preview = ""
+		m.proc = sysstat.ProcStat{}
+		m.procFor = ""
+		return nil
+	}
+	m.preview = ""
+	return m.previewCmd(sess.ID)
+}
+
+// reorderSelected moves the selected session among its group siblings,
+// or the selected group among the groups sharing its parent.
+func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
+	r, ok := m.selectedRow()
+	if !ok {
+		return m, nil
+	}
+	var moved bool
+	var err error
+	if r.isGroup {
+		moved, err = m.store.ReorderGroup(r.group, delta)
+	} else {
+		moved, err = m.store.ReorderSession(r.sess.ID, delta, m.showArchived)
+	}
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	if !moved {
+		edge := "top"
+		if delta > 0 {
+			edge = "bottom"
+		}
+		what := "group"
+		if !r.isGroup {
+			what = "session"
+		}
+		m.err = fmt.Sprintf("%s already at the %s of its level", what, edge)
+		return m, nil
+	}
+	// Mirror the swap in memory so the list redraws instantly; the next
+	// poll re-reads the authoritative order from the store.
+	if r.isGroup {
+		m.swapGroupLocal(r.group, delta)
+	} else {
+		m.swapSessionLocal(r.sess.ID, delta)
+	}
+	m.rebuildRows()
+	return m, m.refreshCmd()
+}
+
+func (m *Model) swapSessionLocal(id string, delta int) {
+	step := 1
+	if delta < 0 {
+		step = -1
+	}
+	for i, sess := range m.sessions {
+		if sess.ID != id {
+			continue
+		}
+		neighbor := i + step
+		if neighbor >= 0 && neighbor < len(m.sessions) && m.sessions[neighbor].Group == sess.Group {
+			m.sessions[i], m.sessions[neighbor] = m.sessions[neighbor], m.sessions[i]
+		}
+		return
+	}
+}
+
+func (m *Model) swapGroupLocal(path string, delta int) {
+	parent := ""
+	if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		parent = path[:idx]
+	}
+	isSibling := func(name string) bool {
+		if parent == "" {
+			return !strings.Contains(name, "/")
+		}
+		rest, ok := strings.CutPrefix(name, parent+"/")
+		return ok && !strings.Contains(rest, "/")
+	}
+	step := 1
+	if delta < 0 {
+		step = -1
+	}
+	current := -1
+	for i, name := range m.groups {
+		if name == path {
+			current = i
+			break
+		}
+	}
+	if current < 0 {
+		return
+	}
+	for i := current + step; i >= 0 && i < len(m.groups); i += step {
+		if isSibling(m.groups[i]) {
+			m.groups[current], m.groups[i] = m.groups[i], m.groups[current]
+			return
+		}
 	}
 }
 

@@ -69,10 +69,17 @@ CREATE TABLE IF NOT EXISTS groups (
 	if err != nil {
 		return err
 	}
-	// Migrate older databases that predate the group default-path column.
-	if _, err := s.db.Exec(`ALTER TABLE groups ADD COLUMN path TEXT NOT NULL DEFAULT ''`); err != nil {
-		if !strings.Contains(err.Error(), "duplicate column") {
-			return err
+	// Migrate older databases that predate the group default-path column
+	// and the session sort-order column.
+	migrations := []string{
+		`ALTER TABLE groups ADD COLUMN path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`,
+	}
+	for _, migration := range migrations {
+		if _, err := s.db.Exec(migration); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column") {
+				return err
+			}
 		}
 	}
 	return nil
@@ -86,10 +93,11 @@ func (s *Store) CreateSession(sess Session) error {
 		sess.LastStatusAt = sess.CreatedAt
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
+		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
-		boolToInt(sess.Archived), sess.CreatedAt.Unix(), sess.LastStatusAt.Unix(),
+		boolToInt(sess.Archived), sess.CreatedAt.Unix(), sess.LastStatusAt.Unix(), sess.Group,
 	)
 	if err != nil {
 		return err
@@ -104,7 +112,9 @@ func (s *Store) ensureGroup(name string) error {
 		return nil
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO groups (name) VALUES (?) ON CONFLICT(name) DO NOTHING`, name)
+		`INSERT INTO groups (name, sort_order)
+		 VALUES (?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+		 ON CONFLICT(name) DO NOTHING`, name)
 	return err
 }
 
@@ -115,7 +125,8 @@ func (s *Store) CreateGroup(name, path string) error {
 		return nil
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO groups (name, path) VALUES (?, ?)
+		`INSERT INTO groups (name, path, sort_order)
+		 VALUES (?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
 		 ON CONFLICT(name) DO UPDATE SET path = excluded.path`, name, path)
 	return err
 }
@@ -126,7 +137,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 	if !includeArchived {
 		query += ` WHERE archived = 0`
 	}
-	query += ` ORDER BY group_name, created_at`
+	query += ` ORDER BY group_name, sort_order, created_at`
 	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -250,9 +261,13 @@ func (s *Store) RenameGroup(oldPath, newPath string) error {
 	return tx.Commit()
 }
 
-// MoveSession reassigns a session to another group ("" = root).
+// MoveSession reassigns a session to another group ("" = root), placing
+// it at the end of the destination.
 func (s *Store) MoveSession(id, group string) error {
-	res, err := s.db.Exec(`UPDATE sessions SET group_name = ? WHERE id = ?`, group, id)
+	res, err := s.db.Exec(
+		`UPDATE sessions SET group_name = ?,
+		 sort_order = (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ?)
+		 WHERE id = ?`, group, group, id)
 	if err != nil {
 		return err
 	}
@@ -304,6 +319,151 @@ func (s *Store) Groups() ([]Group, error) {
 		groups = append(groups, g)
 	}
 	return groups, rows.Err()
+}
+
+// ReorderSession moves a session one visible step among its group
+// siblings, reporting whether anything moved. Hidden (archived)
+// siblings are skipped when the caller's view excludes them, so a move
+// always has a visible effect. Siblings are renumbered to a dense 0..n
+// first, since fresh databases start with ties.
+func (s *Store) ReorderSession(id string, delta int, includeArchived bool) (bool, error) {
+	sess, err := s.Get(id)
+	if err != nil {
+		return false, err
+	}
+	rows, err := s.db.Query(
+		`SELECT id, archived FROM sessions WHERE group_name = ?
+		 ORDER BY sort_order, created_at`, sess.Group)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	type sibling struct {
+		id       string
+		archived bool
+	}
+	var siblings []sibling
+	for rows.Next() {
+		var sib sibling
+		var archived int
+		if err := rows.Scan(&sib.id, &archived); err != nil {
+			return false, err
+		}
+		sib.archived = archived != 0
+		siblings = append(siblings, sib)
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+
+	current, target := -1, -1
+	for i, sib := range siblings {
+		if sib.id == id {
+			current = i
+			break
+		}
+	}
+	if current < 0 {
+		return false, fmt.Errorf("session %s not found among its siblings", id)
+	}
+	step := 1
+	if delta < 0 {
+		step = -1
+	}
+	for i := current + step; i >= 0 && i < len(siblings); i += step {
+		if siblings[i].archived && !includeArchived {
+			continue
+		}
+		target = i
+		break
+	}
+	if target < 0 {
+		return false, nil
+	}
+
+	siblings[current], siblings[target] = siblings[target], siblings[current]
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	for i, sib := range siblings {
+		if _, err := tx.Exec(`UPDATE sessions SET sort_order = ? WHERE id = ?`, i, sib.id); err != nil {
+			return false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ReorderGroup moves a group one step among the groups sharing its
+// parent path, reporting whether anything moved. All groups are
+// renumbered to their current global order first so sibling swaps are
+// well-defined.
+func (s *Store) ReorderGroup(path string, delta int) (bool, error) {
+	if path == "" {
+		return false, fmt.Errorf("cannot reorder the root group")
+	}
+	if err := s.ensureGroup(path); err != nil {
+		return false, err
+	}
+	groups, err := s.Groups()
+	if err != nil {
+		return false, err
+	}
+	parent := ""
+	if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		parent = path[:idx]
+	}
+	isSibling := func(name string) bool {
+		if parent == "" {
+			return !strings.Contains(name, "/")
+		}
+		rest, ok := strings.CutPrefix(name, parent+"/")
+		return ok && !strings.Contains(rest, "/")
+	}
+
+	current, target := -1, -1
+	for i, g := range groups {
+		if g.Name == path {
+			current = i
+			break
+		}
+	}
+	if current < 0 {
+		return false, fmt.Errorf("group %s not found", path)
+	}
+	step := 1
+	if delta < 0 {
+		step = -1
+	}
+	for i := current + step; i >= 0 && i < len(groups); i += step {
+		if isSibling(groups[i].Name) {
+			target = i
+			break
+		}
+	}
+	if target < 0 {
+		return false, nil
+	}
+
+	groups[current], groups[target] = groups[target], groups[current]
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	for i, g := range groups {
+		if _, err := tx.Exec(`UPDATE groups SET sort_order = ? WHERE name = ?`, i, g.Name); err != nil {
+			return false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func requireRow(res sql.Result, id string) error {

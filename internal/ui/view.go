@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -32,17 +33,24 @@ func (m *Model) View() string {
 		leftWidth = 30
 	}
 	rightWidth := m.width - leftWidth
-	bodyHeight := m.height - 4
+	footer := m.viewFooter()
+	bodyHeight := m.height - 3 - lipgloss.Height(footer)
 	if bodyHeight < 3 {
 		bodyHeight = 3
 	}
 
 	listInner := leftWidth - 4
-	left := titledPanel("Sessions", m.viewList(listInner, bodyHeight-2), leftWidth, bodyHeight, false)
+	leftBody := m.viewList(listInner, bodyHeight-2)
+	stats := m.viewComputer(listInner)
+	listHeight := bodyHeight - 2 - lipgloss.Height(stats)
+	if listHeight >= 3 {
+		leftBody = padToHeight(m.viewList(listInner, listHeight), listHeight) + "\n" + stats
+	}
+	left := titledPanel("Sessions", leftBody, leftWidth, bodyHeight, false)
 	right := titledPanel(m.sidebarTitle(), m.viewSidebar(rightWidth-4, bodyHeight-2), rightWidth, bodyHeight, false)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	return strings.Join([]string{m.viewHeader(), body, m.viewStatus(), m.viewFooter()}, "\n")
+	return strings.Join([]string{m.viewHeader(), body, m.viewStatus(), footer}, "\n")
 }
 
 // viewStatus is the transient message line: prompts, search, and
@@ -78,13 +86,79 @@ func (m *Model) viewHeader() string {
 	meta := mutedStyle.Render(fmt.Sprintf("%d sessions", sessionCount)) +
 		subtleStyle.Render(" · ") +
 		lipgloss.NewStyle().Foreground(colorAccent2).Render(scope)
-
 	left := brand + "  " + meta
-	gap := m.width - ansi.StringWidth(left)
-	if gap < 1 {
-		gap = 1
+
+	right := m.viewStatusCounts()
+	if m.agents.count > 0 {
+		agents := labelStyle.Render("agents ") +
+			valueStyle.Render(fmt.Sprintf("%.0f%%", m.agents.cpu)) +
+			subtleStyle.Render(" · ") +
+			valueStyle.Render(humanBytes(m.agents.rss))
+		if right != "" {
+			right += subtleStyle.Render("   ")
+		}
+		right += agents + " "
 	}
-	return left + strings.Repeat(" ", gap)
+
+	gap := m.width - ansi.StringWidth(left) - ansi.StringWidth(right)
+	if gap < 1 {
+		return padRight(left, m.width)
+	}
+	return left + strings.Repeat(" ", gap) + right
+}
+
+// viewStatusCounts is the fleet-at-a-glance strip: one colored glyph and
+// count per status present among the listed sessions.
+func (m *Model) viewStatusCounts() string {
+	counts := map[string]int{}
+	for _, sess := range m.sessions {
+		if !sess.Archived {
+			counts[sess.Status]++
+		}
+	}
+	var parts []string
+	for _, st := range []string{status.Working, status.Ready, status.Idle, status.Errored, status.Dead} {
+		if counts[st] == 0 {
+			continue
+		}
+		glyph := lipgloss.NewStyle().Foreground(statusColor(st)).Render(statusGlyph(st))
+		parts = append(parts, glyph+mutedStyle.Render(fmt.Sprintf(" %d %s", counts[st], st)))
+	}
+	return strings.Join(parts, subtleStyle.Render("  "))
+}
+
+// viewComputer is the compact machine gauge block docked at the bottom
+// of the Sessions panel: cpu, memory (with used/total), root-disk free
+// space, and load averages.
+func (m *Model) viewComputer(width int) string {
+	s := m.snap
+	meter := func(label string, percent float64, ok bool, extra string) string {
+		if !ok {
+			return labelStyle.Width(5).Render(label) + mutedStyle.Render("n/a") + "\n"
+		}
+		line := labelStyle.Width(5).Render(label) + gauge(percent, 8) +
+			valueStyle.Render(fmt.Sprintf(" %3.0f%%", percent))
+		if extra != "" {
+			line += subtleStyle.Render(" " + extra)
+		}
+		return line + "\n"
+	}
+	var b strings.Builder
+	b.WriteString(divider("Computer", width) + "\n")
+	b.WriteString(meter("cpu", s.CPUPercent, s.CPUOK, ""))
+	b.WriteString(meter("mem", s.MemPercent, s.MemOK,
+		humanBytes(s.MemUsed)+"/"+humanBytes(s.MemTotal)))
+	if s.SwapOK && s.SwapTotal > 0 {
+		b.WriteString(meter("swap", s.SwapPercent, true, humanBytes(s.SwapUsed)))
+	}
+	b.WriteString(meter("disk", s.DiskPercent, s.DiskOK,
+		humanBytes(s.DiskTotal-s.DiskUsed)+" free"))
+	if m.netRates {
+		b.WriteString(labelStyle.Width(5).Render("net") +
+			valueStyle.Render("↓ "+humanBytes(m.netDown)+"/s") +
+			subtleStyle.Render("  ↑ "+humanBytes(m.netUp)+"/s") + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m *Model) sidebarTitle() string {
@@ -205,24 +279,15 @@ func divider(label string, width int) string {
 	return head + subtleStyle.Render(strings.Repeat("─", dashes))
 }
 
-// viewSidebar lays out session details and computer stats side by side
-// on top, with the live preview filling the rest of the panel below.
+// viewSidebar lays out session details on top, with the live preview
+// filling the rest of the panel below.
 func (m *Model) viewSidebar(width, height int) string {
-	detailWidth := width * 55 / 100
-	statsWidth := width - detailWidth - 3
-	detail := divider("Details", detailWidth) + "\n" + m.viewDetail(detailWidth)
-	computer := divider("Computer", statsWidth) + "\n" + m.viewComputer(statsWidth)
-	top := lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(detailWidth).Render(detail),
-		subtleStyle.Render(" │ "),
-		lipgloss.NewStyle().Width(statsWidth).Render(computer),
-	)
-
-	previewHeight := height - lipgloss.Height(top) - 1
+	detail := divider("Details", width) + "\n" + m.viewDetail(width)
+	previewHeight := height - lipgloss.Height(detail) - 1
 	if previewHeight < 3 {
-		return top
+		return detail
 	}
-	return top + "\n" + m.viewPreview(width, previewHeight)
+	return detail + "\n" + m.viewPreview(width, previewHeight)
 }
 
 func (m *Model) viewDetail(width int) string {
@@ -316,48 +381,34 @@ func padToHeight(s string, height int) string {
 	return s
 }
 
-func (m *Model) viewComputer(width int) string {
-	s := m.snap
-	barWidth := width - 20
-	if barWidth < 6 {
-		barWidth = 6
-	}
-	if barWidth > 14 {
-		barWidth = 14
-	}
-	var b strings.Builder
-	meter := func(label string, percent float64, ok bool) string {
-		if !ok {
-			return labelStyle.Width(5).Render(label) + mutedStyle.Render("n/a") + "\n"
-		}
-		return labelStyle.Width(5).Render(label) + gauge(percent, barWidth) +
-			mutedStyle.Render(fmt.Sprintf(" %.0f%%", percent)) + "\n"
-	}
-	b.WriteString(meter("cpu", s.CPUPercent, s.CPUOK))
-	b.WriteString(meter("mem", s.MemPercent, s.MemOK))
-	b.WriteString(meter("disk", s.DiskPercent, s.DiskOK))
-	if s.MemOK {
-		b.WriteString(subtleStyle.Render(fmt.Sprintf("      %s / %s", humanBytes(s.MemUsed), humanBytes(s.MemTotal))) + "\n")
-	}
-	if s.LoadOK {
-		b.WriteString(labelStyle.Width(5).Render("load") +
-			mutedStyle.Render(fmt.Sprintf("%.2f %.2f %.2f", s.Load1, s.Load5, s.Load15)) + "\n")
-	}
-	return b.String()
-}
-
+// viewFooter lists every shortcut, wrapping onto extra lines when the
+// terminal is too narrow for one.
 func (m *Model) viewFooter() string {
 	pairs := [][2]string{
-		{"n", "new"}, {"g", "group"}, {"↵", "attach"}, {"m", "move"}, {"r", "rename"},
+		{"↑↓", "navigate"}, {"↵", "attach"}, {"n", "new"}, {"g", "group"},
+		{"⇧↑↓", "reorder"}, {"space", "fold"}, {"m", "move"}, {"r", "rename"},
 		{"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
-		{"t", "archived"}, {"?", "help"}, {"q", "quit"},
+		{"t", "archived"}, {"ctrl+r", "refresh"}, {"?", "help"}, {"q", "quit"},
 	}
-	parts := make([]string, len(pairs))
-	for i, p := range pairs {
-		parts[i] = keyStyle.Render(p[0]) + " " + mutedStyle.Render(p[1])
+	sep := subtleStyle.Render(" · ")
+	sepWidth := ansi.StringWidth(sep)
+	var lines []string
+	line, lineWidth := "", 0
+	for _, p := range pairs {
+		part := keyStyle.Render(p[0]) + " " + mutedStyle.Render(p[1])
+		partWidth := ansi.StringWidth(part)
+		switch {
+		case line == "":
+			line, lineWidth = " "+part, 1+partWidth
+		case lineWidth+sepWidth+partWidth <= m.width:
+			line += sep + part
+			lineWidth += sepWidth + partWidth
+		default:
+			lines = append(lines, line)
+			line, lineWidth = " "+part, 1+partWidth
+		}
 	}
-	line := " " + strings.Join(parts, subtleStyle.Render("  ·  "))
-	return ansi.Truncate(line, m.width, subtleStyle.Render(" …"))
+	return strings.Join(append(lines, line), "\n")
 }
 
 // card centers a bordered modal with a title and footer hint.
@@ -514,6 +565,7 @@ func (m *Model) viewHelp() string {
 		{"r", "rename session / group"},
 		{"a / u", "archive / restore"},
 		{"d", "delete session, or group + subtree"},
+		{"shift+↑↓", "reorder row up / down"},
 		{"space", "collapse / expand group"},
 		{"t", "toggle archived view"},
 		{"/", "search"},
@@ -523,7 +575,7 @@ func (m *Model) viewHelp() string {
 	}
 	var b strings.Builder
 	for _, r := range rows {
-		b.WriteString(keyStyle.Width(8).Render(r[0]) + mutedStyle.Render(r[1]) + "\n")
+		b.WriteString(keyStyle.Width(10).Render(r[0]) + mutedStyle.Render(r[1]) + "\n")
 	}
 	return m.card("? Keys", strings.TrimRight(b.String(), "\n"), "any key to close")
 }

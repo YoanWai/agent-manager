@@ -1,8 +1,6 @@
 # Agent Manager
 
-A terminal UI to manage AI coding-agent sessions on your machine. Create and enter sessions for Claude Code, OpenCode, or any CLI tool; organize them in a nested group tree; archive finished ones; watch live status and a live preview of each session, plus computer resource stats.
-
-A terminal manager for tmux-hosted AI coding sessions.
+A terminal UI to manage AI coding-agent sessions on your machine. Create and enter sessions for Claude Code, OpenCode, or any CLI tool; organize them in a nested group tree with manual ordering; archive finished ones; watch live status, a live pane preview, the combined footprint of your agents, and machine resource gauges.
 
 ## Requirements
 
@@ -12,7 +10,7 @@ A terminal manager for tmux-hosted AI coding sessions.
 ## Install
 
 ```bash
-git clone git@github.com:YoanWai/agent-manager.git
+git clone https://github.com/YoanWai/agent-manager.git
 cd agent-manager
 go install .
 ```
@@ -32,8 +30,10 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | Key | Action |
 |-----|--------|
 | `n` | New session (name, tool, directory, group picker) |
+| `g` | New group (name, parent, default path) |
 | `enter` | Attach session / fold group |
 | `ctrl+q` | Inside a session: back to the manager |
+| `shift+↑` / `shift+↓` | Reorder session or group among its siblings |
 | `m` | Move session to another group |
 | `r` | Rename session or group |
 | `a` / `u` | Archive / restore |
@@ -47,11 +47,15 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 
 ### Groups
 
-Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `n` inside any group picker.
+Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, and reorder both groups and sessions with `shift+↑↓`; the order persists.
 
 ### Status
 
-Each session's tmux pane is polled (default every 2s) and matched against per-tool regex rules to derive a status: `working`, `ready`, `errored`, `idle`, or `dead`. The selected session's pane tail renders live in the preview panel.
+Each session's tmux pane is polled (default every 2s) and matched against per-tool regex rules to derive a status: `working`, `ready`, `errored`, `idle`, or `dead`. The selected session's pane tail renders live in the preview panel, and moving the cursor fetches the preview immediately.
+
+### Stats
+
+The header shows a fleet summary: per-status session counts and the combined CPU/RAM of every live agent's full process tree. The Computer block in the sessions panel shows machine gauges: CPU, memory (used/total), swap, root-disk free space, and network up/down rates.
 
 ## Configuration
 
@@ -79,3 +83,7 @@ State is stored next to the config in `state.db` (SQLite).
 go test ./...   # includes end-to-end tests against a real tmux server
 go run .
 ```
+
+## License
+
+[MIT](LICENSE)

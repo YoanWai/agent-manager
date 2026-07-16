@@ -102,3 +102,89 @@ func TestMissingRowErrors(t *testing.T) {
 		t.Fatal("archive on missing row should error")
 	}
 }
+
+func listIDs(t *testing.T, st *Store, includeArchived bool) []string {
+	t.Helper()
+	sessions, err := st.ListSessions(includeArchived)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	ids := make([]string, len(sessions))
+	for i, sess := range sessions {
+		ids[i] = sess.ID
+	}
+	return ids
+}
+
+func TestReorderSession(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateSession(sample("a", "g1"))
+	st.CreateSession(sample("b", "g1"))
+	st.CreateSession(sample("c", "g1"))
+
+	if moved, err := st.ReorderSession("c", -1, false); err != nil || !moved {
+		t.Fatalf("reorder: moved=%v err=%v", moved, err)
+	}
+	got := listIDs(t, st, false)
+	want := []string{"a", "c", "b"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("order = %v want %v", got, want)
+		}
+	}
+
+	// Top of group: no-op, no error.
+	if moved, err := st.ReorderSession("a", -1, false); err != nil || moved {
+		t.Fatalf("edge reorder: moved=%v err=%v, want no-op", moved, err)
+	}
+	if ids := listIDs(t, st, false); ids[0] != "a" {
+		t.Fatalf("edge move should keep order, got %v", ids)
+	}
+}
+
+func TestReorderSessionSkipsArchivedInActiveView(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateSession(sample("a", "g1"))
+	st.CreateSession(sample("b", "g1"))
+	st.CreateSession(sample("c", "g1"))
+	st.SetArchived("b", true)
+
+	if moved, err := st.ReorderSession("c", -1, false); err != nil || !moved {
+		t.Fatalf("reorder: moved=%v err=%v", moved, err)
+	}
+	got := listIDs(t, st, false)
+	if got[0] != "c" || got[1] != "a" {
+		t.Fatalf("c should jump over hidden b to swap with a, got %v", got)
+	}
+}
+
+func TestReorderGroup(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateGroup("alpha", "")
+	st.CreateGroup("beta", "")
+	st.CreateGroup("alpha/sub", "")
+
+	if moved, err := st.ReorderGroup("beta", -1); err != nil || !moved {
+		t.Fatalf("reorder: moved=%v err=%v", moved, err)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	posOf := func(name string) int {
+		for i, g := range groups {
+			if g.Name == name {
+				return i
+			}
+		}
+		return -1
+	}
+	if posOf("beta") > posOf("alpha") {
+		t.Fatalf("beta should come before alpha, got %v", groups)
+	}
+
+	// Nested group only swaps with same-parent siblings; sole child is a no-op.
+	if moved, err := st.ReorderGroup("alpha/sub", -1); err != nil || moved {
+		t.Fatalf("nested sole child: moved=%v err=%v, want no-op", moved, err)
+	}
+}
