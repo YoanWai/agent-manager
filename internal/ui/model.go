@@ -15,7 +15,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 )
 
 type mode int
@@ -61,8 +60,7 @@ type Model struct {
 	prevNetAt   time.Time
 	prevNetOK   bool
 
-	pollTick     int
-	paneHashes   map[string]uint64
+	poller       *poller
 	cursor       int
 	mode         mode
 	showArchived bool
@@ -105,8 +103,6 @@ type agentStats struct {
 	rss   uint64
 }
 
-type tickMsg time.Time
-
 type refreshMsg struct {
 	sessions   []store.Session
 	groups     []string
@@ -117,7 +113,6 @@ type refreshMsg struct {
 	procFor    string
 	preview    string
 	agents     agentStats
-	paneHashes map[string]uint64
 }
 
 type previewMsg struct {
@@ -136,17 +131,38 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		store:     st,
 		tmux:      driver,
 		engine:    engine,
+		poller:    newPoller(st, driver, engine, cfg.PollInterval.Duration),
 		collapsed: map[string]bool{},
 		mode:      modeList,
 	}
 }
 
-func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.refreshCmd(), tickCmd(m.cfg.PollInterval.Duration))
+// StartPoller launches the background polling loop. It runs outside the
+// bubbletea event loop so statuses keep updating while the TUI is
+// suspended inside a tmux attach.
+func (m *Model) StartPoller(send func(tea.Msg)) {
+	m.syncPollInput()
+	go m.poller.run(send)
 }
 
-func tickCmd(d time.Duration) tea.Cmd {
-	return tea.Tick(d, func(t time.Time) tea.Msg { return tickMsg(t) })
+func (m *Model) syncPollInput() {
+	selectedID := ""
+	if sess, ok := m.selected(); ok {
+		selectedID = sess.ID
+	}
+	m.poller.setInput(m.showArchived, selectedID)
+}
+
+// requestRefresh publishes the current UI state to the poller and asks
+// for an immediate pass.
+func (m *Model) requestRefresh() {
+	m.syncPollInput()
+	m.poller.requestRefresh()
+}
+
+func (m *Model) Init() tea.Cmd {
+	m.syncPollInput()
+	return nil
 }
 
 func (m *Model) selected() (store.Session, bool) {
@@ -180,130 +196,12 @@ func (m *Model) previewCmd(sessID string) tea.Cmd {
 	}
 }
 
-// derivePaneStatus turns one captured pane into a session status. The
-// capture carries ANSI escapes for the preview; rules match against the
-// stripped text. Streaming output often renders without any spinner, so
-// when no rule matches but the content region above the input box changed
-// since the previous poll, the session counts as working. Finished is an
-// alert: entering the session acknowledges it (acked), and the pane keeps
-// deriving finished until the next turn, so acked maps it back to idle.
-func (m *Model) derivePaneStatus(sess store.Session, pane string, previousHashes, paneHashes map[string]uint64) string {
-	text := ansi.Strip(pane)
-	newStatus, matched := m.engine.Match(sess.Tool, text)
-	if region, ok := m.engine.ActivityRegion(sess.Tool, text); ok {
-		hash := hashString(region)
-		paneHashes[sess.ID] = hash
-		if !matched {
-			if previous, seen := previousHashes[sess.ID]; seen && previous != hash {
-				newStatus = status.Working
-			}
-		}
-	}
-	if newStatus == status.Finished && sess.Acked {
-		newStatus = status.Idle
-	}
-	return newStatus
-}
-
-// refreshCmd polls every live session's pane once, deriving status and
-// grabbing the selected session's pane text as the preview, then samples
-// system stats. It runs off the render loop as a tea command. Liveness
-// and pane pids come from one tmux call, and every process tree from one
-// ps call, so the poll cost stays flat as sessions are added.
+// refreshCmd runs one synchronous polling pass; the background poller
+// covers normal operation, this exists for tests and explicit refreshes.
 func (m *Model) refreshCmd() tea.Cmd {
-	includeArchived := m.showArchived
-	selectedID := ""
-	if sess, ok := m.selected(); ok {
-		selectedID = sess.ID
-	}
-	// Machine gauges change slowly; sample them every other poll.
-	sampleStats := m.pollTick%2 == 0
-	m.pollTick++
-	previousHashes := m.paneHashes
+	m.syncPollInput()
 	return func() tea.Msg {
-		sessions, err := m.store.ListSessions(includeArchived)
-		if err != nil {
-			return errMsg{err}
-		}
-
-		panes, err := m.tmux.Panes()
-		if err != nil {
-			return errMsg{err}
-		}
-		var livePIDs []int
-		for _, sess := range sessions {
-			if !sess.Archived && panes[sess.ID] > 0 {
-				livePIDs = append(livePIDs, panes[sess.ID])
-			}
-		}
-		trees := sysstat.Trees(livePIDs)
-
-		preview := ""
-		var proc sysstat.ProcStat
-		var agents agentStats
-		paneHashes := make(map[string]uint64, len(sessions))
-		for i, sess := range sessions {
-			if sess.Archived {
-				continue
-			}
-			newStatus := status.Dead
-			if pid := panes[sess.ID]; pid > 0 {
-				if stat := trees[pid]; stat.OK {
-					agents.count++
-					agents.cpu += stat.CPUPercent
-					agents.rss += stat.RSS
-					if sess.ID == selectedID {
-						proc = stat
-					}
-				}
-				if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
-					newStatus = m.derivePaneStatus(sess, pane, previousHashes, paneHashes)
-					// Any real transition re-arms the finished alert.
-					if sess.Acked && newStatus != status.Idle && newStatus != status.Finished {
-						if err := m.store.SetAcked(sess.ID, false); err != nil {
-							return errMsg{err}
-						}
-						sessions[i].Acked = false
-					}
-					if sess.ID == selectedID {
-						preview = pane
-					}
-				}
-			}
-			if newStatus != sess.Status {
-				if err := m.store.UpdateStatus(sess.ID, newStatus); err != nil {
-					return errMsg{err}
-				}
-				sessions[i].Status = newStatus
-			}
-		}
-
-		groups, err := m.store.Groups()
-		if err != nil {
-			return errMsg{err}
-		}
-		names := make([]string, len(groups))
-		paths := make(map[string]string, len(groups))
-		for i, g := range groups {
-			names[i] = g.Name
-			paths[g.Name] = g.Path
-		}
-
-		msg := refreshMsg{
-			sessions:   sessions,
-			groups:     names,
-			groupPaths: paths,
-			proc:       proc,
-			procFor:    selectedID,
-			preview:    preview,
-			agents:     agents,
-			paneHashes: paneHashes,
-		}
-		if sampleStats {
-			msg.snap = sysstat.Sample("/")
-			msg.snapOK = true
-		}
-		return msg
+		return m.poller.refreshOnce()
 	}
 }
 
@@ -314,11 +212,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
-	case tickMsg:
-		m.ageError()
-		return m, tea.Batch(m.refreshCmd(), tickCmd(m.cfg.PollInterval.Duration))
-
 	case refreshMsg:
+		m.ageError()
 		m.sessions = msg.sessions
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
@@ -326,7 +221,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.procFor = msg.procFor
 		m.preview = msg.preview
 		m.agents = msg.agents
-		m.paneHashes = msg.paneHashes
 		if msg.snapOK {
 			m.snap = msg.snap
 			m.updateNetRates(msg.snap)
@@ -350,10 +244,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 		}
-		return m, m.refreshCmd()
+		m.requestRefresh()
+		return m, nil
 
 	case tea.KeyMsg:
-		return m.handleKey(msg)
+		model, cmd := m.handleKey(msg)
+		m.syncPollInput()
+		return model, cmd
 	}
 	return m, nil
 }

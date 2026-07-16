@@ -63,7 +63,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.toggleCollapse()
 	case "t":
 		m.showArchived = !m.showArchived
-		return m, m.refreshCmd()
+		m.requestRefresh()
 	case "/":
 		m.searching = true
 		m.err = ""
@@ -72,7 +72,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		m.openMove()
 	case "ctrl+r":
-		return m, m.refreshCmd()
+		m.requestRefresh()
 	case "?":
 		m.mode = modeHelp
 	}
@@ -143,7 +143,8 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 		m.swapSessionLocal(entry.sess.ID, delta)
 	}
 	m.rebuildRows()
-	return m, m.refreshCmd()
+	m.requestRefresh()
+	return m, nil
 }
 
 func (m *Model) swapSessionLocal(id string, delta int) {
@@ -250,7 +251,8 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
-	return m, m.refreshCmd()
+	m.requestRefresh()
+	return m, nil
 }
 
 func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
@@ -262,7 +264,8 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
-	return m, m.refreshCmd()
+	m.requestRefresh()
+	return m, nil
 }
 
 func (m *Model) prepareDelete() {
@@ -321,7 +324,8 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.confirm = confirmTarget{}
-		return m, m.refreshCmd()
+		m.requestRefresh()
+		return m, nil
 	}
 	m.confirm = confirmTarget{}
 	return m, nil
@@ -380,7 +384,8 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.relabelSession(m.rename.sessID)
 		}
 		m.mode = modeList
-		return m, m.refreshCmd()
+		m.requestRefresh()
+		return m, nil
 	}
 	var cmd tea.Cmd
 	m.rename.input, cmd = m.rename.input.Update(msg)
@@ -417,7 +422,8 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.relabelSession(m.moveID)
 		m.mode = modeList
-		return m, m.refreshCmd()
+		m.requestRefresh()
+		return m, nil
 	}
 	return m, nil
 }

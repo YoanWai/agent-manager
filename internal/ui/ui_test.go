@@ -52,7 +52,9 @@ func buildModel(t *testing.T) *Model {
 func (m *Model) applyCmd(t *testing.T, cmd tea.Cmd) {
 	t.Helper()
 	if cmd == nil {
-		return
+		// Actions poke the background poller instead of returning a
+		// command; tests run the equivalent refresh synchronously.
+		cmd = m.refreshCmd()
 	}
 	msg := cmd()
 	if msg == nil {

@@ -51,6 +51,7 @@ func run() error {
 
 	model := ui.New(cfg, st, driver, engine)
 	program := tea.NewProgram(model, tea.WithAltScreen())
+	model.StartPoller(program.Send)
 	_, err = program.Run()
 	return err
 }
