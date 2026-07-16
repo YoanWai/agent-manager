@@ -81,3 +81,30 @@ func TestApplyPathSuggestionFillsDirField(t *testing.T) {
 		t.Fatal("dirAuto should be cleared after completion")
 	}
 }
+
+func TestGroupFormInheritsParentPath(t *testing.T) {
+	m := buildModel(t)
+	parentPath := t.TempDir()
+	if err := m.store.CreateGroup("projects", parentPath); err != nil {
+		t.Fatalf("seed group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.openGroupForm()
+	if m.groupForm.path.Value() != parentPath {
+		t.Fatalf("cursor on group should inherit its path, got %q want %q", m.groupForm.path.Value(), parentPath)
+	}
+	pickGroup(t, m, "")
+	m.moveGroupCursor(0)
+	if m.groupForm.path.Value() != "" {
+		t.Fatalf("root parent should clear auto path, got %q", m.groupForm.path.Value())
+	}
+
+	m.groupForm.path.SetValue("/custom")
+	m.groupForm.pathAuto = false
+	pickGroup(t, m, "")
+	m.moveGroupCursor(0)
+	if m.groupForm.path.Value() != "/custom" {
+		t.Fatalf("manual path should survive parent change, got %q", m.groupForm.path.Value())
+	}
+}

@@ -42,9 +42,10 @@ type form struct {
 }
 
 type groupForm struct {
-	name  textinput.Model
-	path  textinput.Model
-	focus int
+	name     textinput.Model
+	path     textinput.Model
+	pathAuto bool
+	focus    int
 }
 
 // sessionLabel renders a session's identity for the tmux status bar.
@@ -222,6 +223,9 @@ func (m *Model) moveGroupCursor(delta int) {
 	if m.mode == modeForm && m.form.dirAuto {
 		m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	}
+	if m.mode == modeGroupForm && m.groupForm.pathAuto {
+		m.groupForm.path.SetValue(m.groupPaths[m.selectedGroupPath()])
+	}
 }
 
 func (m *Model) formFocus(delta int) {
@@ -296,11 +300,13 @@ func (m *Model) openGroupForm() {
 	name := textField("group-name", 60)
 	name.Focus()
 	m.groupForm = groupForm{
-		name:  name,
-		path:  textField("default working directory (optional)", 400),
-		focus: gfName,
+		name:     name,
+		path:     textField("default working directory (optional)", 400),
+		pathAuto: true,
+		focus:    gfName,
 	}
 	m.rebuildGroupOptions(m.contextGroup())
+	m.groupForm.path.SetValue(m.groupPaths[m.selectedGroupPath()])
 	m.pathSugg.reset()
 	m.mode = modeGroupForm
 	m.err = ""
@@ -354,6 +360,7 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.groupForm.name, cmd = m.groupForm.name.Update(msg)
 	case gfPath:
 		m.groupForm.path, cmd = m.groupForm.path.Update(msg)
+		m.groupForm.pathAuto = false
 		m.pathSugg.recompute(m.groupForm.path.Value())
 	}
 	return m, cmd

@@ -103,6 +103,7 @@ func (m *Model) applyPathSuggestion() {
 	case modeGroupForm:
 		m.groupForm.path.SetValue(path)
 		m.groupForm.path.CursorEnd()
+		m.groupForm.pathAuto = false
 	}
 	m.pathSugg.recompute(path)
 }
