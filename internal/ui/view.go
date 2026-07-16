@@ -38,9 +38,9 @@ func (m *Model) View() string {
 	}
 	header += "  " + mutedStyle.Render(fmt.Sprintf("%d sessions · %s", sessionCount, scope))
 
-	leftWidth := m.width * 55 / 100
-	if leftWidth < 30 {
-		leftWidth = 30
+	leftWidth := m.width * 35 / 100
+	if leftWidth < 28 {
+		leftWidth = 28
 	}
 	rightWidth := m.width - leftWidth - 4
 	if rightWidth < 24 {
@@ -108,14 +108,17 @@ func (m *Model) renderTreeRow(r row, selected bool, width int) string {
 	}
 	indent := strings.Repeat("  ", r.depth)
 
+	maxWidth := width - 2
+
 	if r.isGroup {
 		marker := "▾"
 		if m.collapsed[r.group] {
 			marker = "▸"
 		}
 		line := cursor + indent + groupHeaderStyle.Render(marker+" "+baseName(r.group))
+		line = ansi.Truncate(line, maxWidth, "…")
 		if selected {
-			return selectedRowStyle.Width(width - 2).Render(line)
+			return selectedRowStyle.Width(maxWidth).Render(line)
 		}
 		return line
 	}
@@ -129,24 +132,30 @@ func (m *Model) renderTreeRow(r row, selected bool, width int) string {
 	line := fmt.Sprintf("%s%s%s %s %s%s",
 		cursor, indent, glyph, sess.Name,
 		mutedStyle.Render(sess.Tool+" · "+sess.Status+" · "+relTime(sess.CreatedAt)), archived)
+	line = ansi.Truncate(line, maxWidth, "…")
 	if selected {
-		return selectedRowStyle.Width(width - 2).Render(line)
+		return selectedRowStyle.Width(maxWidth).Render(line)
 	}
 	return rowStyle.Render(line)
 }
 
+// viewSidebar lays out session details and computer stats side by side
+// on top, with the live preview filling the rest of the panel below.
 func (m *Model) viewSidebar(width, height int) string {
-	detail := m.viewDetail(width)
+	detailWidth := width * 55 / 100
+	statsWidth := width - detailWidth
+	detail := m.viewDetail(detailWidth)
 	computer := groupHeaderStyle.Render("Computer") + "\n" + m.viewComputer()
+	top := lipgloss.JoinHorizontal(lipgloss.Top,
+		lipgloss.NewStyle().Width(detailWidth).Render(detail),
+		lipgloss.NewStyle().Width(statsWidth).Render(computer),
+	)
 
-	sections := []string{detail}
-	used := lipgloss.Height(detail) + lipgloss.Height(computer) + 2
-	previewHeight := height - used
-	if previewHeight >= 3 {
-		sections = append(sections, m.viewPreview(width, previewHeight))
+	previewHeight := height - lipgloss.Height(top) - 1
+	if previewHeight < 3 {
+		return top
 	}
-	sections = append(sections, computer)
-	return strings.Join(sections, "\n")
+	return top + "\n" + m.viewPreview(width, previewHeight)
 }
 
 func (m *Model) viewDetail(width int) string {
