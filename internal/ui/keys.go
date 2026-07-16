@@ -287,6 +287,12 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
+	// A leftover ack from the previous life must not swallow the revived
+	// agent's first finished alert.
+	if err := m.store.SetAcked(sess.ID, false); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
 	m.err = ""
 	m.requestRefresh()
 	return m, nil

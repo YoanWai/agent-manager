@@ -610,6 +610,10 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	}
 	m.selectSessionRow(t, "phoenix")
 
+	if err := m.store.SetAcked(sess.ID, true); err != nil {
+		t.Fatalf("set acked: %v", err)
+	}
+
 	if _, _ = m.reviveSelected(); m.err != "" {
 		t.Fatalf("revive: %q", m.err)
 	}
@@ -622,6 +626,9 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	}
 	if got.Status != status.Idle {
 		t.Fatalf("after revive, status = %q want %q", got.Status, status.Idle)
+	}
+	if got.Acked {
+		t.Fatal("revive should clear a leftover ack")
 	}
 }
 
