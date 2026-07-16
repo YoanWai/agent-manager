@@ -663,3 +663,26 @@ func TestReviveRefusesMissingDir(t *testing.T) {
 		t.Fatal("revive without a working directory should error")
 	}
 }
+
+func TestRefreshWithStaleSelectionFetchesPreview(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "fresh-one", t.TempDir(), "")
+	m.selectSessionRow(t, "fresh-one")
+	sess := m.sessionRows()[0]
+
+	_, cmd := m.Update(refreshMsg{sessions: m.sessions, procFor: ""})
+	if cmd == nil {
+		t.Fatal("stale refresh should schedule an immediate preview fetch")
+	}
+	if m.poller.selectedID != sess.ID {
+		t.Fatalf("poller selectedID = %q want %q", m.poller.selectedID, sess.ID)
+	}
+
+	m.preview = "existing"
+	if _, cmd := m.Update(refreshMsg{sessions: m.sessions, procFor: sess.ID, preview: "pane text"}); cmd != nil {
+		t.Fatal("matching refresh should not schedule extra work")
+	}
+	if m.preview != "pane text" {
+		t.Fatalf("preview = %q want %q", m.preview, "pane text")
+	}
+}

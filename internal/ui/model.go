@@ -224,15 +224,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions = msg.sessions
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
-		m.proc = msg.proc
-		m.procFor = msg.procFor
-		m.preview = msg.preview
 		m.agents = msg.agents
 		if msg.snapOK {
 			m.snap = msg.snap
 			m.updateNetRates(msg.snap)
 		}
 		m.rebuildRows()
+		// A pass that ran with a stale selection (a session created this
+		// tick) carries the wrong preview; resync and fetch it directly.
+		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
+			m.syncPollInput()
+			return m, m.previewCmd(sess.ID)
+		}
+		m.proc = msg.proc
+		m.procFor = msg.procFor
+		m.preview = msg.preview
 		return m, nil
 
 	case previewMsg:
