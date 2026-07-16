@@ -147,7 +147,10 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 	}
 
 	m.selectSessionRow(t, "alpha")
-	m.mode = modeConfirmDelete
+	m.prepareDelete()
+	if m.mode != modeConfirmDelete {
+		t.Fatal("prepareDelete should enter confirm mode")
+	}
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	if m.tmux.Exists(sess.ID) {
 		t.Fatal("tmux session should be killed after delete")
@@ -214,6 +217,66 @@ func TestNestedGroupsTree(t *testing.T) {
 
 	if m.View() == "" {
 		t.Fatal("View should render non-empty")
+	}
+}
+
+func TestDeleteGroupSubtree(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+
+	if err := m.store.CreateGroup("zone/inner"); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "in-zone", dir, "zone")
+	createSession(t, m, "in-inner", dir, "zone/inner")
+	createSession(t, m, "outside", dir, "")
+
+	archivedID := m.sessionRows()[0].ID
+	for _, s := range m.sessionRows() {
+		if s.Name == "in-inner" {
+			archivedID = s.ID
+		}
+	}
+	if err := m.store.SetArchived(archivedID, true); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	for i, r := range m.rows {
+		if r.isGroup && r.group == "zone" {
+			m.cursor = i
+		}
+	}
+	m.prepareDelete()
+	if !m.confirm.isGroup || len(m.confirm.sessions) != 2 {
+		t.Fatalf("confirm should target 2 subtree sessions (incl. archived), got %+v", m.confirm)
+	}
+	tmuxIDs := make([]string, 0, 2)
+	for _, s := range m.confirm.sessions {
+		tmuxIDs = append(tmuxIDs, s.ID)
+	}
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+
+	for _, id := range tmuxIDs {
+		if m.tmux.Exists(id) {
+			t.Fatalf("tmux session %s should be killed", id)
+		}
+	}
+	sessions := m.sessionRows()
+	if len(sessions) != 1 || sessions[0].Name != "outside" {
+		t.Fatalf("only outside should remain, got %v", sessions)
+	}
+	all, _ := m.store.ListSessions(true)
+	if len(all) != 1 {
+		t.Fatalf("archived subtree session should be gone from db, got %d rows", len(all))
+	}
+	groups, _ := m.store.Groups()
+	for _, g := range groups {
+		if g == "zone" || g == "zone/inner" {
+			t.Fatalf("group %s should be deleted", g)
+		}
 	}
 }
 

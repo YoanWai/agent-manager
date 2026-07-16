@@ -51,11 +51,19 @@ type Model struct {
 	search       string
 	searching    bool
 
-	form form
+	form    form
+	confirm confirmTarget
 
 	width  int
 	height int
 	err    string
+}
+
+type confirmTarget struct {
+	isGroup  bool
+	path     string
+	label    string
+	sessions []store.Session
 }
 
 type tickMsg time.Time

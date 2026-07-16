@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -170,6 +171,32 @@ func (s *Store) Delete(id string) error {
 		return err
 	}
 	return requireRow(res, id)
+}
+
+// SessionsInSubtree returns every session (archived included) whose group
+// is the given path or any descendant of it.
+func (s *Store) SessionsInSubtree(path string) ([]Session, error) {
+	sessions, err := s.ListSessions(true)
+	if err != nil {
+		return nil, err
+	}
+	var matched []Session
+	for _, sess := range sessions {
+		if sess.Group == path || strings.HasPrefix(sess.Group, path+"/") {
+			matched = append(matched, sess)
+		}
+	}
+	return matched, nil
+}
+
+// DeleteGroup removes a group and all its descendant groups.
+func (s *Store) DeleteGroup(path string) error {
+	if path == "" {
+		return fmt.Errorf("cannot delete the root group")
+	}
+	_, err := s.db.Exec(
+		`DELETE FROM groups WHERE name = ? OR name LIKE ? || '/%'`, path, path)
+	return err
 }
 
 func (s *Store) Groups() ([]string, error) {

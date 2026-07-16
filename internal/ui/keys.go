@@ -1,6 +1,10 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
+
+	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -39,9 +43,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "u":
 		return m.restoreSelected()
 	case "d":
-		if _, ok := m.selected(); ok {
-			m.mode = modeConfirmDelete
-		}
+		m.prepareDelete()
 	case "space":
 		m.toggleCollapse()
 	case "t":
@@ -124,26 +126,65 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 	return m, m.refreshCmd()
 }
 
+func (m *Model) prepareDelete() {
+	r, ok := m.selectedRow()
+	if !ok {
+		return
+	}
+	if !r.isGroup {
+		m.confirm = confirmTarget{
+			label:    "delete " + r.sess.Name + "? kills its tmux session. (y/n)",
+			sessions: []store.Session{r.sess},
+		}
+		m.mode = modeConfirmDelete
+		return
+	}
+	subtree, err := m.store.SessionsInSubtree(r.group)
+	if err != nil {
+		m.err = err.Error()
+		return
+	}
+	subgroups := 0
+	for _, g := range m.groups {
+		if strings.HasPrefix(g, r.group+"/") {
+			subgroups++
+		}
+	}
+	label := fmt.Sprintf("delete group %s (%d subgroups, %d sessions incl. archived)? kills their tmux sessions. (y/n)",
+		r.group, subgroups, len(subtree))
+	m.confirm = confirmTarget{isGroup: true, path: r.group, label: label, sessions: subtree}
+	m.mode = modeConfirmDelete
+}
+
 func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	defer func() { m.mode = modeList }()
 	switch msg.String() {
 	case "y", "enter":
-		sess, ok := m.selected()
-		m.mode = modeList
-		if !ok {
-			return m, nil
+		for _, sess := range m.confirm.sessions {
+			if err := m.tmux.Kill(sess.ID); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			if err := m.store.Delete(sess.ID); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
 		}
-		if err := m.tmux.Kill(sess.ID); err != nil {
-			m.err = err.Error()
-			return m, nil
+		if m.confirm.isGroup {
+			if err := m.store.DeleteGroup(m.confirm.path); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			for path := range m.collapsed {
+				if path == m.confirm.path || strings.HasPrefix(path, m.confirm.path+"/") {
+					delete(m.collapsed, path)
+				}
+			}
 		}
-		if err := m.store.Delete(sess.ID); err != nil {
-			m.err = err.Error()
-			return m, nil
-		}
+		m.confirm = confirmTarget{}
 		return m, m.refreshCmd()
-	default:
-		m.mode = modeList
 	}
+	m.confirm = confirmTarget{}
 	return m, nil
 }
 

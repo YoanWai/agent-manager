@@ -155,9 +155,7 @@ func (m *Model) viewFooter() string {
 		return footerStyle.Render("search: ") + m.search + footerStyle.Render("  (enter/esc to close)")
 	}
 	if m.mode == modeConfirmDelete {
-		if sess, ok := m.selected(); ok {
-			return errStyle.Render("delete " + sess.Name + "? kills tmux session. (y/n)")
-		}
+		return errStyle.Render(m.confirm.label)
 	}
 	if m.err != "" {
 		return errStyle.Render("! " + m.err)
@@ -238,7 +236,7 @@ func (m *Model) viewHelp() string {
 		{"enter", "attach session / fold group"},
 		{"ctrl+q", "inside a session: back to manager"},
 		{"a / u", "archive / restore"},
-		{"d", "delete (kills tmux session)"},
+		{"d", "delete session, or group + entire subtree"},
 		{"space", "collapse / expand group"},
 		{"t", "toggle archived view"},
 		{"/", "search"},
