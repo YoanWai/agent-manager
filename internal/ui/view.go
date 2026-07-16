@@ -387,7 +387,7 @@ func (m *Model) viewFooter() string {
 	pairs := [][2]string{
 		{"↑↓", "navigate"}, {"↵", "attach"}, {"n", "new"}, {"g", "group"},
 		{"⇧↑↓", "reorder"}, {"space", "fold"}, {"m", "move"}, {"r", "rename"},
-		{"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
+		{"v", "revive"}, {"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
 		{"t", "archived"}, {"ctrl+r", "refresh"}, {"?", "help"}, {"q", "quit"},
 	}
 	sep := subtleStyle.Render(" · ")

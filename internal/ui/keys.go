@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -53,6 +54,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openForm()
 	case "g":
 		m.openGroupForm()
+	case "v":
+		return m.reviveSelected()
 	case "a":
 		return m.archiveSelected()
 	case "u":
@@ -240,6 +243,53 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return attachDoneMsg{err}
 	})
+}
+
+// reviveSelected relaunches a dead session's tmux session under the same
+// id, keeping its name, group, and history. Tools with a revive_command
+// resume where they left off (e.g. claude --continue).
+func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
+	sess, ok := m.selected()
+	if !ok {
+		return m, nil
+	}
+	if m.tmux.Exists(sess.ID) {
+		m.err = "session is still running; revive only applies to dead sessions"
+		return m, nil
+	}
+	tool, ok := m.cfg.Tools[sess.Tool]
+	if !ok {
+		m.err = "tool " + sess.Tool + " is no longer configured"
+		return m, nil
+	}
+	if info, err := os.Stat(sess.Cwd); err != nil || !info.IsDir() {
+		m.err = "working directory no longer exists: " + sess.Cwd
+		return m, nil
+	}
+	baseCommand := tool.ReviveCommand
+	if baseCommand == "" {
+		baseCommand = tool.Command
+	}
+	command, env, err := m.buildLaunch(tool, baseCommand, sess.ID)
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	if err := m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	if err := m.store.UpdateStatus(sess.ID, tool.DefaultStatus); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	m.err = ""
+	m.requestRefresh()
+	return m, nil
 }
 
 func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {

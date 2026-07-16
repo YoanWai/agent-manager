@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -298,20 +299,10 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	group := m.selectedGroupPath()
 
 	id := newID()
-	command := tool.Command
-	var env map[string]string
-	if tool.StatusSource == hooks.StatusSourceClaude {
-		settingsPath, err := m.hooks.EnsureSettings()
-		if err != nil {
-			m.err = err.Error()
-			return m, nil
-		}
-		if err := m.hooks.Remove(id); err != nil {
-			m.err = err.Error()
-			return m, nil
-		}
-		env = map[string]string{hooks.EnvStatusFile: m.hooks.StatusFile(id)}
-		command = tool.Command + " --settings " + tmux.ShellQuote(settingsPath)
+	command, env, err := m.buildLaunch(tool, tool.Command, id)
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
 	}
 	if err := m.tmux.Create(id, dir, command, env); err != nil {
 		m.err = err.Error()
@@ -336,6 +327,25 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	}
 	m.mode = modeList
 	return m, m.refreshCmd()
+}
+
+// buildLaunch resolves the shell command and environment a session
+// launches with: tools backed by hooks get the generated settings file
+// and their status-file path, plus a clean slate from any earlier file
+// under the same id.
+func (m *Model) buildLaunch(tool config.Tool, baseCommand, id string) (string, map[string]string, error) {
+	if tool.StatusSource != hooks.StatusSourceClaude {
+		return baseCommand, nil, nil
+	}
+	settingsPath, err := m.hooks.EnsureSettings()
+	if err != nil {
+		return "", nil, err
+	}
+	if err := m.hooks.Remove(id); err != nil {
+		return "", nil, err
+	}
+	env := map[string]string{hooks.EnvStatusFile: m.hooks.StatusFile(id)}
+	return baseCommand + " --settings " + tmux.ShellQuote(settingsPath), env, nil
 }
 
 func (m *Model) openGroupForm() {

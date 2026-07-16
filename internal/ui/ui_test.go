@@ -596,3 +596,63 @@ func TestAttachKeepsWorking(t *testing.T) {
 		t.Fatalf("after attach, status = %q want %q", got.Status, status.Working)
 	}
 }
+
+func TestReviveRecreatesDeadSession(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "phoenix", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	if m.tmux.Exists(sess.ID) {
+		t.Fatal("session should be dead before revive")
+	}
+	m.selectSessionRow(t, "phoenix")
+
+	if _, _ = m.reviveSelected(); m.err != "" {
+		t.Fatalf("revive: %q", m.err)
+	}
+	if !m.tmux.Exists(sess.ID) {
+		t.Fatal("revive should recreate the tmux session")
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Idle {
+		t.Fatalf("after revive, status = %q want %q", got.Status, status.Idle)
+	}
+}
+
+func TestReviveRefusesLiveSession(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alive", t.TempDir(), "")
+	m.selectSessionRow(t, "alive")
+
+	if _, _ = m.reviveSelected(); m.err == "" {
+		t.Fatal("revive on a live session should error")
+	}
+	if !m.tmux.Exists(m.sessionRows()[0].ID) {
+		t.Fatal("live session must keep running")
+	}
+}
+
+func TestReviveRefusesMissingDir(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "homeless", dir, "")
+
+	sess := m.sessionRows()[0]
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("remove dir: %v", err)
+	}
+	m.selectSessionRow(t, "homeless")
+
+	if _, _ = m.reviveSelected(); m.err == "" {
+		t.Fatal("revive without a working directory should error")
+	}
+}

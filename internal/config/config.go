@@ -16,6 +16,7 @@ type Rule struct {
 
 type Tool struct {
 	Command        string `toml:"command"`
+	ReviveCommand  string `toml:"revive_command"`
 	StatusSource   string `toml:"status_source"`
 	DefaultStatus  string `toml:"default_status"`
 	ActivityCutoff string `toml:"activity_cutoff"`
@@ -142,6 +143,8 @@ const defaultConfig = `poll_interval = "2s"
 
 [tools.claude]
 command = "claude"
+# used by revive (v) on a dead session; resumes the last conversation there
+revive_command = "claude --continue"
 # hooks report status events directly; the pane rules below stay as fallback
 status_source = "claude-hooks"
 default_status = "idle"
@@ -164,6 +167,7 @@ rules = [
 
 [tools.opencode]
 command = "opencode"
+revive_command = "opencode --continue"
 default_status = "idle"
 activity_cutoff = "(?m)^\\s*╹"
 turn_end = "^\\s*▣ +.+· [\\dhms. ]+\\s*$"
