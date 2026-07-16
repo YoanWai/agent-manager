@@ -25,11 +25,17 @@ checksum:
 changelog:
   use: github-native
 
-homebrew_casks:
+# brews (formula) instead of homebrew_casks: casks quarantine the
+# downloaded binary and Gatekeeper blocks unsigned CLI tools outright;
+# formulas install without quarantine.
+brews:
   - repository:
       owner: YoanWai
       name: homebrew-tap
     homepage: https://github.com/YoanWai/agent-manager
     description: Terminal UI to manage AI coding-agent tmux sessions
+    license: AGPL-3.0-only
     dependencies:
-      - formula: tmux
+      - name: tmux
+    test: |
+      system "#{bin}/agent-manager", "--version"
