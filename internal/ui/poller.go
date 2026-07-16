@@ -224,15 +224,14 @@ func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 		paneHashes[sess.ID] = regionHash
 	}
 	if p.statusSources[sess.Tool] == hooks.StatusSourceClaude {
-		if hookStatus, ok := p.hooks.Read(sess.ID); ok {
-			if agentAlive {
-				return p.applyHookStatus(sess, text, hookStatus), nil
-			}
+		if !agentAlive {
 			// The agent died without its SessionEnd cleanup hook
 			// (crash, SIGKILL); a stale file must not mask the pane.
 			if err := p.hooks.Remove(sess.ID); err != nil {
 				return "", err
 			}
+		} else if hookStatus, ok := p.hooks.Read(sess.ID); ok {
+			return p.applyHookStatus(sess, text, hookStatus), nil
 		}
 	}
 	newStatus, matched := p.engine.Match(sess.Tool, text)

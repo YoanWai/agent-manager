@@ -40,6 +40,7 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string) error {
 		return err
 	}
 	if err := d.installSessionUX(name); err != nil {
+		_ = d.Kill(id)
 		return err
 	}
 	if command == "" {
@@ -57,8 +58,11 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string) error {
 		line.WriteString(key + "=" + ShellQuote(env[key]) + " ")
 	}
 	line.WriteString(command)
-	_, err := d.run("send-keys", "-t", name, line.String(), "Enter")
-	return err
+	if _, err := d.run("send-keys", "-t", name, line.String(), "Enter"); err != nil {
+		_ = d.Kill(id)
+		return err
+	}
+	return nil
 }
 
 // ShellQuote wraps a string in single quotes for POSIX sh; the config
