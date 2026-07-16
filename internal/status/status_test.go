@@ -102,8 +102,8 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 			"  ┃  write a haiku\n     ▣  Build · DeepSeek V4 Pro\n   /home/dev  ctrl+p commands", Working},
 		{"opencode turn ended on a question", "opencode",
 			"     hey. what need?\n     ▣  Build · GLM-5.2 · 22.0s\n  ┃\n  ╹▀▀▀▀\n   /home/dev  ctrl+p commands", Waiting},
-		{"opencode fresh prompt", "opencode",
-			"  ┃  Ask anything... \"What is the tech stack of this project?\"\n  tab agents  ctrl+p commands", Finished},
+		{"opencode fresh prompt, nothing ran yet", "opencode",
+			"  ┃  Ask anything... \"What is the tech stack of this project?\"\n  tab agents  ctrl+p commands", Idle},
 		{"opencode finished with duration (real capture)", "opencode",
 			"     HELLO\n     ▣  Build · GLM-5.2 · 13.9s\n  ┃\n  ┃  Build · GLM-5.2 Z.AI Coding Plan · high\n  ╹▀▀▀▀", Finished},
 		{"opencode plain-text question (real capture)", "opencode",
@@ -132,5 +132,67 @@ func TestNewEngineBadPattern(t *testing.T) {
 	}
 	if _, err := NewEngine(cfg); err == nil {
 		t.Fatal("expected error for invalid regex")
+	}
+}
+
+func TestLongTurnAndMidLineQuestion(t *testing.T) {
+	engine := defaultEngine(t)
+	cases := []struct {
+		name string
+		tool string
+		pane string
+		want string
+	}{
+		{"claude long duration with hidden-messages suffix (real capture)", "claude",
+			"  Done, runtime-proven.\n✻ Crunched for 8m 48s · 6 messages hidden (/focus to show)\n────\n❯ \n────\n  ⏵⏵ bypass permissions on", Finished},
+		{"claude question mid final line (real capture)", "claude",
+			"  Approve commit? Then I'll redeploy to staging so you can feel it there.\n✻ Crunched for 8m 48s · 6 messages hidden (/focus to show)\n────\n❯ \n────\n  ⏵⏵ bypass permissions on", Waiting},
+		{"claude statement after older mid-line question", "claude",
+			"  Approve commit? ok.\n✻ Crunched for 8m 48s\n  Deployed. All done.\n✻ Worked for 12s\n────\n❯ \n────", Finished},
+		{"opencode long duration", "opencode",
+			"     All finished here.\n     ▣  Build · GLM-5.2 · 1m 22s\n  ┃\n  ╹▀▀▀▀", Finished},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := engine.Derive(tc.tool, tc.pane); got != tc.want {
+				t.Fatalf("Derive(%s) = %q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRealPaneEdgeCases(t *testing.T) {
+	engine := defaultEngine(t)
+	cases := []struct {
+		name string
+		tool string
+		pane string
+		want string
+	}{
+		{"claude long spinner without esc hint (real capture)", "claude",
+			"✽ Zigzagging… (3m 18s · ↓ 1.4k tokens · thought for 1s)\n────\n❯ ", Working},
+		{"claude separator carrying hint text (real capture)", "claude",
+			"  Approve commit? Then I'll redeploy to staging.\n✻ Crunched for 8m 48s · 6 messages hidden (/focus to show)\n\n──────────────────    /rc · focus\n❯ nice! works! BUT older prompt echo\n\n✻ Crunched for 2m 2s\n\n──────────────────\n❯ ", Finished},
+		{"claude question with dec-graphics separator", "claude",
+			"  Ship it now?\n✻ Crunched for 2m 2s\nqqqqqqqqqqqqqqqqqq\n❯ ", Waiting},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := engine.Derive(tc.tool, tc.pane); got != tc.want {
+				t.Fatalf("Derive(%s) = %q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRecapBelowSummary(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "  All set on the twin box.\n" +
+		"✻ Crunched for 1m 1s · 3 messages hidden (/focus to show)\n" +
+		"※ recap: Setting up laptop-casting: twin box is done and proven, now deploying\n" +
+		"  plus ports. (disable recaps in /config)\n" +
+		"────\n❯ done, code is 431652\n────\n  ⏵⏵ bypass permissions on"
+	if got := engine.Derive("claude", pane); got != Finished {
+		t.Fatalf("recap below summary should still be finished, got %q", got)
 	}
 }

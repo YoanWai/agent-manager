@@ -18,6 +18,10 @@ type Tool struct {
 	Command        string `toml:"command"`
 	DefaultStatus  string `toml:"default_status"`
 	ActivityCutoff string `toml:"activity_cutoff"`
+	TurnEnd        string `toml:"turn_end"`
+	ChromeLine     string `toml:"chrome_line"`
+	BlockedLine    string `toml:"blocked_line"`
+	TrailingNote   string `toml:"trailing_note"`
 	Rules          []Rule `toml:"rules"`
 }
 
@@ -125,32 +129,33 @@ func writeDefault(path string) error {
 const defaultConfig = `poll_interval = "2s"
 
 # Rules are matched top-down against the visible pane text (ANSI stripped);
-# first match wins, default_status applies when nothing matches.
-#
-# activity_cutoff marks where the tool's input box begins: the text above
-# its last match is the content region. When no rule matches but that
-# region changed since the previous poll, the session counts as working
-# (streaming output often renders without any spinner).
+# first match wins. When no rule matches, the newest turn decides:
+# the content region is the text above the last activity_cutoff match
+# (the tool's input box). If the region's last content line — skipping
+# chrome_line matches (blanks, separators, input-box borders) — is a
+# turn_end marker, the turn just ended: finished, or waiting when the
+# line above it carries a question mark. A blocked_line there (e.g. an
+# interrupt banner) also derives waiting. Otherwise default_status
+# applies, and a region that changed since the previous poll counts as
+# working (streaming output often renders without any spinner).
 
 [tools.claude]
 command = "claude"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
+turn_end = "^[✻✳✶✽✢·✦✧+*] \\S+ for \\d.*$"
+chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$"
+blocked_line = "Interrupted ·"
+# recap blocks ("※ recap: …") render below the turn-end summary
+trailing_note = "^※"
 rules = [
-  # active turn: "✳ Drizzling… (6s · thinking with medium effort)"
-  { state = "working", pattern = "… \\(\\d+m?\\d*s? ·" },
+  # spinner row of an active turn, any duration format:
+  # "✳ Drizzling… (6s · thinking)" / "✽ Zigzagging… (3m 18s · ↓ 1.4k tokens)"
+  { state = "working", pattern = "(?m)^[✻✳✶✽✢·✦✧+*] \\S+… \\(" },
   { state = "working", pattern = "esc to interrupt" },
   # selection dialogs (trust prompt, permission asks, questions) block on the user
   { state = "waiting", pattern = "Enter to confirm" },
   { state = "waiting", pattern = "(?m)^[ \\x{A0}]*❯[ \\x{A0}]+\\d+\\." },
-  # an interrupted turn asks what to do next
-  { state = "waiting", pattern = "Interrupted[^\\n]*\\s*\\n─+\\n❯" },
-  # a turn that ends on a question line is blocked on the user even
-  # without a selection menu; the summary must sit directly above the
-  # prompt so questions from older turns cannot retrigger it
-  { state = "waiting", pattern = "\\?\\s*\\n\\s*[✻✳✶✽✢] \\S+ for [\\dm.]+s\\s*\\n─+\\n❯" },
-  # turn-end summary directly above the prompt = finished
-  { state = "finished", pattern = "[✻✳✶✽✢] \\S+ for [\\dm.]+s\\s*\\n─+\\n❯" },
   { state = "errored", pattern = "(?im)^\\s*error:" },
 ]
 
@@ -158,6 +163,8 @@ rules = [
 command = "opencode"
 default_status = "idle"
 activity_cutoff = "(?m)^\\s*╹"
+turn_end = "^\\s*▣ +.+· [\\dhms. ]+\\s*$"
+chrome_line = "^\\s*(┃.*)?$"
 rules = [
   { state = "errored", pattern = "(?i)requires more credits" },
   { state = "errored", pattern = "(?im)^\\s*error\\b" },
@@ -165,12 +172,5 @@ rules = [
   # gains a duration: "▣  Build · GLM-5.2 · 22.0s")
   { state = "working", pattern = "(?m)^\\s*▣ +[^·\\n]+· [^·\\n]+$" },
   { state = "working", pattern = "esc interrupt" },
-  # newest turn ended on a question line = blocked on the user; the
-  # duration row must sit directly above the input box (captured pane
-  # lines carry trailing space padding, hence the [ \t]* tails)
-  { state = "waiting", pattern = "\\?[ \\t]*\\n\\s*▣ [^\\n]*· [\\d][\\dm.]*s[ \\t]*(\\n[ \\t]*(┃[^\\n]*)?)*\\n\\s*╹" },
-  # a model row with a duration directly above the input box = finished
-  { state = "finished", pattern = "▣ +[^\\n]+· [\\d][\\dm.]*s[ \\t]*(\\n[ \\t]*(┃[^\\n]*)?)*\\n\\s*╹" },
-  { state = "finished", pattern = "Ask anything" },
 ]
 `
