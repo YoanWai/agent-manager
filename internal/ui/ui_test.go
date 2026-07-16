@@ -363,6 +363,35 @@ func TestMoveSession(t *testing.T) {
 	}
 }
 
+func TestNewSessionPreselectsContextGroup(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("alpha/beta"); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "seed", dir, "alpha/beta")
+
+	// cursor on the session inside alpha/beta
+	m.selectSessionRow(t, "seed")
+	m.openForm()
+	if got := m.form.groups[m.form.groupIndex].path; got != "alpha/beta" {
+		t.Fatalf("form should preselect session's group, got %q", got)
+	}
+	m.mode = modeList
+
+	// cursor on a group row
+	for i, r := range m.rows {
+		if r.isGroup && r.group == "alpha" {
+			m.cursor = i
+		}
+	}
+	m.openForm()
+	if got := m.form.groups[m.form.groupIndex].path; got != "alpha" {
+		t.Fatalf("form should preselect the highlighted group, got %q", got)
+	}
+}
+
 func TestInlineGroupCreation(t *testing.T) {
 	m := buildModel(t)
 

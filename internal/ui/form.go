@@ -68,9 +68,21 @@ func (m *Model) openForm() {
 		toolNames: tools,
 		focus:     fieldName,
 	}
-	m.rebuildGroupOptions("")
+	m.rebuildGroupOptions(m.contextGroup())
 	m.mode = modeForm
 	m.err = ""
+}
+
+// contextGroup is the group the cursor currently sits in: a highlighted
+// group row itself, or the group holding a highlighted session.
+func (m *Model) contextGroup() string {
+	if r, ok := m.selectedRow(); ok {
+		if r.isGroup {
+			return r.group
+		}
+		return r.sess.Group
+	}
+	return ""
 }
 
 // rebuildGroupOptions flattens the group tree into picker rows.
