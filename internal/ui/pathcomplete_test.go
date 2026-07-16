@@ -108,3 +108,14 @@ func TestGroupFormInheritsParentPath(t *testing.T) {
 		t.Fatalf("manual path should survive parent change, got %q", m.groupForm.path.Value())
 	}
 }
+
+func TestAncestorGroupPathWalksUp(t *testing.T) {
+	root := t.TempDir()
+	m := &Model{groupPaths: map[string]string{"projects": root}}
+	if got := m.ancestorGroupPath("projects/api/auth"); got != root {
+		t.Fatalf("got %q want %q", got, root)
+	}
+	if got := m.ancestorGroupPath("other"); got != "" {
+		t.Fatalf("got %q want empty", got)
+	}
+}

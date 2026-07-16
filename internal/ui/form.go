@@ -75,13 +75,29 @@ func (m *Model) contextGroup() string {
 	return ""
 }
 
-// groupDefaultDir resolves the working directory for a group: its configured
-// default path if set and valid, otherwise the current directory.
-func (m *Model) groupDefaultDir(group string) string {
-	if p := m.groupPaths[group]; p != "" {
-		if info, err := os.Stat(p); err == nil && info.IsDir() {
-			return p
+// ancestorGroupPath finds the closest configured default path walking up
+// from the group to the root; empty when no ancestor has one.
+func (m *Model) ancestorGroupPath(group string) string {
+	for g := group; g != ""; {
+		if p := m.groupPaths[g]; p != "" {
+			if info, err := os.Stat(p); err == nil && info.IsDir() {
+				return p
+			}
 		}
+		idx := strings.LastIndex(g, "/")
+		if idx < 0 {
+			break
+		}
+		g = g[:idx]
+	}
+	return ""
+}
+
+// groupDefaultDir resolves the working directory for a session in a group:
+// the nearest inherited default path, else the current directory.
+func (m *Model) groupDefaultDir(group string) string {
+	if p := m.ancestorGroupPath(group); p != "" {
+		return p
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -224,7 +240,7 @@ func (m *Model) moveGroupCursor(delta int) {
 		m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	}
 	if m.mode == modeGroupForm && m.groupForm.pathAuto {
-		m.groupForm.path.SetValue(m.groupPaths[m.selectedGroupPath()])
+		m.groupForm.path.SetValue(m.ancestorGroupPath(m.selectedGroupPath()))
 	}
 }
 
@@ -306,7 +322,7 @@ func (m *Model) openGroupForm() {
 		focus:    gfName,
 	}
 	m.rebuildGroupOptions(m.contextGroup())
-	m.groupForm.path.SetValue(m.groupPaths[m.selectedGroupPath()])
+	m.groupForm.path.SetValue(m.ancestorGroupPath(m.selectedGroupPath()))
 	m.pathSugg.reset()
 	m.mode = modeGroupForm
 	m.err = ""
