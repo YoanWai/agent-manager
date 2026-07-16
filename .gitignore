@@ -4,3 +4,4 @@
 *.db-*
 .DS_Store
 /dist/
+dist/

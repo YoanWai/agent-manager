@@ -1,0 +1,35 @@
+version: 2
+
+project_name: agent-manager
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github-native
+
+homebrew_casks:
+  - repository:
+      owner: YoanWai
+      name: homebrew-tap
+    homepage: https://github.com/YoanWai/agent-manager
+    description: Terminal UI to manage AI coding-agent tmux sessions
+    dependencies:
+      - formula: tmux
