@@ -78,8 +78,22 @@ func (d *Driver) SetLabel(id, label string) error {
 	if _, err := d.run("set-option", "-t", name, "status-left-length", "80"); err != nil {
 		return err
 	}
-	_, err := d.run("set-option", "-t", name, "status-left", " "+label+" ")
+	_, err := d.run("set-option", "-t", name, "status-left", " "+sanitizeFormat(label)+" ")
 	return err
+}
+
+// sanitizeFormat neutralizes tmux format expansion in user-supplied text.
+// Status bars expand #(shell command) and friends, so a session named
+// "#(cmd)" would otherwise execute when the bar renders. tmux escapes
+// a literal # as ##. Control characters are dropped.
+func sanitizeFormat(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+	return strings.ReplaceAll(s, "#", "##")
 }
 
 func (d *Driver) AttachCommand(id string) *exec.Cmd {

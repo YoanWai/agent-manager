@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -17,6 +18,32 @@ func requireTmux(t *testing.T) *Driver {
 		t.Fatalf("New: %v", err)
 	}
 	return driver
+}
+
+func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
+	driver := requireTmux(t)
+	id := "lbl" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", ""); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	marker := "/tmp/am-injection-" + id
+	if err := driver.SetLabel(id, "evil #(touch "+marker+") name"); err != nil {
+		t.Fatalf("SetLabel: %v", err)
+	}
+	rendered, err := exec.Command("tmux", "display-message", "-p", "-t", "am_"+id, "#{T:status-left}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("display-message: %v", err)
+	}
+	if !strings.Contains(string(rendered), "#(touch") {
+		t.Fatalf("format string should render literally, got %q", rendered)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if _, err := os.Stat(marker); err == nil {
+		os.Remove(marker)
+		t.Fatal("injection executed: marker file was created")
+	}
 }
 
 func TestLifecycle(t *testing.T) {
