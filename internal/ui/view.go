@@ -25,10 +25,28 @@ func (m *Model) View() string {
 		return m.viewMove()
 	}
 
-	header := titleStyle.Render("Agent Manager")
+	leftWidth := m.width * 34 / 100
+	if leftWidth < 30 {
+		leftWidth = 30
+	}
+	rightWidth := m.width - leftWidth
+	bodyHeight := m.height - 3
+	if bodyHeight < 3 {
+		bodyHeight = 3
+	}
+
+	listInner := leftWidth - 4
+	left := titledPanel("Sessions", m.viewList(listInner, bodyHeight-2), leftWidth, bodyHeight, false)
+	right := titledPanel(m.sidebarTitle(), m.viewSidebar(rightWidth-4, bodyHeight-2), rightWidth, bodyHeight, false)
+	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+
+	return m.viewHeader() + "\n" + body + "\n" + m.viewFooter()
+}
+
+func (m *Model) viewHeader() string {
 	scope := "active"
 	if m.showArchived {
-		scope = "all (incl. archived)"
+		scope = "archived"
 	}
 	sessionCount := 0
 	for _, r := range m.rows {
@@ -36,49 +54,65 @@ func (m *Model) View() string {
 			sessionCount++
 		}
 	}
-	header += "  " + mutedStyle.Render(fmt.Sprintf("%d sessions · %s", sessionCount, scope))
+	brand := badgeStyle.Render("◆ Agent Manager")
+	meta := mutedStyle.Render(fmt.Sprintf("%d sessions", sessionCount)) +
+		subtleStyle.Render(" · ") +
+		lipgloss.NewStyle().Foreground(colorAccent2).Render(scope)
 
-	leftWidth := m.width * 35 / 100
-	if leftWidth < 28 {
-		leftWidth = 28
+	left := brand + "  " + meta
+	gap := m.width - ansi.StringWidth(left)
+	if gap < 1 {
+		gap = 1
 	}
-	rightWidth := m.width - leftWidth - 4
-	if rightWidth < 24 {
-		rightWidth = 24
-	}
-	bodyHeight := m.height - 4
-	if bodyHeight < 3 {
-		bodyHeight = 3
-	}
+	return left + strings.Repeat(" ", gap)
+}
 
-	left := panelStyle.Width(leftWidth).Height(bodyHeight).Render(m.viewList(leftWidth, bodyHeight))
-	right := panelStyle.Width(rightWidth).Height(bodyHeight).Render(m.viewSidebar(rightWidth-2, bodyHeight))
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
-
-	return strings.Join([]string{header, body, m.viewFooter()}, "\n")
+func (m *Model) sidebarTitle() string {
+	if sess, ok := m.selected(); ok {
+		return "Session · " + sess.Name
+	}
+	return "Session"
 }
 
 func (m *Model) viewList(width, height int) string {
 	if len(m.rows) == 0 {
-		empty := "No sessions. Press n to create one."
+		hint := "Press " + keyStyle.Render("n") + mutedStyle.Render(" to create a session.")
 		if strings.TrimSpace(m.search) != "" {
-			empty = "No matches for \"" + m.search + "\"."
+			hint = mutedStyle.Render("No matches for ") + valueStyle.Render("\""+m.search+"\"")
 		}
-		return mutedStyle.Render(empty)
+		return "\n  " + subtleStyle.Render("✦") + "  " + hint
 	}
 
 	start, end := scrollWindow(len(m.rows), m.cursor, height)
 	var b strings.Builder
 	if start > 0 {
-		b.WriteString(mutedStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
 	}
 	for i := start; i < end; i++ {
 		b.WriteString(m.renderTreeRow(m.rows[i], i == m.cursor, width) + "\n")
 	}
 	if end < len(m.rows) {
-		b.WriteString(mutedStyle.Render(fmt.Sprintf("  ↓ %d more", len(m.rows)-end)))
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(m.rows)-end)))
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// treeGuides draws the dim vertical guides for a row's ancestor levels.
+func treeGuides(depth int) string {
+	if depth <= 0 {
+		return ""
+	}
+	return subtleStyle.Render(strings.Repeat("│ ", depth))
+}
+
+func (m *Model) groupSessionCount(path string) int {
+	count := 0
+	for _, sess := range m.sessions {
+		if sess.Group == path || strings.HasPrefix(sess.Group, path+"/") {
+			count++
+		}
+	}
+	return count
 }
 
 // scrollWindow keeps the cursor visible inside a height-limited window,
@@ -102,52 +136,65 @@ func scrollWindow(total, cursor, height int) (int, int) {
 }
 
 func (m *Model) renderTreeRow(r row, selected bool, width int) string {
-	cursor := "  "
+	bar := " "
 	if selected {
-		cursor = "❯ "
+		bar = lipgloss.NewStyle().Foreground(colorAccent).Render("▎")
 	}
-	indent := strings.Repeat("  ", r.depth)
+	guides := treeGuides(r.depth)
 
-	maxWidth := width - 2
-
+	var content string
 	if r.isGroup {
 		marker := "▾"
 		if m.collapsed[r.group] {
 			marker = "▸"
 		}
-		line := cursor + indent + groupHeaderStyle.Render(marker+" "+baseName(r.group))
-		line = ansi.Truncate(line, maxWidth, "…")
+		count := subtleStyle.Render(fmt.Sprintf(" (%d)", m.groupSessionCount(r.group)))
+		name := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true).Render(baseName(r.group))
+		content = subtleStyle.Render(marker) + " " + name + count
+	} else {
+		sess := r.sess
+		glyph := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
+		nameStyle := valueStyle
 		if selected {
-			return selectedRowStyle.Width(maxWidth).Render(line)
+			nameStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 		}
-		return line
+		name := nameStyle.Render(sess.Name)
+		meta := subtleStyle.Render(sess.Tool + " · " + relTime(sess.CreatedAt))
+		archived := ""
+		if sess.Archived {
+			archived = subtleStyle.Render(" ⋅ archived")
+		}
+		content = glyph + " " + name + "  " + meta + archived
 	}
 
-	sess := r.sess
-	glyph := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
-	archived := ""
-	if sess.Archived {
-		archived = " [archived]"
-	}
-	line := fmt.Sprintf("%s%s%s %s %s%s",
-		cursor, indent, glyph, sess.Name,
-		mutedStyle.Render(sess.Tool+" · "+sess.Status+" · "+relTime(sess.CreatedAt)), archived)
-	line = ansi.Truncate(line, maxWidth, "…")
+	line := bar + " " + guides + content
+	line = padRight(line, width)
 	if selected {
-		return selectedRowStyle.Width(maxWidth).Render(line)
+		return selectedRowStyle.Render(line)
 	}
-	return rowStyle.Render(line)
+	return line
+}
+
+// divider renders a labeled section rule that fills the given width.
+func divider(label string, width int) string {
+	head := sectionStyle.Render(label) + " "
+	dashes := width - ansi.StringWidth(label) - 1
+	if dashes < 0 {
+		dashes = 0
+	}
+	return head + subtleStyle.Render(strings.Repeat("─", dashes))
 }
 
 // viewSidebar lays out session details and computer stats side by side
 // on top, with the live preview filling the rest of the panel below.
 func (m *Model) viewSidebar(width, height int) string {
 	detailWidth := width * 55 / 100
-	statsWidth := width - detailWidth
+	statsWidth := width - detailWidth - 3
 	detail := m.viewDetail(detailWidth)
-	computer := groupHeaderStyle.Render("Computer") + "\n" + m.viewComputer()
+	computer := m.viewComputer(statsWidth)
 	top := lipgloss.JoinHorizontal(lipgloss.Top,
 		lipgloss.NewStyle().Width(detailWidth).Render(detail),
+		subtleStyle.Render(" │ "),
 		lipgloss.NewStyle().Width(statsWidth).Render(computer),
 	)
 
@@ -161,17 +208,16 @@ func (m *Model) viewSidebar(width, height int) string {
 func (m *Model) viewDetail(width int) string {
 	sess, ok := m.selected()
 	if !ok {
-		return mutedStyle.Render("No session selected") + "\n"
+		return "\n" + mutedStyle.Render("Select a session to inspect it.")
 	}
 	var b strings.Builder
-	b.WriteString(valueStyle.Render(sess.Name) + "\n")
-	b.WriteString(kv("tool", sess.Tool))
+	b.WriteString(pill(sess.Status, statusColor(sess.Status)) + "  " +
+		pill(sess.Tool, colorAccent) + "\n")
 	b.WriteString(kv("group", displayGroup(sess.Group)))
-	b.WriteString(kv("status", statusText(sess.Status)))
-	b.WriteString(kv("dir", truncateTail(sess.Cwd, width-10)))
+	b.WriteString(kv("dir", truncateTail(sess.Cwd, width-8)))
 	b.WriteString(kv("age", relTime(sess.CreatedAt)))
 	if m.procFor == sess.ID && m.proc.OK {
-		b.WriteString(kv("proc", fmt.Sprintf("%.1f%% cpu · %s", m.proc.CPUPercent, humanBytes(m.proc.RSS))))
+		b.WriteString(kv("proc", fmt.Sprintf("%.1f%% · %s", m.proc.CPUPercent, humanBytes(m.proc.RSS))))
 	}
 	return b.String()
 }
@@ -181,10 +227,10 @@ func (m *Model) viewDetail(width int) string {
 // and closed with an SGR reset so pane colors never leak into the layout.
 func (m *Model) viewPreview(width, height int) string {
 	var b strings.Builder
-	b.WriteString(groupHeaderStyle.Render("Preview") + "\n")
+	b.WriteString(divider("Preview", width) + "\n")
 	lines := paneTail(m.preview, height-1)
 	if len(lines) == 0 {
-		b.WriteString(mutedStyle.Render("(no output)"))
+		b.WriteString(mutedStyle.Render("(no output yet)"))
 		return padToHeight(b.String(), height)
 	}
 	for _, line := range lines {
@@ -250,187 +296,201 @@ func padToHeight(s string, height int) string {
 	return s
 }
 
-func (m *Model) viewComputer() string {
-	var b strings.Builder
+func (m *Model) viewComputer(width int) string {
 	s := m.snap
-	if s.CPUOK {
-		b.WriteString(kv("cpu", fmt.Sprintf("%.1f%%", s.CPUPercent)))
-	} else {
-		b.WriteString(kv("cpu", "n/a"))
+	barWidth := width - 20
+	if barWidth < 6 {
+		barWidth = 6
 	}
+	if barWidth > 14 {
+		barWidth = 14
+	}
+	var b strings.Builder
+	meter := func(label string, percent float64, ok bool) string {
+		if !ok {
+			return labelStyle.Width(5).Render(label) + mutedStyle.Render("n/a") + "\n"
+		}
+		return labelStyle.Width(5).Render(label) + gauge(percent, barWidth) +
+			mutedStyle.Render(fmt.Sprintf(" %.0f%%", percent)) + "\n"
+	}
+	b.WriteString(meter("cpu", s.CPUPercent, s.CPUOK))
+	b.WriteString(meter("mem", s.MemPercent, s.MemOK))
+	b.WriteString(meter("disk", s.DiskPercent, s.DiskOK))
 	if s.MemOK {
-		b.WriteString(kv("mem", fmt.Sprintf("%s / %s (%.0f%%)",
-			humanBytes(s.MemUsed), humanBytes(s.MemTotal), s.MemPercent)))
-	} else {
-		b.WriteString(kv("mem", "n/a"))
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("      %s / %s", humanBytes(s.MemUsed), humanBytes(s.MemTotal))) + "\n")
 	}
 	if s.LoadOK {
-		b.WriteString(kv("load", fmt.Sprintf("%.2f %.2f %.2f", s.Load1, s.Load5, s.Load15)))
-	}
-	if s.DiskOK {
-		b.WriteString(kv("disk", fmt.Sprintf("%s / %s (%.0f%%)",
-			humanBytes(s.DiskUsed), humanBytes(s.DiskTotal), s.DiskPercent)))
+		b.WriteString(labelStyle.Width(5).Render("load") +
+			mutedStyle.Render(fmt.Sprintf("%.2f %.2f %.2f", s.Load1, s.Load5, s.Load15)) + "\n")
 	}
 	return b.String()
 }
 
 func (m *Model) viewFooter() string {
 	if m.searching {
-		return footerStyle.Render("search: ") + m.search + footerStyle.Render("  (enter/esc to close)")
+		cursor := lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
+		return keyStyle.Render(" search ") + valueStyle.Render(m.search) + cursor +
+			subtleStyle.Render("  enter/esc to close")
 	}
 	if m.mode == modeConfirmDelete {
-		return errStyle.Render(m.confirm.label)
+		return errStyle.Render(" ⚠ "+m.confirm.label) + subtleStyle.Render("  y/n")
 	}
 	if m.err != "" {
-		return errStyle.Render("! " + m.err)
+		return errStyle.Render(" ✖ " + m.err)
 	}
-	return footerStyle.Render("n new · enter attach · m move · r rename · a archive · u restore · d delete · space fold · t archived · / search · ? help · q quit")
+	pairs := [][2]string{
+		{"n", "new"}, {"↵", "attach"}, {"m", "move"}, {"r", "rename"},
+		{"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
+		{"t", "archived"}, {"?", "help"}, {"q", "quit"},
+	}
+	parts := make([]string, len(pairs))
+	for i, p := range pairs {
+		parts[i] = keyStyle.Render(p[0]) + " " + mutedStyle.Render(p[1])
+	}
+	line := " " + strings.Join(parts, subtleStyle.Render("  ·  "))
+	return ansi.Truncate(line, m.width, subtleStyle.Render(" …"))
+}
+
+// card centers a bordered modal with a title and footer hint.
+func (m *Model) card(title, body, hint string) string {
+	width := 60
+	if width > m.width-4 {
+		width = m.width - 4
+	}
+	header := badgeStyle.Render(title)
+	content := header + "\n\n" + body
+	if m.err != "" {
+		content += "\n" + errStyle.Render("✖ "+m.err)
+	}
+	content += "\n\n" + subtleStyle.Render(hint)
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorAccent).
+		Padding(1, 3).
+		Width(width).
+		Render(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
 func (m *Model) viewForm() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("New Session") + "\n\n")
 	b.WriteString(formField("name", m.form.name.View(), m.form.focus == fieldName))
 
 	toolVal := "(none configured)"
 	if len(m.form.toolNames) > 0 {
-		toolVal = "◂ " + m.form.toolNames[m.form.toolIndex] + " ▸"
+		toolVal = subtleStyle.Render("◂ ") + valueStyle.Render(m.form.toolNames[m.form.toolIndex]) + subtleStyle.Render(" ▸")
 	}
 	b.WriteString(formField("tool", toolVal, m.form.focus == fieldTool))
-	b.WriteString(formField("directory", m.form.dir.View(), m.form.focus == fieldDir))
-
-	selectedGroup := displayGroup(m.form.groups[m.form.groupIndex].path)
-	b.WriteString(formField("group", selectedGroup, m.form.focus == fieldGroup))
+	b.WriteString(formField("dir", m.form.dir.View(), m.form.focus == fieldDir))
+	b.WriteString(formField("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), m.form.focus == fieldGroup))
 
 	if m.form.focus == fieldGroup {
-		b.WriteString(m.viewGroupPicker())
+		b.WriteString("\n" + m.viewGroupPicker())
 	}
 
-	b.WriteString("\n")
-	if m.err != "" {
-		b.WriteString(errStyle.Render("! "+m.err) + "\n\n")
-	}
-	hint := "tab/↑↓ move · ←→ change tool · enter create · esc cancel"
+	hint := "tab/↑↓ move · ←→ tool · ↵ create · esc cancel"
 	if m.form.focus == fieldGroup {
-		hint = "↑↓ pick group · n new subgroup here · tab next field · enter create session · esc cancel"
+		hint = "↑↓ pick · n new subgroup · tab next · ↵ create · esc cancel"
 	}
 	if m.form.creatingGroup {
-		hint = "enter create group · esc cancel"
+		hint = "↵ create group · esc cancel"
 	}
-	b.WriteString(footerStyle.Render(hint))
-	return b.String()
+	return m.card("◆ New Session", strings.TrimRight(b.String(), "\n"), hint)
+}
+
+func groupBadge(path string) string {
+	return lipgloss.NewStyle().Foreground(colorAccent2).Render(path)
 }
 
 func (m *Model) viewGroupPicker() string {
 	var b strings.Builder
 	for i, opt := range m.form.groups {
-		cursor := "     "
-		if i == m.form.groupIndex {
-			cursor = "   ❯ "
+		selected := i == m.form.groupIndex
+		marker := "  "
+		if selected {
+			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 		}
 		label := displayGroup(opt.path)
 		if opt.path != "" {
 			label = strings.Repeat("  ", opt.depth) + baseName(opt.path)
 		}
-		line := cursor + label
-		if i == m.form.groupIndex {
-			line = cursor + valueStyle.Render(label)
-		} else {
-			line = cursor + mutedStyle.Render(label)
+		style := mutedStyle
+		if selected {
+			style = lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
 		}
-		b.WriteString(line + "\n")
+		b.WriteString("  " + marker + style.Render(label) + "\n")
 	}
 	if m.form.creatingGroup {
 		parent := displayGroup(m.form.groups[m.form.groupIndex].path)
-		b.WriteString("   " + labelStyle.Render("new group under "+parent+":") + " " + m.form.newGroup.View() + "\n")
+		b.WriteString("\n  " + labelStyle.Render("new under "+parent+":") + " " + m.form.newGroup.View())
 	}
-	return b.String()
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func displayGroup(path string) string {
 	if path == "" {
-		return "(root)"
+		return "root"
 	}
 	return path
 }
 
 func (m *Model) viewRename() string {
-	var b strings.Builder
-	what := "session"
-	context := ""
+	what := "Session"
+	sub := ""
 	if m.rename.isGroup {
-		what = "group"
+		what = "Group"
 		if idx := strings.LastIndex(m.rename.path, "/"); idx >= 0 {
-			context = "  " + mutedStyle.Render("under "+m.rename.path[:idx])
+			sub = mutedStyle.Render("under "+m.rename.path[:idx]) + "\n\n"
 		}
 	}
-	b.WriteString(titleStyle.Render("Rename "+what) + context + "\n\n")
-	b.WriteString("  " + m.rename.input.View() + "\n\n")
-	if m.err != "" {
-		b.WriteString(errStyle.Render("! "+m.err) + "\n\n")
-	}
-	b.WriteString(footerStyle.Render("enter apply · esc cancel"))
-	return b.String()
+	body := sub + m.rename.input.View()
+	return m.card("✎ Rename "+what, body, "↵ apply · esc cancel")
 }
 
 func (m *Model) viewMove() string {
-	var b strings.Builder
-	b.WriteString(titleStyle.Render("Move to group") + "\n\n")
-	b.WriteString(m.viewGroupPicker())
-	b.WriteString("\n")
-	if m.err != "" {
-		b.WriteString(errStyle.Render("! "+m.err) + "\n\n")
-	}
-	hint := "↑↓ pick group · n new subgroup here · enter move · esc cancel"
+	hint := "↑↓ pick · n new subgroup · ↵ move · esc cancel"
 	if m.form.creatingGroup {
-		hint = "enter create group · esc cancel"
+		hint = "↵ create group · esc cancel"
 	}
-	b.WriteString(footerStyle.Render(hint))
-	return b.String()
+	return m.card("⇄ Move to group", m.viewGroupPicker(), hint)
 }
 
 func (m *Model) viewHelp() string {
 	rows := [][2]string{
 		{"n", "new session"},
-		{"enter", "attach session / fold group"},
+		{"↵", "attach session / fold group"},
 		{"ctrl+q", "inside a session: back to manager"},
 		{"m", "move session to another group"},
 		{"r", "rename session / group"},
-		{"a / u", "archive / restore (u works in archived view, t)"},
-		{"d", "delete session, or group + entire subtree"},
+		{"a / u", "archive / restore"},
+		{"d", "delete session, or group + subtree"},
 		{"space", "collapse / expand group"},
 		{"t", "toggle archived view"},
 		{"/", "search"},
 		{"ctrl+r", "force refresh"},
-		{"↑↓ / jk", "move"},
+		{"↑↓ / jk", "move cursor"},
 		{"q", "quit (sessions keep running)"},
 	}
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Agent Manager · Help") + "\n\n")
 	for _, r := range rows {
-		b.WriteString(fmt.Sprintf("  %s  %s\n",
-			valueStyle.Width(10).Render(r[0]), mutedStyle.Render(r[1])))
+		b.WriteString(keyStyle.Width(8).Render(r[0]) + mutedStyle.Render(r[1]) + "\n")
 	}
-	b.WriteString("\n" + footerStyle.Render("any key to close"))
-	return b.String()
+	return m.card("? Keys", strings.TrimRight(b.String(), "\n"), "any key to close")
 }
 
 func formField(label, value string, focused bool) string {
-	prefix := "  "
+	marker := "  "
 	style := labelStyle
 	if focused {
-		prefix = "❯ "
-		style = valueStyle
+		marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
+		style = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	}
-	return fmt.Sprintf("%s%s %s\n", prefix, style.Width(10).Render(label), value)
+	return fmt.Sprintf("%s%s %s\n", marker, style.Width(7).Render(label), value)
 }
 
 func kv(key, value string) string {
-	return fmt.Sprintf("%s %s\n", labelStyle.Width(9).Render(key), valueStyle.Render(value))
-}
-
-func statusText(s string) string {
-	return lipgloss.NewStyle().Foreground(statusColor(s)).Render(s)
+	return labelStyle.Width(6).Render(key) + valueStyle.Render(value) + "\n"
 }
 
 func relTime(t time.Time) string {

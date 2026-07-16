@@ -1,48 +1,46 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var (
+	colorText    = lipgloss.Color("252")
+	colorDim     = lipgloss.Color("245")
+	colorSubtle  = lipgloss.Color("240")
+	colorBorder  = lipgloss.Color("238")
 	colorBg      = lipgloss.Color("236")
-	colorMuted   = lipgloss.Color("244")
+	colorSelBg   = lipgloss.Color("238")
+	colorBright  = lipgloss.Color("231")
 	colorAccent  = lipgloss.Color("111")
+	colorAccent2 = lipgloss.Color("79")
+
 	colorWorking = lipgloss.Color("214")
-	colorReady   = lipgloss.Color("42")
+	colorReady   = lipgloss.Color("78")
 	colorErrored = lipgloss.Color("203")
 	colorIdle    = lipgloss.Color("244")
 
-	titleStyle = lipgloss.NewStyle().
+	badgeStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("231")).
+			Foreground(colorBg).
 			Background(colorAccent).
 			Padding(0, 1)
 
-	groupHeaderStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(colorAccent)
+	sectionStyle = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
 
-	selectedRowStyle = lipgloss.NewStyle().
-				Background(colorBg).
-				Foreground(lipgloss.Color("231"))
+	selectedRowStyle = lipgloss.NewStyle().Background(colorSelBg).Foreground(colorBright)
 
-	rowStyle = lipgloss.NewStyle()
-
-	mutedStyle = lipgloss.NewStyle().Foreground(colorMuted)
-
-	panelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorMuted).
-			Padding(0, 1)
-
-	footerStyle = lipgloss.NewStyle().Foreground(colorMuted)
-
-	errStyle = lipgloss.NewStyle().Foreground(colorErrored).Bold(true)
-
-	labelStyle = lipgloss.NewStyle().Foreground(colorMuted)
-	valueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("231"))
+	mutedStyle  = lipgloss.NewStyle().Foreground(colorDim)
+	subtleStyle = lipgloss.NewStyle().Foreground(colorSubtle)
+	valueStyle  = lipgloss.NewStyle().Foreground(colorText)
+	labelStyle  = lipgloss.NewStyle().Foreground(colorDim)
+	footerStyle = lipgloss.NewStyle().Foreground(colorDim)
+	errStyle    = lipgloss.NewStyle().Foreground(colorErrored).Bold(true)
+	keyStyle    = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 )
 
 func statusColor(s string) lipgloss.Color {
@@ -61,7 +59,7 @@ func statusColor(s string) lipgloss.Color {
 func statusGlyph(s string) string {
 	switch s {
 	case status.Working:
-		return "●"
+		return "◐"
 	case status.Ready:
 		return "●"
 	case status.Errored, status.Dead:
@@ -69,4 +67,89 @@ func statusGlyph(s string) string {
 	default:
 		return "○"
 	}
+}
+
+// titledPanel draws a rounded box with the title embedded in the top
+// border, its body clipped and padded to fill the given outer size.
+func titledPanel(title, body string, width, height int, accent bool) string {
+	border := colorBorder
+	if accent {
+		border = colorAccent
+	}
+	bs := lipgloss.NewStyle().Foreground(border)
+	inner := width - 4
+	if inner < 1 {
+		inner = 1
+	}
+	bodyRows := height - 2
+	if bodyRows < 1 {
+		bodyRows = 1
+	}
+
+	titleText := sectionStyle.Render(title)
+	dashCount := inner - ansi.StringWidth(title) - 1
+	if dashCount < 0 {
+		dashCount = 0
+	}
+	top := bs.Render("╭─ ") + titleText + " " + bs.Render(strings.Repeat("─", dashCount)+"╮")
+	bottom := bs.Render("╰" + strings.Repeat("─", width-2) + "╯")
+
+	side := bs.Render("│")
+	lines := strings.Split(body, "\n")
+	var b strings.Builder
+	b.WriteString(top + "\n")
+	for i := 0; i < bodyRows; i++ {
+		content := ""
+		if i < len(lines) {
+			content = lines[i]
+		}
+		b.WriteString(side + " " + padRight(content, inner) + " " + side + "\n")
+	}
+	b.WriteString(bottom)
+	return b.String()
+}
+
+// padRight pads or clips a possibly-styled string to an exact display width.
+func padRight(s string, width int) string {
+	w := ansi.StringWidth(s)
+	if w > width {
+		s = ansi.Truncate(s, width, "…")
+		w = ansi.StringWidth(s)
+	}
+	if w < width {
+		s += strings.Repeat(" ", width-w)
+	}
+	if strings.ContainsRune(s, 0x1b) {
+		s += "\x1b[0m"
+	}
+	return s
+}
+
+// gauge renders a colored bar meter for a 0-100 percentage.
+func gauge(percent float64, width int) string {
+	if width < 1 {
+		width = 1
+	}
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	filled := int(percent/100*float64(width) + 0.5)
+	color := colorReady
+	switch {
+	case percent >= 85:
+		color = colorErrored
+	case percent >= 60:
+		color = colorWorking
+	}
+	on := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("▰", filled))
+	off := subtleStyle.Render(strings.Repeat("▱", width-filled))
+	return on + off
+}
+
+// pill renders a small rounded label chip.
+func pill(text string, fg lipgloss.Color) string {
+	return lipgloss.NewStyle().Foreground(fg).Render("▏" + text)
 }
