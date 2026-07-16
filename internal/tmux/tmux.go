@@ -154,12 +154,20 @@ func (d *Driver) PanePID(id string) (int, error) {
 	return strconv.Atoi(line)
 }
 
+// noServer recognizes both messages tmux prints when no server is up:
+// "no server running on <socket>" and, on Linux since 3.4, "error
+// connecting to <socket> (No such file or directory)".
+func noServer(out string) bool {
+	return strings.Contains(out, "no server running") ||
+		strings.Contains(out, "error connecting to")
+}
+
 // Panes returns every managed session's pane pid in a single tmux call,
 // which doubles as a liveness check: a session absent from the map is gone.
 func (d *Driver) Panes() (map[string]int, error) {
 	out, err := exec.Command(d.bin, "list-panes", "-a", "-F", "#{session_name} #{pane_pid}").CombinedOutput()
 	if err != nil {
-		if strings.Contains(string(out), "no server running") {
+		if noServer(string(out)) {
 			return map[string]int{}, nil
 		}
 		return nil, fmt.Errorf("tmux list-panes: %w: %s", err, strings.TrimSpace(string(out)))
@@ -184,7 +192,7 @@ func (d *Driver) Panes() (map[string]int, error) {
 func (d *Driver) List() ([]string, error) {
 	out, err := exec.Command(d.bin, "list-sessions", "-F", "#{session_name}").CombinedOutput()
 	if err != nil {
-		if strings.Contains(string(out), "no server running") {
+		if noServer(string(out)) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("tmux list-sessions: %w: %s", err, strings.TrimSpace(string(out)))

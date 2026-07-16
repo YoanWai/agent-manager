@@ -152,6 +152,7 @@ func (m *Model) viewHelp() string {
 		{"m", "move session to another group"},
 		{"g", "new group (name, parent, default path)"},
 		{"r", "rename session / group"},
+		{"v", "revive dead session (resumes the agent)"},
 		{"a / u", "archive / restore"},
 		{"d", "delete session, or group + subtree"},
 		{"shift+↑↓", "reorder row up / down"},

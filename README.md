@@ -6,20 +6,31 @@ A terminal UI to manage AI coding-agent sessions on your machine. Create and ent
 
 Status detection currently supports **Claude Code** and **OpenCode** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](#configuration)).
 
-## Requirements
-
-- Go 1.24+
-- tmux
-
 ## Install
 
+### Homebrew (macOS / Linux)
+
 ```bash
-git clone https://github.com/YoanWai/agent-manager.git
-cd agent-manager
-go install .
+brew install yoanwai/tap/agent-manager
 ```
 
-Installs `agent-manager` to `$(go env GOPATH)/bin`.
+Installs tmux with it if missing.
+
+### Go
+
+```bash
+go install github.com/YoanWai/agent-manager@latest
+```
+
+Requires Go 1.24+ and tmux; installs to `$(go env GOPATH)/bin`.
+
+### Prebuilt binaries
+
+Download from [Releases](https://github.com/YoanWai/agent-manager/releases) (macOS and Linux, amd64/arm64).
+
+### Windows
+
+Run inside [WSL2](https://learn.microsoft.com/windows/wsl/install): agent-manager lives on tmux, which is a Linux/macOS tool. In a WSL shell, install with Homebrew or grab the Linux binary from Releases.
 
 ## Usage
 
@@ -40,6 +51,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `shift+↑` / `shift+↓` | Reorder session or group among its siblings |
 | `m` | Move session to another group |
 | `r` | Rename session or group |
+| `v` | Revive a dead session (`revive_command`, e.g. `claude --continue`, resumes the conversation) |
 | `a` / `u` | Archive / restore |
 | `d` | Delete session, or a group + its entire subtree |
 | `space` | Collapse / expand group |
