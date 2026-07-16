@@ -119,3 +119,25 @@ func TestAncestorGroupPathWalksUp(t *testing.T) {
 		t.Fatalf("got %q want empty", got)
 	}
 }
+
+func TestRelativePathsStoredAbsolute(t *testing.T) {
+	m := buildModel(t)
+	base := t.TempDir()
+	if err := os.Mkdir(filepath.Join(base, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(base)
+
+	m.openGroupForm()
+	m.groupForm.name.SetValue("relgrp")
+	m.groupForm.path.SetValue("sub")
+	if _, cmd := m.submitGroupForm(); cmd == nil {
+		t.Fatalf("group form should submit, err=%q", m.err)
+	}
+	groups, _ := m.store.Groups()
+	for _, g := range groups {
+		if g.Name == "relgrp" && !filepath.IsAbs(g.Path) {
+			t.Fatalf("group path stored relative: %q", g.Path)
+		}
+	}
+}

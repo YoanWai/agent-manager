@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -285,6 +286,9 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	if dir == "" {
 		dir, _ = os.Getwd()
 	}
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		m.err = "working directory does not exist: " + dir
 		return m, nil
@@ -417,6 +421,9 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 	}
 	path := expandHome(strings.TrimSpace(m.groupForm.path.Value()))
 	if path != "" {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
 		if info, err := os.Stat(path); err != nil || !info.IsDir() {
 			m.err = "default path does not exist: " + path
 			return m, nil
