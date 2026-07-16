@@ -81,6 +81,16 @@ func decodeInto(path string, cfg *Config) error {
 	return err
 }
 
+// Default returns the built-in configuration without touching the filesystem.
+func Default() (Config, error) {
+	var cfg Config
+	if _, err := toml.Decode(defaultConfig, &cfg); err != nil {
+		return Config{}, err
+	}
+	cfg.applyDefaults()
+	return cfg, nil
+}
+
 func (c *Config) applyDefaults() {
 	if c.PollInterval.Duration <= 0 {
 		c.PollInterval.Duration = 2 * time.Second
@@ -113,19 +123,33 @@ func writeDefault(path string) error {
 
 const defaultConfig = `poll_interval = "2s"
 
+# Rules are matched top-down against the visible pane text (ANSI stripped);
+# first match wins, default_status applies when nothing matches.
+
 [tools.claude]
 command = "claude"
 default_status = "idle"
 rules = [
+  # active turn: "✳ Drizzling… (6s · thinking with medium effort)"
+  { state = "working", pattern = "… \\(\\d+m?\\d*s? ·" },
   { state = "working", pattern = "esc to interrupt" },
-  { state = "errored", pattern = "(?i)^error:" },
+  # selection dialogs (trust prompt, permission asks) wait for the user
+  { state = "ready", pattern = "Enter to confirm" },
+  { state = "ready", pattern = "(?m)^[ \\x{A0}]*❯[ \\x{A0}]+\\d+\\." },
+  # empty input prompt line (claude pads it with a non-breaking space)
+  { state = "ready", pattern = "(?m)^❯[ \\x{A0}]*$" },
+  { state = "errored", pattern = "(?im)^\\s*error:" },
 ]
 
 [tools.opencode]
 command = "opencode"
 default_status = "idle"
 rules = [
-  { state = "working", pattern = "(?i)(thinking|generating|working)" },
-  { state = "errored", pattern = "(?i)^error:" },
+  { state = "errored", pattern = "(?i)requires more credits" },
+  { state = "errored", pattern = "(?im)^\\s*error\\b" },
+  # spinner row while running: "▣  Build · DeepSeek V4 Pro" (a finished
+  # turn gains a duration: "▣  Build · GLM-5.2 · 22.0s")
+  { state = "working", pattern = "(?m)^\\s*▣ +[^·\\n]+· [^·\\n]+$" },
+  { state = "ready", pattern = "Ask anything" },
 ]
 `

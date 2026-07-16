@@ -58,6 +58,9 @@ func (d *Driver) installSessionUX(name string) error {
 		{"set-option", "-t", name, "status-left", ""},
 		{"set-option", "-t", name, "status-right", " agent-manager · Ctrl+Q = back "},
 		{"set-option", "-t", name, "status-style", "bg=colour236,fg=colour249"},
+		// hide the "0:windowname*" window list; it reads as noise here
+		{"set-option", "-t", name, "window-status-format", ""},
+		{"set-option", "-t", name, "window-status-current-format", ""},
 		{"bind-key", "-n", "C-q", "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "detach-client", "send-keys C-q"},
 	}
 	for _, args := range options {
