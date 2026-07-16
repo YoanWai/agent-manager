@@ -22,7 +22,6 @@ type Tool struct {
 
 type Config struct {
 	PollInterval Duration        `toml:"poll_interval"`
-	DefaultGroup string          `toml:"default_group"`
 	Tools        map[string]Tool `toml:"tools"`
 }
 
@@ -86,9 +85,6 @@ func (c *Config) applyDefaults() {
 	if c.PollInterval.Duration <= 0 {
 		c.PollInterval.Duration = 2 * time.Second
 	}
-	if c.DefaultGroup == "" {
-		c.DefaultGroup = "default"
-	}
 	if c.Tools == nil {
 		c.Tools = map[string]Tool{}
 	}
@@ -116,7 +112,6 @@ func writeDefault(path string) error {
 }
 
 const defaultConfig = `poll_interval = "2s"
-default_group = "default"
 
 [tools.claude]
 command = "claude"

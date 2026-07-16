@@ -19,7 +19,6 @@ func buildModel(t *testing.T) *Model {
 		t.Skip("tmux not installed")
 	}
 	cfg := config.Config{
-		DefaultGroup: "default",
 		Tools: map[string]config.Tool{
 			"claude": {Command: "cat", DefaultStatus: status.Idle},
 		},

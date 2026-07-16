@@ -46,6 +46,7 @@ type Model struct {
 	snap     sysstat.Snapshot
 	proc     sysstat.ProcStat
 	procFor  string
+	preview  string
 
 	cursor       int
 	mode         mode
@@ -86,6 +87,7 @@ type refreshMsg struct {
 	snap     sysstat.Snapshot
 	proc     sysstat.ProcStat
 	procFor  string
+	preview  string
 }
 
 type errMsg struct{ err error }
@@ -125,6 +127,9 @@ func (m *Model) selectedRow() (row, bool) {
 	return m.rows[m.cursor], true
 }
 
+// refreshCmd polls every live session's pane once, deriving status and
+// grabbing the selected session's pane text as the preview, then samples
+// system stats. It runs off the render loop as a tea command.
 func (m *Model) refreshCmd() tea.Cmd {
 	includeArchived := m.showArchived
 	selectedID := ""
@@ -136,57 +141,51 @@ func (m *Model) refreshCmd() tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		for _, sess := range sessions {
-			if sess.Archived {
-				continue
-			}
-			newStatus := m.deriveStatus(sess)
-			if newStatus != sess.Status {
-				if err := m.store.UpdateStatus(sess.ID, newStatus); err != nil {
-					return errMsg{err}
-				}
-			}
-		}
-		sessions, err = m.store.ListSessions(includeArchived)
-		if err != nil {
-			return errMsg{err}
-		}
-		groups, err := m.store.Groups()
-		if err != nil {
-			return errMsg{err}
-		}
 
+		preview := ""
 		diskPath := "/"
 		var proc sysstat.ProcStat
-		for _, sess := range sessions {
+		for i, sess := range sessions {
 			if sess.ID == selectedID {
 				diskPath = sess.Cwd
 				if pid, err := m.tmux.PanePID(sess.ID); err == nil {
 					proc = sysstat.Proc(pid)
 				}
 			}
+			if sess.Archived {
+				continue
+			}
+			newStatus := status.Dead
+			if m.tmux.Exists(sess.ID) {
+				if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
+					newStatus = m.engine.Derive(sess.Tool, pane)
+					if sess.ID == selectedID {
+						preview = pane
+					}
+				}
+			}
+			if newStatus != sess.Status {
+				if err := m.store.UpdateStatus(sess.ID, newStatus); err != nil {
+					return errMsg{err}
+				}
+				sessions[i].Status = newStatus
+			}
 		}
-		snap := sysstat.Sample(diskPath)
+
+		groups, err := m.store.Groups()
+		if err != nil {
+			return errMsg{err}
+		}
 
 		return refreshMsg{
 			sessions: sessions,
 			groups:   groups,
-			snap:     snap,
+			snap:     sysstat.Sample(diskPath),
 			proc:     proc,
 			procFor:  selectedID,
+			preview:  preview,
 		}
 	}
-}
-
-func (m *Model) deriveStatus(sess store.Session) string {
-	if !m.tmux.Exists(sess.ID) {
-		return status.Dead
-	}
-	pane, err := m.tmux.CapturePane(sess.ID)
-	if err != nil {
-		return status.Dead
-	}
-	return m.engine.Derive(sess.Tool, pane)
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -205,6 +204,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.snap = msg.snap
 		m.proc = msg.proc
 		m.procFor = msg.procFor
+		m.preview = msg.preview
 		m.rebuildRows()
 		return m, nil
 
@@ -224,9 +224,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func rowKey(r row) string {
+	if r.isGroup {
+		return "g:" + r.group
+	}
+	return "s:" + r.sess.ID
+}
+
 // rebuildRows walks the group tree depth-first and emits one row per
 // group node and per session, honoring collapse state and search.
+// The cursor follows the previously selected row's identity, so list
+// changes from the 2s poll never yank the selection around.
 func (m *Model) rebuildRows() {
+	previousKey := ""
+	if r, ok := m.selectedRow(); ok {
+		previousKey = rowKey(r)
+	}
 	query := strings.ToLower(strings.TrimSpace(m.search))
 
 	sessionsByGroup := map[string][]store.Session{}
@@ -270,6 +283,14 @@ func (m *Model) rebuildRows() {
 	}
 
 	m.rows = rows
+	if previousKey != "" {
+		for i, r := range rows {
+			if rowKey(r) == previousKey {
+				m.cursor = i
+				break
+			}
+		}
+	}
 	if m.cursor >= len(rows) {
 		m.cursor = len(rows) - 1
 	}

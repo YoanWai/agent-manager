@@ -49,14 +49,14 @@ func (m *Model) View() string {
 		bodyHeight = 3
 	}
 
-	left := panelStyle.Width(leftWidth).Height(bodyHeight).Render(m.viewList(leftWidth))
-	right := panelStyle.Width(rightWidth).Height(bodyHeight).Render(m.viewSidebar())
+	left := panelStyle.Width(leftWidth).Height(bodyHeight).Render(m.viewList(leftWidth, bodyHeight))
+	right := panelStyle.Width(rightWidth).Height(bodyHeight).Render(m.viewSidebar(rightWidth-2, bodyHeight))
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
 	return strings.Join([]string{header, body, m.viewFooter()}, "\n")
 }
 
-func (m *Model) viewList(width int) string {
+func (m *Model) viewList(width, height int) string {
 	if len(m.rows) == 0 {
 		empty := "No sessions. Press n to create one."
 		if strings.TrimSpace(m.search) != "" {
@@ -65,11 +65,38 @@ func (m *Model) viewList(width int) string {
 		return mutedStyle.Render(empty)
 	}
 
+	start, end := scrollWindow(len(m.rows), m.cursor, height)
 	var b strings.Builder
-	for i, r := range m.rows {
-		b.WriteString(m.renderTreeRow(r, i == m.cursor, width) + "\n")
+	if start > 0 {
+		b.WriteString(mutedStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
+	}
+	for i := start; i < end; i++ {
+		b.WriteString(m.renderTreeRow(m.rows[i], i == m.cursor, width) + "\n")
+	}
+	if end < len(m.rows) {
+		b.WriteString(mutedStyle.Render(fmt.Sprintf("  ↓ %d more", len(m.rows)-end)))
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// scrollWindow keeps the cursor visible inside a height-limited window,
+// reserving one line for each overflow indicator when needed.
+func scrollWindow(total, cursor, height int) (int, int) {
+	if total <= height {
+		return 0, total
+	}
+	visible := height - 2
+	if visible < 1 {
+		visible = 1
+	}
+	start := cursor - visible/2
+	if start < 0 {
+		start = 0
+	}
+	if start+visible > total {
+		start = total - visible
+	}
+	return start, start + visible
 }
 
 func (m *Model) renderTreeRow(r row, selected bool, width int) string {
@@ -106,28 +133,72 @@ func (m *Model) renderTreeRow(r row, selected bool, width int) string {
 	return rowStyle.Render(line)
 }
 
-func (m *Model) viewSidebar() string {
-	var b strings.Builder
-	sess, ok := m.selected()
-	if ok {
-		b.WriteString(valueStyle.Render(sess.Name) + "\n")
-		b.WriteString(kv("tool", sess.Tool))
-		b.WriteString(kv("group", displayGroup(sess.Group)))
-		b.WriteString(kv("status", statusText(sess.Status)))
-		b.WriteString(kv("dir", truncate(sess.Cwd, 40)))
-		b.WriteString(kv("age", relTime(sess.CreatedAt)))
-		if m.procFor == sess.ID && m.proc.OK {
-			b.WriteString(kv("proc cpu", fmt.Sprintf("%.1f%%", m.proc.CPUPercent)))
-			b.WriteString(kv("proc mem", humanBytes(m.proc.RSS)))
-		}
-	} else {
-		b.WriteString(mutedStyle.Render("No session selected") + "\n")
-	}
+func (m *Model) viewSidebar(width, height int) string {
+	detail := m.viewDetail(width)
+	computer := groupHeaderStyle.Render("Computer") + "\n" + m.viewComputer()
 
-	b.WriteString("\n")
-	b.WriteString(groupHeaderStyle.Render("Computer") + "\n")
-	b.WriteString(m.viewComputer())
+	sections := []string{detail}
+	used := lipgloss.Height(detail) + lipgloss.Height(computer) + 2
+	previewHeight := height - used
+	if previewHeight >= 3 {
+		sections = append(sections, m.viewPreview(width, previewHeight))
+	}
+	sections = append(sections, computer)
+	return strings.Join(sections, "\n")
+}
+
+func (m *Model) viewDetail(width int) string {
+	sess, ok := m.selected()
+	if !ok {
+		return mutedStyle.Render("No session selected") + "\n"
+	}
+	var b strings.Builder
+	b.WriteString(valueStyle.Render(sess.Name) + "\n")
+	b.WriteString(kv("tool", sess.Tool))
+	b.WriteString(kv("group", displayGroup(sess.Group)))
+	b.WriteString(kv("status", statusText(sess.Status)))
+	b.WriteString(kv("dir", truncateTail(sess.Cwd, width-10)))
+	b.WriteString(kv("age", relTime(sess.CreatedAt)))
+	if m.procFor == sess.ID && m.proc.OK {
+		b.WriteString(kv("proc", fmt.Sprintf("%.1f%% cpu · %s", m.proc.CPUPercent, humanBytes(m.proc.RSS))))
+	}
 	return b.String()
+}
+
+// viewPreview renders the tail of the selected session's tmux pane,
+// clipped to the panel: the freshest output.
+func (m *Model) viewPreview(width, height int) string {
+	var b strings.Builder
+	b.WriteString(groupHeaderStyle.Render("Preview") + "\n")
+	lines := paneTail(m.preview, height-1)
+	if len(lines) == 0 {
+		b.WriteString(mutedStyle.Render("(no output)"))
+		return padToHeight(b.String(), height)
+	}
+	for _, line := range lines {
+		b.WriteString(mutedStyle.Render(clipLine(line, width)) + "\n")
+	}
+	return padToHeight(strings.TrimRight(b.String(), "\n"), height)
+}
+
+// paneTail returns the last n lines of pane text, dropping trailing blanks.
+func paneTail(pane string, n int) []string {
+	if n <= 0 || pane == "" {
+		return nil
+	}
+	lines := strings.Split(strings.TrimRight(pane, "\n \t"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return lines
+}
+
+func padToHeight(s string, height int) string {
+	missing := height - lipgloss.Height(s)
+	if missing > 0 {
+		s += strings.Repeat("\n", missing)
+	}
+	return s
 }
 
 func (m *Model) viewComputer() string {
@@ -340,12 +411,20 @@ func humanBytes(b uint64) string {
 	return fmt.Sprintf("%.1f%cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-func truncate(s string, max int) string {
-	if len(s) <= max {
+// truncateTail keeps the end of the string (best for paths).
+func truncateTail(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max || max <= 1 {
 		return s
 	}
-	if max <= 1 {
-		return s[:max]
+	return "…" + string(runes[len(runes)-max+1:])
+}
+
+// clipLine keeps the start of the string (best for terminal output).
+func clipLine(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max || max <= 1 {
+		return s
 	}
-	return "…" + s[len(s)-max+1:]
+	return string(runes[:max-1]) + "…"
 }

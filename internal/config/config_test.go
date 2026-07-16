@@ -21,9 +21,6 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if cfg.PollInterval.Duration != 2*time.Second {
 		t.Fatalf("poll interval = %v want 2s", cfg.PollInterval.Duration)
 	}
-	if cfg.DefaultGroup != "default" {
-		t.Fatalf("default group = %q", cfg.DefaultGroup)
-	}
 	if _, ok := cfg.Tools["claude"]; !ok {
 		t.Fatal("expected claude tool in default config")
 	}
@@ -40,9 +37,6 @@ func TestApplyDefaults(t *testing.T) {
 	cfg.applyDefaults()
 	if cfg.PollInterval.Duration != 2*time.Second {
 		t.Fatalf("poll = %v", cfg.PollInterval.Duration)
-	}
-	if cfg.DefaultGroup != "default" {
-		t.Fatalf("group = %q", cfg.DefaultGroup)
 	}
 	if cfg.Tools == nil {
 		t.Fatal("tools should be non-nil after defaults")
