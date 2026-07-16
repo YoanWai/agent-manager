@@ -241,11 +241,13 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				delete(m.collapsed, m.rename.path)
 				m.collapsed[newPath] = true
 			}
+			m.relabelSubtree(newPath)
 		} else {
 			if err := m.store.RenameSession(m.rename.sessID, name); err != nil {
 				m.err = err.Error()
 				return m, nil
 			}
+			m.relabelSession(m.rename.sessID)
 		}
 		m.mode = modeList
 		return m, m.refreshCmd()
@@ -292,10 +294,38 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.err = err.Error()
 			return m, nil
 		}
+		m.relabelSession(m.moveID)
 		m.mode = modeList
 		return m, m.refreshCmd()
 	}
 	return m, nil
+}
+
+// relabelSession refreshes one session's tmux status-bar label from the db.
+func (m *Model) relabelSession(id string) {
+	sess, err := m.store.Get(id)
+	if err != nil {
+		m.err = err.Error()
+		return
+	}
+	if !m.tmux.Exists(id) {
+		return
+	}
+	if err := m.tmux.SetLabel(id, sessionLabel(sess.Group, sess.Name)); err != nil {
+		m.err = err.Error()
+	}
+}
+
+// relabelSubtree refreshes labels for every session under a group path.
+func (m *Model) relabelSubtree(path string) {
+	sessions, err := m.store.SessionsInSubtree(path)
+	if err != nil {
+		m.err = err.Error()
+		return
+	}
+	for _, sess := range sessions {
+		m.relabelSession(sess.ID)
+	}
 }
 
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

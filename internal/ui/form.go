@@ -271,6 +271,17 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
+	if err := m.tmux.SetLabel(id, sessionLabel(group, name)); err != nil {
+		m.err = err.Error()
+	}
 	m.mode = modeList
 	return m, m.refreshCmd()
+}
+
+// sessionLabel renders a session's identity for the tmux status bar.
+func sessionLabel(group, name string) string {
+	if group == "" {
+		return name
+	}
+	return group + " · " + name
 }

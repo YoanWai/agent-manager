@@ -71,6 +71,17 @@ func (d *Driver) installSessionUX(name string) error {
 	return nil
 }
 
+// SetLabel puts the session's name and group path in the status bar's
+// left side, replacing the hidden window list.
+func (d *Driver) SetLabel(id, label string) error {
+	name := sessionName(id)
+	if _, err := d.run("set-option", "-t", name, "status-left-length", "80"); err != nil {
+		return err
+	}
+	_, err := d.run("set-option", "-t", name, "status-left", " "+label+" ")
+	return err
+}
+
 func (d *Driver) AttachCommand(id string) *exec.Cmd {
 	return exec.Command(d.bin, "attach-session", "-t", sessionName(id))
 }
