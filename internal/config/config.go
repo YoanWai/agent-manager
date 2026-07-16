@@ -154,9 +154,14 @@ default_status = "idle"
 rules = [
   { state = "errored", pattern = "(?i)requires more credits" },
   { state = "errored", pattern = "(?im)^\\s*error\\b" },
-  # spinner row while running: "▣  Build · DeepSeek V4 Pro" (a finished
-  # turn gains a duration: "▣  Build · GLM-5.2 · 22.0s")
+  # spinner row while running: "▣  Build · GLM-5.2" (a finished turn
+  # gains a duration: "▣  Build · GLM-5.2 · 22.0s")
   { state = "working", pattern = "(?m)^\\s*▣ +[^·\\n]+· [^·\\n]+$" },
+  { state = "working", pattern = "esc interrupt" },
+  # newest turn ended on a question line = blocked on the user
+  { state = "waiting", pattern = "(?s)\\?\\s*\\n\\s*▣ [^\\n]*· [\\d][\\dm.]*s[^▣]*$" },
+  # a model row with a duration = a finished turn
+  { state = "finished", pattern = "(?m)^\\s*▣ +[^\\n]+· [\\d][\\dm.]*s$" },
   { state = "finished", pattern = "Ask anything" },
 ]
 `

@@ -98,6 +98,12 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 			"     hey. what need?\n     ▣  Build · GLM-5.2 · 22.0s\n   /home/dev  ctrl+p commands", Idle},
 		{"opencode fresh prompt", "opencode",
 			"  ┃  Ask anything... \"What is the tech stack of this project?\"\n  tab agents  ctrl+p commands", Finished},
+		{"opencode finished with duration (real capture)", "opencode",
+			"     HELLO\n     ▣  Build · GLM-5.2 · 13.9s\n  ┃\n  ┃  Build · GLM-5.2 Z.AI Coding Plan · high", Finished},
+		{"opencode plain-text question (real capture)", "opencode",
+			"     What color are you thinking?\n     ▣  Build · GLM-5.2 · 9.7s\n  ┃\n  ┃  Build · GLM-5.2 Z.AI Coding Plan · high", Waiting},
+		{"opencode old question, newer statement turn", "opencode",
+			"     What color?\n     ▣  Build · GLM-5.2 · 9.7s\n     DONE\n     ▣  Build · GLM-5.2 · 4.2s\n  ┃", Finished},
 		{"opencode out of credits", "opencode",
 			"  ┃  This request requires more credits, or fewer max_tokens.", Errored},
 	}
