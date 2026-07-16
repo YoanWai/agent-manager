@@ -23,6 +23,13 @@ type groupOption struct {
 	depth int
 }
 
+func newGroupInput() textinput.Model {
+	input := textinput.New()
+	input.Placeholder = "group-name"
+	input.CharLimit = 60
+	return input
+}
+
 type form struct {
 	name          textinput.Model
 	dir           textinput.Model
@@ -52,9 +59,7 @@ func (m *Model) openForm() {
 	dir.SetValue(cwd)
 	dir.CharLimit = 400
 
-	newGroup := textinput.New()
-	newGroup.Placeholder = "group-name"
-	newGroup.CharLimit = 60
+	newGroup := newGroupInput()
 
 	m.form = form{
 		name:      name,

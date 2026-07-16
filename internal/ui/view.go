@@ -17,6 +17,10 @@ func (m *Model) View() string {
 		return m.viewForm()
 	case modeHelp:
 		return m.viewHelp()
+	case modeRename:
+		return m.viewRename()
+	case modeMove:
+		return m.viewMove()
 	}
 
 	header := titleStyle.Render("Agent Manager")
@@ -160,7 +164,7 @@ func (m *Model) viewFooter() string {
 	if m.err != "" {
 		return errStyle.Render("! " + m.err)
 	}
-	return footerStyle.Render("n new · enter attach · a archive · u restore · d delete · space fold · t archived · / search · ? help · q quit")
+	return footerStyle.Render("n new · enter attach · m move · r rename · a archive · u restore · d delete · space fold · t archived · / search · ? help · q quit")
 }
 
 func (m *Model) viewForm() string {
@@ -230,17 +234,54 @@ func displayGroup(path string) string {
 	return path
 }
 
+func (m *Model) viewRename() string {
+	var b strings.Builder
+	what := "session"
+	context := ""
+	if m.rename.isGroup {
+		what = "group"
+		if idx := strings.LastIndex(m.rename.path, "/"); idx >= 0 {
+			context = "  " + mutedStyle.Render("under "+m.rename.path[:idx])
+		}
+	}
+	b.WriteString(titleStyle.Render("Rename "+what) + context + "\n\n")
+	b.WriteString("  " + m.rename.input.View() + "\n\n")
+	if m.err != "" {
+		b.WriteString(errStyle.Render("! "+m.err) + "\n\n")
+	}
+	b.WriteString(footerStyle.Render("enter apply · esc cancel"))
+	return b.String()
+}
+
+func (m *Model) viewMove() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Move to group") + "\n\n")
+	b.WriteString(m.viewGroupPicker())
+	b.WriteString("\n")
+	if m.err != "" {
+		b.WriteString(errStyle.Render("! "+m.err) + "\n\n")
+	}
+	hint := "↑↓ pick group · n new subgroup here · enter move · esc cancel"
+	if m.form.creatingGroup {
+		hint = "enter create group · esc cancel"
+	}
+	b.WriteString(footerStyle.Render(hint))
+	return b.String()
+}
+
 func (m *Model) viewHelp() string {
 	rows := [][2]string{
 		{"n", "new session"},
 		{"enter", "attach session / fold group"},
 		{"ctrl+q", "inside a session: back to manager"},
-		{"a / u", "archive / restore"},
+		{"m", "move session to another group"},
+		{"r", "rename session / group"},
+		{"a / u", "archive / restore (u works in archived view, t)"},
 		{"d", "delete session, or group + entire subtree"},
 		{"space", "collapse / expand group"},
 		{"t", "toggle archived view"},
 		{"/", "search"},
-		{"r", "force refresh"},
+		{"ctrl+r", "force refresh"},
 		{"↑↓ / jk", "move"},
 		{"q", "quit (sessions keep running)"},
 	}

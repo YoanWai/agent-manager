@@ -3,6 +3,7 @@ package ui
 import (
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -277,6 +278,89 @@ func TestDeleteGroupSubtree(t *testing.T) {
 		if g == "zone" || g == "zone/inner" {
 			t.Fatalf("group %s should be deleted", g)
 		}
+	}
+}
+
+func TestRenameGroupCascades(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+
+	if err := m.store.CreateGroup("old/inner"); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "kid", dir, "old/inner")
+
+	for i, r := range m.rows {
+		if r.isGroup && r.group == "old" {
+			m.cursor = i
+		}
+	}
+	m.collapsed["old"] = true
+	m.rebuildRows()
+	m.openRename()
+	if !m.rename.isGroup || m.rename.path != "old" {
+		t.Fatalf("rename target wrong: %+v", m.rename)
+	}
+	m.rename.input.SetValue("fresh")
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+
+	kid := m.sessionRows()
+	if len(kid) != 0 {
+		t.Fatalf("fresh should stay collapsed after rename, got %d sessions", len(kid))
+	}
+	if !m.collapsed["fresh"] || m.collapsed["old"] {
+		t.Fatalf("collapse state should follow rename: %v", m.collapsed)
+	}
+	m.collapsed["fresh"] = false
+	m.rebuildRows()
+	sessions := m.sessionRows()
+	if len(sessions) != 1 || sessions[0].Group != "fresh/inner" {
+		t.Fatalf("session group should cascade to fresh/inner, got %+v", sessions)
+	}
+	groups, _ := m.store.Groups()
+	for _, g := range groups {
+		if strings.HasPrefix(g, "old") {
+			t.Fatalf("old group path survived rename: %v", groups)
+		}
+	}
+}
+
+func TestRenameSession(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "before", t.TempDir(), "")
+	m.selectSessionRow(t, "before")
+	m.openRename()
+	m.rename.input.SetValue("after")
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	if m.sessionRows()[0].Name != "after" {
+		t.Fatalf("rename failed: %+v", m.sessionRows()[0])
+	}
+}
+
+func TestMoveSession(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("target/deep"); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "wanderer", dir, "")
+
+	m.selectSessionRow(t, "wanderer")
+	m.openMove()
+	if m.mode != modeMove {
+		t.Fatal("openMove should enter move mode")
+	}
+	pickGroup(t, m, "target/deep")
+	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+
+	sessions := m.sessionRows()
+	if len(sessions) != 1 || sessions[0].Group != "target/deep" {
+		t.Fatalf("move failed: %+v", sessions)
 	}
 }
 

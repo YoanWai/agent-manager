@@ -189,6 +189,69 @@ func (s *Store) SessionsInSubtree(path string) ([]Session, error) {
 	return matched, nil
 }
 
+// RenameGroup rewrites a group path and every descendant group and
+// session under it. Fails if the destination path already exists.
+func (s *Store) RenameGroup(oldPath, newPath string) error {
+	if oldPath == "" || newPath == "" {
+		return fmt.Errorf("group path cannot be empty")
+	}
+	if oldPath == newPath {
+		return nil
+	}
+	var exists int
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM groups WHERE name = ?)`, newPath).Scan(&exists)
+	if err != nil {
+		return err
+	}
+	if exists == 1 {
+		return fmt.Errorf("group %s already exists", newPath)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(
+		`UPDATE groups SET name = ? || substr(name, length(?)+1)
+		 WHERE name = ? OR name LIKE ? || '/%'`,
+		newPath, oldPath, oldPath, oldPath)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(
+		`UPDATE sessions SET group_name = ? || substr(group_name, length(?)+1)
+		 WHERE group_name = ? OR group_name LIKE ? || '/%'`,
+		newPath, oldPath, oldPath, oldPath)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// MoveSession reassigns a session to another group ("" = root).
+func (s *Store) MoveSession(id, group string) error {
+	res, err := s.db.Exec(`UPDATE sessions SET group_name = ? WHERE id = ?`, group, id)
+	if err != nil {
+		return err
+	}
+	if err := requireRow(res, id); err != nil {
+		return err
+	}
+	return s.CreateGroup(group)
+}
+
+// RenameSession changes a session's display name.
+func (s *Store) RenameSession(id, name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("session name cannot be empty")
+	}
+	res, err := s.db.Exec(`UPDATE sessions SET name = ? WHERE id = ?`, name, id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
+}
+
 // DeleteGroup removes a group and all its descendant groups.
 func (s *Store) DeleteGroup(path string) error {
 	if path == "" {

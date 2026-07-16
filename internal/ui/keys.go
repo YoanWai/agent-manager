@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -14,6 +15,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFormKey(msg)
 	case modeConfirmDelete:
 		return m.handleConfirmKey(msg)
+	case modeRename:
+		return m.handleRenameKey(msg)
+	case modeMove:
+		return m.handleMoveKey(msg)
 	case modeHelp:
 		m.mode = modeList
 		return m, nil
@@ -53,6 +58,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searching = true
 		m.err = ""
 	case "r":
+		m.openRename()
+	case "m":
+		m.openMove()
+	case "ctrl+r":
 		return m, m.refreshCmd()
 	case "?":
 		m.mode = modeHelp
@@ -185,6 +194,107 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.refreshCmd()
 	}
 	m.confirm = confirmTarget{}
+	return m, nil
+}
+
+func (m *Model) openRename() {
+	r, ok := m.selectedRow()
+	if !ok {
+		return
+	}
+	input := textinput.New()
+	input.CharLimit = 60
+	input.Focus()
+	if r.isGroup {
+		input.SetValue(baseName(r.group))
+		m.rename = renameTarget{isGroup: true, path: r.group, input: input}
+	} else {
+		input.SetValue(r.sess.Name)
+		m.rename = renameTarget{sessID: r.sess.ID, input: input}
+	}
+	m.mode = modeRename
+	m.err = ""
+}
+
+func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = modeList
+		return m, nil
+	case "enter":
+		name := strings.TrimSpace(m.rename.input.Value())
+		name = strings.ReplaceAll(name, "/", "-")
+		if name == "" {
+			m.err = "name cannot be empty"
+			return m, nil
+		}
+		if m.rename.isGroup {
+			newPath := name
+			if idx := strings.LastIndex(m.rename.path, "/"); idx >= 0 {
+				newPath = m.rename.path[:idx] + "/" + name
+			}
+			if err := m.store.RenameGroup(m.rename.path, newPath); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			if m.collapsed[m.rename.path] {
+				delete(m.collapsed, m.rename.path)
+				m.collapsed[newPath] = true
+			}
+		} else {
+			if err := m.store.RenameSession(m.rename.sessID, name); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+		}
+		m.mode = modeList
+		return m, m.refreshCmd()
+	}
+	var cmd tea.Cmd
+	m.rename.input, cmd = m.rename.input.Update(msg)
+	return m, cmd
+}
+
+func (m *Model) openMove() {
+	sess, ok := m.selected()
+	if !ok {
+		return
+	}
+	m.moveID = sess.ID
+	m.form.newGroup = newGroupInput()
+	m.rebuildGroupOptions(sess.Group)
+	m.mode = modeMove
+	m.err = ""
+}
+
+func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.form.creatingGroup {
+		return m.handleNewGroupKey(msg)
+	}
+	switch msg.String() {
+	case "esc":
+		m.mode = modeList
+		return m, nil
+	case "up":
+		m.moveGroupCursor(-1)
+		return m, nil
+	case "down":
+		m.moveGroupCursor(1)
+		return m, nil
+	case "n":
+		m.form.creatingGroup = true
+		m.form.newGroup.SetValue("")
+		m.form.newGroup.Focus()
+		return m, nil
+	case "enter":
+		group := m.form.groups[m.form.groupIndex].path
+		if err := m.store.MoveSession(m.moveID, group); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.mode = modeList
+		return m, m.refreshCmd()
+	}
 	return m, nil
 }
 

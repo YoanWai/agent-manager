@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -22,6 +23,8 @@ const (
 	modeForm
 	modeConfirmDelete
 	modeHelp
+	modeRename
+	modeMove
 )
 
 type row struct {
@@ -53,6 +56,8 @@ type Model struct {
 
 	form    form
 	confirm confirmTarget
+	rename  renameTarget
+	moveID  string
 
 	width  int
 	height int
@@ -64,6 +69,13 @@ type confirmTarget struct {
 	path     string
 	label    string
 	sessions []store.Session
+}
+
+type renameTarget struct {
+	isGroup bool
+	path    string
+	sessID  string
+	input   textinput.Model
 }
 
 type tickMsg time.Time
