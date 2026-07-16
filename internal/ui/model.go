@@ -30,7 +30,7 @@ const (
 	modeGroupForm
 )
 
-type row struct {
+type treeRow struct {
 	isGroup bool
 	group   string
 	depth   int
@@ -44,7 +44,7 @@ type Model struct {
 	engine *status.Engine
 
 	sessions   []store.Session
-	rows       []row
+	rows       []treeRow
 	groups     []string
 	groupPaths map[string]string
 	snap       sysstat.Snapshot
@@ -156,9 +156,9 @@ func (m *Model) selected() (store.Session, bool) {
 	return m.rows[m.cursor].sess, true
 }
 
-func (m *Model) selectedRow() (row, bool) {
+func (m *Model) selectedRow() (treeRow, bool) {
 	if m.cursor < 0 || m.cursor >= len(m.rows) {
-		return row{}, false
+		return treeRow{}, false
 	}
 	return m.rows[m.cursor], true
 }
@@ -178,6 +178,31 @@ func (m *Model) previewCmd(sessID string) tea.Cmd {
 		}
 		return msg
 	}
+}
+
+// derivePaneStatus turns one captured pane into a session status. The
+// capture carries ANSI escapes for the preview; rules match against the
+// stripped text. Streaming output often renders without any spinner, so
+// when no rule matches but the content region above the input box changed
+// since the previous poll, the session counts as working. Finished is an
+// alert: entering the session acknowledges it (acked), and the pane keeps
+// deriving finished until the next turn, so acked maps it back to idle.
+func (m *Model) derivePaneStatus(sess store.Session, pane string, previousHashes, paneHashes map[string]uint64) string {
+	text := ansi.Strip(pane)
+	newStatus, matched := m.engine.Match(sess.Tool, text)
+	if region, ok := m.engine.ActivityRegion(sess.Tool, text); ok {
+		hash := hashString(region)
+		paneHashes[sess.ID] = hash
+		if !matched {
+			if previous, seen := previousHashes[sess.ID]; seen && previous != hash {
+				newStatus = status.Working
+			}
+		}
+	}
+	if newStatus == status.Finished && sess.Acked {
+		newStatus = status.Idle
+	}
+	return newStatus
 }
 
 // refreshCmd polls every live session's pane once, deriving status and
@@ -232,31 +257,8 @@ func (m *Model) refreshCmd() tea.Cmd {
 					}
 				}
 				if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
-					// The capture carries ANSI escapes for the preview;
-					// status rules match against plain text.
-					text := ansi.Strip(pane)
-					matched := false
-					newStatus, matched = m.engine.Match(sess.Tool, text)
-					// Streaming output often renders without any spinner;
-					// content changing above the input box means the tool
-					// is still producing output.
-					if region, ok := m.engine.ActivityRegion(sess.Tool, text); ok {
-						hash := hashString(region)
-						paneHashes[sess.ID] = hash
-						if !matched {
-							if previous, seen := previousHashes[sess.ID]; seen && previous != hash {
-								newStatus = status.Working
-							}
-						}
-					}
-					// Finished is an alert: entering the session
-					// acknowledges it (acked), and the pane keeps
-					// deriving finished until the next turn, so acked
-					// maps it back to idle. Any real transition re-arms
-					// the alert.
-					if newStatus == status.Finished && sess.Acked {
-						newStatus = status.Idle
-					}
+					newStatus = m.derivePaneStatus(sess, pane, previousHashes, paneHashes)
+					// Any real transition re-arms the finished alert.
 					if sess.Acked && newStatus != status.Idle && newStatus != status.Finished {
 						if err := m.store.SetAcked(sess.ID, false); err != nil {
 							return errMsg{err}
@@ -398,11 +400,11 @@ func hashString(s string) uint64 {
 	return h.Sum64()
 }
 
-func rowKey(r row) string {
-	if r.isGroup {
-		return "g:" + r.group
+func rowKey(entry treeRow) string {
+	if entry.isGroup {
+		return "g:" + entry.group
 	}
-	return "s:" + r.sess.ID
+	return "s:" + entry.sess.ID
 }
 
 // rebuildRows walks the group tree depth-first and emits one row per
@@ -411,8 +413,8 @@ func rowKey(r row) string {
 // changes from the 2s poll never yank the selection around.
 func (m *Model) rebuildRows() {
 	previousKey := ""
-	if r, ok := m.selectedRow(); ok {
-		previousKey = rowKey(r)
+	if entry, ok := m.selectedRow(); ok {
+		previousKey = rowKey(entry)
 	}
 	query := strings.ToLower(strings.TrimSpace(m.search))
 
@@ -432,18 +434,18 @@ func (m *Model) rebuildRows() {
 	}
 	children := childIndex(paths, m.groups)
 
-	rows := make([]row, 0, len(m.sessions)+len(paths))
+	rows := make([]treeRow, 0, len(m.sessions)+len(paths))
 	for _, sess := range sessionsByGroup[""] {
-		rows = append(rows, row{sess: sess})
+		rows = append(rows, treeRow{sess: sess})
 	}
 	var walk func(path string, depth int)
 	walk = func(path string, depth int) {
-		rows = append(rows, row{isGroup: true, group: path, depth: depth})
+		rows = append(rows, treeRow{isGroup: true, group: path, depth: depth})
 		if m.collapsed[path] {
 			return
 		}
 		for _, sess := range sessionsByGroup[path] {
-			rows = append(rows, row{sess: sess, depth: depth + 1})
+			rows = append(rows, treeRow{sess: sess, depth: depth + 1})
 		}
 		for _, child := range children[path] {
 			walk(child, depth+1)
@@ -455,8 +457,8 @@ func (m *Model) rebuildRows() {
 
 	m.rows = rows
 	if previousKey != "" {
-		for i, r := range rows {
-			if rowKey(r) == previousKey {
+		for i, entry := range rows {
+			if rowKey(entry) == previousKey {
 				m.cursor = i
 				break
 			}

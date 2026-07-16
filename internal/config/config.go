@@ -15,7 +15,7 @@ type Rule struct {
 }
 
 type Tool struct {
-	Command       string `toml:"command"`
+	Command        string `toml:"command"`
 	DefaultStatus  string `toml:"default_status"`
 	ActivityCutoff string `toml:"activity_cutoff"`
 	Rules          []Rule `toml:"rules"`

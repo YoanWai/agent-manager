@@ -44,7 +44,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "shift+down":
 		return m.reorderSelected(1)
 	case "enter":
-		if r, ok := m.selectedRow(); ok && r.isGroup {
+		if entry, ok := m.selectedRow(); ok && entry.isGroup {
 			m.toggleCollapse()
 			return m, nil
 		}
@@ -108,16 +108,16 @@ func (m *Model) moveCursor(delta int) tea.Cmd {
 // reorderSelected moves the selected session among its group siblings,
 // or the selected group among the groups sharing its parent.
 func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
-	r, ok := m.selectedRow()
+	entry, ok := m.selectedRow()
 	if !ok {
 		return m, nil
 	}
 	var moved bool
 	var err error
-	if r.isGroup {
-		moved, err = m.store.ReorderGroup(r.group, delta)
+	if entry.isGroup {
+		moved, err = m.store.ReorderGroup(entry.group, delta)
 	} else {
-		moved, err = m.store.ReorderSession(r.sess.ID, delta, m.showArchived)
+		moved, err = m.store.ReorderSession(entry.sess.ID, delta, m.showArchived)
 	}
 	if err != nil {
 		m.err = err.Error()
@@ -129,7 +129,7 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 			edge = "bottom"
 		}
 		what := "group"
-		if !r.isGroup {
+		if !entry.isGroup {
 			what = "session"
 		}
 		m.err = fmt.Sprintf("%s already at the %s of its level", what, edge)
@@ -137,10 +137,10 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 	}
 	// Mirror the swap in memory so the list redraws instantly; the next
 	// poll re-reads the authoritative order from the store.
-	if r.isGroup {
-		m.swapGroupLocal(r.group, delta)
+	if entry.isGroup {
+		m.swapGroupLocal(entry.group, delta)
 	} else {
-		m.swapSessionLocal(r.sess.ID, delta)
+		m.swapSessionLocal(entry.sess.ID, delta)
 	}
 	m.rebuildRows()
 	return m, m.refreshCmd()
@@ -198,13 +198,13 @@ func (m *Model) swapGroupLocal(path string, delta int) {
 }
 
 func (m *Model) toggleCollapse() {
-	r, ok := m.selectedRow()
+	entry, ok := m.selectedRow()
 	if !ok {
 		return
 	}
-	path := r.group
-	if !r.isGroup {
-		path = r.sess.Group
+	path := entry.group
+	if !entry.isGroup {
+		path = entry.sess.Group
 	}
 	if path == "" {
 		return
@@ -266,32 +266,32 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) prepareDelete() {
-	r, ok := m.selectedRow()
+	entry, ok := m.selectedRow()
 	if !ok {
 		return
 	}
-	if !r.isGroup {
+	if !entry.isGroup {
 		m.confirm = confirmTarget{
-			label:    "delete " + r.sess.Name + "? kills its tmux session. (y/n)",
-			sessions: []store.Session{r.sess},
+			label:    "delete " + entry.sess.Name + "? kills its tmux session. (y/n)",
+			sessions: []store.Session{entry.sess},
 		}
 		m.mode = modeConfirmDelete
 		return
 	}
-	subtree, err := m.store.SessionsInSubtree(r.group)
+	subtree, err := m.store.SessionsInSubtree(entry.group)
 	if err != nil {
 		m.err = err.Error()
 		return
 	}
 	subgroups := 0
 	for _, g := range m.groups {
-		if strings.HasPrefix(g, r.group+"/") {
+		if strings.HasPrefix(g, entry.group+"/") {
 			subgroups++
 		}
 	}
 	label := fmt.Sprintf("delete group %s (%d subgroups, %d sessions incl. archived)? kills their tmux sessions. (y/n)",
-		r.group, subgroups, len(subtree))
-	m.confirm = confirmTarget{isGroup: true, path: r.group, label: label, sessions: subtree}
+		entry.group, subgroups, len(subtree))
+	m.confirm = confirmTarget{isGroup: true, path: entry.group, label: label, sessions: subtree}
 	m.mode = modeConfirmDelete
 }
 
@@ -328,19 +328,19 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) openRename() {
-	r, ok := m.selectedRow()
+	entry, ok := m.selectedRow()
 	if !ok {
 		return
 	}
 	input := textinput.New()
 	input.CharLimit = 60
 	input.Focus()
-	if r.isGroup {
-		input.SetValue(baseName(r.group))
-		m.rename = renameTarget{isGroup: true, path: r.group, input: input}
+	if entry.isGroup {
+		input.SetValue(baseName(entry.group))
+		m.rename = renameTarget{isGroup: true, path: entry.group, input: input}
 	} else {
-		input.SetValue(r.sess.Name)
-		m.rename = renameTarget{sessID: r.sess.ID, input: input}
+		input.SetValue(entry.sess.Name)
+		m.rename = renameTarget{sessID: entry.sess.ID, input: input}
 	}
 	m.mode = modeRename
 	m.err = ""

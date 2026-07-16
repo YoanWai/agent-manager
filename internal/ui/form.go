@@ -67,11 +67,11 @@ func textField(placeholder string, limit int) textinput.Model {
 // contextGroup is the group the cursor currently sits in: a highlighted
 // group row itself, or the group holding a highlighted session.
 func (m *Model) contextGroup() string {
-	if r, ok := m.selectedRow(); ok {
-		if r.isGroup {
-			return r.group
+	if entry, ok := m.selectedRow(); ok {
+		if entry.isGroup {
+			return entry.group
 		}
-		return r.sess.Group
+		return entry.sess.Group
 	}
 	return ""
 }

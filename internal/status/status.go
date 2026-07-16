@@ -70,9 +70,9 @@ func (e *Engine) Match(tool, pane string) (string, bool) {
 	if !ok {
 		return Idle, false
 	}
-	for _, r := range tr.rules {
-		if r.re.MatchString(pane) {
-			return r.state, true
+	for _, rule := range tr.rules {
+		if rule.re.MatchString(pane) {
+			return rule.state, true
 		}
 	}
 	return tr.defaultStatus, false

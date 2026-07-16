@@ -22,8 +22,8 @@ var (
 	colorWorking  = lipgloss.Color("214")
 	colorWaiting  = lipgloss.Color("213")
 	colorFinished = lipgloss.Color("82")
-	colorErrored = lipgloss.Color("203")
-	colorIdle    = lipgloss.Color("244")
+	colorErrored  = lipgloss.Color("203")
+	colorIdle     = lipgloss.Color("244")
 
 	badgeStyle = lipgloss.NewStyle().
 			Bold(true).
