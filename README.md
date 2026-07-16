@@ -51,7 +51,7 @@ Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Session
 
 ### Status
 
-Each session's tmux pane is polled (default every 2s) and matched against per-tool regex rules to derive a status: `working` (busy), `waiting` (blocked on your answer to a dialog), `ready` (turn finished, idle prompt), `errored`, `idle`, or `dead`. The selected session's pane tail renders live in the preview panel, and moving the cursor fetches the preview immediately.
+Each session's tmux pane is polled (default every 2s) and matched against per-tool regex rules to derive a status: `working` (busy), `waiting` (blocked on your answer to a dialog), `finished` (turn ended — an alert that clears to `idle` once you enter the session), `errored`, `idle`, or `dead`. The selected session's pane tail renders live in the preview panel, and moving the cursor fetches the preview immediately.
 
 ### Stats
 

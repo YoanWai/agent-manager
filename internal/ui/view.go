@@ -117,7 +117,7 @@ func (m *Model) viewStatusCounts() string {
 		}
 	}
 	var parts []string
-	for _, st := range []string{status.Waiting, status.Working, status.Ready, status.Idle, status.Errored, status.Dead} {
+	for _, st := range []string{status.Waiting, status.Working, status.Finished, status.Idle, status.Errored, status.Dead} {
 		if counts[st] == 0 {
 			continue
 		}

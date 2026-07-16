@@ -19,9 +19,9 @@ var (
 	colorAccent  = lipgloss.Color("111")
 	colorAccent2 = lipgloss.Color("79")
 
-	colorWorking = lipgloss.Color("214")
-	colorWaiting = lipgloss.Color("213")
-	colorReady   = lipgloss.Color("78")
+	colorWorking  = lipgloss.Color("214")
+	colorWaiting  = lipgloss.Color("213")
+	colorFinished = lipgloss.Color("82")
 	colorErrored = lipgloss.Color("203")
 	colorIdle    = lipgloss.Color("244")
 
@@ -50,8 +50,8 @@ func statusColor(s string) lipgloss.Color {
 		return colorWorking
 	case status.Waiting:
 		return colorWaiting
-	case status.Ready:
-		return colorReady
+	case status.Finished:
+		return colorFinished
 	case status.Errored, status.Dead:
 		return colorErrored
 	default:
@@ -65,8 +65,8 @@ func statusGlyph(s string) string {
 		return "◐"
 	case status.Waiting:
 		return "?"
-	case status.Ready:
-		return "●"
+	case status.Finished:
+		return "✔"
 	case status.Errored, status.Dead:
 		return "✖"
 	default:
@@ -142,7 +142,7 @@ func gauge(percent float64, width int) string {
 		percent = 100
 	}
 	filled := int(percent/100*float64(width) + 0.5)
-	color := colorReady
+	color := colorFinished
 	switch {
 	case percent >= 85:
 		color = colorErrored

@@ -7,12 +7,12 @@ import (
 )
 
 const (
-	Working = "working"
-	Waiting = "waiting"
-	Ready   = "ready"
-	Errored = "errored"
-	Idle    = "idle"
-	Dead    = "dead"
+	Working  = "working"
+	Waiting  = "waiting"
+	Finished = "finished"
+	Errored  = "errored"
+	Idle     = "idle"
+	Dead     = "dead"
 )
 
 type rule struct {

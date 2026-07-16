@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -222,6 +223,13 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.err = ""
+	// Entering a finished session acknowledges the alert.
+	if sess.Status == status.Finished {
+		if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+	}
 	cmd := m.tmux.AttachCommand(sess.ID)
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return attachDoneMsg{err}

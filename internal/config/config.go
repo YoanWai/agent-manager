@@ -136,9 +136,11 @@ rules = [
   # selection dialogs (trust prompt, permission asks, questions) block on the user
   { state = "waiting", pattern = "Enter to confirm" },
   { state = "waiting", pattern = "(?m)^[ \\x{A0}]*❯[ \\x{A0}]+\\d+\\." },
-  # empty input prompt line after a turn = finished, ready for the next task
-  # (claude pads it with a non-breaking space)
-  { state = "ready", pattern = "(?m)^❯[ \\x{A0}]*$" },
+  # turn-end summary line ("✻ Cooked for 9s") = finished; it stays above
+  # the prompt, unlike the prompt itself which can hold ghost suggestions
+  { state = "finished", pattern = "(?m)^[✻✳✶✽✢·] \\S+ for \\d+m?\\d*s" },
+  # fallback: empty input prompt (claude pads it with a non-breaking space)
+  { state = "finished", pattern = "(?m)^❯[ \\x{A0}]*$" },
   { state = "errored", pattern = "(?im)^\\s*error:" },
 ]
 
@@ -151,6 +153,6 @@ rules = [
   # spinner row while running: "▣  Build · DeepSeek V4 Pro" (a finished
   # turn gains a duration: "▣  Build · GLM-5.2 · 22.0s")
   { state = "working", pattern = "(?m)^\\s*▣ +[^·\\n]+· [^·\\n]+$" },
-  { state = "ready", pattern = "Ask anything" },
+  { state = "finished", pattern = "Ask anything" },
 ]
 `

@@ -230,6 +230,13 @@ func (m *Model) refreshCmd() tea.Cmd {
 					// The capture carries ANSI escapes for the preview;
 					// status rules match against plain text.
 					newStatus = m.engine.Derive(sess.Tool, ansi.Strip(pane))
+					// Finished is an alert: it fires when a turn ends and
+					// clears to idle once attended. An idle pane keeps
+					// looking finished (same empty prompt), so idle only
+					// escalates when a turn actually ran in between.
+					if newStatus == status.Finished && sess.Status == status.Idle {
+						newStatus = status.Idle
+					}
 					if sess.ID == selectedID {
 						preview = pane
 					}
