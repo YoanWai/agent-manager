@@ -249,12 +249,19 @@ func (m *Model) refreshCmd() tea.Cmd {
 							}
 						}
 					}
-					// Finished is an alert: it fires when a turn ends and
-					// clears to idle once attended. An idle pane keeps
-					// looking finished (same empty prompt), so idle only
-					// escalates when a turn actually ran in between.
-					if newStatus == status.Finished && sess.Status == status.Idle {
+					// Finished is an alert: entering the session
+					// acknowledges it (acked), and the pane keeps
+					// deriving finished until the next turn, so acked
+					// maps it back to idle. Any real transition re-arms
+					// the alert.
+					if newStatus == status.Finished && sess.Acked {
 						newStatus = status.Idle
+					}
+					if sess.Acked && newStatus != status.Idle && newStatus != status.Finished {
+						if err := m.store.SetAcked(sess.ID, false); err != nil {
+							return errMsg{err}
+						}
+						sessions[i].Acked = false
 					}
 					if sess.ID == selectedID {
 						preview = pane

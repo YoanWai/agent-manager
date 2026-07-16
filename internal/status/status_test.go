@@ -110,6 +110,8 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 			"     What color are you thinking?\n     ▣  Build · GLM-5.2 · 9.7s\n  ┃\n  ┃  Build · GLM-5.2 Z.AI Coding Plan · high\n  ╹▀▀▀▀", Waiting},
 		{"opencode old question, newer statement turn", "opencode",
 			"     What color?\n     ▣  Build · GLM-5.2 · 9.7s\n     DONE\n     ▣  Build · GLM-5.2 · 4.2s\n  ┃\n  ╹▀▀▀▀", Finished},
+		{"opencode question with trailing pad from ansi capture (real)", "opencode",
+			"     Which fruit do you want to know more about?   \n     ▣  Build · GLM-5.2 · 10.4s   \n     \n  ┃     \n  ┃  Build · GLM-5.2 Z.AI Coding Plan · high   \n  ╹▀▀▀▀", Waiting},
 		{"opencode out of credits", "opencode",
 			"  ┃  This request requires more credits, or fewer max_tokens.", Errored},
 	}

@@ -17,6 +17,7 @@ type Session struct {
 	Group        string
 	Status       string
 	Archived     bool
+	Acked        bool
 	CreatedAt    time.Time
 	LastStatusAt time.Time
 }
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS groups (
 	migrations := []string{
 		`ALTER TABLE groups ADD COLUMN path TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN acked INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -132,7 +134,7 @@ func (s *Store) CreateGroup(name, path string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, created_at, last_status_at
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -147,13 +149,14 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 	var sessions []Session
 	for rows.Next() {
 		var sess Session
-		var archived int
+		var archived, acked int
 		var created, lastStatus int64
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
-			&sess.Group, &sess.Status, &archived, &created, &lastStatus); err != nil {
+			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus); err != nil {
 			return nil, err
 		}
 		sess.Archived = archived != 0
+		sess.Acked = acked != 0
 		sess.CreatedAt = time.Unix(created, 0)
 		sess.LastStatusAt = time.Unix(lastStatus, 0)
 		sessions = append(sessions, sess)
@@ -163,17 +166,18 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 
 func (s *Store) Get(id string) (Session, error) {
 	var sess Session
-	var archived int
+	var archived, acked int
 	var created, lastStatus int64
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, created_at, last_status_at
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
-		&sess.Status, &archived, &created, &lastStatus)
+		&sess.Status, &archived, &acked, &created, &lastStatus)
 	if err != nil {
 		return Session{}, err
 	}
 	sess.Archived = archived != 0
+	sess.Acked = acked != 0
 	sess.CreatedAt = time.Unix(created, 0)
 	sess.LastStatusAt = time.Unix(lastStatus, 0)
 	return sess, nil
@@ -183,6 +187,18 @@ func (s *Store) UpdateStatus(id, newStatus string) error {
 	res, err := s.db.Exec(
 		`UPDATE sessions SET status = ?, last_status_at = ? WHERE id = ?`,
 		newStatus, time.Now().Unix(), id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
+}
+
+// SetAcked marks whether the user has acknowledged the session's last
+// finished turn; an acked session renders idle even while its pane still
+// shows the finished turn.
+func (s *Store) SetAcked(id string, acked bool) error {
+	res, err := s.db.Exec(
+		`UPDATE sessions SET acked = ? WHERE id = ?`, boolToInt(acked), id)
 	if err != nil {
 		return err
 	}

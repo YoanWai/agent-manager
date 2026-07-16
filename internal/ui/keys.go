@@ -223,9 +223,14 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.err = ""
-	// Entering a finished session acknowledges the alert.
+	// Entering a finished session acknowledges the alert; the acked mark
+	// keeps it idle while the pane still shows the acknowledged turn.
 	if sess.Status == status.Finished {
 		if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		if err := m.store.SetAcked(sess.ID, true); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}

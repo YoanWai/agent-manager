@@ -188,3 +188,22 @@ func TestReorderGroup(t *testing.T) {
 		t.Fatalf("nested sole child: moved=%v err=%v, want no-op", moved, err)
 	}
 }
+
+func TestSetAcked(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateSession(sample("a", "g1"))
+	if err := st.SetAcked("a", true); err != nil {
+		t.Fatalf("set acked: %v", err)
+	}
+	got, _ := st.Get("a")
+	if !got.Acked {
+		t.Fatal("acked should persist")
+	}
+	if err := st.SetAcked("a", false); err != nil {
+		t.Fatalf("clear acked: %v", err)
+	}
+	got, _ = st.Get("a")
+	if got.Acked {
+		t.Fatal("acked should clear")
+	}
+}

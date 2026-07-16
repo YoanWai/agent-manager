@@ -436,3 +436,54 @@ func TestGroupDefaultPathFillsSessionDir(t *testing.T) {
 		t.Fatalf("session dir should default to the group path %q, got %q", groupDir, got)
 	}
 }
+
+func TestAttachAcknowledgesFinished(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alert-me", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+		t.Fatalf("set finished: %v", err)
+	}
+	m.sessions[0].Status = status.Finished
+	m.rebuildRows()
+	m.selectSessionRow(t, "alert-me")
+
+	if _, cmd := m.attachSelected(); cmd == nil {
+		t.Fatalf("attach did not start, err = %q", m.err)
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Idle {
+		t.Fatalf("after attach, status = %q want %q", got.Status, status.Idle)
+	}
+	if !got.Acked {
+		t.Fatal("attach should mark the session acked")
+	}
+}
+
+func TestAttachKeepsWorking(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "busy-one", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.store.UpdateStatus(sess.ID, status.Working); err != nil {
+		t.Fatalf("set working: %v", err)
+	}
+	m.sessions[0].Status = status.Working
+	m.rebuildRows()
+	m.selectSessionRow(t, "busy-one")
+
+	if _, cmd := m.attachSelected(); cmd == nil {
+		t.Fatalf("attach did not start, err = %q", m.err)
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Working {
+		t.Fatalf("after attach, status = %q want %q", got.Status, status.Working)
+	}
+}

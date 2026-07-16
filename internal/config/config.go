@@ -166,10 +166,11 @@ rules = [
   { state = "working", pattern = "(?m)^\\s*▣ +[^·\\n]+· [^·\\n]+$" },
   { state = "working", pattern = "esc interrupt" },
   # newest turn ended on a question line = blocked on the user; the
-  # duration row must sit directly above the input box
-  { state = "waiting", pattern = "\\?\\s*\\n\\s*▣ [^\\n]*· [\\d][\\dm.]*s(\\n[ \\t]*(┃[^\\n]*)?)*\\n\\s*╹" },
+  # duration row must sit directly above the input box (captured pane
+  # lines carry trailing space padding, hence the [ \t]* tails)
+  { state = "waiting", pattern = "\\?[ \\t]*\\n\\s*▣ [^\\n]*· [\\d][\\dm.]*s[ \\t]*(\\n[ \\t]*(┃[^\\n]*)?)*\\n\\s*╹" },
   # a model row with a duration directly above the input box = finished
-  { state = "finished", pattern = "▣ +[^\\n]+· [\\d][\\dm.]*s(\\n[ \\t]*(┃[^\\n]*)?)*\\n\\s*╹" },
+  { state = "finished", pattern = "▣ +[^\\n]+· [\\d][\\dm.]*s[ \\t]*(\\n[ \\t]*(┃[^\\n]*)?)*\\n\\s*╹" },
   { state = "finished", pattern = "Ask anything" },
 ]
 `
