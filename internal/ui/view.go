@@ -30,7 +30,7 @@ func (m *Model) View() string {
 		leftWidth = 30
 	}
 	rightWidth := m.width - leftWidth
-	bodyHeight := m.height - 3
+	bodyHeight := m.height - 4
 	if bodyHeight < 3 {
 		bodyHeight = 3
 	}
@@ -40,7 +40,25 @@ func (m *Model) View() string {
 	right := titledPanel(m.sidebarTitle(), m.viewSidebar(rightWidth-4, bodyHeight-2), rightWidth, bodyHeight, false)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	return m.viewHeader() + "\n" + body + "\n" + m.viewFooter()
+	return strings.Join([]string{m.viewHeader(), body, m.viewStatus(), m.viewFooter()}, "\n")
+}
+
+// viewStatus is the transient message line: prompts, search, and
+// self-dismissing errors. Keeps the footer free for key hints.
+func (m *Model) viewStatus() string {
+	switch {
+	case m.mode == modeConfirmDelete:
+		return padRight(errStyle.Render(" ⚠ "+m.confirm.label)+subtleStyle.Render("  y/n"), m.width)
+	case m.searching:
+		cursor := lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
+		line := keyStyle.Render(" search ") + valueStyle.Render(m.search) + cursor +
+			subtleStyle.Render("  enter/esc to close")
+		return padRight(line, m.width)
+	case m.err != "":
+		return padRight(errStyle.Render(" ✖ "+m.err), m.width)
+	default:
+		return ""
+	}
 }
 
 func (m *Model) viewHeader() string {
@@ -327,17 +345,6 @@ func (m *Model) viewComputer(width int) string {
 }
 
 func (m *Model) viewFooter() string {
-	if m.searching {
-		cursor := lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
-		return keyStyle.Render(" search ") + valueStyle.Render(m.search) + cursor +
-			subtleStyle.Render("  enter/esc to close")
-	}
-	if m.mode == modeConfirmDelete {
-		return errStyle.Render(" ⚠ "+m.confirm.label) + subtleStyle.Render("  y/n")
-	}
-	if m.err != "" {
-		return errStyle.Render(" ✖ " + m.err)
-	}
 	pairs := [][2]string{
 		{"n", "new"}, {"↵", "attach"}, {"m", "move"}, {"r", "rename"},
 		{"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},

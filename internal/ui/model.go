@@ -61,9 +61,11 @@ type Model struct {
 	rename  renameTarget
 	moveID  string
 
-	width  int
-	height int
-	err    string
+	width    int
+	height   int
+	err      string
+	errShown string
+	errAge   int
 }
 
 type confirmTarget struct {
@@ -199,6 +201,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
+		m.ageError()
 		return m, tea.Batch(m.refreshCmd(), tickCmd(m.cfg.PollInterval.Duration))
 
 	case refreshMsg:
@@ -225,6 +228,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 	return m, nil
+}
+
+// ageError clears a status message after it has survived a couple of poll
+// ticks, so transient errors self-dismiss without any per-callsite timers.
+func (m *Model) ageError() {
+	if m.err == "" {
+		m.errShown, m.errAge = "", 0
+		return
+	}
+	if m.err != m.errShown {
+		m.errShown, m.errAge = m.err, 0
+		return
+	}
+	m.errAge++
+	if m.errAge >= 2 {
+		m.err, m.errShown, m.errAge = "", "", 0
+	}
 }
 
 func rowKey(r row) string {
