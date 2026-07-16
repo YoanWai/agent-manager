@@ -11,11 +11,13 @@ const maxPathSuggestions = 5
 type pathComplete struct {
 	suggestions []string
 	index       int
+	chosen      bool
 }
 
 func (pc *pathComplete) reset() {
 	pc.suggestions = nil
 	pc.index = 0
+	pc.chosen = false
 }
 
 func (pc *pathComplete) active() bool { return len(pc.suggestions) > 0 }
@@ -25,6 +27,7 @@ func (pc *pathComplete) move(delta int) {
 		return
 	}
 	pc.index = (pc.index + delta + len(pc.suggestions)) % len(pc.suggestions)
+	pc.chosen = true
 }
 
 func (pc *pathComplete) selected() string {
@@ -37,6 +40,7 @@ func (pc *pathComplete) selected() string {
 func (pc *pathComplete) recompute(typed string) {
 	pc.suggestions = completeDirs(typed)
 	pc.index = 0
+	pc.chosen = false
 }
 
 func expandHome(path string) string {
