@@ -107,6 +107,7 @@ func (m *Model) openForm() {
 	}
 	m.rebuildGroupOptions(m.contextGroup())
 	m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
+	m.pathSugg.reset()
 	m.mode = modeForm
 	m.err = ""
 }
@@ -147,11 +148,20 @@ func (m *Model) rebuildGroupOptions(selectPath string) {
 }
 
 func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	dirSuggesting := m.form.focus == fieldDir && m.pathSugg.active()
 	switch msg.String() {
 	case "esc":
+		if dirSuggesting {
+			m.pathSugg.reset()
+			return m, nil
+		}
 		m.mode = modeList
 		return m, nil
 	case "tab":
+		if dirSuggesting {
+			m.applyPathSuggestion()
+			return m, nil
+		}
 		m.formFocus(1)
 		return m, nil
 	case "shift+tab":
@@ -160,6 +170,8 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up":
 		if m.form.focus == fieldGroup {
 			m.moveGroupCursor(-1)
+		} else if dirSuggesting {
+			m.pathSugg.move(-1)
 		} else {
 			m.formFocus(-1)
 		}
@@ -167,6 +179,8 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down":
 		if m.form.focus == fieldGroup {
 			m.moveGroupCursor(1)
+		} else if dirSuggesting {
+			m.pathSugg.move(1)
 		} else {
 			m.formFocus(1)
 		}
@@ -192,6 +206,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case fieldDir:
 		m.form.dir, cmd = m.form.dir.Update(msg)
 		m.form.dirAuto = false
+		m.pathSugg.recompute(m.form.dir.Value())
 	}
 	return m, cmd
 }
@@ -210,6 +225,7 @@ func (m *Model) moveGroupCursor(delta int) {
 }
 
 func (m *Model) formFocus(delta int) {
+	m.pathSugg.reset()
 	m.form.focus = (m.form.focus + delta + fieldCount) % fieldCount
 	m.form.name.Blur()
 	m.form.dir.Blur()
@@ -241,7 +257,7 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	if name == "" {
 		name = toolName + "-" + newID()[:4]
 	}
-	dir := strings.TrimSpace(m.form.dir.Value())
+	dir := expandHome(strings.TrimSpace(m.form.dir.Value()))
 	if dir == "" {
 		dir, _ = os.Getwd()
 	}
@@ -285,16 +301,26 @@ func (m *Model) openGroupForm() {
 		focus: gfName,
 	}
 	m.rebuildGroupOptions(m.contextGroup())
+	m.pathSugg.reset()
 	m.mode = modeGroupForm
 	m.err = ""
 }
 
 func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	pathSuggesting := m.groupForm.focus == gfPath && m.pathSugg.active()
 	switch msg.String() {
 	case "esc":
+		if pathSuggesting {
+			m.pathSugg.reset()
+			return m, nil
+		}
 		m.mode = modeList
 		return m, nil
 	case "tab":
+		if pathSuggesting {
+			m.applyPathSuggestion()
+			return m, nil
+		}
 		m.groupFormFocus(1)
 		return m, nil
 	case "shift+tab":
@@ -303,6 +329,8 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up":
 		if m.groupForm.focus == gfParent {
 			m.moveGroupCursor(-1)
+		} else if pathSuggesting {
+			m.pathSugg.move(-1)
 		} else {
 			m.groupFormFocus(-1)
 		}
@@ -310,6 +338,8 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down":
 		if m.groupForm.focus == gfParent {
 			m.moveGroupCursor(1)
+		} else if pathSuggesting {
+			m.pathSugg.move(1)
 		} else {
 			m.groupFormFocus(1)
 		}
@@ -324,11 +354,13 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.groupForm.name, cmd = m.groupForm.name.Update(msg)
 	case gfPath:
 		m.groupForm.path, cmd = m.groupForm.path.Update(msg)
+		m.pathSugg.recompute(m.groupForm.path.Value())
 	}
 	return m, cmd
 }
 
 func (m *Model) groupFormFocus(delta int) {
+	m.pathSugg.reset()
 	m.groupForm.focus = (m.groupForm.focus + delta + gfCount) % gfCount
 	m.groupForm.name.Blur()
 	m.groupForm.path.Blur()
@@ -352,7 +384,7 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 	if parent != "" {
 		full = parent + "/" + name
 	}
-	path := strings.TrimSpace(m.groupForm.path.Value())
+	path := expandHome(strings.TrimSpace(m.groupForm.path.Value()))
 	if path != "" {
 		if info, err := os.Stat(path); err != nil || !info.IsDir() {
 			m.err = "default path does not exist: " + path

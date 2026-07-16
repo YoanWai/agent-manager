@@ -60,6 +60,7 @@ type Model struct {
 
 	form      form
 	groupForm groupForm
+	pathSugg  pathComplete
 	confirm   confirmTarget
 	rename    renameTarget
 	moveID    string

@@ -392,6 +392,9 @@ func (m *Model) viewForm() string {
 	}
 	b.WriteString(formField("tool", toolVal, m.form.focus == fieldTool))
 	b.WriteString(formField("dir", m.form.dir.View(), m.form.focus == fieldDir))
+	if m.form.focus == fieldDir && m.pathSugg.active() {
+		b.WriteString(m.viewPathSuggestions() + "\n")
+	}
 	b.WriteString(formField("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), m.form.focus == fieldGroup))
 
 	if m.form.focus == fieldGroup {
@@ -402,11 +405,30 @@ func (m *Model) viewForm() string {
 	if m.form.focus == fieldGroup {
 		hint = "↑↓ pick group · tab next field · ↵ create · esc cancel"
 	}
+	if m.form.focus == fieldDir && m.pathSugg.active() {
+		hint = "↑↓ pick · tab complete · ↵ create · esc close"
+	}
 	return m.card("◆ New Session", strings.TrimRight(b.String(), "\n"), hint)
 }
 
 func groupBadge(path string) string {
 	return lipgloss.NewStyle().Foreground(colorAccent2).Render(path)
+}
+
+// viewPathSuggestions renders the directory-completion dropdown under
+// a focused path field.
+func (m *Model) viewPathSuggestions() string {
+	var b strings.Builder
+	for i, path := range m.pathSugg.suggestions {
+		marker := "  "
+		style := mutedStyle
+		if i == m.pathSugg.index {
+			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
+			style = lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
+		}
+		b.WriteString("      " + marker + style.Render(truncateTail(path, 40)) + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m *Model) viewGroupPicker() string {
@@ -435,12 +457,18 @@ func (m *Model) viewGroupForm() string {
 	b.WriteString(formField("name", m.groupForm.name.View(), m.groupForm.focus == gfName))
 	b.WriteString(formField("parent", groupBadge(displayGroup(m.selectedGroupPath())), m.groupForm.focus == gfParent))
 	b.WriteString(formField("path", m.groupForm.path.View(), m.groupForm.focus == gfPath))
+	if m.groupForm.focus == gfPath && m.pathSugg.active() {
+		b.WriteString(m.viewPathSuggestions() + "\n")
+	}
 	if m.groupForm.focus == gfParent {
 		b.WriteString("\n" + m.viewGroupPicker())
 	}
 	hint := "tab/↑↓ move · ↵ create · esc cancel"
 	if m.groupForm.focus == gfParent {
 		hint = "↑↓ pick parent · tab next field · ↵ create · esc cancel"
+	}
+	if m.groupForm.focus == gfPath && m.pathSugg.active() {
+		hint = "↑↓ pick · tab complete · ↵ create · esc close"
 	}
 	return m.card("✦ New Group", strings.TrimRight(b.String(), "\n"), hint)
 }
