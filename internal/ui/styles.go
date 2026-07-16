@@ -20,6 +20,7 @@ var (
 	colorAccent2 = lipgloss.Color("79")
 
 	colorWorking = lipgloss.Color("214")
+	colorWaiting = lipgloss.Color("213")
 	colorReady   = lipgloss.Color("78")
 	colorErrored = lipgloss.Color("203")
 	colorIdle    = lipgloss.Color("244")
@@ -47,6 +48,8 @@ func statusColor(s string) lipgloss.Color {
 	switch s {
 	case status.Working:
 		return colorWorking
+	case status.Waiting:
+		return colorWaiting
 	case status.Ready:
 		return colorReady
 	case status.Errored, status.Dead:
@@ -60,6 +63,8 @@ func statusGlyph(s string) string {
 	switch s {
 	case status.Working:
 		return "◐"
+	case status.Waiting:
+		return "?"
 	case status.Ready:
 		return "●"
 	case status.Errored, status.Dead:

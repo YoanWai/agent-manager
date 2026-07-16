@@ -8,6 +8,7 @@ import (
 
 const (
 	Working = "working"
+	Waiting = "waiting"
 	Ready   = "ready"
 	Errored = "errored"
 	Idle    = "idle"

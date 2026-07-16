@@ -133,10 +133,11 @@ rules = [
   # active turn: "✳ Drizzling… (6s · thinking with medium effort)"
   { state = "working", pattern = "… \\(\\d+m?\\d*s? ·" },
   { state = "working", pattern = "esc to interrupt" },
-  # selection dialogs (trust prompt, permission asks) wait for the user
-  { state = "ready", pattern = "Enter to confirm" },
-  { state = "ready", pattern = "(?m)^[ \\x{A0}]*❯[ \\x{A0}]+\\d+\\." },
-  # empty input prompt line (claude pads it with a non-breaking space)
+  # selection dialogs (trust prompt, permission asks, questions) block on the user
+  { state = "waiting", pattern = "Enter to confirm" },
+  { state = "waiting", pattern = "(?m)^[ \\x{A0}]*❯[ \\x{A0}]+\\d+\\." },
+  # empty input prompt line after a turn = finished, ready for the next task
+  # (claude pads it with a non-breaking space)
   { state = "ready", pattern = "(?m)^❯[ \\x{A0}]*$" },
   { state = "errored", pattern = "(?im)^\\s*error:" },
 ]
