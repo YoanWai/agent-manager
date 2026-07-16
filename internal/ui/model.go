@@ -3,6 +3,7 @@ package ui
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"hash/fnv"
 	"sort"
 	"strings"
 	"time"
@@ -61,6 +62,7 @@ type Model struct {
 	prevNetOK   bool
 
 	pollTick     int
+	paneHashes   map[string]uint64
 	cursor       int
 	mode         mode
 	showArchived bool
@@ -115,6 +117,7 @@ type refreshMsg struct {
 	procFor    string
 	preview    string
 	agents     agentStats
+	paneHashes map[string]uint64
 }
 
 type previewMsg struct {
@@ -191,6 +194,7 @@ func (m *Model) refreshCmd() tea.Cmd {
 	// Machine gauges change slowly; sample them every other poll.
 	sampleStats := m.pollTick%2 == 0
 	m.pollTick++
+	previousHashes := m.paneHashes
 	return func() tea.Msg {
 		sessions, err := m.store.ListSessions(includeArchived)
 		if err != nil {
@@ -212,6 +216,7 @@ func (m *Model) refreshCmd() tea.Cmd {
 		preview := ""
 		var proc sysstat.ProcStat
 		var agents agentStats
+		paneHashes := make(map[string]uint64, len(sessions))
 		for i, sess := range sessions {
 			if sess.Archived {
 				continue
@@ -229,7 +234,21 @@ func (m *Model) refreshCmd() tea.Cmd {
 				if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
 					// The capture carries ANSI escapes for the preview;
 					// status rules match against plain text.
-					newStatus = m.engine.Derive(sess.Tool, ansi.Strip(pane))
+					text := ansi.Strip(pane)
+					matched := false
+					newStatus, matched = m.engine.Match(sess.Tool, text)
+					// Streaming output often renders without any spinner;
+					// content changing above the input box means the tool
+					// is still producing output.
+					if region, ok := m.engine.ActivityRegion(sess.Tool, text); ok {
+						hash := hashString(region)
+						paneHashes[sess.ID] = hash
+						if !matched {
+							if previous, seen := previousHashes[sess.ID]; seen && previous != hash {
+								newStatus = status.Working
+							}
+						}
+					}
 					// Finished is an alert: it fires when a turn ends and
 					// clears to idle once attended. An idle pane keeps
 					// looking finished (same empty prompt), so idle only
@@ -269,6 +288,7 @@ func (m *Model) refreshCmd() tea.Cmd {
 			procFor:    selectedID,
 			preview:    preview,
 			agents:     agents,
+			paneHashes: paneHashes,
 		}
 		if sampleStats {
 			msg.snap = sysstat.Sample("/")
@@ -297,6 +317,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.procFor = msg.procFor
 		m.preview = msg.preview
 		m.agents = msg.agents
+		m.paneHashes = msg.paneHashes
 		if msg.snapOK {
 			m.snap = msg.snap
 			m.updateNetRates(msg.snap)
@@ -362,6 +383,12 @@ func (m *Model) ageError() {
 	if m.errAge >= 2 {
 		m.err, m.errShown, m.errAge = "", "", 0
 	}
+}
+
+func hashString(s string) uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(s))
+	return h.Sum64()
 }
 
 func rowKey(r row) string {
