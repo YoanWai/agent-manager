@@ -1,6 +1,10 @@
 # Agent Manager
 
-A terminal UI to manage AI coding-agent sessions on your machine. Create and enter sessions for Claude Code, OpenCode, or any CLI tool; organize them in a nested group tree with manual ordering; archive finished ones; watch live status, a live pane preview, the combined footprint of your agents, and machine resource gauges.
+A terminal UI to manage AI coding-agent sessions on your machine. Create and enter sessions, organize them in a nested group tree with manual ordering, archive finished ones, and watch live status, a live pane preview, the combined footprint of your agents, and machine resource gauges.
+
+## Supported tools
+
+Status detection currently supports **Claude Code** and **OpenCode** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](#configuration)).
 
 ## Requirements
 
@@ -51,7 +55,18 @@ Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Session
 
 ### Status
 
-Each session's tmux pane is polled (default every 2s) and matched against per-tool regex rules to derive a status: `working` (busy), `waiting` (blocked on your answer to a dialog), `finished` (turn ended — an alert that clears to `idle` once you enter the session), `errored`, `idle`, or `dead`. The selected session's pane tail renders live in the preview panel, and moving the cursor fetches the preview immediately.
+Each session's tmux pane is polled (default every 2s) to derive a status:
+
+| Status | Meaning |
+|--------|---------|
+| `working` | The agent is busy on a turn |
+| `waiting` | Blocked on you: a dialog, a permission ask, or a plain-text question |
+| `finished` | Turn ended — an alert that clears to `idle` once you enter the session |
+| `errored` | The tool reported an error |
+| `idle` | Nothing running |
+| `dead` | The tmux session is gone |
+
+Detection matches per-tool regex rules against the visible pane, analyzes the newest turn to tell `finished` from `waiting`, and treats streaming output (content changing between polls) as `working`. Polling keeps running while you are inside a session, so statuses stay live. The selected session's pane tail renders in the preview panel, and moving the cursor fetches the preview immediately.
 
 ### Stats
 
@@ -59,21 +74,21 @@ The header shows a fleet summary: per-status session counts and the combined CPU
 
 ## Configuration
 
-Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux) and is created with defaults on first run:
+Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux) and is created on first run with working defaults for Claude Code and OpenCode.
+
+Add any CLI tool as a `[tools.<name>]` block:
 
 ```toml
-poll_interval = "2s"
-
-[tools.claude]
-command = "claude"
+[tools.mytool]
+command = "mytool"
 default_status = "idle"
 rules = [
   { state = "working", pattern = "esc to interrupt" },
-  { state = "errored", pattern = "(?i)^error:" },
+  { state = "errored", pattern = "(?im)^\\s*error:" },
 ]
 ```
 
-Add any CLI tool as a `[tools.<name>]` block with a `command` and status `rules` (first match wins; `default_status` applies when nothing matches).
+Rules match top-down against the visible pane text; first match wins, and `default_status` applies when nothing matches. Optional per-tool fields refine detection: `activity_cutoff` (regex locating the tool's input box, everything above it is turn content), `turn_end` (a turn-summary line marking the turn as over), `chrome_line`, `blocked_line`, and `trailing_note`. The generated config's `claude` and `opencode` blocks show all of them in use.
 
 State is stored next to the config in `state.db` (SQLite).
 
