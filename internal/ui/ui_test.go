@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -21,6 +23,17 @@ func buildModel(t *testing.T) *Model {
 	cfg := config.Config{
 		Tools: map[string]config.Tool{
 			"claude": {Command: "cat", DefaultStatus: status.Idle},
+			"claude-hooked": {
+				Command:        "cat",
+				StatusSource:   "claude-hooks",
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: "(?m)^❯",
+				TurnEnd:        `^[✻✳✶✽✢·✦✧+*] \S+ for \d.*$`,
+				Rules: []config.Rule{
+					{State: status.Waiting, Pattern: "Enter to confirm"},
+					{State: status.Errored, Pattern: `(?im)^\s*error:`},
+				},
+			},
 		},
 	}
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
@@ -38,7 +51,7 @@ func buildModel(t *testing.T) *Model {
 		t.Fatalf("engine: %v", err)
 	}
 
-	m := New(cfg, st, driver, engine)
+	m := New(cfg, st, driver, engine, hooks.NewManager(t.TempDir()))
 	m.width = 120
 	m.height = 40
 	t.Cleanup(func() {
@@ -436,6 +449,100 @@ func TestGroupDefaultPathFillsSessionDir(t *testing.T) {
 	m.moveGroupCursor(0) // re-resolve dir for the selected group
 	if got := m.form.dir.Value(); got != groupDir {
 		t.Fatalf("session dir should default to the group path %q, got %q", groupDir, got)
+	}
+}
+
+func writeHookStatus(t *testing.T, m *Model, id, state string) {
+	t.Helper()
+	path := m.hooks.StatusFile(id)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir hooks dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(state), 0o644); err != nil {
+		t.Fatalf("write hook status: %v", err)
+	}
+}
+
+func deriveStatus(t *testing.T, m *Model, sess store.Session, pane string, agentAlive bool) string {
+	t.Helper()
+	got, err := m.poller.derivePaneStatus(sess, pane, agentAlive, map[string]uint64{})
+	if err != nil {
+		t.Fatalf("derivePaneStatus: %v", err)
+	}
+	return got
+}
+
+func TestHookStatusDerivesFinishedAndIdleWhenAcked(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked01", Tool: "claude-hooked"}
+	pane := "some output\n❯ \n"
+	writeHookStatus(t, m, sess.ID, status.Finished)
+
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
+		t.Fatalf("hook finished should derive finished, got %q", got)
+	}
+
+	sess.Acked = true
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Idle {
+		t.Fatalf("acked hook finished should derive idle, got %q", got)
+	}
+}
+
+func TestHookWorkingWinsOverUnmatchedPane(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked02", Tool: "claude-hooked"}
+	writeHookStatus(t, m, sess.ID, status.Working)
+
+	pane := "plain streaming text no rule matches\n❯ \n"
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Working {
+		t.Fatalf("hook working should win, got %q", got)
+	}
+}
+
+func TestHookFinishedUpgradesToWaitingOnQuestionTurn(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked03", Tool: "claude-hooked"}
+	writeHookStatus(t, m, sess.ID, status.Finished)
+
+	pane := "Do you want me to proceed?\n\n✻ Baked for 5s\n\n❯ \n"
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Waiting {
+		t.Fatalf("question turn should upgrade hook finished to waiting, got %q", got)
+	}
+}
+
+func TestHookFinishedUpgradesToErroredOnErrorLine(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked04", Tool: "claude-hooked"}
+	writeHookStatus(t, m, sess.ID, status.Finished)
+
+	pane := "error: something broke\n❯ \n"
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Errored {
+		t.Fatalf("error line should upgrade hook finished to errored, got %q", got)
+	}
+}
+
+func TestHookWorkingUpgradesToWaitingOnPaneMatch(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked05", Tool: "claude-hooked"}
+	writeHookStatus(t, m, sess.ID, status.Working)
+
+	pane := "Enter to confirm\n❯ \n"
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Waiting {
+		t.Fatalf("waiting pane verdict should upgrade hook working, got %q", got)
+	}
+}
+
+func TestStaleHookFileFallsBackToPaneRules(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked06", Tool: "claude-hooked"}
+	writeHookStatus(t, m, sess.ID, status.Working)
+
+	pane := "shell prompt after a crash\n❯ \n"
+	if got := deriveStatus(t, m, sess, pane, false); got != status.Idle {
+		t.Fatalf("dead agent should fall back to pane rules, got %q", got)
+	}
+	if _, ok := m.hooks.Read(sess.ID); ok {
+		t.Fatal("stale hook status file should be removed")
 	}
 }
 

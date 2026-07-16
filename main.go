@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -49,7 +50,7 @@ func run() error {
 	}
 	defer st.Close()
 
-	model := ui.New(cfg, st, driver, engine)
+	model := ui.New(cfg, st, driver, engine, hooks.NewManager(dir))
 	program := tea.NewProgram(model, tea.WithAltScreen())
 	model.StartPoller(program.Send)
 	_, err = program.Run()

@@ -16,6 +16,7 @@ type Rule struct {
 
 type Tool struct {
 	Command        string `toml:"command"`
+	StatusSource   string `toml:"status_source"`
 	DefaultStatus  string `toml:"default_status"`
 	ActivityCutoff string `toml:"activity_cutoff"`
 	TurnEnd        string `toml:"turn_end"`
@@ -141,6 +142,8 @@ const defaultConfig = `poll_interval = "2s"
 
 [tools.claude]
 command = "claude"
+# hooks report status events directly; the pane rules below stay as fallback
+status_source = "claude-hooks"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 turn_end = "^[✻✳✶✽✢·✦✧+*] \\S+ for \\d.*$"

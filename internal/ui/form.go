@@ -6,7 +6,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -296,7 +298,22 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	group := m.selectedGroupPath()
 
 	id := newID()
-	if err := m.tmux.Create(id, dir, tool.Command); err != nil {
+	command := tool.Command
+	var env map[string]string
+	if tool.StatusSource == hooks.StatusSourceClaude {
+		settingsPath, err := m.hooks.EnsureSettings()
+		if err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		if err := m.hooks.Remove(id); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		env = map[string]string{hooks.EnvStatusFile: m.hooks.StatusFile(id)}
+		command = tool.Command + " --settings " + tmux.ShellQuote(settingsPath)
+	}
+	if err := m.tmux.Create(id, dir, command, env); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
@@ -310,6 +327,7 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	}
 	if err := m.store.CreateSession(sess); err != nil {
 		_ = m.tmux.Kill(id)
+		_ = m.hooks.Remove(id)
 		m.err = err.Error()
 		return m, nil
 	}
