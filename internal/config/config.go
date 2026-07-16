@@ -136,6 +136,10 @@ rules = [
   # selection dialogs (trust prompt, permission asks, questions) block on the user
   { state = "waiting", pattern = "Enter to confirm" },
   { state = "waiting", pattern = "(?m)^[ \\x{A0}]*❯[ \\x{A0}]+\\d+\\." },
+  # a turn that ends on a question line is blocked on the user even
+  # without a selection menu; anchored to the newest turn-end summary by
+  # requiring no later summary glyph before the pane ends
+  { state = "waiting", pattern = "(?s)\\?\\s*\\n\\s*[✻✳✶✽✢] \\S+ for \\d+m?\\d*s[^✻✳✶✽✢]*$" },
   # turn-end summary line ("✻ Cooked for 9s") = finished; it stays above
   # the prompt, unlike the prompt itself which can hold ghost suggestions
   { state = "finished", pattern = "(?m)^[✻✳✶✽✢·] \\S+ for \\d+m?\\d*s" },
