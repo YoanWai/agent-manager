@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -25,7 +24,13 @@ func (m *Model) View() string {
 	if m.showArchived {
 		scope = "all (incl. archived)"
 	}
-	header += "  " + mutedStyle.Render(fmt.Sprintf("%d sessions · %s", len(m.nav), scope))
+	sessionCount := 0
+	for _, r := range m.rows {
+		if !r.isGroup {
+			sessionCount++
+		}
+	}
+	header += "  " + mutedStyle.Render(fmt.Sprintf("%d sessions · %s", sessionCount, scope))
 
 	leftWidth := m.width * 55 / 100
 	if leftWidth < 30 {
@@ -48,7 +53,7 @@ func (m *Model) View() string {
 }
 
 func (m *Model) viewList(width int) string {
-	if len(m.nav) == 0 {
+	if len(m.rows) == 0 {
 		empty := "No sessions. Press n to create one."
 		if strings.TrimSpace(m.search) != "" {
 			empty = "No matches for \"" + m.search + "\"."
@@ -57,47 +62,40 @@ func (m *Model) viewList(width int) string {
 	}
 
 	var b strings.Builder
-	query := strings.ToLower(strings.TrimSpace(m.search))
-	lastGroup := ""
-	selectedID := ""
-	if sess, ok := m.selected(); ok {
-		selectedID = sess.ID
-	}
-
-	for _, sess := range m.orderedSessions() {
-		if query != "" && !matchesSearch(sess, query) {
-			continue
-		}
-		if sess.Group != lastGroup {
-			lastGroup = sess.Group
-			marker := "▾"
-			if m.collapsed[sess.Group] {
-				marker = "▸"
-			}
-			b.WriteString(groupHeaderStyle.Render(fmt.Sprintf("%s %s", marker, sess.Group)) + "\n")
-		}
-		if m.collapsed[sess.Group] {
-			continue
-		}
-		b.WriteString(m.renderRow(sess, sess.ID == selectedID, width) + "\n")
+	for i, r := range m.rows {
+		b.WriteString(m.renderTreeRow(r, i == m.cursor, width) + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func (m *Model) renderRow(sess store.Session, selected bool, width int) string {
-	glyph := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
+func (m *Model) renderTreeRow(r row, selected bool, width int) string {
 	cursor := "  "
 	if selected {
 		cursor = "❯ "
 	}
-	age := relTime(sess.CreatedAt)
+	indent := strings.Repeat("  ", r.depth)
+
+	if r.isGroup {
+		marker := "▾"
+		if m.collapsed[r.group] {
+			marker = "▸"
+		}
+		line := cursor + indent + groupHeaderStyle.Render(marker+" "+baseName(r.group))
+		if selected {
+			return selectedRowStyle.Width(width - 2).Render(line)
+		}
+		return line
+	}
+
+	sess := r.sess
+	glyph := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
 	archived := ""
 	if sess.Archived {
 		archived = " [archived]"
 	}
-	line := fmt.Sprintf("%s%s %s %s%s",
-		cursor, glyph, sess.Name,
-		mutedStyle.Render(sess.Tool+" · "+sess.Status+" · "+age), archived)
+	line := fmt.Sprintf("%s%s%s %s %s%s",
+		cursor, indent, glyph, sess.Name,
+		mutedStyle.Render(sess.Tool+" · "+sess.Status+" · "+relTime(sess.CreatedAt)), archived)
 	if selected {
 		return selectedRowStyle.Width(width - 2).Render(line)
 	}
@@ -110,7 +108,7 @@ func (m *Model) viewSidebar() string {
 	if ok {
 		b.WriteString(valueStyle.Render(sess.Name) + "\n")
 		b.WriteString(kv("tool", sess.Tool))
-		b.WriteString(kv("group", sess.Group))
+		b.WriteString(kv("group", displayGroup(sess.Group)))
 		b.WriteString(kv("status", statusText(sess.Status)))
 		b.WriteString(kv("dir", truncate(sess.Cwd, 40)))
 		b.WriteString(kv("age", relTime(sess.CreatedAt)))
@@ -178,19 +176,67 @@ func (m *Model) viewForm() string {
 	}
 	b.WriteString(formField("tool", toolVal, m.form.focus == fieldTool))
 	b.WriteString(formField("directory", m.form.dir.View(), m.form.focus == fieldDir))
-	b.WriteString(formField("group", m.form.group.View(), m.form.focus == fieldGroup))
+
+	selectedGroup := displayGroup(m.form.groups[m.form.groupIndex].path)
+	b.WriteString(formField("group", selectedGroup, m.form.focus == fieldGroup))
+
+	if m.form.focus == fieldGroup {
+		b.WriteString(m.viewGroupPicker())
+	}
+
 	b.WriteString("\n")
 	if m.err != "" {
 		b.WriteString(errStyle.Render("! "+m.err) + "\n\n")
 	}
-	b.WriteString(footerStyle.Render("tab/↑↓ move · ←→ change tool · enter create · esc cancel"))
+	hint := "tab/↑↓ move · ←→ change tool · enter create · esc cancel"
+	if m.form.focus == fieldGroup {
+		hint = "↑↓ pick group · n new subgroup here · tab next field · enter create session · esc cancel"
+	}
+	if m.form.creatingGroup {
+		hint = "enter create group · esc cancel"
+	}
+	b.WriteString(footerStyle.Render(hint))
 	return b.String()
+}
+
+func (m *Model) viewGroupPicker() string {
+	var b strings.Builder
+	for i, opt := range m.form.groups {
+		cursor := "     "
+		if i == m.form.groupIndex {
+			cursor = "   ❯ "
+		}
+		label := displayGroup(opt.path)
+		if opt.path != "" {
+			label = strings.Repeat("  ", opt.depth) + baseName(opt.path)
+		}
+		line := cursor + label
+		if i == m.form.groupIndex {
+			line = cursor + valueStyle.Render(label)
+		} else {
+			line = cursor + mutedStyle.Render(label)
+		}
+		b.WriteString(line + "\n")
+	}
+	if m.form.creatingGroup {
+		parent := displayGroup(m.form.groups[m.form.groupIndex].path)
+		b.WriteString("   " + labelStyle.Render("new group under "+parent+":") + " " + m.form.newGroup.View() + "\n")
+	}
+	return b.String()
+}
+
+func displayGroup(path string) string {
+	if path == "" {
+		return "(root)"
+	}
+	return path
 }
 
 func (m *Model) viewHelp() string {
 	rows := [][2]string{
 		{"n", "new session"},
-		{"enter", "attach to selected (detach returns here)"},
+		{"enter", "attach session / fold group"},
+		{"ctrl+q", "inside a session: back to manager"},
 		{"a / u", "archive / restore"},
 		{"d", "delete (kills tmux session)"},
 		{"space", "collapse / expand group"},

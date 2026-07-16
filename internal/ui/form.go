@@ -18,13 +18,21 @@ const (
 	fieldCount
 )
 
+type groupOption struct {
+	path  string
+	depth int
+}
+
 type form struct {
-	name      textinput.Model
-	dir       textinput.Model
-	group     textinput.Model
-	toolNames []string
-	toolIndex int
-	focus     int
+	name          textinput.Model
+	dir           textinput.Model
+	newGroup      textinput.Model
+	toolNames     []string
+	toolIndex     int
+	groups        []groupOption
+	groupIndex    int
+	creatingGroup bool
+	focus         int
 }
 
 func (m *Model) openForm() {
@@ -44,32 +52,80 @@ func (m *Model) openForm() {
 	dir.SetValue(cwd)
 	dir.CharLimit = 400
 
-	group := textinput.New()
-	group.SetValue(m.cfg.DefaultGroup)
-	group.CharLimit = 60
+	newGroup := textinput.New()
+	newGroup.Placeholder = "group-name"
+	newGroup.CharLimit = 60
 
 	m.form = form{
 		name:      name,
 		dir:       dir,
-		group:     group,
+		newGroup:  newGroup,
 		toolNames: tools,
-		toolIndex: 0,
 		focus:     fieldName,
 	}
+	m.rebuildGroupOptions("")
 	m.mode = modeForm
 	m.err = ""
 }
 
+// rebuildGroupOptions flattens the group tree into picker rows.
+// Index 0 is always the root; selectPath moves the highlight when given.
+func (m *Model) rebuildGroupOptions(selectPath string) {
+	paths := groupClosure(m.groups, m.sessions)
+	children := childIndex(paths)
+
+	options := []groupOption{{path: "", depth: 0}}
+	var walk func(path string, depth int)
+	walk = func(path string, depth int) {
+		options = append(options, groupOption{path: path, depth: depth})
+		for _, child := range children[path] {
+			walk(child, depth+1)
+		}
+	}
+	for _, root := range children[""] {
+		walk(root, 1)
+	}
+
+	m.form.groups = options
+	for i, opt := range options {
+		if selectPath != "" && opt.path == selectPath {
+			m.form.groupIndex = i
+			return
+		}
+	}
+	if m.form.groupIndex >= len(options) {
+		m.form.groupIndex = 0
+	}
+}
+
 func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.form.creatingGroup {
+		return m.handleNewGroupKey(msg)
+	}
+
 	switch msg.String() {
 	case "esc":
 		m.mode = modeList
 		return m, nil
-	case "tab", "down":
+	case "tab":
 		m.formFocus(1)
 		return m, nil
-	case "shift+tab", "up":
+	case "shift+tab":
 		m.formFocus(-1)
+		return m, nil
+	case "up":
+		if m.form.focus == fieldGroup {
+			m.moveGroupCursor(-1)
+		} else {
+			m.formFocus(-1)
+		}
+		return m, nil
+	case "down":
+		if m.form.focus == fieldGroup {
+			m.moveGroupCursor(1)
+		} else {
+			m.formFocus(1)
+		}
 		return m, nil
 	case "left":
 		if m.form.focus == fieldTool {
@@ -79,6 +135,13 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right":
 		if m.form.focus == fieldTool {
 			m.cycleTool(1)
+			return m, nil
+		}
+	case "n":
+		if m.form.focus == fieldGroup {
+			m.form.creatingGroup = true
+			m.form.newGroup.SetValue("")
+			m.form.newGroup.Focus()
 			return m, nil
 		}
 	case "enter":
@@ -91,24 +154,67 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form.name, cmd = m.form.name.Update(msg)
 	case fieldDir:
 		m.form.dir, cmd = m.form.dir.Update(msg)
-	case fieldGroup:
-		m.form.group, cmd = m.form.group.Update(msg)
 	}
 	return m, cmd
+}
+
+func (m *Model) handleNewGroupKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.form.creatingGroup = false
+		return m, nil
+	case "enter":
+		name := strings.TrimSpace(m.form.newGroup.Value())
+		name = strings.ReplaceAll(name, "/", "-")
+		if name == "" {
+			m.form.creatingGroup = false
+			return m, nil
+		}
+		parent := m.form.groups[m.form.groupIndex].path
+		path := name
+		if parent != "" {
+			path = parent + "/" + name
+		}
+		if err := m.store.CreateGroup(path); err != nil {
+			m.err = err.Error()
+			m.form.creatingGroup = false
+			return m, nil
+		}
+		groups, err := m.store.Groups()
+		if err != nil {
+			m.err = err.Error()
+			m.form.creatingGroup = false
+			return m, nil
+		}
+		m.groups = groups
+		m.form.creatingGroup = false
+		m.rebuildGroupOptions(path)
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.form.newGroup, cmd = m.form.newGroup.Update(msg)
+	return m, cmd
+}
+
+func (m *Model) moveGroupCursor(delta int) {
+	m.form.groupIndex += delta
+	if m.form.groupIndex < 0 {
+		m.form.groupIndex = 0
+	}
+	if m.form.groupIndex >= len(m.form.groups) {
+		m.form.groupIndex = len(m.form.groups) - 1
+	}
 }
 
 func (m *Model) formFocus(delta int) {
 	m.form.focus = (m.form.focus + delta + fieldCount) % fieldCount
 	m.form.name.Blur()
 	m.form.dir.Blur()
-	m.form.group.Blur()
 	switch m.form.focus {
 	case fieldName:
 		m.form.name.Focus()
 	case fieldDir:
 		m.form.dir.Focus()
-	case fieldGroup:
-		m.form.group.Focus()
 	}
 }
 
@@ -140,10 +246,7 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		m.err = "working directory does not exist: " + dir
 		return m, nil
 	}
-	group := strings.TrimSpace(m.form.group.Value())
-	if group == "" {
-		group = m.cfg.DefaultGroup
-	}
+	group := m.form.groups[m.form.groupIndex].path
 
 	id := newID()
 	if err := m.tmux.Create(id, dir, tool.Command); err != nil {

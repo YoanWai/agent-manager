@@ -83,10 +83,15 @@ func (s *Store) CreateSession(sess Session) error {
 	if err != nil {
 		return err
 	}
-	return s.ensureGroup(sess.Group)
+	return s.CreateGroup(sess.Group)
 }
 
-func (s *Store) ensureGroup(name string) error {
+// CreateGroup registers a group path like "backend/api/auth".
+// The empty path is the root and is never stored.
+func (s *Store) CreateGroup(name string) error {
+	if name == "" {
+		return nil
+	}
 	_, err := s.db.Exec(
 		`INSERT INTO groups (name) VALUES (?) ON CONFLICT(name) DO NOTHING`, name)
 	return err

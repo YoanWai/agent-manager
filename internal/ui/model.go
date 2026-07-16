@@ -24,6 +24,13 @@ const (
 	modeHelp
 )
 
+type row struct {
+	isGroup bool
+	group   string
+	depth   int
+	sess    store.Session
+}
+
 type Model struct {
 	cfg    config.Config
 	store  *store.Store
@@ -31,7 +38,7 @@ type Model struct {
 	engine *status.Engine
 
 	sessions []store.Session
-	nav      []store.Session
+	rows     []row
 	groups   []string
 	snap     sysstat.Snapshot
 	proc     sysstat.ProcStat
@@ -85,10 +92,17 @@ func tickCmd(d time.Duration) tea.Cmd {
 }
 
 func (m *Model) selected() (store.Session, bool) {
-	if m.cursor < 0 || m.cursor >= len(m.nav) {
+	if m.cursor < 0 || m.cursor >= len(m.rows) || m.rows[m.cursor].isGroup {
 		return store.Session{}, false
 	}
-	return m.nav[m.cursor], true
+	return m.rows[m.cursor].sess, true
+}
+
+func (m *Model) selectedRow() (row, bool) {
+	if m.cursor < 0 || m.cursor >= len(m.rows) {
+		return row{}, false
+	}
+	return m.rows[m.cursor], true
 }
 
 func (m *Model) refreshCmd() tea.Cmd {
@@ -171,7 +185,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.snap = msg.snap
 		m.proc = msg.proc
 		m.procFor = msg.procFor
-		m.rebuildNav()
+		m.rebuildRows()
 		return m, nil
 
 	case errMsg:
@@ -190,42 +204,116 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) rebuildNav() {
-	nav := make([]store.Session, 0, len(m.sessions))
+// rebuildRows walks the group tree depth-first and emits one row per
+// group node and per session, honoring collapse state and search.
+func (m *Model) rebuildRows() {
 	query := strings.ToLower(strings.TrimSpace(m.search))
-	for _, sess := range m.orderedSessions() {
+
+	sessionsByGroup := map[string][]store.Session{}
+	for _, sess := range m.sessions {
 		if query != "" && !matchesSearch(sess, query) {
 			continue
 		}
-		if m.collapsed[sess.Group] {
-			continue
-		}
-		nav = append(nav, sess)
+		sessionsByGroup[sess.Group] = append(sessionsByGroup[sess.Group], sess)
 	}
-	m.nav = nav
-	if m.cursor >= len(nav) {
-		m.cursor = len(nav) - 1
+	for _, group := range sessionsByGroup {
+		sort.SliceStable(group, func(i, j int) bool {
+			return group[i].CreatedAt.Before(group[j].CreatedAt)
+		})
+	}
+
+	paths := groupClosure(m.groups, m.sessions)
+	if query != "" {
+		paths = pathsWithSessions(paths, sessionsByGroup)
+	}
+	children := childIndex(paths)
+
+	rows := make([]row, 0, len(m.sessions)+len(paths))
+	for _, sess := range sessionsByGroup[""] {
+		rows = append(rows, row{sess: sess})
+	}
+	var walk func(path string, depth int)
+	walk = func(path string, depth int) {
+		rows = append(rows, row{isGroup: true, group: path, depth: depth})
+		if m.collapsed[path] {
+			return
+		}
+		for _, sess := range sessionsByGroup[path] {
+			rows = append(rows, row{sess: sess, depth: depth + 1})
+		}
+		for _, child := range children[path] {
+			walk(child, depth+1)
+		}
+	}
+	for _, root := range children[""] {
+		walk(root, 0)
+	}
+
+	m.rows = rows
+	if m.cursor >= len(rows) {
+		m.cursor = len(rows) - 1
 	}
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
 }
 
-func (m *Model) orderedSessions() []store.Session {
-	groupOrder := map[string]int{}
-	for i, g := range m.groups {
-		groupOrder[g] = i
-	}
-	ordered := make([]store.Session, len(m.sessions))
-	copy(ordered, m.sessions)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		gi, gj := groupOrder[ordered[i].Group], groupOrder[ordered[j].Group]
-		if gi != gj {
-			return gi < gj
+// groupClosure unions stored groups with groups referenced by sessions,
+// then adds every ancestor so partial paths always render.
+func groupClosure(groups []string, sessions []store.Session) map[string]bool {
+	paths := map[string]bool{}
+	add := func(path string) {
+		for path != "" {
+			paths[path] = true
+			idx := strings.LastIndex(path, "/")
+			if idx < 0 {
+				break
+			}
+			path = path[:idx]
 		}
-		return ordered[i].CreatedAt.Before(ordered[j].CreatedAt)
-	})
-	return ordered
+	}
+	for _, g := range groups {
+		add(g)
+	}
+	for _, sess := range sessions {
+		add(sess.Group)
+	}
+	return paths
+}
+
+func pathsWithSessions(paths map[string]bool, sessionsByGroup map[string][]store.Session) map[string]bool {
+	kept := map[string]bool{}
+	for path := range paths {
+		for group := range sessionsByGroup {
+			if group == path || strings.HasPrefix(group, path+"/") {
+				kept[path] = true
+				break
+			}
+		}
+	}
+	return kept
+}
+
+func childIndex(paths map[string]bool) map[string][]string {
+	children := map[string][]string{}
+	for path := range paths {
+		parent := ""
+		if idx := strings.LastIndex(path, "/"); idx >= 0 {
+			parent = path[:idx]
+		}
+		children[parent] = append(children[parent], path)
+	}
+	for _, siblings := range children {
+		sort.Strings(siblings)
+	}
+	return children
+}
+
+func baseName(path string) string {
+	if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		return path[idx+1:]
+	}
+	return path
 }
 
 func matchesSearch(sess store.Session, query string) bool {

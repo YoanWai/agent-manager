@@ -38,8 +38,30 @@ func (d *Driver) Create(id, cwd, command string) error {
 	if _, err := d.run("new-session", "-d", "-s", name, "-c", cwd); err != nil {
 		return err
 	}
+	if err := d.installSessionUX(name); err != nil {
+		return err
+	}
 	if command != "" {
 		if _, err := d.run("send-keys", "-t", name, command, "Enter"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// installSessionUX adds a status-bar hint and a Ctrl+Q detach binding.
+// The bind is server-global but only detaches inside am_* sessions;
+// everywhere else Ctrl+Q passes through to the pane untouched.
+func (d *Driver) installSessionUX(name string) error {
+	options := [][]string{
+		{"set-option", "-t", name, "status", "on"},
+		{"set-option", "-t", name, "status-left", ""},
+		{"set-option", "-t", name, "status-right", " agent-manager · Ctrl+Q = back "},
+		{"set-option", "-t", name, "status-style", "bg=colour236,fg=colour249"},
+		{"bind-key", "-n", "C-q", "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "detach-client", "send-keys C-q"},
+	}
+	for _, args := range options {
+		if _, err := d.run(args...); err != nil {
 			return err
 		}
 	}

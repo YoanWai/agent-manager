@@ -27,6 +27,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		m.moveCursor(1)
 	case "enter":
+		if r, ok := m.selectedRow(); ok && r.isGroup {
+			m.toggleCollapse()
+			return m, nil
+		}
 		return m.attachSelected()
 	case "n":
 		m.openForm()
@@ -59,18 +63,25 @@ func (m *Model) moveCursor(delta int) {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
-	if m.cursor >= len(m.nav) {
-		m.cursor = len(m.nav) - 1
+	if m.cursor >= len(m.rows) {
+		m.cursor = len(m.rows) - 1
 	}
 }
 
 func (m *Model) toggleCollapse() {
-	sess, ok := m.selected()
+	r, ok := m.selectedRow()
 	if !ok {
 		return
 	}
-	m.collapsed[sess.Group] = !m.collapsed[sess.Group]
-	m.rebuildNav()
+	path := r.group
+	if !r.isGroup {
+		path = r.sess.Group
+	}
+	if path == "" {
+		return
+	}
+	m.collapsed[path] = !m.collapsed[path]
+	m.rebuildRows()
 }
 
 func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
@@ -144,11 +155,11 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.search) > 0 {
 			m.search = m.search[:len(m.search)-1]
 		}
-		m.rebuildNav()
+		m.rebuildRows()
 	default:
 		if len(msg.String()) == 1 {
 			m.search += msg.String()
-			m.rebuildNav()
+			m.rebuildRows()
 		}
 	}
 	return m, nil
