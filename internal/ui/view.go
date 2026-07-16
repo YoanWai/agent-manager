@@ -406,7 +406,7 @@ func (m *Model) viewForm() string {
 		hint = "↑↓ pick group · tab next field · ↵ create · esc cancel"
 	}
 	if m.form.focus == fieldDir && m.pathSugg.active() {
-		hint = "↑↓ pick · tab complete · ↵ create · esc close"
+		hint = "↑↓ pick · ↵/tab complete · esc close"
 	}
 	return m.card("◆ New Session", strings.TrimRight(b.String(), "\n"), hint)
 }
@@ -468,7 +468,7 @@ func (m *Model) viewGroupForm() string {
 		hint = "↑↓ pick parent · tab next field · ↵ create · esc cancel"
 	}
 	if m.groupForm.focus == gfPath && m.pathSugg.active() {
-		hint = "↑↓ pick · tab complete · ↵ create · esc close"
+		hint = "↑↓ pick · ↵/tab complete · esc close"
 	}
 	return m.card("✦ New Group", strings.TrimRight(b.String(), "\n"), hint)
 }

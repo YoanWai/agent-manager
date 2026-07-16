@@ -213,6 +213,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case "enter":
+		if dirSuggesting {
+			m.applyPathSuggestion()
+			return m, nil
+		}
 		return m.submitForm()
 	}
 
@@ -367,6 +371,10 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter":
+		if pathSuggesting {
+			m.applyPathSuggestion()
+			return m, nil
+		}
 		return m.submitGroupForm()
 	}
 
