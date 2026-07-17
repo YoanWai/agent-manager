@@ -466,6 +466,7 @@ func (m *Model) openQuickMode() {
 	input.CharLimit = 2000
 	input.Placeholder = "type and press enter"
 	input.Focus()
+	m.err = ""
 	names := sortedToolNames(m.cfg)
 	current := m.defaultTool()
 	index := 0
@@ -475,7 +476,6 @@ func (m *Model) openQuickMode() {
 		}
 	}
 	m.quick = quickState{active: true, input: input, toolNames: names, toolIndex: index}
-	m.err = ""
 }
 
 // handleQuickKey runs while the quick bar is docked in the sidebar: arrows
@@ -528,12 +528,14 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
+	// The prompt is delivered: clear the input before anything else can
+	// fail, so a retry cannot send it twice.
+	m.quick.input.SetValue("")
+	m.err = ""
 	// A queued answer means the user expects a fresh finished alert.
 	if err := m.store.SetAcked(entry.sess.ID, false); err != nil {
-		m.err = err.Error()
-		return m, nil
+		m.err = "prompt sent, but clearing the alert ack failed: " + err.Error()
 	}
-	m.quick.input.SetValue("")
 	m.requestRefresh()
 	return m, nil
 }
@@ -562,6 +564,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.quick.input.SetValue("")
+	m.err = ""
 	return m, m.refreshCmd()
 }
 
@@ -575,14 +578,19 @@ func (m *Model) quickTool() string {
 }
 
 // defaultTool is the CLI quick spawn launches: the settings choice when it
-// still exists in the config, else the first tool alphabetically.
+// still exists in the config, else the first tool alphabetically. A store
+// error still yields the fallback but is surfaced, never swallowed.
 func (m *Model) defaultTool() string {
 	names := sortedToolNames(m.cfg)
 	if len(names) == 0 {
 		return ""
 	}
 	chosen, err := m.store.Setting("default_tool")
-	if err == nil && chosen != "" {
+	if err != nil {
+		m.err = "reading default tool setting: " + err.Error()
+		return names[0]
+	}
+	if chosen != "" {
 		if _, ok := m.cfg.Tools[chosen]; ok {
 			return chosen
 		}
@@ -596,6 +604,7 @@ func (m *Model) openSettings() {
 		m.err = "no tools configured"
 		return
 	}
+	m.err = ""
 	current := m.defaultTool()
 	index := 0
 	for i, name := range names {
@@ -605,7 +614,6 @@ func (m *Model) openSettings() {
 	}
 	m.settings = settingsState{toolNames: names, toolIndex: index}
 	m.mode = modeSettings
-	m.err = ""
 }
 
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
