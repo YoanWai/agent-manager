@@ -467,9 +467,10 @@ func (m *Model) openQuickMode() {
 	input.Placeholder = "type and press enter"
 	input.Focus()
 	names := sortedToolNames(m.cfg)
+	current := m.defaultTool()
 	index := 0
 	for i, name := range names {
-		if name == m.defaultTool() {
+		if name == current {
 			index = i
 		}
 	}

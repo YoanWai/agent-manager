@@ -291,7 +291,9 @@ func (m *Model) viewSidebar(width, height int) string {
 	bar := ""
 	if m.quick.active {
 		bar = m.viewQuickBar(width)
-		height -= lipgloss.Height(bar) + 1
+		if height -= lipgloss.Height(bar) + 1; height < 3 {
+			height = 3
+		}
 	}
 	detail := divider("Details", width) + "\n" + m.viewDetail(width)
 	body := detail
