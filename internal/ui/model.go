@@ -99,6 +99,8 @@ type renameTarget struct {
 	path    string
 	sessID  string
 	input   textinput.Model
+	dir     textinput.Model
+	focus   int
 }
 
 // quickState is the inline prompt bar docked under the preview: active
