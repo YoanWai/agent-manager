@@ -297,8 +297,12 @@ func (m *Model) viewSidebar(width, height int) string {
 	}
 	detail := divider("Details", width) + "\n" + m.viewDetail(width)
 	body := detail
-	if previewHeight := height - lipgloss.Height(detail) - 1; previewHeight >= 3 {
-		body = detail + "\n" + m.viewPreview(width, previewHeight)
+	if rest := height - lipgloss.Height(detail) - 1; rest >= 3 {
+		if group, ok := m.selectedGroup(); ok {
+			body = detail + "\n" + m.viewGroupAgents(group, width, rest)
+		} else {
+			body = detail + "\n" + m.viewPreview(width, rest)
+		}
 	}
 	if bar == "" {
 		return body
@@ -317,12 +321,51 @@ func (m *Model) viewQuickBar(width int) string {
 			target = "answer " + entry.sess.Name
 		}
 	}
+	m.quick.input.SetWidth(width)
+	m.quick.input.SetHeight(m.quickBarRows(width - 2))
 	return divider("Quick Prompt · "+target, width) + "\n" + m.quick.input.View()
+}
+
+const quickBarMaxRows = 5
+
+// quickBarRows is the rows the typed text needs at the current width,
+// capped so the bar never swallows the sidebar. Single-line values (the
+// normal case) count exact soft-wrap rows; pasted multi-line values are
+// estimated, with the textarea scrolling to keep the cursor visible.
+func (m *Model) quickBarRows(textWidth int) int {
+	rows := 0
+	if m.quick.input.LineCount() == 1 {
+		rows = m.quick.input.LineInfo().Height
+	} else {
+		if textWidth < 1 {
+			textWidth = 1
+		}
+		for _, line := range strings.Split(m.quick.input.Value(), "\n") {
+			rows += 1 + (max(lipgloss.Width(line), 1)-1)/textWidth
+		}
+	}
+	if rows > quickBarMaxRows {
+		rows = quickBarMaxRows
+	}
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
+}
+
+func (m *Model) selectedGroup() (string, bool) {
+	if entry, ok := m.selectedRow(); ok && entry.isGroup {
+		return entry.group, true
+	}
+	return "", false
 }
 
 func (m *Model) viewDetail(width int) string {
 	sess, ok := m.selected()
 	if !ok {
+		if group, isGroup := m.selectedGroup(); isGroup {
+			return m.viewGroupDetail(group, width)
+		}
 		return "\n" + mutedStyle.Render("Select a session to inspect it.")
 	}
 	var b strings.Builder
@@ -335,6 +378,105 @@ func (m *Model) viewDetail(width int) string {
 		b.WriteString(kv("proc", fmt.Sprintf("%.1f%% · %s", m.proc.CPUPercent, humanBytes(m.proc.RSS))))
 	}
 	return b.String()
+}
+
+// viewGroupDetail fills the details panel for a selected group: default
+// path (own or inherited), direct subgroup count, and a status breakdown
+// of every agent in the subtree.
+func (m *Model) viewGroupDetail(group string, width int) string {
+	var b strings.Builder
+	count := m.groupSessionCount(group)
+	countLabel := fmt.Sprintf("%d agents", count)
+	if count == 1 {
+		countLabel = "1 agent"
+	}
+	b.WriteString(pill("group", colorAccent2) + "  " + pill(countLabel, colorAccent) + "\n")
+
+	path := m.groupPaths[group]
+	source := ""
+	if path == "" {
+		path = m.groupDefaultDir(group)
+		source = subtleStyle.Render(" · inherited")
+	}
+	b.WriteString(labelStyle.Width(6).Render("path") +
+		valueStyle.Render(truncateTail(path, width-8)) + source + "\n")
+
+	if group != "" {
+		b.WriteString(kv("group", displayGroup(parentGroup(group))))
+	}
+	if subgroups := m.directSubgroupCount(group); subgroups > 0 {
+		b.WriteString(kv("subs", fmt.Sprintf("%d", subgroups)))
+	}
+	if breakdown := m.groupStatusBreakdown(group); breakdown != "" {
+		b.WriteString(labelStyle.Width(6).Render("state") + breakdown + "\n")
+	}
+	return b.String()
+}
+
+func parentGroup(group string) string {
+	if idx := strings.LastIndex(group, "/"); idx >= 0 {
+		return group[:idx]
+	}
+	return ""
+}
+
+func (m *Model) directSubgroupCount(group string) int {
+	count := 0
+	for path := range groupClosure(m.groups, m.sessions) {
+		if parentGroup(path) == group && path != group {
+			count++
+		}
+	}
+	return count
+}
+
+// groupStatusBreakdown renders "2 working · 1 waiting" for the subtree,
+// each count tinted in its status color, skipping zero statuses.
+func (m *Model) groupStatusBreakdown(group string) string {
+	counts := map[string]int{}
+	for _, sess := range m.sessions {
+		if sess.Group == group || strings.HasPrefix(sess.Group, group+"/") {
+			counts[sess.Status]++
+		}
+	}
+	var parts []string
+	for _, st := range []string{status.Working, status.Waiting, status.Finished, status.Errored, status.Idle, status.Dead} {
+		if counts[st] > 0 {
+			parts = append(parts, lipgloss.NewStyle().Foreground(statusColor(st)).
+				Render(fmt.Sprintf("%d %s", counts[st], st)))
+		}
+	}
+	return strings.Join(parts, subtleStyle.Render(" · "))
+}
+
+// viewGroupAgents lists the subtree's sessions where a session's pane
+// preview would sit, so a group row reads as a group pane.
+func (m *Model) viewGroupAgents(group string, width, height int) string {
+	var b strings.Builder
+	b.WriteString(divider("Agents", width) + "\n")
+	shown, total := 0, m.groupSessionCount(group)
+	if total == 0 {
+		b.WriteString(mutedStyle.Render("(no agents yet — press space to spawn one)"))
+		return padToHeight(b.String(), height)
+	}
+	for _, sess := range m.sessions {
+		if sess.Group != group && !strings.HasPrefix(sess.Group, group+"/") {
+			continue
+		}
+		if shown >= height-2 && total > shown+1 {
+			b.WriteString(subtleStyle.Render(fmt.Sprintf("  … %d more", total-shown)))
+			break
+		}
+		glyph := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
+		line := glyph + " " + valueStyle.Render(sess.Name) +
+			subtleStyle.Render("  "+sess.Tool+" · "+relTime(sess.CreatedAt))
+		if ansi.StringWidth(line) > width {
+			line = ansi.Truncate(line, width-1, "…")
+		}
+		b.WriteString(line + "\n")
+		shown++
+	}
+	return padToHeight(strings.TrimRight(b.String(), "\n"), height)
 }
 
 // viewPreview renders the tail of the selected session's tmux pane with

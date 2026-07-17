@@ -9,8 +9,10 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -537,9 +539,18 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) openQuickMode() {
-	input := textinput.New()
+	input := textarea.New()
 	input.CharLimit = 2000
 	input.Placeholder = "type and press enter"
+	input.ShowLineNumbers = false
+	input.SetPromptFunc(2, func(lineIndex int) string {
+		if lineIndex == 0 {
+			return "> "
+		}
+		return ""
+	})
+	input.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	input.SetHeight(1)
 	input.Focus()
 	m.err = ""
 	names := sortedToolNames(m.cfg)
@@ -573,6 +584,11 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m.submitQuick()
 	}
+	// Update repositions its viewport against the height set at the last
+	// render; a keystroke that adds a wrapped row would scroll that first
+	// row away for good. Full cap height here keeps the viewport pinned,
+	// and the next render shrinks the bar back to the rows the text needs.
+	m.quick.input.SetHeight(quickBarMaxRows)
 	var cmd tea.Cmd
 	m.quick.input, cmd = m.quick.input.Update(msg)
 	return m, cmd
