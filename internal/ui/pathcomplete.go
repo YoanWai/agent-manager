@@ -108,6 +108,9 @@ func (m *Model) applyPathSuggestion() {
 		m.groupForm.path.SetValue(path)
 		m.groupForm.path.CursorEnd()
 		m.groupForm.pathAuto = false
+	case modeRename:
+		m.rename.dir.SetValue(path)
+		m.rename.dir.CursorEnd()
 	}
 	m.pathSugg.recompute(path)
 }

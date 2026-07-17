@@ -389,12 +389,12 @@ func (m *Model) openGroupForm() {
 	name.Focus()
 	m.groupForm = groupForm{
 		name:     name,
-		path:     textField("default working directory (optional)", 400),
+		path:     textField("default working directory", 400),
 		pathAuto: true,
 		focus:    gfName,
 	}
 	m.rebuildGroupOptions(m.contextGroup())
-	m.groupForm.path.SetValue(m.ancestorGroupPath(m.selectedGroupPath()))
+	m.groupForm.path.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	m.pathSugg.reset()
 	m.mode = modeGroupForm
 	m.err = ""
@@ -484,14 +484,15 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 		full = parent + "/" + name
 	}
 	path := expandHome(strings.TrimSpace(m.groupForm.path.Value()))
-	if path != "" {
-		if abs, err := filepath.Abs(path); err == nil {
-			path = abs
-		}
-		if info, err := os.Stat(path); err != nil || !info.IsDir() {
-			m.err = "default path does not exist: " + path
-			return m, nil
-		}
+	if path == "" {
+		path = m.groupDefaultDir(parent)
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	if info, err := os.Stat(path); err != nil || !info.IsDir() {
+		m.err = "default path does not exist: " + path
+		return m, nil
 	}
 	if err := m.store.CreateGroup(full, path); err != nil {
 		m.err = err.Error()

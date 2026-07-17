@@ -139,7 +139,15 @@ func (m *Model) viewRename() string {
 	body := sub +
 		formField("name", m.rename.input.View(), m.rename.focus == 0) +
 		formField("path", m.rename.dir.View(), m.rename.focus == 1)
-	return m.card("✎ Edit Group", strings.TrimRight(body, "\n"), "tab/↑↓ move · ↵ apply · esc cancel")
+	hint := "tab/↑↓ move · ↵ apply · esc cancel"
+	if m.rename.focus == 1 && m.pathSugg.active() {
+		body += m.viewPathSuggestions() + "\n"
+		hint = "↑↓ pick · tab complete · ↵ apply · esc close"
+		if m.pathSugg.chosen {
+			hint = "↑↓ pick · ↵/tab complete · esc close"
+		}
+	}
+	return m.card("✎ Edit Group", strings.TrimRight(body, "\n"), hint)
 }
 
 func (m *Model) viewSettings() string {
