@@ -926,3 +926,38 @@ func TestEditGroupRejectsMissingPath(t *testing.T) {
 		t.Fatal("modal should stay open on error")
 	}
 }
+
+func TestGroupPathNeverEmpty(t *testing.T) {
+	m := buildModel(t)
+	m.openGroupForm()
+	if m.groupForm.path.Value() == "" {
+		t.Fatal("group form path should prefill with a resolved directory")
+	}
+	m.groupForm.name.SetValue("zone")
+	m.groupForm.path.SetValue("")
+	if _, _ = m.submitGroupForm(); m.err != "" {
+		t.Fatalf("submit: %q", m.err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	if m.groupPaths["zone"] == "" {
+		t.Fatal("created group should get a resolved default path, not empty")
+	}
+
+	for i, row := range m.rows {
+		if row.isGroup && row.group == "zone" {
+			m.cursor = i
+		}
+	}
+	m.openRename()
+	if m.rename.dir.Value() == "" {
+		t.Fatal("edit modal should prefill the path")
+	}
+	m.rename.dir.SetValue("")
+	if _, _ = m.applyRename(); m.err != "" {
+		t.Fatalf("apply: %q", m.err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	if m.groupPaths["zone"] == "" {
+		t.Fatal("edited group should keep a resolved path when cleared")
+	}
+}

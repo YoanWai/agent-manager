@@ -411,8 +411,13 @@ func (m *Model) openRename() {
 	input.Focus()
 	if entry.isGroup {
 		input.SetValue(baseName(entry.group))
-		dir := textField("default path (optional)", 400)
-		dir.SetValue(m.groupPaths[entry.group])
+		dir := textField("default working directory", 400)
+		dirValue := m.groupPaths[entry.group]
+		if dirValue == "" {
+			dirValue = m.groupDefaultDir(entry.group)
+		}
+		dir.SetValue(dirValue)
+		m.pathSugg.reset()
 		m.rename = renameTarget{isGroup: true, path: entry.group, input: input, dir: dir}
 	} else {
 		input.SetValue(entry.sess.Name)
@@ -423,6 +428,7 @@ func (m *Model) openRename() {
 }
 
 func (m *Model) renameFocus(delta int) {
+	m.pathSugg.reset()
 	m.rename.focus = (m.rename.focus + delta + 2) % 2
 	m.rename.input.Blur()
 	m.rename.dir.Blur()
@@ -434,16 +440,37 @@ func (m *Model) renameFocus(delta int) {
 }
 
 func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	pathSuggesting := m.rename.isGroup && m.rename.focus == 1 && m.pathSugg.active()
 	switch msg.String() {
 	case "esc":
+		if pathSuggesting {
+			m.pathSugg.reset()
+			return m, nil
+		}
 		m.mode = modeList
 		return m, nil
 	case "tab", "up", "down":
-		if m.rename.isGroup {
-			m.renameFocus(1)
+		if !m.rename.isGroup {
+			break
+		}
+		if pathSuggesting {
+			switch msg.String() {
+			case "tab":
+				m.applyPathSuggestion()
+			case "up":
+				m.pathSugg.move(-1)
+			case "down":
+				m.pathSugg.move(1)
+			}
 			return m, nil
 		}
+		m.renameFocus(1)
+		return m, nil
 	case "enter":
+		if pathSuggesting && m.pathSugg.chosen {
+			m.applyPathSuggestion()
+			return m, nil
+		}
 		return m.applyRename()
 	}
 	var cmd tea.Cmd
@@ -451,6 +478,7 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rename.input, cmd = m.rename.input.Update(msg)
 	} else {
 		m.rename.dir, cmd = m.rename.dir.Update(msg)
+		m.pathSugg.recompute(m.rename.dir.Value())
 	}
 	return m, cmd
 }
@@ -464,14 +492,19 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 	}
 	if m.rename.isGroup {
 		dir := expandHome(strings.TrimSpace(m.rename.dir.Value()))
-		if dir != "" {
-			if abs, err := filepath.Abs(dir); err == nil {
-				dir = abs
+		if dir == "" {
+			parent := ""
+			if idx := strings.LastIndex(m.rename.path, "/"); idx >= 0 {
+				parent = m.rename.path[:idx]
 			}
-			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-				m.err = "default path does not exist: " + dir
-				return m, nil
-			}
+			dir = m.groupDefaultDir(parent)
+		}
+		if abs, err := filepath.Abs(dir); err == nil {
+			dir = abs
+		}
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			m.err = "default path does not exist: " + dir
+			return m, nil
 		}
 		newPath := name
 		if idx := strings.LastIndex(m.rename.path, "/"); idx >= 0 {
