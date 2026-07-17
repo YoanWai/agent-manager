@@ -63,7 +63,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE TABLE IF NOT EXISTS groups (
 	name       TEXT PRIMARY KEY,
-	collapsed  INTEGER NOT NULL DEFAULT 0,
 	sort_order INTEGER NOT NULL DEFAULT 0,
 	path       TEXT NOT NULL DEFAULT ''
 );

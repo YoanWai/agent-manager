@@ -112,10 +112,10 @@ func TestGroupFormInheritsParentPath(t *testing.T) {
 func TestAncestorGroupPathWalksUp(t *testing.T) {
 	root := t.TempDir()
 	m := &Model{groupPaths: map[string]string{"projects": root}}
-	if got := m.ancestorGroupPath("projects/api/auth"); got != root {
+	if got := m.ancestorGroupDir("projects/api/auth"); got != root {
 		t.Fatalf("got %q want %q", got, root)
 	}
-	if got := m.ancestorGroupPath("other"); got != "" {
+	if got := m.ancestorGroupDir("other"); got != "" {
 		t.Fatalf("got %q want empty", got)
 	}
 }

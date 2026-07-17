@@ -199,20 +199,3 @@ func (d *Driver) Panes() (map[string]int, error) {
 	}
 	return panes, nil
 }
-
-func (d *Driver) List() ([]string, error) {
-	out, err := exec.Command(d.bin, "list-sessions", "-F", "#{session_name}").CombinedOutput()
-	if err != nil {
-		if noServer(string(out)) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("tmux list-sessions: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	var ids []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if strings.HasPrefix(line, prefix) {
-			ids = append(ids, strings.TrimPrefix(line, prefix))
-		}
-	}
-	return ids, nil
-}

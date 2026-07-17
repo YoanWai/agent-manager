@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -181,16 +180,9 @@ func (m *Model) swapSessionLocal(id string, delta int) {
 }
 
 func (m *Model) swapGroupLocal(path string, delta int) {
-	parent := ""
-	if idx := strings.LastIndex(path, "/"); idx >= 0 {
-		parent = path[:idx]
-	}
+	parent := parentGroup(path)
 	isSibling := func(name string) bool {
-		if parent == "" {
-			return !strings.Contains(name, "/")
-		}
-		rest, ok := strings.CutPrefix(name, parent+"/")
-		return ok && !strings.Contains(rest, "/")
+		return parentGroup(name) == parent
 	}
 	step := 1
 	if delta < 0 {
@@ -236,7 +228,7 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if !m.tmux.Exists(sess.ID) {
-		m.err = "session is not running (dead); delete or recreate it"
+		m.err = "session is dead - press v to revive"
 		return m, nil
 	}
 	m.err = ""
@@ -344,7 +336,7 @@ func (m *Model) prepareDelete() {
 	}
 	if !entry.isGroup {
 		m.confirm = confirmTarget{
-			label:    "delete " + entry.sess.Name + "? kills its tmux session. (y/n)",
+			label:    "delete " + entry.sess.Name + "? kills its tmux session.",
 			sessions: []store.Session{entry.sess},
 		}
 		m.mode = modeConfirmDelete
@@ -361,7 +353,7 @@ func (m *Model) prepareDelete() {
 			subgroups++
 		}
 	}
-	label := fmt.Sprintf("delete group %s (%d subgroups, %d sessions incl. archived)? kills their tmux sessions. (y/n)",
+	label := fmt.Sprintf("delete group %s (%d subgroups, %d sessions incl. archived)? kills their tmux sessions.",
 		entry.group, subgroups, len(subtree))
 	m.confirm = confirmTarget{isGroup: true, path: entry.group, label: label, sessions: subtree}
 	m.mode = modeConfirmDelete
@@ -496,24 +488,15 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.rename.isGroup {
-		dir := expandHome(strings.TrimSpace(m.rename.dir.Value()))
-		if dir == "" {
-			parent := ""
-			if idx := strings.LastIndex(m.rename.path, "/"); idx >= 0 {
-				parent = m.rename.path[:idx]
-			}
-			dir = m.groupDefaultDir(parent)
-		}
-		if abs, err := filepath.Abs(dir); err == nil {
-			dir = abs
-		}
-		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		parent := parentGroup(m.rename.path)
+		dir, ok := resolveExistingDir(m.rename.dir.Value(), m.groupDefaultDir(parent))
+		if !ok {
 			m.err = "default path does not exist: " + dir
 			return m, nil
 		}
 		newPath := name
-		if idx := strings.LastIndex(m.rename.path, "/"); idx >= 0 {
-			newPath = m.rename.path[:idx] + "/" + name
+		if parent != "" {
+			newPath = parent + "/" + name
 		}
 		if err := m.store.RenameGroup(m.rename.path, newPath); err != nil {
 			m.err = err.Error()
@@ -590,6 +573,13 @@ func (m *Model) openQuickMode() {
 	input.SetHeight(1)
 	input.Focus()
 	m.err = ""
+	names, index := m.defaultToolSelection()
+	m.quick = quickState{active: true, input: input, toolNames: names, toolIndex: index}
+}
+
+// defaultToolSelection returns the sorted tool names with the index of
+// the configured default, ready to seed a tool picker.
+func (m *Model) defaultToolSelection() ([]string, int) {
 	names := sortedToolNames(m.cfg)
 	current := m.defaultTool()
 	index := 0
@@ -598,7 +588,7 @@ func (m *Model) openQuickMode() {
 			index = i
 		}
 	}
-	m.quick = quickState{active: true, input: input, toolNames: names, toolIndex: index}
+	return names, index
 }
 
 // handleQuickKey runs while the quick bar is docked in the sidebar: arrows
@@ -678,11 +668,8 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		m.err = "no tools configured"
 		return m, nil
 	}
-	dir := expandHome(m.groupPaths[group])
-	if dir == "" {
-		dir, _ = os.Getwd()
-	}
-	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+	dir, ok := resolveExistingDir(m.groupPaths[group], m.groupDefaultDir(group))
+	if !ok {
 		m.err = "group has no valid default path: " + dir
 		return m, nil
 	}
@@ -727,19 +714,12 @@ func (m *Model) defaultTool() string {
 }
 
 func (m *Model) openSettings() {
-	names := sortedToolNames(m.cfg)
-	if len(names) == 0 {
+	if len(m.cfg.Tools) == 0 {
 		m.err = "no tools configured"
 		return
 	}
 	m.err = ""
-	current := m.defaultTool()
-	index := 0
-	for i, name := range names {
-		if name == current {
-			index = i
-		}
-	}
+	names, index := m.defaultToolSelection()
 	m.settings = settingsState{toolNames: names, toolIndex: index}
 	m.mode = modeSettings
 }

@@ -111,18 +111,12 @@ func TestLifecycle(t *testing.T) {
 		t.Fatalf("captured pane missing marker: %q", pane)
 	}
 
-	ids, err := driver.List()
+	panes, err := driver.Panes()
 	if err != nil {
-		t.Fatalf("List: %v", err)
+		t.Fatalf("Panes: %v", err)
 	}
-	found := false
-	for _, got := range ids {
-		if got == id {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("List should include %q, got %v", id, ids)
+	if panes[id] <= 0 {
+		t.Fatalf("Panes should map %q to a pane pid, got %v", id, panes)
 	}
 
 	if err := driver.Kill(id); err != nil {

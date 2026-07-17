@@ -27,7 +27,7 @@ func testEngine(t *testing.T) *Engine {
 	return engine
 }
 
-func TestDerive(t *testing.T) {
+func TestMatch(t *testing.T) {
 	engine := testEngine(t)
 	cases := []struct {
 		name string
@@ -43,8 +43,8 @@ func TestDerive(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := engine.Derive(tc.tool, tc.pane); got != tc.want {
-				t.Fatalf("Derive(%q)=%q want %q", tc.pane, got, tc.want)
+			if got, _ := engine.Match(tc.tool, tc.pane); got != tc.want {
+				t.Fatalf("Match(%q)=%q want %q", tc.pane, got, tc.want)
 			}
 		})
 	}
@@ -117,8 +117,8 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := engine.Derive(tc.tool, tc.pane); got != tc.want {
-				t.Fatalf("Derive(%s) = %q want %q", tc.name, got, tc.want)
+			if got, _ := engine.Match(tc.tool, tc.pane); got != tc.want {
+				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
 			}
 		})
 	}
@@ -154,8 +154,8 @@ func TestLongTurnAndMidLineQuestion(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := engine.Derive(tc.tool, tc.pane); got != tc.want {
-				t.Fatalf("Derive(%s) = %q want %q", tc.name, got, tc.want)
+			if got, _ := engine.Match(tc.tool, tc.pane); got != tc.want {
+				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
 			}
 		})
 	}
@@ -178,8 +178,8 @@ func TestRealPaneEdgeCases(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := engine.Derive(tc.tool, tc.pane); got != tc.want {
-				t.Fatalf("Derive(%s) = %q want %q", tc.name, got, tc.want)
+			if got, _ := engine.Match(tc.tool, tc.pane); got != tc.want {
+				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
 			}
 		})
 	}
@@ -192,7 +192,7 @@ func TestRecapBelowSummary(t *testing.T) {
 		"※ recap: Setting up laptop-casting: twin box is done and proven, now deploying\n" +
 		"  plus ports. (disable recaps in /config)\n" +
 		"────\n❯ done, code is 431652\n────\n  ⏵⏵ bypass permissions on"
-	if got := engine.Derive("claude", pane); got != Finished {
+	if got, _ := engine.Match("claude", pane); got != Finished {
 		t.Fatalf("recap below summary should still be finished, got %q", got)
 	}
 }
@@ -218,8 +218,8 @@ func TestQuotedSignalsDoNotTrigger(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := engine.Derive(tc.tool, tc.pane); got != tc.want {
-				t.Fatalf("Derive(%s) = %q want %q", tc.name, got, tc.want)
+			if got, _ := engine.Match(tc.tool, tc.pane); got != tc.want {
+				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
 			}
 		})
 	}
