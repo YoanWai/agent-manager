@@ -74,13 +74,9 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 
 `esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](#configuration)).
 
-![quick prompt demo](docs/quick-prompt.gif)
-
 ### Groups
 
 Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `shift+↑↓` (the order persists), fold a subtree with `f`, and edit a group's name and default path with `r`.
-
-![groups demo](docs/groups.gif)
 
 ### Status
 
