@@ -46,8 +46,8 @@ func (m *Model) View() string {
 	if listHeight >= 3 {
 		leftBody = padToHeight(m.viewList(listInner, listHeight), listHeight) + "\n" + stats
 	}
-	left := titledPanel("Sessions", leftBody, leftWidth, bodyHeight, false)
-	right := titledPanel(m.sidebarTitle(), m.viewSidebar(rightWidth-4, bodyHeight-2), rightWidth, bodyHeight, false)
+	left := titledPanel("Sessions", leftBody, leftWidth, bodyHeight)
+	right := titledPanel(m.sidebarTitle(), m.viewSidebar(rightWidth-4, bodyHeight-2), rightWidth, bodyHeight)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
 	return strings.Join([]string{m.viewHeader(), "", body, m.viewStatus(), footer}, "\n")
@@ -205,10 +205,16 @@ func treeGuides(depth int) string {
 	return subtleStyle.Render(strings.Repeat("│ ", depth))
 }
 
+// inGroupSubtree reports whether a session's group sits at or below the
+// given group in the tree.
+func inGroupSubtree(sessGroup, group string) bool {
+	return sessGroup == group || strings.HasPrefix(sessGroup, group+"/")
+}
+
 func (m *Model) groupSessionCount(path string) int {
 	count := 0
 	for _, sess := range m.visibleSessions() {
-		if sess.Group == path || strings.HasPrefix(sess.Group, path+"/") {
+		if inGroupSubtree(sess.Group, path) {
 			count++
 		}
 	}
@@ -285,13 +291,10 @@ func (m *Model) renamingGroup(group string) bool {
 }
 
 func (m *Model) renamingRow(entry treeRow) bool {
-	if m.mode != modeRename {
-		return false
-	}
 	if entry.isGroup {
-		return m.rename.isGroup && entry.group == m.rename.path
+		return m.renamingGroup(entry.group)
 	}
-	return !m.rename.isGroup && entry.sess.ID == m.rename.sessID
+	return m.mode == modeRename && !m.rename.isGroup && entry.sess.ID == m.rename.sessID
 }
 
 // renameRowInput renders the inline name editor in place of the row's
@@ -495,7 +498,7 @@ func (m *Model) groupStatusBreakdown(group string) string {
 func (m *Model) groupStatusCounts(group string) map[string]int {
 	counts := map[string]int{}
 	for _, sess := range m.visibleSessions() {
-		if sess.Group == group || strings.HasPrefix(sess.Group, group+"/") {
+		if inGroupSubtree(sess.Group, group) {
 			counts[sess.Status]++
 		}
 	}
@@ -527,7 +530,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		return padToHeight(b.String(), height)
 	}
 	for _, sess := range m.visibleSessions() {
-		if sess.Group != group && !strings.HasPrefix(sess.Group, group+"/") {
+		if !inGroupSubtree(sess.Group, group) {
 			continue
 		}
 		if shown >= height-2 && total > shown+1 {
@@ -707,13 +710,4 @@ func truncateTail(s string, max int) string {
 		return s
 	}
 	return "…" + string(runes[len(runes)-max+1:])
-}
-
-// clipLine keeps the start of the string (best for terminal output).
-func clipLine(s string, max int) string {
-	runes := []rune(s)
-	if len(runes) <= max || max <= 1 {
-		return s
-	}
-	return string(runes[:max-1]) + "…"
 }

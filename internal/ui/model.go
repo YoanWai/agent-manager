@@ -40,11 +40,10 @@ type treeRow struct {
 }
 
 type Model struct {
-	cfg    config.Config
-	store  *store.Store
-	tmux   *tmux.Driver
-	engine *status.Engine
-	hooks  *hooks.Manager
+	cfg   config.Config
+	store *store.Store
+	tmux  *tmux.Driver
+	hooks *hooks.Manager
 
 	sessions   []store.Session
 	rows       []treeRow
@@ -157,7 +156,6 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		cfg:       cfg,
 		store:     st,
 		tmux:      driver,
-		engine:    engine,
 		hooks:     hookManager,
 		poller:    newPoller(st, driver, engine, hookManager, statusSources, cfg.PollInterval.Duration),
 		collapsed: map[string]bool{},
@@ -446,7 +444,7 @@ func pathsWithSessions(paths map[string]bool, sessionsByGroup map[string][]store
 	kept := map[string]bool{}
 	for path := range paths {
 		for group := range sessionsByGroup {
-			if group == path || strings.HasPrefix(group, path+"/") {
+			if inGroupSubtree(group, path) {
 				kept[path] = true
 				break
 			}
@@ -464,10 +462,7 @@ func childIndex(paths map[string]bool, ordered []string) map[string][]string {
 	}
 	children := map[string][]string{}
 	for path := range paths {
-		parent := ""
-		if idx := strings.LastIndex(path, "/"); idx >= 0 {
-			parent = path[:idx]
-		}
+		parent := parentGroup(path)
 		children[parent] = append(children[parent], path)
 	}
 	for _, siblings := range children {

@@ -39,7 +39,6 @@ var (
 	subtleStyle = lipgloss.NewStyle().Foreground(colorSubtle)
 	valueStyle  = lipgloss.NewStyle().Foreground(colorText)
 	labelStyle  = lipgloss.NewStyle().Foreground(colorDim)
-	footerStyle = lipgloss.NewStyle().Foreground(colorDim)
 	errStyle    = lipgloss.NewStyle().Foreground(colorErrored).Bold(true)
 	keyStyle    = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 )
@@ -76,12 +75,8 @@ func statusGlyph(s string) string {
 
 // titledPanel draws a rounded box with the title embedded in the top
 // border, its body clipped and padded to fill the given outer size.
-func titledPanel(title, body string, width, height int, accent bool) string {
-	border := colorBorder
-	if accent {
-		border = colorAccent
-	}
-	bs := lipgloss.NewStyle().Foreground(border)
+func titledPanel(title, body string, width, height int) string {
+	bs := lipgloss.NewStyle().Foreground(colorBorder)
 	inner := width - 4
 	if inner < 1 {
 		inner = 1

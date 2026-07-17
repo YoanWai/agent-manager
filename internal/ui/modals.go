@@ -63,8 +63,6 @@ func groupBadge(path string) string {
 	return lipgloss.NewStyle().Foreground(colorAccent2).Render(path)
 }
 
-// viewPathSuggestions renders the directory-completion dropdown under
-// a focused path field.
 func pathSuggestHint(chosen bool) string {
 	if chosen {
 		return "↑↓ pick · ↵/tab complete · esc close"
@@ -72,6 +70,8 @@ func pathSuggestHint(chosen bool) string {
 	return "↑↓ pick · tab complete · ↵ create · esc close"
 }
 
+// viewPathSuggestions renders the directory-completion dropdown under
+// a focused path field.
 func (m *Model) viewPathSuggestions() string {
 	var b strings.Builder
 	for i, path := range m.pathSugg.suggestions {

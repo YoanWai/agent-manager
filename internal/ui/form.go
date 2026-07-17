@@ -62,6 +62,21 @@ func sessionLabel(group, name string) string {
 	return group + " · " + name
 }
 
+// resolveExistingDir turns raw field input into a usable directory:
+// expand ~, fall back when empty, absolutize, and require it to exist.
+// The resolved value returns either way so error messages can show it.
+func resolveExistingDir(raw, fallback string) (string, bool) {
+	dir := expandHome(strings.TrimSpace(raw))
+	if dir == "" {
+		dir = fallback
+	}
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	info, err := os.Stat(dir)
+	return dir, err == nil && info.IsDir()
+}
+
 func textField(placeholder string, limit int) textinput.Model {
 	in := textinput.New()
 	in.Placeholder = placeholder
@@ -81,20 +96,15 @@ func (m *Model) contextGroup() string {
 	return ""
 }
 
-// ancestorGroupPath finds the closest configured default path walking up
+// ancestorGroupDir finds the closest configured default path walking up
 // from the group to the root; empty when no ancestor has one.
-func (m *Model) ancestorGroupPath(group string) string {
-	for g := group; g != ""; {
+func (m *Model) ancestorGroupDir(group string) string {
+	for g := group; g != ""; g = parentGroup(g) {
 		if p := m.groupPaths[g]; p != "" {
 			if info, err := os.Stat(p); err == nil && info.IsDir() {
 				return p
 			}
 		}
-		idx := strings.LastIndex(g, "/")
-		if idx < 0 {
-			break
-		}
-		g = g[:idx]
 	}
 	return ""
 }
@@ -102,7 +112,7 @@ func (m *Model) ancestorGroupPath(group string) string {
 // groupDefaultDir resolves the working directory for a session in a group:
 // the nearest inherited default path, else the current directory.
 func (m *Model) groupDefaultDir(group string) string {
-	if p := m.ancestorGroupPath(group); p != "" {
+	if p := m.ancestorGroupDir(group); p != "" {
 		return p
 	}
 	cwd, err := os.Getwd()
@@ -259,7 +269,7 @@ func (m *Model) moveGroupCursor(delta int) {
 		m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	}
 	if m.mode == modeGroupForm && m.groupForm.pathAuto {
-		m.groupForm.path.SetValue(m.ancestorGroupPath(m.selectedGroupPath()))
+		m.groupForm.path.SetValue(m.ancestorGroupDir(m.selectedGroupPath()))
 	}
 }
 
@@ -298,14 +308,9 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	if name == "" {
 		name = toolName + "-" + newID()[:4]
 	}
-	dir := expandHome(strings.TrimSpace(m.form.dir.Value()))
-	if dir == "" {
-		dir, _ = os.Getwd()
-	}
-	if abs, err := filepath.Abs(dir); err == nil {
-		dir = abs
-	}
-	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+	cwd, _ := os.Getwd()
+	dir, ok := resolveExistingDir(m.form.dir.Value(), cwd)
+	if !ok {
 		m.err = "working directory does not exist: " + dir
 		return m, nil
 	}
@@ -483,14 +488,8 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 	if parent != "" {
 		full = parent + "/" + name
 	}
-	path := expandHome(strings.TrimSpace(m.groupForm.path.Value()))
-	if path == "" {
-		path = m.groupDefaultDir(parent)
-	}
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
-	}
-	if info, err := os.Stat(path); err != nil || !info.IsDir() {
+	path, ok := resolveExistingDir(m.groupForm.path.Value(), m.groupDefaultDir(parent))
+	if !ok {
 		m.err = "default path does not exist: " + path
 		return m, nil
 	}

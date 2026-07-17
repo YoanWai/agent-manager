@@ -46,10 +46,6 @@ func (d *Duration) UnmarshalText(text []byte) error {
 	return nil
 }
 
-func (d Duration) MarshalText() ([]byte, error) {
-	return []byte(d.Duration.String()), nil
-}
-
 func Dir() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {

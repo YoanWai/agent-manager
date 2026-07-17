@@ -76,11 +76,6 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 	return engine, nil
 }
 
-func (e *Engine) Derive(tool, pane string) string {
-	state, _ := e.Match(tool, pane)
-	return state
-}
-
 // Match derives a status and reports whether any signal matched, so the
 // caller can distinguish a real signal from the default fallback. Rules
 // run first, scoped to the current turn; when none hit, the newest turn
@@ -117,12 +112,20 @@ func (tr toolRules) matchScope(pane string) string {
 		return pane
 	}
 	lines := strings.Split(region, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if tr.turnEnd.MatchString(strings.TrimRight(lines[i], " \t")) {
-			return strings.Join(lines[i+1:], "\n")
-		}
+	if lastEnd := tr.lastTurnEndIndex(lines); lastEnd >= 0 {
+		return strings.Join(lines[lastEnd+1:], "\n")
 	}
 	return pane
+}
+
+// lastTurnEndIndex finds the newest turn_end marker line, -1 when absent.
+func (tr toolRules) lastTurnEndIndex(lines []string) int {
+	for i := len(lines) - 1; i >= 0; i-- {
+		if tr.turnEnd.MatchString(strings.TrimRight(lines[i], " \t")) {
+			return i
+		}
+	}
+	return -1
 }
 
 // ActivityRegion returns the pane content above the tool's input box
@@ -173,13 +176,7 @@ func (tr toolRules) turnState(pane string) (string, bool) {
 		return Waiting, true
 	}
 
-	lastEnd := -1
-	for i := len(lines) - 1; i >= 0; i-- {
-		if tr.turnEnd.MatchString(strings.TrimRight(lines[i], " \t")) {
-			lastEnd = i
-			break
-		}
-	}
+	lastEnd := tr.lastTurnEndIndex(lines)
 	if lastEnd < 0 || !tr.turnIsNewest(lines[lastEnd+1:]) {
 		return "", false
 	}

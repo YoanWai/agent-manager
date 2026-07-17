@@ -102,11 +102,7 @@ func TestTruncateRuneSafe(t *testing.T) {
 	if !strings.HasPrefix(tail, "…") || len([]rune(tail)) != 10 {
 		t.Fatalf("truncateTail broken: %q (%d runes)", tail, len([]rune(tail)))
 	}
-	clipped := clipLine(hebrew, 10)
-	if !strings.HasSuffix(clipped, "…") || len([]rune(clipped)) != 10 {
-		t.Fatalf("clipLine broken: %q (%d runes)", clipped, len([]rune(clipped)))
-	}
-	if truncateTail("short", 10) != "short" || clipLine("short", 10) != "short" {
+	if truncateTail("short", 10) != "short" {
 		t.Fatal("short strings should pass through")
 	}
 }
