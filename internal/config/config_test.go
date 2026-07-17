@@ -30,6 +30,12 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if cfg.Tools["claude"].Command != "claude" {
 		t.Fatalf("claude command = %q", cfg.Tools["claude"].Command)
 	}
+	if got := cfg.Tools["opencode"].PromptFlag; got != "--prompt" {
+		t.Fatalf("opencode prompt_flag = %q want --prompt", got)
+	}
+	if got := cfg.Tools["claude"].PromptFlag; got != "" {
+		t.Fatalf("claude prompt_flag = %q want empty (positional prompt)", got)
+	}
 }
 
 func TestApplyDefaults(t *testing.T) {

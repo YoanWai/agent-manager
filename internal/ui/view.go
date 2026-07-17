@@ -22,6 +22,8 @@ func (m *Model) View() string {
 		return m.viewHelp()
 	case modeRename:
 		return m.viewRename()
+	case modeSettings:
+		return m.viewSettings()
 	case modeMove:
 		return m.viewMove()
 	case modeGroupForm:
@@ -165,6 +167,9 @@ func (m *Model) sidebarTitle() string {
 	if sess, ok := m.selected(); ok {
 		return "Session · " + sess.Name
 	}
+	if entry, ok := m.selectedRow(); ok && entry.isGroup {
+		return "Group · " + displayGroup(entry.group)
+	}
 	return "Session"
 }
 
@@ -280,14 +285,39 @@ func divider(label string, width int) string {
 }
 
 // viewSidebar lays out session details on top, with the live preview
-// filling the rest of the panel below.
+// filling the rest of the panel below. The quick bar, when active, docks
+// at the very bottom in the same spot for sessions and groups alike.
 func (m *Model) viewSidebar(width, height int) string {
-	detail := divider("Details", width) + "\n" + m.viewDetail(width)
-	previewHeight := height - lipgloss.Height(detail) - 1
-	if previewHeight < 3 {
-		return detail
+	bar := ""
+	if m.quick.active {
+		bar = m.viewQuickBar(width)
+		if height -= lipgloss.Height(bar) + 1; height < 3 {
+			height = 3
+		}
 	}
-	return detail + "\n" + m.viewPreview(width, previewHeight)
+	detail := divider("Details", width) + "\n" + m.viewDetail(width)
+	body := detail
+	if previewHeight := height - lipgloss.Height(detail) - 1; previewHeight >= 3 {
+		body = detail + "\n" + m.viewPreview(width, previewHeight)
+	}
+	if bar == "" {
+		return body
+	}
+	return padToHeight(body, height) + "\n" + bar
+}
+
+// viewQuickBar is the docked prompt input: enter answers the selected
+// session, or spawns a fresh agent when a group row is selected.
+func (m *Model) viewQuickBar(width int) string {
+	target := "no selection"
+	if entry, ok := m.selectedRow(); ok {
+		if entry.isGroup {
+			target = "new " + m.quickTool() + " agent in " + displayGroup(entry.group)
+		} else {
+			target = "answer " + entry.sess.Name
+		}
+	}
+	return divider("Quick Prompt · "+target, width) + "\n" + m.quick.input.View()
 }
 
 func (m *Model) viewDetail(width int) string {
@@ -386,9 +416,15 @@ func padToHeight(s string, height int) string {
 func (m *Model) viewFooter() string {
 	pairs := [][2]string{
 		{"↑↓", "navigate"}, {"↵", "attach"}, {"n", "new"}, {"g", "group"},
-		{"⇧↑↓", "reorder"}, {"space", "fold"}, {"m", "move"}, {"r", "rename"},
+		{"⇧↑↓", "reorder"}, {"space", "quick prompt"}, {"f", "fold"}, {"m", "move"}, {"r", "rename"},
 		{"v", "revive"}, {"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
-		{"t", "archived"}, {"ctrl+r", "refresh"}, {"?", "help"}, {"q", "quit"},
+		{"t", "archived"}, {"s", "settings"}, {"ctrl+r", "refresh"}, {"?", "help"}, {"q", "quit"},
+	}
+	if m.quick.active {
+		pairs = [][2]string{
+			{"↵", "send"}, {"↑↓", "switch target"}, {"⇥", "tool: " + m.quickTool()},
+			{"esc", "close"},
+		}
 	}
 	sep := subtleStyle.Render(" · ")
 	sepWidth := ansi.StringWidth(sep)

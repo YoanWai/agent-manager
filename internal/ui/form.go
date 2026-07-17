@@ -18,6 +18,7 @@ const (
 	fieldName = iota
 	fieldTool
 	fieldDir
+	fieldPrompt
 	fieldGroup
 	fieldCount
 )
@@ -37,6 +38,7 @@ type groupOption struct {
 type form struct {
 	name       textinput.Model
 	dir        textinput.Model
+	prompt     textinput.Model
 	dirAuto    bool
 	toolNames  []string
 	toolIndex  int
@@ -110,18 +112,25 @@ func (m *Model) groupDefaultDir(group string) string {
 	return cwd
 }
 
+func sortedToolNames(cfg config.Config) []string {
+	names := cfg.ToolNames()
+	sort.Strings(names)
+	return names
+}
+
 func (m *Model) openForm() {
-	tools := m.cfg.ToolNames()
-	sort.Strings(tools)
+	tools := sortedToolNames(m.cfg)
 
 	name := textField("my-session", 60)
 	name.Focus()
 
 	dir := textField("", 400)
+	prompt := textField("first task (optional)", 2000)
 
 	m.form = form{
 		name:      name,
 		dir:       dir,
+		prompt:    prompt,
 		dirAuto:   true,
 		toolNames: tools,
 		focus:     fieldName,
@@ -232,6 +241,8 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form.dir, cmd = m.form.dir.Update(msg)
 		m.form.dirAuto = false
 		m.pathSugg.recompute(m.form.dir.Value())
+	case fieldPrompt:
+		m.form.prompt, cmd = m.form.prompt.Update(msg)
 	}
 	return m, cmd
 }
@@ -257,11 +268,14 @@ func (m *Model) formFocus(delta int) {
 	m.form.focus = (m.form.focus + delta + fieldCount) % fieldCount
 	m.form.name.Blur()
 	m.form.dir.Blur()
+	m.form.prompt.Blur()
 	switch m.form.focus {
 	case fieldName:
 		m.form.name.Focus()
 	case fieldDir:
 		m.form.dir.Focus()
+	case fieldPrompt:
+		m.form.prompt.Focus()
 	}
 }
 
@@ -279,7 +293,6 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	toolName := m.form.toolNames[m.form.toolIndex]
-	tool := m.cfg.Tools[toolName]
 
 	name := strings.TrimSpace(m.form.name.Value())
 	if name == "" {
@@ -297,16 +310,31 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	group := m.selectedGroupPath()
+	prompt := strings.TrimSpace(m.form.prompt.Value())
+	if strings.HasPrefix(prompt, "-") {
+		m.err = `prompt cannot start with "-": the tool would read it as a flag`
+		return m, nil
+	}
 
-	id := newID()
-	command, env, err := m.buildLaunch(tool, tool.Command, id)
-	if err != nil {
+	if err := m.spawnSession(toolName, name, dir, group, prompt); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
+	m.mode = modeList
+	return m, m.refreshCmd()
+}
+
+// spawnSession creates the tmux session and its store record for both
+// the New Session form and quick spawn.
+func (m *Model) spawnSession(toolName, name, dir, group, prompt string) error {
+	tool := m.cfg.Tools[toolName]
+	id := newID()
+	command, env, err := m.buildLaunch(tool, withPrompt(tool, tool.Command, prompt), id)
+	if err != nil {
+		return err
+	}
 	if err := m.tmux.Create(id, dir, command, env); err != nil {
-		m.err = err.Error()
-		return m, nil
+		return err
 	}
 	sess := store.Session{
 		ID:     id,
@@ -319,14 +347,22 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	if err := m.store.CreateSession(sess); err != nil {
 		_ = m.tmux.Kill(id)
 		_ = m.hooks.Remove(id)
-		m.err = err.Error()
-		return m, nil
+		return err
 	}
-	if err := m.tmux.SetLabel(id, sessionLabel(group, name)); err != nil {
-		m.err = err.Error()
+	return m.tmux.SetLabel(id, sessionLabel(group, name))
+}
+
+// withPrompt embeds an optional starting prompt into a tool's launch
+// command; tools whose positional argument is not a prompt route it
+// through their prompt_flag.
+func withPrompt(tool config.Tool, command, prompt string) string {
+	if prompt == "" {
+		return command
 	}
-	m.mode = modeList
-	return m, m.refreshCmd()
+	if tool.PromptFlag != "" {
+		return command + " " + tool.PromptFlag + " " + tmux.ShellQuote(prompt)
+	}
+	return command + " " + tmux.ShellQuote(prompt)
 }
 
 // buildLaunch resolves the shell command and environment a session

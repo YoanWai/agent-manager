@@ -46,7 +46,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 
 | Key | Action |
 |-----|--------|
-| `n` | New session (name, tool, directory, group picker) |
+| `n` | New session (name, tool, directory, optional starting prompt, group picker) |
 | `g` | New group (name, parent, default path) |
 | `enter` | Attach session / fold group |
 | `ctrl+q` | Inside a session: back to the manager |
@@ -56,12 +56,23 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `v` | Revive a dead session (`revive_command`, e.g. `claude --continue`, resumes the conversation) |
 | `a` / `u` | Archive / restore |
 | `d` | Delete session, or a group + its entire subtree |
-| `space` | Collapse / expand group |
+| `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
+| `f` | Fold / unfold group |
+| `s` | Settings (default tool for quick spawn) |
 | `t` | Toggle archived view |
 | `/` | Search |
 | `ctrl+r` | Force refresh |
 | `?` | Help |
 | `q` | Quit (sessions keep running) |
+
+### Quick prompt
+
+Press `space` to dock a prompt bar at the bottom of the sidebar. The target follows the cursor while the bar is open (`↑↓` still navigate):
+
+- On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar stays open and clears, ready for the next answer.
+- On a **group** row, `enter` spawns a new agent in that group with the prompt embedded, using the group's default path. The spawn tool starts at the Settings (`s`) default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. The agent starts working on the prompt immediately.
+
+`esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](#configuration)).
 
 ### Groups
 
@@ -103,6 +114,8 @@ rules = [
 ```
 
 Rules match top-down against the visible pane text; first match wins, and `default_status` applies when nothing matches. Optional per-tool fields refine detection: `activity_cutoff` (regex locating the tool's input box, everything above it is turn content), `turn_end` (a turn-summary line marking the turn as over), `chrome_line`, `blocked_line`, and `trailing_note`. The generated config's `claude` and `opencode` blocks show all of them in use.
+
+`prompt_flag` controls how the new-session form's optional prompt is embedded into the launch command. Tools that take the prompt as a positional argument (Claude Code: `claude 'the prompt'`) leave it empty; tools whose positional argument means something else declare the flag (OpenCode: `prompt_flag = "--prompt"`, since its positional argument is the project path). The prompt only shapes the launch command; revive (`v`) uses `revive_command` untouched.
 
 State is stored next to the config in `state.db` (SQLite).
 

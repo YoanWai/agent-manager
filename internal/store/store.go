@@ -66,6 +66,10 @@ CREATE TABLE IF NOT EXISTS groups (
 	collapsed  INTEGER NOT NULL DEFAULT 0,
 	sort_order INTEGER NOT NULL DEFAULT 0,
 	path       TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS settings (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
 );`)
 	if err != nil {
 		return err
@@ -85,6 +89,22 @@ CREATE TABLE IF NOT EXISTS groups (
 		}
 	}
 	return nil
+}
+
+func (s *Store) Setting(key string) (string, error) {
+	var value string
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return value, err
+}
+
+func (s *Store) SetSetting(key, value string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO settings (key, value) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
 }
 
 func (s *Store) CreateSession(sess Session) error {

@@ -664,6 +664,133 @@ func TestReviveRefusesMissingDir(t *testing.T) {
 	}
 }
 
+func TestQuickPromptDeadSessionSetsError(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "gone", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	m.selectSessionRow(t, "gone")
+
+	m.openQuickMode()
+	m.quick.input.SetValue("hello?")
+	if _, _ = m.submitQuick(); m.err != "session is dead - press v to revive" {
+		t.Fatalf("err = %q", m.err)
+	}
+	if !m.quick.active {
+		t.Fatal("quick mode should stay open after a failed send")
+	}
+	if _, err := m.store.Get(sess.ID); err != nil {
+		t.Fatalf("session record should survive: %v", err)
+	}
+}
+
+func TestQuickPromptSendClearsAcked(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.store.SetAcked(sess.ID, true); err != nil {
+		t.Fatalf("set acked: %v", err)
+	}
+	m.selectSessionRow(t, "answer-me")
+
+	m.openQuickMode()
+	if !m.quick.active {
+		t.Fatalf("quick mode should activate, err = %q", m.err)
+	}
+	m.quick.input.SetValue("carry on with the plan")
+	if _, _ = m.submitQuick(); m.err != "" {
+		t.Fatalf("send: %q", m.err)
+	}
+	if !m.quick.active {
+		t.Fatal("quick mode should stay active after a send")
+	}
+	if m.quick.input.Value() != "" {
+		t.Fatal("input should clear after a send")
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Acked {
+		t.Fatal("quick prompt send should clear the acked flag")
+	}
+}
+
+func TestQuickSpawnOnGroupCreatesSession(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	for i, row := range m.rows {
+		if row.isGroup && row.group == "backend" {
+			m.cursor = i
+		}
+	}
+
+	m.openQuickMode()
+	m.quick.input.SetValue("build the api")
+	_, cmd := m.submitQuick()
+	if m.err != "" {
+		t.Fatalf("quick spawn: %q", m.err)
+	}
+	m.applyCmd(t, cmd)
+
+	sessions := m.sessionRows()
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %d want 1", len(sessions))
+	}
+	spawned := sessions[0]
+	if spawned.Group != "backend" || spawned.Tool != "claude" || spawned.Cwd != dir {
+		t.Fatalf("spawned session fields wrong: %+v", spawned)
+	}
+	if !m.tmux.Exists(spawned.ID) {
+		t.Fatal("tmux session should exist after quick spawn")
+	}
+	if m.quick.input.Value() != "" {
+		t.Fatal("input should clear after a spawn")
+	}
+}
+
+func TestDefaultToolFallsBackWhenSettingStale(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.SetSetting("default_tool", "deleted-tool"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	if got := m.defaultTool(); got != "claude" {
+		t.Fatalf("defaultTool = %q want claude (alphabetical fallback)", got)
+	}
+}
+
+func TestFormPromptComposesWithSettings(t *testing.T) {
+	m := buildModel(t)
+	tool := m.cfg.Tools["claude-hooked"]
+
+	command, _, err := m.buildLaunch(tool, withPrompt(tool, tool.Command, "fix the bug"), "prompt01")
+	if err != nil {
+		t.Fatalf("buildLaunch: %v", err)
+	}
+	if !strings.HasPrefix(command, "cat 'fix the bug' --settings '") {
+		t.Fatalf("command = %q", command)
+	}
+
+	flagged := config.Tool{Command: "opencode", PromptFlag: "--prompt"}
+	if got := withPrompt(flagged, flagged.Command, "do it"); got != "opencode --prompt 'do it'" {
+		t.Fatalf("flagged compose = %q", got)
+	}
+	if got := withPrompt(tool, tool.Command, ""); got != "cat" {
+		t.Fatalf("empty prompt should leave the command untouched, got %q", got)
+	}
+}
+
 func TestRefreshWithStaleSelectionFetchesPreview(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "fresh-one", t.TempDir(), "")
@@ -684,5 +811,61 @@ func TestRefreshWithStaleSelectionFetchesPreview(t *testing.T) {
 	}
 	if m.preview != "pane text" {
 		t.Fatalf("preview = %q want %q", m.preview, "pane text")
+	}
+}
+
+func TestFormRejectsDashLeadingPrompt(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.name.SetValue("flagged")
+	m.form.dir.SetValue(t.TempDir())
+	m.form.toolIndex = 0
+	m.form.prompt.SetValue("--version")
+
+	if _, _ = m.submitForm(); m.err == "" {
+		t.Fatal("dash-leading prompt should be rejected")
+	}
+	if m.mode != modeForm {
+		t.Fatalf("form should stay open, mode = %v", m.mode)
+	}
+	if len(m.sessionRows()) != 0 {
+		t.Fatalf("no session should be created, got %d", len(m.sessionRows()))
+	}
+}
+
+func TestQuickSpawnUsesTabCycledTool(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	for i, row := range m.rows {
+		if row.isGroup && row.group == "backend" {
+			m.cursor = i
+		}
+	}
+
+	m.openQuickMode()
+	if m.quickTool() != "claude" {
+		t.Fatalf("quick tool starts at %q want claude", m.quickTool())
+	}
+	if _, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyTab}); m.quickTool() != "claude-hooked" {
+		t.Fatalf("after tab, quick tool = %q want claude-hooked", m.quickTool())
+	}
+
+	m.quick.input.SetValue("build the api")
+	_, cmd := m.submitQuick()
+	if m.err != "" {
+		t.Fatalf("quick spawn: %q", m.err)
+	}
+	m.applyCmd(t, cmd)
+
+	sessions := m.sessionRows()
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %d want 1", len(sessions))
+	}
+	if sessions[0].Tool != "claude-hooked" {
+		t.Fatalf("spawned tool = %q want claude-hooked", sessions[0].Tool)
 	}
 }

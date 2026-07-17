@@ -28,6 +28,7 @@ const (
 	modeRename
 	modeMove
 	modeGroupForm
+	modeSettings
 )
 
 type treeRow struct {
@@ -75,6 +76,8 @@ type Model struct {
 	pathSugg  pathComplete
 	confirm   confirmTarget
 	rename    renameTarget
+	quick     quickState
+	settings  settingsState
 	moveID    string
 
 	width    int
@@ -96,6 +99,21 @@ type renameTarget struct {
 	path    string
 	sessID  string
 	input   textinput.Model
+}
+
+// quickState is the inline prompt bar docked under the preview: active
+// across cursor moves, so the target follows the selection. The tool is
+// the spawn CLI for group targets, cycled with tab.
+type quickState struct {
+	active    bool
+	input     textinput.Model
+	toolNames []string
+	toolIndex int
+}
+
+type settingsState struct {
+	toolNames []string
+	toolIndex int
 }
 
 // agentStats aggregates process-tree usage across all live sessions.

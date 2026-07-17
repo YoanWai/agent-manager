@@ -93,6 +93,17 @@ func (d *Driver) installSessionUX(name string) error {
 	return nil
 }
 
+// SendText types text into the session's pane as literal keystrokes and
+// presses Enter, so the agent inside receives it as a user message.
+func (d *Driver) SendText(id, text string) error {
+	name := sessionName(id)
+	if _, err := d.run("send-keys", "-t", name, "-l", "--", text); err != nil {
+		return err
+	}
+	_, err := d.run("send-keys", "-t", name, "Enter")
+	return err
+}
+
 // SetLabel puts the session's name and group path in the status bar's
 // left side, replacing the hidden window list.
 func (d *Driver) SetLabel(id, label string) error {

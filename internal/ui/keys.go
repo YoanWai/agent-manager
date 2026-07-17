@@ -20,6 +20,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKey(msg)
 	case modeRename:
 		return m.handleRenameKey(msg)
+	case modeSettings:
+		return m.handleSettingsKey(msg)
 	case modeMove:
 		return m.handleMoveKey(msg)
 	case modeGroupForm:
@@ -31,6 +33,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.searching {
 		return m.handleSearchKey(msg)
+	}
+	if m.quick.active {
+		return m.handleQuickKey(msg)
 	}
 
 	switch msg.String() {
@@ -62,8 +67,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.restoreSelected()
 	case "d":
 		m.prepareDelete()
-	case "space":
+	case " ", "space":
+		m.openQuickMode()
+	case "f":
 		m.toggleCollapse()
+	case "s":
+		m.openSettings()
 	case "t":
 		m.showArchived = !m.showArchived
 		m.requestRefresh()
@@ -450,6 +459,176 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.rename.input, cmd = m.rename.input.Update(msg)
 	return m, cmd
+}
+
+func (m *Model) openQuickMode() {
+	input := textinput.New()
+	input.CharLimit = 2000
+	input.Placeholder = "type and press enter"
+	input.Focus()
+	m.err = ""
+	names := sortedToolNames(m.cfg)
+	current := m.defaultTool()
+	index := 0
+	for i, name := range names {
+		if name == current {
+			index = i
+		}
+	}
+	m.quick = quickState{active: true, input: input, toolNames: names, toolIndex: index}
+}
+
+// handleQuickKey runs while the quick bar is docked in the sidebar: arrows
+// keep moving the selection (the target follows the cursor), enter submits
+// against whatever is selected, and every other key is typed text.
+func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.quick.active = false
+		return m, nil
+	case "up":
+		return m, m.moveCursor(-1)
+	case "down":
+		return m, m.moveCursor(1)
+	case "tab", "alt+m":
+		if len(m.quick.toolNames) > 0 {
+			m.quick.toolIndex = (m.quick.toolIndex + 1) % len(m.quick.toolNames)
+		}
+		return m, nil
+	case "enter":
+		return m.submitQuick()
+	}
+	var cmd tea.Cmd
+	m.quick.input, cmd = m.quick.input.Update(msg)
+	return m, cmd
+}
+
+// submitQuick answers the selected session, or spawns a new session with
+// the prompt embedded when a group is selected. The bar stays active so
+// consecutive prompts flow without re-arming.
+func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
+	entry, ok := m.selectedRow()
+	if !ok {
+		m.err = "nothing selected"
+		return m, nil
+	}
+	text := strings.TrimSpace(m.quick.input.Value())
+	if text == "" {
+		m.err = "prompt cannot be empty"
+		return m, nil
+	}
+	if entry.isGroup {
+		return m.quickSpawn(entry.group, text)
+	}
+	if !m.tmux.Exists(entry.sess.ID) {
+		m.err = "session is dead - press v to revive"
+		return m, nil
+	}
+	if err := m.tmux.SendText(entry.sess.ID, text); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	// The prompt is delivered: clear the input before anything else can
+	// fail, so a retry cannot send it twice.
+	m.quick.input.SetValue("")
+	m.err = ""
+	// A queued answer means the user expects a fresh finished alert.
+	if err := m.store.SetAcked(entry.sess.ID, false); err != nil {
+		m.err = "prompt sent, but clearing the alert ack failed: " + err.Error()
+	}
+	m.requestRefresh()
+	return m, nil
+}
+
+func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
+	if strings.HasPrefix(prompt, "-") {
+		m.err = `prompt cannot start with "-": the tool would read it as a flag`
+		return m, nil
+	}
+	toolName := m.quickTool()
+	if toolName == "" {
+		m.err = "no tools configured"
+		return m, nil
+	}
+	dir := expandHome(m.groupPaths[group])
+	if dir == "" {
+		dir, _ = os.Getwd()
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		m.err = "group has no valid default path: " + dir
+		return m, nil
+	}
+	name := toolName + "-" + newID()[:4]
+	if err := m.spawnSession(toolName, name, dir, group, prompt); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	m.quick.input.SetValue("")
+	m.err = ""
+	return m, m.refreshCmd()
+}
+
+// quickTool is the spawn CLI for the current quick-mode run: the settings
+// default until tab cycles it.
+func (m *Model) quickTool() string {
+	if len(m.quick.toolNames) == 0 {
+		return ""
+	}
+	return m.quick.toolNames[m.quick.toolIndex]
+}
+
+// defaultTool is the CLI quick spawn launches: the settings choice when it
+// still exists in the config, else the first tool alphabetically. A store
+// error still yields the fallback but is surfaced, never swallowed.
+func (m *Model) defaultTool() string {
+	names := sortedToolNames(m.cfg)
+	if len(names) == 0 {
+		return ""
+	}
+	chosen, err := m.store.Setting("default_tool")
+	if err != nil {
+		m.err = "reading default tool setting: " + err.Error()
+		return names[0]
+	}
+	if chosen != "" {
+		if _, ok := m.cfg.Tools[chosen]; ok {
+			return chosen
+		}
+	}
+	return names[0]
+}
+
+func (m *Model) openSettings() {
+	names := sortedToolNames(m.cfg)
+	if len(names) == 0 {
+		m.err = "no tools configured"
+		return
+	}
+	m.err = ""
+	current := m.defaultTool()
+	index := 0
+	for i, name := range names {
+		if name == current {
+			index = i
+		}
+	}
+	m.settings = settingsState{toolNames: names, toolIndex: index}
+	m.mode = modeSettings
+}
+
+func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "left", "h":
+		m.settings.toolIndex = (m.settings.toolIndex + len(m.settings.toolNames) - 1) % len(m.settings.toolNames)
+	case "right", "l":
+		m.settings.toolIndex = (m.settings.toolIndex + 1) % len(m.settings.toolNames)
+	case "enter", "esc":
+		if err := m.store.SetSetting("default_tool", m.settings.toolNames[m.settings.toolIndex]); err != nil {
+			m.err = err.Error()
+		}
+		m.mode = modeList
+	}
+	return m, nil
 }
 
 func (m *Model) openMove() {
