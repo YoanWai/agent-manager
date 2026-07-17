@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -108,7 +109,7 @@ type renameTarget struct {
 // the spawn CLI for group targets, cycled with tab.
 type quickState struct {
 	active    bool
-	input     textinput.Model
+	input     textarea.Model
 	toolNames []string
 	toolIndex int
 }

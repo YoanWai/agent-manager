@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func buildModel(t *testing.T) *Model {
@@ -959,5 +960,38 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	if m.groupPaths["zone"] == "" {
 		t.Fatal("edited group should keep a resolved path when cleared")
+	}
+}
+
+func TestGroupRowRendersGroupPane(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "api-agent", dir, "backend")
+	for i, row := range m.rows {
+		if row.isGroup && row.group == "backend" {
+			m.cursor = i
+		}
+	}
+
+	detail := ansi.Strip(m.viewDetail(112))
+	if !strings.Contains(detail, dir) {
+		t.Fatalf("group detail missing path %q:\n%s", dir, detail)
+	}
+	if !strings.Contains(detail, "1 agent") {
+		t.Fatalf("group detail missing agent count:\n%s", detail)
+	}
+
+	agents := ansi.Strip(m.viewGroupAgents("backend", 112, 10))
+	if !strings.Contains(agents, "api-agent") {
+		t.Fatalf("agents list missing session:\n%s", agents)
+	}
+
+	inherited := ansi.Strip(m.viewGroupDetail("backend/sub", 112))
+	if !strings.Contains(inherited, dir) || !strings.Contains(inherited, "inherited") {
+		t.Fatalf("subgroup should inherit the ancestor path:\n%s", inherited)
 	}
 }
