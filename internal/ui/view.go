@@ -20,8 +20,6 @@ func (m *Model) View() string {
 		return m.viewForm()
 	case modeHelp:
 		return m.viewHelp()
-	case modeRename:
-		return m.viewRename()
 	case modeSettings:
 		return m.viewSettings()
 	case modeMove:
@@ -241,6 +239,11 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 	}
 	guides := treeGuides(entry.depth)
 
+	if m.renamingRow(entry) {
+		line := bar + " " + guides + m.renameRowInput(entry, width-2-ansi.StringWidth(guides))
+		return selectedRowStyle.Render(padRight(line, width))
+	}
+
 	var content string
 	if entry.isGroup {
 		marker := "▾"
@@ -272,6 +275,34 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 		return selectedRowStyle.Render(line)
 	}
 	return line
+}
+
+func (m *Model) renamingGroup(group string) bool {
+	return m.mode == modeRename && m.rename.isGroup && m.rename.path == group
+}
+
+func (m *Model) renamingRow(entry treeRow) bool {
+	if m.mode != modeRename {
+		return false
+	}
+	if entry.isGroup {
+		return m.rename.isGroup && entry.group == m.rename.path
+	}
+	return !m.rename.isGroup && entry.sess.ID == m.rename.sessID
+}
+
+// renameRowInput renders the inline name editor in place of the row's
+// label, keeping the row's glyph so the edit reads in context.
+func (m *Model) renameRowInput(entry treeRow, width int) string {
+	lead := subtleStyle.Render("▾")
+	if !entry.isGroup {
+		lead = lipgloss.NewStyle().Foreground(statusColor(entry.sess.Status)).
+			Render(statusGlyph(entry.sess.Status))
+	}
+	if fieldWidth := width - 4; fieldWidth >= 5 {
+		m.rename.input.Width = fieldWidth
+	}
+	return lead + " " + m.rename.input.View()
 }
 
 // divider renders a labeled section rule that fills the given width.
@@ -392,14 +423,28 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	}
 	b.WriteString(pill("group", colorAccent2) + "  " + pill(countLabel, colorAccent) + "\n")
 
-	path := m.groupPaths[group]
-	source := ""
-	if path == "" {
-		path = m.groupDefaultDir(group)
-		source = subtleStyle.Render(" · inherited")
+	if m.renamingGroup(group) {
+		label := labelStyle
+		if m.rename.focus == 1 {
+			label = lipgloss.NewStyle().Foreground(colorAccent)
+		}
+		if fieldWidth := width - 8; fieldWidth >= 10 {
+			m.rename.dir.Width = fieldWidth
+		}
+		b.WriteString(label.Width(6).Render("path") + m.rename.dir.View() + "\n")
+		if m.rename.focus == 1 && m.pathSugg.active() {
+			b.WriteString(m.viewPathSuggestions() + "\n")
+		}
+	} else {
+		path := m.groupPaths[group]
+		source := ""
+		if path == "" {
+			path = m.groupDefaultDir(group)
+			source = subtleStyle.Render(" · inherited")
+		}
+		b.WriteString(labelStyle.Width(6).Render("path") +
+			valueStyle.Render(truncateTail(path, width-8)) + source + "\n")
 	}
-	b.WriteString(labelStyle.Width(6).Render("path") +
-		valueStyle.Render(truncateTail(path, width-8)) + source + "\n")
 
 	if group != "" {
 		b.WriteString(kv("group", displayGroup(parentGroup(group))))
@@ -566,6 +611,12 @@ func (m *Model) viewFooter() string {
 		pairs = [][2]string{
 			{"↵", "send"}, {"↑↓", "switch target"}, {"⇥", "tool: " + m.quickTool()},
 			{"esc", "close"},
+		}
+	}
+	if m.mode == modeRename {
+		pairs = [][2]string{{"↵", "save"}, {"esc", "cancel"}}
+		if m.rename.isGroup {
+			pairs = [][2]string{{"⇥", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}
 		}
 	}
 	sep := subtleStyle.Render(" · ")

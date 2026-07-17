@@ -128,28 +128,6 @@ func (m *Model) viewGroupForm() string {
 	return m.card("✦ New Group", strings.TrimRight(b.String(), "\n"), hint)
 }
 
-func (m *Model) viewRename() string {
-	if !m.rename.isGroup {
-		return m.card("✎ Rename Session", m.rename.input.View(), "↵ apply · esc cancel")
-	}
-	sub := ""
-	if idx := strings.LastIndex(m.rename.path, "/"); idx >= 0 {
-		sub = mutedStyle.Render("under "+m.rename.path[:idx]) + "\n\n"
-	}
-	body := sub +
-		formField("name", m.rename.input.View(), m.rename.focus == 0) +
-		formField("path", m.rename.dir.View(), m.rename.focus == 1)
-	hint := "tab/↑↓ move · ↵ apply · esc cancel"
-	if m.rename.focus == 1 && m.pathSugg.active() {
-		body += m.viewPathSuggestions() + "\n"
-		hint = "↑↓ pick · tab complete · ↵ apply · esc close"
-		if m.pathSugg.chosen {
-			hint = "↑↓ pick · ↵/tab complete · esc close"
-		}
-	}
-	return m.card("✎ Edit Group", strings.TrimRight(body, "\n"), hint)
-}
-
 func (m *Model) viewSettings() string {
 	marker := lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 	label := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("quick spawn tool")

@@ -408,10 +408,12 @@ func (m *Model) openRename() {
 	}
 	input := textinput.New()
 	input.CharLimit = 60
+	input.Prompt = ""
 	input.Focus()
 	if entry.isGroup {
 		input.SetValue(baseName(entry.group))
 		dir := textField("default working directory", 400)
+		dir.Prompt = ""
 		dirValue := m.groupPaths[entry.group]
 		if dirValue == "" {
 			dirValue = m.groupDefaultDir(entry.group)
@@ -519,21 +521,55 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 			m.err = err.Error()
 			return m, nil
 		}
-		if m.collapsed[m.rename.path] {
-			delete(m.collapsed, m.rename.path)
-			m.collapsed[newPath] = true
-		}
+		m.renameGroupLocally(m.rename.path, newPath, dir)
 		m.relabelSubtree(newPath)
 	} else {
 		if err := m.store.RenameSession(m.rename.sessID, name); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
+		for i := range m.sessions {
+			if m.sessions[i].ID == m.rename.sessID {
+				m.sessions[i].Name = name
+			}
+		}
 		m.relabelSession(m.rename.sessID)
 	}
+	m.rebuildRows()
 	m.mode = modeList
 	m.requestRefresh()
 	return m, nil
+}
+
+// renameGroupLocally rewrites the in-memory tree right away, so the
+// frames between saving and the poller's next refresh already show the
+// new name and path instead of flashing the stale ones.
+func (m *Model) renameGroupLocally(old, newPath, dir string) {
+	moved := func(group string) (string, bool) {
+		if group == old || strings.HasPrefix(group, old+"/") {
+			return newPath + group[len(old):], true
+		}
+		return group, false
+	}
+	for i := range m.groups {
+		m.groups[i], _ = moved(m.groups[i])
+	}
+	for i := range m.sessions {
+		m.sessions[i].Group, _ = moved(m.sessions[i].Group)
+	}
+	groupPaths := make(map[string]string, len(m.groupPaths))
+	for group, path := range m.groupPaths {
+		group, _ = moved(group)
+		groupPaths[group] = path
+	}
+	groupPaths[newPath] = dir
+	m.groupPaths = groupPaths
+	for group, folded := range m.collapsed {
+		if renamed, ok := moved(group); ok {
+			delete(m.collapsed, group)
+			m.collapsed[renamed] = folded
+		}
+	}
 }
 
 func (m *Model) openQuickMode() {
