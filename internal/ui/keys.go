@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -410,7 +411,9 @@ func (m *Model) openRename() {
 	input.Focus()
 	if entry.isGroup {
 		input.SetValue(baseName(entry.group))
-		m.rename = renameTarget{isGroup: true, path: entry.group, input: input}
+		dir := textField("default path (optional)", 400)
+		dir.SetValue(m.groupPaths[entry.group])
+		m.rename = renameTarget{isGroup: true, path: entry.group, input: input, dir: dir}
 	} else {
 		input.SetValue(entry.sess.Name)
 		m.rename = renameTarget{sessID: entry.sess.ID, input: input}
@@ -419,46 +422,85 @@ func (m *Model) openRename() {
 	m.err = ""
 }
 
+func (m *Model) renameFocus(delta int) {
+	m.rename.focus = (m.rename.focus + delta + 2) % 2
+	m.rename.input.Blur()
+	m.rename.dir.Blur()
+	if m.rename.focus == 0 {
+		m.rename.input.Focus()
+	} else {
+		m.rename.dir.Focus()
+	}
+}
+
 func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.mode = modeList
 		return m, nil
-	case "enter":
-		name := strings.TrimSpace(m.rename.input.Value())
-		name = strings.ReplaceAll(name, "/", "-")
-		if name == "" {
-			m.err = "name cannot be empty"
+	case "tab", "up", "down":
+		if m.rename.isGroup {
+			m.renameFocus(1)
 			return m, nil
 		}
-		if m.rename.isGroup {
-			newPath := name
-			if idx := strings.LastIndex(m.rename.path, "/"); idx >= 0 {
-				newPath = m.rename.path[:idx] + "/" + name
-			}
-			if err := m.store.RenameGroup(m.rename.path, newPath); err != nil {
-				m.err = err.Error()
-				return m, nil
-			}
-			if m.collapsed[m.rename.path] {
-				delete(m.collapsed, m.rename.path)
-				m.collapsed[newPath] = true
-			}
-			m.relabelSubtree(newPath)
-		} else {
-			if err := m.store.RenameSession(m.rename.sessID, name); err != nil {
-				m.err = err.Error()
-				return m, nil
-			}
-			m.relabelSession(m.rename.sessID)
-		}
-		m.mode = modeList
-		m.requestRefresh()
-		return m, nil
+	case "enter":
+		return m.applyRename()
 	}
 	var cmd tea.Cmd
-	m.rename.input, cmd = m.rename.input.Update(msg)
+	if m.rename.focus == 0 {
+		m.rename.input, cmd = m.rename.input.Update(msg)
+	} else {
+		m.rename.dir, cmd = m.rename.dir.Update(msg)
+	}
 	return m, cmd
+}
+
+func (m *Model) applyRename() (tea.Model, tea.Cmd) {
+	name := strings.TrimSpace(m.rename.input.Value())
+	name = strings.ReplaceAll(name, "/", "-")
+	if name == "" {
+		m.err = "name cannot be empty"
+		return m, nil
+	}
+	if m.rename.isGroup {
+		dir := expandHome(strings.TrimSpace(m.rename.dir.Value()))
+		if dir != "" {
+			if abs, err := filepath.Abs(dir); err == nil {
+				dir = abs
+			}
+			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+				m.err = "default path does not exist: " + dir
+				return m, nil
+			}
+		}
+		newPath := name
+		if idx := strings.LastIndex(m.rename.path, "/"); idx >= 0 {
+			newPath = m.rename.path[:idx] + "/" + name
+		}
+		if err := m.store.RenameGroup(m.rename.path, newPath); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		// CreateGroup upserts, so it doubles as the default-path setter.
+		if err := m.store.CreateGroup(newPath, dir); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		if m.collapsed[m.rename.path] {
+			delete(m.collapsed, m.rename.path)
+			m.collapsed[newPath] = true
+		}
+		m.relabelSubtree(newPath)
+	} else {
+		if err := m.store.RenameSession(m.rename.sessID, name); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.relabelSession(m.rename.sessID)
+	}
+	m.mode = modeList
+	m.requestRefresh()
+	return m, nil
 }
 
 func (m *Model) openQuickMode() {

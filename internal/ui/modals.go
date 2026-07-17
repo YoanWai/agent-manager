@@ -129,16 +129,17 @@ func (m *Model) viewGroupForm() string {
 }
 
 func (m *Model) viewRename() string {
-	what := "Session"
-	sub := ""
-	if m.rename.isGroup {
-		what = "Group"
-		if idx := strings.LastIndex(m.rename.path, "/"); idx >= 0 {
-			sub = mutedStyle.Render("under "+m.rename.path[:idx]) + "\n\n"
-		}
+	if !m.rename.isGroup {
+		return m.card("✎ Rename Session", m.rename.input.View(), "↵ apply · esc cancel")
 	}
-	body := sub + m.rename.input.View()
-	return m.card("✎ Rename "+what, body, "↵ apply · esc cancel")
+	sub := ""
+	if idx := strings.LastIndex(m.rename.path, "/"); idx >= 0 {
+		sub = mutedStyle.Render("under "+m.rename.path[:idx]) + "\n\n"
+	}
+	body := sub +
+		formField("name", m.rename.input.View(), m.rename.focus == 0) +
+		formField("path", m.rename.dir.View(), m.rename.focus == 1)
+	return m.card("✎ Edit Group", strings.TrimRight(body, "\n"), "tab/↑↓ move · ↵ apply · esc cancel")
 }
 
 func (m *Model) viewSettings() string {
@@ -161,7 +162,7 @@ func (m *Model) viewHelp() string {
 		{"ctrl+q", "inside a session: back to manager"},
 		{"m", "move session to another group"},
 		{"g", "new group (name, parent, default path)"},
-		{"r", "rename session / group"},
+		{"r", "rename session / edit group (name + default path)"},
 		{"v", "revive dead session (resumes the agent)"},
 		{"a / u", "archive / restore"},
 		{"d", "delete session, or group + subtree"},

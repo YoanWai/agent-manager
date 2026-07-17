@@ -52,7 +52,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `ctrl+q` | Inside a session: back to the manager |
 | `shift+↑` / `shift+↓` | Reorder session or group among its siblings |
 | `m` | Move session to another group |
-| `r` | Rename session or group |
+| `r` | Rename session / edit group (name and default path) |
 | `v` | Revive a dead session (`revive_command`, e.g. `claude --continue`, resumes the conversation) |
 | `a` / `u` | Archive / restore |
 | `d` | Delete session, or a group + its entire subtree |
