@@ -181,7 +181,6 @@ func (m *Model) viewHelp() string {
 		{"s", "settings (quick spawn tool)"},
 		{"t", "toggle archived view"},
 		{"/", "search"},
-		{"ctrl+r", "force refresh"},
 		{"↑↓ / jk", "move cursor"},
 		{"q", "quit (sessions keep running)"},
 	}

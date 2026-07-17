@@ -61,7 +61,6 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `s` | Settings (default tool for quick spawn) |
 | `t` | Toggle archived view |
 | `/` | Search |
-| `ctrl+r` | Force refresh |
 | `?` | Help |
 | `q` | Quit (sessions keep running) |
 

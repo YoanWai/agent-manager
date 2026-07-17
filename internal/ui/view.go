@@ -560,7 +560,7 @@ func (m *Model) viewFooter() string {
 		{"↑↓", "navigate"}, {"↵", "attach"}, {"n", "new"}, {"g", "group"},
 		{"⇧↑↓", "reorder"}, {"space", "quick prompt"}, {"f", "fold"}, {"m", "move"}, {"r", "rename/edit"},
 		{"v", "revive"}, {"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
-		{"t", "archived"}, {"s", "settings"}, {"ctrl+r", "refresh"}, {"?", "help"}, {"q", "quit"},
+		{"t", "archived"}, {"s", "settings"}, {"?", "help"}, {"q", "quit"},
 	}
 	if m.quick.active {
 		pairs = [][2]string{

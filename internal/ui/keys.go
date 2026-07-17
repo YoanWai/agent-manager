@@ -86,8 +86,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openRename()
 	case "m":
 		m.openMove()
-	case "ctrl+r":
-		m.requestRefresh()
 	case "?":
 		m.mode = modeHelp
 	}
