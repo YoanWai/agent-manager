@@ -40,7 +40,7 @@ Run inside [WSL2](https://learn.microsoft.com/windows/wsl/install): agent-manage
 agent-manager
 ```
 
-Sessions run inside tmux (`am_*` namespace), so they survive the manager quitting. Inside a session, **Ctrl+Q** detaches back to the manager.
+Sessions run inside tmux (`am_*` namespace), so they survive the manager quitting. Inside a session, **Ctrl+Q** detaches back to the manager. `agent-manager --version` prints the version.
 
 ### Keys
 
@@ -97,13 +97,17 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 
 Detection matches per-tool regex rules against the visible pane, analyzes the newest turn to tell `finished` from `waiting`, and treats streaming output (content changing between polls) as `working`. Polling keeps running while you are inside a session, so statuses stay live. The selected session's pane tail renders in the preview panel, and moving the cursor fetches the preview immediately.
 
+For Claude Code, status comes first-hand from [hook events](https://docs.anthropic.com/en/docs/claude-code/hooks) instead of pane guessing: sessions launch with a generated `--settings` file whose hooks write the lifecycle state (`working`, `waiting`, `finished`, `idle`) to a per-session status file that the poller reads first. Pane rules still refine it — hooks cannot see a plain-text question, an Esc interrupt, or an error line, so a matching pane verdict upgrades the hook status — and they take over fully as fallback when the hook file is missing or stale. Enabled per tool with `status_source = "claude-hooks"`.
+
 ### Stats
 
-The header shows a fleet summary: per-status session counts and the combined CPU/RAM of every live agent's full process tree. The Computer block in the sessions panel shows machine gauges: CPU, memory (used/total), swap, root-disk free space, and network up/down rates.
+The header shows a fleet summary: per-status session counts, plus `agents N% · X GB`, the combined CPU and RSS memory of every live agent's full process tree (shell, agent, and children). Agent CPU uses `ps` semantics where 100% equals one full core, so the total can exceed 100% on multi-core machines. The Computer block in the sessions panel shows machine gauges: CPU (normalized to the whole machine, capped at 100%), memory (used/total), swap, root-disk free space, and network up/down rates.
 
 ## Configuration
 
 Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux) and is created on first run with working defaults for Claude Code and OpenCode.
+
+Top-level: `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats.
 
 Add any CLI tool as a `[tools.<name>]` block:
 
@@ -118,6 +122,8 @@ rules = [
 ```
 
 Rules match top-down against the visible pane text; first match wins, and `default_status` applies when nothing matches. Optional per-tool fields refine detection: `activity_cutoff` (regex locating the tool's input box, everything above it is turn content), `turn_end` (a turn-summary line marking the turn as over), `chrome_line`, `blocked_line`, and `trailing_note`. The generated config's `claude` and `opencode` blocks show all of them in use.
+
+Other per-tool fields: `revive_command` is what `v` runs to revive a dead session (e.g. `claude --continue` resumes the conversation in place); `status_source = "claude-hooks"` switches status to Claude Code hook events (see [Status](#status)).
 
 `prompt_flag` controls how the new-session form's optional prompt is embedded into the launch command. Tools that take the prompt as a positional argument (Claude Code: `claude 'the prompt'`) leave it empty; tools whose positional argument means something else declare the flag (OpenCode: `prompt_flag = "--prompt"`, since its positional argument is the project path). The prompt only shapes the launch command; revive (`v`) uses `revive_command` untouched.
 
