@@ -174,6 +174,9 @@ func (m *Model) sidebarTitle() string {
 func (m *Model) viewList(width, height int) string {
 	if len(m.rows) == 0 {
 		hint := "Press " + keyStyle.Render("n") + mutedStyle.Render(" to create a session.")
+		if m.showArchived {
+			hint = mutedStyle.Render("No archived sessions. ") + keyStyle.Render("t") + mutedStyle.Render(" goes back.")
+		}
 		if strings.TrimSpace(m.search) != "" {
 			hint = mutedStyle.Render("No matches for ") + valueStyle.Render("\""+m.search+"\"")
 		}
@@ -204,7 +207,7 @@ func treeGuides(depth int) string {
 
 func (m *Model) groupSessionCount(path string) int {
 	count := 0
-	for _, sess := range m.sessions {
+	for _, sess := range m.visibleSessions() {
 		if sess.Group == path || strings.HasPrefix(sess.Group, path+"/") {
 			count++
 		}
@@ -263,11 +266,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 		name := nameStyle.Render(sess.Name)
 		state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(sess.Status)
 		meta := state + subtleStyle.Render(" · "+sess.Tool+" · "+relTime(sess.CreatedAt))
-		archived := ""
-		if sess.Archived {
-			archived = subtleStyle.Render(" ⋅ archived")
-		}
-		content = glyph + " " + name + "  " + meta + archived
+		content = glyph + " " + name + "  " + meta
 	}
 
 	line := bar + " " + guides + content
@@ -495,7 +494,7 @@ func (m *Model) groupStatusBreakdown(group string) string {
 
 func (m *Model) groupStatusCounts(group string) map[string]int {
 	counts := map[string]int{}
-	for _, sess := range m.sessions {
+	for _, sess := range m.visibleSessions() {
 		if sess.Group == group || strings.HasPrefix(sess.Group, group+"/") {
 			counts[sess.Status]++
 		}
@@ -527,7 +526,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		b.WriteString(mutedStyle.Render("(no agents yet — press space to spawn one)"))
 		return padToHeight(b.String(), height)
 	}
-	for _, sess := range m.sessions {
+	for _, sess := range m.visibleSessions() {
 		if sess.Group != group && !strings.HasPrefix(sess.Group, group+"/") {
 			continue
 		}

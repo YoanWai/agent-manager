@@ -1019,3 +1019,32 @@ func TestCursorWrapsAroundTheList(t *testing.T) {
 		t.Fatalf("empty list should leave the cursor alone, cursor = %d", m.cursor)
 	}
 }
+
+func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "live-one", dir, "")
+	createSession(t, m, "old-one", dir, "")
+
+	m.selectSessionRow(t, "old-one")
+	_, cmd := m.archiveSelected()
+	m.applyCmd(t, cmd)
+
+	if names := sessionNames(m); len(names) != 1 || names[0] != "live-one" {
+		t.Fatalf("active view = %v want [live-one]", names)
+	}
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	if names := sessionNames(m); len(names) != 1 || names[0] != "old-one" {
+		t.Fatalf("archived view = %v want [old-one]", names)
+	}
+}
+
+func sessionNames(m *Model) []string {
+	var names []string
+	for _, sess := range m.sessionRows() {
+		names = append(names, sess.Name)
+	}
+	return names
+}

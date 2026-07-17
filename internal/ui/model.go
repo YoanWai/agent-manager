@@ -193,6 +193,20 @@ func (m *Model) Init() tea.Cmd {
 	return nil
 }
 
+// visibleSessions filters to the sessions the current view scope shows:
+// active ones normally, archived ones in the archived view. It also
+// covers the frames between a scope toggle and the next refresh, when
+// m.sessions still carries the other scope's list.
+func (m *Model) visibleSessions() []store.Session {
+	visible := make([]store.Session, 0, len(m.sessions))
+	for _, sess := range m.sessions {
+		if sess.Archived == m.showArchived {
+			visible = append(visible, sess)
+		}
+	}
+	return visible
+}
+
 func (m *Model) selected() (store.Session, bool) {
 	if m.cursor < 0 || m.cursor >= len(m.rows) || m.rows[m.cursor].isGroup {
 		return store.Session{}, false
@@ -352,7 +366,7 @@ func (m *Model) rebuildRows() {
 	// m.sessions arrives ordered by the store (group, sort_order), so
 	// per-group slices inherit the user's manual order.
 	sessionsByGroup := map[string][]store.Session{}
-	for _, sess := range m.sessions {
+	for _, sess := range m.visibleSessions() {
 		if query != "" && !matchesSearch(sess, query) {
 			continue
 		}
@@ -360,7 +374,9 @@ func (m *Model) rebuildRows() {
 	}
 
 	paths := groupClosure(m.groups, m.sessions)
-	if query != "" {
+	// The archived view keeps only groups that hold archived sessions,
+	// instead of the full (mostly empty) tree skeleton.
+	if query != "" || m.showArchived {
 		paths = pathsWithSessions(paths, sessionsByGroup)
 	}
 	children := childIndex(paths, m.groups)
