@@ -310,14 +310,12 @@ func (m *Model) viewQuickBar(width int) string {
 	target := "no selection"
 	if entry, ok := m.selectedRow(); ok {
 		if entry.isGroup {
-			target = "new " + m.defaultTool() + " agent in " + displayGroup(entry.group)
+			target = "new " + m.quickTool() + " agent in " + displayGroup(entry.group)
 		} else {
 			target = "answer " + entry.sess.Name
 		}
 	}
-	return divider("Quick Prompt · "+target, width) + "\n" +
-		m.quick.input.View() + "\n" +
-		subtleStyle.Render("↵ send · ↑↓ switch target · esc close")
+	return divider("Quick Prompt · "+target, width) + "\n" + m.quick.input.View()
 }
 
 func (m *Model) viewDetail(width int) string {
@@ -419,6 +417,12 @@ func (m *Model) viewFooter() string {
 		{"⇧↑↓", "reorder"}, {"space", "quick prompt"}, {"f", "fold"}, {"m", "move"}, {"r", "rename"},
 		{"v", "revive"}, {"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
 		{"t", "archived"}, {"s", "settings"}, {"ctrl+r", "refresh"}, {"?", "help"}, {"q", "quit"},
+	}
+	if m.quick.active {
+		pairs = [][2]string{
+			{"↵", "send"}, {"↑↓", "switch target"}, {"⇥", "tool: " + m.quickTool()},
+			{"esc", "close"},
+		}
 	}
 	sep := subtleStyle.Render(" · ")
 	sepWidth := ansi.StringWidth(sep)

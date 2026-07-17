@@ -102,10 +102,13 @@ type renameTarget struct {
 }
 
 // quickState is the inline prompt bar docked under the preview: active
-// across cursor moves, so the target follows the selection.
+// across cursor moves, so the target follows the selection. The tool is
+// the spawn CLI for group targets, cycled with tab.
 type quickState struct {
-	active bool
-	input  textinput.Model
+	active    bool
+	input     textinput.Model
+	toolNames []string
+	toolIndex int
 }
 
 type settingsState struct {

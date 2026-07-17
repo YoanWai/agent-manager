@@ -70,7 +70,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 Press `space` to dock a prompt bar at the bottom of the sidebar. The target follows the cursor while the bar is open (`↑↓` still navigate):
 
 - On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar stays open and clears, ready for the next answer.
-- On a **group** row, `enter` spawns a new agent in that group with the prompt embedded, using the group's default path and the default tool from Settings (`s`). The agent starts working on the prompt immediately.
+- On a **group** row, `enter` spawns a new agent in that group with the prompt embedded, using the group's default path. The spawn tool starts at the Settings (`s`) default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. The agent starts working on the prompt immediately.
 
 `esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](#configuration)).
 

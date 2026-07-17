@@ -167,6 +167,7 @@ func (m *Model) viewHelp() string {
 		{"d", "delete session, or group + subtree"},
 		{"shift+↑↓", "reorder row up / down"},
 		{"space", "quick prompt: answer session / spawn agent in group"},
+		{"⇥", "in quick prompt: switch spawn tool"},
 		{"f", "fold / unfold group"},
 		{"s", "settings (quick spawn tool)"},
 		{"t", "toggle archived view"},

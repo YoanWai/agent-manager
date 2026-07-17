@@ -466,7 +466,14 @@ func (m *Model) openQuickMode() {
 	input.CharLimit = 2000
 	input.Placeholder = "type and press enter"
 	input.Focus()
-	m.quick = quickState{active: true, input: input}
+	names := sortedToolNames(m.cfg)
+	index := 0
+	for i, name := range names {
+		if name == m.defaultTool() {
+			index = i
+		}
+	}
+	m.quick = quickState{active: true, input: input, toolNames: names, toolIndex: index}
 	m.err = ""
 }
 
@@ -482,6 +489,11 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.moveCursor(-1)
 	case "down":
 		return m, m.moveCursor(1)
+	case "tab":
+		if len(m.quick.toolNames) > 0 {
+			m.quick.toolIndex = (m.quick.toolIndex + 1) % len(m.quick.toolNames)
+		}
+		return m, nil
 	case "enter":
 		return m.submitQuick()
 	}
@@ -530,7 +542,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		m.err = `prompt cannot start with "-": the tool would read it as a flag`
 		return m, nil
 	}
-	toolName := m.defaultTool()
+	toolName := m.quickTool()
 	if toolName == "" {
 		m.err = "no tools configured"
 		return m, nil
@@ -550,6 +562,15 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 	}
 	m.quick.input.SetValue("")
 	return m, m.refreshCmd()
+}
+
+// quickTool is the spawn CLI for the current quick-mode run: the settings
+// default until tab cycles it.
+func (m *Model) quickTool() string {
+	if len(m.quick.toolNames) == 0 {
+		return ""
+	}
+	return m.quick.toolNames[m.quick.toolIndex]
 }
 
 // defaultTool is the CLI quick spawn launches: the settings choice when it

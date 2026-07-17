@@ -832,3 +832,40 @@ func TestFormRejectsDashLeadingPrompt(t *testing.T) {
 		t.Fatalf("no session should be created, got %d", len(m.sessionRows()))
 	}
 }
+
+func TestQuickSpawnUsesTabCycledTool(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	for i, row := range m.rows {
+		if row.isGroup && row.group == "backend" {
+			m.cursor = i
+		}
+	}
+
+	m.openQuickMode()
+	if m.quickTool() != "claude" {
+		t.Fatalf("quick tool starts at %q want claude", m.quickTool())
+	}
+	if _, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyTab}); m.quickTool() != "claude-hooked" {
+		t.Fatalf("after tab, quick tool = %q want claude-hooked", m.quickTool())
+	}
+
+	m.quick.input.SetValue("build the api")
+	_, cmd := m.submitQuick()
+	if m.err != "" {
+		t.Fatalf("quick spawn: %q", m.err)
+	}
+	m.applyCmd(t, cmd)
+
+	sessions := m.sessionRows()
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %d want 1", len(sessions))
+	}
+	if sessions[0].Tool != "claude-hooked" {
+		t.Fatalf("spawned tool = %q want claude-hooked", sessions[0].Tool)
+	}
+}
