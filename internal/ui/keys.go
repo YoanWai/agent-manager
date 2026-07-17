@@ -489,7 +489,7 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.moveCursor(-1)
 	case "down":
 		return m, m.moveCursor(1)
-	case "tab":
+	case "tab", "alt+m":
 		if len(m.quick.toolNames) > 0 {
 			m.quick.toolIndex = (m.quick.toolIndex + 1) % len(m.quick.toolNames)
 		}
