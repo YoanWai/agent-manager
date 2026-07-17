@@ -34,7 +34,7 @@ brews:
       name: homebrew-tap
     homepage: https://github.com/YoanWai/agent-manager
     description: Terminal UI to manage AI coding-agent tmux sessions
-    license: AGPL-3.0-only
+    license: MIT
     dependencies:
       - name: tmux
     test: |
