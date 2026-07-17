@@ -869,3 +869,60 @@ func TestQuickSpawnUsesTabCycledTool(t *testing.T) {
 		t.Fatalf("spawned tool = %q want claude-hooked", sessions[0].Tool)
 	}
 }
+
+func TestEditGroupRenamesAndSetsPath(t *testing.T) {
+	m := buildModel(t)
+	oldDir := t.TempDir()
+	newDir := t.TempDir()
+	if err := m.store.CreateGroup("backend", oldDir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	for i, row := range m.rows {
+		if row.isGroup && row.group == "backend" {
+			m.cursor = i
+		}
+	}
+
+	m.openRename()
+	if m.mode != modeRename || !m.rename.isGroup {
+		t.Fatalf("edit group should open, mode = %v", m.mode)
+	}
+	if m.rename.dir.Value() != oldDir {
+		t.Fatalf("path prefill = %q want %q", m.rename.dir.Value(), oldDir)
+	}
+	m.rename.input.SetValue("platform")
+	m.rename.dir.SetValue(newDir)
+	if _, _ = m.applyRename(); m.err != "" {
+		t.Fatalf("apply: %q", m.err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	if m.groupPaths["platform"] != newDir {
+		t.Fatalf("platform path = %q want %q", m.groupPaths["platform"], newDir)
+	}
+	if _, exists := m.groupPaths["backend"]; exists {
+		t.Fatal("old group name should be gone")
+	}
+}
+
+func TestEditGroupRejectsMissingPath(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("backend", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	for i, row := range m.rows {
+		if row.isGroup && row.group == "backend" {
+			m.cursor = i
+		}
+	}
+	m.openRename()
+	m.rename.dir.SetValue("/nope/definitely/missing")
+	if _, _ = m.applyRename(); m.err == "" {
+		t.Fatal("missing path should be rejected")
+	}
+	if m.mode != modeRename {
+		t.Fatal("modal should stay open on error")
+	}
+}
