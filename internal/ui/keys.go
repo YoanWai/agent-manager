@@ -96,13 +96,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // fetch for the newly selected session, so the sidebar follows the
 // cursor without waiting for the next poll tick.
 func (m *Model) moveCursor(delta int) tea.Cmd {
+	if len(m.rows) == 0 {
+		return nil
+	}
 	previous := m.cursor
 	m.cursor += delta
 	if m.cursor < 0 {
-		m.cursor = 0
+		m.cursor = len(m.rows) - 1
 	}
 	if m.cursor >= len(m.rows) {
-		m.cursor = len(m.rows) - 1
+		m.cursor = 0
 	}
 	if m.cursor == previous {
 		return nil

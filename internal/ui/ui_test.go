@@ -995,3 +995,27 @@ func TestGroupRowRendersGroupPane(t *testing.T) {
 		t.Fatalf("subgroup should inherit the ancestor path:\n%s", inherited)
 	}
 }
+
+func TestCursorWrapsAroundTheList(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "first", dir, "")
+	createSession(t, m, "second", dir, "")
+
+	m.cursor = 0
+	m.moveCursor(-1)
+	if m.cursor != len(m.rows)-1 {
+		t.Fatalf("up from the top should wrap to the bottom, cursor = %d", m.cursor)
+	}
+	m.moveCursor(1)
+	if m.cursor != 0 {
+		t.Fatalf("down from the bottom should wrap to the top, cursor = %d", m.cursor)
+	}
+
+	m.rows = nil
+	m.cursor = 0
+	m.moveCursor(1)
+	if m.cursor != 0 {
+		t.Fatalf("empty list should leave the cursor alone, cursor = %d", m.cursor)
+	}
+}
