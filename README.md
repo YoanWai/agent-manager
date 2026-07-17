@@ -56,7 +56,9 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `v` | Revive a dead session (`revive_command`, e.g. `claude --continue`, resumes the conversation) |
 | `a` / `u` | Archive / restore |
 | `d` | Delete session, or a group + its entire subtree |
-| `space` | Quick prompt to session / fold group |
+| `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
+| `f` | Fold / unfold group |
+| `s` | Settings (default tool for quick spawn) |
 | `t` | Toggle archived view |
 | `/` | Search |
 | `ctrl+r` | Force refresh |
@@ -65,7 +67,12 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 
 ### Quick prompt
 
-Press `space` on a session to type a one-line message into a modal and send it straight into the session's pane, so the agent gets it as a user message without you attaching. The new-session form's optional `prompt` field launches the agent already working on a task; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](#configuration)).
+Press `space` to dock a prompt bar at the bottom of the sidebar. The target follows the cursor while the bar is open (`↑↓` still navigate):
+
+- On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar stays open and clears, ready for the next answer.
+- On a **group** row, `enter` spawns a new agent in that group with the prompt embedded, using the group's default path and the default tool from Settings (`s`). The agent starts working on the prompt immediately.
+
+`esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](#configuration)).
 
 ### Groups
 

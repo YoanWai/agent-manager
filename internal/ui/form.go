@@ -112,9 +112,14 @@ func (m *Model) groupDefaultDir(group string) string {
 	return cwd
 }
 
+func sortedToolNames(cfg config.Config) []string {
+	names := cfg.ToolNames()
+	sort.Strings(names)
+	return names
+}
+
 func (m *Model) openForm() {
-	tools := m.cfg.ToolNames()
-	sort.Strings(tools)
+	tools := sortedToolNames(m.cfg)
 
 	name := textField("my-session", 60)
 	name.Focus()
@@ -288,7 +293,6 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	toolName := m.form.toolNames[m.form.toolIndex]
-	tool := m.cfg.Tools[toolName]
 
 	name := strings.TrimSpace(m.form.name.Value())
 	if name == "" {
@@ -312,15 +316,25 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	id := newID()
-	command, env, err := m.buildLaunch(tool, withPrompt(tool, tool.Command, prompt), id)
-	if err != nil {
+	if err := m.spawnSession(toolName, name, dir, group, prompt); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
+	m.mode = modeList
+	return m, m.refreshCmd()
+}
+
+// spawnSession creates the tmux session and its store record for both
+// the New Session form and quick spawn.
+func (m *Model) spawnSession(toolName, name, dir, group, prompt string) error {
+	tool := m.cfg.Tools[toolName]
+	id := newID()
+	command, env, err := m.buildLaunch(tool, withPrompt(tool, tool.Command, prompt), id)
+	if err != nil {
+		return err
+	}
 	if err := m.tmux.Create(id, dir, command, env); err != nil {
-		m.err = err.Error()
-		return m, nil
+		return err
 	}
 	sess := store.Session{
 		ID:     id,
@@ -333,14 +347,9 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	if err := m.store.CreateSession(sess); err != nil {
 		_ = m.tmux.Kill(id)
 		_ = m.hooks.Remove(id)
-		m.err = err.Error()
-		return m, nil
+		return err
 	}
-	if err := m.tmux.SetLabel(id, sessionLabel(group, name)); err != nil {
-		m.err = err.Error()
-	}
-	m.mode = modeList
-	return m, m.refreshCmd()
+	return m.tmux.SetLabel(id, sessionLabel(group, name))
 }
 
 // withPrompt embeds an optional starting prompt into a tool's launch

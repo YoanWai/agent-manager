@@ -141,9 +141,13 @@ func (m *Model) viewRename() string {
 	return m.card("✎ Rename "+what, body, "↵ apply · esc cancel")
 }
 
-func (m *Model) viewQuickPrompt() string {
-	body := mutedStyle.Render(m.quickPrompt.sessName) + "\n\n" + m.quickPrompt.input.View()
-	return m.card("▷ Quick Prompt", body, "↵ send · esc cancel")
+func (m *Model) viewSettings() string {
+	marker := lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
+	label := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("quick spawn tool")
+	tool := subtleStyle.Render("◂ ") +
+		valueStyle.Render(m.settings.toolNames[m.settings.toolIndex]) +
+		subtleStyle.Render(" ▸")
+	return m.card("⚙ Settings", marker+label+"  "+tool, "←→ change · ↵/esc save")
 }
 
 func (m *Model) viewMove() string {
@@ -162,7 +166,9 @@ func (m *Model) viewHelp() string {
 		{"a / u", "archive / restore"},
 		{"d", "delete session, or group + subtree"},
 		{"shift+↑↓", "reorder row up / down"},
-		{"space", "quick prompt to session / fold group"},
+		{"space", "quick prompt: answer session / spawn agent in group"},
+		{"f", "fold / unfold group"},
+		{"s", "settings (quick spawn tool)"},
 		{"t", "toggle archived view"},
 		{"/", "search"},
 		{"ctrl+r", "force refresh"},

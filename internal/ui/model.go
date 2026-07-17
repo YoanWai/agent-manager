@@ -28,7 +28,7 @@ const (
 	modeRename
 	modeMove
 	modeGroupForm
-	modeQuickPrompt
+	modeSettings
 )
 
 type treeRow struct {
@@ -71,13 +71,14 @@ type Model struct {
 	search       string
 	searching    bool
 
-	form        form
-	groupForm   groupForm
-	pathSugg    pathComplete
-	confirm     confirmTarget
-	rename      renameTarget
-	quickPrompt quickPromptTarget
-	moveID      string
+	form      form
+	groupForm groupForm
+	pathSugg  pathComplete
+	confirm   confirmTarget
+	rename    renameTarget
+	quick     quickState
+	settings  settingsState
+	moveID    string
 
 	width    int
 	height   int
@@ -100,10 +101,16 @@ type renameTarget struct {
 	input   textinput.Model
 }
 
-type quickPromptTarget struct {
-	sessID   string
-	sessName string
-	input    textinput.Model
+// quickState is the inline prompt bar docked under the preview: active
+// across cursor moves, so the target follows the selection.
+type quickState struct {
+	active bool
+	input  textinput.Model
+}
+
+type settingsState struct {
+	toolNames []string
+	toolIndex int
 }
 
 // agentStats aggregates process-tree usage across all live sessions.

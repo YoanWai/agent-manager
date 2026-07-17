@@ -674,12 +674,16 @@ func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 	}
 	m.selectSessionRow(t, "gone")
 
-	m.openQuickPrompt(sess)
-	if m.mode != modeList {
-		t.Fatal("quick prompt on a dead session should not open the modal")
-	}
-	if m.err != "session is dead - press v to revive" {
+	m.openQuickMode()
+	m.quick.input.SetValue("hello?")
+	if _, _ = m.submitQuick(); m.err != "session is dead - press v to revive" {
 		t.Fatalf("err = %q", m.err)
+	}
+	if !m.quick.active {
+		t.Fatal("quick mode should stay open after a failed send")
+	}
+	if _, err := m.store.Get(sess.ID); err != nil {
+		t.Fatalf("session record should survive: %v", err)
 	}
 }
 
@@ -693,16 +697,19 @@ func TestQuickPromptSendClearsAcked(t *testing.T) {
 	}
 	m.selectSessionRow(t, "answer-me")
 
-	m.openQuickPrompt(sess)
-	if m.mode != modeQuickPrompt {
-		t.Fatalf("quick prompt should open, err = %q", m.err)
+	m.openQuickMode()
+	if !m.quick.active {
+		t.Fatalf("quick mode should activate, err = %q", m.err)
 	}
-	m.quickPrompt.input.SetValue("carry on with the plan")
-	if _, _ = m.handleQuickPromptKey(tea.KeyMsg{Type: tea.KeyEnter}); m.err != "" {
+	m.quick.input.SetValue("carry on with the plan")
+	if _, _ = m.submitQuick(); m.err != "" {
 		t.Fatalf("send: %q", m.err)
 	}
-	if m.mode != modeList {
-		t.Fatal("modal should close after send")
+	if !m.quick.active {
+		t.Fatal("quick mode should stay active after a send")
+	}
+	if m.quick.input.Value() != "" {
+		t.Fatal("input should clear after a send")
 	}
 	got, err := m.store.Get(sess.ID)
 	if err != nil {
@@ -710,6 +717,56 @@ func TestQuickPromptSendClearsAcked(t *testing.T) {
 	}
 	if got.Acked {
 		t.Fatal("quick prompt send should clear the acked flag")
+	}
+}
+
+func TestQuickSpawnOnGroupCreatesSession(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	for i, row := range m.rows {
+		if row.isGroup && row.group == "backend" {
+			m.cursor = i
+		}
+	}
+
+	m.openQuickMode()
+	m.quick.input.SetValue("build the api")
+	_, cmd := m.submitQuick()
+	if m.err != "" {
+		t.Fatalf("quick spawn: %q", m.err)
+	}
+	m.applyCmd(t, cmd)
+
+	sessions := m.sessionRows()
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %d want 1", len(sessions))
+	}
+	spawned := sessions[0]
+	if spawned.Group != "backend" || spawned.Tool != "claude" || spawned.Cwd != dir {
+		t.Fatalf("spawned session fields wrong: %+v", spawned)
+	}
+	if !m.tmux.Exists(spawned.ID) {
+		t.Fatal("tmux session should exist after quick spawn")
+	}
+	if m.quick.input.Value() != "" {
+		t.Fatal("input should clear after a spawn")
+	}
+}
+
+func TestDefaultToolFallsBackWhenSettingStale(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.SetSetting("default_tool", "deleted-tool"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	if got := m.defaultTool(); got != "claude" {
+		t.Fatalf("defaultTool = %q want claude (alphabetical fallback)", got)
 	}
 }
 
