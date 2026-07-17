@@ -34,7 +34,7 @@ func (m *Model) View() string {
 	}
 	rightWidth := m.width - leftWidth
 	footer := m.viewFooter()
-	bodyHeight := m.height - 3 - lipgloss.Height(footer)
+	bodyHeight := m.height - 4 - lipgloss.Height(footer)
 	if bodyHeight < 3 {
 		bodyHeight = 3
 	}
@@ -50,7 +50,7 @@ func (m *Model) View() string {
 	right := titledPanel(m.sidebarTitle(), m.viewSidebar(rightWidth-4, bodyHeight-2), rightWidth, bodyHeight, false)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	return strings.Join([]string{m.viewHeader(), body, m.viewStatus(), footer}, "\n")
+	return strings.Join([]string{m.viewHeader(), "", body, m.viewStatus(), footer}, "\n")
 }
 
 // viewStatus is the transient message line: prompts, search, and
@@ -252,7 +252,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 		}
 		count := subtleStyle.Render(fmt.Sprintf(" (%d)", m.groupSessionCount(entry.group)))
 		name := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true).Render(baseName(entry.group))
-		content = subtleStyle.Render(marker) + " " + name + count
+		content = subtleStyle.Render(marker) + " " + name + count + m.groupStatusGlyphs(entry.group)
 	} else {
 		sess := entry.sess
 		glyph := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
@@ -261,7 +261,8 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 			nameStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 		}
 		name := nameStyle.Render(sess.Name)
-		meta := subtleStyle.Render(sess.Tool + " · " + relTime(sess.CreatedAt))
+		state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(sess.Status)
+		meta := state + subtleStyle.Render(" · "+sess.Tool+" · "+relTime(sess.CreatedAt))
 		archived := ""
 		if sess.Archived {
 			archived = subtleStyle.Render(" ⋅ archived")
@@ -270,6 +271,9 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 	}
 
 	line := bar + " " + guides + content
+	if ansi.StringWidth(line) > width {
+		line = ansi.Truncate(line, width-1, "…") + "\x1b[0m"
+	}
 	line = padRight(line, width)
 	if selected {
 		return selectedRowStyle.Render(line)
@@ -478,12 +482,7 @@ func (m *Model) directSubgroupCount(group string) int {
 // groupStatusBreakdown renders "2 working · 1 waiting" for the subtree,
 // each count tinted in its status color, skipping zero statuses.
 func (m *Model) groupStatusBreakdown(group string) string {
-	counts := map[string]int{}
-	for _, sess := range m.sessions {
-		if sess.Group == group || strings.HasPrefix(sess.Group, group+"/") {
-			counts[sess.Status]++
-		}
-	}
+	counts := m.groupStatusCounts(group)
 	var parts []string
 	for _, st := range []string{status.Working, status.Waiting, status.Finished, status.Errored, status.Idle, status.Dead} {
 		if counts[st] > 0 {
@@ -492,6 +491,30 @@ func (m *Model) groupStatusBreakdown(group string) string {
 		}
 	}
 	return strings.Join(parts, subtleStyle.Render(" · "))
+}
+
+func (m *Model) groupStatusCounts(group string) map[string]int {
+	counts := map[string]int{}
+	for _, sess := range m.sessions {
+		if sess.Group == group || strings.HasPrefix(sess.Group, group+"/") {
+			counts[sess.Status]++
+		}
+	}
+	return counts
+}
+
+// groupStatusGlyphs is the compact per-row rollup of a group subtree's
+// live statuses (" ◐2 ?1"), idle omitted so quiet groups stay clean.
+func (m *Model) groupStatusGlyphs(group string) string {
+	counts := m.groupStatusCounts(group)
+	var b strings.Builder
+	for _, st := range []string{status.Working, status.Waiting, status.Finished, status.Errored, status.Dead} {
+		if counts[st] > 0 {
+			b.WriteString(" " + lipgloss.NewStyle().Foreground(statusColor(st)).
+				Render(fmt.Sprintf("%s%d", statusGlyph(st), counts[st])))
+		}
+	}
+	return b.String()
 }
 
 // viewGroupAgents lists the subtree's sessions where a session's pane
