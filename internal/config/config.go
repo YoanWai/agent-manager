@@ -136,7 +136,10 @@ const defaultConfig = `poll_interval = "2s"
 # line above it carries a question mark. A blocked_line there (e.g. an
 # interrupt banner) also derives waiting. Otherwise default_status
 # applies, and a region that changed since the previous poll counts as
-# working (streaming output often renders without any spinner).
+# working (streaming output often renders without any spinner). A turn
+# that closes without any turn_end marker still resolves: when a working
+# region stops changing and nothing matches, its last content line
+# decides finished versus waiting (question mark waits).
 
 [tools.claude]
 command = "claude"
@@ -188,7 +191,8 @@ revive_command = "codex resume --last"
 default_status = "idle"
 activity_cutoff = "(?m)^›"
 # a turn that ran commands closes with a "─ Worked for 12s ─" divider above
-# the input box; purely conversational turns leave no divider
+# the input box; purely conversational turns leave no divider and resolve
+# through the quiet-region fallback instead
 turn_end = "(?m)^─+ Worked for [\\dhms. ]+─"
 chrome_line = "^\\s*─*\\s*$"
 rules = [

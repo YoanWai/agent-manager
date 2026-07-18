@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -34,6 +35,11 @@ func buildModel(t *testing.T) *Model {
 					{State: status.Waiting, Pattern: "Enter to confirm"},
 					{State: status.Errored, Pattern: `(?im)^\s*error:`},
 				},
+			},
+			"quietchat": {
+				Command:        "cat",
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: "(?m)^›",
 			},
 		},
 	}
@@ -545,6 +551,121 @@ func TestStaleHookFileFallsBackToPaneRules(t *testing.T) {
 	if _, ok := m.hooks.Read(sess.ID); ok {
 		t.Fatal("stale hook status file should be removed")
 	}
+}
+
+func seedRegionHash(t *testing.T, m *Model, sess store.Session, pane string) {
+	t.Helper()
+	region, ok := m.poller.engine.ActivityRegion(sess.Tool, ansi.Strip(pane))
+	if !ok {
+		t.Fatal("pane should have an activity region")
+	}
+	m.poller.paneHashes = map[string]uint64{sess.ID: hashString(region)}
+}
+
+func TestQuietPaneAfterWorkingDerivesFinished(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "quiet01", Tool: "claude-hooked", Status: status.Working}
+	pane := "final answer with no turn marker\n❯ \n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
+		t.Fatalf("quiet pane after working should derive finished, got %q", got)
+	}
+}
+
+func TestQuietPaneEndingOnQuestionDerivesWaiting(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "quiet02", Tool: "claude-hooked", Status: status.Working}
+	pane := "Which of the two options do you prefer?\n❯ \n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Waiting {
+		t.Fatalf("quiet pane ending on a question should derive waiting, got %q", got)
+	}
+}
+
+func TestQuietPaneAfterIdleStaysIdle(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "quiet03", Tool: "claude-hooked", Status: status.Idle}
+	pane := "old transcript text\n❯ \n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Idle {
+		t.Fatalf("quiet pane after idle should stay idle, got %q", got)
+	}
+}
+
+func TestQuietFinishedPersistsAndAckMapsToIdle(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "quiet04", Tool: "claude-hooked", Status: status.Finished}
+	pane := "final answer with no turn marker\n❯ \n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
+		t.Fatalf("inferred finished should persist while the pane stays quiet, got %q", got)
+	}
+	sess.Acked = true
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Idle {
+		t.Fatalf("acked inferred finished should derive idle, got %q", got)
+	}
+}
+
+func TestChangedRegionStillDerivesWorking(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "quiet05", Tool: "claude-hooked", Status: status.Working}
+	seedRegionHash(t, m, sess, "earlier streaming text\n❯ \n")
+	if got := deriveStatus(t, m, sess, "earlier streaming text plus more\n❯ \n", true); got != status.Working {
+		t.Fatalf("changed region should derive working, got %q", got)
+	}
+}
+
+func TestLiveQuietTurnResolvesFinished(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.name.SetValue("quiet-live")
+	m.form.dir.SetValue(t.TempDir())
+	for i, name := range sortedToolNames(m.cfg) {
+		if name == "quietchat" {
+			m.form.toolIndex = i
+		}
+	}
+	pickGroup(t, m, "")
+	_, cmd := m.submitForm()
+	if m.mode != modeList {
+		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.err)
+	}
+	m.applyCmd(t, cmd)
+	sess := m.sessionRows()[0]
+
+	send := func(text string) {
+		t.Helper()
+		if err := m.tmux.SendText(sess.ID, text); err != nil {
+			t.Fatalf("send %q: %v", text, err)
+		}
+	}
+	waitStatus := func(want string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			m.applyCmd(t, m.refreshCmd())
+			got, err := m.store.Get(sess.ID)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			if got.Status == want {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("status = %q, want %q", got.Status, want)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	send("first answer chunk")
+	send("› ask anything")
+	m.applyCmd(t, m.refreshCmd())
+
+	send("more streaming output")
+	send("› ask anything")
+	waitStatus(status.Working)
+	waitStatus(status.Finished)
 }
 
 func TestAttachAcknowledgesFinished(t *testing.T) {

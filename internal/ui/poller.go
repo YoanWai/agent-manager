@@ -212,9 +212,13 @@ func (p *poller) refreshOnce() tea.Msg {
 // capture carries ANSI escapes for the preview; rules match against the
 // stripped text. Streaming output often renders without any spinner, so
 // when no rule matches but the content region above the input box changed
-// since the previous poll, the session counts as working. Finished is an
-// alert: entering the session acknowledges it (acked), and the pane keeps
-// deriving finished until the next turn, so acked maps it back to idle.
+// since the previous poll, the session counts as working. The reverse
+// transition closes marker-less turns: a session that was mid-turn whose
+// region stopped changing has ended its turn even when the tool printed
+// no turn_end line, so the region's last content line decides finished
+// versus waiting. Finished is an alert: entering the session acknowledges
+// it (acked), and the pane keeps deriving finished until the next turn,
+// so acked maps it back to idle.
 func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
 	text := ansi.Strip(pane)
 	region, hasRegion := p.engine.ActivityRegion(sess.Tool, text)
@@ -236,14 +240,26 @@ func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 	}
 	newStatus, matched := p.engine.Match(sess.Tool, text)
 	if hasRegion && !matched {
-		if previous, seen := p.paneHashes[sess.ID]; seen && previous != regionHash {
-			newStatus = status.Working
+		if previous, seen := p.paneHashes[sess.ID]; seen {
+			if previous != regionHash {
+				newStatus = status.Working
+			} else if turnInFlight(sess.Status) {
+				newStatus = p.engine.TurnEndedState(sess.Tool, region)
+			}
 		}
 	}
 	if newStatus == status.Finished && sess.Acked {
 		newStatus = status.Idle
 	}
 	return newStatus, nil
+}
+
+// turnInFlight reports whether a status means a turn is running or resting
+// unacknowledged. Only then can a quiet region mean the turn just ended;
+// finished and waiting stay in the set so the inferred status persists
+// across polls instead of collapsing to idle on the next pass.
+func turnInFlight(current string) bool {
+	return current == status.Working || current == status.Finished || current == status.Waiting
 }
 
 // applyHookStatus trusts the hook-reported status over pane heuristics

@@ -164,6 +164,26 @@ func TestCodexRealPanes(t *testing.T) {
 	}
 }
 
+func TestTurnEndedState(t *testing.T) {
+	engine := defaultEngine(t)
+	cases := []struct {
+		name   string
+		region string
+		want   string
+	}{
+		{"plain response", "• Final response.\n\n", Finished},
+		{"question response", "• Which file should I edit, A or B?\n\n", Waiting},
+		{"question above trailing separator", "• Which file?\n\n────────────\n", Waiting},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := engine.TurnEndedState("codex", tc.region); got != tc.want {
+				t.Fatalf("TurnEndedState = %q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestNewEngineBadPattern(t *testing.T) {
 	cfg := config.Config{
 		Tools: map[string]config.Tool{

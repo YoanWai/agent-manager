@@ -187,6 +187,24 @@ func (tr toolRules) turnState(pane string) (string, bool) {
 	return Finished, true
 }
 
+// TurnEndedState infers the resting status of a turn that closed without
+// a turn_end marker: the poller calls it when a region that was working
+// stops changing and no rule matches. A question mark on the last content
+// line means the agent asked something in plain text and waits on the
+// answer; anything else counts as finished.
+func (e *Engine) TurnEndedState(tool, region string) string {
+	tr, ok := e.tools[tool]
+	if !ok {
+		return Finished
+	}
+	lines := strings.Split(region, "\n")
+	last := lastContentIndex(lines, len(lines)-1, tr.chromeLine)
+	if last >= 0 && strings.Contains(lines[last], "?") {
+		return Waiting
+	}
+	return Finished
+}
+
 // turnIsNewest reports whether the lines below a turn_end marker hold no
 // real content: only blanks, chrome, and trailing note blocks. Any other
 // content means a newer turn is already producing output.
