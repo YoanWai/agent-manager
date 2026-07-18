@@ -438,6 +438,11 @@ func (m *Model) rebuildRows() {
 	}
 	children := childIndex(paths, m.groups)
 
+	// Folds are a browsing convenience for the active tree; the archived
+	// and search views already prune to matching groups, so honoring folds
+	// there would hide the very sessions the user came to act on.
+	honorFolds := query == "" && !m.showArchived
+
 	rows := make([]treeRow, 0, len(m.sessions)+len(paths))
 	for _, sess := range sessionsByGroup[""] {
 		rows = append(rows, treeRow{sess: sess})
@@ -445,7 +450,7 @@ func (m *Model) rebuildRows() {
 	var walk func(path string, depth int)
 	walk = func(path string, depth int) {
 		rows = append(rows, treeRow{isGroup: true, group: path, depth: depth})
-		if m.collapsed[path] {
+		if honorFolds && m.collapsed[path] {
 			return
 		}
 		for _, sess := range sessionsByGroup[path] {
