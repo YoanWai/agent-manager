@@ -538,6 +538,18 @@ func annotationLine(line diff.Line) (num int, deleted bool) {
 	return line.NewNum, false
 }
 
+// annotationRows renders the comment attached to line lineIdx, if any, as
+// its own indented full-width rows beneath the code line. Shared by the
+// unified and side-by-side layouts so both surface saved comments.
+func (m *Model) annotationRows(fd *diff.FileDiff, lineIdx, width int) []string {
+	note := m.annotationAt(fd.File.Path, fd.Lines[lineIdx])
+	if note == nil {
+		return nil
+	}
+	comment := mutedStyle.Italic(true).Render("  ¶ " + note.text)
+	return wrapTinted(comment, nil, "", "", width)
+}
+
 func (m *Model) annotationAt(path string, line diff.Line) *annotation {
 	num, deleted := annotationLine(line)
 	notes := m.diff.annotations[m.diff.sessID]
@@ -785,10 +797,7 @@ func (m *Model) unifiedRows(fd *diff.FileDiff, hl *fileHL, width, height int) []
 	i := scroll
 	for ; i < total && len(rows) < height; i++ {
 		rows = append(rows, m.renderDiffRow(fd, hl, i, width, i == m.diff.cursorLine)...)
-		if note := m.annotationAt(fd.File.Path, fd.Lines[i]); note != nil {
-			comment := mutedStyle.Italic(true).Render("  ¶ " + note.text)
-			rows = append(rows, wrapTinted(comment, nil, "", "", width)...)
-		}
+		rows = append(rows, m.annotationRows(fd, i, width)...)
 	}
 	if i < total {
 		if len(rows) >= height {
@@ -1008,6 +1017,12 @@ func (m *Model) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *file
 				line = selectedRowStyle.Render(padRight(line, width))
 			}
 			out = append(out, line)
+		}
+		if row.Left >= 0 {
+			out = append(out, m.annotationRows(fd, row.Left, width)...)
+		}
+		if row.Right >= 0 && row.Right != row.Left {
+			out = append(out, m.annotationRows(fd, row.Right, width)...)
 		}
 	}
 	if i < len(rows) {

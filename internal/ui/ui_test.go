@@ -1434,6 +1434,7 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
 	m.applyCmd(t, m.openDiff())
+	m.diff.sideBySide = false
 
 	for i, fd := range m.diff.set.Files {
 		if fd.File.Path == "main.go" {
@@ -1524,5 +1525,68 @@ func TestToggleCollapseAllFlipsEveryGroup(t *testing.T) {
 	}
 	if restored := loadCollapsed(m.store); len(restored) != 0 {
 		t.Fatalf("unfold-all not persisted: %v", restored)
+	}
+}
+
+func TestDiffCommentVisibleInBothLayouts(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	m.applyCmd(t, m.openDiff())
+	m.diff.sideBySide = false
+
+	for i, fd := range m.diff.set.Files {
+		if fd.File.Path == "main.go" {
+			m.diff.fileIdx = i
+		}
+	}
+	fd := m.currentFileDiff()
+	for i, line := range fd.Lines {
+		if line.NewNum > 0 && strings.Contains(line.Text, "println") {
+			m.diff.cursorLine = i
+		}
+	}
+	m.openAnnotate()
+	m.diff.annInput.SetValue("use fmt.Println here")
+	m.saveAnnotation()
+
+	m.diff.sideBySide = false
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
+		t.Fatalf("comment missing in unified layout:\n%s", view)
+	}
+	m.diff.sideBySide = true
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
+		t.Fatalf("comment missing in split layout:\n%s", view)
+	}
+}
+
+func TestDefaultSplitLayout(t *testing.T) {
+	m := buildModel(t)
+	if !m.defaultSplitLayout() {
+		t.Fatal("split should be the default layout")
+	}
+	if err := m.store.SetSetting(diffLayoutSetting, "unified"); err != nil {
+		t.Fatal(err)
+	}
+	if m.defaultSplitLayout() {
+		t.Fatal("stored unified choice should opt out of split")
+	}
+}
+
+func TestSettingsTogglesReviewLayout(t *testing.T) {
+	m := buildModel(t)
+	m.openSettings()
+	if !m.settings.layoutSplit {
+		t.Fatal("settings should open on split by default")
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.settings.field != settingsFieldLayout {
+		t.Fatalf("down should focus layout field, got %d", m.settings.field)
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := m.defaultSplitLayout(); got {
+		t.Fatal("layout should persist as unified after toggle")
 	}
 }

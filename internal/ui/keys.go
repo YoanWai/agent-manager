@@ -113,6 +113,7 @@ func (m *Model) openDiff() tea.Cmd {
 		m.diff.reviewed = map[string]map[string]bool{}
 		m.diff.annotations = map[string][]annotation{}
 		m.diff.hl = newHLCache()
+		m.diff.sideBySide = m.defaultSplitLayout()
 	}
 	m.diff.active = true
 	m.mode = modeDiff
@@ -767,6 +768,20 @@ func (m *Model) defaultTool() string {
 	return names[0]
 }
 
+const diffLayoutSetting = "diff_layout"
+
+// defaultSplitLayout reports whether review mode should open in split
+// (side-by-side) layout. Split is the default; a stored "unified" choice
+// opts out. A store error is surfaced but still yields the split default.
+func (m *Model) defaultSplitLayout() bool {
+	chosen, err := m.store.Setting(diffLayoutSetting)
+	if err != nil {
+		m.err = "reading diff layout setting: " + err.Error()
+		return true
+	}
+	return chosen != "unified"
+}
+
 func (m *Model) openSettings() {
 	if len(m.cfg.Tools) == 0 {
 		m.err = "no tools configured"
@@ -774,18 +789,33 @@ func (m *Model) openSettings() {
 	}
 	m.err = ""
 	names, index := m.defaultToolSelection()
-	m.settings = settingsState{toolNames: names, toolIndex: index}
+	m.settings = settingsState{
+		toolNames:   names,
+		toolIndex:   index,
+		layoutSplit: m.defaultSplitLayout(),
+	}
 	m.mode = modeSettings
 }
 
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "left", "h":
-		m.settings.toolIndex = (m.settings.toolIndex + len(m.settings.toolNames) - 1) % len(m.settings.toolNames)
-	case "right", "l":
-		m.settings.toolIndex = (m.settings.toolIndex + 1) % len(m.settings.toolNames)
+	case "up", "k", "down", "j":
+		m.settings.field = (m.settings.field + 1) % settingsFieldCount
+	case "left", "h", "right", "l":
+		if m.settings.field == settingsFieldTool {
+			m.settings.toolIndex = (m.settings.toolIndex + 1) % len(m.settings.toolNames)
+		} else {
+			m.settings.layoutSplit = !m.settings.layoutSplit
+		}
 	case "enter", "esc":
 		if err := m.store.SetSetting("default_tool", m.settings.toolNames[m.settings.toolIndex]); err != nil {
+			m.err = err.Error()
+		}
+		layout := "split"
+		if !m.settings.layoutSplit {
+			layout = "unified"
+		}
+		if err := m.store.SetSetting(diffLayoutSetting, layout); err != nil {
 			m.err = err.Error()
 		}
 		m.mode = modeList

@@ -129,12 +129,23 @@ func (m *Model) viewGroupForm() string {
 }
 
 func (m *Model) viewSettings() string {
-	marker := lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
-	label := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("quick spawn tool")
-	tool := subtleStyle.Render("◂ ") +
-		valueStyle.Render(m.settings.toolNames[m.settings.toolIndex]) +
-		subtleStyle.Render(" ▸")
-	return m.card("⚙ Settings", marker+label+"  "+tool, "←→ change · ↵/esc save")
+	layout := "unified"
+	if m.settings.layoutSplit {
+		layout = "split"
+	}
+	row := func(field int, name, value string) string {
+		marker := "  "
+		labelStyle := valueStyle
+		if m.settings.field == field {
+			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
+			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+		}
+		picker := subtleStyle.Render("◂ ") + valueStyle.Render(value) + subtleStyle.Render(" ▸")
+		return marker + labelStyle.Render(name) + "  " + picker
+	}
+	body := row(settingsFieldTool, "quick spawn tool", m.settings.toolNames[m.settings.toolIndex]) + "\n" +
+		row(settingsFieldLayout, "review layout", layout)
+	return m.card("⚙ Settings", body, "↑↓ field · ←→ change · ↵/esc save")
 }
 
 func (m *Model) viewMove() string {
@@ -157,8 +168,9 @@ func (m *Model) viewHelp() string {
 		{"⇥", "in quick prompt: switch spawn tool"},
 		{"D", "review changes: whole-file diffs, comment lines, send to agent"},
 		{"s", "cycle diff scope: uncommitted / vs base / last commit / staged"},
+		{"f", "fold / unfold group"},
 		{"F", "fold / unfold all groups"},
-		{"s", "settings (quick spawn tool)"},
+		{"s", "settings (quick spawn tool, review layout)"},
 		{"t", "toggle archived view"},
 		{"/", "search"},
 		{"↑↓ / jk", "move cursor"},

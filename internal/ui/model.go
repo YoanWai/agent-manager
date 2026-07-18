@@ -119,9 +119,17 @@ type quickState struct {
 }
 
 type settingsState struct {
-	toolNames []string
-	toolIndex int
+	toolNames   []string
+	toolIndex   int
+	field       int
+	layoutSplit bool
 }
+
+const (
+	settingsFieldTool = iota
+	settingsFieldLayout
+	settingsFieldCount
+)
 
 // agentStats aggregates process-tree usage across all live sessions.
 type agentStats struct {
