@@ -207,3 +207,38 @@ func TestSetAcked(t *testing.T) {
 		t.Fatal("acked should clear")
 	}
 }
+
+func TestAgentSessionIDRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	sess := sample("a", "g1")
+	sess.AgentSessionID = "conv-uuid-1"
+	if err := st.CreateSession(sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := st.Get("a")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.AgentSessionID != "conv-uuid-1" {
+		t.Fatalf("stored agent id = %q, want conv-uuid-1", got.AgentSessionID)
+	}
+
+	if err := st.SetAgentSessionID("a", "conv-uuid-2"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got, err = st.Get("a")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.AgentSessionID != "conv-uuid-2" {
+		t.Fatalf("updated agent id = %q, want conv-uuid-2", got.AgentSessionID)
+	}
+
+	list, err := st.ListSessions(false)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 1 || list[0].AgentSessionID != "conv-uuid-2" {
+		t.Fatalf("list agent id = %+v", list)
+	}
+}

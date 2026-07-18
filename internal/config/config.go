@@ -15,9 +15,20 @@ type Rule struct {
 }
 
 type Tool struct {
-	Command        string `toml:"command"`
-	ReviveCommand  string `toml:"revive_command"`
-	PromptFlag     string `toml:"prompt_flag"`
+	Command       string `toml:"command"`
+	ReviveCommand string `toml:"revive_command"`
+	PromptFlag    string `toml:"prompt_flag"`
+	// SessionIDFlag makes a new session launch with an id we choose (e.g.
+	// claude/grok "--session-id <uuid>"), so revive can later resume that
+	// exact conversation deterministically.
+	SessionIDFlag string `toml:"session_id_flag"`
+	// ResumeByIDCommand resumes a specific conversation; "{id}" is replaced
+	// with the session's agent id. Preferred over ReviveCommand, which only
+	// resumes the working directory's most recent conversation.
+	ResumeByIDCommand string `toml:"resume_by_id_command"`
+	// SessionStore names the built-in capturer that reads back the id a tool
+	// minted itself when it has no SessionIDFlag ("codex" or "opencode").
+	SessionStore   string `toml:"session_store"`
 	StatusSource   string `toml:"status_source"`
 	DefaultStatus  string `toml:"default_status"`
 	ActivityCutoff string `toml:"activity_cutoff"`
@@ -76,8 +87,61 @@ func Load() (Config, error) {
 	if err := decodeInto(path, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 	}
+	if err := cfg.backfillToolDefaults(); err != nil {
+		return Config{}, err
+	}
 	cfg.applyDefaults()
 	return cfg, nil
+}
+
+// backfillToolDefaults fills fields the built-in tools gained after a
+// user's config.toml was written: existing tools keep their values, but
+// any field left at its zero value inherits the built-in default, and
+// tools absent from the file are added. This lets older configs pick up
+// new capabilities (a new prompt_flag, extra rules) without a rewrite.
+func (c *Config) backfillToolDefaults() error {
+	if c.Tools == nil {
+		c.Tools = map[string]Tool{}
+	}
+	builtin, err := Default()
+	if err != nil {
+		return err
+	}
+	for name, def := range builtin.Tools {
+		user, ok := c.Tools[name]
+		if !ok {
+			c.Tools[name] = def
+			continue
+		}
+		c.Tools[name] = mergeTool(user, def)
+	}
+	return nil
+}
+
+// mergeTool returns user with any zero-value field filled from def.
+func mergeTool(user, def Tool) Tool {
+	fill := func(dst *string, src string) {
+		if *dst == "" {
+			*dst = src
+		}
+	}
+	fill(&user.Command, def.Command)
+	fill(&user.ReviveCommand, def.ReviveCommand)
+	fill(&user.PromptFlag, def.PromptFlag)
+	fill(&user.SessionIDFlag, def.SessionIDFlag)
+	fill(&user.ResumeByIDCommand, def.ResumeByIDCommand)
+	fill(&user.SessionStore, def.SessionStore)
+	fill(&user.StatusSource, def.StatusSource)
+	fill(&user.DefaultStatus, def.DefaultStatus)
+	fill(&user.ActivityCutoff, def.ActivityCutoff)
+	fill(&user.TurnEnd, def.TurnEnd)
+	fill(&user.ChromeLine, def.ChromeLine)
+	fill(&user.BlockedLine, def.BlockedLine)
+	fill(&user.TrailingNote, def.TrailingNote)
+	if len(user.Rules) == 0 {
+		user.Rules = def.Rules
+	}
+	return user
 }
 
 func decodeInto(path string, cfg *Config) error {
@@ -143,7 +207,11 @@ const defaultConfig = `poll_interval = "2s"
 
 [tools.claude]
 command = "claude"
-# used by revive (v) on a dead session; resumes the last conversation there
+# revive (v) launches a new session with this id, so it can later resume
+# that exact conversation regardless of what else ran in the directory
+session_id_flag = "--session-id"
+resume_by_id_command = "claude --resume {id}"
+# fallback when a session predates id tracking: resumes the last conversation there
 revive_command = "claude --continue"
 # hooks report status events directly; the pane rules below stay as fallback
 status_source = "claude-hooks"
@@ -167,6 +235,9 @@ rules = [
 
 [tools.opencode]
 command = "opencode"
+# opencode mints its own session id; capture it after launch and resume it
+session_store = "opencode"
+resume_by_id_command = "opencode --session {id}"
 revive_command = "opencode --continue"
 # opencode's positional argument is the project path, so the optional
 # session prompt travels behind this flag
@@ -186,7 +257,10 @@ rules = [
 
 [tools.codex]
 command = "codex"
-# resumes the most recent session in the working directory
+# codex mints its own session id; capture it after launch and resume it
+session_store = "codex"
+resume_by_id_command = "codex resume {id}"
+# fallback: resumes the most recent session in the working directory
 revive_command = "codex resume --last"
 default_status = "idle"
 activity_cutoff = "(?m)^›"
@@ -209,7 +283,9 @@ rules = [
 
 [tools.grok]
 command = "grok"
-# resumes the most recent session for the working directory
+session_id_flag = "--session-id"
+resume_by_id_command = "grok --resume {id}"
+# fallback: resumes the most recent session for the working directory
 revive_command = "grok --continue"
 default_status = "idle"
 activity_cutoff = "(?m)^\\s*│ ❯"
