@@ -124,6 +124,46 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 	}
 }
 
+// Fixtures below mirror real Codex TUI frames, drawn from Codex's own render
+// snapshot tests (openai/codex, codex-rs/tui) and a live-captured session
+// (2026-07-18). Working/finished frames come from the snapshots; idle, the
+// first-run trust dialog, and the usage-limit error were captured live.
+func TestCodexRealPanes(t *testing.T) {
+	engine := defaultEngine(t)
+	cases := []struct {
+		name string
+		tool string
+		pane string
+		want string
+	}{
+		{"codex idle at prompt", "codex",
+			"› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Idle},
+		{"codex active turn", "codex",
+			"• Working (0s • esc to interrupt)\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Working},
+		{"codex active turn, other status verb", "codex",
+			"• Analyzing (12s • esc to interrupt)\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Working},
+		{"codex finished work turn", "codex",
+			"• Ran echo preparing\n  └ preparing\n\n────────────────────────────────\n\n• Final response.\n\n─ Worked for 2m 05s ─────────────\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Finished},
+		{"codex finished turn ending on a question", "codex",
+			"• Which file should I edit, A or B?\n\n─ Worked for 3s ─────────────────\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Waiting},
+		{"codex command-approval modal", "codex",
+			"  $ echo hello world\n\n› 1. Yes, proceed (y)\n  2. Yes, and don't ask again for commands that start with `echo hello world` (p)\n  3. No, and tell Codex what to do differently (esc)\n\n  Press enter to confirm or esc to cancel", Waiting},
+		{"codex first-run trust dialog", "codex",
+			"Do you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt injection.\n\n› 1. Yes, continue\n  2. No, quit\n\n  Press enter to continue", Waiting},
+		{"codex request-user-input selection", "codex",
+			"  Choose an option.\n\n  › 1. Option 1  First choice.\n    2. Option 2  Second choice.\n\n  tab to add notes | enter to submit answer | esc to interrupt", Waiting},
+		{"codex usage limit", "codex",
+			"■ You've hit your usage limit. Upgrade to Plus to continue using Codex, or try again at Jul 22nd, 2026 10:42 AM.\n\n› Ask Codex to do anything", Errored},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, _ := engine.Match(tc.tool, tc.pane); got != tc.want {
+				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestNewEngineBadPattern(t *testing.T) {
 	cfg := config.Config{
 		Tools: map[string]config.Tool{

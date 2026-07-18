@@ -6,7 +6,7 @@ A terminal UI to manage AI coding-agent sessions on your machine. Create and ent
 
 ## Supported tools
 
-Status detection currently supports **Claude Code** and **OpenCode** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](#configuration)).
+Status detection currently supports **Claude Code**, **OpenCode**, and **Codex** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](#configuration)).
 
 ## Install
 
@@ -100,7 +100,7 @@ The header shows a fleet summary: per-status session counts, plus `agents N% · 
 
 ## Configuration
 
-Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux) and is created on first run with working defaults for Claude Code and OpenCode.
+Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux) and is created on first run with working defaults for Claude Code, OpenCode, and Codex.
 
 Top-level: `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats.
 

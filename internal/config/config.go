@@ -180,4 +180,26 @@ rules = [
   { state = "working", pattern = "(?m)^\\s*▣ +[^·\\n]+· [^·\\n]+$" },
   { state = "working", pattern = "esc interrupt" },
 ]
+
+[tools.codex]
+command = "codex"
+# resumes the most recent session in the working directory
+revive_command = "codex resume --last"
+default_status = "idle"
+activity_cutoff = "(?m)^›"
+# a turn that ran commands closes with a "─ Worked for 12s ─" divider above
+# the input box; purely conversational turns leave no divider
+turn_end = "(?m)^─+ Worked for [\\dhms. ]+─"
+chrome_line = "^\\s*─*\\s*$"
+rules = [
+  # bottom-pane dialogs (command approval, choice prompts, first-run trust)
+  # select a numbered option and block on the user's answer
+  { state = "waiting", pattern = "(?m)^\\s*›\\s+\\d+\\." },
+  { state = "waiting", pattern = "(?m)Press enter to (confirm|continue)\\b" },
+  { state = "waiting", pattern = "(?m)enter to submit answer\\b" },
+  # active turn status line: "• Working (0s • esc to interrupt)" / "Analyzing"
+  { state = "working", pattern = "(?m)esc to interrupt\\b" },
+  { state = "errored", pattern = "(?m)You've hit your usage limit" },
+  { state = "errored", pattern = "(?im)^\\s*■.*\\berror\\b" },
+]
 `
