@@ -206,4 +206,25 @@ rules = [
   { state = "errored", pattern = "(?m)You've hit your usage limit" },
   { state = "errored", pattern = "(?im)^\\s*■.*\\berror\\b" },
 ]
+
+[tools.grok]
+command = "grok"
+# resumes the most recent session for the working directory
+revive_command = "grok --continue"
+default_status = "idle"
+activity_cutoff = "(?m)^\\s*│ ❯"
+# turn summary above the input box, e.g. "Worked for 5.0s." / "Worked for 25s."
+turn_end = "(?m)^\\s*Worked for [\\dhms. ]+s\\."
+chrome_line = "^\\s*[┃❙│─╭╮╰╯]*\\s*$"
+rules = [
+  # first-run "Do you trust this directory?" and other y/n prompts block on the user
+  { state = "waiting", pattern = "(?m)^\\s*(Yes, proceed|No, quit)\\s{2,}[yn]\\s*$" },
+  # an approval dialog replaces the input box; it blocks on the user's choice
+  { state = "waiting", pattern = "(?m)^\\s*\\d+/\\d+:select\\b" },
+  { state = "waiting", pattern = "(?m)\\d \\([●○]\\) " },
+  # active turn: a rotating braille spinner with an elapsed timer
+  # ("⠹ Delete file… 2.5s"). A pending approval freezes it to a ◆ glyph.
+  { state = "working", pattern = "(?m)[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] .*… \\d" },
+  { state = "errored", pattern = "(?im)^\\s*error:" },
+]
 `
