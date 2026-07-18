@@ -324,6 +324,12 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	if baseCommand == "" {
 		baseCommand = tool.Command
 	}
+	// When the session's own conversation id is known, resume that exact
+	// conversation instead of the working directory's most recent one,
+	// which would be the wrong conversation whenever sessions share a cwd.
+	if sess.AgentSessionID != "" && tool.ResumeByIDCommand != "" {
+		baseCommand = strings.ReplaceAll(tool.ResumeByIDCommand, "{id}", sess.AgentSessionID)
+	}
 	command, env, err := m.buildLaunch(tool, baseCommand, sess.ID)
 	if err != nil {
 		m.err = err.Error()

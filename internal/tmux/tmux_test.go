@@ -80,7 +80,7 @@ func TestReviewRequestRoundTrip(t *testing.T) {
 	driver := requireTmux(t)
 	// A live server is needed for global options to stick.
 	id := "rev" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil); err != nil {
+	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })

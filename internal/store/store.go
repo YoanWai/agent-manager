@@ -20,6 +20,10 @@ type Session struct {
 	Acked        bool
 	CreatedAt    time.Time
 	LastStatusAt time.Time
+	// AgentSessionID is the agent CLI's own conversation id (claude/grok
+	// session UUID, codex rollout id, opencode session id). Revive resumes
+	// this exact conversation instead of the cwd's most recent one.
+	AgentSessionID string
 }
 
 type Store struct {
@@ -59,7 +63,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	status         TEXT NOT NULL,
 	archived       INTEGER NOT NULL DEFAULT 0,
 	created_at     INTEGER NOT NULL,
-	last_status_at INTEGER NOT NULL
+	last_status_at INTEGER NOT NULL,
+	agent_session_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS groups (
 	name       TEXT PRIMARY KEY,
@@ -79,6 +84,7 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE groups ADD COLUMN path TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN acked INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN agent_session_id TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -114,11 +120,11 @@ func (s *Store) CreateSession(sess Session) error {
 		sess.LastStatusAt = sess.CreatedAt
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
+		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
-		boolToInt(sess.Archived), sess.CreatedAt.Unix(), sess.LastStatusAt.Unix(), sess.Group,
+		boolToInt(sess.Archived), sess.CreatedAt.Unix(), sess.LastStatusAt.Unix(), sess.AgentSessionID, sess.Group,
 	)
 	if err != nil {
 		return err
@@ -153,7 +159,7 @@ func (s *Store) CreateGroup(name, path string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -171,7 +177,8 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		var archived, acked int
 		var created, lastStatus int64
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
-			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus); err != nil {
+			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
+			&sess.AgentSessionID); err != nil {
 			return nil, err
 		}
 		sess.Archived = archived != 0
@@ -188,10 +195,10 @@ func (s *Store) Get(id string) (Session, error) {
 	var archived, acked int
 	var created, lastStatus int64
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
-		&sess.Status, &archived, &acked, &created, &lastStatus)
+		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID)
 	if err != nil {
 		return Session{}, err
 	}
@@ -218,6 +225,19 @@ func (s *Store) UpdateStatus(id, newStatus string) error {
 func (s *Store) SetAcked(id string, acked bool) error {
 	res, err := s.db.Exec(
 		`UPDATE sessions SET acked = ? WHERE id = ?`, boolToInt(acked), id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
+}
+
+// SetAgentSessionID records the agent CLI's own conversation id for a
+// session, so a later revive resumes that exact conversation. Used both
+// when launching a tool we assign the id to and when capturing the id a
+// tool minted itself.
+func (s *Store) SetAgentSessionID(id, agentSessionID string) error {
+	res, err := s.db.Exec(
+		`UPDATE sessions SET agent_session_id = ? WHERE id = ?`, agentSessionID, id)
 	if err != nil {
 		return err
 	}

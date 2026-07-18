@@ -162,8 +162,10 @@ type attachDoneMsg struct{ err error }
 
 func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager) *Model {
 	statusSources := make(map[string]string, len(cfg.Tools))
+	sessionStores := make(map[string]string, len(cfg.Tools))
 	for name, tool := range cfg.Tools {
 		statusSources[name] = tool.StatusSource
+		sessionStores[name] = tool.SessionStore
 	}
 	// A missing git binary only disables the diff view; everything else
 	// works without it, so the error surfaces on first use instead.
@@ -174,7 +176,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		tmux:      driver,
 		hooks:     hookManager,
 		gitDrv:    gitDriver,
-		poller:    newPoller(st, driver, engine, hookManager, statusSources, cfg.PollInterval.Duration),
+		poller:    newPoller(st, driver, engine, hookManager, statusSources, sessionStores, cfg.PollInterval.Duration),
 		collapsed: loadCollapsed(st),
 		mode:      modeList,
 	}

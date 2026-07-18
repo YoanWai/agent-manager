@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -23,6 +24,7 @@ type poller struct {
 	engine        *status.Engine
 	hooks         *hooks.Manager
 	statusSources map[string]string
+	sessionStores map[string]string
 	interval      time.Duration
 	poke          chan struct{}
 
@@ -40,14 +42,15 @@ type poller struct {
 	tick       int
 }
 
-func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, statusSources map[string]string, interval time.Duration) *poller {
+func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, statusSources, sessionStores map[string]string, interval time.Duration) *poller {
 	return &poller{
-		store:         st,
-		tmux:          driver,
-		engine:        engine,
-		hooks:         hookManager,
-		statusSources: statusSources,
-		interval:      interval,
+		store:            st,
+		tmux:             driver,
+		engine:           engine,
+		hooks:            hookManager,
+		statusSources:    statusSources,
+		sessionStores:    sessionStores,
+		interval:         interval,
 		poke:             make(chan struct{}, 1),
 		paneHashes:       map[string]uint64{},
 		pendingDirective: map[string]struct{}{},
@@ -177,6 +180,14 @@ func (p *poller) refreshOnce() tea.Msg {
 	var proc sysstat.ProcStat
 	var agents agentStats
 	paneHashes := make(map[string]uint64, len(sessions))
+	// Conversation ids already bound to a session, so a tool that mints its
+	// own id (codex, opencode) never has two sessions capture the same one.
+	claimed := make(map[string]bool, len(sessions))
+	for _, sess := range sessions {
+		if sess.AgentSessionID != "" {
+			claimed[sess.AgentSessionID] = true
+		}
+	}
 	for i, sess := range sessions {
 		if sess.Archived {
 			continue
@@ -223,6 +234,20 @@ func (p *poller) refreshOnce() tea.Msg {
 				return errMsg{err}
 			}
 			sessions[i].Status = newStatus
+		}
+		// Once a tool that mints its own id has a live pane, read the id it
+		// wrote so a later revive resumes that exact conversation. Captured
+		// once; nothing to do for tools launched with an id we chose.
+		if panes[sess.ID] > 0 && sessions[i].AgentSessionID == "" {
+			if storeName := p.sessionStores[sess.Tool]; storeName != "" {
+				if agentID, ok := agentsession.Capture(storeName, sess.Cwd, sess.CreatedAt, claimed); ok {
+					if err := p.store.SetAgentSessionID(sess.ID, agentID); err != nil {
+						return errMsg{err}
+					}
+					sessions[i].AgentSessionID = agentID
+					claimed[agentID] = true
+				}
+			}
 		}
 	}
 	p.paneHashes = paneHashes

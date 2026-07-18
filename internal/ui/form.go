@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/uuid"
 )
 
 const (
@@ -383,7 +384,17 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	id := newID()
 	deferDirective := autoNamed && !directiveEmbeddable(prompt)
 	prompt = launchPrompt(prompt, autoNamed)
-	command, env, err := m.buildLaunch(tool, withPrompt(tool, tool.Command, prompt), id)
+	base := withPrompt(tool, tool.Command, prompt)
+	// Tools that accept a chosen session id launch with one, so a later
+	// revive resumes this exact conversation rather than the directory's
+	// most recent one. Tools without the flag mint their own id, captured
+	// after launch by the poller.
+	agentSessionID := ""
+	if tool.SessionIDFlag != "" {
+		agentSessionID = uuid.NewString()
+		base += " " + tool.SessionIDFlag + " " + agentSessionID
+	}
+	command, env, err := m.buildLaunch(tool, base, id)
 	if err != nil {
 		return err
 	}
@@ -391,12 +402,13 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		return err
 	}
 	sess := store.Session{
-		ID:     id,
-		Name:   name,
-		Tool:   toolName,
-		Cwd:    dir,
-		Group:  group,
-		Status: tool.DefaultStatus,
+		ID:             id,
+		Name:           name,
+		Tool:           toolName,
+		Cwd:            dir,
+		Group:          group,
+		Status:         tool.DefaultStatus,
+		AgentSessionID: agentSessionID,
 	}
 	if err := m.store.CreateSession(sess); err != nil {
 		_ = m.tmux.Kill(id)
