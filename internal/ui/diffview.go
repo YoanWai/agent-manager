@@ -53,10 +53,7 @@ type diffState struct {
 	hl          *hlCache
 	hlPending   hlKey
 
-	// reattachID is set when review was entered from inside a session via
-	// Ctrl+R; leaving review re-attaches that session instead of dropping to
-	// the list. Empty when review was opened from the list, where leaving
-	// returns to the list.
+	// Set when review opened from inside a session; leaving re-attaches it.
 	reattachID string
 }
 

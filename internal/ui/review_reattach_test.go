@@ -4,6 +4,7 @@ import (
 	"os/exec"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/status"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -74,5 +75,46 @@ func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
 	}
 	if cmd != nil {
 		t.Fatal("list review esc should not re-attach")
+	}
+}
+
+// Leaving review back into a session acknowledges a finished alert, matching
+// what entering the session from the list does.
+func TestReattachAcknowledgesFinished(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	createSession(t, m, "finisher", t.TempDir(), "")
+	m.selectSessionRow(t, "finisher")
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("no session selected")
+	}
+	t.Cleanup(func() { m.tmux.ClearReviewRequest() })
+
+	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+		t.Fatalf("set finished: %v", err)
+	}
+	if _, err := exec.Command("tmux", "set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
+		t.Fatalf("set marker: %v", err)
+	}
+	updated, _ := m.Update(attachDoneMsg{})
+	*m = *updated.(*Model)
+	if m.mode != modeDiff {
+		t.Fatalf("expected review, mode = %v, err = %q", m.mode, m.err)
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	if cmd == nil {
+		t.Fatalf("esc should re-attach, err = %q", m.err)
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Idle || !got.Acked {
+		t.Fatalf("re-attach should acknowledge finished: status = %q acked = %v", got.Status, got.Acked)
 	}
 }

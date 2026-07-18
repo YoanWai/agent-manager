@@ -284,38 +284,46 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.err = ""
-	// Entering a finished session acknowledges the alert; the acked mark
-	// keeps it idle while the pane still shows the acknowledged turn.
-	if sess.Status == status.Finished {
-		if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
-			m.err = err.Error()
-			return m, nil
-		}
-		if err := m.store.SetAcked(sess.ID, true); err != nil {
-			m.err = err.Error()
-			return m, nil
-		}
+	if err := m.acknowledgeFinished(sess); err != nil {
+		m.err = err.Error()
+		return m, nil
 	}
 	return m, m.attachCmd(sess.ID)
 }
 
-// attachCmd suspends the TUI to attach the session's tmux pane, resuming on
-// detach with an attachDoneMsg. Shared by entering a session from the list
-// and by returning to it after an in-session review.
+// acknowledgeFinished marks a finished session idle and acked so entering it
+// clears the alert while the pane still shows the acknowledged turn.
+func (m *Model) acknowledgeFinished(sess store.Session) error {
+	if sess.Status != status.Finished {
+		return nil
+	}
+	if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
+		return err
+	}
+	return m.store.SetAcked(sess.ID, true)
+}
+
 func (m *Model) attachCmd(id string) tea.Cmd {
 	return tea.ExecProcess(m.tmux.AttachCommand(id), func(err error) tea.Msg {
 		return attachDoneMsg{err}
 	})
 }
 
-// reattach returns to a session after review, or reports it if it died
-// while the diff was open.
 func (m *Model) reattach(id string) tea.Cmd {
 	if !m.tmux.Exists(id) {
 		m.err = "session is dead - press v to revive"
 		return nil
 	}
 	m.err = ""
+	sess, err := m.store.Get(id)
+	if err != nil {
+		m.err = err.Error()
+		return nil
+	}
+	if err := m.acknowledgeFinished(sess); err != nil {
+		m.err = err.Error()
+		return nil
+	}
 	return m.attachCmd(id)
 }
 
