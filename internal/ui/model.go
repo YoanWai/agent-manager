@@ -369,6 +369,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case attachDoneMsg:
 		if msg.err != nil {
 			m.err = msg.err.Error()
+			m.requestRefresh()
+			return m, nil
+		}
+		// Ctrl+R inside the session sets a marker before detaching; consume
+		// it here and jump straight to review for the session just attached.
+		requested, err := m.tmux.ReviewRequested()
+		if err != nil {
+			m.err = err.Error()
+		} else if requested {
+			if clearErr := m.tmux.ClearReviewRequest(); clearErr != nil {
+				m.err = clearErr.Error()
+			}
+			return m, m.openDiff()
 		}
 		m.requestRefresh()
 		return m, nil

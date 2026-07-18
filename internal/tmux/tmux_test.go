@@ -76,6 +76,50 @@ func TestSendText(t *testing.T) {
 	}
 }
 
+func TestReviewRequestRoundTrip(t *testing.T) {
+	driver := requireTmux(t)
+	// A live server is needed for global options to stick.
+	id := "rev" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	t.Cleanup(func() { driver.ClearReviewRequest() })
+
+	if err := driver.ClearReviewRequest(); err != nil {
+		t.Fatalf("ClearReviewRequest: %v", err)
+	}
+	requested, err := driver.ReviewRequested()
+	if err != nil {
+		t.Fatalf("ReviewRequested: %v", err)
+	}
+	if requested {
+		t.Fatal("no request expected on a clean marker")
+	}
+
+	if _, err := exec.Command("tmux", "set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
+		t.Fatalf("set marker: %v", err)
+	}
+	requested, err = driver.ReviewRequested()
+	if err != nil {
+		t.Fatalf("ReviewRequested: %v", err)
+	}
+	if !requested {
+		t.Fatal("marker set to 1 should read as requested")
+	}
+
+	if err := driver.ClearReviewRequest(); err != nil {
+		t.Fatalf("ClearReviewRequest: %v", err)
+	}
+	requested, err = driver.ReviewRequested()
+	if err != nil {
+		t.Fatalf("ReviewRequested: %v", err)
+	}
+	if requested {
+		t.Fatal("clear should drop the marker")
+	}
+}
+
 func TestLifecycle(t *testing.T) {
 	driver := requireTmux(t)
 	id := "test" + time.Now().Format("150405.000000")

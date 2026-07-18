@@ -10,6 +10,10 @@ import (
 
 const prefix = "am_"
 
+// reviewOption is the global tmux user option the in-session Ctrl+R binding
+// sets to signal the manager to open review for the session it just detached.
+const reviewOption = "@am_review"
+
 type Driver struct {
 	bin string
 }
@@ -85,12 +89,15 @@ func (d *Driver) installSessionUX(name string) error {
 	options := [][]string{
 		{"set-option", "-t", name, "status", "on"},
 		{"set-option", "-t", name, "status-left", ""},
-		{"set-option", "-t", name, "status-right", " agent-manager · Ctrl+Q = back "},
+		{"set-option", "-t", name, "status-right", " agent-manager · Ctrl+Q = back · Ctrl+R = review "},
 		{"set-option", "-t", name, "status-style", "bg=colour236,fg=colour249"},
 		// hide the "0:windowname*" window list; it reads as noise here
 		{"set-option", "-t", name, "window-status-format", ""},
 		{"set-option", "-t", name, "window-status-current-format", ""},
 		{"bind-key", "-n", "C-q", "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "detach-client", "send-keys C-q"},
+		// Ctrl+R inside an am_* session leaves a marker and detaches; the
+		// manager reads the marker on return and jumps straight to review.
+		{"bind-key", "-n", "C-r", "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "set-option -g " + reviewOption + " 1 ; detach-client", "send-keys C-r"},
 	}
 	for _, args := range options {
 		if _, err := d.run(args...); err != nil {
@@ -134,6 +141,25 @@ func sanitizeFormat(s string) string {
 		return r
 	}, s)
 	return strings.ReplaceAll(s, "#", "##")
+}
+
+// ReviewRequested reports whether the in-session Ctrl+R binding set the
+// review marker before detaching. A missing tmux server means no request.
+func (d *Driver) ReviewRequested() (bool, error) {
+	out, err := exec.Command(d.bin, "show-option", "-gqv", reviewOption).CombinedOutput()
+	if err != nil {
+		if noServer(string(out)) {
+			return false, nil
+		}
+		return false, fmt.Errorf("tmux show-option %s: %w: %s", reviewOption, err, strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out)) == "1", nil
+}
+
+// ClearReviewRequest unsets the review marker so it fires once per request.
+func (d *Driver) ClearReviewRequest() error {
+	_, err := d.run("set-option", "-gu", reviewOption)
+	return err
 }
 
 func (d *Driver) AttachCommand(id string) *exec.Cmd {
