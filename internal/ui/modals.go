@@ -158,6 +158,7 @@ func (m *Model) viewHelp() string {
 		{"D", "review changes: whole-file diffs, comment lines, send to agent"},
 		{"s", "cycle diff scope: uncommitted / vs base / last commit / staged"},
 		{"f", "fold / unfold group"},
+		{"F", "fold / unfold all groups"},
 		{"s", "settings (quick spawn tool)"},
 		{"t", "toggle archived view"},
 		{"/", "search"},

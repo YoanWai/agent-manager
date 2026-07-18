@@ -75,6 +75,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openQuickMode()
 	case "f":
 		m.toggleCollapse()
+	case "F":
+		m.toggleCollapseAll()
 	case "s":
 		m.openSettings()
 	case "t":
@@ -248,6 +250,25 @@ func (m *Model) toggleCollapse() {
 		return
 	}
 	m.collapsed[path] = !m.collapsed[path]
+	m.persistCollapsed()
+	m.rebuildRows()
+}
+
+// toggleCollapseAll folds every group when any is open, and unfolds all
+// when they are already collapsed, so one key flips the whole tree.
+func (m *Model) toggleCollapseAll() {
+	groups := groupClosure(m.groups, m.sessions)
+	anyOpen := false
+	for group := range groups {
+		if !m.collapsed[group] {
+			anyOpen = true
+			break
+		}
+	}
+	for group := range groups {
+		m.collapsed[group] = anyOpen
+	}
+	m.persistCollapsed()
 	m.rebuildRows()
 }
 
@@ -420,6 +441,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					delete(m.collapsed, path)
 				}
 			}
+			m.persistCollapsed()
 		}
 		m.confirm = confirmTarget{}
 		m.requestRefresh()
@@ -589,6 +611,7 @@ func (m *Model) renameGroupLocally(old, newPath, dir string) {
 			m.collapsed[renamed] = folded
 		}
 	}
+	m.persistCollapsed()
 }
 
 func (m *Model) openQuickMode() {

@@ -632,7 +632,7 @@ func padToHeight(s string, height int) string {
 func (m *Model) viewFooter() string {
 	pairs := [][2]string{
 		{"↑↓", "navigate"}, {"↵", "attach"}, {"n", "new"}, {"g", "group"},
-		{"⇧↑↓", "reorder"}, {"space", "quick prompt"}, {"D", "review"}, {"f", "fold"}, {"m", "move"}, {"r", "rename/edit"},
+		{"⇧↑↓", "reorder"}, {"space", "quick prompt"}, {"D", "review"}, {"f", "fold"}, {"F", "fold all"}, {"m", "move"}, {"r", "rename/edit"},
 		{"v", "revive"}, {"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
 		{"t", "archived"}, {"s", "settings"}, {"?", "help"}, {"q", "quit"},
 	}

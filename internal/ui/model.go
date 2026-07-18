@@ -3,6 +3,7 @@ package ui
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"hash/fnv"
 	"sort"
 	"strings"
@@ -166,8 +167,48 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		hooks:     hookManager,
 		gitDrv:    gitDriver,
 		poller:    newPoller(st, driver, engine, hookManager, statusSources, cfg.PollInterval.Duration),
-		collapsed: map[string]bool{},
+		collapsed: loadCollapsed(st),
 		mode:      modeList,
+	}
+}
+
+const collapsedSetting = "collapsed_groups"
+
+// loadCollapsed restores the set of folded group paths persisted from a
+// previous run so the tree opens in the same shape the user left it.
+func loadCollapsed(st *store.Store) map[string]bool {
+	collapsed := map[string]bool{}
+	raw, err := st.Setting(collapsedSetting)
+	if err != nil || raw == "" {
+		return collapsed
+	}
+	var paths []string
+	if err := json.Unmarshal([]byte(raw), &paths); err != nil {
+		return collapsed
+	}
+	for _, path := range paths {
+		collapsed[path] = true
+	}
+	return collapsed
+}
+
+// persistCollapsed saves the currently folded group paths so the state
+// survives across launches.
+func (m *Model) persistCollapsed() {
+	paths := make([]string, 0, len(m.collapsed))
+	for path, folded := range m.collapsed {
+		if folded {
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+	raw, err := json.Marshal(paths)
+	if err != nil {
+		m.err = err.Error()
+		return
+	}
+	if err := m.store.SetSetting(collapsedSetting, string(raw)); err != nil {
+		m.err = err.Error()
 	}
 }
 

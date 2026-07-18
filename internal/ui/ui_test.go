@@ -1443,3 +1443,51 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 		t.Fatalf("prompt not delivered:\n%s", pane)
 	}
 }
+
+func TestCollapsedStatePersistsAcrossReload(t *testing.T) {
+	m := buildModel(t)
+	m.collapsed["backend"] = true
+	m.collapsed["backend/api"] = true
+	m.persistCollapsed()
+
+	restored := loadCollapsed(m.store)
+	if !restored["backend"] || !restored["backend/api"] {
+		t.Fatalf("collapsed groups not restored: %v", restored)
+	}
+
+	m.collapsed["backend"] = false
+	m.persistCollapsed()
+	restored = loadCollapsed(m.store)
+	if restored["backend"] {
+		t.Fatalf("expanded group leaked back as collapsed: %v", restored)
+	}
+	if !restored["backend/api"] {
+		t.Fatalf("still-folded group dropped: %v", restored)
+	}
+}
+
+func TestToggleCollapseAllFlipsEveryGroup(t *testing.T) {
+	m := buildModel(t)
+	m.sessions = []store.Session{{ID: "a", Group: "backend/api"}, {ID: "b", Group: "frontend"}}
+	want := []string{"backend", "backend/api", "frontend"}
+
+	m.toggleCollapseAll()
+	for _, group := range want {
+		if !m.collapsed[group] {
+			t.Fatalf("group %q not collapsed after fold-all", group)
+		}
+	}
+	if restored := loadCollapsed(m.store); len(restored) != 3 {
+		t.Fatalf("fold-all not persisted: %v", restored)
+	}
+
+	m.toggleCollapseAll()
+	for _, group := range want {
+		if m.collapsed[group] {
+			t.Fatalf("group %q still collapsed after unfold-all", group)
+		}
+	}
+	if restored := loadCollapsed(m.store); len(restored) != 0 {
+		t.Fatalf("unfold-all not persisted: %v", restored)
+	}
+}
