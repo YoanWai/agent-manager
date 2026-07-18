@@ -155,6 +155,8 @@ func (m *Model) viewHelp() string {
 		{"shift+↑↓", "reorder row up / down"},
 		{"space", "quick prompt: answer session / spawn agent in group"},
 		{"⇥", "in quick prompt: switch spawn tool"},
+		{"D", "review changes: whole-file diffs, comment lines, send to agent"},
+		{"s", "cycle diff scope: uncommitted / vs base / last commit / staged"},
 		{"f", "fold / unfold group"},
 		{"s", "settings (quick spawn tool)"},
 		{"t", "toggle archived view"},

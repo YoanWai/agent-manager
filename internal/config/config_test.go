@@ -27,11 +27,26 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if _, ok := cfg.Tools["opencode"]; !ok {
 		t.Fatal("expected opencode tool in default config")
 	}
+	if _, ok := cfg.Tools["codex"]; !ok {
+		t.Fatal("expected codex tool in default config")
+	}
+	if cfg.Tools["codex"].Command != "codex" {
+		t.Fatalf("codex command = %q", cfg.Tools["codex"].Command)
+	}
+	if got := cfg.Tools["codex"].ReviveCommand; got != "codex resume --last" {
+		t.Fatalf("codex revive_command = %q want \"codex resume --last\"", got)
+	}
+	if got := cfg.Tools["codex"].PromptFlag; got != "" {
+		t.Fatalf("codex prompt_flag = %q want empty (positional prompt)", got)
+	}
 	if _, ok := cfg.Tools["grok"]; !ok {
 		t.Fatal("expected grok tool in default config")
 	}
 	if cfg.Tools["grok"].Command != "grok" {
 		t.Fatalf("grok command = %q", cfg.Tools["grok"].Command)
+	}
+	if got := cfg.Tools["grok"].ReviveCommand; got != "grok --continue" {
+		t.Fatalf("grok revive_command = %q want \"grok --continue\"", got)
 	}
 	if got := cfg.Tools["grok"].PromptFlag; got != "" {
 		t.Fatalf("grok prompt_flag = %q want empty (positional prompt)", got)

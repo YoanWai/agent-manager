@@ -136,7 +136,10 @@ const defaultConfig = `poll_interval = "2s"
 # line above it carries a question mark. A blocked_line there (e.g. an
 # interrupt banner) also derives waiting. Otherwise default_status
 # applies, and a region that changed since the previous poll counts as
-# working (streaming output often renders without any spinner).
+# working (streaming output often renders without any spinner). A turn
+# that closes without any turn_end marker still resolves: when a working
+# region stops changing and nothing matches, its last content line
+# decides finished versus waiting (question mark waits).
 
 [tools.claude]
 command = "claude"
@@ -179,6 +182,29 @@ rules = [
   # gains a duration: "▣  Build · GLM-5.2 · 22.0s")
   { state = "working", pattern = "(?m)^\\s*▣ +[^·\\n]+· [^·\\n]+$" },
   { state = "working", pattern = "esc interrupt" },
+]
+
+[tools.codex]
+command = "codex"
+# resumes the most recent session in the working directory
+revive_command = "codex resume --last"
+default_status = "idle"
+activity_cutoff = "(?m)^›"
+# a turn that ran commands closes with a "─ Worked for 12s ─" divider above
+# the input box; purely conversational turns leave no divider and resolve
+# through the quiet-region fallback instead
+turn_end = "(?m)^─+ Worked for [\\dhms. ]+─"
+chrome_line = "^\\s*─*\\s*$"
+rules = [
+  # bottom-pane dialogs (command approval, choice prompts, first-run trust)
+  # select a numbered option and block on the user's answer
+  { state = "waiting", pattern = "(?m)^\\s*›\\s+\\d+\\." },
+  { state = "waiting", pattern = "(?m)Press enter to (confirm|continue)\\b" },
+  { state = "waiting", pattern = "(?m)enter to submit answer\\b" },
+  # active turn status line: "• Working (0s • esc to interrupt)" / "Analyzing"
+  { state = "working", pattern = "(?m)esc to interrupt\\b" },
+  { state = "errored", pattern = "(?m)You've hit your usage limit" },
+  { state = "errored", pattern = "(?im)^\\s*■.*\\berror\\b" },
 ]
 
 [tools.grok]

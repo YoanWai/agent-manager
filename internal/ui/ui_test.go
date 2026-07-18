@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -34,6 +35,11 @@ func buildModel(t *testing.T) *Model {
 					{State: status.Waiting, Pattern: "Enter to confirm"},
 					{State: status.Errored, Pattern: `(?im)^\s*error:`},
 				},
+			},
+			"quietchat": {
+				Command:        "cat",
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: "(?m)^›",
 			},
 		},
 	}
@@ -547,6 +553,121 @@ func TestStaleHookFileFallsBackToPaneRules(t *testing.T) {
 	}
 }
 
+func seedRegionHash(t *testing.T, m *Model, sess store.Session, pane string) {
+	t.Helper()
+	region, ok := m.poller.engine.ActivityRegion(sess.Tool, ansi.Strip(pane))
+	if !ok {
+		t.Fatal("pane should have an activity region")
+	}
+	m.poller.paneHashes = map[string]uint64{sess.ID: hashString(region)}
+}
+
+func TestQuietPaneAfterWorkingDerivesFinished(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "quiet01", Tool: "claude-hooked", Status: status.Working}
+	pane := "final answer with no turn marker\n❯ \n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
+		t.Fatalf("quiet pane after working should derive finished, got %q", got)
+	}
+}
+
+func TestQuietPaneEndingOnQuestionDerivesWaiting(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "quiet02", Tool: "claude-hooked", Status: status.Working}
+	pane := "Which of the two options do you prefer?\n❯ \n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Waiting {
+		t.Fatalf("quiet pane ending on a question should derive waiting, got %q", got)
+	}
+}
+
+func TestQuietPaneAfterIdleStaysIdle(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "quiet03", Tool: "claude-hooked", Status: status.Idle}
+	pane := "old transcript text\n❯ \n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Idle {
+		t.Fatalf("quiet pane after idle should stay idle, got %q", got)
+	}
+}
+
+func TestQuietFinishedPersistsAndAckMapsToIdle(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "quiet04", Tool: "claude-hooked", Status: status.Finished}
+	pane := "final answer with no turn marker\n❯ \n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
+		t.Fatalf("inferred finished should persist while the pane stays quiet, got %q", got)
+	}
+	sess.Acked = true
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Idle {
+		t.Fatalf("acked inferred finished should derive idle, got %q", got)
+	}
+}
+
+func TestChangedRegionStillDerivesWorking(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "quiet05", Tool: "claude-hooked", Status: status.Working}
+	seedRegionHash(t, m, sess, "earlier streaming text\n❯ \n")
+	if got := deriveStatus(t, m, sess, "earlier streaming text plus more\n❯ \n", true); got != status.Working {
+		t.Fatalf("changed region should derive working, got %q", got)
+	}
+}
+
+func TestLiveQuietTurnResolvesFinished(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.name.SetValue("quiet-live")
+	m.form.dir.SetValue(t.TempDir())
+	for i, name := range sortedToolNames(m.cfg) {
+		if name == "quietchat" {
+			m.form.toolIndex = i
+		}
+	}
+	pickGroup(t, m, "")
+	_, cmd := m.submitForm()
+	if m.mode != modeList {
+		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.err)
+	}
+	m.applyCmd(t, cmd)
+	sess := m.sessionRows()[0]
+
+	send := func(text string) {
+		t.Helper()
+		if err := m.tmux.SendText(sess.ID, text); err != nil {
+			t.Fatalf("send %q: %v", text, err)
+		}
+	}
+	waitStatus := func(want string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			m.applyCmd(t, m.refreshCmd())
+			got, err := m.store.Get(sess.ID)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			if got.Status == want {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("status = %q, want %q", got.Status, want)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	send("first answer chunk")
+	send("› ask anything")
+	m.applyCmd(t, m.refreshCmd())
+
+	send("more streaming output")
+	send("› ask anything")
+	waitStatus(status.Working)
+	waitStatus(status.Finished)
+}
+
 func TestAttachAcknowledgesFinished(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alert-me", t.TempDir(), "")
@@ -1047,4 +1168,126 @@ func sessionNames(m *Model) []string {
 		names = append(names, sess.Name)
 	}
 	return names
+}
+
+func gitTestRepo(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "t@t")
+	run("config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "-m", "init")
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() { println(1) }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "extra.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestDiffReviewShowsWholeFile(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+
+	m.applyCmd(t, m.openDiff())
+	if !m.diff.active || m.mode != modeDiff || m.diff.loading {
+		t.Fatalf("diff should be loaded fullscreen, active=%v mode=%v err=%q", m.diff.active, m.mode, m.diff.errText)
+	}
+	if len(m.diff.set.Files) != 2 {
+		t.Fatalf("files = %+v", m.diff.set.Files)
+	}
+
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "Review · coder") || !strings.Contains(view, "Files") {
+		t.Fatalf("fullscreen review layout missing:\n%s", view)
+	}
+	if !strings.Contains(view, "package main") || !strings.Contains(view, "println(1)") {
+		t.Fatalf("whole-file content missing:\n%s", view)
+	}
+	if !strings.Contains(view, "func main() {}") {
+		t.Fatalf("deleted line should interleave:\n%s", view)
+	}
+}
+
+func TestDiffScopeCycleAndLayout(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	m.applyCmd(t, m.openDiff())
+
+	m.applyCmd(t, m.cycleDiffScope())
+	if m.diff.scope.String() != "vs base" {
+		t.Fatalf("scope = %q", m.diff.scope)
+	}
+
+	m.diff.sideBySide = true
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "split") {
+		t.Fatalf("split pill missing:\n%s", view)
+	}
+}
+
+func TestDiffAnnotateAndSend(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	m.applyCmd(t, m.openDiff())
+
+	for i, fd := range m.diff.set.Files {
+		if fd.File.Path == "main.go" {
+			m.diff.fileIdx = i
+		}
+	}
+	fd := m.currentFileDiff()
+	target := -1
+	for i, line := range fd.Lines {
+		if line.NewNum > 0 && strings.Contains(line.Text, "println") {
+			target = i
+		}
+	}
+	if target < 0 {
+		t.Fatalf("no add line found: %+v", fd.Lines)
+	}
+	m.diff.cursorLine = target
+	m.openAnnotate()
+	m.diff.annInput.SetValue("use fmt.Println here")
+	m.saveAnnotation()
+	if len(m.diff.annotations[m.diff.sessID]) != 1 {
+		t.Fatalf("annotations = %+v", m.diff.annotations)
+	}
+
+	_, cmd := m.sendAnnotations()
+	m.applyCmd(t, cmd)
+	if len(m.diff.annotations[m.diff.sessID]) != 0 {
+		t.Fatal("annotations should clear after send")
+	}
+	if !strings.Contains(m.diff.notice, "review comment") {
+		t.Fatalf("feedback = %q", m.err)
+	}
+	sess := m.sessionRows()[0]
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(pane, "use fmt.Println here") || !strings.Contains(pane, "main.go:3") {
+		t.Fatalf("prompt not delivered:\n%s", pane)
+	}
 }
