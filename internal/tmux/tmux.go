@@ -82,22 +82,32 @@ func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// installSessionUX adds a status-bar hint and a Ctrl+Q detach binding.
-// The bind is server-global but only detaches inside am_* sessions;
-// everywhere else Ctrl+Q passes through to the pane untouched.
+// installSessionUX styles a new session's status bar, seeds an empty label
+// until SetLabel runs, and installs the server-global key bindings.
 func (d *Driver) installSessionUX(name string) error {
+	if err := d.EnsureBindings(); err != nil {
+		return err
+	}
+	if err := d.styleStatusBar(name); err != nil {
+		return err
+	}
+	_, err := d.run("set-option", "-t", name, "status-left", "")
+	return err
+}
+
+// styleStatusBar sets a session's status bar chrome, leaving status-left (the
+// name label) untouched so re-styling a live session keeps its label.
+func (d *Driver) styleStatusBar(name string) error {
 	options := [][]string{
 		{"set-option", "-t", name, "status", "on"},
-		{"set-option", "-t", name, "status-left", ""},
-		{"set-option", "-t", name, "status-right", " agent-manager · Ctrl+Q = back · Ctrl+R = review "},
+		// The default status-right-length of 40 truncates the hint before the
+		// Ctrl+R part, so widen it to fit the whole footer.
+		{"set-option", "-t", name, "status-right-length", "80"},
+		{"set-option", "-t", name, "status-right", " agent-manager · Ctrl+q = back · Ctrl+r = review "},
 		{"set-option", "-t", name, "status-style", "bg=colour236,fg=colour249"},
 		// hide the "0:windowname*" window list; it reads as noise here
 		{"set-option", "-t", name, "window-status-format", ""},
 		{"set-option", "-t", name, "window-status-current-format", ""},
-		{"bind-key", "-n", "C-q", "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "detach-client", "send-keys C-q"},
-		// Ctrl+R inside an am_* session leaves a marker and detaches; the
-		// manager reads the marker on return and jumps straight to review.
-		{"bind-key", "-n", "C-r", "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "set-option -g " + reviewOption + " 1 ; detach-client", "send-keys C-r"},
 	}
 	for _, args := range options {
 		if _, err := d.run(args...); err != nil {
@@ -105,6 +115,30 @@ func (d *Driver) installSessionUX(name string) error {
 		}
 	}
 	return nil
+}
+
+// EnsureBindings installs the server-global Ctrl+Q detach and Ctrl+R review
+// bindings. Both only act inside am_* sessions; elsewhere the key passes
+// through to the pane. Idempotent, so it is safe to re-run for sessions that
+// predate a binding.
+func (d *Driver) EnsureBindings() error {
+	binds := [][]string{
+		{"bind-key", "-n", "C-q", "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "detach-client", "send-keys C-q"},
+		{"bind-key", "-n", "C-r", "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "set-option -g " + reviewOption + " 1 ; detach-client", "send-keys C-r"},
+	}
+	for _, args := range binds {
+		if _, err := d.run(args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RefreshChrome re-applies the status bar chrome to a live session so a
+// session created before a manager update picks up the current footer,
+// without disturbing its name label.
+func (d *Driver) RefreshChrome(id string) error {
+	return d.styleStatusBar(sessionName(id))
 }
 
 // SendText types text into the session's pane as literal keystrokes and

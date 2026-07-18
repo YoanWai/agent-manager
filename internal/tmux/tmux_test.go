@@ -120,6 +120,44 @@ func TestReviewRequestRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRefreshChromeKeepsLabelAndAddsReviewHint(t *testing.T) {
+	driver := requireTmux(t)
+	id := "chr" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	if err := driver.SetLabel(id, "my-session"); err != nil {
+		t.Fatalf("SetLabel: %v", err)
+	}
+	if err := driver.RefreshChrome(id); err != nil {
+		t.Fatalf("RefreshChrome: %v", err)
+	}
+
+	right, err := exec.Command("tmux", "display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("status-right: %v", err)
+	}
+	if !strings.Contains(string(right), "Ctrl+r = review") {
+		t.Fatalf("footer should advertise review, got %q", right)
+	}
+	length, err := exec.Command("tmux", "show-option", "-t", "am_"+id, "-v", "status-right-length").CombinedOutput()
+	if err != nil {
+		t.Fatalf("status-right-length: %v", err)
+	}
+	if strings.TrimSpace(string(length)) != "80" {
+		t.Fatalf("status-right-length should fit the footer, got %q", length)
+	}
+	left, err := exec.Command("tmux", "display-message", "-p", "-t", "am_"+id, "#{T:status-left}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("status-left: %v", err)
+	}
+	if !strings.Contains(string(left), "my-session") {
+		t.Fatalf("re-styling should keep the name label, got %q", left)
+	}
+}
+
 func TestLifecycle(t *testing.T) {
 	driver := requireTmux(t)
 	id := "test" + time.Now().Format("150405.000000")
