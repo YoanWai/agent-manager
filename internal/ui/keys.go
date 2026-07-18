@@ -73,8 +73,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.prepareDelete()
 	case " ", "space":
 		m.openQuickMode()
-	case "f":
-		m.toggleCollapse()
 	case "F":
 		m.toggleCollapseAll()
 	case "s":
