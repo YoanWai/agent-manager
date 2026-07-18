@@ -80,6 +80,8 @@ Press `D` on a session to open a full-screen review of its repo: changed files w
 
 Press `c` on a line to write a comment; `C` flattens every comment into one review prompt and sends it straight into the agent's pane, so the agent starts addressing your notes while you watch the diff update. `esc` closes the review.
 
+![diff review demo](docs/demo-diff.gif)
+
 ### Groups
 
 Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `shift+↑↓` (the order persists), fold a subtree with `f`, and edit a group's name and default path with `r`.
