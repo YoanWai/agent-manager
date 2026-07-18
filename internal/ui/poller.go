@@ -276,8 +276,8 @@ func (p *poller) refreshOnce() tea.Msg {
 // unclaimed rollout in its directory; a later session started in the same
 // directory then skips that rollout via claimed and captures its own.
 // Capturing out of launch order would let a later session claim an earlier
-// one's conversation. CreatedAt is second-resolution, so two sessions
-// launched in the same directory within one second can still tie.
+// one's conversation. CreatedAt carries nanosecond precision, so sessions
+// launched a moment apart in the same directory still order deterministically.
 func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[string]int, claimed map[string]bool) error {
 	pending := make([]int, 0, len(sessions))
 	for i, sess := range sessions {

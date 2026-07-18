@@ -23,9 +23,11 @@ func writeCodexRollout(t *testing.T, path, sessionID, cwd string, modTime time.T
 	}
 }
 
-// Two codex sessions share a directory, A launched before B. The poller
-// receives them in store order (B first), not launch order. Capture must
-// still bind each to its own conversation instead of swapping them.
+// Two codex sessions share a directory, A launched a fraction of a second
+// before B, both within the same wall-clock second. The poller receives
+// them in store order (B first), not launch order. Sub-second launch times
+// must survive the store round-trip so capture binds each to its own
+// conversation instead of swapping them.
 func TestCaptureAgentSessionIDsAssignsInLaunchOrder(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -37,14 +39,17 @@ func TestCaptureAgentSessionIDsAssignsInLaunchOrder(t *testing.T) {
 	t.Setenv("CODEX_HOME", codexHome)
 	cwd := t.TempDir()
 
-	base := time.Now().Add(-time.Minute)
-	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-id", cwd, base)
-	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-B.jsonl"), "B-id", cwd, base.Add(2*time.Second))
+	// A whole second, so A and B share it and only nanoseconds separate them.
+	base := time.Now().Truncate(time.Second).Add(-time.Minute)
+	aLaunch := base.Add(100 * time.Millisecond)
+	bLaunch := base.Add(600 * time.Millisecond)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-id", cwd, aLaunch)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-B.jsonl"), "B-id", cwd, bLaunch)
 
-	if err := st.CreateSession(store.Session{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: base}); err != nil {
+	if err := st.CreateSession(store.Session{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: aLaunch}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CreateSession(store.Session{ID: "sess-B", Name: "b", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: base.Add(2 * time.Second)}); err != nil {
+	if err := st.CreateSession(store.Session{ID: "sess-B", Name: "b", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: bLaunch}); err != nil {
 		t.Fatal(err)
 	}
 	sessA, err := st.Get("sess-A")
