@@ -52,6 +52,9 @@ type diffState struct {
 	probeTick   int
 	hl          *hlCache
 	hlPending   hlKey
+
+	// Set when review opened from inside a session; leaving re-attaches it.
+	reattachID string
 }
 
 type diffLoadedMsg struct {
@@ -428,6 +431,14 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "esc":
 		m.mode = modeList
 		m.diff.active = false
+		// Review opened from inside a session returns to that session, not
+		// the list, so Ctrl+R then esc is a round trip back to where it began.
+		if id := m.diff.reattachID; id != "" {
+			m.diff.reattachID = ""
+			if cmd := m.reattach(id); cmd != nil {
+				return m, cmd
+			}
+		}
 	case "up", "k":
 		m.moveDiffCursor(-1, height)
 	case "down", "j":

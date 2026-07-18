@@ -118,6 +118,9 @@ func (m *Model) openDiff() tea.Cmd {
 	m.diff.active = true
 	m.mode = modeDiff
 	m.err = ""
+	// Default to returning to the list; the in-session Ctrl+R path sets this
+	// afterward when review should return to the session instead.
+	m.diff.reattachID = ""
 	return m.retargetDiff(sess)
 }
 
@@ -281,22 +284,47 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.err = ""
-	// Entering a finished session acknowledges the alert; the acked mark
-	// keeps it idle while the pane still shows the acknowledged turn.
-	if sess.Status == status.Finished {
-		if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
-			m.err = err.Error()
-			return m, nil
-		}
-		if err := m.store.SetAcked(sess.ID, true); err != nil {
-			m.err = err.Error()
-			return m, nil
-		}
+	if err := m.acknowledgeFinished(sess); err != nil {
+		m.err = err.Error()
+		return m, nil
 	}
-	cmd := m.tmux.AttachCommand(sess.ID)
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+	return m, m.attachCmd(sess.ID)
+}
+
+// acknowledgeFinished marks a finished session idle and acked so entering it
+// clears the alert while the pane still shows the acknowledged turn.
+func (m *Model) acknowledgeFinished(sess store.Session) error {
+	if sess.Status != status.Finished {
+		return nil
+	}
+	if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
+		return err
+	}
+	return m.store.SetAcked(sess.ID, true)
+}
+
+func (m *Model) attachCmd(id string) tea.Cmd {
+	return tea.ExecProcess(m.tmux.AttachCommand(id), func(err error) tea.Msg {
 		return attachDoneMsg{err}
 	})
+}
+
+func (m *Model) reattach(id string) tea.Cmd {
+	if !m.tmux.Exists(id) {
+		m.err = "session is dead - press v to revive"
+		return nil
+	}
+	m.err = ""
+	sess, err := m.store.Get(id)
+	if err != nil {
+		m.err = err.Error()
+		return nil
+	}
+	if err := m.acknowledgeFinished(sess); err != nil {
+		m.err = err.Error()
+		return nil
+	}
+	return m.attachCmd(id)
 }
 
 // reviveSelected relaunches a dead session's tmux session under the same

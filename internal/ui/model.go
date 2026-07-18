@@ -380,10 +380,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err != nil {
 			m.err = err.Error()
 		} else if requested {
+			// A failed clear leaves the marker set, which would reopen review
+			// on every later detach, so surface it and stay in the list rather
+			// than letting openDiff reset m.err and hide it.
 			if clearErr := m.tmux.ClearReviewRequest(); clearErr != nil {
 				m.err = clearErr.Error()
+				m.requestRefresh()
+				return m, nil
 			}
-			return m, m.openDiff()
+			sess, ok := m.selected()
+			cmd := m.openDiff()
+			if ok && m.mode == modeDiff {
+				m.diff.reattachID = sess.ID
+			}
+			return m, cmd
 		}
 		m.requestRefresh()
 		return m, nil
