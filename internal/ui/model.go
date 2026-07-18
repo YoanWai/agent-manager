@@ -383,7 +383,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if clearErr := m.tmux.ClearReviewRequest(); clearErr != nil {
 				m.err = clearErr.Error()
 			}
-			return m, m.openDiff()
+			sess, ok := m.selected()
+			cmd := m.openDiff()
+			// Remember the origin so leaving review returns to this session
+			// rather than the list; only when review actually opened.
+			if ok && m.mode == modeDiff {
+				m.diff.reattachID = sess.ID
+			}
+			return m, cmd
 		}
 		m.requestRefresh()
 		return m, nil

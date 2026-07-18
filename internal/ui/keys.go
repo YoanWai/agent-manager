@@ -118,6 +118,9 @@ func (m *Model) openDiff() tea.Cmd {
 	m.diff.active = true
 	m.mode = modeDiff
 	m.err = ""
+	// Default to returning to the list; the in-session Ctrl+R path sets this
+	// afterward when review should return to the session instead.
+	m.diff.reattachID = ""
 	return m.retargetDiff(sess)
 }
 
@@ -293,10 +296,27 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	cmd := m.tmux.AttachCommand(sess.ID)
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+	return m, m.attachCmd(sess.ID)
+}
+
+// attachCmd suspends the TUI to attach the session's tmux pane, resuming on
+// detach with an attachDoneMsg. Shared by entering a session from the list
+// and by returning to it after an in-session review.
+func (m *Model) attachCmd(id string) tea.Cmd {
+	return tea.ExecProcess(m.tmux.AttachCommand(id), func(err error) tea.Msg {
 		return attachDoneMsg{err}
 	})
+}
+
+// reattach returns to a session after review, or reports it if it died
+// while the diff was open.
+func (m *Model) reattach(id string) tea.Cmd {
+	if !m.tmux.Exists(id) {
+		m.err = "session is dead - press v to revive"
+		return nil
+	}
+	m.err = ""
+	return m.attachCmd(id)
 }
 
 // reviveSelected relaunches a dead session's tmux session under the same
