@@ -673,6 +673,48 @@ func TestLiveQuietTurnResolvesFinished(t *testing.T) {
 	waitStatus(status.Finished)
 }
 
+func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	createSession(t, m, "reviewme", t.TempDir(), "")
+	m.selectSessionRow(t, "reviewme")
+	t.Cleanup(func() { m.tmux.ClearReviewRequest() })
+
+	if _, err := exec.Command("tmux", "set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
+		t.Fatalf("set marker: %v", err)
+	}
+	updated, _ := m.Update(attachDoneMsg{})
+	*m = *updated.(*Model)
+	if m.mode != modeDiff {
+		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.err)
+	}
+
+	requested, err := m.tmux.ReviewRequested()
+	if err != nil {
+		t.Fatalf("ReviewRequested: %v", err)
+	}
+	if requested {
+		t.Fatal("opening review should consume the marker")
+	}
+}
+
+func TestAttachDoneStaysInListWithoutMarker(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "plainexit", t.TempDir(), "")
+	m.selectSessionRow(t, "plainexit")
+	if err := m.tmux.ClearReviewRequest(); err != nil {
+		t.Fatalf("clear marker: %v", err)
+	}
+
+	updated, _ := m.Update(attachDoneMsg{})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("no marker should stay in list, mode = %v", m.mode)
+	}
+}
+
 func TestAttachAcknowledgesFinished(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alert-me", t.TempDir(), "")
