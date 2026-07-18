@@ -26,6 +26,8 @@ func (m *Model) View() string {
 		return m.viewMove()
 	case modeGroupForm:
 		return m.viewGroupForm()
+	case modeDiff:
+		return m.viewDiffFull()
 	}
 
 	leftWidth := m.width * 34 / 100
@@ -66,6 +68,8 @@ func (m *Model) viewStatus() string {
 		return padRight(line, m.width)
 	case m.err != "":
 		return padRight(errStyle.Render(" ✖ "+m.err), m.width)
+	case m.diff.notice != "":
+		return padRight(lipgloss.NewStyle().Foreground(colorFinished).Render(" ✔ "+m.diff.notice), m.width)
 	default:
 		return ""
 	}
@@ -337,6 +341,8 @@ func (m *Model) viewSidebar(width, height int) string {
 	if rest := height - lipgloss.Height(detail) - 1; rest >= 3 {
 		if group, ok := m.selectedGroup(); ok {
 			body = detail + "\n" + m.viewGroupAgents(group, width, rest)
+		} else if m.diff.active {
+			body = detail + "\n" + m.viewDiffPanel(width, rest)
 		} else {
 			body = detail + "\n" + m.viewPreview(width, rest)
 		}
@@ -644,6 +650,19 @@ func (m *Model) viewFooter() string {
 			pairs = [][2]string{{"⇥", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}
 		}
 	}
+	if m.diff.active && m.mode == modeList && !m.quick.active {
+		pairs = [][2]string{
+			{"↑↓", "navigate"}, {"↵", "attach"}, {"J/K", "scroll"}, {"[ ]", "file"},
+			{"S", "scope: " + m.diff.scope.String()}, {"x", "review"},
+			{"space", "quick prompt"}, {"D", "close diff"},
+		}
+	}
+	return footerLine(pairs, m.width)
+}
+
+// footerLine wraps key hint pairs onto extra lines when the terminal is
+// too narrow for one.
+func footerLine(pairs [][2]string, width int) string {
 	sep := subtleStyle.Render(" · ")
 	sepWidth := ansi.StringWidth(sep)
 	var lines []string
@@ -654,7 +673,7 @@ func (m *Model) viewFooter() string {
 		switch {
 		case line == "":
 			line, lineWidth = " "+part, 1+partWidth
-		case lineWidth+sepWidth+partWidth <= m.width:
+		case lineWidth+sepWidth+partWidth <= width:
 			line += sep + part
 			lineWidth += sepWidth + partWidth
 		default:

@@ -28,6 +28,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleMoveKey(msg)
 	case modeGroupForm:
 		return m.handleGroupFormKey(msg)
+	case modeDiff:
+		return m.handleDiffKey(msg)
 	case modeHelp:
 		m.mode = modeList
 		return m, nil
@@ -87,6 +89,43 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openMove()
 	case "?":
 		m.mode = modeHelp
+	case "D":
+		return m, m.toggleDiff()
+	case "x":
+		var cmd tea.Cmd
+		if !m.diff.active {
+			if cmd = m.toggleDiff(); !m.diff.active {
+				return m, cmd
+			}
+		}
+		m.mode = modeDiff
+		return m, cmd
+	case "S":
+		return m, m.cycleDiffScope()
+	case "J":
+		if m.diff.active {
+			m.scrollDiff(1)
+		}
+	case "K":
+		if m.diff.active {
+			m.scrollDiff(-1)
+		}
+	case "ctrl+d":
+		if m.diff.active {
+			m.scrollDiff(10)
+		}
+	case "ctrl+u":
+		if m.diff.active {
+			m.scrollDiff(-10)
+		}
+	case "]":
+		if m.diff.active {
+			return m, m.switchDiffFile(1)
+		}
+	case "[":
+		if m.diff.active {
+			return m, m.switchDiffFile(-1)
+		}
 	}
 	return m, nil
 }
@@ -117,6 +156,10 @@ func (m *Model) moveCursor(delta int) tea.Cmd {
 		return nil
 	}
 	m.preview = ""
+	// The open diff panel follows the cursor like the preview does.
+	if m.diff.active && sess.ID != m.diff.sessID {
+		return tea.Batch(m.previewCmd(sess.ID), m.retargetDiff(sess))
+	}
 	return m.previewCmd(sess.ID)
 }
 
