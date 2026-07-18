@@ -247,6 +247,32 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
+	return m.refreshExistingSessionUX
+}
+
+// refreshExistingSessionUX re-applies the tmux bindings and status bar to
+// sessions that were already running when the manager started, so a session
+// created before an update still gets the current key bindings (the
+// server-global Ctrl+R review key) and footer.
+func (m *Model) refreshExistingSessionUX() tea.Msg {
+	if err := m.tmux.EnsureBindings(); err != nil {
+		return errMsg{err}
+	}
+	sessions, err := m.store.ListSessions(true)
+	if err != nil {
+		return errMsg{err}
+	}
+	for _, sess := range sessions {
+		if !m.tmux.Exists(sess.ID) {
+			continue
+		}
+		if err := m.tmux.RefreshChrome(sess.ID); err != nil {
+			return errMsg{err}
+		}
+		if err := m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)); err != nil {
+			return errMsg{err}
+		}
+	}
 	return nil
 }
 
@@ -319,6 +345,12 @@ func (m *Model) resizeSessions() {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		// Resuming from a tmux attach re-sends the current size unchanged; only
+		// a real resize needs the per-session tmux resize calls, so an
+		// unchanged size skips them and keeps detach latency flat.
+		if msg.Width == m.width && msg.Height == m.height {
+			return m, nil
+		}
 		m.width = msg.Width
 		m.height = msg.Height
 		m.resizeSessions()

@@ -120,6 +120,37 @@ func TestReviewRequestRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRefreshChromeKeepsLabelAndAddsReviewHint(t *testing.T) {
+	driver := requireTmux(t)
+	id := "chr" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	if err := driver.SetLabel(id, "my-session"); err != nil {
+		t.Fatalf("SetLabel: %v", err)
+	}
+	if err := driver.RefreshChrome(id); err != nil {
+		t.Fatalf("RefreshChrome: %v", err)
+	}
+
+	right, err := exec.Command("tmux", "display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("status-right: %v", err)
+	}
+	if !strings.Contains(string(right), "Ctrl+R = review") {
+		t.Fatalf("footer should advertise review, got %q", right)
+	}
+	left, err := exec.Command("tmux", "display-message", "-p", "-t", "am_"+id, "#{T:status-left}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("status-left: %v", err)
+	}
+	if !strings.Contains(string(left), "my-session") {
+		t.Fatalf("re-styling should keep the name label, got %q", left)
+	}
+}
+
 func TestLifecycle(t *testing.T) {
 	driver := requireTmux(t)
 	id := "test" + time.Now().Format("150405.000000")
