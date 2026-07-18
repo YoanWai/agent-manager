@@ -401,6 +401,10 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.err = err.Error()
 				return m, nil
 			}
+			if err := m.hooks.RemoveName(sess.ID); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
 			if err := m.store.Delete(sess.ID); err != nil {
 				m.err = err.Error()
 				return m, nil
@@ -703,7 +707,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	name := toolName + "-" + newID()[:4]
-	if err := m.spawnSession(toolName, name, dir, group, prompt); err != nil {
+	if err := m.spawnSession(toolName, name, dir, group, prompt, true); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}

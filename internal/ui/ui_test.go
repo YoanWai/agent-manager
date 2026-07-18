@@ -41,6 +41,11 @@ func buildModel(t *testing.T) *Model {
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^›",
 			},
+			"ready-tool": {
+				Command:        `printf '❯ ' && cat`,
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: "(?m)^❯",
+			},
 		},
 	}
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
@@ -879,6 +884,153 @@ func TestQuickSpawnOnGroupCreatesSession(t *testing.T) {
 	}
 	if m.quick.input.Value() != "" {
 		t.Fatal("input should clear after a spawn")
+	}
+}
+
+func TestLaunchPromptInjectsDirectiveOnlyForAutoNamedWithPrompt(t *testing.T) {
+	withDirective := launchPrompt("build the api", true)
+	if !strings.HasPrefix(withDirective, renameDirective+"\n\n") || !strings.HasSuffix(withDirective, "build the api") {
+		t.Fatalf("auto-named prompt should carry the directive, got %q", withDirective)
+	}
+	if got := launchPrompt("build the api", false); got != "build the api" {
+		t.Fatalf("custom-named prompt should stay clean, got %q", got)
+	}
+	if got := launchPrompt("", true); got != "" {
+		t.Fatalf("promptless session should stay clean, got %q", got)
+	}
+	if got := launchPrompt("/compact keep the api notes", true); got != "/compact keep the api notes" {
+		t.Fatalf("slash-command prompt should stay clean, got %q", got)
+	}
+}
+
+func TestSpawnMarksDeferredDirective(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+
+	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "/compact", true); err != nil {
+		t.Fatalf("slash spawn: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	slashID := m.sessionRows()[0].ID
+	if !m.poller.directivePending(slashID) {
+		t.Fatal("slash-prompt spawn should defer the directive")
+	}
+
+	if err := m.spawnSession("claude", "claude-bbbb", dir, "", "do things", true); err != nil {
+		t.Fatalf("plain spawn: %v", err)
+	}
+	if err := m.spawnSession("claude", "custom", dir, "", "/compact", false); err != nil {
+		t.Fatalf("custom spawn: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	for _, sess := range m.sessionRows() {
+		if sess.ID == slashID {
+			continue
+		}
+		if m.poller.directivePending(sess.ID) {
+			t.Fatalf("session %q should not defer a directive", sess.Name)
+		}
+	}
+}
+
+func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	sess := m.sessionRows()[0]
+	if !m.poller.directivePending(sess.ID) {
+		t.Fatal("promptless auto-named spawn should defer the directive")
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for m.poller.directivePending(sess.ID) {
+		if time.Now().After(deadline) {
+			pane, _ := m.tmux.CapturePane(sess.ID)
+			t.Fatalf("directive never sent; pane:\n%s", pane)
+		}
+		time.Sleep(100 * time.Millisecond)
+		m.applyCmd(t, m.refreshCmd())
+	}
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if !strings.Contains(pane, "agent-manager rename") {
+		t.Fatalf("pane should hold the directive, got:\n%s", pane)
+	}
+}
+
+func TestBuildLaunchCarriesSessionID(t *testing.T) {
+	m := buildModel(t)
+	plain := m.cfg.Tools["claude"]
+	_, env, err := m.buildLaunch(plain, plain.Command, "abcd1234")
+	if err != nil {
+		t.Fatalf("buildLaunch: %v", err)
+	}
+	if env[hooks.EnvSessionID] != "abcd1234" {
+		t.Fatalf("plain tool env = %v, want session id", env)
+	}
+
+	hooked := m.cfg.Tools["claude-hooked"]
+	_, env, err = m.buildLaunch(hooked, hooked.Command, "abcd1234")
+	if err != nil {
+		t.Fatalf("buildLaunch hooked: %v", err)
+	}
+	if env[hooks.EnvSessionID] != "abcd1234" || env[hooks.EnvStatusFile] == "" {
+		t.Fatalf("hooked tool env = %v, want session id and status file", env)
+	}
+}
+
+func writePendingName(t *testing.T, m *Model, id, name string) {
+	t.Helper()
+	path := m.hooks.NameFile(id)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir hooks dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(name), 0o644); err != nil {
+		t.Fatalf("write name: %v", err)
+	}
+}
+
+func TestRefreshAppliesPendingRename(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "placeholder", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+
+	writePendingName(t, m, sess.ID, "fix auth bug\n")
+	m.applyCmd(t, m.refreshCmd())
+
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Name != "fix auth bug" {
+		t.Fatalf("name = %q, want the agent-chosen name", got.Name)
+	}
+	if _, err := os.Stat(m.hooks.NameFile(sess.ID)); !os.IsNotExist(err) {
+		t.Fatal("applied name file should be consumed")
+	}
+}
+
+func TestRefreshConsumesGarbageNameFile(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "keeper", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+
+	writePendingName(t, m, sess.ID, "   \n")
+	m.applyCmd(t, m.refreshCmd())
+
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Name != "keeper" {
+		t.Fatalf("whitespace name must not rename, got %q", got.Name)
+	}
+	if _, err := os.Stat(m.hooks.NameFile(sess.ID)); !os.IsNotExist(err) {
+		t.Fatal("garbage name file should still be consumed")
 	}
 }
 

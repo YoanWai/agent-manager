@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -21,10 +23,51 @@ func main() {
 		fmt.Println("agent-manager", version)
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "rename" {
+		if err := renameCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "agent-manager:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "agent-manager:", err)
 		os.Exit(1)
 	}
+}
+
+func renameCommand(args []string) error {
+	dir, err := config.Dir()
+	if err != nil {
+		return err
+	}
+	return runRename(args, os.Getenv(hooks.EnvSessionID), dir)
+}
+
+var sessionIDPattern = regexp.MustCompile(`^[0-9a-f]+$`)
+
+// runRename records a session's self-chosen name for the running manager
+// to apply on its next poll. It only writes the name file; the manager
+// owns the database and the tmux label.
+func runRename(args []string, sessionID, configDir string) error {
+	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
+		return fmt.Errorf(`usage: agent-manager rename "<name>"`)
+	}
+	if sessionID == "" {
+		return fmt.Errorf("not inside an agent-manager session (%s is unset)", hooks.EnvSessionID)
+	}
+	if !sessionIDPattern.MatchString(sessionID) {
+		return fmt.Errorf("invalid session id %q", sessionID)
+	}
+	path := hooks.NewManager(configDir).NameFile(sessionID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(args[0]), 0o644); err != nil {
+		return err
+	}
+	fmt.Println("session renamed to", strings.TrimSpace(args[0]))
+	return nil
 }
 
 func run() error {
