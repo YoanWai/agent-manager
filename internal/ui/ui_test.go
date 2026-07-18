@@ -220,6 +220,41 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 	}
 }
 
+func TestArchivedViewIgnoresFold(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+
+	if err := m.store.CreateGroup("work", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "alpha", dir, "work")
+
+	m.selectSessionRow(t, "alpha")
+	_, cmd := m.archiveSelected()
+	m.applyCmd(t, cmd)
+
+	m.collapsed["work"] = true
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	if len(m.sessionRows()) != 1 {
+		t.Fatalf("archived session inside a folded group should still show, got %d rows", len(m.sessionRows()))
+	}
+
+	m.selectSessionRow(t, "alpha")
+	_, cmd = m.restoreSelected()
+	m.applyCmd(t, cmd)
+
+	active, err := m.store.ListSessions(false)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(active) != 1 {
+		t.Fatalf("after restore, active sessions in store = %d want 1", len(active))
+	}
+}
+
 func TestNestedGroupsTree(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
