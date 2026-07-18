@@ -266,12 +266,11 @@ func (m *Model) refreshExistingSessionUX() tea.Msg {
 		if !m.tmux.Exists(sess.ID) {
 			continue
 		}
-		if err := m.tmux.RefreshChrome(sess.ID); err != nil {
-			return errMsg{err}
-		}
-		if err := m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)); err != nil {
-			return errMsg{err}
-		}
+		// Best-effort per session: one that dies between the check and here
+		// errors harmlessly and must not abort the rest, and the bindings that
+		// matter are already installed above.
+		_ = m.tmux.RefreshChrome(sess.ID)
+		_ = m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
 	}
 	return nil
 }
