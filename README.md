@@ -6,7 +6,7 @@ A terminal UI to manage AI coding-agent sessions on your machine. Create and ent
 
 ## Supported tools
 
-Status detection currently supports **Claude Code**, **OpenCode**, and **Grok Build** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](#configuration)).
+Status detection currently supports **Claude Code**, **OpenCode**, **Codex**, and **Grok Build** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](#configuration)).
 
 ## Install
 
@@ -97,7 +97,7 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 | `idle` | Nothing running |
 | `dead` | The tmux session is gone |
 
-Detection matches per-tool regex rules against the visible pane, analyzes the newest turn to tell `finished` from `waiting`, and treats streaming output (content changing between polls) as `working`. Polling keeps running while you are inside a session, so statuses stay live. The selected session's pane tail renders in the preview panel, and moving the cursor fetches the preview immediately.
+Detection matches per-tool regex rules against the visible pane, analyzes the newest turn to tell `finished` from `waiting`, and treats streaming output (content changing between polls) as `working`. A turn that ends without any turn-summary line still resolves: when a `working` pane goes quiet, the turn counts as `finished`, or `waiting` when it ends on a question. Polling keeps running while you are inside a session, so statuses stay live. The selected session's pane tail renders in the preview panel, and moving the cursor fetches the preview immediately.
 
 For Claude Code, status comes first-hand from [hook events](https://docs.anthropic.com/en/docs/claude-code/hooks) instead of pane guessing: sessions launch with a generated `--settings` file whose hooks write the lifecycle state (`working`, `waiting`, `finished`, `idle`) to a per-session status file that the poller reads first. Pane rules still refine it — hooks cannot see a plain-text question, an Esc interrupt, or an error line, so a matching pane verdict upgrades the hook status — and they take over fully as fallback when the hook file is missing or stale. Enabled per tool with `status_source = "claude-hooks"`.
 
@@ -107,7 +107,7 @@ The header shows a fleet summary: per-status session counts, plus `agents N% · 
 
 ## Configuration
 
-Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux) and is created on first run with working defaults for Claude Code, OpenCode, and Grok Build.
+Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux) and is created on first run with working defaults for Claude Code, OpenCode, Codex, and Grok Build.
 
 Top-level: `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats.
 
