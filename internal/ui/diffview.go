@@ -112,32 +112,6 @@ func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 	}
 }
 
-// toggleDiff opens or closes the diff panel for the selected session.
-func (m *Model) toggleDiff() tea.Cmd {
-	if m.diff.active {
-		m.diff.active = false
-		return nil
-	}
-	if m.gitDrv == nil {
-		m.err = "git not found in PATH"
-		return nil
-	}
-	sess, ok := m.selected()
-	if !ok {
-		m.err = "select a session to diff"
-		return nil
-	}
-	if m.diff.scrollByFile == nil {
-		m.diff.scrollByFile = map[string]int{}
-		m.diff.reviewed = map[string]map[string]bool{}
-		m.diff.annotations = map[string][]annotation{}
-		m.diff.hl = newHLCache()
-	}
-	m.diff.active = true
-	m.err = ""
-	return m.retargetDiff(sess)
-}
-
 // retargetDiff points the open diff at a session, reloading its set.
 func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.sessID = sess.ID
@@ -324,12 +298,6 @@ func (m *Model) diffRowCount(fd *diff.FileDiff) int {
 	return len(fd.Lines)
 }
 
-func (m *Model) scrollDiff(delta int) {
-	m.diff.scroll += delta
-	m.diff.cursorLine += delta
-	m.clampDiffCursor()
-}
-
 // moveDiffCursor moves the fullscreen line cursor, dragging the viewport
 // along when the cursor leaves it.
 func (m *Model) moveDiffCursor(delta int, height int) {
@@ -457,11 +425,9 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	height := m.diffCodeHeight()
 	switch msg.String() {
-	case "q":
+	case "q", "esc":
 		m.mode = modeList
 		m.diff.active = false
-	case "esc":
-		m.mode = modeList
 	case "up", "k":
 		m.moveDiffCursor(-1, height)
 	case "down", "j":
@@ -716,43 +682,6 @@ func scopePhrase(scope git.Scope) string {
 
 const diffGutterSign = 2
 
-// viewDiffPanel renders the whole-file diff in the sidebar slot where
-// the pane preview normally sits.
-func (m *Model) viewDiffPanel(width, height int) string {
-	var b strings.Builder
-	title := fmt.Sprintf("Diff · %s", m.diff.scope)
-	if count := len(m.diff.set.Files); count > 0 {
-		title += fmt.Sprintf(" · %d/%d", m.diff.fileIdx+1, count)
-	}
-	b.WriteString(divider(title, width) + "\n")
-
-	if empty := m.diffEmptyText(); empty != "" {
-		b.WriteString(empty)
-		return padToHeight(b.String(), height)
-	}
-
-	fd := m.currentFileDiff()
-	b.WriteString(m.diffFileHeader(fd, width) + "\n")
-	if body := m.diffBodyNote(fd); body != "" {
-		b.WriteString(body)
-		return padToHeight(b.String(), height)
-	}
-
-	codeHeight := height - 2
-	hl := m.currentHL()
-	start, end := m.diffWindow(len(fd.Lines), codeHeight)
-	if start > 0 {
-		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
-	}
-	for i := start; i < end; i++ {
-		b.WriteString(m.renderDiffRow(fd, hl, i, width, false, false) + "\n")
-	}
-	if end < len(fd.Lines) {
-		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(fd.Lines)-end)))
-	}
-	return padToHeight(strings.TrimRight(b.String(), "\n"), height)
-}
-
 // diffWindow slices the scroll viewport, reserving overflow indicator
 // rows like the session list does.
 func (m *Model) diffWindow(total, height int) (int, int) {
@@ -795,30 +724,6 @@ func (m *Model) diffEmptyText() string {
 			subtleStyle.Render("S cycles scope")
 	}
 	return ""
-}
-
-// diffFileHeader is the current file's title row: reviewed glyph, path,
-// right-aligned add/del counts.
-func (m *Model) diffFileHeader(fd *diff.FileDiff, width int) string {
-	glyph := subtleStyle.Render("○")
-	if m.fileReviewed(fd.File.Path) {
-		glyph = lipgloss.NewStyle().Foreground(colorFinished).Render("✔")
-	}
-	path := fd.File.Path
-	if fd.File.Status == git.Renamed {
-		path = fd.File.OldPath + " → " + path
-	}
-	counts := lipgloss.NewStyle().Foreground(colorFinished).Render(fmt.Sprintf("+%d", fd.Stat.Adds)) +
-		" " + lipgloss.NewStyle().Foreground(colorErrored).Render(fmt.Sprintf("−%d", fd.Stat.Dels))
-	if fd.File.Status == git.Untracked {
-		counts = lipgloss.NewStyle().Foreground(colorFinished).Render("new")
-	}
-	left := glyph + " " + valueStyle.Render(truncateTail(path, width-12))
-	gap := width - ansi.StringWidth(left) - ansi.StringWidth(counts)
-	if gap < 1 {
-		gap = 1
-	}
-	return left + strings.Repeat(" ", gap) + counts
 }
 
 func (m *Model) diffBodyNote(fd *diff.FileDiff) string {
@@ -1184,6 +1089,6 @@ func (m *Model) viewDiffFooter() string {
 	if count := len(m.diff.annotations[m.diff.sessID]); count > 0 {
 		pairs = append(pairs, [2]string{"C", fmt.Sprintf("send %d", count)}, [2]string{"d", "remove"})
 	}
-	pairs = append(pairs, [2]string{"esc", "panel"}, [2]string{"q", "close"})
+	pairs = append(pairs, [2]string{"esc", "close"})
 	return footerLine(pairs, m.width)
 }

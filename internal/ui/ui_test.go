@@ -1079,23 +1079,23 @@ func gitTestRepo(t *testing.T) string {
 	return dir
 }
 
-func TestDiffPanelShowsWholeFile(t *testing.T) {
+func TestDiffReviewShowsWholeFile(t *testing.T) {
 	m := buildModel(t)
 	dir := gitTestRepo(t)
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
 
-	m.applyCmd(t, m.toggleDiff())
-	if !m.diff.active || m.diff.loading {
-		t.Fatalf("diff should be loaded, state = %+v err = %q", m.diff.active, m.diff.errText)
+	m.applyCmd(t, m.openDiff())
+	if !m.diff.active || m.mode != modeDiff || m.diff.loading {
+		t.Fatalf("diff should be loaded fullscreen, active=%v mode=%v err=%q", m.diff.active, m.mode, m.diff.errText)
 	}
 	if len(m.diff.set.Files) != 2 {
 		t.Fatalf("files = %+v", m.diff.set.Files)
 	}
 
 	view := ansi.Strip(m.View())
-	if !strings.Contains(view, "Diff · uncommitted") {
-		t.Fatalf("panel header missing:\n%s", view)
+	if !strings.Contains(view, "Review · coder") || !strings.Contains(view, "Files") {
+		t.Fatalf("fullscreen review layout missing:\n%s", view)
 	}
 	if !strings.Contains(view, "package main") || !strings.Contains(view, "println(1)") {
 		t.Fatalf("whole-file content missing:\n%s", view)
@@ -1105,24 +1105,16 @@ func TestDiffPanelShowsWholeFile(t *testing.T) {
 	}
 }
 
-func TestDiffScopeCycleAndFullscreen(t *testing.T) {
+func TestDiffScopeCycleAndLayout(t *testing.T) {
 	m := buildModel(t)
 	dir := gitTestRepo(t)
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
-	m.applyCmd(t, m.toggleDiff())
+	m.applyCmd(t, m.openDiff())
 
 	m.applyCmd(t, m.cycleDiffScope())
 	if m.diff.scope.String() != "vs base" {
 		t.Fatalf("scope = %q", m.diff.scope)
-	}
-
-	m.diff.scope = 0
-	m.applyCmd(t, m.retargetDiff(m.rows[m.cursor].sess))
-	m.mode = modeDiff
-	view := ansi.Strip(m.View())
-	if !strings.Contains(view, "Review · coder") || !strings.Contains(view, "Files") {
-		t.Fatalf("fullscreen layout missing:\n%s", view)
 	}
 
 	m.diff.sideBySide = true
@@ -1136,8 +1128,7 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	dir := gitTestRepo(t)
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
-	m.applyCmd(t, m.toggleDiff())
-	m.mode = modeDiff
+	m.applyCmd(t, m.openDiff())
 
 	for i, fd := range m.diff.set.Files {
 		if fd.File.Path == "main.go" {

@@ -341,8 +341,6 @@ func (m *Model) viewSidebar(width, height int) string {
 	if rest := height - lipgloss.Height(detail) - 1; rest >= 3 {
 		if group, ok := m.selectedGroup(); ok {
 			body = detail + "\n" + m.viewGroupAgents(group, width, rest)
-		} else if m.diff.active {
-			body = detail + "\n" + m.viewDiffPanel(width, rest)
 		} else {
 			body = detail + "\n" + m.viewPreview(width, rest)
 		}
@@ -634,7 +632,7 @@ func padToHeight(s string, height int) string {
 func (m *Model) viewFooter() string {
 	pairs := [][2]string{
 		{"↑↓", "navigate"}, {"↵", "attach"}, {"n", "new"}, {"g", "group"},
-		{"⇧↑↓", "reorder"}, {"space", "quick prompt"}, {"f", "fold"}, {"m", "move"}, {"r", "rename/edit"},
+		{"⇧↑↓", "reorder"}, {"space", "quick prompt"}, {"D", "review"}, {"f", "fold"}, {"m", "move"}, {"r", "rename/edit"},
 		{"v", "revive"}, {"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
 		{"t", "archived"}, {"s", "settings"}, {"?", "help"}, {"q", "quit"},
 	}
@@ -648,13 +646,6 @@ func (m *Model) viewFooter() string {
 		pairs = [][2]string{{"↵", "save"}, {"esc", "cancel"}}
 		if m.rename.isGroup {
 			pairs = [][2]string{{"⇥", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}
-		}
-	}
-	if m.diff.active && m.mode == modeList && !m.quick.active {
-		pairs = [][2]string{
-			{"↑↓", "navigate"}, {"↵", "attach"}, {"J/K", "scroll"}, {"[ ]", "file"},
-			{"S", "scope: " + m.diff.scope.String()}, {"x", "review"},
-			{"space", "quick prompt"}, {"D", "close diff"},
 		}
 	}
 	return footerLine(pairs, m.width)

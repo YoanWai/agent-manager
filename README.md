@@ -57,9 +57,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `a` / `u` | Archive / restore |
 | `d` | Delete session, or a group + its entire subtree |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
-| `D` | Diff panel for the selected session (whole files, changed lines tinted) |
-| `x` | Full-screen review: file list, unified/side-by-side, line comments sent to the agent |
-| `S` | Cycle diff scope: uncommitted → vs base → last commit → staged |
+| `D` | Review the selected session's changes: full-screen whole-file diffs, line comments sent to the agent |
 | `f` | Fold / unfold group |
 | `s` | Settings (default tool for quick spawn) |
 | `t` | Toggle archived view |
@@ -78,9 +76,9 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 
 ### Diff review
 
-Press `D` on a session to swap the pane preview for a diff of the session's repo: the entire file renders with syntax highlighting and the changed lines tinted, so every edit reads in full context. The panel follows the cursor, refreshes as the agent keeps editing, `J`/`K` scroll, `[`/`]` switch files, and `S` cycles the scope (uncommitted, vs base, last commit, staged).
+Press `D` on a session to open a full-screen review of its repo: changed files with +/− counts on the left, the whole file on the right with syntax highlighting and changed lines tinted, so every edit reads in full context. Arrow keys and `ctrl+d`/`ctrl+u` scroll the file, `J`/`K` switch files, `n`/`N` jump between changes, `u` toggles unified and side-by-side, `s` cycles the scope (uncommitted, vs base, last commit, staged), and `space` marks a file reviewed. The diff refreshes as the agent keeps editing.
 
-`x` expands to a full-screen review: changed files with +/− counts on the left, code on the right, `u` toggles unified and side-by-side, `n`/`N` jump between changes, and `space` marks a file reviewed. Press `c` on a line to write a comment; `C` flattens every comment into one review prompt and sends it straight into the agent's pane, so the agent starts addressing your notes while you watch the diff update.
+Press `c` on a line to write a comment; `C` flattens every comment into one review prompt and sends it straight into the agent's pane, so the agent starts addressing your notes while you watch the diff update. `esc` closes the review.
 
 ### Groups
 
