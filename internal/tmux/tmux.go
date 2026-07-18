@@ -100,7 +100,10 @@ func (d *Driver) installSessionUX(name string) error {
 func (d *Driver) styleStatusBar(name string) error {
 	options := [][]string{
 		{"set-option", "-t", name, "status", "on"},
-		{"set-option", "-t", name, "status-right", " agent-manager · Ctrl+Q = back · Ctrl+R = review "},
+		// The default status-right-length of 40 truncates the hint before the
+		// Ctrl+R part, so widen it to fit the whole footer.
+		{"set-option", "-t", name, "status-right-length", "80"},
+		{"set-option", "-t", name, "status-right", " agent-manager · Ctrl+q = back · Ctrl+r = review "},
 		{"set-option", "-t", name, "status-style", "bg=colour236,fg=colour249"},
 		// hide the "0:windowname*" window list; it reads as noise here
 		{"set-option", "-t", name, "window-status-format", ""},

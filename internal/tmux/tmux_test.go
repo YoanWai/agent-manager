@@ -139,8 +139,15 @@ func TestRefreshChromeKeepsLabelAndAddsReviewHint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status-right: %v", err)
 	}
-	if !strings.Contains(string(right), "Ctrl+R = review") {
+	if !strings.Contains(string(right), "Ctrl+r = review") {
 		t.Fatalf("footer should advertise review, got %q", right)
+	}
+	length, err := exec.Command("tmux", "show-option", "-t", "am_"+id, "-v", "status-right-length").CombinedOutput()
+	if err != nil {
+		t.Fatalf("status-right-length: %v", err)
+	}
+	if strings.TrimSpace(string(length)) != "80" {
+		t.Fatalf("status-right-length should fit the footer, got %q", length)
 	}
 	left, err := exec.Command("tmux", "display-message", "-p", "-t", "am_"+id, "#{T:status-left}").CombinedOutput()
 	if err != nil {
