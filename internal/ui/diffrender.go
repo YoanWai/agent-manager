@@ -3,6 +3,7 @@ package ui
 import (
 	"hash/fnv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
@@ -10,6 +11,7 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -147,16 +149,19 @@ func (hl *fileHL) hlLine(line diff.Line) string {
 	return line.Text
 }
 
-// tintLine overlays a diff background onto a chroma-highlighted line:
-// the background is re-emitted after every SGR reset chroma writes, and
-// word spans (byte offsets into the raw text) switch to the brighter
-// span background. Returns the line with the background still open so
-// the caller can pad to full width before resetting.
-func tintLine(highlighted string, spans []diff.Span, baseBg, spanBg string) string {
-	var builder strings.Builder
-	builder.Grow(len(highlighted) + 64)
-
-	currentBg := func(offset int) string {
+// wrapTinted overlays a diff background onto a chroma-highlighted line
+// and wraps it to width, returning one entry per visual row. The diff
+// background is re-emitted after every SGR reset chroma writes so it
+// survives across tokens and across wrap boundaries; word spans (byte
+// offsets into the raw text) switch to the brighter span background.
+// When a background is set, each row is padded so the tint fills the
+// full width; a plain line (empty baseBg) is left unpadded for the
+// caller to pad. Every row is closed with a reset.
+func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	bgFor := func(offset int) string {
 		for _, span := range spans {
 			if offset >= span.Start && offset < span.End {
 				return spanBg
@@ -165,11 +170,34 @@ func tintLine(highlighted string, spans []diff.Span, baseBg, spanBg string) stri
 		return baseBg
 	}
 
+	var rows []string
+	var b strings.Builder
+	activeBg := ""
+	rowWidth := 0
+	fresh := true
+
+	closeRow := func() {
+		if baseBg != "" && rowWidth < width {
+			b.WriteString(strings.Repeat(" ", width-rowWidth))
+		}
+		if b.Len() > 0 || baseBg != "" {
+			b.WriteString("\x1b[0m")
+		}
+		rows = append(rows, b.String())
+		b.Reset()
+		fresh = true
+		rowWidth = 0
+	}
+
 	offset := 0
-	builder.WriteString(currentBg(0))
-	activeBg := currentBg(0)
-	i := 0
-	for i < len(highlighted) {
+	for i := 0; i < len(highlighted); {
+		if fresh {
+			activeBg = bgFor(offset)
+			if activeBg != "" {
+				b.WriteString(activeBg)
+			}
+			fresh = false
+		}
 		if highlighted[i] == 0x1b {
 			end := i + 1
 			if end < len(highlighted) && highlighted[end] == '[' {
@@ -182,20 +210,30 @@ func tintLine(highlighted string, spans []diff.Span, baseBg, spanBg string) stri
 				}
 			}
 			sequence := highlighted[i:end]
-			builder.WriteString(sequence)
-			if sequence == "\x1b[0m" {
-				builder.WriteString(activeBg)
+			b.WriteString(sequence)
+			if sequence == "\x1b[0m" && activeBg != "" {
+				b.WriteString(activeBg)
 			}
 			i = end
 			continue
 		}
-		if bg := currentBg(offset); bg != activeBg {
-			activeBg = bg
-			builder.WriteString(bg)
+		r, size := utf8.DecodeRuneInString(highlighted[i:])
+		runeWidth := ansi.StringWidth(string(r))
+		if rowWidth+runeWidth > width {
+			closeRow()
+			continue
 		}
-		builder.WriteByte(highlighted[i])
-		offset++
-		i++
+		if bg := bgFor(offset); bg != activeBg {
+			activeBg = bg
+			b.WriteString(bg)
+		}
+		b.WriteString(highlighted[i : i+size])
+		offset += size
+		rowWidth += runeWidth
+		i += size
 	}
-	return builder.String()
+	if !fresh || len(rows) == 0 {
+		closeRow()
+	}
+	return rows
 }

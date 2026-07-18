@@ -682,33 +682,6 @@ func scopePhrase(scope git.Scope) string {
 
 const diffGutterSign = 2
 
-// diffWindow slices the scroll viewport, reserving overflow indicator
-// rows like the session list does.
-func (m *Model) diffWindow(total, height int) (int, int) {
-	if total <= height {
-		return 0, total
-	}
-	visible := height
-	if m.diff.scroll > 0 {
-		visible--
-	}
-	start := m.diff.scroll
-	if start > total-1 {
-		start = total - 1
-	}
-	if start+visible < total {
-		visible--
-	}
-	if visible < 1 {
-		visible = 1
-	}
-	end := start + visible
-	if end > total {
-		end = total
-	}
-	return start, end
-}
-
 func (m *Model) diffEmptyText() string {
 	if m.diff.loading && len(m.diff.set.Files) == 0 {
 		return mutedStyle.Render("(loading diff…)")
@@ -740,21 +713,14 @@ func (m *Model) diffBodyNote(fd *diff.FileDiff) string {
 	return ""
 }
 
-// renderDiffRow renders one whole-file diff line: line numbers, change
-// sign, syntax-highlighted text with the diff background tinted through.
-func (m *Model) renderDiffRow(fd *diff.FileDiff, hl *fileHL, index, width int, dualGutter, cursor bool) string {
+// renderDiffRow renders one whole-file diff line into one or more visual
+// rows: line numbers, change sign, syntax-highlighted text with the diff
+// background tinted through, long lines wrapped with the gutter blanked
+// on continuation rows.
+func (m *Model) renderDiffRow(fd *diff.FileDiff, hl *fileHL, index, width int, cursor bool) []string {
 	line := fd.Lines[index]
 	gutterWidth := numWidth(fd)
-	var gutter string
-	if dualGutter {
-		gutter = numCell(line.OldNum, gutterWidth) + numCell(line.NewNum, gutterWidth)
-	} else {
-		num := line.NewNum
-		if line.Kind == diff.Del {
-			num = line.OldNum
-		}
-		gutter = numCell(num, gutterWidth)
-	}
+	gutter := numCell(line.OldNum, gutterWidth) + numCell(line.NewNum, gutterWidth)
 
 	sign, baseBg, spanBg := " ", "", ""
 	switch line.Kind {
@@ -768,25 +734,7 @@ func (m *Model) renderDiffRow(fd *diff.FileDiff, hl *fileHL, index, width int, d
 	if textWidth < 4 {
 		textWidth = 4
 	}
-
-	text := hl.hlLine(line)
-	if line.Kind == diff.Same {
-		if ansi.StringWidth(text) > textWidth {
-			text = ansi.Truncate(text, textWidth-1, "…")
-		}
-		if strings.ContainsRune(text, 0x1b) {
-			text += "\x1b[0m"
-		}
-	} else {
-		text = tintLine(text, line.Spans, baseBg, spanBg)
-		if ansi.StringWidth(text) > textWidth {
-			text = ansi.Truncate(text, textWidth-1, "…") + baseBg
-		}
-		if pad := textWidth - ansi.StringWidth(text); pad > 0 {
-			text += strings.Repeat(" ", pad)
-		}
-		text += "\x1b[0m"
-	}
+	textRows := wrapTinted(hl.hlLine(line), line.Spans, baseBg, spanBg, textWidth)
 
 	marker := " "
 	if m.annotationAt(fd.File.Path, line) != nil {
@@ -799,13 +747,58 @@ func (m *Model) renderDiffRow(fd *diff.FileDiff, hl *fileHL, index, width int, d
 	case diff.Del:
 		signCell = lipgloss.NewStyle().Foreground(colorErrored).Render(sign)
 	}
+	blankGutter := strings.Repeat(" ", ansi.StringWidth(gutter))
 
-	row := subtleStyle.Render(gutter) + marker + signCell + text
-	row = padRight(row, width)
-	if cursor {
-		return selectedRowStyle.Render(row)
+	out := make([]string, len(textRows))
+	for i, text := range textRows {
+		prefix := subtleStyle.Render(blankGutter) + "  "
+		if i == 0 {
+			prefix = subtleStyle.Render(gutter) + marker + signCell
+		}
+		row := padRight(prefix+text, width)
+		if cursor {
+			row = selectedRowStyle.Render(row)
+		}
+		out[i] = row
 	}
-	return row
+	return out
+}
+
+// unifiedRows fills the code viewport with wrapped whole-file rows,
+// starting at the scroll line and reserving rows for the overflow
+// indicators. A logical line can span several visual rows; annotation
+// comments render on their own indented rows beneath the marked line.
+func (m *Model) unifiedRows(fd *diff.FileDiff, hl *fileHL, width, height int) []string {
+	total := len(fd.Lines)
+	scroll := m.diff.scroll
+	if scroll > total-1 {
+		scroll = total - 1
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+
+	var rows []string
+	if scroll > 0 {
+		rows = append(rows, subtleStyle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
+	}
+	i := scroll
+	for ; i < total && len(rows) < height; i++ {
+		rows = append(rows, m.renderDiffRow(fd, hl, i, width, i == m.diff.cursorLine)...)
+		if note := m.annotationAt(fd.File.Path, fd.Lines[i]); note != nil {
+			comment := mutedStyle.Italic(true).Render("  ¶ " + note.text)
+			rows = append(rows, wrapTinted(comment, nil, "", "", width)...)
+		}
+	}
+	if i < total {
+		if len(rows) >= height {
+			rows = rows[:height-1]
+		}
+		rows = append(rows, subtleStyle.Render(fmt.Sprintf("  ↓ %d more", total-i)))
+	} else if len(rows) > height {
+		rows = rows[:height]
+	}
+	return rows
 }
 
 func numWidth(fd *diff.FileDiff) int {
@@ -965,21 +958,7 @@ func (m *Model) viewDiffCode(width, height int) string {
 	if m.diff.sideBySide {
 		m.renderSideBySide(&b, fd, hl, width, height)
 	} else {
-		total := len(fd.Lines)
-		start, end := m.diffWindow(total, height)
-		if start > 0 {
-			b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
-		}
-		for i := start; i < end; i++ {
-			b.WriteString(m.renderDiffRow(fd, hl, i, width, true, i == m.diff.cursorLine) + "\n")
-			if note := m.annotationAt(fd.File.Path, fd.Lines[i]); note != nil {
-				comment := mutedStyle.Italic(true).Render("  ¶ " + note.text)
-				b.WriteString(ansi.Truncate(comment, width, "…") + "\n")
-			}
-		}
-		if end < total {
-			b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", total-end)))
-		}
+		b.WriteString(strings.Join(m.unifiedRows(fd, hl, width, height), "\n"))
 	}
 
 	body := strings.TrimRight(b.String(), "\n")
@@ -991,38 +970,67 @@ func (m *Model) viewDiffCode(width, height int) string {
 
 func (m *Model) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *fileHL, width, height int) {
 	rows := fd.SideBySideRows()
-	start, end := m.diffWindow(len(rows), height)
 	half := (width - 1) / 2
-	if start > 0 {
-		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
-	}
 	sep := subtleStyle.Render("│")
-	for i := start; i < end; i++ {
+
+	scroll := m.diff.scroll
+	if scroll > len(rows)-1 {
+		scroll = len(rows) - 1
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+	var out []string
+	if scroll > 0 {
+		out = append(out, subtleStyle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
+	}
+	i := scroll
+	for ; i < len(rows) && len(out) < height; i++ {
 		row := rows[i]
 		left := m.renderSideCell(fd, hl, row.Left, half, true)
 		right := m.renderSideCell(fd, hl, row.Right, width-half-1, false)
-		line := left + sep + right
-		if i == m.diff.cursorLine {
-			line = selectedRowStyle.Render(padRight(line, width))
+		// A wrapped cell can be taller than its partner; pad the shorter
+		// side with blank cells so the columns stay aligned.
+		lines := len(left)
+		if len(right) > lines {
+			lines = len(right)
 		}
-		b.WriteString(line + "\n")
+		for r := 0; r < lines; r++ {
+			leftCell, rightCell := padRight("", half), padRight("", width-half-1)
+			if r < len(left) {
+				leftCell = left[r]
+			}
+			if r < len(right) {
+				rightCell = right[r]
+			}
+			line := leftCell + sep + rightCell
+			if i == m.diff.cursorLine {
+				line = selectedRowStyle.Render(padRight(line, width))
+			}
+			out = append(out, line)
+		}
 	}
-	if end < len(rows) {
-		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-end)))
+	if i < len(rows) {
+		if len(out) >= height {
+			out = out[:height-1]
+		}
+		out = append(out, subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-i)))
+	} else if len(out) > height {
+		out = out[:height]
 	}
+	b.WriteString(strings.Join(out, "\n"))
 }
 
-// renderSideCell renders one half of a side-by-side row; -1 renders the
-// dim filler for an unpaired line.
-func (m *Model) renderSideCell(fd *diff.FileDiff, hl *fileHL, index, width int, leftSide bool) string {
+// renderSideCell renders one half of a side-by-side row into wrapped
+// visual rows; -1 renders a single dim filler for an unpaired line.
+func (m *Model) renderSideCell(fd *diff.FileDiff, hl *fileHL, index, width int, leftSide bool) []string {
 	if index < 0 {
-		return padRight(subtleStyle.Render(" ·"), width)
+		return []string{padRight(subtleStyle.Render(" ·"), width)}
 	}
 	line := fd.Lines[index]
-	// The left column carries old-side content: skip adds there, and
-	// mirror Same lines on both sides.
+	// The left column carries old-side content: skip adds there.
 	if leftSide && line.Kind == diff.Add {
-		return padRight("", width)
+		return []string{padRight("", width)}
 	}
 	gutterWidth := numWidth(fd)
 	num := line.NewNum
@@ -1043,24 +1051,17 @@ func (m *Model) renderSideCell(fd *diff.FileDiff, hl *fileHL, index, width int, 
 	if textWidth < 4 {
 		textWidth = 4
 	}
-	text := hl.hlLine(line)
-	if line.Kind == diff.Same {
-		if ansi.StringWidth(text) > textWidth {
-			text = ansi.Truncate(text, textWidth-1, "…")
+	textRows := wrapTinted(hl.hlLine(line), line.Spans, baseBg, spanBg, textWidth)
+	blankGutter := strings.Repeat(" ", gutterWidth)
+	out := make([]string, len(textRows))
+	for i, text := range textRows {
+		g := blankGutter
+		if i == 0 {
+			g = gutter
 		}
-		if strings.ContainsRune(text, 0x1b) {
-			text += "\x1b[0m"
-		}
-		return padRight(subtleStyle.Render(gutter)+text, width)
+		out[i] = padRight(subtleStyle.Render(g)+text, width)
 	}
-	text = tintLine(text, line.Spans, baseBg, spanBg)
-	if ansi.StringWidth(text) > textWidth {
-		text = ansi.Truncate(text, textWidth-1, "…") + baseBg
-	}
-	if pad := textWidth - ansi.StringWidth(text); pad > 0 {
-		text += strings.Repeat(" ", pad)
-	}
-	return subtleStyle.Render(gutter) + text + "\x1b[0m"
+	return out
 }
 
 func (m *Model) viewDiffStatus() string {
