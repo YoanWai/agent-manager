@@ -124,7 +124,7 @@ func (s *Store) CreateSession(sess Session) error {
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
-		boolToInt(sess.Archived), sess.CreatedAt.Unix(), sess.LastStatusAt.Unix(), sess.AgentSessionID, sess.Group,
+		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID, sess.Group,
 	)
 	if err != nil {
 		return err
@@ -183,8 +183,8 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		}
 		sess.Archived = archived != 0
 		sess.Acked = acked != 0
-		sess.CreatedAt = time.Unix(created, 0)
-		sess.LastStatusAt = time.Unix(lastStatus, 0)
+		sess.CreatedAt = decodeTime(created)
+		sess.LastStatusAt = decodeTime(lastStatus)
 		sessions = append(sessions, sess)
 	}
 	return sessions, rows.Err()
@@ -204,15 +204,15 @@ func (s *Store) Get(id string) (Session, error) {
 	}
 	sess.Archived = archived != 0
 	sess.Acked = acked != 0
-	sess.CreatedAt = time.Unix(created, 0)
-	sess.LastStatusAt = time.Unix(lastStatus, 0)
+	sess.CreatedAt = decodeTime(created)
+	sess.LastStatusAt = decodeTime(lastStatus)
 	return sess, nil
 }
 
 func (s *Store) UpdateStatus(id, newStatus string) error {
 	res, err := s.db.Exec(
 		`UPDATE sessions SET status = ?, last_status_at = ? WHERE id = ?`,
-		newStatus, time.Now().Unix(), id)
+		newStatus, encodeTime(time.Now()), id)
 	if err != nil {
 		return err
 	}
@@ -537,4 +537,33 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// secondsCeiling separates the two timestamp encodings the sessions table
+// has held. Values below it are Unix seconds written before nanosecond
+// precision (a seconds timestamp stays under it until the year 33658); at
+// or above it are Unix nanoseconds (any real nanosecond timestamp since
+// 1970 far exceeds it). This lets decodeTime read old rows without a data
+// migration.
+const secondsCeiling int64 = 1e12
+
+// encodeTime stores a timestamp as Unix nanoseconds so sessions launched in
+// the same second keep a distinct, ordered launch time. The zero time
+// encodes as 0.
+func encodeTime(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixNano()
+}
+
+// decodeTime reverses encodeTime, reading pre-precision rows as seconds.
+func decodeTime(v int64) time.Time {
+	if v == 0 {
+		return time.Time{}
+	}
+	if v < secondsCeiling {
+		return time.Unix(v, 0)
+	}
+	return time.Unix(0, v)
 }

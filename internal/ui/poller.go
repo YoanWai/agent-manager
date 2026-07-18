@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"sort"
 	"sync"
 	"time"
 
@@ -235,20 +236,9 @@ func (p *poller) refreshOnce() tea.Msg {
 			}
 			sessions[i].Status = newStatus
 		}
-		// Once a tool that mints its own id has a live pane, read the id it
-		// wrote so a later revive resumes that exact conversation. Captured
-		// once; nothing to do for tools launched with an id we chose.
-		if panes[sess.ID] > 0 && sessions[i].AgentSessionID == "" {
-			if storeName := p.sessionStores[sess.Tool]; storeName != "" {
-				if agentID, ok := agentsession.Capture(storeName, sess.Cwd, sess.CreatedAt, claimed); ok {
-					if err := p.store.SetAgentSessionID(sess.ID, agentID); err != nil {
-						return errMsg{err}
-					}
-					sessions[i].AgentSessionID = agentID
-					claimed[agentID] = true
-				}
-			}
-		}
+	}
+	if err := p.captureAgentSessionIDs(sessions, panes, claimed); err != nil {
+		return errMsg{err}
 	}
 	p.paneHashes = paneHashes
 	p.sweepDirectives(sessions)
@@ -278,6 +268,42 @@ func (p *poller) refreshOnce() tea.Msg {
 		msg.snapOK = true
 	}
 	return msg
+}
+
+// captureAgentSessionIDs binds each not-yet-captured id-minting session
+// (codex, opencode) to the conversation its CLI wrote. Sessions are
+// processed in launch order so the earliest one claims the earliest
+// unclaimed rollout in its directory; a later session started in the same
+// directory then skips that rollout via claimed and captures its own.
+// Capturing out of launch order would let a later session claim an earlier
+// one's conversation. CreatedAt carries nanosecond precision, so sessions
+// launched a moment apart in the same directory still order deterministically.
+func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[string]int, claimed map[string]bool) error {
+	pending := make([]int, 0, len(sessions))
+	for i, sess := range sessions {
+		if sess.Archived || panes[sess.ID] == 0 || sess.AgentSessionID != "" {
+			continue
+		}
+		if p.sessionStores[sess.Tool] != "" {
+			pending = append(pending, i)
+		}
+	}
+	sort.SliceStable(pending, func(a, b int) bool {
+		return sessions[pending[a]].CreatedAt.Before(sessions[pending[b]].CreatedAt)
+	})
+	for _, i := range pending {
+		sess := sessions[i]
+		agentID, ok := agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.CreatedAt, claimed)
+		if !ok {
+			continue
+		}
+		if err := p.store.SetAgentSessionID(sess.ID, agentID); err != nil {
+			return err
+		}
+		sessions[i].AgentSessionID = agentID
+		claimed[agentID] = true
+	}
+	return nil
 }
 
 // maybeSendDirective delivers the deferred rename directive once the
