@@ -294,11 +294,24 @@ func (m *Model) refreshCmd() tea.Cmd {
 	}
 }
 
+// resizeSessions syncs every live session's tmux window to the current
+// terminal size, so a detached session's preview tracks the manager instead
+// of waiting for its first attach. Dead sessions error harmlessly and skip.
+func (m *Model) resizeSessions() {
+	for _, sess := range m.sessions {
+		if sess.Archived {
+			continue
+		}
+		_ = m.tmux.Resize(sess.ID, m.width, m.height)
+	}
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.resizeSessions()
 		return m, nil
 
 	case refreshMsg:

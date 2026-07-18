@@ -34,9 +34,16 @@ func (d *Driver) run(args ...string) (string, error) {
 	return string(out), nil
 }
 
-func (d *Driver) Create(id, cwd, command string, env map[string]string) error {
+func (d *Driver) Create(id, cwd, command string, env map[string]string, width, height int) error {
 	name := sessionName(id)
-	if _, err := d.run("new-session", "-d", "-s", name, "-c", cwd); err != nil {
+	args := []string{"new-session", "-d", "-s", name, "-c", cwd}
+	// A detached session sizes to tmux's 80x24 default and holds it until a
+	// client attaches, so its pane preview renders narrow. Booting at the
+	// manager's terminal size makes the preview fill from the first frame.
+	if width > 0 && height > 0 {
+		args = append(args, "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
+	}
+	if _, err := d.run(args...); err != nil {
 		return err
 	}
 	if err := d.installSessionUX(name); err != nil {
@@ -150,6 +157,17 @@ func (d *Driver) Exists(id string) bool {
 // (-e), so previews keep the session's real colors. Strip before regex use.
 func (d *Driver) CapturePane(id string) (string, error) {
 	return d.run("capture-pane", "-p", "-e", "-t", sessionName(id))
+}
+
+// Resize sets a detached session's window to the given dimensions so its
+// preview capture tracks the manager's terminal. A client attach overrides
+// this; on detach tmux keeps the last size, so live sessions stay in sync.
+func (d *Driver) Resize(id string, width, height int) error {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+	_, err := d.run("resize-window", "-t", sessionName(id), "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
+	return err
 }
 
 func (d *Driver) PanePID(id string) (int, error) {

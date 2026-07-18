@@ -387,7 +387,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	if err != nil {
 		return err
 	}
-	if err := m.tmux.Create(id, dir, command, env); err != nil {
+	if err := m.tmux.Create(id, dir, command, env, m.width, m.height); err != nil {
 		return err
 	}
 	sess := store.Session{

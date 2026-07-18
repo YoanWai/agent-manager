@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -133,6 +134,37 @@ func createSession(t *testing.T, m *Model, name, dir, group string) {
 		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.err)
 	}
 	m.applyCmd(t, cmd)
+}
+
+func windowWidth(t *testing.T, id string) int {
+	t.Helper()
+	out, err := exec.Command("tmux", "display-message", "-p", "-t", "am_"+id, "#{window_width}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("display-message: %v: %s", err, out)
+	}
+	w, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		t.Fatalf("parse width %q: %v", out, err)
+	}
+	return w
+}
+
+// A detached session must boot at the manager's terminal width so its pane
+// preview fills immediately, and follow later terminal resizes, rather than
+// staying at tmux's 80-column default until the first attach.
+func TestSessionSizesToTerminal(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "sized", t.TempDir(), "")
+	id := m.sessionRows()[0].ID
+
+	if w := windowWidth(t, id); w != m.width {
+		t.Fatalf("new session window width = %d, want %d", w, m.width)
+	}
+
+	m.Update(tea.WindowSizeMsg{Width: 150, Height: 45})
+	if w := windowWidth(t, id); w != 150 {
+		t.Fatalf("after resize, window width = %d, want 150", w)
+	}
 }
 
 func TestCreateArchiveRestoreDelete(t *testing.T) {
@@ -1435,10 +1467,13 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 		t.Fatalf("feedback = %q", m.err)
 	}
 	sess := m.sessionRows()[0]
-	pane, err := m.tmux.CapturePane(sess.ID)
+	// Join wrapped lines so the delivery check does not depend on where the
+	// pane's width breaks the prompt; the session sizes to the model width.
+	out, err := exec.Command("tmux", "capture-pane", "-p", "-J", "-t", "am_"+sess.ID).CombinedOutput()
 	if err != nil {
 		t.Fatal(err)
 	}
+	pane := string(out)
 	if !strings.Contains(pane, "use fmt.Println here") || !strings.Contains(pane, "main.go:3") {
 		t.Fatalf("prompt not delivered:\n%s", pane)
 	}

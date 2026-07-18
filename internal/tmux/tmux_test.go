@@ -23,7 +23,7 @@ func requireTmux(t *testing.T) *Driver {
 func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	driver := requireTmux(t)
 	id := "lbl" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "", nil); err != nil {
+	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -49,7 +49,7 @@ func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 func TestSendText(t *testing.T) {
 	driver := requireTmux(t)
 	id := "send" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "cat", nil); err != nil {
+	if err := driver.Create(id, "/tmp", "cat", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
@@ -81,7 +81,7 @@ func TestLifecycle(t *testing.T) {
 	id := "test" + time.Now().Format("150405.000000")
 	id = strings.ReplaceAll(id, ".", "")
 
-	if err := driver.Create(id, "/tmp", "printf 'hello-pane-marker'", nil); err != nil {
+	if err := driver.Create(id, "/tmp", "printf 'hello-pane-marker'", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })

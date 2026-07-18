@@ -328,7 +328,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
-	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env); err != nil {
+	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, m.width, m.height); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
