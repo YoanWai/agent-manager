@@ -6,7 +6,7 @@ A terminal UI to manage AI coding-agent sessions on your machine. Create and ent
 
 ## Supported tools
 
-Status detection currently supports **Claude Code** and **OpenCode** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](#configuration)).
+Status detection currently supports **Claude Code**, **OpenCode**, and **Grok Build** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](#configuration)).
 
 ## Install
 
@@ -57,6 +57,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `a` / `u` | Archive / restore |
 | `d` | Delete session, or a group + its entire subtree |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
+| `D` | Review the selected session's changes: full-screen whole-file diffs, line comments sent to the agent |
 | `f` | Fold / unfold group |
 | `s` | Settings (default tool for quick spawn) |
 | `t` | Toggle archived view |
@@ -72,6 +73,12 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 - On a **group** row, `enter` spawns a new agent in that group with the prompt embedded, using the group's default path. The spawn tool starts at the Settings (`s`) default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. The agent starts working on the prompt immediately.
 
 `esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](#configuration)).
+
+### Diff review
+
+Press `D` on a session to open a full-screen review of its repo: changed files with +/− counts on the left, the whole file on the right with syntax highlighting and changed lines tinted, so every edit reads in full context. Arrow keys and `ctrl+d`/`ctrl+u` scroll the file, `J`/`K` switch files, `n`/`N` jump between changes, `u` toggles unified and side-by-side, `s` cycles the scope (uncommitted, vs base, last commit, staged), and `space` marks a file reviewed. The diff refreshes as the agent keeps editing.
+
+Press `c` on a line to write a comment; `C` flattens every comment into one review prompt and sends it straight into the agent's pane, so the agent starts addressing your notes while you watch the diff update. `esc` closes the review.
 
 ### Groups
 
@@ -100,7 +107,7 @@ The header shows a fleet summary: per-status session counts, plus `agents N% · 
 
 ## Configuration
 
-Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux) and is created on first run with working defaults for Claude Code and OpenCode.
+Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux) and is created on first run with working defaults for Claude Code, OpenCode, and Grok Build.
 
 Top-level: `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats.
 
