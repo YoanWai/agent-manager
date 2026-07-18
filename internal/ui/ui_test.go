@@ -1169,3 +1169,125 @@ func sessionNames(m *Model) []string {
 	}
 	return names
 }
+
+func gitTestRepo(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "t@t")
+	run("config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "-m", "init")
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() { println(1) }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "extra.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestDiffReviewShowsWholeFile(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+
+	m.applyCmd(t, m.openDiff())
+	if !m.diff.active || m.mode != modeDiff || m.diff.loading {
+		t.Fatalf("diff should be loaded fullscreen, active=%v mode=%v err=%q", m.diff.active, m.mode, m.diff.errText)
+	}
+	if len(m.diff.set.Files) != 2 {
+		t.Fatalf("files = %+v", m.diff.set.Files)
+	}
+
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "Review · coder") || !strings.Contains(view, "Files") {
+		t.Fatalf("fullscreen review layout missing:\n%s", view)
+	}
+	if !strings.Contains(view, "package main") || !strings.Contains(view, "println(1)") {
+		t.Fatalf("whole-file content missing:\n%s", view)
+	}
+	if !strings.Contains(view, "func main() {}") {
+		t.Fatalf("deleted line should interleave:\n%s", view)
+	}
+}
+
+func TestDiffScopeCycleAndLayout(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	m.applyCmd(t, m.openDiff())
+
+	m.applyCmd(t, m.cycleDiffScope())
+	if m.diff.scope.String() != "vs base" {
+		t.Fatalf("scope = %q", m.diff.scope)
+	}
+
+	m.diff.sideBySide = true
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "split") {
+		t.Fatalf("split pill missing:\n%s", view)
+	}
+}
+
+func TestDiffAnnotateAndSend(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	m.applyCmd(t, m.openDiff())
+
+	for i, fd := range m.diff.set.Files {
+		if fd.File.Path == "main.go" {
+			m.diff.fileIdx = i
+		}
+	}
+	fd := m.currentFileDiff()
+	target := -1
+	for i, line := range fd.Lines {
+		if line.NewNum > 0 && strings.Contains(line.Text, "println") {
+			target = i
+		}
+	}
+	if target < 0 {
+		t.Fatalf("no add line found: %+v", fd.Lines)
+	}
+	m.diff.cursorLine = target
+	m.openAnnotate()
+	m.diff.annInput.SetValue("use fmt.Println here")
+	m.saveAnnotation()
+	if len(m.diff.annotations[m.diff.sessID]) != 1 {
+		t.Fatalf("annotations = %+v", m.diff.annotations)
+	}
+
+	_, cmd := m.sendAnnotations()
+	m.applyCmd(t, cmd)
+	if len(m.diff.annotations[m.diff.sessID]) != 0 {
+		t.Fatal("annotations should clear after send")
+	}
+	if !strings.Contains(m.diff.notice, "review comment") {
+		t.Fatalf("feedback = %q", m.err)
+	}
+	sess := m.sessionRows()[0]
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(pane, "use fmt.Println here") || !strings.Contains(pane, "main.go:3") {
+		t.Fatalf("prompt not delivered:\n%s", pane)
+	}
+}

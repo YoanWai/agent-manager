@@ -26,6 +26,8 @@ func (m *Model) View() string {
 		return m.viewMove()
 	case modeGroupForm:
 		return m.viewGroupForm()
+	case modeDiff:
+		return m.viewDiffFull()
 	}
 
 	leftWidth := m.width * 34 / 100
@@ -66,6 +68,8 @@ func (m *Model) viewStatus() string {
 		return padRight(line, m.width)
 	case m.err != "":
 		return padRight(errStyle.Render(" ✖ "+m.err), m.width)
+	case m.diff.notice != "":
+		return padRight(lipgloss.NewStyle().Foreground(colorFinished).Render(" ✔ "+m.diff.notice), m.width)
 	default:
 		return ""
 	}
@@ -628,7 +632,7 @@ func padToHeight(s string, height int) string {
 func (m *Model) viewFooter() string {
 	pairs := [][2]string{
 		{"↑↓", "navigate"}, {"↵", "attach"}, {"n", "new"}, {"g", "group"},
-		{"⇧↑↓", "reorder"}, {"space", "quick prompt"}, {"f", "fold"}, {"m", "move"}, {"r", "rename/edit"},
+		{"⇧↑↓", "reorder"}, {"space", "quick prompt"}, {"D", "review"}, {"f", "fold"}, {"m", "move"}, {"r", "rename/edit"},
 		{"v", "revive"}, {"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
 		{"t", "archived"}, {"s", "settings"}, {"?", "help"}, {"q", "quit"},
 	}
@@ -644,6 +648,12 @@ func (m *Model) viewFooter() string {
 			pairs = [][2]string{{"⇥", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}
 		}
 	}
+	return footerLine(pairs, m.width)
+}
+
+// footerLine wraps key hint pairs onto extra lines when the terminal is
+// too narrow for one.
+func footerLine(pairs [][2]string, width int) string {
 	sep := subtleStyle.Render(" · ")
 	sepWidth := ansi.StringWidth(sep)
 	var lines []string
@@ -654,7 +664,7 @@ func (m *Model) viewFooter() string {
 		switch {
 		case line == "":
 			line, lineWidth = " "+part, 1+partWidth
-		case lineWidth+sepWidth+partWidth <= m.width:
+		case lineWidth+sepWidth+partWidth <= width:
 			line += sep + part
 			lineWidth += sepWidth + partWidth
 		default:

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -30,6 +31,7 @@ const (
 	modeMove
 	modeGroupForm
 	modeSettings
+	modeDiff
 )
 
 type treeRow struct {
@@ -40,10 +42,11 @@ type treeRow struct {
 }
 
 type Model struct {
-	cfg   config.Config
-	store *store.Store
-	tmux  *tmux.Driver
-	hooks *hooks.Manager
+	cfg    config.Config
+	store  *store.Store
+	tmux   *tmux.Driver
+	hooks  *hooks.Manager
+	gitDrv *git.Driver
 
 	sessions   []store.Session
 	rows       []treeRow
@@ -71,6 +74,7 @@ type Model struct {
 	search       string
 	searching    bool
 
+	diff      diffState
 	form      form
 	groupForm groupForm
 	pathSugg  pathComplete
@@ -152,11 +156,15 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	for name, tool := range cfg.Tools {
 		statusSources[name] = tool.StatusSource
 	}
+	// A missing git binary only disables the diff view; everything else
+	// works without it, so the error surfaces on first use instead.
+	gitDriver, _ := git.New()
 	return &Model{
 		cfg:       cfg,
 		store:     st,
 		tmux:      driver,
 		hooks:     hookManager,
+		gitDrv:    gitDriver,
 		poller:    newPoller(st, driver, engine, hookManager, statusSources, cfg.PollInterval.Duration),
 		collapsed: map[string]bool{},
 		mode:      modeList,
@@ -267,12 +275,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// tick) carries the wrong preview; resync and fetch it directly.
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
-			return m, m.previewCmd(sess.ID)
+			return m, tea.Batch(m.previewCmd(sess.ID), m.diffRefreshCmd())
 		}
 		m.proc = msg.proc
 		m.procFor = msg.procFor
 		m.preview = msg.preview
-		return m, nil
+		return m, m.diffRefreshCmd()
 
 	case previewMsg:
 		if sess, ok := m.selected(); ok && sess.ID == msg.sessID {
@@ -281,6 +289,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.procFor = msg.sessID
 		}
 		return m, nil
+
+	case diffLoadedMsg:
+		return m, m.handleDiffLoaded(msg)
+
+	case diffHLMsg:
+		m.handleDiffHL(msg)
+		return m, nil
+
+	case diffProbeMsg:
+		return m, m.handleDiffProbe(msg)
 
 	case errMsg:
 		m.err = msg.err.Error()
