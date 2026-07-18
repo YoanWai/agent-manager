@@ -124,6 +124,45 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 	}
 }
 
+// Fixtures below are captured from real grok Build panes (2026-07-18).
+func TestGrokRealPanes(t *testing.T) {
+	engine := defaultEngine(t)
+	cases := []struct {
+		name string
+		tool string
+		pane string
+		want string
+	}{
+		{"grok idle at prompt", "grok",
+			"  Tip: Press Ctrl+O to toggle auto-approve mode.\n  ╭────────────────────────────╮\n  │ ❯                        │\n  ╰──────────── Grok 4.5 (high) ─╯\n  Shift+Tab:mode  │  Ctrl+x:shortcuts", Idle},
+		{"grok active turn (braille spinner)", "grok",
+			"     Deleting victim.txt.\n    ⠹ Delete victim.txt with rm… 2.5s                6.0s ⇣32.4k [↓][stop]\n  ╭────────────────────────────╮\n  │ ❯                        │\n  ╰──────────── Grok 4.5 (high) ─╯\n  Shift+Tab:mode  │  Ctrl+x:shortcuts", Working},
+		{"grok waiting-for-response spinner", "grok",
+			"    ⠴ Waiting for response… 1.8s                            1.8s ⇣15.4k [stop]\n  ╭────────────────────────────╮\n  │ ❯                        │\n  ╰──────────── Grok 4.5 (high) ─╯\n  Shift+Tab:mode  │  Ctrl+x:shortcuts", Working},
+		{"grok finished turn", "grok",
+			"     ❯ count from 1 to 5\n     1\n     2\n     done\n     Worked for 5.0s.               stop  [hooks: 2]\n\n  ╭────────────────────────────╮\n  │ ❯                        │\n  ╰──────────── Grok 4.5 (high) ─╯\n  Shift+Tab:mode  │  Ctrl+x:shortcuts", Finished},
+		{"grok finished, whole-second duration", "grok",
+			"     Deleted victim.txt.\n     Worked for 25s.               stop  [hooks: 2]\n\n  ╭────────────────────────────╮\n  │ ❯                        │\n  ╰──────────── Grok 4.5 (high) ─╯\n  Shift+Tab:mode  │  Ctrl+x:shortcuts", Finished},
+		{"grok plain-text question ends the turn", "grok",
+			"     Which feature do you want, A or B?\n     Worked for 3.2s.            stop  [hooks: 2]\n\n  ╭────────────────────────────╮\n  │ ❯                        │\n  ╰──────────── Grok 4.5 (high) ─╯\n  Shift+Tab:mode  │  Ctrl+x:shortcuts", Waiting},
+		{"grok old question, newer statement turn", "grok",
+			"     Which one?\n     Worked for 4s.\n     All done now.\n     Worked for 2s.\n\n  ╭────────────────────────────╮\n  │ ❯                        │\n  ╰──────────── Grok 4.5 (high) ─╯\n  Shift+Tab:mode  │  Ctrl+x:shortcuts", Finished},
+		{"grok first-run trust dialog", "grok",
+			"                  Do you trust the contents of this directory?\n                         /Users/yoan/Desktop/projects\n\n            Grok Build may run or modify contents in this directory,\n                             posing security risks.\n\n                         Yes, proceed                 y\n                         No, quit                     n", Waiting},
+		{"grok approval dialog (input box replaced)", "grok",
+			"  ┃  Remove victim2.txt file\n  ┃  rm victim2.txt\n  ┃\n  ┃  1 (●) Yes, and don't ask again for anything (always-approve mode)\n  ┃  2 (○) Yes, proceed\n  ┃  3 (○) No, reject (type to add feedback)\n  ┃\n\n  1/3:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel", Waiting},
+		{"grok errored", "grok",
+			"  error: request failed\n  │ ❯                    │", Errored},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, _ := engine.Match(tc.tool, tc.pane); got != tc.want {
+				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestNewEngineBadPattern(t *testing.T) {
 	cfg := config.Config{
 		Tools: map[string]config.Tool{

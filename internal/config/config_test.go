@@ -27,6 +27,15 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if _, ok := cfg.Tools["opencode"]; !ok {
 		t.Fatal("expected opencode tool in default config")
 	}
+	if _, ok := cfg.Tools["grok"]; !ok {
+		t.Fatal("expected grok tool in default config")
+	}
+	if cfg.Tools["grok"].Command != "grok" {
+		t.Fatalf("grok command = %q", cfg.Tools["grok"].Command)
+	}
+	if got := cfg.Tools["grok"].PromptFlag; got != "" {
+		t.Fatalf("grok prompt_flag = %q want empty (positional prompt)", got)
+	}
 	if cfg.Tools["claude"].Command != "claude" {
 		t.Fatalf("claude command = %q", cfg.Tools["claude"].Command)
 	}
