@@ -19,6 +19,10 @@ import (
 
 const EnvStatusFile = "AGENT_MANAGER_STATUS_FILE"
 
+// EnvSessionID identifies the managed session to the rename subcommand;
+// every session gets it regardless of tool.
+const EnvSessionID = "AGENT_MANAGER_SESSION_ID"
+
 // StatusSourceClaude is the status_source config value that enables this
 // package for a tool.
 const StatusSourceClaude = "claude-hooks"
@@ -125,7 +129,39 @@ func (m *Manager) Read(id string) (string, bool) {
 }
 
 func (m *Manager) Remove(id string) error {
-	err := os.Remove(m.StatusFile(id))
+	return removeIfExists(m.StatusFile(id))
+}
+
+// NameFile is the mailbox the rename subcommand writes a session's
+// self-chosen name into; the poller applies and deletes it.
+func (m *Manager) NameFile(id string) string {
+	return filepath.Join(m.dir, id+".name")
+}
+
+const maxNameLength = 80
+
+// ReadName returns the pending rename for a session. found reports that
+// the file exists, so the caller can consume it even when the content
+// normalizes to nothing. The file is written by agents, so the name is
+// squashed to one bounded line.
+func (m *Manager) ReadName(id string) (name string, found bool) {
+	raw, err := os.ReadFile(m.NameFile(id))
+	if err != nil {
+		return "", false
+	}
+	name = strings.Join(strings.Fields(string(raw)), " ")
+	if runes := []rune(name); len(runes) > maxNameLength {
+		name = string(runes[:maxNameLength])
+	}
+	return name, true
+}
+
+func (m *Manager) RemoveName(id string) error {
+	return removeIfExists(m.NameFile(id))
+}
+
+func removeIfExists(path string) error {
+	err := os.Remove(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}

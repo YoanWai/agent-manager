@@ -324,7 +324,8 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	toolName := m.form.toolNames[m.form.toolIndex]
 
 	name := strings.TrimSpace(m.form.name.Value())
-	if name == "" {
+	autoNamed := name == ""
+	if autoNamed {
 		name = toolName + "-" + newID()[:4]
 	}
 	cwd, _ := os.Getwd()
@@ -340,7 +341,7 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if err := m.spawnSession(toolName, name, dir, group, prompt); err != nil {
+	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
@@ -348,11 +349,40 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	return m, m.refreshCmd()
 }
 
+// renameDirective asks the agent, as the first line of its first prompt,
+// to name its own session via the rename subcommand. Injected only for
+// auto-named sessions that launch with a prompt, so it fires exactly once.
+const renameDirective = `First, run this exact shell command once, replacing <name> with a short 2-4 word kebab-case name describing the task: agent-manager rename "<name>". Then do the task:`
+
+// deferredRenameDirective is the standalone message sent into sessions
+// whose first prompt could not carry the directive: slash-command
+// prompts (the command must open the message) and promptless launches.
+const deferredRenameDirective = `Run this exact shell command once, replacing <name> with a short 2-4 word kebab-case name describing this session's work: agent-manager rename "<name>". Then continue.`
+
+// directiveEmbeddable reports whether the rename directive can ride the
+// session's first prompt; otherwise it is sent later as its own message.
+func directiveEmbeddable(prompt string) bool {
+	return prompt != "" && !strings.HasPrefix(prompt, "/")
+}
+
+// launchPrompt prepends the rename directive when an auto-named session
+// launches with an embeddable prompt; other launches stay clean.
+func launchPrompt(prompt string, autoNamed bool) string {
+	if autoNamed && directiveEmbeddable(prompt) {
+		return renameDirective + "\n\n" + prompt
+	}
+	return prompt
+}
+
 // spawnSession creates the tmux session and its store record for both
-// the New Session form and quick spawn.
-func (m *Model) spawnSession(toolName, name, dir, group, prompt string) error {
+// the New Session form and quick spawn. autoNamed marks sessions whose
+// name is a generated placeholder; when they launch with a prompt, the
+// agent is asked to rename the session itself.
+func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed bool) error {
 	tool := m.cfg.Tools[toolName]
 	id := newID()
+	deferDirective := autoNamed && !directiveEmbeddable(prompt)
+	prompt = launchPrompt(prompt, autoNamed)
 	command, env, err := m.buildLaunch(tool, withPrompt(tool, tool.Command, prompt), id)
 	if err != nil {
 		return err
@@ -373,6 +403,9 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string) error {
 		_ = m.hooks.Remove(id)
 		return err
 	}
+	if deferDirective {
+		m.poller.markDirectivePending(id)
+	}
 	return m.tmux.SetLabel(id, sessionLabel(group, name))
 }
 
@@ -390,12 +423,17 @@ func withPrompt(tool config.Tool, command, prompt string) string {
 }
 
 // buildLaunch resolves the shell command and environment a session
-// launches with: tools backed by hooks get the generated settings file
-// and their status-file path, plus a clean slate from any earlier file
-// under the same id.
+// launches with. Every session carries its id so the rename subcommand
+// can find it; tools backed by hooks additionally get the generated
+// settings file and their status-file path, plus a clean slate from any
+// earlier files under the same id.
 func (m *Model) buildLaunch(tool config.Tool, baseCommand, id string) (string, map[string]string, error) {
+	if err := m.hooks.RemoveName(id); err != nil {
+		return "", nil, err
+	}
+	env := map[string]string{hooks.EnvSessionID: id}
 	if tool.StatusSource != hooks.StatusSourceClaude {
-		return baseCommand, nil, nil
+		return baseCommand, env, nil
 	}
 	settingsPath, err := m.hooks.EnsureSettings()
 	if err != nil {
@@ -404,7 +442,7 @@ func (m *Model) buildLaunch(tool config.Tool, baseCommand, id string) (string, m
 	if err := m.hooks.Remove(id); err != nil {
 		return "", nil, err
 	}
-	env := map[string]string{hooks.EnvStatusFile: m.hooks.StatusFile(id)}
+	env[hooks.EnvStatusFile] = m.hooks.StatusFile(id)
 	return baseCommand + " --settings " + tmux.ShellQuote(settingsPath), env, nil
 }
 

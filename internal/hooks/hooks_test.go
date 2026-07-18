@@ -132,6 +132,49 @@ func TestReadWhitelist(t *testing.T) {
 	}
 }
 
+func TestReadNameNormalizes(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(manager.NameFile("x")), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	writeName := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(manager.NameFile("x"), []byte(content), 0o644); err != nil {
+			t.Fatalf("write name: %v", err)
+		}
+	}
+
+	writeName("  fix   auth\nbug \n")
+	if got, found := manager.ReadName("x"); !found || got != "fix auth bug" {
+		t.Fatalf("ReadName = %q, %v; want squashed line, true", got, found)
+	}
+
+	writeName("   \n\t")
+	if got, found := manager.ReadName("x"); !found || got != "" {
+		t.Fatalf("whitespace file: got %q, %v; want empty name with found=true", got, found)
+	}
+
+	writeName(strings.Repeat("é", maxNameLength+20))
+	got, _ := manager.ReadName("x")
+	if runes := []rune(got); len(runes) != maxNameLength {
+		t.Fatalf("long name should cap at %d runes, got %d", maxNameLength, len(runes))
+	}
+
+	if _, found := manager.ReadName("no-such-session"); found {
+		t.Fatal("missing name file should not be found")
+	}
+
+	if err := manager.RemoveName("x"); err != nil {
+		t.Fatalf("RemoveName: %v", err)
+	}
+	if err := manager.RemoveName("x"); err != nil {
+		t.Fatalf("second RemoveName should be a no-op: %v", err)
+	}
+	if _, found := manager.ReadName("x"); found {
+		t.Fatal("removed name file should not be found")
+	}
+}
+
 func TestRemoveIdempotent(t *testing.T) {
 	manager := NewManager(t.TempDir())
 	if err := os.MkdirAll(filepath.Dir(manager.StatusFile("x")), 0o755); err != nil {

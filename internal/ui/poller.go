@@ -29,6 +29,9 @@ type poller struct {
 	mu              sync.Mutex
 	includeArchived bool
 	selectedID      string
+	// sessions whose rename directive could not ride the first prompt;
+	// sent as a message once the tool's input box appears
+	pendingDirective map[string]struct{}
 
 	// guarded by runMu: refresh state shared between the polling loop
 	// and one-off refresh commands
@@ -45,8 +48,47 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		hooks:         hookManager,
 		statusSources: statusSources,
 		interval:      interval,
-		poke:          make(chan struct{}, 1),
-		paneHashes:    map[string]uint64{},
+		poke:             make(chan struct{}, 1),
+		paneHashes:       map[string]uint64{},
+		pendingDirective: map[string]struct{}{},
+	}
+}
+
+func (p *poller) markDirectivePending(id string) {
+	p.mu.Lock()
+	p.pendingDirective[id] = struct{}{}
+	p.mu.Unlock()
+}
+
+func (p *poller) directivePending(id string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, pending := p.pendingDirective[id]
+	return pending
+}
+
+func (p *poller) clearDirective(id string) {
+	p.mu.Lock()
+	delete(p.pendingDirective, id)
+	p.mu.Unlock()
+}
+
+// sweepDirectives drops pending flags for sessions that no longer exist,
+// so a session deleted before its directive fired leaves nothing behind.
+func (p *poller) sweepDirectives(sessions []store.Session) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.pendingDirective) == 0 {
+		return
+	}
+	alive := make(map[string]struct{}, len(sessions))
+	for _, sess := range sessions {
+		alive[sess.ID] = struct{}{}
+	}
+	for id := range p.pendingDirective {
+		if _, ok := alive[id]; !ok {
+			delete(p.pendingDirective, id)
+		}
 	}
 }
 
@@ -139,6 +181,9 @@ func (p *poller) refreshOnce() tea.Msg {
 		if sess.Archived {
 			continue
 		}
+		if err := p.applyPendingRename(&sessions[i]); err != nil {
+			return errMsg{err}
+		}
 		newStatus := status.Dead
 		if pid := panes[sess.ID]; pid > 0 {
 			stat := trees[pid]
@@ -155,6 +200,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
+				p.maybeSendDirective(sess, pane, agentAlive)
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
 				if err != nil {
 					return errMsg{err}
@@ -180,6 +226,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		}
 	}
 	p.paneHashes = paneHashes
+	p.sweepDirectives(sessions)
 
 	groups, err := p.store.Groups()
 	if err != nil {
@@ -206,6 +253,45 @@ func (p *poller) refreshOnce() tea.Msg {
 		msg.snapOK = true
 	}
 	return msg
+}
+
+// maybeSendDirective delivers the deferred rename directive once the
+// tool's input box shows in the pane, proving the agent booted and can
+// take a message. Sent even mid-turn: tools queue typed input and
+// process it when the current turn ends. A failed send keeps the flag
+// for the next poll. Tools without an activity_cutoff never look ready,
+// so their sessions keep the placeholder name.
+func (p *poller) maybeSendDirective(sess store.Session, pane string, agentAlive bool) {
+	if !agentAlive || !p.directivePending(sess.ID) {
+		return
+	}
+	if _, ready := p.engine.ActivityRegion(sess.Tool, ansi.Strip(pane)); !ready {
+		return
+	}
+	if err := p.tmux.SendText(sess.ID, deferredRenameDirective); err == nil {
+		p.clearDirective(sess.ID)
+	}
+}
+
+// applyPendingRename picks up a name the session's agent left via the
+// rename subcommand: the store row and tmux label update together here,
+// keeping the manager the sole database writer. The file is consumed
+// even when the name is unchanged so it never lingers. A dead tmux
+// session cannot take a label, which is fine; the label is rewritten on
+// revive.
+func (p *poller) applyPendingRename(sess *store.Session) error {
+	name, found := p.hooks.ReadName(sess.ID)
+	if !found {
+		return nil
+	}
+	if name != "" && name != sess.Name {
+		if err := p.store.RenameSession(sess.ID, name); err != nil {
+			return err
+		}
+		sess.Name = name
+		_ = p.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, name))
+	}
+	return p.hooks.RemoveName(sess.ID)
 }
 
 // derivePaneStatus turns one captured pane into a session status. The
