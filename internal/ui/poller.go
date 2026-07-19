@@ -249,19 +249,24 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	names := make([]string, len(groups))
 	paths := make(map[string]string, len(groups))
+	archivedGroups := make(map[string]bool, len(groups))
 	for i, g := range groups {
 		names[i] = g.Name
 		paths[g.Name] = g.Path
+		if g.Archived {
+			archivedGroups[g.Name] = true
+		}
 	}
 
 	msg := refreshMsg{
-		sessions:   sessions,
-		groups:     names,
-		groupPaths: paths,
-		proc:       proc,
-		procFor:    selectedID,
-		preview:    preview,
-		agents:     agents,
+		sessions:       sessions,
+		groups:         names,
+		groupPaths:     paths,
+		archivedGroups: archivedGroups,
+		proc:           proc,
+		procFor:        selectedID,
+		preview:        preview,
+		agents:         agents,
 	}
 	if sampleStats {
 		msg.snap = sysstat.Sample("/")

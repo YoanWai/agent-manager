@@ -111,6 +111,27 @@ func (m *Model) selectSessionRow(t *testing.T, name string) {
 	t.Fatalf("no session row named %q", name)
 }
 
+func (m *Model) selectGroupRow(t *testing.T, path string) {
+	t.Helper()
+	for i, r := range m.rows {
+		if r.isGroup && r.group == path {
+			m.cursor = i
+			return
+		}
+	}
+	t.Fatalf("no group row for %q", path)
+}
+
+func (m *Model) groupRowPaths() []string {
+	var paths []string
+	for _, r := range m.rows {
+		if r.isGroup {
+			paths = append(paths, r.group)
+		}
+	}
+	return paths
+}
+
 func pickGroup(t *testing.T, m *Model, path string) {
 	t.Helper()
 	for i, opt := range m.form.groups {
@@ -1420,6 +1441,75 @@ func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	if names := sessionNames(m); len(names) != 1 || names[0] != "old-one" {
 		t.Fatalf("archived view = %v want [old-one]", names)
+	}
+}
+
+func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("proj", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := m.store.CreateGroup("proj/sub", ""); err != nil {
+		t.Fatalf("create subgroup: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "top", dir, "proj")
+	createSession(t, m, "deep", dir, "proj/sub")
+
+	m.selectGroupRow(t, "proj")
+	_, cmd := m.archiveSelected()
+	m.applyCmd(t, cmd)
+
+	if paths := m.groupRowPaths(); len(paths) != 0 {
+		t.Fatalf("active view still shows group rows %v", paths)
+	}
+	if names := sessionNames(m); len(names) != 0 {
+		t.Fatalf("active view still shows sessions %v", names)
+	}
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	gotGroups := m.groupRowPaths()
+	if len(gotGroups) != 2 || gotGroups[0] != "proj" || gotGroups[1] != "proj/sub" {
+		t.Fatalf("archived view groups = %v want [proj proj/sub]", gotGroups)
+	}
+	if names := sessionNames(m); len(names) != 2 {
+		t.Fatalf("archived view sessions = %v want 2", names)
+	}
+
+	m.selectGroupRow(t, "proj")
+	_, cmd = m.restoreSelected()
+	m.applyCmd(t, cmd)
+	m.showArchived = false
+	m.applyCmd(t, m.refreshCmd())
+	if paths := m.groupRowPaths(); len(paths) != 2 {
+		t.Fatalf("after restore, active groups = %v want 2", paths)
+	}
+	if names := sessionNames(m); len(names) != 2 {
+		t.Fatalf("after restore, active sessions = %v want 2", names)
+	}
+}
+
+func TestArchiveGroupKeepsEmptyGroupInArchivedView(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("empty", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.selectGroupRow(t, "empty")
+	_, cmd := m.archiveSelected()
+	m.applyCmd(t, cmd)
+
+	if paths := m.groupRowPaths(); len(paths) != 0 {
+		t.Fatalf("archived empty group still in active view: %v", paths)
+	}
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	if paths := m.groupRowPaths(); len(paths) != 1 || paths[0] != "empty" {
+		t.Fatalf("archived view groups = %v want [empty]", paths)
 	}
 }
 

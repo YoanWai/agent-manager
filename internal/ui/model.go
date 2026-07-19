@@ -49,15 +49,16 @@ type Model struct {
 	hooks  *hooks.Manager
 	gitDrv *git.Driver
 
-	sessions   []store.Session
-	rows       []treeRow
-	groups     []string
-	groupPaths map[string]string
-	snap       sysstat.Snapshot
-	proc       sysstat.ProcStat
-	procFor    string
-	preview    string
-	agents     agentStats
+	sessions       []store.Session
+	rows           []treeRow
+	groups         []string
+	groupPaths     map[string]string
+	archivedGroups map[string]bool
+	snap           sysstat.Snapshot
+	proc           sysstat.ProcStat
+	procFor        string
+	preview        string
+	agents         agentStats
 
 	netUp       uint64
 	netDown     uint64
@@ -139,15 +140,16 @@ type agentStats struct {
 }
 
 type refreshMsg struct {
-	sessions   []store.Session
-	groups     []string
-	groupPaths map[string]string
-	snap       sysstat.Snapshot
-	snapOK     bool
-	proc       sysstat.ProcStat
-	procFor    string
-	preview    string
-	agents     agentStats
+	sessions       []store.Session
+	groups         []string
+	groupPaths     map[string]string
+	archivedGroups map[string]bool
+	snap           sysstat.Snapshot
+	snapOK         bool
+	proc           sysstat.ProcStat
+	procFor        string
+	preview        string
+	agents         agentStats
 }
 
 type previewMsg struct {
@@ -360,6 +362,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions = msg.sessions
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
+		m.archivedGroups = msg.archivedGroups
 		m.agents = msg.agents
 		if msg.snapOK {
 			m.snap = msg.snap
@@ -508,10 +511,27 @@ func (m *Model) rebuildRows() {
 	}
 
 	paths := groupClosure(m.groups, m.sessions)
-	// The archived view keeps only groups that hold archived sessions,
-	// instead of the full (mostly empty) tree skeleton.
-	if query != "" || m.showArchived {
-		paths = pathsWithSessions(paths, sessionsByGroup)
+	if m.showArchived {
+		// The archived view keeps groups that hold archived sessions plus any
+		// group whose subtree was archived as a whole (even with no sessions),
+		// instead of the full tree skeleton.
+		kept := pathsWithSessions(paths, sessionsByGroup)
+		for path := range paths {
+			if m.groupEffectivelyArchived(path) {
+				addWithAncestors(kept, path)
+			}
+		}
+		paths = kept
+	} else {
+		// The active view hides any archived group and its whole subtree.
+		for path := range paths {
+			if m.groupEffectivelyArchived(path) {
+				delete(paths, path)
+			}
+		}
+		if query != "" {
+			paths = pathsWithSessions(paths, sessionsByGroup)
+		}
 	}
 	children := childIndex(paths, m.groups)
 
@@ -579,6 +599,33 @@ func groupClosure(groups []string, sessions []store.Session) map[string]bool {
 		add(sess.Group)
 	}
 	return paths
+}
+
+// groupEffectivelyArchived reports whether a group path was archived, either
+// directly or by an ancestor group being archived as a whole.
+func (m *Model) groupEffectivelyArchived(path string) bool {
+	for path != "" {
+		if m.archivedGroups[path] {
+			return true
+		}
+		idx := strings.LastIndex(path, "/")
+		if idx < 0 {
+			break
+		}
+		path = path[:idx]
+	}
+	return false
+}
+
+func addWithAncestors(set map[string]bool, path string) {
+	for path != "" {
+		set[path] = true
+		idx := strings.LastIndex(path, "/")
+		if idx < 0 {
+			break
+		}
+		path = path[:idx]
+	}
 }
 
 func pathsWithSessions(paths map[string]bool, sessionsByGroup map[string][]store.Session) map[string]bool {

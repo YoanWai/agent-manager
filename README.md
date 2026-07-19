@@ -54,7 +54,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `m` | Move session to another group |
 | `r` | Rename session / edit group (name and default path) |
 | `v` | Revive a dead session (`revive_command`, e.g. `claude --continue`, resumes the conversation) |
-| `a` / `u` | Archive / restore |
+| `a` / `u` | Archive / restore a session, or a group and its entire subtree |
 | `d` | Delete session, or a group + its entire subtree |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `D` | Review the selected session's changes: full-screen whole-file diffs, line comments sent to the agent |
