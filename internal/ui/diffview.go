@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
@@ -24,8 +25,8 @@ type annotation struct {
 
 // diffState drives the diff panel and the full-screen review mode. The
 // panel follows the tree cursor like the pane preview; fullscreen pins
-// the session. Annotations and reviewed marks are keyed by session so
-// cursor moves never lose them.
+// the session. Annotations and reviewed marks are keyed by session and repo
+// so cursor moves never lose them.
 type diffState struct {
 	active     bool
 	scope      git.Scope
@@ -53,6 +54,16 @@ type diffState struct {
 	hl          *hlCache
 	hlPending   hlKey
 
+	// repoRoots holds the git repos found under the session cwd; when the cwd
+	// is an umbrella of several repos, repoIdx selects the one under review and
+	// the r key cycles between them. repoSel is the selected repo's root path,
+	// the stable identity carried across reloads since ResolveRepos re-ranks the
+	// list each call; review state (comments, reviewed marks) is keyed by it so
+	// a same-named file in a sibling repo never inherits the wrong marks.
+	repoRoots []string
+	repoIdx   int
+	repoSel   string
+
 	// Set when review opened from inside a session; leaving re-attaches it.
 	reattachID string
 }
@@ -64,6 +75,10 @@ type diffLoadedMsg struct {
 	set    diff.Set
 	fp     uint64
 	err    error
+	// repoRoots and repoIdx report which repo the load resolved to, so the UI
+	// can show the repo name and enable cycling when the cwd holds several.
+	repoRoots []string
+	repoIdx   int
 	// refresh marks a silent reload of the same session and scope (the agent
 	// edited the file under review), the only case where saved comments
 	// re-anchor. Scope cycles and session switches load a different file set.
@@ -76,16 +91,35 @@ type diffHLMsg struct {
 }
 
 type diffProbeMsg struct {
-	sessID string
-	scope  git.Scope
-	fp     uint64
+	sessID   string
+	scope    git.Scope
+	repoRoot string
+	fp       uint64
 }
 
-func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, refresh bool) tea.Cmd {
+// diffLoadCmd resolves the repos under the session cwd and loads the diff for
+// the wanted repo. repoWant is the previously selected repo root, matched by
+// path so the selection survives ResolveRepos re-ranking the list between
+// loads; an empty or vanished path falls back to the top-ranked repo.
+func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, refresh bool) tea.Cmd {
 	driver := m.gitDrv
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, refresh: refresh}
-		msg.set, msg.err = diff.BuildSet(driver, sess.Cwd, scope)
+		roots, err := driver.ResolveRepos(sess.Cwd)
+		if err != nil {
+			msg.err = err
+			return msg
+		}
+		repoIdx := 0
+		for i, root := range roots {
+			if root == repoWant {
+				repoIdx = i
+				break
+			}
+		}
+		msg.repoRoots = roots
+		msg.repoIdx = repoIdx
+		msg.set, msg.err = diff.BuildSet(driver, roots[repoIdx], scope)
 		if msg.err == nil {
 			baseRef := ""
 			if scope == git.ScopeBranch {
@@ -113,13 +147,14 @@ func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 		}
 		fp, err := driver.Fingerprint(root, scope, baseRef)
 		if err != nil {
-			return diffProbeMsg{sessID: sess.ID, scope: scope, fp: 0}
+			return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: root, fp: 0}
 		}
-		return diffProbeMsg{sessID: sess.ID, scope: scope, fp: fp}
+		return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: root, fp: fp}
 	}
 }
 
-// retargetDiff points the open diff at a session, reloading its set.
+// retargetDiff points the open diff at a session, reloading its set. A new
+// session resets the repo selection so the load re-ranks from scratch.
 func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.sessID = sess.ID
 	m.diff.gen++
@@ -129,7 +164,10 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, false)
+	m.diff.repoRoots = nil
+	m.diff.repoIdx = 0
+	m.diff.repoSel = ""
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }
 
 func (m *Model) cycleDiffScope() tea.Cmd {
@@ -147,7 +185,36 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, false)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
+}
+
+// cycleDiffRepo advances to the next repo when the session cwd is an umbrella
+// of several. It is a no-op for a plain single-repo cwd. The next repo is
+// pinned by path so the fresh ResolveRepos ranking cannot land on a different
+// repo than the one the cycle stepped to.
+func (m *Model) cycleDiffRepo() tea.Cmd {
+	if !m.diff.active || len(m.diff.repoRoots) < 2 {
+		return nil
+	}
+	sess, ok := m.diffSession()
+	if !ok {
+		return nil
+	}
+	next := (m.diff.repoIdx + 1) % len(m.diff.repoRoots)
+	m.diff.repoSel = m.diff.repoRoots[next]
+	m.diff.gen++
+	m.diff.loading = true
+	m.diff.errText = ""
+	m.diff.fileIdx = 0
+	m.diff.scroll = 0
+	m.diff.cursorLine = 0
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
+}
+
+// reviewKey scopes a session's comments and reviewed marks to the repo under
+// review, so cycling repos never leaks marks between same-named files.
+func (m *Model) reviewKey() string {
+	return m.diff.sessID + "\x00" + m.diff.repoSel
 }
 
 // diffSession resolves the session the diff is pinned to.
@@ -178,9 +245,13 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	if msg.err != nil {
 		m.diff.errText = msg.err.Error()
 		m.diff.set = diff.Set{}
+		m.diff.repoRoots = nil
 		return nil
 	}
 	m.diff.errText = ""
+	m.diff.repoRoots = msg.repoRoots
+	m.diff.repoIdx = msg.repoIdx
+	m.diff.repoSel = msg.repoRoots[msg.repoIdx]
 	previousPath := ""
 	if fd := m.currentFileDiff(); fd != nil {
 		previousPath = fd.File.Path
@@ -219,6 +290,12 @@ func (m *Model) handleDiffProbe(msg diffProbeMsg) tea.Cmd {
 	if !m.diff.active || msg.sessID != m.diff.sessID || msg.scope != m.diff.scope {
 		return nil
 	}
+	// A probe fired against the previously selected repo can land after an r
+	// cycle; its fingerprint is for the old repo, so ignore it rather than let
+	// the mismatch trigger a spurious refresh-reanchor on the new repo.
+	if msg.repoRoot != m.diff.repoSel {
+		return nil
+	}
 	if msg.fp == 0 || msg.fp == m.diff.fingerprint {
 		return nil
 	}
@@ -227,7 +304,7 @@ func (m *Model) handleDiffProbe(msg diffProbeMsg) tea.Cmd {
 		return nil
 	}
 	m.diff.gen++
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, true)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, true)
 }
 
 // diffRefreshCmd is the poller piggyback: every second tick while the
@@ -280,10 +357,10 @@ func (m *Model) currentHL() *fileHL {
 	return m.diff.hl.get(hlKey{sessID: m.diff.sessID, scope: m.diff.scope, path: fd.File.Path, hash: contentHash(fd)})
 }
 
-// scrollKey scopes a file's saved scroll to the session and scope it was
-// taken in, so positions never leak across sessions or diff scopes.
+// scrollKey scopes a file's saved scroll to the session, repo, and scope it
+// was taken in, so positions never leak across sessions, repos, or diff scopes.
 func (m *Model) scrollKey(path string) string {
-	return m.diff.sessID + "\x00" + m.diff.scope.String() + "\x00" + path
+	return m.reviewKey() + "\x00" + m.diff.scope.String() + "\x00" + path
 }
 
 func (m *Model) switchDiffFile(delta int) tea.Cmd {
@@ -501,6 +578,8 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.jumpChange(-1)
 	case "s":
 		return m, m.cycleDiffScope()
+	case "r":
+		return m, m.cycleDiffRepo()
 	case "u":
 		lineIdx := m.cursorDiffLine()
 		m.diff.sideBySide = !m.diff.sideBySide
@@ -512,7 +591,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		m.removeAnnotation()
 	case "C":
-		if len(m.diff.annotations[m.diff.sessID]) == 0 {
+		if len(m.diff.annotations[m.reviewKey()]) == 0 {
 			m.err = "no comments to send - press c on a line first"
 		} else {
 			m.diff.sendConfirm = true
@@ -526,10 +605,10 @@ func (m *Model) toggleReviewed() tea.Cmd {
 	if fd == nil {
 		return nil
 	}
-	marks := m.diff.reviewed[m.diff.sessID]
+	marks := m.diff.reviewed[m.reviewKey()]
 	if marks == nil {
 		marks = map[string]bool{}
-		m.diff.reviewed[m.diff.sessID] = marks
+		m.diff.reviewed[m.reviewKey()] = marks
 	}
 	marks[fd.File.Path] = !marks[fd.File.Path]
 	if !marks[fd.File.Path] {
@@ -548,7 +627,7 @@ func (m *Model) toggleReviewed() tea.Cmd {
 }
 
 func (m *Model) fileReviewed(path string) bool {
-	return m.diff.reviewed[m.diff.sessID][path]
+	return m.diff.reviewed[m.reviewKey()][path]
 }
 
 func (m *Model) openAnnotate() {
@@ -601,7 +680,7 @@ func (m *Model) annotationRows(fd *diff.FileDiff, lineIdx, width int) []string {
 
 func (m *Model) annotationAt(path string, line diff.Line) *annotation {
 	num, deleted := annotationLine(line)
-	notes := m.diff.annotations[m.diff.sessID]
+	notes := m.diff.annotations[m.reviewKey()]
 	for i := range notes {
 		if notes[i].file == path && notes[i].line == num && notes[i].deleted == deleted {
 			return &notes[i]
@@ -615,7 +694,7 @@ func (m *Model) annotationAt(path string, line diff.Line) *annotation {
 // edits while the user reviews), choosing the nearest match. A comment
 // whose line vanished entirely keeps its number as the best guess.
 func (m *Model) reanchorAnnotations() {
-	notes := m.diff.annotations[m.diff.sessID]
+	notes := m.diff.annotations[m.reviewKey()]
 	for i := range notes {
 		note := &notes[i]
 		// A blank line's excerpt is empty and would match every blank line;
@@ -648,7 +727,7 @@ func (m *Model) reanchorAnnotations() {
 // annotationOccupies reports whether a note other than self already anchors
 // on the given file line, so re-anchoring never stacks two comments there.
 func (m *Model) annotationOccupies(file string, line int, deleted bool, self int) bool {
-	notes := m.diff.annotations[m.diff.sessID]
+	notes := m.diff.annotations[m.reviewKey()]
 	for i := range notes {
 		if i != self && notes[i].file == file && notes[i].line == line && notes[i].deleted == deleted {
 			return true
@@ -706,7 +785,7 @@ func (m *Model) saveAnnotation() {
 	if text == "" {
 		return
 	}
-	m.diff.annotations[m.diff.sessID] = append(m.diff.annotations[m.diff.sessID], annotation{
+	m.diff.annotations[m.reviewKey()] = append(m.diff.annotations[m.reviewKey()], annotation{
 		file:    fd.File.Path,
 		line:    num,
 		deleted: deleted,
@@ -725,10 +804,10 @@ func (m *Model) removeAnnotation() {
 		return
 	}
 	num, deleted := annotationLine(fd.Lines[lineIdx])
-	notes := m.diff.annotations[m.diff.sessID]
+	notes := m.diff.annotations[m.reviewKey()]
 	for i := range notes {
 		if notes[i].file == fd.File.Path && notes[i].line == num && notes[i].deleted == deleted {
-			m.diff.annotations[m.diff.sessID] = append(notes[:i], notes[i+1:]...)
+			m.diff.annotations[m.reviewKey()] = append(notes[:i], notes[i+1:]...)
 			return
 		}
 	}
@@ -747,7 +826,7 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 		m.err = "session is dead - press v to revive"
 		return m, nil
 	}
-	notes := m.diff.annotations[sess.ID]
+	notes := m.diff.annotations[m.reviewKey()]
 	var parts []string
 	for i, note := range notes {
 		location := fmt.Sprintf("%s:%d", note.file, note.line)
@@ -766,7 +845,7 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	count := len(notes)
-	delete(m.diff.annotations, sess.ID)
+	delete(m.diff.annotations, m.reviewKey())
 	m.diff.notice = fmt.Sprintf("sent %d review %s to %s", count, commentNoun(count), sess.Name)
 	if err := m.store.SetAcked(sess.ID, false); err != nil {
 		m.diff.notice = ""
@@ -977,6 +1056,10 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	}
 	left := badgeStyle.Render("◆ Review · "+sessName) + "  " +
 		pill(m.diff.scope.String(), colorAccent2) + "  " + pill(layout, colorAccent)
+	if len(m.diff.repoRoots) > 1 {
+		name := filepath.Base(m.diff.repoRoots[m.diff.repoIdx])
+		left += "  " + pill(fmt.Sprintf("%s %d/%d", name, m.diff.repoIdx+1, len(m.diff.repoRoots)), colorAccent)
+	}
 	if m.diff.set.BaseDesc != "" && m.diff.scope == git.ScopeBranch {
 		left += "  " + subtleStyle.Render(m.diff.set.BaseDesc)
 	}
@@ -989,7 +1072,7 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	right := mutedStyle.Render(fmt.Sprintf("%d files", len(m.diff.set.Files))) + subtleStyle.Render(" · ") +
 		lipgloss.NewStyle().Foreground(colorFinished).Render(fmt.Sprintf("+%d", adds)) + " " +
 		lipgloss.NewStyle().Foreground(colorErrored).Render(fmt.Sprintf("−%d", dels))
-	if count := len(m.diff.annotations[m.diff.sessID]); count > 0 {
+	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
 		right += subtleStyle.Render(" · ") + lipgloss.NewStyle().Foreground(colorAccent).Render(fmt.Sprintf("¶%d", count))
 	}
 	right += " "
@@ -1020,7 +1103,7 @@ func (m *Model) viewDiffFileList(width, height int) string {
 		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
 	}
 	notes := map[string]int{}
-	for _, note := range m.diff.annotations[m.diff.sessID] {
+	for _, note := range m.diff.annotations[m.reviewKey()] {
 		notes[note.file]++
 	}
 	for i := start; i < end; i++ {
@@ -1203,7 +1286,7 @@ func (m *Model) viewDiffStatus() string {
 		return padRight(lipgloss.NewStyle().Foreground(colorFinished).Render(" ✔ "+m.diff.notice), m.width)
 	}
 	if m.diff.sendConfirm {
-		count := len(m.diff.annotations[m.diff.sessID])
+		count := len(m.diff.annotations[m.reviewKey()])
 		return padRight(errStyle.Render(fmt.Sprintf(" ¶ send %d %s to the agent?", count, commentNoun(count)))+
 			subtleStyle.Render("  ↵/y send · esc cancel"), m.width)
 	}
@@ -1218,7 +1301,10 @@ func (m *Model) viewDiffFooter() string {
 		{"↑↓", "scroll"}, {"J/K", "file"}, {"n/N", "change"}, {"space", "reviewed"},
 		{"u", "layout"}, {"s", "scope: " + m.diff.scope.String()}, {"c", "comment"},
 	}
-	if count := len(m.diff.annotations[m.diff.sessID]); count > 0 {
+	if len(m.diff.repoRoots) > 1 {
+		pairs = append(pairs, [2]string{"r", "repo: " + filepath.Base(m.diff.repoRoots[m.diff.repoIdx])})
+	}
+	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
 		pairs = append(pairs, [2]string{"C", fmt.Sprintf("send %d", count)}, [2]string{"d", "remove"})
 	}
 	pairs = append(pairs, [2]string{"esc", "close"})

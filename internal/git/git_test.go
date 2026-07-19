@@ -56,6 +56,75 @@ func TestNotARepo(t *testing.T) {
 	}
 }
 
+func initRepoAt(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-b", "main"},
+		{"config", "user.email", "test@test"},
+		{"config", "user.name", "test"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+}
+
+func TestResolveReposSingle(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.go", "package a\n")
+	commit(t, dir, "init")
+	roots, err := driver.ResolveRepos(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roots) != 1 {
+		t.Fatalf("want 1 root, got %v", roots)
+	}
+}
+
+func TestResolveReposUmbrellaRanksDirtyFirst(t *testing.T) {
+	driver, err := New()
+	if err != nil {
+		t.Skip("git not installed")
+	}
+	umbrella := t.TempDir()
+	clean := filepath.Join(umbrella, "clean")
+	dirty := filepath.Join(umbrella, "dirty")
+	initRepoAt(t, clean)
+	write(t, clean, "a.go", "package a\n")
+	commit(t, clean, "init")
+	initRepoAt(t, dirty)
+	write(t, dirty, "a.go", "package a\n")
+	commit(t, dirty, "init")
+	write(t, dirty, "b.go", "package a\n")
+
+	roots, err := driver.ResolveRepos(umbrella)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roots) != 2 {
+		t.Fatalf("want 2 roots, got %v", roots)
+	}
+	if filepath.Base(roots[0]) != "dirty" {
+		t.Fatalf("want dirty repo first, got %v", roots)
+	}
+}
+
+func TestResolveReposNone(t *testing.T) {
+	driver, err := New()
+	if err != nil {
+		t.Skip("git not installed")
+	}
+	if _, err := driver.ResolveRepos(t.TempDir()); err != ErrNotARepo {
+		t.Fatalf("want ErrNotARepo, got %v", err)
+	}
+}
+
 func TestUncommittedScope(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "a.go", "package a\n\nfunc A() {}\n")
