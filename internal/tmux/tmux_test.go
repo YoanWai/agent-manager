@@ -20,6 +20,41 @@ func requireTmux(t *testing.T) *Driver {
 	return driver
 }
 
+func windowSizeOption(t *testing.T, id string) string {
+	t.Helper()
+	out, err := exec.Command("tmux", "show-window-options", "-v", "-t", "am_"+id, "window-size").CombinedOutput()
+	if err != nil {
+		t.Fatalf("show-window-options: %v: %s", err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// Resize pins the detached window to a manual size for the preview, and
+// PrepareAttach flips it back to auto so the attaching client fills it
+// instead of leaving tmux's dotted out-of-bounds overlay on the right.
+func TestPrepareAttachRestoresAutoSize(t *testing.T) {
+	driver := requireTmux(t)
+	id := "attach" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 100, 30); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	if err := driver.Resize(id, 80, 24); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+	if got := windowSizeOption(t, id); got != "manual" {
+		t.Fatalf("after Resize, window-size = %q, want manual", got)
+	}
+
+	if err := driver.PrepareAttach(id); err != nil {
+		t.Fatalf("PrepareAttach: %v", err)
+	}
+	if got := windowSizeOption(t, id); got != "latest" {
+		t.Fatalf("after PrepareAttach, window-size = %q, want latest", got)
+	}
+}
+
 func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	driver := requireTmux(t)
 	id := "lbl" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")

@@ -304,8 +304,14 @@ func (m *Model) acknowledgeFinished(sess store.Session) error {
 }
 
 func (m *Model) attachCmd(id string) tea.Cmd {
+	// Flip the window back to auto-sizing so it fills the terminal on attach;
+	// attachDoneMsg re-pins it to the preview width on detach.
+	if err := m.tmux.PrepareAttach(id); err != nil {
+		m.err = err.Error()
+		return nil
+	}
 	return tea.ExecProcess(m.tmux.AttachCommand(id), func(err error) tea.Msg {
-		return attachDoneMsg{err}
+		return attachDoneMsg{sessID: id, err: err}
 	})
 }
 
@@ -363,7 +369,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
-	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, m.width, m.height); err != nil {
+	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, m.previewPaneWidth(), m.height); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}

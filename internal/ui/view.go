@@ -30,11 +30,7 @@ func (m *Model) View() string {
 		return m.viewDiffFull()
 	}
 
-	leftWidth := m.width * 34 / 100
-	if leftWidth < 30 {
-		leftWidth = 30
-	}
-	rightWidth := m.width - leftWidth
+	leftWidth, rightWidth := m.splitWidths()
 	footer := m.viewFooter()
 	bodyHeight := m.height - 4 - lipgloss.Height(footer)
 	if bodyHeight < 3 {
@@ -53,6 +49,24 @@ func (m *Model) View() string {
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
 	return strings.Join([]string{m.viewHeader(), "", body, m.viewStatus(), footer}, "\n")
+}
+
+// splitWidths is the body's horizontal split: the sessions panel takes 34%
+// of the terminal (30 columns minimum) and the sidebar the rest.
+func (m *Model) splitWidths() (int, int) {
+	leftWidth := m.width * 34 / 100
+	if leftWidth < 30 {
+		leftWidth = 30
+	}
+	return leftWidth, m.width - leftWidth
+}
+
+// previewPaneWidth is the sidebar's inner content width: the columns the
+// pane preview can actually show. Sessions size to it so captured lines
+// fit the panel instead of getting clipped on the right.
+func (m *Model) previewPaneWidth() int {
+	_, rightWidth := m.splitWidths()
+	return rightWidth - 4
 }
 
 // viewStatus is the transient message line: prompts, search, and

@@ -86,11 +86,14 @@ type Model struct {
 	settings  settingsState
 	moveID    string
 
-	width    int
-	height   int
-	err      string
-	errShown string
-	errAge   int
+	width  int
+	height int
+	// sessionsSized flips after the first refresh shrinks sessions left
+	// over from a previous manager run to the preview panel's width.
+	sessionsSized bool
+	err           string
+	errShown      string
+	errAge        int
 }
 
 type confirmTarget struct {
@@ -160,7 +163,10 @@ type previewMsg struct {
 
 type errMsg struct{ err error }
 
-type attachDoneMsg struct{ err error }
+type attachDoneMsg struct {
+	sessID string
+	err    error
+}
 
 func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager) *Model {
 	statusSources := make(map[string]string, len(cfg.Tools))
@@ -331,15 +337,15 @@ func (m *Model) refreshCmd() tea.Cmd {
 	}
 }
 
-// resizeSessions syncs every live session's tmux window to the current
-// terminal size, so a detached session's preview tracks the manager instead
-// of waiting for its first attach. Dead sessions error harmlessly and skip.
+// resizeSessions syncs every live session's tmux window to the preview
+// panel's width, so a detached session's capture fits the panel instead of
+// getting clipped on the right. Dead sessions error harmlessly and skip.
 func (m *Model) resizeSessions() {
 	for _, sess := range m.sessions {
 		if sess.Archived {
 			continue
 		}
-		_ = m.tmux.Resize(sess.ID, m.width, m.height)
+		_ = m.tmux.Resize(sess.ID, m.previewPaneWidth(), m.height)
 	}
 }
 
@@ -367,6 +373,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.snapOK {
 			m.snap = msg.snap
 			m.updateNetRates(msg.snap)
+		}
+		if !m.sessionsSized && m.width > 0 && len(m.sessions) > 0 {
+			m.sessionsSized = true
+			m.resizeSessions()
 		}
 		m.rebuildRows()
 		// A pass that ran with a stale selection (a session created this
@@ -403,6 +413,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case attachDoneMsg:
+		// The attach client sized the window to the full terminal and tmux
+		// keeps that size on detach; shrink it back to the preview panel so
+		// the capture is not clipped on the right.
+		_ = m.tmux.Resize(msg.sessID, m.previewPaneWidth(), m.height)
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.requestRefresh()

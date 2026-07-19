@@ -43,7 +43,7 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 	args := []string{"new-session", "-d", "-s", name, "-c", cwd}
 	// A detached session sizes to tmux's 80x24 default and holds it until a
 	// client attaches, so its pane preview renders narrow. Booting at the
-	// manager's terminal size makes the preview fill from the first frame.
+	// preview panel's size makes the preview fit from the first frame.
 	if width > 0 && height > 0 {
 		args = append(args, "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
 	}
@@ -219,14 +219,25 @@ func (d *Driver) CapturePane(id string) (string, error) {
 	return d.run("capture-pane", "-p", "-e", "-t", sessionName(id))
 }
 
-// Resize sets a detached session's window to the given dimensions so its
-// preview capture tracks the manager's terminal. A client attach overrides
-// this; on detach tmux keeps the last size, so live sessions stay in sync.
+// Resize pins a detached session's window to the given dimensions so its
+// preview capture fits the manager's preview panel. resize-window forces
+// window-size to manual, which is what keeps the detached window fixed;
+// PrepareAttach flips it back to auto before a client attaches so the
+// window fills the terminal instead of leaving a dotted overlay gap.
 func (d *Driver) Resize(id string, width, height int) error {
 	if width <= 0 || height <= 0 {
 		return nil
 	}
 	_, err := d.run("resize-window", "-t", sessionName(id), "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
+	return err
+}
+
+// PrepareAttach restores automatic window sizing so the session fills the
+// attaching client and tracks terminal resizes while attached. Without it,
+// the manual size Resize pinned for the preview would leave the client's
+// extra columns painted with tmux's out-of-bounds dotted overlay.
+func (d *Driver) PrepareAttach(id string) error {
+	_, err := d.run("set-window-option", "-t", sessionName(id), "window-size", "latest")
 	return err
 }
 
