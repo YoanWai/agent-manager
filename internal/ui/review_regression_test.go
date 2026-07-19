@@ -8,6 +8,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -156,9 +158,21 @@ func TestNoReloadWhileAnnotating(t *testing.T) {
 	}
 }
 
-// A reload that shifts line numbers re-points saved comments at the line
-// carrying their excerpt, so the agent receives the location the user meant.
-func TestAnnotationsReanchorAfterReload(t *testing.T) {
+// refreshDiff drives the silent same-scope reload path (the probe piggyback),
+// the only reload that re-anchors comments.
+func (m *Model) refreshDiff(t *testing.T) {
+	t.Helper()
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("no diff session")
+	}
+	m.diff.gen++
+	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, true))
+}
+
+// A silent same-scope reload that shifts line numbers re-points saved comments
+// at the line carrying their excerpt, so the agent gets the location meant.
+func TestAnnotationsReanchorAfterRefresh(t *testing.T) {
 	m := buildModel(t)
 	if m.gitDrv == nil {
 		t.Skip("git not installed")
@@ -178,14 +192,111 @@ func TestAnnotationsReanchorAfterReload(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte(shifted), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sess, ok := m.diffSession()
-	if !ok {
-		t.Fatal("no diff session")
+	m.refreshDiff(t)
+	if notes = m.diff.annotations[m.diff.sessID]; len(notes) != 1 || notes[0].line != 4 {
+		t.Fatalf("annotation after refresh = %+v, want line 4", notes)
 	}
-	m.drainCmds(t, m.retargetDiff(sess))
-	notes = m.diff.annotations[m.diff.sessID]
-	if len(notes) != 1 || notes[0].line != 4 {
-		t.Fatalf("annotation after reload = %+v, want line 4", notes)
+}
+
+// A scope cycle loads a different file set; it must not re-anchor a comment's
+// stored line against content it was never made against.
+func TestScopeCycleDoesNotReanchor(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "scoped", gitRepoWithTwoChangedFiles(t))
+	m.pressDiffKey(t, 'n')
+	m.openAnnotate()
+	m.diff.annInput.SetValue("note")
+	m.saveAnnotation()
+	before := m.diff.annotations[m.diff.sessID][0].line
+
+	m.drainCmds(t, m.cycleDiffScope())
+	if got := m.diff.annotations[m.diff.sessID][0].line; got != before {
+		t.Fatalf("scope cycle rewrote the comment line: %d -> %d", before, got)
+	}
+}
+
+// An ambiguous excerpt (blank line, or several identical lines) never moves the
+// comment, and re-anchoring never stacks two comments onto one line.
+func TestReanchorKeepsAmbiguousAndAvoidsCollapse(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	m.diff.sessID = "s1"
+	m.diff.annotations = map[string][]annotation{"s1": {
+		{file: "f.go", line: 2, excerpt: "", text: "blank"},
+		{file: "f.go", line: 5, excerpt: "}", text: "first brace"},
+		{file: "f.go", line: 9, excerpt: "}", text: "second brace"},
+		{file: "f.go", line: 12, excerpt: "unique()", text: "moves"},
+	}}
+	lineOf := func(kind diff.LineKind, num int, text string) diff.Line {
+		return diff.Line{Kind: kind, NewNum: num, Text: text}
+	}
+	m.diff.set = diff.Set{Files: []diff.FileDiff{{
+		File: git.ChangedFile{Path: "f.go"},
+		Lines: []diff.Line{
+			lineOf(diff.Same, 1, ""),
+			lineOf(diff.Same, 2, "}"), // one of the two braces survived
+			lineOf(diff.Same, 3, "unique()"),
+		},
+	}}}
+	m.reanchorAnnotations()
+	notes := m.diff.annotations["s1"]
+	if notes[0].line != 2 {
+		t.Errorf("blank excerpt should not move: line=%d", notes[0].line)
+	}
+	// Two '}' notes, one surviving brace: unique match, but the second must not
+	// collapse onto the first's new anchor.
+	if notes[1].line == notes[2].line {
+		t.Errorf("two comments collapsed onto line %d", notes[1].line)
+	}
+	if notes[3].line != 3 {
+		t.Errorf("unique excerpt should move to line 3: line=%d", notes[3].line)
+	}
+}
+
+// Ctrl+C quits from the comment editor and the send-confirm prompt, not just
+// the base review keymap.
+func TestReviewCtrlCQuitsFromSubmodes(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "subquit", gitRepoWithTwoChangedFiles(t))
+	m.openAnnotate()
+	if _, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+		t.Fatal("ctrl+c should quit while annotating")
+	}
+	m.diff.annotating = false
+	m.diff.sendConfirm = true
+	if _, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+		t.Fatal("ctrl+c should quit from the send-confirm prompt")
+	}
+}
+
+// A load in flight when the comment box opens (e.g. a scope cycle) must not
+// swap the set under the editor, even though m.diff.loading is still true.
+func TestInFlightLoadDroppedWhileAnnotating(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "inflight", gitRepoWithTwoChangedFiles(t))
+	linesBefore := len(m.currentFileDiff().Lines)
+	m.openAnnotate()
+	m.diff.loading = true // simulate a user-initiated load still running
+	stale := diffLoadedMsg{sessID: m.diff.sessID, scope: m.diff.scope, gen: m.diff.gen}
+	if cmd := m.handleDiffLoaded(stale); cmd != nil {
+		t.Fatal("load must be dropped while annotating")
+	}
+	if m.diff.loading {
+		t.Fatal("in-flight flag must clear so probes resume")
+	}
+	if got := len(m.currentFileDiff().Lines); got != linesBefore {
+		t.Errorf("set swapped under the comment box: %d -> %d", linesBefore, got)
 	}
 }
 

@@ -64,6 +64,10 @@ type diffLoadedMsg struct {
 	set    diff.Set
 	fp     uint64
 	err    error
+	// refresh marks a silent reload of the same session and scope (the agent
+	// edited the file under review), the only case where saved comments
+	// re-anchor. Scope cycles and session switches load a different file set.
+	refresh bool
 }
 
 type diffHLMsg struct {
@@ -77,10 +81,10 @@ type diffProbeMsg struct {
 	fp     uint64
 }
 
-func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int) tea.Cmd {
+func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, refresh bool) tea.Cmd {
 	driver := m.gitDrv
 	return func() tea.Msg {
-		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen}
+		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, refresh: refresh}
 		msg.set, msg.err = diff.BuildSet(driver, sess.Cwd, scope)
 		if msg.err == nil {
 			baseRef := ""
@@ -125,7 +129,7 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, false)
 }
 
 func (m *Model) cycleDiffScope() tea.Cmd {
@@ -143,7 +147,7 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, false)
 }
 
 // diffSession resolves the session the diff is pinned to.
@@ -160,10 +164,13 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	if msg.sessID != m.diff.sessID || msg.scope != m.diff.scope || msg.gen != m.diff.gen {
 		return nil
 	}
-	// A background reload that lands while a comment is being written (or
-	// confirmed) would shift lines under the open editor and attach the
-	// comment to the wrong line; drop it, the next probe reloads after.
-	if !m.diff.loading && (m.diff.annotating || m.diff.sendConfirm) {
+	// Any load landing while a comment is being written or confirmed would
+	// shift lines under the open editor and mis-anchor the comment, including
+	// an explicit scope-cycle or retarget load still in flight when the box
+	// opened. Clear the in-flight flag so probes resume, but leave the
+	// fingerprint stale so the next probe reloads once the box closes.
+	if m.diff.annotating || m.diff.sendConfirm {
+		m.diff.loading = false
 		return nil
 	}
 	m.diff.loading = false
@@ -179,7 +186,12 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 		previousPath = fd.File.Path
 	}
 	m.diff.set = msg.set
-	m.reanchorAnnotations()
+	// Re-anchor only on a silent same-scope refresh. A scope cycle or session
+	// switch loads a different file set, where matching a comment by excerpt
+	// would rewrite its line against content it was never made against.
+	if msg.refresh {
+		m.reanchorAnnotations()
+	}
 	// Keep the user's place across silent reloads.
 	m.diff.fileIdx = 0
 	for i, fd := range m.diff.set.Files {
@@ -188,6 +200,8 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 			break
 		}
 	}
+	// The restored file may have been past the eager-load cap in the fresh set.
+	diff.EnsureFile(m.gitDrv, &m.diff.set, m.diff.fileIdx)
 	m.clampDiffCursor()
 	return m.ensureHighlight()
 }
@@ -213,7 +227,7 @@ func (m *Model) handleDiffProbe(msg diffProbeMsg) tea.Cmd {
 		return nil
 	}
 	m.diff.gen++
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, true)
 }
 
 // diffRefreshCmd is the poller piggyback: every second tick while the
@@ -436,6 +450,8 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.diff.sendConfirm {
 		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
 		case "enter", "y":
 			m.diff.sendConfirm = false
 			return m.sendAnnotations()
@@ -600,33 +616,45 @@ func (m *Model) annotationAt(path string, line diff.Line) *annotation {
 // whose line vanished entirely keeps its number as the best guess.
 func (m *Model) reanchorAnnotations() {
 	notes := m.diff.annotations[m.diff.sessID]
-	if len(notes) == 0 {
-		return
-	}
 	for i := range notes {
 		note := &notes[i]
-		fd := m.fileDiffByPath(note.file)
-		if fd == nil || len(fd.Lines) == 0 {
+		// A blank line's excerpt is empty and would match every blank line;
+		// only a distinctive excerpt can re-anchor.
+		if note.excerpt == "" {
 			continue
 		}
-		best, bestDistance := 0, -1
+		fd := m.fileDiffByPath(note.file)
+		if fd == nil {
+			continue
+		}
+		matches, target := 0, 0
 		for _, line := range fd.Lines {
 			num, deleted := annotationLine(line)
-			if deleted != note.deleted || excerptOf(line.Text) != note.excerpt {
-				continue
-			}
-			distance := num - note.line
-			if distance < 0 {
-				distance = -distance
-			}
-			if bestDistance < 0 || distance < bestDistance {
-				best, bestDistance = num, distance
+			if deleted == note.deleted && excerptOf(line.Text) == note.excerpt {
+				matches++
+				target = num
 			}
 		}
-		if bestDistance >= 0 {
-			note.line = best
+		// Move the note only when the excerpt pins exactly one line and no
+		// other note already sits there; zero, several, or contested matches
+		// are ambiguous, so the stored line stays put rather than snapping to
+		// the wrong line or collapsing two comments onto one.
+		if matches == 1 && !m.annotationOccupies(note.file, target, note.deleted, i) {
+			note.line = target
 		}
 	}
+}
+
+// annotationOccupies reports whether a note other than self already anchors
+// on the given file line, so re-anchoring never stacks two comments there.
+func (m *Model) annotationOccupies(file string, line int, deleted bool, self int) bool {
+	notes := m.diff.annotations[m.diff.sessID]
+	for i := range notes {
+		if i != self && notes[i].file == file && notes[i].line == line && notes[i].deleted == deleted {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) fileDiffByPath(path string) *diff.FileDiff {
@@ -640,6 +668,8 @@ func (m *Model) fileDiffByPath(path string) *diff.FileDiff {
 
 func (m *Model) handleAnnotateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
 	case "esc":
 		m.diff.annotating = false
 		return m, nil
