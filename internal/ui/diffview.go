@@ -160,6 +160,12 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	if msg.sessID != m.diff.sessID || msg.scope != m.diff.scope || msg.gen != m.diff.gen {
 		return nil
 	}
+	// A background reload that lands while a comment is being written (or
+	// confirmed) would shift lines under the open editor and attach the
+	// comment to the wrong line; drop it, the next probe reloads after.
+	if !m.diff.loading && (m.diff.annotating || m.diff.sendConfirm) {
+		return nil
+	}
 	m.diff.loading = false
 	m.diff.fingerprint = msg.fp
 	if msg.err != nil {
@@ -173,6 +179,7 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 		previousPath = fd.File.Path
 	}
 	m.diff.set = msg.set
+	m.reanchorAnnotations()
 	// Keep the user's place across silent reloads.
 	m.diff.fileIdx = 0
 	for i, fd := range m.diff.set.Files {
@@ -213,6 +220,9 @@ func (m *Model) handleDiffProbe(msg diffProbeMsg) tea.Cmd {
 // diff is open, probe the repo fingerprint and reload on change.
 func (m *Model) diffRefreshCmd() tea.Cmd {
 	if !m.diff.active || m.diff.loading || m.gitDrv == nil || m.diff.set.Repo.Root == "" {
+		return nil
+	}
+	if m.diff.annotating || m.diff.sendConfirm {
 		return nil
 	}
 	m.diff.probeTick++
@@ -256,18 +266,24 @@ func (m *Model) currentHL() *fileHL {
 	return m.diff.hl.get(hlKey{sessID: m.diff.sessID, scope: m.diff.scope, path: fd.File.Path, hash: contentHash(fd)})
 }
 
+// scrollKey scopes a file's saved scroll to the session and scope it was
+// taken in, so positions never leak across sessions or diff scopes.
+func (m *Model) scrollKey(path string) string {
+	return m.diff.sessID + "\x00" + m.diff.scope.String() + "\x00" + path
+}
+
 func (m *Model) switchDiffFile(delta int) tea.Cmd {
 	count := len(m.diff.set.Files)
 	if count == 0 {
 		return nil
 	}
 	if fd := m.currentFileDiff(); fd != nil {
-		m.diff.scrollByFile[fd.File.Path] = m.diff.scroll
+		m.diff.scrollByFile[m.scrollKey(fd.File.Path)] = m.diff.scroll
 	}
 	m.diff.fileIdx = (m.diff.fileIdx + delta + count) % count
 	diff.EnsureFile(m.gitDrv, &m.diff.set, m.diff.fileIdx)
 	fd := m.currentFileDiff()
-	m.diff.scroll = m.diff.scrollByFile[fd.File.Path]
+	m.diff.scroll = m.diff.scrollByFile[m.scrollKey(fd.File.Path)]
 	m.diff.cursorLine = m.diff.scroll
 	m.clampDiffCursor()
 	return m.ensureHighlight()
@@ -394,9 +410,11 @@ func (m *Model) setCursorDiffLine(lineIdx int) {
 	}
 }
 
-// diffCodeHeight is the code viewport height in fullscreen review.
+// diffCodeHeight is the code viewport height in fullscreen review. It
+// mirrors viewDiffFull's layout math, including a footer that wraps onto
+// extra lines in narrow terminals.
 func (m *Model) diffCodeHeight() int {
-	height := m.height - 7
+	height := m.height - 6 - lipgloss.Height(m.viewDiffFooter())
 	if m.diff.annotating {
 		height -= m.diffAnnBarRows() + 1
 	}
@@ -428,6 +446,8 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	height := m.diffCodeHeight()
 	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
 	case "q", "esc":
 		m.mode = modeList
 		m.diff.active = false
@@ -470,7 +490,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.diff.sideBySide = !m.diff.sideBySide
 		m.setCursorDiffLine(lineIdx)
 	case " ", "space":
-		m.toggleReviewed()
+		return m, m.toggleReviewed()
 	case "c":
 		m.openAnnotate()
 	case "d":
@@ -485,10 +505,10 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) toggleReviewed() {
+func (m *Model) toggleReviewed() tea.Cmd {
 	fd := m.currentFileDiff()
 	if fd == nil {
-		return
+		return nil
 	}
 	marks := m.diff.reviewed[m.diff.sessID]
 	if marks == nil {
@@ -497,16 +517,18 @@ func (m *Model) toggleReviewed() {
 	}
 	marks[fd.File.Path] = !marks[fd.File.Path]
 	if !marks[fd.File.Path] {
-		return
+		return nil
 	}
-	// Advance to the next unreviewed file, review-queue style.
+	// Advance to the next unreviewed file, review-queue style. The switch
+	// returns the highlight command for the newly shown file; dropping it
+	// would leave that file unhighlighted.
 	for step := 1; step < len(m.diff.set.Files); step++ {
 		next := (m.diff.fileIdx + step) % len(m.diff.set.Files)
 		if !marks[m.diff.set.Files[next].File.Path] {
-			m.switchDiffFile(next - m.diff.fileIdx)
-			return
+			return m.switchDiffFile(next - m.diff.fileIdx)
 		}
 	}
+	return nil
 }
 
 func (m *Model) fileReviewed(path string) bool {
@@ -572,6 +594,50 @@ func (m *Model) annotationAt(path string, line diff.Line) *annotation {
 	return nil
 }
 
+// reanchorAnnotations re-points saved comments at the line that still
+// carries their excerpt after a reload shifted line numbers (the agent
+// edits while the user reviews), choosing the nearest match. A comment
+// whose line vanished entirely keeps its number as the best guess.
+func (m *Model) reanchorAnnotations() {
+	notes := m.diff.annotations[m.diff.sessID]
+	if len(notes) == 0 {
+		return
+	}
+	for i := range notes {
+		note := &notes[i]
+		fd := m.fileDiffByPath(note.file)
+		if fd == nil || len(fd.Lines) == 0 {
+			continue
+		}
+		best, bestDistance := 0, -1
+		for _, line := range fd.Lines {
+			num, deleted := annotationLine(line)
+			if deleted != note.deleted || excerptOf(line.Text) != note.excerpt {
+				continue
+			}
+			distance := num - note.line
+			if distance < 0 {
+				distance = -distance
+			}
+			if bestDistance < 0 || distance < bestDistance {
+				best, bestDistance = num, distance
+			}
+		}
+		if bestDistance >= 0 {
+			note.line = best
+		}
+	}
+}
+
+func (m *Model) fileDiffByPath(path string) *diff.FileDiff {
+	for i := range m.diff.set.Files {
+		if m.diff.set.Files[i].File.Path == path {
+			return &m.diff.set.Files[i]
+		}
+	}
+	return nil
+}
+
 func (m *Model) handleAnnotateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -610,15 +676,11 @@ func (m *Model) saveAnnotation() {
 	if text == "" {
 		return
 	}
-	excerpt := strings.TrimSpace(line.Text)
-	if len(excerpt) > 60 {
-		excerpt = excerpt[:60]
-	}
 	m.diff.annotations[m.diff.sessID] = append(m.diff.annotations[m.diff.sessID], annotation{
 		file:    fd.File.Path,
 		line:    num,
 		deleted: deleted,
-		excerpt: excerpt,
+		excerpt: excerptOf(line.Text),
 		text:    text,
 	})
 }
@@ -675,17 +737,30 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 	}
 	count := len(notes)
 	delete(m.diff.annotations, sess.ID)
-	noun := "comments"
-	if count == 1 {
-		noun = "comment"
-	}
-	m.diff.notice = fmt.Sprintf("sent %d review %s to %s", count, noun, sess.Name)
+	m.diff.notice = fmt.Sprintf("sent %d review %s to %s", count, commentNoun(count), sess.Name)
 	if err := m.store.SetAcked(sess.ID, false); err != nil {
 		m.diff.notice = ""
 		m.err = "comments sent, but clearing the alert ack failed: " + err.Error()
 	}
 	m.requestRefresh()
 	return m, nil
+}
+
+// excerptOf caps a code excerpt at 60 runes, never splitting a rune, so
+// multibyte lines stay valid UTF-8 in the prompt sent to the agent.
+func excerptOf(text string) string {
+	excerpt := strings.TrimSpace(text)
+	if runes := []rune(excerpt); len(runes) > 60 {
+		return string(runes[:60])
+	}
+	return excerpt
+}
+
+func commentNoun(count int) string {
+	if count == 1 {
+		return "comment"
+	}
+	return "comments"
 }
 
 func scopePhrase(scope git.Scope) string {
@@ -717,7 +792,7 @@ func (m *Model) diffEmptyText() string {
 	}
 	if len(m.diff.set.Files) == 0 {
 		return mutedStyle.Render(fmt.Sprintf("✓ no changes (%s)", m.diff.scope)) + "\n" +
-			subtleStyle.Render("S cycles scope")
+			subtleStyle.Render("s cycles scope")
 	}
 	return ""
 }
@@ -1099,7 +1174,7 @@ func (m *Model) viewDiffStatus() string {
 	}
 	if m.diff.sendConfirm {
 		count := len(m.diff.annotations[m.diff.sessID])
-		return padRight(errStyle.Render(fmt.Sprintf(" ¶ send %d comments to the agent?", count))+
+		return padRight(errStyle.Render(fmt.Sprintf(" ¶ send %d %s to the agent?", count, commentNoun(count)))+
 			subtleStyle.Render("  ↵/y send · esc cancel"), m.width)
 	}
 	return ""
