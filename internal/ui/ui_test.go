@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -974,6 +975,55 @@ func TestQuickPromptSendClearsAcked(t *testing.T) {
 	}
 	if got.Acked {
 		t.Fatal("quick prompt send should clear the acked flag")
+	}
+}
+
+func TestQuickAttachImageInsertsPath(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+
+	orig := captureClipboardImage
+	defer func() { captureClipboardImage = orig }()
+	captureClipboardImage = func() ([]byte, string, error) {
+		return []byte("png-bytes"), "png", nil
+	}
+
+	if _, _ = m.attachQuickImage(); m.err != "" {
+		t.Fatalf("attach: %q", m.err)
+	}
+	value := strings.TrimSpace(m.quick.input.Value())
+	if value == "" {
+		t.Fatal("expected the image path to be inserted")
+	}
+	data, err := os.ReadFile(value)
+	if err != nil {
+		t.Fatalf("inserted path is not a readable file: %v", err)
+	}
+	if string(data) != "png-bytes" {
+		t.Fatalf("temp file holds %q", data)
+	}
+	os.Remove(value)
+}
+
+func TestQuickAttachImageNoImageSetsError(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+
+	orig := captureClipboardImage
+	defer func() { captureClipboardImage = orig }()
+	captureClipboardImage = func() ([]byte, string, error) {
+		return nil, "", clipboard.ErrNoImage
+	}
+
+	if _, _ = m.attachQuickImage(); m.err != clipboard.ErrNoImage.Error() {
+		t.Fatalf("err = %q", m.err)
+	}
+	if m.quick.input.Value() != "" {
+		t.Fatal("input should stay empty when no image is present")
 	}
 }
 

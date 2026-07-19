@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -657,6 +658,29 @@ func (m *Model) renameGroupLocally(old, newPath, dir string) {
 	m.persistCollapsed()
 }
 
+// captureClipboardImage is the seam the quick bar uses to read a pasted
+// image; tests swap it for a fake.
+var captureClipboardImage = clipboard.ReadImage
+
+// attachQuickImage saves a clipboard image to a temp file and inserts its
+// path into the prompt, so the agent in the target session can open it.
+// Any failure leaves the input untouched and surfaces the reason.
+func (m *Model) attachQuickImage() (tea.Model, tea.Cmd) {
+	data, ext, err := captureClipboardImage()
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	path, err := clipboard.SaveToTemp(data, ext)
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	m.quick.input.InsertString(" " + path + " ")
+	m.err = ""
+	return m, nil
+}
+
 func (m *Model) openQuickMode() {
 	input := textarea.New()
 	input.CharLimit = 2000
@@ -707,6 +731,8 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.quick.toolIndex = (m.quick.toolIndex + 1) % len(m.quick.toolNames)
 		}
 		return m, nil
+	case "ctrl+v":
+		return m.attachQuickImage()
 	case "enter":
 		return m.submitQuick()
 	}

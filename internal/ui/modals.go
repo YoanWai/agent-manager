@@ -167,6 +167,7 @@ func (m *Model) viewHelp() string {
 		{"shift+↑↓", "reorder row up / down"},
 		{"space", "quick prompt: answer session / spawn agent in group"},
 		{"⇥", "in quick prompt: switch spawn tool"},
+		{"^v", "in quick prompt: attach a clipboard image"},
 		{"D", "review changes: whole-file diffs, comment lines, send to agent"},
 		{"s", "in review: cycle scope (uncommitted / vs base / last commit / staged)"},
 		{"F", "fold / unfold all groups"},
