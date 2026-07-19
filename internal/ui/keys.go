@@ -663,11 +663,11 @@ func (m *Model) renameGroupLocally(old, newPath, dir string) {
 // image; tests swap it for a fake.
 var captureClipboardImage = clipboard.ReadImage
 
-// attachQuickImage saves a clipboard image to a temp file and inserts its
-// path into the prompt, so the agent in the target session can open it. It
-// reports whether it handled the keypress: an empty clipboard returns false
-// so the caller can fall back to a plain text paste, while a real failure is
-// surfaced through m.err.
+// attachQuickImage saves a clipboard image to a temp file and records it as
+// an attachment shown beside the prompt; its path is appended to the message
+// on submit so the agent can open it. It reports whether it handled the
+// keypress: an empty clipboard returns false so the caller can fall back to a
+// plain text paste, while a real failure is surfaced through m.err.
 func (m *Model) attachQuickImage() bool {
 	data, ext, err := captureClipboardImage()
 	if err != nil {
@@ -682,13 +682,23 @@ func (m *Model) attachQuickImage() bool {
 		m.err = err.Error()
 		return true
 	}
-	// InsertString alone leaves the viewport where it was; a no-op Update
-	// runs repositionView so the inserted path scrolls into view.
-	m.quick.input.SetHeight(quickBarMaxRows)
-	m.quick.input.InsertString(" " + path + " ")
-	m.quick.input, _ = m.quick.input.Update(nil)
+	m.quick.attachments = append(m.quick.attachments, path)
 	m.err = ""
 	return true
+}
+
+// quickMessage is the text delivered on submit: the typed prompt with any
+// attachment paths appended so the target agent can open them.
+func (m *Model) quickMessage() string {
+	text := strings.TrimSpace(m.quick.input.Value())
+	if len(m.quick.attachments) == 0 {
+		return text
+	}
+	paths := strings.Join(m.quick.attachments, " ")
+	if text == "" {
+		return paths
+	}
+	return text + " " + paths
 }
 
 func (m *Model) openQuickMode() {
@@ -769,7 +779,7 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 		m.err = "nothing selected"
 		return m, nil
 	}
-	text := strings.TrimSpace(m.quick.input.Value())
+	text := m.quickMessage()
 	if text == "" {
 		m.err = "prompt cannot be empty"
 		return m, nil
@@ -788,6 +798,7 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 	// The prompt is delivered: clear the input before anything else can
 	// fail, so a retry cannot send it twice.
 	m.quick.input.SetValue("")
+	m.quick.attachments = nil
 	m.err = ""
 	// A queued answer means the user expects a fresh finished alert.
 	if err := m.store.SetAcked(entry.sess.ID, false); err != nil {
@@ -818,6 +829,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.quick.input.SetValue("")
+	m.quick.attachments = nil
 	m.err = ""
 	return m, m.refreshCmd()
 }

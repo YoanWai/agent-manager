@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -392,7 +393,25 @@ func (m *Model) viewQuickBar(width int) string {
 	}
 	m.quick.input.SetWidth(width)
 	m.quick.input.SetHeight(m.quickBarRows(width - 2))
-	return divider("Quick Prompt · "+target, width) + "\n" + m.quick.input.View()
+	bar := divider("Quick Prompt · "+target, width) + "\n" + m.quick.input.View()
+	if chip := m.quickAttachmentChip(width); chip != "" {
+		bar += "\n" + chip
+	}
+	return bar
+}
+
+// quickAttachmentChip renders the pasted images docked under the prompt as
+// a muted line of file names, so the raw temp paths stay out of the input.
+func (m *Model) quickAttachmentChip(width int) string {
+	if len(m.quick.attachments) == 0 {
+		return ""
+	}
+	names := make([]string, len(m.quick.attachments))
+	for i, path := range m.quick.attachments {
+		names[i] = filepath.Base(path)
+	}
+	line := "📎 " + strings.Join(names, "  ")
+	return mutedStyle.Render(ansi.Truncate(line, max(width, 1), "…"))
 }
 
 const quickBarMaxRows = 5

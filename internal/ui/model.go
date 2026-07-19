@@ -116,10 +116,11 @@ type renameTarget struct {
 // across cursor moves, so the target follows the selection. The tool is
 // the spawn CLI for group targets, cycled with tab.
 type quickState struct {
-	active    bool
-	input     textarea.Model
-	toolNames []string
-	toolIndex int
+	active      bool
+	input       textarea.Model
+	toolNames   []string
+	toolIndex   int
+	attachments []string
 }
 
 type settingsState struct {
