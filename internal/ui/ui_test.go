@@ -632,6 +632,17 @@ func TestHookWorkingUpgradesToWaitingOnPaneMatch(t *testing.T) {
 	}
 }
 
+func TestHookWorkingReconcilesToFinishedOnEndedTurn(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked07", Tool: "claude-hooked", Status: status.Working}
+	writeHookStatus(t, m, sess.ID, status.Working)
+
+	pane := "here is the result\n\n✻ Baked for 5s\n\n❯ \n"
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
+		t.Fatalf("stale working hook over an ended turn should reconcile to finished, got %q", got)
+	}
+}
+
 func TestStaleHookFileFallsBackToPaneRules(t *testing.T) {
 	m := buildModel(t)
 	sess := store.Session{ID: "hooked06", Tool: "claude-hooked"}
@@ -1622,13 +1633,13 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	m.openAnnotate()
 	m.diff.annInput.SetValue("use fmt.Println here")
 	m.saveAnnotation()
-	if len(m.diff.annotations[m.diff.sessID]) != 1 {
+	if len(m.diff.annotations[m.reviewKey()]) != 1 {
 		t.Fatalf("annotations = %+v", m.diff.annotations)
 	}
 
 	_, cmd := m.sendAnnotations()
 	m.applyCmd(t, cmd)
-	if len(m.diff.annotations[m.diff.sessID]) != 0 {
+	if len(m.diff.annotations[m.reviewKey()]) != 0 {
 		t.Fatal("annotations should clear after send")
 	}
 	if !strings.Contains(m.diff.notice, "review comment") {

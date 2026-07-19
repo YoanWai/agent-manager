@@ -408,7 +408,12 @@ func turnInFlight(current string) bool {
 // for the states hooks can see. They cannot see a plain-text question,
 // an interrupt banner, or an error line, so a matched pane verdict
 // upgrades finished to waiting or errored, and working to waiting (an
-// Esc interrupt fires no Stop event).
+// Esc interrupt fires no Stop event). A working hook also reconciles to
+// the pane verdict when the pane shows the turn already ended: background
+// subagents write working via PreToolUse/PostToolUse but fire no Stop
+// when they finish, so the file would otherwise stay pinned at working
+// forever. The pane only reports finished/waiting/errored once the newest
+// turn is quiet, so this never fires while the agent is still streaming.
 func (p *poller) applyHookStatus(sess store.Session, text, hookStatus string) string {
 	paneStatus, matched := p.engine.Match(sess.Tool, text)
 	switch hookStatus {
@@ -420,8 +425,11 @@ func (p *poller) applyHookStatus(sess store.Session, text, hookStatus string) st
 			return status.Idle
 		}
 	case status.Working:
-		if matched && paneStatus == status.Waiting {
-			return status.Waiting
+		if matched && (paneStatus == status.Waiting || paneStatus == status.Finished || paneStatus == status.Errored) {
+			if paneStatus == status.Finished && sess.Acked {
+				return status.Idle
+			}
+			return paneStatus
 		}
 	}
 	return hookStatus

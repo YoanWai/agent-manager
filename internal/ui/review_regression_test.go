@@ -108,6 +108,65 @@ func TestReviewCyclesReposUnderUmbrella(t *testing.T) {
 	}
 }
 
+// A reviewed mark placed on a path in one repo must not bleed onto a
+// same-named path in a sibling repo when cycling with r.
+func TestReviewMarksIsolatedPerRepo(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, dirtyName := umbrellaWithTwoRepos(t)
+	openReviewOn(t, m, "umbrella", umbrella)
+	if got := filepath.Base(m.diff.repoSel); got != dirtyName {
+		t.Fatalf("want %q selected, got %q", dirtyName, got)
+	}
+	if fd := m.currentFileDiff(); fd == nil || fd.File.Path != "a.go" {
+		t.Fatalf("want a.go under review in the dirty repo, got %v", fd)
+	}
+	m.drainCmds(t, m.toggleReviewed())
+	if !m.fileReviewed("a.go") {
+		t.Fatal("a.go should be reviewed in the dirty repo")
+	}
+
+	m.pressDiffKey(t, 'r')
+	if filepath.Base(m.diff.repoSel) != "alpha" {
+		t.Fatalf("r should select alpha, got %q", m.diff.repoSel)
+	}
+	if m.fileReviewed("a.go") {
+		t.Fatal("a.go reviewed mark leaked into the sibling repo")
+	}
+
+	m.pressDiffKey(t, 'r')
+	if !m.fileReviewed("a.go") {
+		t.Fatal("cycling back should restore the dirty repo's reviewed mark")
+	}
+}
+
+// The selected repo is pinned by path, so a reload whose fresh ranking would
+// put a different repo first keeps the user on the repo they chose.
+func TestRepoSelectionSurvivesReload(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, _ := umbrellaWithTwoRepos(t)
+	openReviewOn(t, m, "umbrella", umbrella)
+
+	m.pressDiffKey(t, 'r')
+	if filepath.Base(m.diff.repoSel) != "alpha" {
+		t.Fatalf("want alpha selected, got %q", m.diff.repoSel)
+	}
+	// A scope cycle reloads through ResolveRepos, which ranks the dirty repo
+	// first; the path pin must keep alpha selected regardless.
+	m.pressDiffKey(t, 's')
+	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+		t.Fatalf("reload should keep alpha pinned, got %q", got)
+	}
+	if got := filepath.Base(m.diff.repoRoots[m.diff.repoIdx]); got != "alpha" {
+		t.Fatalf("repoIdx should track the pinned repo after re-rank, got %q", got)
+	}
+}
+
 // drainCmds runs a command chain to exhaustion, feeding every message back
 // into Update, so async follow-ups (diff loads, highlights) all land.
 func (m *Model) drainCmds(t *testing.T, cmd tea.Cmd) {
@@ -234,7 +293,7 @@ func (m *Model) refreshDiff(t *testing.T) {
 		t.Fatal("no diff session")
 	}
 	m.diff.gen++
-	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoIdx, true))
+	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, true))
 }
 
 // A silent same-scope reload that shifts line numbers re-points saved comments
@@ -250,7 +309,7 @@ func TestAnnotationsReanchorAfterRefresh(t *testing.T) {
 	m.openAnnotate()
 	m.diff.annInput.SetValue("note")
 	m.saveAnnotation()
-	notes := m.diff.annotations[m.diff.sessID]
+	notes := m.diff.annotations[m.reviewKey()]
 	if len(notes) != 1 || notes[0].line != 3 {
 		t.Fatalf("annotation = %+v, want line 3", notes)
 	}
@@ -260,7 +319,7 @@ func TestAnnotationsReanchorAfterRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.refreshDiff(t)
-	if notes = m.diff.annotations[m.diff.sessID]; len(notes) != 1 || notes[0].line != 4 {
+	if notes = m.diff.annotations[m.reviewKey()]; len(notes) != 1 || notes[0].line != 4 {
 		t.Fatalf("annotation after refresh = %+v, want line 4", notes)
 	}
 }
@@ -277,10 +336,10 @@ func TestScopeCycleDoesNotReanchor(t *testing.T) {
 	m.openAnnotate()
 	m.diff.annInput.SetValue("note")
 	m.saveAnnotation()
-	before := m.diff.annotations[m.diff.sessID][0].line
+	before := m.diff.annotations[m.reviewKey()][0].line
 
 	m.drainCmds(t, m.cycleDiffScope())
-	if got := m.diff.annotations[m.diff.sessID][0].line; got != before {
+	if got := m.diff.annotations[m.reviewKey()][0].line; got != before {
 		t.Fatalf("scope cycle rewrote the comment line: %d -> %d", before, got)
 	}
 }
@@ -293,7 +352,7 @@ func TestReanchorKeepsAmbiguousAndAvoidsCollapse(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	m.diff.sessID = "s1"
-	m.diff.annotations = map[string][]annotation{"s1": {
+	m.diff.annotations = map[string][]annotation{m.reviewKey(): {
 		{file: "f.go", line: 2, excerpt: "", text: "blank"},
 		{file: "f.go", line: 5, excerpt: "}", text: "first brace"},
 		{file: "f.go", line: 9, excerpt: "}", text: "second brace"},
@@ -311,7 +370,7 @@ func TestReanchorKeepsAmbiguousAndAvoidsCollapse(t *testing.T) {
 		},
 	}}}
 	m.reanchorAnnotations()
-	notes := m.diff.annotations["s1"]
+	notes := m.diff.annotations[m.reviewKey()]
 	if notes[0].line != 2 {
 		t.Errorf("blank excerpt should not move: line=%d", notes[0].line)
 	}
