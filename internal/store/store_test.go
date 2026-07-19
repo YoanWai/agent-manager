@@ -168,6 +168,25 @@ func TestSetGroupArchivedFlipsSubtree(t *testing.T) {
 	}
 }
 
+func TestSetGroupArchivedUnderscoreDoesNotBleed(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateGroup("my_proj", "")
+	st.CreateGroup("myXproj/sub", "")
+	st.CreateSession(sample("a", "my_proj"))
+	st.CreateSession(sample("b", "myXproj/sub"))
+
+	if err := st.SetGroupArchived("my_proj", true); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if !groupArchived(t, st, "my_proj") || !sessionArchived(t, st, "a") {
+		t.Fatal("my_proj and its session should be archived")
+	}
+	// "my_proj/%" with an unescaped underscore matches "myXproj/sub".
+	if groupArchived(t, st, "myXproj/sub") || sessionArchived(t, st, "b") {
+		t.Fatal("myXproj/sub must not be caught by the my_proj archive (LIKE _ wildcard bleed)")
+	}
+}
+
 func TestSetGroupArchivedEmptyPathErrors(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.SetGroupArchived("", true); err == nil {

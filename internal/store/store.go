@@ -329,17 +329,18 @@ func (s *Store) RenameGroup(oldPath, newPath string) error {
 		return err
 	}
 	defer tx.Rollback()
+	likeOld := escapeLike(oldPath)
 	_, err = tx.Exec(
 		`UPDATE groups SET name = ? || substr(name, length(?)+1)
-		 WHERE name = ? OR name LIKE ? || '/%'`,
-		newPath, oldPath, oldPath, oldPath)
+		 WHERE name = ? OR name LIKE ? || '/%' ESCAPE '\'`,
+		newPath, oldPath, oldPath, likeOld)
 	if err != nil {
 		return err
 	}
 	_, err = tx.Exec(
 		`UPDATE sessions SET group_name = ? || substr(group_name, length(?)+1)
-		 WHERE group_name = ? OR group_name LIKE ? || '/%'`,
-		newPath, oldPath, oldPath, oldPath)
+		 WHERE group_name = ? OR group_name LIKE ? || '/%' ESCAPE '\'`,
+		newPath, oldPath, oldPath, likeOld)
 	if err != nil {
 		return err
 	}
@@ -380,7 +381,7 @@ func (s *Store) DeleteGroup(path string) error {
 		return fmt.Errorf("cannot delete the root group")
 	}
 	_, err := s.db.Exec(
-		`DELETE FROM groups WHERE name = ? OR name LIKE ? || '/%'`, path, path)
+		`DELETE FROM groups WHERE name = ? OR name LIKE ? || '/%' ESCAPE '\'`, path, escapeLike(path))
 	return err
 }
 
@@ -421,14 +422,15 @@ func (s *Store) SetGroupArchived(path string, archived bool) error {
 	}
 	defer tx.Rollback()
 	flag := boolToInt(archived)
+	likePath := escapeLike(path)
 	if _, err := tx.Exec(
-		`UPDATE groups SET archived = ? WHERE name = ? OR name LIKE ? || '/%'`,
-		flag, path, path); err != nil {
+		`UPDATE groups SET archived = ? WHERE name = ? OR name LIKE ? || '/%' ESCAPE '\'`,
+		flag, path, likePath); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(
-		`UPDATE sessions SET archived = ? WHERE group_name = ? OR group_name LIKE ? || '/%'`,
-		flag, path, path); err != nil {
+		`UPDATE sessions SET archived = ? WHERE group_name = ? OR group_name LIKE ? || '/%' ESCAPE '\'`,
+		flag, path, likePath); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -588,6 +590,14 @@ func requireRow(res sql.Result, id string) error {
 		return fmt.Errorf("session %s not found", id)
 	}
 	return nil
+}
+
+// escapeLike escapes the LIKE metacharacters so a group path is matched
+// literally in a `? || '/%'` prefix pattern, paired with ESCAPE '\'. Group
+// names may contain '_' or '%', which LIKE would otherwise treat as
+// wildcards and let one group's subtree bleed into another's.
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 func boolToInt(b bool) int {
