@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
@@ -53,6 +54,12 @@ type diffState struct {
 	hl          *hlCache
 	hlPending   hlKey
 
+	// repoRoots holds the git repos found under the session cwd; when the cwd
+	// is an umbrella of several repos, repoIdx selects the one under review and
+	// the r key cycles between them.
+	repoRoots []string
+	repoIdx   int
+
 	// Set when review opened from inside a session; leaving re-attaches it.
 	reattachID string
 }
@@ -64,6 +71,10 @@ type diffLoadedMsg struct {
 	set    diff.Set
 	fp     uint64
 	err    error
+	// repoRoots and repoIdx report which repo the load resolved to, so the UI
+	// can show the repo name and enable cycling when the cwd holds several.
+	repoRoots []string
+	repoIdx   int
 	// refresh marks a silent reload of the same session and scope (the agent
 	// edited the file under review), the only case where saved comments
 	// re-anchor. Scope cycles and session switches load a different file set.
@@ -81,11 +92,21 @@ type diffProbeMsg struct {
 	fp     uint64
 }
 
-func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, refresh bool) tea.Cmd {
+func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen, repoIdx int, refresh bool) tea.Cmd {
 	driver := m.gitDrv
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, refresh: refresh}
-		msg.set, msg.err = diff.BuildSet(driver, sess.Cwd, scope)
+		roots, err := driver.ResolveRepos(sess.Cwd)
+		if err != nil {
+			msg.err = err
+			return msg
+		}
+		if repoIdx >= len(roots) {
+			repoIdx = 0
+		}
+		msg.repoRoots = roots
+		msg.repoIdx = repoIdx
+		msg.set, msg.err = diff.BuildSet(driver, roots[repoIdx], scope)
 		if msg.err == nil {
 			baseRef := ""
 			if scope == git.ScopeBranch {
@@ -119,7 +140,8 @@ func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 	}
 }
 
-// retargetDiff points the open diff at a session, reloading its set.
+// retargetDiff points the open diff at a session, reloading its set. A new
+// session resets the repo selection so the load re-ranks from scratch.
 func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.sessID = sess.ID
 	m.diff.gen++
@@ -129,7 +151,9 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, false)
+	m.diff.repoRoots = nil
+	m.diff.repoIdx = 0
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoIdx, false)
 }
 
 func (m *Model) cycleDiffScope() tea.Cmd {
@@ -147,7 +171,27 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, false)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoIdx, false)
+}
+
+// cycleDiffRepo advances to the next repo when the session cwd is an umbrella
+// of several. It is a no-op for a plain single-repo cwd.
+func (m *Model) cycleDiffRepo() tea.Cmd {
+	if !m.diff.active || len(m.diff.repoRoots) < 2 {
+		return nil
+	}
+	sess, ok := m.diffSession()
+	if !ok {
+		return nil
+	}
+	m.diff.repoIdx = (m.diff.repoIdx + 1) % len(m.diff.repoRoots)
+	m.diff.gen++
+	m.diff.loading = true
+	m.diff.errText = ""
+	m.diff.fileIdx = 0
+	m.diff.scroll = 0
+	m.diff.cursorLine = 0
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoIdx, false)
 }
 
 // diffSession resolves the session the diff is pinned to.
@@ -178,9 +222,12 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	if msg.err != nil {
 		m.diff.errText = msg.err.Error()
 		m.diff.set = diff.Set{}
+		m.diff.repoRoots = nil
 		return nil
 	}
 	m.diff.errText = ""
+	m.diff.repoRoots = msg.repoRoots
+	m.diff.repoIdx = msg.repoIdx
 	previousPath := ""
 	if fd := m.currentFileDiff(); fd != nil {
 		previousPath = fd.File.Path
@@ -227,7 +274,7 @@ func (m *Model) handleDiffProbe(msg diffProbeMsg) tea.Cmd {
 		return nil
 	}
 	m.diff.gen++
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, true)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoIdx, true)
 }
 
 // diffRefreshCmd is the poller piggyback: every second tick while the
@@ -501,6 +548,8 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.jumpChange(-1)
 	case "s":
 		return m, m.cycleDiffScope()
+	case "r":
+		return m, m.cycleDiffRepo()
 	case "u":
 		lineIdx := m.cursorDiffLine()
 		m.diff.sideBySide = !m.diff.sideBySide
@@ -977,6 +1026,10 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	}
 	left := badgeStyle.Render("◆ Review · "+sessName) + "  " +
 		pill(m.diff.scope.String(), colorAccent2) + "  " + pill(layout, colorAccent)
+	if len(m.diff.repoRoots) > 1 {
+		name := filepath.Base(m.diff.repoRoots[m.diff.repoIdx])
+		left += "  " + pill(fmt.Sprintf("%s %d/%d", name, m.diff.repoIdx+1, len(m.diff.repoRoots)), colorAccent)
+	}
 	if m.diff.set.BaseDesc != "" && m.diff.scope == git.ScopeBranch {
 		left += "  " + subtleStyle.Render(m.diff.set.BaseDesc)
 	}
@@ -1217,6 +1270,9 @@ func (m *Model) viewDiffFooter() string {
 	pairs := [][2]string{
 		{"↑↓", "scroll"}, {"J/K", "file"}, {"n/N", "change"}, {"space", "reviewed"},
 		{"u", "layout"}, {"s", "scope: " + m.diff.scope.String()}, {"c", "comment"},
+	}
+	if len(m.diff.repoRoots) > 1 {
+		pairs = append(pairs, [2]string{"r", "repo: " + filepath.Base(m.diff.repoRoots[m.diff.repoIdx])})
 	}
 	if count := len(m.diff.annotations[m.diff.sessID]); count > 0 {
 		pairs = append(pairs, [2]string{"C", fmt.Sprintf("send %d", count)}, [2]string{"d", "remove"})

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -94,6 +95,97 @@ func (d *Driver) OpenRepo(dir string) (Repo, error) {
 		repo.Detached = false
 	}
 	return repo, nil
+}
+
+// maxRepoDepth bounds how far ResolveRepos descends into an umbrella folder
+// looking for nested repos.
+const maxRepoDepth = 3
+
+// skipDirs are directories ResolveRepos never descends into while hunting for
+// nested repos: dependency trees, build output, and agent-manager's own
+// worktree scratch dirs would only add noise or duplicate a repo already found.
+var skipDirs = map[string]bool{
+	"node_modules":    true,
+	".worktrees":      true,
+	".archive":        true,
+	"dist":            true,
+	"build":           true,
+	"vendor":          true,
+	".playwright-mcp": true,
+}
+
+// ResolveRepos returns the git repo roots reachable from cwd, most-active
+// first. When cwd is itself a repo, that is the only root. When cwd is an
+// umbrella folder holding several repos, each nested repo root is returned
+// ranked with dirty working trees before clean ones, then by most recent
+// commit, so review lands on the repo the agent is most likely editing.
+func (d *Driver) ResolveRepos(cwd string) ([]string, error) {
+	root, err := d.run(cwd, "rev-parse", "--show-toplevel")
+	if err == nil {
+		return []string{root}, nil
+	}
+	if !errors.Is(err, ErrNotARepo) {
+		return nil, err
+	}
+	roots := d.discoverRepos(cwd)
+	if len(roots) == 0 {
+		return nil, ErrNotARepo
+	}
+	d.rankRepos(roots)
+	return roots, nil
+}
+
+func (d *Driver) discoverRepos(dir string) []string {
+	var roots []string
+	var walk func(path string, depth int)
+	walk = func(path string, depth int) {
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return
+		}
+		for _, entry := range entries {
+			if entry.Name() == ".git" {
+				roots = append(roots, path)
+				return
+			}
+		}
+		if depth >= maxRepoDepth {
+			return
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() || skipDirs[entry.Name()] {
+				continue
+			}
+			walk(filepath.Join(path, entry.Name()), depth+1)
+		}
+	}
+	walk(dir, 0)
+	return roots
+}
+
+func (d *Driver) rankRepos(roots []string) {
+	type meta struct {
+		dirty bool
+		when  int64
+	}
+	info := make(map[string]meta, len(roots))
+	for _, root := range roots {
+		var m meta
+		if out, err := d.run(root, "status", "--porcelain"); err == nil && strings.TrimSpace(out) != "" {
+			m.dirty = true
+		}
+		if out, err := d.run(root, "log", "-1", "--format=%ct"); err == nil {
+			m.when, _ = strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+		}
+		info[root] = m
+	}
+	sort.SliceStable(roots, func(i, j int) bool {
+		a, b := info[roots[i]], info[roots[j]]
+		if a.dirty != b.dirty {
+			return a.dirty
+		}
+		return a.when > b.when
+	})
 }
 
 // BaseRef finds the merge base against the repo's main branch for the

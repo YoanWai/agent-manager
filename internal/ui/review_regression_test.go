@@ -41,6 +41,73 @@ func gitRepoWithTwoChangedFiles(t *testing.T) string {
 	return dir
 }
 
+// umbrellaWithTwoRepos makes a dir that is not itself a repo but holds two
+// nested repos, the second one dirty so it ranks first.
+func umbrellaWithTwoRepos(t *testing.T) (umbrella, dirtyName string) {
+	t.Helper()
+	umbrella = t.TempDir()
+	run := func(dir string, args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v: %s", args, err, out)
+		}
+	}
+	for _, name := range []string{"alpha", "bravo"} {
+		dir := filepath.Join(umbrella, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package a\n\nfunc A() int { return 1 }\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run(dir, "git", "init")
+		run(dir, "git", "add", ".")
+		run(dir, "git", "commit", "-m", "init")
+	}
+	dirty := filepath.Join(umbrella, "bravo")
+	if err := os.WriteFile(filepath.Join(dirty, "a.go"), []byte("package a\n\nfunc A() int { return 99 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return umbrella, "bravo"
+}
+
+// A session whose cwd is an umbrella of several repos opens review on the
+// most-active repo, shows the repo in the header, and the r key cycles.
+func TestReviewCyclesReposUnderUmbrella(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, dirtyName := umbrellaWithTwoRepos(t)
+	openReviewOn(t, m, "umbrella", umbrella)
+
+	if len(m.diff.repoRoots) != 2 {
+		t.Fatalf("want 2 repos resolved, got %v (err=%q)", m.diff.repoRoots, m.diff.errText)
+	}
+	if got := filepath.Base(m.diff.repoRoots[m.diff.repoIdx]); got != dirtyName {
+		t.Fatalf("want dirty repo %q selected first, got %q", dirtyName, got)
+	}
+	if !strings.Contains(m.viewDiffHeader("umbrella"), dirtyName) {
+		t.Fatalf("header should name the selected repo %q", dirtyName)
+	}
+
+	m.pressDiffKey(t, 'r')
+	if got := filepath.Base(m.diff.repoRoots[m.diff.repoIdx]); got != "alpha" {
+		t.Fatalf("r should cycle to the other repo, got %q", got)
+	}
+	if !strings.Contains(m.viewDiffHeader("umbrella"), "alpha") {
+		t.Fatal("header should follow the repo cycle")
+	}
+	m.pressDiffKey(t, 'r')
+	if got := filepath.Base(m.diff.repoRoots[m.diff.repoIdx]); got != dirtyName {
+		t.Fatalf("r should wrap back, got %q", got)
+	}
+}
+
 // drainCmds runs a command chain to exhaustion, feeding every message back
 // into Update, so async follow-ups (diff loads, highlights) all land.
 func (m *Model) drainCmds(t *testing.T, cmd tea.Cmd) {
@@ -167,7 +234,7 @@ func (m *Model) refreshDiff(t *testing.T) {
 		t.Fatal("no diff session")
 	}
 	m.diff.gen++
-	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, true))
+	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoIdx, true))
 }
 
 // A silent same-scope reload that shifts line numbers re-points saved comments
