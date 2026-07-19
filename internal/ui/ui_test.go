@@ -990,7 +990,7 @@ func TestQuickPromptSendClearsAcked(t *testing.T) {
 	}
 }
 
-func TestQuickAttachImageInsertsPath(t *testing.T) {
+func TestQuickAttachImageRecordsAttachmentNotInput(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "answer-me", t.TempDir(), "")
 	m.selectSessionRow(t, "answer-me")
@@ -1008,18 +1008,54 @@ func TestQuickAttachImageInsertsPath(t *testing.T) {
 	if m.err != "" {
 		t.Fatalf("attach: %q", m.err)
 	}
-	value := strings.TrimSpace(m.quick.input.Value())
-	if value == "" {
-		t.Fatal("expected the image path to be inserted")
+	if m.quick.input.Value() != "" {
+		t.Fatal("the path should stay out of the typed input")
 	}
-	data, err := os.ReadFile(value)
+	if len(m.quick.attachments) != 1 {
+		t.Fatalf("want 1 attachment, got %d", len(m.quick.attachments))
+	}
+	path := m.quick.attachments[0]
+	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("inserted path is not a readable file: %v", err)
+		t.Fatalf("attachment path is not a readable file: %v", err)
 	}
 	if string(data) != "png-bytes" {
 		t.Fatalf("temp file holds %q", data)
 	}
-	os.Remove(value)
+	os.Remove(path)
+}
+
+func TestQuickAttachmentChipShowsBasename(t *testing.T) {
+	m := buildModel(t)
+	if got := m.quickAttachmentChip(80); got != "" {
+		t.Fatalf("no attachments should render nothing, got %q", got)
+	}
+	m.quick.attachments = []string{"/tmp/agent-manager-pastes/paste-123.png"}
+	chip := m.quickAttachmentChip(80)
+	if !strings.Contains(chip, "paste-123.png") {
+		t.Fatalf("chip should show the file name, got %q", chip)
+	}
+	if strings.Contains(chip, "/tmp/") {
+		t.Fatalf("chip should not show the full path, got %q", chip)
+	}
+}
+
+func TestQuickMessageAppendsAttachmentPaths(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+
+	m.quick.input.SetValue("look at this")
+	m.quick.attachments = []string{"/tmp/a.png", "/tmp/b.png"}
+	if got := m.quickMessage(); got != "look at this /tmp/a.png /tmp/b.png" {
+		t.Fatalf("compose = %q", got)
+	}
+
+	m.quick.input.SetValue("")
+	if got := m.quickMessage(); got != "/tmp/a.png /tmp/b.png" {
+		t.Fatalf("image-only compose = %q", got)
+	}
 }
 
 func TestQuickAttachImageNoImageFallsThrough(t *testing.T) {
