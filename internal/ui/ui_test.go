@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -990,7 +991,10 @@ func TestQuickAttachImageInsertsPath(t *testing.T) {
 		return []byte("png-bytes"), "png", nil
 	}
 
-	if _, _ = m.attachQuickImage(); m.err != "" {
+	if !m.attachQuickImage() {
+		t.Fatal("attachQuickImage should report it handled the image")
+	}
+	if m.err != "" {
 		t.Fatalf("attach: %q", m.err)
 	}
 	value := strings.TrimSpace(m.quick.input.Value())
@@ -1007,7 +1011,7 @@ func TestQuickAttachImageInsertsPath(t *testing.T) {
 	os.Remove(value)
 }
 
-func TestQuickAttachImageNoImageSetsError(t *testing.T) {
+func TestQuickAttachImageNoImageFallsThrough(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "answer-me", t.TempDir(), "")
 	m.selectSessionRow(t, "answer-me")
@@ -1019,11 +1023,52 @@ func TestQuickAttachImageNoImageSetsError(t *testing.T) {
 		return nil, "", clipboard.ErrNoImage
 	}
 
-	if _, _ = m.attachQuickImage(); m.err != clipboard.ErrNoImage.Error() {
-		t.Fatalf("err = %q", m.err)
+	if m.attachQuickImage() {
+		t.Fatal("an empty clipboard should not be handled, so text paste can run")
+	}
+	if m.err != "" {
+		t.Fatalf("an empty clipboard is not an error, err = %q", m.err)
 	}
 	if m.quick.input.Value() != "" {
 		t.Fatal("input should stay empty when no image is present")
+	}
+}
+
+func TestQuickCtrlVNoImageReachesTextPaste(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+
+	orig := captureClipboardImage
+	defer func() { captureClipboardImage = orig }()
+	captureClipboardImage = func() ([]byte, string, error) {
+		return nil, "", clipboard.ErrNoImage
+	}
+
+	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if cmd == nil {
+		t.Fatal("ctrl+v with no image should fall through to the textarea's paste command")
+	}
+}
+
+func TestQuickAttachImageRealErrorSurfaces(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+
+	orig := captureClipboardImage
+	defer func() { captureClipboardImage = orig }()
+	captureClipboardImage = func() ([]byte, string, error) {
+		return nil, "", errors.New("install wl-clipboard or xclip to paste images")
+	}
+
+	if !m.attachQuickImage() {
+		t.Fatal("a real clipboard error should be handled, not fall through")
+	}
+	if m.err == "" {
+		t.Fatal("a real clipboard error should surface through m.err")
 	}
 }
 

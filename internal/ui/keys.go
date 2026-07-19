@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -663,22 +664,31 @@ func (m *Model) renameGroupLocally(old, newPath, dir string) {
 var captureClipboardImage = clipboard.ReadImage
 
 // attachQuickImage saves a clipboard image to a temp file and inserts its
-// path into the prompt, so the agent in the target session can open it.
-// Any failure leaves the input untouched and surfaces the reason.
-func (m *Model) attachQuickImage() (tea.Model, tea.Cmd) {
+// path into the prompt, so the agent in the target session can open it. It
+// reports whether it handled the keypress: an empty clipboard returns false
+// so the caller can fall back to a plain text paste, while a real failure is
+// surfaced through m.err.
+func (m *Model) attachQuickImage() bool {
 	data, ext, err := captureClipboardImage()
 	if err != nil {
+		if errors.Is(err, clipboard.ErrNoImage) {
+			return false
+		}
 		m.err = err.Error()
-		return m, nil
+		return true
 	}
 	path, err := clipboard.SaveToTemp(data, ext)
 	if err != nil {
 		m.err = err.Error()
-		return m, nil
+		return true
 	}
+	// InsertString alone leaves the viewport where it was; a no-op Update
+	// runs repositionView so the inserted path scrolls into view.
+	m.quick.input.SetHeight(quickBarMaxRows)
 	m.quick.input.InsertString(" " + path + " ")
+	m.quick.input, _ = m.quick.input.Update(nil)
 	m.err = ""
-	return m, nil
+	return true
 }
 
 func (m *Model) openQuickMode() {
@@ -732,7 +742,11 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "ctrl+v":
-		return m.attachQuickImage()
+		if m.attachQuickImage() {
+			return m, nil
+		}
+		// No image on the clipboard: fall through so the textarea's own
+		// ctrl+v text paste still works.
 	case "enter":
 		return m.submitQuick()
 	}
