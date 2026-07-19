@@ -149,21 +149,21 @@ func windowWidth(t *testing.T, id string) int {
 	return w
 }
 
-// A detached session must boot at the manager's terminal width so its pane
-// preview fills immediately, and follow later terminal resizes, rather than
-// staying at tmux's 80-column default until the first attach.
-func TestSessionSizesToTerminal(t *testing.T) {
+// A detached session must boot at the preview panel's width so its pane
+// preview fills without cropping on the right, and follow later terminal
+// resizes, rather than staying at tmux's 80-column default until attach.
+func TestSessionSizesToPreviewPane(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sized", t.TempDir(), "")
 	id := m.sessionRows()[0].ID
 
-	if w := windowWidth(t, id); w != m.width {
-		t.Fatalf("new session window width = %d, want %d", w, m.width)
+	if w := windowWidth(t, id); w != m.previewPaneWidth() {
+		t.Fatalf("new session window width = %d, want %d", w, m.previewPaneWidth())
 	}
 
 	m.Update(tea.WindowSizeMsg{Width: 150, Height: 45})
-	if w := windowWidth(t, id); w != 150 {
-		t.Fatalf("after resize, window width = %d, want 150", w)
+	if w := windowWidth(t, id); w != m.previewPaneWidth() {
+		t.Fatalf("after resize, window width = %d, want %d", w, m.previewPaneWidth())
 	}
 }
 
