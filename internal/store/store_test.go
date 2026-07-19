@@ -116,6 +116,104 @@ func listIDs(t *testing.T, st *Store, includeArchived bool) []string {
 	return ids
 }
 
+func groupArchived(t *testing.T, st *Store, path string) bool {
+	t.Helper()
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	for _, g := range groups {
+		if g.Name == path {
+			return g.Archived
+		}
+	}
+	t.Fatalf("group %q not found", path)
+	return false
+}
+
+func sessionArchived(t *testing.T, st *Store, id string) bool {
+	t.Helper()
+	sess, err := st.Get(id)
+	if err != nil {
+		t.Fatalf("get %s: %v", id, err)
+	}
+	return sess.Archived
+}
+
+func TestSetGroupArchivedFlipsSubtree(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateGroup("proj", "")
+	st.CreateGroup("proj/sub", "")
+	st.CreateSession(sample("a", "proj"))
+	st.CreateSession(sample("b", "proj/sub"))
+
+	if err := st.SetGroupArchived("proj", true); err != nil {
+		t.Fatalf("archive group: %v", err)
+	}
+	if !groupArchived(t, st, "proj") || !groupArchived(t, st, "proj/sub") {
+		t.Fatal("group and subgroup should be archived")
+	}
+	if !sessionArchived(t, st, "a") || !sessionArchived(t, st, "b") {
+		t.Fatal("sessions in subtree should be archived")
+	}
+
+	if err := st.SetGroupArchived("proj", false); err != nil {
+		t.Fatalf("restore group: %v", err)
+	}
+	if groupArchived(t, st, "proj") || groupArchived(t, st, "proj/sub") {
+		t.Fatal("group and subgroup should be restored")
+	}
+	if sessionArchived(t, st, "a") || sessionArchived(t, st, "b") {
+		t.Fatal("sessions in subtree should be restored")
+	}
+}
+
+func TestSetGroupArchivedUnderscoreDoesNotBleed(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateGroup("my_proj", "")
+	st.CreateGroup("myXproj/sub", "")
+	st.CreateSession(sample("a", "my_proj"))
+	st.CreateSession(sample("b", "myXproj/sub"))
+
+	if err := st.SetGroupArchived("my_proj", true); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if !groupArchived(t, st, "my_proj") || !sessionArchived(t, st, "a") {
+		t.Fatal("my_proj and its session should be archived")
+	}
+	// "my_proj/%" with an unescaped underscore matches "myXproj/sub".
+	if groupArchived(t, st, "myXproj/sub") || sessionArchived(t, st, "b") {
+		t.Fatal("myXproj/sub must not be caught by the my_proj archive (LIKE _ wildcard bleed)")
+	}
+}
+
+func TestSetGroupArchivedEmptyPathErrors(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.SetGroupArchived("", true); err == nil {
+		t.Fatal("archiving the root group should error")
+	}
+}
+
+func TestRestoreSessionUnarchivesAncestorGroups(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateGroup("proj", "")
+	st.CreateGroup("proj/sub", "")
+	st.CreateSession(sample("a", "proj/sub"))
+	if err := st.SetGroupArchived("proj", true); err != nil {
+		t.Fatalf("archive group: %v", err)
+	}
+
+	if err := st.SetArchived("a", false); err != nil {
+		t.Fatalf("restore session: %v", err)
+	}
+	if sessionArchived(t, st, "a") {
+		t.Fatal("session should be active after restore")
+	}
+	if groupArchived(t, st, "proj") || groupArchived(t, st, "proj/sub") {
+		t.Fatal("ancestor groups should be un-archived so the session has a live home")
+	}
+}
+
 func TestReorderSession(t *testing.T) {
 	st := newTestStore(t)
 	st.CreateSession(sample("a", "g1"))

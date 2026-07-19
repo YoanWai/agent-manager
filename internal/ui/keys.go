@@ -387,27 +387,31 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
-	sess, ok := m.selected()
-	if !ok {
-		return m, nil
-	}
-	if err := m.store.SetArchived(sess.ID, true); err != nil {
-		m.err = err.Error()
-		return m, nil
-	}
-	m.requestRefresh()
-	return m, nil
+	return m.setSelectedArchived(true)
 }
 
 func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
-	sess, ok := m.selected()
+	return m.setSelectedArchived(false)
+}
+
+// setSelectedArchived archives or restores the selected row: a group row
+// takes its whole subtree, a session row takes just that session.
+func (m *Model) setSelectedArchived(archived bool) (tea.Model, tea.Cmd) {
+	entry, ok := m.selectedRow()
 	if !ok {
 		return m, nil
 	}
-	if err := m.store.SetArchived(sess.ID, false); err != nil {
+	var err error
+	if entry.isGroup {
+		err = m.store.SetGroupArchived(entry.group, archived)
+	} else {
+		err = m.store.SetArchived(entry.sess.ID, archived)
+	}
+	if err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
+	m.err = ""
 	m.requestRefresh()
 	return m, nil
 }

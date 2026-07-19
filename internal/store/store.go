@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS groups (
 	name       TEXT PRIMARY KEY,
 	sort_order INTEGER NOT NULL DEFAULT 0,
-	path       TEXT NOT NULL DEFAULT ''
+	path       TEXT NOT NULL DEFAULT '',
+	archived   INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS settings (
 	key   TEXT PRIMARY KEY,
@@ -85,6 +86,7 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN acked INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN agent_session_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE groups ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -250,7 +252,35 @@ func (s *Store) SetArchived(id string, archived bool) error {
 	if err != nil {
 		return err
 	}
-	return requireRow(res, id)
+	if err := requireRow(res, id); err != nil {
+		return err
+	}
+	// Restoring a session out of an archived group must leave it with a live
+	// home, so un-archive its group and every ancestor.
+	if !archived {
+		sess, err := s.Get(id)
+		if err != nil {
+			return err
+		}
+		return s.unarchiveAncestorGroups(sess.Group)
+	}
+	return nil
+}
+
+// unarchiveAncestorGroups clears the archived flag on a group path and each
+// of its ancestors, leaving descendants untouched.
+func (s *Store) unarchiveAncestorGroups(path string) error {
+	for path != "" {
+		if _, err := s.db.Exec(`UPDATE groups SET archived = 0 WHERE name = ?`, path); err != nil {
+			return err
+		}
+		idx := strings.LastIndex(path, "/")
+		if idx < 0 {
+			break
+		}
+		path = path[:idx]
+	}
+	return nil
 }
 
 func (s *Store) Delete(id string) error {
@@ -299,17 +329,18 @@ func (s *Store) RenameGroup(oldPath, newPath string) error {
 		return err
 	}
 	defer tx.Rollback()
+	likeOld := escapeLike(oldPath)
 	_, err = tx.Exec(
 		`UPDATE groups SET name = ? || substr(name, length(?)+1)
-		 WHERE name = ? OR name LIKE ? || '/%'`,
-		newPath, oldPath, oldPath, oldPath)
+		 WHERE name = ? OR name LIKE ? || '/%' ESCAPE '\'`,
+		newPath, oldPath, oldPath, likeOld)
 	if err != nil {
 		return err
 	}
 	_, err = tx.Exec(
 		`UPDATE sessions SET group_name = ? || substr(group_name, length(?)+1)
-		 WHERE group_name = ? OR group_name LIKE ? || '/%'`,
-		newPath, oldPath, oldPath, oldPath)
+		 WHERE group_name = ? OR group_name LIKE ? || '/%' ESCAPE '\'`,
+		newPath, oldPath, oldPath, likeOld)
 	if err != nil {
 		return err
 	}
@@ -350,17 +381,18 @@ func (s *Store) DeleteGroup(path string) error {
 		return fmt.Errorf("cannot delete the root group")
 	}
 	_, err := s.db.Exec(
-		`DELETE FROM groups WHERE name = ? OR name LIKE ? || '/%'`, path, path)
+		`DELETE FROM groups WHERE name = ? OR name LIKE ? || '/%' ESCAPE '\'`, path, escapeLike(path))
 	return err
 }
 
 type Group struct {
-	Name string
-	Path string
+	Name     string
+	Path     string
+	Archived bool
 }
 
 func (s *Store) Groups() ([]Group, error) {
-	rows, err := s.db.Query(`SELECT name, path FROM groups ORDER BY sort_order, name`)
+	rows, err := s.db.Query(`SELECT name, path, archived FROM groups ORDER BY sort_order, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -368,12 +400,40 @@ func (s *Store) Groups() ([]Group, error) {
 	var groups []Group
 	for rows.Next() {
 		var g Group
-		if err := rows.Scan(&g.Name, &g.Path); err != nil {
+		var archived int
+		if err := rows.Scan(&g.Name, &g.Path, &archived); err != nil {
 			return nil, err
 		}
+		g.Archived = archived != 0
 		groups = append(groups, g)
 	}
 	return groups, rows.Err()
+}
+
+// SetGroupArchived flips the archived flag on a group, every descendant
+// group, and every session in the subtree, in one transaction.
+func (s *Store) SetGroupArchived(path string, archived bool) error {
+	if path == "" {
+		return fmt.Errorf("cannot archive the root group")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	flag := boolToInt(archived)
+	likePath := escapeLike(path)
+	if _, err := tx.Exec(
+		`UPDATE groups SET archived = ? WHERE name = ? OR name LIKE ? || '/%' ESCAPE '\'`,
+		flag, path, likePath); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`UPDATE sessions SET archived = ? WHERE group_name = ? OR group_name LIKE ? || '/%' ESCAPE '\'`,
+		flag, path, likePath); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ReorderSession moves a session one visible step among its group
@@ -530,6 +590,14 @@ func requireRow(res sql.Result, id string) error {
 		return fmt.Errorf("session %s not found", id)
 	}
 	return nil
+}
+
+// escapeLike escapes the LIKE metacharacters so a group path is matched
+// literally in a `? || '/%'` prefix pattern, paired with ESCAPE '\'. Group
+// names may contain '_' or '%', which LIKE would otherwise treat as
+// wildcards and let one group's subtree bleed into another's.
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 func boolToInt(b bool) int {
