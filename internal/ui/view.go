@@ -171,6 +171,20 @@ func (m *Model) viewComputer(width int) string {
 	}
 	b.WriteString(meter("disk", snap.DiskPercent, snap.DiskOK,
 		humanBytes(snap.DiskTotal-snap.DiskUsed)+" free"))
+	var temps []string
+	if snap.CPUTempOK {
+		temps = append(temps, fmt.Sprintf("cpu %.0f°C", snap.CPUTemp))
+	}
+	if snap.GPUTempOK {
+		temps = append(temps, fmt.Sprintf("gpu %.0f°C", snap.GPUTemp))
+	}
+	if snap.SoCTempOK {
+		temps = append(temps, fmt.Sprintf("soc %.0f°C", snap.SoCTemp))
+	}
+	if len(temps) > 0 {
+		b.WriteString(labelStyle.Width(5).Render("temp") +
+			valueStyle.Render(strings.Join(temps, "  ")) + "\n")
+	}
 	if m.netRates {
 		b.WriteString(labelStyle.Width(5).Render("net") +
 			valueStyle.Render("↓ "+humanBytes(m.netDown)+"/s") +

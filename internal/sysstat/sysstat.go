@@ -9,6 +9,7 @@ import (
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/shirou/gopsutil/v4/net"
+	"github.com/shirou/gopsutil/v4/sensors"
 )
 
 type Snapshot struct {
@@ -29,6 +30,12 @@ type Snapshot struct {
 	NetSent     uint64
 	NetRecv     uint64
 	NetOK       bool
+	CPUTemp     float64
+	CPUTempOK   bool
+	GPUTemp     float64
+	GPUTempOK   bool
+	SoCTemp     float64
+	SoCTempOK   bool
 }
 
 type ProcStat struct {
@@ -78,7 +85,67 @@ func Sample(diskPath string) Snapshot {
 		snap.NetOK = true
 	}
 
+	sampleTemps(&snap)
+
 	return snap
+}
+
+// sampleTemps categorizes hardware temperature sensors into CPU and GPU
+// readings. Sensor names differ by platform: Intel Macs expose SMC keys
+// (TC0D/TG0D), Linux exposes hwmon labels (coretemp/amdgpu), and Apple
+// Silicon exposes only unlabeled per-chiplet die temperatures. When no
+// CPU/GPU split is available (Apple Silicon), the hottest die temperature
+// is reported as a single SoC reading. Each category keeps the hottest
+// matching sensor.
+func sampleTemps(snap *Snapshot) {
+	temps, err := sensors.SensorsTemperatures()
+	if err != nil || len(temps) == 0 {
+		return
+	}
+	var cpu, gpu, die float64
+	for _, sensor := range temps {
+		if sensor.Temperature <= 0 {
+			continue
+		}
+		key := strings.ToLower(sensor.SensorKey)
+		switch {
+		case isGPUSensor(key):
+			if sensor.Temperature > gpu {
+				gpu = sensor.Temperature
+			}
+			snap.GPUTempOK = true
+		case isCPUSensor(key):
+			if sensor.Temperature > cpu {
+				cpu = sensor.Temperature
+			}
+			snap.CPUTempOK = true
+		case strings.Contains(key, "tdie"):
+			if sensor.Temperature > die {
+				die = sensor.Temperature
+			}
+		}
+	}
+	snap.CPUTemp = cpu
+	snap.GPUTemp = gpu
+	if !snap.CPUTempOK && !snap.GPUTempOK && die > 0 {
+		snap.SoCTemp = die
+		snap.SoCTempOK = true
+	}
+}
+
+func isGPUSensor(key string) bool {
+	return strings.Contains(key, "gpu") ||
+		strings.Contains(key, "tg0") ||
+		strings.Contains(key, "nvidia") ||
+		strings.Contains(key, "radeon")
+}
+
+func isCPUSensor(key string) bool {
+	return strings.Contains(key, "cpu") ||
+		strings.Contains(key, "tc0") ||
+		strings.Contains(key, "coretemp") ||
+		strings.Contains(key, "k10temp") ||
+		strings.Contains(key, "package")
 }
 
 // Trees reports the combined CPU and resident memory of each requested
