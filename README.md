@@ -57,7 +57,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `a` / `u` | Archive / restore a session, or a group and its entire subtree |
 | `d` | Delete session, or a group + its entire subtree |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
-| `D` | Review the selected session's changes: full-screen whole-file diffs, line comments sent to the agent |
+| `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, line comments sent to the agent |
 | `f` | Fold / unfold group |
 | `s` | Settings (default tool for quick spawn) |
 | `t` | Toggle archived view |
@@ -88,7 +88,7 @@ Agents usually work in git worktrees, one branch per worktree, and those worktre
 
 ### Diff review
 
-Press `D` or `ctrl+r` on a session to open a full-screen review of its repo: changed files with +/− counts on the left, the whole file on the right with syntax highlighting and changed lines tinted, so every edit reads in full context. Arrow keys and `ctrl+d`/`ctrl+u` scroll the file, `J`/`K` switch files, `n`/`N` jump between changes, `u` toggles unified and side-by-side, `s` cycles the scope (uncommitted, vs base, last commit, staged), and `space` marks a file reviewed. When the working directory holds several repos, `r` opens a picker you type to filter, and `b` lists the current repo's worktrees by branch name so you can review another branch with one keypress. `B` picks the base the "vs base" scope compares against. The diff refreshes as the agent keeps editing.
+Press `ctrl+r` on a session to open a full-screen review of its repo: changed files with +/− counts on the left, the whole file on the right with syntax highlighting and changed lines tinted, so every edit reads in full context. Arrow keys and `ctrl+d`/`ctrl+u` scroll the file, `J`/`K` switch files, `n`/`N` jump between changes, `u` toggles unified and side-by-side, `s` cycles the scope (uncommitted, vs base, last commit, staged), and `space` marks a file reviewed. When the working directory holds several repos, `r` opens a picker you type to filter, and `b` lists the current repo's worktrees by branch name so you can review another branch with one keypress. `B` picks the base the "vs base" scope compares against. The diff refreshes as the agent keeps editing.
 
 Press `c` on a line to write a comment; `C` flattens every comment into one review prompt and sends it straight into the agent's pane, so the agent starts addressing your notes while you watch the diff update. `esc` closes the review.
 
