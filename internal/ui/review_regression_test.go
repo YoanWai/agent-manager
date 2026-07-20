@@ -127,7 +127,7 @@ func TestRepoPickerFiltersAndSelects(t *testing.T) {
 	for _, r := range "alph" {
 		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
-	if got := m.filteredRepoRoots(); len(got) != 1 || filepath.Base(got[0]) != "alpha" {
+	if got := m.filteredRows(); len(got) != 1 || got[0].label != "alpha" {
 		t.Fatalf("filter should narrow to alpha, got %v", got)
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -158,6 +158,43 @@ func TestRepoPickerEscapeKeepsRepo(t *testing.T) {
 	}
 	if m.diff.repoSel != before || filepath.Base(m.diff.repoSel) != dirtyName {
 		t.Fatalf("esc should not change the repo, got %q", m.diff.repoSel)
+	}
+}
+
+func TestBranchPickerListsWorktreesAndSwitches(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, _ := umbrellaWithTwoRepos(t)
+	alpha := filepath.Join(umbrella, "alpha")
+	outside := filepath.Join(t.TempDir(), "wt-feature")
+	cmd := exec.Command("git", "worktree", "add", "-b", "feature/pick-me", outside)
+	cmd.Dir = alpha
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("worktree add: %v: %s", err, out)
+	}
+	openReviewOn(t, m, "branches", umbrella)
+	m.drainCmds(t, m.selectRepo(alpha))
+
+	m.pressDiffKey(t, 'b')
+	if m.mode != modeRepoPick {
+		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.err)
+	}
+	rendered := m.viewRepoPick()
+	if !strings.Contains(rendered, "feature/pick-me") {
+		t.Fatalf("picker should show the worktree branch, got:\n%s", rendered)
+	}
+	for _, r := range "pick-me" {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	updated, cmdSel := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	m.drainCmds(t, cmdSel)
+	resolved, _ := filepath.EvalSymlinks(outside)
+	sel, _ := filepath.EvalSymlinks(m.diff.repoSel)
+	if sel != resolved {
+		t.Fatalf("enter should switch to the worktree, got %q", m.diff.repoSel)
 	}
 }
 
@@ -944,7 +981,7 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		*m = *updated.(*Model)
 	}
-	onScreen := m.filteredRepoRoots()[m.repoPick.cursor]
+	onScreen := m.filteredRows()[m.repoPick.cursor].root
 
 	// A reload lands carrying only the repos that still exist, re-ranked.
 	m.diff.repoRoots = []string{realRoots[1], realRoots[0]}
@@ -956,7 +993,7 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	if m.mode != modeDiff {
 		t.Fatalf("enter should return to review, mode = %v", m.mode)
 	}
-	if m.repoPick.cursor >= len(m.repoPick.roots) {
+	if m.repoPick.cursor >= len(m.repoPick.rows) {
 		t.Fatalf("cursor should stay inside the snapshot, got %d", m.repoPick.cursor)
 	}
 	if m.diff.repoSel != onScreen {

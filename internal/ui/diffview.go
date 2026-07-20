@@ -62,6 +62,10 @@ type diffState struct {
 	repoRoots []string
 	repoSel   string
 
+	// worktrees of the selected repo, cached each load so the footer can offer
+	// the b branch picker only when there is more than one to switch between.
+	worktrees []git.Worktree
+
 	// Set when review opened from inside a session; leaving re-attaches it.
 	reattachID string
 }
@@ -77,6 +81,7 @@ type diffLoadedMsg struct {
 	// can show the repo name and offer the picker when the cwd holds several.
 	repoRoots []string
 	repoRoot  string
+	worktrees []git.Worktree
 	// Set when the wanted repo is not under the session cwd, so the fallback to
 	// the top-ranked repo is announced rather than silent.
 	missingRepo string
@@ -132,6 +137,7 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 				baseRef, _, _ = driver.BaseRef(msg.set.Repo.Root)
 			}
 			msg.fp, _ = driver.Fingerprint(msg.set.Repo.Root, scope, baseRef)
+			msg.worktrees, _ = driver.Worktrees(msg.set.Repo.Root)
 		}
 		return msg
 	}
@@ -236,11 +242,13 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 		m.diff.errText = msg.err.Error()
 		m.diff.set = diff.Set{}
 		m.diff.repoRoots = nil
+		m.diff.worktrees = nil
 		return nil
 	}
 	m.diff.errText = ""
 	m.diff.repoRoots = msg.repoRoots
 	m.diff.repoSel = msg.repoRoot
+	m.diff.worktrees = msg.worktrees
 	if msg.missingRepo != "" {
 		m.err = fmt.Sprintf("picked or declared repo %s is no longer under the session directory",
 			filepath.Base(msg.missingRepo))
@@ -576,6 +584,8 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.cycleDiffScope()
 	case "r":
 		m.openRepoPick()
+	case "b":
+		return m, m.openBranchPick()
 	case "u":
 		lineIdx := m.cursorDiffLine()
 		m.diff.sideBySide = !m.diff.sideBySide
@@ -1313,6 +1323,9 @@ func (m *Model) viewDiffFooter() string {
 	}
 	if len(m.diff.repoRoots) > 1 {
 		pairs = append(pairs, [2]string{"r", "repo: " + filepath.Base(m.diff.repoSel)})
+	}
+	if len(m.diff.worktrees) > 1 {
+		pairs = append(pairs, [2]string{"b", "branch"})
 	}
 	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
 		pairs = append(pairs, [2]string{"C", fmt.Sprintf("send %d", count)}, [2]string{"d", "remove"})

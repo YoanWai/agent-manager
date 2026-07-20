@@ -178,6 +178,7 @@ func (m *Model) viewHelp() string {
 		{"D / x / ctrl+r", "review changes: whole-file diffs, comment lines, send to agent"},
 		{"s", "in review: cycle scope (uncommitted / vs base / last commit / staged)"},
 		{"r", "in review: pick the repo when the session dir holds several"},
+		{"b", "in review: pick the branch from the repo's worktrees"},
 		{"F", "fold / unfold all groups"},
 		{"s", "settings (quick spawn tool, review layout)"},
 		{"t", "toggle archived view"},
