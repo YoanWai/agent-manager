@@ -275,6 +275,12 @@ func (d *Driver) ChangedFiles(root string, scope Scope, baseRef string) ([]Chang
 			return nil, err
 		}
 		for _, path := range splitNUL(untracked) {
+			// git reports a nested repository as a directory it will not
+			// descend into; there is nothing to diff and its changes belong
+			// to that repository's own review.
+			if strings.HasSuffix(path, "/") {
+				continue
+			}
 			files = append(files, ChangedFile{Path: path, OldPath: path, Status: Untracked})
 		}
 	}

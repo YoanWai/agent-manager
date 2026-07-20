@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -274,5 +275,35 @@ func TestIsBinary(t *testing.T) {
 	}
 	if !IsBinary([]byte{'a', 0, 'b'}) {
 		t.Fatal("NUL not flagged binary")
+	}
+}
+
+func TestChangedFilesSkipsNestedRepoDirectories(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "tracked.go", "package a\n")
+	commit(t, dir, "init")
+	write(t, dir, "untracked.go", "package a\n\nfunc B() {}\n")
+	initRepoAt(t, filepath.Join(dir, "nested"))
+
+	files, err := driver.ChangedFiles(dir, ScopeUncommitted, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if strings.HasSuffix(file.Path, "/") {
+			t.Fatalf("directory entry leaked into the file list: %q", file.Path)
+		}
+		if file.Path == "nested" {
+			t.Fatal("nested repository should not be listed")
+		}
+	}
+	found := false
+	for _, file := range files {
+		if file.Path == "untracked.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("untracked file should still be listed, got %+v", files)
 	}
 }
