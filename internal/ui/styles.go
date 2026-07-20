@@ -14,7 +14,7 @@ var (
 	colorSubtle  = lipgloss.Color("240")
 	colorBorder  = lipgloss.Color("238")
 	colorBg      = lipgloss.Color("236")
-	colorSelBg   = lipgloss.Color("238")
+	colorSelBg   = lipgloss.Color("239")
 	colorBright  = lipgloss.Color("231")
 	colorAccent  = lipgloss.Color("111")
 	colorAccent2 = lipgloss.Color("79")
