@@ -118,14 +118,14 @@ func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
 }
 
 // nudgeSplit moves the divider by delta columns while resize mode is on.
-// Panes reflow live so the preview keeps fitting; persist waits for |.
+// UI reflows instantly; tmux reflow is deferred to commit (| / mouse up)
+// so holding an arrow does not spawn a resize-window per keystroke.
 func (m *Model) nudgeSplit(delta int) {
 	if m.width <= 0 || delta == 0 {
 		return
 	}
 	left, _ := m.splitWidths()
 	m.setSplitFromX(left + delta)
-	m.resizeSessions()
 }
 
 // listChromeRows is the number of rows above the sessions/sidebar body

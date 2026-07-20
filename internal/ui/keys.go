@@ -182,9 +182,6 @@ func (m *Model) moveCursor(delta int) tea.Cmd {
 		return nil
 	}
 	m.preview = ""
-	// Detail block height can change per session; pin the pane to the
-	// preview box before capturing so the frame matches 1:1.
-	_ = m.tmux.Resize(sess.ID, m.previewPaneWidth(), m.previewPaneHeight())
 	return m.previewCmd(sess)
 }
 

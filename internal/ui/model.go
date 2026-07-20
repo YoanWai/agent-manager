@@ -112,6 +112,9 @@ type Model struct {
 	splitRatioBefore float64
 	resizeMode       bool
 	splitDragging    bool
+	// paneGeom is the last width×height we told tmux for each session id.
+	// Skips no-op resize-window calls that otherwise stall the UI.
+	paneGeom map[string][2]int
 }
 
 // confirmTarget.action values; the zero value means delete.
@@ -200,6 +203,8 @@ type previewMsg struct {
 	sessID  string
 	preview string
 	proc    sysstat.ProcStat
+	// sized is the width×height applied before capture (0,0 if skipped).
+	sized [2]int
 }
 
 type errMsg struct{ err error }
@@ -356,7 +361,16 @@ func (m *Model) selectedRow() (treeRow, bool) {
 
 // previewCmd captures one session's pane and process stats right away,
 // off the render loop, for instant sidebar updates on cursor moves.
+// A size pin runs in this same background cmd only when the target box
+// changed, so j/k never blocks on tmux and never re-resizes no-ops.
 func (m *Model) previewCmd(sess store.Session) tea.Cmd {
+	width, height := m.previewPaneWidth(), m.previewPaneHeight()
+	needResize := true
+	if m.paneGeom != nil {
+		if last, ok := m.paneGeom[sess.ID]; ok && last[0] == width && last[1] == height {
+			needResize = false
+		}
+	}
 	return func() tea.Msg {
 		msg := previewMsg{sessID: sess.ID}
 		if sess.Archived {
@@ -368,6 +382,11 @@ func (m *Model) previewCmd(sess store.Session) tea.Cmd {
 			return msg
 		}
 		if m.tmux.Exists(sess.ID) {
+			if needResize && width > 0 && height > 0 {
+				if err := m.tmux.Resize(sess.ID, width, height); err == nil {
+					msg.sized = [2]int{width, height}
+				}
+			}
 			if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
 				msg.preview = pane
 			}
@@ -389,15 +408,45 @@ func (m *Model) refreshCmd() tea.Cmd {
 }
 
 // resizeSessions syncs every live session's tmux window to the preview
-// panel's pixel box so a capture fills the preview 1:1. Dead sessions
-// error harmlessly and skip.
+// panel's pixel box so a capture fills the preview 1:1. No-op when the
+// size already matches; otherwise resizes in parallel so a fleet of
+// sessions does not serialize N tmux round-trips on the UI path.
 func (m *Model) resizeSessions() {
 	width, height := m.previewPaneWidth(), m.previewPaneHeight()
+	if width <= 0 || height <= 0 {
+		return
+	}
+	if m.paneGeom == nil {
+		m.paneGeom = map[string][2]int{}
+	}
+	var todo []string
 	for _, sess := range m.sessions {
 		if sess.Archived {
 			continue
 		}
-		_ = m.tmux.Resize(sess.ID, width, height)
+		if last, ok := m.paneGeom[sess.ID]; ok && last[0] == width && last[1] == height {
+			continue
+		}
+		todo = append(todo, sess.ID)
+	}
+	if len(todo) == 0 {
+		return
+	}
+	type result struct {
+		id  string
+		err error
+	}
+	results := make(chan result, len(todo))
+	for _, id := range todo {
+		go func(id string) {
+			results <- result{id: id, err: m.tmux.Resize(id, width, height)}
+		}(id)
+	}
+	for range todo {
+		r := <-results
+		if r.err == nil {
+			m.paneGeom[r.id] = [2]int{width, height}
+		}
 	}
 }
 
@@ -412,6 +461,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.width = msg.Width
 		m.height = msg.Height
+		// Geometry cache is stale for every session after a real resize.
+		m.paneGeom = nil
 		m.resizeSessions()
 		return m, nil
 
@@ -443,6 +494,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.diffRefreshCmd()
 
 	case previewMsg:
+		if msg.sized[0] > 0 && msg.sized[1] > 0 {
+			if m.paneGeom == nil {
+				m.paneGeom = map[string][2]int{}
+			}
+			m.paneGeom[msg.sessID] = msg.sized
+		}
 		if sess, ok := m.selected(); ok && sess.ID == msg.sessID {
 			m.preview = msg.preview
 			m.proc = msg.proc
@@ -471,7 +528,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; shrink it back to the preview panel so
 		// the capture is not clipped on the right.
+		if m.paneGeom != nil {
+			delete(m.paneGeom, msg.sessID)
+		}
 		_ = m.tmux.Resize(msg.sessID, m.previewPaneWidth(), m.previewPaneHeight())
+		if m.paneGeom == nil {
+			m.paneGeom = map[string][2]int{}
+		}
+		m.paneGeom[msg.sessID] = [2]int{m.previewPaneWidth(), m.previewPaneHeight()}
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.requestRefresh()

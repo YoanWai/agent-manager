@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -505,28 +504,29 @@ func (m *Model) syncQuickInlineChips() {
 	})
 }
 
-// quickInlineChipPrompt is the first-line prompt: "> " plus one chip per
-// attachment (and a transient pasting chip while the clipboard read runs).
+// quickInlineChipPrompt is the first-line prompt: a styled caret plus one
+// soft chip per attachment (and a transient pasting chip while the
+// clipboard read runs). Labels are short "Image N" tokens so the bar stays
+// readable; full paths still go out on submit via attachments.
 func (m *Model) quickInlineChipPrompt() string {
 	var b strings.Builder
-	b.WriteString("> ")
-	for _, path := range m.quick.attachments {
-		b.WriteString(imageChip(filepath.Base(path)))
-		b.WriteByte(' ')
+	b.WriteString(keyStyle.Render("❯ "))
+	for i := range m.quick.attachments {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(imageChip(fmt.Sprintf("Image %d", i+1)))
 	}
 	if m.quick.pasting {
-		b.WriteString(imageChip("pasting…"))
+		if len(m.quick.attachments) > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(imageChipPasting())
+	}
+	if len(m.quick.attachments) > 0 || m.quick.pasting {
 		b.WriteByte(' ')
 	}
 	return b.String()
-}
-
-// imageChip is a compact inline token for a pasted image basename.
-func imageChip(label string) string {
-	return lipgloss.NewStyle().
-		Foreground(colorBg).
-		Background(colorAccent2).
-		Render(" " + label + " ")
 }
 
 const quickBarMaxRows = 5
