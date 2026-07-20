@@ -778,6 +778,48 @@ func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 	}
 }
 
+func TestDeclaredWorktreeOutsideCwdIsAccepted(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, _ := umbrellaWithTwoRepos(t)
+	outside := filepath.Join(t.TempDir(), "wt-out")
+	runGit := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	runGit(filepath.Join(umbrella, "alpha"), "worktree", "add", "-b", "feature/wt", outside)
+
+	createSession(t, m, "wtdecl", umbrella, "")
+	m.selectSessionRow(t, "wtdecl")
+	sess, _ := m.selected()
+	if err := m.store.SetReviewRepo(sess.ID, outside); err != nil {
+		t.Fatal(err)
+	}
+	m.drainCmds(t, m.openDiff())
+	if m.err != "" {
+		t.Fatalf("declared worktree must not be reported missing, err = %q", m.err)
+	}
+	resolved, _ := filepath.EvalSymlinks(outside)
+	sel, _ := filepath.EvalSymlinks(m.diff.repoSel)
+	if sel != resolved {
+		t.Fatalf("review should open on the declared worktree, got %q", m.diff.repoSel)
+	}
+	found := false
+	for _, root := range m.diff.repoRoots {
+		if r, _ := filepath.EvalSymlinks(root); r == resolved {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the declared worktree should appear in the picker roots")
+	}
+}
+
 // addDirtyRepo adds a committed repo with an uncommitted edit, so it ranks
 // ahead of the clean ones.
 func addDirtyRepo(t *testing.T, umbrella, name string) {

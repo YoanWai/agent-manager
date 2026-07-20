@@ -116,7 +116,12 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 			}
 		}
 		if repoWant != "" && !found {
-			msg.missingRepo = repoWant
+			if driver.IsRepoRoot(repoWant) {
+				roots = append(roots, repoWant)
+				repoIdx = len(roots) - 1
+			} else {
+				msg.missingRepo = repoWant
+			}
 		}
 		msg.repoRoots = roots
 		msg.repoRoot = roots[repoIdx]
