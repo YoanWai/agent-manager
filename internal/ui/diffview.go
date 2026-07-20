@@ -154,7 +154,7 @@ func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 }
 
 // retargetDiff points the open diff at a session, reloading its set. A new
-// session resets the repo selection so the load re-ranks from scratch.
+// session seeds the repo selection from the agent's declared repo, if any.
 func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.sessID = sess.ID
 	m.diff.gen++
@@ -167,6 +167,11 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.repoRoots = nil
 	m.diff.repoIdx = 0
 	m.diff.repoSel = ""
+	if declared, err := m.store.ReviewRepo(sess.ID); err != nil {
+		m.err = err.Error()
+	} else {
+		m.diff.repoSel = declared
+	}
 	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }
 

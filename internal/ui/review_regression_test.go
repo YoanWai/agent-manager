@@ -589,3 +589,24 @@ func TestHeaderMarksUncountedFile(t *testing.T) {
 		t.Fatalf("header should mark the uncounted file, got %q", m.viewDiffHeader("counted"))
 	}
 }
+
+func TestReviewOpensOnDeclaredRepo(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, dirtyName := umbrellaWithTwoRepos(t)
+	createSession(t, m, "declared", umbrella, "")
+	m.selectSessionRow(t, "declared")
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("no selected session")
+	}
+	if err := m.store.SetReviewRepo(sess.ID, filepath.Join(umbrella, "alpha")); err != nil {
+		t.Fatal(err)
+	}
+	m.drainCmds(t, m.openDiff())
+	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+		t.Fatalf("review should open on the declared repo, got %q (ranking prefers %q)", got, dirtyName)
+	}
+}
