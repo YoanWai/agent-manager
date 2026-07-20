@@ -117,14 +117,15 @@ var skipDirs = map[string]bool{
 }
 
 // ResolveRepos returns the git repo roots reachable from cwd, most-active
-// first. When cwd is itself a repo, that is the only root. When cwd is an
+// first. When cwd is itself a repo, that repo plus its linked worktrees are
+// the roots. When cwd is an
 // umbrella folder holding several repos, each nested repo root is returned
 // ranked with dirty working trees before clean ones, then by most recent
 // commit, so review lands on the repo the agent is most likely editing.
 func (d *Driver) ResolveRepos(cwd string) ([]string, error) {
 	root, err := d.run(cwd, "rev-parse", "--show-toplevel")
 	if err == nil {
-		return []string{root}, nil
+		return d.expandWorktrees([]string{root}), nil
 	}
 	if !errors.Is(err, ErrNotARepo) {
 		return nil, err

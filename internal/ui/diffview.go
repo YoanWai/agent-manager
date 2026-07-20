@@ -1086,12 +1086,21 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	}
 	left := badgeStyle.Render("◆ Review · "+sessName) + "  " +
 		pill(m.diff.scope.String(), colorAccent2) + "  " + pill(layout, colorAccent)
-	if len(m.diff.repoRoots) > 1 {
+	if root := m.diff.set.Repo.Root; root != "" {
 		name := filepath.Base(m.diff.repoSel)
-		left += "  " + pill(fmt.Sprintf("%s · %d repos", name, len(m.diff.repoRoots)), colorAccent)
-	}
-	if m.diff.set.BaseDesc != "" && m.diff.scope == git.ScopeBranch {
-		left += "  " + subtleStyle.Render(m.diff.set.BaseDesc)
+		if name == "" || name == "." {
+			name = filepath.Base(root)
+		}
+		if len(m.diff.repoRoots) > 1 {
+			name = fmt.Sprintf("%s · %d repos", name, len(m.diff.repoRoots))
+		}
+		left += "  " + pill(name, colorAccent)
+		branch := m.diff.set.Repo.Branch
+		if m.diff.scope == git.ScopeBranch && m.diff.set.BaseDesc != "" {
+			left += "  " + subtleStyle.Render(m.diff.set.BaseDesc+" → "+branch)
+		} else if branch != "" {
+			left += "  " + subtleStyle.Render(branch)
+		}
 	}
 
 	adds, dels := 0, 0
@@ -1345,7 +1354,7 @@ func (m *Model) viewDiffFooter() string {
 		{"↑↓", "scroll"}, {"J/K", "file"}, {"n/N", "change"}, {"space", "reviewed"},
 		{"u", "layout"}, {"s", "scope: " + m.diff.scope.String()}, {"B", "base"}, {"c", "comment"},
 	}
-	if len(m.diff.repoRoots) > 1 {
+	if len(m.diff.repoRoots) > 0 {
 		pairs = append(pairs, [2]string{"r", "repo: " + filepath.Base(m.diff.repoSel)})
 	}
 	if len(m.diff.worktrees) > 1 {
