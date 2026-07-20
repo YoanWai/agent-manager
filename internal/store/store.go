@@ -2,12 +2,18 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+// ErrSessionGone reports a write against a session row that is no longer
+// there. Deleting a session is normal, so a caller holding a session
+// listed a moment earlier can tell that race apart from a real failure.
+var ErrSessionGone = errors.New("session no longer exists")
 
 type Session struct {
 	ID           string
@@ -689,7 +695,7 @@ func requireRow(res sql.Result, id string) error {
 		return err
 	}
 	if affected == 0 {
-		return fmt.Errorf("session %s not found", id)
+		return fmt.Errorf("session %s: %w", id, ErrSessionGone)
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -144,6 +145,17 @@ func (p *poller) run(send func(tea.Msg)) {
 	}
 }
 
+// ignoreDeletedSession drops the error a store write returns when the
+// session was deleted between this pass listing it and writing to it.
+// The row is gone on purpose, so there is nothing left to write and
+// nothing for the user to act on; any other failure still surfaces.
+func ignoreDeletedSession(err error) error {
+	if errors.Is(err, store.ErrSessionGone) {
+		return nil
+	}
+	return err
+}
+
 // archivedPreview serves an archived session's stored pane snapshot,
 // backfilling it from a still-live tmux window for sessions archived
 // before snapshots existed.
@@ -159,7 +171,7 @@ func archivedPreview(st *store.Store, driver *tmux.Driver, sessID string) (strin
 	if err != nil || pane == "" {
 		return "", nil
 	}
-	if err := st.SetSnapshot(sessID, pane); err != nil {
+	if err := ignoreDeletedSession(st.SetSnapshot(sessID, pane)); err != nil {
 		return "", err
 	}
 	return pane, nil
@@ -241,7 +253,7 @@ func (p *poller) refreshOnce() tea.Msg {
 				newStatus = derived
 				// Any real transition re-arms the finished alert.
 				if sess.Acked && newStatus != status.Idle && newStatus != status.Finished {
-					if err := p.store.SetAcked(sess.ID, false); err != nil {
+					if err := ignoreDeletedSession(p.store.SetAcked(sess.ID, false)); err != nil {
 						return errMsg{err}
 					}
 					sessions[i].Acked = false
@@ -252,7 +264,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			}
 		}
 		if newStatus != sess.Status {
-			if err := p.store.UpdateStatus(sess.ID, newStatus); err != nil {
+			if err := ignoreDeletedSession(p.store.UpdateStatus(sess.ID, newStatus)); err != nil {
 				return errMsg{err}
 			}
 			sessions[i].Status = newStatus
@@ -335,7 +347,7 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 		if !ok {
 			continue
 		}
-		if err := p.store.SetAgentSessionID(sess.ID, agentID); err != nil {
+		if err := ignoreDeletedSession(p.store.SetAgentSessionID(sess.ID, agentID)); err != nil {
 			return err
 		}
 		sessions[i].AgentSessionID = agentID
@@ -374,7 +386,7 @@ func (p *poller) applyPendingRename(sess *store.Session) error {
 		return nil
 	}
 	if name != "" && name != sess.Name {
-		if err := p.store.RenameSession(sess.ID, name); err != nil {
+		if err := ignoreDeletedSession(p.store.RenameSession(sess.ID, name)); err != nil {
 			return err
 		}
 		sess.Name = name

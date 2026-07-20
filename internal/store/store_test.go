@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -245,6 +246,29 @@ func TestPruneArchivedGroupsKeepsArchivedGroupHoldingASession(t *testing.T) {
 	}
 	if paths := groupPaths(t, st); len(paths) != 2 {
 		t.Fatalf("remaining groups = %v want both kept", paths)
+	}
+}
+
+func TestWritesToADeletedSessionReportGone(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateSession(sample("a", "proj"))
+	if err := st.Delete("a"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	writes := map[string]error{
+		"UpdateStatus":      st.UpdateStatus("a", "idle"),
+		"SetAcked":          st.SetAcked("a", true),
+		"SetAgentSessionID": st.SetAgentSessionID("a", "conv"),
+		"SetSnapshot":       st.SetSnapshot("a", "pane"),
+		"SetArchived":       st.SetArchived("a", true),
+		"RenameSession":     st.RenameSession("a", "renamed"),
+		"Delete":            st.Delete("a"),
+	}
+	for name, err := range writes {
+		if !errors.Is(err, ErrSessionGone) {
+			t.Errorf("%s on a deleted session = %v, want ErrSessionGone", name, err)
+		}
 	}
 }
 
