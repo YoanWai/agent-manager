@@ -89,7 +89,7 @@ func TestReviewPicksRepoUnderUmbrella(t *testing.T) {
 	if len(m.diff.repoRoots) != 2 {
 		t.Fatalf("want 2 repos resolved, got %v (err=%q)", m.diff.repoRoots, m.diff.errText)
 	}
-	if got := filepath.Base(m.diff.repoRoots[m.diff.repoIdx]); got != dirtyName {
+	if got := filepath.Base(m.diff.repoSel); got != dirtyName {
 		t.Fatalf("want dirty repo %q selected first, got %q", dirtyName, got)
 	}
 	if !strings.Contains(m.viewDiffHeader("umbrella"), dirtyName) {
@@ -97,14 +97,14 @@ func TestReviewPicksRepoUnderUmbrella(t *testing.T) {
 	}
 
 	m.pickRepo(t, "alpha")
-	if got := filepath.Base(m.diff.repoRoots[m.diff.repoIdx]); got != "alpha" {
+	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
 		t.Fatalf("picker should select the other repo, got %q", got)
 	}
 	if !strings.Contains(m.viewDiffHeader("umbrella"), "alpha") {
 		t.Fatal("header should follow the picked repo")
 	}
 	m.pickRepo(t, dirtyName)
-	if got := filepath.Base(m.diff.repoRoots[m.diff.repoIdx]); got != dirtyName {
+	if got := filepath.Base(m.diff.repoSel); got != dirtyName {
 		t.Fatalf("picker should select back, got %q", got)
 	}
 }
@@ -215,8 +215,8 @@ func TestRepoSelectionSurvivesReload(t *testing.T) {
 	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
 		t.Fatalf("reload should keep alpha pinned, got %q", got)
 	}
-	if got := filepath.Base(m.diff.repoRoots[m.diff.repoIdx]); got != "alpha" {
-		t.Fatalf("repoIdx should track the pinned repo after re-rank, got %q", got)
+	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+		t.Fatalf("repoSel should track the pinned repo after re-rank, got %q", got)
 	}
 }
 
@@ -366,7 +366,7 @@ func (m *Model) refreshDiff(t *testing.T) {
 		t.Fatal("no diff session")
 	}
 	m.diff.gen++
-	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, true))
+	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false, true))
 }
 
 // A silent same-scope reload that shifts line numbers re-points saved comments
@@ -473,6 +473,12 @@ func TestReviewCtrlCQuitsFromSubmodes(t *testing.T) {
 	m.diff.sendConfirm = true
 	if _, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
 		t.Fatal("ctrl+c should quit from the send-confirm prompt")
+	}
+	m.diff.sendConfirm = false
+	m.diff.repoRoots = []string{"/tmp/one", "/tmp/two"}
+	m.openRepoPick()
+	if _, cmd := m.handleRepoPickKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+		t.Fatal("ctrl+c should quit while the repo picker is open")
 	}
 }
 
@@ -683,6 +689,75 @@ func TestReviewOpensOnDeclaredRepo(t *testing.T) {
 	}
 }
 
+// A repo picked by hand outranks the agent's declaration, and keeps doing so
+// after review is closed and reopened.
+func TestHandPickedRepoOutlivesReopen(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, _ := umbrellaWithTwoRepos(t)
+	createSession(t, m, "picked", umbrella, "")
+	m.selectSessionRow(t, "picked")
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("no selected session")
+	}
+	if err := m.store.SetReviewRepo(sess.ID, filepath.Join(umbrella, "alpha")); err != nil {
+		t.Fatal(err)
+	}
+	m.drainCmds(t, m.openDiff())
+	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+		t.Fatalf("review should open on the declared repo, got %q", got)
+	}
+
+	m.pickRepo(t, "bravo")
+	if got := filepath.Base(m.diff.repoSel); got != "bravo" {
+		t.Fatalf("picking bravo should load it, got %q", got)
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	m.drainCmds(t, cmd)
+	if m.mode != modeList {
+		t.Fatalf("esc should leave review, mode = %v", m.mode)
+	}
+	m.drainCmds(t, m.openDiff())
+	if got := filepath.Base(m.diff.repoSel); got != "bravo" {
+		t.Fatalf("the hand-picked repo should win over the declared one on reopen, got %q", got)
+	}
+}
+
+// A declared repo the session cwd does not contain must be reported, not
+// silently swapped for whatever the ranking put on top.
+func TestDeclaredRepoOutsideCwdIsReported(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, _ := umbrellaWithTwoRepos(t)
+	createSession(t, m, "elsewhere", umbrella, "")
+	m.selectSessionRow(t, "elsewhere")
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("no selected session")
+	}
+	if err := m.store.SetReviewRepo(sess.ID, filepath.Join(t.TempDir(), "somewhere-else")); err != nil {
+		t.Fatal(err)
+	}
+	m.drainCmds(t, m.openDiff())
+
+	if m.err == "" {
+		t.Fatal("a declared repo outside the session cwd must be surfaced")
+	}
+	if !strings.Contains(m.viewDiffStatus(), m.err) {
+		t.Fatalf("review status should show %q", m.err)
+	}
+	if len(m.diff.repoRoots) < 2 {
+		t.Fatal("the picker must stay usable so the user can recover")
+	}
+}
+
 // Picking a repo after the session has left m.sessions must say so instead of
 // dropping the user back into review with the old repo and no explanation.
 func TestRepoPickerReportsMissingSession(t *testing.T) {
@@ -720,8 +795,10 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 	}
 }
 
-// The poller reloads repoRoots while the picker is open, so the root list can
-// shrink under a cursor parked on a high row. Enter must not index past it.
+// The poller reloads repoRoots while the picker is open, so the live list can
+// shrink and, because rankRepos is dirty-first, reorder under a parked cursor.
+// The picker works off a snapshot, so Enter must load the repo whose row was on
+// screen and must never index past the list.
 func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	m := buildModel(t)
 	if m.gitDrv == nil {
@@ -742,13 +819,14 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	if m.mode != modeRepoPick {
 		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
 	}
-	for m.repoPick.cursor != 15 {
+	for m.repoPick.cursor != 1 {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		*m = *updated.(*Model)
 	}
+	onScreen := m.filteredRepoRoots()[m.repoPick.cursor]
 
-	// A reload lands carrying only the repos that still exist.
-	m.diff.repoRoots = realRoots
+	// A reload lands carrying only the repos that still exist, re-ranked.
+	m.diff.repoRoots = []string{realRoots[1], realRoots[0]}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
@@ -757,11 +835,11 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	if m.mode != modeDiff {
 		t.Fatalf("enter should return to review, mode = %v", m.mode)
 	}
-	if m.repoPick.cursor >= len(realRoots) {
-		t.Fatalf("cursor should be clamped into the shrunken list, got %d", m.repoPick.cursor)
+	if m.repoPick.cursor >= len(m.repoPick.roots) {
+		t.Fatalf("cursor should stay inside the snapshot, got %d", m.repoPick.cursor)
 	}
-	if m.diff.repoSel != realRoots[len(realRoots)-1] {
-		t.Fatalf("enter should select the last surviving repo, got %q", m.diff.repoSel)
+	if m.diff.repoSel != onScreen {
+		t.Fatalf("enter should load the repo on the cursor row %q, got %q", onScreen, m.diff.repoSel)
 	}
 }
 
@@ -773,7 +851,7 @@ func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 			fmt.Sprintf("/home/someone/very/long/parent/path/for/wrapping/umbrella/repo-%02d", i))
 	}
 	m.diff.repoSel = m.diff.repoRoots[0]
-	m.mode = modeRepoPick
+	m.openRepoPick()
 
 	view := m.viewRepoPick()
 	if lines := len(strings.Split(view, "\n")); lines > m.height {

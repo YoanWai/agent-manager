@@ -88,6 +88,10 @@ type Model struct {
 	moveID    string
 	repoPick  repoPickState
 
+	// Repo a human picked by hand per session, outranking the agent's
+	// declaration for as long as this manager runs.
+	pickedRepos map[string]string
+
 	width  int
 	height int
 	// sessionsSized flips after the first refresh shrinks sessions left

@@ -368,6 +368,24 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	}
 }
 
+// Deleting a session must take its review target with it, or a recycled
+// session id would inherit a dead repo declaration.
+func TestDeleteDropsReviewTarget(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("a", "g1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetReviewRepo("a", "/repos/alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Delete("a"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.ReviewRepo("a"); err != nil || got != "" {
+		t.Fatalf("review target survived the delete: %q, %v", got, err)
+	}
+}
+
 func TestReviewRepoRoundTrip(t *testing.T) {
 	st := newTestStore(t)
 	if got, err := st.ReviewRepo("s1"); err != nil || got != "" {

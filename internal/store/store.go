@@ -336,6 +336,9 @@ func (s *Store) unarchiveAncestorGroups(path string) error {
 }
 
 func (s *Store) Delete(id string) error {
+	if _, err := s.db.Exec(`DELETE FROM review_targets WHERE session_id = ?`, id); err != nil {
+		return err
+	}
 	res, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id)
 	if err != nil {
 		return err

@@ -54,14 +54,12 @@ type diffState struct {
 	hl          *hlCache
 	hlPending   hlKey
 
-	// repoRoots holds the git repos found under the session cwd; when the cwd
-	// is an umbrella of several repos, repoIdx selects the one under review and
-	// the r key cycles between them. repoSel is the selected repo's root path,
-	// the stable identity carried across reloads since ResolveRepos re-ranks the
-	// list each call; review state (comments, reviewed marks) is keyed by it so
-	// a same-named file in a sibling repo never inherits the wrong marks.
+	// repoRoots holds the git repos found under the session cwd; the r key picks
+	// between them. repoSel is the selected repo's root path, the stable identity
+	// carried across reloads since ResolveRepos re-ranks the list each call;
+	// review state (comments, reviewed marks) is keyed by it so a same-named file
+	// in a sibling repo never inherits the wrong marks.
 	repoRoots []string
-	repoIdx   int
 	repoSel   string
 
 	// Set when review opened from inside a session; leaving re-attaches it.
@@ -75,10 +73,13 @@ type diffLoadedMsg struct {
 	set    diff.Set
 	fp     uint64
 	err    error
-	// repoRoots and repoIdx report which repo the load resolved to, so the UI
-	// can show the repo name and enable cycling when the cwd holds several.
+	// repoRoots and repoRoot report which repo the load resolved to, so the UI
+	// can show the repo name and offer the picker when the cwd holds several.
 	repoRoots []string
-	repoIdx   int
+	repoRoot  string
+	// Set when the agent declared a repo that the session cwd does not contain,
+	// so the fallback to the top-ranked repo is announced rather than silent.
+	declaredMissing string
 	// refresh marks a silent reload of the same session and scope (the agent
 	// edited the file under review), the only case where saved comments
 	// re-anchor. Scope cycles and session switches load a different file set.
@@ -100,8 +101,10 @@ type diffProbeMsg struct {
 // diffLoadCmd resolves the repos under the session cwd and loads the diff for
 // the wanted repo. repoWant is the previously selected repo root, matched by
 // path so the selection survives ResolveRepos re-ranking the list between
-// loads; an empty or vanished path falls back to the top-ranked repo.
-func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, refresh bool) tea.Cmd {
+// loads; an empty or vanished path falls back to the top-ranked repo. declared
+// marks repoWant as the agent's declaration rather than a remembered pick, so
+// its absence is reported instead of quietly re-ranked.
+func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, declared, refresh bool) tea.Cmd {
 	driver := m.gitDrv
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, refresh: refresh}
@@ -110,15 +113,18 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 			msg.err = err
 			return msg
 		}
-		repoIdx := 0
+		repoIdx, found := 0, false
 		for i, root := range roots {
 			if root == repoWant {
-				repoIdx = i
+				repoIdx, found = i, true
 				break
 			}
 		}
+		if declared && repoWant != "" && !found {
+			msg.declaredMissing = repoWant
+		}
 		msg.repoRoots = roots
-		msg.repoIdx = repoIdx
+		msg.repoRoot = roots[repoIdx]
 		msg.set, msg.err = diff.BuildSet(driver, roots[repoIdx], scope)
 		if msg.err == nil {
 			baseRef := ""
@@ -153,8 +159,9 @@ func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 	}
 }
 
-// retargetDiff points the open diff at a session, reloading its set. A new
-// session seeds the repo selection from the agent's declared repo, if any.
+// retargetDiff points the open diff at a session, reloading its set. The repo
+// selection is seeded from this session's hand-picked repo, then the agent's
+// declared one, then the ranking.
 func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.sessID = sess.ID
 	m.diff.gen++
@@ -165,14 +172,17 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
 	m.diff.repoRoots = nil
-	m.diff.repoIdx = 0
 	m.diff.repoSel = ""
-	if declared, err := m.store.ReviewRepo(sess.ID); err != nil {
+	fromDeclaration := false
+	if picked, ok := m.pickedRepos[sess.ID]; ok {
+		m.diff.repoSel = picked
+	} else if declared, err := m.store.ReviewRepo(sess.ID); err != nil {
 		m.err = err.Error()
-	} else {
+	} else if declared != "" {
 		m.diff.repoSel = declared
+		fromDeclaration = true
 	}
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, fromDeclaration, false)
 }
 
 func (m *Model) cycleDiffScope() tea.Cmd {
@@ -190,7 +200,7 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false, false)
 }
 
 // reviewKey scopes a session's comments and reviewed marks to the repo under
@@ -232,8 +242,11 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	}
 	m.diff.errText = ""
 	m.diff.repoRoots = msg.repoRoots
-	m.diff.repoIdx = msg.repoIdx
-	m.diff.repoSel = msg.repoRoots[msg.repoIdx]
+	m.diff.repoSel = msg.repoRoot
+	if msg.declaredMissing != "" {
+		m.err = fmt.Sprintf("declared repo %s is not under the session directory",
+			filepath.Base(msg.declaredMissing))
+	}
 	previousPath := ""
 	if fd := m.currentFileDiff(); fd != nil {
 		previousPath = fd.File.Path
@@ -286,7 +299,7 @@ func (m *Model) handleDiffProbe(msg diffProbeMsg) tea.Cmd {
 		return nil
 	}
 	m.diff.gen++
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, true)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false, true)
 }
 
 // diffRefreshCmd is the poller piggyback: every second tick while the
@@ -1039,8 +1052,8 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	left := badgeStyle.Render("◆ Review · "+sessName) + "  " +
 		pill(m.diff.scope.String(), colorAccent2) + "  " + pill(layout, colorAccent)
 	if len(m.diff.repoRoots) > 1 {
-		name := filepath.Base(m.diff.repoRoots[m.diff.repoIdx])
-		left += "  " + pill(fmt.Sprintf("%s %d/%d", name, m.diff.repoIdx+1, len(m.diff.repoRoots)), colorAccent)
+		name := filepath.Base(m.diff.repoSel)
+		left += "  " + pill(fmt.Sprintf("%s · %d repos", name, len(m.diff.repoRoots)), colorAccent)
 	}
 	if m.diff.set.BaseDesc != "" && m.diff.scope == git.ScopeBranch {
 		left += "  " + subtleStyle.Render(m.diff.set.BaseDesc)
@@ -1298,7 +1311,7 @@ func (m *Model) viewDiffFooter() string {
 		{"u", "layout"}, {"s", "scope: " + m.diff.scope.String()}, {"c", "comment"},
 	}
 	if len(m.diff.repoRoots) > 1 {
-		pairs = append(pairs, [2]string{"r", "repo: " + filepath.Base(m.diff.repoRoots[m.diff.repoIdx])})
+		pairs = append(pairs, [2]string{"r", "repo: " + filepath.Base(m.diff.repoSel)})
 	}
 	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
 		pairs = append(pairs, [2]string{"C", fmt.Sprintf("send %d", count)}, [2]string{"d", "remove"})

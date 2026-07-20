@@ -9,7 +9,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// roots is snapshotted at open because a silent refresh keeps landing while the
+// picker is up, and rankRepos reorders the live list as agents dirty repos,
+// which would slide a different repo under the cursor than the row on screen.
 type repoPickState struct {
+	roots  []string
 	filter string
 	cursor int
 }
@@ -18,8 +22,8 @@ func (m *Model) openRepoPick() {
 	if len(m.diff.repoRoots) < 2 {
 		return
 	}
-	m.repoPick = repoPickState{}
-	for i, root := range m.diff.repoRoots {
+	m.repoPick = repoPickState{roots: append([]string(nil), m.diff.repoRoots...)}
+	for i, root := range m.repoPick.roots {
 		if root == m.diff.repoSel {
 			m.repoPick.cursor = i
 			break
@@ -31,11 +35,11 @@ func (m *Model) openRepoPick() {
 
 func (m *Model) filteredRepoRoots() []string {
 	if m.repoPick.filter == "" {
-		return m.diff.repoRoots
+		return m.repoPick.roots
 	}
 	needle := strings.ToLower(m.repoPick.filter)
 	var out []string
-	for _, root := range m.diff.repoRoots {
+	for _, root := range m.repoPick.roots {
 		if strings.Contains(strings.ToLower(root), needle) {
 			out = append(out, root)
 		}
@@ -45,11 +49,9 @@ func (m *Model) filteredRepoRoots() []string {
 
 func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.filteredRepoRoots()
-	// A reload can shrink repoRoots while the picker is open, stranding the cursor.
-	if m.repoPick.cursor >= len(rows) {
-		m.repoPick.cursor = max(0, len(rows)-1)
-	}
 	switch msg.Type {
+	case tea.KeyCtrlC:
+		return m, tea.Quit
 	case tea.KeyEsc:
 		m.mode = modeDiff
 		return m, nil
@@ -94,13 +96,17 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 		return nil
 	}
 	m.diff.repoSel = root
+	if m.pickedRepos == nil {
+		m.pickedRepos = map[string]string{}
+	}
+	m.pickedRepos[sess.ID] = root
 	m.diff.gen++
 	m.diff.loading = true
 	m.diff.errText = ""
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false, false)
 }
 
 func (m *Model) repoPickWindow(count int) (start, end int) {
