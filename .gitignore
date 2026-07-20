@@ -1,5 +1,6 @@
 /agent-manager
 /am
+.worktrees/
 *.db
 *.db-*
 .DS_Store

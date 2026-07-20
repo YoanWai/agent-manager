@@ -399,53 +399,68 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
-	return m.setSelectedArchived(true)
-}
-
-func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
-	return m.setSelectedArchived(false)
-}
-
-// setSelectedArchived archives or restores the selected row: a group row
-// takes its whole subtree, a session row takes just that session.
-func (m *Model) setSelectedArchived(archived bool) (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedRow()
 	if !ok {
 		return m, nil
 	}
-	if archived {
-		if err := m.snapshotForArchive(entry); err != nil {
+	if entry.isGroup {
+		subtree, err := m.store.SessionsInSubtree(entry.group)
+		if err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
-	}
-	var err error
-	if entry.isGroup {
-		err = m.store.SetGroupArchived(entry.group, archived)
+		m.confirm = confirmTarget{
+			isGroup:  true,
+			path:     entry.group,
+			action:   actionArchive,
+			sessions: subtree,
+			label:    fmt.Sprintf("archive group %s (%d sessions)?", entry.group, len(subtree)),
+		}
 	} else {
-		err = m.store.SetArchived(entry.sess.ID, archived)
+		m.confirm = confirmTarget{
+			action:   actionArchive,
+			sessions: []store.Session{entry.sess},
+			label:    fmt.Sprintf("archive %s?", entry.sess.Name),
+		}
 	}
-	if err != nil {
-		m.err = err.Error()
-		return m, nil
-	}
-	m.err = ""
-	m.requestRefresh()
+	m.mode = modeConfirmDelete
 	return m, nil
 }
 
-// snapshotForArchive freezes each still-live pane as the session's stored
-// snapshot, so the archived preview survives the tmux window going away.
-func (m *Model) snapshotForArchive(entry treeRow) error {
-	sessions := []store.Session{entry.sess}
+func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
+	entry, ok := m.selectedRow()
+	if !ok {
+		return m, nil
+	}
 	if entry.isGroup {
-		var err error
-		sessions, err = m.store.SessionsInSubtree(entry.group)
+		subtree, err := m.store.SessionsInSubtree(entry.group)
 		if err != nil {
-			return err
+			m.err = err.Error()
+			return m, nil
+		}
+		m.confirm = confirmTarget{
+			isGroup:  true,
+			path:     entry.group,
+			action:   actionRestore,
+			sessions: subtree,
+			label:    fmt.Sprintf("restore group %s (%d sessions)?", entry.group, len(subtree)),
+		}
+	} else {
+		m.confirm = confirmTarget{
+			action:   actionRestore,
+			sessions: []store.Session{entry.sess},
+			label:    fmt.Sprintf("restore %s?", entry.sess.Name),
 		}
 	}
-	for _, sess := range sessions {
+	m.mode = modeConfirmDelete
+	return m, nil
+}
+
+// archivalSnapshot captures pane content for every still-live session
+// in the confirm target, so the snapshot survives when the tmux window
+// is later killed or the session window is reused for a new agent.
+func (m *Model) archivalSnapshot() error {
+	for _, sess := range m.confirm.sessions {
 		if !m.tmux.Exists(sess.ID) {
 			continue
 		}
@@ -453,11 +468,18 @@ func (m *Model) snapshotForArchive(entry treeRow) error {
 		if err != nil || pane == "" {
 			continue
 		}
-		if err := m.store.SetSnapshot(sess.ID, pane); err != nil {
+		if err := m.setSnapshot(sess.ID, pane); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (m *Model) applyConfirmedArchived(archived bool) error {
+	if m.confirm.isGroup {
+		return m.store.SetGroupArchived(m.confirm.path, archived)
+	}
+	return m.store.SetArchived(m.confirm.sessions[0].ID, archived)
 }
 
 func (m *Model) prepareDelete() {
@@ -530,43 +552,65 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	defer func() { m.mode = modeList }()
 	switch msg.String() {
 	case "y", "enter":
-		for _, sess := range m.confirm.sessions {
-			if err := m.tmux.Kill(sess.ID); err != nil {
+		switch m.confirm.action {
+		case actionArchive:
+			if err := m.archivalSnapshot(); err != nil {
 				m.err = err.Error()
 				return m, nil
 			}
-			if err := m.hooks.Remove(sess.ID); err != nil {
+			if err := m.applyConfirmedArchived(true); err != nil {
 				m.err = err.Error()
 				return m, nil
 			}
-			if err := m.hooks.RemoveName(sess.ID); err != nil {
+			m.err = ""
+		case actionRestore:
+			if err := m.applyConfirmedArchived(false); err != nil {
 				m.err = err.Error()
 				return m, nil
 			}
-			if err := m.hooks.RemoveReviewRepo(sess.ID); err != nil {
-				m.err = err.Error()
-				return m, nil
+			m.err = ""
+		case actionDelete:
+			for _, sess := range m.confirm.sessions {
+				if err := m.tmux.Kill(sess.ID); err != nil {
+					m.err = err.Error()
+					return m, nil
+				}
+				if err := m.hooks.Remove(sess.ID); err != nil {
+					m.err = err.Error()
+					return m, nil
+				}
+				if err := m.hooks.RemoveName(sess.ID); err != nil {
+					m.err = err.Error()
+					return m, nil
+				}
+				if err := m.hooks.RemoveReviewRepo(sess.ID); err != nil {
+					m.err = err.Error()
+					return m, nil
+				}
+				if err := m.hooks.RemoveReviewBase(sess.ID); err != nil {
+					m.err = err.Error()
+					return m, nil
+				}
+				delete(m.pickedRepos, sess.ID)
+				if err := m.store.Delete(sess.ID); err != nil {
+					m.err = err.Error()
+					return m, nil
+				}
 			}
-			if err := m.hooks.RemoveReviewBase(sess.ID); err != nil {
-				m.err = err.Error()
-				return m, nil
+			if m.confirm.isGroup {
+				removed, err := m.deleteConfirmedGroups()
+				if err != nil {
+					m.err = err.Error()
+					return m, nil
+				}
+				for _, path := range removed {
+					delete(m.collapsed, path)
+				}
+				m.persistCollapsed()
 			}
-			delete(m.pickedRepos, sess.ID)
-			if err := m.store.Delete(sess.ID); err != nil {
-				m.err = err.Error()
-				return m, nil
-			}
-		}
-		if m.confirm.isGroup {
-			removed, err := m.deleteConfirmedGroups()
-			if err != nil {
-				m.err = err.Error()
-				return m, nil
-			}
-			for _, path := range removed {
-				delete(m.collapsed, path)
-			}
-			m.persistCollapsed()
+		default:
+			m.err = fmt.Sprintf("unknown confirm action %q", m.confirm.action)
+			return m, nil
 		}
 		m.confirm = confirmTarget{}
 		m.requestRefresh()

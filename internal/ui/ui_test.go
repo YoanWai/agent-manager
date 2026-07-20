@@ -208,7 +208,8 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 	}
 
 	m.selectSessionRow(t, "alpha")
-	_, cmd := m.archiveSelected()
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 	if len(m.sessionRows()) != 0 {
 		t.Fatalf("after archive, active sessions = %d want 0", len(m.sessionRows()))
@@ -221,7 +222,8 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 	}
 
 	m.selectSessionRow(t, "alpha")
-	_, cmd = m.restoreSelected()
+	m.restoreSelected()
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 	m.showArchived = false
 	m.applyCmd(t, m.refreshCmd())
@@ -255,7 +257,8 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 	createSession(t, m, "alpha", dir, "work")
 
 	m.selectSessionRow(t, "alpha")
-	_, cmd := m.archiveSelected()
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
 	m.collapsed["work"] = true
@@ -267,7 +270,8 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 	}
 
 	m.selectSessionRow(t, "alpha")
-	_, cmd = m.restoreSelected()
+	m.restoreSelected()
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
 	active, err := m.store.ListSessions(false)
@@ -410,7 +414,8 @@ func TestDeleteGroupInArchivedViewSparesLiveSessions(t *testing.T) {
 	createSession(t, m, "live", dir, "bugs")
 
 	m.selectSessionRow(t, "old")
-	_, cmd := m.archiveSelected()
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
 	m.showArchived = true
@@ -449,7 +454,8 @@ func TestDeleteArchivedGroupInArchivedViewRemovesIt(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "empty")
-	_, cmd := m.archiveSelected()
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
 	m.showArchived = true
@@ -1673,7 +1679,8 @@ func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
 	createSession(t, m, "old-one", dir, "")
 
 	m.selectSessionRow(t, "old-one")
-	_, cmd := m.archiveSelected()
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
 	if names := sessionNames(m); len(names) != 1 || names[0] != "live-one" {
@@ -1684,6 +1691,60 @@ func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	if names := sessionNames(m); len(names) != 1 || names[0] != "old-one" {
 		t.Fatalf("archived view = %v want [old-one]", names)
+	}
+}
+
+func TestArchiveRestoreClearStaleError(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "alpha", dir, "")
+
+	m.selectSessionRow(t, "alpha")
+	m.err = "stale failure from an earlier action"
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	if m.err != "" {
+		t.Fatalf("archive should clear the stale error, err = %q", m.err)
+	}
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "alpha")
+	m.err = "stale failure from an earlier action"
+	m.restoreSelected()
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	if m.err != "" {
+		t.Fatalf("restore should clear the stale error, err = %q", m.err)
+	}
+}
+
+func TestArchiveAbortsWhenSnapshotFails(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "alpha", dir, "")
+	m.setSnapshot = func(id, snapshot string) error {
+		return errors.New("disk full")
+	}
+
+	m.selectSessionRow(t, "alpha")
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+
+	if m.err != "disk full" {
+		t.Fatalf("snapshot failure should surface, err = %q", m.err)
+	}
+	if len(m.sessionRows()) != 1 {
+		t.Fatalf("failed snapshot must not archive, active sessions = %d want 1", len(m.sessionRows()))
+	}
+	active, err := m.store.ListSessions(false)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(active) != 1 || active[0].Archived {
+		t.Fatalf("session should stay unarchived in the store, got %+v", active)
 	}
 }
 
@@ -1701,7 +1762,8 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 	createSession(t, m, "deep", dir, "proj/sub")
 
 	m.selectGroupRow(t, "proj")
-	_, cmd := m.archiveSelected()
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
 	if paths := m.groupRowPaths(); len(paths) != 0 {
@@ -1722,7 +1784,8 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 	}
 
 	m.selectGroupRow(t, "proj")
-	_, cmd = m.restoreSelected()
+	m.restoreSelected()
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 	m.showArchived = false
 	m.applyCmd(t, m.refreshCmd())
@@ -1742,7 +1805,8 @@ func TestArchiveGroupKeepsEmptyGroupInArchivedView(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 
 	m.selectGroupRow(t, "empty")
-	_, cmd := m.archiveSelected()
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
 	if paths := m.groupRowPaths(); len(paths) != 0 {
@@ -2024,9 +2088,9 @@ func TestArchivedSessionKeepsPaneSnapshot(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	if _, cmd := m.archiveSelected(); cmd != nil {
-		m.applyCmd(t, cmd)
-	}
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
 
 	snapshot, err := m.store.Snapshot(sess.ID)
 	if err != nil {
