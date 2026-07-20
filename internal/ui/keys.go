@@ -28,6 +28,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSettingsKey(msg)
 	case modeMove:
 		return m.handleMoveKey(msg)
+	case modeRepoPick:
+		return m.handleRepoPickKey(msg)
 	case modeGroupForm:
 		return m.handleGroupFormKey(msg)
 	case modeDiff:
@@ -92,6 +94,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.mode = modeHelp
 	case "D", "x":
+		return m, m.openDiff()
+	case "ctrl+r":
 		return m, m.openDiff()
 	}
 	return m, nil
@@ -539,6 +543,15 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.err = err.Error()
 				return m, nil
 			}
+			if err := m.hooks.RemoveReviewRepo(sess.ID); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			if err := m.hooks.RemoveReviewBase(sess.ID); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			delete(m.pickedRepos, sess.ID)
 			if err := m.store.Delete(sess.ID); err != nil {
 				m.err = err.Error()
 				return m, nil

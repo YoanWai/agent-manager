@@ -25,6 +25,8 @@ func (m *Model) View() string {
 		return m.viewSettings()
 	case modeMove:
 		return m.viewMove()
+	case modeRepoPick:
+		return m.viewRepoPick()
 	case modeGroupForm:
 		return m.viewGroupForm()
 	case modeDiff:

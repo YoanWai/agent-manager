@@ -175,6 +175,62 @@ func TestReadNameNormalizes(t *testing.T) {
 	}
 }
 
+func TestReviewRepoMailbox(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if _, found := manager.ReadReviewRepo("abc"); found {
+		t.Fatal("no mailbox should exist yet")
+	}
+	path := manager.ReviewRepoFile("abc")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("  /repos/alpha\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root, found := manager.ReadReviewRepo("abc")
+	if !found || root != "/repos/alpha" {
+		t.Fatalf("read = %q, %v; want /repos/alpha, true", root, found)
+	}
+	if err := manager.RemoveReviewRepo("abc"); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := manager.ReadReviewRepo("abc"); found {
+		t.Fatal("mailbox should be gone after removal")
+	}
+}
+
+func TestReviewBaseMailbox(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if _, _, found := manager.ReadReviewBase("abc"); found {
+		t.Fatal("no mailbox should exist yet")
+	}
+	path := manager.ReviewBaseFile("abc")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("  /repos/alpha\nmain\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root, ref, found := manager.ReadReviewBase("abc")
+	if !found || root != "/repos/alpha" || ref != "main" {
+		t.Fatalf("read = %q, %q, %v; want /repos/alpha, main, true", root, ref, found)
+	}
+	// A clear writes the root with an empty ref line.
+	if err := os.WriteFile(path, []byte("/repos/alpha\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root, ref, found = manager.ReadReviewBase("abc")
+	if !found || root != "/repos/alpha" || ref != "" {
+		t.Fatalf("cleared read = %q, %q, %v; want /repos/alpha, empty, true", root, ref, found)
+	}
+	if err := manager.RemoveReviewBase("abc"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, found := manager.ReadReviewBase("abc"); found {
+		t.Fatal("mailbox should be gone after removal")
+	}
+}
+
 func TestRemoveIdempotent(t *testing.T) {
 	manager := NewManager(t.TempDir())
 	if err := os.MkdirAll(filepath.Dir(manager.StatusFile("x")), 0o755); err != nil {

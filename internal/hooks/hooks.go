@@ -160,6 +160,48 @@ func (m *Manager) RemoveName(id string) error {
 	return removeIfExists(m.NameFile(id))
 }
 
+// ReviewRepoFile is the mailbox the review-repo subcommand writes the repo
+// a session is working in into; the poller applies and deletes it.
+func (m *Manager) ReviewRepoFile(id string) string {
+	return filepath.Join(m.dir, id+".reviewrepo")
+}
+
+func (m *Manager) ReadReviewRepo(id string) (root string, found bool) {
+	raw, err := os.ReadFile(m.ReviewRepoFile(id))
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(string(raw)), true
+}
+
+func (m *Manager) RemoveReviewRepo(id string) error {
+	return removeIfExists(m.ReviewRepoFile(id))
+}
+
+// ReviewBaseFile is the mailbox the review-base subcommand writes the repo
+// root and the base ref its branch diffs against into; the poller applies
+// and deletes it. The file holds two lines: the repo root then the ref.
+func (m *Manager) ReviewBaseFile(id string) string {
+	return filepath.Join(m.dir, id+".reviewbase")
+}
+
+func (m *Manager) ReadReviewBase(id string) (root, ref string, found bool) {
+	raw, err := os.ReadFile(m.ReviewBaseFile(id))
+	if err != nil {
+		return "", "", false
+	}
+	lines := strings.SplitN(string(raw), "\n", 2)
+	root = strings.TrimSpace(lines[0])
+	if len(lines) > 1 {
+		ref = strings.TrimSpace(lines[1])
+	}
+	return root, ref, true
+}
+
+func (m *Manager) RemoveReviewBase(id string) error {
+	return removeIfExists(m.ReviewBaseFile(id))
+}
+
 func removeIfExists(path string) error {
 	err := os.Remove(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {

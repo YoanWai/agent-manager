@@ -7,12 +7,19 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// card centers a bordered modal with a title and footer hint.
-func (m *Model) card(title, body, hint string) string {
+func (m *Model) cardWidth() int {
 	width := 60
 	if width > m.width-4 {
 		width = m.width - 4
 	}
+	return width
+}
+
+const cardPaddingX = 3
+
+// card centers a bordered modal with a title and footer hint.
+func (m *Model) card(title, body, hint string) string {
+	width := m.cardWidth()
 	header := badgeStyle.Render(title)
 	content := header + "\n\n" + body
 	if m.err != "" {
@@ -23,7 +30,7 @@ func (m *Model) card(title, body, hint string) string {
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorAccent).
-		Padding(1, 3).
+		Padding(1, cardPaddingX).
 		Width(width).
 		Render(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
@@ -168,9 +175,11 @@ func (m *Model) viewHelp() string {
 		{"space", "quick prompt: answer session / spawn agent in group"},
 		{"⇥", "in quick prompt: switch spawn tool"},
 		{"^v", "in quick prompt: attach a clipboard image"},
-		{"D", "review changes: whole-file diffs, comment lines, send to agent"},
+		{"D / x / ctrl+r", "review changes: whole-file diffs, comment lines, send to agent"},
 		{"s", "in review: cycle scope (uncommitted / vs base / last commit / staged)"},
-		{"r", "in review: cycle repo when the session dir holds several"},
+		{"r", "in review: pick the repo when the session dir holds several"},
+		{"b", "in review: pick the branch from the repo's worktrees"},
+		{"B", "in review: pick the base the branch diff compares against"},
 		{"F", "fold / unfold all groups"},
 		{"s", "settings (quick spawn tool, review layout)"},
 		{"t", "toggle archived view"},
