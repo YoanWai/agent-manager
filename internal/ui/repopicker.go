@@ -73,7 +73,10 @@ func (m *Model) openBranchPick() tea.Cmd {
 // override the base the branch scope diffs against, cursor on the stored base.
 // Listing shells out synchronously; a failure stays in review with the error shown.
 func (m *Model) openBasePick() tea.Cmd {
-	root := m.diff.set.Repo.Root
+	// Key off the raw selection, not the resolved toplevel: the toplevel is
+	// empty after a bad base errors the load, which would make the one control
+	// that clears the bad base unreachable exactly when it is needed.
+	root := m.diff.repoSel
 	if m.gitDrv == nil || root == "" {
 		m.err = "no repo under review"
 		return nil

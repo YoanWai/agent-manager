@@ -161,24 +161,26 @@ func (m *Model) diffHLCmd(fd diff.FileDiff, key hlKey) tea.Cmd {
 
 func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 	driver := m.gitDrv
-	root := m.diff.set.Repo.Root
+	// The override is keyed by the raw selection while the git operations run
+	// against the resolved toplevel - the same split diffLoadCmd uses, so probe
+	// and load produce the same fingerprint instead of reloading every tick.
+	repoSel := m.diff.repoSel
+	gitRoot := m.diff.set.Repo.Root
 	stor := m.store
 	return func() tea.Msg {
-		// Probe and load must derive the base the same way or the fingerprint
-		// never matches and the probe reloads every tick.
-		override, err := stor.ReviewBase(sess.ID, root)
+		override, err := stor.ReviewBase(sess.ID, repoSel)
 		if err != nil {
-			return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: root, fp: 0}
+			return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: repoSel, fp: 0}
 		}
 		baseRef := ""
 		if scope == git.ScopeBranch {
-			baseRef, _, _ = driver.BranchBase(root, override)
+			baseRef, _, _ = driver.BranchBase(gitRoot, override)
 		}
-		fp, err := driver.Fingerprint(root, scope, baseRef)
+		fp, err := driver.Fingerprint(gitRoot, scope, baseRef)
 		if err != nil {
-			return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: root, fp: 0}
+			return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: repoSel, fp: 0}
 		}
-		return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: root, fp: fp}
+		return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: repoSel, fp: fp}
 	}
 }
 

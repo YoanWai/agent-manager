@@ -1210,12 +1210,25 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	if got != "feature" {
 		t.Errorf("stored base = %q, want feature", got)
 	}
-	other, err := m.store.ReviewBase(sess.ID, filepath.Join(t.TempDir(), "other"))
+	// Genuine per-repo round trip: a base stored for a second repo must read
+	// back independently, and repo A's base must stay put.
+	repoB := gitRepoWithSecondBranch(t)
+	if err := m.store.SetReviewBase(sess.ID, repoB, "main"); err != nil {
+		t.Fatal(err)
+	}
+	baseA, err := m.store.ReviewBase(sess.ID, m.diff.repoSel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if other != "" {
-		t.Errorf("base leaked to another repo root: %q", other)
+	if baseA != "feature" {
+		t.Errorf("repo A base = %q, want feature", baseA)
+	}
+	baseB, err := m.store.ReviewBase(sess.ID, repoB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseB != "main" {
+		t.Errorf("repo B base = %q, want main", baseB)
 	}
 
 	m.pressDiffKey(t, 'B')
@@ -1229,5 +1242,142 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	}
 	if cleared != "" {
 		t.Errorf("auto should clear the stored base, got %q", cleared)
+	}
+}
+
+// umbrellaWithBranchedRepo makes a dir that is not itself a repo but holds one
+// nested repo whose feature branch diverges from main, so an overridden base
+// yields a different fingerprint than auto-detection. On macOS the discovered
+// root string is unresolved (/var/...) while git's toplevel resolves
+// (/private/var/...), which is exactly the split the base keying must survive.
+func umbrellaWithBranchedRepo(t *testing.T) (umbrella, repoRoot string) {
+	t.Helper()
+	umbrella = t.TempDir()
+	repoRoot = filepath.Join(umbrella, "solo")
+	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoRoot
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v: %s", args, err, out)
+		}
+	}
+	write := func(content string) {
+		if err := os.WriteFile(filepath.Join(repoRoot, "a.go"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("git", "init", "-b", "main")
+	write("package a\n\nfunc A() int { return 1 }\n")
+	run("git", "add", ".")
+	run("git", "commit", "-m", "c1")
+	run("git", "branch", "feature")
+	write("package a\n\nfunc A() int { return 2 }\n")
+	run("git", "add", ".")
+	run("git", "commit", "-m", "c2")
+	return umbrella, repoRoot
+}
+
+// A stored base that no longer resolves errors the branch-scope load and clears
+// the diff set, leaving the resolved toplevel empty. The B picker must still
+// open - keyed off the raw selection - so auto can clear the bad base, which is
+// the only recovery path.
+func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	dir := gitRepoWithSecondBranch(t)
+	openReviewOn(t, m, "invalidbase", dir)
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("no diff session")
+	}
+
+	if err := m.store.SetReviewBase(sess.ID, m.diff.repoSel, "gone-ref"); err != nil {
+		t.Fatal(err)
+	}
+	m.diff.scope = git.ScopeBranch
+	m.diff.gen++
+	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false))
+	if m.diff.errText == "" {
+		t.Fatal("an unresolvable stored base must error the load")
+	}
+	if m.diff.set.Repo.Root != "" {
+		t.Fatalf("the errored load should clear the diff set, root = %q", m.diff.set.Repo.Root)
+	}
+
+	m.drainCmds(t, m.openBasePick())
+	if m.mode != modeRepoPick {
+		t.Fatalf("B must open the base picker after the load errored, mode = %v (err=%q)", m.mode, m.err)
+	}
+	labels := map[string]bool{}
+	for _, row := range m.repoPick.rows {
+		labels[row.label] = true
+	}
+	if !labels["auto"] || !labels["feature"] {
+		t.Fatalf("picker should list auto and the refs, got %v", labels)
+	}
+
+	m.typeAndEnter(t, "auto")
+	base, err := m.store.ReviewBase(sess.ID, m.diff.repoSel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base != "" {
+		t.Fatalf("auto should clear the bad base, got %q", base)
+	}
+	if m.diff.errText != "" {
+		t.Fatalf("clearing the base should let the reload succeed, err = %q", m.diff.errText)
+	}
+	if m.diff.set.Repo.Root == "" {
+		t.Fatal("the recovery reload should rebuild the diff set")
+	}
+}
+
+// Probe and load must derive the base and fingerprint identically. With an
+// unresolved umbrella root and a stored override, the probe has to read the
+// base under the raw selection - not the resolved toplevel - or its fingerprint
+// diverges from the load's and review reloads every tick forever.
+func TestProbeAndLoadAgreeOnFingerprint(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, _ := umbrellaWithBranchedRepo(t)
+	openReviewOn(t, m, "probe", umbrella)
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("no diff session")
+	}
+
+	if err := m.store.SetReviewBase(sess.ID, m.diff.repoSel, "feature"); err != nil {
+		t.Fatal(err)
+	}
+	m.diff.scope = git.ScopeBranch
+	m.diff.gen++
+	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false))
+	if m.diff.errText != "" {
+		t.Fatalf("branch-scope load with a valid override should not error, err = %q", m.diff.errText)
+	}
+	if m.diff.fingerprint == 0 {
+		t.Fatal("load should record a non-zero fingerprint")
+	}
+
+	msg, ok := m.diffProbeCmd(sess, m.diff.scope)().(diffProbeMsg)
+	if !ok {
+		t.Fatal("probe closure should yield a diffProbeMsg")
+	}
+	if msg.repoRoot != m.diff.repoSel {
+		t.Fatalf("probe should report the selected repo %q, got %q", m.diff.repoSel, msg.repoRoot)
+	}
+	if msg.fp != m.diff.fingerprint {
+		t.Fatalf("probe fingerprint %d must match the load's %d or review reloads forever (repoSel=%q toplevel=%q)",
+			msg.fp, m.diff.fingerprint, m.diff.repoSel, m.diff.set.Repo.Root)
 	}
 }
