@@ -272,6 +272,27 @@ func TestWritesToADeletedSessionReportGone(t *testing.T) {
 	}
 }
 
+func TestNoOpWriteDoesNotLookLikeADeletedSession(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateSession(sample("a", "proj"))
+
+	// Rewriting a column with the value it already holds still counts as a
+	// row affected, so ErrSessionGone only ever means the row is absent.
+	writes := map[string]error{
+		"UpdateStatus":      st.UpdateStatus("a", "idle"),
+		"SetAcked":          st.SetAcked("a", false),
+		"SetAgentSessionID": st.SetAgentSessionID("a", ""),
+		"SetSnapshot":       st.SetSnapshot("a", ""),
+		"SetArchived":       st.SetArchived("a", false),
+		"RenameSession":     st.RenameSession("a", "n-a"),
+	}
+	for name, err := range writes {
+		if err != nil {
+			t.Errorf("%s writing an unchanged value = %v, want nil", name, err)
+		}
+	}
+}
+
 func TestSetGroupArchivedEmptyPathErrors(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.SetGroupArchived("", true); err == nil {
