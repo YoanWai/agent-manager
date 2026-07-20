@@ -74,7 +74,9 @@ the repo, then set its base.
 
 Both validate before writing and fail loudly rather than storing something the
 review cannot use. `review-repo` requires a path that resolves to a git repo
-root; `review-base` requires a ref that resolves in the active repo.
+root. `review-base` requires a ref that resolves in the repo review would
+currently use for that session: the declared `review_repo` when set, otherwise
+the top of the dirty-first ranking.
 
 ### Storage
 
@@ -100,8 +102,8 @@ back, so the header never claims a comparison that did not happen.
 ### Pickers
 
 `r` opens a repo picker instead of cycling: the repos found under the session
-directory, filtered as you type, enter to select. A second key opens a branch
-picker over `refs/heads` and `refs/remotes` for the active repo, with the cursor
+directory, filtered as you type, enter to select. `b` opens a branch picker over
+`refs/heads` and `refs/remotes` for the active repo, with the cursor
 starting on the current base and an `auto` entry that clears the stored ref back
 to auto-detection.
 
