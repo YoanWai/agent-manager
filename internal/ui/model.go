@@ -104,6 +104,9 @@ type confirmTarget struct {
 	path         string
 	label        string
 	sessions     []store.Session
+	// action selects the operation on "y": "archive", "restore", or ""
+	// (delete, the default).
+	action string
 }
 
 type renameTarget struct {
