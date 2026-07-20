@@ -825,11 +825,11 @@ func (m *Model) renameGroupLocally(old, newPath, dir string) {
 // image; tests swap it for a fake.
 var captureClipboardImage = clipboard.ReadImage
 
-// attachQuickImage saves a clipboard image to a temp file and records it as
-// an attachment shown beside the prompt; its path is appended to the message
-// on submit so the agent can open it. It reports whether it handled the
-// keypress: an empty clipboard returns false so the caller can fall back to a
-// plain text paste, while a real failure is surfaced through m.err.
+// attachQuickImage saves a clipboard image to a temp file and inserts that
+// path into the prompt at the cursor so the user can edit or delete it like
+// any other text. It reports whether it handled the keypress: an empty
+// clipboard returns false so the caller can fall back to a plain text paste,
+// while a real failure is surfaced through m.err.
 func (m *Model) attachQuickImage() bool {
 	data, ext, err := captureClipboardImage()
 	if err != nil {
@@ -844,23 +844,32 @@ func (m *Model) attachQuickImage() bool {
 		m.err = err.Error()
 		return true
 	}
-	m.quick.attachments = append(m.quick.attachments, path)
+	// Space-pad so the path is a standalone, backspace-deletable token.
+	token := " " + path + " "
+	// bubbles InsertString silently truncates at CharLimit; refuse when the
+	// full path would not fit so we never submit a broken partial path.
+	if limit := m.quick.input.CharLimit; limit > 0 {
+		if m.quick.input.Length()+len([]rune(token)) > limit {
+			_ = os.Remove(path)
+			m.err = "prompt is full"
+			return true
+		}
+	}
+	before := m.quick.input.Value()
+	m.quick.input.InsertString(token)
+	if !strings.Contains(m.quick.input.Value(), path) {
+		m.quick.input.SetValue(before)
+		_ = os.Remove(path)
+		m.err = "prompt is full"
+		return true
+	}
 	m.err = ""
 	return true
 }
 
-// quickMessage is the text delivered on submit: the typed prompt with any
-// attachment paths appended so the target agent can open them.
+// quickMessage is the text delivered on submit.
 func (m *Model) quickMessage() string {
-	text := strings.TrimSpace(m.quick.input.Value())
-	if len(m.quick.attachments) == 0 {
-		return text
-	}
-	paths := strings.Join(m.quick.attachments, " ")
-	if text == "" {
-		return paths
-	}
-	return text + " " + paths
+	return strings.TrimSpace(m.quick.input.Value())
 }
 
 func (m *Model) openQuickMode() {
@@ -960,7 +969,6 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 	// The prompt is delivered: clear the input before anything else can
 	// fail, so a retry cannot send it twice.
 	m.quick.input.SetValue("")
-	m.quick.attachments = nil
 	m.err = ""
 	// A queued answer means the user expects a fresh finished alert.
 	if err := m.store.SetAcked(entry.sess.ID, false); err != nil {
@@ -991,7 +999,6 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.quick.input.SetValue("")
-	m.quick.attachments = nil
 	m.err = ""
 	return m, m.refreshCmd()
 }

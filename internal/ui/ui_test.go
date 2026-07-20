@@ -1101,7 +1101,7 @@ func TestQuickPromptSendClearsAcked(t *testing.T) {
 	}
 }
 
-func TestQuickAttachImageRecordsAttachmentNotInput(t *testing.T) {
+func TestQuickAttachImageInsertsPathIntoInput(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "answer-me", t.TempDir(), "")
 	m.selectSessionRow(t, "answer-me")
@@ -1119,16 +1119,62 @@ func TestQuickAttachImageRecordsAttachmentNotInput(t *testing.T) {
 	if m.err != "" {
 		t.Fatalf("attach: %q", m.err)
 	}
-	if m.quick.input.Value() != "" {
-		t.Fatal("the path should stay out of the typed input")
+	value := strings.TrimSpace(m.quick.input.Value())
+	if value == "" {
+		t.Fatal("the path should be inserted into the typed input")
 	}
-	if len(m.quick.attachments) != 1 {
-		t.Fatalf("want 1 attachment, got %d", len(m.quick.attachments))
+	if !strings.HasSuffix(value, ".png") {
+		t.Fatalf("input should hold a .png path, got %q", value)
 	}
-	path := m.quick.attachments[0]
+	data, err := os.ReadFile(value)
+	if err != nil {
+		t.Fatalf("inserted path is not a readable file: %v", err)
+	}
+	if string(data) != "png-bytes" {
+		t.Fatalf("temp file holds %q", data)
+	}
+	if got := m.quickMessage(); got != value {
+		t.Fatalf("quickMessage = %q, want %q", got, value)
+	}
+	os.Remove(value)
+}
+
+func TestQuickAttachImagePadsBesideExistingText(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+	m.quick.input.SetValue("look at this")
+	m.quick.input.CursorEnd()
+
+	orig := captureClipboardImage
+	defer func() { captureClipboardImage = orig }()
+	captureClipboardImage = func() ([]byte, string, error) {
+		return []byte("png-bytes"), "png", nil
+	}
+
+	if !m.attachQuickImage() {
+		t.Fatal("attachQuickImage should report it handled the image")
+	}
+	value := m.quick.input.Value()
+	if !strings.HasPrefix(value, "look at this ") {
+		t.Fatalf("existing text should stay put, got %q", value)
+	}
+	if !strings.Contains(value, "agent-manager-pastes") {
+		t.Fatalf("path should land in the input, got %q", value)
+	}
+	msg := m.quickMessage()
+	if !strings.HasPrefix(msg, "look at this ") {
+		t.Fatalf("compose should space-separate path, got %q", msg)
+	}
+	fields := strings.Fields(msg)
+	if len(fields) < 4 {
+		t.Fatalf("want text tokens plus path, got %q", msg)
+	}
+	path := fields[len(fields)-1]
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("attachment path is not a readable file: %v", err)
+		t.Fatalf("padded path is not a readable file: %v", err)
 	}
 	if string(data) != "png-bytes" {
 		t.Fatalf("temp file holds %q", data)
@@ -1136,36 +1182,34 @@ func TestQuickAttachImageRecordsAttachmentNotInput(t *testing.T) {
 	os.Remove(path)
 }
 
-func TestQuickAttachmentChipShowsBasename(t *testing.T) {
-	m := buildModel(t)
-	if got := m.quickAttachmentChip(80); got != "" {
-		t.Fatalf("no attachments should render nothing, got %q", got)
-	}
-	m.quick.attachments = []string{"/tmp/agent-manager-pastes/paste-123.png"}
-	chip := m.quickAttachmentChip(80)
-	if !strings.Contains(chip, "paste-123.png") {
-		t.Fatalf("chip should show the file name, got %q", chip)
-	}
-	if strings.Contains(chip, "/tmp/") {
-		t.Fatalf("chip should not show the full path, got %q", chip)
-	}
-}
-
-func TestQuickMessageAppendsAttachmentPaths(t *testing.T) {
+func TestQuickAttachImageFullPromptSurfacesError(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "answer-me", t.TempDir(), "")
 	m.selectSessionRow(t, "answer-me")
 	m.openQuickMode()
+	// Fill the textarea to CharLimit so the padded path cannot fit.
+	limit := m.quick.input.CharLimit
+	if limit <= 0 {
+		t.Fatal("quick input needs a positive CharLimit for this test")
+	}
+	m.quick.input.SetValue(strings.Repeat("x", limit))
+	m.quick.input.CursorEnd()
+	before := m.quick.input.Value()
 
-	m.quick.input.SetValue("look at this")
-	m.quick.attachments = []string{"/tmp/a.png", "/tmp/b.png"}
-	if got := m.quickMessage(); got != "look at this /tmp/a.png /tmp/b.png" {
-		t.Fatalf("compose = %q", got)
+	orig := captureClipboardImage
+	defer func() { captureClipboardImage = orig }()
+	captureClipboardImage = func() ([]byte, string, error) {
+		return []byte("png-bytes"), "png", nil
 	}
 
-	m.quick.input.SetValue("")
-	if got := m.quickMessage(); got != "/tmp/a.png /tmp/b.png" {
-		t.Fatalf("image-only compose = %q", got)
+	if !m.attachQuickImage() {
+		t.Fatal("full-prompt attach should still handle the keypress")
+	}
+	if m.err == "" {
+		t.Fatal("full prompt should surface an error")
+	}
+	if m.quick.input.Value() != before {
+		t.Fatalf("input should stay unchanged when the path cannot fit, got %q", m.quick.input.Value())
 	}
 }
 
