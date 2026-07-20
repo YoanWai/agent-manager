@@ -845,7 +845,24 @@ func (m *Model) attachQuickImage() bool {
 		return true
 	}
 	// Space-pad so the path is a standalone, backspace-deletable token.
-	m.quick.input.InsertString(" " + path + " ")
+	token := " " + path + " "
+	// bubbles InsertString silently truncates at CharLimit; refuse when the
+	// full path would not fit so we never submit a broken partial path.
+	if limit := m.quick.input.CharLimit; limit > 0 {
+		if m.quick.input.Length()+len([]rune(token)) > limit {
+			_ = os.Remove(path)
+			m.err = "prompt is full"
+			return true
+		}
+	}
+	before := m.quick.input.Value()
+	m.quick.input.InsertString(token)
+	if !strings.Contains(m.quick.input.Value(), path) {
+		m.quick.input.SetValue(before)
+		_ = os.Remove(path)
+		m.err = "prompt is full"
+		return true
+	}
 	m.err = ""
 	return true
 }

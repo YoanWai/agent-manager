@@ -1172,7 +1172,45 @@ func TestQuickAttachImagePadsBesideExistingText(t *testing.T) {
 		t.Fatalf("want text tokens plus path, got %q", msg)
 	}
 	path := fields[len(fields)-1]
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("padded path is not a readable file: %v", err)
+	}
+	if string(data) != "png-bytes" {
+		t.Fatalf("temp file holds %q", data)
+	}
 	os.Remove(path)
+}
+
+func TestQuickAttachImageFullPromptSurfacesError(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+	// Fill the textarea to CharLimit so the padded path cannot fit.
+	limit := m.quick.input.CharLimit
+	if limit <= 0 {
+		t.Fatal("quick input needs a positive CharLimit for this test")
+	}
+	m.quick.input.SetValue(strings.Repeat("x", limit))
+	m.quick.input.CursorEnd()
+	before := m.quick.input.Value()
+
+	orig := captureClipboardImage
+	defer func() { captureClipboardImage = orig }()
+	captureClipboardImage = func() ([]byte, string, error) {
+		return []byte("png-bytes"), "png", nil
+	}
+
+	if !m.attachQuickImage() {
+		t.Fatal("full-prompt attach should still handle the keypress")
+	}
+	if m.err == "" {
+		t.Fatal("full prompt should surface an error")
+	}
+	if m.quick.input.Value() != before {
+		t.Fatalf("input should stay unchanged when the path cannot fit, got %q", m.quick.input.Value())
+	}
 }
 
 func TestQuickAttachImageNoImageFallsThrough(t *testing.T) {
