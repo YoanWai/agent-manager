@@ -100,6 +100,11 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope) (Set, error) {
 	for i, file := range files {
 		stat, known := stats[file.Path]
 		fd := FileDiff{File: file, Stat: stat, statKnown: known}
+		if !known {
+			if err := countUnknownStat(driver, repo.Root, &fd); err != nil {
+				return Set{}, err
+			}
+		}
 		if i < maxEagerFiles {
 			loadFile(driver, repo.Root, scope, baseRef, &fd)
 		}
@@ -141,23 +146,25 @@ func loadFile(driver *git.Driver, root string, scope git.Scope, baseRef string, 
 	known := fd.statKnown
 	*fd = BuildFile(oldContent, newContent, fd.File, fd.Stat)
 	fd.statKnown = known
-	if !known {
-		fd.Stat = countStat(fd.Lines)
-	}
 }
 
-func countStat(lines []Line) git.FileStat {
-	var stat git.FileStat
-	for _, line := range lines {
-		switch line.Kind {
-		case Add:
-			stat.Adds++
-		case Del:
-			stat.Dels++
-		}
+// Counting raw bytes keeps untracked files correct past the diff model's caps.
+func countUnknownStat(driver *git.Driver, root string, fd *FileDiff) error {
+	count, err := driver.CountWorkingLines(root, fd.File.Path)
+	if err != nil {
+		return err
 	}
-	return stat
+	if !count.Counted {
+		return nil
+	}
+	fd.statKnown = true
+	fd.Stat = git.FileStat{Adds: count.Lines, Binary: count.Binary}
+	fd.Binary = count.Binary
+	return nil
 }
+
+// StatKnown reports whether Stat holds a real count rather than an unknown one.
+func (fd *FileDiff) StatKnown() bool { return fd.statKnown }
 
 func fileSides(driver *git.Driver, root string, scope git.Scope, baseRef string, file git.ChangedFile) (oldContent, newContent []byte, err error) {
 	oldRef, newRef := "", ""

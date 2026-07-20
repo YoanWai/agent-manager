@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -275,9 +276,7 @@ func (d *Driver) ChangedFiles(root string, scope Scope, baseRef string) ([]Chang
 			return nil, err
 		}
 		for _, path := range splitNUL(untracked) {
-			// git reports a nested repository as a directory it will not
-			// descend into; there is nothing to diff and its changes belong
-			// to that repository's own review.
+			// a nested repository is listed as a directory and belongs to its own review
 			if strings.HasSuffix(path, "/") {
 				continue
 			}
@@ -391,6 +390,63 @@ func (d *Driver) ShowFile(root, ref, path string) ([]byte, error) {
 // IndexFile reads a file's staged content.
 func (d *Driver) IndexFile(root, path string) ([]byte, error) {
 	return d.ShowFile(root, ":0", path)
+}
+
+// maxCountBytes bounds the scan CountWorkingLines is willing to do.
+const maxCountBytes = 64 << 20
+
+// LineCount reports a file's lines; Counted is false when it could not be scanned.
+type LineCount struct {
+	Lines   int
+	Binary  bool
+	Counted bool
+}
+
+// CountWorkingLines streams a working-tree file, so files too big to diff still count.
+func (d *Driver) CountWorkingLines(root, path string) (LineCount, error) {
+	file, err := os.Open(filepath.Join(root, path))
+	if errors.Is(err, os.ErrNotExist) {
+		return LineCount{}, nil
+	}
+	if err != nil {
+		return LineCount{}, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return LineCount{}, err
+	}
+	if info.Size() > maxCountBytes {
+		return LineCount{}, nil
+	}
+
+	buf := make([]byte, 32*1024)
+	count := LineCount{Counted: true}
+	total := 0
+	var lastByte byte
+	for {
+		n, readErr := file.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			if total == 0 && IsBinary(chunk) {
+				return LineCount{Binary: true, Counted: true}, nil
+			}
+			total += n
+			count.Lines += bytes.Count(chunk, []byte{'\n'})
+			lastByte = chunk[n-1]
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return LineCount{}, readErr
+		}
+	}
+	if total > 0 && lastByte != '\n' {
+		count.Lines++
+	}
+	return count, nil
 }
 
 func (d *Driver) WorkingFile(root, path string) ([]byte, error) {

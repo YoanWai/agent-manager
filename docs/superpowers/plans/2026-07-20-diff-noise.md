@@ -396,10 +396,10 @@ Expected: the command prints the new pull request URL
 
 ## Self-Review
 
-**Spec coverage.** The spec's Phase 1 lists three defects. Untracked directories map to Task 1, missing line counts to Task 2, binary labelling to Task 3. The spec's claim that header totals correct themselves is verified in Task 3 Step 5 and stated in the PR body. The spec's Phase 1 test list maps to the tests in Tasks 1 through 3, plus the real-repository check in Task 4.
+**Spec coverage.** The spec's Phase 1 lists three defects. Untracked directories map to Task 1, missing line counts to Task 2, binary labelling to Task 3. The spec's claim about header totals is verified by `TestHeaderTotalStableWithoutLazyLoad` in `internal/diff/diff_test.go`, which asserts every listed file carries its stat straight out of `BuildSet`, past the eager-load cap and with no lazy load, so the total the header sums is correct on the first paint and does not drift as the user scrolls. The spec's Phase 1 test list maps to the tests in Tasks 1 through 3, plus the real-repository check in Task 4.
 
 **Placeholders.** Every code step carries the actual code. No TBD, no "handle edge cases", no "similar to Task N".
 
-**Type consistency.** `countStat` returns `git.FileStat` and is called only from `loadFile`. `statKnown` is written in `BuildSet` and read in `loadFile`, both in package `diff`. `ChangedFile.Path` is the field filtered in Task 1 and asserted in its test. `FileDiff.Binary` is set in `loadFile` and read in `viewDiffFileList`.
+**Type consistency.** `Driver.CountWorkingLines` returns `git.LineCount` and is called only from `countUnknownStat`, which runs in `BuildSet` and writes `git.FileStat`. `statKnown` is written in `BuildSet`, preserved across `loadFile`, and read through `FileDiff.StatKnown` in `viewDiffFileList`. `ChangedFile.Path` is the field filtered in Task 1 and asserted in its test. `FileDiff.Binary` is set in `loadFile` and read in `viewDiffFileList`.
 
 One gap found and closed: Task 2's test needs `testRepo`/`write`/`commit` helpers, which live in `internal/git/git_test.go` and may not exist in `internal/diff/diff_test.go`. Step 1 now says to copy them if missing.

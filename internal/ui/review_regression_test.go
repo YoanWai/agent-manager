@@ -468,7 +468,19 @@ func TestBinaryFileShowsBinaryNotZeroCounts(t *testing.T) {
 	openReviewOn(t, m, "binary", dir)
 
 	rendered := m.viewDiffFileList(60, 20)
-	if !strings.Contains(rendered, "binary") {
-		t.Fatalf("binary file should be labelled binary, got:\n%s", rendered)
+	row := ""
+	for _, line := range strings.Split(rendered, "\n") {
+		if strings.Contains(line, "logo.png") {
+			row = line
+		}
+	}
+	if row == "" {
+		t.Fatalf("logo.png missing from the file list:\n%s", rendered)
+	}
+	if !strings.Contains(row, "binary") {
+		t.Errorf("logo.png row should be labelled binary, got: %q", row)
+	}
+	if strings.Contains(row, "+0") || strings.Contains(row, "−0") {
+		t.Errorf("logo.png row still shows zero counts: %q", row)
 	}
 }
