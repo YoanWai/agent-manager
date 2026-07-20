@@ -1899,3 +1899,62 @@ func TestSettingsTogglesReviewLayout(t *testing.T) {
 		t.Fatal("layout should persist as unified after toggle")
 	}
 }
+
+// Archiving must freeze the pane as a stored snapshot, and the poller must
+// keep serving it instead of wiping the preview on the next tick.
+func TestArchivedSessionKeepsPaneSnapshot(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "frozen", t.TempDir(), "")
+	m.selectSessionRow(t, "frozen")
+	sess := m.sessionRows()[0]
+
+	if err := m.tmux.SendText(sess.ID, "snapshot-marker"); err != nil {
+		t.Fatalf("send text: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err == nil && strings.Contains(pane, "snapshot-marker") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pane never showed the marker, last capture: %q", pane)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if _, cmd := m.archiveSelected(); cmd != nil {
+		m.applyCmd(t, cmd)
+	}
+
+	snapshot, err := m.store.Snapshot(sess.ID)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if !strings.Contains(snapshot, "snapshot-marker") {
+		t.Fatalf("archive should persist the pane, snapshot = %q", snapshot)
+	}
+
+	m.showArchived = true
+	m.applyCmd(t, nil)
+	m.selectSessionRow(t, "frozen")
+	m.applyCmd(t, nil)
+	if !strings.Contains(m.preview, "snapshot-marker") {
+		t.Fatalf("archived preview should survive the poll tick, preview = %q", m.preview)
+	}
+
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	m.preview = ""
+	m.applyCmd(t, nil)
+	if !strings.Contains(m.preview, "snapshot-marker") {
+		t.Fatalf("archived preview should show the snapshot after tmux is gone, preview = %q", m.preview)
+	}
+
+	m.preview = ""
+	m.applyCmd(t, m.previewCmd(m.rows[m.cursor].sess))
+	if !strings.Contains(m.preview, "snapshot-marker") {
+		t.Fatalf("previewCmd should serve the snapshot for an archived session, preview = %q", m.preview)
+	}
+}

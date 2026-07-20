@@ -152,7 +152,7 @@ func (m *Model) moveCursor(delta int) tea.Cmd {
 		return nil
 	}
 	m.preview = ""
-	return m.previewCmd(sess.ID)
+	return m.previewCmd(sess)
 }
 
 // reorderSelected moves the selected session among its group siblings,
@@ -409,6 +409,12 @@ func (m *Model) setSelectedArchived(archived bool) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if archived {
+		if err := m.snapshotForArchive(entry); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+	}
 	var err error
 	if entry.isGroup {
 		err = m.store.SetGroupArchived(entry.group, archived)
@@ -422,6 +428,32 @@ func (m *Model) setSelectedArchived(archived bool) (tea.Model, tea.Cmd) {
 	m.err = ""
 	m.requestRefresh()
 	return m, nil
+}
+
+// snapshotForArchive freezes each still-live pane as the session's stored
+// snapshot, so the archived preview survives the tmux window going away.
+func (m *Model) snapshotForArchive(entry treeRow) error {
+	sessions := []store.Session{entry.sess}
+	if entry.isGroup {
+		var err error
+		sessions, err = m.store.SessionsInSubtree(entry.group)
+		if err != nil {
+			return err
+		}
+	}
+	for _, sess := range sessions {
+		if !m.tmux.Exists(sess.ID) {
+			continue
+		}
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil || pane == "" {
+			continue
+		}
+		if err := m.store.SetSnapshot(sess.ID, pane); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m *Model) prepareDelete() {

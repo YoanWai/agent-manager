@@ -314,14 +314,22 @@ func (m *Model) selectedRow() (treeRow, bool) {
 
 // previewCmd captures one session's pane and process stats right away,
 // off the render loop, for instant sidebar updates on cursor moves.
-func (m *Model) previewCmd(sessID string) tea.Cmd {
+func (m *Model) previewCmd(sess store.Session) tea.Cmd {
 	return func() tea.Msg {
-		msg := previewMsg{sessID: sessID}
-		if m.tmux.Exists(sessID) {
-			if pane, err := m.tmux.CapturePane(sessID); err == nil {
+		msg := previewMsg{sessID: sess.ID}
+		if sess.Archived {
+			snapshot, err := archivedPreview(m.store, m.tmux, sess.ID)
+			if err != nil {
+				return errMsg{err}
+			}
+			msg.preview = snapshot
+			return msg
+		}
+		if m.tmux.Exists(sess.ID) {
+			if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
 				msg.preview = pane
 			}
-			if pid, err := m.tmux.PanePID(sessID); err == nil {
+			if pid, err := m.tmux.PanePID(sess.ID); err == nil {
 				msg.proc = sysstat.Trees([]int{pid})[pid]
 			}
 		}
@@ -384,7 +392,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// tick) carries the wrong preview; resync and fetch it directly.
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
-			return m, tea.Batch(m.previewCmd(sess.ID), m.diffRefreshCmd())
+			return m, tea.Batch(m.previewCmd(sess), m.diffRefreshCmd())
 		}
 		m.proc = msg.proc
 		m.procFor = msg.procFor
