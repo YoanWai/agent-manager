@@ -6,6 +6,9 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
+	"io"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -78,7 +81,15 @@ func textResult(message string, err error) (*mcp.CallToolResult, any, error) {
 	}, nil, nil
 }
 
-// Run serves MCP over stdio until the client closes the connection.
+// Run serves MCP over stdio until the client closes the connection. A
+// client that drops the pipe without the shutdown handshake surfaces as
+// EOF, which is a normal exit, not a failure.
 func Run(configDir, sessionID, version string) error {
-	return NewServer(configDir, sessionID, version).Run(context.Background(), &mcp.StdioTransport{})
+	err := NewServer(configDir, sessionID, version).Run(context.Background(), &mcp.StdioTransport{})
+	// The SDK reports an abrupt pipe close as an internal "server is
+	// closing" wire error that wraps EOF without errors.Is support.
+	if err != nil && (errors.Is(err, io.EOF) || strings.Contains(err.Error(), "server is closing")) {
+		return nil
+	}
+	return err
 }
