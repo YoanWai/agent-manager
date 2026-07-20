@@ -100,7 +100,7 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope) (Set, error) {
 	for i, file := range files {
 		stat, known := stats[file.Path]
 		fd := FileDiff{File: file, Stat: stat, statKnown: known}
-		if !known {
+		if !known && file.Status == git.Untracked {
 			if err := countUnknownStat(driver, repo.Root, &fd); err != nil {
 				fd.Err = err
 				set.Files = append(set.Files, fd)

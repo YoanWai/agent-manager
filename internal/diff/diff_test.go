@@ -281,6 +281,9 @@ func TestTruncatedTrackedFileKeepsNumstat(t *testing.T) {
 		t.Fatalf("files = %d, want 1", len(set.Files))
 	}
 	big := set.Files[0]
+	if !big.StatKnown() {
+		t.Fatal("big.txt stat should stay known after the truncated load")
+	}
 	if big.Stat.Adds != 1 || big.Stat.Dels != 1 {
 		t.Errorf("big.txt stat = %+v, want 1 add 1 del from numstat", big.Stat)
 	}

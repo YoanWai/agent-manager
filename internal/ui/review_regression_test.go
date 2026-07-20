@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -482,6 +483,75 @@ func TestBinaryFileShowsBinaryNotZeroCounts(t *testing.T) {
 	}
 	if strings.Contains(row, "+0") || strings.Contains(row, "−0") {
 		t.Errorf("logo.png row still shows zero counts: %q", row)
+	}
+}
+
+// Rows past the eager-load cap are rendered before their content is read, so
+// the binary label has to come from numstat rather than the loaded file.
+func TestTrackedBinaryPastEagerCapShowsBinary(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v: %s", args, err, out)
+		}
+	}
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("git", "init")
+	const filler = 250
+	for i := 0; i < filler; i++ {
+		write(fmt.Sprintf("f%03d.txt", i), "one\n")
+	}
+	write("zz.bin", "\x00\x01\x02initial")
+	run("git", "add", ".")
+	run("git", "commit", "-m", "init")
+	for i := 0; i < filler; i++ {
+		write(fmt.Sprintf("f%03d.txt", i), "two\n")
+	}
+	write("zz.bin", "\x00\x01\x02changed")
+	openReviewOn(t, m, "bigbin", dir)
+
+	files := m.diff.set.Files
+	index := -1
+	for i := range files {
+		if files[i].File.Path == "zz.bin" {
+			index = i
+		}
+	}
+	if index < 0 {
+		t.Fatal("zz.bin missing from the diff set")
+	}
+	if files[index].Lines != nil || files[index].Binary {
+		t.Fatalf("zz.bin at index %d was loaded; the test needs an unloaded row", index)
+	}
+
+	rendered := m.viewDiffFileList(60, len(files)+2)
+	row := ""
+	for _, line := range strings.Split(rendered, "\n") {
+		if strings.Contains(line, "zz.bin") {
+			row = line
+		}
+	}
+	if row == "" {
+		t.Fatalf("zz.bin missing from the file list:\n%s", rendered)
+	}
+	if !strings.Contains(row, "binary") {
+		t.Errorf("zz.bin row should be labelled binary, got: %q", row)
+	}
+	if strings.Contains(row, "+0") || strings.Contains(row, "−0") {
+		t.Errorf("zz.bin row still shows zero counts: %q", row)
 	}
 }
 

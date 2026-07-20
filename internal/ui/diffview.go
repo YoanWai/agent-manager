@@ -1129,7 +1129,7 @@ func (m *Model) viewDiffFileList(width, height int) string {
 		if !fd.StatKnown() {
 			counts = mutedStyle.Render("?")
 		}
-		if fd.Binary {
+		if fd.Binary || fd.Stat.Binary {
 			counts = mutedStyle.Render("binary")
 		}
 		if count := notes[fd.File.Path]; count > 0 {

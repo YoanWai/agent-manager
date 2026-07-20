@@ -226,6 +226,12 @@ git add internal/diff/diff.go internal/diff/diff_test.go
 git commit -m "fix: count lines for untracked files instead of showing zero"
 ```
 
+**Final implementation:** the shipped code counts newlines from the raw working-tree bytes in `countUnknownStat` at `BuildSet` time, not from `fd.Lines` in `loadFile`. Deriving the stat from the diff model reported a wrong number for any file past `maxFileLines`/`maxFileBytes`, because those caps truncate `Lines` before the count is taken; the raw byte scan stays correct at any size.
+
+The scan is bounded by `maxCountBytes` (8 MiB) in `internal/git/git.go`, so a pathological file degrades to a `?` marker instead of being re-scanned on every ~2s poll. `git.LineCount` carries `Counted` to distinguish "counted zero" from "not counted", and `FileDiff.statKnown` drives the `?` render. A read error on the file surfaces on `FileDiff.Err` and keeps the review open rather than failing the whole set.
+
+The count runs only for `git.Untracked` files: `git diff --numstat` covers every path `--name-status` lists, so tracked files in every scope always have a real stat, and the working tree is the wrong side to read for the staged, last-commit, and branch scopes.
+
 ---
 
 ### Task 3: Label binary files in the review list

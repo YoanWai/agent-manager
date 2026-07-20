@@ -393,7 +393,7 @@ func (d *Driver) IndexFile(root, path string) ([]byte, error) {
 }
 
 // maxCountBytes bounds the scan CountWorkingLines is willing to do.
-const maxCountBytes = 64 << 20
+const maxCountBytes = 8 << 20
 
 // LineCount reports a file's lines; Counted is false when it could not be scanned.
 type LineCount struct {
