@@ -220,6 +220,9 @@ func (p *poller) refreshOnce() tea.Msg {
 		if err := p.applyPendingReviewRepo(&sessions[i]); err != nil {
 			return errMsg{err}
 		}
+		if err := p.applyPendingReviewBase(&sessions[i]); err != nil {
+			return errMsg{err}
+		}
 		newStatus := status.Dead
 		if pid := panes[sess.ID]; pid > 0 {
 			stat := trees[pid]
@@ -397,6 +400,19 @@ func (p *poller) applyPendingReviewRepo(sess *store.Session) error {
 		}
 	}
 	return p.hooks.RemoveReviewRepo(sess.ID)
+}
+
+func (p *poller) applyPendingReviewBase(sess *store.Session) error {
+	root, ref, found := p.hooks.ReadReviewBase(sess.ID)
+	if !found {
+		return nil
+	}
+	if root != "" {
+		if err := p.store.SetReviewBase(sess.ID, root, ref); err != nil {
+			return err
+		}
+	}
+	return p.hooks.RemoveReviewBase(sess.ID)
 }
 
 // derivePaneStatus turns one captured pane into a session status. The

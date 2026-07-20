@@ -54,3 +54,55 @@ func TestPollerAppliesPendingReviewRepo(t *testing.T) {
 		t.Fatal("mailbox should be consumed")
 	}
 }
+
+func TestPollerAppliesPendingReviewBase(t *testing.T) {
+	p, sess := newTestPollerWithSession(t)
+	path := p.hooks.ReviewBaseFile(sess.ID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("/repos/alpha\nmain\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.applyPendingReviewBase(&sess); err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.store.ReviewBase(sess.ID, "/repos/alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "main" {
+		t.Fatalf("stored review base = %q, want main", got)
+	}
+	if _, _, found := p.hooks.ReadReviewBase(sess.ID); found {
+		t.Fatal("mailbox should be consumed")
+	}
+}
+
+// An empty ref line clears the stored base, and the mailbox is still consumed.
+func TestPollerAppliesReviewBaseClear(t *testing.T) {
+	p, sess := newTestPollerWithSession(t)
+	if err := p.store.SetReviewBase(sess.ID, "/repos/alpha", "main"); err != nil {
+		t.Fatal(err)
+	}
+	path := p.hooks.ReviewBaseFile(sess.ID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("/repos/alpha\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.applyPendingReviewBase(&sess); err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.store.ReviewBase(sess.ID, "/repos/alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "" {
+		t.Fatalf("review base after clear = %q, want empty", got)
+	}
+	if _, _, found := p.hooks.ReadReviewBase(sess.ID); found {
+		t.Fatal("mailbox should be consumed")
+	}
+}

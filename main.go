@@ -43,6 +43,17 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "review-base" {
+		dir, err := config.Dir()
+		if err == nil {
+			err = runReviewBase(os.Args[2:], os.Getenv(hooks.EnvSessionID), dir)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "agent-manager:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "agent-manager:", err)
 		os.Exit(1)
@@ -125,6 +136,53 @@ func runReviewRepo(args []string, sessionID, configDir string) error {
 		return err
 	}
 	fmt.Println("review repo set to", root)
+	return nil
+}
+
+// runReviewBase records the base ref the session's branch diffs against, read
+// from the process working directory the agent runs it in. `--clear` writes an
+// empty ref line, meaning delete.
+func runReviewBase(args []string, sessionID, configDir string) error {
+	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
+		return fmt.Errorf(`usage: agent-manager review-base <ref>|--clear`)
+	}
+	if sessionID == "" {
+		return fmt.Errorf("not inside an agent-manager session (%s is unset)", hooks.EnvSessionID)
+	}
+	if !sessionIDPattern.MatchString(sessionID) {
+		return fmt.Errorf("invalid session id %q", sessionID)
+	}
+	driver, err := git.New()
+	if err != nil {
+		return err
+	}
+	repo, err := driver.OpenRepo(".")
+	if err != nil {
+		if errors.Is(err, git.ErrNotARepo) {
+			return fmt.Errorf("not inside a git repository")
+		}
+		return err
+	}
+	ref := ""
+	clear := strings.TrimSpace(args[0]) == "--clear"
+	if !clear {
+		ref = strings.TrimSpace(args[0])
+		if err := driver.ResolveRef(repo.Root, ref); err != nil {
+			return err
+		}
+	}
+	path := hooks.NewManager(configDir).ReviewBaseFile(sessionID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(repo.Root+"\n"+ref+"\n"), 0o644); err != nil {
+		return err
+	}
+	if clear {
+		fmt.Println("review base cleared for", repo.Root)
+	} else {
+		fmt.Println("review base set to", ref)
+	}
 	return nil
 }
 

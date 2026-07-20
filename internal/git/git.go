@@ -222,6 +222,32 @@ func (d *Driver) BaseRef(root string) (ref, describe string, err error) {
 	return base, candidate + "@" + short, nil
 }
 
+// BranchRefs lists local and remote branch short names, dropping origin/HEAD
+// and the bare origin ref that name a remote's default rather than a branch.
+func (d *Driver) BranchRefs(root string) ([]string, error) {
+	out, err := d.run(root, "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes")
+	if err != nil {
+		return nil, err
+	}
+	var refs []string
+	for _, line := range strings.Split(out, "\n") {
+		name := strings.TrimSpace(line)
+		if name == "" || name == "origin" || name == "origin/HEAD" {
+			continue
+		}
+		refs = append(refs, name)
+	}
+	return refs, nil
+}
+
+// ResolveRef reports whether ref names a commit reachable in root.
+func (d *Driver) ResolveRef(root, ref string) error {
+	if _, err := d.run(root, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil {
+		return fmt.Errorf("ref %q does not resolve to a commit", ref)
+	}
+	return nil
+}
+
 type Status byte
 
 const (
