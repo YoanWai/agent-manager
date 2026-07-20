@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var ErrNotARepo = errors.New("not a git repository")
@@ -132,8 +133,41 @@ func (d *Driver) ResolveRepos(cwd string) ([]string, error) {
 	if len(roots) == 0 {
 		return nil, ErrNotARepo
 	}
+	roots = d.expandWorktrees(roots)
 	d.rankRepos(roots)
 	return roots, nil
+}
+
+// expandWorktrees adds each discovered repo's linked worktrees to the
+// candidates, so a worktree living outside the umbrella still ranks.
+func (d *Driver) expandWorktrees(roots []string) []string {
+	seen := make(map[string]bool, len(roots))
+	identity := func(path string) string {
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			return resolved
+		}
+		return path
+	}
+	var expanded []string
+	add := func(path string) {
+		key := identity(path)
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		expanded = append(expanded, path)
+	}
+	for _, root := range roots {
+		add(root)
+		worktrees, err := d.Worktrees(root)
+		if err != nil {
+			continue
+		}
+		for _, worktree := range worktrees {
+			add(worktree.Root)
+		}
+	}
+	return expanded
 }
 
 func (d *Driver) discoverRepos(dir string) []string {
@@ -164,29 +198,72 @@ func (d *Driver) discoverRepos(dir string) []string {
 	return roots
 }
 
+// maxDirtyProbes caps the expensive status calls: recency ranks everything
+// cheaply first, then only the freshest few are probed for a dirty tree.
+const maxDirtyProbes = 8
+
 func (d *Driver) rankRepos(roots []string) {
-	type meta struct {
-		dirty bool
-		when  int64
-	}
-	info := make(map[string]meta, len(roots))
-	for _, root := range roots {
-		var m meta
-		if out, err := d.run(root, "status", "--porcelain"); err == nil && strings.TrimSpace(out) != "" {
-			m.dirty = true
+	when := make([]int64, len(roots))
+	forEachIndex(len(roots), func(i int) {
+		if out, err := d.run(roots[i], "log", "-1", "--format=%ct"); err == nil {
+			when[i], _ = strconv.ParseInt(strings.TrimSpace(out), 10, 64)
 		}
-		if out, err := d.run(root, "log", "-1", "--format=%ct"); err == nil {
-			m.when, _ = strconv.ParseInt(strings.TrimSpace(out), 10, 64)
-		}
-		info[root] = m
+	})
+	byWhen := make(map[string]int64, len(roots))
+	for i, root := range roots {
+		byWhen[root] = when[i]
 	}
 	sort.SliceStable(roots, func(i, j int) bool {
-		a, b := info[roots[i]], info[roots[j]]
-		if a.dirty != b.dirty {
-			return a.dirty
-		}
-		return a.when > b.when
+		return byWhen[roots[i]] > byWhen[roots[j]]
 	})
+	probes := len(roots)
+	if probes > maxDirtyProbes {
+		probes = maxDirtyProbes
+	}
+	dirty := make([]bool, probes)
+	forEachIndex(probes, func(i int) {
+		if out, err := d.run(roots[i], "status", "--porcelain"); err == nil && strings.TrimSpace(out) != "" {
+			dirty[i] = true
+		}
+	})
+	byDirty := make(map[string]bool, probes)
+	for i, root := range roots[:probes] {
+		byDirty[root] = dirty[i]
+	}
+	sort.SliceStable(roots[:probes], func(i, j int) bool {
+		return byDirty[roots[i]] && !byDirty[roots[j]]
+	})
+}
+
+// forEachIndex fans work across a bounded worker pool; each git call spawns
+// a process, so serial ranking of dozens of worktrees pays seconds in spawns.
+func forEachIndex(count int, work func(i int)) {
+	workers := 8
+	if count < workers {
+		workers = count
+	}
+	if workers <= 1 {
+		for i := 0; i < count; i++ {
+			work(i)
+		}
+		return
+	}
+	var wg sync.WaitGroup
+	next := make(chan int)
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range next {
+				work(i)
+			}
+		}()
+	}
+	for i := 0; i < count; i++ {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
 }
 
 // BaseRef finds the merge base against the repo's main branch for the
