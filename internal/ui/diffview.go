@@ -1065,13 +1065,21 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	}
 
 	adds, dels := 0, 0
+	uncounted := false
 	for _, fd := range m.diff.set.Files {
+		if !fd.StatKnown() {
+			uncounted = true
+			continue
+		}
 		adds += fd.Stat.Adds
 		dels += fd.Stat.Dels
 	}
 	right := mutedStyle.Render(fmt.Sprintf("%d files", len(m.diff.set.Files))) + subtleStyle.Render(" · ") +
 		lipgloss.NewStyle().Foreground(colorFinished).Render(fmt.Sprintf("+%d", adds)) + " " +
 		lipgloss.NewStyle().Foreground(colorErrored).Render(fmt.Sprintf("−%d", dels))
+	if uncounted {
+		right += " " + mutedStyle.Render("+?")
+	}
 	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
 		right += subtleStyle.Render(" · ") + lipgloss.NewStyle().Foreground(colorAccent).Render(fmt.Sprintf("¶%d", count))
 	}

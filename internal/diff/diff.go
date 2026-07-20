@@ -102,7 +102,9 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope) (Set, error) {
 		fd := FileDiff{File: file, Stat: stat, statKnown: known}
 		if !known {
 			if err := countUnknownStat(driver, repo.Root, &fd); err != nil {
-				return Set{}, err
+				fd.Err = err
+				set.Files = append(set.Files, fd)
+				continue
 			}
 		}
 		if i < maxEagerFiles {

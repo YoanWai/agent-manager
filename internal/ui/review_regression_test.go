@@ -484,3 +484,38 @@ func TestBinaryFileShowsBinaryNotZeroCounts(t *testing.T) {
 		t.Errorf("logo.png row still shows zero counts: %q", row)
 	}
 }
+
+// A file whose line count is unknown must not be silently summed as zero in
+// the header: the totals carry a marker instead of asserting an exact count.
+func TestHeaderMarksUncountedFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads any file regardless of mode")
+	}
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	dir := gitRepoWithTwoChangedFiles(t)
+	openReviewOn(t, m, "counted", dir)
+	if strings.Contains(m.viewDiffHeader("counted"), "?") {
+		t.Fatal("header should not flag unknown counts when every file is counted")
+	}
+
+	locked := filepath.Join(dir, "locked.go")
+	if err := os.WriteFile(locked, []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o644) })
+
+	set, err := diff.BuildSet(m.gitDrv, dir, git.ScopeUncommitted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.diff.set = set
+	if !strings.Contains(m.viewDiffHeader("counted"), "+?") {
+		t.Fatalf("header should mark the uncounted file, got %q", m.viewDiffHeader("counted"))
+	}
+}

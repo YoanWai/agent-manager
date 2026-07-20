@@ -332,3 +332,45 @@ func TestHeaderTotalStableWithoutLazyLoad(t *testing.T) {
 		t.Fatalf("total drifted after lazy loading: %d -> %d", adds, after)
 	}
 }
+
+func TestUnreadableUntrackedFileDoesNotAbortSet(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads any file regardless of mode")
+	}
+	driver, dir := testRepo(t)
+	write(t, dir, "tracked.go", "package a\n")
+	commit(t, dir, "init")
+	write(t, dir, "readable.go", "package a\n\nfunc B() {}\n")
+	write(t, dir, "locked.go", "package a\n")
+	locked := filepath.Join(dir, "locked.go")
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o644) })
+
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted)
+	if err != nil {
+		t.Fatalf("BuildSet aborted on one unreadable file: %v", err)
+	}
+	byPath := map[string]FileDiff{}
+	for _, fd := range set.Files {
+		byPath[fd.File.Path] = fd
+	}
+	readable, ok := byPath["readable.go"]
+	if !ok {
+		t.Fatal("readable.go missing from set")
+	}
+	if !readable.StatKnown() || readable.Stat.Adds != 3 {
+		t.Errorf("readable.go stat = %+v known=%v, want 3 adds", readable.Stat, readable.StatKnown())
+	}
+	bad, ok := byPath["locked.go"]
+	if !ok {
+		t.Fatal("locked.go missing from set")
+	}
+	if bad.Err == nil {
+		t.Error("locked.go should carry the count error")
+	}
+	if bad.StatKnown() {
+		t.Error("locked.go stat should stay unknown so the row renders ?")
+	}
+}
