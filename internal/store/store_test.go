@@ -367,3 +367,28 @@ func TestSnapshotRoundTrip(t *testing.T) {
 		t.Fatalf("missing session snapshot = %q, %v; want empty, nil", snapshot, err)
 	}
 }
+
+func TestReviewRepoRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	if got, err := st.ReviewRepo("s1"); err != nil || got != "" {
+		t.Fatalf("unset review repo = %q, %v; want empty, nil", got, err)
+	}
+	if err := st.SetReviewRepo("s1", "/repos/alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.ReviewRepo("s1"); err != nil || got != "/repos/alpha" {
+		t.Fatalf("review repo = %q, %v; want /repos/alpha", got, err)
+	}
+	if err := st.SetReviewRepo("s1", "/repos/bravo"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.ReviewRepo("s1"); got != "/repos/bravo" {
+		t.Fatalf("review repo after update = %q, want /repos/bravo", got)
+	}
+	if err := st.SetReviewRepo("s1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.ReviewRepo("s1"); got != "" {
+		t.Fatalf("review repo after clear = %q, want empty", got)
+	}
+}

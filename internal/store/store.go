@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -88,6 +89,10 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN agent_session_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE groups ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN snapshot TEXT NOT NULL DEFAULT ''`,
+		`CREATE TABLE IF NOT EXISTS review_targets (
+			session_id TEXT PRIMARY KEY,
+			repo_root  TEXT NOT NULL
+		)`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -106,6 +111,31 @@ func (s *Store) Setting(key string) (string, error) {
 		return "", nil
 	}
 	return value, err
+}
+
+func (s *Store) SetReviewRepo(sessionID, repoRoot string) error {
+	if repoRoot == "" {
+		_, err := s.db.Exec(`DELETE FROM review_targets WHERE session_id = ?`, sessionID)
+		return err
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO review_targets (session_id, repo_root) VALUES (?, ?)
+		 ON CONFLICT(session_id) DO UPDATE SET repo_root = excluded.repo_root`,
+		sessionID, repoRoot,
+	)
+	return err
+}
+
+func (s *Store) ReviewRepo(sessionID string) (string, error) {
+	var root string
+	err := s.db.QueryRow(`SELECT repo_root FROM review_targets WHERE session_id = ?`, sessionID).Scan(&root)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return root, nil
 }
 
 func (s *Store) SetSetting(key, value string) error {
