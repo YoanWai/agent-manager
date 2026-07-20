@@ -474,16 +474,52 @@ func (m *Model) prepareDelete() {
 		m.err = err.Error()
 		return
 	}
+	if m.showArchived {
+		m.confirm = archivedGroupDelete(entry.group, subtree)
+	} else {
+		m.confirm = m.wholeGroupDelete(entry.group, subtree)
+	}
+	m.mode = modeConfirmDelete
+}
+
+// wholeGroupDelete targets the group as the active view shows it: the
+// group ceases to exist, so its subtree goes with it, archived sessions
+// included, leaving nothing stranded under a group that is gone.
+func (m *Model) wholeGroupDelete(path string, subtree []store.Session) confirmTarget {
 	subgroups := 0
 	for _, g := range m.groups {
-		if strings.HasPrefix(g, entry.group+"/") {
+		if strings.HasPrefix(g, path+"/") {
 			subgroups++
 		}
 	}
-	label := fmt.Sprintf("delete group %s (%d subgroups, %d sessions incl. archived)? kills their tmux sessions.",
-		entry.group, subgroups, len(subtree))
-	m.confirm = confirmTarget{isGroup: true, path: entry.group, label: label, sessions: subtree}
-	m.mode = modeConfirmDelete
+	return confirmTarget{
+		isGroup:  true,
+		path:     path,
+		sessions: subtree,
+		label: fmt.Sprintf("delete group %s (%d subgroups, %d sessions incl. archived)? kills their tmux sessions.",
+			path, subgroups, len(subtree)),
+	}
+}
+
+// archivedGroupDelete targets only what the archived view shows: the
+// archived sessions under the group. The live sessions and the group
+// itself belong to the active view and survive; the group row goes only
+// once nothing is left beneath it.
+func archivedGroupDelete(path string, subtree []store.Session) confirmTarget {
+	var archived []store.Session
+	for _, sess := range subtree {
+		if sess.Archived {
+			archived = append(archived, sess)
+		}
+	}
+	return confirmTarget{
+		isGroup:      true,
+		archivedOnly: true,
+		path:         path,
+		sessions:     archived,
+		label: fmt.Sprintf("delete %s from the archive (%d archived sessions)? kills their tmux sessions, live ones stay.",
+			path, len(archived)),
+	}
 }
 
 func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -509,14 +545,13 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if m.confirm.isGroup {
-			if err := m.store.DeleteGroup(m.confirm.path); err != nil {
+			removed, err := m.deleteConfirmedGroups()
+			if err != nil {
 				m.err = err.Error()
 				return m, nil
 			}
-			for path := range m.collapsed {
-				if path == m.confirm.path || strings.HasPrefix(path, m.confirm.path+"/") {
-					delete(m.collapsed, path)
-				}
+			for _, path := range removed {
+				delete(m.collapsed, path)
 			}
 			m.persistCollapsed()
 		}
@@ -526,6 +561,15 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.confirm = confirmTarget{}
 	return m, nil
+}
+
+// deleteConfirmedGroups removes the group rows the confirmed delete
+// covers, reporting the paths that went so their fold state can go too.
+func (m *Model) deleteConfirmedGroups() ([]string, error) {
+	if m.confirm.archivedOnly {
+		return m.store.PruneArchivedGroups(m.confirm.path)
+	}
+	return m.store.DeleteGroup(m.confirm.path)
 }
 
 func (m *Model) openRename() {

@@ -97,10 +97,13 @@ type Model struct {
 }
 
 type confirmTarget struct {
-	isGroup  bool
-	path     string
-	label    string
-	sessions []store.Session
+	isGroup bool
+	// archivedOnly marks a group delete issued from the archived view,
+	// which clears the group's archive instead of the group itself.
+	archivedOnly bool
+	path         string
+	label        string
+	sessions     []store.Session
 }
 
 type renameTarget struct {
@@ -624,20 +627,8 @@ func groupClosure(groups []string, sessions []store.Session) map[string]bool {
 	return paths
 }
 
-// groupEffectivelyArchived reports whether a group path was archived, either
-// directly or by an ancestor group being archived as a whole.
 func (m *Model) groupEffectivelyArchived(path string) bool {
-	for path != "" {
-		if m.archivedGroups[path] {
-			return true
-		}
-		idx := strings.LastIndex(path, "/")
-		if idx < 0 {
-			break
-		}
-		path = path[:idx]
-	}
-	return false
+	return store.EffectivelyArchived(m.archivedGroups, path)
 }
 
 func addWithAncestors(set map[string]bool, path string) {

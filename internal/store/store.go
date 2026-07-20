@@ -292,17 +292,12 @@ func (s *Store) SetArchived(id string, archived bool) error {
 // unarchiveAncestorGroups clears the archived flag on a group path and each
 // of its ancestors, leaving descendants untouched.
 func (s *Store) unarchiveAncestorGroups(path string) error {
-	for path != "" {
-		if _, err := s.db.Exec(`UPDATE groups SET archived = 0 WHERE name = ?`, path); err != nil {
-			return err
-		}
-		idx := strings.LastIndex(path, "/")
-		if idx < 0 {
-			break
-		}
-		path = path[:idx]
-	}
-	return nil
+	var err error
+	eachAncestor(path, func(ancestor string) bool {
+		_, err = s.db.Exec(`UPDATE groups SET archived = 0 WHERE name = ?`, ancestor)
+		return err == nil
+	})
+	return err
 }
 
 func (s *Store) Delete(id string) error {
@@ -322,7 +317,7 @@ func (s *Store) SessionsInSubtree(path string) ([]Session, error) {
 	}
 	var matched []Session
 	for _, sess := range sessions {
-		if sess.Group == path || strings.HasPrefix(sess.Group, path+"/") {
+		if inSubtree(sess.Group, path) {
 			matched = append(matched, sess)
 		}
 	}
@@ -397,14 +392,99 @@ func (s *Store) RenameSession(id, name string) error {
 	return requireRow(res, id)
 }
 
-// DeleteGroup removes a group and all its descendant groups.
-func (s *Store) DeleteGroup(path string) error {
+// DeleteGroup removes a group and all its descendant groups, reporting
+// the paths it removed.
+func (s *Store) DeleteGroup(path string) ([]string, error) {
 	if path == "" {
-		return fmt.Errorf("cannot delete the root group")
+		return nil, fmt.Errorf("cannot delete the root group")
 	}
-	_, err := s.db.Exec(
-		`DELETE FROM groups WHERE name = ? OR name LIKE ? || '/%' ESCAPE '\'`, path, escapeLike(path))
-	return err
+	groups, err := s.Groups()
+	if err != nil {
+		return nil, err
+	}
+	return s.deleteGroups(groups, func(g Group) bool { return inSubtree(g.Name, path) })
+}
+
+// PruneArchivedGroups removes the groups in a subtree that are archived,
+// directly or through an archived ancestor, and hold no session anywhere
+// beneath them, reporting the paths it removed. A group that still holds
+// a session stays, and so does each of its ancestors, so no session is
+// left without a home. Deleting a group from the archived view runs this
+// instead of DeleteGroup: it clears the group rows that emptying the
+// archive left behind while the live tree keeps its own.
+func (s *Store) PruneArchivedGroups(root string) ([]string, error) {
+	sessions, err := s.ListSessions(true)
+	if err != nil {
+		return nil, err
+	}
+	occupied := map[string]bool{}
+	for _, sess := range sessions {
+		eachAncestor(sess.Group, func(path string) bool {
+			occupied[path] = true
+			return true
+		})
+	}
+	groups, err := s.Groups()
+	if err != nil {
+		return nil, err
+	}
+	archived := map[string]bool{}
+	for _, g := range groups {
+		if g.Archived {
+			archived[g.Name] = true
+		}
+	}
+	return s.deleteGroups(groups, func(g Group) bool {
+		return inSubtree(g.Name, root) && !occupied[g.Name] && EffectivelyArchived(archived, g.Name)
+	})
+}
+
+// deleteGroups removes every group the predicate selects, reporting the
+// paths it removed.
+func (s *Store) deleteGroups(groups []Group, selected func(Group) bool) ([]string, error) {
+	var removed []string
+	for _, g := range groups {
+		if !selected(g) {
+			continue
+		}
+		if _, err := s.db.Exec(`DELETE FROM groups WHERE name = ?`, g.Name); err != nil {
+			return removed, err
+		}
+		removed = append(removed, g.Name)
+	}
+	return removed, nil
+}
+
+// EffectivelyArchived reports whether a group path counts as archived,
+// either directly or because an ancestor group was archived as a whole.
+func EffectivelyArchived(archived map[string]bool, path string) bool {
+	found := false
+	eachAncestor(path, func(ancestor string) bool {
+		found = archived[ancestor]
+		return !found
+	})
+	return found
+}
+
+// inSubtree reports whether a group path is the root itself or any group
+// nested under it.
+func inSubtree(path, root string) bool {
+	return path == root || strings.HasPrefix(path, root+"/")
+}
+
+// eachAncestor visits a group path and then each of its ancestors,
+// stopping early when the visitor returns false.
+func eachAncestor(path string, visit func(string) bool) {
+	for path != "" {
+		if !visit(path) {
+			return
+		}
+		idx := strings.LastIndex(path, "/")
+		if idx < 0 {
+			return
+		}
+		path = path[:idx]
+	}
 }
 
 type Group struct {
