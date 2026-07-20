@@ -49,6 +49,10 @@ type Model struct {
 	hooks  *hooks.Manager
 	gitDrv *git.Driver
 
+	// setSnapshot writes a session's pane capture; a seam so archival
+	// snapshot failures can be exercised without a broken store.
+	setSnapshot func(id, snapshot string) error
+
 	sessions       []store.Session
 	rows           []treeRow
 	groups         []string
@@ -191,14 +195,15 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
 	return &Model{
-		cfg:       cfg,
-		store:     st,
-		tmux:      driver,
-		hooks:     hookManager,
-		gitDrv:    gitDriver,
-		poller:    newPoller(st, driver, engine, hookManager, statusSources, sessionStores, cfg.PollInterval.Duration),
-		collapsed: loadCollapsed(st),
-		mode:      modeList,
+		cfg:         cfg,
+		store:       st,
+		tmux:        driver,
+		hooks:       hookManager,
+		gitDrv:      gitDriver,
+		setSnapshot: st.SetSnapshot,
+		poller:      newPoller(st, driver, engine, hookManager, statusSources, sessionStores, cfg.PollInterval.Duration),
+		collapsed:   loadCollapsed(st),
+		mode:        modeList,
 	}
 }
 

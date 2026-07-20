@@ -1685,6 +1685,34 @@ func TestArchiveRestoreClearStaleError(t *testing.T) {
 	}
 }
 
+func TestArchiveAbortsWhenSnapshotFails(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "alpha", dir, "")
+	m.setSnapshot = func(id, snapshot string) error {
+		return errors.New("disk full")
+	}
+
+	m.selectSessionRow(t, "alpha")
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+
+	if m.err != "disk full" {
+		t.Fatalf("snapshot failure should surface, err = %q", m.err)
+	}
+	if len(m.sessionRows()) != 1 {
+		t.Fatalf("failed snapshot must not archive, active sessions = %d want 1", len(m.sessionRows()))
+	}
+	active, err := m.store.ListSessions(false)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(active) != 1 || active[0].Archived {
+		t.Fatalf("session should stay unarchived in the store, got %+v", active)
+	}
+}
+
 func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

@@ -464,7 +464,7 @@ func (m *Model) archivalSnapshot() error {
 		if err != nil || pane == "" {
 			continue
 		}
-		if err := m.store.SetSnapshot(sess.ID, pane); err != nil {
+		if err := m.setSnapshot(sess.ID, pane); err != nil {
 			return err
 		}
 	}
