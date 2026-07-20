@@ -720,6 +720,51 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 	}
 }
 
+// The poller reloads repoRoots while the picker is open, so the root list can
+// shrink under a cursor parked on a high row. Enter must not index past it.
+func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, _ := umbrellaWithTwoRepos(t)
+	openReviewOn(t, m, "shrink", umbrella)
+
+	realRoots := append([]string(nil), m.diff.repoRoots...)
+	if len(realRoots) != 2 {
+		t.Fatalf("want 2 real repos, got %v", realRoots)
+	}
+	for i := len(realRoots); i < 20; i++ {
+		m.diff.repoRoots = append(m.diff.repoRoots, filepath.Join(umbrella, fmt.Sprintf("repo-%02d", i)))
+	}
+
+	m.pressDiffKey(t, 'r')
+	if m.mode != modeRepoPick {
+		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
+	}
+	for m.repoPick.cursor != 15 {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		*m = *updated.(*Model)
+	}
+
+	// A reload lands carrying only the repos that still exist.
+	m.diff.repoRoots = realRoots
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	m.drainCmds(t, cmd)
+
+	if m.mode != modeDiff {
+		t.Fatalf("enter should return to review, mode = %v", m.mode)
+	}
+	if m.repoPick.cursor >= len(realRoots) {
+		t.Fatalf("cursor should be clamped into the shrunken list, got %d", m.repoPick.cursor)
+	}
+	if m.diff.repoSel != realRoots[len(realRoots)-1] {
+		t.Fatalf("enter should select the last surviving repo, got %q", m.diff.repoSel)
+	}
+}
+
 func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 	m := buildModel(t)
 	m.width, m.height = 80, 24
@@ -737,8 +782,12 @@ func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 	if !strings.Contains(view, "repo-00") {
 		t.Fatal("the cursor row should be visible at the top of the list")
 	}
-	if !strings.Contains(view, "more") {
-		t.Fatal("hidden rows should be reported")
+	shown := strings.Count(view, "repo-")
+	if shown == 0 || shown >= len(m.diff.repoRoots) {
+		t.Fatalf("expected a windowed subset of the repos, %d of %d rendered", shown, len(m.diff.repoRoots))
+	}
+	if want := fmt.Sprintf("+%d more", len(m.diff.repoRoots)-shown); !strings.Contains(view, want) {
+		t.Fatalf("hidden count should match the %d rows actually rendered, want %q in view", shown, want)
 	}
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})

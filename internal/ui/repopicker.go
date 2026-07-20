@@ -45,6 +45,10 @@ func (m *Model) filteredRepoRoots() []string {
 
 func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.filteredRepoRoots()
+	// A reload can shrink repoRoots while the picker is open, stranding the cursor.
+	if m.repoPick.cursor >= len(rows) {
+		m.repoPick.cursor = max(0, len(rows)-1)
+	}
 	switch msg.Type {
 	case tea.KeyEsc:
 		m.mode = modeDiff
@@ -99,8 +103,6 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }
 
-// repoPickWindow picks the slice of rows that fits the terminal, keeping the
-// cursor centred so it stays visible while moving through a long list.
 func (m *Model) repoPickWindow(count int) (start, end int) {
 	visible := max(3, m.height-repoPickChrome)
 	if count <= visible {
@@ -116,8 +118,7 @@ func (m *Model) repoPickWindow(count int) (start, end int) {
 	return start, start + visible
 }
 
-// repoPickChrome counts the card lines around the rows: border, padding,
-// title, blank spacers, an error line, the hint, and the "+N more" line.
+// Card lines around the rows: border, padding, title, spacers, error, hint, "+N more".
 const repoPickChrome = 12
 
 func (m *Model) repoPickRow(root string, selected bool) string {
