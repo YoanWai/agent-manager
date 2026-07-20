@@ -831,6 +831,45 @@ func TestChangedRegionStillDerivesWorking(t *testing.T) {
 	}
 }
 
+// A post-resize rebaseline (no prior hash) must keep finished instead of
+// inventing working from reflowed content or collapsing to idle.
+func TestRebaselineKeepsFinishedWithoutFlashingWorking(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "reflow01", Tool: "claude-hooked", Status: status.Finished}
+	before := "final answer line that wraps differently after resize\n❯ \n"
+	after := "final answer line that wraps\ndifferently after resize\n❯ \n"
+	seedRegionHash(t, m, sess, before)
+	// Without clearing, a reflow looks like streaming work.
+	if got := deriveStatus(t, m, sess, after, true); got != status.Working {
+		t.Fatalf("reflow with a prior hash should look like working (precondition), got %q", got)
+	}
+	seedRegionHash(t, m, sess, before)
+	m.poller.reflowSessions([]string{sess.ID}, func() {})
+	if got := deriveStatus(t, m, sess, after, true); got != status.Finished {
+		t.Fatalf("rebaseline after resize must keep finished, got %q", got)
+	}
+}
+
+func TestRebaselineKeepsWaitingAndWorking(t *testing.T) {
+	m := buildModel(t)
+	pane := "Which option do you prefer?\n❯ \n"
+	for _, st := range []string{status.Waiting, status.Working} {
+		sess := store.Session{ID: "reflow-" + st, Tool: "claude-hooked", Status: st}
+		if got := deriveStatus(t, m, sess, pane, true); got != st {
+			t.Fatalf("unseen baseline with status %q: got %q", st, got)
+		}
+	}
+}
+
+func TestRebaselineIdleStaysIdle(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "reflow-idle", Tool: "claude-hooked", Status: status.Idle}
+	pane := "old transcript text\n❯ \n"
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Idle {
+		t.Fatalf("unseen baseline idle should stay idle, got %q", got)
+	}
+}
+
 func TestLiveQuietTurnResolvesFinished(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()

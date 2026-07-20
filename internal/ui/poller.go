@@ -427,6 +427,22 @@ func (p *poller) applyPendingReviewBase(sess *store.Session) error {
 	return p.hooks.RemoveReviewBase(sess.ID)
 }
 
+// reflowSessions drops activity-region hashes for ids and runs reflow
+// while the poller is paused (runMu held). A poll must not capture mid-
+// resize against a pre-resize hash: that comparison treats reflow as
+// streaming and flashes every session as working for one tick.
+func (p *poller) reflowSessions(ids []string, reflow func()) {
+	if len(ids) == 0 {
+		return
+	}
+	p.runMu.Lock()
+	defer p.runMu.Unlock()
+	for _, id := range ids {
+		delete(p.paneHashes, id)
+	}
+	reflow()
+}
+
 // derivePaneStatus turns one captured pane into a session status. The
 // capture carries ANSI escapes for the preview; rules match against the
 // stripped text. Streaming output often renders without any spinner, so
@@ -438,6 +454,10 @@ func (p *poller) applyPendingReviewBase(sess *store.Session) error {
 // versus waiting. Finished is an alert: entering the session acknowledges
 // it (acked), and the pane keeps deriving finished until the next turn,
 // so acked maps it back to idle.
+//
+// A missing prior hash (first observation, or post-resize rebaseline)
+// never invents working and never collapses finished/waiting to the tool
+// default: the stored status holds until the next poll has a baseline.
 func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
 	text := ansi.Strip(pane)
 	region, hasRegion := p.engine.ActivityRegion(sess.Tool, text)
@@ -465,6 +485,8 @@ func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 			} else if turnInFlight(sess.Status) {
 				newStatus = p.engine.TurnEndedState(sess.Tool, region)
 			}
+		} else if turnInFlight(sess.Status) {
+			newStatus = sess.Status
 		}
 	}
 	if newStatus == status.Finished && sess.Acked {
