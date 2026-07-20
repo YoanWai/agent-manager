@@ -455,3 +455,20 @@ func TestExcerptKeepsRuneBoundary(t *testing.T) {
 		t.Fatalf("short excerpt = %q", short)
 	}
 }
+
+func TestBinaryFileShowsBinaryNotZeroCounts(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	dir := gitRepoWithTwoChangedFiles(t)
+	if err := os.WriteFile(filepath.Join(dir, "logo.png"), []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\x00binary"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	openReviewOn(t, m, "binary", dir)
+
+	rendered := m.viewDiffFileList(60, 20)
+	if !strings.Contains(rendered, "binary") {
+		t.Fatalf("binary file should be labelled binary, got:\n%s", rendered)
+	}
+}

@@ -1118,6 +1118,9 @@ func (m *Model) viewDiffFileList(width, height int) string {
 		}
 		counts := lipgloss.NewStyle().Foreground(colorFinished).Render(fmt.Sprintf("+%d", fd.Stat.Adds)) +
 			" " + lipgloss.NewStyle().Foreground(colorErrored).Render(fmt.Sprintf("−%d", fd.Stat.Dels))
+		if fd.Binary {
+			counts = mutedStyle.Render("binary")
+		}
 		if count := notes[fd.File.Path]; count > 0 {
 			counts = lipgloss.NewStyle().Foreground(colorAccent).Render(fmt.Sprintf("¶%d ", count)) + counts
 		}
