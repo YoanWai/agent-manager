@@ -175,7 +175,7 @@ func (m *Model) viewHelp() string {
 		{"space", "quick prompt: answer session / spawn agent in group"},
 		{"⇥", "in quick prompt: switch spawn tool"},
 		{"^v", "in quick prompt: attach a clipboard image"},
-		{"D", "review changes: whole-file diffs, comment lines, send to agent"},
+		{"D / x / ctrl+r", "review changes: whole-file diffs, comment lines, send to agent"},
 		{"s", "in review: cycle scope (uncommitted / vs base / last commit / staged)"},
 		{"r", "in review: pick the repo when the session dir holds several"},
 		{"F", "fold / unfold all groups"},

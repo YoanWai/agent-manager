@@ -95,6 +95,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeHelp
 	case "D", "x":
 		return m, m.openDiff()
+	case "ctrl+r":
+		return m, m.openDiff()
 	}
 	return m, nil
 }

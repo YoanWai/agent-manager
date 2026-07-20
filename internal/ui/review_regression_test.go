@@ -803,3 +803,22 @@ func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 		t.Fatal("the cursor must stay visible after moving to the end of the list")
 	}
 }
+
+func TestCtrlRFromListOpensReview(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	createSession(t, m, "ctrlr", gitRepoWithTwoChangedFiles(t), "")
+	m.selectSessionRow(t, "ctrlr")
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	*m = *updated.(*Model)
+	m.drainCmds(t, cmd)
+	if m.mode != modeDiff {
+		t.Fatalf("ctrl+r from the list should open review, mode = %v (err=%q)", m.mode, m.err)
+	}
+	if m.diff.reattachID != "" {
+		t.Fatal("review opened from the list should return to the list, not re-attach")
+	}
+}
