@@ -1,16 +1,15 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/mcpserver"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -54,6 +53,17 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		dir, err := config.Dir()
+		if err == nil {
+			err = mcpserver.Run(dir, os.Getenv(hooks.EnvSessionID), version)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "agent-manager:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "agent-manager:", err)
 		os.Exit(1)
@@ -68,29 +78,15 @@ func renameCommand(args []string) error {
 	return runRename(args, os.Getenv(hooks.EnvSessionID), dir)
 }
 
-var sessionIDPattern = regexp.MustCompile(`^[0-9a-f]+$`)
-
-// runRename records a session's self-chosen name for the running manager
-// to apply on its next poll. It only writes the name file; the manager
-// owns the database and the tmux label.
 func runRename(args []string, sessionID, configDir string) error {
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
 		return fmt.Errorf(`usage: agent-manager rename "<name>"`)
 	}
-	if sessionID == "" {
-		return fmt.Errorf("not inside an agent-manager session (%s is unset)", hooks.EnvSessionID)
-	}
-	if !sessionIDPattern.MatchString(sessionID) {
-		return fmt.Errorf("invalid session id %q", sessionID)
-	}
-	path := hooks.NewManager(configDir).NameFile(sessionID)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	message, err := sessioncmd.Rename(configDir, sessionID, args[0])
+	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, []byte(args[0]), 0o644); err != nil {
-		return err
-	}
-	fmt.Println("session renamed to", strings.TrimSpace(args[0]))
+	fmt.Println(message)
 	return nil
 }
 
@@ -100,42 +96,11 @@ func runReviewRepo(args []string, sessionID, configDir string) error {
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
 		return fmt.Errorf(`usage: agent-manager review-repo <path>`)
 	}
-	if sessionID == "" {
-		return fmt.Errorf("not inside an agent-manager session (%s is unset)", hooks.EnvSessionID)
-	}
-	if !sessionIDPattern.MatchString(sessionID) {
-		return fmt.Errorf("invalid session id %q", sessionID)
-	}
-	driver, err := git.New()
+	message, err := sessioncmd.ReviewRepo(configDir, sessionID, args[0])
 	if err != nil {
 		return err
 	}
-	target := strings.TrimSpace(args[0])
-	abs, err := filepath.Abs(target)
-	if err != nil {
-		return err
-	}
-	roots, err := driver.ResolveRepos(abs)
-	if err != nil {
-		if errors.Is(err, git.ErrNotARepo) {
-			return fmt.Errorf("%s is not inside a git repository", target)
-		}
-		return err
-	}
-	root := roots[0]
-	// ResolveRepos also discovers repos nested under a non-repo umbrella and
-	// ranks them, which would silently record a guess instead of a declaration.
-	if !pathWithin(abs, root) {
-		return fmt.Errorf("%s is not inside a git repository", target)
-	}
-	path := hooks.NewManager(configDir).ReviewRepoFile(sessionID)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, []byte(root), 0o644); err != nil {
-		return err
-	}
-	fmt.Println("review repo set to", root)
+	fmt.Println(message)
 	return nil
 }
 
@@ -146,55 +111,16 @@ func runReviewBase(args []string, sessionID, configDir string) error {
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
 		return fmt.Errorf(`usage: agent-manager review-base <ref>|--clear`)
 	}
-	if sessionID == "" {
-		return fmt.Errorf("not inside an agent-manager session (%s is unset)", hooks.EnvSessionID)
+	ref := strings.TrimSpace(args[0])
+	if ref == "--clear" {
+		ref = ""
 	}
-	if !sessionIDPattern.MatchString(sessionID) {
-		return fmt.Errorf("invalid session id %q", sessionID)
-	}
-	driver, err := git.New()
+	message, err := sessioncmd.ReviewBase(configDir, sessionID, ".", ref)
 	if err != nil {
 		return err
 	}
-	repo, err := driver.OpenRepo(".")
-	if err != nil {
-		if errors.Is(err, git.ErrNotARepo) {
-			return fmt.Errorf("not inside a git repository")
-		}
-		return err
-	}
-	ref := ""
-	clear := strings.TrimSpace(args[0]) == "--clear"
-	if !clear {
-		ref = strings.TrimSpace(args[0])
-		if err := driver.ResolveRef(repo.Root, ref); err != nil {
-			return err
-		}
-	}
-	path := hooks.NewManager(configDir).ReviewBaseFile(sessionID)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, []byte(repo.Root+"\n"+ref+"\n"), 0o644); err != nil {
-		return err
-	}
-	if clear {
-		fmt.Println("review base cleared for", repo.Root)
-	} else {
-		fmt.Println("review base set to", ref)
-	}
+	fmt.Println(message)
 	return nil
-}
-
-// Both sides are resolved first because git reports a toplevel with symlinks expanded.
-func pathWithin(path, root string) bool {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		path = resolved
-	}
-	if resolved, err := filepath.EvalSymlinks(root); err == nil {
-		root = resolved
-	}
-	return path == root || strings.HasPrefix(path, root+string(filepath.Separator))
 }
 
 func run() error {

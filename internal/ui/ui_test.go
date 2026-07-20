@@ -1411,7 +1411,7 @@ func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	m := buildModel(t)
 	plain := m.cfg.Tools["claude"]
-	_, env, err := m.buildLaunch(plain, plain.Command, "abcd1234")
+	_, env, err := m.buildLaunch("plain", plain, plain.Command, "abcd1234")
 	if err != nil {
 		t.Fatalf("buildLaunch: %v", err)
 	}
@@ -1420,7 +1420,7 @@ func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	}
 
 	hooked := m.cfg.Tools["claude-hooked"]
-	_, env, err = m.buildLaunch(hooked, hooked.Command, "abcd1234")
+	_, env, err = m.buildLaunch("hooked", hooked, hooked.Command, "abcd1234")
 	if err != nil {
 		t.Fatalf("buildLaunch hooked: %v", err)
 	}
@@ -1494,11 +1494,11 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 	m := buildModel(t)
 	tool := m.cfg.Tools["claude-hooked"]
 
-	command, _, err := m.buildLaunch(tool, withPrompt(tool, tool.Command, "fix the bug"), "prompt01")
+	command, _, err := m.buildLaunch("claude", tool, withPrompt(tool, tool.Command, "fix the bug"), "prompt01")
 	if err != nil {
 		t.Fatalf("buildLaunch: %v", err)
 	}
-	if !strings.HasPrefix(command, "cat 'fix the bug' --settings '") {
+	if !strings.HasPrefix(command, "cat 'fix the bug' --mcp-config '") || !strings.Contains(command, "--settings '") {
 		t.Fatalf("command = %q", command)
 	}
 

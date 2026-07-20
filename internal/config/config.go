@@ -28,7 +28,11 @@ type Tool struct {
 	ResumeByIDCommand string `toml:"resume_by_id_command"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex" or "opencode").
-	SessionStore   string `toml:"session_store"`
+	SessionStore string `toml:"session_store"`
+	// MCP picks how the agent-manager MCP server is registered into this
+	// tool's sessions: "claude", "codex", "opencode", "grok" or "none".
+	// Empty uses the tool's config key when it names a known style.
+	MCP            string `toml:"mcp"`
 	StatusSource   string `toml:"status_source"`
 	DefaultStatus  string `toml:"default_status"`
 	ActivityCutoff string `toml:"activity_cutoff"`

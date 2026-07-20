@@ -396,7 +396,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	if sess.AgentSessionID != "" && tool.ResumeByIDCommand != "" {
 		baseCommand = strings.ReplaceAll(tool.ResumeByIDCommand, "{id}", sess.AgentSessionID)
 	}
-	command, env, err := m.buildLaunch(tool, baseCommand, sess.ID)
+	command, env, err := m.buildLaunch(sess.Tool, tool, baseCommand, sess.ID)
 	if err != nil {
 		m.err = err.Error()
 		return m, nil

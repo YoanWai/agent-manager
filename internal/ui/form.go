@@ -8,6 +8,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -394,7 +395,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		agentSessionID = uuid.NewString()
 		base += " " + tool.SessionIDFlag + " " + agentSessionID
 	}
-	command, env, err := m.buildLaunch(tool, base, id)
+	command, env, err := m.buildLaunch(toolName, tool, base, id)
 	if err != nil {
 		return err
 	}
@@ -439,13 +440,17 @@ func withPrompt(tool config.Tool, command, prompt string) string {
 // can find it; tools backed by hooks additionally get the generated
 // settings file and their status-file path, plus a clean slate from any
 // earlier files under the same id.
-func (m *Model) buildLaunch(tool config.Tool, baseCommand, id string) (string, map[string]string, error) {
+func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id string) (string, map[string]string, error) {
 	if err := m.hooks.RemoveName(id); err != nil {
 		return "", nil, err
 	}
 	env := map[string]string{hooks.EnvSessionID: id}
+	command, err := mcpreg.Apply(mcpreg.Style(toolName, tool.MCP), mcpExecutable(), m.hooks.Dir(), baseCommand, env)
+	if err != nil {
+		return "", nil, err
+	}
 	if tool.StatusSource != hooks.StatusSourceClaude {
-		return baseCommand, env, nil
+		return command, env, nil
 	}
 	settingsPath, err := m.hooks.EnsureSettings()
 	if err != nil {
@@ -455,7 +460,16 @@ func (m *Model) buildLaunch(tool config.Tool, baseCommand, id string) (string, m
 		return "", nil, err
 	}
 	env[hooks.EnvStatusFile] = m.hooks.StatusFile(id)
-	return baseCommand + " --settings " + tmux.ShellQuote(settingsPath), env, nil
+	return command + " --settings " + tmux.ShellQuote(settingsPath), env, nil
+}
+
+// mcpExecutable names the binary generated MCP configs point at: the
+// running manager itself, falling back to the PATH-resolved name.
+func mcpExecutable() string {
+	if exe, err := os.Executable(); err == nil {
+		return exe
+	}
+	return "agent-manager"
 }
 
 func (m *Model) openGroupForm() {

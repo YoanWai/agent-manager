@@ -37,6 +37,12 @@ func NewManager(configDir string) *Manager {
 	return &Manager{dir: filepath.Join(configDir, "hooks")}
 }
 
+// Dir exposes the hooks directory for other generated per-session
+// artifacts, like MCP registration configs.
+func (h *Manager) Dir() string {
+	return h.dir
+}
+
 type hookCommand struct {
 	Type    string `json:"type"`
 	Command string `json:"command"`
