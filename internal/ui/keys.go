@@ -818,24 +818,20 @@ func (m *Model) renameGroupLocally(old, newPath, dir string) {
 	m.persistCollapsed()
 }
 
-// captureClipboardImage is the seam the quick bar uses to read a pasted
-// image; tests swap it for a fake.
-var captureClipboardImage = clipboard.ReadImage
+// captureClipboardImage is the seam the quick bar uses to save a pasted
+// image to a temp file; tests swap it for a fake.
+var captureClipboardImage = clipboard.SaveImage
 
-// attachQuickImageCmd reads the clipboard image off the UI thread. macOS
-// osascript conversion can take a second or more on a large screenshot;
-// returning a Cmd keeps the TUI responsive and shows a pasting chip.
+// attachQuickImageCmd reads the clipboard image off the UI thread and
+// writes it once into the pastes directory. Returning a Cmd keeps the TUI
+// responsive and shows a pasting chip while the OS clipboard is read.
 func (m *Model) attachQuickImageCmd() tea.Cmd {
 	return func() tea.Msg {
-		data, ext, err := captureClipboardImage()
+		path, err := captureClipboardImage()
 		if err != nil {
 			if errors.Is(err, clipboard.ErrNoImage) {
 				return quickImageMsg{noImage: true}
 			}
-			return quickImageMsg{err: err}
-		}
-		path, err := clipboard.SaveToTemp(data, ext)
-		if err != nil {
 			return quickImageMsg{err: err}
 		}
 		return quickImageMsg{path: path}

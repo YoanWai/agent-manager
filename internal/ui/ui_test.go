@@ -1106,10 +1106,14 @@ func TestQuickAttachImageRecordsAttachmentNotInput(t *testing.T) {
 	m.selectSessionRow(t, "answer-me")
 	m.openQuickMode()
 
+	fakePath := filepath.Join(t.TempDir(), "paste-test.png")
+	if err := os.WriteFile(fakePath, []byte("png-bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	orig := captureClipboardImage
 	defer func() { captureClipboardImage = orig }()
-	captureClipboardImage = func() ([]byte, string, error) {
-		return []byte("png-bytes"), "png", nil
+	captureClipboardImage = func() (string, error) {
+		return fakePath, nil
 	}
 
 	msg := m.attachQuickImageCmd()().(quickImageMsg)
@@ -1128,6 +1132,9 @@ func TestQuickAttachImageRecordsAttachmentNotInput(t *testing.T) {
 		t.Fatalf("want 1 attachment, got %d", len(m.quick.attachments))
 	}
 	path := m.quick.attachments[0]
+	if path != fakePath {
+		t.Fatalf("attachment path = %q, want %q", path, fakePath)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("attachment path is not a readable file: %v", err)
@@ -1271,8 +1278,8 @@ func TestQuickAttachImageRealErrorSurfaces(t *testing.T) {
 
 	orig := captureClipboardImage
 	defer func() { captureClipboardImage = orig }()
-	captureClipboardImage = func() ([]byte, string, error) {
-		return nil, "", errors.New("install wl-clipboard or xclip to paste images")
+	captureClipboardImage = func() (string, error) {
+		return "", errors.New("install wl-clipboard or xclip to paste images")
 	}
 
 	msg := m.attachQuickImageCmd()().(quickImageMsg)

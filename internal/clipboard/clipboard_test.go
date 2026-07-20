@@ -19,24 +19,28 @@ func TestReadImageDarwinWritesAndReadsBytes(t *testing.T) {
 	defer restore()()
 	goos = "darwin"
 	want := []byte("fake-png-bytes")
-	var sawScript bool
+	var sawJXA bool
 	runCmd = func(name string, args ...string) ([]byte, error) {
 		if name != "osascript" {
 			t.Fatalf("expected osascript, got %q", name)
 		}
-		sawScript = true
+		// Prefer JXA AppKit path: osascript -l JavaScript -e <script> <path>
+		if len(args) < 4 || args[0] != "-l" || args[1] != "JavaScript" {
+			t.Fatalf("want JXA invocation, got %v", args)
+		}
+		sawJXA = true
 		path := args[len(args)-1]
 		if err := os.WriteFile(path, want, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		return nil, nil
+		return []byte("12"), nil
 	}
 	data, ext, err := ReadImage()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sawScript {
-		t.Fatal("osascript was not invoked")
+	if !sawJXA {
+		t.Fatal("JXA osascript was not invoked")
 	}
 	if string(data) != string(want) || ext != "png" {
 		t.Fatalf("got %q/%q", data, ext)
@@ -47,9 +51,52 @@ func TestReadImageDarwinNoImage(t *testing.T) {
 	defer restore()()
 	goos = "darwin"
 	runCmd = func(name string, args ...string) ([]byte, error) {
-		return nil, errors.New("coercion failed")
+		return nil, errors.New("no image")
 	}
 	if _, _, err := ReadImage(); !errors.Is(err, ErrNoImage) {
+		t.Fatalf("want ErrNoImage, got %v", err)
+	}
+}
+
+func TestSaveImageDarwinWritesOnce(t *testing.T) {
+	defer restore()()
+	goos = "darwin"
+	want := []byte("single-write-png")
+	var writePath string
+	runCmd = func(name string, args ...string) ([]byte, error) {
+		writePath = args[len(args)-1]
+		if err := os.WriteFile(writePath, want, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return []byte("16"), nil
+	}
+	path, err := SaveImage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(path)
+	if !strings.Contains(path, "agent-manager-pastes") {
+		t.Fatalf("want path under pastes dir, got %q", path)
+	}
+	if writePath != path {
+		t.Fatalf("JXA should write the final path directly; wrote %q, returned %q", writePath, path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(want) {
+		t.Fatalf("got %q", data)
+	}
+}
+
+func TestSaveImageDarwinNoImage(t *testing.T) {
+	defer restore()()
+	goos = "darwin"
+	runCmd = func(name string, args ...string) ([]byte, error) {
+		return nil, errors.New("no image")
+	}
+	if _, err := SaveImage(); !errors.Is(err, ErrNoImage) {
 		t.Fatalf("want ErrNoImage, got %v", err)
 	}
 }
