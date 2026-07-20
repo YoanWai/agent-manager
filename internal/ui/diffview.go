@@ -994,7 +994,7 @@ func (m *Model) renderDiffRow(fd *diff.FileDiff, hl *fileHL, index, width int, c
 		}
 		row := padRight(prefix+text, width)
 		if cursor {
-			row = selectedRowStyle.Render(row)
+			row = renderSelectedRow(row)
 		}
 		out[i] = row
 	}
@@ -1173,7 +1173,7 @@ func (m *Model) viewDiffFileList(width, height int) string {
 		}
 		row := left + strings.Repeat(" ", gap) + counts
 		if i == m.diff.fileIdx {
-			row = selectedRowStyle.Render(padRight(row, width))
+			row = renderSelectedRow(padRight(row, width))
 		}
 		b.WriteString(row + "\n")
 	}
@@ -1257,7 +1257,7 @@ func (m *Model) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *file
 			}
 			line := leftCell + sep + rightCell
 			if i == m.diff.cursorLine {
-				line = selectedRowStyle.Render(padRight(line, width))
+				line = renderSelectedRow(padRight(line, width))
 			}
 			out = append(out, line)
 		}

@@ -285,7 +285,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 
 	if m.renamingRow(entry) {
 		line := bar + " " + guides + m.renameRowInput(entry, width-2-ansi.StringWidth(guides))
-		return selectedRowStyle.Render(padRight(line, width))
+		return renderSelectedRow(padRight(line, width))
 	}
 
 	var content string
@@ -316,7 +316,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 	}
 	line = padRight(line, width)
 	if selected {
-		return selectedRowStyle.Render(line)
+		return renderSelectedRow(line)
 	}
 	return line
 }
