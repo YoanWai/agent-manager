@@ -91,7 +91,8 @@ func (m *Model) openBasePick() tea.Cmd {
 		m.err = "session is gone"
 		return nil
 	}
-	current, err := m.store.ReviewBase(sess.ID, root)
+	// Resolve symlinks so the key matches the CLI's symlink-expanded toplevel.
+	current, err := m.store.ReviewBase(sess.ID, resolveSymlinksOrSelf(root))
 	if err != nil {
 		m.err = err.Error()
 		return nil
@@ -216,7 +217,8 @@ func (m *Model) selectBase(ref string) tea.Cmd {
 		m.err = "session is gone"
 		return nil
 	}
-	if err := m.store.SetReviewBase(sess.ID, m.diff.repoSel, ref); err != nil {
+	// Resolve symlinks so the key matches the CLI's symlink-expanded toplevel.
+	if err := m.store.SetReviewBase(sess.ID, resolveSymlinksOrSelf(m.diff.repoSel), ref); err != nil {
 		m.err = err.Error()
 		return nil
 	}

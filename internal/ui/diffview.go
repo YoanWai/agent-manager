@@ -134,8 +134,9 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 		msg.repoRoots = roots
 		msg.repoRoot = roots[repoIdx]
 		// Read the declared base only once the final root is known, since the
-		// base is keyed per repo.
-		override, err := stor.ReviewBase(sess.ID, roots[repoIdx])
+		// base is keyed per repo. Resolve symlinks so the key matches the CLI,
+		// which stores under git's symlink-expanded toplevel.
+		override, err := stor.ReviewBase(sess.ID, resolveSymlinksOrSelf(roots[repoIdx]))
 		if err != nil {
 			msg.err = err
 			return msg
@@ -168,7 +169,9 @@ func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 	gitRoot := m.diff.set.Repo.Root
 	stor := m.store
 	return func() tea.Msg {
-		override, err := stor.ReviewBase(sess.ID, repoSel)
+		// Resolve symlinks so the key matches both the CLI writer and the load
+		// closure, keeping probe and load fingerprints identical.
+		override, err := stor.ReviewBase(sess.ID, resolveSymlinksOrSelf(repoSel))
 		if err != nil {
 			return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: repoSel, fp: 0}
 		}

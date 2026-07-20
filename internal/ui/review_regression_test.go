@@ -1381,3 +1381,68 @@ func TestProbeAndLoadAgreeOnFingerprint(t *testing.T) {
 			msg.fp, m.diff.fingerprint, m.diff.repoSel, m.diff.set.Repo.Root)
 	}
 }
+
+// The CLI writes the base under git's symlink-resolved toplevel, while the UI
+// discovers umbrella repos under the raw cwd. This exercises the whole path an
+// agent's `review-base` takes: mailbox written the way the CLI writes it (the
+// resolved root), the poller applying it, then the UI load. The load must key
+// its read the same resolved way or the override silently never reaches review.
+func TestCLIReviewBaseReachesLoadAcrossSymlinkBoundary(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	_, repoRoot := umbrellaWithBranchedRepo(t)
+	umbrella := filepath.Dir(repoRoot)
+	openReviewOn(t, m, "cliboundary", umbrella)
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("no diff session")
+	}
+
+	resolvedRoot := resolveSymlinksOrSelf(m.diff.repoSel)
+	if resolvedRoot == m.diff.repoSel {
+		t.Skip("temp dir is not symlinked, so there is no raw/resolved boundary to cross")
+	}
+
+	branchReload := func() {
+		m.diff.scope = git.ScopeBranch
+		m.diff.gen++
+		m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false))
+		if m.diff.errText != "" {
+			t.Fatalf("branch-scope load should not error, err = %q", m.diff.errText)
+		}
+	}
+
+	branchReload()
+	autoFingerprint := m.diff.fingerprint
+
+	// Mirror the CLI exactly: OpenRepo yields the same symlink-resolved toplevel
+	// the review-base subcommand stores, so the mailbox holds the resolved root.
+	repo, err := m.gitDrv.OpenRepo(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repo.Root != resolvedRoot {
+		t.Fatalf("test premise broken: git toplevel %q should match the resolved selection %q", repo.Root, resolvedRoot)
+	}
+	path := m.hooks.ReviewBaseFile(sess.ID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(repo.Root+"\nfeature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.poller.applyPendingReviewBase(&sess); err != nil {
+		t.Fatal(err)
+	}
+
+	branchReload()
+	if m.diff.fingerprint == autoFingerprint {
+		t.Fatalf("the CLI-declared feature base never reached the load: fingerprint stayed at the auto value %d (base keyed under %q was read under %q)",
+			autoFingerprint, resolvedRoot, m.diff.repoSel)
+	}
+	if len(m.diff.set.Files) == 0 {
+		t.Fatal("the feature base should surface the diverging file in review")
+	}
+}
