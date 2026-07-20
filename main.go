@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,11 +99,24 @@ func runReviewRepo(args []string, sessionID, configDir string) error {
 	if err != nil {
 		return err
 	}
-	roots, err := driver.ResolveRepos(strings.TrimSpace(args[0]))
+	target := strings.TrimSpace(args[0])
+	abs, err := filepath.Abs(target)
 	if err != nil {
-		return fmt.Errorf("%s is not a git repository: %w", args[0], err)
+		return err
+	}
+	roots, err := driver.ResolveRepos(abs)
+	if err != nil {
+		if errors.Is(err, git.ErrNotARepo) {
+			return fmt.Errorf("%s is not inside a git repository", target)
+		}
+		return err
 	}
 	root := roots[0]
+	// ResolveRepos also discovers repos nested under a non-repo umbrella and
+	// ranks them, which would silently record a guess instead of a declaration.
+	if !pathWithin(abs, root) {
+		return fmt.Errorf("%s is not inside a git repository", target)
+	}
 	path := hooks.NewManager(configDir).ReviewRepoFile(sessionID)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -112,6 +126,19 @@ func runReviewRepo(args []string, sessionID, configDir string) error {
 	}
 	fmt.Println("review repo set to", root)
 	return nil
+}
+
+// pathWithin reports whether path is root or sits under it. Both sides are
+// resolved first because git reports a toplevel with symlinks expanded, which
+// on macOS turns /var into /private/var.
+func pathWithin(path, root string) bool {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	return path == root || strings.HasPrefix(path, root+string(filepath.Separator))
 }
 
 func run() error {
