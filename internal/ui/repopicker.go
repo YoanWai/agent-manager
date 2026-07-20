@@ -5,12 +5,23 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/git"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
+// pickKind selects what a picker's Enter does: retarget the repo/branch, or
+// set the diff base.
+type pickKind int
+
+const (
+	pickRepo pickKind = iota
+	pickBase
+)
+
 // pickRow is one selectable target: label is what the user reads (a repo base
-// name or a worktree's branch), root is the path selectRepo retargets to.
+// name, a worktree's branch, or a base ref), root carries the path selectRepo
+// retargets to, or the ref selectBase persists ("" for auto).
 type pickRow struct {
 	label string
 	root  string
@@ -22,6 +33,7 @@ type repoPickState struct {
 	filter string
 	cursor int
 	title  string
+	kind   pickKind
 }
 
 func (m *Model) openRepoPick() {
@@ -32,7 +44,7 @@ func (m *Model) openRepoPick() {
 	for i, root := range m.diff.repoRoots {
 		rows[i] = pickRow{label: filepath.Base(root), root: root}
 	}
-	m.openPick(rows, "⌥ Review repo")
+	m.openPick(rows, "⌥ Review repo", pickRepo, m.diff.repoSel)
 }
 
 // openBranchPick lists the currently selected repo's worktrees, one branch per
@@ -53,15 +65,48 @@ func (m *Model) openBranchPick() tea.Cmd {
 	for i, wt := range worktrees {
 		rows[i] = pickRow{label: wt.Branch, root: wt.Root}
 	}
-	m.openPick(rows, "⌥ Review branch")
+	m.openPick(rows, "⌥ Review branch", pickRepo, m.diff.repoSel)
 	return nil
 }
 
-func (m *Model) openPick(rows []pickRow, title string) {
-	m.repoPick = repoPickState{rows: rows, title: title}
-	selResolved := resolveSymlinksOrSelf(m.diff.repoSel)
+// openBasePick lists auto plus the current repo's branch refs so the user can
+// override the base the branch scope diffs against, cursor on the stored base.
+// Listing shells out synchronously; a failure stays in review with the error shown.
+func (m *Model) openBasePick() tea.Cmd {
+	root := m.diff.set.Repo.Root
+	if m.gitDrv == nil || root == "" {
+		m.err = "no repo under review"
+		return nil
+	}
+	refs, err := m.gitDrv.BranchRefs(root)
+	if err != nil {
+		m.err = err.Error()
+		return nil
+	}
+	sess, ok := m.diffSession()
+	if !ok {
+		m.err = "session is gone"
+		return nil
+	}
+	current, err := m.store.ReviewBase(sess.ID, root)
+	if err != nil {
+		m.err = err.Error()
+		return nil
+	}
+	rows := make([]pickRow, 0, len(refs)+1)
+	rows = append(rows, pickRow{label: "auto", root: ""})
+	for _, ref := range refs {
+		rows = append(rows, pickRow{label: ref, root: ref})
+	}
+	m.openPick(rows, "⌥ Diff base", pickBase, current)
+	return nil
+}
+
+func (m *Model) openPick(rows []pickRow, title string, kind pickKind, current string) {
+	m.repoPick = repoPickState{rows: rows, title: title, kind: kind}
+	selResolved := resolveSymlinksOrSelf(current)
 	for i, row := range rows {
-		if row.root == m.diff.repoSel || resolveSymlinksOrSelf(row.root) == selResolved {
+		if row.root == current || resolveSymlinksOrSelf(row.root) == selResolved {
 			m.repoPick.cursor = i
 			break
 		}
@@ -118,7 +163,11 @@ func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mode = modeDiff
-		return m, m.selectRepo(rows[m.repoPick.cursor].root)
+		row := rows[m.repoPick.cursor]
+		if m.repoPick.kind == pickBase {
+			return m, m.selectBase(row.root)
+		}
+		return m, m.selectRepo(row.root)
 	case tea.KeyRunes:
 		m.repoPick.filter += string(msg.Runes)
 		m.repoPick.cursor = 0
@@ -146,6 +195,29 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 		m.pickedRepos = map[string]string{}
 	}
 	m.pickedRepos[sess.ID] = root
+	m.diff.gen++
+	m.diff.loading = true
+	m.diff.errText = ""
+	m.diff.fileIdx = 0
+	m.diff.scroll = 0
+	m.diff.cursorLine = 0
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
+}
+
+// selectBase persists the chosen base for the current repo ("" clears to auto)
+// then reloads. It forces the branch scope so the freshly picked base is what
+// the review actually shows.
+func (m *Model) selectBase(ref string) tea.Cmd {
+	sess, ok := m.diffSession()
+	if !ok {
+		m.err = "session is gone"
+		return nil
+	}
+	if err := m.store.SetReviewBase(sess.ID, m.diff.repoSel, ref); err != nil {
+		m.err = err.Error()
+		return nil
+	}
+	m.diff.scope = git.ScopeBranch
 	m.diff.gen++
 	m.diff.loading = true
 	m.diff.errText = ""

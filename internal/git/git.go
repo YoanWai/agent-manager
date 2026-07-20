@@ -211,6 +211,12 @@ func (d *Driver) BaseRef(root string) (ref, describe string, err error) {
 	if candidate == "" {
 		return "", "", errors.New("no base branch (main/master/origin) found")
 	}
+	return d.baseRefFor(root, candidate)
+}
+
+// baseRefFor returns the merge base of candidate against HEAD and a short
+// "<candidate>@<short>" description.
+func (d *Driver) baseRefFor(root, candidate string) (ref, describe string, err error) {
 	base, err := d.run(root, "merge-base", candidate, "HEAD")
 	if err != nil {
 		return "", "", err
@@ -220,6 +226,19 @@ func (d *Driver) BaseRef(root string) (ref, describe string, err error) {
 		short = short[:7]
 	}
 	return base, candidate + "@" + short, nil
+}
+
+// BranchBase resolves the base ref the branch scope diffs against. A non-empty
+// override is validated first and fails loudly when it no longer resolves,
+// never falling back to auto-detection; empty override auto-detects.
+func (d *Driver) BranchBase(root, override string) (ref, describe string, err error) {
+	if override != "" {
+		if err := d.ResolveRef(root, override); err != nil {
+			return "", "", err
+		}
+		return d.baseRefFor(root, override)
+	}
+	return d.BaseRef(root)
 }
 
 // BranchRefs lists local and remote branch short names, dropping origin/HEAD

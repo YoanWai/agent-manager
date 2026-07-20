@@ -106,6 +106,9 @@ type diffProbeMsg struct {
 // repoWant is matched by path so the selection survives ResolveRepos re-ranking between loads.
 func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, refresh bool) tea.Cmd {
 	driver := m.gitDrv
+	// The store handle is goroutine-safe sqlite; capture it so the closure
+	// never touches the Model.
+	stor := m.store
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, refresh: refresh}
 		roots, err := driver.ResolveRepos(sess.Cwd)
@@ -130,11 +133,18 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 		}
 		msg.repoRoots = roots
 		msg.repoRoot = roots[repoIdx]
-		msg.set, msg.err = diff.BuildSet(driver, roots[repoIdx], scope)
+		// Read the declared base only once the final root is known, since the
+		// base is keyed per repo.
+		override, err := stor.ReviewBase(sess.ID, roots[repoIdx])
+		if err != nil {
+			msg.err = err
+			return msg
+		}
+		msg.set, msg.err = diff.BuildSet(driver, roots[repoIdx], scope, override)
 		if msg.err == nil {
 			baseRef := ""
 			if scope == git.ScopeBranch {
-				baseRef, _, _ = driver.BaseRef(msg.set.Repo.Root)
+				baseRef, _, _ = driver.BranchBase(msg.set.Repo.Root, override)
 			}
 			msg.fp, _ = driver.Fingerprint(msg.set.Repo.Root, scope, baseRef)
 			msg.worktrees, _ = driver.Worktrees(msg.set.Repo.Root)
@@ -152,10 +162,17 @@ func (m *Model) diffHLCmd(fd diff.FileDiff, key hlKey) tea.Cmd {
 func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 	driver := m.gitDrv
 	root := m.diff.set.Repo.Root
+	stor := m.store
 	return func() tea.Msg {
+		// Probe and load must derive the base the same way or the fingerprint
+		// never matches and the probe reloads every tick.
+		override, err := stor.ReviewBase(sess.ID, root)
+		if err != nil {
+			return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: root, fp: 0}
+		}
 		baseRef := ""
 		if scope == git.ScopeBranch {
-			baseRef, _, _ = driver.BaseRef(root)
+			baseRef, _, _ = driver.BranchBase(root, override)
 		}
 		fp, err := driver.Fingerprint(root, scope, baseRef)
 		if err != nil {
@@ -586,6 +603,8 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openRepoPick()
 	case "b":
 		return m, m.openBranchPick()
+	case "B":
+		return m, m.openBasePick()
 	case "u":
 		lineIdx := m.cursorDiffLine()
 		m.diff.sideBySide = !m.diff.sideBySide
@@ -1319,7 +1338,7 @@ func (m *Model) viewDiffFooter() string {
 	}
 	pairs := [][2]string{
 		{"↑↓", "scroll"}, {"J/K", "file"}, {"n/N", "change"}, {"space", "reviewed"},
-		{"u", "layout"}, {"s", "scope: " + m.diff.scope.String()}, {"c", "comment"},
+		{"u", "layout"}, {"s", "scope: " + m.diff.scope.String()}, {"B", "base"}, {"c", "comment"},
 	}
 	if len(m.diff.repoRoots) > 1 {
 		pairs = append(pairs, [2]string{"r", "repo: " + filepath.Base(m.diff.repoSel)})

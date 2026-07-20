@@ -48,10 +48,11 @@ type FileDiff struct {
 }
 
 type Set struct {
-	Repo     git.Repo
-	Scope    git.Scope
-	BaseDesc string
-	Files    []FileDiff
+	Repo         git.Repo
+	Scope        git.Scope
+	BaseDesc     string
+	BaseOverride string
+	Files        []FileDiff
 }
 
 const (
@@ -62,19 +63,21 @@ const (
 	maxSpanBlock  = 200
 )
 
-// BuildSet loads and diffs every changed file for a scope.
-func BuildSet(driver *git.Driver, cwd string, scope git.Scope) (Set, error) {
+// BuildSet loads and diffs every changed file for a scope. A non-empty
+// baseOverride selects the ScopeBranch base and fails loudly when it no
+// longer resolves; empty keeps auto-detection.
+func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride string) (Set, error) {
 	repo, err := driver.OpenRepo(cwd)
 	if err != nil {
 		return Set{}, err
 	}
-	set := Set{Repo: repo, Scope: scope}
+	set := Set{Repo: repo, Scope: scope, BaseOverride: baseOverride}
 
 	baseRef := ""
 	switch scope {
 	case git.ScopeBranch:
 		var describe string
-		baseRef, describe, err = driver.BaseRef(repo.Root)
+		baseRef, describe, err = driver.BranchBase(repo.Root, baseOverride)
 		if err != nil {
 			return Set{}, err
 		}
@@ -126,7 +129,7 @@ func EnsureFile(driver *git.Driver, set *Set, index int) {
 	}
 	baseRef := ""
 	if set.Scope == git.ScopeBranch {
-		baseRef, _, _ = driver.BaseRef(set.Repo.Root)
+		baseRef, _, _ = driver.BranchBase(set.Repo.Root, set.BaseOverride)
 	}
 	loadFile(driver, set.Repo.Root, set.Scope, baseRef, fd)
 }

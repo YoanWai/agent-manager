@@ -179,6 +179,7 @@ func (m *Model) viewHelp() string {
 		{"s", "in review: cycle scope (uncommitted / vs base / last commit / staged)"},
 		{"r", "in review: pick the repo when the session dir holds several"},
 		{"b", "in review: pick the branch from the repo's worktrees"},
+		{"B", "in review: pick the base the branch diff compares against"},
 		{"F", "fold / unfold all groups"},
 		{"s", "settings (quick spawn tool, review layout)"},
 		{"t", "toggle archived view"},

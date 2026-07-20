@@ -763,7 +763,7 @@ func TestHeaderMarksUncountedFile(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(locked, 0o644) })
 
-	set, err := diff.BuildSet(m.gitDrv, dir, git.ScopeUncommitted)
+	set, err := diff.BuildSet(m.gitDrv, dir, git.ScopeUncommitted, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1124,5 +1124,110 @@ func TestCtrlRFromListOpensReview(t *testing.T) {
 	}
 	if m.diff.reattachID != "" {
 		t.Fatal("review opened from the list should return to the list, not re-attach")
+	}
+}
+
+func gitRepoWithSecondBranch(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v: %s", args, err, out)
+		}
+	}
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("git", "init", "-b", "main")
+	write("a.go", "package a\n\nfunc A() int { return 1 }\n")
+	run("git", "add", ".")
+	run("git", "commit", "-m", "c1")
+	run("git", "branch", "feature")
+	write("a.go", "package a\n\nfunc A() int { return 2 }\n")
+	run("git", "add", ".")
+	run("git", "commit", "-m", "c2")
+	return dir
+}
+
+func (m *Model) typeAndEnter(t *testing.T, text string) {
+	t.Helper()
+	for _, r := range text {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		*m = *updated.(*Model)
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	m.drainCmds(t, cmd)
+}
+
+// The B picker lists auto plus the repo's refs; picking a ref persists it per
+// repo and forces the branch scope, and auto clears the stored base.
+func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	dir := gitRepoWithSecondBranch(t)
+	openReviewOn(t, m, "base", dir)
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("no diff session")
+	}
+	if m.diff.scope == git.ScopeBranch {
+		t.Fatal("precondition: scope should start off vs base so the switch is observable")
+	}
+
+	m.pressDiffKey(t, 'B')
+	if m.mode != modeRepoPick {
+		t.Fatalf("B should open the base picker, mode = %v", m.mode)
+	}
+	labels := map[string]bool{}
+	for _, row := range m.repoPick.rows {
+		labels[row.label] = true
+	}
+	if !labels["auto"] || !labels["feature"] {
+		t.Fatalf("picker should list auto and feature, got %v", labels)
+	}
+
+	m.typeAndEnter(t, "feature")
+	if m.mode != modeDiff {
+		t.Fatalf("enter should return to review, mode = %v", m.mode)
+	}
+	if m.diff.scope != git.ScopeBranch {
+		t.Errorf("picking a base should switch scope to vs base, got %v", m.diff.scope)
+	}
+	got, err := m.store.ReviewBase(sess.ID, m.diff.repoSel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "feature" {
+		t.Errorf("stored base = %q, want feature", got)
+	}
+	other, err := m.store.ReviewBase(sess.ID, filepath.Join(t.TempDir(), "other"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other != "" {
+		t.Errorf("base leaked to another repo root: %q", other)
+	}
+
+	m.pressDiffKey(t, 'B')
+	if m.mode != modeRepoPick {
+		t.Fatalf("B should reopen the base picker, mode = %v", m.mode)
+	}
+	m.typeAndEnter(t, "auto")
+	cleared, err := m.store.ReviewBase(sess.ID, m.diff.repoSel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared != "" {
+		t.Errorf("auto should clear the stored base, got %q", cleared)
 	}
 }
