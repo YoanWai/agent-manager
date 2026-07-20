@@ -1446,3 +1446,30 @@ func TestCLIReviewBaseReachesLoadAcrossSymlinkBoundary(t *testing.T) {
 		t.Fatal("the feature base should surface the diverging file in review")
 	}
 }
+
+// The review header always names the repo and its branch; in branch scope it
+// shows the base and the branch it diffs into.
+func TestReviewHeaderShowsRepoBranchAndBase(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	dir := gitRepoWithTwoChangedFiles(t)
+	openReviewOn(t, m, "hdr", dir)
+
+	header := m.viewDiffHeader("hdr")
+	if !strings.Contains(header, filepath.Base(dir)) {
+		t.Fatalf("header should name the repo, got %q", header)
+	}
+	if !strings.Contains(header, "main") {
+		t.Fatalf("header should show the branch, got %q", header)
+	}
+
+	for m.diff.scope != git.ScopeBranch {
+		m.drainCmds(t, m.cycleDiffScope())
+	}
+	header = m.viewDiffHeader("hdr")
+	if !strings.Contains(header, "→ main") {
+		t.Fatalf("branch scope header should show base → branch, got %q", header)
+	}
+}

@@ -557,3 +557,29 @@ func TestResolveReposIncludesOutsideWorktrees(t *testing.T) {
 		t.Fatalf("want repo + worktree once each, got %v", roots)
 	}
 }
+
+func TestResolveReposSingleIncludesWorktrees(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.go", "package a\n")
+	commit(t, dir, "init")
+
+	worktree := filepath.Join(t.TempDir(), "wt-feature")
+	cmd := exec.Command("git", "worktree", "add", "-b", "feature/x", worktree)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v: %s", err, out)
+	}
+
+	roots, err := driver.ResolveRepos(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roots) != 2 {
+		t.Fatalf("want repo + worktree, got %v", roots)
+	}
+	resolvedRepo, _ := filepath.EvalSymlinks(dir)
+	first, _ := filepath.EvalSymlinks(roots[0])
+	if first != resolvedRepo {
+		t.Fatalf("cwd repo should stay first, got %v", roots)
+	}
+}

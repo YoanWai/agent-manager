@@ -37,7 +37,7 @@ type repoPickState struct {
 }
 
 func (m *Model) openRepoPick() {
-	if len(m.diff.repoRoots) < 2 {
+	if len(m.diff.repoRoots) == 0 {
 		return
 	}
 	rows := make([]pickRow, len(m.diff.repoRoots))
