@@ -32,7 +32,7 @@ func gitRepoWithTwoChangedFiles(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	run("git", "init")
+	run("git", "init", "-b", "main")
 	write("a.go", "package a\n\nfunc A() int { return 1 }\n")
 	write("b.go", "package a\n\nfunc B() int { return 2 }\n")
 	run("git", "add", ".")
@@ -692,7 +692,7 @@ func TestTrackedBinaryPastEagerCapShowsBinary(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	run("git", "init")
+	run("git", "init", "-b", "main")
 	const filler = 250
 	for i := 0; i < filler; i++ {
 		write(fmt.Sprintf("f%03d.txt", i), "one\n")
@@ -946,7 +946,7 @@ func addDirtyRepo(t *testing.T, umbrella, name string) {
 	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package a\n\nfunc A() int { return 1 }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run("git", "init")
+	run("git", "init", "-b", "main")
 	run("git", "add", ".")
 	run("git", "commit", "-m", "init")
 	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package a\n\nfunc A() int { return 77 }\n"), 0o644); err != nil {
