@@ -156,9 +156,9 @@ func (m *Model) openDiff() tea.Cmd {
 	return m.retargetDiff(sess)
 }
 
-// moveCursor shifts the selection and kicks off an immediate preview
-// fetch for the newly selected session, so the sidebar follows the
-// cursor without waiting for the next poll tick.
+// moveCursor shifts the selection and schedules a debounced preview
+// fetch. Key-repeat only bumps the gen; a single capture runs after the
+// cursor settles so holding j/k cannot pile up tmux work.
 func (m *Model) moveCursor(delta int) tea.Cmd {
 	if len(m.rows) == 0 {
 		return nil
@@ -174,15 +174,14 @@ func (m *Model) moveCursor(delta int) tea.Cmd {
 	if m.cursor == previous {
 		return nil
 	}
-	sess, ok := m.selected()
-	if !ok {
-		m.preview = ""
-		m.proc = sysstat.ProcStat{}
-		m.procFor = ""
+	m.preview = ""
+	m.proc = sysstat.ProcStat{}
+	m.procFor = ""
+	if _, ok := m.selected(); !ok {
 		return nil
 	}
-	m.preview = ""
-	return m.previewCmd(sess)
+	m.previewGen++
+	return m.schedulePreview()
 }
 
 // reorderSelected moves the selected session among its group siblings,
