@@ -80,9 +80,9 @@ Sessions spawned without a custom name (every quick spawn, and the form with the
 
 ### Declaring the repo under review
 
-A session's working directory is often an umbrella folder holding many repos, so review can only guess which one the agent means. An agent that knows which repo it is working in can say so by running `agent-manager review-repo <path>` from a shell inside its session. The subcommand checks that the path is (or sits inside) a git repo, resolves it to the repo root, and drops it into a per-session file; the manager picks it up on the next poll and opens review on that repo. A path that is not inside a git repo is rejected, so a declaration is always a fact rather than a guess.
+A session's working directory is often an umbrella folder holding many repos, so review can only guess which one the agent means. An agent that knows which repo it is working in can say so by running `agent-manager review-repo <path>` from a shell inside its session. The subcommand checks that the path is (or sits inside) a git repo, resolves it to the repo root, and drops it into a per-session file; the manager picks it up on the next poll and review opens on that repo the next time you open it. A path that is not inside a git repo is rejected, so a declaration is always a fact rather than a guess.
 
-Review resolves its repo in a fixed order: a repo you picked by hand with `r` wins for as long as the manager is running, then the agent's declared repo, then the ranking (dirty working trees first, then most recent commit). When a declared repo turns out not to sit under the session's working directory, review says so in the status line and leaves the picker open so you can choose.
+Review resolves its repo in a fixed order: a repo you picked by hand with `r` wins for as long as the manager is running, then the agent's declared repo, then the ranking (dirty working trees first, then most recent commit). When the picked or declared repo turns out not to sit under the session's working directory, review says so in the status line and `r` is there to pick the right one.
 
 ### Diff review
 

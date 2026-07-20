@@ -77,9 +77,9 @@ type diffLoadedMsg struct {
 	// can show the repo name and offer the picker when the cwd holds several.
 	repoRoots []string
 	repoRoot  string
-	// Set when the agent declared a repo that the session cwd does not contain,
-	// so the fallback to the top-ranked repo is announced rather than silent.
-	declaredMissing string
+	// Set when the wanted repo is not under the session cwd, so the fallback to
+	// the top-ranked repo is announced rather than silent.
+	missingRepo string
 	// refresh marks a silent reload of the same session and scope (the agent
 	// edited the file under review), the only case where saved comments
 	// re-anchor. Scope cycles and session switches load a different file set.
@@ -98,13 +98,8 @@ type diffProbeMsg struct {
 	fp       uint64
 }
 
-// diffLoadCmd resolves the repos under the session cwd and loads the diff for
-// the wanted repo. repoWant is the previously selected repo root, matched by
-// path so the selection survives ResolveRepos re-ranking the list between
-// loads; an empty or vanished path falls back to the top-ranked repo. declared
-// marks repoWant as the agent's declaration rather than a remembered pick, so
-// its absence is reported instead of quietly re-ranked.
-func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, declared, refresh bool) tea.Cmd {
+// repoWant is matched by path so the selection survives ResolveRepos re-ranking between loads.
+func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, refresh bool) tea.Cmd {
 	driver := m.gitDrv
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, refresh: refresh}
@@ -120,8 +115,8 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 				break
 			}
 		}
-		if declared && repoWant != "" && !found {
-			msg.declaredMissing = repoWant
+		if repoWant != "" && !found {
+			msg.missingRepo = repoWant
 		}
 		msg.repoRoots = roots
 		msg.repoRoot = roots[repoIdx]
@@ -173,16 +168,14 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.cursorLine = 0
 	m.diff.repoRoots = nil
 	m.diff.repoSel = ""
-	fromDeclaration := false
 	if picked, ok := m.pickedRepos[sess.ID]; ok {
 		m.diff.repoSel = picked
 	} else if declared, err := m.store.ReviewRepo(sess.ID); err != nil {
 		m.err = err.Error()
 	} else if declared != "" {
 		m.diff.repoSel = declared
-		fromDeclaration = true
 	}
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, fromDeclaration, false)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }
 
 func (m *Model) cycleDiffScope() tea.Cmd {
@@ -200,7 +193,7 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false, false)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }
 
 // reviewKey scopes a session's comments and reviewed marks to the repo under
@@ -243,9 +236,12 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	m.diff.errText = ""
 	m.diff.repoRoots = msg.repoRoots
 	m.diff.repoSel = msg.repoRoot
-	if msg.declaredMissing != "" {
-		m.err = fmt.Sprintf("declared repo %s is not under the session directory",
-			filepath.Base(msg.declaredMissing))
+	if msg.missingRepo != "" {
+		m.err = fmt.Sprintf("picked or declared repo %s is no longer under the session directory",
+			filepath.Base(msg.missingRepo))
+		if m.pickedRepos[msg.sessID] == msg.missingRepo {
+			delete(m.pickedRepos, msg.sessID)
+		}
 	}
 	previousPath := ""
 	if fd := m.currentFileDiff(); fd != nil {
@@ -299,7 +295,7 @@ func (m *Model) handleDiffProbe(msg diffProbeMsg) tea.Cmd {
 		return nil
 	}
 	m.diff.gen++
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false, true)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, true)
 }
 
 // diffRefreshCmd is the poller piggyback: every second tick while the

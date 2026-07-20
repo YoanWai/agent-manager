@@ -366,7 +366,7 @@ func (m *Model) refreshDiff(t *testing.T) {
 		t.Fatal("no diff session")
 	}
 	m.diff.gen++
-	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false, true))
+	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, true))
 }
 
 // A silent same-scope reload that shifts line numbers re-points saved comments
@@ -725,6 +725,85 @@ func TestHandPickedRepoOutlivesReopen(t *testing.T) {
 	m.drainCmds(t, m.openDiff())
 	if got := filepath.Base(m.diff.repoSel); got != "bravo" {
 		t.Fatalf("the hand-picked repo should win over the declared one on reopen, got %q", got)
+	}
+}
+
+// A hand-picked repo that disappears must be reported and forgotten, so the
+// agent's declaration takes over instead of a dead path shadowing it forever.
+func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, _ := umbrellaWithTwoRepos(t)
+	addDirtyRepo(t, umbrella, "charlie")
+	createSession(t, m, "vanish", umbrella, "")
+	m.selectSessionRow(t, "vanish")
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("no selected session")
+	}
+	if err := m.store.SetReviewRepo(sess.ID, filepath.Join(umbrella, "alpha")); err != nil {
+		t.Fatal(err)
+	}
+	m.drainCmds(t, m.openDiff())
+	m.pickRepo(t, "bravo")
+	if got := filepath.Base(m.diff.repoSel); got != "bravo" {
+		t.Fatalf("picking bravo should load it, got %q", got)
+	}
+
+	if err := os.RemoveAll(filepath.Join(umbrella, "bravo")); err != nil {
+		t.Fatal(err)
+	}
+	m.err = ""
+	m.diff.gen++
+	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false))
+
+	if !strings.Contains(m.err, "bravo") {
+		t.Fatalf("a vanished hand-picked repo must be surfaced, got err %q", m.err)
+	}
+	if !strings.Contains(m.viewDiffStatus(), m.err) {
+		t.Fatalf("review status should show %q", m.err)
+	}
+	if _, still := m.pickedRepos[sess.ID]; still {
+		t.Fatal("the dead pick must be forgotten so the declaration can take over")
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	m.drainCmds(t, cmd)
+	m.drainCmds(t, m.openDiff())
+	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+		t.Fatalf("reopening should land on the declared repo, got %q", got)
+	}
+}
+
+// addDirtyRepo adds a committed repo with an uncommitted edit, so it ranks
+// ahead of the clean ones.
+func addDirtyRepo(t *testing.T, umbrella, name string) {
+	t.Helper()
+	dir := filepath.Join(umbrella, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v: %s", args, err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package a\n\nfunc A() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("git", "init")
+	run("git", "add", ".")
+	run("git", "commit", "-m", "init")
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package a\n\nfunc A() int { return 77 }\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

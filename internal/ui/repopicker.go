@@ -9,9 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// roots is snapshotted at open because a silent refresh keeps landing while the
-// picker is up, and rankRepos reorders the live list as agents dirty repos,
-// which would slide a different repo under the cursor than the row on screen.
+// roots is snapshotted at open because a refresh landing behind the picker would reorder rows under the cursor.
 type repoPickState struct {
 	roots  []string
 	filter string
@@ -106,7 +104,7 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false, false)
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }
 
 func (m *Model) repoPickWindow(count int) (start, end int) {

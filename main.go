@@ -128,9 +128,7 @@ func runReviewRepo(args []string, sessionID, configDir string) error {
 	return nil
 }
 
-// pathWithin reports whether path is root or sits under it. Both sides are
-// resolved first because git reports a toplevel with symlinks expanded, which
-// on macOS turns /var into /private/var.
+// Both sides are resolved first because git reports a toplevel with symlinks expanded.
 func pathWithin(path, root string) bool {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved
