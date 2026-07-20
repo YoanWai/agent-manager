@@ -99,13 +99,35 @@ exists, and auto-detects `main`/`master`/`origin/HEAD` otherwise. A stored ref
 that no longer resolves surfaces as a review error rather than silently falling
 back, so the header never claims a comparison that did not happen.
 
-### Pickers
+### Worktrees are branches
 
-`r` opens a repo picker instead of cycling: the repos found under the session
-directory, filtered as you type, enter to select. `b` opens a branch picker over
-`refs/heads` and `refs/remotes` for the active repo, with the cursor
-starting on the current base and an `auto` entry that clears the stored ref back
-to auto-detection.
+Agents work in git worktrees, one branch per worktree, and those worktrees live
+wherever the agent tooling puts them: under the repo's `.worktrees/`, in a
+sibling `<name>-worktrees/` folder, or under the user's config directory.
+Directory discovery from the session cwd cannot see them.
+
+The design is AI-driven: the agent declares its worktree with the existing
+`agent-manager review-repo <path>` command, and that one declaration names both
+the repo and the branch, because a worktree is a branch. Review accepts any
+declared path that is a real git worktree root, wherever it lives on disk;
+`git rev-parse` at load time is the authority, not containment under the
+session cwd. A declaration that is not a git root at all is reported, exactly
+as a vanished one is.
+
+The human overrides through pickers, expected to be rare:
+
+`r` opens the repo picker: the repos found under the session directory,
+filtered as you type, enter to select. `b` opens a branch picker listing the
+active repo's worktrees from `git worktree list --porcelain`, each row showing
+the branch name and the worktree path, with the cursor on the current one.
+Selecting a row retargets review to that worktree through the same
+path-pinned selection the repo picker uses.
+
+### Base picker
+
+A later phase adds `B` over `refs/heads` and `refs/remotes` for the active
+repo, with the cursor starting on the current base and an `auto` entry that
+clears the stored ref back to auto-detection.
 
 Both are the same filtered-list component, differing only in the rows they show
 and what selecting a row does. It follows the existing modal patterns (move,
