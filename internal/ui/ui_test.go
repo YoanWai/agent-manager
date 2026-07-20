@@ -2185,7 +2185,8 @@ func TestArchivedSessionKeepsPaneSnapshot(t *testing.T) {
 	}
 
 	m.preview = ""
-	m.applyCmd(t, m.previewCmd(m.rows[m.cursor].sess))
+	m.previewGen++
+	m.applyCmd(t, m.previewCmd(m.rows[m.cursor].sess, m.previewGen))
 	if !strings.Contains(m.preview, "snapshot-marker") {
 		t.Fatalf("previewCmd should serve the snapshot for an archived session, preview = %q", m.preview)
 	}

@@ -115,6 +115,10 @@ type Model struct {
 	// paneGeom is the last width×height we told tmux for each session id.
 	// Skips no-op resize-window calls that otherwise stall the UI.
 	paneGeom map[string][2]int
+	// previewGen increments on every cursor move. In-flight captures and
+	// settle timers with an older gen are dropped so key-repeat cannot
+	// queue a second of tmux work after the user stops.
+	previewGen uint64
 }
 
 // confirmTarget.action values; the zero value means delete.
@@ -203,9 +207,21 @@ type previewMsg struct {
 	sessID  string
 	preview string
 	proc    sysstat.ProcStat
-	// sized is the width×height applied before capture (0,0 if skipped).
-	sized [2]int
+	// gen is the previewGen the capture was scheduled for; mismatched
+	// gens are discarded so a hold-j burst cannot paint a stale session.
+	gen uint64
 }
+
+// previewSettleMsg fires after the cursor has stopped moving so one
+// capture runs instead of one per key-repeat tick.
+type previewSettleMsg struct {
+	gen uint64
+}
+
+// previewSettle is how long we wait after the last cursor move before
+// talking to tmux. Short enough to feel instant, long enough to collapse
+// a held j/k burst into a single capture.
+const previewSettle = 50 * time.Millisecond
 
 type errMsg struct{ err error }
 
@@ -359,20 +375,22 @@ func (m *Model) selectedRow() (treeRow, bool) {
 	return m.rows[m.cursor], true
 }
 
-// previewCmd captures one session's pane and process stats right away,
-// off the render loop, for instant sidebar updates on cursor moves.
-// A size pin runs in this same background cmd only when the target box
-// changed, so j/k never blocks on tmux and never re-resizes no-ops.
-func (m *Model) previewCmd(sess store.Session) tea.Cmd {
-	width, height := m.previewPaneWidth(), m.previewPaneHeight()
-	needResize := true
-	if m.paneGeom != nil {
-		if last, ok := m.paneGeom[sess.ID]; ok && last[0] == width && last[1] == height {
-			needResize = false
-		}
-	}
+// schedulePreview arms a single capture after previewSettle. Call after
+// bumping previewGen so earlier timers and in-flight captures go stale.
+func (m *Model) schedulePreview() tea.Cmd {
+	gen := m.previewGen
+	return tea.Tick(previewSettle, func(time.Time) tea.Msg {
+		return previewSettleMsg{gen: gen}
+	})
+}
+
+// previewCmd captures one session's pane and process stats off the
+// render loop. gen tags the result so a newer cursor move can discard it.
+// Size pins stay on resizeSessions / create / attach — not on every look —
+// so a settle capture is one capture-pane, not resize+capture+pid storms.
+func (m *Model) previewCmd(sess store.Session, gen uint64) tea.Cmd {
 	return func() tea.Msg {
-		msg := previewMsg{sessID: sess.ID}
+		msg := previewMsg{sessID: sess.ID, gen: gen}
 		if sess.Archived {
 			snapshot, err := archivedPreview(m.store, m.tmux, sess.ID)
 			if err != nil {
@@ -382,11 +400,6 @@ func (m *Model) previewCmd(sess store.Session) tea.Cmd {
 			return msg
 		}
 		if m.tmux.Exists(sess.ID) {
-			if needResize && width > 0 && height > 0 {
-				if err := m.tmux.Resize(sess.ID, width, height); err == nil {
-					msg.sized = [2]int{width, height}
-				}
-			}
 			if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
 				msg.preview = pane
 			}
@@ -486,19 +499,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// tick) carries the wrong preview; resync and fetch it directly.
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
-			return m, tea.Batch(m.previewCmd(sess), m.diffRefreshCmd())
+			m.previewGen++
+			return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.diffRefreshCmd())
 		}
 		m.proc = msg.proc
 		m.procFor = msg.procFor
 		m.preview = msg.preview
 		return m, m.diffRefreshCmd()
 
+	case previewSettleMsg:
+		if msg.gen != m.previewGen {
+			return m, nil
+		}
+		sess, ok := m.selected()
+		if !ok {
+			return m, nil
+		}
+		return m, m.previewCmd(sess, msg.gen)
+
 	case previewMsg:
-		if msg.sized[0] > 0 && msg.sized[1] > 0 {
-			if m.paneGeom == nil {
-				m.paneGeom = map[string][2]int{}
-			}
-			m.paneGeom[msg.sessID] = msg.sized
+		if msg.gen != 0 && msg.gen != m.previewGen {
+			return m, nil
 		}
 		if sess, ok := m.selected(); ok && sess.ID == msg.sessID {
 			m.preview = msg.preview
