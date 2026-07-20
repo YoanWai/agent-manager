@@ -37,6 +37,10 @@ var (
 	// wslProbe reports whether we are running under WSL (Windows clipboard
 	// bridge needed when Linux tools cannot see the host clipboard).
 	wslProbe = detectWSL
+	// readNativeImage is set by platform files (darwin/linux) to an
+	// in-process pasteboard reader. Nil means "use the shell-tool path".
+	// Prefer native: spawning osascript/wl-paste is tens of ms each paste.
+	readNativeImage func() ([]byte, error)
 )
 
 // pastesDir is the shared temp directory for clipboard image files.
@@ -59,8 +63,8 @@ func ReadImage() ([]byte, string, error) {
 }
 
 // SaveImage writes a clipboard image into the pastes directory and returns
-// its absolute path. Each platform writes the PNG once (no intermediate
-// buffer file when tools can stream to a path).
+// its absolute path. Prefers an in-process native pasteboard read when
+// available, then platform shell tools.
 func SaveImage() (string, error) {
 	switch goos {
 	case "darwin":
@@ -72,10 +76,8 @@ func SaveImage() (string, error) {
 	}
 }
 
-// jxaReadPNG writes the clipboard image as PNG to the path in argv[0].
-// Prefers NSPasteboardTypePNG (fast, no conversion). Falls back to TIFF
-// only when needed. AppleScript "clipboard as PNGf" is several times
-// slower because it re-encodes through the Scripting Bridge.
+// jxaReadPNG is the Darwin fallback when the native purego pasteboard
+// cannot initialize. Prefer NSPasteboardTypePNG; TIFF only if needed.
 const jxaReadPNG = `
 ObjC.import("AppKit");
 ObjC.import("Foundation");
@@ -102,22 +104,33 @@ function run(argv) {
 }
 `
 
-// writeDarwinPNG dumps the clipboard image as PNG to path using JXA
-// AppKit. Any failure (empty clipboard, no image type) is ErrNoImage.
-func writeDarwinPNG(path string) error {
+// writeDarwinPNGJXA dumps the clipboard image as PNG to path using JXA.
+func writeDarwinPNGJXA(path string) error {
 	if _, err := runCmd("osascript", "-l", "JavaScript", "-e", jxaReadPNG, path); err != nil {
 		return ErrNoImage
 	}
 	return nil
 }
 
-// saveDarwinImage writes the clipboard PNG straight into the pastes dir.
+// saveDarwinImage prefers the in-process AppKit reader (microseconds to low
+// milliseconds). Falls back to JXA osascript only when native is unavailable.
 func saveDarwinImage() (string, error) {
+	if readNativeImage != nil {
+		data, err := readNativeImage()
+		if err == nil && len(data) > 0 {
+			return SaveToTemp(data, "png")
+		}
+		// Native initialized but clipboard has no image: do not pay for JXA.
+		if errors.Is(err, ErrNoImage) || (err == nil && len(data) == 0) {
+			return "", ErrNoImage
+		}
+		// Native failed to init; fall through to JXA.
+	}
 	path, err := newPasteFile("png")
 	if err != nil {
 		return "", err
 	}
-	if err := writeDarwinPNG(path); err != nil {
+	if err := writeDarwinPNGJXA(path); err != nil {
 		_ = os.Remove(path)
 		return "", err
 	}
@@ -129,14 +142,11 @@ func saveDarwinImage() (string, error) {
 }
 
 // readDarwin pulls PNG bytes for callers that still want the raw payload.
-// It writes once into a temp file under pastesDir and reads it back.
 func readDarwin() ([]byte, string, error) {
 	path, err := saveDarwinImage()
 	if err != nil {
 		return nil, "", err
 	}
-	// Caller owns only the bytes; drop the file so we do not leak pastes
-	// from ReadImage-only use. SaveImage is the path-returning API.
 	defer os.Remove(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -148,14 +158,19 @@ func readDarwin() ([]byte, string, error) {
 	return data, "png", nil
 }
 
-// saveLinuxImage writes a clipboard PNG in one shot. Order:
-//  1. wl-paste (Wayland)
-//  2. xclip (X11 / WSLg)
-//  3. On WSL: Windows clipboard via powershell.exe (host paste)
-//
-// Native tools are tried first so a real Linux desktop stays local and
-// fast; WSL falls through to Windows when those cannot see the image.
+// saveLinuxImage writes a clipboard PNG. Order:
+//  1. In-process native pasteboard (X11/Wayland via golang.design/x/clipboard)
+//  2. wl-paste (Wayland CLI)
+//  3. xclip (X11 CLI)
+//  4. On WSL: Windows clipboard via powershell.exe
 func saveLinuxImage() (string, error) {
+	if readNativeImage != nil {
+		data, err := readNativeImage()
+		if err == nil && len(data) > 0 {
+			return SaveToTemp(data, "png")
+		}
+	}
+
 	var triedTool bool
 	if _, err := lookPath("wl-paste"); err == nil {
 		triedTool = true
@@ -176,12 +191,9 @@ func saveLinuxImage() (string, error) {
 		if err == nil {
 			return path, nil
 		}
-		// WSL with no image on either clipboard is still "no image".
 		if errors.Is(err, ErrNoImage) {
 			return "", ErrNoImage
 		}
-		// Missing powershell is a real config problem on WSL when native
-		// tools also cannot deliver an image.
 		if !triedTool {
 			return "", err
 		}
@@ -193,7 +205,7 @@ func saveLinuxImage() (string, error) {
 	return "", ErrNoImage
 }
 
-// readLinux pulls PNG bytes for the ReadImage API (in-memory).
+// readLinux pulls PNG bytes for the ReadImage API.
 func readLinux() ([]byte, string, error) {
 	path, err := saveLinuxImage()
 	if err != nil {
@@ -248,7 +260,6 @@ func saveWSLWindowsImage() (string, error) {
 		return "", fmt.Errorf("wslpath: %w", err)
 	}
 	winPath := strings.TrimSpace(string(winOut))
-	// Single-quoted PowerShell string: double any embedded quotes.
 	winPath = strings.ReplaceAll(winPath, "'", "''")
 	script := "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; " +
 		"$img = [System.Windows.Forms.Clipboard]::GetImage(); " +
