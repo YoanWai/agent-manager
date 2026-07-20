@@ -43,6 +43,7 @@ type FileDiff struct {
 	Binary    bool
 	Truncated bool
 	Err       error
+	statKnown bool
 	rows      []Row
 }
 
@@ -97,7 +98,8 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope) (Set, error) {
 	}
 
 	for i, file := range files {
-		fd := FileDiff{File: file, Stat: stats[file.Path]}
+		stat, known := stats[file.Path]
+		fd := FileDiff{File: file, Stat: stat, statKnown: known}
 		if i < maxEagerFiles {
 			loadFile(driver, repo.Root, scope, baseRef, &fd)
 		}
@@ -136,7 +138,25 @@ func loadFile(driver *git.Driver, root string, scope git.Scope, baseRef string, 
 		fd.Truncated = true
 		return
 	}
+	known := fd.statKnown
 	*fd = BuildFile(oldContent, newContent, fd.File, fd.Stat)
+	fd.statKnown = known
+	if !known {
+		fd.Stat = countStat(fd.Lines)
+	}
+}
+
+func countStat(lines []Line) git.FileStat {
+	var stat git.FileStat
+	for _, line := range lines {
+		switch line.Kind {
+		case Add:
+			stat.Adds++
+		case Del:
+			stat.Dels++
+		}
+	}
+	return stat
 }
 
 func fileSides(driver *git.Driver, root string, scope git.Scope, baseRef string, file git.ChangedFile) (oldContent, newContent []byte, err error) {

@@ -1,10 +1,52 @@
 package diff
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/git"
 )
+
+func testRepo(t *testing.T) (*git.Driver, string) {
+	t.Helper()
+	driver, err := git.New()
+	if err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-b", "main"},
+		{"config", "user.email", "test@test"},
+		{"config", "user.name", "test"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	return driver, dir
+}
+
+func commit(t *testing.T, dir, message string) {
+	t.Helper()
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-m", message}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+}
+
+func write(t *testing.T, dir, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func buildTestFile(t *testing.T, oldText, newText string) FileDiff {
 	t.Helper()
@@ -108,5 +150,31 @@ func TestTabsExpanded(t *testing.T) {
 	fd := buildTestFile(t, "", "\tindented\n")
 	if fd.Lines[0].Text != "    indented" {
 		t.Fatalf("text = %q", fd.Lines[0].Text)
+	}
+}
+
+func TestUntrackedFileGetsLineCount(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "tracked.go", "package a\n")
+	commit(t, dir, "init")
+	write(t, dir, "new.go", "package a\n\nfunc B() {}\n")
+	write(t, dir, "empty.go", "")
+
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := map[string]FileDiff{}
+	for _, fd := range set.Files {
+		byPath[fd.File.Path] = fd
+	}
+	if got := byPath["new.go"].Stat.Adds; got != 3 {
+		t.Errorf("new.go adds = %d, want 3", got)
+	}
+	if got := byPath["new.go"].Stat.Dels; got != 0 {
+		t.Errorf("new.go dels = %d, want 0", got)
+	}
+	if got := byPath["empty.go"].Stat.Adds; got != 0 {
+		t.Errorf("empty.go adds = %d, want 0", got)
 	}
 }
