@@ -193,31 +193,8 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }
 
-// cycleDiffRepo advances to the next repo when the session cwd is an umbrella
-// of several. It is a no-op for a plain single-repo cwd. The next repo is
-// pinned by path so the fresh ResolveRepos ranking cannot land on a different
-// repo than the one the cycle stepped to.
-func (m *Model) cycleDiffRepo() tea.Cmd {
-	if !m.diff.active || len(m.diff.repoRoots) < 2 {
-		return nil
-	}
-	sess, ok := m.diffSession()
-	if !ok {
-		return nil
-	}
-	next := (m.diff.repoIdx + 1) % len(m.diff.repoRoots)
-	m.diff.repoSel = m.diff.repoRoots[next]
-	m.diff.gen++
-	m.diff.loading = true
-	m.diff.errText = ""
-	m.diff.fileIdx = 0
-	m.diff.scroll = 0
-	m.diff.cursorLine = 0
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
-}
-
 // reviewKey scopes a session's comments and reviewed marks to the repo under
-// review, so cycling repos never leaks marks between same-named files.
+// review, so switching repos never leaks marks between same-named files.
 func (m *Model) reviewKey() string {
 	return m.diff.sessID + "\x00" + m.diff.repoSel
 }
@@ -584,7 +561,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		return m, m.cycleDiffScope()
 	case "r":
-		return m, m.cycleDiffRepo()
+		m.openRepoPick()
 	case "u":
 		lineIdx := m.cursorDiffLine()
 		m.diff.sideBySide = !m.diff.sideBySide

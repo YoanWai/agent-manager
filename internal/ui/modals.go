@@ -170,7 +170,7 @@ func (m *Model) viewHelp() string {
 		{"^v", "in quick prompt: attach a clipboard image"},
 		{"D", "review changes: whole-file diffs, comment lines, send to agent"},
 		{"s", "in review: cycle scope (uncommitted / vs base / last commit / staged)"},
-		{"r", "in review: cycle repo when the session dir holds several"},
+		{"r", "in review: pick the repo when the session dir holds several"},
 		{"F", "fold / unfold all groups"},
 		{"s", "settings (quick spawn tool, review layout)"},
 		{"t", "toggle archived view"},

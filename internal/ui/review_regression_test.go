@@ -77,8 +77,8 @@ func umbrellaWithTwoRepos(t *testing.T) (umbrella, dirtyName string) {
 }
 
 // A session whose cwd is an umbrella of several repos opens review on the
-// most-active repo, shows the repo in the header, and the r key cycles.
-func TestReviewCyclesReposUnderUmbrella(t *testing.T) {
+// most-active repo, shows the repo in the header, and the r key picks another.
+func TestReviewPicksRepoUnderUmbrella(t *testing.T) {
 	m := buildModel(t)
 	if m.gitDrv == nil {
 		t.Skip("git not installed")
@@ -96,16 +96,68 @@ func TestReviewCyclesReposUnderUmbrella(t *testing.T) {
 		t.Fatalf("header should name the selected repo %q", dirtyName)
 	}
 
-	m.pressDiffKey(t, 'r')
+	m.pickRepo(t, "alpha")
 	if got := filepath.Base(m.diff.repoRoots[m.diff.repoIdx]); got != "alpha" {
-		t.Fatalf("r should cycle to the other repo, got %q", got)
+		t.Fatalf("picker should select the other repo, got %q", got)
 	}
 	if !strings.Contains(m.viewDiffHeader("umbrella"), "alpha") {
-		t.Fatal("header should follow the repo cycle")
+		t.Fatal("header should follow the picked repo")
 	}
-	m.pressDiffKey(t, 'r')
+	m.pickRepo(t, dirtyName)
 	if got := filepath.Base(m.diff.repoRoots[m.diff.repoIdx]); got != dirtyName {
-		t.Fatalf("r should wrap back, got %q", got)
+		t.Fatalf("picker should select back, got %q", got)
+	}
+}
+
+func TestRepoPickerFiltersAndSelects(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, dirtyName := umbrellaWithTwoRepos(t)
+	openReviewOn(t, m, "picker", umbrella)
+	if filepath.Base(m.diff.repoSel) != dirtyName {
+		t.Fatalf("expected to start on %q", dirtyName)
+	}
+
+	m.pressDiffKey(t, 'r')
+	if m.mode != modeRepoPick {
+		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
+	}
+	for _, r := range "alph" {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if got := m.filteredRepoRoots(); len(got) != 1 || filepath.Base(got[0]) != "alpha" {
+		t.Fatalf("filter should narrow to alpha, got %v", got)
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	m.drainCmds(t, cmd)
+	if m.mode != modeDiff {
+		t.Fatalf("enter should return to review, mode = %v", m.mode)
+	}
+	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+		t.Fatalf("enter should select alpha, got %q", got)
+	}
+}
+
+func TestRepoPickerEscapeKeepsRepo(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, dirtyName := umbrellaWithTwoRepos(t)
+	openReviewOn(t, m, "escpick", umbrella)
+	before := m.diff.repoSel
+
+	m.pressDiffKey(t, 'r')
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	if m.mode != modeDiff {
+		t.Fatalf("esc should return to review, mode = %v", m.mode)
+	}
+	if m.diff.repoSel != before || filepath.Base(m.diff.repoSel) != dirtyName {
+		t.Fatalf("esc should not change the repo, got %q", m.diff.repoSel)
 	}
 }
 
@@ -129,17 +181,17 @@ func TestReviewMarksIsolatedPerRepo(t *testing.T) {
 		t.Fatal("a.go should be reviewed in the dirty repo")
 	}
 
-	m.pressDiffKey(t, 'r')
+	m.pickRepo(t, "alpha")
 	if filepath.Base(m.diff.repoSel) != "alpha" {
-		t.Fatalf("r should select alpha, got %q", m.diff.repoSel)
+		t.Fatalf("picker should select alpha, got %q", m.diff.repoSel)
 	}
 	if m.fileReviewed("a.go") {
 		t.Fatal("a.go reviewed mark leaked into the sibling repo")
 	}
 
-	m.pressDiffKey(t, 'r')
+	m.pickRepo(t, dirtyName)
 	if !m.fileReviewed("a.go") {
-		t.Fatal("cycling back should restore the dirty repo's reviewed mark")
+		t.Fatal("picking back should restore the dirty repo's reviewed mark")
 	}
 }
 
@@ -153,7 +205,7 @@ func TestRepoSelectionSurvivesReload(t *testing.T) {
 	umbrella, _ := umbrellaWithTwoRepos(t)
 	openReviewOn(t, m, "umbrella", umbrella)
 
-	m.pressDiffKey(t, 'r')
+	m.pickRepo(t, "alpha")
 	if filepath.Base(m.diff.repoSel) != "alpha" {
 		t.Fatalf("want alpha selected, got %q", m.diff.repoSel)
 	}
@@ -188,6 +240,26 @@ func (m *Model) pressDiffKey(t *testing.T, key rune) {
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
+}
+
+// pickRepo drives the repo picker the way a human would: r, type the repo
+// name, enter.
+func (m *Model) pickRepo(t *testing.T, name string) {
+	t.Helper()
+	m.pressDiffKey(t, 'r')
+	if m.mode != modeRepoPick {
+		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
+	}
+	for _, r := range name {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		*m = *updated.(*Model)
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	m.drainCmds(t, cmd)
+	if m.mode != modeDiff {
+		t.Fatalf("enter should return to review, mode = %v", m.mode)
+	}
 }
 
 func openReviewOn(t *testing.T, m *Model, name, dir string) {

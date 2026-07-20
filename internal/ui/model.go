@@ -30,6 +30,7 @@ const (
 	modeHelp
 	modeRename
 	modeMove
+	modeRepoPick
 	modeGroupForm
 	modeSettings
 	modeDiff
@@ -85,6 +86,7 @@ type Model struct {
 	quick     quickState
 	settings  settingsState
 	moveID    string
+	repoPick  repoPickState
 
 	width  int
 	height int

@@ -28,6 +28,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSettingsKey(msg)
 	case modeMove:
 		return m.handleMoveKey(msg)
+	case modeRepoPick:
+		return m.handleRepoPickKey(msg)
 	case modeGroupForm:
 		return m.handleGroupFormKey(msg)
 	case modeDiff:
