@@ -15,7 +15,7 @@ import (
 )
 
 type renameArgs struct {
-	Name string `json:"name" jsonschema:"short 2-4 word kebab-case name describing this session's task"`
+	Name string `json:"name" jsonschema:"short 2-4 word kebab-case name for the broad feature of this whole session, not one subtask"`
 }
 
 type reviewRepoArgs struct {
@@ -34,8 +34,9 @@ func NewServer(configDir, sessionID, version string) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "rename",
-		Description: "Name this session after its task. Call once at the start of a new session, " +
-			"and again whenever the session's purpose changes.",
+		Description: "Name this session after the broad feature it is about. Call exactly once at the " +
+			"start of a new session. Do not call again unless the user explicitly asks you to rename. " +
+			"Prefer a broad feature name over a single subtask.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args renameArgs) (*mcp.CallToolResult, any, error) {
 		return textResult(sessioncmd.Rename(configDir, sessionID, args.Name))
 	})

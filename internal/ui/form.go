@@ -354,12 +354,12 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 // renameDirective asks the agent, as the first line of its first prompt,
 // to name its own session via the rename subcommand. Injected only for
 // auto-named sessions that launch with a prompt, so it fires exactly once.
-const renameDirective = `First, run this exact shell command once, replacing <name> with a short 2-4 word kebab-case name describing the task: agent-manager rename "<name>". Then do the task:`
+const renameDirective = `First, run this exact shell command once, replacing <name> with a short 2-4 word kebab-case name for the broad feature or theme of this whole session (not one subtask of a larger feature): agent-manager rename "<name>". Run rename only this once. Do not rename again later in the conversation unless the user explicitly asks you to rename; if they do, pick a broad name from context, not a narrow step. Then do the task:`
 
 // deferredRenameDirective is the standalone message sent into sessions
 // whose first prompt could not carry the directive: slash-command
 // prompts (the command must open the message) and promptless launches.
-const deferredRenameDirective = `Run this exact shell command once, replacing <name> with a short 2-4 word kebab-case name describing this session's work: agent-manager rename "<name>". Then continue.`
+const deferredRenameDirective = `Run this exact shell command once, replacing <name> with a short 2-4 word kebab-case name for the broad feature or theme of this whole session (not one subtask of a larger feature): agent-manager rename "<name>". Run rename only this once. Do not rename again later in the conversation unless the user explicitly asks you to rename; if they do, pick a broad name from context, not a narrow step. Then continue.`
 
 // directiveEmbeddable reports whether the rename directive can ride the
 // session's first prompt; otherwise it is sent later as its own message.
