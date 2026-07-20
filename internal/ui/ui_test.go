@@ -397,6 +397,72 @@ func TestDeleteGroupSubtree(t *testing.T) {
 	}
 }
 
+func TestDeleteGroupInArchivedViewSparesLiveSessions(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+
+	if err := m.store.CreateGroup("bugs", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "old", dir, "bugs")
+	createSession(t, m, "live", dir, "bugs")
+
+	m.selectSessionRow(t, "old")
+	_, cmd := m.archiveSelected()
+	m.applyCmd(t, cmd)
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "bugs")
+	m.prepareDelete()
+	if len(m.confirm.sessions) != 1 || m.confirm.sessions[0].Name != "old" {
+		t.Fatalf("confirm should target only the archived session, got %+v", m.confirm.sessions)
+	}
+	archivedID := m.confirm.sessions[0].ID
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+
+	m.showArchived = false
+	m.applyCmd(t, m.refreshCmd())
+	if names := sessionNames(m); len(names) != 1 || names[0] != "live" {
+		t.Fatalf("active view sessions = %v want [live]", names)
+	}
+	if paths := m.groupRowPaths(); len(paths) != 1 || paths[0] != "bugs" {
+		t.Fatalf("group holding a live session should survive, got %v", paths)
+	}
+	for _, sess := range m.sessionRows() {
+		if !m.tmux.Exists(sess.ID) {
+			t.Fatalf("live session %s lost its tmux window", sess.Name)
+		}
+	}
+	if m.tmux.Exists(archivedID) {
+		t.Fatalf("archived session %s should be killed", archivedID)
+	}
+}
+
+func TestDeleteArchivedGroupInArchivedViewRemovesIt(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("empty", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "empty")
+	_, cmd := m.archiveSelected()
+	m.applyCmd(t, cmd)
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "empty")
+	m.prepareDelete()
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+
+	if paths := m.groupRowPaths(); len(paths) != 0 {
+		t.Fatalf("archived empty group should be gone, got %v", paths)
+	}
+}
+
 func TestRenameGroupCascades(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

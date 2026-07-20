@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"sort"
 	"testing"
 )
 
@@ -131,6 +132,20 @@ func groupArchived(t *testing.T, st *Store, path string) bool {
 	return false
 }
 
+func groupPaths(t *testing.T, st *Store) []string {
+	t.Helper()
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	paths := make([]string, len(groups))
+	for i, g := range groups {
+		paths[i] = g.Name
+	}
+	sort.Strings(paths)
+	return paths
+}
+
 func sessionArchived(t *testing.T, st *Store, id string) bool {
 	t.Helper()
 	sess, err := st.Get(id)
@@ -184,6 +199,52 @@ func TestSetGroupArchivedUnderscoreDoesNotBleed(t *testing.T) {
 	// "my_proj/%" with an unescaped underscore matches "myXproj/sub".
 	if groupArchived(t, st, "myXproj/sub") || sessionArchived(t, st, "b") {
 		t.Fatal("myXproj/sub must not be caught by the my_proj archive (LIKE _ wildcard bleed)")
+	}
+}
+
+func TestPruneArchivedGroupsRemovesOnlyEmptyArchivedOnes(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateGroup("proj", "")
+	st.CreateGroup("proj/gone", "")
+	st.CreateGroup("proj/live", "")
+	st.CreateSession(sample("a", "proj/live"))
+	if err := st.SetGroupArchived("proj/gone", true); err != nil {
+		t.Fatalf("archive group: %v", err)
+	}
+
+	removed, err := st.PruneArchivedGroups("proj")
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if len(removed) != 1 || removed[0] != "proj/gone" {
+		t.Fatalf("removed = %v want [proj/gone]", removed)
+	}
+	paths := groupPaths(t, st)
+	if len(paths) != 2 || paths[0] != "proj" || paths[1] != "proj/live" {
+		t.Fatalf("remaining groups = %v want [proj proj/live]", paths)
+	}
+}
+
+func TestPruneArchivedGroupsKeepsArchivedGroupHoldingASession(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateGroup("proj", "")
+	st.CreateGroup("proj/sub", "")
+	if err := st.SetGroupArchived("proj", true); err != nil {
+		t.Fatalf("archive group: %v", err)
+	}
+	// A session launched into an archived group starts out live, so neither
+	// its group nor that group's ancestors may be pruned away under it.
+	st.CreateSession(sample("a", "proj/sub"))
+
+	removed, err := st.PruneArchivedGroups("proj")
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("removed = %v want none", removed)
+	}
+	if paths := groupPaths(t, st); len(paths) != 2 {
+		t.Fatalf("remaining groups = %v want both kept", paths)
 	}
 }
 
