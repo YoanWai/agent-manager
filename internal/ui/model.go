@@ -96,6 +96,13 @@ type Model struct {
 	errAge        int
 }
 
+// confirmTarget.action values; the zero value means delete.
+const (
+	actionDelete  = ""
+	actionArchive = "archive"
+	actionRestore = "restore"
+)
+
 type confirmTarget struct {
 	isGroup bool
 	// archivedOnly marks a group delete issued from the archived view,
@@ -104,9 +111,7 @@ type confirmTarget struct {
 	path         string
 	label        string
 	sessions     []store.Session
-	// action selects the operation on "y": "archive", "restore", or ""
-	// (delete, the default).
-	action string
+	action       string
 }
 
 type renameTarget struct {

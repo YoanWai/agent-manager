@@ -408,13 +408,13 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		m.confirm = confirmTarget{
 			isGroup:  true,
 			path:     entry.group,
-			action:   "archive",
+			action:   actionArchive,
 			sessions: subtree,
 			label:    fmt.Sprintf("archive group %s (%d sessions)?", entry.group, len(subtree)),
 		}
 	} else {
 		m.confirm = confirmTarget{
-			action:   "archive",
+			action:   actionArchive,
 			sessions: []store.Session{entry.sess},
 			label:    fmt.Sprintf("archive %s?", entry.sess.Name),
 		}
@@ -437,13 +437,13 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 		m.confirm = confirmTarget{
 			isGroup:  true,
 			path:     entry.group,
-			action:   "restore",
+			action:   actionRestore,
 			sessions: subtree,
 			label:    fmt.Sprintf("restore group %s (%d sessions)?", entry.group, len(subtree)),
 		}
 	} else {
 		m.confirm = confirmTarget{
-			action:   "restore",
+			action:   actionRestore,
 			sessions: []store.Session{entry.sess},
 			label:    fmt.Sprintf("restore %s?", entry.sess.Name),
 		}
@@ -455,7 +455,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 // archivalSnapshot captures pane content for every still-live session
 // in the confirm target, so the snapshot survives when the tmux window
 // is later killed or the session window is reused for a new agent.
-func (m *Model) archivalSnapshot() {
+func (m *Model) archivalSnapshot() error {
 	for _, sess := range m.confirm.sessions {
 		if !m.tmux.Exists(sess.ID) {
 			continue
@@ -465,10 +465,17 @@ func (m *Model) archivalSnapshot() {
 			continue
 		}
 		if err := m.store.SetSnapshot(sess.ID, pane); err != nil {
-			m.err = err.Error()
-			return
+			return err
 		}
 	}
+	return nil
+}
+
+func (m *Model) applyConfirmedArchived(archived bool) error {
+	if m.confirm.isGroup {
+		return m.store.SetGroupArchived(m.confirm.path, archived)
+	}
+	return m.store.SetArchived(m.confirm.sessions[0].ID, archived)
 }
 
 func (m *Model) prepareDelete() {
@@ -542,28 +549,23 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "enter":
 		switch m.confirm.action {
-		case "archive":
-			m.archivalSnapshot()
-			var err error
-			if m.confirm.isGroup {
-				err = m.store.SetGroupArchived(m.confirm.path, true)
-			} else {
-				err = m.store.SetArchived(m.confirm.sessions[0].ID, true)
-			}
-			if err != nil {
+		case actionArchive:
+			if err := m.archivalSnapshot(); err != nil {
 				m.err = err.Error()
+				return m, nil
 			}
-		case "restore":
-			var err error
-			if m.confirm.isGroup {
-				err = m.store.SetGroupArchived(m.confirm.path, false)
-			} else {
-				err = m.store.SetArchived(m.confirm.sessions[0].ID, false)
-			}
-			if err != nil {
+			if err := m.applyConfirmedArchived(true); err != nil {
 				m.err = err.Error()
+				return m, nil
 			}
-		default:
+			m.err = ""
+		case actionRestore:
+			if err := m.applyConfirmedArchived(false); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			m.err = ""
+		case actionDelete:
 			for _, sess := range m.confirm.sessions {
 				if err := m.tmux.Kill(sess.ID); err != nil {
 					m.err = err.Error()
@@ -593,6 +595,9 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				m.persistCollapsed()
 			}
+		default:
+			m.err = fmt.Sprintf("unknown confirm action %q", m.confirm.action)
+			return m, nil
 		}
 		m.confirm = confirmTarget{}
 		m.requestRefresh()

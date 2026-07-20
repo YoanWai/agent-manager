@@ -1659,6 +1659,32 @@ func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
 	}
 }
 
+func TestArchiveRestoreClearStaleError(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "alpha", dir, "")
+
+	m.selectSessionRow(t, "alpha")
+	m.err = "stale failure from an earlier action"
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	if m.err != "" {
+		t.Fatalf("archive should clear the stale error, err = %q", m.err)
+	}
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "alpha")
+	m.err = "stale failure from an earlier action"
+	m.restoreSelected()
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	if m.err != "" {
+		t.Fatalf("restore should clear the stale error, err = %q", m.err)
+	}
+}
+
 func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
