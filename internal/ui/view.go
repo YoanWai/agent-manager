@@ -319,12 +319,15 @@ func (m *Model) viewList(width, height int) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// treeGuides draws the dim vertical guides for a row's ancestor levels.
-func treeGuides(depth int) string {
+func treeGuides(depth int, selected bool) string {
 	if depth <= 0 {
 		return ""
 	}
-	return subtleStyle.Render(strings.Repeat("│ ", depth))
+	guides := strings.Repeat("│ ", depth)
+	if selected {
+		return guides
+	}
+	return subtleStyle.Render(guides)
 }
 
 // inGroupSubtree reports whether a session's group sits at or below the
@@ -368,11 +371,18 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 	if selected {
 		bar = lipgloss.NewStyle().Foreground(colorAccent).Render("▎")
 	}
-	guides := treeGuides(entry.depth)
+	guides := treeGuides(entry.depth, selected)
 
 	if m.renamingRow(entry) {
 		line := bar + " " + guides + m.renameRowInput(entry, width-2-ansi.StringWidth(guides))
 		return renderSelectedRow(padRight(line, width))
+	}
+
+	secondary := func(s string) string {
+		if selected {
+			return s
+		}
+		return subtleStyle.Render(s)
 	}
 
 	var content string
@@ -381,9 +391,9 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 		if m.collapsed[entry.group] {
 			marker = "▸"
 		}
-		count := subtleStyle.Render(fmt.Sprintf(" (%d)", m.groupSessionCount(entry.group)))
+		count := secondary(fmt.Sprintf(" (%d)", m.groupSessionCount(entry.group)))
 		name := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true).Render(baseName(entry.group))
-		content = subtleStyle.Render(marker) + " " + name + count + m.groupStatusGlyphs(entry.group)
+		content = secondary(marker) + " " + name + count + m.groupStatusGlyphs(entry.group)
 	} else {
 		sess := entry.sess
 		glyph := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
@@ -393,7 +403,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 		}
 		name := nameStyle.Render(sess.Name)
 		state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(sess.Status)
-		meta := state + subtleStyle.Render(" · "+sess.Tool+" · "+relTime(sess.CreatedAt))
+		meta := state + secondary(" · "+sess.Tool+" · "+relTime(sess.CreatedAt))
 		content = glyph + " " + name + "  " + meta
 	}
 
