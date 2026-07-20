@@ -449,18 +449,22 @@ func (m *Model) resizeSessions() {
 		id  string
 		err error
 	}
-	results := make(chan result, len(todo))
-	for _, id := range todo {
-		go func(id string) {
-			results <- result{id: id, err: m.tmux.Resize(id, width, height)}
-		}(id)
-	}
-	for range todo {
-		r := <-results
-		if r.err == nil {
-			m.paneGeom[r.id] = [2]int{width, height}
+	// Pause polling for the whole clear+resize window so a mid-reflow
+	// capture cannot compare against a pre-resize hash.
+	m.poller.reflowSessions(todo, func() {
+		results := make(chan result, len(todo))
+		for _, id := range todo {
+			go func(id string) {
+				results <- result{id: id, err: m.tmux.Resize(id, width, height)}
+			}(id)
 		}
-	}
+		for range todo {
+			r := <-results
+			if r.err == nil {
+				m.paneGeom[r.id] = [2]int{width, height}
+			}
+		}
+	})
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -552,11 +556,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.paneGeom != nil {
 			delete(m.paneGeom, msg.sessID)
 		}
-		_ = m.tmux.Resize(msg.sessID, m.previewPaneWidth(), m.previewPaneHeight())
+		width, height := m.previewPaneWidth(), m.previewPaneHeight()
+		m.poller.reflowSessions([]string{msg.sessID}, func() {
+			_ = m.tmux.Resize(msg.sessID, width, height)
+		})
 		if m.paneGeom == nil {
 			m.paneGeom = map[string][2]int{}
 		}
-		m.paneGeom[msg.sessID] = [2]int{m.previewPaneWidth(), m.previewPaneHeight()}
+		m.paneGeom[msg.sessID] = [2]int{width, height}
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.requestRefresh()
