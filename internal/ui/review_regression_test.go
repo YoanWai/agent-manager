@@ -198,6 +198,74 @@ func TestBranchPickerListsWorktreesAndSwitches(t *testing.T) {
 	}
 }
 
+// The b picker must seed its cursor on the worktree under review even when
+// that worktree was declared via a /tmp path that git resolves to
+// /private/tmp, since /tmp is a symlink on macOS.
+func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, _ := umbrellaWithTwoRepos(t)
+	alpha := filepath.Join(umbrella, "alpha")
+
+	linkedParent, err := os.MkdirTemp("/tmp", "am-p2-symlink-seed-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(linkedParent) })
+	if resolved, _ := filepath.EvalSymlinks(linkedParent); resolved == linkedParent {
+		t.Skip("/tmp does not resolve to a different path on this system")
+	}
+	rawWorktree := filepath.Join(linkedParent, "wt-declared")
+
+	runGit := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	runGit(alpha, "worktree", "add", "-b", "feature/declared-symlinked", rawWorktree)
+
+	createSession(t, m, "symseed", umbrella, "")
+	m.selectSessionRow(t, "symseed")
+	sess, _ := m.selected()
+	if err := m.store.SetReviewRepo(sess.ID, rawWorktree); err != nil {
+		t.Fatal(err)
+	}
+	m.drainCmds(t, m.openDiff())
+	if m.err != "" {
+		t.Fatalf("declared worktree must not be reported missing, err = %q", m.err)
+	}
+	if m.diff.repoSel != rawWorktree {
+		t.Fatalf("repoSel should stay the raw declared path, got %q", m.diff.repoSel)
+	}
+
+	m.pressDiffKey(t, 'b')
+	if m.mode != modeRepoPick {
+		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.err)
+	}
+	resolvedWorktree, _ := filepath.EvalSymlinks(rawWorktree)
+	rows := m.filteredRows()
+	wantCursor := -1
+	for i, row := range rows {
+		if resolved, _ := filepath.EvalSymlinks(row.root); resolved == resolvedWorktree {
+			wantCursor = i
+			break
+		}
+	}
+	if wantCursor == -1 {
+		t.Fatalf("declared worktree should appear among picker rows, got %v", rows)
+	}
+	if wantCursor == 0 {
+		t.Fatal("test setup invalid: declared worktree must not already be row 0")
+	}
+	if m.repoPick.cursor != wantCursor {
+		t.Fatalf("cursor should seed on the declared worktree row %d, got %d", wantCursor, m.repoPick.cursor)
+	}
+}
+
 // A reviewed mark placed on a path in one repo must not bleed onto a
 // same-named path in a sibling repo when cycling with r.
 func TestReviewMarksIsolatedPerRepo(t *testing.T) {

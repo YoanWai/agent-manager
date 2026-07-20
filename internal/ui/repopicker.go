@@ -59,14 +59,23 @@ func (m *Model) openBranchPick() tea.Cmd {
 
 func (m *Model) openPick(rows []pickRow, title string) {
 	m.repoPick = repoPickState{rows: rows, title: title}
+	selResolved := resolveSymlinksOrSelf(m.diff.repoSel)
 	for i, row := range rows {
-		if row.root == m.diff.repoSel {
+		if row.root == m.diff.repoSel || resolveSymlinksOrSelf(row.root) == selResolved {
 			m.repoPick.cursor = i
 			break
 		}
 	}
 	m.mode = modeRepoPick
 	m.err = ""
+}
+
+func resolveSymlinksOrSelf(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+	return resolved
 }
 
 func (m *Model) filteredRows() []pickRow {
