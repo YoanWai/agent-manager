@@ -144,6 +144,27 @@ func (p *poller) run(send func(tea.Msg)) {
 	}
 }
 
+// archivedPreview serves an archived session's stored pane snapshot,
+// backfilling it from a still-live tmux window for sessions archived
+// before snapshots existed.
+func archivedPreview(st *store.Store, driver *tmux.Driver, sessID string) (string, error) {
+	snapshot, err := st.Snapshot(sessID)
+	if err != nil || snapshot != "" {
+		return snapshot, err
+	}
+	if !driver.Exists(sessID) {
+		return "", nil
+	}
+	pane, err := driver.CapturePane(sessID)
+	if err != nil || pane == "" {
+		return "", nil
+	}
+	if err := st.SetSnapshot(sessID, pane); err != nil {
+		return "", err
+	}
+	return pane, nil
+}
+
 // refreshOnce polls every live session's pane, derives and stores status,
 // and samples system stats. Liveness and pane pids come from one tmux
 // call, and every process tree from one ps call, so the poll cost stays
@@ -235,6 +256,18 @@ func (p *poller) refreshOnce() tea.Msg {
 				return errMsg{err}
 			}
 			sessions[i].Status = newStatus
+		}
+	}
+	if preview == "" && selectedID != "" {
+		for _, sess := range sessions {
+			if sess.ID == selectedID && sess.Archived {
+				snapshot, err := archivedPreview(p.store, p.tmux, sess.ID)
+				if err != nil {
+					return errMsg{err}
+				}
+				preview = snapshot
+				break
+			}
 		}
 	}
 	if err := p.captureAgentSessionIDs(sessions, panes, claimed); err != nil {

@@ -340,3 +340,30 @@ func TestAgentSessionIDRoundTrip(t *testing.T) {
 		t.Fatalf("list agent id = %+v", list)
 	}
 }
+
+func TestSnapshotRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	sess := Session{ID: "snap1", Name: "one", Tool: "claude", Cwd: "/tmp"}
+	if err := s.CreateSession(sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if snapshot, err := s.Snapshot("snap1"); err != nil || snapshot != "" {
+		t.Fatalf("fresh session snapshot = %q, %v; want empty", snapshot, err)
+	}
+	if err := s.SetSnapshot("snap1", "pane\x1b[31mtext\x1b[0m"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	snapshot, err := s.Snapshot("snap1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if snapshot != "pane\x1b[31mtext\x1b[0m" {
+		t.Fatalf("snapshot = %q", snapshot)
+	}
+	if err := s.SetSnapshot("missing", "x"); err == nil {
+		t.Fatal("SetSnapshot on a missing session should fail")
+	}
+	if snapshot, err := s.Snapshot("missing"); err != nil || snapshot != "" {
+		t.Fatalf("missing session snapshot = %q, %v; want empty, nil", snapshot, err)
+	}
+}

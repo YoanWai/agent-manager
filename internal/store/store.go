@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN acked INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN agent_session_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE groups ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN snapshot TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -244,6 +245,27 @@ func (s *Store) SetAgentSessionID(id, agentSessionID string) error {
 		return err
 	}
 	return requireRow(res, id)
+}
+
+// SetSnapshot stores the session's final pane capture, kept out of the
+// Session struct so list queries never haul the blob.
+func (s *Store) SetSnapshot(id, snapshot string) error {
+	res, err := s.db.Exec(
+		`UPDATE sessions SET snapshot = ? WHERE id = ?`, snapshot, id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
+}
+
+// Snapshot returns the stored pane capture for a session, "" if none.
+func (s *Store) Snapshot(id string) (string, error) {
+	var snapshot string
+	err := s.db.QueryRow(`SELECT snapshot FROM sessions WHERE id = ?`, id).Scan(&snapshot)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return snapshot, err
 }
 
 func (s *Store) SetArchived(id string, archived bool) error {
