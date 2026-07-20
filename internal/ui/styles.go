@@ -35,6 +35,14 @@ var (
 
 	selectedRowStyle = lipgloss.NewStyle().Background(colorSelBg).Foreground(colorBright)
 
+	// selectedRowReapply is the SGR sequence re-applied after every inner
+	// SGR reset inside a selected row. lipgloss's .Render emits one reset
+	// per call, so wrapping pre-styled content with selectedRowStyle leaves
+	// the background set only on the first segment. renderSelectedRow
+	// substitutes each inner reset with reset+reapply so the selected bg
+	// holds across the whole row.
+	selectedRowReapply = "\x1b[0m\x1b[48;5;" + string(colorSelBg) + "m\x1b[38;5;" + string(colorBright) + "m"
+
 	mutedStyle  = lipgloss.NewStyle().Foreground(colorDim)
 	subtleStyle = lipgloss.NewStyle().Foreground(colorSubtle)
 	valueStyle  = lipgloss.NewStyle().Foreground(colorText)
@@ -42,6 +50,16 @@ var (
 	errStyle    = lipgloss.NewStyle().Foreground(colorErrored).Bold(true)
 	keyStyle    = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 )
+
+// renderSelectedRow wraps a pre-styled line with the selected row's
+// background and foreground. Internal SGR resets emitted by per-segment
+// lipgloss.Render calls (and padRight) would otherwise clear the outer
+// background after the first segment, leaving only the bar glyph tinted.
+// Re-applying the selected bg+fg after every reset keeps the row tinted
+// end-to-end.
+func renderSelectedRow(s string) string {
+	return selectedRowStyle.Render(strings.ReplaceAll(s, "\x1b[0m", selectedRowReapply))
+}
 
 func statusColor(s string) lipgloss.Color {
 	switch s {
