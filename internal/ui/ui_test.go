@@ -1138,24 +1138,28 @@ func TestQuickAttachImageRecordsAttachmentNotInput(t *testing.T) {
 	os.Remove(path)
 }
 
-func TestQuickInlineChipPromptShowsBasename(t *testing.T) {
+func TestQuickInlineChipPromptShowsImageLabel(t *testing.T) {
 	m := buildModel(t)
 	m.openQuickMode()
-	if got := m.quickInlineChipPrompt(); got != "> " {
+	// Empty: just the caret (styled). Strip ANSI for a stable compare.
+	if got := ansi.Strip(m.quickInlineChipPrompt()); got != "❯ " {
 		t.Fatalf("empty chips should be just the caret prefix, got %q", got)
 	}
-	m.quick.attachments = []string{"/tmp/agent-manager-pastes/paste-123.png"}
-	prompt := m.quickInlineChipPrompt()
-	if !strings.Contains(prompt, "paste-123.png") {
-		t.Fatalf("chip should show the file name, got %q", prompt)
+	m.quick.attachments = []string{
+		"/tmp/agent-manager-pastes/paste-123.png",
+		"/tmp/agent-manager-pastes/paste-456.png",
 	}
-	if strings.Contains(prompt, "/tmp/") {
-		t.Fatalf("chip should not show the full path, got %q", prompt)
+	prompt := m.quickInlineChipPrompt()
+	if !strings.Contains(prompt, "Image 1") || !strings.Contains(prompt, "Image 2") {
+		t.Fatalf("chips should show short Image N labels, got %q", prompt)
+	}
+	if strings.Contains(prompt, "paste-123") || strings.Contains(prompt, "/tmp/") {
+		t.Fatalf("chip should not show the temp path, got %q", prompt)
 	}
 	// Chips render through the textarea prompt so they sit on the input line.
 	m.syncQuickInlineChips()
 	view := m.quick.input.View()
-	if !strings.Contains(view, "paste-123.png") {
+	if !strings.Contains(view, "Image 1") {
 		t.Fatalf("inline chip should appear in the input view, got %q", view)
 	}
 	m.quick.attachments = nil

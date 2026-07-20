@@ -171,3 +171,27 @@ func gauge(percent float64, width int) string {
 func pill(text string, fg lipgloss.Color) string {
 	return lipgloss.NewStyle().Foreground(fg).Render("▏" + text)
 }
+
+// imageChipStyle is the soft pill used for inline pasted-image tokens in
+// the quick prompt (same visual family as badges, quieter so the text wins).
+var imageChipStyle = lipgloss.NewStyle().
+	Foreground(colorBright).
+	Background(colorSelBg).
+	Padding(0, 1)
+
+// imageChipPastingStyle is the in-flight variant while the clipboard image
+// is still being captured.
+var imageChipPastingStyle = lipgloss.NewStyle().
+	Foreground(colorWorking).
+	Background(colorSelBg).
+	Padding(0, 1)
+
+// imageChip renders an inline pasted-image token: icon + short label.
+func imageChip(label string) string {
+	return imageChipStyle.Render("🖼 " + label)
+}
+
+// imageChipPasting is the transient chip shown during an async paste.
+func imageChipPasting() string {
+	return imageChipPastingStyle.Render("◌ pasting…")
+}
