@@ -17,6 +17,23 @@ import (
 )
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Resize mode owns the keyboard until the drag commits or the user
+	// cancels: other bindings would fight the mouse-gated session.
+	if m.resizeMode {
+		switch msg.String() {
+		case "|", "esc":
+			return m.exitResizeMode(false)
+		case "q", "ctrl+c":
+			// Drop mouse reporting before quit so the terminal is not left
+			// in mouse mode if shutdown races the bubbletea teardown.
+			m.resizeMode = false
+			m.splitDragging = false
+			return m, tea.Sequence(tea.DisableMouse, tea.Quit)
+		default:
+			return m, nil
+		}
+	}
+
 	switch m.mode {
 	case modeForm:
 		return m.handleFormKey(msg)
@@ -81,6 +98,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.toggleCollapseAll()
 	case "s":
 		m.openSettings()
+	case "|":
+		return m.enterResizeMode()
 	case "t":
 		m.showArchived = !m.showArchived
 		m.requestRefresh()

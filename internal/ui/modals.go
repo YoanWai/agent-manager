@@ -182,6 +182,7 @@ func (m *Model) viewHelp() string {
 		{"B", "in review: pick the base the branch diff compares against"},
 		{"F", "fold / unfold all groups"},
 		{"s", "settings (quick spawn tool, review layout)"},
+		{"|", "resize sessions/sidebar split (drag divider)"},
 		{"t", "toggle archived view"},
 		{"/", "search"},
 		{"↑↓ / jk", "move cursor"},
