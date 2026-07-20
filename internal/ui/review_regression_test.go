@@ -682,3 +682,75 @@ func TestReviewOpensOnDeclaredRepo(t *testing.T) {
 		t.Fatalf("review should open on the declared repo, got %q (ranking prefers %q)", got, dirtyName)
 	}
 }
+
+// Picking a repo after the session has left m.sessions must say so instead of
+// dropping the user back into review with the old repo and no explanation.
+func TestRepoPickerReportsMissingSession(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	umbrella, _ := umbrellaWithTwoRepos(t)
+	openReviewOn(t, m, "gone", umbrella)
+	before := m.diff.repoSel
+
+	m.pressDiffKey(t, 'r')
+	if m.mode != modeRepoPick {
+		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
+	}
+	for _, r := range "alph" {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		*m = *updated.(*Model)
+	}
+	m.sessions = nil
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if cmd != nil {
+		t.Fatal("a missing session must not kick off a diff load")
+	}
+	if m.err == "" {
+		t.Fatal("picking a repo for a missing session must surface an error")
+	}
+	if m.diff.repoSel != before {
+		t.Fatalf("repo should not change when the session is gone, got %q", m.diff.repoSel)
+	}
+	if !strings.Contains(m.viewDiffStatus(), m.err) {
+		t.Fatalf("review status should show the error %q", m.err)
+	}
+}
+
+func TestRepoPickerFitsTerminalHeight(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 80, 24
+	for i := 0; i < 20; i++ {
+		m.diff.repoRoots = append(m.diff.repoRoots,
+			fmt.Sprintf("/home/someone/very/long/parent/path/for/wrapping/umbrella/repo-%02d", i))
+	}
+	m.diff.repoSel = m.diff.repoRoots[0]
+	m.mode = modeRepoPick
+
+	view := m.viewRepoPick()
+	if lines := len(strings.Split(view, "\n")); lines > m.height {
+		t.Fatalf("picker rendered %d lines, terminal is %d", lines, m.height)
+	}
+	if !strings.Contains(view, "repo-00") {
+		t.Fatal("the cursor row should be visible at the top of the list")
+	}
+	if !strings.Contains(view, "more") {
+		t.Fatal("hidden rows should be reported")
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	*m = *updated.(*Model)
+	if m.repoPick.cursor != len(m.diff.repoRoots)-1 {
+		t.Fatalf("up from the top should wrap to the last repo, cursor = %d", m.repoPick.cursor)
+	}
+	view = m.viewRepoPick()
+	if lines := len(strings.Split(view, "\n")); lines > m.height {
+		t.Fatalf("picker rendered %d lines at the list end, terminal is %d", lines, m.height)
+	}
+	if !strings.Contains(view, "repo-19") {
+		t.Fatal("the cursor must stay visible after moving to the end of the list")
+	}
+}

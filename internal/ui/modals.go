@@ -7,12 +7,19 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// card centers a bordered modal with a title and footer hint.
-func (m *Model) card(title, body, hint string) string {
+func (m *Model) cardWidth() int {
 	width := 60
 	if width > m.width-4 {
 		width = m.width - 4
 	}
+	return width
+}
+
+const cardPaddingX = 3
+
+// card centers a bordered modal with a title and footer hint.
+func (m *Model) card(title, body, hint string) string {
+	width := m.cardWidth()
 	header := badgeStyle.Render(title)
 	content := header + "\n\n" + body
 	if m.err != "" {
@@ -23,7 +30,7 @@ func (m *Model) card(title, body, hint string) string {
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorAccent).
-		Padding(1, 3).
+		Padding(1, cardPaddingX).
 		Width(width).
 		Render(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)

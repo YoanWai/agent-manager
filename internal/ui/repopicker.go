@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -65,7 +66,7 @@ func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mode = modeDiff
-		return m, m.selectRepo(rows[min(m.repoPick.cursor, len(rows)-1)])
+		return m, m.selectRepo(rows[m.repoPick.cursor])
 	case tea.KeyRunes:
 		m.repoPick.filter += string(msg.Runes)
 		m.repoPick.cursor = 0
@@ -85,6 +86,7 @@ func (m *Model) moveRepoPickCursor(delta, count int) {
 func (m *Model) selectRepo(root string) tea.Cmd {
 	sess, ok := m.diffSession()
 	if !ok {
+		m.err = "session is gone"
 		return nil
 	}
 	m.diff.repoSel = root
@@ -97,6 +99,43 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }
 
+// repoPickWindow picks the slice of rows that fits the terminal, keeping the
+// cursor centred so it stays visible while moving through a long list.
+func (m *Model) repoPickWindow(count int) (start, end int) {
+	visible := max(3, m.height-repoPickChrome)
+	if count <= visible {
+		return 0, count
+	}
+	start = m.repoPick.cursor - visible/2
+	if start < 0 {
+		start = 0
+	}
+	if start+visible > count {
+		start = count - visible
+	}
+	return start, start + visible
+}
+
+// repoPickChrome counts the card lines around the rows: border, padding,
+// title, blank spacers, an error line, the hint, and the "+N more" line.
+const repoPickChrome = 12
+
+func (m *Model) repoPickRow(root string, selected bool) string {
+	marker := "  "
+	nameStyle := lipgloss.NewStyle()
+	if selected {
+		marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
+		nameStyle = nameStyle.Foreground(colorAccent).Bold(true)
+	}
+	name := filepath.Base(root)
+	budget := m.cardWidth() - 2*cardPaddingX - lipgloss.Width(marker) - lipgloss.Width(name) - 2
+	dir := ""
+	if budget > 1 {
+		dir = subtleStyle.Render("  " + truncateTail(filepath.Dir(root), budget))
+	}
+	return marker + nameStyle.Render(name) + dir
+}
+
 func (m *Model) viewRepoPick() string {
 	rows := m.filteredRepoRoots()
 	var body strings.Builder
@@ -104,15 +143,12 @@ func (m *Model) viewRepoPick() string {
 	if len(rows) == 0 {
 		body.WriteString(subtleStyle.Render("no repo matches"))
 	}
-	for i, root := range rows {
-		marker := "  "
-		line := filepath.Base(root) + subtleStyle.Render("  "+filepath.Dir(root))
-		if i == min(m.repoPick.cursor, len(rows)-1) {
-			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
-			line = lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(filepath.Base(root)) +
-				subtleStyle.Render("  "+filepath.Dir(root))
-		}
-		body.WriteString(marker + line + "\n")
+	start, end := m.repoPickWindow(len(rows))
+	for i := start; i < end; i++ {
+		body.WriteString(m.repoPickRow(rows[i], i == m.repoPick.cursor) + "\n")
+	}
+	if hidden := len(rows) - (end - start); hidden > 0 {
+		body.WriteString(subtleStyle.Render(fmt.Sprintf("+%d more", hidden)) + "\n")
 	}
 	return m.card("⌥ Review repo", strings.TrimRight(body.String(), "\n"), "type to filter · ↑↓ pick · ↵ select · esc cancel")
 }
