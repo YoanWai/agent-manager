@@ -211,6 +211,12 @@ func (d *Driver) BaseRef(root string) (ref, describe string, err error) {
 	if candidate == "" {
 		return "", "", errors.New("no base branch (main/master/origin) found")
 	}
+	return d.baseRefFor(root, candidate)
+}
+
+// baseRefFor returns the merge base of candidate against HEAD and a short
+// "<candidate>@<short>" description.
+func (d *Driver) baseRefFor(root, candidate string) (ref, describe string, err error) {
 	base, err := d.run(root, "merge-base", candidate, "HEAD")
 	if err != nil {
 		return "", "", err
@@ -220,6 +226,45 @@ func (d *Driver) BaseRef(root string) (ref, describe string, err error) {
 		short = short[:7]
 	}
 	return base, candidate + "@" + short, nil
+}
+
+// BranchBase resolves the base ref the branch scope diffs against. A non-empty
+// override is validated first and fails loudly when it no longer resolves,
+// never falling back to auto-detection; empty override auto-detects.
+func (d *Driver) BranchBase(root, override string) (ref, describe string, err error) {
+	if override != "" {
+		if err := d.ResolveRef(root, override); err != nil {
+			return "", "", err
+		}
+		return d.baseRefFor(root, override)
+	}
+	return d.BaseRef(root)
+}
+
+// BranchRefs lists local and remote branch short names, dropping origin/HEAD
+// and the bare origin ref that name a remote's default rather than a branch.
+func (d *Driver) BranchRefs(root string) ([]string, error) {
+	out, err := d.run(root, "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes")
+	if err != nil {
+		return nil, err
+	}
+	var refs []string
+	for _, line := range strings.Split(out, "\n") {
+		name := strings.TrimSpace(line)
+		if name == "" || name == "origin" || name == "origin/HEAD" {
+			continue
+		}
+		refs = append(refs, name)
+	}
+	return refs, nil
+}
+
+// ResolveRef reports whether ref names a commit reachable in root.
+func (d *Driver) ResolveRef(root, ref string) error {
+	if _, err := d.run(root, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil {
+		return fmt.Errorf("ref %q does not resolve to a commit", ref)
+	}
+	return nil
 }
 
 type Status byte
@@ -488,4 +533,57 @@ func IsBinary(content []byte) bool {
 		limit = 8192
 	}
 	return bytes.IndexByte(content[:limit], 0) >= 0
+}
+
+type Worktree struct {
+	Root   string
+	Branch string
+}
+
+func (d *Driver) Worktrees(root string) ([]Worktree, error) {
+	out, err := d.run(root, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	var worktrees []Worktree
+	var current Worktree
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			current = Worktree{Root: strings.TrimPrefix(line, "worktree ")}
+		case strings.HasPrefix(line, "HEAD "):
+			sha := strings.TrimPrefix(line, "HEAD ")
+			if len(sha) > 7 {
+				sha = sha[:7]
+			}
+			current.Branch = sha
+		case strings.HasPrefix(line, "branch "):
+			current.Branch = strings.TrimPrefix(strings.TrimPrefix(line, "branch "), "refs/heads/")
+		case line == "":
+			if current.Root != "" {
+				worktrees = append(worktrees, current)
+				current = Worktree{}
+			}
+		}
+	}
+	if current.Root != "" {
+		worktrees = append(worktrees, current)
+	}
+	return worktrees, nil
+}
+
+func (d *Driver) IsRepoRoot(dir string) bool {
+	top, err := d.run(dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return false
+	}
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return false
+	}
+	resolvedTop, err := filepath.EvalSymlinks(top)
+	if err != nil {
+		return false
+	}
+	return resolvedDir == resolvedTop
 }

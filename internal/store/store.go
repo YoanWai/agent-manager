@@ -2,12 +2,18 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+// ErrSessionGone reports a write against a session row that is no longer
+// there. Deleting a session is normal, so a caller holding a session
+// listed a moment earlier can tell that race apart from a real failure.
+var ErrSessionGone = errors.New("session no longer exists")
 
 type Session struct {
 	ID           string
@@ -88,6 +94,16 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN agent_session_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE groups ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN snapshot TEXT NOT NULL DEFAULT ''`,
+		`CREATE TABLE IF NOT EXISTS review_targets (
+			session_id TEXT PRIMARY KEY,
+			repo_root  TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS review_bases (
+			session_id TEXT NOT NULL,
+			repo_root  TEXT NOT NULL,
+			base_ref   TEXT NOT NULL,
+			PRIMARY KEY (session_id, repo_root)
+		)`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -106,6 +122,60 @@ func (s *Store) Setting(key string) (string, error) {
 		return "", nil
 	}
 	return value, err
+}
+
+func (s *Store) SetReviewRepo(sessionID, repoRoot string) error {
+	if repoRoot == "" {
+		_, err := s.db.Exec(`DELETE FROM review_targets WHERE session_id = ?`, sessionID)
+		return err
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO review_targets (session_id, repo_root) VALUES (?, ?)
+		 ON CONFLICT(session_id) DO UPDATE SET repo_root = excluded.repo_root`,
+		sessionID, repoRoot,
+	)
+	return err
+}
+
+func (s *Store) ReviewRepo(sessionID string) (string, error) {
+	var root string
+	err := s.db.QueryRow(`SELECT repo_root FROM review_targets WHERE session_id = ?`, sessionID).Scan(&root)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return root, nil
+}
+
+func (s *Store) SetReviewBase(sessionID, repoRoot, baseRef string) error {
+	if baseRef == "" {
+		_, err := s.db.Exec(
+			`DELETE FROM review_bases WHERE session_id = ? AND repo_root = ?`,
+			sessionID, repoRoot)
+		return err
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO review_bases (session_id, repo_root, base_ref) VALUES (?, ?, ?)
+		 ON CONFLICT(session_id, repo_root) DO UPDATE SET base_ref = excluded.base_ref`,
+		sessionID, repoRoot, baseRef,
+	)
+	return err
+}
+
+func (s *Store) ReviewBase(sessionID, repoRoot string) (string, error) {
+	var ref string
+	err := s.db.QueryRow(
+		`SELECT base_ref FROM review_bases WHERE session_id = ? AND repo_root = ?`,
+		sessionID, repoRoot).Scan(&ref)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return ref, nil
 }
 
 func (s *Store) SetSetting(key, value string) error {
@@ -301,6 +371,12 @@ func (s *Store) unarchiveAncestorGroups(path string) error {
 }
 
 func (s *Store) Delete(id string) error {
+	if _, err := s.db.Exec(`DELETE FROM review_targets WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`DELETE FROM review_bases WHERE session_id = ?`, id); err != nil {
+		return err
+	}
 	res, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id)
 	if err != nil {
 		return err
@@ -689,7 +765,7 @@ func requireRow(res sql.Result, id string) error {
 		return err
 	}
 	if affected == 0 {
-		return fmt.Errorf("session %s not found", id)
+		return fmt.Errorf("session %s: %w", id, ErrSessionGone)
 	}
 	return nil
 }

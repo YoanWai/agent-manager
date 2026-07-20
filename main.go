@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -25,6 +27,28 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "rename" {
 		if err := renameCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "agent-manager:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "review-repo" {
+		dir, err := config.Dir()
+		if err == nil {
+			err = runReviewRepo(os.Args[2:], os.Getenv(hooks.EnvSessionID), dir)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "agent-manager:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "review-base" {
+		dir, err := config.Dir()
+		if err == nil {
+			err = runReviewBase(os.Args[2:], os.Getenv(hooks.EnvSessionID), dir)
+		}
+		if err != nil {
 			fmt.Fprintln(os.Stderr, "agent-manager:", err)
 			os.Exit(1)
 		}
@@ -68,6 +92,109 @@ func runRename(args []string, sessionID, configDir string) error {
 	}
 	fmt.Println("session renamed to", strings.TrimSpace(args[0]))
 	return nil
+}
+
+// runReviewRepo records the repo a session is working in, so review opens
+// there instead of guessing from the working directory.
+func runReviewRepo(args []string, sessionID, configDir string) error {
+	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
+		return fmt.Errorf(`usage: agent-manager review-repo <path>`)
+	}
+	if sessionID == "" {
+		return fmt.Errorf("not inside an agent-manager session (%s is unset)", hooks.EnvSessionID)
+	}
+	if !sessionIDPattern.MatchString(sessionID) {
+		return fmt.Errorf("invalid session id %q", sessionID)
+	}
+	driver, err := git.New()
+	if err != nil {
+		return err
+	}
+	target := strings.TrimSpace(args[0])
+	abs, err := filepath.Abs(target)
+	if err != nil {
+		return err
+	}
+	roots, err := driver.ResolveRepos(abs)
+	if err != nil {
+		if errors.Is(err, git.ErrNotARepo) {
+			return fmt.Errorf("%s is not inside a git repository", target)
+		}
+		return err
+	}
+	root := roots[0]
+	// ResolveRepos also discovers repos nested under a non-repo umbrella and
+	// ranks them, which would silently record a guess instead of a declaration.
+	if !pathWithin(abs, root) {
+		return fmt.Errorf("%s is not inside a git repository", target)
+	}
+	path := hooks.NewManager(configDir).ReviewRepoFile(sessionID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(root), 0o644); err != nil {
+		return err
+	}
+	fmt.Println("review repo set to", root)
+	return nil
+}
+
+// runReviewBase records the base ref the session's branch diffs against, read
+// from the process working directory the agent runs it in. `--clear` writes an
+// empty ref line, meaning delete.
+func runReviewBase(args []string, sessionID, configDir string) error {
+	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
+		return fmt.Errorf(`usage: agent-manager review-base <ref>|--clear`)
+	}
+	if sessionID == "" {
+		return fmt.Errorf("not inside an agent-manager session (%s is unset)", hooks.EnvSessionID)
+	}
+	if !sessionIDPattern.MatchString(sessionID) {
+		return fmt.Errorf("invalid session id %q", sessionID)
+	}
+	driver, err := git.New()
+	if err != nil {
+		return err
+	}
+	repo, err := driver.OpenRepo(".")
+	if err != nil {
+		if errors.Is(err, git.ErrNotARepo) {
+			return fmt.Errorf("not inside a git repository")
+		}
+		return err
+	}
+	ref := ""
+	clear := strings.TrimSpace(args[0]) == "--clear"
+	if !clear {
+		ref = strings.TrimSpace(args[0])
+		if err := driver.ResolveRef(repo.Root, ref); err != nil {
+			return err
+		}
+	}
+	path := hooks.NewManager(configDir).ReviewBaseFile(sessionID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(repo.Root+"\n"+ref+"\n"), 0o644); err != nil {
+		return err
+	}
+	if clear {
+		fmt.Println("review base cleared for", repo.Root)
+	} else {
+		fmt.Println("review base set to", ref)
+	}
+	return nil
+}
+
+// Both sides are resolved first because git reports a toplevel with symlinks expanded.
+func pathWithin(path, root string) bool {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	return path == root || strings.HasPrefix(path, root+string(filepath.Separator))
 }
 
 func run() error {

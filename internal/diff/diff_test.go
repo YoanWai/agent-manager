@@ -162,7 +162,7 @@ func TestUntrackedFileGetsLineCount(t *testing.T) {
 	write(t, dir, "new.go", "package a\n\nfunc B() {}\n")
 	write(t, dir, "empty.go", "")
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted)
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestUntrackedFileOverLineCapCountsTrueLines(t *testing.T) {
 	const total = maxFileLines + 2000
 	write(t, dir, "huge.txt", linesOf(total))
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted)
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func TestUntrackedFileOverByteCapStillCounts(t *testing.T) {
 	total := (maxFileBytes / len(line)) + 500
 	write(t, dir, "wide.txt", strings.Repeat(line, total))
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted)
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestTruncatedTrackedFileKeepsNumstat(t *testing.T) {
 	}
 	write(t, dir, "big.txt", changed)
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted)
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func TestHeaderTotalStableWithoutLazyLoad(t *testing.T) {
 		write(t, dir, fmt.Sprintf("untracked%03d.txt", i), linesOf(linesEach))
 	}
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted)
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +351,7 @@ func TestUnreadableUntrackedFileDoesNotAbortSet(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(locked, 0o644) })
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted)
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
 	if err != nil {
 		t.Fatalf("BuildSet aborted on one unreadable file: %v", err)
 	}
@@ -375,5 +375,69 @@ func TestUnreadableUntrackedFileDoesNotAbortSet(t *testing.T) {
 	}
 	if bad.StatKnown() {
 		t.Error("locked.go stat should stay unknown so the row renders ?")
+	}
+}
+
+func gitRun(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+}
+
+// A stored base ref drives the vs-base diff: the branch diffs against the
+// override's merge base, not the auto-detected main.
+func TestBuildSetBranchBaseOverride(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.go", "package a\n\nfunc A() int { return 1 }\n")
+	commit(t, dir, "c1")
+	gitRun(t, dir, "branch", "feature")
+	write(t, dir, "a.go", "package a\n\nfunc A() int { return 2 }\n")
+	commit(t, dir, "c2")
+
+	auto, err := BuildSet(driver, dir, git.ScopeBranch, "")
+	if err != nil {
+		t.Fatalf("auto BuildSet: %v", err)
+	}
+	if len(auto.Files) != 0 {
+		t.Fatalf("auto base (main == HEAD) should show no changes, got %d files", len(auto.Files))
+	}
+
+	over, err := BuildSet(driver, dir, git.ScopeBranch, "feature")
+	if err != nil {
+		t.Fatalf("override BuildSet: %v", err)
+	}
+	if over.BaseOverride != "feature" {
+		t.Errorf("BaseOverride = %q, want feature", over.BaseOverride)
+	}
+	if !strings.HasPrefix(over.BaseDesc, "feature@") {
+		t.Errorf("BaseDesc = %q, want feature@<short>", over.BaseDesc)
+	}
+	found := false
+	for _, fd := range over.Files {
+		if fd.File.Path == "a.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("override base should surface a.go changed since the fork, files = %+v", over.Files)
+	}
+}
+
+// An unresolvable stored base fails loudly, naming the ref, never falling back
+// to auto-detection.
+func TestBuildSetBranchBaseOverrideInvalid(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.go", "package a\n")
+	commit(t, dir, "c1")
+
+	_, err := BuildSet(driver, dir, git.ScopeBranch, "no-such-ref")
+	if err == nil {
+		t.Fatal("invalid base should error, not fall back to main")
+	}
+	if !strings.Contains(err.Error(), "no-such-ref") {
+		t.Errorf("error must name the ref, got %q", err)
 	}
 }

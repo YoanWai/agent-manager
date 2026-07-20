@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -466,6 +467,40 @@ func TestDeleteArchivedGroupInArchivedViewRemovesIt(t *testing.T) {
 
 	if paths := m.groupRowPaths(); len(paths) != 0 {
 		t.Fatalf("archived empty group should be gone, got %v", paths)
+	}
+}
+
+func TestIgnoreDeletedSessionDropsOnlyTheDeleteRace(t *testing.T) {
+	if err := ignoreDeletedSession(fmt.Errorf("abc: %w", store.ErrSessionGone)); err != nil {
+		t.Fatalf("a session deleted mid-poll should not fail the pass: %v", err)
+	}
+	if err := ignoreDeletedSession(errors.New("database is locked")); err == nil {
+		t.Fatal("a real store failure must still surface")
+	}
+}
+
+func TestPendingRenameForADeletedSessionDoesNotFailThePoll(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "doomed", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+
+	// The manager deleted the row while this poll pass still held it.
+	if err := m.store.Delete(sess.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	nameFile := m.hooks.NameFile(sess.ID)
+	if err := os.MkdirAll(filepath.Dir(nameFile), 0o755); err != nil {
+		t.Fatalf("hooks dir: %v", err)
+	}
+	if err := os.WriteFile(nameFile, []byte("renamed"), 0o644); err != nil {
+		t.Fatalf("write name file: %v", err)
+	}
+
+	if err := m.poller.applyPendingRename(&sess); err != nil {
+		t.Fatalf("rename of a deleted session should not fail the pass: %v", err)
+	}
+	if _, found := m.hooks.ReadName(sess.ID); found {
+		t.Fatal("the name file should be consumed instead of retried every poll")
 	}
 }
 

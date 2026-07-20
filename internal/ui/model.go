@@ -30,6 +30,7 @@ const (
 	modeHelp
 	modeRename
 	modeMove
+	modeRepoPick
 	modeGroupForm
 	modeSettings
 	modeDiff
@@ -89,6 +90,11 @@ type Model struct {
 	quick     quickState
 	settings  settingsState
 	moveID    string
+	repoPick  repoPickState
+
+	// Repo a human picked by hand per session, outranking the agent's
+	// declaration for as long as this manager runs.
+	pickedRepos map[string]string
 
 	width  int
 	height int

@@ -414,3 +414,105 @@ func TestCountWorkingLinesMissingFileIsUncounted(t *testing.T) {
 		t.Fatalf("count = %+v, want uncounted for a vanished file", count)
 	}
 }
+
+func TestWorktreesListsBranches(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.go", "package a\n")
+	commit(t, dir, "init")
+	wtDir := filepath.Join(t.TempDir(), "wt-feature")
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	runGit("worktree", "add", "-b", "feature/x", wtDir)
+
+	worktrees, err := driver.Worktrees(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(worktrees) != 2 {
+		t.Fatalf("want 2 worktrees, got %+v", worktrees)
+	}
+	byBranch := map[string]string{}
+	for _, wt := range worktrees {
+		byBranch[wt.Branch] = wt.Root
+	}
+	if _, ok := byBranch["feature/x"]; !ok {
+		t.Fatalf("feature/x missing: %+v", worktrees)
+	}
+	if _, ok := byBranch["main"]; !ok {
+		t.Fatalf("main missing: %+v", worktrees)
+	}
+}
+
+func TestIsRepoRoot(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.go", "package a\n")
+	commit(t, dir, "init")
+	if !driver.IsRepoRoot(dir) {
+		t.Fatal("repo root should be recognised")
+	}
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if driver.IsRepoRoot(sub) {
+		t.Fatal("a subdirectory is not the root")
+	}
+	if driver.IsRepoRoot(t.TempDir()) {
+		t.Fatal("a non-repo dir is not a root")
+	}
+}
+
+func TestBranchRefsExcludesOriginHead(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "base\n")
+	commit(t, dir, "base")
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	runGit("checkout", "-b", "feature")
+	// A remote-tracking origin/HEAD and origin ref must be filtered out.
+	runGit("update-ref", "refs/remotes/origin/main", "main")
+	runGit("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+	refs, err := driver.BranchRefs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, ref := range refs {
+		got[ref] = true
+	}
+	for _, want := range []string{"main", "feature", "origin/main"} {
+		if !got[want] {
+			t.Fatalf("BranchRefs missing %q: %v", want, refs)
+		}
+	}
+	for _, unwanted := range []string{"origin", "origin/HEAD"} {
+		if got[unwanted] {
+			t.Fatalf("BranchRefs must exclude %q: %v", unwanted, refs)
+		}
+	}
+}
+
+func TestResolveRef(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "base\n")
+	commit(t, dir, "base")
+	if err := driver.ResolveRef(dir, "main"); err != nil {
+		t.Fatalf("main should resolve: %v", err)
+	}
+	if err := driver.ResolveRef(dir, "nope"); err == nil {
+		t.Fatal("an unknown ref must fail")
+	} else if !strings.Contains(err.Error(), "nope") {
+		t.Fatalf("error should name the ref, got %v", err)
+	}
+}

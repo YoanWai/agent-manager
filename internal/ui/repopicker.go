@@ -1,0 +1,285 @@
+package ui
+
+import (
+	"fmt"
+	"path/filepath"
+	"strings"
+
+	"github.com/YoanWai/agent-manager/internal/git"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// pickKind selects what a picker's Enter does: retarget the repo/branch, or
+// set the diff base.
+type pickKind int
+
+const (
+	pickRepo pickKind = iota
+	pickBase
+)
+
+// pickRow is one selectable target: label is what the user reads (a repo base
+// name, a worktree's branch, or a base ref), root carries the path selectRepo
+// retargets to, or the ref selectBase persists ("" for auto).
+type pickRow struct {
+	label string
+	root  string
+}
+
+// rows is snapshotted at open because a refresh landing behind the picker would reorder rows under the cursor.
+type repoPickState struct {
+	rows   []pickRow
+	filter string
+	cursor int
+	title  string
+	kind   pickKind
+}
+
+func (m *Model) openRepoPick() {
+	if len(m.diff.repoRoots) < 2 {
+		return
+	}
+	rows := make([]pickRow, len(m.diff.repoRoots))
+	for i, root := range m.diff.repoRoots {
+		rows[i] = pickRow{label: filepath.Base(root), root: root}
+	}
+	m.openPick(rows, "⌥ Review repo", pickRepo, m.diff.repoSel)
+}
+
+// openBranchPick lists the currently selected repo's worktrees, one branch per
+// row, so the user can retarget review to another worktree. Listing shells out
+// synchronously; a failure stays in review with the error shown.
+func (m *Model) openBranchPick() tea.Cmd {
+	root := m.diff.set.Repo.Root
+	if m.gitDrv == nil || root == "" {
+		m.err = "no repo under review"
+		return nil
+	}
+	worktrees, err := m.gitDrv.Worktrees(root)
+	if err != nil {
+		m.err = err.Error()
+		return nil
+	}
+	rows := make([]pickRow, len(worktrees))
+	for i, wt := range worktrees {
+		rows[i] = pickRow{label: wt.Branch, root: wt.Root}
+	}
+	m.openPick(rows, "⌥ Review branch", pickRepo, m.diff.repoSel)
+	return nil
+}
+
+// openBasePick lists auto plus the current repo's branch refs so the user can
+// override the base the branch scope diffs against, cursor on the stored base.
+// Listing shells out synchronously; a failure stays in review with the error shown.
+func (m *Model) openBasePick() tea.Cmd {
+	// Key off the raw selection, not the resolved toplevel: the toplevel is
+	// empty after a bad base errors the load, which would make the one control
+	// that clears the bad base unreachable exactly when it is needed.
+	root := m.diff.repoSel
+	if m.gitDrv == nil || root == "" {
+		m.err = "no repo under review"
+		return nil
+	}
+	refs, err := m.gitDrv.BranchRefs(root)
+	if err != nil {
+		m.err = err.Error()
+		return nil
+	}
+	sess, ok := m.diffSession()
+	if !ok {
+		m.err = "session is gone"
+		return nil
+	}
+	// Resolve symlinks so the key matches the CLI's symlink-expanded toplevel.
+	current, err := m.store.ReviewBase(sess.ID, resolveSymlinksOrSelf(root))
+	if err != nil {
+		m.err = err.Error()
+		return nil
+	}
+	rows := make([]pickRow, 0, len(refs)+1)
+	rows = append(rows, pickRow{label: "auto", root: ""})
+	for _, ref := range refs {
+		rows = append(rows, pickRow{label: ref, root: ref})
+	}
+	m.openPick(rows, "⌥ Diff base", pickBase, current)
+	return nil
+}
+
+func (m *Model) openPick(rows []pickRow, title string, kind pickKind, current string) {
+	m.repoPick = repoPickState{rows: rows, title: title, kind: kind}
+	selResolved := resolveSymlinksOrSelf(current)
+	for i, row := range rows {
+		if row.root == current || resolveSymlinksOrSelf(row.root) == selResolved {
+			m.repoPick.cursor = i
+			break
+		}
+	}
+	m.mode = modeRepoPick
+	m.err = ""
+}
+
+func resolveSymlinksOrSelf(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+	return resolved
+}
+
+func (m *Model) filteredRows() []pickRow {
+	if m.repoPick.filter == "" {
+		return m.repoPick.rows
+	}
+	needle := strings.ToLower(m.repoPick.filter)
+	var out []pickRow
+	for _, row := range m.repoPick.rows {
+		if strings.Contains(strings.ToLower(row.label), needle) ||
+			strings.Contains(strings.ToLower(row.root), needle) {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	rows := m.filteredRows()
+	switch msg.Type {
+	case tea.KeyCtrlC:
+		return m, tea.Quit
+	case tea.KeyEsc:
+		m.mode = modeDiff
+		return m, nil
+	case tea.KeyUp:
+		m.moveRepoPickCursor(-1, len(rows))
+		return m, nil
+	case tea.KeyDown:
+		m.moveRepoPickCursor(1, len(rows))
+		return m, nil
+	case tea.KeyBackspace:
+		if m.repoPick.filter != "" {
+			m.repoPick.filter = m.repoPick.filter[:len(m.repoPick.filter)-1]
+			m.repoPick.cursor = 0
+		}
+		return m, nil
+	case tea.KeyEnter:
+		if len(rows) == 0 {
+			return m, nil
+		}
+		m.mode = modeDiff
+		row := rows[m.repoPick.cursor]
+		if m.repoPick.kind == pickBase {
+			return m, m.selectBase(row.root)
+		}
+		return m, m.selectRepo(row.root)
+	case tea.KeyRunes:
+		m.repoPick.filter += string(msg.Runes)
+		m.repoPick.cursor = 0
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *Model) moveRepoPickCursor(delta, count int) {
+	if count == 0 {
+		m.repoPick.cursor = 0
+		return
+	}
+	m.repoPick.cursor = (m.repoPick.cursor + delta + count) % count
+}
+
+func (m *Model) selectRepo(root string) tea.Cmd {
+	sess, ok := m.diffSession()
+	if !ok {
+		m.err = "session is gone"
+		return nil
+	}
+	m.diff.repoSel = root
+	if m.pickedRepos == nil {
+		m.pickedRepos = map[string]string{}
+	}
+	m.pickedRepos[sess.ID] = root
+	m.diff.gen++
+	m.diff.loading = true
+	m.diff.errText = ""
+	m.diff.fileIdx = 0
+	m.diff.scroll = 0
+	m.diff.cursorLine = 0
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
+}
+
+// selectBase persists the chosen base for the current repo ("" clears to auto)
+// then reloads. It forces the branch scope so the freshly picked base is what
+// the review actually shows.
+func (m *Model) selectBase(ref string) tea.Cmd {
+	sess, ok := m.diffSession()
+	if !ok {
+		m.err = "session is gone"
+		return nil
+	}
+	// Resolve symlinks so the key matches the CLI's symlink-expanded toplevel.
+	if err := m.store.SetReviewBase(sess.ID, resolveSymlinksOrSelf(m.diff.repoSel), ref); err != nil {
+		m.err = err.Error()
+		return nil
+	}
+	m.diff.scope = git.ScopeBranch
+	m.diff.gen++
+	m.diff.loading = true
+	m.diff.errText = ""
+	m.diff.fileIdx = 0
+	m.diff.scroll = 0
+	m.diff.cursorLine = 0
+	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
+}
+
+func (m *Model) repoPickWindow(count int) (start, end int) {
+	visible := max(3, m.height-repoPickChrome)
+	if count <= visible {
+		return 0, count
+	}
+	start = m.repoPick.cursor - visible/2
+	if start < 0 {
+		start = 0
+	}
+	if start+visible > count {
+		start = count - visible
+	}
+	return start, start + visible
+}
+
+// Card lines around the rows: border, padding, title, spacers, error, hint, "+N more".
+const repoPickChrome = 12
+
+func (m *Model) repoPickRow(row pickRow, selected bool) string {
+	marker := "  "
+	nameStyle := lipgloss.NewStyle()
+	if selected {
+		marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
+		nameStyle = nameStyle.Foreground(colorAccent).Bold(true)
+	}
+	inner := m.cardWidth() - 2*cardPaddingX
+	name := truncateTail(row.label, inner-lipgloss.Width(marker))
+	budget := inner - lipgloss.Width(marker) - lipgloss.Width(name) - 2
+	dir := ""
+	if budget > 1 {
+		dir = subtleStyle.Render("  " + truncateTail(filepath.Dir(row.root), budget))
+	}
+	return marker + nameStyle.Render(name) + dir
+}
+
+func (m *Model) viewRepoPick() string {
+	rows := m.filteredRows()
+	var body strings.Builder
+	body.WriteString(mutedStyle.Render("filter: ") + m.repoPick.filter + "\n\n")
+	if len(rows) == 0 {
+		body.WriteString(subtleStyle.Render("no match"))
+	}
+	start, end := m.repoPickWindow(len(rows))
+	for i := start; i < end; i++ {
+		body.WriteString(m.repoPickRow(rows[i], i == m.repoPick.cursor) + "\n")
+	}
+	if hidden := len(rows) - (end - start); hidden > 0 {
+		body.WriteString(subtleStyle.Render(fmt.Sprintf("+%d more", hidden)) + "\n")
+	}
+	return m.card(m.repoPick.title, strings.TrimRight(body.String(), "\n"), "type to filter · ↑↓ pick · ↵ select · esc cancel")
+}
