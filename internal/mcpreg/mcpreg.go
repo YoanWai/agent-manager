@@ -135,6 +135,8 @@ func writeConfig(dir, name string, content []byte) (string, error) {
 // ensureGrokRegistered adds the server to grok's user-scope config once
 // per binary path, via grok's own config writer. The marker file records
 // the registered path so upgrades that move the binary re-register.
+// The check-then-add window is benign: grok mcp add updates in place, so
+// two racing managers just write the same entry twice.
 func ensureGrokRegistered(exe, hooksDir string) error {
 	marker := filepath.Join(hooksDir, "mcp-grok-registered")
 	if content, err := os.ReadFile(marker); err == nil && string(content) == exe {
