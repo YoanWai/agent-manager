@@ -16,23 +16,30 @@ func (m *Model) View() string {
 	if m.width == 0 {
 		return "loading..."
 	}
+	var frame string
 	switch m.mode {
 	case modeForm:
-		return m.viewForm()
+		frame = m.viewForm()
 	case modeHelp:
-		return m.viewHelp()
+		frame = m.viewHelp()
 	case modeSettings:
-		return m.viewSettings()
+		frame = m.viewSettings()
 	case modeMove:
-		return m.viewMove()
+		frame = m.viewMove()
 	case modeRepoPick:
-		return m.viewRepoPick()
+		frame = m.viewRepoPick()
 	case modeGroupForm:
-		return m.viewGroupForm()
+		frame = m.viewGroupForm()
 	case modeDiff:
-		return m.viewDiffFull()
+		frame = m.viewDiffFull()
+	default:
+		frame = m.viewListFrame()
 	}
+	return clampFrame(frame, m.height)
+}
 
+// viewListFrame is the sessions/sidebar layout used in list mode.
+func (m *Model) viewListFrame() string {
 	leftWidth, rightWidth := m.splitWidths()
 	footer := m.viewFooter()
 	bodyHeight := m.listBodyHeight()
@@ -65,6 +72,22 @@ func (m *Model) View() string {
 	return strings.Join([]string{m.viewHeader(), "", body, m.viewStatus(), footer}, "\n")
 }
 
+// clampFrame pins a rendered frame to exactly height rows so the outer
+// terminal cannot scroll the TUI away when a layout overshoots.
+func clampFrame(frame string, height int) string {
+	if height <= 0 {
+		return frame
+	}
+	lines := strings.Split(frame, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
 // splitWidths is the body's horizontal split: the sessions panel takes
 // splitRatio of the terminal (default 34%), floored so both sides stay
 // usable when the window is wide enough.
@@ -86,7 +109,49 @@ func (m *Model) splitWidths() (int, int) {
 // fit the panel instead of getting clipped on the right.
 func (m *Model) previewPaneWidth() int {
 	_, rightWidth := m.splitWidths()
-	return rightWidth - 4
+	if m.resizeMode && rightWidth > 1 {
+		// Grip steals one column from the right panel while resize is on.
+		rightWidth--
+	}
+	w := rightWidth - 4
+	if w < 1 {
+		return 1
+	}
+	return w
+}
+
+// previewPaneHeight is the rows of session pane content the Preview
+// section can show. Mirrors viewSidebar + viewPreview so tmux is pinned
+// to the same box the UI paints into.
+func (m *Model) previewPaneHeight() int {
+	width := m.previewPaneWidth()
+	if m.height < 1 {
+		return 1
+	}
+	sidebarInner := m.listBodyHeight() - 2
+	if sidebarInner < 1 {
+		return 1
+	}
+	avail := sidebarInner
+	if m.quick.active {
+		barH := lipgloss.Height(m.viewQuickBar(width)) + 1
+		avail -= barH
+		if avail < 3 {
+			avail = 3
+		}
+	}
+	detailH := lipgloss.Height(divider("Details", width) + "\n" + m.viewDetail(width))
+	rest := avail - detailH - 1
+	if rest < 3 {
+		// Preview section is hidden; keep a tiny pane for create/attach paths.
+		return 3
+	}
+	// viewPreview spends one row on its "Preview" divider.
+	h := rest - 1
+	if h < 1 {
+		return 1
+	}
+	return h
 }
 
 // viewStatus is the transient message line: prompts, search, and
@@ -96,7 +161,7 @@ func (m *Model) viewStatus() string {
 	case m.mode == modeConfirmDelete:
 		return padRight(errStyle.Render(" ⚠ "+m.confirm.label)+subtleStyle.Render("  y/n"), m.width)
 	case m.resizeMode:
-		hint := "drag the divider · release to set · esc cancels"
+		hint := "←→ resize · drag divider · | set · esc cancel"
 		if m.splitDragging {
 			hint = "release to set · esc cancels"
 		}
@@ -625,13 +690,18 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 	return padToHeight(strings.TrimRight(b.String(), "\n"), height)
 }
 
-// viewPreview renders the tail of the selected session's tmux pane with
-// its original ANSI colors, clipped to the panel. Each line is sanitized
-// and closed with an SGR reset so pane colors never leak into the layout.
+// viewPreview renders the selected session's tmux pane 1:1 with its
+// original ANSI colors. The pane is sized to this box, so the capture is
+// painted top-to-bottom without tail/collapse transforms that would make
+// it look unlike being inside the session.
 func (m *Model) viewPreview(width, height int) string {
 	var b strings.Builder
 	b.WriteString(divider("Preview", width) + "\n")
-	lines := paneTail(m.preview, height-1)
+	contentRows := height - 1
+	if contentRows < 1 {
+		return padToHeight(b.String(), height)
+	}
+	lines := paneExact(m.preview, contentRows)
 	if len(lines) == 0 {
 		b.WriteString(mutedStyle.Render("(no output yet)"))
 		return padToHeight(b.String(), height)
@@ -642,13 +712,16 @@ func (m *Model) viewPreview(width, height int) string {
 	return padToHeight(strings.TrimRight(b.String(), "\n"), height)
 }
 
-// eraseSeqs matches CSI K (erase in line) and CSI J (erase in display).
-// Captured panes carry them, and passed through they make the outer
-// terminal paint the current background past the clip point.
-var eraseSeqs = regexp.MustCompile(`\x1b\[[0-9]*[KJ]`)
+// previewDangerSeqs strips capture sequences that would scroll or clear the
+// outer manager terminal when embedded in View output: erase (K/J), scroll
+// (S/T), insert/delete lines (L/M), set scroll region (r), and the 7-bit
+// index / reverse-index / next-line controls (D/M/E).
+var previewDangerSeqs = regexp.MustCompile(
+	`\x1b\[[0-9;]*[KJLMSTr]|\x1b[DEM]`,
+)
 
 func previewLine(line string, width int) string {
-	line = eraseSeqs.ReplaceAllString(line, "")
+	line = previewDangerSeqs.ReplaceAllString(line, "")
 	line = strings.Map(func(r rune) rune {
 		if r < 0x20 && r != 0x1b && r != '\t' {
 			return -1
@@ -656,7 +729,7 @@ func previewLine(line string, width int) string {
 		return r
 	}, line)
 	if ansi.StringWidth(line) > width {
-		line = ansi.Truncate(line, width-1, "…")
+		line = ansi.Truncate(line, width, "")
 	}
 	if strings.ContainsRune(line, 0x1b) {
 		line += "\x1b[0m"
@@ -664,10 +737,26 @@ func previewLine(line string, width int) string {
 	return line
 }
 
-// paneTail returns the last n lines of pane text. Trailing blanks are
-// dropped and interior runs of blank lines collapse to one, so sparse
-// TUI panes (claude leaves most rows empty) show their real content
-// instead of a window of whitespace. ANSI-only lines count as blank.
+// paneExact returns up to n lines of pane text as captured, preserving
+// blank rows so a full-screen agent TUI looks the same in the preview.
+// When the capture is taller than the panel (stale size), the bottom n
+// lines are kept — the visible end of the pane.
+func paneExact(pane string, n int) []string {
+	if n <= 0 || pane == "" {
+		return nil
+	}
+	// capture-pane often ends with a trailing newline; drop only that.
+	pane = strings.TrimSuffix(pane, "\n")
+	lines := strings.Split(pane, "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return lines
+}
+
+// paneTail returns the last n content-bearing lines of pane text with
+// blank runs collapsed. Used by tests and any caller that wants a dense
+// log-style excerpt rather than a 1:1 TUI frame.
 func paneTail(pane string, n int) []string {
 	if n <= 0 || pane == "" {
 		return nil
@@ -716,7 +805,7 @@ func (m *Model) viewFooter() string {
 	}
 	if m.resizeMode {
 		pairs = [][2]string{
-			{"drag", "divider"}, {"release", "commit"}, {"esc / |", "cancel"},
+			{"←→", "nudge"}, {"drag", "divider"}, {"| / release", "commit"}, {"esc", "cancel"},
 		}
 	}
 	if m.mode == modeRename {

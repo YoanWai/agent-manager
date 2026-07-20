@@ -173,21 +173,25 @@ func windowWidth(t *testing.T, id string) int {
 	return w
 }
 
-// A detached session must boot at the preview panel's width so its pane
-// preview fills without cropping on the right, and follow later terminal
-// resizes, rather than staying at tmux's 80-column default until attach.
+// A detached session must boot at the preview panel's width×height so its
+// pane preview fills 1:1, and follow later terminal resizes, rather than
+// staying at tmux's 80×24 default until attach.
 func TestSessionSizesToPreviewPane(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sized", t.TempDir(), "")
 	id := m.sessionRows()[0].ID
+	// Create sizes from pre-selection geometry; re-pin to the live preview box.
+	m.resizeSessions()
 
-	if w := windowWidth(t, id); w != m.previewPaneWidth() {
-		t.Fatalf("new session window width = %d, want %d", w, m.previewPaneWidth())
+	wantW, wantH := m.previewPaneWidth(), m.previewPaneHeight()
+	if w, h := windowSize(t, id); w != wantW || h != wantH {
+		t.Fatalf("new session window = %dx%d, want %dx%d", w, h, wantW, wantH)
 	}
 
 	m.Update(tea.WindowSizeMsg{Width: 150, Height: 45})
-	if w := windowWidth(t, id); w != m.previewPaneWidth() {
-		t.Fatalf("after resize, window width = %d, want %d", w, m.previewPaneWidth())
+	wantW, wantH = m.previewPaneWidth(), m.previewPaneHeight()
+	if w, h := windowSize(t, id); w != wantW || h != wantH {
+		t.Fatalf("after resize, window = %dx%d, want %dx%d", w, h, wantW, wantH)
 	}
 }
 

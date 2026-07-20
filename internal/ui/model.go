@@ -378,14 +378,15 @@ func (m *Model) refreshCmd() tea.Cmd {
 }
 
 // resizeSessions syncs every live session's tmux window to the preview
-// panel's width, so a detached session's capture fits the panel instead of
-// getting clipped on the right. Dead sessions error harmlessly and skip.
+// panel's pixel box so a capture fills the preview 1:1. Dead sessions
+// error harmlessly and skip.
 func (m *Model) resizeSessions() {
+	width, height := m.previewPaneWidth(), m.previewPaneHeight()
 	for _, sess := range m.sessions {
 		if sess.Archived {
 			continue
 		}
-		_ = m.tmux.Resize(sess.ID, m.previewPaneWidth(), m.height)
+		_ = m.tmux.Resize(sess.ID, width, height)
 	}
 }
 
@@ -456,7 +457,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; shrink it back to the preview panel so
 		// the capture is not clipped on the right.
-		_ = m.tmux.Resize(msg.sessID, m.previewPaneWidth(), m.height)
+		_ = m.tmux.Resize(msg.sessID, m.previewPaneWidth(), m.previewPaneHeight())
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.requestRefresh()

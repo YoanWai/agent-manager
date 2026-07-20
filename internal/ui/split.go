@@ -100,22 +100,32 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 }
 
 // exitResizeMode turns mouse reporting back off. When commit is true the
-// current ratio is persisted and live sessions are resized once; otherwise
-// a mid-drag cancel restores the pre-drag ratio.
+// current ratio is persisted; cancel restores the pre-mode ratio. Either
+// path ends with a pane resize so the preview stays 1:1 with the panel.
 func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
 	if !m.resizeMode && !m.splitDragging {
 		return m, nil
 	}
-	if m.splitDragging && !commit {
+	if !commit {
 		m.splitRatio = m.splitRatioBefore
-	}
-	if commit {
+	} else {
 		m.persistSplitRatio()
-		m.resizeSessions()
 	}
 	m.splitDragging = false
 	m.resizeMode = false
+	m.resizeSessions()
 	return m, tea.DisableMouse
+}
+
+// nudgeSplit moves the divider by delta columns while resize mode is on.
+// Panes reflow live so the preview keeps fitting; persist waits for |.
+func (m *Model) nudgeSplit(delta int) {
+	if m.width <= 0 || delta == 0 {
+		return
+	}
+	left, _ := m.splitWidths()
+	m.setSplitFromX(left + delta)
+	m.resizeSessions()
 }
 
 // listChromeRows is the number of rows above the sessions/sidebar body
