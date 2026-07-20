@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -25,6 +26,17 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "rename" {
 		if err := renameCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "agent-manager:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "review-repo" {
+		dir, err := config.Dir()
+		if err == nil {
+			err = runReviewRepo(os.Args[2:], os.Getenv(hooks.EnvSessionID), dir)
+		}
+		if err != nil {
 			fmt.Fprintln(os.Stderr, "agent-manager:", err)
 			os.Exit(1)
 		}
@@ -67,6 +79,38 @@ func runRename(args []string, sessionID, configDir string) error {
 		return err
 	}
 	fmt.Println("session renamed to", strings.TrimSpace(args[0]))
+	return nil
+}
+
+// runReviewRepo records the repo a session is working in, so review opens
+// there instead of guessing from the working directory.
+func runReviewRepo(args []string, sessionID, configDir string) error {
+	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
+		return fmt.Errorf(`usage: agent-manager review-repo <path>`)
+	}
+	if sessionID == "" {
+		return fmt.Errorf("not inside an agent-manager session (%s is unset)", hooks.EnvSessionID)
+	}
+	if !sessionIDPattern.MatchString(sessionID) {
+		return fmt.Errorf("invalid session id %q", sessionID)
+	}
+	driver, err := git.New()
+	if err != nil {
+		return err
+	}
+	roots, err := driver.ResolveRepos(strings.TrimSpace(args[0]))
+	if err != nil {
+		return fmt.Errorf("%s is not a git repository: %w", args[0], err)
+	}
+	root := roots[0]
+	path := hooks.NewManager(configDir).ReviewRepoFile(sessionID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(root), 0o644); err != nil {
+		return err
+	}
+	fmt.Println("review repo set to", root)
 	return nil
 }
 
