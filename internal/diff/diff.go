@@ -43,6 +43,7 @@ type FileDiff struct {
 	Binary    bool
 	Truncated bool
 	Err       error
+	statKnown bool
 	rows      []Row
 }
 
@@ -97,7 +98,15 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope) (Set, error) {
 	}
 
 	for i, file := range files {
-		fd := FileDiff{File: file, Stat: stats[file.Path]}
+		stat, known := stats[file.Path]
+		fd := FileDiff{File: file, Stat: stat, statKnown: known}
+		if !known && file.Status == git.Untracked {
+			if err := countUnknownStat(driver, repo.Root, &fd); err != nil {
+				fd.Err = err
+				set.Files = append(set.Files, fd)
+				continue
+			}
+		}
 		if i < maxEagerFiles {
 			loadFile(driver, repo.Root, scope, baseRef, &fd)
 		}
@@ -136,8 +145,28 @@ func loadFile(driver *git.Driver, root string, scope git.Scope, baseRef string, 
 		fd.Truncated = true
 		return
 	}
+	known := fd.statKnown
 	*fd = BuildFile(oldContent, newContent, fd.File, fd.Stat)
+	fd.statKnown = known
 }
+
+// Counting raw bytes keeps untracked files correct past the diff model's caps.
+func countUnknownStat(driver *git.Driver, root string, fd *FileDiff) error {
+	count, err := driver.CountWorkingLines(root, fd.File.Path)
+	if err != nil {
+		return err
+	}
+	if !count.Counted {
+		return nil
+	}
+	fd.statKnown = true
+	fd.Stat = git.FileStat{Adds: count.Lines, Binary: count.Binary}
+	fd.Binary = count.Binary
+	return nil
+}
+
+// StatKnown reports whether Stat holds a real count rather than an unknown one.
+func (fd *FileDiff) StatKnown() bool { return fd.statKnown }
 
 func fileSides(driver *git.Driver, root string, scope git.Scope, baseRef string, file git.ChangedFile) (oldContent, newContent []byte, err error) {
 	oldRef, newRef := "", ""

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -274,5 +275,142 @@ func TestIsBinary(t *testing.T) {
 	}
 	if !IsBinary([]byte{'a', 0, 'b'}) {
 		t.Fatal("NUL not flagged binary")
+	}
+}
+
+func TestChangedFilesSkipsNestedRepoDirectories(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "tracked.go", "package a\n")
+	commit(t, dir, "init")
+	write(t, dir, "untracked.go", "package a\n\nfunc B() {}\n")
+	initRepoAt(t, filepath.Join(dir, "nested"))
+
+	files, err := driver.ChangedFiles(dir, ScopeUncommitted, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if strings.HasSuffix(file.Path, "/") {
+			t.Fatalf("directory entry leaked into the file list: %q", file.Path)
+		}
+		if file.Path == "nested" {
+			t.Fatal("nested repository should not be listed")
+		}
+	}
+	found := false
+	for _, file := range files {
+		if file.Path == "untracked.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("untracked file should still be listed, got %+v", files)
+	}
+}
+
+func TestCountWorkingLines(t *testing.T) {
+	driver, dir := testRepo(t)
+	cases := []struct {
+		name    string
+		content string
+		want    int
+	}{
+		{"empty", "", 0},
+		{"trailing newline", "a\nb\nc\n", 3},
+		{"no trailing newline", "a\nb\nc", 3},
+		{"one line", "only\n", 1},
+		{"blank lines counted", "\n\n\n", 3},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := strings.ReplaceAll(tc.name, " ", "_") + ".txt"
+			if err := os.WriteFile(filepath.Join(dir, path), []byte(tc.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			count, err := driver.CountWorkingLines(dir, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !count.Counted || count.Binary {
+				t.Fatalf("count = %+v, want a plain counted result", count)
+			}
+			if count.Lines != tc.want {
+				t.Errorf("lines = %d, want %d", count.Lines, tc.want)
+			}
+		})
+	}
+}
+
+// A count that spans more than one read buffer must still be right.
+func TestCountWorkingLinesAcrossBuffers(t *testing.T) {
+	driver, dir := testRepo(t)
+	var b strings.Builder
+	const want = 40000
+	for i := 0; i < want; i++ {
+		b.WriteString("some line of text\n")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "long.txt"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	count, err := driver.CountWorkingLines(dir, "long.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !count.Counted || count.Lines != want {
+		t.Fatalf("count = %+v, want %d counted lines", count, want)
+	}
+}
+
+func TestCountWorkingLinesBinary(t *testing.T) {
+	driver, dir := testRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "logo.png"), []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\x00binary\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	count, err := driver.CountWorkingLines(dir, "logo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !count.Binary {
+		t.Fatalf("count = %+v, want binary", count)
+	}
+	if count.Lines != 0 {
+		t.Errorf("binary file got a line count of %d", count.Lines)
+	}
+}
+
+// Past the scan budget the count is reported unknown, never as zero.
+func TestCountWorkingLinesTooLarge(t *testing.T) {
+	driver, dir := testRepo(t)
+	path := filepath.Join(dir, "huge.bin")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(maxCountBytes + 1); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	file.Close()
+
+	count, err := driver.CountWorkingLines(dir, "huge.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count.Counted {
+		t.Fatalf("count = %+v, want an uncounted result past the budget", count)
+	}
+	if count.Lines != 0 {
+		t.Errorf("uncounted result carried %d lines", count.Lines)
+	}
+}
+
+func TestCountWorkingLinesMissingFileIsUncounted(t *testing.T) {
+	driver, dir := testRepo(t)
+	count, err := driver.CountWorkingLines(dir, "gone.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count.Counted {
+		t.Fatalf("count = %+v, want uncounted for a vanished file", count)
 	}
 }
