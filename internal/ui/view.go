@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -480,9 +481,52 @@ func (m *Model) viewQuickBar(width int) string {
 			target = "answer " + entry.sess.Name
 		}
 	}
+	// Chips live in the textarea prompt so they sit on the same line as the
+	// typed text (Claude-style inline chips), not on a separate strip below.
+	m.syncQuickInlineChips()
 	m.quick.input.SetWidth(width)
 	m.quick.input.SetHeight(m.quickBarRows(width - 2))
 	return divider("Quick Prompt · "+target, width) + "\n" + m.quick.input.View()
+}
+
+// syncQuickInlineChips rebuilds the line-0 prompt as "> [chip] [chip] " so
+// pasted images render inline with the caret. Paths stay out of the value;
+// backspace at the text start peels chips off (see handleQuickKey).
+func (m *Model) syncQuickInlineChips() {
+	prefix := m.quickInlineChipPrompt()
+	// lipgloss.Width ignores SGR so the reserved prompt slot matches what
+	// the terminal paints; uniseg alone would mis-count styled chips.
+	promptWidth := max(lipgloss.Width(prefix), 2)
+	m.quick.input.SetPromptFunc(promptWidth, func(lineIndex int) string {
+		if lineIndex == 0 {
+			return prefix
+		}
+		return strings.Repeat(" ", promptWidth)
+	})
+}
+
+// quickInlineChipPrompt is the first-line prompt: "> " plus one chip per
+// attachment (and a transient pasting chip while the clipboard read runs).
+func (m *Model) quickInlineChipPrompt() string {
+	var b strings.Builder
+	b.WriteString("> ")
+	for _, path := range m.quick.attachments {
+		b.WriteString(imageChip(filepath.Base(path)))
+		b.WriteByte(' ')
+	}
+	if m.quick.pasting {
+		b.WriteString(imageChip("pasting…"))
+		b.WriteByte(' ')
+	}
+	return b.String()
+}
+
+// imageChip is a compact inline token for a pasted image basename.
+func imageChip(label string) string {
+	return lipgloss.NewStyle().
+		Foreground(colorBg).
+		Background(colorAccent2).
+		Render(" " + label + " ")
 }
 
 const quickBarMaxRows = 5

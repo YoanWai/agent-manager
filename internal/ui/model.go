@@ -143,12 +143,24 @@ type renameTarget struct {
 
 // quickState is the inline prompt bar docked under the preview: active
 // across cursor moves, so the target follows the selection. The tool is
-// the spawn CLI for group targets, cycled with tab.
+// the spawn CLI for group targets, cycled with tab. Pasted images render
+// as inline chips in the prompt (same line as the text); backspace at the
+// text start removes the nearest chip. Paths append on submit only.
 type quickState struct {
-	active    bool
-	input     textarea.Model
-	toolNames []string
-	toolIndex int
+	active      bool
+	input       textarea.Model
+	toolNames   []string
+	toolIndex   int
+	attachments []string
+	pasting     bool
+}
+
+// quickImageMsg is the result of an async clipboard image read started
+// from the quick bar's ctrl+v handler.
+type quickImageMsg struct {
+	path    string
+	err     error
+	noImage bool
 }
 
 type settingsState struct {
@@ -451,6 +463,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.err = msg.err.Error()
 		return m, nil
+
+	case quickImageMsg:
+		return m.handleQuickImageMsg(msg)
 
 	case attachDoneMsg:
 		// The attach client sized the window to the full terminal and tmux

@@ -825,51 +825,86 @@ func (m *Model) renameGroupLocally(old, newPath, dir string) {
 // image; tests swap it for a fake.
 var captureClipboardImage = clipboard.ReadImage
 
-// attachQuickImage saves a clipboard image to a temp file and inserts that
-// path into the prompt at the cursor so the user can edit or delete it like
-// any other text. It reports whether it handled the keypress: an empty
-// clipboard returns false so the caller can fall back to a plain text paste,
-// while a real failure is surfaced through m.err.
-func (m *Model) attachQuickImage() bool {
-	data, ext, err := captureClipboardImage()
-	if err != nil {
-		if errors.Is(err, clipboard.ErrNoImage) {
-			return false
+// attachQuickImageCmd reads the clipboard image off the UI thread. macOS
+// osascript conversion can take a second or more on a large screenshot;
+// returning a Cmd keeps the TUI responsive and shows a pasting chip.
+func (m *Model) attachQuickImageCmd() tea.Cmd {
+	return func() tea.Msg {
+		data, ext, err := captureClipboardImage()
+		if err != nil {
+			if errors.Is(err, clipboard.ErrNoImage) {
+				return quickImageMsg{noImage: true}
+			}
+			return quickImageMsg{err: err}
 		}
-		m.err = err.Error()
-		return true
-	}
-	path, err := clipboard.SaveToTemp(data, ext)
-	if err != nil {
-		m.err = err.Error()
-		return true
-	}
-	// Space-pad so the path is a standalone, backspace-deletable token.
-	token := " " + path + " "
-	// bubbles InsertString silently truncates at CharLimit; refuse when the
-	// full path would not fit so we never submit a broken partial path.
-	if limit := m.quick.input.CharLimit; limit > 0 {
-		if m.quick.input.Length()+len([]rune(token)) > limit {
-			_ = os.Remove(path)
-			m.err = "prompt is full"
-			return true
+		path, err := clipboard.SaveToTemp(data, ext)
+		if err != nil {
+			return quickImageMsg{err: err}
 		}
+		return quickImageMsg{path: path}
 	}
-	before := m.quick.input.Value()
-	m.quick.input.InsertString(token)
-	if !strings.Contains(m.quick.input.Value(), path) {
-		m.quick.input.SetValue(before)
-		_ = os.Remove(path)
-		m.err = "prompt is full"
-		return true
+}
+
+// handleQuickImageMsg applies an async clipboard result: a path becomes a
+// chip, a real error surfaces, and no-image falls through to text paste.
+func (m *Model) handleQuickImageMsg(msg quickImageMsg) (tea.Model, tea.Cmd) {
+	m.quick.pasting = false
+	if !m.quick.active {
+		if msg.path != "" {
+			_ = os.Remove(msg.path)
+		}
+		return m, nil
 	}
+	if msg.noImage {
+		m.quick.input.SetHeight(quickBarMaxRows)
+		var cmd tea.Cmd
+		m.quick.input, cmd = m.quick.input.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+		return m, cmd
+	}
+	if msg.err != nil {
+		m.err = msg.err.Error()
+		return m, nil
+	}
+	m.quick.attachments = append(m.quick.attachments, msg.path)
+	m.err = ""
+	return m, nil
+}
+
+// popQuickAttachment removes the last pasted image chip and deletes its
+// temp file. Used when the user backspaces at the start of the text.
+func (m *Model) popQuickAttachment() bool {
+	if len(m.quick.attachments) == 0 {
+		return false
+	}
+	last := m.quick.attachments[len(m.quick.attachments)-1]
+	m.quick.attachments = m.quick.attachments[:len(m.quick.attachments)-1]
+	_ = os.Remove(last)
 	m.err = ""
 	return true
 }
 
-// quickMessage is the text delivered on submit.
+// quickCursorAtTextStart is true when the caret is on the first line at
+// column 0: the spot where the next backspace should remove an inline chip
+// rather than a character of typed text.
+func (m *Model) quickCursorAtTextStart() bool {
+	if m.quick.input.Line() != 0 {
+		return false
+	}
+	return m.quick.input.LineInfo().CharOffset == 0
+}
+
+// quickMessage is the text delivered on submit: the typed prompt with any
+// attachment paths appended so the target agent can open them.
 func (m *Model) quickMessage() string {
-	return strings.TrimSpace(m.quick.input.Value())
+	text := strings.TrimSpace(m.quick.input.Value())
+	if len(m.quick.attachments) == 0 {
+		return text
+	}
+	paths := strings.Join(m.quick.attachments, " ")
+	if text == "" {
+		return paths
+	}
+	return text + " " + paths
 }
 
 func (m *Model) openQuickMode() {
@@ -912,6 +947,7 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.quick.active = false
+		m.quick.pasting = false
 		return m, nil
 	case "up":
 		return m, m.moveCursor(-1)
@@ -923,11 +959,19 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "ctrl+v":
-		if m.attachQuickImage() {
+		if m.quick.pasting {
 			return m, nil
 		}
-		// No image on the clipboard: fall through so the textarea's own
-		// ctrl+v text paste still works.
+		// Image read runs off-thread; chips appear when quickImageMsg lands.
+		m.quick.pasting = true
+		m.err = ""
+		return m, m.attachQuickImageCmd()
+	case "backspace", "ctrl+h":
+		// Chips sit in the prompt, left of the text. Backspace at the
+		// start of the text peels the nearest chip (Claude-style).
+		if m.quickCursorAtTextStart() && m.popQuickAttachment() {
+			return m, nil
+		}
 	case "enter":
 		return m.submitQuick()
 	}
@@ -969,6 +1013,7 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 	// The prompt is delivered: clear the input before anything else can
 	// fail, so a retry cannot send it twice.
 	m.quick.input.SetValue("")
+	m.quick.attachments = nil
 	m.err = ""
 	// A queued answer means the user expects a fresh finished alert.
 	if err := m.store.SetAcked(entry.sess.ID, false); err != nil {
@@ -999,6 +1044,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.quick.input.SetValue("")
+	m.quick.attachments = nil
 	m.err = ""
 	return m, m.refreshCmd()
 }
