@@ -118,16 +118,25 @@ func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
 	return m, tea.DisableMouse
 }
 
-// bodyYRange is the inclusive-start exclusive-end row range of the main
-// sessions/sidebar body, matching the layout in View.
-func (m *Model) bodyYRange() (start, end int) {
-	footer := m.viewFooter()
-	bodyHeight := m.height - 4 - lipgloss.Height(footer)
+// listChromeRows is the number of rows above the sessions/sidebar body
+// in list mode: header + blank separator. Shared by View and bodyYRange
+// so hit-testing cannot drift from paint.
+const listChromeRows = 2
+
+// listBodyHeight is the vertical budget for the sessions/sidebar panels.
+// Matches View: height - (header, blank, status, footer baseline).
+func (m *Model) listBodyHeight() int {
+	bodyHeight := m.height - 4 - lipgloss.Height(m.viewFooter())
 	if bodyHeight < 3 {
 		bodyHeight = 3
 	}
-	// header, blank line, then body.
-	return 2, 2 + bodyHeight
+	return bodyHeight
+}
+
+// bodyYRange is the inclusive-start exclusive-end row range of the main
+// sessions/sidebar body, matching the layout in View.
+func (m *Model) bodyYRange() (start, end int) {
+	return listChromeRows, listChromeRows + m.listBodyHeight()
 }
 
 // dividerX is the column index of the sessions/sidebar junction (first
@@ -183,11 +192,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setSplitFromX(msg.X)
-		m.splitDragging = false
-		m.persistSplitRatio()
-		m.resizeSessions()
-		m.resizeMode = false
-		return m, tea.DisableMouse
+		return m.exitResizeMode(true)
 	}
 	return m, nil
 }

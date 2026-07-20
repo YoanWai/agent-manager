@@ -35,10 +35,7 @@ func (m *Model) View() string {
 
 	leftWidth, rightWidth := m.splitWidths()
 	footer := m.viewFooter()
-	bodyHeight := m.height - 4 - lipgloss.Height(footer)
-	if bodyHeight < 3 {
-		bodyHeight = 3
-	}
+	bodyHeight := m.listBodyHeight()
 
 	// Grip column sits between the panels in resize mode so the drag
 	// target is visible; steal it from the right panel to keep total width.
@@ -64,6 +61,7 @@ func (m *Model) View() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	}
 
+	// listChromeRows (header + blank) must stay aligned with bodyYRange.
 	return strings.Join([]string{m.viewHeader(), "", body, m.viewStatus(), footer}, "\n")
 }
 

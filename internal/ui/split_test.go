@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type memSettings map[string]string
@@ -135,7 +137,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	m = updated.(*Model)
 
 	div := m.dividerX()
-	// Body starts at y=2; any y inside the body range works.
+	// Body starts at listChromeRows; any y inside the body range works.
 	updated, _ = m.handleMouse(tea.MouseMsg{
 		X: div, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
@@ -173,6 +175,118 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	}
 	if got != 0.5 {
 		t.Fatalf("persisted ratio = %v want 0.5", got)
+	}
+}
+
+// Motion updates the live ratio only; tmux resize happens once on release.
+func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "split-drag", t.TempDir(), "")
+	id := m.sessionRows()[0].ID
+	m.splitRatio = defaultSplitRatio
+	m.resizeSessions()
+	before := windowWidth(t, id)
+	if before != m.previewPaneWidth() {
+		t.Fatalf("setup width = %d want %d", before, m.previewPaneWidth())
+	}
+
+	// Drift the session away so a real resize is observable.
+	if _, err := exec.Command("tmux", "resize-window", "-t", "am_"+id, "-x", "100", "-y", "30").CombinedOutput(); err != nil {
+		t.Fatalf("resize-window: %v", err)
+	}
+	if w := windowWidth(t, id); w != 100 {
+		t.Fatalf("drifted width = %d want 100", w)
+	}
+
+	updated, _ := m.enterResizeMode()
+	m = updated.(*Model)
+	div := m.dividerX()
+	y0, _ := m.bodyYRange()
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: div, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: 50, Y: y0, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if w := windowWidth(t, id); w != 100 {
+		t.Fatalf("motion must not resize tmux, width = %d want 100", w)
+	}
+	wantPreview := m.previewPaneWidth()
+	if wantPreview == 100 {
+		t.Fatal("test setup: preview width should differ from drifted 100")
+	}
+
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: 50, Y: y0, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if w := windowWidth(t, id); w != wantPreview {
+		t.Fatalf("release should resize once to preview width, got %d want %d", w, wantPreview)
+	}
+}
+
+func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
+	m := &Model{
+		mode:       modeList,
+		width:      100,
+		height:     40,
+		splitRatio: 0.34,
+		resizeMode: true,
+	}
+	div := m.dividerX()
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: div, Y: 0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.splitDragging {
+		t.Fatal("press on header row must not start drag")
+	}
+	y0, y1 := m.bodyYRange()
+	if y0 != listChromeRows {
+		t.Fatalf("body start = %d want %d", y0, listChromeRows)
+	}
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: div, Y: y1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.splitDragging {
+		t.Fatal("press on exclusive body end must not start drag")
+	}
+}
+
+func TestEnterResizeBlockedWhenSearchingOrQuick(t *testing.T) {
+	m := &Model{mode: modeList, width: 100, height: 40, splitRatio: defaultSplitRatio, searching: true}
+	updated, cmd := m.enterResizeMode()
+	m = updated.(*Model)
+	if m.resizeMode || cmd != nil {
+		t.Fatal("searching should block resize mode")
+	}
+	m.searching = false
+	m.quick.active = true
+	updated, cmd = m.enterResizeMode()
+	m = updated.(*Model)
+	if m.resizeMode || cmd != nil {
+		t.Fatal("quick prompt should block resize mode")
+	}
+}
+
+func TestBodyYRangeMatchesListChrome(t *testing.T) {
+	m := &Model{width: 120, height: 40, splitRatio: defaultSplitRatio, mode: modeList}
+	start, end := m.bodyYRange()
+	if start != listChromeRows {
+		t.Fatalf("start = %d want listChromeRows=%d", start, listChromeRows)
+	}
+	wantH := m.height - 4 - lipgloss.Height(m.viewFooter())
+	if wantH < 3 {
+		wantH = 3
+	}
+	if m.listBodyHeight() != wantH {
+		t.Fatalf("listBodyHeight = %d want %d", m.listBodyHeight(), wantH)
+	}
+	if end != listChromeRows+wantH {
+		t.Fatalf("end = %d want %d", end, listChromeRows+wantH)
 	}
 }
 
