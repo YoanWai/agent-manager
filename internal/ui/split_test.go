@@ -119,6 +119,69 @@ func TestResizeModeKeyEnablesMouse(t *testing.T) {
 	}
 }
 
+func TestArrowNudgeAndPipeCommits(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	m := &Model{
+		store:      st,
+		mode:       modeList,
+		width:      100,
+		height:     40,
+		splitRatio: 0.34,
+	}
+	updated, _ := m.enterResizeMode()
+	m = updated.(*Model)
+	before, _ := m.splitWidths()
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(*Model)
+	after, _ := m.splitWidths()
+	if after != before+1 {
+		t.Fatalf("right arrow left width = %d want %d", after, before+1)
+	}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m = updated.(*Model)
+	if left, _ := m.splitWidths(); left != before {
+		t.Fatalf("left arrow should undo nudge, left=%d want %d", left, before)
+	}
+	// Nudge once more, then | commits.
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
+	m = updated.(*Model)
+	if m.resizeMode {
+		t.Fatal("| should commit and exit resize mode")
+	}
+	if cmd == nil {
+		t.Fatal("commit should disable mouse")
+	}
+	raw, err := st.Setting(splitRatioSetting)
+	if err != nil || raw == "" {
+		t.Fatalf("committed ratio missing: %v %q", err, raw)
+	}
+	if left, _ := m.splitWidths(); left != before+1 {
+		t.Fatalf("committed left = %d want %d", left, before+1)
+	}
+}
+
+func TestArrowCancelRestoresRatio(t *testing.T) {
+	m := &Model{mode: modeList, width: 100, height: 40, splitRatio: 0.34}
+	updated, _ := m.enterResizeMode()
+	m = updated.(*Model)
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(*Model)
+	if m.resizeMode {
+		t.Fatal("esc should exit")
+	}
+	if left, _ := m.splitWidths(); left != 34 {
+		t.Fatalf("esc should restore left=34, got %d", left)
+	}
+}
+
 func TestDragReleasePersistsAndExits(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -213,15 +276,16 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 	if w := windowWidth(t, id); w != 100 {
 		t.Fatalf("motion must not resize tmux, width = %d want 100", w)
 	}
-	wantPreview := m.previewPaneWidth()
-	if wantPreview == 100 {
-		t.Fatal("test setup: preview width should differ from drifted 100")
-	}
 
 	updated, _ = m.handleMouse(tea.MouseMsg{
 		X: 50, Y: y0, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
+	// After exit, grip is gone; measure the committed preview width.
+	wantPreview := m.previewPaneWidth()
+	if wantPreview == 100 {
+		t.Fatal("test setup: preview width should differ from drifted 100")
+	}
 	if w := windowWidth(t, id); w != wantPreview {
 		t.Fatalf("release should resize once to preview width, got %d want %d", w, wantPreview)
 	}

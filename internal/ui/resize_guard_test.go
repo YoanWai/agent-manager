@@ -73,10 +73,11 @@ func TestUnchangedWindowSizeSkipsResize(t *testing.T) {
 		t.Fatalf("unchanged size should skip resize, session is %dx%d, want 100x30", w, h)
 	}
 
-	// A real resize propagates the preview panel width to the session.
+	// A real resize propagates the preview panel box to the session.
 	updated, _ = m.Update(tea.WindowSizeMsg{Width: 150, Height: 45})
 	*m = *updated.(*Model)
-	if w, h := windowSize(t, id); w != m.previewPaneWidth() || h != 45 {
-		t.Fatalf("changed size should resize session, got %dx%d, want %dx45", w, h, m.previewPaneWidth())
+	wantW, wantH := m.previewPaneWidth(), m.previewPaneHeight()
+	if w, h := windowSize(t, id); w != wantW || h != wantH {
+		t.Fatalf("changed size should resize session, got %dx%d, want %dx%d", w, h, wantW, wantH)
 	}
 }

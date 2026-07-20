@@ -34,6 +34,31 @@ func TestScrollWindow(t *testing.T) {
 	}
 }
 
+func TestPaneExactPreservesBlanks(t *testing.T) {
+	pane := "one\n\n\ntwo\n"
+	got := paneExact(pane, 10)
+	if len(got) != 4 || got[1] != "" || got[2] != "" {
+		t.Fatalf("paneExact should keep blank rows: %q", got)
+	}
+	got = paneExact("a\nb\nc\nd", 2)
+	if len(got) != 2 || got[0] != "c" || got[1] != "d" {
+		t.Fatalf("paneExact oversize should take bottom lines: %q", got)
+	}
+}
+
+func TestClampFrame(t *testing.T) {
+	tall := "a\nb\nc\nd\ne"
+	got := clampFrame(tall, 3)
+	if got != "a\nb\nc" {
+		t.Fatalf("clampFrame trim = %q", got)
+	}
+	short := "x"
+	got = clampFrame(short, 3)
+	if got != "x\n\n" {
+		t.Fatalf("clampFrame pad = %q", got)
+	}
+}
+
 func TestPaneTail(t *testing.T) {
 	pane := "one\ntwo\nthree\n\n\n"
 	got := paneTail(pane, 2)
@@ -77,6 +102,10 @@ func TestPreviewLine(t *testing.T) {
 	erased := "abc\x1b[K\x1b[2Jdef"
 	if got := previewLine(erased, 80); got != "abcdef" {
 		t.Fatalf("erase sequences should be stripped: %q", got)
+	}
+	scrolled := "a\x1b[1Sb\x1bMc\x1b[2Td"
+	if got := previewLine(scrolled, 80); got != "abcd" {
+		t.Fatalf("scroll sequences should be stripped: %q", got)
 	}
 
 	control := "a\rb\bc"

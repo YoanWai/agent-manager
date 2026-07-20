@@ -21,7 +21,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// cancels: other bindings would fight the mouse-gated session.
 	if m.resizeMode {
 		switch msg.String() {
-		case "|", "esc":
+		case "left", "h":
+			m.nudgeSplit(-1)
+			return m, nil
+		case "right", "l":
+			m.nudgeSplit(1)
+			return m, nil
+		case "|":
+			// Second | commits the working ratio (arrows or an unfinished drag).
+			return m.exitResizeMode(true)
+		case "esc":
 			return m.exitResizeMode(false)
 		case "q", "ctrl+c":
 			// Drop mouse reporting before quit so the terminal is not left
@@ -173,6 +182,9 @@ func (m *Model) moveCursor(delta int) tea.Cmd {
 		return nil
 	}
 	m.preview = ""
+	// Detail block height can change per session; pin the pane to the
+	// preview box before capturing so the frame matches 1:1.
+	_ = m.tmux.Resize(sess.ID, m.previewPaneWidth(), m.previewPaneHeight())
 	return m.previewCmd(sess)
 }
 
@@ -392,7 +404,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
-	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, m.previewPaneWidth(), m.height); err != nil {
+	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
