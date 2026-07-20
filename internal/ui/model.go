@@ -104,6 +104,14 @@ type Model struct {
 	err           string
 	errShown      string
 	errAge        int
+
+	// Horizontal sessions/sidebar split. splitRatio is the left panel's
+	// share of the terminal width; resizeMode arms mouse reporting so the
+	// user can drag the divider without breaking normal text selection.
+	splitRatio       float64
+	splitRatioBefore float64
+	resizeMode       bool
+	splitDragging    bool
 }
 
 // confirmTarget.action values; the zero value means delete.
@@ -209,6 +217,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		setSnapshot: st.SetSnapshot,
 		poller:      newPoller(st, driver, engine, hookManager, statusSources, sessionStores, cfg.PollInterval.Duration),
 		collapsed:   loadCollapsed(st),
+		splitRatio:  loadSplitRatio(st),
 		mode:        modeList,
 	}
 }
@@ -476,6 +485,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.requestRefresh()
 		return m, nil
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 
 	case tea.KeyMsg:
 		model, cmd := m.handleKey(msg)

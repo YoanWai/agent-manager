@@ -40,6 +40,14 @@ func (m *Model) View() string {
 		bodyHeight = 3
 	}
 
+	// Grip column sits between the panels in resize mode so the drag
+	// target is visible; steal it from the right panel to keep total width.
+	gripWidth := 0
+	if m.resizeMode && rightWidth > 1 {
+		gripWidth = 1
+		rightWidth--
+	}
+
 	listInner := leftWidth - 4
 	leftBody := m.viewList(listInner, bodyHeight-2)
 	stats := m.viewComputer(listInner)
@@ -49,18 +57,29 @@ func (m *Model) View() string {
 	}
 	left := titledPanel("Sessions", leftBody, leftWidth, bodyHeight)
 	right := titledPanel(m.sidebarTitle(), m.viewSidebar(rightWidth-4, bodyHeight-2), rightWidth, bodyHeight)
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	var body string
+	if gripWidth > 0 {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, left, m.resizeGrip(bodyHeight), right)
+	} else {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	}
 
 	return strings.Join([]string{m.viewHeader(), "", body, m.viewStatus(), footer}, "\n")
 }
 
-// splitWidths is the body's horizontal split: the sessions panel takes 34%
-// of the terminal (30 columns minimum) and the sidebar the rest.
+// splitWidths is the body's horizontal split: the sessions panel takes
+// splitRatio of the terminal (default 34%), floored so both sides stay
+// usable when the window is wide enough.
 func (m *Model) splitWidths() (int, int) {
-	leftWidth := m.width * 34 / 100
-	if leftWidth < 30 {
-		leftWidth = 30
+	if m.width <= 0 {
+		return 0, 0
 	}
+	ratio := m.splitRatio
+	if ratio <= 0 || ratio >= 1 {
+		ratio = defaultSplitRatio
+	}
+	leftWidth := int(float64(m.width)*ratio + 0.5)
+	leftWidth = clampSplitLeft(leftWidth, m.width)
 	return leftWidth, m.width - leftWidth
 }
 
@@ -78,6 +97,12 @@ func (m *Model) viewStatus() string {
 	switch {
 	case m.mode == modeConfirmDelete:
 		return padRight(errStyle.Render(" ⚠ "+m.confirm.label)+subtleStyle.Render("  y/n"), m.width)
+	case m.resizeMode:
+		hint := "drag the divider · release to set · esc cancels"
+		if m.splitDragging {
+			hint = "release to set · esc cancels"
+		}
+		return padRight(keyStyle.Render(" resize ")+subtleStyle.Render(hint), m.width)
 	case m.searching:
 		cursor := lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
 		line := keyStyle.Render(" search ") + valueStyle.Render(m.search) + cursor +
@@ -683,12 +708,17 @@ func (m *Model) viewFooter() string {
 		{"↑↓", "navigate"}, {"↵", "attach"}, {"n", "new"}, {"g", "group"},
 		{"⇧↑↓", "reorder"}, {"space", "quick prompt"}, {"ctrl+r", "review"}, {"F", "fold all"}, {"m", "move"}, {"r", "rename/edit"},
 		{"v", "revive"}, {"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
-		{"t", "archived"}, {"s", "settings"}, {"?", "help"}, {"q", "quit"},
+		{"t", "archived"}, {"s", "settings"}, {"|", "resize"}, {"?", "help"}, {"q", "quit"},
 	}
 	if m.quick.active {
 		pairs = [][2]string{
 			{"↵", "send"}, {"↑↓", "switch target"}, {"⇥", "tool: " + m.quickTool()},
 			{"esc", "close"},
+		}
+	}
+	if m.resizeMode {
+		pairs = [][2]string{
+			{"drag", "divider"}, {"release", "commit"}, {"esc / |", "cancel"},
 		}
 	}
 	if m.mode == modeRename {
