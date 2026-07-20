@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // ErrNoImage means the clipboard held no image when it was read.
@@ -22,6 +23,20 @@ var (
 	runCmd   = func(name string, args ...string) ([]byte, error) {
 		return exec.Command(name, args...).Output()
 	}
+	// runCmdToFile runs a command with stdout directed at outPath.
+	runCmdToFile = func(outPath string, name string, args ...string) error {
+		file, err := os.OpenFile(outPath, os.O_WRONLY|os.O_TRUNC, 0o644)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		cmd := exec.Command(name, args...)
+		cmd.Stdout = file
+		return cmd.Run()
+	}
+	// wslProbe reports whether we are running under WSL (Windows clipboard
+	// bridge needed when Linux tools cannot see the host clipboard).
+	wslProbe = detectWSL
 )
 
 // pastesDir is the shared temp directory for clipboard image files.
@@ -44,18 +59,14 @@ func ReadImage() ([]byte, string, error) {
 }
 
 // SaveImage writes a clipboard image into the pastes directory and returns
-// its absolute path. On Darwin this is a single write (no intermediate
-// buffer file). Linux still reads bytes then writes them once.
+// its absolute path. Each platform writes the PNG once (no intermediate
+// buffer file when tools can stream to a path).
 func SaveImage() (string, error) {
 	switch goos {
 	case "darwin":
 		return saveDarwinImage()
 	case "linux":
-		data, ext, err := readLinux()
-		if err != nil {
-			return "", err
-		}
-		return SaveToTemp(data, ext)
+		return saveLinuxImage()
 	default:
 		return "", fmt.Errorf("clipboard image paste is not supported on %s", goos)
 	}
@@ -102,24 +113,15 @@ func writeDarwinPNG(path string) error {
 
 // saveDarwinImage writes the clipboard PNG straight into the pastes dir.
 func saveDarwinImage() (string, error) {
-	if err := os.MkdirAll(pastesDir(), 0o755); err != nil {
-		return "", err
-	}
-	file, err := os.CreateTemp(pastesDir(), "paste-*.png")
+	path, err := newPasteFile("png")
 	if err != nil {
-		return "", err
-	}
-	path := file.Name()
-	if err := file.Close(); err != nil {
-		_ = os.Remove(path)
 		return "", err
 	}
 	if err := writeDarwinPNG(path); err != nil {
 		_ = os.Remove(path)
 		return "", err
 	}
-	info, err := os.Stat(path)
-	if err != nil || info.Size() == 0 {
+	if !fileNonEmpty(path) {
 		_ = os.Remove(path)
 		return "", ErrNoImage
 	}
@@ -146,24 +148,157 @@ func readDarwin() ([]byte, string, error) {
 	return data, "png", nil
 }
 
-// readLinux pulls PNG bytes from whichever clipboard tool is installed,
-// preferring the Wayland one.
-func readLinux() ([]byte, string, error) {
+// saveLinuxImage writes a clipboard PNG in one shot. Order:
+//  1. wl-paste (Wayland)
+//  2. xclip (X11 / WSLg)
+//  3. On WSL: Windows clipboard via powershell.exe (host paste)
+//
+// Native tools are tried first so a real Linux desktop stays local and
+// fast; WSL falls through to Windows when those cannot see the image.
+func saveLinuxImage() (string, error) {
+	var triedTool bool
 	if _, err := lookPath("wl-paste"); err == nil {
-		data, err := runCmd("wl-paste", "--type", "image/png")
-		if err != nil || len(data) == 0 {
-			return nil, "", ErrNoImage
+		triedTool = true
+		path, err := writePasteFromCmd("png", "wl-paste", "--type", "image/png")
+		if err == nil {
+			return path, nil
 		}
-		return data, "png", nil
 	}
 	if _, err := lookPath("xclip"); err == nil {
-		data, err := runCmd("xclip", "-selection", "clipboard", "-t", "image/png", "-o")
-		if err != nil || len(data) == 0 {
-			return nil, "", ErrNoImage
+		triedTool = true
+		path, err := writePasteFromCmd("png", "xclip", "-selection", "clipboard", "-t", "image/png", "-o")
+		if err == nil {
+			return path, nil
 		}
-		return data, "png", nil
 	}
-	return nil, "", errors.New("install wl-clipboard or xclip to paste images")
+	if wslProbe() {
+		path, err := saveWSLWindowsImage()
+		if err == nil {
+			return path, nil
+		}
+		// WSL with no image on either clipboard is still "no image".
+		if errors.Is(err, ErrNoImage) {
+			return "", ErrNoImage
+		}
+		// Missing powershell is a real config problem on WSL when native
+		// tools also cannot deliver an image.
+		if !triedTool {
+			return "", err
+		}
+		return "", ErrNoImage
+	}
+	if !triedTool {
+		return "", errors.New("install wl-clipboard or xclip to paste images")
+	}
+	return "", ErrNoImage
+}
+
+// readLinux pulls PNG bytes for the ReadImage API (in-memory).
+func readLinux() ([]byte, string, error) {
+	path, err := saveLinuxImage()
+	if err != nil {
+		return nil, "", err
+	}
+	defer os.Remove(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(data) == 0 {
+		return nil, "", ErrNoImage
+	}
+	return data, "png", nil
+}
+
+// writePasteFromCmd creates a paste file and streams the command's stdout
+// into it. Empty output or a failed command is ErrNoImage.
+func writePasteFromCmd(ext string, name string, args ...string) (string, error) {
+	path, err := newPasteFile(ext)
+	if err != nil {
+		return "", err
+	}
+	if err := runCmdToFile(path, name, args...); err != nil {
+		_ = os.Remove(path)
+		return "", ErrNoImage
+	}
+	if !fileNonEmpty(path) {
+		_ = os.Remove(path)
+		return "", ErrNoImage
+	}
+	return path, nil
+}
+
+// saveWSLWindowsImage reads an image from the Windows host clipboard via
+// PowerShell and saves it to a WSL pastes path (converted with wslpath).
+func saveWSLWindowsImage() (string, error) {
+	ps, err := lookPath("powershell.exe")
+	if err != nil {
+		ps, err = lookPath("pwsh.exe")
+		if err != nil {
+			return "", errors.New("WSL image paste needs powershell.exe (Windows clipboard) or wl-clipboard/xclip")
+		}
+	}
+	path, err := newPasteFile("png")
+	if err != nil {
+		return "", err
+	}
+	winOut, err := runCmd("wslpath", "-w", path)
+	if err != nil {
+		_ = os.Remove(path)
+		return "", fmt.Errorf("wslpath: %w", err)
+	}
+	winPath := strings.TrimSpace(string(winOut))
+	// Single-quoted PowerShell string: double any embedded quotes.
+	winPath = strings.ReplaceAll(winPath, "'", "''")
+	script := "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; " +
+		"$img = [System.Windows.Forms.Clipboard]::GetImage(); " +
+		"if ($null -eq $img) { exit 1 }; " +
+		"$img.Save('" + winPath + "', [System.Drawing.Imaging.ImageFormat]::Png)"
+	if _, err := runCmd(ps, "-NoProfile", "-NonInteractive", "-Command", script); err != nil {
+		_ = os.Remove(path)
+		return "", ErrNoImage
+	}
+	if !fileNonEmpty(path) {
+		_ = os.Remove(path)
+		return "", ErrNoImage
+	}
+	return path, nil
+}
+
+// detectWSL reports WSL via env or the kernel release string.
+func detectWSL() bool {
+	if os.Getenv("WSL_DISTRO_NAME") != "" || os.Getenv("WSL_INTEROP") != "" {
+		return true
+	}
+	data, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	if err != nil {
+		return false
+	}
+	release := strings.ToLower(string(data))
+	return strings.Contains(release, "microsoft") || strings.Contains(release, "wsl")
+}
+
+// newPasteFile creates an empty paste-* file under pastesDir and returns
+// its absolute path (caller fills it or removes it).
+func newPasteFile(ext string) (string, error) {
+	if err := os.MkdirAll(pastesDir(), 0o755); err != nil {
+		return "", err
+	}
+	file, err := os.CreateTemp(pastesDir(), "paste-*."+ext)
+	if err != nil {
+		return "", err
+	}
+	path := file.Name()
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", err
+	}
+	return path, nil
+}
+
+func fileNonEmpty(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Size() > 0
 }
 
 // SaveToTemp writes image bytes to a uniquely named file under a shared
