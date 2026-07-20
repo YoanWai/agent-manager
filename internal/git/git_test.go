@@ -516,3 +516,44 @@ func TestResolveRef(t *testing.T) {
 		t.Fatalf("error should name the ref, got %v", err)
 	}
 }
+
+func TestResolveReposIncludesOutsideWorktrees(t *testing.T) {
+	driver, err := New()
+	if err != nil {
+		t.Skip("git not installed")
+	}
+	umbrella := t.TempDir()
+	repo := filepath.Join(umbrella, "alpha")
+	initRepoAt(t, repo)
+	write(t, repo, "a.go", "package a\n")
+	commit(t, repo, "init")
+
+	outside := filepath.Join(t.TempDir(), "wt-hot")
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	runGit("worktree", "add", "-b", "feature/hot", outside)
+	write(t, outside, "b.go", "package a\n\nfunc B() {}\n")
+
+	roots, err := driver.ResolveRepos(umbrella)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedOutside, _ := filepath.EvalSymlinks(outside)
+	first, _ := filepath.EvalSymlinks(roots[0])
+	if first != resolvedOutside {
+		t.Fatalf("dirty outside worktree should rank first, got %v", roots)
+	}
+	seen := map[string]int{}
+	for _, root := range roots {
+		resolved, _ := filepath.EvalSymlinks(root)
+		seen[resolved]++
+	}
+	if len(roots) != 2 || seen[resolvedOutside] != 1 {
+		t.Fatalf("want repo + worktree once each, got %v", roots)
+	}
+}
