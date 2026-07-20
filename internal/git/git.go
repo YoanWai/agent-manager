@@ -489,3 +489,56 @@ func IsBinary(content []byte) bool {
 	}
 	return bytes.IndexByte(content[:limit], 0) >= 0
 }
+
+type Worktree struct {
+	Root   string
+	Branch string
+}
+
+func (d *Driver) Worktrees(root string) ([]Worktree, error) {
+	out, err := d.run(root, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	var worktrees []Worktree
+	var current Worktree
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			current = Worktree{Root: strings.TrimPrefix(line, "worktree ")}
+		case strings.HasPrefix(line, "HEAD "):
+			sha := strings.TrimPrefix(line, "HEAD ")
+			if len(sha) > 7 {
+				sha = sha[:7]
+			}
+			current.Branch = sha
+		case strings.HasPrefix(line, "branch "):
+			current.Branch = strings.TrimPrefix(strings.TrimPrefix(line, "branch "), "refs/heads/")
+		case line == "":
+			if current.Root != "" {
+				worktrees = append(worktrees, current)
+				current = Worktree{}
+			}
+		}
+	}
+	if current.Root != "" {
+		worktrees = append(worktrees, current)
+	}
+	return worktrees, nil
+}
+
+func (d *Driver) IsRepoRoot(dir string) bool {
+	top, err := d.run(dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return false
+	}
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return false
+	}
+	resolvedTop, err := filepath.EvalSymlinks(top)
+	if err != nil {
+		return false
+	}
+	return resolvedDir == resolvedTop
+}
