@@ -1096,7 +1096,7 @@ func (m *Model) viewDiffHeader(sessName string) string {
 		}
 		left += "  " + pill(name, colorAccent)
 		branch := m.diff.set.Repo.Branch
-		if m.diff.scope == git.ScopeBranch && m.diff.set.BaseDesc != "" {
+		if m.diff.scope == git.ScopeBranch && m.diff.set.BaseDesc != "" && branch != "" {
 			left += "  " + subtleStyle.Render(m.diff.set.BaseDesc+" → "+branch)
 		} else if branch != "" {
 			left += "  " + subtleStyle.Render(branch)
