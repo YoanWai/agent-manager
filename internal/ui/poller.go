@@ -41,8 +41,17 @@ type poller struct {
 	// and one-off refresh commands
 	runMu      sync.Mutex
 	paneHashes map[string]uint64
+	// quietSince is when each session's activity region last stopped
+	// changing while unmatched; used to debounce marker-less turn ends.
+	quietSince map[string]time.Time
 	tick       int
 }
+
+// quietEndGrace is how long a working pane must stay region-stable and
+// rule-unmatched before the quiet-region path may mark the turn finished.
+// One poll is not enough: agents pause between tools (and a fast poll
+// interval would flap working/finished every few ticks).
+var quietEndGrace = time.Second
 
 func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, statusSources, sessionStores map[string]string, interval time.Duration) *poller {
 	return &poller{
@@ -55,6 +64,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		interval:         interval,
 		poke:             make(chan struct{}, 1),
 		paneHashes:       map[string]uint64{},
+		quietSince:       map[string]time.Time{},
 		pendingDirective: map[string]struct{}{},
 	}
 }
@@ -439,6 +449,7 @@ func (p *poller) reflowSessions(ids []string, reflow func()) {
 	defer p.runMu.Unlock()
 	for _, id := range ids {
 		delete(p.paneHashes, id)
+		delete(p.quietSince, id)
 	}
 	reflow()
 }
@@ -482,12 +493,35 @@ func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 		if previous, seen := p.paneHashes[sess.ID]; seen {
 			if previous != regionHash {
 				newStatus = status.Working
+				delete(p.quietSince, sess.ID)
 			} else if turnInFlight(sess.Status) {
-				newStatus = p.engine.TurnEndedState(sess.Tool, region)
+				// Already resting: re-infer finished vs waiting without delay.
+				if sess.Status != status.Working {
+					newStatus = p.engine.TurnEndedState(sess.Tool, region)
+				} else {
+					// Mid-turn pauses (thinking, between tools) look quiet for
+					// a poll or two; wait before treating that as turn end.
+					now := time.Now()
+					since, ok := p.quietSince[sess.ID]
+					if !ok {
+						p.quietSince[sess.ID] = now
+						since = now
+					}
+					if now.Sub(since) >= quietEndGrace {
+						newStatus = p.engine.TurnEndedState(sess.Tool, region)
+						if newStatus != status.Working {
+							delete(p.quietSince, sess.ID)
+						}
+					} else {
+						newStatus = status.Working
+					}
+				}
 			}
 		} else if turnInFlight(sess.Status) {
 			newStatus = sess.Status
 		}
+	} else {
+		delete(p.quietSince, sess.ID)
 	}
 	if newStatus == status.Finished && sess.Acked {
 		newStatus = status.Idle

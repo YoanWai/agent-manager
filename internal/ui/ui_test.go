@@ -834,7 +834,15 @@ func seedRegionHash(t *testing.T, m *Model, sess store.Session, pane string) {
 	m.poller.paneHashes = map[string]uint64{sess.ID: hashString(region)}
 }
 
+func disableQuietEndGrace(t *testing.T) {
+	t.Helper()
+	prev := quietEndGrace
+	quietEndGrace = 0
+	t.Cleanup(func() { quietEndGrace = prev })
+}
+
 func TestQuietPaneAfterWorkingDerivesFinished(t *testing.T) {
+	disableQuietEndGrace(t)
 	m := buildModel(t)
 	sess := store.Session{ID: "quiet01", Tool: "claude-hooked", Status: status.Working}
 	pane := "final answer with no turn marker\n❯ \n"
@@ -844,7 +852,21 @@ func TestQuietPaneAfterWorkingDerivesFinished(t *testing.T) {
 	}
 }
 
+func TestQuietPaneHoldsWorkingUntilGrace(t *testing.T) {
+	prev := quietEndGrace
+	quietEndGrace = time.Hour
+	t.Cleanup(func() { quietEndGrace = prev })
+	m := buildModel(t)
+	sess := store.Session{ID: "quiet-hold", Tool: "claude-hooked", Status: status.Working}
+	pane := "final answer with no turn marker\n❯ \n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Working {
+		t.Fatalf("first quiet poll within grace should stay working, got %q", got)
+	}
+}
+
 func TestQuietPaneEndingOnQuestionDerivesWaiting(t *testing.T) {
+	disableQuietEndGrace(t)
 	m := buildModel(t)
 	sess := store.Session{ID: "quiet02", Tool: "claude-hooked", Status: status.Working}
 	pane := "Which of the two options do you prefer?\n❯ \n"
