@@ -85,18 +85,16 @@ func TestSetSplitFromXClampsAndUpdatesRatio(t *testing.T) {
 	}
 }
 
-func TestResizeModeKeyEnablesMouse(t *testing.T) {
+func TestResizeModeKeyArmsDrag(t *testing.T) {
 	m := &Model{mode: modeList, splitRatio: defaultSplitRatio, width: 120, height: 40}
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
 	m = updated.(*Model)
 	if !m.resizeMode {
 		t.Fatal("| should enter resize mode")
 	}
-	if cmd == nil {
-		t.Fatal("enter should return EnableMouseCellMotion cmd")
-	}
-	if msg := cmd(); msg == nil {
-		t.Fatal("mouse enable cmd produced nil msg")
+	if cmd != nil {
+		// Mouse is always on at the program level; resize only flips a flag.
+		t.Fatal("enter should not toggle mouse reporting")
 	}
 
 	// Other keys are swallowed while armed.
@@ -114,8 +112,8 @@ func TestResizeModeKeyEnablesMouse(t *testing.T) {
 	if m.resizeMode {
 		t.Fatal("esc should leave resize mode")
 	}
-	if cmd == nil {
-		t.Fatal("exit should return DisableMouse cmd")
+	if cmd != nil {
+		t.Fatal("exit should not toggle mouse reporting")
 	}
 }
 
@@ -154,8 +152,8 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	if m.resizeMode {
 		t.Fatal("| should commit and exit resize mode")
 	}
-	if cmd == nil {
-		t.Fatal("commit should disable mouse")
+	if cmd != nil {
+		t.Fatal("commit should not toggle mouse reporting")
 	}
 	raw, err := st.Setting(splitRatioSetting)
 	if err != nil || raw == "" {
@@ -224,8 +222,8 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	if m.splitDragging || m.resizeMode {
 		t.Fatal("release should end drag and exit resize mode")
 	}
-	if cmd == nil {
-		t.Fatal("release should disable mouse")
+	if cmd != nil {
+		t.Fatal("release should not toggle mouse reporting")
 	}
 
 	raw, err := st.Setting(splitRatioSetting)
@@ -411,5 +409,49 @@ func TestNewLoadsPersistedSplitRatio(t *testing.T) {
 	loaded := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks)
 	if loaded.splitRatio != 0.45 {
 		t.Fatalf("New splitRatio = %v want 0.45", loaded.splitRatio)
+	}
+}
+
+// Wheel events must be consumed by the app (so the host terminal cannot
+// scroll the TUI away) and advance the list cursor outside resize mode.
+func TestWheelScrollMovesListCursor(t *testing.T) {
+	m := &Model{
+		mode:   modeList,
+		cursor: 0,
+		rows:   []treeRow{{}, {}},
+		width:  80,
+		height: 24,
+	}
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
+	})
+	m = updated.(*Model)
+	if m.cursor != 1 {
+		t.Fatalf("wheel down cursor = %d want 1", m.cursor)
+	}
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress,
+	})
+	m = updated.(*Model)
+	if m.cursor != 0 {
+		t.Fatalf("wheel up cursor = %d want 0", m.cursor)
+	}
+}
+
+func TestWheelSwallowedInResizeMode(t *testing.T) {
+	m := &Model{
+		mode:       modeList,
+		resizeMode: true,
+		cursor:     0,
+		rows:       []treeRow{{}, {}},
+		width:      80,
+		height:     24,
+	}
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
+	})
+	m = updated.(*Model)
+	if m.cursor != 0 {
+		t.Fatalf("resize mode should swallow wheel, cursor = %d", m.cursor)
 	}
 }

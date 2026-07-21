@@ -153,7 +153,9 @@ func run() error {
 	defer st.Close()
 
 	model := ui.New(cfg, st, driver, engine, hooks.NewManager(dir))
-	program := tea.NewProgram(model, tea.WithAltScreen())
+	// Mouse cell motion is always on so the terminal (and nested tmux)
+	// cannot scroll the manager out of view. Shift+drag still selects text.
+	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	model.StartPoller(program.Send)
 	_, err = program.Run()
 	return err

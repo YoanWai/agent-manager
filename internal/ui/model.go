@@ -106,8 +106,8 @@ type Model struct {
 	errAge        int
 
 	// Horizontal sessions/sidebar split. splitRatio is the left panel's
-	// share of the terminal width; resizeMode arms mouse reporting so the
-	// user can drag the divider without breaking normal text selection.
+	// share of the terminal width; resizeMode arms divider drag handling
+	// (mouse reporting itself is always on so the host cannot scroll us).
 	splitRatio       float64
 	splitRatioBefore float64
 	resizeMode       bool

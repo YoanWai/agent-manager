@@ -33,11 +33,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			return m.exitResizeMode(false)
 		case "q", "ctrl+c":
-			// Drop mouse reporting before quit so the terminal is not left
-			// in mouse mode if shutdown races the bubbletea teardown.
 			m.resizeMode = false
 			m.splitDragging = false
-			return m, tea.Sequence(tea.DisableMouse, tea.Quit)
+			return m, tea.Quit
 		default:
 			return m, nil
 		}
