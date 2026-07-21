@@ -557,12 +557,27 @@ func TestRenameSession(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "before", t.TempDir(), "")
 	m.selectSessionRow(t, "before")
+	id := m.sessionRows()[0].ID
+	if err := m.store.SetAgentSessionID(id, "conv-keep"); err != nil {
+		t.Fatalf("set agent id: %v", err)
+	}
 	m.openRename()
 	m.rename.input.SetValue("after")
 	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
-	if m.sessionRows()[0].Name != "after" {
-		t.Fatalf("rename failed: %+v", m.sessionRows()[0])
+	got := m.sessionRows()[0]
+	if got.Name != "after" {
+		t.Fatalf("rename failed: %+v", got)
+	}
+	stored, err := m.store.Get(id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.AgentSessionID != "conv-keep" {
+		t.Fatalf("name-only rename wiped agent session id: %q", stored.AgentSessionID)
+	}
+	if stored.Tool != "claude" {
+		t.Fatalf("name-only rename changed tool: %q", stored.Tool)
 	}
 }
 

@@ -825,7 +825,15 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		tool := m.renameTool()
-		if tool != "" {
+		var prevTool string
+		for i := range m.sessions {
+			if m.sessions[i].ID == m.rename.sessID {
+				prevTool = m.sessions[i].Tool
+				break
+			}
+		}
+		toolChanged := tool != "" && tool != prevTool
+		if toolChanged {
 			if err := m.store.UpdateTool(m.rename.sessID, tool); err != nil {
 				m.err = err.Error()
 				return m, nil
@@ -834,7 +842,7 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		for i := range m.sessions {
 			if m.sessions[i].ID == m.rename.sessID {
 				m.sessions[i].Name = name
-				if tool != "" {
+				if toolChanged {
 					m.sessions[i].Tool = tool
 					m.sessions[i].AgentSessionID = ""
 				}

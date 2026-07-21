@@ -107,6 +107,19 @@ func TestUpdateTool(t *testing.T) {
 	if got.AgentSessionID != "" {
 		t.Fatalf("agent session id should clear on tool change, got %q", got.AgentSessionID)
 	}
+	if err := st.SetAgentSessionID("a", "ses_new"); err != nil {
+		t.Fatalf("reset agent id: %v", err)
+	}
+	if err := st.UpdateTool("a", "grok"); err != nil {
+		t.Fatalf("same-tool update: %v", err)
+	}
+	got, err = st.Get("a")
+	if err != nil {
+		t.Fatalf("get after same-tool: %v", err)
+	}
+	if got.AgentSessionID != "ses_new" {
+		t.Fatalf("same-tool update wiped agent id: %q", got.AgentSessionID)
+	}
 	if err := st.UpdateTool("a", ""); err == nil {
 		t.Fatal("empty tool should error")
 	}
