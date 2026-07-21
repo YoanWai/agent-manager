@@ -85,9 +85,9 @@ func (m *Model) setSplitFromX(x int) {
 	m.splitRatio = float64(left) / float64(m.width)
 }
 
-// enterResizeMode turns mouse reporting on so the user can drag the
-// sessions/sidebar divider. Mouse stays off outside this mode so normal
-// terminal text selection still works.
+// enterResizeMode arms divider dragging. Mouse reporting is always on at
+// the program level (see main) so the terminal cannot scroll the TUI away;
+// this mode only changes how clicks/drags are interpreted.
 func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	if m.mode != modeList || m.searching || m.quick.active {
 		return m, nil
@@ -96,12 +96,12 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	m.splitDragging = false
 	m.splitRatioBefore = m.splitRatio
 	m.err = ""
-	return m, tea.EnableMouseCellMotion
+	return m, nil
 }
 
-// exitResizeMode turns mouse reporting back off. When commit is true the
-// current ratio is persisted; cancel restores the pre-mode ratio. Either
-// path ends with a pane resize so the preview stays 1:1 with the panel.
+// exitResizeMode leaves divider-drag mode. When commit is true the current
+// ratio is persisted; cancel restores the pre-mode ratio. Either path ends
+// with a pane resize so the preview stays 1:1 with the panel.
 func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
 	if !m.resizeMode && !m.splitDragging {
 		return m, nil
@@ -114,7 +114,7 @@ func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
 	m.splitDragging = false
 	m.resizeMode = false
 	m.resizeSessions()
-	return m, tea.DisableMouse
+	return m, nil
 }
 
 // nudgeSplit moves the divider by delta columns while resize mode is on.
@@ -164,10 +164,13 @@ func (m *Model) onDivider(x int) bool {
 }
 
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if !m.resizeMode {
-		return m, nil
-	}
+	// Always consume mouse events so the host terminal / outer tmux never
+	// scrolls the manager off-screen. Wheel maps to in-app navigation;
+	// clicks only drive the divider while resize mode is armed.
 	if tea.MouseEvent(msg).IsWheel() {
+		return m.handleMouseWheel(msg)
+	}
+	if !m.resizeMode {
 		return m, nil
 	}
 
@@ -205,6 +208,38 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.exitResizeMode(true)
 	}
 	return m, nil
+}
+
+// handleMouseWheel keeps the wheel inside the app: list cursor, diff
+// scroll, or a no-op swallow so the outer terminal cannot scroll away.
+func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.resizeMode {
+		return m, nil
+	}
+	delta := 0
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		delta = -1
+	case tea.MouseButtonWheelDown:
+		delta = 1
+	default:
+		return m, nil
+	}
+	switch m.mode {
+	case modeDiff:
+		if m.diff.annotating || m.diff.sendConfirm {
+			return m, nil
+		}
+		m.moveDiffCursor(delta, m.diffCodeHeight())
+		return m, nil
+	case modeList, modeRename:
+		if m.searching {
+			return m, nil
+		}
+		return m, m.moveCursor(delta)
+	default:
+		return m, nil
+	}
 }
 
 // resizeGrip is the 1-column accent bar drawn between the panels while
