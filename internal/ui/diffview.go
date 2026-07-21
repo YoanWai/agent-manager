@@ -1084,7 +1084,7 @@ func (m *Model) viewDiffFull() string {
 // but reads as noise in the header, where only the ref name carries
 // signal for the user picking a target.
 func stripBaseHash(desc string) string {
-	if i := strings.IndexByte(desc, '@'); i >= 0 {
+	if i := strings.LastIndexByte(desc, '@'); i >= 0 {
 		return desc[:i]
 	}
 	return desc
