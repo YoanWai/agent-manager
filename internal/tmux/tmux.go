@@ -2,10 +2,13 @@ package tmux
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 const prefix = "am_"
@@ -47,29 +50,26 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 	if width > 0 && height > 0 {
 		args = append(args, "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
 	}
+	// Launch via a short `sh <script>` window command. Typing the full line
+	// with send-keys truncates around 1024 bytes, which breaks long first
+	// prompts mid-path. A script has no practical length limit, and exec'ing
+	// the user shell afterwards matches "type into a shell" (pane stays up).
+	var scriptPath string
+	if command != "" {
+		var err error
+		scriptPath, err = writeLaunchScript(id, envCommand(env, command))
+		if err != nil {
+			return err
+		}
+		args = append(args, "sh "+ShellQuote(scriptPath))
+	}
 	if _, err := d.run(args...); err != nil {
+		if scriptPath != "" {
+			os.Remove(scriptPath)
+		}
 		return err
 	}
 	if err := d.installSessionUX(name); err != nil {
-		_ = d.Kill(id)
-		return err
-	}
-	if command == "" {
-		return nil
-	}
-	// env rides the command line as VAR=value prefixes because
-	// new-session -e needs tmux >= 3.2
-	keys := make([]string, 0, len(env))
-	for key := range env {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	var line strings.Builder
-	for _, key := range keys {
-		line.WriteString(key + "=" + ShellQuote(env[key]) + " ")
-	}
-	line.WriteString(command)
-	if _, err := d.run("send-keys", "-t", name, line.String(), "Enter"); err != nil {
 		_ = d.Kill(id)
 		return err
 	}
@@ -80,6 +80,40 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 // dir on macOS contains a space, so paths sent into panes must be quoted.
 func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// envCommand builds VAR='value' … command for a POSIX shell.
+func envCommand(env map[string]string, command string) string {
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var line strings.Builder
+	for _, key := range keys {
+		line.WriteString(key + "=" + ShellQuote(env[key]) + " ")
+	}
+	line.WriteString(command)
+	return line.String()
+}
+
+func launchScriptPath(id string) string {
+	return filepath.Join(os.TempDir(), "am-launch-"+id+".sh")
+}
+
+// writeLaunchScript writes a one-shot shell script that runs the launch
+// line then replaces itself with an interactive shell.
+func writeLaunchScript(id, line string) (string, error) {
+	path := launchScriptPath(id)
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	body := "#!/bin/sh\n" + line + "\nexec " + ShellQuote(shell) + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+		return "", fmt.Errorf("launch script: %w", err)
+	}
+	return path, nil
 }
 
 // installSessionUX styles a new session's status bar, seeds an empty label
@@ -141,14 +175,40 @@ func (d *Driver) RefreshChrome(id string) error {
 	return d.styleStatusBar(sessionName(id))
 }
 
-// SendText types text into the session's pane as literal keystrokes and
-// presses Enter, so the agent inside receives it as a user message.
+// SendText delivers text into the session's pane and presses Enter, so
+// the agent inside receives it as a user message. Uses paste-buffer so
+// long prompts are not truncated the way send-keys is.
 func (d *Driver) SendText(id, text string) error {
-	name := sessionName(id)
-	if _, err := d.run("send-keys", "-t", name, "-l", "--", text); err != nil {
+	return d.pasteAndEnter(sessionName(id), text)
+}
+
+var pasteSeq atomic.Uint64
+
+// pasteAndEnter pastes text of any length into a pane and submits it.
+// tmux send-keys silently stops around 1024 bytes; load-buffer does not.
+func (d *Driver) pasteAndEnter(target, text string) error {
+	file, err := os.CreateTemp("", "am-paste-*")
+	if err != nil {
+		return fmt.Errorf("paste temp file: %w", err)
+	}
+	path := file.Name()
+	defer os.Remove(path)
+	if _, err := file.WriteString(text); err != nil {
+		file.Close()
+		return fmt.Errorf("paste temp write: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("paste temp close: %w", err)
+	}
+	buf := fmt.Sprintf("am_paste_%d", pasteSeq.Add(1))
+	if _, err := d.run("load-buffer", "-b", buf, path); err != nil {
 		return err
 	}
-	_, err := d.run("send-keys", "-t", name, "Enter")
+	if _, err := d.run("paste-buffer", "-d", "-b", buf, "-t", target); err != nil {
+		_, _ = d.run("delete-buffer", "-b", buf)
+		return err
+	}
+	_, err = d.run("send-keys", "-t", target, "Enter")
 	return err
 }
 
@@ -202,9 +262,11 @@ func (d *Driver) AttachCommand(id string) *exec.Cmd {
 
 func (d *Driver) Kill(id string) error {
 	if !d.Exists(id) {
+		os.Remove(launchScriptPath(id))
 		return nil
 	}
 	_, err := d.run("kill-session", "-t", sessionName(id))
+	os.Remove(launchScriptPath(id))
 	return err
 }
 
