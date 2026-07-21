@@ -557,12 +557,68 @@ func TestRenameSession(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "before", t.TempDir(), "")
 	m.selectSessionRow(t, "before")
+	id := m.sessionRows()[0].ID
+	if err := m.store.SetAgentSessionID(id, "conv-keep"); err != nil {
+		t.Fatalf("set agent id: %v", err)
+	}
 	m.openRename()
 	m.rename.input.SetValue("after")
 	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
-	if m.sessionRows()[0].Name != "after" {
-		t.Fatalf("rename failed: %+v", m.sessionRows()[0])
+	got := m.sessionRows()[0]
+	if got.Name != "after" {
+		t.Fatalf("rename failed: %+v", got)
+	}
+	stored, err := m.store.Get(id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.AgentSessionID != "conv-keep" {
+		t.Fatalf("name-only rename wiped agent session id: %q", stored.AgentSessionID)
+	}
+	if stored.Tool != "claude" {
+		t.Fatalf("name-only rename changed tool: %q", stored.Tool)
+	}
+}
+
+func TestRenameSessionChangesTool(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "swapped", t.TempDir(), "")
+	m.selectSessionRow(t, "swapped")
+	start := m.sessionRows()[0]
+	if start.Tool != "claude" {
+		t.Fatalf("setup tool = %q want claude", start.Tool)
+	}
+	if err := m.store.SetAgentSessionID(start.ID, "conv-1"); err != nil {
+		t.Fatalf("set agent id: %v", err)
+	}
+	m.openRename()
+	if m.renameTool() != "claude" {
+		t.Fatalf("rename tool start = %q want claude", m.renameTool())
+	}
+	if len(m.rename.toolNames) < 2 {
+		t.Fatalf("need at least 2 tools to cycle, got %v", m.rename.toolNames)
+	}
+	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyTab})
+	wantTool := m.rename.toolNames[1]
+	if m.renameTool() != wantTool {
+		t.Fatalf("after tab tool = %q want %q", m.renameTool(), wantTool)
+	}
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	got := m.sessionRows()[0]
+	if got.Tool != wantTool {
+		t.Fatalf("tool after save = %q want %q", got.Tool, wantTool)
+	}
+	if got.AgentSessionID != "" {
+		t.Fatalf("agent session id should clear on tool change, got %q", got.AgentSessionID)
+	}
+	stored, err := m.store.Get(got.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Tool != wantTool || stored.AgentSessionID != "" {
+		t.Fatalf("store after save: tool=%q agent=%q", stored.Tool, stored.AgentSessionID)
 	}
 }
 

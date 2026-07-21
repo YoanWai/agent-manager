@@ -676,7 +676,26 @@ func (m *Model) openRename() {
 		m.rename = renameTarget{isGroup: true, path: entry.group, input: input, dir: dir}
 	} else {
 		input.SetValue(entry.sess.Name)
-		m.rename = renameTarget{sessID: entry.sess.ID, input: input}
+		tools := sortedToolNames(m.cfg)
+		toolIndex := 0
+		for i, name := range tools {
+			if name == entry.sess.Tool {
+				toolIndex = i
+				break
+			}
+		}
+		// Current tool missing from config (removed block): keep it selectable
+		// so save does not silently reassign to the first configured tool.
+		if len(tools) == 0 || tools[toolIndex] != entry.sess.Tool {
+			tools = append([]string{entry.sess.Tool}, tools...)
+			toolIndex = 0
+		}
+		m.rename = renameTarget{
+			sessID:    entry.sess.ID,
+			input:     input,
+			toolNames: tools,
+			toolIndex: toolIndex,
+		}
 	}
 	m.mode = modeRename
 	m.err = ""
@@ -704,17 +723,35 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeList
 		return m, nil
-	case "tab", "up", "down":
+	case "tab":
+		if !m.rename.isGroup {
+			m.cycleRenameTool(1)
+			return m, nil
+		}
+		if pathSuggesting {
+			m.applyPathSuggestion()
+			return m, nil
+		}
+		m.renameFocus(1)
+		return m, nil
+	case "shift+tab":
+		if !m.rename.isGroup {
+			m.cycleRenameTool(-1)
+			return m, nil
+		}
+		if pathSuggesting {
+			return m, nil
+		}
+		m.renameFocus(-1)
+		return m, nil
+	case "up", "down":
 		if !m.rename.isGroup {
 			break
 		}
 		if pathSuggesting {
-			switch msg.String() {
-			case "tab":
-				m.applyPathSuggestion()
-			case "up":
+			if msg.String() == "up" {
 				m.pathSugg.move(-1)
-			case "down":
+			} else {
 				m.pathSugg.move(1)
 			}
 			return m, nil
@@ -736,6 +773,21 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pathSugg.recompute(m.rename.dir.Value())
 	}
 	return m, cmd
+}
+
+func (m *Model) cycleRenameTool(delta int) {
+	if len(m.rename.toolNames) == 0 {
+		return
+	}
+	n := len(m.rename.toolNames)
+	m.rename.toolIndex = (m.rename.toolIndex + delta + n) % n
+}
+
+func (m *Model) renameTool() string {
+	if len(m.rename.toolNames) == 0 {
+		return ""
+	}
+	return m.rename.toolNames[m.rename.toolIndex]
 }
 
 func (m *Model) applyRename() (tea.Model, tea.Cmd) {
@@ -772,9 +824,28 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 			m.err = err.Error()
 			return m, nil
 		}
+		tool := m.renameTool()
+		var prevTool string
+		for i := range m.sessions {
+			if m.sessions[i].ID == m.rename.sessID {
+				prevTool = m.sessions[i].Tool
+				break
+			}
+		}
+		toolChanged := tool != "" && tool != prevTool
+		if toolChanged {
+			if err := m.store.UpdateTool(m.rename.sessID, tool); err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+		}
 		for i := range m.sessions {
 			if m.sessions[i].ID == m.rename.sessID {
 				m.sessions[i].Name = name
+				if toolChanged {
+					m.sessions[i].Tool = tool
+					m.sessions[i].AgentSessionID = ""
+				}
 			}
 		}
 		m.relabelSession(m.rename.sessID)

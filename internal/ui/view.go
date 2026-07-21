@@ -582,8 +582,14 @@ func (m *Model) viewDetail(width int) string {
 		return "\n" + mutedStyle.Render("Select a session to inspect it.")
 	}
 	var b strings.Builder
+	tool := sess.Tool
+	if m.mode == modeRename && !m.rename.isGroup && m.rename.sessID == sess.ID {
+		if picked := m.renameTool(); picked != "" {
+			tool = picked
+		}
+	}
 	b.WriteString(pill(sess.Status, statusColor(sess.Status)) + "  " +
-		pill(sess.Tool, colorAccent) + "\n")
+		pill(tool, colorAccent) + "\n")
 	b.WriteString(kv("group", displayGroup(sess.Group)))
 	b.WriteString(kv("dir", truncateTail(sess.Cwd, width-8)))
 	b.WriteString(kv("age", relTime(sess.CreatedAt)))
@@ -847,6 +853,8 @@ func (m *Model) viewFooter() string {
 		pairs = [][2]string{{"↵", "save"}, {"esc", "cancel"}}
 		if m.rename.isGroup {
 			pairs = [][2]string{{"⇥", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}
+		} else if tool := m.renameTool(); tool != "" {
+			pairs = [][2]string{{"⇥", "tool: " + tool}, {"↵", "save"}, {"esc", "cancel"}}
 		}
 	}
 	return footerLine(pairs, m.width)

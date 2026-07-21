@@ -140,12 +140,14 @@ type confirmTarget struct {
 }
 
 type renameTarget struct {
-	isGroup bool
-	path    string
-	sessID  string
-	input   textinput.Model
-	dir     textinput.Model
-	focus   int
+	isGroup   bool
+	path      string
+	sessID    string
+	input     textinput.Model
+	dir       textinput.Model
+	focus     int
+	toolNames []string
+	toolIndex int
 }
 
 // quickState is the inline prompt bar docked under the preview: active

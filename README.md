@@ -52,7 +52,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `ctrl+q` | Inside a session: back to the manager |
 | `shift+↑` / `shift+↓` | Reorder session or group among its siblings |
 | `m` | Move session to another group |
-| `r` | Rename session / edit group (name and default path) |
+| `r` | Rename session / edit tool; edit group name and default path |
 | `v` | Revive a dead session (`revive_command`, e.g. `claude --continue`, resumes the conversation) |
 | `a` / `u` | Archive / restore a session, or a group and its entire subtree |
 | `d` | Delete session, or a group + its entire subtree |
@@ -102,7 +102,7 @@ Press `c` on a line to write a comment; `C` flattens every comment into one revi
 
 ### Groups
 
-Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `shift+↑↓` (the order persists), fold a subtree with `f`, and edit a group's name and default path with `r`.
+Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `shift+↑↓` (the order persists), fold a subtree with `f`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool (status rules and revive follow the new tool; useful when you quit one agent in the pane and start another).
 
 ### Status
 
