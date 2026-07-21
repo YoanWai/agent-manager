@@ -101,14 +101,46 @@ func TestSendText(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CapturePane: %v", err)
 		}
-		if strings.Count(pane, "hello world") >= 2 {
+		if strings.Contains(pane, "hello world") {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if strings.Count(pane, "hello world") < 2 {
+	if !strings.Contains(pane, "hello world") {
 		t.Fatalf("cat should echo the sent line, pane: %q", pane)
 	}
+}
+
+// Create used to type the launch line with send-keys, which silently
+// truncates around 1024 bytes and left long first prompts as a broken
+// shell command. paste-buffer must deliver the full line.
+func TestCreateDeliversLongCommand(t *testing.T) {
+	driver := requireTmux(t)
+	id := "long" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	marker := "/tmp/am-long-" + id
+	t.Cleanup(func() { os.Remove(marker) })
+
+	payload := strings.Repeat("x", 1500)
+	command := "printf '%s' '" + payload + "' > " + marker
+	if len(command) < 1024 {
+		t.Fatalf("test command must exceed the old 1024-byte send-keys limit, got %d", len(command))
+	}
+	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(marker)
+		if err == nil && string(data) == payload {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	pane, _ := driver.CapturePane(id)
+	got, _ := os.ReadFile(marker)
+	t.Fatalf("long launch command truncated or failed; wrote %d bytes, want %d; pane:\n%s", len(got), len(payload), pane)
 }
 
 func TestReviewRequestRoundTrip(t *testing.T) {

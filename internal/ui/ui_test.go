@@ -1455,14 +1455,21 @@ func TestLaunchPromptInjectsDirectiveOnlyForAutoNamedWithPrompt(t *testing.T) {
 	if !strings.HasPrefix(withDirective, renameDirective+"\n\n") || !strings.HasSuffix(withDirective, "build the api") {
 		t.Fatalf("auto-named prompt should carry the directive, got %q", withDirective)
 	}
-	if got := launchPrompt("build the api", false); got != "build the api" {
-		t.Fatalf("custom-named prompt should stay clean, got %q", got)
+	named := launchPrompt("build the api", false)
+	if !strings.HasPrefix(named, renameAvailableNote+"\n\n") || !strings.HasSuffix(named, "build the api") {
+		t.Fatalf("custom-named prompt should note rename is optional later, got %q", named)
+	}
+	if strings.Contains(named, "Run rename only this once") || strings.HasPrefix(named, renameDirective) {
+		t.Fatalf("custom-named prompt must not force a rename, got %q", named)
 	}
 	if got := launchPrompt("", true); got != "" {
 		t.Fatalf("promptless session should stay clean, got %q", got)
 	}
 	if got := launchPrompt("/compact keep the api notes", true); got != "/compact keep the api notes" {
 		t.Fatalf("slash-command prompt should stay clean, got %q", got)
+	}
+	if got := launchPrompt("/compact keep the api notes", false); got != "/compact keep the api notes" {
+		t.Fatalf("named slash-command prompt should stay clean, got %q", got)
 	}
 }
 
@@ -1503,10 +1510,10 @@ func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	sess := m.sessionRows()[0]
-	if !m.poller.directivePending(sess.ID) {
-		t.Fatal("promptless auto-named spawn should defer the directive")
-	}
-
+	// Launch scripts boot the tool immediately, so the first refresh may
+	// already deliver the deferred directive. Either still-pending or
+	// already present in the pane is success; a missing mark before any
+	// send is not possible after spawnSession.
 	deadline := time.Now().Add(5 * time.Second)
 	for m.poller.directivePending(sess.ID) {
 		if time.Now().After(deadline) {

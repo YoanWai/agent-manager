@@ -361,25 +361,34 @@ const renameDirective = `First, run this exact shell command once, replacing <na
 // prompts (the command must open the message) and promptless launches.
 const deferredRenameDirective = `Run this exact shell command once, replacing <name> with a short 2-4 word kebab-case name for the broad feature or theme of this whole session (not one subtask of a larger feature): agent-manager rename "<name>". Run rename only this once. Do not rename again later in the conversation unless the user explicitly asks you to rename; if they do, pick a broad name from context, not a narrow step. Then continue.`
 
-// directiveEmbeddable reports whether the rename directive can ride the
-// session's first prompt; otherwise it is sent later as its own message.
+// renameAvailableNote tells a custom-named session that rename exists for
+// later use without asking it to rename now.
+const renameAvailableNote = `This session is already named. You can rename it later with agent-manager rename "<name>" only if the user asks. Do not rename it now. Then do the task:`
+
+// directiveEmbeddable reports whether a launch note can ride the
+// session's first prompt; otherwise auto-named sessions get the rename
+// directive later as its own message.
 func directiveEmbeddable(prompt string) bool {
 	return prompt != "" && !strings.HasPrefix(prompt, "/")
 }
 
-// launchPrompt prepends the rename directive when an auto-named session
-// launches with an embeddable prompt; other launches stay clean.
+// launchPrompt prepends a short agent note when the first prompt can
+// carry one: auto-named sessions must rename once; custom-named sessions
+// only learn that rename is available later.
 func launchPrompt(prompt string, autoNamed bool) string {
-	if autoNamed && directiveEmbeddable(prompt) {
+	if !directiveEmbeddable(prompt) {
+		return prompt
+	}
+	if autoNamed {
 		return renameDirective + "\n\n" + prompt
 	}
-	return prompt
+	return renameAvailableNote + "\n\n" + prompt
 }
 
 // spawnSession creates the tmux session and its store record for both
 // the New Session form and quick spawn. autoNamed marks sessions whose
-// name is a generated placeholder; when they launch with a prompt, the
-// agent is asked to rename the session itself.
+// name is a generated placeholder; those are asked to rename once.
+// Custom-named sessions only get a short note that rename is available later.
 func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed bool) error {
 	tool := m.cfg.Tools[toolName]
 	id := newID()
