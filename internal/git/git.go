@@ -63,7 +63,7 @@ func (s Scope) Next() Scope { return (s + 1) % scopeCount }
 func (s Scope) String() string {
 	switch s {
 	case ScopeBranch:
-		return "vs base"
+		return "vs target"
 	case ScopeLastCommit:
 		return "last commit"
 	case ScopeStaged:

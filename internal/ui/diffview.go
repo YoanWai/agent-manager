@@ -905,7 +905,7 @@ func commentNoun(count int) string {
 func scopePhrase(scope git.Scope) string {
 	switch scope {
 	case git.ScopeBranch:
-		return "your branch changes vs base"
+		return "your branch changes vs target"
 	case git.ScopeLastCommit:
 		return "your last commit"
 	case git.ScopeStaged:
@@ -1079,13 +1079,25 @@ func (m *Model) viewDiffFull() string {
 	return strings.Join([]string{header, "", body, status, footer}, "\n")
 }
 
+// stripBaseHash drops the @<short-sha> suffix BaseDesc carries from
+// baseRefFor. The hash matters for telling two merge-bases apart in logs
+// but reads as noise in the header, where only the ref name carries
+// signal for the user picking a target.
+func stripBaseHash(desc string) string {
+	if i := strings.IndexByte(desc, '@'); i >= 0 {
+		return desc[:i]
+	}
+	return desc
+}
+
 func (m *Model) viewDiffHeader(sessName string) string {
 	layout := "unified"
 	if m.diff.sideBySide {
 		layout = "split"
 	}
 	left := badgeStyle.Render("◆ Review · "+sessName) + "  " +
-		pill(m.diff.scope.String(), colorAccent2) + "  " + pill(layout, colorAccent)
+		keyPill("s", m.diff.scope.String(), colorAccent2) + "  " +
+		keyPill("u", layout, colorAccent)
 	if root := m.diff.set.Repo.Root; root != "" {
 		name := filepath.Base(m.diff.repoSel)
 		if name == "" || name == "." {
@@ -1094,10 +1106,15 @@ func (m *Model) viewDiffHeader(sessName string) string {
 		if len(m.diff.repoRoots) > 1 {
 			name = fmt.Sprintf("%s · %d repos", name, len(m.diff.repoRoots))
 		}
-		left += "  " + pill(name, colorAccent)
+		left += "  " + keyPill("r", name, colorAccent)
 		branch := m.diff.set.Repo.Branch
 		if m.diff.scope == git.ScopeBranch && m.diff.set.BaseDesc != "" && branch != "" {
-			left += "  " + subtleStyle.Render(m.diff.set.BaseDesc+" → "+branch)
+			target := stripBaseHash(m.diff.set.BaseDesc)
+			summary := target + " → " + branch
+			if m.diff.set.BaseOverride == "" {
+				summary += " " + subtleStyle.Render("(auto)")
+			}
+			left += "  " + keyPill("B", summary, colorAccent)
 		} else if branch != "" {
 			left += "  " + subtleStyle.Render(branch)
 		}
@@ -1352,7 +1369,7 @@ func (m *Model) viewDiffFooter() string {
 	}
 	pairs := [][2]string{
 		{"↑↓", "scroll"}, {"J/K", "file"}, {"n/N", "change"}, {"space", "reviewed"},
-		{"u", "layout"}, {"s", "scope: " + m.diff.scope.String()}, {"B", "base"}, {"c", "comment"},
+		{"u", "layout"}, {"s", "scope: " + m.diff.scope.String()}, {"B", "target"}, {"c", "comment"},
 	}
 	if len(m.diff.repoRoots) > 0 {
 		pairs = append(pairs, [2]string{"r", "repo: " + filepath.Base(m.diff.repoSel)})
