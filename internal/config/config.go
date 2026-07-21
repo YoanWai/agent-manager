@@ -293,9 +293,12 @@ resume_by_id_command = "grok --resume {id}"
 revive_command = "grok --continue"
 default_status = "idle"
 activity_cutoff = "(?m)^\\s*│ ❯"
-# turn summary above the input box, e.g. "Worked for 5.0s." / "Worked for 25s."
-turn_end = "(?m)^\\s*Worked for [\\dhms. ]+s\\."
-chrome_line = "^\\s*[┃❙│─╭╮╰╯]*\\s*$"
+# turn summary above the input box. Grok prints a live "Worked for 1m20s"
+# timer while subagents run; only the real end line gains "stop" (and usually
+# "[hooks: N]"). Trailing period after the duration is optional.
+turn_end = "(?m)^\\s*Worked for [\\dhms. ]+s\\.?(?:\\s|$).*\\bstop\\b"
+# input-box borders plus the right-edge scrollbar block on overflow panes
+chrome_line = "^\\s*[┃❙│─╭╮╰╯█]*\\s*$"
 rules = [
   # first-run "Do you trust this directory?" and other y/n prompts block on the user
   { state = "waiting", pattern = "(?m)^\\s*(Yes, proceed|No, quit)\\s{2,}[yn]\\s*$" },
