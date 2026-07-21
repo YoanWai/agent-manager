@@ -1998,7 +1998,7 @@ func TestDiffScopeCycleAndLayout(t *testing.T) {
 	m.applyCmd(t, m.openDiff())
 
 	m.applyCmd(t, m.cycleDiffScope())
-	if m.diff.scope.String() != "vs base" {
+	if m.diff.scope.String() != "vs target" {
 		t.Fatalf("scope = %q", m.diff.scope)
 	}
 

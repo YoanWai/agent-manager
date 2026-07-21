@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func gitRepoWithTwoChangedFiles(t *testing.T) string {
@@ -1181,7 +1182,7 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 		t.Fatal("no diff session")
 	}
 	if m.diff.scope == git.ScopeBranch {
-		t.Fatal("precondition: scope should start off vs base so the switch is observable")
+		t.Fatal("precondition: scope should start off vs target so the switch is observable")
 	}
 
 	m.pressDiffKey(t, 'B')
@@ -1201,7 +1202,7 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 		t.Fatalf("enter should return to review, mode = %v", m.mode)
 	}
 	if m.diff.scope != git.ScopeBranch {
-		t.Errorf("picking a base should switch scope to vs base, got %v", m.diff.scope)
+		t.Errorf("picking a base should switch scope to vs target, got %v", m.diff.scope)
 	}
 	got, err := m.store.ReviewBase(sess.ID, m.diff.repoSel)
 	if err != nil {
@@ -1471,5 +1472,51 @@ func TestReviewHeaderShowsRepoBranchAndBase(t *testing.T) {
 	header = m.viewDiffHeader("hdr")
 	if !strings.Contains(header, "→ main") {
 		t.Fatalf("branch scope header should show base → branch, got %q", header)
+	}
+}
+
+// The target pill in the header is the one place a reviewer figures out
+// what they are diffing into, so it has to read cleanly: the @<hash>
+// suffix BaseDesc carries internally is dropped, each changeable pill
+// wears its key, and an auto-detected target says so out loud while an
+// explicitly set one does not.
+func TestReviewHeaderTargetLabelCleanAndKeyed(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	dir := gitRepoWithSecondBranch(t)
+	openReviewOn(t, m, "hdr", dir)
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("no diff session")
+	}
+	for m.diff.scope != git.ScopeBranch {
+		m.drainCmds(t, m.cycleDiffScope())
+	}
+
+	header := ansi.Strip(m.viewDiffHeader("hdr"))
+	if !strings.Contains(header, "B ") || !strings.Contains(header, "▏") {
+		t.Fatalf("target pill should wear its B key, got %q", header)
+	}
+	if strings.Contains(header, "@") {
+		t.Fatalf("header should drop the @hash suffix from the target, got %q", header)
+	}
+	if !strings.Contains(header, "(auto)") {
+		t.Fatalf("auto-detected target should be marked, got %q", header)
+	}
+
+	if err := m.store.SetReviewBase(sess.ID, m.diff.repoSel, "feature"); err != nil {
+		t.Fatal(err)
+	}
+	m.diff.set.BaseOverride = "feature"
+	m.diff.set.BaseDesc = "feature@deadbee"
+	m.diff.set.Repo.Branch = "feature"
+	header = ansi.Strip(m.viewDiffHeader("hdr"))
+	if strings.Contains(header, "(auto)") {
+		t.Fatalf("explicit target should not be marked auto, got %q", header)
+	}
+	if !strings.Contains(header, "feature → feature") {
+		t.Fatalf("header should show the cleaned target → branch, got %q", header)
 	}
 }

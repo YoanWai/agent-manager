@@ -172,6 +172,14 @@ func pill(text string, fg lipgloss.Color) string {
 	return lipgloss.NewStyle().Foreground(fg).Render("▏" + text)
 }
 
+// keyPill renders a pill with the key that changes it dimmed in front, so
+// the header doubles as a key legend: each changeable value wears its
+// shortcut. The key is dim enough to lose to the value at a glance but
+// reads clearly when hunted.
+func keyPill(key, text string, fg lipgloss.Color) string {
+	return subtleStyle.Render(key+" ") + pill(text, fg)
+}
+
 // imageChipStyle is the soft pill used for inline pasted-image tokens in
 // the quick prompt (same visual family as badges, quieter so the text wins).
 var imageChipStyle = lipgloss.NewStyle().
