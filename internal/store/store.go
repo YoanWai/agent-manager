@@ -468,6 +468,22 @@ func (s *Store) RenameSession(id, name string) error {
 	return requireRow(res, id)
 }
 
+// UpdateTool changes which tool status rules and revive use for a session.
+// Clears the captured agent conversation id: that id only makes sense for
+// the tool that minted it, and a manual tool swap means the user swapped
+// the process in the pane (e.g. quit opencode, ran grok).
+func (s *Store) UpdateTool(id, tool string) error {
+	if strings.TrimSpace(tool) == "" {
+		return fmt.Errorf("session tool cannot be empty")
+	}
+	res, err := s.db.Exec(
+		`UPDATE sessions SET tool = ?, agent_session_id = '' WHERE id = ?`, tool, id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
+}
+
 // DeleteGroup removes a group and all its descendant groups, reporting
 // the paths it removed.
 func (s *Store) DeleteGroup(path string) ([]string, error) {

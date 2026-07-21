@@ -84,6 +84,37 @@ func TestUpdateStatus(t *testing.T) {
 	}
 }
 
+func TestUpdateTool(t *testing.T) {
+	st := newTestStore(t)
+	sess := sample("a", "g1")
+	sess.Tool = "opencode"
+	if err := st.CreateSession(sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := st.SetAgentSessionID("a", "ses_old"); err != nil {
+		t.Fatalf("set agent id: %v", err)
+	}
+	if err := st.UpdateTool("a", "grok"); err != nil {
+		t.Fatalf("update tool: %v", err)
+	}
+	got, err := st.Get("a")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Tool != "grok" {
+		t.Fatalf("tool = %q want grok", got.Tool)
+	}
+	if got.AgentSessionID != "" {
+		t.Fatalf("agent session id should clear on tool change, got %q", got.AgentSessionID)
+	}
+	if err := st.UpdateTool("a", ""); err == nil {
+		t.Fatal("empty tool should error")
+	}
+	if err := st.UpdateTool("missing", "claude"); err == nil {
+		t.Fatal("update tool on missing row should error")
+	}
+}
+
 func TestDelete(t *testing.T) {
 	st := newTestStore(t)
 	st.CreateSession(sample("a", "g1"))
@@ -263,6 +294,7 @@ func TestWritesToADeletedSessionReportGone(t *testing.T) {
 		"SetSnapshot":       st.SetSnapshot("a", "pane"),
 		"SetArchived":       st.SetArchived("a", true),
 		"RenameSession":     st.RenameSession("a", "renamed"),
+		"UpdateTool":        st.UpdateTool("a", "grok"),
 		"Delete":            st.Delete("a"),
 	}
 	for name, err := range writes {
@@ -285,6 +317,7 @@ func TestNoOpWriteDoesNotLookLikeADeletedSession(t *testing.T) {
 		"SetSnapshot":       st.SetSnapshot("a", ""),
 		"SetArchived":       st.SetArchived("a", false),
 		"RenameSession":     st.RenameSession("a", "n-a"),
+		"UpdateTool":        st.UpdateTool("a", "claude"),
 	}
 	for name, err := range writes {
 		if err != nil {
