@@ -569,7 +569,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.requestRefresh()
-			return m, nil
+			return m, tea.EnableMouseCellMotion
 		}
 		// Ctrl+R inside the session sets a marker before detaching; consume
 		// it here and jump straight to review for the session just attached.
@@ -583,17 +583,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if clearErr := m.tmux.ClearReviewRequest(); clearErr != nil {
 				m.err = clearErr.Error()
 				m.requestRefresh()
-				return m, nil
+				return m, tea.EnableMouseCellMotion
 			}
 			sess, ok := m.selected()
 			cmd := m.openDiff()
 			if ok && m.mode == modeDiff {
 				m.diff.reattachID = sess.ID
 			}
-			return m, cmd
+			return m, tea.Batch(cmd, tea.EnableMouseCellMotion)
 		}
 		m.requestRefresh()
-		return m, nil
+		return m, tea.EnableMouseCellMotion
 
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
