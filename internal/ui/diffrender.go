@@ -230,9 +230,18 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 	var rows []string
 	var b strings.Builder
 	activeBg := ""
+	activeFg := ""
 	rowWidth := 0
 	fresh := true
 	offset := 0
+
+	noteAnsi := func(seq string) {
+		if seq == "\x1b[0m" {
+			activeFg = ""
+		} else {
+			activeFg += seq
+		}
+	}
 
 	closeRow := func() {
 		if baseBg != "" && rowWidth < width {
@@ -262,6 +271,7 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 				}
 				seq := text[ti:end]
 				b.WriteString(seq)
+				noteAnsi(seq)
 				if seq == "\x1b[0m" && activeBg != "" {
 					b.WriteString(activeBg)
 				}
@@ -272,6 +282,9 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 				activeBg = bgFor(offset)
 				if activeBg != "" {
 					b.WriteString(activeBg)
+				}
+				if activeFg != "" {
+					b.WriteString(activeFg)
 				}
 				fresh = false
 			}
@@ -299,6 +312,7 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 
 		if isAnsi {
 			b.WriteString(tok.text)
+			noteAnsi(tok.text)
 			if tok.text == "\x1b[0m" && activeBg != "" {
 				b.WriteString(activeBg)
 			}
