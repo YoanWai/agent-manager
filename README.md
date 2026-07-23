@@ -2,7 +2,9 @@
 
 ![agent-manager demo](docs/demo.gif)
 
-A terminal UI to manage AI coding-agent sessions on your machine. Create and enter sessions, organize them in a nested group tree with manual ordering, archive finished ones, and watch live status, a live pane preview, the combined footprint of your agents, and machine resource gauges.
+Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, and Grok run side by side, each in its own tmux session, so they keep working after you quit the manager.
+
+Instead of hunting through terminal tabs to see which agent is done and which is stuck, every session shows up in one list with live status, grouped into a project tree you can fold and reorder. You answer any of them without attaching: `space` sends a prompt straight into a session's pane, or spawns a new agent in the selected group. A dead session revives where it left off with `v`. And `ctrl+r` opens a full-file diff of what an agent changed, syntax-highlighted, where a comment you leave on a line goes straight back to the agent's pane.
 
 ## Supported tools
 
