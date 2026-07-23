@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -252,7 +251,7 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 	}
 
 	// Drift the session away so a real resize is observable.
-	if _, err := exec.Command("tmux", "resize-window", "-t", "am_"+id, "-x", "100", "-y", "30").CombinedOutput(); err != nil {
+	if _, err := tmuxCmd("resize-window", "-t", "am_"+id, "-x", "100", "-y", "30").CombinedOutput(); err != nil {
 		t.Fatalf("resize-window: %v", err)
 	}
 	if w := windowWidth(t, id); w != 100 {

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"os/exec"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -23,7 +22,7 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	}
 	t.Cleanup(func() { m.tmux.ClearReviewRequest() })
 
-	if _, err := exec.Command("tmux", "set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
+	if _, err := tmuxCmd("set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, _ := m.Update(attachDoneMsg{})
@@ -96,7 +95,7 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
 		t.Fatalf("set finished: %v", err)
 	}
-	if _, err := exec.Command("tmux", "set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
+	if _, err := tmuxCmd("set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, _ := m.Update(attachDoneMsg{})

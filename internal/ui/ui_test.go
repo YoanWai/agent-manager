@@ -57,7 +57,7 @@ func buildModel(t *testing.T) *Model {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	driver, err := tmux.New()
+	driver, err := tmux.NewWithSocket(testSocket)
 	if err != nil {
 		t.Fatalf("tmux: %v", err)
 	}
@@ -161,7 +161,7 @@ func createSession(t *testing.T, m *Model, name, dir, group string) {
 
 func windowWidth(t *testing.T, id string) int {
 	t.Helper()
-	out, err := exec.Command("tmux", "display-message", "-p", "-t", "am_"+id, "#{window_width}").CombinedOutput()
+	out, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{window_width}").CombinedOutput()
 	if err != nil {
 		t.Fatalf("display-message: %v: %s", err, out)
 	}
@@ -1010,7 +1010,7 @@ func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
 	m.selectSessionRow(t, "reviewme")
 	t.Cleanup(func() { m.tmux.ClearReviewRequest() })
 
-	if _, err := exec.Command("tmux", "set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
+	if _, err := tmuxCmd("set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, _ := m.Update(attachDoneMsg{})
@@ -2135,7 +2135,7 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	sess := m.sessionRows()[0]
 	// Join wrapped lines so the delivery check does not depend on where the
 	// pane's width breaks the prompt; the session sizes to the model width.
-	out, err := exec.Command("tmux", "capture-pane", "-p", "-J", "-t", "am_"+sess.ID).CombinedOutput()
+	out, err := tmuxCmd("capture-pane", "-p", "-J", "-t", "am_"+sess.ID).CombinedOutput()
 	if err != nil {
 		t.Fatal(err)
 	}

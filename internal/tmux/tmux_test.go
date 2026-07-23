@@ -8,12 +8,30 @@ import (
 	"time"
 )
 
+// testSocket is an isolated tmux server for this package's tests, so they
+// never touch the default socket where the user's shell tmux and live agents
+// live. TestMain tears it down before and after the run.
+const testSocket = "amtmuxtest"
+
+// TestMain kills any leftover test server so each run starts and ends clean.
+func TestMain(m *testing.M) {
+	tmuxCmd("kill-server").Run()
+	code := m.Run()
+	tmuxCmd("kill-server").Run()
+	os.Exit(code)
+}
+
+// tmuxCmd builds a raw tmux command aimed at the test socket.
+func tmuxCmd(args ...string) *exec.Cmd {
+	return exec.Command("tmux", append([]string{"-L", testSocket}, args...)...)
+}
+
 func requireTmux(t *testing.T) *Driver {
 	t.Helper()
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not installed")
 	}
-	driver, err := New()
+	driver, err := NewWithSocket(testSocket)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -22,7 +40,7 @@ func requireTmux(t *testing.T) *Driver {
 
 func windowSizeOption(t *testing.T, id string) string {
 	t.Helper()
-	out, err := exec.Command("tmux", "show-window-options", "-v", "-t", "am_"+id, "window-size").CombinedOutput()
+	out, err := tmuxCmd("show-window-options", "-v", "-t", "am_"+id, "window-size").CombinedOutput()
 	if err != nil {
 		t.Fatalf("show-window-options: %v: %s", err, out)
 	}
@@ -67,7 +85,7 @@ func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	if err := driver.SetLabel(id, "evil #(touch "+marker+") name"); err != nil {
 		t.Fatalf("SetLabel: %v", err)
 	}
-	rendered, err := exec.Command("tmux", "display-message", "-p", "-t", "am_"+id, "#{T:status-left}").CombinedOutput()
+	rendered, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-left}").CombinedOutput()
 	if err != nil {
 		t.Fatalf("display-message: %v", err)
 	}
@@ -164,7 +182,7 @@ func TestReviewRequestRoundTrip(t *testing.T) {
 		t.Fatal("no request expected on a clean marker")
 	}
 
-	if _, err := exec.Command("tmux", "set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
+	if _, err := tmuxCmd("set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
 	}
 	requested, err = driver.ReviewRequested()
@@ -202,21 +220,21 @@ func TestRefreshChromeKeepsLabelAndAddsReviewHint(t *testing.T) {
 		t.Fatalf("RefreshChrome: %v", err)
 	}
 
-	right, err := exec.Command("tmux", "display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
+	right, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
 	if err != nil {
 		t.Fatalf("status-right: %v", err)
 	}
 	if !strings.Contains(string(right), "Ctrl+r = review") {
 		t.Fatalf("footer should advertise review, got %q", right)
 	}
-	length, err := exec.Command("tmux", "show-option", "-t", "am_"+id, "-v", "status-right-length").CombinedOutput()
+	length, err := tmuxCmd("show-option", "-t", "am_"+id, "-v", "status-right-length").CombinedOutput()
 	if err != nil {
 		t.Fatalf("status-right-length: %v", err)
 	}
 	if strings.TrimSpace(string(length)) != "80" {
 		t.Fatalf("status-right-length should fit the footer, got %q", length)
 	}
-	left, err := exec.Command("tmux", "display-message", "-p", "-t", "am_"+id, "#{T:status-left}").CombinedOutput()
+	left, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-left}").CombinedOutput()
 	if err != nil {
 		t.Fatalf("status-left: %v", err)
 	}

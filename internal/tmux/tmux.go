@@ -13,28 +13,54 @@ import (
 
 const prefix = "am_"
 
+// defaultSocket is the private tmux server name the manager runs every agent
+// on. A dedicated -L socket keeps agent sessions off the user's default
+// socket, where a shell tmux, a `go test`, or a stray kill-server would
+// otherwise share a server with the live agents and take them all down at once.
+const defaultSocket = "agentmgr"
+
 // reviewOption is the global tmux user option the in-session Ctrl+R binding
 // sets to signal the manager to open review for the session it just detached.
 const reviewOption = "@am_review"
 
 type Driver struct {
-	bin string
+	bin    string
+	socket string
 }
 
 func New() (*Driver, error) {
+	return NewWithSocket(defaultSocket)
+}
+
+// NewWithSocket builds a driver bound to a named tmux server. Tests pass an
+// isolated socket so their sessions never collide with the default socket or
+// with live agents on the production socket.
+func NewWithSocket(socket string) (*Driver, error) {
 	bin, err := exec.LookPath("tmux")
 	if err != nil {
 		return nil, fmt.Errorf("tmux not found on PATH: %w", err)
 	}
-	return &Driver{bin: bin}, nil
+	return &Driver{bin: bin, socket: socket}, nil
+}
+
+// SocketName is the tmux server name this driver targets. Tests use it to aim
+// raw tmux commands at the same private socket the driver runs on.
+func (d *Driver) SocketName() string {
+	return d.socket
 }
 
 func sessionName(id string) string {
 	return prefix + id
 }
 
+// args prefixes -L <socket> so every tmux invocation targets the driver's
+// private server. tmux requires the flag before the command word.
+func (d *Driver) args(a ...string) []string {
+	return append([]string{"-L", d.socket}, a...)
+}
+
 func (d *Driver) run(args ...string) (string, error) {
-	out, err := exec.Command(d.bin, args...).CombinedOutput()
+	out, err := exec.Command(d.bin, d.args(args...)...).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("tmux %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
@@ -240,7 +266,7 @@ func sanitizeFormat(s string) string {
 // ReviewRequested reports whether the in-session Ctrl+R binding set the
 // review marker before detaching. A missing tmux server means no request.
 func (d *Driver) ReviewRequested() (bool, error) {
-	out, err := exec.Command(d.bin, "show-option", "-gqv", reviewOption).CombinedOutput()
+	out, err := exec.Command(d.bin, d.args("show-option", "-gqv", reviewOption)...).CombinedOutput()
 	if err != nil {
 		if noServer(string(out)) {
 			return false, nil
@@ -257,7 +283,7 @@ func (d *Driver) ClearReviewRequest() error {
 }
 
 func (d *Driver) AttachCommand(id string) *exec.Cmd {
-	return exec.Command(d.bin, "attach-session", "-t", sessionName(id))
+	return exec.Command(d.bin, d.args("attach-session", "-t", sessionName(id))...)
 }
 
 func (d *Driver) Kill(id string) error {
@@ -271,7 +297,7 @@ func (d *Driver) Kill(id string) error {
 }
 
 func (d *Driver) Exists(id string) bool {
-	err := exec.Command(d.bin, "has-session", "-t", sessionName(id)).Run()
+	err := exec.Command(d.bin, d.args("has-session", "-t", sessionName(id))...).Run()
 	return err == nil
 }
 
@@ -327,7 +353,7 @@ func noServer(out string) bool {
 // Panes returns every managed session's pane pid in a single tmux call,
 // which doubles as a liveness check: a session absent from the map is gone.
 func (d *Driver) Panes() (map[string]int, error) {
-	out, err := exec.Command(d.bin, "list-panes", "-a", "-F", "#{session_name} #{pane_pid}").CombinedOutput()
+	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-F", "#{session_name} #{pane_pid}")...).CombinedOutput()
 	if err != nil {
 		if noServer(string(out)) {
 			return map[string]int{}, nil
