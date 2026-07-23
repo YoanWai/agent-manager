@@ -63,7 +63,7 @@ func renderSelectedRow(s string) string {
 
 func statusColor(s string) lipgloss.Color {
 	switch s {
-	case status.Working:
+	case status.Working, status.Starting:
 		return colorWorking
 	case status.Waiting:
 		return colorWaiting
@@ -80,6 +80,8 @@ func statusGlyph(s string) string {
 	switch s {
 	case status.Working:
 		return "◐"
+	case status.Starting:
+		return "◌"
 	case status.Waiting:
 		return "?"
 	case status.Finished:
@@ -89,6 +91,15 @@ func statusGlyph(s string) string {
 	default:
 		return "○"
 	}
+}
+
+// statusLabel is the human text for a status; most match the raw value, but
+// the transient launch state reads better spelled out.
+func statusLabel(s string) string {
+	if s == status.Starting {
+		return "starting up"
+	}
+	return s
 }
 
 // titledPanel draws a rounded box with the title embedded in the top

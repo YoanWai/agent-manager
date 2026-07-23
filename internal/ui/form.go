@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
+	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -417,7 +418,9 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		Tool:           toolName,
 		Cwd:            dir,
 		Group:          group,
-		Status:         tool.DefaultStatus,
+		// Starting until the agent first draws to its pane, so the row shows
+		// a launch state immediately; the poller flips it to the real status.
+		Status:         status.Starting,
 		AgentSessionID: agentSessionID,
 	}
 	if err := m.store.CreateSession(sess); err != nil {
@@ -428,7 +431,14 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	if deferDirective {
 		m.poller.markDirectivePending(id)
 	}
-	return m.tmux.SetLabel(id, sessionLabel(group, name))
+	if err := m.tmux.SetLabel(id, sessionLabel(group, name)); err != nil {
+		return err
+	}
+	// Show the new session at once instead of waiting for the next poll to
+	// reload it from the store.
+	m.sessions = append(m.sessions, sess)
+	m.rebuildRows()
+	return nil
 }
 
 // withPrompt embeds an optional starting prompt into a tool's launch

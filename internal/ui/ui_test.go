@@ -1129,6 +1129,28 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	}
 }
 
+func TestNewSessionShowsStartingImmediately(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.name.SetValue("boot")
+	m.form.dir.SetValue(t.TempDir())
+	m.form.toolIndex = 0
+	pickGroup(t, m, "")
+	// submitForm without the follow-up refresh: the row must already show the
+	// launch state from the optimistic insert alone.
+	if _, _ = m.submitForm(); m.err != "" {
+		t.Fatalf("submit: %q", m.err)
+	}
+	rows := m.sessionRows()
+	if len(rows) != 1 {
+		t.Fatalf("want 1 row, got %d", len(rows))
+	}
+	if rows[0].Status != status.Starting {
+		t.Fatalf("new row status = %q, want %q", rows[0].Status, status.Starting)
+	}
+	t.Cleanup(func() { m.tmux.Kill(rows[0].ID) })
+}
+
 func TestReviveAllRecreatesEveryDeadSession(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

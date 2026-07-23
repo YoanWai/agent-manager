@@ -402,7 +402,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 			nameStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 		}
 		name := nameStyle.Render(sess.Name)
-		state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(sess.Status)
+		state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status))
 		meta := state + secondary(" · "+sess.Tool+" · "+relTime(sess.CreatedAt))
 		content = glyph + " " + name + "  " + meta
 	}

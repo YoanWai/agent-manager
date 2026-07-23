@@ -14,6 +14,10 @@ const (
 	Errored  = "errored"
 	Idle     = "idle"
 	Dead     = "dead"
+	// Starting is the transient state a session shows from launch until its
+	// agent first draws to the pane, so a new row appears immediately instead
+	// of after the next poll.
+	Starting = "starting"
 )
 
 type rule struct {
