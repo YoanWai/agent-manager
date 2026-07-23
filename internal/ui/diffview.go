@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
@@ -106,15 +107,23 @@ type diffProbeMsg struct {
 // repoWant is matched by path so the selection survives ResolveRepos re-ranking between loads.
 func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, refresh bool) tea.Cmd {
 	driver := m.gitDrv
-	// The store handle is goroutine-safe sqlite; capture it so the closure
-	// never touches the Model.
 	stor := m.store
+	var cachedRoots []string
+	var cachedCWD string
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, refresh: refresh}
-		roots, err := driver.ResolveRepos(sess.Cwd)
-		if err != nil {
-			msg.err = err
-			return msg
+		var roots []string
+		var err error
+		if sess.Cwd == cachedCWD && cachedRoots != nil {
+			roots = cachedRoots
+		} else {
+			roots, err = driver.ResolveRepos(sess.Cwd)
+			if err != nil {
+				msg.err = err
+				return msg
+			}
+			cachedCWD = sess.Cwd
+			cachedRoots = roots
 		}
 		repoIdx, found := 0, false
 		for i, root := range roots {
@@ -133,23 +142,44 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 		}
 		msg.repoRoots = roots
 		msg.repoRoot = roots[repoIdx]
-		// Read the declared base only once the final root is known, since the
-		// base is keyed per repo. Resolve symlinks so the key matches the CLI,
-		// which stores under git's symlink-expanded toplevel.
 		override, err := stor.ReviewBase(sess.ID, resolveSymlinksOrSelf(roots[repoIdx]))
 		if err != nil {
 			msg.err = err
 			return msg
 		}
-		msg.set, msg.err = diff.BuildSet(driver, roots[repoIdx], scope, override)
-		if msg.err == nil {
-			baseRef := ""
-			if scope == git.ScopeBranch {
-				baseRef, _, _ = driver.BranchBase(msg.set.Repo.Root, override)
-			}
-			msg.fp, _ = driver.Fingerprint(msg.set.Repo.Root, scope, baseRef)
-			msg.worktrees, _ = driver.Worktrees(msg.set.Repo.Root)
+		finishDiffMsg(driver, scope, gen, roots[repoIdx], override, roots, &msg)
+		return msg
+	}
+}
+
+func finishDiffMsg(driver *git.Driver, scope git.Scope, gen int, gitRoot, override string, repoRoots []string, msg *diffLoadedMsg) {
+	msg.repoRoots = repoRoots
+	msg.repoRoot = gitRoot
+	msg.set, msg.err = diff.BuildSet(driver, gitRoot, scope, override)
+	if msg.err == nil {
+		baseRef := msg.set.BaseRef
+		if scope == git.ScopeBranch && baseRef == "" {
+			baseRef, _, _ = driver.BranchBase(msg.set.Repo.Root, override)
 		}
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			msg.fp, _ = driver.Fingerprint(msg.set.Repo.Root, scope, baseRef)
+		}()
+		go func() {
+			defer wg.Done()
+			msg.worktrees, _ = driver.Worktrees(msg.set.Repo.Root)
+		}()
+		wg.Wait()
+	}
+}
+
+func (m *Model) diffReloadCmd(sess store.Session, scope git.Scope, gen int, gitRoot, override string, repoRoots []string) tea.Cmd {
+	driver := m.gitDrv
+	return func() tea.Msg {
+		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen}
+		finishDiffMsg(driver, scope, gen, gitRoot, override, repoRoots, &msg)
 		return msg
 	}
 }
@@ -223,9 +253,19 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 	m.diff.gen++
 	m.diff.loading = true
 	m.diff.errText = ""
+	m.diff.set = diff.Set{}
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
+	if m.diff.repoSel != "" && len(m.diff.repoRoots) > 0 {
+		override, err := m.store.ReviewBase(sess.ID, resolveSymlinksOrSelf(m.diff.repoSel))
+		if err != nil {
+			m.diff.loading = false
+			m.err = err.Error()
+			return nil
+		}
+		return m.diffReloadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, override, m.diff.repoRoots)
+	}
 	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }
 

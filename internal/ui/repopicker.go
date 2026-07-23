@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -202,6 +203,7 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 	m.diff.gen++
 	m.diff.loading = true
 	m.diff.errText = ""
+	m.diff.set = diff.Set{}
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
@@ -226,9 +228,13 @@ func (m *Model) selectBase(ref string) tea.Cmd {
 	m.diff.gen++
 	m.diff.loading = true
 	m.diff.errText = ""
+	m.diff.set = diff.Set{}
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
+	if m.diff.repoSel != "" && len(m.diff.repoRoots) > 0 {
+		return m.diffReloadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, ref, m.diff.repoRoots)
+	}
 	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }
 

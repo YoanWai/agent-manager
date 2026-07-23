@@ -5,6 +5,7 @@ package diff
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/YoanWai/agent-manager/internal/git"
 	udiff "github.com/aymanbagabas/go-udiff"
@@ -51,6 +52,7 @@ type Set struct {
 	Repo         git.Repo
 	Scope        git.Scope
 	BaseDesc     string
+	BaseRef      string
 	BaseOverride string
 	Files        []FileDiff
 }
@@ -82,6 +84,7 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride stri
 			return Set{}, err
 		}
 		set.BaseDesc = describe
+		set.BaseRef = baseRef
 	case git.ScopeStaged, git.ScopeUncommitted:
 		set.BaseDesc = "HEAD"
 	case git.ScopeLastCommit:
@@ -91,13 +94,25 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride stri
 		return set, nil
 	}
 
-	files, err := driver.ChangedFiles(repo.Root, scope, baseRef)
-	if err != nil {
-		return Set{}, err
+	var files []git.ChangedFile
+	var stats map[string]git.FileStat
+	var filesErr, statsErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		files, filesErr = driver.ChangedFiles(repo.Root, scope, baseRef)
+	}()
+	go func() {
+		defer wg.Done()
+		stats, statsErr = driver.NumStat(repo.Root, scope, baseRef)
+	}()
+	wg.Wait()
+	if filesErr != nil {
+		return Set{}, filesErr
 	}
-	stats, err := driver.NumStat(repo.Root, scope, baseRef)
-	if err != nil {
-		return Set{}, err
+	if statsErr != nil {
+		return Set{}, statsErr
 	}
 
 	for i, file := range files {
@@ -127,10 +142,7 @@ func EnsureFile(driver *git.Driver, set *Set, index int) {
 	if fd.Lines != nil || fd.Binary || fd.Err != nil {
 		return
 	}
-	baseRef := ""
-	if set.Scope == git.ScopeBranch {
-		baseRef, _, _ = driver.BranchBase(set.Repo.Root, set.BaseOverride)
-	}
+	baseRef := set.BaseRef
 	loadFile(driver, set.Repo.Root, set.Scope, baseRef, fd)
 }
 
