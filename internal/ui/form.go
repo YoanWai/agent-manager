@@ -413,11 +413,11 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		return err
 	}
 	sess := store.Session{
-		ID:             id,
-		Name:           name,
-		Tool:           toolName,
-		Cwd:            dir,
-		Group:          group,
+		ID:    id,
+		Name:  name,
+		Tool:  toolName,
+		Cwd:   dir,
+		Group: group,
 		// Starting until the agent first draws to its pane, so the row shows
 		// a launch state immediately; the poller flips it to the real status.
 		Status:         status.Starting,
