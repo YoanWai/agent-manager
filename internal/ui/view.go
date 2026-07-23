@@ -194,6 +194,11 @@ func (m *Model) viewHeader() string {
 	meta := mutedStyle.Render(fmt.Sprintf("%d sessions", sessionCount)) +
 		subtleStyle.Render(" · ") +
 		lipgloss.NewStyle().Foreground(colorAccent2).Render(scope)
+	if m.updateLatest != "" {
+		meta += subtleStyle.Render(" · ") +
+			lipgloss.NewStyle().Foreground(colorAccent).Bold(true).
+				Render("↑ "+m.updateLatest+" available")
+	}
 	left := brand + "  " + meta
 
 	right := m.viewStatusCounts()

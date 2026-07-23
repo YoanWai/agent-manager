@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/YoanWai/agent-manager/internal/update"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -119,6 +121,12 @@ type Model struct {
 	// settle timers with an older gen are dropped so key-repeat cannot
 	// queue a second of tmux work after the user stops.
 	previewGen uint64
+
+	// version is this build's release tag; updateLatest/updateURL hold a
+	// newer release found on GitHub so the header can badge it.
+	version      string
+	updateLatest string
+	updateURL    string
 }
 
 // confirmTarget.action values; the zero value means delete.
@@ -232,7 +240,7 @@ type attachDoneMsg struct {
 	err    error
 }
 
-func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager) *Model {
+func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) *Model {
 	statusSources := make(map[string]string, len(cfg.Tools))
 	sessionStores := make(map[string]string, len(cfg.Tools))
 	for name, tool := range cfg.Tools {
@@ -253,6 +261,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		collapsed:   loadCollapsed(st),
 		splitRatio:  loadSplitRatio(st),
 		mode:        modeList,
+		version:     version,
 	}
 }
 
@@ -321,7 +330,28 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return m.refreshExistingSessionUX
+	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate)
+}
+
+// updateMsg carries the result of the background GitHub release check.
+type updateMsg struct {
+	latest string
+	url    string
+}
+
+// checkForUpdate hits GitHub Releases (throttled to once a day via an
+// on-disk cache) off the event loop and reports a newer release. Any
+// failure resolves to an empty message so the TUI simply shows no badge.
+func (m *Model) checkForUpdate() tea.Msg {
+	dir, err := config.Dir()
+	if err != nil {
+		return updateMsg{}
+	}
+	result, err := update.Check(context.Background(), dir, m.version)
+	if err != nil {
+		return updateMsg{}
+	}
+	return updateMsg{latest: result.Latest, url: result.URL}
 }
 
 // refreshExistingSessionUX re-applies the tmux bindings and status bar to
@@ -512,6 +542,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.procFor = msg.procFor
 		m.preview = msg.preview
 		return m, m.diffRefreshCmd()
+
+	case updateMsg:
+		m.updateLatest = msg.latest
+		m.updateURL = msg.url
+		return m, nil
 
 	case previewSettleMsg:
 		if msg.gen != m.previewGen {

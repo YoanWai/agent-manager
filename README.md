@@ -36,6 +36,15 @@ Download from [Releases](https://github.com/YoanWai/agent-manager/releases) (mac
 
 Run inside [WSL2](https://learn.microsoft.com/windows/wsl/install): agent-manager lives on tmux, which is a Linux/macOS tool. In a WSL shell, install with Homebrew or grab the Linux binary from Releases.
 
+### Updating
+
+The manager checks GitHub Releases once a day and shows a `↑ vX.Y.Z available` badge in the header when a newer version is out. Pull it in the way you installed:
+
+```bash
+brew upgrade yoanwai/tap/agent-manager   # Homebrew
+go install github.com/YoanWai/agent-manager@latest   # Go
+```
+
 ## Usage
 
 ```bash
