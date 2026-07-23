@@ -142,7 +142,7 @@ func (m *Model) openDiff() tea.Cmd {
 	}
 	if m.diff.scrollByFile == nil {
 		m.diff.scrollByFile = map[string]int{}
-		m.diff.reviewed = map[string]map[string]bool{}
+		m.diff.reviewed = map[string]map[string]uint64{}
 		m.diff.annotations = map[string][]annotation{}
 		m.diff.hl = newHLCache()
 		m.diff.sideBySide = m.defaultSplitLayout()

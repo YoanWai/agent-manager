@@ -42,7 +42,7 @@ type diffState struct {
 	sideBySide bool
 
 	scrollByFile map[string]int
-	reviewed     map[string]map[string]bool
+	reviewed     map[string]map[string]uint64
 	annotations  map[string][]annotation
 
 	annotating  bool
@@ -323,6 +323,7 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 		previousPath = fd.File.Path
 	}
 	m.diff.set = msg.set
+	clearStaleReviewedMarks(m)
 	// Re-anchor only on a silent same-scope refresh. A scope cycle or session
 	// switch loads a different file set, where matching a comment by excerpt
 	// would rewrite its line against content it was never made against.
@@ -679,19 +680,20 @@ func (m *Model) toggleReviewed() tea.Cmd {
 	}
 	marks := m.diff.reviewed[m.reviewKey()]
 	if marks == nil {
-		marks = map[string]bool{}
+		marks = map[string]uint64{}
 		m.diff.reviewed[m.reviewKey()] = marks
 	}
-	marks[fd.File.Path] = !marks[fd.File.Path]
-	if !marks[fd.File.Path] {
+	if marks[fd.File.Path] != 0 {
+		marks[fd.File.Path] = 0
 		return nil
 	}
+	marks[fd.File.Path] = contentHash(fd)
 	// Advance to the next unreviewed file, review-queue style. The switch
 	// returns the highlight command for the newly shown file; dropping it
 	// would leave that file unhighlighted.
 	for step := 1; step < len(m.diff.set.Files); step++ {
 		next := (m.diff.fileIdx + step) % len(m.diff.set.Files)
-		if !marks[m.diff.set.Files[next].File.Path] {
+		if marks[m.diff.set.Files[next].File.Path] == 0 {
 			return m.switchDiffFile(next - m.diff.fileIdx)
 		}
 	}
@@ -699,7 +701,23 @@ func (m *Model) toggleReviewed() tea.Cmd {
 }
 
 func (m *Model) fileReviewed(path string) bool {
-	return m.diff.reviewed[m.reviewKey()][path]
+	return m.diff.reviewed[m.reviewKey()][path] != 0
+}
+
+func clearStaleReviewedMarks(m *Model) {
+	marks := m.diff.reviewed[m.reviewKey()]
+	if len(marks) == 0 {
+		return
+	}
+	for path, stored := range marks {
+		if stored == 0 {
+			continue
+		}
+		fd := m.fileDiffByPath(path)
+		if fd == nil || contentHash(fd) != stored {
+			delete(marks, path)
+		}
+	}
 }
 
 func (m *Model) openAnnotate() {
