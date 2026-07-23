@@ -1520,3 +1520,35 @@ func TestReviewHeaderTargetLabelCleanAndKeyed(t *testing.T) {
 		t.Fatalf("header should show the cleaned target → branch, got %q", header)
 	}
 }
+
+func TestReviewedMarkClearsOnContentChange(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	dir := gitRepoWithTwoChangedFiles(t)
+	openReviewOn(t, m, "reset", dir)
+	if len(m.diff.set.Files) == 0 {
+		t.Fatal("want at least one changed file")
+	}
+	path := m.diff.set.Files[0].File.Path
+
+	m.drainCmds(t, m.toggleReviewed())
+	if !m.fileReviewed(path) {
+		t.Fatal("file should be reviewed after toggle")
+	}
+
+	original, err := os.ReadFile(filepath.Join(dir, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := string(original) + "\nfunc Added() {}"
+	if err := os.WriteFile(filepath.Join(dir, path), []byte(changed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m.refreshDiff(t)
+	if m.fileReviewed(path) {
+		t.Fatal("reviewed mark should reset after content changes")
+	}
+}
