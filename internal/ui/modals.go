@@ -151,8 +151,20 @@ func (m *Model) viewSettings() string {
 		return marker + labelStyle.Render(name) + "  " + picker
 	}
 	body := row(settingsFieldTool, "quick spawn tool", m.settings.toolNames[m.settings.toolIndex]) + "\n" +
-		row(settingsFieldLayout, "review layout", layout)
+		row(settingsFieldLayout, "review layout", layout) + "\n\n" +
+		subtleStyle.Render("  version ") + valueStyle.Render(m.version) + m.versionStatus()
 	return m.card("⚙ Settings", body, "↑↓ field · ←→ change · ↵/esc save")
+}
+
+// versionStatus reports whether a newer release is known, as a suffix for
+// the settings version line. Empty when the daily check has not found one.
+func (m *Model) versionStatus() string {
+	if m.updateLatest == "" {
+		return ""
+	}
+	return subtleStyle.Render(" · ") +
+		lipgloss.NewStyle().Foreground(colorAccent).Bold(true).
+			Render("↑ "+m.updateLatest+" available")
 }
 
 func (m *Model) viewMove() string {
