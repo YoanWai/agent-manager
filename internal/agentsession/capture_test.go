@@ -71,37 +71,62 @@ func TestCaptureCodexNoMatch(t *testing.T) {
 	}
 }
 
-func opencodeSession(id, dir string) string {
-	return `{"id":"` + id + `","directory":"` + dir + `","time":{"created":1784385368000}}`
+type ocMeta struct {
+	dir     string
+	created time.Time
+}
+
+// stubOpencode replaces the opencode CLI seams with in-memory data for the
+// duration of a test and returns a restore function.
+func stubOpencode(t *testing.T, ids []string, metas map[string]ocMeta) {
+	t.Helper()
+	listSaved, metaSaved := opencodeListIDs, opencodeSessionMeta
+	opencodeListIDs = func(string) ([]string, bool) { return ids, true }
+	opencodeSessionMeta = func(_, id string) (string, time.Time, bool) {
+		m, ok := metas[id]
+		return m.dir, m.created, ok
+	}
+	t.Cleanup(func() { opencodeListIDs, opencodeSessionMeta = listSaved, metaSaved })
 }
 
 func TestCaptureOpencodePicksSessionAfterLaunchInCwd(t *testing.T) {
-	root := t.TempDir()
 	launch := time.Now()
-	writeFile(t, filepath.Join(root, "projhash/ses_old.json"),
-		opencodeSession("ses_old", "/repo"), launch.Add(-time.Hour))
-	writeFile(t, filepath.Join(root, "projhash/ses_other.json"),
-		opencodeSession("ses_other", "/elsewhere"), launch.Add(time.Second))
-	writeFile(t, filepath.Join(root, "projhash/ses_ours.json"),
-		opencodeSession("ses_ours", "/repo"), launch.Add(2*time.Second))
+	stubOpencode(t, []string{"ses_ours", "ses_other", "ses_old"}, map[string]ocMeta{
+		// An older conversation in the same cwd predates the launch: not ours.
+		"ses_old": {"/repo", launch.Add(-time.Hour)},
+		// A conversation in a different cwd started after launch: not ours.
+		"ses_other": {"/elsewhere", launch.Add(time.Second)},
+		// Ours: same cwd, created just after launch.
+		"ses_ours": {"/repo", launch.Add(2 * time.Second)},
+	})
 
-	id, ok := captureOpencode(root, "/repo", launch, map[string]bool{})
+	id, ok := captureOpencode("/repo", launch, map[string]bool{})
 	if !ok || id != "ses_ours" {
 		t.Fatalf("got id=%q ok=%v, want ses_ours true", id, ok)
 	}
 }
 
 func TestCaptureOpencodeSkipsClaimed(t *testing.T) {
-	root := t.TempDir()
 	launch := time.Now()
-	writeFile(t, filepath.Join(root, "p/ses_1.json"),
-		opencodeSession("ses_1", "/repo"), launch.Add(time.Second))
-	writeFile(t, filepath.Join(root, "p/ses_2.json"),
-		opencodeSession("ses_2", "/repo"), launch.Add(2*time.Second))
+	stubOpencode(t, []string{"ses_1", "ses_2"}, map[string]ocMeta{
+		"ses_1": {"/repo", launch.Add(time.Second)},
+		"ses_2": {"/repo", launch.Add(2 * time.Second)},
+	})
 
-	id, ok := captureOpencode(root, "/repo", launch, map[string]bool{"ses_1": true})
+	// ses_1 already belongs to another session, so the earliest unclaimed
+	// match wins instead.
+	id, ok := captureOpencode("/repo", launch, map[string]bool{"ses_1": true})
 	if !ok || id != "ses_2" {
 		t.Fatalf("got id=%q ok=%v, want ses_2 true", id, ok)
+	}
+}
+
+func TestParseOpencodeExportReadsDirectoryAndTime(t *testing.T) {
+	out := []byte("Exporting session: ses_x\n" +
+		`{"info":{"id":"ses_x","directory":"/repo","time":{"created":1784385368000}}}`)
+	dir, created, ok := parseOpencodeExport(out)
+	if !ok || dir != "/repo" || created.UnixMilli() != 1784385368000 {
+		t.Fatalf("got dir=%q created=%v ok=%v", dir, created, ok)
 	}
 }
 

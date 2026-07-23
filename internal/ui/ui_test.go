@@ -1129,6 +1129,30 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	}
 }
 
+func TestReviveAllRecreatesEveryDeadSession(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "alpha", dir, "")
+	createSession(t, m, "beta", dir, "")
+
+	for _, sess := range m.visibleSessions() {
+		if err := m.tmux.Kill(sess.ID); err != nil {
+			t.Fatalf("kill %s: %v", sess.Name, err)
+		}
+	}
+	// A refresh marks the pane-less sessions dead so revive-all picks them up.
+	m.applyCmd(t, m.refreshCmd())
+
+	if _, _ = m.reviveAllDead(); m.err != "" {
+		t.Fatalf("revive all: %q", m.err)
+	}
+	for _, sess := range m.visibleSessions() {
+		if !m.tmux.Exists(sess.ID) {
+			t.Fatalf("revive all should recreate %s", sess.Name)
+		}
+	}
+}
+
 func TestReviveRefusesLiveSession(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alive", t.TempDir(), "")
