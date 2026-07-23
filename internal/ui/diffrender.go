@@ -157,6 +157,11 @@ func (hl *fileHL) hlLine(line diff.Line) string {
 // When a background is set, each row is padded so the tint fills the
 // full width; a plain line (empty baseBg) is left unpadded for the
 // caller to pad. Every row is closed with a reset.
+//
+// Wrapping prefers word boundaries (space characters): when a non-space
+// character would overflow the row, the current word moves to the next
+// line instead of being split mid-identifier. A word wider than the line
+// width falls back to character-level splitting.
 func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, width int) []string {
 	if width < 1 {
 		width = 1
@@ -170,11 +175,54 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 		return baseBg
 	}
 
+	type seg struct {
+		text    string
+		visible int
+		bytes   int
+	}
+	var tokens []seg
+	i := 0
+	for i < len(highlighted) {
+		if highlighted[i] == 0x1b {
+			end := i + 1
+			if end < len(highlighted) && highlighted[end] == '[' {
+				end++
+				for end < len(highlighted) && highlighted[end] != 'm' {
+					end++
+				}
+				if end < len(highlighted) {
+					end++
+				}
+			}
+			tokens = append(tokens, seg{text: highlighted[i:end]})
+			i = end
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(highlighted[i:])
+		if r == ' ' {
+			tokens = append(tokens, seg{text: " ", visible: 1, bytes: 1})
+			i++
+			continue
+		}
+		end := i + size
+		visible := ansi.StringWidth(string(r))
+		bytes := size
+		for end < len(highlighted) && highlighted[end] != ' ' && highlighted[end] != 0x1b {
+			r2, s2 := utf8.DecodeRuneInString(highlighted[end:])
+			visible += ansi.StringWidth(string(r2))
+			bytes += s2
+			end += s2
+		}
+		tokens = append(tokens, seg{text: highlighted[i:end], visible: visible, bytes: bytes})
+		i = end
+	}
+
 	var rows []string
 	var b strings.Builder
 	activeBg := ""
 	rowWidth := 0
 	fresh := true
+	offset := 0
 
 	closeRow := func() {
 		if baseBg != "" && rowWidth < width {
@@ -189,49 +237,91 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 		rowWidth = 0
 	}
 
-	offset := 0
-	for i := 0; i < len(highlighted); {
-		if fresh {
-			activeBg = bgFor(offset)
-			if activeBg != "" {
-				b.WriteString(activeBg)
-			}
-			fresh = false
-		}
-		if highlighted[i] == 0x1b {
-			end := i + 1
-			if end < len(highlighted) && highlighted[end] == '[' {
-				end++
-				for end < len(highlighted) && highlighted[end] != 'm' {
+	emitText := func(text string, textBytes int) {
+		for ti := 0; ti < len(text); {
+			if text[ti] == 0x1b {
+				end := ti + 1
+				if end < len(text) && text[end] == '[' {
 					end++
+					for end < len(text) && text[end] != 'm' {
+						end++
+					}
+					if end < len(text) {
+						end++
+					}
 				}
-				if end < len(highlighted) {
-					end++
+				seq := text[ti:end]
+				b.WriteString(seq)
+				if seq == "\x1b[0m" && activeBg != "" {
+					b.WriteString(activeBg)
 				}
+				ti = end
+				continue
 			}
-			sequence := highlighted[i:end]
-			b.WriteString(sequence)
-			if sequence == "\x1b[0m" && activeBg != "" {
-				b.WriteString(activeBg)
+			if fresh {
+				activeBg = bgFor(offset)
+				if activeBg != "" {
+					b.WriteString(activeBg)
+				}
+				fresh = false
 			}
-			i = end
-			continue
+			r, rSize := utf8.DecodeRuneInString(text[ti:])
+			rWidth := ansi.StringWidth(string(r))
+			if rowWidth+rWidth > width {
+				closeRow()
+				continue
+			}
+			if bg := bgFor(offset); bg != activeBg {
+				activeBg = bg
+				b.WriteString(bg)
+			}
+			b.WriteString(text[ti : ti+rSize])
+			offset += rSize
+			rowWidth += rWidth
+			ti += rSize
 		}
-		r, size := utf8.DecodeRuneInString(highlighted[i:])
-		runeWidth := ansi.StringWidth(string(r))
-		if rowWidth+runeWidth > width {
-			closeRow()
-			continue
-		}
-		if bg := bgFor(offset); bg != activeBg {
-			activeBg = bg
-			b.WriteString(bg)
-		}
-		b.WriteString(highlighted[i : i+size])
-		offset += size
-		rowWidth += runeWidth
-		i += size
 	}
+
+	for ti := 0; ti < len(tokens); ti++ {
+		tok := tokens[ti]
+		isAnsi := tok.visible == 0 && tok.bytes == 0
+		isSpace := tok.text == " "
+
+		if isAnsi {
+			b.WriteString(tok.text)
+			if tok.text == "\x1b[0m" && activeBg != "" {
+				b.WriteString(activeBg)
+			}
+			continue
+		}
+
+		if isSpace {
+			if rowWidth+1 > width {
+				closeRow()
+				continue
+			}
+			if bg := bgFor(offset); bg != activeBg {
+				activeBg = bg
+				b.WriteString(bg)
+			}
+			b.WriteByte(' ')
+			offset++
+			rowWidth++
+			continue
+		}
+
+		if rowWidth+tok.visible > width {
+			if rowWidth > 0 {
+				closeRow()
+			}
+			if tok.visible > width {
+				emitText(tok.text, tok.bytes)
+				continue
+			}
+		}
+		emitText(tok.text, tok.bytes)
+	}
+
 	if !fresh || len(rows) == 0 {
 		closeRow()
 	}

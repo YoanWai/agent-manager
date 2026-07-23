@@ -45,7 +45,59 @@ func TestWrapTintedSpanSwitch(t *testing.T) {
 	}
 }
 
-func TestWrapTintedWrapsLongLine(t *testing.T) {
+func TestWrapTintedWordBoundary(t *testing.T) {
+	line := "hello world foo bar"
+	rows := wrapTinted(line, nil, "", "", 14)
+	stripped := ansi.Strip(strings.Join(rows, ""))
+	stripped = strings.TrimSpace(stripped)
+	words := strings.Fields(stripped)
+	if len(words) != 4 {
+		t.Fatalf("expected 4 words, got %d: %q", len(words), words)
+	}
+	for _, w := range words {
+		if !strings.Contains("hello world foo bar", w) {
+			t.Fatalf("unexpected word fragment: %q", w)
+		}
+	}
+}
+
+func TestWrapTintedLongWordFallsBack(t *testing.T) {
+	word := strings.Repeat("x", 60)
+	line := "before " + word + " after"
+	rows := wrapTinted(line, nil, "", "", 20)
+	stripped := ansi.Strip(strings.Join(rows, ""))
+	if !strings.Contains(stripped, "before") {
+		t.Fatal("missing before")
+	}
+	if !strings.Contains(stripped, "after") {
+		t.Fatal("missing after")
+	}
+	if xs := strings.Count(stripped, "x"); xs != 60 {
+		t.Fatalf("expected 60 x's, got %d", xs)
+	}
+	for _, row := range rows {
+		if w := ansi.StringWidth(row); w > 20 {
+			t.Fatalf("row exceeds width: %d", w)
+		}
+	}
+}
+
+func TestWrapTintedWordWrapWithSpans(t *testing.T) {
+	line := "if a > b return c"
+	rows := wrapTinted(line, []diff.Span{{Start: 5, End: 6}}, bgAdd, bgAddSpan, 10)
+	stripped := ansi.Strip(strings.Join(rows, ""))
+	stripped = strings.ReplaceAll(stripped, " ", "")
+	if stripped != "ifa>breturnc" {
+		t.Fatalf("content lost or reordered: %q", stripped)
+	}
+	for _, row := range rows {
+		if w := ansi.StringWidth(row); w > 10 {
+			t.Fatalf("row exceeds width: %d row=%q", w, row)
+		}
+	}
+}
+
+func TestWrapTintedWordWrapNoSpaces(t *testing.T) {
 	long := strings.Repeat("x", 100)
 	rows := wrapTinted(long, nil, "", "", 20)
 	if len(rows) != 5 {

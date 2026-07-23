@@ -529,14 +529,16 @@ func (m *Model) setCursorDiffLine(lineIdx int) {
 
 // diffCodeHeight is the code viewport height in fullscreen review. It
 // mirrors viewDiffFull's layout math, including a footer that wraps onto
-// extra lines in narrow terminals.
+// extra lines in narrow terminals. Two rows are reserved for the overflow
+// indicators (↑ N more / ↓ N more) so the cursor never lands on them.
 func (m *Model) diffCodeHeight() int {
 	height := m.height - 6 - lipgloss.Height(m.viewDiffFooter())
 	if m.diff.annotating {
 		height -= m.diffAnnBarRows() + 1
 	}
-	if height < 3 {
-		height = 3
+	height -= 2
+	if height < 1 {
+		height = 1
 	}
 	return height
 }
