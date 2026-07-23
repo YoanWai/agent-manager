@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,7 +10,7 @@ import (
 
 func windowSize(t *testing.T, id string) (int, int) {
 	t.Helper()
-	out, err := exec.Command("tmux", "display-message", "-p", "-t", "am_"+id,
+	out, err := tmuxCmd("display-message", "-p", "-t", "am_"+id,
 		"#{window_width} #{window_height}").CombinedOutput()
 	if err != nil {
 		t.Fatalf("display-message: %v: %s", err, out)
@@ -34,7 +33,7 @@ func TestFirstRefreshResizesExistingSessions(t *testing.T) {
 	id := m.sessionRows()[0].ID
 
 	// Drift the window as if an older manager had sized it to the terminal.
-	if _, err := exec.Command("tmux", "resize-window", "-t", "am_"+id, "-x", "191", "-y", "55").CombinedOutput(); err != nil {
+	if _, err := tmuxCmd("resize-window", "-t", "am_"+id, "-x", "191", "-y", "55").CombinedOutput(); err != nil {
 		t.Fatalf("resize-window: %v", err)
 	}
 
@@ -45,7 +44,7 @@ func TestFirstRefreshResizesExistingSessions(t *testing.T) {
 	}
 
 	// Later refreshes leave sizes alone (attach keeps its own resync path).
-	if _, err := exec.Command("tmux", "resize-window", "-t", "am_"+id, "-x", "100", "-y", "30").CombinedOutput(); err != nil {
+	if _, err := tmuxCmd("resize-window", "-t", "am_"+id, "-x", "100", "-y", "30").CombinedOutput(); err != nil {
 		t.Fatalf("resize-window: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -62,7 +61,7 @@ func TestUnchangedWindowSizeSkipsResize(t *testing.T) {
 	id := m.sessionRows()[0].ID
 
 	// Drift the session window away from the manager size behind its back.
-	if _, err := exec.Command("tmux", "resize-window", "-t", "am_"+id, "-x", "100", "-y", "30").CombinedOutput(); err != nil {
+	if _, err := tmuxCmd("resize-window", "-t", "am_"+id, "-x", "100", "-y", "30").CombinedOutput(); err != nil {
 		t.Fatalf("resize-window: %v", err)
 	}
 
