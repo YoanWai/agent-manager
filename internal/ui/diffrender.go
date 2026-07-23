@@ -18,16 +18,26 @@ const (
 	maxHighlightBytes = 256 << 10
 	highlightCacheCap = 8
 
-	bgAdd     = "\x1b[48;5;22m"
-	bgDel     = "\x1b[48;5;52m"
-	bgAddSpan = "\x1b[48;5;28m"
-	bgDelSpan = "\x1b[48;5;88m"
+	bgAdd     = "\x1b[48;2;22;42;22m"
+	bgDel     = "\x1b[48;2;48;24;24m"
+	bgAddSpan = "\x1b[48;2;38;74;38m"
+	bgDelSpan = "\x1b[48;2;82;36;36m"
 )
 
 var (
-	chromaStyle     = styles.Get("monokai")
+	chromaStyle     = brightCommentStyle()
 	chromaFormatter = formatters.Get("terminal256")
 )
+
+// brightCommentStyle lifts monokai's dim comment color so source comments
+// stay legible over the diff background tints.
+func brightCommentStyle() *chroma.Style {
+	style, err := styles.Get("monokai").Builder().Add(chroma.Comment, "#b0af99").Build()
+	if err != nil {
+		return styles.Get("monokai")
+	}
+	return style
+}
 
 // fileHL holds one file's syntax-highlighted lines per side, indexed by
 // OldNum/NewNum minus one.

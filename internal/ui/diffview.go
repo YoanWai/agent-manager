@@ -746,8 +746,8 @@ func (m *Model) annotationRows(fd *diff.FileDiff, lineIdx, width int) []string {
 	if note == nil {
 		return nil
 	}
-	comment := mutedStyle.Italic(true).Render("  ¶ " + note.text)
-	return wrapTinted(comment, nil, "", "", width)
+	comment := annotationStyle.Render("  ¶ " + note.text)
+	return wrapTinted(comment, nil, annotationBg, annotationBg, width)
 }
 
 func (m *Model) annotationAt(path string, line diff.Line) *annotation {

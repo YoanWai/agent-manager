@@ -49,6 +49,9 @@ var (
 	labelStyle  = lipgloss.NewStyle().Foreground(colorDim)
 	errStyle    = lipgloss.NewStyle().Foreground(colorErrored).Bold(true)
 	keyStyle    = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+
+	annotationStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	annotationBg    = "\x1b[48;2;28;32;46m"
 )
 
 // renderSelectedRow wraps a pre-styled line with the selected row's
