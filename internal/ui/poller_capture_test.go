@@ -64,14 +64,26 @@ func TestCaptureAgentSessionIDsAssignsInLaunchOrder(t *testing.T) {
 	sessions := []store.Session{sessB, sessA} // store order, not launch order
 	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}}
 	panes := map[string]int{"sess-A": 123, "sess-B": 456}
-	if err := p.captureAgentSessionIDs(sessions, panes, map[string]bool{}); err != nil {
+	captured, err := p.captureAgentSessionIDs(sessions, panes)
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	if got := sessions[1].AgentSessionID; got != "A-id" {
-		t.Fatalf("session A captured %q, want A-id", got)
+	if captured != 2 {
+		t.Fatalf("captured %d, want 2", captured)
 	}
-	if got := sessions[0].AgentSessionID; got != "B-id" {
-		t.Fatalf("session B captured %q, want B-id", got)
+
+	gotA, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotA.AgentSessionID != "A-id" {
+		t.Fatalf("session A captured %q, want A-id", gotA.AgentSessionID)
+	}
+	gotB, err := st.Get("sess-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotB.AgentSessionID != "B-id" {
+		t.Fatalf("session B captured %q, want B-id", gotB.AgentSessionID)
 	}
 }

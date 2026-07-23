@@ -3,7 +3,9 @@ package ui
 import (
 	"errors"
 	"sort"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/agentsession"
@@ -33,9 +35,15 @@ type poller struct {
 	mu              sync.Mutex
 	includeArchived bool
 	selectedID      string
+	// captureErr holds a background id-capture failure to surface on the
+	// next poll, since that work no longer runs inline.
+	captureErr error
 	// sessions whose rename directive could not ride the first prompt;
 	// sent as a message once the tool's input box appears
 	pendingDirective map[string]struct{}
+
+	// captureBusy guards the single in-flight id-capture goroutine.
+	captureBusy atomic.Bool
 
 	// guarded by runMu: refresh state shared between the polling loop
 	// and one-off refresh commands
@@ -52,6 +60,17 @@ type poller struct {
 // One poll is not enough: agents pause between tools (and a fast poll
 // interval would flap working/finished every few ticks).
 var quietEndGrace = time.Second
+
+// startingGrace caps how long a session may show the launch state before the
+// poll derives its real status regardless, so a tool that never paints its
+// pane does not sit on "starting" forever.
+const startingGrace = 30 * time.Second
+
+// paneBooted reports whether the agent has painted anything to its pane yet,
+// which marks the end of the launch state.
+func paneBooted(pane string) bool {
+	return strings.TrimSpace(ansi.Strip(pane)) != ""
+}
 
 func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, statusSources, sessionStores map[string]string, interval time.Duration) *poller {
 	return &poller{
@@ -198,7 +217,12 @@ func (p *poller) refreshOnce() tea.Msg {
 	p.mu.Lock()
 	includeArchived := p.includeArchived
 	selectedID := p.selectedID
+	captureErr := p.captureErr
+	p.captureErr = nil
 	p.mu.Unlock()
+	if captureErr != nil {
+		return errMsg{captureErr}
+	}
 	// Machine gauges change slowly; sample them every other poll.
 	sampleStats := p.tick%2 == 0
 	p.tick++
@@ -224,14 +248,6 @@ func (p *poller) refreshOnce() tea.Msg {
 	var proc sysstat.ProcStat
 	var agents agentStats
 	paneHashes := make(map[string]uint64, len(sessions))
-	// Conversation ids already bound to a session, so a tool that mints its
-	// own id (codex, opencode) never has two sessions capture the same one.
-	claimed := make(map[string]bool, len(sessions))
-	for _, sess := range sessions {
-		if sess.AgentSessionID != "" {
-			claimed[sess.AgentSessionID] = true
-		}
-	}
 	for i, sess := range sessions {
 		if sess.Archived {
 			continue
@@ -267,6 +283,14 @@ func (p *poller) refreshOnce() tea.Msg {
 					return errMsg{err}
 				}
 				newStatus = derived
+				// Hold the launch state until the agent first paints its pane,
+				// so a just-created session reads "starting up" rather than
+				// flashing idle before it has booted. A grace cap keeps a tool
+				// that never paints from sticking on starting forever.
+				if sess.Status == status.Starting && !paneBooted(pane) &&
+					time.Since(sess.CreatedAt) < startingGrace {
+					newStatus = status.Starting
+				}
 				// Any real transition re-arms the finished alert.
 				if sess.Acked && newStatus != status.Idle && newStatus != status.Finished {
 					if err := ignoreDeletedSession(p.store.SetAcked(sess.ID, false)); err != nil {
@@ -298,9 +322,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			}
 		}
 	}
-	if err := p.captureAgentSessionIDs(sessions, panes, claimed); err != nil {
-		return errMsg{err}
-	}
+	p.startCaptureIfIdle(sessions, panes)
 	p.paneHashes = paneHashes
 	p.sweepDirectives(sessions)
 
@@ -336,27 +358,69 @@ func (p *poller) refreshOnce() tea.Msg {
 	return msg
 }
 
+// idMinting reports whether a live, not-yet-captured session belongs to a
+// tool that mints its own conversation id (codex, opencode).
+func (p *poller) idMinting(sess store.Session, panes map[string]int) bool {
+	return !sess.Archived && panes[sess.ID] != 0 && sess.AgentSessionID == "" &&
+		p.sessionStores[sess.Tool] != ""
+}
+
+// startCaptureIfIdle runs id capture off the poll lock. Capturing an
+// opencode/codex id shells out to the tool's CLI, which can take seconds;
+// doing it inside refreshOnce would hold runMu and stall every refresh,
+// including a freshly submitted session's first appearance. One pass runs at
+// a time, on a snapshot, and a pass that captures anything pokes a refresh so
+// the UI and store pick up the new ids.
+func (p *poller) startCaptureIfIdle(sessions []store.Session, panes map[string]int) {
+	hasWork := false
+	for _, sess := range sessions {
+		if p.idMinting(sess, panes) {
+			hasWork = true
+			break
+		}
+	}
+	if !hasWork || !p.captureBusy.CompareAndSwap(false, true) {
+		return
+	}
+	snapshot := append([]store.Session(nil), sessions...)
+	go func() {
+		defer p.captureBusy.Store(false)
+		captured, err := p.captureAgentSessionIDs(snapshot, panes)
+		if err != nil {
+			p.mu.Lock()
+			p.captureErr = err
+			p.mu.Unlock()
+		}
+		if captured > 0 || err != nil {
+			p.requestRefresh()
+		}
+	}()
+}
+
 // captureAgentSessionIDs binds each not-yet-captured id-minting session
-// (codex, opencode) to the conversation its CLI wrote. Sessions are
-// processed in launch order so the earliest one claims the earliest
-// unclaimed rollout in its directory; a later session started in the same
-// directory then skips that rollout via claimed and captures its own.
-// Capturing out of launch order would let a later session claim an earlier
-// one's conversation. CreatedAt carries nanosecond precision, so sessions
-// launched a moment apart in the same directory still order deterministically.
-func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[string]int, claimed map[string]bool) error {
+// (codex, opencode) to the conversation its CLI wrote, returning how many it
+// bound. Sessions are processed in launch order so the earliest one claims
+// the earliest unclaimed conversation in its directory; a later session
+// started in the same directory then skips that one via claimed and captures
+// its own. CreatedAt carries nanosecond precision, so sessions launched a
+// moment apart in the same directory still order deterministically.
+func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[string]int) (int, error) {
+	claimed := make(map[string]bool, len(sessions))
+	for _, sess := range sessions {
+		if sess.AgentSessionID != "" {
+			claimed[sess.AgentSessionID] = true
+		}
+	}
 	pending := make([]int, 0, len(sessions))
 	for i, sess := range sessions {
-		if sess.Archived || panes[sess.ID] == 0 || sess.AgentSessionID != "" {
-			continue
-		}
-		if p.sessionStores[sess.Tool] != "" {
+		if p.idMinting(sess, panes) {
 			pending = append(pending, i)
 		}
 	}
 	sort.SliceStable(pending, func(a, b int) bool {
 		return sessions[pending[a]].CreatedAt.Before(sessions[pending[b]].CreatedAt)
 	})
+	captured := 0
 	for _, i := range pending {
 		sess := sessions[i]
 		agentID, ok := agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.CreatedAt, claimed)
@@ -364,12 +428,12 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 			continue
 		}
 		if err := ignoreDeletedSession(p.store.SetAgentSessionID(sess.ID, agentID)); err != nil {
-			return err
+			return captured, err
 		}
-		sessions[i].AgentSessionID = agentID
 		claimed[agentID] = true
+		captured++
 	}
-	return nil
+	return captured, nil
 }
 
 // maybeSendDirective delivers the deferred rename directive once the
