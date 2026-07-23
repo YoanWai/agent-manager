@@ -642,7 +642,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.switchDiffFile(-1)
 	case "n":
 		m.jumpChange(1)
-	case "N":
+	case "N", "shift+n":
 		m.jumpChange(-1)
 	case "s":
 		return m, m.cycleDiffScope()
@@ -1410,8 +1410,9 @@ func (m *Model) viewDiffFooter() string {
 		return footerLine([][2]string{{"↵", "save"}, {"esc", "cancel"}}, m.width)
 	}
 	pairs := [][2]string{
-		{"↑↓", "scroll"}, {"J/K", "file"}, {"n/N", "change"}, {"space", "reviewed"},
-		{"u", "layout"}, {"s", "scope: " + m.diff.scope.String()}, {"B", "target"}, {"c", "comment"},
+		{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"},
+		{"n/N", "change"}, {"space", "reviewed"}, {"u", "layout"},
+		{"s", "scope: " + m.diff.scope.String()}, {"B", "target"}, {"c", "comment"},
 	}
 	if len(m.diff.repoRoots) > 0 {
 		pairs = append(pairs, [2]string{"r", "repo: " + filepath.Base(m.diff.repoSel)})
@@ -1422,6 +1423,6 @@ func (m *Model) viewDiffFooter() string {
 	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
 		pairs = append(pairs, [2]string{"C", fmt.Sprintf("send %d", count)}, [2]string{"d", "remove"})
 	}
-	pairs = append(pairs, [2]string{"esc", "close"})
+	pairs = append(pairs, [2]string{"esc/q", "close"}, [2]string{"ctrl+c", "quit"})
 	return footerLine(pairs, m.width)
 }

@@ -93,7 +93,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openGroupForm()
 	case "v":
 		return m.reviveSelected()
-	case "V":
+	case "V", "shift+v":
 		return m.reviveAllDead()
 	case "a":
 		return m.archiveSelected()
@@ -103,7 +103,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.prepareDelete()
 	case " ", "space":
 		m.openQuickMode()
-	case "F":
+	case "F", "shift+f":
 		m.toggleCollapseAll()
 	case "s":
 		m.openSettings()
