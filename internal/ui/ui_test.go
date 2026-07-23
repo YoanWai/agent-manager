@@ -66,7 +66,7 @@ func buildModel(t *testing.T) *Model {
 		t.Fatalf("engine: %v", err)
 	}
 
-	m := New(cfg, st, driver, engine, hooks.NewManager(t.TempDir()))
+	m := New(cfg, st, driver, engine, hooks.NewManager(t.TempDir()), "dev")
 	m.width = 120
 	m.height = 40
 	t.Cleanup(func() {
