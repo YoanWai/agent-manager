@@ -93,6 +93,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openGroupForm()
 	case "v":
 		return m.reviveSelected()
+	case "V":
+		return m.reviveAllDead()
 	case "a":
 		return m.archiveSelected()
 	case "u":
@@ -370,55 +372,102 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if m.tmux.Exists(sess.ID) {
-		m.err = "session is still running; revive only applies to dead sessions"
+	if err := m.reviveSession(sess); err != nil {
+		m.err = err.Error()
 		return m, nil
+	}
+	m.err = m.degradedResumeNotice(sess)
+	m.requestRefresh()
+	return m, nil
+}
+
+// reviveAllDead relaunches every dead session in the current view, resuming
+// each by its captured id where one exists. It revives what it can and names
+// the first failure rather than stopping, so one broken session does not
+// block the rest.
+func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
+	revived, degraded := 0, 0
+	var firstErr string
+	for _, sess := range m.visibleSessions() {
+		if sess.Status != status.Dead {
+			continue
+		}
+		if err := m.reviveSession(sess); err != nil {
+			if firstErr == "" {
+				firstErr = err.Error()
+			}
+			continue
+		}
+		revived++
+		if m.degradedResumeNotice(sess) != "" {
+			degraded++
+		}
+	}
+	switch {
+	case revived == 0 && firstErr == "":
+		m.err = "no dead sessions to revive"
+	case firstErr != "":
+		m.err = fmt.Sprintf("revived %d, first error: %s", revived, firstErr)
+	case degraded > 0:
+		m.err = fmt.Sprintf("revived %d, %d without a captured id (used --continue)", revived, degraded)
+	default:
+		m.err = ""
+	}
+	m.requestRefresh()
+	return m, nil
+}
+
+// degradedResumeNotice warns when a revived session had to fall back to the
+// working directory's most recent conversation because its own conversation
+// id was never captured, which resumes the wrong conversation whenever
+// sessions share a directory.
+func (m *Model) degradedResumeNotice(sess store.Session) string {
+	tool, ok := m.cfg.Tools[sess.Tool]
+	if !ok || sess.AgentSessionID != "" || tool.ResumeByIDCommand == "" {
+		return ""
+	}
+	return fmt.Sprintf("revived %s with --continue: no conversation id captured, may resume the wrong conversation", sess.Name)
+}
+
+// reviveSession relaunches one dead session under its old id, keeping its
+// name, group, and history. When the session's own conversation id was
+// captured, it resumes that exact conversation via the tool's
+// resume_by_id_command instead of the working directory's most recent one,
+// which would be the wrong conversation whenever sessions share a cwd.
+func (m *Model) reviveSession(sess store.Session) error {
+	if m.tmux.Exists(sess.ID) {
+		return fmt.Errorf("session %s is still running; revive only applies to dead sessions", sess.Name)
 	}
 	tool, ok := m.cfg.Tools[sess.Tool]
 	if !ok {
-		m.err = "tool " + sess.Tool + " is no longer configured"
-		return m, nil
+		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
 	}
 	if info, err := os.Stat(sess.Cwd); err != nil || !info.IsDir() {
-		m.err = "working directory no longer exists: " + sess.Cwd
-		return m, nil
+		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
 	baseCommand := tool.ReviveCommand
 	if baseCommand == "" {
 		baseCommand = tool.Command
 	}
-	// When the session's own conversation id is known, resume that exact
-	// conversation instead of the working directory's most recent one,
-	// which would be the wrong conversation whenever sessions share a cwd.
 	if sess.AgentSessionID != "" && tool.ResumeByIDCommand != "" {
 		baseCommand = strings.ReplaceAll(tool.ResumeByIDCommand, "{id}", sess.AgentSessionID)
 	}
 	command, env, err := m.buildLaunch(sess.Tool, tool, baseCommand, sess.ID)
 	if err != nil {
-		m.err = err.Error()
-		return m, nil
+		return err
 	}
 	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
-		m.err = err.Error()
-		return m, nil
+		return err
 	}
 	if err := m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)); err != nil {
-		m.err = err.Error()
-		return m, nil
+		return err
 	}
 	if err := m.store.UpdateStatus(sess.ID, tool.DefaultStatus); err != nil {
-		m.err = err.Error()
-		return m, nil
+		return err
 	}
 	// A leftover ack from the previous life must not swallow the revived
 	// agent's first finished alert.
-	if err := m.store.SetAcked(sess.ID, false); err != nil {
-		m.err = err.Error()
-		return m, nil
-	}
-	m.err = ""
-	m.requestRefresh()
-	return m, nil
+	return m.store.SetAcked(sess.ID, false)
 }
 
 func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
