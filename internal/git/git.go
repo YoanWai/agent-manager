@@ -363,6 +363,15 @@ type ChangedFile struct {
 	Status  Status
 }
 
+// LastCommitParent returns HEAD's parent ref, or git's empty-tree object
+// when HEAD is a root commit.
+func (d *Driver) LastCommitParent(root string) string {
+	if _, err := d.run(root, "rev-parse", "--verify", "-q", "HEAD~1"); err != nil {
+		return emptyTree
+	}
+	return "HEAD~1"
+}
+
 // diffRange returns the base ref and diff arguments for a scope; baseRef
 // is only consulted for ScopeBranch.
 func (d *Driver) diffRange(root string, scope Scope, baseRef string) (base string, args []string, err error) {
@@ -370,10 +379,7 @@ func (d *Driver) diffRange(root string, scope Scope, baseRef string) (base strin
 	case ScopeStaged:
 		return "", []string{"--cached"}, nil
 	case ScopeLastCommit:
-		parent := "HEAD~1"
-		if _, err := d.run(root, "rev-parse", "--verify", "-q", "HEAD~1"); err != nil {
-			parent = emptyTree
-		}
+		parent := d.LastCommitParent(root)
 		return parent, []string{parent, "HEAD"}, nil
 	case ScopeBranch:
 		return baseRef, []string{baseRef, "HEAD"}, nil

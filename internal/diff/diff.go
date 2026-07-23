@@ -190,11 +190,13 @@ func fileSides(driver *git.Driver, root string, scope git.Scope, baseRef string,
 		oldRef = "HEAD"
 	case git.ScopeStaged:
 		oldRef, newRef = "HEAD", ":0"
-	case git.ScopeLastCommit, git.ScopeBranch:
+	case git.ScopeLastCommit:
 		oldRef, newRef = baseRef, "HEAD"
-	}
-	if scope == git.ScopeLastCommit && baseRef != "" {
-		oldRef = baseRef
+		if oldRef == "" {
+			oldRef = driver.LastCommitParent(root)
+		}
+	case git.ScopeBranch:
+		oldRef, newRef = baseRef, "HEAD"
 	}
 
 	if file.Status != git.Added && file.Status != git.Untracked {
