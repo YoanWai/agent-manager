@@ -1,5 +1,10 @@
 # Agent Manager
 
+[![CI](https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/YoanWai/agent-manager.svg)](https://pkg.go.dev/github.com/YoanWai/agent-manager)
+[![Go Report Card](https://goreportcard.com/badge/github.com/YoanWai/agent-manager)](https://goreportcard.com/report/github.com/YoanWai/agent-manager)
+[![codecov](https://codecov.io/gh/YoanWai/agent-manager/branch/main/graph/badge.svg)](https://codecov.io/gh/YoanWai/agent-manager)
+
 ![agent-manager demo](docs/demo.gif)
 
 Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, and Grok run side by side, each in its own tmux session, so they keep working after you quit the manager.
