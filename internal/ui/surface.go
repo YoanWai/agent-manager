@@ -8,20 +8,18 @@ import (
 )
 
 // The list view sits on the terminal's own background, with the sessions
-// rail on a lifted panel card and the selected entry lifted once more.
-// One rule governs every fill: painted color never touches a window edge.
-// A terminal blends window padding and transparency into its default
-// background, so a fill flush against the window sits beside that blend
-// as a slightly different tone — an accident. Behind a margin of the
-// terminal's own background, the same fill reads as a card, which is a
-// choice. The margin column between the rail and the window edge is that
-// rule made visible.
+// rail filling its pane flush — header rule to footer rule, window edge to
+// seam — and the selected entry lifted once more. The backdrop itself is
+// never painted: the terminal background sync keeps the terminal's default
+// at the theme's tone, so the window padding around the cell grid carries
+// the same color as the unpainted cells and the frame meets the window
+// without a ring of a different tone.
 
 // backdropHex is the backdrop's fill: none. paint treats it as "pad, but
 // leave the terminal's background alone".
 func backdropHex() string { return "" }
 
-// panelHex is the rail card's fill: one step above the backdrop.
+// panelHex is the rail's fill: one step above the backdrop.
 func panelHex() string { return mix(current.Bg, current.Surface, 0.55) }
 
 // blockHex is a section block inside the content area, quieter than the

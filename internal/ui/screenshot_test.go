@@ -167,7 +167,7 @@ func TestSeamJunctionsMeetTheRules(t *testing.T) {
 		}
 		cell := row[seamCol]
 		switch cell {
-		case '│', '├':
+		case '│', '├', '┤', '┼':
 			sawTee[cell] = true
 		default:
 			t.Fatalf("row %d: seam cell is %q, not a joint glyph:\n%s", i, string(cell), string(row))
@@ -176,7 +176,7 @@ func TestSeamJunctionsMeetTheRules(t *testing.T) {
 	if footer := ansi.Strip(rows[m.headerRows()+1+m.listBodyHeight()]); []rune(footer)[seamCol] != '┴' {
 		t.Fatalf("closing rule carries no ┴ at the seam: %q", footer)
 	}
-	if !sawTee['├'] {
-		t.Fatalf("the content rule never tees into the seam: %v", sawTee)
+	if !sawTee['├'] || !sawTee['┤'] {
+		t.Fatalf("body rules never tee into the seam: %v", sawTee)
 	}
 }
