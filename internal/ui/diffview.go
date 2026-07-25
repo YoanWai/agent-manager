@@ -1128,8 +1128,9 @@ func (m *Model) viewDiffFull() string {
 	if fileWidth < 28 {
 		fileWidth = 28
 	}
-	// One column goes to the seam between the two surfaces.
-	codeWidth := m.width - fileWidth - 1
+	// Two columns go to the seam and the fill's bleed edge between the
+	// two surfaces.
+	codeWidth := m.width - fileWidth - 2
 
 	// Files sit on the rail surface, the code on the backdrop: the same
 	// two-surface split the session list uses, so review reads as the same
@@ -1143,15 +1144,16 @@ func (m *Model) viewDiffFull() string {
 	// same as the list view, so the two screens share one frame language.
 	frame := []string{
 		paint(m.viewDiffHeader(sess.Name), m.width, backdropHex()),
-		m.boundedRuleRow(fileWidth, m.width, "┬"),
+		m.boundedRuleRow(fileWidth+1, m.width, "▄"),
 	}
 	frame = append(frame, joinColumns(
 		paintRows(fileLines, fileWidth, bodyHeight, panelHex()),
 		m.vruleColumn(bodyHeight),
+		m.bleedColumn(bodyHeight),
 		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
 	)...)
 	frame = append(frame,
-		m.boundedRuleRow(fileWidth, m.width, "┴"),
+		m.boundedRuleRow(fileWidth+1, m.width, "▀"),
 		paint(m.viewDiffStatus(), m.width, backdropHex()),
 	)
 	for _, line := range splitLines(footer) {

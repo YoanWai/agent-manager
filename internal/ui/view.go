@@ -76,8 +76,9 @@ func (m *Model) splitWidths() (int, int) {
 // fit the panel instead of getting clipped on the right.
 func (m *Model) previewPaneWidth() int {
 	_, rightWidth := m.splitWidths()
-	// The seam column between the rail and the content is not the pane's.
-	w := rightWidth - 1 - 2*contentGutter
+	// The seam and bleed columns between the rail and the content are not
+	// the pane's.
+	w := rightWidth - 2 - 2*contentGutter
 	if w < 1 {
 		return 1
 	}

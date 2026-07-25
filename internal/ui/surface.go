@@ -41,17 +41,19 @@ func hrule(width int) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(ruleHex())).Render(strings.Repeat("─", width))
 }
 
-// boundedRuleRow is the horizontal rule that opens or closes the body,
-// with its junction where the seam tees in. The rule rows sit on the
-// backdrop: the pane's fill spans the body rows between them and claims
-// the seam column, so the box ends flush on its right line while the
-// horizontal rules read as frame, not as part of the fill.
-func (m *Model) boundedRuleRow(paneWidth, width int, junction string) string {
+// boundedRuleRow is the row that opens or closes the body. Over the pane
+// it draws half blocks in the pane's own tone — the fill bleeding half a
+// cell past its box, which is as far as a character cell can be divided —
+// and across the content it draws the thin rule, whose center line meets
+// the half blocks' edge at the same height.
+func (m *Model) boundedRuleRow(paneWidth, width int, edge string) string {
 	if paneWidth < 0 || paneWidth >= width {
 		return paint(hrule(width), width, backdropHex())
 	}
-	style := lipgloss.NewStyle().Foreground(lipgloss.Color(ruleHex()))
-	return paint(hrule(paneWidth)+style.Render(junction)+hrule(width-paneWidth-1), width, backdropHex())
+	bleed := lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex())).
+		Render(strings.Repeat(edge, paneWidth+1))
+	return paint(bleed, paneWidth+1, backdropHex()) +
+		paint(hrule(width-paneWidth-1), width-paneWidth-1, backdropHex())
 }
 
 // vruleColumn is the seam between two painted columns. It doubles as the
@@ -60,6 +62,17 @@ func (m *Model) vruleColumn(height int) []string {
 	lines := make([]string, height)
 	for i := range lines {
 		lines[i] = m.seamCell(false, false)
+	}
+	return lines
+}
+
+// bleedColumn finishes a pane's right edge: a half block in the pane's
+// tone on the backdrop, extending the fill half a cell past the seam.
+func (m *Model) bleedColumn(height int) []string {
+	cell := paint(lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex())).Render("▌"), 1, backdropHex())
+	lines := make([]string, height)
+	for i := range lines {
+		lines[i] = cell
 	}
 	return lines
 }

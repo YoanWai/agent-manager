@@ -140,43 +140,32 @@ func TestFrameFitsTerminal(t *testing.T) {
 	}
 }
 
-// Every cell of the column seam must be a joint glyph, and the rules that
-// cross it must land as junctions, not butt against a bare bar.
-func TestSeamJunctionsMeetTheRules(t *testing.T) {
+// The pane's soft edges: the opening row bleeds down with ▄, the closing
+// row up with ▀, and every body row ends with the ▌ half-block edge one
+// column past the seam, so the fill extends half a cell beyond its box on
+// all three sides.
+func TestPaneSoftEdges(t *testing.T) {
 	m := shotModel()
 	rows := strings.Split(m.View(), "\n")
-	// Columns are counted in runes: the rule row is all multi-byte glyphs,
-	// so a byte index would name a column far right of the real seam.
-	header := []rune(ansi.Strip(rows[m.headerRows()]))
-	seamCol := -1
-	for i, r := range header {
-		if r == '┬' {
-			seamCol = i
-			break
+	leftWidth, _ := m.splitWidths()
+
+	top := []rune(ansi.Strip(rows[m.headerRows()]))
+	bottom := []rune(ansi.Strip(rows[m.headerRows()+1+m.listBodyHeight()]))
+	for col := 0; col <= leftWidth+1; col++ {
+		if top[col] != '▄' {
+			t.Fatalf("top edge col %d is %q, want ▄:\n%s", col, string(top[col]), string(top))
+		}
+		if bottom[col] != '▀' {
+			t.Fatalf("bottom edge col %d is %q, want ▀:\n%s", col, string(bottom[col]), string(bottom))
 		}
 	}
-	if seamCol < 0 {
-		t.Fatalf("header rule carries no ┬:\n%s", string(header))
+	if top[leftWidth+2] == '▄' || bottom[leftWidth+2] == '▀' {
+		t.Fatalf("the bleed should stop after the seam's edge column")
 	}
-
-	sawTee := map[rune]bool{}
 	for i := m.headerRows() + 1; i < m.headerRows()+1+m.listBodyHeight(); i++ {
 		row := []rune(ansi.Strip(rows[i]))
-		if seamCol >= len(row) {
-			t.Fatalf("row %d shorter than the seam column: %q", i, string(row))
+		if cell := row[leftWidth+1]; cell != '▌' && cell != '─' {
+			t.Fatalf("row %d: edge column is %q, want ▌:\n%s", i, string(cell), string(row))
 		}
-		cell := row[seamCol]
-		switch cell {
-		case '│', '├', '┤', '┼':
-			sawTee[cell] = true
-		default:
-			t.Fatalf("row %d: seam cell is %q, not a joint glyph:\n%s", i, string(cell), string(row))
-		}
-	}
-	if footer := ansi.Strip(rows[m.headerRows()+1+m.listBodyHeight()]); []rune(footer)[seamCol] != '┴' {
-		t.Fatalf("closing rule carries no ┴ at the seam: %q", footer)
-	}
-	if !sawTee['├'] || !sawTee['┤'] {
-		t.Fatalf("body rules never tee into the seam: %v", sawTee)
 	}
 }

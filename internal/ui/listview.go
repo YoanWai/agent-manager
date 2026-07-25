@@ -35,26 +35,29 @@ func (m *Model) viewListFrame() string {
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
-	// The rail's fill runs flush: from the header's rule to the footer's
-	// and from the window edge to the seam, one solid pane. The window
-	// padding around the grid carries the backdrop tone via the terminal
-	// background sync, so the pane reads as filling its box exactly.
+	// The rail's fill runs flush from the window edge through the seam
+	// column, then bleeds half a cell further right, and half a cell above
+	// and below its body rows — soft edges drawn with half blocks, the
+	// finest step a character cell allows. The window padding around the
+	// grid carries the backdrop tone via the terminal background sync.
+	bleedWidth := contentWidth - 1
 	railRows := m.railLines(leftWidth, bodyHeight)
-	contentRows := m.contentLines(contentWidth-2*contentGutter, bodyHeight)
+	contentRows := m.contentLines(bleedWidth-2*contentGutter, bodyHeight)
 	seam := make([]string, bodyHeight)
 	for i := range seam {
 		leftRule := i < len(railRows) && railRows[i].rule
 		rightRule := i < len(contentRows) && contentRows[i].rule
 		seam[i] = m.seamCell(leftRule, rightRule)
 	}
-	frame = append(frame, m.boundedRuleRow(leftWidth, m.width, "┬"))
+	frame = append(frame, m.boundedRuleRow(leftWidth+1, m.width, "▄"))
 	frame = append(frame, joinColumns(
 		paintContent(railRows, leftWidth, bodyHeight, panelHex()),
 		seam,
-		paintContent(contentRows, contentWidth, bodyHeight, backdropHex()),
+		m.bleedColumn(bodyHeight),
+		paintContent(contentRows, bleedWidth, bodyHeight, backdropHex()),
 	)...)
 	frame = append(frame,
-		m.boundedRuleRow(leftWidth, m.width, "┴"),
+		m.boundedRuleRow(leftWidth+1, m.width, "▀"),
 		paint(m.viewStatus(), m.width, backdropHex()),
 	)
 	for _, line := range splitLines(footer) {
