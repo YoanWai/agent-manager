@@ -1258,6 +1258,7 @@ func (m *Model) cycleSetting(step int) {
 	case settingsFieldTheme:
 		m.settings.themeIndex = (m.settings.themeIndex + step + len(themes)) % len(themes)
 		applyTheme(themes[m.settings.themeIndex])
+		SyncTerminalBackground()
 	case settingsFieldLayout:
 		m.settings.layoutSplit = !m.settings.layoutSplit
 	}

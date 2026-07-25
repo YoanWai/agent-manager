@@ -160,8 +160,12 @@ func run() error {
 	if err := ui.EnableAlternateScroll(); err != nil {
 		return err
 	}
+	// The terminal's own background follows the theme while the manager
+	// runs, so window padding outside the cell grid matches the frame.
+	ui.SyncTerminalBackground()
 	model.StartPoller(program.Send)
 	_, runErr := program.Run()
+	ui.ResetTerminalBackground()
 	if err := ui.DisableAlternateScroll(); err != nil && runErr == nil {
 		runErr = err
 	}

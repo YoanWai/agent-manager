@@ -54,8 +54,17 @@ func TestClampFrame(t *testing.T) {
 	}
 	short := "x"
 	got = clampFrame(short, 3)
-	if got != "x\n\n" {
+	lines := strings.Split(got, "\n")
+	if len(lines) != 3 || lines[0] != "x" {
 		t.Fatalf("clampFrame pad = %q", got)
+	}
+	for _, line := range lines[1:] {
+		// Padding rows wear the backdrop fill rather than being bare, so
+		// a short frame cannot show the terminal's background through its
+		// bottom rows.
+		if !strings.Contains(line, " ") {
+			t.Fatalf("padding row is bare: %q", line)
+		}
 	}
 }
 

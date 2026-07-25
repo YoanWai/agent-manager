@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -273,6 +274,21 @@ func applyTheme(t Theme) {
 // current is the live token set; renderers that need a raw SGR sequence
 // (rather than a lipgloss style) read their hex from here.
 var current = themes[0]
+
+// SyncTerminalBackground repaints the terminal's own background to the
+// theme's backdrop (OSC 11). The frame can only paint its cell grid; any
+// window padding the terminal draws around that grid keeps the terminal's
+// color, so the two must be the same color for the frame's edges to look
+// exact. Terminals without OSC 11 ignore it.
+func SyncTerminalBackground() {
+	os.Stdout.WriteString("]11;" + current.Bg + "")
+}
+
+// ResetTerminalBackground restores the terminal's own background (OSC 111)
+// when the manager exits.
+func ResetTerminalBackground() {
+	os.Stdout.WriteString("]111")
+}
 
 // bgSeq is the raw "set background" SGR for a hex color, for the few spots
 // that paint a background around content lipgloss already styled. It goes

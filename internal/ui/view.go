@@ -48,7 +48,9 @@ func clampFrame(frame string, height int) string {
 		lines = lines[:height]
 	}
 	for len(lines) < height {
-		lines = append(lines, "")
+		// Padding rows carry the backdrop too; a bare row would show the
+		// terminal's own background through the bottom of a short frame.
+		lines = append(lines, paint("", 1, backdropHex()))
 	}
 	return strings.Join(lines, "\n")
 }
