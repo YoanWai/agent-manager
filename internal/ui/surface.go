@@ -41,17 +41,17 @@ func hrule(width int) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(ruleHex())).Render(strings.Repeat("─", width))
 }
 
-// boundedRuleRow is the horizontal rule that opens or closes the body: its
-// left segment and the junction ride the pane's fill, so the fill reaches
-// its own boundary lines instead of stopping a row short of them, and the
-// remainder crosses the content on the backdrop.
+// boundedRuleRow is the horizontal rule that opens or closes the body,
+// with its junction where the seam tees in. The rule rows sit on the
+// backdrop: the pane's fill spans the body rows between them and claims
+// the seam column, so the box ends flush on its right line while the
+// horizontal rules read as frame, not as part of the fill.
 func (m *Model) boundedRuleRow(paneWidth, width int, junction string) string {
 	if paneWidth < 0 || paneWidth >= width {
 		return paint(hrule(width), width, backdropHex())
 	}
 	style := lipgloss.NewStyle().Foreground(lipgloss.Color(ruleHex()))
-	return paint(hrule(paneWidth)+style.Render(junction), paneWidth+1, panelHex()) +
-		paint(hrule(width-paneWidth-1), width-paneWidth-1, backdropHex())
+	return paint(hrule(paneWidth)+style.Render(junction)+hrule(width-paneWidth-1), width, backdropHex())
 }
 
 // vruleColumn is the seam between two painted columns. It doubles as the
