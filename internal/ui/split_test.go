@@ -92,7 +92,6 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 		t.Fatal("| should enter resize mode")
 	}
 	if cmd != nil {
-		// Mouse is always on at the program level; resize only flips a flag.
 		t.Fatal("enter should not toggle mouse reporting")
 	}
 

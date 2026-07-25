@@ -153,10 +153,17 @@ func run() error {
 	defer st.Close()
 
 	model := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
-	// Mouse cell motion is always on so the terminal (and nested tmux)
-	// cannot scroll the manager out of view. Shift+drag still selects text.
-	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// Mouse reporting stays off so the terminal keeps native text selection.
+	// Alternate scroll then turns the wheel into arrow keys instead of host
+	// scrollback, so the manager cannot be scrolled out of view.
+	program := tea.NewProgram(model, tea.WithAltScreen())
+	if err := ui.EnableAlternateScroll(); err != nil {
+		return err
+	}
 	model.StartPoller(program.Send)
-	_, err = program.Run()
-	return err
+	_, runErr := program.Run()
+	if err := ui.DisableAlternateScroll(); err != nil && runErr == nil {
+		runErr = err
+	}
+	return runErr
 }

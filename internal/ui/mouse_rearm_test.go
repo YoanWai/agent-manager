@@ -1,25 +1,19 @@
 package ui
 
 import (
-	"reflect"
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Bubbletea's RestoreTerminal (v1.3.10) re-enables altscreen, bracketed
-// paste, and focus reporting after tea.ExecProcess but not mouse mode, so
-// every tmux attach/detach silently kills wheel capture and the host
-// scrolls the manager off-screen. Detaching must re-arm mouse cell motion.
-func TestDetachReArmsMouseCapture(t *testing.T) {
+// Mouse reporting is off by default and only enabled during resize mode.
+// After a tmux attach/detach, no mouse re-arming is needed because mouse
+// is off: the terminal handles native text selection directly.
+// This test verifies the handler returns no mouse-enable command.
+func TestDetachNoMouseReArm(t *testing.T) {
 	m := buildModel(t)
 	t.Cleanup(func() { m.tmux.ClearReviewRequest() })
 
 	_, cmd := m.Update(attachDoneMsg{})
-	if cmd == nil {
-		t.Fatal("detach should re-enable mouse capture, got nil command")
-	}
-	if reflect.TypeOf(cmd()) != reflect.TypeOf(tea.EnableMouseCellMotion()) {
-		t.Fatalf("detach command = %T, want the tea.EnableMouseCellMotion message", cmd())
+	if cmd != nil {
+		t.Fatalf("detach should not re-arm mouse, got %T", cmd)
 	}
 }
