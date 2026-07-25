@@ -127,9 +127,10 @@ func (m *Model) nudgeSplit(delta int) {
 }
 
 // listChromeRows is the number of rows above the sessions/content body:
-// the header (one line, or the wordmark's three) and the seam under it.
-// Shared by View and bodyYRange so hit-testing cannot drift from paint.
-func (m *Model) listChromeRows() int { return m.headerRows() + 1 }
+// the header, which shares the rail and content surfaces with the body
+// below it. Shared by View and bodyYRange so hit-testing cannot drift
+// from paint.
+func (m *Model) listChromeRows() int { return m.headerRows() }
 
 // listBodyHeight is the vertical budget for the sessions/sidebar panels.
 // Matches View: height - (header, blank, status, footer baseline).

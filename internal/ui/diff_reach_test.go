@@ -81,8 +81,13 @@ func TestDiffReviewReachesLastLine(t *testing.T) {
 			if !strings.Contains(view, last) {
 				t.Fatalf("G should paint the last line %q, got:\n%s", last, view)
 			}
-			if !strings.Contains(view, fmt.Sprintf("line-%03d", lines-1)) {
-				t.Fatalf("the line before the end should be painted too, got:\n%s", view)
+			// The whole tail has to be on screen, not just the final line:
+			// a viewport that outruns its painted rows shows the last line
+			// and silently drops the ones just above it.
+			for n := lines; n > lines-6; n-- {
+				if !strings.Contains(view, fmt.Sprintf("line-%03d", n)) {
+					t.Fatalf("line %d missing from the end of the file, got:\n%s", n, view)
+				}
 			}
 		})
 	}

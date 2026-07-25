@@ -238,6 +238,33 @@ type previewSettleMsg struct {
 // a held j/k burst into a single capture.
 const previewSettle = 50 * time.Millisecond
 
+// The selected session's pane is re-captured on its own timer. The full
+// poll is deliberately slow (it lists panes, samples every process tree and
+// writes the store), which left the preview refreshing on the poll cadence
+// and reading as a still image of a live agent. One capture of one pane is
+// cheap, but it is still a tmux exec, so the rate follows the session: an
+// agent that is producing output earns a fast cadence, one that is waiting
+// on a human does not.
+const (
+	previewIntervalLive = 300 * time.Millisecond
+	previewIntervalCalm = 1200 * time.Millisecond
+)
+
+// previewTickMsg drives that timer.
+type previewTickMsg struct{}
+
+// previewTick re-arms the preview timer at the cadence the selection earns.
+func (m *Model) previewTick() tea.Cmd {
+	interval := previewIntervalCalm
+	if sess, ok := m.selected(); ok {
+		switch sess.Status {
+		case status.Working, status.Starting:
+			interval = previewIntervalLive
+		}
+	}
+	return tea.Tick(interval, func(time.Time) tea.Msg { return previewTickMsg{} })
+}
+
 type errMsg struct{ err error }
 
 type attachDoneMsg struct {
@@ -346,7 +373,7 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.bannerTick())
+	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.bannerTick(), m.previewTick())
 }
 
 // updateMsg carries the result of the background GitHub release check.
@@ -534,6 +561,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case bannerTickMsg:
 		m.bannerPhase++
 		return m, m.bannerTick()
+
+	case previewTickMsg:
+		// Only the list keeps a live pane on screen; review and the modal
+		// screens have no preview to feed, so they skip the capture and
+		// just keep the timer alive.
+		sess, ok := m.selected()
+		if !ok || (m.mode != modeList && m.mode != modeRename) {
+			return m, m.previewTick()
+		}
+		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
 
 	case refreshMsg:
 		m.ageError()

@@ -26,21 +26,26 @@ func (m *Model) viewListFrame() string {
 	footer := m.viewFooter()
 	bodyHeight := m.listBodyHeight()
 
-	// One column goes to the seam between the rail and the content.
+	// One column goes to the seam between the rail and the content, and the
+	// rail carries the wordmark so the two surfaces run from the very top of
+	// the frame down to the footer's seam.
 	contentWidth := rightWidth - 1
+	headerRows := m.headerRows()
 
-	frame := []string{}
-	for _, line := range m.viewHeaderRows() {
-		frame = append(frame, paint(line, m.width, backdropHex()))
-	}
-	frame = append(frame, paint(hrule(m.width), m.width, backdropHex()))
-	frame = append(frame, joinColumns(
-		paintRows(m.railLines(leftWidth, bodyHeight), leftWidth, bodyHeight, panelHex()),
-		m.vruleColumn(bodyHeight),
-		paintContent(m.contentLines(contentWidth-2*contentGutter, bodyHeight), contentWidth, bodyHeight, backdropHex()),
-	)...)
+	railHead := m.viewBanner()
+	contentHead := m.viewHeaderRows()
+
+	rail := append(
+		paintRows(railHead, leftWidth, headerRows, panelHex()),
+		paintRows(m.railLines(leftWidth, bodyHeight), leftWidth, bodyHeight, panelHex())...)
+	seam := m.vruleColumn(headerRows + bodyHeight)
+	content := append(
+		paintRows(contentHead, contentWidth, headerRows, backdropHex()),
+		paintContent(m.contentLines(contentWidth-2*contentGutter, bodyHeight), contentWidth, bodyHeight, backdropHex())...)
+
+	frame := joinColumns(rail, seam, content)
 	frame = append(frame,
-		paint(hrule(m.width), m.width, backdropHex()),
+		paint(hruleJoined(m.width, leftWidth, "┴"), m.width, backdropHex()),
 		paint(m.viewStatus(), m.width, backdropHex()),
 	)
 	for _, line := range splitLines(footer) {
@@ -306,8 +311,11 @@ func (m *Model) contentLines(width, height int) []contentLine {
 // marked raw: painting our backdrop behind an agent's own CLI colors would
 // replace the background it drew itself, so those rows keep the terminal's.
 func (m *Model) previewLines(width, height int, gutter string) []contentLine {
-	lines := []contentLine{{text: gutter + subtleStyle.Render("preview")}}
-	rows := height - 1
+	lines := []contentLine{
+		{text: gutter + subtleStyle.Render("preview")},
+		{raw: true},
+	}
+	rows := height - len(lines)
 	if rows < 1 {
 		return lines
 	}
@@ -455,51 +463,43 @@ func (m *Model) viewQuickBar(width int) string {
 // it, with the scope line and the fleet rollup set against the right edge
 // on the wordmark's own rows.
 func (m *Model) viewHeaderRows() []string {
-	if !m.showBanner() {
-		return []string{m.viewHeader()}
-	}
-	// Each header row offers its readings richest-first and takes the
-	// widest one that still clears the wordmark.
-	right := [][]string{
-		{m.headerScope()},
-		{
-			joinHeaderRight(m.viewStatusCounts(false), m.headerAgents()),
-			joinHeaderRight(m.viewStatusCounts(true), m.headerAgents()),
-			m.viewStatusCounts(true),
-		},
-	}
-	rows := m.viewBanner()
-	for i := range rows {
-		if i >= len(right) {
+	_, rightWidth := m.splitWidths()
+	width := rightWidth - 1 - contentGutter
+	left := strings.Repeat(" ", contentGutter) + m.headerScope()
+
+	// The rollup offers its readings richest-first and takes the widest one
+	// that still clears the scope on its left.
+	for _, right := range []string{
+		joinHeaderRight(m.viewStatusCounts(false), m.headerAgents()),
+		joinHeaderRight(m.viewStatusCounts(true), m.headerAgents()),
+		m.viewStatusCounts(true),
+		"",
+	} {
+		gap := width - ansi.StringWidth(left) - ansi.StringWidth(right)
+		if right == "" || gap < 2 {
 			continue
 		}
-		for _, text := range right[i] {
-			if text == "" {
-				continue
-			}
-			gap := m.width - railGutter - ansi.StringWidth(rows[i]) - ansi.StringWidth(text)
-			if gap >= 2 {
-				rows[i] += strings.Repeat(" ", gap) + text
-				break
-			}
-		}
+		return []string{left + strings.Repeat(" ", gap) + right}
 	}
-	return rows
+	return []string{left}
 }
 
 // headerScope names what the list is showing and badges a newer release.
+// The count is of the same sessions the rollup beside it breaks down, so
+// the two lines always add up; counting painted rows instead would drop
+// everything folded inside a collapsed group.
 func (m *Model) headerScope() string {
 	scope := "active"
 	if m.showArchived {
 		scope = "archived"
 	}
-	sessionCount := 0
-	for _, entry := range m.rows {
-		if !entry.isGroup {
-			sessionCount++
-		}
+	count := len(m.visibleSessions())
+	label := " sessions"
+	if count == 1 {
+		label = " session"
 	}
-	line := valueStyle.Render(fmt.Sprintf("%d", sessionCount)) + subtleStyle.Render(" "+scope)
+	line := valueStyle.Render(fmt.Sprintf("%d", count)) + subtleStyle.Render(label) +
+		subtleStyle.Render(" · "+scope)
 	if m.updateLatest != "" {
 		line += subtleStyle.Render("   ") +
 			lipgloss.NewStyle().Foreground(colorAccent).Render("↑ "+m.updateLatest+" available")
@@ -514,32 +514,6 @@ func (m *Model) headerAgents() string {
 	}
 	return labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.0f%%", m.agents.cpu)) +
 		subtleStyle.Render(" · ") + labelStyle.Render("ram ") + valueStyle.Render(humanBytes(m.agents.rss))
-}
-
-// viewHeader is the single-line header used when the terminal is too narrow
-// for the wordmark: the product mark, what is on screen, and the fleet
-// rollup pushed to the right edge.
-func (m *Model) viewHeader() string {
-	left := strings.Repeat(" ", railGutter) +
-		lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(bannerWord) +
-		subtleStyle.Render("   ") + m.headerScope()
-
-	agents := m.headerAgents()
-	for _, right := range []string{
-		joinHeaderRight(m.viewStatusCounts(false), agents),
-		joinHeaderRight(m.viewStatusCounts(true), agents),
-		joinHeaderRight(m.viewStatusCounts(true), ""),
-		"",
-	} {
-		if right == "" {
-			break
-		}
-		gap := m.width - 2*railGutter - ansi.StringWidth(left) - ansi.StringWidth(right)
-		if gap >= 2 {
-			return left + strings.Repeat(" ", gap) + right
-		}
-	}
-	return left
 }
 
 func joinHeaderRight(counts, agents string) string {
@@ -557,10 +531,8 @@ func joinHeaderRight(counts, agents string) string {
 // per state present among the listed sessions.
 func (m *Model) viewStatusCounts(compact bool) string {
 	counts := map[string]int{}
-	for _, sess := range m.sessions {
-		if !sess.Archived {
-			counts[sess.Status]++
-		}
+	for _, sess := range m.visibleSessions() {
+		counts[sess.Status]++
 	}
 	var parts []string
 	for _, st := range []string{status.Waiting, status.Working, status.Finished, status.Idle, status.Errored, status.Dead} {

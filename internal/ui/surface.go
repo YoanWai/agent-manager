@@ -37,6 +37,19 @@ func hrule(width int) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(ruleHex())).Render(strings.Repeat("─", width))
 }
 
+// hruleJoined is a horizontal seam that meets the vertical one at column x,
+// carrying the junction glyph so the two lines connect instead of crossing.
+func hruleJoined(width, x int, junction string) string {
+	if width < 1 {
+		return ""
+	}
+	if x < 0 || x >= width {
+		return hrule(width)
+	}
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color(ruleHex()))
+	return style.Render(strings.Repeat("─", x) + junction + strings.Repeat("─", width-x-1))
+}
+
 // vruleColumn is the seam between two painted columns. It doubles as the
 // resize grip, taking the accent while the divider is being moved.
 func (m *Model) vruleColumn(height int) []string {
@@ -48,10 +61,12 @@ func (m *Model) vruleColumn(height int) []string {
 	case m.resizeMode:
 		color, glyph = colorAccent, "║"
 	}
+	// The seam sits on the backdrop, not on the rail: painting it with the
+	// rail's fill makes the rail look a column wider than it is.
 	cell := lipgloss.NewStyle().Foreground(color).Render(glyph)
 	lines := make([]string, height)
 	for i := range lines {
-		lines[i] = paint(cell, 1, panelHex())
+		lines[i] = paint(cell, 1, backdropHex())
 	}
 	return lines
 }

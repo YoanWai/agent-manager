@@ -6,26 +6,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
-// The wordmark is drawn from half-block glyphs, three rows tall. Only the
-// seven letters in "agent manager" exist, which is the whole point: a
-// wordmark, not a font.
-var bannerGlyphs = map[rune][bannerRows]string{
-	'a': {"▄▀▄", "█▀█"},
-	'g': {"█▀▀", "█▄█"},
-	'e': {"█▀▀", "██▄"},
-	'n': {"█▄█", "█ █"},
-	't': {"▀█▀", " █ "},
-	'm': {"█▄▀▄█", "█ ▀ █"},
-	'r': {"█▀▄", "█▀▄"},
-	' ': {"  ", "  "},
-}
-
+// The wordmark is the product name set in tracked-out capitals, lit by a
+// highlight that sweeps across it once on launch. One row: a header, not a
+// splash screen.
 const (
 	bannerWord = "agent manager"
-	bannerRows = 2
+	bannerRows = 1
 
 	// bannerFrames is how long the intro sweep runs. The wordmark animates
 	// on launch and then holds still: a permanently animating header would
@@ -46,33 +34,21 @@ func (m *Model) bannerTick() tea.Cmd {
 	return tea.Tick(bannerInterval, func(time.Time) tea.Msg { return bannerTickMsg{} })
 }
 
-// bannerWidth is the columns the wordmark needs, letters plus the single
-// column between them.
+// bannerWidth is the columns the tracked-out wordmark needs.
 func bannerWidth() int {
-	width := 0
-	for i, r := range bannerWord {
-		if i > 0 {
-			width++
-		}
-		width += ansi.StringWidth(bannerGlyphs[r][0])
-	}
-	return width
+	return len(bannerWord)*2 - 1
 }
 
-// showBanner reports whether the terminal is wide enough for the wordmark
-// to sit beside the fleet rollup without crowding it.
+// showBanner reports whether the rail is wide enough for the tracked-out
+// wordmark; a narrow rail gets the name set plainly instead.
 func (m *Model) showBanner() bool {
-	return m.width >= bannerWidth()+34
+	left, _ := m.splitWidths()
+	return left >= bannerWidth()+railGutter+1
 }
 
 // headerRows is how many rows the header occupies, which the body height
 // and every mouse hit-test are measured against.
-func (m *Model) headerRows() int {
-	if m.showBanner() {
-		return bannerRows
-	}
-	return 1
-}
+func (m *Model) headerRows() int { return bannerRows }
 
 // viewBanner draws the wordmark, lit by a highlight that sweeps left to
 // right during the intro and then rests just past the end of the word.
@@ -82,26 +58,23 @@ func (m *Model) viewBanner() []string {
 	// settled header still has a direction to it.
 	head := sweep * float64(bannerWidth()) * 1.25
 
-	rows := make([]string, bannerRows)
-	for row := 0; row < bannerRows; row++ {
-		var b strings.Builder
-		column := 0
-		for i, letter := range bannerWord {
-			if i > 0 {
-				b.WriteString(" ")
-				column++
-			}
-			glyph := bannerGlyphs[letter][row]
-			for _, cell := range glyph {
-				b.WriteString(lipgloss.NewStyle().
-					Foreground(lipgloss.Color(bannerTint(float64(column), head))).
-					Render(string(cell)))
-				column++
-			}
-		}
-		rows[row] = strings.Repeat(" ", railGutter) + b.String()
+	var b strings.Builder
+	b.WriteString(strings.Repeat(" ", railGutter))
+	if !m.showBanner() {
+		// Too tight for tracking; the name still leads the rail.
+		b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(bannerWord))
+		return []string{b.String()}
 	}
-	return rows
+	for i, letter := range bannerWord {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		b.WriteString(lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color(bannerTint(float64(i*2), head))).
+			Render(strings.ToUpper(string(letter))))
+	}
+	return []string{b.String()}
 }
 
 // bannerTint colors one column of the wordmark by its distance from the

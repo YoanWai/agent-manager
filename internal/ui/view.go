@@ -97,14 +97,14 @@ func (m *Model) previewPaneHeight() int {
 	if m.quick.active {
 		avail -= lipgloss.Height(m.viewQuickBar(width)) + 1
 	}
-	// Mirrors contentLines: the detail head, a blank, then the preview
-	// under its label.
+	// Mirrors contentLines: the detail head, the seam, then the preview
+	// under its label and the blank line beneath it.
 	rest := avail - lipgloss.Height(m.viewDetail(width)) - 1
 	if rest < 3 {
 		// Preview section is hidden; keep a tiny pane for create/attach paths.
 		return 3
 	}
-	h := rest - 1
+	h := rest - 2
 	if h < 1 {
 		return 1
 	}
@@ -491,7 +491,9 @@ func relTime(t time.Time) string {
 	d := time.Since(t)
 	switch {
 	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
+		// Five-second steps: a column of ages that ticks every second is
+		// motion the eye chases for no information.
+		return fmt.Sprintf("%ds", int(d.Seconds()/5)*5)
 	case d < time.Hour:
 		return fmt.Sprintf("%dm", int(d.Minutes()))
 	case d < 24*time.Hour:
