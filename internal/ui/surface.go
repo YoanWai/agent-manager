@@ -46,13 +46,19 @@ func hrule(width int) string {
 // cell past its box, which is as far as a character cell can be divided —
 // and across the content it draws the thin rule, whose center line meets
 // the half blocks' edge at the same height.
+// The half-cell edges are drawn inverted: the cell's background carries
+// the pane tone and the glyph paints the backdrop half in the theme's
+// backdrop color. Fonts give block glyphs a hair of side bearing, and a
+// leak through that bearing shows the cell background — inverted, the
+// leak is pane tone and fuses with the fill instead of cutting a thin
+// gap into its edge.
 func (m *Model) boundedRuleRow(paneWidth, width int, edge string) string {
 	if paneWidth < 0 || paneWidth >= width {
 		return paint(hrule(width), width, backdropHex())
 	}
-	bleed := lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex())).
+	bleed := lipgloss.NewStyle().Foreground(colorBg).
 		Render(strings.Repeat(edge, paneWidth+1))
-	return paint(bleed, paneWidth+1, backdropHex()) +
+	return paint(bleed, paneWidth+1, panelHex()) +
 		paint(hrule(width-paneWidth-1), width-paneWidth-1, backdropHex())
 }
 
@@ -69,7 +75,7 @@ func (m *Model) vruleColumn(height int) []string {
 // bleedColumn finishes a pane's right edge: a half block in the pane's
 // tone on the backdrop, extending the fill half a cell past the seam.
 func (m *Model) bleedColumn(height int) []string {
-	cell := paint(lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex())).Render("▌"), 1, backdropHex())
+	cell := paint(lipgloss.NewStyle().Foreground(colorBg).Render("▐"), 1, panelHex())
 	lines := make([]string, height)
 	for i := range lines {
 		lines[i] = cell

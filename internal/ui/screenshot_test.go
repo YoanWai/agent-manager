@@ -152,20 +152,20 @@ func TestPaneSoftEdges(t *testing.T) {
 	top := []rune(ansi.Strip(rows[m.headerRows()]))
 	bottom := []rune(ansi.Strip(rows[m.headerRows()+1+m.listBodyHeight()]))
 	for col := 0; col <= leftWidth+1; col++ {
-		if top[col] != '▄' {
-			t.Fatalf("top edge col %d is %q, want ▄:\n%s", col, string(top[col]), string(top))
+		if top[col] != '▀' {
+			t.Fatalf("top edge col %d is %q, want ▀:\n%s", col, string(top[col]), string(top))
 		}
-		if bottom[col] != '▀' {
-			t.Fatalf("bottom edge col %d is %q, want ▀:\n%s", col, string(bottom[col]), string(bottom))
+		if bottom[col] != '▄' {
+			t.Fatalf("bottom edge col %d is %q, want ▄:\n%s", col, string(bottom[col]), string(bottom))
 		}
 	}
-	if top[leftWidth+2] == '▄' || bottom[leftWidth+2] == '▀' {
+	if top[leftWidth+2] == '▀' || bottom[leftWidth+2] == '▄' {
 		t.Fatalf("the bleed should stop after the seam's edge column")
 	}
 	for i := m.headerRows() + 1; i < m.headerRows()+1+m.listBodyHeight(); i++ {
 		row := []rune(ansi.Strip(rows[i]))
-		if cell := row[leftWidth+1]; cell != '▌' && cell != '─' {
-			t.Fatalf("row %d: edge column is %q, want ▌:\n%s", i, string(cell), string(row))
+		if cell := row[leftWidth+1]; cell != '▐' && cell != '─' {
+			t.Fatalf("row %d: edge column is %q, want ▐:\n%s", i, string(cell), string(row))
 		}
 		// The seam is fill, not a drawn line: the glyphs of the old line
 		// seam appearing here mean a stale seam renderer shipped again.

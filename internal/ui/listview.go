@@ -49,7 +49,7 @@ func (m *Model) viewListFrame() string {
 		rightRule := i < len(contentRows) && contentRows[i].rule
 		seam[i] = m.seamCell(leftRule, rightRule)
 	}
-	frame = append(frame, m.boundedRuleRow(leftWidth+1, m.width, "▄"))
+	frame = append(frame, m.boundedRuleRow(leftWidth+1, m.width, "▀"))
 	frame = append(frame, joinColumns(
 		paintContent(railRows, leftWidth, bodyHeight, panelHex()),
 		seam,
@@ -57,7 +57,7 @@ func (m *Model) viewListFrame() string {
 		paintContent(contentRows, bleedWidth, bodyHeight, backdropHex()),
 	)...)
 	frame = append(frame,
-		m.boundedRuleRow(leftWidth+1, m.width, "▀"),
+		m.boundedRuleRow(leftWidth+1, m.width, "▄"),
 		paint(m.viewStatus(), m.width, backdropHex()),
 	)
 	for _, line := range splitLines(footer) {
