@@ -1134,8 +1134,9 @@ func (m *Model) viewDiffFull() string {
 	// Files sit on the rail surface, the code on the backdrop: the same
 	// two-surface split the session list uses, so review reads as the same
 	// application rather than a second one.
+	cardWidth := fileWidth - 2
 	fileLines := append([]string{"", "  " + subtleStyle.Render("files")},
-		indentLines(splitLines(m.viewDiffFileList(fileWidth-1-2*railGutter, bodyHeight-2)), railGutter)...)
+		indentLines(splitLines(m.viewDiffFileList(cardWidth-2*railGutter, bodyHeight-4)), railGutter)...)
 	codeLines := append([]string{"", "  " + subtleStyle.Render(ansi.Strip(m.diffCodeTitle()))},
 		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
@@ -1145,14 +1146,19 @@ func (m *Model) viewDiffFull() string {
 		paint(m.viewDiffHeader(sess.Name), m.width, backdropHex()),
 		paint(hruleJoined(m.width, fileWidth, "┬"), m.width, backdropHex()),
 	}
-	// The files card keeps the same unpainted margin column as the rail.
-	margin := make([]string, bodyHeight)
-	for i := range margin {
-		margin[i] = paint("", 1, backdropHex())
+	// The files card floats inside its column with the same four-sided
+	// margin the sessions rail wears.
+	card := paintRows(fileLines, cardWidth, bodyHeight-2, panelHex())
+	files := make([]string, bodyHeight)
+	for i := range files {
+		if i == 0 || i == bodyHeight-1 {
+			files[i] = paint("", fileWidth, backdropHex())
+		} else {
+			files[i] = paint("", 1, backdropHex()) + card[i-1] + paint("", 1, backdropHex())
+		}
 	}
 	frame = append(frame, joinColumns(
-		margin,
-		paintRows(fileLines, fileWidth-1, bodyHeight, panelHex()),
+		files,
 		m.vruleColumn(bodyHeight),
 		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
 	)...)

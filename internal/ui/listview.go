@@ -35,22 +35,28 @@ func (m *Model) viewListFrame() string {
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
-	// The rail card leaves its first column unpainted so its fill never
-	// touches the window edge; see the surface rules in surface.go.
-	railRows := m.railLines(leftWidth-1, bodyHeight)
+	// The rail card floats: a margin of the terminal's own background on
+	// all four sides, so its fill never touches the window edge, the
+	// header's rule, the seam, or the footer's rule. Its own rules stop at
+	// the card's edge; see the surface rules in surface.go.
+	cardWidth := leftWidth - 2
+	railRows := m.railLines(cardWidth, bodyHeight-2)
+	card := paintContent(railRows, cardWidth, bodyHeight-2, panelHex())
 	contentRows := m.contentLines(contentWidth-2*contentGutter, bodyHeight)
+	rail := make([]string, bodyHeight)
 	seam := make([]string, bodyHeight)
-	margin := make([]string, bodyHeight)
-	for i := range seam {
-		leftRule := i < len(railRows) && railRows[i].rule
+	for i := range rail {
+		if i == 0 || i == bodyHeight-1 {
+			rail[i] = paint("", leftWidth, backdropHex())
+		} else {
+			rail[i] = paint("", 1, backdropHex()) + card[i-1] + paint("", 1, backdropHex())
+		}
 		rightRule := i < len(contentRows) && contentRows[i].rule
-		seam[i] = m.seamCell(leftRule, rightRule)
-		margin[i] = paint("", 1, backdropHex())
+		seam[i] = m.seamCell(false, rightRule)
 	}
 	frame = append(frame, paint(hruleJoined(m.width, leftWidth, "┬"), m.width, backdropHex()))
 	frame = append(frame, joinColumns(
-		margin,
-		paintContent(railRows, leftWidth-1, bodyHeight, panelHex()),
+		rail,
 		seam,
 		paintContent(contentRows, contentWidth, bodyHeight, backdropHex()),
 	)...)
