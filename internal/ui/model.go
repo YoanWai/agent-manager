@@ -109,7 +109,7 @@ type Model struct {
 
 	// Horizontal sessions/sidebar split. splitRatio is the left panel's
 	// share of the terminal width; resizeMode arms divider drag handling
-	// (mouse reporting itself is always on so the host cannot scroll us).
+	// (mouse motion reporting is always on so the host cannot scroll us).
 	splitRatio       float64
 	splitRatioBefore float64
 	resizeMode       bool
@@ -604,7 +604,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			m.requestRefresh()
-			return m, tea.EnableMouseCellMotion
+			return m, nil
 		}
 		// Ctrl+R inside the session sets a marker before detaching; consume
 		// it here and jump straight to review for the session just attached.
@@ -618,17 +618,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if clearErr := m.tmux.ClearReviewRequest(); clearErr != nil {
 				m.err = clearErr.Error()
 				m.requestRefresh()
-				return m, tea.EnableMouseCellMotion
+				return m, nil
 			}
 			sess, ok := m.selected()
 			cmd := m.openDiff()
 			if ok && m.mode == modeDiff {
 				m.diff.reattachID = sess.ID
 			}
-			return m, tea.Batch(cmd, tea.EnableMouseCellMotion)
+			return m, cmd
 		}
 		m.requestRefresh()
-		return m, tea.EnableMouseCellMotion
+		return m, nil
 
 	case tea.MouseMsg:
 		return m.handleMouse(msg)

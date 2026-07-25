@@ -153,9 +153,10 @@ func run() error {
 	defer st.Close()
 
 	model := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
-	// Mouse cell motion is always on so the terminal (and nested tmux)
-	// cannot scroll the manager out of view. Shift+drag still selects text.
-	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// Mouse reporting is off by default so native text selection works
+	// in the terminal. It is enabled only during resize mode (divider drag)
+	// and disabled on exit, so the terminal handles selection normally.
+	program := tea.NewProgram(model, tea.WithAltScreen())
 	model.StartPoller(program.Send)
 	_, err = program.Run()
 	return err

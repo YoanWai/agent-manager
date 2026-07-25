@@ -85,9 +85,9 @@ func (m *Model) setSplitFromX(x int) {
 	m.splitRatio = float64(left) / float64(m.width)
 }
 
-// enterResizeMode arms divider dragging. Mouse reporting is always on at
-// the program level (see main) so the terminal cannot scroll the TUI away;
-// this mode only changes how clicks/drags are interpreted.
+// enterResizeMode arms divider dragging by enabling mouse cell motion so
+// drag events are captured. Mouse reporting is disabled outside this mode
+// so native text selection works in the terminal.
 func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	if m.mode != modeList || m.searching || m.quick.active {
 		return m, nil
@@ -96,12 +96,13 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	m.splitDragging = false
 	m.splitRatioBefore = m.splitRatio
 	m.err = ""
-	return m, nil
+	return m, tea.EnableMouseCellMotion
 }
 
 // exitResizeMode leaves divider-drag mode. When commit is true the current
 // ratio is persisted; cancel restores the pre-mode ratio. Either path ends
-// with a pane resize so the preview stays 1:1 with the panel.
+// with a pane resize so the preview stays 1:1 and mouse reporting disabled
+// so the terminal regains native text selection.
 func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
 	if !m.resizeMode && !m.splitDragging {
 		return m, nil
@@ -114,7 +115,7 @@ func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
 	m.splitDragging = false
 	m.resizeMode = false
 	m.resizeSessions()
-	return m, nil
+	return m, tea.DisableMouse
 }
 
 // nudgeSplit moves the divider by delta columns while resize mode is on.
@@ -164,9 +165,9 @@ func (m *Model) onDivider(x int) bool {
 }
 
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// Always consume mouse events so the host terminal / outer tmux never
-	// scrolls the manager off-screen. Wheel maps to in-app navigation;
-	// clicks only drive the divider while resize mode is armed.
+	// Mouse events are always consumed so the host terminal / outer tmux
+	// never scrolls the manager off-screen. Wheel maps to in-app
+	// navigation; clicks only drive the divider while resize mode is armed.
 	if tea.MouseEvent(msg).IsWheel() {
 		return m.handleMouseWheel(msg)
 	}

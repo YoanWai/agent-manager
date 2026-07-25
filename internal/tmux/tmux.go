@@ -168,6 +168,9 @@ func (d *Driver) styleStatusBar(name string) error {
 		// hide the "0:windowname*" window list; it reads as noise here
 		{"set-option", "-t", name, "window-status-format", ""},
 		{"set-option", "-t", name, "window-status-current-format", ""},
+		// mouse on so tmux handles scrollback per-session instead of the
+		// terminal emulator, whose buffer carries content from prior attaches.
+		{"set-option", "-t", name, "mouse", "on"},
 	}
 	for _, args := range options {
 		if _, err := d.run(args...); err != nil {
