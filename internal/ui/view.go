@@ -58,8 +58,9 @@ func (m *Model) viewListFrame() string {
 	if listHeight >= 3 {
 		leftBody = padToHeight(m.viewList(listInner, listHeight), listHeight) + "\n" + stats
 	}
-	left := titledPanel("Sessions", leftBody, leftWidth, bodyHeight)
-	right := titledPanel(m.sidebarTitle(), m.viewSidebar(rightWidth-4, bodyHeight-2), rightWidth, bodyHeight)
+	sidebarFocused := m.quick.active
+	left := titledPanel("Sessions", leftBody, leftWidth, bodyHeight, !sidebarFocused)
+	right := titledPanel(m.sidebarTitle(), m.viewSidebar(rightWidth-4, bodyHeight-2), rightWidth, bodyHeight, sidebarFocused)
 	var body string
 	if gripWidth > 0 {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, m.resizeGrip(bodyHeight), right)
@@ -190,39 +191,57 @@ func (m *Model) viewHeader() string {
 			sessionCount++
 		}
 	}
-	brand := badgeStyle.Render("◆ Agent Manager")
-	meta := mutedStyle.Render(fmt.Sprintf("%d sessions", sessionCount)) +
-		subtleStyle.Render(" · ") +
+	brand := badgeStyle.Render("◆ agent manager")
+	meta := valueStyle.Render(fmt.Sprintf("%d", sessionCount)) +
+		mutedStyle.Render(" sessions") +
+		subtleStyle.Render("  ·  ") +
 		lipgloss.NewStyle().Foreground(colorAccent2).Render(scope)
 	if m.updateLatest != "" {
-		meta += subtleStyle.Render(" · ") +
+		meta += subtleStyle.Render("  ·  ") +
 			lipgloss.NewStyle().Foreground(colorAccent).Bold(true).
 				Render("↑ "+m.updateLatest+" available")
 	}
 	left := brand + "  " + meta
 
-	right := m.viewStatusCounts()
+	agents := ""
 	if m.agents.count > 0 {
-		agents := labelStyle.Render("agents ") +
+		agents = labelStyle.Render("agents ") +
 			valueStyle.Render(fmt.Sprintf("%.0f%%", m.agents.cpu)) +
 			subtleStyle.Render(" · ") +
-			valueStyle.Render(humanBytes(m.agents.rss))
-		if right != "" {
-			right += subtleStyle.Render("   ")
-		}
-		right += agents + " "
+			valueStyle.Render(humanBytes(m.agents.rss)) + " "
 	}
 
-	gap := m.width - ansi.StringWidth(left) - ansi.StringWidth(right)
-	if gap < 1 {
-		return padRight(left, m.width)
+	// The right side gives way as the terminal narrows: the fleet strip
+	// first sheds its words, then the process stat drops, then the strip
+	// itself, so the brand and scope never get pushed off the line.
+	for _, right := range []string{
+		joinHeaderRight(m.viewStatusCounts(false), agents),
+		joinHeaderRight(m.viewStatusCounts(true), agents),
+		joinHeaderRight(m.viewStatusCounts(true), ""),
+		"",
+	} {
+		gap := m.width - ansi.StringWidth(left) - ansi.StringWidth(right)
+		if gap >= 2 {
+			return left + strings.Repeat(" ", gap) + right
+		}
 	}
-	return left + strings.Repeat(" ", gap) + right
+	return padRight(left, m.width)
+}
+
+func joinHeaderRight(counts, agents string) string {
+	switch {
+	case counts == "":
+		return agents
+	case agents == "":
+		return counts
+	default:
+		return counts + subtleStyle.Render("   ") + agents
+	}
 }
 
 // viewStatusCounts is the fleet-at-a-glance strip: one colored glyph and
 // count per status present among the listed sessions.
-func (m *Model) viewStatusCounts() string {
+func (m *Model) viewStatusCounts(compact bool) string {
 	counts := map[string]int{}
 	for _, sess := range m.sessions {
 		if !sess.Archived {
@@ -234,10 +253,13 @@ func (m *Model) viewStatusCounts() string {
 		if counts[st] == 0 {
 			continue
 		}
-		glyph := lipgloss.NewStyle().Foreground(statusColor(st)).Render(statusGlyph(st))
-		parts = append(parts, glyph+mutedStyle.Render(fmt.Sprintf(" %d %s", counts[st], st)))
+		label := fmt.Sprintf("%s %d %s", statusGlyph(st), counts[st], st)
+		if compact {
+			label = fmt.Sprintf("%s %d", statusGlyph(st), counts[st])
+		}
+		parts = append(parts, pill(label, statusColor(st)))
 	}
-	return strings.Join(parts, subtleStyle.Render("  "))
+	return strings.Join(parts, " ")
 }
 
 // viewComputer is the compact machine gauge block docked at the bottom
@@ -300,14 +322,19 @@ func (m *Model) sidebarTitle() string {
 
 func (m *Model) viewList(width, height int) string {
 	if len(m.rows) == 0 {
-		hint := "Press " + keyStyle.Render("n") + mutedStyle.Render(" to create a session.")
+		title := "No sessions yet"
+		hint := keyCap("n", "starts one") + subtleStyle.Render("  ·  ") + keyCap("g", "makes a group")
 		if m.showArchived {
-			hint = mutedStyle.Render("No archived sessions. ") + keyStyle.Render("t") + mutedStyle.Render(" goes back.")
+			title = "Nothing archived"
+			hint = keyCap("t", "goes back to active sessions")
 		}
 		if strings.TrimSpace(m.search) != "" {
-			hint = mutedStyle.Render("No matches for ") + valueStyle.Render("\""+m.search+"\"")
+			title = "No matches for \"" + m.search + "\""
+			hint = keyCap("esc", "clears the search")
 		}
-		return "\n  " + subtleStyle.Render("✦") + "  " + hint
+		return "\n  " + lipgloss.NewStyle().Foreground(colorDim).Render(title) +
+			"\n  " + subtleStyle.Render(strings.Repeat("─", max(ansi.StringWidth(title), 1))) +
+			"\n  " + hint
 	}
 
 	start, end := scrollWindow(len(m.rows), m.cursor, height)
@@ -374,7 +401,7 @@ func scrollWindow(total, cursor, height int) (int, int) {
 func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 	bar := " "
 	if selected {
-		bar = lipgloss.NewStyle().Foreground(colorAccent).Render("▎")
+		bar = lipgloss.NewStyle().Foreground(colorAccent).Render("▌")
 	}
 	guides := treeGuides(entry.depth, selected)
 
@@ -390,15 +417,16 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 		return subtleStyle.Render(s)
 	}
 
-	var content string
+	var lead, meta string
 	if entry.isGroup {
 		marker := "▾"
 		if m.collapsed[entry.group] {
 			marker = "▸"
 		}
-		count := secondary(fmt.Sprintf(" (%d)", m.groupSessionCount(entry.group)))
 		name := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true).Render(baseName(entry.group))
-		content = secondary(marker) + " " + name + count + m.groupStatusGlyphs(entry.group)
+		lead = secondary(marker) + " " + name
+		meta = secondary(fmt.Sprintf("%d", m.groupSessionCount(entry.group))) +
+			m.groupStatusGlyphs(entry.group)
 	} else {
 		sess := entry.sess
 		glyph := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
@@ -406,13 +434,19 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 		if selected {
 			nameStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 		}
-		name := nameStyle.Render(sess.Name)
+		lead = glyph + " " + nameStyle.Render(sess.Name)
 		state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status))
-		meta := state + secondary(" · "+sess.Tool+" · "+relTime(sess.CreatedAt))
-		content = glyph + " " + name + "  " + meta
+		// Meta gives up detail before the name gives up characters: age
+		// goes first, then the tool, leaving the state as the last thing
+		// standing next to the name.
+		meta = fitMeta(ansi.StringWidth(lead), width-2-ansi.StringWidth(guides),
+			state+secondary(" · "+sess.Tool+" · "+relTime(sess.CreatedAt)),
+			state+secondary(" · "+sess.Tool),
+			state,
+		)
 	}
 
-	line := bar + " " + guides + content
+	line := bar + " " + guides + rowColumns(lead, meta, width-2-ansi.StringWidth(guides))
 	if ansi.StringWidth(line) > width {
 		line = ansi.Truncate(line, width-1, "…") + "\x1b[0m"
 	}
@@ -421,6 +455,37 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 		return renderSelectedRow(line)
 	}
 	return line
+}
+
+// fitMeta picks the richest meta variant that still leaves the name room,
+// so narrow panels lose detail rather than lose names.
+func fitMeta(leadWidth, rowWidth int, variants ...string) string {
+	for _, variant := range variants {
+		if leadWidth+2+ansi.StringWidth(variant) <= rowWidth {
+			return variant
+		}
+	}
+	if len(variants) == 0 {
+		return ""
+	}
+	return variants[len(variants)-1]
+}
+
+// rowColumns lays a list row out as a name column and a right-aligned meta
+// column, so status, tool and age line up down the list instead of ragging
+// off the end of each name. Rows too narrow to split keep meta inline and
+// let the caller's truncation decide what survives.
+func rowColumns(lead, meta string, width int) string {
+	if meta == "" {
+		return lead
+	}
+	const gap = 2
+	leadWidth := ansi.StringWidth(lead)
+	metaWidth := ansi.StringWidth(meta)
+	if width < 1 || leadWidth+gap+metaWidth > width {
+		return lead + strings.Repeat(" ", gap) + meta
+	}
+	return lead + strings.Repeat(" ", width-leadWidth-metaWidth) + meta
 }
 
 func (m *Model) renamingGroup(group string) bool {
@@ -448,14 +513,15 @@ func (m *Model) renameRowInput(entry treeRow, width int) string {
 	return lead + " " + m.rename.input.View()
 }
 
-// divider renders a labeled section rule that fills the given width.
+// divider renders a labeled section rule that fills the given width: an
+// accent tick, the label, then a hairline out to the edge.
 func divider(label string, width int) string {
-	head := sectionStyle.Render(label) + " "
-	dashes := width - ansi.StringWidth(label) - 1
+	head := sectionStyle.Render("▍"+label) + " "
+	dashes := width - ansi.StringWidth(label) - 2
 	if dashes < 0 {
 		dashes = 0
 	}
-	return head + subtleStyle.Render(strings.Repeat("─", dashes))
+	return head + lipgloss.NewStyle().Foreground(colorBorder).Render(strings.Repeat("─", dashes))
 }
 
 // viewSidebar lays out session details on top, with the live preview
@@ -837,11 +903,12 @@ func padToHeight(s string, height int) string {
 // viewFooter lists every shortcut, wrapping onto extra lines when the
 // terminal is too narrow for one.
 func (m *Model) viewFooter() string {
+	// The footer carries the handful of keys a session is actually driven
+	// with; ? opens the full map, so the rest stay out of the frame.
 	pairs := [][2]string{
 		{"↑↓", "navigate"}, {"↵", "attach"}, {"n", "new"}, {"g", "group"},
-		{"⇧↑↓", "reorder"}, {"space", "quick prompt"}, {"ctrl+r", "review"}, {"F", "fold all"}, {"m", "move"}, {"r", "rename/edit"},
-		{"v", "revive"}, {"V", "revive all"}, {"a", "archive"}, {"u", "restore"}, {"d", "delete"}, {"/", "search"},
-		{"t", "archived"}, {"s", "settings"}, {"|", "resize"}, {"?", "help"}, {"q", "quit"},
+		{"space", "prompt"}, {"ctrl+r", "review"}, {"/", "search"},
+		{"s", "settings"}, {"?", "keys"}, {"q", "quit"},
 	}
 	if m.quick.active {
 		pairs = [][2]string{
@@ -873,7 +940,7 @@ func footerLine(pairs [][2]string, width int) string {
 	var lines []string
 	line, lineWidth := "", 0
 	for _, p := range pairs {
-		part := keyStyle.Render(p[0]) + " " + mutedStyle.Render(p[1])
+		part := keyCap(p[0], p[1])
 		partWidth := ansi.StringWidth(part)
 		switch {
 		case line == "":

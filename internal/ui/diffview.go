@@ -765,7 +765,7 @@ func (m *Model) annotationRows(fd *diff.FileDiff, lineIdx, width int) []string {
 		return nil
 	}
 	comment := annotationStyle.Render("  ¶ " + note.text)
-	return wrapTinted(comment, nil, annotationBg, annotationBg, width)
+	return wrapTinted(comment, nil, annotationBg(), annotationBg(), width)
 }
 
 func (m *Model) annotationAt(path string, line diff.Line) *annotation {
@@ -1130,8 +1130,9 @@ func (m *Model) viewDiffFull() string {
 	}
 	codeWidth := m.width - fileWidth
 
-	files := titledPanel("Files", m.viewDiffFileList(fileWidth-4, bodyHeight-2), fileWidth, bodyHeight)
-	code := titledPanel(m.diffCodeTitle(), m.viewDiffCode(codeWidth-4, bodyHeight-2), codeWidth, bodyHeight)
+	// The cursor lives in the code panel, so it wears the focus border.
+	files := titledPanel("Files", m.viewDiffFileList(fileWidth-4, bodyHeight-2), fileWidth, bodyHeight, false)
+	code := titledPanel(m.diffCodeTitle(), m.viewDiffCode(codeWidth-4, bodyHeight-2), codeWidth, bodyHeight, true)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, files, code)
 
 	header := m.viewDiffHeader(sess.Name)

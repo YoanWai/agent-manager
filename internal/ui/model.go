@@ -182,12 +182,14 @@ type quickImageMsg struct {
 type settingsState struct {
 	toolNames   []string
 	toolIndex   int
+	themeIndex  int
 	field       int
 	layoutSplit bool
 }
 
 const (
 	settingsFieldTool = iota
+	settingsFieldTheme
 	settingsFieldLayout
 	settingsFieldCount
 )
@@ -249,6 +251,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// A missing git binary only disables the diff view; everything else
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
+	applyTheme(themes[themeIndex(storedTheme(st))])
 	return &Model{
 		cfg:         cfg,
 		store:       st,
@@ -262,6 +265,16 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		mode:        modeList,
 		version:     version,
 	}
+}
+
+// storedTheme reads the persisted theme name. A read failure falls back to
+// the default theme: the UI still paints, just not in the chosen palette.
+func storedTheme(st *store.Store) string {
+	name, err := st.Setting(themeSetting)
+	if err != nil {
+		return ""
+	}
+	return name
 }
 
 const collapsedSetting = "collapsed_groups"

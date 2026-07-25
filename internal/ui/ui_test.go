@@ -2292,6 +2292,10 @@ func TestSettingsTogglesReviewLayout(t *testing.T) {
 		t.Fatal("settings should open on split by default")
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.settings.field != settingsFieldTheme {
+		t.Fatalf("first down should focus theme field, got %d", m.settings.field)
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	if m.settings.field != settingsFieldLayout {
 		t.Fatalf("down should focus layout field, got %d", m.settings.field)
 	}

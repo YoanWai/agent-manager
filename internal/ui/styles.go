@@ -8,51 +8,81 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// Colors are resolved from the active Theme by applyTheme; nothing here
+// hardcodes a palette. See theme.go for the token meanings.
 var (
-	colorText    = lipgloss.Color("252")
-	colorDim     = lipgloss.Color("245")
-	colorSubtle  = lipgloss.Color("240")
-	colorBorder  = lipgloss.Color("238")
-	colorBg      = lipgloss.Color("236")
-	colorSelBg   = lipgloss.Color("239")
-	colorBright  = lipgloss.Color("231")
-	colorAccent  = lipgloss.Color("111")
-	colorAccent2 = lipgloss.Color("79")
+	colorBg      lipgloss.Color
+	colorSurface lipgloss.Color
+	colorOverlay lipgloss.Color
+	colorBorder  lipgloss.Color
+	colorFocus   lipgloss.Color
+	colorBright  lipgloss.Color
+	colorText    lipgloss.Color
+	colorDim     lipgloss.Color
+	colorSubtle  lipgloss.Color
+	colorAccent  lipgloss.Color
+	colorAccent2 lipgloss.Color
+	colorSelBg   lipgloss.Color
 
-	colorWorking  = lipgloss.Color("214")
-	colorWaiting  = lipgloss.Color("213")
-	colorFinished = lipgloss.Color("82")
-	colorErrored  = lipgloss.Color("203")
-	colorIdle     = lipgloss.Color("244")
+	colorWorking  lipgloss.Color
+	colorWaiting  lipgloss.Color
+	colorFinished lipgloss.Color
+	colorErrored  lipgloss.Color
+	colorIdle     lipgloss.Color
+)
 
+var (
+	badgeStyle       lipgloss.Style
+	sectionStyle     lipgloss.Style
+	selectedRowStyle lipgloss.Style
+
+	mutedStyle  lipgloss.Style
+	subtleStyle lipgloss.Style
+	valueStyle  lipgloss.Style
+	labelStyle  lipgloss.Style
+	errStyle    lipgloss.Style
+	keyStyle    lipgloss.Style
+
+	annotationStyle lipgloss.Style
+
+	chipStyle             lipgloss.Style
+	imageChipStyle        lipgloss.Style
+	imageChipPastingStyle lipgloss.Style
+)
+
+func init() { applyTheme(themes[0]) }
+
+// rebuildStyles re-derives every style from the colors applyTheme just set.
+func rebuildStyles() {
 	badgeStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorBg).
-			Background(colorAccent).
-			Padding(0, 1)
+		Bold(true).
+		Foreground(colorBg).
+		Background(colorAccent).
+		Padding(0, 1)
 
 	sectionStyle = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
 
 	selectedRowStyle = lipgloss.NewStyle().Background(colorSelBg).Foreground(colorBright)
 
-	// selectedRowReapply is the SGR sequence re-applied after every inner
-	// SGR reset inside a selected row. lipgloss's .Render emits one reset
-	// per call, so wrapping pre-styled content with selectedRowStyle leaves
-	// the background set only on the first segment. renderSelectedRow
-	// substitutes each inner reset with reset+reapply so the selected bg
-	// holds across the whole row.
-	selectedRowReapply = "\x1b[0m\x1b[48;5;" + string(colorSelBg) + "m\x1b[38;5;" + string(colorBright) + "m"
-
-	mutedStyle  = lipgloss.NewStyle().Foreground(colorDim)
+	mutedStyle = lipgloss.NewStyle().Foreground(colorDim)
 	subtleStyle = lipgloss.NewStyle().Foreground(colorSubtle)
-	valueStyle  = lipgloss.NewStyle().Foreground(colorText)
-	labelStyle  = lipgloss.NewStyle().Foreground(colorDim)
-	errStyle    = lipgloss.NewStyle().Foreground(colorErrored).Bold(true)
-	keyStyle    = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	valueStyle = lipgloss.NewStyle().Foreground(colorText)
+	labelStyle = lipgloss.NewStyle().Foreground(colorSubtle)
+	errStyle = lipgloss.NewStyle().Foreground(colorErrored).Bold(true)
+	keyStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 
 	annotationStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
-	annotationBg    = "\x1b[48;2;28;32;46m"
-)
+
+	chipStyle = lipgloss.NewStyle().Background(colorSurface).Padding(0, 1)
+	imageChipStyle = lipgloss.NewStyle().
+		Foreground(colorBright).
+		Background(colorSurface).
+		Padding(0, 1)
+	imageChipPastingStyle = lipgloss.NewStyle().
+		Foreground(colorWorking).
+		Background(colorSurface).
+		Padding(0, 1)
+}
 
 // renderSelectedRow wraps a pre-styled line with the selected row's
 // background and foreground. Internal SGR resets emitted by per-segment
@@ -61,7 +91,16 @@ var (
 // Re-applying the selected bg+fg after every reset keeps the row tinted
 // end-to-end.
 func renderSelectedRow(s string) string {
-	return selectedRowStyle.Render(strings.ReplaceAll(s, "\x1b[0m", selectedRowReapply))
+	reapply := "\x1b[0m" + bgSeq(current.Surface) + fgSeq(current.Bright)
+	return selectedRowStyle.Render(strings.ReplaceAll(s, "\x1b[0m", reapply))
+}
+
+// annotationBg is the wash behind a reviewer's inline comment: the theme's
+// backdrop lifted toward the accent, so the note reads as ours rather than
+// as part of the diff. Resolved per call so it follows the live color
+// profile as well as the live theme.
+func annotationBg() string {
+	return bgSeq(mix(current.Bg, current.Accent, 0.18))
 }
 
 func statusColor(s string) lipgloss.Color {
@@ -79,6 +118,9 @@ func statusColor(s string) lipgloss.Color {
 	}
 }
 
+// statusGlyph is one geometric mark per state, all from the same weight
+// family so a column of them reads as a single scale rather than a mix of
+// punctuation. Shape carries the state; color reinforces it.
 func statusGlyph(s string) string {
 	switch s {
 	case status.Working:
@@ -86,11 +128,11 @@ func statusGlyph(s string) string {
 	case status.Starting:
 		return "◌"
 	case status.Waiting:
-		return "?"
+		return "◆"
 	case status.Finished:
-		return "✔"
+		return "●"
 	case status.Errored, status.Dead:
-		return "✖"
+		return "✕"
 	default:
 		return "○"
 	}
@@ -105,10 +147,16 @@ func statusLabel(s string) string {
 	return s
 }
 
-// titledPanel draws a rounded box with the title embedded in the top
-// border, its body clipped and padded to fill the given outer size.
-func titledPanel(title, body string, width, height int) string {
-	bs := lipgloss.NewStyle().Foreground(colorBorder)
+// titledPanel draws a rounded box with the title set into the top border,
+// its body clipped and padded to fill the given outer size. A focused
+// panel wears the accent border and a filled title chip, so which side
+// takes the keys is readable without hunting for the cursor.
+func titledPanel(title, body string, width, height int, focused bool) string {
+	borderColor := colorBorder
+	if focused {
+		borderColor = colorFocus
+	}
+	bs := lipgloss.NewStyle().Foreground(borderColor)
 	inner := width - 4
 	if inner < 1 {
 		inner = 1
@@ -118,8 +166,8 @@ func titledPanel(title, body string, width, height int) string {
 		bodyRows = 1
 	}
 
-	titleText := sectionStyle.Render(title)
-	dashCount := inner - ansi.StringWidth(title) - 1
+	titleText := panelTitle(title, focused)
+	dashCount := inner - ansi.StringWidth(ansi.Strip(titleText)) - 1
 	if dashCount < 0 {
 		dashCount = 0
 	}
@@ -141,6 +189,19 @@ func titledPanel(title, body string, width, height int) string {
 	return b.String()
 }
 
+// panelTitle styles a panel's border title: a solid chip when the panel has
+// focus, quiet text when it does not.
+func panelTitle(title string, focused bool) string {
+	if focused {
+		return lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorBg).
+			Background(colorFocus).
+			Render(" " + title + " ")
+	}
+	return lipgloss.NewStyle().Foreground(colorDim).Render(title)
+}
+
 // padRight pads or clips a possibly-styled string to an exact display width.
 func padRight(s string, width int) string {
 	w := ansi.StringWidth(s)
@@ -157,7 +218,33 @@ func padRight(s string, width int) string {
 	return s
 }
 
-// gauge renders a colored bar meter for a 0-100 percentage.
+// padLeft right-aligns a possibly-styled string inside an exact width, for
+// meta columns that should end on a shared right edge.
+func padLeft(s string, width int) string {
+	w := ansi.StringWidth(s)
+	if w > width {
+		s = ansi.Truncate(s, width, "…")
+		w = ansi.StringWidth(s)
+	}
+	if w < width {
+		s = strings.Repeat(" ", width-w) + s
+	}
+	if strings.ContainsRune(s, 0x1b) {
+		s += "\x1b[0m"
+	}
+	return s
+}
+
+// gaugeGlyph is the meter's bar unit: a heavy rule reads as a slim
+// continuous line rather than a row of stacked blocks.
+const (
+	gaugeGlyph = "━"
+	gaugeHalf  = "╸"
+)
+
+// gauge renders a meter for a 0-100 percentage: a colored run over a muted
+// track, the color ramping from calm to alarming as it fills, with a
+// half-width cap so small changes still move the bar.
 func gauge(percent float64, width int) string {
 	if width < 1 {
 		width = 1
@@ -168,25 +255,44 @@ func gauge(percent float64, width int) string {
 	if percent > 100 {
 		percent = 100
 	}
-	filled := int(percent/100*float64(width) + 0.5)
-	color := colorFinished
+	units := percent / 100 * float64(width)
+	filled := int(units)
+	if filled > width {
+		filled = width
+	}
+	half := units-float64(filled) >= 0.5
+
+	color := lipgloss.Color(gaugeRamp(percent))
+	bar := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat(gaugeGlyph, filled))
+	rest := width - filled
+	if half && rest > 0 {
+		bar += lipgloss.NewStyle().Foreground(color).Render(gaugeHalf)
+		rest--
+	}
+	track := lipgloss.NewStyle().Foreground(colorOverlay).Render(strings.Repeat(gaugeGlyph, rest))
+	return bar + track
+}
+
+// gaugeRamp blends the meter color across the load range so a gauge reads
+// as a temperature rather than three discrete buckets.
+func gaugeRamp(percent float64) string {
 	switch {
 	case percent >= 85:
-		color = colorErrored
+		return current.Errored
 	case percent >= 60:
-		color = colorWorking
+		return mix(current.Working, current.Errored, (percent-60)/25)
+	default:
+		return mix(current.Finished, current.Working, percent/60)
 	}
-	on := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("▰", filled))
-	off := subtleStyle.Render(strings.Repeat("▱", width-filled))
-	return on + off
 }
 
-// pill renders a small rounded label chip.
+// pill renders a small label chip: tinted text on the surface fill, so a
+// row of them reads as tokens rather than as more prose.
 func pill(text string, fg lipgloss.Color) string {
-	return lipgloss.NewStyle().Foreground(fg).Render("▏" + text)
+	return chipStyle.Foreground(fg).Render(text)
 }
 
-// keyPill renders a pill with the key that changes it dimmed in front, so
+// keyPill renders a chip with the key that changes it dimmed in front, so
 // the header doubles as a key legend: each changeable value wears its
 // shortcut. The key is dim enough to lose to the value at a glance but
 // reads clearly when hunted.
@@ -194,19 +300,10 @@ func keyPill(key, text string, fg lipgloss.Color) string {
 	return subtleStyle.Render(key+" ") + pill(text, fg)
 }
 
-// imageChipStyle is the soft pill used for inline pasted-image tokens in
-// the quick prompt (same visual family as badges, quieter so the text wins).
-var imageChipStyle = lipgloss.NewStyle().
-	Foreground(colorBright).
-	Background(colorSelBg).
-	Padding(0, 1)
-
-// imageChipPastingStyle is the in-flight variant while the clipboard image
-// is still being captured.
-var imageChipPastingStyle = lipgloss.NewStyle().
-	Foreground(colorWorking).
-	Background(colorSelBg).
-	Padding(0, 1)
+// keyCap renders one footer binding: the key in accent, its action muted.
+func keyCap(key, label string) string {
+	return keyStyle.Render(key) + " " + mutedStyle.Render(label)
+}
 
 // imageChip renders an inline pasted-image token: icon + short label.
 func imageChip(label string) string {

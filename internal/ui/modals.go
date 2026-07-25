@@ -23,13 +23,15 @@ func (m *Model) card(title, body, hint string) string {
 	header := badgeStyle.Render(title)
 	content := header + "\n\n" + body
 	if m.err != "" {
-		content += "\n" + errStyle.Render("✖ "+m.err)
+		content += "\n" + errStyle.Render("✕ "+m.err)
 	}
-	content += "\n\n" + subtleStyle.Render(hint)
+	rule := lipgloss.NewStyle().Foreground(colorBorder).
+		Render(strings.Repeat("─", max(width-2*cardPaddingX, 1)))
+	content += "\n\n" + rule + "\n" + subtleStyle.Render(hint)
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorAccent).
+		BorderForeground(colorFocus).
 		Padding(1, cardPaddingX).
 		Width(width).
 		Render(content)
@@ -148,12 +150,24 @@ func (m *Model) viewSettings() string {
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
 		picker := subtleStyle.Render("◂ ") + valueStyle.Render(value) + subtleStyle.Render(" ▸")
-		return marker + labelStyle.Render(name) + "  " + picker
+		return marker + padRight(labelStyle.Render(name), 18) + picker
 	}
 	body := row(settingsFieldTool, "quick spawn tool", m.settings.toolNames[m.settings.toolIndex]) + "\n" +
+		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
+		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n\n" +
 		subtleStyle.Render("  version ") + valueStyle.Render(m.version) + m.versionStatus()
 	return m.card("⚙ Settings", body, "↑↓ field · ←→ change · ↵/esc save")
+}
+
+// themeSwatch previews a palette as a run of blocks, so a theme can be
+// picked by eye rather than by name.
+func themeSwatch(t Theme) string {
+	var b strings.Builder
+	for _, hex := range []string{t.Accent, t.Accent2, t.Working, t.Waiting, t.Finished, t.Errored} {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Render("█"))
+	}
+	return b.String()
 }
 
 // versionStatus reports whether a newer release is known, as a suffix for

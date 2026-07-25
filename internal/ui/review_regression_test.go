@@ -1496,7 +1496,7 @@ func TestReviewHeaderTargetLabelCleanAndKeyed(t *testing.T) {
 	}
 
 	header := ansi.Strip(m.viewDiffHeader("hdr"))
-	if !strings.Contains(header, "B ") || !strings.Contains(header, "▏") {
+	if !strings.Contains(header, "B ") || !strings.Contains(header, "main") {
 		t.Fatalf("target pill should wear its B key, got %q", header)
 	}
 	if strings.Contains(header, "@") {
