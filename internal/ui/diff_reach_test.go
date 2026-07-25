@@ -115,3 +115,84 @@ func TestDiffReviewStepsDownToTheEnd(t *testing.T) {
 		t.Fatalf("stepping down should reach the last line %q, got:\n%s", last, view)
 	}
 }
+
+// gitRepoWithWideFile is a repo whose changed lines are far wider than any
+// pane, so every line soft-wraps onto several painted rows.
+func gitRepoWithWideFile(t *testing.T, lines, lineWidth int) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "t@t")
+	run("config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(dir, "wide.txt"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "-m", "init")
+
+	var b strings.Builder
+	for i := 1; i <= lines; i++ {
+		fmt.Fprintf(&b, "wide-%03d %s\n", i, strings.Repeat("x", lineWidth))
+	}
+	if err := os.WriteFile(filepath.Join(dir, "wide.txt"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// Long lines wrap onto several painted rows, but the cursor and scroll
+// count logical lines. If the window math ignores the wraps, every wrapped
+// line on screen pushes one more line of the file's tail off the bottom:
+// the cursor lands on the last line and the screen never shows it.
+func TestDiffReviewReachesEndWithWrappedLines(t *testing.T) {
+	const lines = 80
+	for _, layout := range []struct {
+		name  string
+		split bool
+	}{{"unified", false}, {"side-by-side", true}} {
+		t.Run(layout.name, func(t *testing.T) {
+			m := buildModel(t)
+			dir := gitRepoWithWideFile(t, lines, 220)
+			createSession(t, m, "coder", dir, "")
+			m.selectSessionRow(t, "coder")
+			m.applyCmd(t, m.openDiff())
+			if m.diff.loading || len(m.diff.set.Files) == 0 {
+				t.Fatalf("diff did not load: %q", m.diff.errText)
+			}
+			m.width, m.height = 120, 34
+			m.diff.sideBySide = layout.split
+
+			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+			last := fmt.Sprintf("wide-%03d", lines)
+			if view := ansi.Strip(m.View()); !strings.Contains(view, last) {
+				t.Fatalf("G should paint the last line %q, got:\n%s", last, view)
+			}
+
+			// Stepping down must keep the cursor painted the whole way.
+			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+			for i := 0; i < lines+5; i++ {
+				m.handleDiffKey(tea.KeyMsg{Type: tea.KeyDown})
+				fd := m.currentFileDiff()
+				lineIdx := m.cursorDiffLine()
+				if fd == nil || lineIdx >= len(fd.Lines) {
+					t.Fatal("cursor out of range")
+				}
+				marker := strings.Fields(fd.Lines[lineIdx].Text)[0]
+				if view := ansi.Strip(m.View()); !strings.Contains(view, marker) {
+					t.Fatalf("step %d: cursor on %q but the frame never paints it:\n%s", i, marker, view)
+				}
+			}
+		})
+	}
+}
