@@ -82,11 +82,13 @@ func plain(s string, width int) string {
 	return "\x1b[0m" + s + "\x1b[0m"
 }
 
-// contentLine is one row of the content column: ours to paint, or captured
-// output that must keep the terminal's backdrop.
+// contentLine is one row of the content column: ours to paint, a seam that
+// spans the column edge to edge, or captured output that must keep the
+// terminal's own backdrop.
 type contentLine struct {
 	text string
 	raw  bool
+	rule bool
 }
 
 // paintContent paints a content column, leaving raw rows unfilled.
@@ -95,6 +97,12 @@ func paintContent(lines []contentLine, width, height int, bg string) []string {
 	for i := 0; i < height; i++ {
 		if i >= len(lines) {
 			out[i] = paint("", width, bg)
+			continue
+		}
+		if lines[i].rule {
+			// Seams are drawn at the column's full width, not the inset the
+			// text uses, so they meet the frame's edges exactly.
+			out[i] = paint(hrule(width), width, bg)
 			continue
 		}
 		if lines[i].raw {

@@ -289,7 +289,7 @@ func (m *Model) contentLines(width, height int) []contentLine {
 	body := ours(splitLines(m.viewDetail(width)))
 	rest := height - len(body) - len(bar) - 1
 	if rest >= 3 {
-		body = append(body, contentLine{text: hrule(width)})
+		body = append(body, contentLine{rule: true})
 		if group, ok := m.selectedGroup(); ok {
 			body = append(body, ours(splitLines(m.viewGroupAgents(group, width, rest)))...)
 		} else {
