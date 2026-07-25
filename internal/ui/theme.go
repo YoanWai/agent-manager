@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -281,13 +282,42 @@ var current = themes[0]
 // color, so the two must be the same color for the frame's edges to look
 // exact. Terminals without OSC 11 ignore it.
 func SyncTerminalBackground() {
-	os.Stdout.WriteString("]11;" + current.Bg + "")
+	emitToTerminal("\x1b]11;" + current.Bg + "\x07")
 }
 
 // ResetTerminalBackground restores the terminal's own background (OSC 111)
 // when the manager exits.
 func ResetTerminalBackground() {
-	os.Stdout.WriteString("]111")
+	emitToTerminal("\x1b]111\x07")
+}
+
+// emitToTerminal sends a control sequence to whatever is actually drawing
+// the window. Run under tmux, a plain sequence stops at the multiplexer
+// (which at most recolors our pane), so it goes out twice: once plain and
+// once wrapped in tmux's passthrough envelope for the outer terminal.
+// EnableTerminalPassthrough must have opened that envelope first.
+func emitToTerminal(seq string) {
+	os.Stdout.WriteString(seq)
+	if os.Getenv("TMUX") != "" {
+		os.Stdout.WriteString(tmuxPassthrough(seq))
+	}
+}
+
+// tmuxPassthrough wraps a sequence in DCS tmux;…ST, doubling every ESC as
+// tmux's passthrough protocol requires.
+func tmuxPassthrough(seq string) string {
+	return "\x1bPtmux;" + strings.ReplaceAll(seq, "\x1b", "\x1b\x1b") + "\x1b\\"
+}
+
+// EnableTerminalPassthrough asks the hosting tmux, when there is one, to
+// let this pane's passthrough sequences reach the outer terminal. Off by
+// default since tmux 3.3, and without it the backdrop sync above dies at
+// the multiplexer.
+func EnableTerminalPassthrough() {
+	if os.Getenv("TMUX") == "" {
+		return
+	}
+	_ = exec.Command("tmux", "set-option", "-p", "allow-passthrough", "on").Run()
 }
 
 // bgSeq is the raw "set background" SGR for a hex color, for the few spots

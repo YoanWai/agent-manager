@@ -553,6 +553,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.width = msg.Width
 		m.height = msg.Height
+		// Re-assert the terminal backdrop: a reattach or a fresh outer
+		// terminal delivers a size message and may carry stale colors.
+		SyncTerminalBackground()
 		// Geometry cache is stale for every session after a real resize.
 		m.paneGeom = nil
 		m.resizeSessions()
