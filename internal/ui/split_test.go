@@ -91,8 +91,8 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 	if !m.resizeMode {
 		t.Fatal("| should enter resize mode")
 	}
-	if cmd == nil {
-		t.Fatal("enter should enable mouse reporting")
+	if cmd != nil {
+		t.Fatal("enter should not toggle mouse reporting")
 	}
 
 	// Other keys are swallowed while armed.
@@ -110,8 +110,8 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 	if m.resizeMode {
 		t.Fatal("esc should leave resize mode")
 	}
-	if cmd == nil {
-		t.Fatal("exit should disable mouse reporting")
+	if cmd != nil {
+		t.Fatal("exit should not toggle mouse reporting")
 	}
 }
 
@@ -150,8 +150,8 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	if m.resizeMode {
 		t.Fatal("| should commit and exit resize mode")
 	}
-	if cmd == nil {
-		t.Fatal("commit should disable mouse reporting")
+	if cmd != nil {
+		t.Fatal("commit should not toggle mouse reporting")
 	}
 	raw, err := st.Setting(splitRatioSetting)
 	if err != nil || raw == "" {
@@ -220,8 +220,8 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	if m.splitDragging || m.resizeMode {
 		t.Fatal("release should end drag and exit resize mode")
 	}
-	if cmd == nil {
-		t.Fatal("release should disable mouse reporting")
+	if cmd != nil {
+		t.Fatal("release should not toggle mouse reporting")
 	}
 
 	raw, err := st.Setting(splitRatioSetting)

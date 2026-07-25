@@ -85,9 +85,8 @@ func (m *Model) setSplitFromX(x int) {
 	m.splitRatio = float64(left) / float64(m.width)
 }
 
-// enterResizeMode arms divider dragging by enabling mouse cell motion so
-// drag events are captured. Mouse reporting is disabled outside this mode
-// so native text selection works in the terminal.
+// enterResizeMode arms divider dragging. Mouse is never enabled by the
+// app so native text selection always works in the terminal.
 func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	if m.mode != modeList || m.searching || m.quick.active {
 		return m, nil
@@ -96,13 +95,12 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	m.splitDragging = false
 	m.splitRatioBefore = m.splitRatio
 	m.err = ""
-	return m, tea.EnableMouseCellMotion
+	return m, nil
 }
 
 // exitResizeMode leaves divider-drag mode. When commit is true the current
 // ratio is persisted; cancel restores the pre-mode ratio. Either path ends
-// with a pane resize so the preview stays 1:1 and mouse reporting disabled
-// so the terminal regains native text selection.
+// with a pane resize so the preview stays 1:1 with the panel.
 func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
 	if !m.resizeMode && !m.splitDragging {
 		return m, nil
@@ -115,7 +113,7 @@ func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
 	m.splitDragging = false
 	m.resizeMode = false
 	m.resizeSessions()
-	return m, tea.DisableMouse
+	return m, nil
 }
 
 // nudgeSplit moves the divider by delta columns while resize mode is on.
