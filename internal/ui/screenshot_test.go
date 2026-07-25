@@ -140,10 +140,12 @@ func TestFrameFitsTerminal(t *testing.T) {
 	}
 }
 
-// The pane's soft edges: the opening row bleeds down with ▄, the closing
-// row up with ▀, and every body row ends with the ▌ half-block edge one
-// column past the seam, so the fill extends half a cell beyond its box on
-// all three sides.
+// The pane's soft edges: the opening row bleeds down, the closing row up,
+// and every body row ends with the ▐ half-block edge one column past the
+// seam. The end cells of the edge rows are the corners: the first is a
+// foreground half block so the window margin cannot inherit pane tone and
+// smear past the corner, and the last is a quadrant so the bleed's
+// half-cell fill closes at the corner instead of jutting right.
 func TestPaneSoftEdges(t *testing.T) {
 	m := shotModel()
 	rows := strings.Split(m.View(), "\n")
@@ -151,7 +153,11 @@ func TestPaneSoftEdges(t *testing.T) {
 
 	top := []rune(ansi.Strip(rows[m.headerRows()]))
 	bottom := []rune(ansi.Strip(rows[m.headerRows()+1+m.listBodyHeight()]))
-	for col := 0; col <= leftWidth+1; col++ {
+	if top[0] != '▄' || bottom[0] != '▀' {
+		t.Fatalf("edge rows should open with foreground half blocks, got %q and %q",
+			string(top[0]), string(bottom[0]))
+	}
+	for col := 1; col <= leftWidth; col++ {
 		if top[col] != '▀' {
 			t.Fatalf("top edge col %d is %q, want ▀:\n%s", col, string(top[col]), string(top))
 		}
@@ -159,11 +165,18 @@ func TestPaneSoftEdges(t *testing.T) {
 			t.Fatalf("bottom edge col %d is %q, want ▄:\n%s", col, string(bottom[col]), string(bottom))
 		}
 	}
+	if top[leftWidth+1] != '▜' || bottom[leftWidth+1] != '▟' {
+		t.Fatalf("edge rows should close with corner quadrants, got %q and %q",
+			string(top[leftWidth+1]), string(bottom[leftWidth+1]))
+	}
 	if top[leftWidth+2] == '▀' || bottom[leftWidth+2] == '▄' {
 		t.Fatalf("the bleed should stop after the seam's edge column")
 	}
 	for i := m.headerRows() + 1; i < m.headerRows()+1+m.listBodyHeight(); i++ {
 		row := []rune(ansi.Strip(rows[i]))
+		if cell := row[0]; cell != '█' {
+			t.Fatalf("row %d: first column is %q, want █:\n%s", i, string(cell), string(row))
+		}
 		if cell := row[leftWidth+1]; cell != '▐' && cell != '─' {
 			t.Fatalf("row %d: edge column is %q, want ▐:\n%s", i, string(cell), string(row))
 		}

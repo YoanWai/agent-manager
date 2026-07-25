@@ -17,6 +17,9 @@ import (
 const (
 	railGutter    = 2
 	contentGutter = 2
+	// railInset is the pad inside the rail's own column, one short of
+	// railGutter because the edge column already occupies the first cell.
+	railInset = railGutter - 1
 )
 
 // viewListFrame is the sessions rail beside the session content, both
@@ -35,23 +38,32 @@ func (m *Model) viewListFrame() string {
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
-	// The rail's fill runs flush from the window edge through the seam
-	// column, then bleeds half a cell further right, and half a cell above
-	// and below its body rows — soft edges drawn with half blocks, the
-	// finest step a character cell allows. The window padding around the
-	// grid carries the backdrop tone via the terminal background sync.
+	// The rail's fill runs from the edge column through the seam column,
+	// then bleeds half a cell further right, and half a cell above and
+	// below its body rows — soft edges drawn with half blocks, the finest
+	// step a character cell allows. The first column is drawn as foreground
+	// blocks so the window margin beside it keeps the terminal's own
+	// background and the fill's corners land exactly on the cell grid.
 	bleedWidth := contentWidth - 1
-	railRows := m.railLines(leftWidth, bodyHeight)
+	railWidth := leftWidth - 1
+	railRows := m.railLines(railWidth, bodyHeight)
 	contentRows := m.contentLines(bleedWidth-2*contentGutter, bodyHeight)
 	seam := make([]string, bodyHeight)
+	edge := make([]string, bodyHeight)
 	for i := range seam {
 		leftRule := i < len(railRows) && railRows[i].rule
 		rightRule := i < len(contentRows) && contentRows[i].rule
 		seam[i] = m.seamCell(leftRule, rightRule)
+		tone := panelHex()
+		if i < len(railRows) && railRows[i].tone != "" {
+			tone = railRows[i].tone
+		}
+		edge[i] = railEdgeCell(tone)
 	}
 	frame = append(frame, m.boundedRuleRow(leftWidth+1, m.width, "▀"))
 	frame = append(frame, joinColumns(
-		paintContent(railRows, leftWidth, bodyHeight, panelHex()),
+		edge,
+		paintContent(railRows, railWidth, bodyHeight, panelHex()),
 		seam,
 		m.bleedColumn(bodyHeight),
 		paintContent(contentRows, bleedWidth, bodyHeight, backdropHex()),
@@ -75,9 +87,7 @@ func (m *Model) railLines(width, height int) []contentLine {
 		listHeight, meters = height, nil
 	}
 	rows := []contentLine{{}}
-	for _, line := range m.entryLines(width, listHeight-1) {
-		rows = append(rows, contentLine{text: line})
-	}
+	rows = append(rows, m.entryLines(width, listHeight-1)...)
 	for len(rows) < listHeight {
 		rows = append(rows, contentLine{})
 	}
@@ -92,10 +102,15 @@ func (m *Model) railLines(width, height int) []contentLine {
 }
 
 // entryLines renders the visible slice of the tree. Entries are two lines
-// tall, so the window is measured in lines rather than rows.
-func (m *Model) entryLines(width, height int) []string {
+// tall, so the window is measured in lines rather than rows. Each line
+// carries the tone its entry painted, which the edge column matches.
+func (m *Model) entryLines(width, height int) []contentLine {
 	if len(m.rows) == 0 {
-		return m.emptyRailLines(width)
+		var lines []contentLine
+		for _, line := range m.emptyRailLines(width) {
+			lines = append(lines, contentLine{text: line})
+		}
+		return lines
 	}
 	heights := make([]int, len(m.rows))
 	for i := range heights {
@@ -103,15 +118,22 @@ func (m *Model) entryLines(width, height int) []string {
 	}
 	start, end := lineWindow(heights, m.cursor, height)
 
-	var lines []string
+	var lines []contentLine
 	if start > 0 {
-		lines = append(lines, subtleStyle.Render(strings.Repeat(" ", railGutter)+fmt.Sprintf("↑ %d more", start)))
+		lines = append(lines, contentLine{text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↑ %d more", start))})
 	}
 	for i := start; i < end; i++ {
-		lines = append(lines, splitLines(m.renderTreeRow(m.rows[i], i == m.cursor, width))...)
+		selected := i == m.cursor
+		tone := panelHex()
+		if selected || m.renamingRow(m.rows[i]) {
+			tone = selectedHex()
+		}
+		for _, line := range splitLines(m.renderTreeRow(m.rows[i], selected, width)) {
+			lines = append(lines, contentLine{text: line, tone: tone})
+		}
 	}
 	if end < len(m.rows) {
-		lines = append(lines, subtleStyle.Render(strings.Repeat(" ", railGutter)+fmt.Sprintf("↓ %d more", len(m.rows)-end)))
+		lines = append(lines, contentLine{text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↓ %d more", len(m.rows)-end))})
 	}
 	if len(lines) > height {
 		lines = lines[:height]
@@ -176,7 +198,7 @@ func (m *Model) emptyRailLines(width int) []string {
 		title = "no matches"
 		hint = subtleStyle.Render("for \"" + m.search + "\"")
 	}
-	pad := strings.Repeat(" ", railGutter)
+	pad := strings.Repeat(" ", railInset)
 	return []string{"", pad + mutedStyle.Render(title), "", pad + hint}
 }
 
@@ -184,7 +206,7 @@ func (m *Model) emptyRailLines(width int) []string {
 // second line carrying the state and tool. The selected entry lifts onto
 // its own band instead of wearing a marker.
 func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
-	pad := strings.Repeat(" ", railGutter)
+	pad := strings.Repeat(" ", railInset)
 	indent := strings.Repeat("  ", entry.depth)
 
 	if m.renamingRow(entry) {
@@ -258,7 +280,7 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, i
 // and one thin meter per resource.
 func (m *Model) computerLines(width int) []string {
 	snap := m.snap
-	pad := strings.Repeat(" ", railGutter)
+	pad := strings.Repeat(" ", railInset)
 	barWidth := width - 22
 	if barWidth < 4 {
 		barWidth = 4

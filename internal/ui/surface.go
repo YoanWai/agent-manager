@@ -46,20 +46,37 @@ func hrule(width int) string {
 // cell past its box, which is as far as a character cell can be divided —
 // and across the content it draws the thin rule, whose center line meets
 // the half blocks' edge at the same height.
-// The half-cell edges are drawn inverted: the cell's background carries
-// the pane tone and the glyph paints the backdrop half in the theme's
-// backdrop color. Fonts give block glyphs a hair of side bearing, and a
-// leak through that bearing shows the cell background — inverted, the
-// leak is pane tone and fuses with the fill instead of cutting a thin
-// gap into its edge.
+// The run's interior is drawn inverted — the cell background carries the
+// pane tone and the glyph paints the backdrop half in the theme's backdrop
+// color — but both end cells are not. The terminal extends a row's edge
+// cell background into the window margin at full cell height, so an
+// inverted first cell smears pane tone past the pane's corner; drawing it
+// as a foreground half block keeps the margin on the terminal's own
+// background. The last cell sits over the bleed column, whose fill is only
+// half a cell wide, so it takes a quadrant instead of a half block and the
+// pane tone stops at the corner instead of jutting past it.
 func (m *Model) boundedRuleRow(paneWidth, width int, edge string) string {
-	if paneWidth < 0 || paneWidth >= width {
+	if paneWidth < 2 || paneWidth >= width {
 		return paint(hrule(width), width, backdropHex())
 	}
-	bleed := lipgloss.NewStyle().Foreground(colorBg).
-		Render(strings.Repeat(edge, paneWidth+1))
-	return paint(bleed, paneWidth+1, panelHex()) +
+	facing, corner := "▄", "▜"
+	if edge == "▄" {
+		facing, corner = "▀", "▟"
+	}
+	first := plain(lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex())).Render(facing), 1)
+	interior := lipgloss.NewStyle().Foreground(colorBg).
+		Render(strings.Repeat(edge, paneWidth-1))
+	last := lipgloss.NewStyle().Foreground(colorBg).Render(corner)
+	return first + paint(interior, paneWidth-1, panelHex()) + paint(last, 1, panelHex()) +
 		paint(hrule(width-paneWidth-1), width-paneWidth-1, backdropHex())
+}
+
+// railEdgeCell is one row of the pane's first column, drawn as a foreground
+// block in the row's own tone rather than as cell background. The window
+// margin beside it inherits the cell's background — the terminal's own —
+// so the pane's left edge lands exactly on the cell grid.
+func railEdgeCell(tone string) string {
+	return plain(lipgloss.NewStyle().Foreground(lipgloss.Color(tone)).Render("█"), 1)
 }
 
 // vruleColumn is the seam between two painted columns. It doubles as the
@@ -136,11 +153,13 @@ func plain(s string, width int) string {
 
 // contentLine is one row of the content column: ours to paint, a seam that
 // spans the column edge to edge, or captured output that must keep the
-// terminal's own backdrop.
+// terminal's own backdrop. Rail rows also carry the tone their fill uses,
+// so the edge column beside them can match the selected entry's band.
 type contentLine struct {
 	text string
 	raw  bool
 	rule bool
+	tone string
 }
 
 // paintContent paints a content column, leaving raw rows unfilled.

@@ -1135,8 +1135,8 @@ func (m *Model) viewDiffFull() string {
 	// Files sit on the rail surface, the code on the backdrop: the same
 	// two-surface split the session list uses, so review reads as the same
 	// application rather than a second one.
-	fileLines := append([]string{"", "  " + subtleStyle.Render("files")},
-		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railGutter)...)
+	fileLines := append([]string{"", strings.Repeat(" ", railInset) + subtleStyle.Render("files")},
+		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railInset)...)
 	codeLines := append([]string{"", "  " + subtleStyle.Render(ansi.Strip(m.diffCodeTitle()))},
 		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
@@ -1146,8 +1146,13 @@ func (m *Model) viewDiffFull() string {
 		paint(m.viewDiffHeader(sess.Name), m.width, backdropHex()),
 		m.boundedRuleRow(fileWidth+1, m.width, "▀"),
 	}
+	edge := make([]string, bodyHeight)
+	for i := range edge {
+		edge[i] = railEdgeCell(panelHex())
+	}
 	frame = append(frame, joinColumns(
-		paintRows(fileLines, fileWidth, bodyHeight, panelHex()),
+		edge,
+		paintRows(fileLines, fileWidth-1, bodyHeight, panelHex()),
 		m.vruleColumn(bodyHeight),
 		m.bleedColumn(bodyHeight),
 		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
