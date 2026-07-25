@@ -2110,7 +2110,7 @@ func TestDiffReviewShowsWholeFile(t *testing.T) {
 	}
 
 	view := ansi.Strip(m.View())
-	if !strings.Contains(view, "Review · coder") || !strings.Contains(view, "files") {
+	if !strings.Contains(view, "review · coder") || !strings.Contains(view, "files") {
 		t.Fatalf("fullscreen review layout missing:\n%s", view)
 	}
 	if !strings.Contains(view, "package main") || !strings.Contains(view, "println(1)") {

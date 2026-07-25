@@ -2,7 +2,6 @@ package ui
 
 import (
 	"strconv"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -239,21 +238,4 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
-}
-
-// resizeGrip is the 1-column accent bar drawn between the panels while
-// resize mode is active so the drag target is obvious.
-func (m *Model) resizeGrip(height int) string {
-	style := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
-	if m.splitDragging {
-		style = lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
-	}
-	if height < 1 {
-		height = 1
-	}
-	lines := make([]string, height)
-	for i := range lines {
-		lines[i] = style.Render("║")
-	}
-	return strings.Join(lines, "\n")
 }

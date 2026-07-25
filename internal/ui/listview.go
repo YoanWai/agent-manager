@@ -3,8 +3,10 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -13,7 +15,7 @@ import (
 // the content column's. Consistent insets are what make an unbordered
 // layout read as columns.
 const (
-	railGutter    = 2
+	railGutter    = 3
 	contentGutter = 2
 )
 
@@ -24,26 +26,20 @@ func (m *Model) viewListFrame() string {
 	footer := m.viewFooter()
 	bodyHeight := m.listBodyHeight()
 
-	gripWidth := 0
-	if m.resizeMode && rightWidth > 1 {
-		gripWidth = 1
-		rightWidth--
-	}
-
-	rail := paintRows(m.railLines(leftWidth, bodyHeight), leftWidth, bodyHeight, panelHex())
-	content := paintRows(m.contentLines(rightWidth-2*contentGutter, bodyHeight), rightWidth, bodyHeight, backdropHex())
-	columns := [][]string{rail}
-	if gripWidth > 0 {
-		columns = append(columns, paintRows(splitLines(m.resizeGrip(bodyHeight)), 1, bodyHeight, panelHex()))
-	}
-	columns = append(columns, content)
+	// One column goes to the seam between the rail and the content.
+	contentWidth := rightWidth - 1
 
 	frame := []string{
 		paint(m.viewHeader(), m.width, backdropHex()),
-		paint("", m.width, backdropHex()),
+		paint(hrule(m.width), m.width, backdropHex()),
 	}
-	frame = append(frame, joinColumns(columns...)...)
+	frame = append(frame, joinColumns(
+		paintRows(m.railLines(leftWidth, bodyHeight), leftWidth, bodyHeight, panelHex()),
+		m.vruleColumn(bodyHeight),
+		paintRows(m.contentLines(contentWidth-2*contentGutter, bodyHeight), contentWidth, bodyHeight, backdropHex()),
+	)...)
 	frame = append(frame,
+		paint(hrule(m.width), m.width, backdropHex()),
 		paint(m.viewStatus(), m.width, backdropHex()),
 	)
 	for _, line := range splitLines(footer) {
@@ -60,7 +56,7 @@ func (m *Model) railLines(width, height int) []string {
 	if listHeight < 3 {
 		listHeight, meters = height, nil
 	}
-	lines := m.entryLines(width, listHeight)
+	lines := append([]string{""}, m.entryLines(width, listHeight-1)...)
 	for len(lines) < listHeight {
 		lines = append(lines, "")
 	}
@@ -74,8 +70,8 @@ func (m *Model) entryLines(width, height int) []string {
 		return m.emptyRailLines(width)
 	}
 	heights := make([]int, len(m.rows))
-	for i, entry := range m.rows {
-		heights[i] = m.entryHeight(entry, i)
+	for i := range heights {
+		heights[i] = m.entryHeight()
 	}
 	start, end := lineWindow(heights, m.cursor, height)
 
@@ -95,18 +91,10 @@ func (m *Model) entryLines(width, height int) []string {
 	return lines
 }
 
-// entryHeight is how many lines an entry paints: sessions carry a second
-// meta line, group headers are a single line with a spacer above unless
-// they open the list.
-func (m *Model) entryHeight(entry treeRow, index int) int {
-	if !entry.isGroup {
-		return 2
-	}
-	if index == 0 {
-		return 1
-	}
-	return 2
-}
+// entryHeight is how many lines an entry paints. Every entry is the same
+// height, groups included: a ragged list of one- and two-line rows reads
+// as gaps rather than as rhythm.
+func (m *Model) entryHeight() int { return 2 }
 
 // lineWindow keeps the cursor's entry fully visible inside a line budget,
 // scrolling by whole entries so an entry is never cut in half.
@@ -195,7 +183,7 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	if selected {
 		metaStyle = mutedStyle
 	}
-	age := metaStyle.Render(relTime(sess.CreatedAt))
+	age := metaStyle.Render(relTime(lastActivity(sess)))
 	meta := pad + indent + "  " +
 		lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
 		metaStyle.Render(" · "+sess.Tool)
@@ -212,22 +200,30 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, i
 	if m.collapsed[entry.group] {
 		marker = "▸"
 	}
-	nameStyle := lipgloss.NewStyle().Foreground(colorAccent2)
+	nameStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
 	if selected {
-		nameStyle = nameStyle.Foreground(colorBright).Bold(true)
+		nameStyle = nameStyle.Foreground(colorBright)
+	}
+	count := m.groupSessionCount(entry.group)
+	countLabel := fmt.Sprintf("%d agents", count)
+	if count == 1 {
+		countLabel = "1 agent"
 	}
 	head := pad + indent + subtleStyle.Render(marker) + " " + nameStyle.Render(baseName(entry.group))
-	tail := subtleStyle.Render(fmt.Sprintf("%d", m.groupSessionCount(entry.group))) + m.groupStatusGlyphs(entry.group)
+
+	// The second line carries what the group is doing, so a folded group
+	// still reports its subtree without being opened.
+	meta := m.groupStatusBreakdown(entry.group)
+	if meta == "" {
+		meta = subtleStyle.Render("no agents yet")
+	}
 
 	bg := panelHex()
 	if selected {
 		bg = selectedHex()
 	}
-	line := paint(rowColumns(head, tail, width-railGutter), width, bg)
-	if entry == m.rows[0] {
-		return line
-	}
-	return paint("", width, panelHex()) + "\n" + line
+	return paint(rowColumns(head, subtleStyle.Render(countLabel), width-railGutter), width, bg) + "\n" +
+		paint(pad+indent+"  "+meta, width, bg)
 }
 
 // computerLines is the machine block docked at the rail's foot: a label
@@ -255,7 +251,7 @@ func (m *Model) computerLines(width int) []string {
 		return line
 	}
 
-	lines := []string{"", pad + subtleStyle.Render("computer")}
+	lines := []string{hrule(width), pad + subtleStyle.Render("computer")}
 	lines = append(lines,
 		meter("cpu", snap.CPUPercent, snap.CPUOK, ""),
 		meter("mem", snap.MemPercent, snap.MemOK, humanBytes(snap.MemUsed)+"/"+humanBytes(snap.MemTotal)),
@@ -298,7 +294,7 @@ func (m *Model) contentLines(width, height int) []string {
 		} else {
 			section = m.viewPreview(width, rest)
 		}
-		body = append(body, "")
+		body = append(body, hrule(width))
 		body = append(body, indent(splitLines(section))...)
 	}
 	for len(body)+len(bar) < height {
@@ -326,9 +322,10 @@ func (m *Model) viewDetail(width int) string {
 
 	title := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(sess.Name)
 	state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
-		Render(statusGlyph(sess.Status) + " " + statusLabel(sess.Status))
+		Render(statusGlyph(sess.Status)+" "+statusLabel(sess.Status)) +
+		subtleStyle.Render(" · "+relTime(lastActivity(sess)))
 
-	facts := []string{tool, displayGroup(sess.Group), relTime(sess.CreatedAt)}
+	facts := []string{tool, displayGroup(sess.Group), "started " + relTime(sess.CreatedAt) + " ago"}
 	if m.procFor == sess.ID && m.proc.OK {
 		facts = append(facts, fmt.Sprintf("%.1f%% · %s", m.proc.CPUPercent, humanBytes(m.proc.RSS)))
 	}
@@ -412,11 +409,22 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		}
 		dot := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
 		line := rowColumns(dot+" "+valueStyle.Render(sess.Name),
-			subtleStyle.Render(sess.Tool+" · "+relTime(sess.CreatedAt)), width)
+			subtleStyle.Render(sess.Tool+" · "+relTime(lastActivity(sess))), width)
 		lines = append(lines, line)
 		shown++
 	}
 	return strings.Join(lines, "\n")
+}
+
+// lastActivity is when a session last changed state: the agent answering,
+// finishing, erroring, or the moment a prompt set it working. It is what
+// "how long since anything happened here" means to someone scanning the
+// rail, where uptime says nothing about whether an agent is stuck.
+func lastActivity(sess store.Session) time.Time {
+	if sess.LastStatusAt.IsZero() {
+		return sess.CreatedAt
+	}
+	return sess.LastStatusAt
 }
 
 // viewQuickBar is the docked prompt: enter answers the selected session, or

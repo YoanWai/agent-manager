@@ -43,9 +43,50 @@ type Theme struct {
 	Idle     string
 }
 
-// themes is the built-in palette set, in picker order. Mocha leads: it is
-// the default and the palette the layout was tuned against.
+// themes is the built-in palette set, in picker order. Classic leads: it
+// is the default, a restrained take on the sixteen colors every terminal
+// has had for decades.
 var themes = []Theme{
+	{
+		Name:    "classic",
+		Bg:      "#0f1115",
+		Surface: "#232830",
+		Overlay: "#2d333d",
+		Border:  "#2d333d",
+		Focus:   "#6f9fd0",
+		Bright:  "#eceff4",
+		Text:    "#c6ccd6",
+		Dim:     "#98a0ac",
+		Subtle:  "#646c78",
+		Accent:  "#6f9fd0",
+		Accent2: "#6cb6a4",
+
+		Working:  "#5f9ecf",
+		Waiting:  "#d4a55c",
+		Finished: "#85b26f",
+		Errored:  "#cc6a6a",
+		Idle:     "#646c78",
+	},
+	{
+		Name:    "solarized dark",
+		Bg:      "#002b36",
+		Surface: "#073642",
+		Overlay: "#0e4753",
+		Border:  "#0e4753",
+		Focus:   "#268bd2",
+		Bright:  "#eee8d5",
+		Text:    "#93a1a1",
+		Dim:     "#839496",
+		Subtle:  "#586e75",
+		Accent:  "#268bd2",
+		Accent2: "#2aa198",
+
+		Working:  "#268bd2",
+		Waiting:  "#b58900",
+		Finished: "#859900",
+		Errored:  "#dc322f",
+		Idle:     "#586e75",
+	},
 	{
 		Name:    "catppuccin mocha",
 		Bg:      "#11111b",
@@ -189,15 +230,6 @@ var themes = []Theme{
 }
 
 const themeSetting = "theme"
-
-// themeNames lists the built-in themes in picker order.
-func themeNames() []string {
-	names := make([]string, len(themes))
-	for i, t := range themes {
-		names[i] = t.Name
-	}
-	return names
-}
 
 // themeIndex finds a theme by name, falling back to the default when the
 // stored name is unknown (a theme removed between releases).

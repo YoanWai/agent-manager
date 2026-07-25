@@ -3,13 +3,14 @@ package ui
 import (
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
 // The list view is built from painted surfaces rather than drawn boxes:
 // the app fills a backdrop, the sessions rail sits on a slightly lifted
-// panel tone, and the selected entry lifts once more. Nothing is separated
-// by a rule, so the eye reads depth instead of chrome.
+// panel tone, and the selected entry lifts once more. Depth carries the
+// structure; a hairline marks each seam where two surfaces meet.
 
 // backdropHex is the tone behind the whole frame.
 func backdropHex() string { return current.Bg }
@@ -23,6 +24,37 @@ func blockHex() string { return mix(current.Bg, current.Surface, 0.18) }
 
 // selectedHex is the band under the cursor's entry.
 func selectedHex() string { return mix(current.Bg, current.Surface, 0.72) }
+
+// ruleHex is the hairline tone: lifted just far enough off the backdrop to
+// draw a seam without becoming a border.
+func ruleHex() string { return mix(current.Bg, current.Text, 0.17) }
+
+// hrule is a horizontal seam across a painted row.
+func hrule(width int) string {
+	if width < 1 {
+		return ""
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(ruleHex())).Render(strings.Repeat("─", width))
+}
+
+// vruleColumn is the seam between two painted columns. It doubles as the
+// resize grip, taking the accent while the divider is being moved.
+func (m *Model) vruleColumn(height int) []string {
+	color := lipgloss.Color(ruleHex())
+	glyph := "│"
+	switch {
+	case m.splitDragging:
+		color, glyph = colorAccent2, "║"
+	case m.resizeMode:
+		color, glyph = colorAccent, "║"
+	}
+	cell := lipgloss.NewStyle().Foreground(color).Render(glyph)
+	lines := make([]string, height)
+	for i := range lines {
+		lines[i] = paint(cell, 1, panelHex())
+	}
+	return lines
+}
 
 // paint pads a possibly-styled line to an exact width and fills every cell
 // with bg. Inner SGR resets emitted by per-segment renders would drop the

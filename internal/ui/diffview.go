@@ -1128,7 +1128,8 @@ func (m *Model) viewDiffFull() string {
 	if fileWidth < 28 {
 		fileWidth = 28
 	}
-	codeWidth := m.width - fileWidth
+	// One column goes to the seam between the two surfaces.
+	codeWidth := m.width - fileWidth - 1
 
 	// Files sit on the rail surface, the code on the backdrop: the same
 	// two-surface split the session list uses, so review reads as the same
@@ -1140,13 +1141,17 @@ func (m *Model) viewDiffFull() string {
 
 	frame := []string{
 		paint(m.viewDiffHeader(sess.Name), m.width, backdropHex()),
-		paint("", m.width, backdropHex()),
+		paint(hrule(m.width), m.width, backdropHex()),
 	}
 	frame = append(frame, joinColumns(
 		paintRows(fileLines, fileWidth, bodyHeight, panelHex()),
+		m.vruleColumn(bodyHeight),
 		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
 	)...)
-	frame = append(frame, paint(m.viewDiffStatus(), m.width, backdropHex()))
+	frame = append(frame,
+		paint(hrule(m.width), m.width, backdropHex()),
+		paint(m.viewDiffStatus(), m.width, backdropHex()),
+	)
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
@@ -1169,7 +1174,7 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	if m.diff.sideBySide {
 		layout = "split"
 	}
-	left := badgeStyle.Render("◆ Review · "+sessName) + "  " +
+	left := "  " + lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("review · "+sessName) + "  " +
 		keyPill("s", m.diff.scope.String(), colorAccent2) + "  " +
 		keyPill("u", layout, colorAccent)
 	if root := m.diff.set.Repo.Root; root != "" {

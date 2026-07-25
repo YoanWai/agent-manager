@@ -51,7 +51,8 @@ func shotModel() *Model {
 	sess := func(name, group, tool, st string, age time.Duration) store.Session {
 		return store.Session{
 			ID: name, Name: name, Group: group, Tool: tool, Status: st,
-			Cwd: "/Users/yoan/dev/spaze/api", CreatedAt: now.Add(-age),
+			Cwd: "/Users/yoan/dev/spaze/api", CreatedAt: now.Add(-24 * time.Hour),
+			LastStatusAt: now.Add(-age),
 		}
 	}
 	sessions := []store.Session{

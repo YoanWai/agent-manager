@@ -74,11 +74,8 @@ func (m *Model) splitWidths() (int, int) {
 // fit the panel instead of getting clipped on the right.
 func (m *Model) previewPaneWidth() int {
 	_, rightWidth := m.splitWidths()
-	if m.resizeMode && rightWidth > 1 {
-		// Grip steals one column from the right panel while resize is on.
-		rightWidth--
-	}
-	w := rightWidth - 2*contentGutter
+	// The seam column between the rail and the content is not the pane's.
+	w := rightWidth - 1 - 2*contentGutter
 	if w < 1 {
 		return 1
 	}
@@ -307,8 +304,11 @@ func (m *Model) groupStatusBreakdown(group string) string {
 	var parts []string
 	for _, st := range []string{status.Working, status.Waiting, status.Finished, status.Errored, status.Idle, status.Dead} {
 		if counts[st] > 0 {
+			// The count carries the state's color, the word stays quiet: a
+			// rollup line should read as one texture, not as six labels
+			// competing with the session names above it.
 			parts = append(parts, lipgloss.NewStyle().Foreground(statusColor(st)).
-				Render(fmt.Sprintf("%d %s", counts[st], st)))
+				Render(fmt.Sprintf("%d", counts[st]))+subtleStyle.Render(" "+st))
 		}
 	}
 	return strings.Join(parts, subtleStyle.Render(" · "))

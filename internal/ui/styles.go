@@ -32,7 +32,6 @@ var (
 )
 
 var (
-	badgeStyle       lipgloss.Style
 	sectionStyle     lipgloss.Style
 	selectedRowStyle lipgloss.Style
 
@@ -54,12 +53,6 @@ func init() { applyTheme(themes[0]) }
 
 // rebuildStyles re-derives every style from the colors applyTheme just set.
 func rebuildStyles() {
-	badgeStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(colorBg).
-		Background(colorAccent).
-		Padding(0, 1)
-
 	sectionStyle = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
 
 	selectedRowStyle = lipgloss.NewStyle().Background(colorSelBg).Foreground(colorBright)
@@ -147,61 +140,6 @@ func statusLabel(s string) string {
 	return s
 }
 
-// titledPanel draws a rounded box with the title set into the top border,
-// its body clipped and padded to fill the given outer size. A focused
-// panel wears the accent border and a filled title chip, so which side
-// takes the keys is readable without hunting for the cursor.
-func titledPanel(title, body string, width, height int, focused bool) string {
-	borderColor := colorBorder
-	if focused {
-		borderColor = colorFocus
-	}
-	bs := lipgloss.NewStyle().Foreground(borderColor)
-	inner := width - 4
-	if inner < 1 {
-		inner = 1
-	}
-	bodyRows := height - 2
-	if bodyRows < 1 {
-		bodyRows = 1
-	}
-
-	titleText := panelTitle(title, focused)
-	dashCount := inner - ansi.StringWidth(ansi.Strip(titleText)) - 1
-	if dashCount < 0 {
-		dashCount = 0
-	}
-	top := bs.Render("╭─ ") + titleText + " " + bs.Render(strings.Repeat("─", dashCount)+"╮")
-	bottom := bs.Render("╰" + strings.Repeat("─", width-2) + "╯")
-
-	side := bs.Render("│")
-	lines := strings.Split(body, "\n")
-	var b strings.Builder
-	b.WriteString(top + "\n")
-	for i := 0; i < bodyRows; i++ {
-		content := ""
-		if i < len(lines) {
-			content = lines[i]
-		}
-		b.WriteString(side + " " + padRight(content, inner) + " " + side + "\n")
-	}
-	b.WriteString(bottom)
-	return b.String()
-}
-
-// panelTitle styles a panel's border title: a solid chip when the panel has
-// focus, quiet text when it does not.
-func panelTitle(title string, focused bool) string {
-	if focused {
-		return lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorBg).
-			Background(colorFocus).
-			Render(" " + title + " ")
-	}
-	return lipgloss.NewStyle().Foreground(colorDim).Render(title)
-}
-
 // padRight pads or clips a possibly-styled string to an exact display width.
 func padRight(s string, width int) string {
 	w := ansi.StringWidth(s)
@@ -211,23 +149,6 @@ func padRight(s string, width int) string {
 	}
 	if w < width {
 		s += strings.Repeat(" ", width-w)
-	}
-	if strings.ContainsRune(s, 0x1b) {
-		s += "\x1b[0m"
-	}
-	return s
-}
-
-// padLeft right-aligns a possibly-styled string inside an exact width, for
-// meta columns that should end on a shared right edge.
-func padLeft(s string, width int) string {
-	w := ansi.StringWidth(s)
-	if w > width {
-		s = ansi.Truncate(s, width, "…")
-		w = ansi.StringWidth(s)
-	}
-	if w < width {
-		s = strings.Repeat(" ", width-w) + s
 	}
 	if strings.ContainsRune(s, 0x1b) {
 		s += "\x1b[0m"
@@ -273,17 +194,15 @@ func gauge(percent float64, width int) string {
 	return bar + track
 }
 
-// gaugeRamp blends the meter color across the load range so a gauge reads
-// as a temperature rather than three discrete buckets.
+// gaugeRamp blends a meter from the theme's calm color to its alarm color
+// as the load climbs. The anchors are deliberately "finished" and "errored"
+// rather than any state color: a machine meter is a temperature, and a
+// theme whose working color is blue would otherwise paint a cold gauge.
 func gaugeRamp(percent float64) string {
-	switch {
-	case percent >= 85:
+	if percent >= 85 {
 		return current.Errored
-	case percent >= 60:
-		return mix(current.Working, current.Errored, (percent-60)/25)
-	default:
-		return mix(current.Finished, current.Working, percent/60)
 	}
+	return mix(current.Finished, current.Errored, percent/85)
 }
 
 // pill renders a small label chip: tinted text on the surface fill, so a
