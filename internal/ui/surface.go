@@ -8,26 +8,31 @@ import (
 )
 
 // The list view is built from painted surfaces rather than drawn boxes:
-// the app fills a backdrop, the sessions rail sits on a slightly lifted
-// panel tone, and the selected entry lifts once more. Depth carries the
-// structure; a hairline marks each seam where two surfaces meet.
+// the backdrop is the terminal's own background, the sessions rail sits on
+// a lifted panel tone, and the selected entry lifts once more. Depth
+// carries the structure; a hairline marks each seam where two surfaces
+// meet. The backdrop is deliberately not painted: terminals blend window
+// padding and transparency into their default background, and only cells
+// left on that default blend the same way, so an app-painted backdrop
+// always rings the frame in a slightly wrong tone.
 
-// backdropHex is the tone behind the whole frame.
-func backdropHex() string { return current.Bg }
+// backdropHex is the backdrop's fill: none. paint treats it as "pad, but
+// leave the terminal's background alone".
+func backdropHex() string { return "" }
 
-// panelHex is the sessions rail: one subtle step above the backdrop.
-func panelHex() string { return mix(current.Bg, current.Surface, 0.34) }
+// panelHex is the sessions rail: one step above the backdrop.
+func panelHex() string { return mix(current.Bg, current.Surface, 0.55) }
 
 // blockHex is a section block inside the content area, quieter than the
 // rail so it groups without announcing itself.
-func blockHex() string { return mix(current.Bg, current.Surface, 0.18) }
+func blockHex() string { return mix(current.Bg, current.Surface, 0.35) }
 
 // selectedHex is the band under the cursor's entry.
-func selectedHex() string { return mix(current.Bg, current.Surface, 0.72) }
+func selectedHex() string { return current.Surface }
 
 // ruleHex is the hairline tone: lifted just far enough off the backdrop to
 // draw a seam without becoming a border.
-func ruleHex() string { return mix(current.Bg, current.Text, 0.17) }
+func ruleHex() string { return mix(current.Bg, current.Text, 0.22) }
 
 // hrule is a horizontal seam across a painted row.
 func hrule(width int) string {
@@ -86,6 +91,9 @@ func (m *Model) seamCell(leftRule, rightRule bool) string {
 // with bg. Inner SGR resets emitted by per-segment renders would drop the
 // fill partway across, so each reset re-applies it.
 func paint(s string, width int, bg string) string {
+	if bg == "" {
+		return plain(s, width)
+	}
 	fill := bgSeq(bg)
 	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+fill)
 	if w := ansi.StringWidth(s); w > width {

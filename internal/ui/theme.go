@@ -292,15 +292,17 @@ func ResetTerminalBackground() {
 }
 
 // emitToTerminal sends a control sequence to whatever is actually drawing
-// the window. Run under tmux, a plain sequence stops at the multiplexer
-// (which at most recolors our pane), so it goes out twice: once plain and
-// once wrapped in tmux's passthrough envelope for the outer terminal.
-// EnableTerminalPassthrough must have opened that envelope first.
+// the window. Run under tmux, only the passthrough envelope goes out: a
+// plain OSC would make tmux recolor our pane's default background, and a
+// recolored pane paints as explicit color while the terminal's padding
+// keeps blending its own — the exact ring the backdrop scheme exists to
+// avoid. EnableTerminalPassthrough must have opened the envelope first.
 func emitToTerminal(seq string) {
-	os.Stdout.WriteString(seq)
 	if os.Getenv("TMUX") != "" {
 		os.Stdout.WriteString(tmuxPassthrough(seq))
+		return
 	}
+	os.Stdout.WriteString(seq)
 }
 
 // tmuxPassthrough wraps a sequence in DCS tmux;…ST, doubling every ESC as
