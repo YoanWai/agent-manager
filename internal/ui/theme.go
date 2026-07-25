@@ -61,8 +61,8 @@ var themes = []Theme{
 		Accent:  "#6f9fd0",
 		Accent2: "#6cb6a4",
 
-		Working:  "#5f9ecf",
-		Waiting:  "#d4a55c",
+		Working:  "#d08442",
+		Waiting:  "#d9b45c",
 		Finished: "#85b26f",
 		Errored:  "#cc6a6a",
 		Idle:     "#646c78",

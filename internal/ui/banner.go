@@ -12,20 +12,20 @@ import (
 // The wordmark is drawn from half-block glyphs, three rows tall. Only the
 // seven letters in "agent manager" exist, which is the whole point: a
 // wordmark, not a font.
-var bannerGlyphs = map[rune][3]string{
-	'a': {"▄▀▄", "█▀█", "▀ ▀"},
-	'g': {"█▀▀", "█▄█", "▀▀▀"},
-	'e': {"█▀▀", "█▀▀", "▀▀▀"},
-	'n': {"█▄ █", "█ ▀█", "▀  ▀"},
-	't': {"▀█▀", " █ ", " ▀ "},
-	'm': {"█▀▄▀█", "█ ▀ █", "▀   ▀"},
-	'r': {"█▀█", "█▀▄", "▀ ▀"},
-	' ': {"  ", "  ", "  "},
+var bannerGlyphs = map[rune][bannerRows]string{
+	'a': {"▄▀▄", "█▀█"},
+	'g': {"█▀▀", "█▄█"},
+	'e': {"█▀▀", "██▄"},
+	'n': {"█▄█", "█ █"},
+	't': {"▀█▀", " █ "},
+	'm': {"█▄▀▄█", "█ ▀ █"},
+	'r': {"█▀▄", "█▀▄"},
+	' ': {"  ", "  "},
 }
 
 const (
 	bannerWord = "agent manager"
-	bannerRows = 3
+	bannerRows = 2
 
 	// bannerFrames is how long the intro sweep runs. The wordmark animates
 	// on launch and then holds still: a permanently animating header would

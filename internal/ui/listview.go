@@ -37,7 +37,7 @@ func (m *Model) viewListFrame() string {
 	frame = append(frame, joinColumns(
 		paintRows(m.railLines(leftWidth, bodyHeight), leftWidth, bodyHeight, panelHex()),
 		m.vruleColumn(bodyHeight),
-		paintRows(m.contentLines(contentWidth-2*contentGutter, bodyHeight), contentWidth, bodyHeight, backdropHex()),
+		paintContent(m.contentLines(contentWidth-2*contentGutter, bodyHeight), contentWidth, bodyHeight, backdropHex()),
 	)...)
 	frame = append(frame,
 		paint(hrule(m.width), m.width, backdropHex()),
@@ -272,36 +272,58 @@ func (m *Model) computerLines(width int) []string {
 
 // contentLines is the right column: what the cursor is on, then its live
 // pane, with the quick prompt docked at the foot when it is open.
-func (m *Model) contentLines(width, height int) []string {
+func (m *Model) contentLines(width, height int) []contentLine {
 	gutter := strings.Repeat(" ", contentGutter)
-	indent := func(lines []string) []string {
-		out := make([]string, len(lines))
+	ours := func(lines []string) []contentLine {
+		out := make([]contentLine, len(lines))
 		for i, line := range lines {
-			out[i] = gutter + line
+			out[i] = contentLine{text: gutter + line}
 		}
 		return out
 	}
 
-	bar := []string{}
+	var bar []contentLine
 	if m.quick.active {
-		bar = append([]string{""}, indent(splitLines(m.viewQuickBar(width)))...)
+		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(width)))...)
 	}
-	body := indent(splitLines(m.viewDetail(width)))
+	body := ours(splitLines(m.viewDetail(width)))
 	rest := height - len(body) - len(bar) - 1
 	if rest >= 3 {
-		var section string
+		body = append(body, contentLine{text: hrule(width)})
 		if group, ok := m.selectedGroup(); ok {
-			section = m.viewGroupAgents(group, width, rest)
+			body = append(body, ours(splitLines(m.viewGroupAgents(group, width, rest)))...)
 		} else {
-			section = m.viewPreview(width, rest)
+			body = append(body, m.previewLines(width, rest, gutter)...)
 		}
-		body = append(body, hrule(width))
-		body = append(body, indent(splitLines(section))...)
 	}
 	for len(body)+len(bar) < height {
-		body = append(body, "")
+		body = append(body, contentLine{})
 	}
 	return append(body[:max(height-len(bar), 0)], bar...)
+}
+
+// previewLines is the captured pane under its label. The captured rows are
+// marked raw: painting our backdrop behind an agent's own CLI colors would
+// replace the background it drew itself, so those rows keep the terminal's.
+func (m *Model) previewLines(width, height int, gutter string) []contentLine {
+	lines := []contentLine{{text: gutter + subtleStyle.Render("preview")}}
+	rows := height - 1
+	if rows < 1 {
+		return lines
+	}
+	pane := paneExact(m.preview, rows)
+	if len(pane) == 0 {
+		return append(lines, contentLine{text: gutter + mutedStyle.Render("(no output yet)")})
+	}
+	for _, line := range pane {
+		lines = append(lines, contentLine{text: gutter + previewLine(line, width), raw: true})
+	}
+	// Rows past the capture stay raw too: a painted tail under unpainted
+	// output would read as a box drawn around the agent's last line.
+	for len(lines) < height {
+		lines = append(lines, contentLine{raw: true})
+	}
+	return lines
 }
 
 // viewDetail heads the content column: the selected session's name, its
@@ -328,7 +350,7 @@ func (m *Model) viewDetail(width int) string {
 
 	facts := []string{tool, displayGroup(sess.Group), "started " + relSince(sess.CreatedAt)}
 	if m.procFor == sess.ID && m.proc.OK {
-		facts = append(facts, fmt.Sprintf("%.1f%% · %s", m.proc.CPUPercent, humanBytes(m.proc.RSS)))
+		facts = append(facts, fmt.Sprintf("cpu %.1f%% · ram %s", m.proc.CPUPercent, humanBytes(m.proc.RSS)))
 	}
 	meta := subtleStyle.Render(strings.Join(facts, " · "))
 	dir := subtleStyle.Render(truncateTail(sess.Cwd, width))
@@ -370,24 +392,6 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	lines := []string{head, subtleStyle.Render(truncateTail(path, width-len(source))) + source}
 	if breakdown := m.groupStatusBreakdown(group); breakdown != "" {
 		lines = append(lines, breakdown)
-	}
-	return strings.Join(lines, "\n")
-}
-
-// viewPreview shows the selected session's pane 1:1 with its own colors,
-// under a quiet label rather than inside a box.
-func (m *Model) viewPreview(width, height int) string {
-	lines := []string{subtleStyle.Render("preview")}
-	contentRows := height - 1
-	if contentRows < 1 {
-		return strings.Join(lines, "\n")
-	}
-	pane := paneExact(m.preview, contentRows)
-	if len(pane) == 0 {
-		return lines[0] + "\n" + mutedStyle.Render("(no output yet)")
-	}
-	for _, line := range pane {
-		lines = append(lines, previewLine(line, width))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -458,8 +462,11 @@ func (m *Model) viewHeaderRows() []string {
 	// widest one that still clears the wordmark.
 	right := [][]string{
 		{m.headerScope()},
-		{m.viewStatusCounts(false), m.viewStatusCounts(true)},
-		{m.headerAgents()},
+		{
+			joinHeaderRight(m.viewStatusCounts(false), m.headerAgents()),
+			joinHeaderRight(m.viewStatusCounts(true), m.headerAgents()),
+			m.viewStatusCounts(true),
+		},
 	}
 	rows := m.viewBanner()
 	for i := range rows {
@@ -505,7 +512,8 @@ func (m *Model) headerAgents() string {
 	if m.agents.count == 0 {
 		return ""
 	}
-	return subtleStyle.Render(fmt.Sprintf("%.0f%% · %s", m.agents.cpu, humanBytes(m.agents.rss)))
+	return labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.0f%%", m.agents.cpu)) +
+		subtleStyle.Render(" · ") + labelStyle.Render("ram ") + valueStyle.Render(humanBytes(m.agents.rss))
 }
 
 // viewHeader is the single-line header used when the terminal is too narrow

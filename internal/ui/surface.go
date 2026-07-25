@@ -70,6 +70,42 @@ func paint(s string, width int, bg string) string {
 	return fill + s + "\x1b[0m"
 }
 
+// plain pads a line to width without filling it, leaving the terminal's own
+// background showing through. Captured agent output is drawn this way so a
+// session's CLI looks exactly as it does inside the session.
+func plain(s string, width int) string {
+	if w := ansi.StringWidth(s); w > width {
+		s = ansi.Truncate(s, width, "")
+	} else if w < width {
+		s += strings.Repeat(" ", width-w)
+	}
+	return "\x1b[0m" + s + "\x1b[0m"
+}
+
+// contentLine is one row of the content column: ours to paint, or captured
+// output that must keep the terminal's backdrop.
+type contentLine struct {
+	text string
+	raw  bool
+}
+
+// paintContent paints a content column, leaving raw rows unfilled.
+func paintContent(lines []contentLine, width, height int, bg string) []string {
+	out := make([]string, height)
+	for i := 0; i < height; i++ {
+		if i >= len(lines) {
+			out[i] = paint("", width, bg)
+			continue
+		}
+		if lines[i].raw {
+			out[i] = plain(lines[i].text, width)
+			continue
+		}
+		out[i] = paint(lines[i].text, width, bg)
+	}
+	return out
+}
+
 // paintRows paints each line of a block, padding the block itself out to
 // height so a short column still fills its side of the frame.
 func paintRows(lines []string, width, height int, bg string) []string {

@@ -338,7 +338,7 @@ func TestBodyYRangeMatchesListChrome(t *testing.T) {
 	if start != m.listChromeRows() {
 		t.Fatalf("start = %d want listChromeRows=%d", start, m.listChromeRows())
 	}
-	wantH := m.height - m.listChromeRows() - 3 - lipgloss.Height(m.viewFooter())
+	wantH := m.height - m.listChromeRows() - 2 - lipgloss.Height(m.viewFooter())
 	if wantH < 3 {
 		wantH = 3
 	}

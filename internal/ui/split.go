@@ -134,7 +134,9 @@ func (m *Model) listChromeRows() int { return m.headerRows() + 1 }
 // listBodyHeight is the vertical budget for the sessions/sidebar panels.
 // Matches View: height - (header, blank, status, footer baseline).
 func (m *Model) listBodyHeight() int {
-	bodyHeight := m.height - m.listChromeRows() - 3 - lipgloss.Height(m.viewFooter())
+	// The frame is the chrome rows, the body, the seam above the footer,
+	// the status line, and the footer itself.
+	bodyHeight := m.height - m.listChromeRows() - 2 - lipgloss.Height(m.viewFooter())
 	if bodyHeight < 3 {
 		bodyHeight = 3
 	}

@@ -124,10 +124,13 @@ func TestFrameFitsTerminal(t *testing.T) {
 		for _, height := range []int{24, 34, 50} {
 			m := shotModel()
 			m.width, m.height = width, height
-			lines := strings.Split(m.View(), "\n")
-			if len(lines) != height {
-				t.Errorf("%dx%d: frame has %d rows", width, height, len(lines))
+			// View clamps and pads, which would hide a frame that is a row
+			// short or a row long, so the raw frame is what gets measured.
+			raw := strings.Split(m.viewListFrame(), "\n")
+			if len(raw) != height {
+				t.Errorf("%dx%d: frame paints %d rows", width, height, len(raw))
 			}
+			lines := strings.Split(m.View(), "\n")
 			for i, line := range lines {
 				if got := ansi.StringWidth(line); got > width {
 					t.Errorf("%dx%d: line %d is %d wide: %q", width, height, i, got, ansi.Strip(line))
