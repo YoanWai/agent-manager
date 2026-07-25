@@ -53,6 +53,18 @@ func hruleJoined(width, x int, junction string) string {
 // vruleColumn is the seam between two painted columns. It doubles as the
 // resize grip, taking the accent while the divider is being moved.
 func (m *Model) vruleColumn(height int) []string {
+	lines := make([]string, height)
+	for i := range lines {
+		lines[i] = m.seamCell(false, false)
+	}
+	return lines
+}
+
+// seamCell is one row of the vertical seam. A rule arriving from either
+// side turns the cell into the matching junction, so crossing lines meet
+// instead of butting against each other; while the divider is being moved
+// the whole seam becomes the grip and junctions give way to it.
+func (m *Model) seamCell(leftRule, rightRule bool) string {
 	color := lipgloss.Color(ruleHex())
 	glyph := "│"
 	switch {
@@ -60,15 +72,14 @@ func (m *Model) vruleColumn(height int) []string {
 		color, glyph = colorAccent2, "║"
 	case m.resizeMode:
 		color, glyph = colorAccent, "║"
+	case leftRule && rightRule:
+		glyph = "┼"
+	case leftRule:
+		glyph = "┤"
+	case rightRule:
+		glyph = "├"
 	}
-	// The seam sits on the backdrop, not on the rail: painting it with the
-	// rail's fill makes the rail look a column wider than it is.
-	cell := lipgloss.NewStyle().Foreground(color).Render(glyph)
-	lines := make([]string, height)
-	for i := range lines {
-		lines[i] = paint(cell, 1, backdropHex())
-	}
-	return lines
+	return paint(lipgloss.NewStyle().Foreground(color).Render(glyph), 1, backdropHex())
 }
 
 // paint pads a possibly-styled line to an exact width and fills every cell

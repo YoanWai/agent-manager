@@ -35,11 +35,19 @@ func (m *Model) viewListFrame() string {
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
+	railRows := m.railLines(leftWidth, bodyHeight)
+	contentRows := m.contentLines(contentWidth-2*contentGutter, bodyHeight)
+	seam := make([]string, bodyHeight)
+	for i := range seam {
+		leftRule := i < len(railRows) && railRows[i].rule
+		rightRule := i < len(contentRows) && contentRows[i].rule
+		seam[i] = m.seamCell(leftRule, rightRule)
+	}
 	frame = append(frame, paint(hruleJoined(m.width, leftWidth, "┬"), m.width, backdropHex()))
 	frame = append(frame, joinColumns(
-		paintRows(m.railLines(leftWidth, bodyHeight), leftWidth, bodyHeight, panelHex()),
-		m.vruleColumn(bodyHeight),
-		paintContent(m.contentLines(contentWidth-2*contentGutter, bodyHeight), contentWidth, bodyHeight, backdropHex()),
+		paintContent(railRows, leftWidth, bodyHeight, panelHex()),
+		seam,
+		paintContent(contentRows, contentWidth, bodyHeight, backdropHex()),
 	)...)
 	frame = append(frame,
 		paint(hruleJoined(m.width, leftWidth, "┴"), m.width, backdropHex()),
@@ -52,18 +60,28 @@ func (m *Model) viewListFrame() string {
 }
 
 // railLines is the sessions rail: the entry list on top, the machine
-// meters docked at the bottom.
-func (m *Model) railLines(width, height int) []string {
+// meters docked at the bottom behind their seam.
+func (m *Model) railLines(width, height int) []contentLine {
 	meters := m.computerLines(width)
-	listHeight := height - len(meters)
+	listHeight := height - len(meters) - 1
 	if listHeight < 3 {
 		listHeight, meters = height, nil
 	}
-	lines := append([]string{""}, m.entryLines(width, listHeight-1)...)
-	for len(lines) < listHeight {
-		lines = append(lines, "")
+	rows := []contentLine{{}}
+	for _, line := range m.entryLines(width, listHeight-1) {
+		rows = append(rows, contentLine{text: line})
 	}
-	return append(lines[:listHeight], meters...)
+	for len(rows) < listHeight {
+		rows = append(rows, contentLine{})
+	}
+	rows = rows[:listHeight]
+	if meters != nil {
+		rows = append(rows, contentLine{rule: true})
+		for _, line := range meters {
+			rows = append(rows, contentLine{text: line})
+		}
+	}
+	return rows
 }
 
 // entryLines renders the visible slice of the tree. Entries are two lines
@@ -254,7 +272,7 @@ func (m *Model) computerLines(width int) []string {
 		return line
 	}
 
-	lines := []string{hrule(width), pad + subtleStyle.Render("computer")}
+	lines := []string{pad + subtleStyle.Render("computer")}
 	lines = append(lines,
 		meter("cpu", snap.CPUPercent, snap.CPUOK, ""),
 		meter("mem", snap.MemPercent, snap.MemOK, humanBytes(snap.MemUsed)+"/"+humanBytes(snap.MemTotal)),

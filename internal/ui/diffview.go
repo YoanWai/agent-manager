@@ -1139,9 +1139,11 @@ func (m *Model) viewDiffFull() string {
 	codeLines := append([]string{"", "  " + subtleStyle.Render(ansi.Strip(m.diffCodeTitle()))},
 		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
+	// The column seam tees into the rules that open and close the body,
+	// same as the list view, so the two screens share one frame language.
 	frame := []string{
 		paint(m.viewDiffHeader(sess.Name), m.width, backdropHex()),
-		paint(hrule(m.width), m.width, backdropHex()),
+		paint(hruleJoined(m.width, fileWidth, "┬"), m.width, backdropHex()),
 	}
 	frame = append(frame, joinColumns(
 		paintRows(fileLines, fileWidth, bodyHeight, panelHex()),
@@ -1149,7 +1151,7 @@ func (m *Model) viewDiffFull() string {
 		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
 	)...)
 	frame = append(frame,
-		paint(hrule(m.width), m.width, backdropHex()),
+		paint(hruleJoined(m.width, fileWidth, "┴"), m.width, backdropHex()),
 		paint(m.viewDiffStatus(), m.width, backdropHex()),
 	)
 	for _, line := range splitLines(footer) {
