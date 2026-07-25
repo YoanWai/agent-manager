@@ -167,5 +167,10 @@ func TestPaneSoftEdges(t *testing.T) {
 		if cell := row[leftWidth+1]; cell != '▌' && cell != '─' {
 			t.Fatalf("row %d: edge column is %q, want ▌:\n%s", i, string(cell), string(row))
 		}
+		// The seam is fill, not a drawn line: the glyphs of the old line
+		// seam appearing here mean a stale seam renderer shipped again.
+		if cell := row[leftWidth]; cell != ' ' && cell != '─' {
+			t.Fatalf("row %d: seam column is %q, want pane fill:\n%s", i, string(cell), string(row))
+		}
 	}
 }

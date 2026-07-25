@@ -82,21 +82,21 @@ func (m *Model) bleedColumn(height int) []string {
 // instead of butting against each other; while the divider is being moved
 // the whole seam becomes the grip and junctions give way to it.
 func (m *Model) seamCell(leftRule, rightRule bool) string {
-	color := lipgloss.Color(ruleHex())
-	glyph := "│"
-	switch {
-	case m.splitDragging:
-		color, glyph = colorAccent2, "║"
-	case m.resizeMode:
-		color, glyph = colorAccent, "║"
-	case leftRule && rightRule:
-		glyph = "┼"
-	case leftRule:
-		glyph = "┤"
-	case rightRule:
-		glyph = "├"
+	// While the divider is being moved the seam becomes the grip.
+	if m.splitDragging || m.resizeMode {
+		color := colorAccent
+		if m.splitDragging {
+			color = colorAccent2
+		}
+		return paint(lipgloss.NewStyle().Foreground(color).Render("║"), 1, panelHex())
 	}
-	return paint(lipgloss.NewStyle().Foreground(color).Render(glyph), 1, backdropHex())
+	// Otherwise the seam is the pane's own fill — its edge is drawn by the
+	// bleed column beside it, not by a line — and a rule arriving from
+	// either side crosses it as a rule cell on that fill.
+	if leftRule || rightRule {
+		return paint(hrule(1), 1, panelHex())
+	}
+	return paint("", 1, panelHex())
 }
 
 // paint pads a possibly-styled line to an exact width and fills every cell
