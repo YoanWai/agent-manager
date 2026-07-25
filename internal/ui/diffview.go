@@ -1135,7 +1135,7 @@ func (m *Model) viewDiffFull() string {
 	// two-surface split the session list uses, so review reads as the same
 	// application rather than a second one.
 	fileLines := append([]string{"", "  " + subtleStyle.Render("files")},
-		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railGutter)...)
+		indentLines(splitLines(m.viewDiffFileList(fileWidth-1-2*railGutter, bodyHeight-2)), railGutter)...)
 	codeLines := append([]string{"", "  " + subtleStyle.Render(ansi.Strip(m.diffCodeTitle()))},
 		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
@@ -1145,8 +1145,14 @@ func (m *Model) viewDiffFull() string {
 		paint(m.viewDiffHeader(sess.Name), m.width, backdropHex()),
 		paint(hruleJoined(m.width, fileWidth, "┬"), m.width, backdropHex()),
 	}
+	// The files card keeps the same unpainted margin column as the rail.
+	margin := make([]string, bodyHeight)
+	for i := range margin {
+		margin[i] = paint("", 1, backdropHex())
+	}
 	frame = append(frame, joinColumns(
-		paintRows(fileLines, fileWidth, bodyHeight, panelHex()),
+		margin,
+		paintRows(fileLines, fileWidth-1, bodyHeight, panelHex()),
 		m.vruleColumn(bodyHeight),
 		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
 	)...)

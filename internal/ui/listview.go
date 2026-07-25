@@ -35,17 +35,22 @@ func (m *Model) viewListFrame() string {
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
-	railRows := m.railLines(leftWidth, bodyHeight)
+	// The rail card leaves its first column unpainted so its fill never
+	// touches the window edge; see the surface rules in surface.go.
+	railRows := m.railLines(leftWidth-1, bodyHeight)
 	contentRows := m.contentLines(contentWidth-2*contentGutter, bodyHeight)
 	seam := make([]string, bodyHeight)
+	margin := make([]string, bodyHeight)
 	for i := range seam {
 		leftRule := i < len(railRows) && railRows[i].rule
 		rightRule := i < len(contentRows) && contentRows[i].rule
 		seam[i] = m.seamCell(leftRule, rightRule)
+		margin[i] = paint("", 1, backdropHex())
 	}
 	frame = append(frame, paint(hruleJoined(m.width, leftWidth, "┬"), m.width, backdropHex()))
 	frame = append(frame, joinColumns(
-		paintContent(railRows, leftWidth, bodyHeight, panelHex()),
+		margin,
+		paintContent(railRows, leftWidth-1, bodyHeight, panelHex()),
 		seam,
 		paintContent(contentRows, contentWidth, bodyHeight, backdropHex()),
 	)...)

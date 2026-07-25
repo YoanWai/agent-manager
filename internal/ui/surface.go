@@ -7,22 +7,22 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// The list view is built on the terminal's own background everywhere: the
-// only filled cells are the selection band, chips and modal cards — small
-// shapes that read as deliberate highlights and never touch a window edge.
-// Structure comes from the seams and from type weight instead of from
-// area fills, because a terminal blends window padding and transparency
-// into its default background, and any large painted region sits beside
-// that blend as an obviously different tone, like a stray child element
-// carrying the background its container should have.
+// The list view sits on the terminal's own background, with the sessions
+// rail on a lifted panel card and the selected entry lifted once more.
+// One rule governs every fill: painted color never touches a window edge.
+// A terminal blends window padding and transparency into its default
+// background, so a fill flush against the window sits beside that blend
+// as a slightly different tone — an accident. Behind a margin of the
+// terminal's own background, the same fill reads as a card, which is a
+// choice. The margin column between the rail and the window edge is that
+// rule made visible.
 
 // backdropHex is the backdrop's fill: none. paint treats it as "pad, but
 // leave the terminal's background alone".
 func backdropHex() string { return "" }
 
-// panelHex is the sessions rail's fill: none, same reasoning as the
-// backdrop — the rail spans the window's whole left edge.
-func panelHex() string { return "" }
+// panelHex is the rail card's fill: one step above the backdrop.
+func panelHex() string { return mix(current.Bg, current.Surface, 0.55) }
 
 // blockHex is a section block inside the content area, quieter than the
 // rail so it groups without announcing itself.
