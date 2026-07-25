@@ -9,7 +9,7 @@ import (
 
 func (m *Model) cardWidth() int {
 	width := 60
-	if width > m.width-4 {
+	if m.width >= 28 && width > m.width-4 {
 		width = m.width - 4
 	}
 	return width
@@ -17,25 +17,44 @@ func (m *Model) cardWidth() int {
 
 const cardPaddingX = 3
 
-// card centers a bordered modal with a title and footer hint.
+// card floats a modal on the app backdrop: a lifted panel, no border, its
+// title set in accent above the body and its keys quietly at the foot.
 func (m *Model) card(title, body, hint string) string {
-	width := m.cardWidth()
-	header := badgeStyle.Render(title)
-	content := header + "\n\n" + body
+	return m.cardSized(m.cardWidth(), title, body, hint)
+}
+
+// cardSized is card at an explicit width, for the key map, whose lines are
+// too long to read inside the default column.
+func (m *Model) cardSized(width int, title, body, hint string) string {
+	head := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(title)
+	content := head + "\n\n" + body
 	if m.err != "" {
 		content += "\n" + errStyle.Render("✕ "+m.err)
 	}
-	rule := lipgloss.NewStyle().Foreground(colorBorder).
-		Render(strings.Repeat("─", max(width-2*cardPaddingX, 1)))
-	content += "\n\n" + rule + "\n" + subtleStyle.Render(hint)
+	content += "\n\n" + subtleStyle.Render(hint)
 
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorFocus).
-		Padding(1, cardPaddingX).
-		Width(width).
-		Render(content)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	inner := width - 2*cardPaddingX
+	pad := strings.Repeat(" ", cardPaddingX)
+	var lines []string
+	lines = append(lines, paint("", width, blockHex()))
+	for _, line := range strings.Split(content, "\n") {
+		lines = append(lines, paint(pad+padRight(line, inner), width, blockHex()))
+	}
+	lines = append(lines, paint("", width, blockHex()))
+
+	height := max(m.height, len(lines))
+	left := max((m.width-width)/2, 0)
+	frameWidth := max(m.width, left+width)
+	top := max((height-len(lines))/2, 0)
+	frame := make([]string, 0, height)
+	for i := 0; i < height; i++ {
+		row := ""
+		if i >= top && i-top < len(lines) {
+			row = paint("", left, backdropHex()) + lines[i-top]
+		}
+		frame = append(frame, paint(row, frameWidth, backdropHex()))
+	}
+	return strings.Join(frame, "\n")
 }
 
 func (m *Model) viewForm() string {
@@ -195,6 +214,7 @@ func (m *Model) viewHelp() string {
 		{"g", "new group (name, parent, default path)"},
 		{"r", "rename session / edit group (name + default path)"},
 		{"v", "revive dead session (resumes the agent)"},
+		{"V", "revive every dead session"},
 		{"a / u", "archive / restore"},
 		{"d", "delete session, or group + subtree"},
 		{"shift+↑↓", "reorder row up / down"},
@@ -219,7 +239,11 @@ func (m *Model) viewHelp() string {
 	for _, binding := range rows {
 		b.WriteString(keyStyle.Width(10).Render(binding[0]) + mutedStyle.Render(binding[1]) + "\n")
 	}
-	return m.card("? Keys", strings.TrimRight(b.String(), "\n"), "any key to close")
+	width := 92
+	if m.width >= 28 && width > m.width-4 {
+		width = m.width - 4
+	}
+	return m.cardSized(width, "? Keys", strings.TrimRight(b.String(), "\n"), "any key to close")
 }
 
 func formField(label, value string, focused bool) string {

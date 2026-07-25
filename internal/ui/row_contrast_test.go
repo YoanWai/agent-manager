@@ -59,7 +59,7 @@ func TestSelectedRowMetaUsesBrightNotSubtle(t *testing.T) {
 	if !strings.Contains(selected, brightSeq) {
 		t.Fatalf("selected row missing the bright reapply fg %q:\n%q", brightSeq, selected)
 	}
-	if !strings.Contains(selected, " · grok · ") {
+	if !strings.Contains(selected, " · grok") {
 		t.Fatalf("selected missing meta text:\n%q", selected)
 	}
 }

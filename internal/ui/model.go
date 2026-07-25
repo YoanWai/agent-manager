@@ -540,6 +540,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if !m.sessionsSized && m.width > 0 && len(m.sessions) > 0 {
 			m.sessionsSized = true
+			// Sessions left from a previous run carry that run's window
+			// size, which our cache knows nothing about, so the first pass
+			// re-asserts geometry for every one of them.
+			m.paneGeom = nil
 			m.resizeSessions()
 		}
 		m.rebuildRows()

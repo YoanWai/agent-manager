@@ -1130,14 +1130,27 @@ func (m *Model) viewDiffFull() string {
 	}
 	codeWidth := m.width - fileWidth
 
-	// The cursor lives in the code panel, so it wears the focus border.
-	files := titledPanel("Files", m.viewDiffFileList(fileWidth-4, bodyHeight-2), fileWidth, bodyHeight, false)
-	code := titledPanel(m.diffCodeTitle(), m.viewDiffCode(codeWidth-4, bodyHeight-2), codeWidth, bodyHeight, true)
-	body := lipgloss.JoinHorizontal(lipgloss.Top, files, code)
+	// Files sit on the rail surface, the code on the backdrop: the same
+	// two-surface split the session list uses, so review reads as the same
+	// application rather than a second one.
+	fileLines := append([]string{"", "  " + subtleStyle.Render("files")},
+		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railGutter)...)
+	codeLines := append([]string{"", "  " + subtleStyle.Render(ansi.Strip(m.diffCodeTitle()))},
+		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
-	header := m.viewDiffHeader(sess.Name)
-	status := m.viewDiffStatus()
-	return strings.Join([]string{header, "", body, status, footer}, "\n")
+	frame := []string{
+		paint(m.viewDiffHeader(sess.Name), m.width, backdropHex()),
+		paint("", m.width, backdropHex()),
+	}
+	frame = append(frame, joinColumns(
+		paintRows(fileLines, fileWidth, bodyHeight, panelHex()),
+		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
+	)...)
+	frame = append(frame, paint(m.viewDiffStatus(), m.width, backdropHex()))
+	for _, line := range splitLines(footer) {
+		frame = append(frame, paint(line, m.width, backdropHex()))
+	}
+	return strings.Join(frame, "\n")
 }
 
 // stripBaseHash drops the @<short-sha> suffix BaseDesc carries from
