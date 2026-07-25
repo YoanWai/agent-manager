@@ -153,11 +153,17 @@ func run() error {
 	defer st.Close()
 
 	model := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
-	// Mouse reporting is off by default so native text selection works
-	// in the terminal. It is enabled only during resize mode (divider drag)
-	// and disabled on exit, so the terminal handles selection normally.
+	// Mouse reporting stays off so the terminal keeps native text selection.
+	// Alternate scroll then turns the wheel into arrow keys instead of host
+	// scrollback, so the manager cannot be scrolled out of view.
 	program := tea.NewProgram(model, tea.WithAltScreen())
+	if err := ui.EnableAlternateScroll(); err != nil {
+		return err
+	}
 	model.StartPoller(program.Send)
-	_, err = program.Run()
-	return err
+	_, runErr := program.Run()
+	if err := ui.DisableAlternateScroll(); err != nil && runErr == nil {
+		runErr = err
+	}
+	return runErr
 }
