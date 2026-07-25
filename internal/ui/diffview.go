@@ -1143,7 +1143,7 @@ func (m *Model) viewDiffFull() string {
 	// same as the list view, so the two screens share one frame language.
 	frame := []string{
 		paint(m.viewDiffHeader(sess.Name), m.width, backdropHex()),
-		paint(hruleJoined(m.width, fileWidth, "┬"), m.width, backdropHex()),
+		m.boundedRuleRow(fileWidth, m.width, "┬"),
 	}
 	frame = append(frame, joinColumns(
 		paintRows(fileLines, fileWidth, bodyHeight, panelHex()),
@@ -1151,7 +1151,7 @@ func (m *Model) viewDiffFull() string {
 		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
 	)...)
 	frame = append(frame,
-		paint(hruleJoined(m.width, fileWidth, "┴"), m.width, backdropHex()),
+		m.boundedRuleRow(fileWidth, m.width, "┴"),
 		paint(m.viewDiffStatus(), m.width, backdropHex()),
 	)
 	for _, line := range splitLines(footer) {

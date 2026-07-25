@@ -41,17 +41,17 @@ func hrule(width int) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(ruleHex())).Render(strings.Repeat("─", width))
 }
 
-// hruleJoined is a horizontal seam that meets the vertical one at column x,
-// carrying the junction glyph so the two lines connect instead of crossing.
-func hruleJoined(width, x int, junction string) string {
-	if width < 1 {
-		return ""
-	}
-	if x < 0 || x >= width {
-		return hrule(width)
+// boundedRuleRow is the horizontal rule that opens or closes the body: its
+// left segment and the junction ride the pane's fill, so the fill reaches
+// its own boundary lines instead of stopping a row short of them, and the
+// remainder crosses the content on the backdrop.
+func (m *Model) boundedRuleRow(paneWidth, width int, junction string) string {
+	if paneWidth < 0 || paneWidth >= width {
+		return paint(hrule(width), width, backdropHex())
 	}
 	style := lipgloss.NewStyle().Foreground(lipgloss.Color(ruleHex()))
-	return style.Render(strings.Repeat("─", x) + junction + strings.Repeat("─", width-x-1))
+	return paint(hrule(paneWidth)+style.Render(junction), paneWidth+1, panelHex()) +
+		paint(hrule(width-paneWidth-1), width-paneWidth-1, backdropHex())
 }
 
 // vruleColumn is the seam between two painted columns. It doubles as the
