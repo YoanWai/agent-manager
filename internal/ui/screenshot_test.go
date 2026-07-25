@@ -139,3 +139,44 @@ func TestFrameFitsTerminal(t *testing.T) {
 		}
 	}
 }
+
+// Every cell of the column seam must be a joint glyph, and the rules that
+// cross it must land as junctions, not butt against a bare bar.
+func TestSeamJunctionsMeetTheRules(t *testing.T) {
+	m := shotModel()
+	rows := strings.Split(m.View(), "\n")
+	// Columns are counted in runes: the rule row is all multi-byte glyphs,
+	// so a byte index would name a column far right of the real seam.
+	header := []rune(ansi.Strip(rows[m.headerRows()]))
+	seamCol := -1
+	for i, r := range header {
+		if r == '┬' {
+			seamCol = i
+			break
+		}
+	}
+	if seamCol < 0 {
+		t.Fatalf("header rule carries no ┬:\n%s", string(header))
+	}
+
+	sawTee := map[rune]bool{}
+	for i := m.headerRows() + 1; i < m.headerRows()+1+m.listBodyHeight(); i++ {
+		row := []rune(ansi.Strip(rows[i]))
+		if seamCol >= len(row) {
+			t.Fatalf("row %d shorter than the seam column: %q", i, string(row))
+		}
+		cell := row[seamCol]
+		switch cell {
+		case '│', '├', '┤', '┼':
+			sawTee[cell] = true
+		default:
+			t.Fatalf("row %d: seam cell is %q, not a joint glyph:\n%s", i, string(cell), string(row))
+		}
+	}
+	if footer := ansi.Strip(rows[m.headerRows()+1+m.listBodyHeight()]); []rune(footer)[seamCol] != '┴' {
+		t.Fatalf("closing rule carries no ┴ at the seam: %q", footer)
+	}
+	if !sawTee['├'] || !sawTee['┤'] {
+		t.Fatalf("body rules never tee into the seam: %v", sawTee)
+	}
+}
