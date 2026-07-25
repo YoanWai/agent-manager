@@ -26,24 +26,21 @@ func (m *Model) viewListFrame() string {
 	footer := m.viewFooter()
 	bodyHeight := m.listBodyHeight()
 
-	// One column goes to the seam between the rail and the content, and the
-	// rail carries the wordmark so the two surfaces run from the very top of
-	// the frame down to the footer's seam.
+	// The header is one full-width band over both columns, closed by a
+	// rule; the seam between the rail and the content tees into that rule
+	// and runs down to meet the footer's.
 	contentWidth := rightWidth - 1
-	headerRows := m.headerRows()
 
-	railHead := m.viewBanner()
-	contentHead := m.viewHeaderRows()
-
-	rail := append(
-		paintRows(railHead, leftWidth, headerRows, panelHex()),
-		paintRows(m.railLines(leftWidth, bodyHeight), leftWidth, bodyHeight, panelHex())...)
-	seam := m.vruleColumn(headerRows + bodyHeight)
-	content := append(
-		paintRows(contentHead, contentWidth, headerRows, backdropHex()),
-		paintContent(m.contentLines(contentWidth-2*contentGutter, bodyHeight), contentWidth, bodyHeight, backdropHex())...)
-
-	frame := joinColumns(rail, seam, content)
+	frame := []string{}
+	for _, line := range m.viewHeaderRows() {
+		frame = append(frame, paint(line, m.width, backdropHex()))
+	}
+	frame = append(frame, paint(hruleJoined(m.width, leftWidth, "┬"), m.width, backdropHex()))
+	frame = append(frame, joinColumns(
+		paintRows(m.railLines(leftWidth, bodyHeight), leftWidth, bodyHeight, panelHex()),
+		m.vruleColumn(bodyHeight),
+		paintContent(m.contentLines(contentWidth-2*contentGutter, bodyHeight), contentWidth, bodyHeight, backdropHex()),
+	)...)
 	frame = append(frame,
 		paint(hruleJoined(m.width, leftWidth, "┴"), m.width, backdropHex()),
 		paint(m.viewStatus(), m.width, backdropHex()),
@@ -459,29 +456,40 @@ func (m *Model) viewQuickBar(width int) string {
 	return subtleStyle.Render(target) + "\n" + m.quick.input.View()
 }
 
-// viewHeaderRows is the header block: the wordmark when there is room for
-// it, with the scope line and the fleet rollup set against the right edge
-// on the wordmark's own rows.
+// viewHeaderRows is the full-width band over both columns: the wordmark
+// on the left, and the richest reading of the fleet that fits set against
+// the right edge (scope and rollup, then a compact rollup, then the scope
+// alone).
 func (m *Model) viewHeaderRows() []string {
-	_, rightWidth := m.splitWidths()
-	width := rightWidth - 1 - contentGutter
-	left := strings.Repeat(" ", contentGutter) + m.headerScope()
-
-	// The rollup offers its readings richest-first and takes the widest one
-	// that still clears the scope on its left.
+	left := m.viewBanner()[0]
+	sep := subtleStyle.Render("   ")
+	scope := m.headerScope()
+	agents := m.headerAgents()
 	for _, right := range []string{
-		joinHeaderRight(m.viewStatusCounts(false), m.headerAgents()),
-		joinHeaderRight(m.viewStatusCounts(true), m.headerAgents()),
-		m.viewStatusCounts(true),
+		joinHeaderPieces(sep, scope, m.viewStatusCounts(false), agents),
+		joinHeaderPieces(sep, scope, m.viewStatusCounts(true), agents),
+		joinHeaderPieces(sep, scope, m.viewStatusCounts(true), ""),
+		scope,
 		"",
 	} {
-		gap := width - ansi.StringWidth(left) - ansi.StringWidth(right)
+		gap := m.width - railGutter - ansi.StringWidth(left) - ansi.StringWidth(right)
 		if right == "" || gap < 2 {
 			continue
 		}
-		return []string{left + strings.Repeat(" ", gap) + right}
+		return []string{left + strings.Repeat(" ", gap) + right + strings.Repeat(" ", railGutter)}
 	}
 	return []string{left}
+}
+
+// joinHeaderPieces joins the header's non-empty readings with a separator.
+func joinHeaderPieces(sep string, pieces ...string) string {
+	kept := pieces[:0:0]
+	for _, piece := range pieces {
+		if piece != "" {
+			kept = append(kept, piece)
+		}
+	}
+	return strings.Join(kept, sep)
 }
 
 // headerScope names what the list is showing and badges a newer release.
