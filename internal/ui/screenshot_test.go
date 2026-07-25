@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -40,6 +41,13 @@ func TestZZShot(t *testing.T) {
 		m.version = "0.9.2"
 	case "help":
 		m.mode = modeHelp
+	}
+	if phase := os.Getenv("AM_SHOT_PHASE"); phase != "" {
+		n, err := strconv.Atoi(phase)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.bannerPhase = n
 	}
 	if err := os.WriteFile(out, []byte(m.View()), 0o644); err != nil {
 		t.Fatal(err)
@@ -107,15 +115,23 @@ const previewSample = "\x1b[38;5;110m◆\x1b[0m claude \x1b[38;5;240m·\x1b[0m a
 	"\x1b[38;5;214m✳\x1b[0m Running tests… (14s · esc to interrupt)\n"
 
 // A frame line wider than the terminal wraps, which pushes the whole
-// layout down a row and tears the panels. Every line the list frame paints
-// has to fit, at any width the panels still make sense at.
-func TestFrameLinesFitTerminalWidth(t *testing.T) {
+// layout down a row and tears the panels. A frame with more rows than the
+// terminal loses its footer to the clamp. Both have to hold at every size
+// the layout still makes sense at, including the width where the header
+// swaps between the wordmark and its one-line form.
+func TestFrameFitsTerminal(t *testing.T) {
 	for _, width := range []int{80, 100, 120, 160, 200} {
-		m := shotModel()
-		m.width = width
-		for i, line := range strings.Split(m.View(), "\n") {
-			if got := ansi.StringWidth(line); got > width {
-				t.Errorf("width %d: line %d is %d wide: %q", width, i, got, ansi.Strip(line))
+		for _, height := range []int{24, 34, 50} {
+			m := shotModel()
+			m.width, m.height = width, height
+			lines := strings.Split(m.View(), "\n")
+			if len(lines) != height {
+				t.Errorf("%dx%d: frame has %d rows", width, height, len(lines))
+			}
+			for i, line := range lines {
+				if got := ansi.StringWidth(line); got > width {
+					t.Errorf("%dx%d: line %d is %d wide: %q", width, height, i, got, ansi.Strip(line))
+				}
 			}
 		}
 	}

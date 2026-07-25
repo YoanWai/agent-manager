@@ -126,15 +126,15 @@ func (m *Model) nudgeSplit(delta int) {
 	m.setSplitFromX(left + delta)
 }
 
-// listChromeRows is the number of rows above the sessions/sidebar body
-// in list mode: header + blank separator. Shared by View and bodyYRange
-// so hit-testing cannot drift from paint.
-const listChromeRows = 2
+// listChromeRows is the number of rows above the sessions/content body:
+// the header (one line, or the wordmark's three) and the seam under it.
+// Shared by View and bodyYRange so hit-testing cannot drift from paint.
+func (m *Model) listChromeRows() int { return m.headerRows() + 1 }
 
 // listBodyHeight is the vertical budget for the sessions/sidebar panels.
 // Matches View: height - (header, blank, status, footer baseline).
 func (m *Model) listBodyHeight() int {
-	bodyHeight := m.height - 3 - lipgloss.Height(m.viewFooter())
+	bodyHeight := m.height - m.listChromeRows() - 3 - lipgloss.Height(m.viewFooter())
 	if bodyHeight < 3 {
 		bodyHeight = 3
 	}
@@ -144,7 +144,7 @@ func (m *Model) listBodyHeight() int {
 // bodyYRange is the inclusive-start exclusive-end row range of the main
 // sessions/sidebar body, matching the layout in View.
 func (m *Model) bodyYRange() (start, end int) {
-	return listChromeRows, listChromeRows + m.listBodyHeight()
+	return m.listChromeRows(), m.listChromeRows() + m.listBodyHeight()
 }
 
 // dividerX is the column index of the sessions/sidebar junction (first

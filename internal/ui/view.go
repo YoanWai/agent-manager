@@ -481,6 +481,12 @@ func kv(key, value string) string {
 	return labelStyle.Width(6).Render(key) + valueStyle.Render(value) + "\n"
 }
 
+// relSince is relTime worded as a moment in the past, for columns that
+// answer "when did this last happen" rather than "how long has this run".
+func relSince(t time.Time) string {
+	return relTime(t) + " ago"
+}
+
 func relTime(t time.Time) string {
 	d := time.Since(t)
 	switch {

@@ -15,7 +15,7 @@ import (
 // the content column's. Consistent insets are what make an unbordered
 // layout read as columns.
 const (
-	railGutter    = 3
+	railGutter    = 2
 	contentGutter = 2
 )
 
@@ -29,10 +29,11 @@ func (m *Model) viewListFrame() string {
 	// One column goes to the seam between the rail and the content.
 	contentWidth := rightWidth - 1
 
-	frame := []string{
-		paint(m.viewHeader(), m.width, backdropHex()),
-		paint(hrule(m.width), m.width, backdropHex()),
+	frame := []string{}
+	for _, line := range m.viewHeaderRows() {
+		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
+	frame = append(frame, paint(hrule(m.width), m.width, backdropHex()))
 	frame = append(frame, joinColumns(
 		paintRows(m.railLines(leftWidth, bodyHeight), leftWidth, bodyHeight, panelHex()),
 		m.vruleColumn(bodyHeight),
@@ -183,7 +184,7 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	if selected {
 		metaStyle = mutedStyle
 	}
-	age := metaStyle.Render(relTime(lastActivity(sess)))
+	age := metaStyle.Render(relSince(lastActivity(sess)))
 	meta := pad + indent + "  " +
 		lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
 		metaStyle.Render(" · "+sess.Tool)
@@ -323,9 +324,9 @@ func (m *Model) viewDetail(width int) string {
 	title := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(sess.Name)
 	state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
 		Render(statusGlyph(sess.Status)+" "+statusLabel(sess.Status)) +
-		subtleStyle.Render(" · "+relTime(lastActivity(sess)))
+		subtleStyle.Render(" · "+relSince(lastActivity(sess)))
 
-	facts := []string{tool, displayGroup(sess.Group), "started " + relTime(sess.CreatedAt) + " ago"}
+	facts := []string{tool, displayGroup(sess.Group), "started " + relSince(sess.CreatedAt)}
 	if m.procFor == sess.ID && m.proc.OK {
 		facts = append(facts, fmt.Sprintf("%.1f%% · %s", m.proc.CPUPercent, humanBytes(m.proc.RSS)))
 	}
@@ -409,7 +410,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		}
 		dot := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
 		line := rowColumns(dot+" "+valueStyle.Render(sess.Name),
-			subtleStyle.Render(sess.Tool+" · "+relTime(lastActivity(sess))), width)
+			subtleStyle.Render(sess.Tool+" · "+relSince(lastActivity(sess))), width)
 		lines = append(lines, line)
 		shown++
 	}
@@ -446,9 +447,41 @@ func (m *Model) viewQuickBar(width int) string {
 	return subtleStyle.Render(target) + "\n" + m.quick.input.View()
 }
 
-// viewHeader is the top line: the product mark, what is on screen, and the
-// fleet rollup pushed to the right edge.
-func (m *Model) viewHeader() string {
+// viewHeaderRows is the header block: the wordmark when there is room for
+// it, with the scope line and the fleet rollup set against the right edge
+// on the wordmark's own rows.
+func (m *Model) viewHeaderRows() []string {
+	if !m.showBanner() {
+		return []string{m.viewHeader()}
+	}
+	// Each header row offers its readings richest-first and takes the
+	// widest one that still clears the wordmark.
+	right := [][]string{
+		{m.headerScope()},
+		{m.viewStatusCounts(false), m.viewStatusCounts(true)},
+		{m.headerAgents()},
+	}
+	rows := m.viewBanner()
+	for i := range rows {
+		if i >= len(right) {
+			continue
+		}
+		for _, text := range right[i] {
+			if text == "" {
+				continue
+			}
+			gap := m.width - railGutter - ansi.StringWidth(rows[i]) - ansi.StringWidth(text)
+			if gap >= 2 {
+				rows[i] += strings.Repeat(" ", gap) + text
+				break
+			}
+		}
+	}
+	return rows
+}
+
+// headerScope names what the list is showing and badges a newer release.
+func (m *Model) headerScope() string {
 	scope := "active"
 	if m.showArchived {
 		scope = "archived"
@@ -459,18 +492,31 @@ func (m *Model) viewHeader() string {
 			sessionCount++
 		}
 	}
-	left := strings.Repeat(" ", railGutter) +
-		lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("agent manager") +
-		subtleStyle.Render(fmt.Sprintf("   %d %s", sessionCount, scope))
+	line := valueStyle.Render(fmt.Sprintf("%d", sessionCount)) + subtleStyle.Render(" "+scope)
 	if m.updateLatest != "" {
-		left += subtleStyle.Render("   ") +
+		line += subtleStyle.Render("   ") +
 			lipgloss.NewStyle().Foreground(colorAccent).Render("↑ "+m.updateLatest+" available")
 	}
+	return line
+}
 
-	agents := ""
-	if m.agents.count > 0 {
-		agents = subtleStyle.Render(fmt.Sprintf("%.0f%% · %s", m.agents.cpu, humanBytes(m.agents.rss)))
+// headerAgents is the fleet's process cost, empty when nothing is running.
+func (m *Model) headerAgents() string {
+	if m.agents.count == 0 {
+		return ""
 	}
+	return subtleStyle.Render(fmt.Sprintf("%.0f%% · %s", m.agents.cpu, humanBytes(m.agents.rss)))
+}
+
+// viewHeader is the single-line header used when the terminal is too narrow
+// for the wordmark: the product mark, what is on screen, and the fleet
+// rollup pushed to the right edge.
+func (m *Model) viewHeader() string {
+	left := strings.Repeat(" ", railGutter) +
+		lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(bannerWord) +
+		subtleStyle.Render("   ") + m.headerScope()
+
+	agents := m.headerAgents()
 	for _, right := range []string{
 		joinHeaderRight(m.viewStatusCounts(false), agents),
 		joinHeaderRight(m.viewStatusCounts(true), agents),

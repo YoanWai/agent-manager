@@ -121,6 +121,10 @@ type Model struct {
 	// queue a second of tmux work after the user stops.
 	previewGen uint64
 
+	// bannerPhase advances the wordmark's intro sweep and then stops, so
+	// the frame is not repainted forever.
+	bannerPhase int
+
 	// version is this build's release tag; updateLatest/updateURL hold a
 	// newer release found on GitHub so the header can badge it.
 	version      string
@@ -342,7 +346,7 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate)
+	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.bannerTick())
 }
 
 // updateMsg carries the result of the background GitHub release check.
@@ -526,6 +530,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.paneGeom = nil
 		m.resizeSessions()
 		return m, nil
+
+	case bannerTickMsg:
+		m.bannerPhase++
+		return m, m.bannerTick()
 
 	case refreshMsg:
 		m.ageError()
