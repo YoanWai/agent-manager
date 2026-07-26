@@ -1094,6 +1094,57 @@ func TestAttachKeepsWorking(t *testing.T) {
 	}
 }
 
+// PrepareAttach flips window-size to auto, which reflows the pane the same
+// way the detach-side resize does; without clearing the cached hash first,
+// the next poll compares the reflowed pane against a pre-attach hash and
+// reads it as working (TestRebaselineKeepsFinishedWithoutFlashingWorking
+// proves that precondition). Attach must clear it the same way detach does.
+func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.name.SetValue("attach-reflow")
+	m.form.dir.SetValue(t.TempDir())
+	m.form.toolIndex = 1 // claude-hooked: configured with an activity region to hash
+	pickGroup(t, m, "")
+	_, cmd := m.submitForm()
+	if m.mode != modeList {
+		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.err)
+	}
+	m.applyCmd(t, cmd)
+
+	sess := m.sessionRows()[0]
+	if sess.Tool != "claude-hooked" {
+		t.Fatalf("session tool = %q, want claude-hooked", sess.Tool)
+	}
+	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+		t.Fatalf("set finished: %v", err)
+	}
+	sess.Status = status.Finished
+	m.sessions[0].Status = status.Finished
+	m.rebuildRows()
+	m.selectSessionRow(t, "attach-reflow")
+
+	before := "final answer line that wraps differently after attach\n❯ \n"
+	after := "final answer line that wraps\ndifferently after attach\n❯ \n"
+	seedRegionHash(t, m, sess, before)
+	// Without clearing, the widened pane looks like streaming work.
+	if got := deriveStatus(t, m, sess, after, true); got != status.Working {
+		t.Fatalf("reflow with a prior hash should look like working (precondition), got %q", got)
+	}
+
+	if _, cmd := m.attachSelected(); cmd == nil {
+		t.Fatalf("attach did not start, err = %q", m.err)
+	}
+
+	entered, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got := deriveStatus(t, m, entered, after, true); got != status.Idle {
+		t.Fatalf("attach must rebaseline the pane hash instead of flashing working, got %q", got)
+	}
+}
+
 func TestReviveRecreatesDeadSession(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "phoenix", t.TempDir(), "")
