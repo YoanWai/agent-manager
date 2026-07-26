@@ -2110,7 +2110,7 @@ func TestDiffReviewShowsWholeFile(t *testing.T) {
 	}
 
 	view := ansi.Strip(m.View())
-	if !strings.Contains(view, "Review · coder") || !strings.Contains(view, "Files") {
+	if !strings.Contains(view, "review · coder") || !strings.Contains(view, "files") {
 		t.Fatalf("fullscreen review layout missing:\n%s", view)
 	}
 	if !strings.Contains(view, "package main") || !strings.Contains(view, "println(1)") {
@@ -2290,6 +2290,10 @@ func TestSettingsTogglesReviewLayout(t *testing.T) {
 	m.openSettings()
 	if !m.settings.layoutSplit {
 		t.Fatal("settings should open on split by default")
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.settings.field != settingsFieldTheme {
+		t.Fatalf("first down should focus theme field, got %d", m.settings.field)
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	if m.settings.field != settingsFieldLayout {

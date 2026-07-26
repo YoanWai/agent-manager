@@ -54,37 +54,16 @@ func TestClampFrame(t *testing.T) {
 	}
 	short := "x"
 	got = clampFrame(short, 3)
-	if got != "x\n\n" {
+	lines := strings.Split(got, "\n")
+	if len(lines) != 3 || lines[0] != "x" {
 		t.Fatalf("clampFrame pad = %q", got)
 	}
-}
-
-func TestPaneTail(t *testing.T) {
-	pane := "one\ntwo\nthree\n\n\n"
-	got := paneTail(pane, 2)
-	if len(got) != 2 || got[0] != "two" || got[1] != "three" {
-		t.Fatalf("paneTail = %v", got)
-	}
-	if paneTail("", 5) != nil {
-		t.Fatal("empty pane should return nil")
-	}
-	if paneTail("x", 0) != nil {
-		t.Fatal("zero budget should return nil")
-	}
-	ansiBlank := "real\n\x1b[38;5;42m   \x1b[0m\n"
-	got = paneTail(ansiBlank, 5)
-	if len(got) != 1 || got[0] != "real" {
-		t.Fatalf("ANSI-only blank lines should be trimmed, got %v", got)
-	}
-	sparse := "top\n\n\n\n\nmiddle\n\n\n\nbottom\n\n\n"
-	got = paneTail(sparse, 10)
-	want := []string{"top", "", "middle", "", "bottom"}
-	if len(got) != len(want) {
-		t.Fatalf("blank runs should collapse to one: %q", got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("blank runs should collapse to one: %q", got)
+	for _, line := range lines[1:] {
+		// Padding rows wear the backdrop fill rather than being bare, so
+		// a short frame cannot show the terminal's background through its
+		// bottom rows.
+		if !strings.Contains(line, " ") {
+			t.Fatalf("padding row is bare: %q", line)
 		}
 	}
 }

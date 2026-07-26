@@ -1213,6 +1213,7 @@ func (m *Model) openSettings() {
 	m.settings = settingsState{
 		toolNames:   names,
 		toolIndex:   index,
+		themeIndex:  themeIndex(current.Name),
 		layoutSplit: m.defaultSplitLayout(),
 	}
 	m.mode = modeSettings
@@ -1220,16 +1221,19 @@ func (m *Model) openSettings() {
 
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "up", "k", "down", "j":
+	case "up", "k":
+		m.settings.field = (m.settings.field + settingsFieldCount - 1) % settingsFieldCount
+	case "down", "j":
 		m.settings.field = (m.settings.field + 1) % settingsFieldCount
-	case "left", "h", "right", "l":
-		if m.settings.field == settingsFieldTool {
-			m.settings.toolIndex = (m.settings.toolIndex + 1) % len(m.settings.toolNames)
-		} else {
-			m.settings.layoutSplit = !m.settings.layoutSplit
-		}
+	case "left", "h":
+		m.cycleSetting(-1)
+	case "right", "l":
+		m.cycleSetting(1)
 	case "enter", "esc":
 		if err := m.store.SetSetting("default_tool", m.settings.toolNames[m.settings.toolIndex]); err != nil {
+			m.err = err.Error()
+		}
+		if err := m.store.SetSetting(themeSetting, themes[m.settings.themeIndex].Name); err != nil {
 			m.err = err.Error()
 		}
 		layout := "split"
@@ -1242,6 +1246,22 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 	}
 	return m, nil
+}
+
+// cycleSetting steps the focused setting by one. The theme applies as it
+// is stepped so the picker doubles as a live preview of the palette.
+func (m *Model) cycleSetting(step int) {
+	switch m.settings.field {
+	case settingsFieldTool:
+		count := len(m.settings.toolNames)
+		m.settings.toolIndex = (m.settings.toolIndex + step + count) % count
+	case settingsFieldTheme:
+		m.settings.themeIndex = (m.settings.themeIndex + step + len(themes)) % len(themes)
+		applyTheme(themes[m.settings.themeIndex])
+		SyncTerminalBackground()
+	case settingsFieldLayout:
+		m.settings.layoutSplit = !m.settings.layoutSplit
+	}
 }
 
 func (m *Model) openMove() {

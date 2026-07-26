@@ -121,6 +121,10 @@ type Model struct {
 	// queue a second of tmux work after the user stops.
 	previewGen uint64
 
+	// bannerPhase advances the wordmark's intro sweep and then stops, so
+	// the frame is not repainted forever.
+	bannerPhase int
+
 	// version is this build's release tag; updateLatest/updateURL hold a
 	// newer release found on GitHub so the header can badge it.
 	version      string
@@ -182,12 +186,14 @@ type quickImageMsg struct {
 type settingsState struct {
 	toolNames   []string
 	toolIndex   int
+	themeIndex  int
 	field       int
 	layoutSplit bool
 }
 
 const (
 	settingsFieldTool = iota
+	settingsFieldTheme
 	settingsFieldLayout
 	settingsFieldCount
 )
@@ -232,6 +238,33 @@ type previewSettleMsg struct {
 // a held j/k burst into a single capture.
 const previewSettle = 50 * time.Millisecond
 
+// The selected session's pane is re-captured on its own timer. The full
+// poll is deliberately slow (it lists panes, samples every process tree and
+// writes the store), which left the preview refreshing on the poll cadence
+// and reading as a still image of a live agent. One capture of one pane is
+// cheap, but it is still a tmux exec, so the rate follows the session: an
+// agent that is producing output earns a fast cadence, one that is waiting
+// on a human does not.
+const (
+	previewIntervalLive = 300 * time.Millisecond
+	previewIntervalCalm = 1200 * time.Millisecond
+)
+
+// previewTickMsg drives that timer.
+type previewTickMsg struct{}
+
+// previewTick re-arms the preview timer at the cadence the selection earns.
+func (m *Model) previewTick() tea.Cmd {
+	interval := previewIntervalCalm
+	if sess, ok := m.selected(); ok {
+		switch sess.Status {
+		case status.Working, status.Starting:
+			interval = previewIntervalLive
+		}
+	}
+	return tea.Tick(interval, func(time.Time) tea.Msg { return previewTickMsg{} })
+}
+
 type errMsg struct{ err error }
 
 type attachDoneMsg struct {
@@ -249,6 +282,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// A missing git binary only disables the diff view; everything else
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
+	applyTheme(themes[themeIndex(storedTheme(st))])
 	return &Model{
 		cfg:         cfg,
 		store:       st,
@@ -262,6 +296,16 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		mode:        modeList,
 		version:     version,
 	}
+}
+
+// storedTheme reads the persisted theme name. A read failure falls back to
+// the default theme: the UI still paints, just not in the chosen palette.
+func storedTheme(st *store.Store) string {
+	name, err := st.Setting(themeSetting)
+	if err != nil {
+		return ""
+	}
+	return name
 }
 
 const collapsedSetting = "collapsed_groups"
@@ -329,7 +373,7 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate)
+	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.bannerTick(), m.previewTick())
 }
 
 // updateMsg carries the result of the background GitHub release check.
@@ -509,10 +553,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.width = msg.Width
 		m.height = msg.Height
+		// Re-assert the terminal backdrop: a reattach or a fresh outer
+		// terminal delivers a size message and may carry stale colors.
+		SyncTerminalBackground()
 		// Geometry cache is stale for every session after a real resize.
 		m.paneGeom = nil
 		m.resizeSessions()
 		return m, nil
+
+	case bannerTickMsg:
+		m.bannerPhase++
+		return m, m.bannerTick()
+
+	case previewTickMsg:
+		// Only the list keeps a live pane on screen; review and the modal
+		// screens have no preview to feed, so they skip the capture and
+		// just keep the timer alive.
+		sess, ok := m.selected()
+		if !ok || (m.mode != modeList && m.mode != modeRename) {
+			return m, m.previewTick()
+		}
+		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
 
 	case refreshMsg:
 		m.ageError()
@@ -527,6 +588,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if !m.sessionsSized && m.width > 0 && len(m.sessions) > 0 {
 			m.sessionsSized = true
+			// Sessions left from a previous run carry that run's window
+			// size, which our cache knows nothing about, so the first pass
+			// re-asserts geometry for every one of them.
+			m.paneGeom = nil
 			m.resizeSessions()
 		}
 		m.rebuildRows()

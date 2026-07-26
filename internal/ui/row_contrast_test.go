@@ -18,6 +18,17 @@ func forceANSI256(t *testing.T) {
 	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 }
 
+// sgrOf returns the color sequence a style emits under the active profile,
+// so contrast assertions track the live theme instead of a hardcoded index.
+func sgrOf(rendered string) string {
+	_, seq, found := strings.Cut(rendered, "\x1b[")
+	if !found {
+		return ""
+	}
+	code, _, _ := strings.Cut(seq, "m")
+	return code
+}
+
 func TestSelectedRowMetaUsesBrightNotSubtle(t *testing.T) {
 	forceANSI256(t)
 
@@ -31,22 +42,24 @@ func TestSelectedRowMetaUsesBrightNotSubtle(t *testing.T) {
 			CreatedAt: time.Now().Add(-3 * time.Hour),
 		},
 	}
-	selected := m.renderTreeRow(entry, true, 80)
-	unselected := m.renderTreeRow(entry, false, 80)
+	selected := m.renderTreeRow(entry, true, 80, 0)
+	unselected := m.renderTreeRow(entry, false, 80, 0)
 
 	if !strings.Contains(selected, "\x1b[") {
 		t.Fatal("selected row has no SGR; color profile not active")
 	}
-	if strings.Contains(selected, "38;5;240") {
-		t.Fatalf("selected row still uses subtle fg 240:\n%q", selected)
+	subtleSeq := sgrOf(subtleStyle.Render("x"))
+	brightSeq := sgrOf(lipgloss.NewStyle().Foreground(colorBright).Render("x"))
+	if strings.Contains(selected, subtleSeq) {
+		t.Fatalf("selected row still uses the subtle fg %q:\n%q", subtleSeq, selected)
 	}
-	if !strings.Contains(unselected, "38;5;240") {
-		t.Fatalf("unselected row should use subtle fg 240:\n%q", unselected)
+	if !strings.Contains(unselected, subtleSeq) {
+		t.Fatalf("unselected row should use the subtle fg %q:\n%q", subtleSeq, unselected)
 	}
-	if !strings.Contains(selected, "38;5;231") {
-		t.Fatalf("selected row missing bright reapply fg 231:\n%q", selected)
+	if !strings.Contains(selected, brightSeq) {
+		t.Fatalf("selected row missing the bright reapply fg %q:\n%q", brightSeq, selected)
 	}
-	if !strings.Contains(selected, " · grok · ") {
+	if !strings.Contains(selected, " · grok") {
 		t.Fatalf("selected missing meta text:\n%q", selected)
 	}
 }

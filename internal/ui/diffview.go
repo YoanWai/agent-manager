@@ -765,7 +765,7 @@ func (m *Model) annotationRows(fd *diff.FileDiff, lineIdx, width int) []string {
 		return nil
 	}
 	comment := annotationStyle.Render("  ¶ " + note.text)
-	return wrapTinted(comment, nil, annotationBg, annotationBg, width)
+	return wrapTinted(comment, nil, annotationBg(), annotationBg(), width)
 }
 
 func (m *Model) annotationAt(path string, line diff.Line) *annotation {
@@ -1128,15 +1128,43 @@ func (m *Model) viewDiffFull() string {
 	if fileWidth < 28 {
 		fileWidth = 28
 	}
-	codeWidth := m.width - fileWidth
+	// Two columns go to the seam and the fill's bleed edge between the
+	// two surfaces.
+	codeWidth := m.width - fileWidth - 2
 
-	files := titledPanel("Files", m.viewDiffFileList(fileWidth-4, bodyHeight-2), fileWidth, bodyHeight)
-	code := titledPanel(m.diffCodeTitle(), m.viewDiffCode(codeWidth-4, bodyHeight-2), codeWidth, bodyHeight)
-	body := lipgloss.JoinHorizontal(lipgloss.Top, files, code)
+	// Files sit on the rail surface, the code on the backdrop: the same
+	// two-surface split the session list uses, so review reads as the same
+	// application rather than a second one.
+	fileLines := append([]string{"", strings.Repeat(" ", railInset) + subtleStyle.Render("files")},
+		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railInset)...)
+	codeLines := append([]string{"", "  " + subtleStyle.Render(ansi.Strip(m.diffCodeTitle()))},
+		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
-	header := m.viewDiffHeader(sess.Name)
-	status := m.viewDiffStatus()
-	return strings.Join([]string{header, "", body, status, footer}, "\n")
+	// The column seam tees into the rules that open and close the body,
+	// same as the list view, so the two screens share one frame language.
+	frame := []string{
+		paint(m.viewDiffHeader(sess.Name), m.width, backdropHex()),
+		m.boundedRuleRow(fileWidth+1, m.width, "▀"),
+	}
+	edge := make([]string, bodyHeight)
+	for i := range edge {
+		edge[i] = railEdgeCell(panelHex())
+	}
+	frame = append(frame, joinColumns(
+		edge,
+		paintRows(fileLines, fileWidth-1, bodyHeight, panelHex()),
+		m.vruleColumn(bodyHeight),
+		m.bleedColumn(bodyHeight),
+		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
+	)...)
+	frame = append(frame,
+		m.boundedRuleRow(fileWidth+1, m.width, "▄"),
+		paint(m.viewDiffStatus(), m.width, backdropHex()),
+	)
+	for _, line := range splitLines(footer) {
+		frame = append(frame, paint(line, m.width, backdropHex()))
+	}
+	return strings.Join(frame, "\n")
 }
 
 // stripBaseHash drops the @<short-sha> suffix BaseDesc carries from
@@ -1155,7 +1183,7 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	if m.diff.sideBySide {
 		layout = "split"
 	}
-	left := badgeStyle.Render("◆ Review · "+sessName) + "  " +
+	left := "  " + lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("review · "+sessName) + "  " +
 		keyPill("s", m.diff.scope.String(), colorAccent2) + "  " +
 		keyPill("u", layout, colorAccent)
 	if root := m.diff.set.Repo.Root; root != "" {
@@ -1292,6 +1320,7 @@ func (m *Model) viewDiffCode(width, height int) string {
 	}
 
 	hl := m.currentHL()
+	m.ensureDiffCursorVisible(fd, hl, width, height)
 	var b strings.Builder
 	if m.diff.sideBySide {
 		m.renderSideBySide(&b, fd, hl, width, height)
@@ -1304,6 +1333,74 @@ func (m *Model) viewDiffCode(width, height int) string {
 		return padToHeight(body, height) + "\n" + bar
 	}
 	return body
+}
+
+// ensureDiffCursorVisible raises the scroll until every painted row of the
+// window from the scroll through the cursor fits the viewport. The cursor
+// and scroll count logical lines, but a long line wraps onto several
+// painted rows, and a comment adds more below its line; sizing the window
+// by line count alone lets the cursor walk below the last painted row, so
+// the end of a wrapped file is selected but never on screen.
+func (m *Model) ensureDiffCursorVisible(fd *diff.FileDiff, hl *fileHL, width, height int) {
+	total := len(fd.Lines)
+	span := func(i int) int {
+		return len(m.renderDiffRow(fd, hl, i, width, false)) + len(m.annotationRows(fd, i, width))
+	}
+	if m.diff.sideBySide && m.mode == modeDiff {
+		rows := fd.SideBySideRows()
+		total = len(rows)
+		half := (width - 1) / 2
+		span = func(i int) int {
+			row := rows[i]
+			tallest := len(m.renderSideCell(fd, hl, row.Left, half, true))
+			if right := len(m.renderSideCell(fd, hl, row.Right, width-half-1, false)); right > tallest {
+				tallest = right
+			}
+			if row.Left >= 0 {
+				tallest += len(m.annotationRows(fd, row.Left, width))
+			}
+			if row.Right >= 0 && row.Right != row.Left {
+				tallest += len(m.annotationRows(fd, row.Right, width))
+			}
+			return tallest
+		}
+	}
+
+	cursor := m.diff.cursorLine
+	if cursor > total-1 {
+		cursor = total - 1
+	}
+	if cursor < 0 {
+		return
+	}
+	if m.diff.scroll > cursor {
+		m.diff.scroll = cursor
+	}
+	if m.diff.scroll < 0 {
+		m.diff.scroll = 0
+	}
+	for m.diff.scroll < cursor {
+		// Each overflow indicator takes a row of the same budget.
+		used := 0
+		if m.diff.scroll > 0 {
+			used++
+		}
+		if cursor < total-1 {
+			used++
+		}
+		fits := true
+		for i := m.diff.scroll; i <= cursor; i++ {
+			used += span(i)
+			if used > height {
+				fits = false
+				break
+			}
+		}
+		if fits {
+			break
+		}
+		m.diff.scroll++
+	}
 }
 
 func (m *Model) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *fileHL, width, height int) {

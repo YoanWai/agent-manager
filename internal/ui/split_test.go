@@ -196,7 +196,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	m = updated.(*Model)
 
 	div := m.dividerX()
-	// Body starts at listChromeRows; any y inside the body range works.
+	// Body starts at the header's height; any y inside the body range works.
 	updated, _ = m.handleMouse(tea.MouseMsg{
 		X: div, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
@@ -304,8 +304,8 @@ func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 		t.Fatal("press on header row must not start drag")
 	}
 	y0, y1 := m.bodyYRange()
-	if y0 != listChromeRows {
-		t.Fatalf("body start = %d want %d", y0, listChromeRows)
+	if y0 != m.listChromeRows() {
+		t.Fatalf("body start = %d want %d", y0, m.listChromeRows())
 	}
 	updated, _ = m.handleMouse(tea.MouseMsg{
 		X: div, Y: y1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
@@ -335,18 +335,18 @@ func TestEnterResizeBlockedWhenSearchingOrQuick(t *testing.T) {
 func TestBodyYRangeMatchesListChrome(t *testing.T) {
 	m := &Model{width: 120, height: 40, splitRatio: defaultSplitRatio, mode: modeList}
 	start, end := m.bodyYRange()
-	if start != listChromeRows {
-		t.Fatalf("start = %d want listChromeRows=%d", start, listChromeRows)
+	if start != m.listChromeRows() {
+		t.Fatalf("start = %d want listChromeRows=%d", start, m.listChromeRows())
 	}
-	wantH := m.height - 4 - lipgloss.Height(m.viewFooter())
+	wantH := m.height - m.listChromeRows() - 2 - lipgloss.Height(m.viewFooter())
 	if wantH < 3 {
 		wantH = 3
 	}
 	if m.listBodyHeight() != wantH {
 		t.Fatalf("listBodyHeight = %d want %d", m.listBodyHeight(), wantH)
 	}
-	if end != listChromeRows+wantH {
-		t.Fatalf("end = %d want %d", end, listChromeRows+wantH)
+	if end != m.listChromeRows()+wantH {
+		t.Fatalf("end = %d want %d", end, m.listChromeRows()+wantH)
 	}
 }
 
