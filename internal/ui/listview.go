@@ -202,12 +202,22 @@ func (m *Model) emptyRailLines(width int) []string {
 	return []string{"", pad + mutedStyle.Render(title), "", pad + hint}
 }
 
+// treeGuides is the ancestry trail left of a nested entry: one quiet
+// guide line per level, drawn on both lines of an entry so the line runs
+// unbroken down a group's children.
+func treeGuides(depth int) string {
+	if depth <= 0 {
+		return ""
+	}
+	return subtleStyle.Render(strings.Repeat("│  ", depth))
+}
+
 // renderTreeRow paints one entry: a status dot, the name, and a quiet
 // second line carrying the state and tool. The selected entry lifts onto
 // its own band instead of wearing a marker.
 func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
 	pad := strings.Repeat(" ", railInset)
-	indent := strings.Repeat("  ", entry.depth)
+	indent := treeGuides(entry.depth)
 
 	if m.renamingRow(entry) {
 		line := pad + indent + m.renameRowInput(entry, width-railGutter-ansi.StringWidth(indent))
