@@ -603,9 +603,12 @@ func turnInFlight(current string) bool {
 
 // applyHookStatus trusts the hook-reported status over pane heuristics
 // for the states hooks can see. They cannot see a plain-text question,
-// an interrupt banner, or an error line, so a matched pane verdict
-// upgrades finished to waiting or errored, and working to waiting (an
-// Esc interrupt fires no Stop event). A working hook also reconciles to
+// an interrupt banner, an error line, or work that outlives the turn that
+// started it, so a matched pane verdict upgrades finished to waiting,
+// errored or working (Stop fires when the main agent stops responding,
+// which leaves background agents reported as finished while they run),
+// and working to waiting (an Esc interrupt fires no Stop event). A
+// working hook also reconciles to
 // the pane verdict when the pane shows the turn already ended: background
 // subagents write working via PreToolUse/PostToolUse but fire no Stop
 // when they finish, so the file would otherwise stay pinned at working
@@ -615,7 +618,7 @@ func (p *poller) applyHookStatus(sess store.Session, text, hookStatus string) st
 	paneStatus, matched := p.engine.Match(sess.Tool, text)
 	switch hookStatus {
 	case status.Finished:
-		if matched && (paneStatus == status.Waiting || paneStatus == status.Errored) {
+		if matched && (paneStatus == status.Waiting || paneStatus == status.Errored || paneStatus == status.Working) {
 			return paneStatus
 		}
 		if sess.Acked {

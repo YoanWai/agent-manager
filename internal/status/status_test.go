@@ -94,6 +94,15 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 			"⏺ What color now?\n✻ Crunched for 9s\n  DONE\n✻ Worked for 10s\n────\n❯ \n────", Finished},
 		{"claude interrupted turn (real capture)", "claude",
 			"  221\n⎿  Interrupted · What should Claude do instead?\n────\n❯ \n────\n  ⏵⏵ bypass permissions on", Waiting},
+		// 2026-07-26 real capture: background agents outlive the turn that
+		// spawned them, and the wait line has the same shape as a turn-end
+		// summary ("glyph word for digit"), so it must not read as finished.
+		{"claude waiting on background agents (real capture)", "claude",
+			"⏺ Security agent done. 2 left (logic, backend/API).\n✻ Waiting for 2 background agents to finish\n────\n❯ \n────\n  ⏵⏵ bypass permissions on", Working},
+		{"claude waiting on background agents with hidden-message note (real capture)", "claude",
+			"✻ Waiting for 1 background agent to finish · 13 messages hidden (/focus to show)\n────\n❯ \n────\n  ⏵⏵ bypass permissions on", Working},
+		{"claude background wait after a completed turn (real capture)", "claude",
+			"⏺ done\n✻ Worked for 8m 12s\n  Ran 5 agents\n✻ Waiting for 5 background agents to finish\n────\n❯ \n────", Working},
 		{"claude streaming without spinner (real capture)", "claude",
 			"  183\n  184\n────\n❯ \n────\n  ▎ ● Fable 5 ✦ medium", Idle},
 		{"claude fresh start, typed unsubmitted", "claude",

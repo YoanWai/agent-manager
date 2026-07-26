@@ -36,6 +36,7 @@ type toolRules struct {
 	chromeLine     *regexp.Regexp
 	blockedLine    *regexp.Regexp
 	trailingNote   *regexp.Regexp
+	busyLine       *regexp.Regexp
 	rules          []rule
 }
 
@@ -64,6 +65,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.ChromeLine, &tr.chromeLine},
 			{tool.BlockedLine, &tr.blockedLine},
 			{tool.TrailingNote, &tr.trailingNote},
+			{tool.BusyLine, &tr.busyLine},
 		}
 		for _, opt := range optional {
 			if opt.pattern == "" {
@@ -95,10 +97,34 @@ func (e *Engine) Match(tool, pane string) (string, bool) {
 			return r.state, true
 		}
 	}
+	if tr.isBusy(pane) {
+		return Working, true
+	}
 	if state, ok := tr.turnState(pane); ok {
 		return state, true
 	}
 	return tr.defaultStatus, false
+}
+
+// isBusy reports whether the newest content line marks work that outlives
+// the turn which started it. Background agents keep running after the turn
+// that spawned them ends, and their wait line carries the same shape as a
+// turn-end summary, so turnState would otherwise read the turn as over
+// while the session is still busy.
+func (tr toolRules) isBusy(pane string) bool {
+	if tr.busyLine == nil {
+		return false
+	}
+	region, ok := tr.activityRegion(pane)
+	if !ok {
+		return false
+	}
+	lines := strings.Split(region, "\n")
+	last := lastContentIndex(lines, len(lines)-1, tr.chromeLine)
+	if last < 0 {
+		return false
+	}
+	return tr.busyLine.MatchString(strings.TrimRight(lines[last], " \t"))
 }
 
 // matchScope narrows rule matching to the current turn: the text after
