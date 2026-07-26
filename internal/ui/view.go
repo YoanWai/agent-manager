@@ -77,8 +77,9 @@ func (m *Model) splitWidths() (int, int) {
 func (m *Model) previewPaneWidth() int {
 	_, rightWidth := m.splitWidths()
 	// The seam and bleed columns between the rail and the content are not
-	// the pane's.
-	w := rightWidth - 2 - 2*contentGutter
+	// the pane's. The rest is: captured output spans the column, so a
+	// session is sized to the full width its preview paints into.
+	w := rightWidth - 2
 	if w < 1 {
 		return 1
 	}
@@ -89,7 +90,12 @@ func (m *Model) previewPaneWidth() int {
 // section can show. Mirrors viewSidebar + viewPreview so tmux is pinned
 // to the same box the UI paints into.
 func (m *Model) previewPaneHeight() int {
-	width := m.previewPaneWidth()
+	// Our own blocks wrap inside the column's gutters, so their heights
+	// are measured at that width rather than at the preview's full span.
+	inner := m.previewPaneWidth() - 2*contentGutter
+	if inner < 1 {
+		inner = 1
+	}
 	if m.height < 1 {
 		return 1
 	}
@@ -98,11 +104,11 @@ func (m *Model) previewPaneHeight() int {
 		return 1
 	}
 	if m.quick.active {
-		avail -= lipgloss.Height(m.viewQuickBar(width)) + 1
+		avail -= lipgloss.Height(m.viewQuickBar(inner)) + 1
 	}
 	// Mirrors contentLines: the detail head, the seam, then the preview
 	// under its label and the blank line beneath it.
-	rest := avail - lipgloss.Height(m.viewDetail(width)) - 1
+	rest := avail - lipgloss.Height(m.viewDetail(inner)) - 1
 	if rest < 3 {
 		// Preview section is hidden; keep a tiny pane for create/attach paths.
 		return 3
@@ -315,6 +321,23 @@ func (m *Model) groupStatusCounts(group string) map[string]int {
 		}
 	}
 	return counts
+}
+
+// groupStatusGlyphs is the subtree's rollup written in dots: each state
+// present as its own glyph and count, tinted its own color. A one-line
+// group row has no width to spell the states out, and the glyphs are the
+// same ones the sessions under it wear.
+func (m *Model) groupStatusGlyphs(group string) string {
+	counts := m.groupStatusCounts(group)
+	var parts []string
+	for _, st := range []string{status.Working, status.Waiting, status.Finished, status.Errored, status.Idle, status.Dead} {
+		if counts[st] == 0 {
+			continue
+		}
+		parts = append(parts, lipgloss.NewStyle().Foreground(statusColor(st)).
+			Render(fmt.Sprintf("%s %d", statusGlyph(st), counts[st])))
+	}
+	return strings.Join(parts, subtleStyle.Render("  "))
 }
 
 // previewDangerSeqs strips capture sequences that would scroll or clear the
