@@ -47,7 +47,7 @@ func (m *Model) viewListFrame() string {
 	bleedWidth := contentWidth - 1
 	railWidth := leftWidth - 1
 	railRows := m.railLines(railWidth, bodyHeight)
-	contentRows := m.contentLines(bleedWidth-2*contentGutter, bodyHeight)
+	contentRows := m.contentLines(bleedWidth, bodyHeight)
 	seam := make([]string, bodyHeight)
 	edge := make([]string, bodyHeight)
 	for i := range seam {
@@ -114,7 +114,7 @@ func (m *Model) entryLines(width, height int) []contentLine {
 	}
 	heights := make([]int, len(m.rows))
 	for i := range heights {
-		heights[i] = m.entryHeight()
+		heights[i] = entryHeight(m.rows[i])
 	}
 	start, end := lineWindow(heights, m.cursor, height)
 
@@ -124,11 +124,12 @@ func (m *Model) entryLines(width, height int) []contentLine {
 	}
 	for i := start; i < end; i++ {
 		selected := i == m.cursor
+		entry := m.rows[i]
 		tone := panelHex()
-		if selected || m.renamingRow(m.rows[i]) {
+		if selected || m.renamingRow(entry) {
 			tone = selectedHex()
 		}
-		for _, line := range splitLines(m.renderTreeRow(m.rows[i], selected, width, i)) {
+		for _, line := range splitLines(m.renderTreeRow(entry, selected, width, i, tone)) {
 			lines = append(lines, contentLine{text: line, tone: tone})
 		}
 	}
@@ -141,10 +142,10 @@ func (m *Model) entryLines(width, height int) []contentLine {
 	return lines
 }
 
-// entryHeight is how many lines an entry paints. Every entry is the same
-// height, groups included: a ragged list of one- and two-line rows reads
-// as gaps rather than as rhythm.
-func (m *Model) entryHeight() int { return 2 }
+// entryHeight is how many lines an entry paints. Every entry is one line,
+// groups included: a ragged list of one- and two-line rows reads as gaps
+// rather than as rhythm.
+func entryHeight(treeRow) int { return 1 }
 
 // lineWindow keeps the cursor's entry fully visible inside a line budget,
 // scrolling by whole entries so an entry is never cut in half.
@@ -202,20 +203,20 @@ func (m *Model) emptyRailLines(width int) []string {
 	return []string{"", pad + mutedStyle.Render(title), "", pad + hint}
 }
 
-// treeGuidesAt is the ancestry trail left of a nested entry: the head
-// line takes a branch connector — ├─ mid-list, ╰─ for the last child —
-// and the meta line under it continues the guide, so a group's children
-// hang off its branch the way the legacy tree drew them. A slot goes
-// quiet once its level has no further siblings below.
-func (m *Model) treeGuidesAt(index int) (string, string) {
+// treeGuidesAt is the ancestry trail left of a nested entry: a branch
+// connector — ├─ mid-list, ╰─ for the last child — behind one guide per
+// ancestor, so a group's children hang off its branch the way the legacy
+// tree drew them. A slot goes quiet once its level has no further
+// siblings below, which is what closes a branch off.
+func (m *Model) treeGuidesAt(index int) string {
 	if index < 0 || index >= len(m.rows) {
-		return "", ""
+		return ""
 	}
 	depth := m.rows[index].depth
 	if depth <= 0 {
-		return "", ""
+		return ""
 	}
-	var head, meta strings.Builder
+	var guides strings.Builder
 	for slot := 1; slot <= depth; slot++ {
 		continues := false
 		for j := index + 1; j < len(m.rows); j++ {
@@ -229,66 +230,58 @@ func (m *Model) treeGuidesAt(index int) (string, string) {
 		}
 		switch {
 		case slot < depth && continues:
-			head.WriteString("│  ")
-			meta.WriteString("│  ")
+			guides.WriteString("│  ")
 		case slot < depth:
-			head.WriteString("   ")
-			meta.WriteString("   ")
+			guides.WriteString("   ")
 		case continues:
-			head.WriteString("├─ ")
-			meta.WriteString("│  ")
+			guides.WriteString("├─ ")
 		default:
-			head.WriteString("╰─ ")
-			meta.WriteString("   ")
+			guides.WriteString("╰─ ")
 		}
 	}
-	return subtleStyle.Render(head.String()), subtleStyle.Render(meta.String())
+	return subtleStyle.Render(guides.String())
 }
 
-// renderTreeRow paints one entry: a status dot, the name, and a quiet
-// second line carrying the state and tool. The selected entry lifts onto
-// its own band instead of wearing a marker.
-func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int) string {
+// renderTreeRow paints one entry: a status dot, the name, and what the
+// entry is doing set against the row's far edge. The selected entry lifts
+// onto its own band instead of wearing a marker.
+func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg string) string {
 	pad := strings.Repeat(" ", railInset)
-	head, meta := m.treeGuidesAt(index)
+	guides := m.treeGuidesAt(index)
 
 	if m.renamingRow(entry) {
-		line := pad + head + m.renameRowInput(entry, width-railGutter-ansi.StringWidth(head))
+		line := pad + guides + m.renameRowInput(entry, width-railGutter-ansi.StringWidth(guides))
 		return paint(line, width, selectedHex())
 	}
 
 	if entry.isGroup {
-		return m.renderGroupEntry(entry, selected, width, pad, head, meta)
+		return m.renderGroupEntry(entry, selected, width, pad, guides, bg)
 	}
-	return m.renderSessionEntry(entry, selected, width, pad, head, meta)
+	return m.renderSessionEntry(entry, selected, width, pad, guides, bg)
 }
 
-func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, headGuides, metaGuides string) string {
+func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, bg string) string {
 	sess := entry.sess
 	dot := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
 	nameStyle := valueStyle
 	if selected {
 		nameStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 	}
-	head := pad + headGuides + dot + " " + nameStyle.Render(sess.Name)
+	head := pad + guides + dot + " " + nameStyle.Render(sess.Name)
 
 	metaStyle := subtleStyle
 	if selected {
 		metaStyle = mutedStyle
 	}
-	age := metaStyle.Render(relSince(lastActivity(sess)))
-	meta := pad + metaGuides + "  " +
-		lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
-		metaStyle.Render(" · "+sess.Tool)
+	// A session names its state in words as well as in its dot; a group,
+	// whose row rolls several states together, is left to its dots.
+	meta := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
+		metaStyle.Render(" · "+sess.Tool+" · "+relSince(lastActivity(sess)))
 
-	bg := panelHex()
-	if selected {
-		bg = selectedHex()
-	}
-	return paint(rowColumns(head, age, width-railGutter), width, bg) + "\n" + paint(meta, width, bg)
+	return paint(rowColumns(head, meta, width-railGutter), width, bg)
 }
 
-func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, headGuides, metaGuides string) string {
+func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, guides, bg string) string {
 	marker := "▾"
 	if m.collapsed[entry.group] {
 		marker = "▸"
@@ -297,26 +290,17 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, h
 	if selected {
 		nameStyle = nameStyle.Foreground(colorBright)
 	}
-	count := m.groupSessionCount(entry.group)
-	countLabel := fmt.Sprintf("%d agents", count)
-	if count == 1 {
-		countLabel = "1 agent"
-	}
-	head := pad + headGuides + subtleStyle.Render(marker) + " " + nameStyle.Render(baseName(entry.group))
+	head := pad + guides + subtleStyle.Render(marker) + " " + nameStyle.Render(baseName(entry.group))
 
-	// The second line carries what the group is doing, so a folded group
-	// still reports its subtree without being opened.
-	meta := m.groupStatusBreakdown(entry.group)
+	// What the group is doing rides on the same line as its name, so a
+	// folded group still reports its subtree without being opened. It is
+	// written in dots rather than words: the counts state the size too.
+	meta := m.groupStatusGlyphs(entry.group)
 	if meta == "" {
 		meta = subtleStyle.Render("no agents yet")
 	}
 
-	bg := panelHex()
-	if selected {
-		bg = selectedHex()
-	}
-	return paint(rowColumns(head, subtleStyle.Render(countLabel), width-railGutter), width, bg) + "\n" +
-		paint(pad+metaGuides+"  "+meta, width, bg)
+	return paint(rowColumns(head, meta, width-railGutter), width, bg)
 }
 
 // computerLines is the machine block docked at the rail's foot: a label
@@ -363,9 +347,12 @@ func (m *Model) computerLines(width int) []string {
 }
 
 // contentLines is the right column: what the cursor is on, then its live
-// pane, with the quick prompt docked at the foot when it is open.
+// pane, with the quick prompt docked at the foot when it is open. width is
+// the whole column; our own blocks sit inside its gutters, while the
+// captured pane spans it edge to edge.
 func (m *Model) contentLines(width, height int) []contentLine {
 	gutter := strings.Repeat(" ", contentGutter)
+	inner := width - 2*contentGutter
 	ours := func(lines []string) []contentLine {
 		out := make([]contentLine, len(lines))
 		for i, line := range lines {
@@ -376,14 +363,14 @@ func (m *Model) contentLines(width, height int) []contentLine {
 
 	var bar []contentLine
 	if m.quick.active {
-		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(width)))...)
+		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(inner)))...)
 	}
-	body := ours(splitLines(m.viewDetail(width)))
+	body := ours(splitLines(m.viewDetail(inner)))
 	rest := height - len(body) - len(bar) - 1
 	if rest >= 3 {
 		body = append(body, contentLine{rule: true})
 		if group, ok := m.selectedGroup(); ok {
-			body = append(body, ours(splitLines(m.viewGroupAgents(group, width, rest)))...)
+			body = append(body, ours(splitLines(m.viewGroupAgents(group, inner, rest)))...)
 		} else {
 			body = append(body, m.previewLines(width, rest, gutter)...)
 		}
@@ -395,8 +382,10 @@ func (m *Model) contentLines(width, height int) []contentLine {
 }
 
 // previewLines is the captured pane under its label. The captured rows are
-// marked raw: painting our backdrop behind an agent's own CLI colors would
-// replace the background it drew itself, so those rows keep the terminal's.
+// marked raw and drawn without the column's gutters: painting our backdrop
+// behind an agent's own CLI colors would replace the background it drew
+// itself, and insetting its output would put a margin around a terminal
+// that has its own. Only the label, which is ours, keeps the gutter.
 func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	lines := []contentLine{
 		{text: gutter + subtleStyle.Render("preview")},
@@ -411,7 +400,7 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 		return append(lines, contentLine{text: gutter + mutedStyle.Render("(no output yet)")})
 	}
 	for _, line := range pane {
-		lines = append(lines, contentLine{text: gutter + previewLine(line, width), raw: true})
+		lines = append(lines, contentLine{text: previewLine(line, width), raw: true})
 	}
 	// Rows past the capture stay raw too: a painted tail under unpainted
 	// output would read as a box drawn around the agent's last line.
