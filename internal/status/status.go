@@ -106,11 +106,13 @@ func (e *Engine) Match(tool, pane string) (string, bool) {
 	return tr.defaultStatus, false
 }
 
-// isBusy reports whether the newest content line marks work that outlives
-// the turn which started it. Background agents keep running after the turn
-// that spawned them ends, and their wait line carries the same shape as a
-// turn-end summary, so turnState would otherwise read the turn as over
-// while the session is still busy.
+// isBusy reports whether the newest turn is still running work that
+// outlives it. Background agents keep going after the turn that spawned
+// them ends, and their wait line carries the same shape as a turn-end
+// summary, so turnState would otherwise read the turn as over while the
+// session is still busy. Anchoring on the newest busy line and requiring
+// only chrome and trailing notes below it means a wait line from an older
+// turn, with real output under it, cannot retrigger.
 func (tr toolRules) isBusy(pane string) bool {
 	if tr.busyLine == nil {
 		return false
@@ -120,11 +122,12 @@ func (tr toolRules) isBusy(pane string) bool {
 		return false
 	}
 	lines := strings.Split(region, "\n")
-	last := lastContentIndex(lines, len(lines)-1, tr.chromeLine)
-	if last < 0 {
-		return false
+	for i := len(lines) - 1; i >= 0; i-- {
+		if tr.busyLine.MatchString(strings.TrimRight(lines[i], " \t")) {
+			return tr.turnIsNewest(lines[i+1:])
+		}
 	}
-	return tr.busyLine.MatchString(strings.TrimRight(lines[last], " \t"))
+	return false
 }
 
 // matchScope narrows rule matching to the current turn: the text after
