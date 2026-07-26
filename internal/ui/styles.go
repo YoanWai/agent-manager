@@ -15,7 +15,6 @@ var (
 	colorSurface lipgloss.Color
 	colorOverlay lipgloss.Color
 	colorBorder  lipgloss.Color
-	colorFocus   lipgloss.Color
 	colorBright  lipgloss.Color
 	colorText    lipgloss.Color
 	colorDim     lipgloss.Color

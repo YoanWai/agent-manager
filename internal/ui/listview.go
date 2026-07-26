@@ -614,17 +614,6 @@ func (m *Model) headerAgents() string {
 		subtleStyle.Render(" · ") + labelStyle.Render("ram ") + valueStyle.Render(humanBytes(m.agents.rss))
 }
 
-func joinHeaderRight(counts, agents string) string {
-	switch {
-	case counts == "":
-		return agents
-	case agents == "":
-		return counts
-	default:
-		return counts + subtleStyle.Render("   ") + agents
-	}
-}
-
 // viewStatusCounts is the fleet-at-a-glance strip: a tinted dot and count
 // per state present among the listed sessions.
 func (m *Model) viewStatusCounts(compact bool) string {

@@ -290,16 +290,6 @@ func parentGroup(group string) string {
 	return ""
 }
 
-func (m *Model) directSubgroupCount(group string) int {
-	count := 0
-	for path := range groupClosure(m.groups, m.sessions) {
-		if parentGroup(path) == group && path != group {
-			count++
-		}
-	}
-	return count
-}
-
 // groupStatusBreakdown renders "2 working · 1 waiting" for the subtree,
 // each count tinted in its status color, skipping zero statuses.
 func (m *Model) groupStatusBreakdown(group string) string {
@@ -325,20 +315,6 @@ func (m *Model) groupStatusCounts(group string) map[string]int {
 		}
 	}
 	return counts
-}
-
-// groupStatusGlyphs is the compact per-row rollup of a group subtree's
-// live statuses (" ◐2 ?1"), idle omitted so quiet groups stay clean.
-func (m *Model) groupStatusGlyphs(group string) string {
-	counts := m.groupStatusCounts(group)
-	var b strings.Builder
-	for _, st := range []string{status.Working, status.Waiting, status.Finished, status.Errored, status.Dead} {
-		if counts[st] > 0 {
-			b.WriteString(" " + lipgloss.NewStyle().Foreground(statusColor(st)).
-				Render(fmt.Sprintf("%s%d", statusGlyph(st), counts[st])))
-		}
-	}
-	return b.String()
 }
 
 // previewDangerSeqs strips capture sequences that would scroll or clear the
@@ -377,32 +353,6 @@ func paneExact(pane string, n int) []string {
 	// capture-pane often ends with a trailing newline; drop only that.
 	pane = strings.TrimSuffix(pane, "\n")
 	lines := strings.Split(pane, "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	return lines
-}
-
-// paneTail returns the last n content-bearing lines of pane text with
-// blank runs collapsed. Used by tests and any caller that wants a dense
-// log-style excerpt rather than a 1:1 TUI frame.
-func paneTail(pane string, n int) []string {
-	if n <= 0 || pane == "" {
-		return nil
-	}
-	blank := func(line string) bool {
-		return strings.TrimSpace(ansi.Strip(line)) == ""
-	}
-	var lines []string
-	for _, line := range strings.Split(pane, "\n") {
-		if blank(line) && len(lines) > 0 && blank(lines[len(lines)-1]) {
-			continue
-		}
-		lines = append(lines, line)
-	}
-	for len(lines) > 0 && blank(lines[len(lines)-1]) {
-		lines = lines[:len(lines)-1]
-	}
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
 	}
@@ -478,10 +428,6 @@ func displayGroup(path string) string {
 		return "root"
 	}
 	return path
-}
-
-func kv(key, value string) string {
-	return labelStyle.Width(6).Render(key) + valueStyle.Render(value) + "\n"
 }
 
 // relSince is relTime worded as a moment in the past, for columns that

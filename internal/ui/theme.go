@@ -25,7 +25,6 @@ type Theme struct {
 	Surface string // selected row / chip fill
 	Overlay string // raised fill for gauges tracks and gutters
 	Border  string // idle panel border
-	Focus   string // focused panel border
 
 	// Type.
 	Bright string // emphasized text (selected names, values that must win)
@@ -55,7 +54,6 @@ var themes = []Theme{
 		Surface: "#232830",
 		Overlay: "#2d333d",
 		Border:  "#2d333d",
-		Focus:   "#6f9fd0",
 		Bright:  "#eceff4",
 		Text:    "#c6ccd6",
 		Dim:     "#98a0ac",
@@ -75,7 +73,6 @@ var themes = []Theme{
 		Surface: "#073642",
 		Overlay: "#0e4753",
 		Border:  "#0e4753",
-		Focus:   "#268bd2",
 		Bright:  "#eee8d5",
 		Text:    "#93a1a1",
 		Dim:     "#839496",
@@ -95,7 +92,6 @@ var themes = []Theme{
 		Surface: "#313244",
 		Overlay: "#45475a",
 		Border:  "#45475a",
-		Focus:   "#cba6f7",
 		Bright:  "#f5f5ff",
 		Text:    "#cdd6f4",
 		Dim:     "#a6adc8",
@@ -115,7 +111,6 @@ var themes = []Theme{
 		Surface: "#292e42",
 		Overlay: "#3b4261",
 		Border:  "#3b4261",
-		Focus:   "#7aa2f7",
 		Bright:  "#ffffff",
 		Text:    "#c0caf5",
 		Dim:     "#9aa5ce",
@@ -135,7 +130,6 @@ var themes = []Theme{
 		Surface: "#3c3836",
 		Overlay: "#504945",
 		Border:  "#504945",
-		Focus:   "#83a598",
 		Bright:  "#fbf1c7",
 		Text:    "#ebdbb2",
 		Dim:     "#bdae93",
@@ -155,7 +149,6 @@ var themes = []Theme{
 		Surface: "#3b4252",
 		Overlay: "#434c5e",
 		Border:  "#434c5e",
-		Focus:   "#88c0d0",
 		Bright:  "#eceff4",
 		Text:    "#d8dee9",
 		Dim:     "#aebacf",
@@ -175,7 +168,6 @@ var themes = []Theme{
 		Surface: "#343746",
 		Overlay: "#44475a",
 		Border:  "#44475a",
-		Focus:   "#bd93f9",
 		Bright:  "#ffffff",
 		Text:    "#f8f8f2",
 		Dim:     "#c3c3d0",
@@ -195,7 +187,6 @@ var themes = []Theme{
 		Surface: "#26233a",
 		Overlay: "#403d52",
 		Border:  "#403d52",
-		Focus:   "#c4a7e7",
 		Bright:  "#e0def4",
 		Text:    "#e0def4",
 		Dim:     "#908caa",
@@ -215,7 +206,6 @@ var themes = []Theme{
 		Surface: "#26262b",
 		Overlay: "#3a3a41",
 		Border:  "#3a3a41",
-		Focus:   "#d8d8e0",
 		Bright:  "#ffffff",
 		Text:    "#d0d0d8",
 		Dim:     "#9a9aa4",
@@ -254,7 +244,6 @@ func applyTheme(t Theme) {
 	colorSurface = lipgloss.Color(t.Surface)
 	colorOverlay = lipgloss.Color(t.Overlay)
 	colorBorder = lipgloss.Color(t.Border)
-	colorFocus = lipgloss.Color(t.Focus)
 	colorBright = lipgloss.Color(t.Bright)
 	colorText = lipgloss.Color(t.Text)
 	colorDim = lipgloss.Color(t.Dim)
