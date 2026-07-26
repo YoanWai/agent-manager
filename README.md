@@ -1,9 +1,12 @@
 # Agent Manager
 
 [![CI](https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/YoanWai/agent-manager.svg)](https://pkg.go.dev/github.com/YoanWai/agent-manager)
-[![Go Report Card](https://goreportcard.com/badge/github.com/YoanWai/agent-manager)](https://goreportcard.com/report/github.com/YoanWai/agent-manager)
-[![codecov](https://codecov.io/gh/YoanWai/agent-manager/branch/main/graph/badge.svg)](https://codecov.io/gh/YoanWai/agent-manager)
+[![Release](https://img.shields.io/github/v/release/YoanWai/agent-manager?label=release)](https://github.com/YoanWai/agent-manager/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/YoanWai/agent-manager/total)](https://github.com/YoanWai/agent-manager/releases)
+[![Stars](https://img.shields.io/github/stars/YoanWai/agent-manager)](https://github.com/YoanWai/agent-manager/stargazers)
+![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue)
+[![Go version](https://img.shields.io/github/go-mod/go-version/YoanWai/agent-manager)](go.mod)
+[![License](https://img.shields.io/github/license/YoanWai/agent-manager)](LICENSE)
 
 ![agent-manager demo](docs/demo.gif)
 
