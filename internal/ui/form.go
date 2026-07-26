@@ -231,18 +231,26 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "up":
 		if m.form.focus == fieldGroup {
-			m.moveGroupCursor(-1)
+			if !m.moveGroupCursor(-1) {
+				m.formFocus(-1)
+			}
 		} else if dirSuggesting {
-			m.pathSugg.move(-1)
+			if !m.pathSugg.move(-1) {
+				m.formFocus(-1)
+			}
 		} else {
 			m.formFocus(-1)
 		}
 		return m, nil
 	case "down":
 		if m.form.focus == fieldGroup {
-			m.moveGroupCursor(1)
+			if !m.moveGroupCursor(1) {
+				m.formFocus(1)
+			}
 		} else if dirSuggesting {
-			m.pathSugg.move(1)
+			if !m.pathSugg.move(1) {
+				m.formFocus(1)
+			}
 		} else {
 			m.formFocus(1)
 		}
@@ -279,20 +287,21 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *Model) moveGroupCursor(delta int) {
-	m.form.groupIndex += delta
-	if m.form.groupIndex < 0 {
-		m.form.groupIndex = 0
+// moveGroupCursor moves within the expanded group picker without wrapping.
+// A false result lets the form move focus to the adjacent field.
+func (m *Model) moveGroupCursor(delta int) bool {
+	next := m.form.groupIndex + delta
+	if next < 0 || next >= len(m.form.groups) {
+		return false
 	}
-	if m.form.groupIndex >= len(m.form.groups) {
-		m.form.groupIndex = len(m.form.groups) - 1
-	}
+	m.form.groupIndex = next
 	if m.mode == modeForm && m.form.dirAuto {
 		m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	}
 	if m.mode == modeGroupForm && m.groupForm.pathAuto {
 		m.groupForm.path.SetValue(m.ancestorGroupDir(m.selectedGroupPath()))
 	}
+	return true
 }
 
 func (m *Model) formFocus(delta int) {
@@ -529,18 +538,26 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "up":
 		if m.groupForm.focus == gfParent {
-			m.moveGroupCursor(-1)
+			if !m.moveGroupCursor(-1) {
+				m.groupFormFocus(-1)
+			}
 		} else if pathSuggesting {
-			m.pathSugg.move(-1)
+			if !m.pathSugg.move(-1) {
+				m.groupFormFocus(-1)
+			}
 		} else {
 			m.groupFormFocus(-1)
 		}
 		return m, nil
 	case "down":
 		if m.groupForm.focus == gfParent {
-			m.moveGroupCursor(1)
+			if !m.moveGroupCursor(1) {
+				m.groupFormFocus(1)
+			}
 		} else if pathSuggesting {
-			m.pathSugg.move(1)
+			if !m.pathSugg.move(1) {
+				m.groupFormFocus(1)
+			}
 		} else {
 			m.groupFormFocus(1)
 		}

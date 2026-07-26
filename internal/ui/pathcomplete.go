@@ -22,12 +22,28 @@ func (pc *pathComplete) reset() {
 
 func (pc *pathComplete) active() bool { return len(pc.suggestions) > 0 }
 
-func (pc *pathComplete) move(delta int) {
+// move advances within the suggestions without wrapping. It returns false
+// when the cursor is already at the requested edge so the containing form can
+// continue focus navigation instead of trapping the user in this list.
+func (pc *pathComplete) move(delta int) bool {
 	if !pc.active() {
-		return
+		return false
 	}
-	pc.index = (pc.index + delta + len(pc.suggestions)) % len(pc.suggestions)
+	if !pc.chosen {
+		if delta < 0 {
+			return false
+		}
+		pc.index = 0
+		pc.chosen = true
+		return true
+	}
+	next := pc.index + delta
+	if next < 0 || next >= len(pc.suggestions) {
+		return false
+	}
+	pc.index = next
 	pc.chosen = true
+	return true
 }
 
 func (pc *pathComplete) selected() string {
