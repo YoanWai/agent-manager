@@ -1524,20 +1524,20 @@ func (m *Model) viewDiffFooter() string {
 	if m.diff.annotating {
 		return footerLine([][2]string{{"↵", "save"}, {"esc", "cancel"}}, m.width)
 	}
+	repo := "repo"
+	if len(m.diff.repoRoots) > 0 {
+		repo = "repo: " + filepath.Base(m.diff.repoSel)
+	}
+	send := "send"
+	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
+		send = fmt.Sprintf("send %d", count)
+	}
 	pairs := [][2]string{
 		{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"},
 		{"n/N", "change"}, {"space", "reviewed"}, {"u", "layout"},
-		{"s", "scope: " + m.diff.scope.String()}, {"B", "target"}, {"c", "comment"},
+		{"s", "scope: " + m.diff.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
+		{"c", "comment"}, {"d", "remove"}, {"C", send},
+		{"esc/q", "close"}, {"ctrl+c", "quit"},
 	}
-	if len(m.diff.repoRoots) > 0 {
-		pairs = append(pairs, [2]string{"r", "repo: " + filepath.Base(m.diff.repoSel)})
-	}
-	if len(m.diff.worktrees) > 1 {
-		pairs = append(pairs, [2]string{"b", "branch"})
-	}
-	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
-		pairs = append(pairs, [2]string{"C", fmt.Sprintf("send %d", count)}, [2]string{"d", "remove"})
-	}
-	pairs = append(pairs, [2]string{"esc/q", "close"}, [2]string{"ctrl+c", "quit"})
 	return footerLine(pairs, m.width)
 }
