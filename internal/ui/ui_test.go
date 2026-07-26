@@ -1119,18 +1119,29 @@ func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
 	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
 		t.Fatalf("set finished: %v", err)
 	}
+	sess.Status = status.Finished
 	m.sessions[0].Status = status.Finished
 	m.rebuildRows()
 	m.selectSessionRow(t, "attach-reflow")
 
-	seedRegionHash(t, m, sess, "final answer line that wraps differently before attach\n❯ \n")
+	before := "final answer line that wraps differently after attach\n❯ \n"
+	after := "final answer line that wraps\ndifferently after attach\n❯ \n"
+	seedRegionHash(t, m, sess, before)
+	// Without clearing, the widened pane looks like streaming work.
+	if got := deriveStatus(t, m, sess, after, true); got != status.Working {
+		t.Fatalf("reflow with a prior hash should look like working (precondition), got %q", got)
+	}
 
 	if _, cmd := m.attachSelected(); cmd == nil {
 		t.Fatalf("attach did not start, err = %q", m.err)
 	}
 
-	if _, seen := m.poller.paneHashes[sess.ID]; seen {
-		t.Fatal("attach must clear the cached pane hash so the post-attach reflow is not read as streaming")
+	entered, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got := deriveStatus(t, m, entered, after, true); got != status.Idle {
+		t.Fatalf("attach must rebaseline the pane hash instead of flashing working, got %q", got)
 	}
 }
 
