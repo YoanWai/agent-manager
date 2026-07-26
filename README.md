@@ -2,8 +2,6 @@
 
 [![CI](https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/YoanWai/agent-manager?label=release)](https://github.com/YoanWai/agent-manager/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/YoanWai/agent-manager/total)](https://github.com/YoanWai/agent-manager/releases)
-[![Stars](https://img.shields.io/github/stars/YoanWai/agent-manager)](https://github.com/YoanWai/agent-manager/stargazers)
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue)
 [![Go version](https://img.shields.io/github/go-mod/go-version/YoanWai/agent-manager)](go.mod)
 [![License](https://img.shields.io/github/license/YoanWai/agent-manager)](LICENSE)
