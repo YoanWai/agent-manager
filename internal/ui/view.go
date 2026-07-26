@@ -393,12 +393,13 @@ func padToHeight(s string, height int) string {
 // viewFooter lists every shortcut, wrapping onto extra lines when the
 // terminal is too narrow for one.
 func (m *Model) viewFooter() string {
-	// The footer carries the handful of keys a session is actually driven
-	// with; ? opens the full map, so the rest stay out of the frame.
 	pairs := [][2]string{
-		{"↑↓", "navigate"}, {"↵", "attach"}, {"n", "new"}, {"g", "group"},
-		{"space", "prompt"}, {"ctrl+r", "review"}, {"/", "search"},
-		{"s", "settings"}, {"?", "keys"}, {"q", "quit"},
+		{"↑↓/jk", "navigate"}, {"shift+↑↓", "reorder"}, {"↵", "attach / fold"},
+		{"F", "fold all"}, {"n", "new"}, {"g", "group"}, {"space", "prompt"},
+		{"ctrl+r", "review"}, {"r", "rename"}, {"m", "move"},
+		{"v/V", "revive / all"}, {"a/u", "archive / restore"}, {"d", "delete"},
+		{"t", "archived"}, {"/", "search"}, {"|", "resize"}, {"s", "settings"},
+		{"?", "keys"}, {"q", "quit"},
 	}
 	if m.quick.active {
 		pairs = [][2]string{
