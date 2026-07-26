@@ -75,7 +75,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, line comments sent to the agent |
 | `f` | Fold / unfold group |
-| `s` | Settings (default tool for quick spawn) |
+| `s` | Settings (quick-spawn tool, theme, review layout) |
 | `t` | Toggle archived view |
 | `/` | Search |
 | `?` | Help |
@@ -112,7 +112,9 @@ Registration is per tool. The built-in claude, codex, opencode and grok tools re
 
 ### Diff review
 
-Press `ctrl+r` on a session to open a full-screen review of its repo: changed files with +/− counts on the left, the whole file on the right with syntax highlighting and changed lines tinted, so every edit reads in full context. Arrow keys and `ctrl+d`/`ctrl+u` scroll the file, `J`/`K` switch files, `n`/`N` jump between changes, `u` toggles unified and side-by-side, `s` cycles the scope (uncommitted, vs target, last commit, staged), and `space` marks a file reviewed. When the working directory holds several repos, `r` opens a picker you type to filter, and `b` lists the current repo's worktrees by branch name so you can review another branch with one keypress. `B` picks the target (the merge-into branch) the "vs target" scope compares against. Each changeable value in the header wears its own key, so the scope, layout, repo, and target pills read as `s`, `u`, `r`, `B` legends at a glance. The diff refreshes as the agent keeps editing.
+Press `ctrl+r` on a session to open a full-screen review of its repo: changed files with +/− counts on the left, the whole file on the right with syntax highlighting and changed lines tinted, so every edit reads in full context. Arrow keys and `ctrl+d`/`ctrl+u` scroll the file, `g`/`G` jump to top and bottom, `J`/`K` (or `tab`/`shift+tab`) switch files, `n`/`N` jump between changes, `u` toggles unified and side-by-side, `s` cycles the scope (uncommitted, vs target, last commit, staged), and `space` marks a file reviewed. When the working directory holds several repos, `r` opens a picker you type to filter, and `b` lists the current repo's worktrees by branch name so you can review another branch with one keypress. `B` picks the target (the merge-into branch) the "vs target" scope compares against. Each changeable value in the header wears its own key, so the scope, layout, repo, and target pills read as `s`, `u`, `r`, `B` legends at a glance. The diff refreshes as the agent keeps editing.
+
+![review, side by side, with the changed lines tinted in full file context](docs/screenshot-review.png)
 
 Press `c` on a line to write a comment; `C` flattens every comment into one review prompt and sends it straight into the agent's pane, so the agent starts addressing your notes while you watch the diff update. `esc` closes the review.
 
@@ -135,6 +137,10 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 | `idle` | Nothing running |
 | `dead` | The tmux session is gone |
 
+![the session tree, with a waiting agent's permission prompt in the preview](docs/screenshot-sessions.png)
+
+Each row carries its status and tool inline, and a folded group keeps a count per status so a collapsed subtree still tells you whether anything needs you. Selecting a session shows the tail of its pane on the right, which is how a `waiting` agent's actual question reaches you without attaching.
+
 Detection matches per-tool regex rules against the visible pane, analyzes the newest turn to tell `finished` from `waiting`, and treats streaming output (content changing between polls) as `working`. A turn that ends without any turn-summary line still resolves: when a `working` pane goes quiet, the turn counts as `finished`, or `waiting` when it ends on a question. Polling keeps running while you are inside a session, so statuses stay live. The selected session's pane tail renders in the preview panel, and moving the cursor fetches the preview immediately.
 
 For Claude Code, status comes first-hand from [hook events](https://docs.anthropic.com/en/docs/claude-code/hooks) instead of pane guessing: sessions launch with a generated `--settings` file whose hooks write the lifecycle state (`working`, `waiting`, `finished`, `idle`) to a per-session status file that the poller reads first. Pane rules still refine it — hooks cannot see a plain-text question, an Esc interrupt, or an error line, so a matching pane verdict upgrades the hook status — and they take over fully as fallback when the hook file is missing or stale. Enabled per tool with `status_source = "claude-hooks"`.
@@ -142,6 +148,14 @@ For Claude Code, status comes first-hand from [hook events](https://docs.anthrop
 ### Stats
 
 The header shows a fleet summary: per-status session counts, plus `agents N% · X GB`, the combined CPU and RSS memory of every live agent's full process tree (shell, agent, and children). Agent CPU uses `ps` semantics where 100% equals one full core, so the total can exceed 100% on multi-core machines. The Computer block in the sessions panel shows machine gauges: CPU (normalized to the whole machine, capped at 100%), memory (used/total), swap, root-disk free space, and network up/down rates.
+
+### Themes
+
+`s` opens Settings, where `↑↓` move between fields and `←→` change the focused one.
+
+![settings, with the theme picker and its palette swatches](docs/screenshot-settings.png)
+
+Nine palettes ship: `classic`, `solarized dark`, `catppuccin mocha`, `tokyo night`, `gruvbox dark`, `nord`, `dracula`, `rosé pine`, and `monochrome`. The swatch strip beside the name previews the palette, and the theme applies as you step through it, so the picker is a live preview of the whole UI. The manager also matches the terminal's own background to the palette, so the window has no seam against it, and restores the terminal's background on exit. Your pick is saved with the rest of the state and restored on the next run.
 
 ## Configuration
 
