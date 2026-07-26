@@ -3,6 +3,7 @@ package tmux
 import (
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -127,6 +128,40 @@ func TestSendText(t *testing.T) {
 	if !strings.Contains(pane, "hello world") {
 		t.Fatalf("cat should echo the sent line, pane: %q", pane)
 	}
+}
+
+func TestSendTextKeepsEnterOutsideBracketedPaste(t *testing.T) {
+	driver := requireTmux(t)
+	id := "bracket" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	marker := "/tmp/am-bracket-" + id
+	t.Cleanup(func() { os.Remove(marker) })
+
+	text := "hello world"
+	want := "\x1b[200~" + text + "\x1b[201~\r"
+	command := "stty raw -echo; printf '\\033[?2004h'; dd bs=1 count=" +
+		strconv.Itoa(len(want)) + " of=" + ShellQuote(marker) + " 2>/dev/null"
+	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	// Let tmux observe the application's bracketed-paste mode request before
+	// delivering the message.
+	time.Sleep(100 * time.Millisecond)
+	if err := driver.SendText(id, text); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err := os.ReadFile(marker)
+		if err == nil && string(got) == want {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	got, _ := os.ReadFile(marker)
+	t.Fatalf("pane input = %q, want bracketed paste followed by Enter %q", got, want)
 }
 
 // Create used to type the launch line with send-keys, which silently

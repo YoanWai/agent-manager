@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func setupCompletionDir(t *testing.T) string {
@@ -79,6 +81,103 @@ func TestApplyPathSuggestionFillsDirField(t *testing.T) {
 	}
 	if m.form.dirAuto {
 		t.Fatal("dirAuto should be cleared after completion")
+	}
+}
+
+func TestPathSuggestionsExitToAdjacentFormFields(t *testing.T) {
+	root := setupCompletionDir(t)
+	m := buildModel(t)
+	m.openForm()
+	m.form.focus = fieldDir
+	m.form.name.Blur()
+	m.form.dir.Focus()
+	m.pathSugg.recompute(filepath.Join(root, "a"))
+
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	if !m.pathSugg.chosen || m.pathSugg.index != 0 {
+		t.Fatalf("first down should select the first suggestion, chosen=%v index=%d",
+			m.pathSugg.chosen, m.pathSugg.index)
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.pathSugg.index != 1 {
+		t.Fatalf("second down should select the second suggestion, index=%d", m.pathSugg.index)
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.form.focus != fieldPrompt {
+		t.Fatalf("down past the last suggestion should focus prompt, focus=%d", m.form.focus)
+	}
+
+	m.formFocus(-1)
+	m.pathSugg.recompute(filepath.Join(root, "a"))
+	m.pathSugg.chosen = true
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
+	if m.form.focus != fieldTool {
+		t.Fatalf("up past the first suggestion should focus tool, focus=%d", m.form.focus)
+	}
+}
+
+func TestGroupPickerExitsToAdjacentFields(t *testing.T) {
+	m := buildModel(t)
+
+	m.openGroupForm()
+	m.groupFormFocus(1)
+	m.form.groupIndex = 0
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyUp})
+	if m.groupForm.focus != gfName {
+		t.Fatalf("up past first parent should focus name, focus=%d", m.groupForm.focus)
+	}
+
+	m.openGroupForm()
+	m.groupFormFocus(1)
+	m.form.groupIndex = len(m.form.groups) - 1
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.groupForm.focus != gfPath {
+		t.Fatalf("down past last parent should focus path, focus=%d", m.groupForm.focus)
+	}
+
+	m.openForm()
+	m.form.focus = fieldGroup
+	m.form.name.Blur()
+	m.form.groupIndex = len(m.form.groups) - 1
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.form.focus != fieldName {
+		t.Fatalf("down past last group should wrap to name, focus=%d", m.form.focus)
+	}
+}
+
+func TestStandaloneGroupPickerWrapsWhenThereAreNoAdjacentFields(t *testing.T) {
+	m := buildModel(t)
+	m.form.groups = []groupOption{{path: ""}, {path: "alpha"}, {path: "beta"}}
+	m.mode = modeMove
+
+	m.form.groupIndex = 0
+	m.handleMoveKey(tea.KeyMsg{Type: tea.KeyUp})
+	if m.form.groupIndex != 2 {
+		t.Fatalf("up past first group should wrap to last, index=%d", m.form.groupIndex)
+	}
+
+	m.handleMoveKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.form.groupIndex != 0 {
+		t.Fatalf("down past last group should wrap to first, index=%d", m.form.groupIndex)
+	}
+}
+
+func TestRenamePathSuggestionsExitToName(t *testing.T) {
+	root := setupCompletionDir(t)
+	m := buildModel(t)
+	m.mode = modeRename
+	m.rename.isGroup = true
+	m.rename.input = textField("", 60)
+	m.rename.dir = textField("", 400)
+	m.rename.focus = 1
+	m.rename.dir.Focus()
+	m.pathSugg.recompute(filepath.Join(root, "a"))
+	m.pathSugg.chosen = true
+	m.pathSugg.index = len(m.pathSugg.suggestions) - 1
+
+	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.rename.focus != 0 {
+		t.Fatalf("down past last suggestion should wrap to name, focus=%d", m.rename.focus)
 	}
 }
 

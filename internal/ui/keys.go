@@ -803,13 +803,21 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if pathSuggesting {
 			if msg.String() == "up" {
-				m.pathSugg.move(-1)
+				if !m.pathSugg.move(-1) {
+					m.renameFocus(-1)
+				}
 			} else {
-				m.pathSugg.move(1)
+				if !m.pathSugg.move(1) {
+					m.renameFocus(1)
+				}
 			}
 			return m, nil
 		}
-		m.renameFocus(1)
+		if msg.String() == "up" {
+			m.renameFocus(-1)
+		} else {
+			m.renameFocus(1)
+		}
 		return m, nil
 	case "enter":
 		if pathSuggesting && m.pathSugg.chosen {
@@ -1287,10 +1295,14 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 		return m, nil
 	case "up":
-		m.moveGroupCursor(-1)
+		if !m.moveGroupCursor(-1) && len(m.form.groups) > 0 {
+			m.form.groupIndex = len(m.form.groups) - 1
+		}
 		return m, nil
 	case "down":
-		m.moveGroupCursor(1)
+		if !m.moveGroupCursor(1) && len(m.form.groups) > 0 {
+			m.form.groupIndex = 0
+		}
 		return m, nil
 	case "enter":
 		group := m.selectedGroupPath()
