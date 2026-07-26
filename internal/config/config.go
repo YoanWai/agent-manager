@@ -41,8 +41,8 @@ type Tool struct {
 	BlockedLine    string `toml:"blocked_line"`
 	TrailingNote   string `toml:"trailing_note"`
 	// BusyLine marks work that outlives the turn which started it, such as
-	// background agents. It reads as the newest content line and keeps a
-	// turn-end summary from resolving to finished while that work runs.
+	// background agents. Matching it in the newest turn keeps a turn-end
+	// summary from resolving to finished while that work runs.
 	BusyLine string `toml:"busy_line"`
 	Rules    []Rule `toml:"rules"`
 }
