@@ -34,6 +34,7 @@ func buildModel(t *testing.T) *Model {
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
 				TurnEnd:        `^[✻✳✶✽✢·✦✧+*] \S+ for \d.*$`,
+				BusyLine:       `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ background agents? to finish`,
 				Rules: []config.Rule{
 					{State: status.Waiting, Pattern: "Enter to confirm"},
 					{State: status.Errored, Pattern: `(?im)^\s*error:`},
@@ -808,6 +809,38 @@ func TestHookWorkingReconcilesToFinishedOnEndedTurn(t *testing.T) {
 	pane := "here is the result\n\n✻ Baked for 5s\n\n❯ \n"
 	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
 		t.Fatalf("stale working hook over an ended turn should reconcile to finished, got %q", got)
+	}
+}
+
+// Claude fires Stop when the main agent stops responding, so a turn that
+// leaves background agents running reports finished while they work. The
+// pane still shows the wait, and that verdict has to win.
+func TestHookFinishedUpgradesToWorkingWhileBackgroundAgentsRun(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked08", Tool: "claude-hooked"}
+	writeHookStatus(t, m, sess.ID, status.Finished)
+
+	pane := "⏺ Security agent done. 2 left.\n✻ Waiting for 2 background agents to finish\n❯ \n"
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Working {
+		t.Fatalf("background agents still running should upgrade hook finished to working, got %q", got)
+	}
+
+	sess.Acked = true
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Working {
+		t.Fatalf("an acked session with background agents running should still read working, got %q", got)
+	}
+}
+
+// The wait line disappears once the agents drain, and the completed turn
+// below it must settle back to the hook's own verdict.
+func TestHookFinishedStaysFinishedOnceBackgroundAgentsDrain(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked09", Tool: "claude-hooked"}
+	writeHookStatus(t, m, sess.ID, status.Finished)
+
+	pane := "⏺ all agents reported\n✻ Worked for 5s\n❯ \n"
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
+		t.Fatalf("drained background agents should read finished, got %q", got)
 	}
 }
 

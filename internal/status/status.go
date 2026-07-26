@@ -36,6 +36,7 @@ type toolRules struct {
 	chromeLine     *regexp.Regexp
 	blockedLine    *regexp.Regexp
 	trailingNote   *regexp.Regexp
+	busyLine       *regexp.Regexp
 	rules          []rule
 }
 
@@ -64,6 +65,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.ChromeLine, &tr.chromeLine},
 			{tool.BlockedLine, &tr.blockedLine},
 			{tool.TrailingNote, &tr.trailingNote},
+			{tool.BusyLine, &tr.busyLine},
 		}
 		for _, opt := range optional {
 			if opt.pattern == "" {
@@ -95,10 +97,37 @@ func (e *Engine) Match(tool, pane string) (string, bool) {
 			return r.state, true
 		}
 	}
+	if tr.isBusy(pane) {
+		return Working, true
+	}
 	if state, ok := tr.turnState(pane); ok {
 		return state, true
 	}
 	return tr.defaultStatus, false
+}
+
+// isBusy reports whether the newest turn is still running work that
+// outlives it. Background agents keep going after the turn that spawned
+// them ends, and their wait line carries the same shape as a turn-end
+// summary, so turnState would otherwise read the turn as over while the
+// session is still busy. Anchoring on the newest busy line and requiring
+// only chrome and trailing notes below it means a wait line from an older
+// turn, with real output under it, cannot retrigger.
+func (tr toolRules) isBusy(pane string) bool {
+	if tr.busyLine == nil {
+		return false
+	}
+	region, ok := tr.activityRegion(pane)
+	if !ok {
+		return false
+	}
+	lines := strings.Split(region, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if tr.busyLine.MatchString(strings.TrimRight(lines[i], " \t")) {
+			return tr.turnIsNewest(lines[i+1:])
+		}
+	}
+	return false
 }
 
 // matchScope narrows rule matching to the current turn: the text after

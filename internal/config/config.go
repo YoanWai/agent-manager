@@ -40,7 +40,11 @@ type Tool struct {
 	ChromeLine     string `toml:"chrome_line"`
 	BlockedLine    string `toml:"blocked_line"`
 	TrailingNote   string `toml:"trailing_note"`
-	Rules          []Rule `toml:"rules"`
+	// BusyLine marks work that outlives the turn which started it, such as
+	// background agents. Matching it in the newest turn keeps a turn-end
+	// summary from resolving to finished while that work runs.
+	BusyLine string `toml:"busy_line"`
+	Rules    []Rule `toml:"rules"`
 }
 
 type Config struct {
@@ -142,6 +146,7 @@ func mergeTool(user, def Tool) Tool {
 	fill(&user.ChromeLine, def.ChromeLine)
 	fill(&user.BlockedLine, def.BlockedLine)
 	fill(&user.TrailingNote, def.TrailingNote)
+	fill(&user.BusyLine, def.BusyLine)
 	if len(user.Rules) == 0 {
 		user.Rules = def.Rules
 	}
@@ -226,6 +231,9 @@ chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$"
 blocked_line = "Interrupted ·"
 # recap blocks ("※ recap: …") render below the turn-end summary
 trailing_note = "^※"
+# background agents keep running after the turn that spawned them ends, and
+# their wait line carries the same shape as a turn-end summary
+busy_line = "^[✻✳✶✽✢·✦✧+*] Waiting for \\d+ background agents? to finish"
 rules = [
   # spinner row of an active turn, any duration format:
   # "✳ Drizzling… (6s · thinking)" / "✽ Zigzagging… (3m 18s · ↓ 1.4k tokens)"
