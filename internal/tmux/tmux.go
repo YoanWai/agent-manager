@@ -233,7 +233,11 @@ func (d *Driver) pasteAndEnter(target, text string) error {
 	if _, err := d.run("load-buffer", "-b", buf, path); err != nil {
 		return err
 	}
-	if _, err := d.run("paste-buffer", "-d", "-b", buf, "-t", target); err != nil {
+	// Preserve bracketed-paste boundaries when the pane application requests
+	// them. Codex uses paste-burst detection without these markers and can
+	// consume the immediately following Enter as part of the paste, leaving
+	// the prompt in its composer instead of submitting it.
+	if _, err := d.run("paste-buffer", "-p", "-d", "-b", buf, "-t", target); err != nil {
 		_, _ = d.run("delete-buffer", "-b", buf)
 		return err
 	}
