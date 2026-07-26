@@ -1094,6 +1094,46 @@ func TestAttachKeepsWorking(t *testing.T) {
 	}
 }
 
+// PrepareAttach flips window-size to auto, which reflows the pane the same
+// way the detach-side resize does; without clearing the cached hash first,
+// the next poll compares the reflowed pane against a pre-attach hash and
+// reads it as working (TestRebaselineKeepsFinishedWithoutFlashingWorking
+// proves that precondition). Attach must clear it the same way detach does.
+func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.name.SetValue("attach-reflow")
+	m.form.dir.SetValue(t.TempDir())
+	m.form.toolIndex = 1 // claude-hooked: configured with an activity region to hash
+	pickGroup(t, m, "")
+	_, cmd := m.submitForm()
+	if m.mode != modeList {
+		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.err)
+	}
+	m.applyCmd(t, cmd)
+
+	sess := m.sessionRows()[0]
+	if sess.Tool != "claude-hooked" {
+		t.Fatalf("session tool = %q, want claude-hooked", sess.Tool)
+	}
+	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+		t.Fatalf("set finished: %v", err)
+	}
+	m.sessions[0].Status = status.Finished
+	m.rebuildRows()
+	m.selectSessionRow(t, "attach-reflow")
+
+	seedRegionHash(t, m, sess, "final answer line that wraps differently before attach\n❯ \n")
+
+	if _, cmd := m.attachSelected(); cmd == nil {
+		t.Fatalf("attach did not start, err = %q", m.err)
+	}
+
+	if _, seen := m.poller.paneHashes[sess.ID]; seen {
+		t.Fatal("attach must clear the cached pane hash so the post-attach reflow is not read as streaming")
+	}
+}
+
 func TestReviveRecreatesDeadSession(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "phoenix", t.TempDir(), "")

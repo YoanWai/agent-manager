@@ -336,9 +336,15 @@ func (m *Model) acknowledgeFinished(sess store.Session) error {
 
 func (m *Model) attachCmd(id string) tea.Cmd {
 	// Flip the window back to auto-sizing so it fills the terminal on attach;
-	// attachDoneMsg re-pins it to the preview width on detach.
-	if err := m.tmux.PrepareAttach(id); err != nil {
-		m.err = err.Error()
+	// attachDoneMsg re-pins it to the preview width on detach. Clearing the
+	// cached hash first keeps the poller from reading this reflow as
+	// streaming output, same as the detach-side resize (reflowSessions).
+	var prepErr error
+	m.poller.reflowSessions([]string{id}, func() {
+		prepErr = m.tmux.PrepareAttach(id)
+	})
+	if prepErr != nil {
+		m.err = prepErr.Error()
 		return nil
 	}
 	return tea.ExecProcess(m.tmux.AttachCommand(id), func(err error) tea.Msg {
