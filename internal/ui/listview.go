@@ -128,7 +128,7 @@ func (m *Model) entryLines(width, height int) []contentLine {
 		if selected || m.renamingRow(m.rows[i]) {
 			tone = selectedHex()
 		}
-		for _, line := range splitLines(m.renderTreeRow(m.rows[i], selected, width)) {
+		for _, line := range splitLines(m.renderTreeRow(m.rows[i], selected, width, i)) {
 			lines = append(lines, contentLine{text: line, tone: tone})
 		}
 	}
@@ -202,49 +202,82 @@ func (m *Model) emptyRailLines(width int) []string {
 	return []string{"", pad + mutedStyle.Render(title), "", pad + hint}
 }
 
-// treeGuides is the ancestry trail left of a nested entry: one quiet
-// guide line per level, drawn on both lines of an entry so the line runs
-// unbroken down a group's children.
-func treeGuides(depth int) string {
-	if depth <= 0 {
-		return ""
+// treeGuidesAt is the ancestry trail left of a nested entry: the head
+// line takes a branch connector — ├─ mid-list, ╰─ for the last child —
+// and the meta line under it continues the guide, so a group's children
+// hang off its branch the way the legacy tree drew them. A slot goes
+// quiet once its level has no further siblings below.
+func (m *Model) treeGuidesAt(index int) (string, string) {
+	if index < 0 || index >= len(m.rows) {
+		return "", ""
 	}
-	return subtleStyle.Render(strings.Repeat("│  ", depth))
+	depth := m.rows[index].depth
+	if depth <= 0 {
+		return "", ""
+	}
+	var head, meta strings.Builder
+	for slot := 1; slot <= depth; slot++ {
+		continues := false
+		for j := index + 1; j < len(m.rows); j++ {
+			if m.rows[j].depth < slot {
+				break
+			}
+			if m.rows[j].depth == slot {
+				continues = true
+				break
+			}
+		}
+		switch {
+		case slot < depth && continues:
+			head.WriteString("│  ")
+			meta.WriteString("│  ")
+		case slot < depth:
+			head.WriteString("   ")
+			meta.WriteString("   ")
+		case continues:
+			head.WriteString("├─ ")
+			meta.WriteString("│  ")
+		default:
+			head.WriteString("╰─ ")
+			meta.WriteString("   ")
+		}
+	}
+	return subtleStyle.Render(head.String()), subtleStyle.Render(meta.String())
 }
 
 // renderTreeRow paints one entry: a status dot, the name, and a quiet
 // second line carrying the state and tool. The selected entry lifts onto
 // its own band instead of wearing a marker.
-func (m *Model) renderTreeRow(entry treeRow, selected bool, width int) string {
+func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int) string {
 	pad := strings.Repeat(" ", railInset)
-	indent := treeGuides(entry.depth)
+	head, meta := m.treeGuidesAt(index)
 
 	if m.renamingRow(entry) {
-		line := pad + indent + m.renameRowInput(entry, width-railGutter-ansi.StringWidth(indent))
+		line := pad + head + m.renameRowInput(entry, width-railGutter-ansi.StringWidth(head))
 		return paint(line, width, selectedHex())
 	}
 
 	if entry.isGroup {
-		return m.renderGroupEntry(entry, selected, width, pad, indent)
+		return m.renderGroupEntry(entry, selected, width, pad, head, meta)
 	}
-	return m.renderSessionEntry(entry, selected, width, pad, indent)
+	return m.renderSessionEntry(entry, selected, width, pad, head, meta)
 }
 
-func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, indent string) string {
+func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, headGuides, metaGuides string) string {
 	sess := entry.sess
 	dot := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
 	nameStyle := valueStyle
 	if selected {
 		nameStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 	}
-	head := pad + indent + dot + " " + nameStyle.Render(sess.Name)
+	head := pad + headGuides + dot + " " + nameStyle.Render(sess.Name)
 
 	metaStyle := subtleStyle
 	if selected {
 		metaStyle = mutedStyle
 	}
 	age := metaStyle.Render(relSince(lastActivity(sess)))
-	meta := pad + indent + "  " +
+	meta := pad + metaGuides + "  " +
 		lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
 		metaStyle.Render(" · "+sess.Tool)
 
@@ -255,7 +288,7 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	return paint(rowColumns(head, age, width-railGutter), width, bg) + "\n" + paint(meta, width, bg)
 }
 
-func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, indent string) string {
+func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, headGuides, metaGuides string) string {
 	marker := "▾"
 	if m.collapsed[entry.group] {
 		marker = "▸"
@@ -269,7 +302,7 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, i
 	if count == 1 {
 		countLabel = "1 agent"
 	}
-	head := pad + indent + subtleStyle.Render(marker) + " " + nameStyle.Render(baseName(entry.group))
+	head := pad + headGuides + subtleStyle.Render(marker) + " " + nameStyle.Render(baseName(entry.group))
 
 	// The second line carries what the group is doing, so a folded group
 	// still reports its subtree without being opened.
@@ -283,7 +316,7 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, i
 		bg = selectedHex()
 	}
 	return paint(rowColumns(head, subtleStyle.Render(countLabel), width-railGutter), width, bg) + "\n" +
-		paint(pad+indent+"  "+meta, width, bg)
+		paint(pad+metaGuides+"  "+meta, width, bg)
 }
 
 // computerLines is the machine block docked at the rail's foot: a label

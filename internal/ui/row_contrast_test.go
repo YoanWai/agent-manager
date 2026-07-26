@@ -42,8 +42,8 @@ func TestSelectedRowMetaUsesBrightNotSubtle(t *testing.T) {
 			CreatedAt: time.Now().Add(-3 * time.Hour),
 		},
 	}
-	selected := m.renderTreeRow(entry, true, 80)
-	unselected := m.renderTreeRow(entry, false, 80)
+	selected := m.renderTreeRow(entry, true, 80, 0)
+	unselected := m.renderTreeRow(entry, false, 80, 0)
 
 	if !strings.Contains(selected, "\x1b[") {
 		t.Fatal("selected row has no SGR; color profile not active")
