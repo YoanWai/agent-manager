@@ -42,6 +42,7 @@ var (
 	keyStyle    lipgloss.Style
 
 	annotationStyle lipgloss.Style
+	scopeBadgeStyle lipgloss.Style
 
 	chipStyle             lipgloss.Style
 	imageChipStyle        lipgloss.Style
@@ -64,6 +65,7 @@ func rebuildStyles() {
 	keyStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 
 	annotationStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	scopeBadgeStyle = lipgloss.NewStyle().Foreground(colorBg).Background(colorAccent2).Bold(true).Padding(0, 1)
 
 	chipStyle = lipgloss.NewStyle().Background(colorSurface).Padding(0, 1)
 	imageChipStyle = lipgloss.NewStyle().
