@@ -261,6 +261,9 @@ func (p *poller) refreshOnce() tea.Msg {
 		if err := p.applyPendingReviewBase(&sessions[i]); err != nil {
 			return errMsg{err}
 		}
+		if err := p.applyPendingReviewScope(&sessions[i]); err != nil {
+			return errMsg{err}
+		}
 		newStatus := status.Dead
 		if pid := panes[sess.ID]; pid > 0 {
 			stat := trees[pid]
@@ -499,6 +502,17 @@ func (p *poller) applyPendingReviewBase(sess *store.Session) error {
 		}
 	}
 	return p.hooks.RemoveReviewBase(sess.ID)
+}
+
+func (p *poller) applyPendingReviewScope(sess *store.Session) error {
+	scope, found := p.hooks.ReadReviewScope(sess.ID)
+	if !found {
+		return nil
+	}
+	if err := p.store.SetReviewScope(sess.ID, scope); err != nil {
+		return err
+	}
+	return p.hooks.RemoveReviewScope(sess.ID)
 }
 
 // reflowSessions drops activity-region hashes for ids and runs reflow

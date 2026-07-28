@@ -153,6 +153,7 @@ func (m *Model) openDiff() tea.Cmd {
 	// Default to returning to the list; the in-session Ctrl+R path sets this
 	// afterward when review should return to the session instead.
 	m.diff.reattachID = ""
+	m.applyStoredScope(sess.ID)
 	return m.retargetDiff(sess)
 }
 

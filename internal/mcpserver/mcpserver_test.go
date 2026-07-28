@@ -71,7 +71,7 @@ func TestListsAllTools(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names[tool.Name] = true
 	}
-	for _, want := range []string{"rename", "review_repo", "review_base"} {
+	for _, want := range []string{"rename", "review_repo", "review_base", "review_mode"} {
 		if !names[want] {
 			t.Fatalf("missing tool %q in %v", want, names)
 		}
@@ -148,9 +148,31 @@ func TestBadInputsReturnToolErrors(t *testing.T) {
 	if text, isError := callText(t, session, "review_base", map[string]any{"ref": "nope-branch", "repo_path": gitRepo(t)}); !isError {
 		t.Fatalf("unknown ref should error, got %q", text)
 	}
+	if text, isError := callText(t, session, "review_mode", map[string]any{"scope": "bogus"}); !isError {
+		t.Fatalf("unknown scope should error, got %q", text)
+	}
 
 	noSession := connect(t, configDir, "")
 	if text, isError := callText(t, noSession, "rename", map[string]any{"name": "x"}); !isError || !strings.Contains(text, "AGENT_MANAGER_SESSION_ID") {
 		t.Fatalf("missing session id should error, got %q", text)
+	}
+}
+
+func TestReviewModeWritesMailbox(t *testing.T) {
+	configDir := t.TempDir()
+	session := connect(t, configDir, "abc123")
+
+	for _, scope := range []string{"uncommitted", "branch", "last_commit", "staged"} {
+		text, isError := callText(t, session, "review_mode", map[string]any{"scope": scope})
+		if isError {
+			t.Fatalf("review_mode(%q) error: %q", scope, text)
+		}
+		content, err := os.ReadFile(hooks.NewManager(configDir).ReviewScopeFile("abc123"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.TrimSpace(string(content)); got != scope {
+			t.Fatalf("mailbox scope = %q, want %q", got, scope)
+		}
 	}
 }

@@ -104,6 +104,10 @@ CREATE TABLE IF NOT EXISTS settings (
 			base_ref   TEXT NOT NULL,
 			PRIMARY KEY (session_id, repo_root)
 		)`,
+		`CREATE TABLE IF NOT EXISTS review_scopes (
+			session_id TEXT PRIMARY KEY,
+			scope      TEXT NOT NULL
+		)`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -176,6 +180,31 @@ func (s *Store) ReviewBase(sessionID, repoRoot string) (string, error) {
 		return "", err
 	}
 	return ref, nil
+}
+
+func (s *Store) SetReviewScope(sessionID, scope string) error {
+	if scope == "" {
+		_, err := s.db.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, sessionID)
+		return err
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO review_scopes (session_id, scope) VALUES (?, ?)
+		 ON CONFLICT(session_id) DO UPDATE SET scope = excluded.scope`,
+		sessionID, scope,
+	)
+	return err
+}
+
+func (s *Store) ReviewScope(sessionID string) (string, error) {
+	var scope string
+	err := s.db.QueryRow(`SELECT scope FROM review_scopes WHERE session_id = ?`, sessionID).Scan(&scope)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return scope, nil
 }
 
 func (s *Store) SetSetting(key, value string) error {
@@ -375,6 +404,9 @@ func (s *Store) Delete(id string) error {
 		return err
 	}
 	if _, err := s.db.Exec(`DELETE FROM review_bases WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, id); err != nil {
 		return err
 	}
 	res, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id)

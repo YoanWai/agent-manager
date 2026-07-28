@@ -241,6 +241,26 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }
 
+func (m *Model) applyStoredScope(sessionID string) {
+	if m.store == nil {
+		return
+	}
+	stored, err := m.store.ReviewScope(sessionID)
+	if err != nil || stored == "" {
+		return
+	}
+	switch stored {
+	case "branch":
+		m.diff.scope = git.ScopeBranch
+	case "last_commit":
+		m.diff.scope = git.ScopeLastCommit
+	case "staged":
+		m.diff.scope = git.ScopeStaged
+	case "uncommitted":
+		m.diff.scope = git.ScopeUncommitted
+	}
+}
+
 func (m *Model) cycleDiffScope() tea.Cmd {
 	if !m.diff.active {
 		return nil

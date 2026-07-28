@@ -122,6 +122,57 @@ func ReviewBase(configDir, sessionID, cwd, ref string) (string, error) {
 	return "review base set to " + ref, nil
 }
 
+var validScopes = map[string]bool{
+	"uncommitted": true,
+	"branch":      true,
+	"last_commit": true,
+	"staged":      true,
+}
+
+func scopeToString(s git.Scope) string {
+	switch s {
+	case git.ScopeBranch:
+		return "branch"
+	case git.ScopeLastCommit:
+		return "last_commit"
+	case git.ScopeStaged:
+		return "staged"
+	default:
+		return "uncommitted"
+	}
+}
+
+func parseScope(s string) (git.Scope, bool) {
+	switch strings.TrimSpace(s) {
+	case "branch":
+		return git.ScopeBranch, true
+	case "last_commit":
+		return git.ScopeLastCommit, true
+	case "staged":
+		return git.ScopeStaged, true
+	case "uncommitted":
+		return git.ScopeUncommitted, true
+	default:
+		return 0, false
+	}
+}
+
+// ReviewScope records the diff scope the review screen should open with
+// for this session: uncommitted, branch (vs target), last_commit, or staged.
+func ReviewScope(configDir, sessionID, scope string) (string, error) {
+	scope = strings.TrimSpace(scope)
+	if !validScopes[scope] {
+		return "", fmt.Errorf("unknown scope %q (uncommitted, branch, last_commit, staged)", scope)
+	}
+	if err := validSession(sessionID); err != nil {
+		return "", err
+	}
+	if err := writeMailbox(hooks.NewManager(configDir).ReviewScopeFile(sessionID), scope); err != nil {
+		return "", err
+	}
+	return "review scope set to " + scope, nil
+}
+
 // Both sides are resolved first because git reports a toplevel with symlinks expanded.
 func pathWithin(path, root string) bool {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
