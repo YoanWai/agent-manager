@@ -670,6 +670,10 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.err = err.Error()
 					return m, nil
 				}
+				if err := m.hooks.RemoveReviewScope(sess.ID); err != nil {
+					m.err = err.Error()
+					return m, nil
+				}
 				delete(m.pickedRepos, sess.ID)
 				if err := m.store.Delete(sess.ID); err != nil {
 					m.err = err.Error()
