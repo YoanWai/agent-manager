@@ -27,6 +27,10 @@ type reviewBaseArgs struct {
 	RepoPath string `json:"repo_path,omitempty" jsonschema:"path inside the repo the ref belongs to; defaults to the current working directory"`
 }
 
+type reviewModeArgs struct {
+	Scope string `json:"scope" jsonschema:"diff scope: uncommitted, branch (vs target), last_commit, or staged"`
+}
+
 // NewServer builds the MCP server with every session tool registered.
 // Split from Run so tests can connect an in-process client.
 func NewServer(configDir, sessionID, version string) *mcp.Server {
@@ -66,6 +70,17 @@ func NewServer(configDir, sessionID, version string) *mcp.Server {
 			ref = ""
 		}
 		return textResult(sessioncmd.ReviewBase(configDir, sessionID, cwd, ref))
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "review_mode",
+		Description: "Set the diff scope the manager's review screen shows for this session. " +
+			"Valid values: uncommitted (working dir changes), branch (vs target/merge base), " +
+			"last_commit (HEAD diff), staged (cached changes). " +
+			"Call when you want the review to show a different scope, e.g. switch from " +
+			"uncommitted to staged before committing.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewModeArgs) (*mcp.CallToolResult, any, error) {
+		return textResult(sessioncmd.ReviewScope(configDir, sessionID, args.Scope))
 	})
 
 	return server

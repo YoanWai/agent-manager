@@ -208,6 +208,24 @@ func (m *Manager) RemoveReviewBase(id string) error {
 	return removeIfExists(m.ReviewBaseFile(id))
 }
 
+// ReviewScopeFile is the mailbox the review-mode MCP tool writes the
+// diff scope into; the poller applies and deletes it.
+func (m *Manager) ReviewScopeFile(id string) string {
+	return filepath.Join(m.dir, id+".reviewscope")
+}
+
+func (m *Manager) ReadReviewScope(id string) (scope string, found bool) {
+	raw, err := os.ReadFile(m.ReviewScopeFile(id))
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(string(raw)), true
+}
+
+func (m *Manager) RemoveReviewScope(id string) error {
+	return removeIfExists(m.ReviewScopeFile(id))
+}
+
 func removeIfExists(path string) error {
 	err := os.Remove(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {

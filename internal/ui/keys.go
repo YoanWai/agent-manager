@@ -153,6 +153,7 @@ func (m *Model) openDiff() tea.Cmd {
 	// Default to returning to the list; the in-session Ctrl+R path sets this
 	// afterward when review should return to the session instead.
 	m.diff.reattachID = ""
+	m.applyStoredScope(sess.ID)
 	return m.retargetDiff(sess)
 }
 
@@ -666,6 +667,10 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if err := m.hooks.RemoveReviewBase(sess.ID); err != nil {
+					m.err = err.Error()
+					return m, nil
+				}
+				if err := m.hooks.RemoveReviewScope(sess.ID); err != nil {
 					m.err = err.Error()
 					return m, nil
 				}
