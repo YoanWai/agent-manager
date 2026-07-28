@@ -87,7 +87,13 @@ func (m *Model) railLines(width, height int) []contentLine {
 		listHeight, meters = height, nil
 	}
 	rows := []contentLine{{}}
-	rows = append(rows, m.entryLines(width, listHeight-1)...)
+	if m.showArchived {
+		rows = append(rows,
+			contentLine{text: strings.Repeat(" ", railInset) + scopeBadgeStyle.Render("ARCHIVED") +
+				subtleStyle.Render("  ") + keyCap("t", "back to active")},
+			contentLine{})
+	}
+	rows = append(rows, m.entryLines(width, listHeight-len(rows))...)
 	for len(rows) < listHeight {
 		rows = append(rows, contentLine{})
 	}
@@ -576,17 +582,16 @@ func joinHeaderPieces(sep string, pieces ...string) string {
 // the two lines always add up; counting painted rows instead would drop
 // everything folded inside a collapsed group.
 func (m *Model) headerScope() string {
-	scope := "active"
-	if m.showArchived {
-		scope = "archived"
-	}
 	count := len(m.visibleSessions())
 	label := " sessions"
 	if count == 1 {
 		label = " session"
 	}
-	line := valueStyle.Render(fmt.Sprintf("%d", count)) + subtleStyle.Render(label) +
-		subtleStyle.Render(" · "+scope)
+	scope := subtleStyle.Render(" · active")
+	if m.showArchived {
+		scope = subtleStyle.Render(" · ") + scopeBadgeStyle.Render("ARCHIVED")
+	}
+	line := valueStyle.Render(fmt.Sprintf("%d", count)) + subtleStyle.Render(label) + scope
 	if m.updateLatest != "" {
 		line += subtleStyle.Render("   ") +
 			lipgloss.NewStyle().Foreground(colorAccent).Render("↑ "+m.updateLatest+" available")
