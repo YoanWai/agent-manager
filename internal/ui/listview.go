@@ -340,10 +340,17 @@ func (m *Model) computerLines(width int) []string {
 		meter("mem", snap.MemPercent, snap.MemOK, humanBytes(snap.MemUsed)+"/"+humanBytes(snap.MemTotal)),
 	)
 	if snap.SwapOK && snap.SwapTotal > 0 {
-		lines = append(lines, meter("swap", snap.SwapPercent, true, humanBytes(snap.SwapUsed)))
+		// Percent is used/total of the current swap allocation (macOS
+		// grows the file under pressure; Linux uses the fixed swap size).
+		lines = append(lines, meter("swap", snap.SwapPercent, true,
+			humanBytes(snap.SwapUsed)+"/"+humanBytes(snap.SwapTotal)))
 	}
-	lines = append(lines, meter("disk", snap.DiskPercent, snap.DiskOK,
-		humanBytes(snap.DiskTotal-snap.DiskUsed)+" free"))
+	if snap.DiskOK {
+		lines = append(lines, meter("disk", snap.DiskPercent, true,
+			humanBytes(snap.DiskFree)+" free"))
+	} else {
+		lines = append(lines, meter("disk", 0, false, ""))
+	}
 	if m.netRates {
 		lines = append(lines, pad+labelStyle.Width(5).Render("net")+
 			valueStyle.Render("↓ "+humanBytes(m.netDown)+"/s")+

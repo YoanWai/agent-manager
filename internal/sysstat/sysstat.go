@@ -24,6 +24,7 @@ type Snapshot struct {
 	SwapPercent float64
 	SwapOK      bool
 	DiskUsed    uint64
+	DiskFree    uint64
 	DiskTotal   uint64
 	DiskPercent float64
 	DiskOK      bool
@@ -53,41 +54,102 @@ func Sample(diskPath string) Snapshot {
 		snap.CPUOK = true
 	}
 
-	if vm, err := mem.VirtualMemory(); err == nil {
-		snap.MemUsed = vm.Used
-		snap.MemTotal = vm.Total
-		snap.MemPercent = vm.UsedPercent
-		snap.MemOK = true
-	}
-
-	if sm, err := mem.SwapMemory(); err == nil {
-		snap.SwapUsed = sm.Used
-		snap.SwapTotal = sm.Total
-		snap.SwapPercent = sm.UsedPercent
-		snap.SwapOK = true
-	}
-
-	if diskPath == "" {
-		diskPath = "/"
-	}
-	if usage, err := disk.Usage(diskPath); err == nil {
-		snap.DiskUsed = usage.Used
-		snap.DiskTotal = usage.Total
-		snap.DiskPercent = usage.UsedPercent
-		snap.DiskOK = true
-	}
-
-	// Cumulative bytes across all interfaces since boot; the caller
-	// diffs consecutive snapshots to get transfer rates.
-	if counters, err := net.IOCounters(false); err == nil && len(counters) > 0 {
-		snap.NetSent = counters[0].BytesSent
-		snap.NetRecv = counters[0].BytesRecv
-		snap.NetOK = true
-	}
-
+	sampleMemory(&snap)
+	sampleSwap(&snap)
+	sampleDisk(&snap, diskPath)
+	sampleNet(&snap)
 	sampleTemps(&snap)
 
 	return snap
+}
+
+// sampleSwap reads swap usage and sets SwapPercent as used/total.
+// That is the only meaningful fill fraction: on macOS the swap file
+// grows under pressure, so the denominator is the current allocation
+// from vm.swapusage, not a fixed partition size.
+func sampleSwap(snap *Snapshot) {
+	sm, err := mem.SwapMemory()
+	if err != nil {
+		return
+	}
+	snap.SwapUsed = sm.Used
+	snap.SwapTotal = sm.Total
+	snap.SwapPercent = usedPercent(sm.Used, sm.Total)
+	snap.SwapOK = true
+}
+
+func sampleDisk(snap *Snapshot, diskPath string) {
+	if diskPath == "" {
+		diskPath = "/"
+	}
+	usage, err := disk.Usage(diskPath)
+	if err != nil {
+		return
+	}
+	snap.DiskUsed = usage.Used
+	snap.DiskFree = usage.Free
+	snap.DiskTotal = usage.Total
+	// used/(used+free) matches df Capacity and ignores reserved blocks
+	// that sit in Total but are not available to ordinary processes.
+	if usable := usage.Used + usage.Free; usable > 0 {
+		snap.DiskPercent = usedPercent(usage.Used, usable)
+	} else {
+		snap.DiskPercent = usage.UsedPercent
+	}
+	snap.DiskOK = true
+}
+
+// sampleNet sums counters for real NICs only. Loopback and common
+// virtual interfaces would otherwise dominate the rate on a busy local
+// machine (IPC, VPN tunnels, AWDL).
+func sampleNet(snap *Snapshot) {
+	counters, err := net.IOCounters(true)
+	if err != nil || len(counters) == 0 {
+		return
+	}
+	var sent, recv uint64
+	var any bool
+	for _, counter := range counters {
+		if !countNetInterface(counter.Name) {
+			continue
+		}
+		sent += counter.BytesSent
+		recv += counter.BytesRecv
+		any = true
+	}
+	if !any {
+		return
+	}
+	snap.NetSent = sent
+	snap.NetRecv = recv
+	snap.NetOK = true
+}
+
+func countNetInterface(name string) bool {
+	n := strings.ToLower(name)
+	if n == "lo" || n == "lo0" {
+		return false
+	}
+	for _, prefix := range netSkipPrefixes {
+		if strings.HasPrefix(n, prefix) {
+			return false
+		}
+	}
+	return true
+}
+
+// Virtual / point-to-point / container bridges that are not "the network".
+var netSkipPrefixes = []string{
+	"utun", "awdl", "llw", "bridge", "gif", "stf", "anpi", "ap",
+	"vmenet", "vboxnet", "docker", "br-", "veth", "cni", "flannel",
+	"virbr", "tun", "tap", "wg", "zt", "tailscale", "ipsec", "vmnet",
+}
+
+func usedPercent(used, total uint64) float64 {
+	if total == 0 {
+		return 0
+	}
+	return 100 * float64(used) / float64(total)
 }
 
 // sampleTemps categorizes hardware temperature sensors into CPU and GPU
