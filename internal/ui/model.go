@@ -199,9 +199,11 @@ const (
 )
 
 // agentStats aggregates process-tree usage across all live sessions.
+// cpu and ram are shares of this machine (0–100); rss is absolute bytes.
 type agentStats struct {
 	count int
 	cpu   float64
+	ram   float64
 	rss   uint64
 }
 
@@ -479,7 +481,8 @@ func (m *Model) previewCmd(sess store.Session, gen uint64) tea.Cmd {
 				msg.preview = pane
 			}
 			if pid, err := m.tmux.PanePID(sess.ID); err == nil {
-				msg.proc = sysstat.Trees([]int{pid})[pid]
+				memTotal, _ := sysstat.MemTotalBytes()
+				msg.proc = sysstat.Trees([]int{pid})[pid].ScaleToHost(sysstat.LogicalCPUs(), memTotal)
 			}
 		}
 		return msg
