@@ -125,6 +125,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `s` | Settings (quick-spawn tool, theme, review layout, after quick send) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
+| `e` | Hide / show empty groups |
 | `/` | Search |
 | `?` | Help |
 | `q` | Quit (sessions keep running) |
@@ -200,7 +201,7 @@ Comments stay on the review screen until you send them: `C` flattens every one o
 
 ### Groups
 
-Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `enter` on its row, fold or unfold the whole tree with `F`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool (status rules and revive follow the new tool; useful when you quit one agent in the pane and start another).
+Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `enter` on its row, fold or unfold the whole tree with `F`, hide or restore empty groups visually with `e`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool (status rules and revive follow the new tool; useful when you quit one agent in the pane and start another).
 
 ### Status
 

@@ -118,6 +118,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "t":
 		m.showArchived = !m.showArchived
 		m.requestRefresh()
+	case "e":
+		return m, m.toggleEmptyGroups()
 	case "/":
 		m.searching = true
 		m.err = ""
@@ -343,6 +345,35 @@ func (m *Model) toggleCollapseAll() {
 	}
 	m.persistCollapsed()
 	m.rebuildRows()
+}
+
+// toggleEmptyGroups hides or restores group rows whose subtree has no
+// sessions in the current active/archive view. It never changes the store.
+func (m *Model) toggleEmptyGroups() tea.Cmd {
+	previousKey := ""
+	if entry, ok := m.selectedRow(); ok {
+		previousKey = rowKey(entry)
+	}
+	m.hideEmptyGroups = !m.hideEmptyGroups
+	m.rebuildRows()
+
+	currentKey := ""
+	if entry, ok := m.selectedRow(); ok {
+		currentKey = rowKey(entry)
+	}
+	if currentKey == previousKey {
+		return nil
+	}
+
+	m.preview = ""
+	m.proc = sysstat.ProcStat{}
+	m.procFor = ""
+	m.previewGen++
+	m.syncPollInput()
+	if _, ok := m.selected(); ok {
+		return m.schedulePreview()
+	}
+	return nil
 }
 
 func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
