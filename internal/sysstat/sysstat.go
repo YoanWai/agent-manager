@@ -52,7 +52,7 @@ type ProcStat struct {
 	// Used with a previous sample to compute interval host share.
 	CPUSeconds float64
 	// PCPU is the raw ps pcpu sum (100 ≈ one core). Fallback only.
-	PCPU float64
+	PCPU  float64
 	Procs int
 	OK    bool
 }

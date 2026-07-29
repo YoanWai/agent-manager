@@ -86,8 +86,8 @@ func shotModel() *Model {
 		sessions: sessions, rows: rows, collapsed: map[string]bool{},
 		groupPaths: map[string]string{"backend": "/Users/yoan/dev/spaze/api"},
 		splitRatio: defaultSplitRatio,
-		agents:   agentStats{count: 4, cpu: 12, ram: 9, rss: 1_530_000_000},
-		netRates: true, netDown: 9_400_000, netUp: 2_100_000,
+		agents:     agentStats{count: 4, cpu: 12, ram: 9, rss: 1_530_000_000},
+		netRates:   true, netDown: 9_400_000, netUp: 2_100_000,
 		snap: sysstat.Snapshot{
 			CPUOK: true, CPUPercent: 22,
 			MemOK: true, MemPercent: 75, MemUsed: 12_100_000_000, MemTotal: 16_000_000_000,
