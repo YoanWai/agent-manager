@@ -1,7 +1,10 @@
 package sysstat
 
 import (
+	"math"
 	"os"
+	"os/exec"
+	"runtime"
 	"testing"
 )
 
@@ -10,8 +13,36 @@ func TestSample(t *testing.T) {
 	if snap.MemOK && snap.MemTotal == 0 {
 		t.Fatal("mem reported OK but total is zero")
 	}
+	if snap.MemOK {
+		if snap.MemUsed > snap.MemTotal {
+			t.Fatalf("mem used %d > total %d", snap.MemUsed, snap.MemTotal)
+		}
+		want := usedPercent(snap.MemUsed, snap.MemTotal)
+		if math.Abs(snap.MemPercent-want) > 0.01 {
+			t.Fatalf("mem percent %v != used/total %v", snap.MemPercent, want)
+		}
+	}
+	if snap.SwapOK && snap.SwapTotal > 0 {
+		want := usedPercent(snap.SwapUsed, snap.SwapTotal)
+		if math.Abs(snap.SwapPercent-want) > 0.01 {
+			t.Fatalf("swap percent %v != used/total %v", snap.SwapPercent, want)
+		}
+		if snap.SwapUsed > snap.SwapTotal {
+			t.Fatalf("swap used %d > total %d", snap.SwapUsed, snap.SwapTotal)
+		}
+	}
 	if snap.DiskOK && snap.DiskTotal == 0 {
 		t.Fatal("disk reported OK but total is zero")
+	}
+	if snap.DiskOK {
+		if snap.DiskFree == 0 && snap.DiskUsed == 0 {
+			t.Fatal("disk free and used both zero")
+		}
+		// Free is what the UI shows; it must be the kernel's available
+		// figure (Bavail), not Total-Used (which includes reserved).
+		if snap.DiskFree > snap.DiskTotal {
+			t.Fatalf("disk free %d > total %d", snap.DiskFree, snap.DiskTotal)
+		}
 	}
 	if snap.CPUTempOK && snap.CPUTemp <= 0 {
 		t.Fatal("cpu temp reported OK but not positive")
@@ -68,5 +99,104 @@ func TestTreesInvalid(t *testing.T) {
 	}
 	if len(Trees(nil)) != 0 {
 		t.Fatal("no pids should yield no stats")
+	}
+}
+
+func TestCountNetInterface(t *testing.T) {
+	keep := []string{"en0", "en1", "eth0", "wlan0", "wlp2s0"}
+	for _, name := range keep {
+		if !countNetInterface(name) {
+			t.Fatalf("expected to count %q", name)
+		}
+	}
+	skip := []string{"lo", "lo0", "utun4", "awdl0", "llw0", "bridge0", "docker0", "br-abc", "veth0", "vmenet0", "ap1"}
+	for _, name := range skip {
+		if countNetInterface(name) {
+			t.Fatalf("expected to skip %q", name)
+		}
+	}
+}
+
+func TestUsedPercent(t *testing.T) {
+	if usedPercent(0, 0) != 0 {
+		t.Fatal("zero total should yield 0")
+	}
+	if usedPercent(1, 4) != 25 {
+		t.Fatalf("got %v", usedPercent(1, 4))
+	}
+	if usedPercent(3, 3) != 100 {
+		t.Fatalf("got %v", usedPercent(3, 3))
+	}
+}
+
+func TestParseVMStatMemoryUsed(t *testing.T) {
+	// total pages = 10000 * 16384
+	// reclaimable = free(100)+spec(50)+file(2000)+purg(100) = 2250
+	// used pages = 10000 - 2250 = 7750
+	const body = `Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                               100.
+Pages active:                            5000.
+Pages inactive:                          4000.
+Pages speculative:                        50.
+Pages wired down:                       2000.
+Pages purgeable:                         100.
+Anonymous pages:                        1000.
+File-backed pages:                      2000.
+Pages occupied by compressor:           3000.
+`
+	total := uint64(10000) * 16384
+	used, ok := parseVMStatMemoryUsed(body, total, 4096)
+	if !ok {
+		t.Fatal("expected parse ok")
+	}
+	want := uint64(7750) * 16384
+	if used != want {
+		t.Fatalf("used=%d want=%d", used, want)
+	}
+}
+
+func TestParseVMStatMemoryUsedLegacyWithoutFileBacked(t *testing.T) {
+	// No File-backed line: fall back to app+wired+comp.
+	const body = `Mach Virtual Memory Statistics: (page size of 4096 bytes)
+Pages free:                             1.
+Pages wired down:                       10.
+Pages purgeable:                         0.
+Anonymous pages:                        20.
+Pages used by compressor:               5.
+`
+	used, ok := parseVMStatMemoryUsed(body, 0, 4096)
+	if !ok {
+		t.Fatal("expected parse ok")
+	}
+	if used != 35*4096 {
+		t.Fatalf("used=%d", used)
+	}
+}
+
+func TestSampleMemoryMatchesVMStatOnDarwin(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin only")
+	}
+	snap := Sample("/")
+	if !snap.MemOK {
+		t.Fatal("mem not ok")
+	}
+	out, err := exec.Command("vm_stat").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, ok := parseVMStatMemoryUsed(string(out), snap.MemTotal, 0)
+	if !ok {
+		t.Fatal("vm_stat parse failed")
+	}
+	delta := float64(snap.MemUsed) - float64(want)
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta > 256<<20 {
+		t.Fatalf("mem used %d drifted %v from live vm_stat %d", snap.MemUsed, delta, want)
+	}
+	if snap.MemTotal == 0 || snap.MemUsed > snap.MemTotal {
+		t.Fatalf("bad mem bounds used=%d total=%d", snap.MemUsed, snap.MemTotal)
 	}
 }

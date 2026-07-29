@@ -92,7 +92,7 @@ func shotModel() *Model {
 			CPUOK: true, CPUPercent: 22,
 			MemOK: true, MemPercent: 75, MemUsed: 12_100_000_000, MemTotal: 16_000_000_000,
 			SwapOK: true, SwapPercent: 43, SwapUsed: 4_500_000_000, SwapTotal: 8_000_000_000,
-			DiskOK: true, DiskPercent: 88, DiskUsed: 400_000_000_000, DiskTotal: 500_000_000_000,
+			DiskOK: true, DiskPercent: 88, DiskUsed: 400_000_000_000, DiskFree: 100_000_000_000, DiskTotal: 500_000_000_000,
 			CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55,
 		},
 		preview: previewSample,
