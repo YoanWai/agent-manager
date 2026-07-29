@@ -229,7 +229,7 @@ func (m *Model) viewHelp() string {
 		{"B", "in review: pick the target (merge-into branch) the branch diff compares against"},
 		{"F", "fold / unfold all groups"},
 		{"s", "settings (quick spawn tool, review layout)"},
-		{"|", "resize split (←→ / drag, | commits, esc cancels)"},
+		{"|", "resize split (←→ / drag, enter commits, esc cancels)"},
 		{"t", "toggle archived view"},
 		{"/", "search"},
 		{"↑↓ / jk", "move cursor"},

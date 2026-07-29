@@ -162,6 +162,37 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	}
 }
 
+func TestEnterCommitsResize(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	m := &Model{
+		store:      st,
+		mode:       modeList,
+		width:      100,
+		height:     40,
+		splitRatio: 0.34,
+	}
+	updated, _ := m.enterResizeMode()
+	m = updated.(*Model)
+	m.nudgeSplit(8)
+
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	if m.resizeMode || m.splitDragging {
+		t.Fatal("enter should commit and leave resize mode")
+	}
+	if cmd != nil {
+		t.Fatal("enter commit should not return a command")
+	}
+	if got := loadSplitRatio(st); got != 0.42 {
+		t.Fatalf("reloaded ratio = %v want 0.42", got)
+	}
+}
+
 func TestArrowCancelRestoresRatio(t *testing.T) {
 	m := &Model{mode: modeList, width: 100, height: 40, splitRatio: 0.34}
 	updated, _ := m.enterResizeMode()
@@ -175,6 +206,40 @@ func TestArrowCancelRestoresRatio(t *testing.T) {
 	}
 	if left, _ := m.splitWidths(); left != 34 {
 		t.Fatalf("esc should restore left=34, got %d", left)
+	}
+}
+
+func TestQuitFromResizePersistsRatio(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	m := &Model{
+		store:      st,
+		mode:       modeList,
+		width:      100,
+		height:     40,
+		splitRatio: 0.34,
+	}
+	updated, _ := m.enterResizeMode()
+	m = updated.(*Model)
+	m.nudgeSplit(8)
+
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = updated.(*Model)
+	if m.resizeMode || m.splitDragging {
+		t.Fatal("quit should clear resize state")
+	}
+	if cmd == nil {
+		t.Fatal("quit should return a command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("quit command should produce tea.QuitMsg")
+	}
+	if got := loadSplitRatio(st); got != 0.42 {
+		t.Fatalf("reloaded ratio = %v want 0.42", got)
 	}
 }
 

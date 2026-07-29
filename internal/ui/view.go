@@ -127,7 +127,7 @@ func (m *Model) viewStatus() string {
 	case m.mode == modeConfirmDelete:
 		return "  " + errStyle.Render("⚠ "+m.confirm.label) + subtleStyle.Render("  y/n")
 	case m.resizeMode:
-		hint := "←→ resize · drag divider · | set · esc cancel"
+		hint := "←→ resize · drag divider · enter set · esc cancel"
 		if m.splitDragging {
 			hint = "release to set · esc cancels"
 		}

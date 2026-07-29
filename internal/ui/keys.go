@@ -27,12 +27,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "right", "l":
 			m.nudgeSplit(1)
 			return m, nil
-		case "|":
-			// Second | commits the working ratio (arrows or an unfinished drag).
+		case "|", "enter":
+			// Enter or a second | commits the working ratio.
 			return m.exitResizeMode(true)
 		case "esc":
 			return m.exitResizeMode(false)
 		case "q", "ctrl+c":
+			m.persistSplitRatio()
 			m.resizeMode = false
 			m.splitDragging = false
 			return m, tea.Quit
