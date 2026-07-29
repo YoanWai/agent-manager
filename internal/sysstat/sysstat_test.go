@@ -130,8 +130,9 @@ func TestUsedPercent(t *testing.T) {
 }
 
 func TestParseVMStatMemoryUsed(t *testing.T) {
-	// App = anon - purgeable = 1000 - 100 = 900
-	// Used pages = 900 + 2000 + 3000 = 5900 → 5900 * 16384 bytes
+	// total pages = 10000 * 16384
+	// reclaimable = free(100)+spec(50)+file(2000)+purg(100) = 2250
+	// used pages = 10000 - 2250 = 7750
 	const body = `Mach Virtual Memory Statistics: (page size of 16384 bytes)
 Pages free:                               100.
 Pages active:                            5000.
@@ -140,26 +141,30 @@ Pages speculative:                        50.
 Pages wired down:                       2000.
 Pages purgeable:                         100.
 Anonymous pages:                        1000.
+File-backed pages:                      2000.
 Pages occupied by compressor:           3000.
 `
-	used, ok := parseVMStatMemoryUsed(body, 4096)
+	total := uint64(10000) * 16384
+	used, ok := parseVMStatMemoryUsed(body, total, 4096)
 	if !ok {
 		t.Fatal("expected parse ok")
 	}
-	want := uint64(5900) * 16384
+	want := uint64(7750) * 16384
 	if used != want {
 		t.Fatalf("used=%d want=%d", used, want)
 	}
 }
 
-func TestParseVMStatMemoryUsedLegacyCompressorLabel(t *testing.T) {
+func TestParseVMStatMemoryUsedLegacyWithoutFileBacked(t *testing.T) {
+	// No File-backed line: fall back to app+wired+comp.
 	const body = `Mach Virtual Memory Statistics: (page size of 4096 bytes)
+Pages free:                             1.
 Pages wired down:                       10.
 Pages purgeable:                         0.
 Anonymous pages:                        20.
 Pages used by compressor:               5.
 `
-	used, ok := parseVMStatMemoryUsed(body, 4096)
+	used, ok := parseVMStatMemoryUsed(body, 0, 4096)
 	if !ok {
 		t.Fatal("expected parse ok")
 	}
@@ -176,12 +181,11 @@ func TestSampleMemoryMatchesVMStatOnDarwin(t *testing.T) {
 	if !snap.MemOK {
 		t.Fatal("mem not ok")
 	}
-	// Re-parse live vm_stat; allow a little drift between samples.
 	out, err := exec.Command("vm_stat").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, ok := parseVMStatMemoryUsed(string(out), 0)
+	want, ok := parseVMStatMemoryUsed(string(out), snap.MemTotal, 0)
 	if !ok {
 		t.Fatal("vm_stat parse failed")
 	}
@@ -189,8 +193,6 @@ func TestSampleMemoryMatchesVMStatOnDarwin(t *testing.T) {
 	if delta < 0 {
 		delta = -delta
 	}
-	// 256 MiB of movement between two back-to-back samples is normal
-	// under load; anything larger means we are not on the AM formula.
 	if delta > 256<<20 {
 		t.Fatalf("mem used %d drifted %v from live vm_stat %d", snap.MemUsed, delta, want)
 	}

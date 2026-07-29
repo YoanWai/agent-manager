@@ -11,9 +11,12 @@ var (
 	vmStatLine     = regexp.MustCompile(`^([^:]+):\s+(\d+)\.?$`)
 )
 
-// parseVMStatMemoryUsed implements Activity Monitor "Memory Used" from a
-// vm_stat snapshot: (anonymous - purgeable) + wired + compressor pages.
-func parseVMStatMemoryUsed(out string, defaultPageSize uint64) (uint64, bool) {
+// parseVMStatMemoryUsed implements Activity Monitor "Memory Used": all
+// resident RAM except free, speculative (treated as free), and reclaimable
+// cache (file-backed + purgeable). That is total minus those page classes,
+// which also counts kernel/other pages that app+wired+compressed omits
+// (~0.5–1 GiB on a loaded Mac) and matches the Memory tab more closely.
+func parseVMStatMemoryUsed(out string, total, defaultPageSize uint64) (uint64, bool) {
 	pageSize := defaultPageSize
 	if pageSize == 0 {
 		pageSize = 4096
@@ -38,6 +41,23 @@ func parseVMStatMemoryUsed(out string, defaultPageSize uint64) (uint64, bool) {
 		pages[strings.TrimSpace(m[1])] = n
 	}
 
+	free, okFree := pages["Pages free"]
+	if !okFree {
+		return 0, false
+	}
+	speculative := pages["Pages speculative"]
+	purgeable := pages["Pages purgeable"]
+	fileBacked, okFile := pages["File-backed pages"]
+	if okFile && total > 0 {
+		reclaimable := free + speculative + fileBacked + purgeable
+		totalPages := total / pageSize
+		if reclaimable >= totalPages {
+			return 0, true
+		}
+		return (totalPages - reclaimable) * pageSize, true
+	}
+
+	// Older macOS without file-backed: App + Wired + Compressed.
 	wired, okW := pages["Pages wired down"]
 	anon, okA := pages["Anonymous pages"]
 	if !okW || !okA {
@@ -50,7 +70,6 @@ func parseVMStatMemoryUsed(out string, defaultPageSize uint64) (uint64, bool) {
 	if !okC {
 		return 0, false
 	}
-	purgeable := pages["Pages purgeable"]
 	app := anon
 	if anon >= purgeable {
 		app = anon - purgeable

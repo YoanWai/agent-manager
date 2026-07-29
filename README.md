@@ -151,7 +151,7 @@ For Claude Code, status comes first-hand from [hook events](https://docs.anthrop
 The header shows a fleet summary: per-status session counts, plus `agents N% · X GB`, the combined CPU and RSS memory of every live agent's full process tree (shell, agent, and children). Agent CPU uses `ps` semantics where 100% equals one full core, so the total can exceed 100% on multi-core machines. The Computer block in the sessions panel shows machine gauges:
 
 - **CPU**: whole-machine utilization (0-100%)
-- **Memory**: used/total. On macOS this matches Activity Monitor's Memory Used (app + wired + compressed). On Linux it is `Total - MemAvailable`, so file cache is not counted as used.
+- **Memory**: used/total. On macOS this matches Activity Monitor's Memory Used (resident RAM minus free, speculative, and reclaimable file cache). On Linux it is `Total - MemAvailable`, so file cache is not counted as used.
 - **Swap**: used/total of the current swap allocation (`used/total * 100`). On macOS the swap file grows under pressure, so the denominator is the live size from `vm.swapusage`, not a fixed partition.
 - **Disk**: fill of the root filesystem (used / (used + available)), with free space from the kernel's available figure
 - **Network**: up/down rates on real NICs only (loopback, utun, bridges, and similar virtual interfaces are excluded)

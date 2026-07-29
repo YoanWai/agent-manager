@@ -10,21 +10,17 @@ import (
 )
 
 // sampleMemory on macOS matches Activity Monitor's "Memory Used":
-//
-//	App Memory + Wired + Compressed
-//	  = (anonymous - purgeable) + wired + compressor pages
-//
-// gopsutil's VirtualMemory treats all inactive pages as available, which
-// drifts from Activity Monitor under memory pressure (anonymous inactive
-// is not free). vm_stat is the same source Activity Monitor-style tools
-// use and keeps the number honest without CGO.
+// resident RAM minus free, speculative, and reclaimable file cache.
+// gopsutil's VirtualMemory treats all inactive pages as available and
+// under-counts kernel/other pages; vm_stat keeps the number honest
+// without CGO.
 func sampleMemory(snap *Snapshot) {
 	total, err := unix.SysctlUint64("hw.memsize")
 	if err != nil || total == 0 {
 		sampleMemoryFallback(snap)
 		return
 	}
-	used, ok := memoryUsedFromVMStat()
+	used, ok := memoryUsedFromVMStat(total)
 	if !ok {
 		sampleMemoryFallback(snap)
 		return
@@ -53,10 +49,10 @@ func sampleMemoryFallback(snap *Snapshot) {
 	snap.MemOK = true
 }
 
-func memoryUsedFromVMStat() (uint64, bool) {
+func memoryUsedFromVMStat(total uint64) (uint64, bool) {
 	out, err := exec.Command("vm_stat").Output()
 	if err != nil {
 		return 0, false
 	}
-	return parseVMStatMemoryUsed(string(out), uint64(unix.Getpagesize()))
+	return parseVMStatMemoryUsed(string(out), total, uint64(unix.Getpagesize()))
 }
