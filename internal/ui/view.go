@@ -394,7 +394,7 @@ func padToHeight(s string, height int) string {
 // terminal is too narrow for one.
 func (m *Model) viewFooter() string {
 	pairs := [][2]string{
-		{"↑↓/jk", "navigate"}, {"shift+↑↓", "reorder"}, {"↵", "attach / fold"},
+		{"↑↓/jk", "navigate"}, {"K/J", "reorder"}, {"↵", "attach / fold"},
 		{"F", "fold all"}, {"n", "new"}, {"g", "group"}, {"space", "prompt"},
 		{"ctrl+r", "review"}, {"r", "rename"}, {"m", "move"},
 		{"v/V", "revive / all"}, {"a/u", "archive / restore"}, {"d", "delete"},

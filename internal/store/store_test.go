@@ -3,7 +3,9 @@ package store
 import (
 	"errors"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -408,6 +410,20 @@ func TestReorderSessionSkipsArchivedInActiveView(t *testing.T) {
 	}
 }
 
+func TestSwapSessionOrderCrossesFilteredSibling(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateSession(sample("a", "g1"))
+	st.CreateSession(sample("hidden", "g1"))
+	st.CreateSession(sample("c", "g1"))
+
+	if err := st.SwapSessionOrder("c", "a"); err != nil {
+		t.Fatalf("swap: %v", err)
+	}
+	if got, want := listIDs(t, st, false), []string{"c", "hidden", "a"}; !slices.Equal(got, want) {
+		t.Fatalf("order = %v want %v", got, want)
+	}
+}
+
 func TestReorderGroup(t *testing.T) {
 	st := newTestStore(t)
 	st.CreateGroup("alpha", "")
@@ -436,6 +452,54 @@ func TestReorderGroup(t *testing.T) {
 	// Nested group only swaps with same-parent siblings; sole child is a no-op.
 	if moved, err := st.ReorderGroup("alpha/sub", -1); err != nil || moved {
 		t.Fatalf("nested sole child: moved=%v err=%v, want no-op", moved, err)
+	}
+}
+
+func TestSwapGroupOrderCrossesFilteredSibling(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateGroup("alpha", "")
+	st.CreateGroup("hidden", "")
+	st.CreateGroup("gamma", "")
+
+	if err := st.SwapGroupOrder("gamma", "alpha"); err != nil {
+		t.Fatalf("swap: %v", err)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	got := make([]string, len(groups))
+	for i, group := range groups {
+		got[i] = group.Name
+	}
+	if want := []string{"gamma", "hidden", "alpha"}; !slices.Equal(got, want) {
+		t.Fatalf("order = %v want %v", got, want)
+	}
+}
+
+func TestSwapGroupOrderMaterializesSyntheticAncestors(t *testing.T) {
+	st := newTestStore(t)
+	for _, group := range []string{"alpha/deep", "beta/deep", "gamma/deep"} {
+		if err := st.CreateGroup(group, ""); err != nil {
+			t.Fatalf("create group %q: %v", group, err)
+		}
+	}
+
+	if err := st.SwapGroupOrder("gamma", "beta", "alpha", "beta", "gamma"); err != nil {
+		t.Fatalf("swap: %v", err)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	var roots []string
+	for _, group := range groups {
+		if !strings.Contains(group.Name, "/") {
+			roots = append(roots, group.Name)
+		}
+	}
+	if want := []string{"alpha", "gamma", "beta"}; !slices.Equal(roots, want) {
+		t.Fatalf("root order = %v want %v", roots, want)
 	}
 }
 
