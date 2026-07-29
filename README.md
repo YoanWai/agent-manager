@@ -78,6 +78,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `f` | Fold / unfold group |
 | `s` | Settings (quick-spawn tool, theme, review layout) |
 | `t` | Toggle archived view |
+| `e` | Hide / show empty groups |
 | `/` | Search |
 | `?` | Help |
 | `q` | Quit (sessions keep running) |
@@ -123,7 +124,7 @@ Press `c` on a line to write a comment; `C` flattens every comment into one revi
 
 ### Groups
 
-Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `f`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool (status rules and revive follow the new tool; useful when you quit one agent in the pane and start another).
+Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `f`, hide or restore empty groups visually with `e`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool (status rules and revive follow the new tool; useful when you quit one agent in the pane and start another).
 
 ### Status
 
@@ -148,14 +149,15 @@ For Claude Code, status comes first-hand from [hook events](https://docs.anthrop
 
 ### Stats
 
-The header shows a fleet summary: per-status session counts, plus `agents N% · X GB`, the combined CPU and RSS memory of every live agent's full process tree (shell, agent, and children). Agent CPU uses `ps` semantics where 100% equals one full core, so the total can exceed 100% on multi-core machines. The Computer block in the sessions panel shows machine gauges:
+The header shows a fleet summary: per-status session counts, plus `agents total usage: cpu N% · ram M% · X GB` for every live agent's full process tree (shell, agent, and children). CPU is that tree's CPU time over the last poll as a share of total machine capacity (same 0–100% unit as the computer gauge). RAM is resident set as a share of installed memory, with absolute size beside it. The selected session's detail line uses the same scale for that session alone.
+
+The Computer block in the sessions panel shows machine gauges:
 
 - **CPU**: whole-machine utilization (0-100%)
 - **Memory**: used/total. On macOS this matches Activity Monitor's Memory Used (resident RAM minus free, speculative, and reclaimable file cache). On Linux it is `Total - MemAvailable`, so file cache is not counted as used.
 - **Swap**: used/total of the current swap allocation (`used/total * 100`). On macOS the swap file grows under pressure, so the denominator is the live size from `vm.swapusage`, not a fixed partition.
 - **Disk**: fill of the root filesystem (used / (used + available)), with free space from the kernel's available figure
 - **Network**: up/down rates on real NICs only (loopback, utun, bridges, and similar virtual interfaces are excluded)
-
 
 ### Themes
 

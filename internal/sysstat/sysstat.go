@@ -1,7 +1,9 @@
 package sysstat
 
 import (
+	"fmt"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -40,10 +42,19 @@ type Snapshot struct {
 }
 
 type ProcStat struct {
+	// CPUPercent is host capacity share 0–100 after interval scaling
+	// (or after ScaleToHost's pcpu fallback).
 	CPUPercent float64
+	// RamPercent is 0 until host scaling; then 0–100 of installed RAM.
+	RamPercent float64
 	RSS        uint64
-	Procs      int
-	OK         bool
+	// CPUSeconds is cumulative user+system CPU time for the whole tree.
+	// Used with a previous sample to compute interval host share.
+	CPUSeconds float64
+	// PCPU is the raw ps pcpu sum (100 ≈ one core). Fallback only.
+	PCPU float64
+	Procs int
+	OK    bool
 }
 
 func Sample(diskPath string) Snapshot {
@@ -210,40 +221,170 @@ func isCPUSensor(key string) bool {
 		strings.Contains(key, "package")
 }
 
+// LogicalCPUs is the number of logical processors used as the denominator
+// when converting process-style pcpu into a share of the machine.
+func LogicalCPUs() int {
+	if n, err := cpu.Counts(true); err == nil && n > 0 {
+		return n
+	}
+	if n := runtime.NumCPU(); n > 0 {
+		return n
+	}
+	return 1
+}
+
+// MemTotalBytes is installed RAM, used as the denominator for agent RAM %.
+func MemTotalBytes() (uint64, bool) {
+	vm, err := mem.VirtualMemory()
+	if err != nil || vm.Total == 0 {
+		return 0, false
+	}
+	return vm.Total, true
+}
+
+// HostCPUPercent turns a process-style pcpu sum (100 ≈ one full core) into
+// a percentage of total machine capacity, clamped to [0, 100]. Prefer
+// HostCPUFromDelta when an interval sample is available; pcpu is a coarse
+// fallback and can disagree with the host gauge.
+func HostCPUPercent(pcpu float64, ncpu int) float64 {
+	if ncpu < 1 {
+		ncpu = 1
+	}
+	return clampPct(pcpu / float64(ncpu))
+}
+
+// HostCPUFromDelta is agent CPU time used over an interval as a share of
+// total machine capacity: cpuSec / (elapsed * ncpu) * 100. Same unit as
+// the host gauge (0–100% of the box), so a busy agent fleet cannot
+// honestly read higher than full machine use.
+func HostCPUFromDelta(cpuSecDelta, elapsedSec float64, ncpu int) float64 {
+	if elapsedSec <= 0 || ncpu < 1 {
+		return 0
+	}
+	if cpuSecDelta < 0 {
+		cpuSecDelta = 0
+	}
+	return clampPct(cpuSecDelta / (elapsedSec * float64(ncpu)) * 100)
+}
+
+// HostRAMPercent is rss as a percentage of installed RAM, clamped to [0, 100].
+func HostRAMPercent(rss, memTotal uint64) float64 {
+	if memTotal == 0 {
+		return 0
+	}
+	return clampPct(float64(rss) / float64(memTotal) * 100)
+}
+
+func clampPct(p float64) float64 {
+	if p < 0 {
+		return 0
+	}
+	if p > 100 {
+		return 100
+	}
+	return p
+}
+
+// ScaleToHost sets CPU/RAM to machine shares using pcpu fallback for CPU.
+// Prefer interval scaling in the poller; this path is for one-shot samples
+// (preview) that have no previous CPU-seconds reading.
+func (s ProcStat) ScaleToHost(ncpu int, memTotal uint64) ProcStat {
+	if !s.OK {
+		return s
+	}
+	pcpu := s.PCPU
+	if pcpu == 0 {
+		pcpu = s.CPUPercent
+	}
+	s.CPUPercent = HostCPUPercent(pcpu, ncpu)
+	s.RamPercent = HostRAMPercent(s.RSS, memTotal)
+	return s
+}
+
+// parsePSTime turns a ps time/cputime field into cumulative CPU seconds.
+// Handles DD-HH:MM:SS, HH:MM:SS, and the common Darwin MM:SS.ss form
+// (minutes may exceed 59).
+func parsePSTime(s string) (float64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "-" {
+		return 0, nil
+	}
+	var days float64
+	if i := strings.IndexByte(s, '-'); i >= 0 {
+		d, err := strconv.ParseFloat(s[:i], 64)
+		if err != nil {
+			return 0, err
+		}
+		days = d
+		s = s[i+1:]
+	}
+	parts := strings.Split(s, ":")
+	switch len(parts) {
+	case 1:
+		sec, err := strconv.ParseFloat(parts[0], 64)
+		if err != nil {
+			return 0, err
+		}
+		return days*86400 + sec, nil
+	case 2:
+		min, err1 := strconv.ParseFloat(parts[0], 64)
+		sec, err2 := strconv.ParseFloat(parts[1], 64)
+		if err1 != nil || err2 != nil {
+			return 0, fmt.Errorf("ps time %q", s)
+		}
+		return days*86400 + min*60 + sec, nil
+	case 3:
+		hour, err1 := strconv.ParseFloat(parts[0], 64)
+		min, err2 := strconv.ParseFloat(parts[1], 64)
+		sec, err3 := strconv.ParseFloat(parts[2], 64)
+		if err1 != nil || err2 != nil || err3 != nil {
+			return 0, fmt.Errorf("ps time %q", s)
+		}
+		return days*86400 + hour*3600 + min*60 + sec, nil
+	default:
+		return 0, fmt.Errorf("ps time %q", s)
+	}
+}
+
 // Trees reports the combined CPU and resident memory of each requested
 // process and all of its descendants, from a single ps invocation. tmux
 // pane pids are shells whose real work happens in child processes, so a
-// tree sum is the only honest number. ps %cpu is a recent decaying
-// average, which suits a 2s poll.
+// tree sum is the only honest number.
+//
+// CPUSeconds is cumulative CPU time for interval host-share math. PCPU is
+// the raw ps %cpu sum (fallback). Callers convert to host % via
+// HostCPUFromDelta between polls, or ScaleToHost for a one-shot sample.
 func Trees(rootPIDs []int) map[int]ProcStat {
 	stats := make(map[int]ProcStat, len(rootPIDs))
 	if len(rootPIDs) == 0 {
 		return stats
 	}
-	out, err := exec.Command("ps", "-axo", "pid=,ppid=,pcpu=,rss=").Output()
+	out, err := exec.Command("ps", "-axo", "pid=,ppid=,pcpu=,rss=,time=").Output()
 	if err != nil {
 		return stats
 	}
 
 	type proc struct {
-		cpu float64
-		rss uint64
+		pcpu    float64
+		rss     uint64
+		cpuSecs float64
 	}
 	procs := map[int]proc{}
 	children := map[int][]int{}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) != 4 {
+		if len(fields) != 5 {
 			continue
 		}
 		pid, err1 := strconv.Atoi(fields[0])
 		ppid, err2 := strconv.Atoi(fields[1])
 		cpuPct, err3 := strconv.ParseFloat(fields[2], 64)
 		rssKB, err4 := strconv.ParseUint(fields[3], 10, 64)
-		if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		cpuSecs, err5 := parsePSTime(fields[4])
+		if err1 != nil || err2 != nil || err3 != nil || err4 != nil || err5 != nil {
 			continue
 		}
-		procs[pid] = proc{cpu: cpuPct, rss: rssKB * 1024}
+		procs[pid] = proc{pcpu: cpuPct, rss: rssKB * 1024, cpuSecs: cpuSecs}
 		children[ppid] = append(children[ppid], pid)
 	}
 
@@ -260,13 +401,15 @@ func Trees(rootPIDs []int) map[int]ProcStat {
 			}
 			seen[pid] = true
 			stat.Procs++
-			stat.CPUPercent += procs[pid].cpu
+			stat.PCPU += procs[pid].pcpu
+			stat.CPUSeconds += procs[pid].cpuSecs
 			stat.RSS += procs[pid].rss
 			for _, child := range children[pid] {
 				walk(child)
 			}
 		}
 		walk(root)
+		// Leave CPUPercent 0 until the caller applies interval or fallback.
 		stats[root] = stat
 	}
 	return stats

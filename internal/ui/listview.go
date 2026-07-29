@@ -447,7 +447,8 @@ func (m *Model) viewDetail(width int) string {
 
 	facts := []string{tool, displayGroup(sess.Group), "started " + relSince(sess.CreatedAt)}
 	if m.procFor == sess.ID && m.proc.OK {
-		facts = append(facts, fmt.Sprintf("cpu %.1f%% · ram %s", m.proc.CPUPercent, humanBytes(m.proc.RSS)))
+		facts = append(facts, fmt.Sprintf("cpu %.1f%% · ram %.1f%% · %s",
+			m.proc.CPUPercent, m.proc.RamPercent, humanBytes(m.proc.RSS)))
 	}
 	meta := subtleStyle.Render(strings.Join(facts, " · "))
 	dir := subtleStyle.Render(truncateTail(sess.Cwd, width))
@@ -606,13 +607,18 @@ func (m *Model) headerScope() string {
 	return line
 }
 
-// headerAgents is the fleet's process cost, empty when nothing is running.
+// headerAgents is the fleet's process cost as shares of this machine,
+// empty when nothing is running. RAM shows both percent and absolute size.
 func (m *Model) headerAgents() string {
 	if m.agents.count == 0 {
 		return ""
 	}
-	return labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.0f%%", m.agents.cpu)) +
-		subtleStyle.Render(" · ") + labelStyle.Render("ram ") + valueStyle.Render(humanBytes(m.agents.rss))
+	title := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render("agents total usage:")
+	return title + " " +
+		labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.0f%%", m.agents.cpu)) +
+		subtleStyle.Render(" · ") + labelStyle.Render("ram ") +
+		valueStyle.Render(fmt.Sprintf("%.0f%%", m.agents.ram)) +
+		subtleStyle.Render(" · ") + valueStyle.Render(humanBytes(m.agents.rss))
 }
 
 // viewStatusCounts is the fleet-at-a-glance strip: a tinted dot and count

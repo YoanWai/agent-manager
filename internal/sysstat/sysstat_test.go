@@ -200,3 +200,101 @@ func TestSampleMemoryMatchesVMStatOnDarwin(t *testing.T) {
 		t.Fatalf("bad mem bounds used=%d total=%d", snap.MemUsed, snap.MemTotal)
 	}
 }
+
+func TestHostCPUPercent(t *testing.T) {
+	// 100 process-style % on 8 cores = 12.5% of the machine.
+	if got := HostCPUPercent(100, 8); got != 12.5 {
+		t.Fatalf("HostCPUPercent(100, 8) = %v, want 12.5", got)
+	}
+	// Full saturation of every core.
+	if got := HostCPUPercent(800, 8); got != 100 {
+		t.Fatalf("HostCPUPercent(800, 8) = %v, want 100", got)
+	}
+	// Overshoot clamps.
+	if got := HostCPUPercent(900, 8); got != 100 {
+		t.Fatalf("HostCPUPercent clamp = %v, want 100", got)
+	}
+	if got := HostCPUPercent(50, 0); got != 50 {
+		t.Fatalf("HostCPUPercent ncpu=0 fallback = %v, want 50", got)
+	}
+	if got := HostCPUPercent(-1, 4); got != 0 {
+		t.Fatalf("HostCPUPercent negative = %v, want 0", got)
+	}
+}
+
+func TestHostRAMPercent(t *testing.T) {
+	const total = 16 * 1024 * 1024 * 1024
+	if got := HostRAMPercent(total/4, total); got != 25 {
+		t.Fatalf("HostRAMPercent quarter = %v, want 25", got)
+	}
+	if got := HostRAMPercent(total*2, total); got != 100 {
+		t.Fatalf("HostRAMPercent overshoot = %v, want 100", got)
+	}
+	if got := HostRAMPercent(100, 0); got != 0 {
+		t.Fatalf("HostRAMPercent zero total = %v, want 0", got)
+	}
+}
+
+func TestHostCPUFromDelta(t *testing.T) {
+	// 1.0 CPU-second over 1s on 8 cores = 12.5% of the machine.
+	if got := HostCPUFromDelta(1.0, 1.0, 8); got != 12.5 {
+		t.Fatalf("HostCPUFromDelta = %v, want 12.5", got)
+	}
+	// Fully saturate all cores for the window.
+	if got := HostCPUFromDelta(8.0, 1.0, 8); got != 100 {
+		t.Fatalf("HostCPUFromDelta full = %v, want 100", got)
+	}
+	if got := HostCPUFromDelta(20.0, 1.0, 8); got != 100 {
+		t.Fatalf("HostCPUFromDelta clamp = %v, want 100", got)
+	}
+	if got := HostCPUFromDelta(1.0, 0, 8); got != 0 {
+		t.Fatalf("HostCPUFromDelta zero elapsed = %v, want 0", got)
+	}
+	if got := HostCPUFromDelta(-1.0, 1.0, 8); got != 0 {
+		t.Fatalf("HostCPUFromDelta negative delta = %v, want 0", got)
+	}
+}
+
+func TestParsePSTime(t *testing.T) {
+	cases := map[string]float64{
+		"0:00.50":    0.5,
+		"1:30.00":    90,
+		"37:06.59":   37*60 + 6.59,
+		"975:30.99":  975*60 + 30.99,
+		"01:02:03":   1*3600 + 2*60 + 3,
+		"2-01:00:00": 2*86400 + 3600,
+	}
+	for in, want := range cases {
+		got, err := parsePSTime(in)
+		if err != nil {
+			t.Fatalf("parsePSTime(%q): %v", in, err)
+		}
+		if got < want-0.01 || got > want+0.01 {
+			t.Fatalf("parsePSTime(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestScaleToHost(t *testing.T) {
+	raw := ProcStat{OK: true, PCPU: 200, RSS: 1024}
+	scaled := raw.ScaleToHost(4, 4096)
+	if scaled.CPUPercent != 50 {
+		t.Fatalf("cpu = %v, want 50", scaled.CPUPercent)
+	}
+	if scaled.RamPercent != 25 {
+		t.Fatalf("ram = %v, want 25", scaled.RamPercent)
+	}
+	if scaled.RSS != 1024 {
+		t.Fatalf("rss must stay absolute, got %d", scaled.RSS)
+	}
+	dead := ProcStat{PCPU: 99, RSS: 1}.ScaleToHost(2, 100)
+	if dead.OK || dead.PCPU != 99 {
+		t.Fatal("ScaleToHost must leave non-OK stats alone")
+	}
+}
+
+func TestLogicalCPUs(t *testing.T) {
+	if n := LogicalCPUs(); n < 1 {
+		t.Fatalf("LogicalCPUs = %d, want >= 1", n)
+	}
+}

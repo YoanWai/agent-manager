@@ -53,6 +53,11 @@ type poller struct {
 	// changing while unmatched; used to debounce marker-less turn ends.
 	quietSince map[string]time.Time
 	tick       int
+	// prevTreeCPU / prevTreeAt drive interval agent CPU: cumulative
+	// CPU-seconds per pane root from the last poll, so host share uses
+	// the same "over this window" idea as the computer gauge.
+	prevTreeCPU map[int]float64
+	prevTreeAt  time.Time
 }
 
 // quietEndGrace is how long a working pane must stay region-stable and
@@ -243,10 +248,17 @@ func (p *poller) refreshOnce() tea.Msg {
 		}
 	}
 	trees := sysstat.Trees(livePIDs)
+	ncpu := sysstat.LogicalCPUs()
+	memTotal, _ := sysstat.MemTotalBytes()
+	now := time.Now()
+	elapsed := now.Sub(p.prevTreeAt).Seconds()
+	haveDelta := !p.prevTreeAt.IsZero() && elapsed > 0.05
+	nextTreeCPU := make(map[int]float64, len(livePIDs))
 
 	preview := ""
 	var proc sysstat.ProcStat
 	var agents agentStats
+	var cpuSecDelta float64
 	paneHashes := make(map[string]uint64, len(sessions))
 	for i, sess := range sessions {
 		if sess.Archived {
@@ -268,9 +280,26 @@ func (p *poller) refreshOnce() tea.Msg {
 		if pid := panes[sess.ID]; pid > 0 {
 			stat := trees[pid]
 			if stat.OK {
+				nextTreeCPU[pid] = stat.CPUSeconds
 				agents.count++
-				agents.cpu += stat.CPUPercent
 				agents.rss += stat.RSS
+				var hostCPU float64
+				if haveDelta {
+					delta := stat.CPUSeconds - p.prevTreeCPU[pid]
+					if delta < 0 {
+						delta = 0
+					}
+					cpuSecDelta += delta
+					hostCPU = sysstat.HostCPUFromDelta(delta, elapsed, ncpu)
+				} else {
+					hostCPU = sysstat.HostCPUPercent(stat.PCPU, ncpu)
+				}
+				stat.CPUPercent = hostCPU
+				stat.RamPercent = sysstat.HostRAMPercent(stat.RSS, memTotal)
+				if !haveDelta {
+					// First sample: fleet CPU still uses pcpu sum path below.
+					agents.cpu += stat.PCPU
+				}
 				if sess.ID == selectedID {
 					proc = stat
 				}
@@ -343,6 +372,17 @@ func (p *poller) refreshOnce() tea.Msg {
 			archivedGroups[g.Name] = true
 		}
 	}
+
+	if agents.count > 0 {
+		if haveDelta {
+			agents.cpu = sysstat.HostCPUFromDelta(cpuSecDelta, elapsed, ncpu)
+		} else {
+			agents.cpu = sysstat.HostCPUPercent(agents.cpu, ncpu)
+		}
+		agents.ram = sysstat.HostRAMPercent(agents.rss, memTotal)
+	}
+	p.prevTreeCPU = nextTreeCPU
+	p.prevTreeAt = now
 
 	msg := refreshMsg{
 		sessions:       sessions,
