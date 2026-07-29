@@ -217,7 +217,7 @@ func (m *Model) viewHelp() string {
 		{"V", "revive every dead session"},
 		{"a / u", "archive / restore"},
 		{"d", "delete session, or group + subtree"},
-		{"shift+↑↓", "reorder row up / down"},
+		{"K / J", "reorder row up / down (shift+↑↓ also works)"},
 		{"space", "quick prompt: answer session / spawn agent in group"},
 		{"⇥", "in quick prompt: switch spawn tool"},
 		{"^v", "in quick prompt: paste image as an inline chip"},

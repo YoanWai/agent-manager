@@ -739,20 +739,75 @@ func (s *Store) ReorderSession(id string, delta int, includeArchived bool) (bool
 	}
 
 	siblings[current], siblings[target] = siblings[target], siblings[current]
-	tx, err := s.db.Begin()
-	if err != nil {
-		return false, err
+	ids := make([]string, len(siblings))
+	for i, sibling := range siblings {
+		ids[i] = sibling.id
 	}
-	defer tx.Rollback()
-	for i, sib := range siblings {
-		if _, err := tx.Exec(`UPDATE sessions SET sort_order = ? WHERE id = ?`, i, sib.id); err != nil {
-			return false, err
-		}
-	}
-	if err := tx.Commit(); err != nil {
+	if err := s.persistSessionOrder(ids); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// SwapSessionOrder exchanges two sessions in the same group. The caller can
+// choose visible siblings even when filtered sessions sit between them.
+func (s *Store) SwapSessionOrder(id, targetID string) error {
+	sess, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	target, err := s.Get(targetID)
+	if err != nil {
+		return err
+	}
+	if sess.Group != target.Group {
+		return fmt.Errorf("sessions %s and %s are not siblings", id, targetID)
+	}
+
+	rows, err := s.db.Query(
+		`SELECT id FROM sessions WHERE group_name = ?
+		 ORDER BY sort_order, created_at`, sess.Group)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var ids []string
+	current, targetIndex := -1, -1
+	for rows.Next() {
+		var siblingID string
+		if err := rows.Scan(&siblingID); err != nil {
+			return err
+		}
+		switch siblingID {
+		case id:
+			current = len(ids)
+		case targetID:
+			targetIndex = len(ids)
+		}
+		ids = append(ids, siblingID)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if current < 0 || targetIndex < 0 {
+		return fmt.Errorf("session order changed while reordering")
+	}
+	ids[current], ids[targetIndex] = ids[targetIndex], ids[current]
+	return s.persistSessionOrder(ids)
+}
+
+func (s *Store) persistSessionOrder(ids []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for i, id := range ids {
+		if _, err := tx.Exec(`UPDATE sessions SET sort_order = ? WHERE id = ?`, i, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // ReorderGroup moves a group one step among the groups sharing its
@@ -807,20 +862,69 @@ func (s *Store) ReorderGroup(path string, delta int) (bool, error) {
 	}
 
 	groups[current], groups[target] = groups[target], groups[current]
+	if err := s.persistGroupOrder(groups); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// SwapGroupOrder exchanges two groups with the same parent. siblingOrder
+// materializes displayed ancestors so their manual order can persist too.
+func (s *Store) SwapGroupOrder(path, targetPath string, siblingOrder ...string) error {
+	if path == "" || targetPath == "" {
+		return fmt.Errorf("cannot reorder the root group")
+	}
+	parent := parentPath(path)
+	if parent != parentPath(targetPath) {
+		return fmt.Errorf("groups %s and %s are not siblings", path, targetPath)
+	}
+	for _, sibling := range siblingOrder {
+		if parentPath(sibling) != parent {
+			return fmt.Errorf("group %s is not a sibling of %s", sibling, path)
+		}
+		if err := s.ensureGroup(sibling); err != nil {
+			return err
+		}
+	}
+	groups, err := s.Groups()
+	if err != nil {
+		return err
+	}
+	current, target := -1, -1
+	for i, group := range groups {
+		switch group.Name {
+		case path:
+			current = i
+		case targetPath:
+			target = i
+		}
+	}
+	if current < 0 || target < 0 {
+		return fmt.Errorf("group order changed while reordering")
+	}
+	groups[current], groups[target] = groups[target], groups[current]
+	return s.persistGroupOrder(groups)
+}
+
+func parentPath(path string) string {
+	if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		return path[:idx]
+	}
+	return ""
+}
+
+func (s *Store) persistGroupOrder(groups []Group) error {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer tx.Rollback()
 	for i, g := range groups {
 		if _, err := tx.Exec(`UPDATE groups SET sort_order = ? WHERE name = ?`, i, g.Name); err != nil {
-			return false, err
+			return err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return tx.Commit()
 }
 
 func requireRow(res sql.Result, id string) error {

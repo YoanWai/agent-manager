@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -133,6 +134,43 @@ func (m *Model) groupRowPaths() []string {
 		}
 	}
 	return paths
+}
+
+func loadStoredRows(t *testing.T, m *Model) {
+	t.Helper()
+	sessions, err := m.store.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	groups, err := m.store.Groups()
+	if err != nil {
+		t.Fatalf("list groups: %v", err)
+	}
+	m.sessions = sessions
+	m.groups = make([]string, len(groups))
+	m.groupPaths = make(map[string]string, len(groups))
+	m.archivedGroups = make(map[string]bool, len(groups))
+	for i, group := range groups {
+		m.groups[i] = group.Name
+		m.groupPaths[group.Name] = group.Path
+		if group.Archived {
+			m.archivedGroups[group.Name] = true
+		}
+	}
+	m.rebuildRows()
+}
+
+func listSessionIDs(t *testing.T, st *store.Store) []string {
+	t.Helper()
+	sessions, err := st.ListSessions(false)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	ids := make([]string, len(sessions))
+	for i, sess := range sessions {
+		ids[i] = sess.ID
+	}
+	return ids
 }
 
 func pickGroup(t *testing.T, m *Model, path string) {
@@ -343,6 +381,104 @@ func TestNestedGroupsTree(t *testing.T) {
 
 	if m.View() == "" {
 		t.Fatal("View should render non-empty")
+	}
+}
+
+func TestPortableReorderKeysSwapVisibleSessions(t *testing.T) {
+	m := buildModel(t)
+	for _, sess := range []store.Session{
+		{ID: "a", Name: "keep-alpha", Tool: "claude", Cwd: "/tmp", Status: "idle"},
+		{ID: "hidden", Name: "filtered", Tool: "claude", Cwd: "/tmp", Status: "idle"},
+		{ID: "c", Name: "keep-charlie", Tool: "claude", Cwd: "/tmp", Status: "idle"},
+	} {
+		if err := m.store.CreateSession(sess); err != nil {
+			t.Fatalf("create session %q: %v", sess.ID, err)
+		}
+	}
+	m.search = "keep"
+	loadStoredRows(t, m)
+	m.selectSessionRow(t, "keep-charlie")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
+	m = updated.(*Model)
+	if got, want := []string{m.sessionRows()[0].ID, m.sessionRows()[1].ID}, []string{"c", "a"}; !slices.Equal(got, want) {
+		t.Fatalf("visible order after K = %v want %v", got, want)
+	}
+	if got, want := listSessionIDs(t, m.store), []string{"c", "hidden", "a"}; !slices.Equal(got, want) {
+		t.Fatalf("stored order after K = %v want %v", got, want)
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'J'}})
+	m = updated.(*Model)
+	if got, want := listSessionIDs(t, m.store), []string{"a", "hidden", "c"}; !slices.Equal(got, want) {
+		t.Fatalf("stored order after J = %v want %v", got, want)
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
+	m = updated.(*Model)
+	if got, want := listSessionIDs(t, m.store), []string{"c", "hidden", "a"}; !slices.Equal(got, want) {
+		t.Fatalf("stored order after shift+up = %v want %v", got, want)
+	}
+}
+
+func TestReorderGroupSkipsFilteredSibling(t *testing.T) {
+	m := buildModel(t)
+	for _, group := range []string{"alpha", "hidden", "gamma"} {
+		if err := m.store.CreateGroup(group, ""); err != nil {
+			t.Fatalf("create group %q: %v", group, err)
+		}
+	}
+	for _, sess := range []store.Session{
+		{ID: "a", Name: "keep-alpha", Tool: "claude", Cwd: "/tmp", Group: "alpha", Status: "idle"},
+		{ID: "hidden", Name: "filtered", Tool: "claude", Cwd: "/tmp", Group: "hidden", Status: "idle"},
+		{ID: "g", Name: "keep-gamma", Tool: "claude", Cwd: "/tmp", Group: "gamma", Status: "idle"},
+	} {
+		if err := m.store.CreateSession(sess); err != nil {
+			t.Fatalf("create session %q: %v", sess.ID, err)
+		}
+	}
+	m.search = "keep"
+	loadStoredRows(t, m)
+	m.selectGroupRow(t, "gamma")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
+	m = updated.(*Model)
+	if got, want := m.groupRowPaths(), []string{"gamma", "alpha"}; !slices.Equal(got, want) {
+		t.Fatalf("visible group order after K = %v want %v", got, want)
+	}
+	groups, err := m.store.Groups()
+	if err != nil {
+		t.Fatalf("list groups: %v", err)
+	}
+	got := make([]string, len(groups))
+	for i, group := range groups {
+		got[i] = group.Name
+	}
+	if want := []string{"gamma", "hidden", "alpha"}; !slices.Equal(got, want) {
+		t.Fatalf("stored group order after K = %v want %v", got, want)
+	}
+}
+
+func TestReorderSyntheticGroupUpdatesImmediately(t *testing.T) {
+	m := buildModel(t)
+	for _, group := range []string{"alpha/deep", "beta/deep", "gamma/deep"} {
+		if err := m.store.CreateGroup(group, ""); err != nil {
+			t.Fatalf("create group %q: %v", group, err)
+		}
+	}
+	loadStoredRows(t, m)
+	m.selectGroupRow(t, "gamma")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
+	m = updated.(*Model)
+	var roots []string
+	for _, group := range m.groupRowPaths() {
+		if !strings.Contains(group, "/") {
+			roots = append(roots, group)
+		}
+	}
+	if want := []string{"alpha", "gamma", "beta"}; !slices.Equal(roots, want) {
+		t.Fatalf("root order after K = %v want %v", roots, want)
 	}
 }
 

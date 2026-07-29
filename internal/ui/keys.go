@@ -78,9 +78,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.moveCursor(-1)
 	case "down", "j":
 		return m, m.moveCursor(1)
-	case "shift+up":
+	case "shift+up", "K", "shift+k":
 		return m.reorderSelected(-1)
-	case "shift+down":
+	case "shift+down", "J", "shift+j":
 		return m.reorderSelected(1)
 	case "enter":
 		if entry, ok := m.selectedRow(); ok && entry.isGroup {
@@ -193,18 +193,8 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	var moved bool
-	var err error
-	if entry.isGroup {
-		moved, err = m.store.ReorderGroup(entry.group, delta)
-	} else {
-		moved, err = m.store.ReorderSession(entry.sess.ID, delta, m.showArchived)
-	}
-	if err != nil {
-		m.err = err.Error()
-		return m, nil
-	}
-	if !moved {
+	target, ok := m.visibleReorderTarget(entry, delta)
+	if !ok {
 		edge := "top"
 		if delta > 0 {
 			edge = "bottom"
@@ -216,59 +206,100 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 		m.err = fmt.Sprintf("%s already at the %s of its level", what, edge)
 		return m, nil
 	}
+
+	var err error
+	var groupSiblings []string
+	if entry.isGroup {
+		groupSiblings = m.knownGroupSiblings(parentGroup(entry.group))
+		err = m.store.SwapGroupOrder(entry.group, target.group, groupSiblings...)
+	} else {
+		err = m.store.SwapSessionOrder(entry.sess.ID, target.sess.ID)
+	}
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
 	// Mirror the swap in memory so the list redraws instantly; the next
 	// poll re-reads the authoritative order from the store.
 	if entry.isGroup {
-		m.swapGroupLocal(entry.group, delta)
+		m.materializeGroupsLocal(groupSiblings)
+		m.swapGroupLocal(entry.group, target.group)
 	} else {
-		m.swapSessionLocal(entry.sess.ID, delta)
+		m.swapSessionLocal(entry.sess.ID, target.sess.ID)
 	}
+	m.err = ""
 	m.rebuildRows()
 	m.requestRefresh()
 	return m, nil
 }
 
-func (m *Model) swapSessionLocal(id string, delta int) {
+// visibleReorderTarget finds the next rendered sibling. Filters and archive
+// scope therefore cannot turn a successful reorder into an invisible swap.
+func (m *Model) visibleReorderTarget(entry treeRow, delta int) (treeRow, bool) {
 	step := 1
 	if delta < 0 {
 		step = -1
 	}
-	for i, sess := range m.sessions {
-		if sess.ID != id {
+	for i := m.cursor + step; i >= 0 && i < len(m.rows); i += step {
+		candidate := m.rows[i]
+		if entry.isGroup {
+			if candidate.isGroup && parentGroup(candidate.group) == parentGroup(entry.group) {
+				return candidate, true
+			}
 			continue
 		}
-		neighbor := i + step
-		if neighbor >= 0 && neighbor < len(m.sessions) && m.sessions[neighbor].Group == sess.Group {
-			m.sessions[i], m.sessions[neighbor] = m.sessions[neighbor], m.sessions[i]
+		if !candidate.isGroup && candidate.sess.Group == entry.sess.Group {
+			return candidate, true
 		}
-		return
+	}
+	return treeRow{}, false
+}
+
+func (m *Model) knownGroupSiblings(parent string) []string {
+	paths := groupClosure(m.groups, m.sessions)
+	return childIndex(paths, m.groups)[parent]
+}
+
+func (m *Model) materializeGroupsLocal(paths []string) {
+	known := make(map[string]bool, len(m.groups))
+	for _, group := range m.groups {
+		known[group] = true
+	}
+	for _, path := range paths {
+		if !known[path] {
+			m.groups = append(m.groups, path)
+			known[path] = true
+		}
 	}
 }
 
-func (m *Model) swapGroupLocal(path string, delta int) {
-	parent := parentGroup(path)
-	isSibling := func(name string) bool {
-		return parentGroup(name) == parent
-	}
-	step := 1
-	if delta < 0 {
-		step = -1
-	}
-	current := -1
-	for i, name := range m.groups {
-		if name == path {
+func (m *Model) swapSessionLocal(id, targetID string) {
+	current, target := -1, -1
+	for i, sess := range m.sessions {
+		switch sess.ID {
+		case id:
 			current = i
-			break
+		case targetID:
+			target = i
 		}
 	}
-	if current < 0 {
-		return
+	if current >= 0 && target >= 0 {
+		m.sessions[current], m.sessions[target] = m.sessions[target], m.sessions[current]
 	}
-	for i := current + step; i >= 0 && i < len(m.groups); i += step {
-		if isSibling(m.groups[i]) {
-			m.groups[current], m.groups[i] = m.groups[i], m.groups[current]
-			return
+}
+
+func (m *Model) swapGroupLocal(path, targetPath string) {
+	current, target := -1, -1
+	for i, name := range m.groups {
+		switch name {
+		case path:
+			current = i
+		case targetPath:
+			target = i
 		}
+	}
+	if current >= 0 && target >= 0 {
+		m.groups[current], m.groups[target] = m.groups[target], m.groups[current]
 	}
 }
 
