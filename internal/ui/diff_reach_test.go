@@ -62,7 +62,7 @@ func TestDiffReviewReachesLastLine(t *testing.T) {
 			dir := gitRepoWithLongFile(t, lines)
 			createSession(t, m, "coder", dir, "")
 			m.selectSessionRow(t, "coder")
-			m.applyCmd(t, m.openDiff())
+			m.drainCmds(t, m.openDiff())
 			if m.diff.loading || len(m.diff.set.Files) == 0 {
 				t.Fatalf("diff did not load: %q", m.diff.errText)
 			}
@@ -102,7 +102,7 @@ func TestDiffReviewStepsDownToTheEnd(t *testing.T) {
 	dir := gitRepoWithLongFile(t, lines)
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
-	m.applyCmd(t, m.openDiff())
+	m.drainCmds(t, m.openDiff())
 	if m.diff.loading || len(m.diff.set.Files) == 0 {
 		t.Fatalf("diff did not load: %q", m.diff.errText)
 	}
@@ -166,7 +166,7 @@ func TestDiffReviewReachesEndWithWrappedLines(t *testing.T) {
 			dir := gitRepoWithWideFile(t, lines, 220)
 			createSession(t, m, "coder", dir, "")
 			m.selectSessionRow(t, "coder")
-			m.applyCmd(t, m.openDiff())
+			m.drainCmds(t, m.openDiff())
 			if m.diff.loading || len(m.diff.set.Files) == 0 {
 				t.Fatalf("diff did not load: %q", m.diff.errText)
 			}

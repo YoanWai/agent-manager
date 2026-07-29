@@ -166,6 +166,9 @@ func TestUntrackedFileGetsLineCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for i := range set.Files {
+		EnsureFile(driver, &set, i)
+	}
 	byPath := map[string]FileDiff{}
 	for _, fd := range set.Files {
 		byPath[fd.File.Path] = fd
@@ -215,6 +218,8 @@ func TestUntrackedFileOverLineCapCountsTrueLines(t *testing.T) {
 	if huge == nil {
 		t.Fatal("huge.txt missing from the set")
 	}
+	EnsureFile(driver, &set, 0)
+	huge = &set.Files[0]
 	if !huge.StatKnown() {
 		t.Fatal("huge.txt stat should be known")
 	}
@@ -249,6 +254,8 @@ func TestUntrackedFileOverByteCapStillCounts(t *testing.T) {
 	if wide == nil {
 		t.Fatal("wide.txt missing from the set")
 	}
+	EnsureFile(driver, &set, 0)
+	wide = &set.Files[0]
 	if !wide.StatKnown() {
 		t.Fatal("wide.txt stat should be known")
 	}
@@ -280,6 +287,7 @@ func TestTruncatedTrackedFileKeepsNumstat(t *testing.T) {
 	if len(set.Files) != 1 {
 		t.Fatalf("files = %d, want 1", len(set.Files))
 	}
+	EnsureFile(driver, &set, 0)
 	big := set.Files[0]
 	if !big.StatKnown() {
 		t.Fatal("big.txt stat should stay known after the truncated load")
@@ -289,13 +297,12 @@ func TestTruncatedTrackedFileKeepsNumstat(t *testing.T) {
 	}
 }
 
-// The header sums every file's Stat, so all must be set before any lazy load.
-func TestHeaderTotalStableWithoutLazyLoad(t *testing.T) {
+func TestUntrackedStatsLoadLazily(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "tracked.go", "package a\n")
 	commit(t, dir, "init")
 
-	const files, linesEach = maxEagerFiles + 5, 3
+	const files, linesEach = 205, 3
 	for i := 0; i < files; i++ {
 		write(t, dir, fmt.Sprintf("untracked%03d.txt", i), linesOf(linesEach))
 	}
@@ -308,31 +315,29 @@ func TestHeaderTotalStableWithoutLazyLoad(t *testing.T) {
 		t.Fatalf("files = %d, want %d", len(set.Files), files)
 	}
 
-	adds := 0
 	for i := range set.Files {
 		fd := set.Files[i]
-		if !fd.StatKnown() {
-			t.Fatalf("%s has no stat after BuildSet", fd.File.Path)
+		if fd.StatKnown() {
+			t.Fatalf("%s should keep its stat deferred after BuildSet", fd.File.Path)
 		}
-		if fd.Stat.Adds != linesEach {
-			t.Errorf("%s adds = %d, want %d (index %d)", fd.File.Path, fd.Stat.Adds, linesEach, i)
+		if fd.Loaded() {
+			t.Fatalf("%s should keep its contents deferred after BuildSet", fd.File.Path)
+		}
+	}
+
+	for i := range set.Files {
+		EnsureFile(driver, &set, i)
+	}
+	adds := 0
+	for _, fd := range set.Files {
+		if !fd.StatKnown() || fd.Stat.Adds != linesEach {
+			t.Errorf("%s stat = %+v known=%v, want %d adds",
+				fd.File.Path, fd.Stat, fd.StatKnown(), linesEach)
 		}
 		adds += fd.Stat.Adds
 	}
 	if want := files * linesEach; adds != want {
 		t.Fatalf("total adds = %d, want %d", adds, want)
-	}
-
-	// Loading the files the eager pass skipped must not move the total.
-	for i := range set.Files {
-		EnsureFile(driver, &set, i)
-	}
-	after := 0
-	for _, fd := range set.Files {
-		after += fd.Stat.Adds
-	}
-	if after != adds {
-		t.Fatalf("total drifted after lazy loading: %d -> %d", adds, after)
 	}
 }
 
@@ -354,6 +359,9 @@ func TestUnreadableUntrackedFileDoesNotAbortSet(t *testing.T) {
 	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
 	if err != nil {
 		t.Fatalf("BuildSet aborted on one unreadable file: %v", err)
+	}
+	for i := range set.Files {
+		EnsureFile(driver, &set, i)
 	}
 	byPath := map[string]FileDiff{}
 	for _, fd := range set.Files {

@@ -54,6 +54,8 @@ type diffState struct {
 	probeTick   int
 	hl          *hlCache
 	hlPending   hlKey
+	fileLoading map[int]bool
+	reanchor    map[string]bool
 
 	// repoRoots holds the git repos found under the session cwd; the r key picks
 	// between them. repoSel is the selected repo's root path, the stable identity
@@ -96,6 +98,18 @@ type diffHLMsg struct {
 	key hlKey
 	hl  *fileHL
 }
+
+type diffFileLoadedMsg struct {
+	sessID   string
+	scope    git.Scope
+	gen      int
+	repoRoot string
+	index    int
+	path     string
+	fd       diff.FileDiff
+}
+
+type diffFilesLoadedMsg []diffFileLoadedMsg
 
 type diffProbeMsg struct {
 	sessID   string
@@ -190,6 +204,39 @@ func (m *Model) diffHLCmd(fd diff.FileDiff, key hlKey) tea.Cmd {
 	}
 }
 
+func (m *Model) diffFileLoadCmd(set diff.Set, sessID string, scope git.Scope, gen, index int, path string) tea.Cmd {
+	driver := m.gitDrv
+	return func() tea.Msg {
+		return diffFileLoadedMsg{
+			sessID:   sessID,
+			scope:    scope,
+			gen:      gen,
+			repoRoot: set.Repo.Root,
+			index:    index,
+			path:     path,
+			fd:       diff.LoadFile(driver, set, 0),
+		}
+	}
+}
+
+func diffFilesLoadCmd(cmds []tea.Cmd) tea.Cmd {
+	if len(cmds) == 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		msgs := make(diffFilesLoadedMsg, 0, len(cmds))
+		for _, cmd := range cmds {
+			if cmd == nil {
+				continue
+			}
+			if msg, ok := cmd().(diffFileLoadedMsg); ok {
+				msgs = append(msgs, msg)
+			}
+		}
+		return msgs
+	}
+}
+
 func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 	driver := m.gitDrv
 	// The override is keyed by the raw selection while the git operations run
@@ -231,6 +278,8 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.cursorLine = 0
 	m.diff.repoRoots = nil
 	m.diff.repoSel = ""
+	m.diff.fileLoading = nil
+	m.diff.reanchor = nil
 	if picked, ok := m.pickedRepos[sess.ID]; ok {
 		m.diff.repoSel = picked
 	} else if declared, err := m.store.ReviewRepo(sess.ID); err != nil {
@@ -277,6 +326,8 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
+	m.diff.fileLoading = nil
+	m.diff.reanchor = nil
 	if m.diff.repoSel != "" && len(m.diff.repoRoots) > 0 {
 		override, err := m.store.ReviewBase(sess.ID, resolveSymlinksOrSelf(m.diff.repoSel))
 		if err != nil {
@@ -347,8 +398,13 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	// Re-anchor only on a silent same-scope refresh. A scope cycle or session
 	// switch loads a different file set, where matching a comment by excerpt
 	// would rewrite its line against content it was never made against.
+	m.diff.fileLoading = map[int]bool{}
+	m.diff.reanchor = nil
 	if msg.refresh {
-		m.reanchorAnnotations()
+		m.diff.reanchor = map[string]bool{}
+		for _, note := range m.diff.annotations[m.reviewKey()] {
+			m.diff.reanchor[note.file] = true
+		}
 	}
 	// Keep the user's place across silent reloads.
 	m.diff.fileIdx = 0
@@ -358,8 +414,83 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 			break
 		}
 	}
-	// The restored file may have been past the eager-load cap in the fresh set.
-	diff.EnsureFile(m.gitDrv, &m.diff.set, m.diff.fileIdx)
+	m.clampDiffCursor()
+	currentLoad := m.loadCurrentDiffFile()
+	var statefulLoads []tea.Cmd
+	if msg.refresh {
+		stateful := map[string]bool{}
+		for path, hash := range m.diff.reviewed[m.reviewKey()] {
+			if hash != 0 {
+				stateful[path] = true
+			}
+		}
+		for _, note := range m.diff.annotations[m.reviewKey()] {
+			stateful[note.file] = true
+		}
+		for i := range m.diff.set.Files {
+			if stateful[m.diff.set.Files[i].File.Path] {
+				if cmd := m.loadDiffFile(i); cmd != nil {
+					statefulLoads = append(statefulLoads, cmd)
+				}
+			}
+		}
+	}
+	// The selected file gets its own command so it becomes usable immediately.
+	// Less urgent review-state files load serially in one background command,
+	// avoiding an unbounded git/process fan-out after a large review refresh.
+	return tea.Batch(currentLoad, diffFilesLoadCmd(statefulLoads))
+}
+
+func (m *Model) loadCurrentDiffFile() tea.Cmd {
+	return m.loadDiffFile(m.diff.fileIdx)
+}
+
+func (m *Model) loadDiffFile(index int) tea.Cmd {
+	if index < 0 || index >= len(m.diff.set.Files) {
+		return nil
+	}
+	fd := &m.diff.set.Files[index]
+	if fd.Loaded() {
+		if index == m.diff.fileIdx {
+			return m.ensureHighlight()
+		}
+		return nil
+	}
+	if m.diff.fileLoading == nil {
+		m.diff.fileLoading = map[int]bool{}
+	}
+	if m.diff.fileLoading[index] {
+		return nil
+	}
+	m.diff.fileLoading[index] = true
+
+	// Copy the requested row into a one-file set before the command starts.
+	// The model can switch files or replace its set while the load runs.
+	snapshot := m.diff.set
+	snapshot.Files = []diff.FileDiff{*fd}
+	return m.diffFileLoadCmd(snapshot, m.diff.sessID, m.diff.scope, m.diff.gen,
+		index, fd.File.Path)
+}
+
+func (m *Model) handleDiffFileLoaded(msg diffFileLoadedMsg) tea.Cmd {
+	if !m.diff.active || msg.sessID != m.diff.sessID || msg.scope != m.diff.scope ||
+		msg.gen != m.diff.gen || msg.repoRoot != m.diff.set.Repo.Root {
+		return nil
+	}
+	if msg.index < 0 || msg.index >= len(m.diff.set.Files) ||
+		m.diff.set.Files[msg.index].File.Path != msg.path {
+		return nil
+	}
+	delete(m.diff.fileLoading, msg.index)
+	m.diff.set.Files[msg.index] = msg.fd
+	clearStaleReviewedMark(m, msg.path)
+	if m.diff.reanchor[msg.path] {
+		m.reanchorAnnotationsFor(msg.path)
+		delete(m.diff.reanchor, msg.path)
+	}
+	if msg.index != m.diff.fileIdx {
+		return nil
+	}
 	m.clampDiffCursor()
 	return m.ensureHighlight()
 }
@@ -425,7 +556,7 @@ func (m *Model) currentFileDiff() *diff.FileDiff {
 // its highlighted lines are not cached yet.
 func (m *Model) ensureHighlight() tea.Cmd {
 	fd := m.currentFileDiff()
-	if fd == nil || fd.Binary || fd.Err != nil || len(fd.Lines) == 0 {
+	if fd == nil || !fd.Loaded() || fd.Binary || fd.Err != nil || len(fd.Lines) == 0 {
 		return nil
 	}
 	key := hlKey{sessID: m.diff.sessID, scope: m.diff.scope, path: fd.File.Path, hash: contentHash(fd)}
@@ -459,12 +590,11 @@ func (m *Model) switchDiffFile(delta int) tea.Cmd {
 		m.diff.scrollByFile[m.scrollKey(fd.File.Path)] = m.diff.scroll
 	}
 	m.diff.fileIdx = (m.diff.fileIdx + delta + count) % count
-	diff.EnsureFile(m.gitDrv, &m.diff.set, m.diff.fileIdx)
 	fd := m.currentFileDiff()
 	m.diff.scroll = m.diff.scrollByFile[m.scrollKey(fd.File.Path)]
 	m.diff.cursorLine = m.diff.scroll
 	m.clampDiffCursor()
-	return m.ensureHighlight()
+	return m.loadCurrentDiffFile()
 }
 
 func (m *Model) clampDiffCursor() {
@@ -631,16 +761,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "q", "esc":
-		m.mode = modeList
-		m.diff.active = false
-		// Review opened from inside a session returns to that session, not
-		// the list, so Ctrl+R then esc is a round trip back to where it began.
-		if id := m.diff.reattachID; id != "" {
-			m.diff.reattachID = ""
-			if cmd := m.reattach(id); cmd != nil {
-				return m, cmd
-			}
-		}
+		return m, m.closeDiff()
 	case "up", "k":
 		m.moveDiffCursor(-1, height)
 	case "down", "j":
@@ -693,9 +814,38 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) closeDiff() tea.Cmd {
+	reattachID := m.diff.reattachID
+	m.mode = modeList
+	m.diff.active = false
+	m.diff.gen++
+	m.diff.loading = false
+	m.diff.errText = ""
+	m.diff.set = diff.Set{}
+	m.diff.sessID = ""
+	m.diff.fileIdx = 0
+	m.diff.scroll = 0
+	m.diff.cursorLine = 0
+	m.diff.fingerprint = 0
+	m.diff.repoRoots = nil
+	m.diff.repoSel = ""
+	m.diff.worktrees = nil
+	m.diff.fileLoading = nil
+	m.diff.reanchor = nil
+	m.diff.hlPending = hlKey{}
+	m.diff.hl = nil
+	m.diff.annotating = false
+	m.diff.sendConfirm = false
+	m.diff.reattachID = ""
+	if reattachID != "" {
+		return m.reattach(reattachID, m.diff.gen)
+	}
+	return nil
+}
+
 func (m *Model) toggleReviewed() tea.Cmd {
 	fd := m.currentFileDiff()
-	if fd == nil {
+	if fd == nil || !fd.Loaded() {
 		return nil
 	}
 	marks := m.diff.reviewed[m.reviewKey()]
@@ -734,9 +884,25 @@ func clearStaleReviewedMarks(m *Model) {
 			continue
 		}
 		fd := m.fileDiffByPath(path)
-		if fd == nil || contentHash(fd) != stored {
+		if fd == nil {
+			delete(marks, path)
+			continue
+		}
+		if fd.Loaded() && contentHash(fd) != stored {
 			delete(marks, path)
 		}
+	}
+}
+
+func clearStaleReviewedMark(m *Model, path string) {
+	marks := m.diff.reviewed[m.reviewKey()]
+	stored := marks[path]
+	if stored == 0 {
+		return
+	}
+	fd := m.fileDiffByPath(path)
+	if fd == nil || (fd.Loaded() && contentHash(fd) != stored) {
+		delete(marks, path)
 	}
 }
 
@@ -804,9 +970,16 @@ func (m *Model) annotationAt(path string, line diff.Line) *annotation {
 // edits while the user reviews), choosing the nearest match. A comment
 // whose line vanished entirely keeps its number as the best guess.
 func (m *Model) reanchorAnnotations() {
+	m.reanchorAnnotationsFor("")
+}
+
+func (m *Model) reanchorAnnotationsFor(path string) {
 	notes := m.diff.annotations[m.reviewKey()]
 	for i := range notes {
 		note := &notes[i]
+		if path != "" && note.file != path {
+			continue
+		}
 		// A blank line's excerpt is empty and would match every blank line;
 		// only a distinctive excerpt can re-anchor.
 		if note.excerpt == "" {
@@ -1018,6 +1191,8 @@ func (m *Model) diffEmptyText() string {
 
 func (m *Model) diffBodyNote(fd *diff.FileDiff) string {
 	switch {
+	case !fd.Loaded():
+		return mutedStyle.Render("(loading file…)")
 	case fd.Err != nil:
 		return errStyle.Render("✖ " + fd.Err.Error())
 	case fd.Binary:

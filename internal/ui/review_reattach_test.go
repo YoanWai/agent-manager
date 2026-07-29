@@ -59,7 +59,7 @@ func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
 	createSession(t, m, "listreview", t.TempDir(), "")
 	m.selectSessionRow(t, "listreview")
 
-	m.applyCmd(t, m.openDiff())
+	m.drainCmds(t, m.openDiff())
 	if m.mode != modeDiff {
 		t.Fatalf("openDiff should enter review, mode = %v, err = %q", m.mode, m.err)
 	}
@@ -109,11 +109,30 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("esc should re-attach, err = %q", m.err)
 	}
+	prepared, ok := cmd().(reattachPreparedMsg)
+	if !ok {
+		t.Fatal("re-attach preparation should run in the returned command")
+	}
+	if prepared.err != nil {
+		t.Fatalf("prepare re-attach: %v", prepared.err)
+	}
 	got, err := m.store.Get(sess.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
 	if got.Status != status.Idle || !got.Acked {
 		t.Fatalf("re-attach should acknowledge finished: status = %q acked = %v", got.Status, got.Acked)
+	}
+}
+
+func TestStaleReattachDoesNotInterruptReopenedReview(t *testing.T) {
+	m := &Model{mode: modeDiff, diff: diffState{active: true, gen: 9}}
+	updated, cmd := m.Update(reattachPreparedMsg{sessID: "old", diffGen: 8})
+	m = updated.(*Model)
+	if cmd != nil {
+		t.Fatal("stale re-attach should not return an attach command")
+	}
+	if m.mode != modeDiff || !m.diff.active {
+		t.Fatal("stale re-attach should leave the reopened review untouched")
 	}
 }

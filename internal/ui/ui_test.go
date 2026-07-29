@@ -2321,7 +2321,7 @@ func TestDiffReviewShowsWholeFile(t *testing.T) {
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
 
-	m.applyCmd(t, m.openDiff())
+	m.drainCmds(t, m.openDiff())
 	if !m.diff.active || m.mode != modeDiff || m.diff.loading {
 		t.Fatalf("diff should be loaded fullscreen, active=%v mode=%v err=%q", m.diff.active, m.mode, m.diff.errText)
 	}
@@ -2346,7 +2346,7 @@ func TestDiffScopeCycleAndLayout(t *testing.T) {
 	dir := gitTestRepo(t)
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
-	m.applyCmd(t, m.openDiff())
+	m.drainCmds(t, m.openDiff())
 
 	m.applyCmd(t, m.cycleDiffScope())
 	if m.diff.scope.String() != "vs target" {
@@ -2364,7 +2364,7 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	dir := gitTestRepo(t)
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
-	m.applyCmd(t, m.openDiff())
+	m.drainCmds(t, m.openDiff())
 	m.diff.sideBySide = false
 
 	for i, fd := range m.diff.set.Files {
@@ -2372,6 +2372,7 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 			m.diff.fileIdx = i
 		}
 	}
+	m.drainCmds(t, m.loadCurrentDiffFile())
 	fd := m.currentFileDiff()
 	target := -1
 	for i, line := range fd.Lines {
@@ -2464,7 +2465,7 @@ func TestDiffCommentVisibleInBothLayouts(t *testing.T) {
 	dir := gitTestRepo(t)
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
-	m.applyCmd(t, m.openDiff())
+	m.drainCmds(t, m.openDiff())
 	m.diff.sideBySide = false
 
 	for i, fd := range m.diff.set.Files {
@@ -2472,6 +2473,7 @@ func TestDiffCommentVisibleInBothLayouts(t *testing.T) {
 			m.diff.fileIdx = i
 		}
 	}
+	m.drainCmds(t, m.loadCurrentDiffFile())
 	fd := m.currentFileDiff()
 	for i, line := range fd.Lines {
 		if line.NewNum > 0 && strings.Contains(line.Text, "println") {
