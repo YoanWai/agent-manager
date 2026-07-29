@@ -6,7 +6,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
@@ -335,6 +337,12 @@ func (m *Model) drainCmds(t *testing.T, cmd tea.Cmd) {
 		if msg == nil {
 			return
 		}
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, child := range batch {
+				m.drainCmds(t, child)
+			}
+			return
+		}
 		updated, next := m.Update(msg)
 		*m = *updated.(*Model)
 		cmd = next
@@ -375,6 +383,97 @@ func openReviewOn(t *testing.T, m *Model, name, dir string) {
 	m.drainCmds(t, m.openDiff())
 	if m.mode != modeDiff {
 		t.Fatalf("openDiff should enter review, err = %q", m.err)
+	}
+}
+
+func TestReviewLoadsFilesOnDemand(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "lazy", gitRepoWithTwoChangedFiles(t))
+	if len(m.diff.set.Files) != 2 {
+		t.Fatalf("want 2 files, got %d", len(m.diff.set.Files))
+	}
+	if !m.diff.set.Files[0].Loaded() {
+		t.Fatal("selected file should be loaded after its background command lands")
+	}
+	if m.diff.set.Files[1].Loaded() {
+		t.Fatal("unselected file should remain unloaded")
+	}
+
+	cmd := m.switchDiffFile(1)
+	if cmd == nil {
+		t.Fatal("switching to an unloaded file should schedule a load")
+	}
+	if m.currentFileDiff().Loaded() {
+		t.Fatal("file loading should not block the navigation handler")
+	}
+	if body := ansi.Strip(m.viewDiffCode(80, 20)); !strings.Contains(body, "loading file") {
+		t.Fatalf("unloaded file should render a loading state, got %q", body)
+	}
+	m.drainCmds(t, cmd)
+	if !m.currentFileDiff().Loaded() {
+		t.Fatal("file should install after its background command lands")
+	}
+}
+
+func TestReviewCloseReleasesStateAndIgnoresLateLoad(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "close", gitRepoWithTwoChangedFiles(t))
+	load := m.switchDiffFile(1)
+	if load == nil {
+		t.Fatal("switch should leave a file load in flight")
+	}
+
+	if cmd := m.closeDiff(); cmd != nil {
+		t.Fatal("list-opened review should close without re-attaching")
+	}
+	if m.mode != modeList || m.diff.active || m.diff.sessID != "" {
+		t.Fatalf("review did not close cleanly: mode=%v active=%v session=%q",
+			m.mode, m.diff.active, m.diff.sessID)
+	}
+	if len(m.diff.set.Files) != 0 || m.diff.hlPending != (hlKey{}) {
+		t.Fatal("close should release diff and pending highlight state immediately")
+	}
+
+	late := load()
+	updated, next := m.Update(late)
+	*m = *updated.(*Model)
+	if next != nil || len(m.diff.set.Files) != 0 || m.diff.active {
+		t.Fatal("a file load landing after close must be ignored")
+	}
+}
+
+func TestRefreshFileLoadsRunSerially(t *testing.T) {
+	var active atomic.Int32
+	var peak atomic.Int32
+	cmds := make([]tea.Cmd, 8)
+	for i := range cmds {
+		index := i
+		cmds[i] = func() tea.Msg {
+			now := active.Add(1)
+			for {
+				seen := peak.Load()
+				if now <= seen || peak.CompareAndSwap(seen, now) {
+					break
+				}
+			}
+			time.Sleep(time.Millisecond)
+			active.Add(-1)
+			return diffFileLoadedMsg{index: index}
+		}
+	}
+
+	msgs, ok := diffFilesLoadCmd(cmds)().(diffFilesLoadedMsg)
+	if !ok || len(msgs) != len(cmds) {
+		t.Fatalf("serial load returned %T with %d results", msgs, len(msgs))
+	}
+	if got := peak.Load(); got != 1 {
+		t.Fatalf("refresh loads peaked at %d concurrent jobs, want 1", got)
 	}
 }
 
@@ -651,6 +750,13 @@ func TestBinaryFileShowsBinaryNotZeroCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	openReviewOn(t, m, "binary", dir)
+	for i := range m.diff.set.Files {
+		if m.diff.set.Files[i].File.Path == "logo.png" {
+			m.diff.fileIdx = i
+			m.drainCmds(t, m.loadCurrentDiffFile())
+			break
+		}
+	}
 
 	rendered := m.viewDiffFileList(60, 20)
 	row := ""

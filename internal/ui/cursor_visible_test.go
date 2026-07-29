@@ -53,7 +53,7 @@ func TestDiffFileListCursorAlwaysPainted(t *testing.T) {
 	dir := gitRepoWithManyFiles(t, 40)
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
-	m.applyCmd(t, m.openDiff())
+	m.drainCmds(t, m.openDiff())
 	if m.diff.loading || len(m.diff.set.Files) < 2 {
 		t.Fatalf("diff did not load: %q", m.diff.errText)
 	}
@@ -62,6 +62,7 @@ func TestDiffFileListCursorAlwaysPainted(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 20}, {100, 30}, {140, 44}} {
 		m.width, m.height = size.w, size.h
 		m.diff.fileIdx = last
+		m.drainCmds(t, m.loadCurrentDiffFile())
 		view := ansi.Strip(m.viewDiffFull())
 		name := m.diff.set.Files[last].File.Path
 		if !strings.Contains(view, name) {

@@ -207,6 +207,8 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
+	m.diff.fileLoading = nil
+	m.diff.reanchor = nil
 	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
 }
 
@@ -232,6 +234,8 @@ func (m *Model) selectBase(ref string) tea.Cmd {
 	m.diff.fileIdx = 0
 	m.diff.scroll = 0
 	m.diff.cursorLine = 0
+	m.diff.fileLoading = nil
+	m.diff.reanchor = nil
 	if m.diff.repoSel != "" && len(m.diff.repoRoots) > 0 {
 		return m.diffReloadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, ref, m.diff.repoRoots)
 	}

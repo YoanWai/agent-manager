@@ -45,6 +45,7 @@ type FileDiff struct {
 	Truncated bool
 	Err       error
 	statKnown bool
+	loaded    bool
 	rows      []Row
 }
 
@@ -58,16 +59,17 @@ type Set struct {
 }
 
 const (
-	maxFileBytes  = 1 << 20
-	maxFileLines  = 10000
-	maxEagerFiles = 200
-	maxSpanLine   = 1000
-	maxSpanBlock  = 200
+	maxFileBytes = 1 << 20
+	maxFileLines = 10000
+	maxSpanLine  = 1000
+	maxSpanBlock = 200
 )
 
-// BuildSet loads and diffs every changed file for a scope. A non-empty
-// baseOverride selects the ScopeBranch base and fails loudly when it no
-// longer resolves; empty keeps auto-detection.
+// BuildSet loads only the changed-file metadata for a scope. File contents and
+// line models are loaded on demand so large reviews can show their file list
+// without waiting for every file to be read and diffed. A non-empty
+// baseOverride selects the ScopeBranch base and fails loudly when it no longer
+// resolves; empty keeps auto-detection.
 func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride string) (Set, error) {
 	repo, err := driver.OpenRepo(cwd)
 	if err != nil {
@@ -115,38 +117,49 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride stri
 		return Set{}, statsErr
 	}
 
-	for i, file := range files {
+	for _, file := range files {
 		stat, known := stats[file.Path]
 		fd := FileDiff{File: file, Stat: stat, statKnown: known}
-		if !known && file.Status == git.Untracked {
-			if err := countUnknownStat(driver, repo.Root, &fd); err != nil {
-				fd.Err = err
-				set.Files = append(set.Files, fd)
-				continue
-			}
-		}
-		if i < maxEagerFiles {
-			loadFile(driver, repo.Root, scope, baseRef, &fd)
-		}
 		set.Files = append(set.Files, fd)
 	}
 	return set, nil
 }
 
-// EnsureFile lazily loads a file skipped past the eager cap.
+// EnsureFile synchronously loads one file. Interactive callers should use
+// LoadFile from a background command and install the returned value on their
+// event loop instead.
 func EnsureFile(driver *git.Driver, set *Set, index int) {
 	if index < 0 || index >= len(set.Files) {
 		return
 	}
 	fd := &set.Files[index]
-	if fd.Lines != nil || fd.Binary || fd.Err != nil {
+	if fd.loaded {
 		return
 	}
-	baseRef := set.BaseRef
-	loadFile(driver, set.Repo.Root, set.Scope, baseRef, fd)
+	*fd = LoadFile(driver, *set, index)
+}
+
+// LoadFile builds one file's line model without mutating set, which makes it
+// safe to call from an asynchronous UI command using a snapshot of the set.
+func LoadFile(driver *git.Driver, set Set, index int) FileDiff {
+	if index < 0 || index >= len(set.Files) {
+		return FileDiff{}
+	}
+	fd := set.Files[index]
+	if !fd.loaded {
+		loadFile(driver, set.Repo.Root, set.Scope, set.BaseRef, &fd)
+	}
+	return fd
 }
 
 func loadFile(driver *git.Driver, root string, scope git.Scope, baseRef string, fd *FileDiff) {
+	fd.loaded = true
+	if !fd.statKnown && fd.File.Status == git.Untracked {
+		if err := countUnknownStat(driver, root, fd); err != nil {
+			fd.Err = err
+			return
+		}
+	}
 	oldContent, newContent, err := fileSides(driver, root, scope, baseRef, fd.File)
 	if err != nil {
 		fd.Err = err
@@ -163,6 +176,7 @@ func loadFile(driver *git.Driver, root string, scope git.Scope, baseRef string, 
 	known := fd.statKnown
 	*fd = BuildFile(oldContent, newContent, fd.File, fd.Stat)
 	fd.statKnown = known
+	fd.loaded = true
 }
 
 // Counting raw bytes keeps untracked files correct past the diff model's caps.
@@ -182,6 +196,9 @@ func countUnknownStat(driver *git.Driver, root string, fd *FileDiff) error {
 
 // StatKnown reports whether Stat holds a real count rather than an unknown one.
 func (fd *FileDiff) StatKnown() bool { return fd.statKnown }
+
+// Loaded reports whether the file's contents have been read and modeled.
+func (fd *FileDiff) Loaded() bool { return fd.loaded }
 
 func fileSides(driver *git.Driver, root string, scope git.Scope, baseRef string, file git.ChangedFile) (oldContent, newContent []byte, err error) {
 	oldRef, newRef := "", ""
@@ -222,7 +239,7 @@ func fileSides(driver *git.Driver, root string, scope git.Scope, baseRef string,
 // every new-file line in order, with deleted old lines interleaved
 // ahead of the lines that replaced them.
 func BuildFile(oldContent, newContent []byte, file git.ChangedFile, stat git.FileStat) FileDiff {
-	fd := FileDiff{File: file, Stat: stat}
+	fd := FileDiff{File: file, Stat: stat, loaded: true}
 	oldText, oldTruncated := capLines(string(oldContent))
 	newText, newTruncated := capLines(string(newContent))
 	fd.Truncated = oldTruncated || newTruncated

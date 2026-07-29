@@ -145,8 +145,10 @@ func (m *Model) openDiff() tea.Cmd {
 		m.diff.scrollByFile = map[string]int{}
 		m.diff.reviewed = map[string]map[string]uint64{}
 		m.diff.annotations = map[string][]annotation{}
-		m.diff.hl = newHLCache()
 		m.diff.sideBySide = m.defaultSplitLayout()
+	}
+	if m.diff.hl == nil {
+		m.diff.hl = newHLCache()
 	}
 	m.diff.active = true
 	m.mode = modeDiff
@@ -385,22 +387,38 @@ func (m *Model) attachCmd(id string) tea.Cmd {
 	})
 }
 
-func (m *Model) reattach(id string) tea.Cmd {
-	if !m.tmux.Exists(id) {
-		m.err = "session is dead - press v to revive"
-		return nil
+type reattachPreparedMsg struct {
+	sessID  string
+	diffGen int
+	err     error
+}
+
+func (m *Model) reattach(id string, diffGen int) tea.Cmd {
+	driver := m.tmux
+	stor := m.store
+	poller := m.poller
+	return func() tea.Msg {
+		if !driver.Exists(id) {
+			return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: errors.New("session is dead - press v to revive")}
+		}
+		sess, err := stor.Get(id)
+		if err != nil {
+			return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
+		}
+		if sess.Status == status.Finished {
+			if err := stor.UpdateStatus(sess.ID, status.Idle); err != nil {
+				return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
+			}
+			if err := stor.SetAcked(sess.ID, true); err != nil {
+				return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
+			}
+		}
+		var prepErr error
+		poller.reflowSessions([]string{id}, func() {
+			prepErr = driver.PrepareAttach(id)
+		})
+		return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: prepErr}
 	}
-	m.err = ""
-	sess, err := m.store.Get(id)
-	if err != nil {
-		m.err = err.Error()
-		return nil
-	}
-	if err := m.acknowledgeFinished(sess); err != nil {
-		m.err = err.Error()
-		return nil
-	}
-	return m.attachCmd(id)
 }
 
 // reviveSelected relaunches a dead session's tmux session under the same

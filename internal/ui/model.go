@@ -636,6 +636,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case diffLoadedMsg:
 		return m, m.handleDiffLoaded(msg)
 
+	case diffFileLoadedMsg:
+		return m, m.handleDiffFileLoaded(msg)
+
+	case diffFilesLoadedMsg:
+		var cmds []tea.Cmd
+		for _, loaded := range msg {
+			if cmd := m.handleDiffFileLoaded(loaded); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return m, tea.Batch(cmds...)
+
 	case diffHLMsg:
 		m.handleDiffHL(msg)
 		return m, nil
@@ -693,6 +705,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.requestRefresh()
 		return m, nil
+
+	case reattachPreparedMsg:
+		if msg.diffGen != m.diff.gen || m.diff.active {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.err = ""
+		return m, tea.ExecProcess(m.tmux.AttachCommand(msg.sessID), func(err error) tea.Msg {
+			return attachDoneMsg{sessID: msg.sessID, err: err}
+		})
 
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
