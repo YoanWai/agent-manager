@@ -26,8 +26,8 @@ type Session struct {
 	Acked        bool
 	CreatedAt    time.Time
 	LastStatusAt time.Time
-	// AgentSessionID is the agent CLI's own conversation id (claude/grok
-	// session UUID, codex rollout id, opencode session id). Revive resumes
+	// AgentSessionID is the agent CLI's own conversation id (claude/grok/
+	// gemini session UUID, codex rollout id, opencode session id). Revive resumes
 	// this exact conversation instead of the cwd's most recent one.
 	AgentSessionID string
 }

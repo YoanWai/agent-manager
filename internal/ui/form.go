@@ -128,7 +128,7 @@ func (m *Model) groupDefaultDir(group string) string {
 // toolDisplayOrder fixes the order tools appear in when creating a session and
 // when cycling the quick-spawn tool. Tools outside this list follow, sorted
 // alphabetically.
-var toolDisplayOrder = []string{"claude", "opencode", "codex", "grok"}
+var toolDisplayOrder = []string{"claude", "opencode", "codex", "grok", "gemini"}
 
 func sortedToolNames(cfg config.Config) []string {
 	names := cfg.ToolNames()

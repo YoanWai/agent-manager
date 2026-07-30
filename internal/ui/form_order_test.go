@@ -10,6 +10,7 @@ import (
 func TestSortedToolNamesOrder(t *testing.T) {
 	cfg := config.Config{Tools: map[string]config.Tool{
 		"grok":     {Command: "grok"},
+		"gemini":   {Command: "gemini"},
 		"codex":    {Command: "codex"},
 		"claude":   {Command: "claude"},
 		"opencode": {Command: "opencode"},
@@ -17,7 +18,7 @@ func TestSortedToolNamesOrder(t *testing.T) {
 		"acme":     {Command: "acme"},
 	}}
 	got := sortedToolNames(cfg)
-	want := []string{"claude", "opencode", "codex", "grok", "acme", "zephyr"}
+	want := []string{"claude", "opencode", "codex", "grok", "gemini", "acme", "zephyr"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("sortedToolNames = %v want %v", got, want)
 	}
