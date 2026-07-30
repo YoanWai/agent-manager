@@ -356,7 +356,8 @@ func (m *Model) viewFooter() string {
 		{"↑↓/jk", "navigate"}, {"K/J", "reorder"}, {"↵", "attach / fold"},
 		{"F", "fold all"}, {"n", "new"}, {"g", "group"}, {"space", "prompt"},
 		{"ctrl+r", "review"}, {"r", "rename"}, {"m", "move"},
-		{"v/V", "revive / all"}, {"a/u", "archive / restore"}, {"d", "delete"},
+		{"x/X", "kill / all"}, {"v/V", "revive / all"},
+		{"a/u", "archive / restore"}, {"d", "delete"},
 		{"t", "archived"}, {"/", "search"}, {"|", "resize"}, {"s", "settings"},
 		{"?", "keys"}, {"q", "quit"},
 	}
