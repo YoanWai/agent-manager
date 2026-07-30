@@ -52,8 +52,9 @@ type Model struct {
 	hooks  *hooks.Manager
 	gitDrv *git.Driver
 
-	// setSnapshot writes a session's pane capture; a seam so archival
-	// snapshot failures can be exercised without a broken store.
+	// setSnapshot writes a session's pane capture before archive or kill
+	// takes the window; a seam so snapshot failures can be exercised
+	// without a broken store.
 	setSnapshot func(id, snapshot string) error
 
 	sessions       []store.Session

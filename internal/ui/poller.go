@@ -191,9 +191,9 @@ func ignoreDeletedSession(err error) error {
 }
 
 // storedPreview serves a session's saved pane snapshot, which is what the
-// preview shows once there is no window left to capture: archived sessions
-// and killed ones. It backfills from a still-live tmux window for sessions
-// archived before snapshots existed.
+// preview shows for any session with no window left to capture, however it
+// lost it. It backfills from a still-live tmux window for sessions archived
+// before snapshots existed.
 func storedPreview(st *store.Store, driver *tmux.Driver, sessID string) (string, error) {
 	snapshot, err := st.Snapshot(sessID)
 	if err != nil || snapshot != "" {
