@@ -14,7 +14,7 @@
 
 Claude Code, Codex, OpenCode, and Grok run side by side, each in its own tmux session, so they keep working after you quit the manager.
 
-Instead of hunting through terminal tabs to see which agent is done and which is stuck, every session shows up in one list with live status, grouped into a project tree you can fold and reorder. You answer any of them without attaching: `space` sends a prompt straight into a session's pane, or spawns a new agent in the selected group. A dead session revives on its own conversation with `v`. And `ctrl+r` opens a full-file diff of what an agent changed, syntax-highlighted, where a comment you leave on a line goes straight back to the agent's pane.
+Instead of hunting through terminal tabs to see which agent is done and which is stuck, every session shows up in one list with live status, grouped into a project tree you can fold and reorder. You answer any of them without attaching: `space` sends a prompt straight into a session's pane, or spawns a new agent in the selected group. A dead session revives on its own conversation with `v`. And `ctrl+r` opens a full-file diff of what an agent changed, syntax-highlighted, where the comments you leave on lines go back to the agent's pane as one review prompt when you press `C`.
 
 Not here yet: worktree creation, cost tracking, and agents that can talk to each other.
 
@@ -110,7 +110,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `a` / `u` | Archive / restore a session, or a group and its entire subtree |
 | `d` | Delete session, or a group + its entire subtree |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
-| `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, line comments sent to the agent |
+| `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
 | `s` | Settings (quick-spawn tool, theme, review layout, after quick send) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
@@ -175,14 +175,14 @@ Press `ctrl+r` on a session to open a full-screen review of its repo: changed fi
 | `B` | Pick the target (merge-into branch) the "vs target" scope compares against |
 | `space` | Mark a file reviewed |
 | `c` / `d` | Write / drop a line comment |
-| `C` | Send every comment to the agent as one review prompt |
+| `C` | Send every comment to the agent as one review prompt (`enter` or `y` confirms) |
 | `esc` | Close the review |
 
 Each changeable value in the header wears its own key, so the scope, layout, repo, and target pills read as `s`, `u`, `r`, `B` legends at a glance.
 
 ![review, side by side, with the changed lines tinted in full file context](docs/screenshot-review.png)
 
-`C` flattens every comment into one prompt and sends it straight into the agent's pane, so the agent starts addressing your notes while you watch the diff update.
+Comments stay on the review screen until you send them: `C` flattens every one of them into a single prompt, asks you to confirm, and delivers it into the agent's pane, so the agent starts addressing your notes while you watch the diff update.
 
 ![diff review demo](docs/demo-diff.gif)
 
