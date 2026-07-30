@@ -25,6 +25,24 @@ checksum:
 changelog:
   use: github-native
 
+release:
+  header: |
+    Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, and Grok run side by side, each in its own tmux session, with live status, a project tree, quick prompts, and full-file diff review. [See it running](https://github.com/YoanWai/agent-manager#agent-manager).
+
+  footer: |
+    ## Install
+
+    ```bash
+    brew install yoanwai/tap/agent-manager        # macOS / Linux
+    go install github.com/YoanWai/agent-manager@latest
+    ```
+
+    Prebuilt macOS and Linux binaries are attached below. Windows runs it inside WSL2.
+
+    ## Get involved
+
+    [Discussions](https://github.com/YoanWai/agent-manager/discussions) for questions and setups, [issues](https://github.com/YoanWai/agent-manager/issues) for bugs and ideas, [CONTRIBUTING.md](https://github.com/YoanWai/agent-manager/blob/main/.github/CONTRIBUTING.md) to send a patch.
+
 # brews (formula) instead of homebrew_casks: casks quarantine the
 # downloaded binary and Gatekeeper blocks unsigned CLI tools outright;
 # formulas install without quarantine.
