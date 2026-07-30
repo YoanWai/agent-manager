@@ -76,13 +76,14 @@ type Model struct {
 	prevNetAt   time.Time
 	prevNetOK   bool
 
-	poller       *poller
-	cursor       int
-	mode         mode
-	showArchived bool
-	collapsed    map[string]bool
-	search       string
-	searching    bool
+	poller          *poller
+	cursor          int
+	mode            mode
+	showArchived    bool
+	hideEmptyGroups bool
+	collapsed       map[string]bool
+	search          string
+	searching       bool
 
 	diff      diffState
 	form      form
@@ -840,6 +841,12 @@ func (m *Model) rebuildRows() {
 		if query != "" {
 			paths = pathsWithSessions(paths, sessionsByGroup)
 		}
+	}
+	if m.hideEmptyGroups {
+		// This is a presentation filter only: stored groups remain available
+		// to forms and return to the tree as soon as the toggle is switched
+		// off. Ancestors of groups with visible sessions stay in the tree.
+		paths = pathsWithSessions(paths, sessionsByGroup)
 	}
 	children := childIndex(paths, m.groups)
 
