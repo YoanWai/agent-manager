@@ -200,6 +200,10 @@ go test ./...   # includes end-to-end tests against a real tmux server
 go run .
 ```
 
+## Contributing
+
+Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for setup, the checks CI runs, and how the CLA works. Questions and setups worth sharing go in [Discussions](https://github.com/YoanWai/agent-manager/discussions). Security reports go through a [private advisory](https://github.com/YoanWai/agent-manager/security/advisories/new); see [SECURITY.md](.github/SECURITY.md).
+
 ## License
 
 [MIT](LICENSE)

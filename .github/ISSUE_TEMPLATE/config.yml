@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or help using agent-manager
+    url: https://github.com/YoanWai/agent-manager/discussions/categories/q-a
+    about: Ask in Discussions Q&A and get an answer without opening an issue.
+  - name: Show what you built
+    url: https://github.com/YoanWai/agent-manager/discussions/categories/show-and-tell
+    about: Share your setup, your config, or a tool you added status rules for.
+  - name: Report a security vulnerability
+    url: https://github.com/YoanWai/agent-manager/security/advisories/new
+    about: Report privately so a fix ships before the details are public.
