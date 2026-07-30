@@ -14,8 +14,11 @@ func TestSVGCarriesValueAndFitsText(t *testing.T) {
 			t.Fatalf("svg missing %q:\n%s", want, svg)
 		}
 	}
-	if !strings.Contains(svg, `lengthAdjust="spacingAndGlyphs"`) {
-		t.Fatal("text is not fitted to the width the chip reserved for it")
+	if !strings.Contains(svg, `lengthAdjust="spacing"`) {
+		t.Fatal("text run is not pinned to the width the chip reserved for it")
+	}
+	if strings.Contains(svg, "spacingAndGlyphs") {
+		t.Fatal("glyphs are being distorted to fit the box")
 	}
 }
 
@@ -32,6 +35,10 @@ func TestUnknownIconLeavesNoGap(t *testing.T) {
 	chip := Chip{Label: "platform", Value: "macOS", Icon: "nope"}
 	if strings.Contains(chip.SVG(Light), "<path") {
 		t.Fatal("unknown icon still drew a path")
+	}
+	bare := Chip{Label: "platform", Value: "macOS"}
+	if chip.Width() != bare.Width() {
+		t.Fatal("unknown icon still reserved width")
 	}
 }
 

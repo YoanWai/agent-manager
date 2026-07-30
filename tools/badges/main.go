@@ -22,7 +22,6 @@ const (
 
 const (
 	amber  = "#d08442"
-	teal   = "#6cb6a4"
 	blue   = "#6f9fd0"
 	green  = "#85b26f"
 	purple = "#a78bd0"
@@ -34,7 +33,6 @@ const (
 // white surface, so the same chip reads in either GitHub theme.
 var lightInk = map[string]string{
 	amber:  "#96591f",
-	teal:   "#2f6d5e",
 	blue:   "#2f5f8f",
 	green:  "#4a7336",
 	purple: "#6a4a94",
@@ -87,21 +85,13 @@ func collect() (map[string]badge.Chip, error) {
 
 	var releases []struct {
 		TagName string `json:"tag_name"`
-		Assets  []struct {
-			Count int `json:"download_count"`
-		} `json:"assets"`
 	}
-	if err := get("https://api.github.com/repos/"+repo+"/releases?per_page=100", &releases); err != nil {
+	if err := get("https://api.github.com/repos/"+repo+"/releases?per_page=1", &releases); err != nil {
 		return nil, err
 	}
-	downloads, latest := 0, ""
-	for i, rel := range releases {
-		for _, asset := range rel.Assets {
-			downloads += asset.Count
-		}
-		if i == 0 {
-			latest = rel.TagName
-		}
+	latest := ""
+	if len(releases) > 0 {
+		latest = releases[0].TagName
 	}
 
 	clones := cloneCount()
@@ -117,15 +107,14 @@ func collect() (map[string]badge.Chip, error) {
 	}
 
 	chips := map[string]badge.Chip{
-		"stars":     {Label: "stars", Value: compact(repoInfo.Stars), Color: amber, Icon: "star"},
-		"downloads": {Label: "release downloads", Value: compact(downloads), Color: teal, Icon: "download"},
-		"release":   {Label: "release", Value: latest, Color: blue, Icon: "tag"},
-		"go":        {Label: "go", Value: goVersion, Color: green, Icon: ""},
-		"license":   {Label: "license", Value: license, Color: subtle},
-		"platform":  {Label: "platform", Value: "macOS · Linux · WSL2", Color: subtle, Icon: ""},
+		"stars":    {Label: "stars", Value: compact(repoInfo.Stars), Color: amber, Icon: "star"},
+		"release":  {Label: "release", Value: latest, Color: blue, Icon: "tag"},
+		"go":       {Label: "go", Value: goVersion, Color: green, Icon: ""},
+		"license":  {Label: "license", Value: license, Color: subtle, Icon: "law"},
+		"platform": {Label: "platform", Value: "macOS/Linux/WSL2", Color: subtle, Icon: ""},
 	}
 	if clones > 0 {
-		chips["clones"] = badge.Chip{Label: "clones · 14d", Value: compact(clones), Color: purple, Icon: "repo"}
+		chips["clones"] = badge.Chip{Label: "clones/14d", Value: compact(clones), Color: purple, Icon: "repo"}
 	}
 	return chips, nil
 }
