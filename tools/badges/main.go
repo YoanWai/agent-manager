@@ -46,9 +46,16 @@ func main() {
 }
 
 func run() error {
-	stats, err := collect()
+	stats, complete, err := collect()
 	if err != nil {
 		return err
+	}
+	// The card is one file, so a stat we could not measure would drop its whole
+	// column on the next commit. Leaving the committed card alone keeps the
+	// README honest and makes the missing token visible on the run summary.
+	if !complete {
+		fmt.Println("::warning::clone traffic was unavailable, so the stat card was left as committed; add a BADGE_TOKEN secret to refresh it")
+		return nil
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
@@ -68,7 +75,7 @@ func write(name, svg string) error {
 	return os.WriteFile(filepath.Join(outDir, name), []byte(svg+"\n"), 0o644)
 }
 
-func collect() ([]badge.Stat, error) {
+func collect() ([]badge.Stat, bool, error) {
 	var repoInfo struct {
 		Stars   int `json:"stargazers_count"`
 		License struct {
@@ -76,21 +83,21 @@ func collect() ([]badge.Stat, error) {
 		} `json:"license"`
 	}
 	if err := get("https://api.github.com/repos/"+repo, &repoInfo); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	var releases []struct {
 		TagName string `json:"tag_name"`
 	}
 	if err := get("https://api.github.com/repos/"+repo+"/releases?per_page=1", &releases); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	latest := ""
 	if len(releases) > 0 {
 		latest = releases[0].TagName
 	}
 
-	clones := cloneCount()
+	clones, measured := cloneCount()
 
 	license := repoInfo.License.SPDX
 	if license == "" {
@@ -98,28 +105,27 @@ func collect() ([]badge.Stat, error) {
 	}
 
 	stats := []badge.Stat{{Value: compact(repoInfo.Stars), Label: "stars", Color: amber}}
-	if clones > 0 {
+	if measured {
 		stats = append(stats, badge.Stat{Value: compact(clones), Label: "clones · 14d", Color: purple})
 	}
 	return append(stats,
 		badge.Stat{Value: latest, Label: "release", Color: blue},
 		badge.Stat{Value: license, Label: "license", Color: subtle},
-	), nil
+	), measured, nil
 }
 
 // cloneCount reads 14-day clone traffic. The endpoint needs push access, which
-// the Actions GITHUB_TOKEN does not carry, so an unreachable endpoint leaves the
-// committed clones chip in place and says so rather than failing the refresh or
-// publishing a wrong number.
-func cloneCount() int {
+// the Actions GITHUB_TOKEN does not carry, so the caller is told whether the
+// figure was actually measured rather than being handed a zero to publish.
+func cloneCount() (int, bool) {
 	var clones struct {
 		Count int `json:"count"`
 	}
 	if err := get("https://api.github.com/repos/"+repo+"/traffic/clones", &clones); err != nil {
-		fmt.Fprintf(os.Stderr, "badges: clone traffic unavailable (%v); leaving that chip untouched, set BADGE_TOKEN to refresh it\n", err)
-		return 0
+		fmt.Fprintf(os.Stderr, "badges: clone traffic unavailable: %v\n", err)
+		return 0, false
 	}
-	return clones.Count
+	return clones.Count, true
 }
 
 // compact renders large counts as 1.9k rather than 1918, which keeps a chip
