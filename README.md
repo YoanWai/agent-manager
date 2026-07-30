@@ -16,9 +16,9 @@ Claude Code, Codex, OpenCode, and Grok run side by side, each in its own tmux se
 
 Instead of hunting through terminal tabs to see which agent is done and which is stuck, every session shows up in one list with live status, grouped into a project tree you can fold and reorder. You answer any of them without attaching: `space` sends a prompt straight into a session's pane, or spawns a new agent in the selected group. A dead session revives on its own conversation with `v`. And `ctrl+r` opens a full-file diff of what an agent changed, syntax-highlighted, where the comments you leave on lines go back to the agent's pane as one review prompt when you press `C`.
 
-Not here yet: worktree creation, cost tracking, and agents that can talk to each other.
+Not here yet: worktree creation, cost tracking, mouse-driven navigation, and agents that can talk to each other.
 
-**Jump to** — [Install](#install) · [Keys](#keys) · [Quick prompt](#quick-prompt) · [Diff review](#diff-review) · [Status](#status) · [Configuration](#configuration)
+**Jump to:** [Install](#install) · [Keys](#keys) · [Quick prompt](#quick-prompt) · [Diff review](#diff-review) · [Status](#status) · [Configuration](#configuration)
 
 ## Supported tools
 
@@ -93,7 +93,7 @@ agent-manager
 
 Sessions run inside tmux (`am_*` namespace), so they survive the manager quitting. Inside a session, **Ctrl+Q** detaches back to the manager and **Ctrl+R** opens its diff review. `agent-manager --version` prints the version.
 
-Agent sessions live on a private tmux server named `agentmgr`, so they never mix with the tmux you run yourself and no stray `kill-server` can take them down. To reach one from a plain shell, name that server: `tmux -L agentmgr ls`, then `tmux -L agentmgr attach -t am_<id>`.
+Agent sessions live on a private tmux server named `agentmgr`, so they never mix with the tmux you run yourself and a `kill-server` on your own socket leaves them alone. To reach one from a plain shell, name that server: `tmux -L agentmgr ls`, then `tmux -L agentmgr attach -t am_<id>`.
 
 ### Keys
 
@@ -119,7 +119,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `?` | Help |
 | `q` | Quit (sessions keep running) |
 
-The wheel scrolls the list and the diff. Mouse tracking stays off, so click-drag still selects text natively in your terminal.
+The wheel scrolls the list and the diff. Mouse tracking stays off so click-drag keeps selecting text natively in your terminal, which is why the pointer does not move the selection ([#110](https://github.com/YoanWai/agent-manager/issues/110)).
 
 ### Quick prompt
 
@@ -128,7 +128,7 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 - On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar clears and stays open, ready for the next answer; Settings (`s`) can make it close instead.
 - On a **group** row, `enter` spawns a new agent in that group with the prompt embedded, using the group's default path. The spawn tool starts at the Settings default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. The agent starts working on the prompt immediately.
 
-`ctrl+v` pastes an image from the system clipboard as an `[Image #1]` chip at the caret. The image is saved to a pastes directory, and on send each chip is swapped back for its path, so the paths reach the agent in the order and the places you pasted them. `backspace` next to a chip removes the whole chip, and an edit that swallows one releases its image. A clipboard holding text rather than an image pastes as text.
+`ctrl+v` pastes an image from the system clipboard as an `[Image #1]` chip at the caret. The image is saved under `agent-manager-pastes` in your temp directory, and on send each chip is swapped back for its path, so the paths reach the agent in the order and the places you pasted them. `backspace` next to a chip removes the whole chip, and an edit that swallows one releases its image. A clipboard holding text rather than an image pastes as text.
 
 `esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](#configuration)).
 
@@ -176,7 +176,7 @@ Press `ctrl+r` on a session to open a full-screen review of its repo: changed fi
 | `space` | Mark a file reviewed |
 | `c` / `d` | Write / drop a line comment |
 | `C` | Send every comment to the agent as one review prompt (`enter` or `y` confirms) |
-| `esc` | Close the review |
+| `esc` / `q` | Close the review |
 
 Each changeable value in the header wears its own key, so the scope, layout, repo, and target pills read as `s`, `u`, `r`, `B` legends at a glance.
 
