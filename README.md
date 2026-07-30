@@ -3,16 +3,15 @@
 <p align="center"><b>Run every AI coding agent from one terminal.</b></p>
 
 <p align="center">
-  <a href="https://github.com/YoanWai/agent-manager/stargazers"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/stars-dark.svg"><img src="docs/badges/stars-light.svg" alt="GitHub stars" height="28"></picture></a>
-  <a href="https://github.com/YoanWai/agent-manager/graphs/traffic"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/clones-dark.svg"><img src="docs/badges/clones-light.svg" alt="Git clones, last 14 days" height="28"></picture></a>
-  <a href="https://github.com/YoanWai/agent-manager/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/downloads-dark.svg"><img src="docs/badges/downloads-light.svg" alt="Release asset downloads" height="28"></picture></a>
+  <a href="https://github.com/YoanWai/agent-manager/stargazers"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/stars-dark.svg"><img src="docs/badges/stars-light.svg" alt="GitHub stars" height="26"></picture></a>
+  <a href="https://github.com/YoanWai/agent-manager/graphs/traffic"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/clones-dark.svg"><img src="docs/badges/clones-light.svg" alt="Git clones, last 14 days" height="26"></picture></a>
+  <a href="https://github.com/YoanWai/agent-manager/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/release-dark.svg"><img src="docs/badges/release-light.svg" alt="Latest release" height="26"></picture></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/YoanWai/agent-manager/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/release-dark.svg"><img src="docs/badges/release-light.svg" alt="Latest release" height="28"></picture></a>
-  <a href="go.mod"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/go-dark.svg"><img src="docs/badges/go-light.svg" alt="Minimum Go version" height="28"></picture></a>
-  <a href="LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/license-dark.svg"><img src="docs/badges/license-light.svg" alt="License" height="28"></picture></a>
-  <a href="#install"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/platform-dark.svg"><img src="docs/badges/platform-light.svg" alt="Supported platforms" height="28"></picture></a>
+  <a href="go.mod"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/go-dark.svg"><img src="docs/badges/go-light.svg" alt="Minimum Go version" height="26"></picture></a>
+  <a href="LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/license-dark.svg"><img src="docs/badges/license-light.svg" alt="License" height="26"></picture></a>
+  <a href="#install"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/platform-dark.svg"><img src="docs/badges/platform-light.svg" alt="Supported platforms" height="26"></picture></a>
 </p>
 
 ![agent-manager demo](docs/demo.gif)
