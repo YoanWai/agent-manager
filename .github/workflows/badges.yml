@@ -25,6 +25,7 @@ jobs:
       - name: Render chips
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BADGE_TOKEN: ${{ secrets.BADGE_TOKEN }}
         run: go run ./tools/badges
       - name: Commit when the numbers moved
         run: |
