@@ -8,9 +8,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// The computer block reports whichever temperatures the machine exposes:
-// a cpu/gpu pair where the hardware draws that line, a single soc figure
-// on a chip that does not, and no temp row at all where nothing is read.
 func TestComputerLinesTemperatures(t *testing.T) {
 	cases := []struct {
 		name string
@@ -55,8 +52,7 @@ func TestComputerLinesTemperatures(t *testing.T) {
 	}
 }
 
-// A reading after the first sits behind the separator's own reset, so each
-// one carries its color rather than inheriting one from the reading before.
+// The separator carries its own reset, so a reading cannot inherit color.
 func TestTemperatureReadingsEachKeepTheirColor(t *testing.T) {
 	forceANSI256(t)
 

@@ -84,9 +84,6 @@ func TestSensorCategories(t *testing.T) {
 	}
 }
 
-// TestClassifyTemps walks the sensor names each platform actually reports:
-// Apple Silicon dies, Intel Mac SMC keys, and the hwmon and thermal-zone
-// names Linux builds from its drivers.
 func TestClassifyTemps(t *testing.T) {
 	cases := []struct {
 		name string

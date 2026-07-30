@@ -399,9 +399,6 @@ func (m *Model) computerLines(width int) []string {
 	return append(lines, "")
 }
 
-// tempReadings writes whichever chip temperatures the machine exposes:
-// a cpu/gpu pair where the hardware draws that line, one soc figure where
-// it reports the whole chip, and nothing where it reports neither.
 func tempReadings(snap sysstat.Snapshot) string {
 	var parts []string
 	if snap.CPUTempOK {
