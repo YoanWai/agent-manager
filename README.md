@@ -1,16 +1,24 @@
-# Agent Manager
+<h1 align="center">Agent Manager</h1>
 
-[![CI](https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/YoanWai/agent-manager?label=release)](https://github.com/YoanWai/agent-manager/releases/latest)
-![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue)
-[![Go version](https://img.shields.io/github/go-mod/go-version/YoanWai/agent-manager)](go.mod)
-[![License](https://img.shields.io/github/license/YoanWai/agent-manager)](LICENSE)
+<p align="center"><b>Run every AI coding agent from one terminal.</b></p>
+
+<p align="center">
+  <a href="https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml"><img src="https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/YoanWai/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/YoanWai/agent-manager?label=release" alt="Release"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue" alt="Platforms">
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/YoanWai/agent-manager" alt="Go version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/YoanWai/agent-manager" alt="License"></a>
+</p>
 
 ![agent-manager demo](docs/demo.gif)
 
-Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, and Grok run side by side, each in its own tmux session, so they keep working after you quit the manager.
+Claude Code, Codex, OpenCode, and Grok run side by side, each in its own tmux session, so they keep working after you quit the manager.
 
-Instead of hunting through terminal tabs to see which agent is done and which is stuck, every session shows up in one list with live status, grouped into a project tree you can fold and reorder. You answer any of them without attaching: `space` sends a prompt straight into a session's pane, or spawns a new agent in the selected group. A dead session revives where it left off with `v`. And `ctrl+r` opens a full-file diff of what an agent changed, syntax-highlighted, where a comment you leave on a line goes straight back to the agent's pane.
+Instead of hunting through terminal tabs to see which agent is done and which is stuck, every session shows up in one list with live status, grouped into a project tree you can fold and reorder. You answer any of them without attaching: `space` sends a prompt straight into a session's pane, or spawns a new agent in the selected group. A dead session revives on its own conversation with `v`. And `ctrl+r` opens a full-file diff of what an agent changed, syntax-highlighted, where the comments you leave on lines go back to the agent's pane as one review prompt when you press `C`.
+
+Not here yet: worktree creation, cost tracking, mouse-driven navigation, and agents that can talk to each other.
+
+**Jump to:** [Install](#install) · [Keys](#keys) · [Quick prompt](#quick-prompt) · [Diff review](#diff-review) · [Status](#status) · [Configuration](#configuration)
 
 ## Supported tools
 
@@ -71,10 +79,10 @@ Run inside [WSL2](https://learn.microsoft.com/windows/wsl/install): agent-manage
 The manager checks GitHub Releases once a day and shows a `↑ vX.Y.Z available` badge in the header when a newer version is out. Pull it in the way you installed:
 
 ```bash
-brew upgrade yoanwai/tap/agent-manager   # Homebrew
+brew upgrade yoanwai/tap/agent-manager                                                    # Homebrew
 curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh   # Install script
-mise upgrade --bump ubi:YoanWai/agent-manager   # mise
-go install github.com/YoanWai/agent-manager@latest   # Go
+mise upgrade --bump ubi:YoanWai/agent-manager                                             # mise
+go install github.com/YoanWai/agent-manager@latest                                        # Go
 ```
 
 ## Usage
@@ -83,7 +91,9 @@ go install github.com/YoanWai/agent-manager@latest   # Go
 agent-manager
 ```
 
-Sessions run inside tmux (`am_*` namespace), so they survive the manager quitting. Inside a session, **Ctrl+Q** detaches back to the manager. `agent-manager --version` prints the version.
+Sessions run inside tmux (`am_*` namespace), so they survive the manager quitting. Inside a session, **Ctrl+Q** detaches back to the manager and **Ctrl+R** opens its diff review. `agent-manager --version` prints the version.
+
+Agent sessions live on a private tmux server named `agentmgr`, so they never mix with the tmux you run yourself and a `kill-server` on your own socket leaves them alone. To reach one from a plain shell, name that server: `tmux -L agentmgr ls`, then `tmux -L agentmgr attach -t am_<id>`.
 
 ### Keys
 
@@ -96,28 +106,42 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings |
 | `m` | Move session to another group |
 | `r` | Rename session / edit tool; edit group name and default path |
-| `x` / `X` | Kill a session (or every live session in a group) / kill every live session: frees the RAM their agents hold, the rows stay |
-| `v` | Revive a dead session, or every dead session in a group (`revive_command`, e.g. `claude --continue`, resumes the conversation) |
+| `x` | Kill the selected session, or every live session under a group: frees the RAM their agents hold, and the rows stay for `v` |
+| `X` | Kill every live session in view |
+| `v` | Revive a dead session, or every dead session under a group |
+| `V` | Revive every dead session in view |
 | `a` / `u` | Archive / restore a session, or a group and its entire subtree |
 | `d` | Delete session, or a group + its entire subtree |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
-| `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, line comments sent to the agent |
-| `f` | Fold / unfold group |
+| `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
+| `F` | Fold / unfold every group |
 | `s` | Settings (quick-spawn tool, theme, review layout, after quick send) |
+| `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
-| `e` | Hide / show empty groups |
 | `/` | Search |
 | `?` | Help |
 | `q` | Quit (sessions keep running) |
+
+The wheel scrolls the list and the diff. Mouse tracking stays off so click-drag keeps selecting text natively in your terminal, which is why the pointer does not move the selection ([#110](https://github.com/YoanWai/agent-manager/issues/110)).
 
 ### Quick prompt
 
 Press `space` to dock a prompt bar at the bottom of the sidebar. The target follows the cursor while the bar is open (`↑↓` still navigate):
 
-- On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar stays open and clears, ready for the next answer.
-- On a **group** row, `enter` spawns a new agent in that group with the prompt embedded, using the group's default path. The spawn tool starts at the Settings (`s`) default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. The agent starts working on the prompt immediately.
+- On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar clears and stays open, ready for the next answer; Settings (`s`) can make it close instead.
+- On a **group** row, `enter` spawns a new agent in that group with the prompt embedded, using the group's default path. The spawn tool starts at the Settings default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. The agent starts working on the prompt immediately.
+
+`ctrl+v` pastes an image from the system clipboard as an `[Image #1]` chip at the caret. The image is saved under `agent-manager-pastes` in your temp directory, and on send each chip is swapped back for its path, so the paths reach the agent in the order and the places you pasted them. `backspace` next to a chip removes the whole chip, and an edit that swallows one releases its image. A clipboard holding text rather than an image pastes as text.
 
 `esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](#configuration)).
+
+### Killing and reviving sessions
+
+`x` ends a session that is holding RAM you want back, and on a group row it ends every live session under it; `X` ends every live session in view. Each asks to confirm first, and what it ends is the tmux session, not the record: the row stays in the tree, marked `dead`, with its name, group, and conversation id intact.
+
+`v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`.
+
+The id arrives one of two ways: tools with a `session_id_flag` launch under an id the manager mints, and tools that mint their own are read back by a `session_store` capturer (`codex`, `opencode`). Without an id, revive falls back to `revive_command` (`claude --continue`), which resumes the working directory's most recent conversation, and the manager says so in the status line, since sessions sharing a directory would otherwise land on the wrong one. On a group row `v` revives every dead session under it, and `V` revives every dead session in view; both revive what they can and name the first failure rather than stopping.
 
 ### Self-naming sessions
 
@@ -135,23 +159,41 @@ Agents usually work in git worktrees, one branch per worktree, and those worktre
 
 ### MCP: how agents discover these commands
 
-Every session the manager spawns or revives carries the agent-manager MCP server, so MCP-capable agents see `rename`, `review_repo` and `review_base` as native tools with descriptions telling them when to call each: no prompt injection, no per-project setup. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
+Every session the manager spawns or revives carries the agent-manager MCP server, so MCP-capable agents see `rename`, `review_repo`, `review_base` and `review_mode` (which sets the diff scope review opens on) as native tools with descriptions telling them when to call each: no prompt injection, no per-project setup. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
 
-Registration is per tool. The built-in claude, codex, opencode and grok tools register automatically: claude gets a generated `--mcp-config` file, codex gets `-c mcp_servers...` overrides, opencode gets an `OPENCODE_CONFIG` merge file, and grok gets a one-time `grok mcp add --scope user` entry on its first launch. A custom tool opts in with `mcp = "<style>"` in its config section, or out with `mcp = "none"`. The CLI subcommands keep working everywhere, MCP or not.
+Registration is per tool. The built-in claude, codex, opencode and grok tools register automatically: claude gets a generated `--mcp-config` file, codex gets `-c mcp_servers...` overrides, opencode gets an `OPENCODE_CONFIG` merge file, and grok gets a one-time `grok mcp add --scope user` entry on its first launch. A custom tool opts in with `mcp = "<style>"` in its config section, or out with `mcp = "none"`. The `rename`, `review-repo` and `review-base` CLI subcommands keep working everywhere, MCP or not.
 
 ### Diff review
 
-Press `ctrl+r` on a session to open a full-screen review of its repo: changed files with +/− counts on the left, the whole file on the right with syntax highlighting and changed lines tinted, so every edit reads in full context. Arrow keys and `ctrl+d`/`ctrl+u` scroll the file, `g`/`G` jump to top and bottom, `J`/`K` (or `tab`/`shift+tab`) switch files, `n`/`N` jump between changes, `u` toggles unified and side-by-side, `s` cycles the scope (uncommitted, vs target, last commit, staged), and `space` marks a file reviewed. When the working directory holds several repos, `r` opens a picker you type to filter, and `b` lists the current repo's worktrees by branch name so you can review another branch with one keypress. `B` picks the target (the merge-into branch) the "vs target" scope compares against. Each changeable value in the header wears its own key, so the scope, layout, repo, and target pills read as `s`, `u`, `r`, `B` legends at a glance. The diff refreshes as the agent keeps editing.
+Press `ctrl+r` on a session to open a full-screen review of its repo: changed files with +/− counts on the left, the whole file on the right with syntax highlighting and changed lines tinted, so every edit reads in full context. The diff refreshes as the agent keeps editing.
+
+| Key | Action |
+|-----|--------|
+| `↑↓` / `jk`, `ctrl+d` / `ctrl+u` | Scroll the file |
+| `g` / `G` | Jump to top / bottom |
+| `J` / `K` (or `tab` / `shift+tab`) | Previous / next file |
+| `n` / `N` | Jump between changes |
+| `u` | Toggle unified and side-by-side |
+| `s` | Cycle the scope: uncommitted, vs target, last commit, staged |
+| `r` | Pick the repo when the session's directory holds several (type to filter) |
+| `b` | Pick the branch from the repo's worktrees |
+| `B` | Pick the target (merge-into branch) the "vs target" scope compares against |
+| `space` | Mark a file reviewed |
+| `c` / `d` | Write / drop a line comment |
+| `C` | Send every comment to the agent as one review prompt (`enter` or `y` confirms) |
+| `esc` / `q` | Close the review |
+
+Each changeable value in the header wears its own key, so the scope, layout, repo, and target pills read as `s`, `u`, `r`, `B` legends at a glance.
 
 ![review, side by side, with the changed lines tinted in full file context](docs/screenshot-review.png)
 
-Press `c` on a line to write a comment; `C` flattens every comment into one review prompt and sends it straight into the agent's pane, so the agent starts addressing your notes while you watch the diff update. `esc` closes the review.
+Comments stay on the review screen until you send them: `C` flattens every one of them into a single prompt, asks you to confirm, and delivers it into the agent's pane, so the agent starts addressing your notes while you watch the diff update.
 
 ![diff review demo](docs/demo-diff.gif)
 
 ### Groups
 
-Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `f`, hide or restore empty groups visually with `e`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool (status rules and revive follow the new tool; useful when you quit one agent in the pane and start another).
+Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `enter` on its row, fold or unfold the whole tree with `F`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool (status rules and revive follow the new tool; useful when you quit one agent in the pane and start another).
 
 ### Status
 
@@ -168,9 +210,9 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 
 ![the session tree, with a waiting agent's permission prompt in the preview](docs/screenshot-sessions.png)
 
-Each row carries its status and tool inline, and a folded group keeps a count per status so a collapsed subtree still tells you whether anything needs you. Selecting a session shows the tail of its pane on the right, which is how a `waiting` agent's actual question reaches you without attaching.
+Each row carries its status and tool inline, and a folded group keeps a count per status so a collapsed subtree still tells you whether anything needs you. Selecting a session shows the tail of its pane on the right, which is how a `waiting` agent's actual question reaches you without attaching. A session with no window left, archived or killed, shows the snapshot taken when it still had one.
 
-Detection matches per-tool regex rules against the visible pane, analyzes the newest turn to tell `finished` from `waiting`, and treats streaming output (content changing between polls) as `working`. A turn that ends without any turn-summary line still resolves: when a `working` pane goes quiet, the turn counts as `finished`, or `waiting` when it ends on a question. Polling keeps running while you are inside a session, so statuses stay live. The selected session's pane tail renders in the preview panel, and moving the cursor fetches the preview immediately.
+Detection matches per-tool regex rules against the visible pane, analyzes the newest turn to tell `finished` from `waiting`, and treats streaming output (content changing between polls) as `working`. A turn that ends without any turn-summary line still resolves: when a `working` pane goes quiet, the turn counts as `finished`, or `waiting` when it ends on a question. Work that outlives the turn which started it (background agents) is matched by `busy_line`, so a turn-end summary keeps reading as `working` while that work runs. Polling keeps running while you are inside a session, so statuses stay live. The selected session's pane tail renders in the preview panel, and moving the cursor fetches the preview immediately.
 
 For Claude Code, status comes first-hand from [hook events](https://docs.anthropic.com/en/docs/claude-code/hooks) instead of pane guessing: sessions launch with a generated `--settings` file whose hooks write the lifecycle state (`working`, `waiting`, `finished`, `idle`) to a per-session status file that the poller reads first. Pane rules still refine it — hooks cannot see a plain-text question, an Esc interrupt, or an error line, so a matching pane verdict upgrades the hook status — and they take over fully as fallback when the hook file is missing or stale. Enabled per tool with `status_source = "claude-hooks"`.
 
@@ -185,6 +227,7 @@ The Computer block in the sessions panel shows machine gauges:
 - **Swap**: used/total of the current swap allocation (`used/total * 100`). On macOS the swap file grows under pressure, so the denominator is the live size from `vm.swapusage`, not a fixed partition.
 - **Disk**: fill of the root filesystem (used / (used + available)), with free space from the kernel's available figure
 - **Network**: up/down rates on real NICs only (loopback, utun, bridges, and similar virtual interfaces are excluded)
+- **Temperature**: `cpu`, `gpu` and `soc` readings in °C, each the hottest sensor in its category, sampled every 5s. Apple Silicon draws no CPU/GPU line, so its dies report as one `soc` figure. A reading appears when the machine exposes that sensor.
 
 ### Themes
 
@@ -212,11 +255,15 @@ rules = [
 ]
 ```
 
-Rules match top-down against the visible pane text; first match wins, and `default_status` applies when nothing matches. Optional per-tool fields refine detection: `activity_cutoff` (regex locating the tool's input box, everything above it is turn content), `turn_end` (a turn-summary line marking the turn as over), `chrome_line`, `blocked_line`, and `trailing_note`. The generated config's `claude` and `opencode` blocks show all of them in use.
+Rules match top-down against the visible pane text; first match wins, and `default_status` applies when nothing matches.
 
-Other per-tool fields: `revive_command` is what `v` runs to revive a dead session (e.g. `claude --continue` resumes the conversation in place); `status_source = "claude-hooks"` switches status to Claude Code hook events (see [Status](#status)).
+**Status detection.** Optional per-tool fields refine it: `activity_cutoff` (regex locating the tool's input box, everything above it is turn content), `turn_end` (a turn-summary line marking the turn as over), `busy_line` (work that outlives its turn, such as background agents), `chrome_line`, `blocked_line`, and `trailing_note`. `status_source = "claude-hooks"` switches status to Claude Code hook events (see [Status](#status)). The generated config's `claude` and `opencode` blocks show all of them in use.
 
-`prompt_flag` controls how the new-session form's optional prompt is embedded into the launch command. Tools that take the prompt as a positional argument (Claude Code: `claude 'the prompt'`) leave it empty; tools whose positional argument means something else declare the flag (OpenCode: `prompt_flag = "--prompt"`, since its positional argument is the project path). The prompt only shapes the launch command; revive (`v`) uses `revive_command` untouched.
+**Revive.** `resume_by_id_command` resumes one exact conversation, with `{id}` replaced by the session's captured agent id. That id comes either from launching under an id the manager mints (`session_id_flag`, e.g. `--session-id`) or from reading back an id the tool minted itself (`session_store = "codex" | "opencode"`). `revive_command` is what `v` falls back to when no id is available, e.g. `claude --continue`.
+
+**Prompts.** `prompt_flag` controls how the new-session form's optional prompt is embedded into the launch command. Tools that take the prompt as a positional argument (Claude Code: `claude 'the prompt'`) leave it empty; tools whose positional argument means something else declare the flag (OpenCode: `prompt_flag = "--prompt"`, since its positional argument is the project path). The prompt only shapes the launch command; revive (`v`) uses the revive commands untouched.
+
+**MCP.** `mcp = "claude" | "codex" | "opencode" | "grok" | "none"` picks how the agent-manager MCP server is registered into the tool's sessions (see [MCP](#mcp-how-agents-discover-these-commands)). An empty value uses the tool's config key when it names a known style.
 
 State is stored next to the config in `state.db` (SQLite).
 
