@@ -20,8 +20,6 @@ Not here yet: worktree creation, cost tracking, mouse-driven navigation, and age
 
 **Jump to:** [Install](#install) · [Keys](#keys) · [Quick prompt](#quick-prompt) · [Diff review](#diff-review) · [Status](#status) · [Configuration](#configuration)
 
-Not here yet: worktree creation, cost tracking, mouse support, and agents that can talk to each other.
-
 ## Supported tools
 
 Status detection currently supports **Claude Code**, **OpenCode**, **Codex**, and **Grok Build** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](#configuration)).
