@@ -33,7 +33,10 @@ release:
     ## Install
 
     ```bash
-    brew install yoanwai/tap/agent-manager        # macOS / Linux
+    # macOS / Linux
+    brew install yoanwai/tap/agent-manager
+    curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh
+    mise use -g ubi:YoanWai/agent-manager
     go install github.com/YoanWai/agent-manager@latest
     ```
 
@@ -43,20 +46,26 @@ release:
 
     [Discussions](https://github.com/YoanWai/agent-manager/discussions) for questions and setups, [issues](https://github.com/YoanWai/agent-manager/issues) for bugs and ideas, [CONTRIBUTING.md](https://github.com/YoanWai/agent-manager/blob/main/.github/CONTRIBUTING.md) to send a patch.
 
-# brews (formula) instead of homebrew_casks: casks quarantine the
-# downloaded binary and Gatekeeper blocks unsigned CLI tools outright;
-# formulas install without quarantine.
-brews:
+homebrew_casks:
   - repository:
       owner: YoanWai
       name: homebrew-tap
     homepage: https://github.com/YoanWai/agent-manager
     description: Terminal UI to manage AI coding-agent tmux sessions
     license: MIT
+    binaries:
+      - agent-manager
     dependencies:
-      - name: tmux
-    test: |
-      system "#{bin}/agent-manager", "--version"
+      - formula: tmux
+    # Casks quarantine what they download and Gatekeeper blocks an unsigned
+    # binary outright. The OS.mac? guard keeps Linux installs working, where
+    # system_command on a missing /usr/bin/xattr aborts the install.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/agent-manager"]
+          end
 
 # git_url resolves to an empty string without AUR_KEY in the environment, and
 # goreleaser skips the publish on an empty url, so a release without the key
