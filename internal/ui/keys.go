@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -60,6 +61,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleGroupFormKey(msg)
 	case modeDiff:
 		return m.handleDiffKey(msg)
+	case modeFocus:
+		return m.handleFocusKey(msg)
 	case modeHelp:
 		m.mode = modeList
 		return m, nil
@@ -88,7 +91,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.toggleCollapse()
 			return m, nil
 		}
+		if m.enterFocuses() {
+			return m.focusSelected()
+		}
 		return m.attachSelected()
+	case "A", "shift+a":
+		if m.enterFocuses() {
+			return m.attachSelected()
+		}
+		return m.focusSelected()
 	case "n":
 		m.openForm()
 	case "g":
@@ -341,6 +352,88 @@ func (m *Model) toggleCollapseAll() {
 	m.rebuildRows()
 }
 
+// focusSelected enters focus mode: keys go to the selected session's pane
+// while the manager, its rail and its live preview stay on screen.
+func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
+	sess, ok := m.selected()
+	if !ok {
+		return m, nil
+	}
+	if sess.Archived {
+		return m.attachSelected()
+	}
+	if !m.tmux.Exists(sess.ID) {
+		m.err = "session is dead - press v to revive"
+		return m, nil
+	}
+	m.err = ""
+	if err := m.acknowledgeFinished(sess); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	m.mode = modeFocus
+	// Focusing is deliberate, so the client opens now rather than waiting
+	// for the cursor to settle, and any failure backoff is lifted.
+	if m.focus != nil {
+		m.focus.retryNow()
+	}
+	m.watchSelection()
+	m.sel = focusSelection{}
+	m.copied = 0
+	m.cursorOn = true
+	m.focusScroll = 0
+	// Mouse reporting makes the pane a closed window: clicks land here
+	// instead of the host terminal, so a drag selects pane text alone and
+	// never the rail beside it.
+	return m, tea.Batch(tea.EnableMouseCellMotion, m.cursorBlink())
+}
+
+// leaveFocus returns to the list and gives the mouse back to the terminal,
+// restoring native selection and wheel-as-arrows.
+func (m *Model) leaveFocus() tea.Cmd {
+	m.mode = modeList
+	m.sel = focusSelection{}
+	m.copied = 0
+	return tea.Sequence(tea.DisableMouse, func() tea.Msg {
+		_ = EnableAlternateScroll()
+		return nil
+	})
+}
+
+// handleFocusKey forwards every key into the focused pane. Ctrl+Q is the
+// one reserved key: it returns to the list, mirroring detach from a real
+// attach.
+func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+q" {
+		return m, m.leaveFocus()
+	}
+	sess, ok := m.selected()
+	if !ok {
+		return m, m.leaveFocus()
+	}
+	// Typing puts the cursor back on: a caret that blinks out mid-keystroke
+	// reads as a dropped character.
+	m.cursorOn = true
+	// Keystrokes land at the live bottom, so the view follows them there.
+	var resume tea.Cmd
+	if m.scrolledBack() {
+		m.focusScroll = 0
+		resume = m.focusRegionCmd(sess.ID, 0)
+	}
+	command, ok := focusKeyCommand(tmux.SessionName(sess.ID), msg)
+	if !ok {
+		return m, resume
+	}
+	if m.focus == nil || !m.focus.command(command) {
+		// No control pipe up (yet); one forked send-keys keeps the key
+		// from being swallowed.
+		if err := m.tmux.SendRaw(command); err != nil {
+			m.err = err.Error()
+		}
+	}
+	return m, resume
+}
+
 func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
 	if !ok {
@@ -530,6 +623,11 @@ func (m *Model) reviveSession(sess store.Session) error {
 	}
 	if err := m.store.UpdateStatus(sess.ID, tool.DefaultStatus); err != nil {
 		return err
+	}
+	// The session is alive again; any watcher backoff from its dead spell
+	// no longer applies.
+	if m.focus != nil {
+		m.focus.retryNow()
 	}
 	// A leftover ack from the previous life must not swallow the revived
 	// agent's first finished alert.
@@ -1325,6 +1423,26 @@ func (m *Model) defaultSplitLayout() bool {
 	return chosen != "unified"
 }
 
+const focusKeySetting = "focus_key"
+
+// enterFocuses reports which key opens a session where. Enter focuses the
+// preview and A attaches full screen by default; a stored "attach" choice
+// swaps the pair. Cached on the model because the footer reads it every
+// frame.
+func (m *Model) enterFocuses() bool {
+	return m.focusOnEnter
+}
+
+// storedFocusOnEnter reads the persisted key choice. A read failure yields
+// the default pairing.
+func storedFocusOnEnter(st *store.Store) bool {
+	chosen, err := st.Setting(focusKeySetting)
+	if err != nil {
+		return true
+	}
+	return chosen != "attach"
+}
+
 const quickCloseSetting = "quick_prompt_close"
 
 // quickCloseAfterSend reports whether the quick bar should dismiss itself
@@ -1352,6 +1470,7 @@ func (m *Model) openSettings() {
 		themeIndex:     themeIndex(current.Name),
 		layoutSplit:    m.defaultSplitLayout(),
 		quickCloseSend: m.quickCloseAfterSend(),
+		enterFocuses:   m.enterFocuses(),
 	}
 	m.mode = modeSettings
 }
@@ -1387,6 +1506,14 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err := m.store.SetSetting(quickCloseSetting, quickClose); err != nil {
 			m.err = err.Error()
 		}
+		focusKey := "focus"
+		if !m.settings.enterFocuses {
+			focusKey = "attach"
+		}
+		if err := m.store.SetSetting(focusKeySetting, focusKey); err != nil {
+			m.err = err.Error()
+		}
+		m.focusOnEnter = m.settings.enterFocuses
 		m.mode = modeList
 	}
 	return m, nil
@@ -1407,6 +1534,8 @@ func (m *Model) cycleSetting(step int) {
 		m.settings.layoutSplit = !m.settings.layoutSplit
 	case settingsFieldQuickClose:
 		m.settings.quickCloseSend = !m.settings.quickCloseSend
+	case settingsFieldFocusKey:
+		m.settings.enterFocuses = !m.settings.enterFocuses
 	}
 }
 

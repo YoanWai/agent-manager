@@ -165,6 +165,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.quickCloseSend {
 		quickClose = "close"
 	}
+	focusKey := "↵ focus · A attach"
+	if !m.settings.enterFocuses {
+		focusKey = "↵ attach · A focus"
+	}
 	row := func(field int, name, value string) string {
 		marker := "  "
 		labelStyle := valueStyle
@@ -179,7 +183,8 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
-		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n\n" +
+		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
+		row(settingsFieldFocusKey, "session keys", focusKey) + "\n\n" +
 		subtleStyle.Render("  version ") + valueStyle.Render(m.version) + m.versionStatus()
 	return m.card("⚙ Settings", body, "↑↓ field · ←→ change · ↵/esc save")
 }

@@ -47,6 +47,7 @@ func (m *Model) viewListFrame() string {
 	// background and the fill's corners land exactly on the cell grid.
 	bleedWidth := contentWidth - 1
 	railWidth := leftWidth - 1
+	m.paneColumnX = leftWidth + 2
 	railRows := m.railLines(railWidth, bodyHeight)
 	contentRows := m.contentLines(bleedWidth, bodyHeight)
 	seam := make([]string, bodyHeight)
@@ -69,8 +70,12 @@ func (m *Model) viewListFrame() string {
 		m.bleedColumn(bodyHeight),
 		paintContent(contentRows, bleedWidth, bodyHeight, backdropHex()),
 	)...)
+	bottom := m.boundedRuleRow(leftWidth+1, m.width, "▄")
+	if m.mode == modeFocus && m.paneBox.ok {
+		bottom = m.focusBottomRule(leftWidth+1, m.width)
+	}
 	frame = append(frame,
-		m.boundedRuleRow(leftWidth+1, m.width, "▄"),
+		bottom,
 		paint(m.viewStatus(), m.width, backdropHex()),
 	)
 	for _, line := range splitLines(footer) {
@@ -311,6 +316,10 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 		nameStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 	}
 	head := pad + guides + dot + " " + nameStyle.Render(sess.Name)
+	focused := selected && m.mode == modeFocus
+	if focused {
+		head += " " + focusBadgeStyle.Render(" FOCUS ")
+	}
 
 	metaStyle := subtleStyle
 	if selected {
@@ -439,6 +448,7 @@ func (m *Model) contentLines(width, height int) []contentLine {
 		if group, ok := m.selectedGroup(); ok {
 			body = append(body, ours(splitLines(m.viewGroupAgents(group, inner, rest)))...)
 		} else {
+			m.previewBodyOffset = len(body)
 			body = append(body, m.previewLines(width, rest, gutter)...)
 		}
 	}
@@ -448,26 +458,51 @@ func (m *Model) contentLines(width, height int) []contentLine {
 	return append(body[:max(height-len(bar), 0)], bar...)
 }
 
+// focusTopRule is the hairline that caps the focused pane, titled so the
+// mode names itself where the eye already is.
+func focusTopRule(width int) string {
+	title := " focused · ctrl+q back "
+	rule := annotationStyle.Render(title)
+	rest := width - lipgloss.Width(title)
+	if rest > 0 {
+		rule += focusEdgeStyle.Render(strings.Repeat("─", rest))
+	}
+	return rule
+}
+
 // previewLines is the captured pane under its label. The captured rows are
 // marked raw and drawn without the column's gutters: painting our backdrop
 // behind an agent's own CLI colors would replace the background it drew
 // itself, and insetting its output would put a margin around a terminal
 // that has its own. Only the label, which is ours, keeps the gutter.
 func (m *Model) previewLines(width, height int, gutter string) []contentLine {
-	lines := []contentLine{
-		{text: gutter + subtleStyle.Render("preview")},
-		{raw: true},
+	rule := contentLine{raw: true}
+	if m.mode == modeFocus {
+		rule = contentLine{text: focusTopRule(width), raw: true}
 	}
+	lines := []contentLine{{text: gutter + subtleStyle.Render("preview")}, rule}
 	rows := height - len(lines)
 	if rows < 1 {
 		return lines
 	}
 	pane := paneExact(m.preview, rows)
 	if len(pane) == 0 {
+		// No rows painted means nothing to hit-test: a box left over from
+		// the previous session would catch clicks on empty space.
+		m.paneBox = paneBox{}
 		return append(lines, contentLine{text: gutter + mutedStyle.Render("(no output yet)")})
 	}
-	for _, line := range pane {
-		lines = append(lines, contentLine{text: previewLine(line, width), raw: true})
+	// Record where these rows land so mouse hit-testing reads the same
+	// geometry the paint used.
+	m.paneBox = paneBox{
+		x:      m.paneOriginX(),
+		y:      m.listChromeRows() + m.previewBodyOffset + len(lines),
+		width:  width,
+		height: len(pane),
+		ok:     true,
+	}
+	for i, line := range pane {
+		lines = append(lines, contentLine{text: m.renderPaneRow(i, line, width), raw: true})
 	}
 	// Rows past the capture stay raw too: a painted tail under unpainted
 	// output would read as a box drawn around the agent's last line.

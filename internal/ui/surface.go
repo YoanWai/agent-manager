@@ -97,7 +97,38 @@ func (m *Model) bleedColumn(height int) []string {
 	for i := range lines {
 		lines[i] = cell
 	}
+	// Focus mode lights this column beside the pane rows alone, so the edge
+	// traces the agent's terminal rather than the whole content panel. The
+	// top corner sits on the rule row just above the capture.
+	if m.mode == modeFocus && m.paneBox.ok {
+		edge := paint(focusEdgeStyle.Render("│"), 1, panelHex())
+		corner := paint(focusEdgeStyle.Render("╭"), 1, panelHex())
+		top := m.paneBox.y - m.listChromeRows()
+		if top-1 >= 0 && top-1 < len(lines) {
+			lines[top-1] = corner
+		}
+		for row := top; row < top+m.paneBox.height; row++ {
+			if row >= 0 && row < len(lines) {
+				lines[row] = edge
+			}
+		}
+	}
 	return lines
+}
+
+// focusBottomRule closes the focused pane's hairline along the frame rule
+// under the body: the corner cell is the bleed column the left edge runs
+// down, so the two meet exactly.
+func (m *Model) focusBottomRule(paneWidth, width int) string {
+	tail := width - paneWidth - 1
+	if tail < 1 || paneWidth < 2 {
+		return m.boundedRuleRow(paneWidth, width, "▄")
+	}
+	first := plain(lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex())).Render("▀"), 1)
+	interior := lipgloss.NewStyle().Foreground(colorBg).Render(strings.Repeat("▄", paneWidth-1))
+	corner := focusEdgeStyle.Render("╰")
+	return first + paint(interior, paneWidth-1, panelHex()) + paint(corner, 1, panelHex()) +
+		paint(focusEdgeStyle.Render(strings.Repeat("─", tail)), tail, backdropHex())
 }
 
 // seamCell is one row of the vertical seam. A rule arriving from either

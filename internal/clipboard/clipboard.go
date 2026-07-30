@@ -332,3 +332,43 @@ func SaveToTemp(data []byte, ext string) (string, error) {
 	}
 	return file.Name(), nil
 }
+
+// WriteText puts plain text on the OS clipboard. Used by the focused
+// preview's own selection, which the host terminal never sees because
+// mouse reporting is on while a session has focus.
+func WriteText(text string) error {
+	name, args, err := copyCommand()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(name, args...)
+	cmd.Stdin = strings.NewReader(text)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s: %w: %s", name, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// copyCommand picks the platform's clipboard writer.
+func copyCommand() (string, []string, error) {
+	switch goos {
+	case "darwin":
+		return "pbcopy", nil, nil
+	case "windows":
+		return "clip", nil, nil
+	default:
+		if wslProbe() {
+			return "clip.exe", nil, nil
+		}
+		if _, err := lookPath("wl-copy"); err == nil {
+			return "wl-copy", nil, nil
+		}
+		if _, err := lookPath("xclip"); err == nil {
+			return "xclip", []string{"-selection", "clipboard"}, nil
+		}
+		if _, err := lookPath("xsel"); err == nil {
+			return "xsel", []string{"--clipboard", "--input"}, nil
+		}
+		return "", nil, errors.New("no clipboard tool found (install wl-copy, xclip or xsel)")
+	}
+}
