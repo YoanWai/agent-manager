@@ -15,6 +15,17 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+func TestNewSessionFormUsesSettingsDefaultTool(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.SetSetting("default_tool", "ready-tool"); err != nil {
+		t.Fatal(err)
+	}
+	m.openForm()
+	if got := m.form.toolNames[m.form.toolIndex]; got != "ready-tool" {
+		t.Fatalf("new session tool = %q, want settings default", got)
+	}
+}
+
 func TestNewSessionPreselectsContextGroup(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

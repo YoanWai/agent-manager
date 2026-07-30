@@ -252,7 +252,7 @@ func (m *Model) enabledToolNames() []string {
 }
 
 func (m *Model) openForm() {
-	tools := m.enabledToolNames()
+	tools, toolIndex := m.defaultToolSelection()
 	if len(tools) == 0 {
 		m.errBar.text = "no CLIs enabled: open settings (s), then CLIs, to turn some on"
 		return
@@ -270,6 +270,7 @@ func (m *Model) openForm() {
 		prompt:    prompt,
 		dirAuto:   true,
 		toolNames: tools,
+		toolIndex: toolIndex,
 		focus:     fieldName,
 	}
 	m.errBar.text = ""

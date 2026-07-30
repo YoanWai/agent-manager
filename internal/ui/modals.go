@@ -260,7 +260,7 @@ func (m *Model) viewSettings() string {
 	actionRow := func(field int, name, action string) string {
 		return lead(field, name) + keyStyle.Render("↵") + mutedStyle.Render(" "+action)
 	}
-	body := row(settingsFieldTool, "quick spawn tool", toolValue) + "\n" +
+	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
 		row(settingsFieldDensity, "list density", density) + "\n" +
@@ -374,7 +374,7 @@ func (m *Model) viewHelp() string {
 		{"b", "in review: pick the branch from the repo's worktrees"},
 		{"B", "in review: pick the target (merge-into branch) the branch diff compares against"},
 		{"F", "fold / unfold all groups"},
-		{"s", "settings (CLIs, theme, quick spawn, review layout)"},
+		{"s", "settings (CLIs, theme, default tool, review layout)"},
 		{"|", "resize split (←→ / drag, enter commits, esc cancels)"},
 		{"t", "toggle archived view"},
 		{"M", "messages (updates, tips, bug reporting; x dismisses)"},
