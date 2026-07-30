@@ -34,6 +34,14 @@ curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.
 
 Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Set `AGENT_MANAGER_INSTALL_DIR` for another directory and `AGENT_MANAGER_VERSION` to pin a version. Install tmux with your own package manager.
 
+### Arch Linux
+
+```bash
+yay -S agent-manager-bin
+```
+
+[agent-manager-bin](https://aur.archlinux.org/packages/agent-manager-bin) in the AUR installs the released binary and pulls in tmux and git.
+
 ### mise
 
 ```bash
