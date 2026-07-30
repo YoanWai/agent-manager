@@ -3,11 +3,16 @@
 <p align="center"><b>Run every AI coding agent from one terminal.</b></p>
 
 <p align="center">
-  <a href="https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml"><img src="https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/YoanWai/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/YoanWai/agent-manager?label=release" alt="Release"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue" alt="Platforms">
-  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/YoanWai/agent-manager" alt="Go version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/YoanWai/agent-manager" alt="License"></a>
+  <a href="https://github.com/YoanWai/agent-manager/stargazers"><img src="https://img.shields.io/github/stars/YoanWai/agent-manager?style=flat-square&logo=github&logoColor=c6ccd6&label=stars&color=d08442&labelColor=0f1115" alt="GitHub stars"></a>
+  <a href="https://github.com/YoanWai/agent-manager/releases"><img src="https://img.shields.io/github/downloads/YoanWai/agent-manager/total?style=flat-square&logo=github&logoColor=c6ccd6&label=downloads&color=6cb6a4&labelColor=0f1115" alt="Release downloads"></a>
+  <a href="https://github.com/YoanWai/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/YoanWai/agent-manager?style=flat-square&label=release&color=6f9fd0&labelColor=0f1115" alt="Latest release"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/YoanWai/agent-manager/ci.yml?branch=main&style=flat-square&label=ci&color=85b26f&labelColor=0f1115" alt="CI status"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/YoanWai/agent-manager?style=flat-square&logo=go&logoColor=c6ccd6&label=go&color=a78bd0&labelColor=0f1115" alt="Go version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/YoanWai/agent-manager?style=flat-square&label=license&color=646c78&labelColor=0f1115" alt="License"></a>
+  <a href="#install"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2-646c78?style=flat-square&labelColor=0f1115" alt="Platforms"></a>
 </p>
 
 ![agent-manager demo](docs/demo.gif)
