@@ -14,7 +14,7 @@ By signing this CLA you accept the following terms for all contributions you sub
 
 5. **No warranty.** Contributions are provided as-is, and you are not required to provide support for them.
 
-The Project itself remains available under its public license (AGPL-3.0). This agreement exists so the Project can stay sustainable, including the ability to offer it under additional license terms.
+The Project itself remains available under its public license (MIT). This agreement exists so the Project can stay sustainable, including the ability to offer it under additional license terms.
 
 To sign, comment on your pull request:
 

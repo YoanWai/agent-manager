@@ -11,9 +11,9 @@ Thanks for taking an interest. Bug reports, feature ideas, and pull requests are
 
 ## Before you open a pull request
 
-Open an issue first for anything beyond a small fix. A short discussion about the approach saves rework, especially for UI changes, new keybindings, and anything touching status detection.
+Send it. Typos, broken links, a one-line fix, a status rule for a tool you use: straight to a pull request is fine, and a rough patch that works is worth more than a perfect one you never open.
 
-Small, self-evident fixes (typo, broken link, obvious one-line bug) can go straight to a pull request.
+For a large change (new UI, new keybinding, reworked status detection), an issue first gets you a read on the approach so the work lands the first time. Optional, and worth it.
 
 ## Setup
 

@@ -36,8 +36,6 @@ body:
         - macOS
         - Linux
         - Windows (WSL2)
-    validations:
-      required: true
 
   - type: input
     id: tmux-version
@@ -45,8 +43,6 @@ body:
       label: tmux version
       description: Output of `tmux -V`
       placeholder: tmux 3.5a
-    validations:
-      required: true
 
   - type: dropdown
     id: tool
@@ -60,8 +56,6 @@ body:
         - Grok Build
         - A custom tool from my config
         - Not tool specific
-    validations:
-      required: true
 
   - type: textarea
     id: config

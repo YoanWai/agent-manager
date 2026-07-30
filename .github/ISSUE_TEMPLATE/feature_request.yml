@@ -33,8 +33,6 @@ body:
         - MCP and agent subcommands
         - Stats and gauges
         - Something else
-    validations:
-      required: true
 
   - type: textarea
     id: extra
