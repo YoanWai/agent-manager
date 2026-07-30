@@ -161,6 +161,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.layoutSplit {
 		layout = "split"
 	}
+	quickClose := "stay open"
+	if m.settings.quickCloseSend {
+		quickClose = "close"
+	}
 	row := func(field int, name, value string) string {
 		marker := "  "
 		labelStyle := valueStyle
@@ -174,7 +178,8 @@ func (m *Model) viewSettings() string {
 	body := row(settingsFieldTool, "quick spawn tool", m.settings.toolNames[m.settings.toolIndex]) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
-		row(settingsFieldLayout, "review layout", layout) + "\n\n" +
+		row(settingsFieldLayout, "review layout", layout) + "\n" +
+		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n\n" +
 		subtleStyle.Render("  version ") + valueStyle.Render(m.version) + m.versionStatus()
 	return m.card("⚙ Settings", body, "↑↓ field · ←→ change · ↵/esc save")
 }
@@ -228,7 +233,7 @@ func (m *Model) viewHelp() string {
 		{"b", "in review: pick the branch from the repo's worktrees"},
 		{"B", "in review: pick the target (merge-into branch) the branch diff compares against"},
 		{"F", "fold / unfold all groups"},
-		{"s", "settings (quick spawn tool, review layout)"},
+		{"s", "settings (quick spawn tool, review layout, after quick send)"},
 		{"|", "resize split (←→ / drag, enter commits, esc cancels)"},
 		{"t", "toggle archived view"},
 		{"/", "search"},
