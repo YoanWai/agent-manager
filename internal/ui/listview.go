@@ -7,6 +7,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -387,12 +388,32 @@ func (m *Model) computerLines(width int) []string {
 	} else {
 		lines = append(lines, meter("disk", 0, false, ""))
 	}
+	if temps := tempReadings(snap); temps != "" {
+		lines = append(lines, pad+labelStyle.Width(5).Render("temp")+temps)
+	}
 	if m.netRates {
 		lines = append(lines, pad+labelStyle.Width(5).Render("net")+
 			valueStyle.Render("↓ "+humanBytes(m.netDown)+"/s")+
 			subtleStyle.Render("  ↑ "+humanBytes(m.netUp)+"/s"))
 	}
 	return append(lines, "")
+}
+
+// tempReadings writes whichever chip temperatures the machine exposes:
+// a cpu/gpu pair where the hardware draws that line, one soc figure where
+// it reports the whole chip, and nothing where it reports neither.
+func tempReadings(snap sysstat.Snapshot) string {
+	var parts []string
+	if snap.CPUTempOK {
+		parts = append(parts, valueStyle.Render(fmt.Sprintf("cpu %.0f°C", snap.CPUTemp)))
+	}
+	if snap.GPUTempOK {
+		parts = append(parts, valueStyle.Render(fmt.Sprintf("gpu %.0f°C", snap.GPUTemp)))
+	}
+	if snap.SoCTempOK {
+		parts = append(parts, valueStyle.Render(fmt.Sprintf("soc %.0f°C", snap.SoCTemp)))
+	}
+	return strings.Join(parts, subtleStyle.Render("  "))
 }
 
 // contentLines is the right column: what the cursor is on, then its live

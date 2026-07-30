@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"runtime"
 	"testing"
+
+	"github.com/shirou/gopsutil/v4/sensors"
 )
 
 func TestSample(t *testing.T) {
@@ -79,6 +81,114 @@ func TestSensorCategories(t *testing.T) {
 		if isCPUSensor(key) || isGPUSensor(key) {
 			t.Fatalf("apple silicon die key %q should be neither cpu nor gpu", key)
 		}
+	}
+}
+
+// TestClassifyTemps walks the sensor names each platform actually reports:
+// Apple Silicon dies, Intel Mac SMC keys, and the hwmon and thermal-zone
+// names Linux builds from its drivers.
+func TestClassifyTemps(t *testing.T) {
+	cases := []struct {
+		name string
+		read []sensors.TemperatureStat
+		want tempReading
+	}{
+		{
+			name: "apple silicon dies fold into one soc reading",
+			read: []sensors.TemperatureStat{
+				{SensorKey: "PMU tdie1", Temperature: 60.4},
+				{SensorKey: "PMU2 tdie8", Temperature: 50.7},
+				{SensorKey: "gas gauge battery", Temperature: 27.8},
+				{SensorKey: "NAND CH0 temp", Temperature: 42},
+			},
+			want: tempReading{soc: 60.4, socOK: true},
+		},
+		{
+			name: "intel mac smc keys split cpu and gpu",
+			read: []sensors.TemperatureStat{
+				{SensorKey: "TC0D", Temperature: 61},
+				{SensorKey: "TG0D", Temperature: 55},
+			},
+			want: tempReading{cpu: 61, cpuOK: true, gpu: 55, gpuOK: true},
+		},
+		{
+			name: "intel linux keeps the package over its cores",
+			read: []sensors.TemperatureStat{
+				{SensorKey: "coretemp_package_id_0", Temperature: 58},
+				{SensorKey: "coretemp_core_0", Temperature: 54},
+				{SensorKey: "nvme_composite", Temperature: 47},
+				{SensorKey: "iwlwifi_1", Temperature: 40},
+			},
+			want: tempReading{cpu: 58, cpuOK: true},
+		},
+		{
+			name: "amd names the cpu tctl and the gpu amdgpu",
+			read: []sensors.TemperatureStat{
+				{SensorKey: "k10temp_tctl", Temperature: 64},
+				{SensorKey: "k10temp_tccd1", Temperature: 59},
+				{SensorKey: "amdgpu_edge", Temperature: 49},
+			},
+			want: tempReading{cpu: 64, cpuOK: true, gpu: 49, gpuOK: true},
+		},
+		{
+			name: "zenpower tdie is a cpu, not a bare die",
+			read: []sensors.TemperatureStat{
+				{SensorKey: "zenpower_tdie", Temperature: 66},
+			},
+			want: tempReading{cpu: 66, cpuOK: true},
+		},
+		{
+			name: "thermal zones name the chip by type",
+			read: []sensors.TemperatureStat{
+				{SensorKey: "cpu-thermal", Temperature: 52},
+				{SensorKey: "x86_pkg_temp", Temperature: 57},
+			},
+			want: tempReading{cpu: 57, cpuOK: true},
+		},
+		{
+			name: "an soc thermal zone alone reads as the soc",
+			read: []sensors.TemperatureStat{
+				{SensorKey: "soc-thermal", Temperature: 48},
+			},
+			want: tempReading{soc: 48, socOK: true},
+		},
+		{
+			name: "zeroed and unknown sensors report nothing",
+			read: []sensors.TemperatureStat{
+				{SensorKey: "coretemp_core_0", Temperature: 0},
+				{SensorKey: "acpitz", Temperature: 27.8},
+			},
+			want: tempReading{},
+		},
+		{
+			name: "a sensor reporting its own absence is not a reading",
+			read: []sensors.TemperatureStat{
+				{SensorKey: "coretemp_core_0", Temperature: math.NaN()},
+				{SensorKey: "amdgpu_edge", Temperature: math.Inf(1)},
+				{SensorKey: "k10temp_tctl", Temperature: 3276.7},
+			},
+			want: tempReading{},
+		},
+		{
+			name: "a live sensor outlives its broken neighbours",
+			read: []sensors.TemperatureStat{
+				{SensorKey: "coretemp_core_0", Temperature: math.NaN()},
+				{SensorKey: "coretemp_package_id_0", Temperature: 58},
+			},
+			want: tempReading{cpu: 58, cpuOK: true},
+		},
+		{
+			name: "no sensors at all",
+			read: nil,
+			want: tempReading{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifyTemps(tc.read); got != tc.want {
+				t.Fatalf("classifyTemps() = %+v, want %+v", got, tc.want)
+			}
+		})
 	}
 }
 

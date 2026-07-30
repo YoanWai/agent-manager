@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -163,54 +165,104 @@ func usedPercent(used, total uint64) float64 {
 	return 100 * float64(used) / float64(total)
 }
 
-// sampleTemps categorizes hardware temperature sensors into CPU and GPU
-// readings. Sensor names differ by platform: Intel Macs expose SMC keys
-// (TC0D/TG0D), Linux exposes hwmon labels (coretemp/amdgpu), and Apple
-// Silicon exposes only unlabeled per-chiplet die temperatures. When no
-// CPU/GPU split is available (Apple Silicon), the hottest die temperature
-// is reported as a single SoC reading. Each category keeps the hottest
-// matching sensor.
+// tempRefresh paces the sensor read. On Apple Silicon each read builds an
+// IOKit HID client and costs ~57ms, so temperatures keep a cadence of their
+// own rather than riding every gauge sample.
+const tempRefresh = 5 * time.Second
+
+type tempReading struct {
+	cpu   float64
+	cpuOK bool
+	gpu   float64
+	gpuOK bool
+	soc   float64
+	socOK bool
+}
+
+var tempCache struct {
+	mu     sync.Mutex
+	filled bool
+	at     time.Time
+	last   tempReading
+}
+
 func sampleTemps(snap *Snapshot) {
-	temps, err := sensors.SensorsTemperatures()
-	if err != nil || len(temps) == 0 {
-		return
+	reading := cachedTemps()
+	snap.CPUTemp, snap.CPUTempOK = reading.cpu, reading.cpuOK
+	snap.GPUTemp, snap.GPUTempOK = reading.gpu, reading.gpuOK
+	snap.SoCTemp, snap.SoCTempOK = reading.soc, reading.socOK
+}
+
+func cachedTemps() tempReading {
+	tempCache.mu.Lock()
+	defer tempCache.mu.Unlock()
+	if tempCache.filled && time.Since(tempCache.at) < tempRefresh {
+		return tempCache.last
 	}
-	var cpu, gpu, die float64
-	for _, sensor := range temps {
-		if sensor.Temperature <= 0 {
+	// Linux returns the sensors it could read alongside a warning for the
+	// ones it could not, so a non-nil error still carries usable readings.
+	read, err := sensors.SensorsTemperatures()
+	if len(read) == 0 && err != nil {
+		return tempReading{}
+	}
+	tempCache.last = classifyTemps(read)
+	tempCache.at = time.Now()
+	tempCache.filled = true
+	return tempCache.last
+}
+
+// classifyTemps sorts hardware sensors into CPU and GPU readings. Names
+// differ by platform: Intel Macs expose SMC keys (TC0D/TG0D), Linux joins
+// the hwmon driver to its label (coretemp_core_0, k10temp_tctl, amdgpu_edge)
+// or names a thermal zone by type (cpu-thermal, x86_pkg_temp), and Apple
+// Silicon exposes only unlabeled per-chiplet die temperatures. When no
+// CPU/GPU split is available, the hottest die is reported as a single SoC
+// reading. Each category keeps its hottest sensor.
+func classifyTemps(read []sensors.TemperatureStat) tempReading {
+	var reading tempReading
+	for _, sensor := range read {
+		if !plausibleTemp(sensor.Temperature) {
 			continue
 		}
 		key := strings.ToLower(sensor.SensorKey)
 		switch {
 		case isGPUSensor(key):
-			if sensor.Temperature > gpu {
-				gpu = sensor.Temperature
+			if sensor.Temperature > reading.gpu {
+				reading.gpu = sensor.Temperature
 			}
-			snap.GPUTempOK = true
+			reading.gpuOK = true
 		case isCPUSensor(key):
-			if sensor.Temperature > cpu {
-				cpu = sensor.Temperature
+			if sensor.Temperature > reading.cpu {
+				reading.cpu = sensor.Temperature
 			}
-			snap.CPUTempOK = true
-		case strings.Contains(key, "tdie"):
-			if sensor.Temperature > die {
-				die = sensor.Temperature
+			reading.cpuOK = true
+		case isDieSensor(key):
+			if sensor.Temperature > reading.soc {
+				reading.soc = sensor.Temperature
 			}
+			reading.socOK = true
 		}
 	}
-	snap.CPUTemp = cpu
-	snap.GPUTemp = gpu
-	if !snap.CPUTempOK && !snap.GPUTempOK && die > 0 {
-		snap.SoCTemp = die
-		snap.SoCTempOK = true
+	if reading.cpuOK || reading.gpuOK {
+		reading.soc, reading.socOK = 0, false
 	}
+	return reading
+}
+
+// plausibleTemp keeps a sensor that is reporting silicon rather than its own
+// absence: an unpopulated SMC key reads 0, a detached probe can read NaN or
+// an infinity, and a confused driver can report thousands of degrees. The
+// comparison also rejects NaN, which no ordering would have caught.
+func plausibleTemp(celsius float64) bool {
+	return celsius > 0 && celsius <= 150
 }
 
 func isGPUSensor(key string) bool {
 	return strings.Contains(key, "gpu") ||
 		strings.Contains(key, "tg0") ||
 		strings.Contains(key, "nvidia") ||
-		strings.Contains(key, "radeon")
+		strings.Contains(key, "radeon") ||
+		strings.Contains(key, "nouveau")
 }
 
 func isCPUSensor(key string) bool {
@@ -218,7 +270,18 @@ func isCPUSensor(key string) bool {
 		strings.Contains(key, "tc0") ||
 		strings.Contains(key, "coretemp") ||
 		strings.Contains(key, "k10temp") ||
-		strings.Contains(key, "package")
+		strings.Contains(key, "zenpower") ||
+		strings.Contains(key, "package") ||
+		strings.Contains(key, "pkg") ||
+		strings.Contains(key, "tctl") ||
+		strings.Contains(key, "tccd")
+}
+
+// isDieSensor matches the whole-chip readings a machine reports when it
+// draws no CPU/GPU line: Apple Silicon's per-chiplet dies and the SoC
+// thermal zones on ARM boards.
+func isDieSensor(key string) bool {
+	return strings.Contains(key, "tdie") || strings.Contains(key, "soc")
 }
 
 // LogicalCPUs is the number of logical processors used as the denominator
