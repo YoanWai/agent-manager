@@ -23,7 +23,6 @@ const (
 const (
 	amber  = "#d08442"
 	blue   = "#6f9fd0"
-	green  = "#85b26f"
 	purple = "#a78bd0"
 	red    = "#cc6a6a"
 	subtle = "#7d8590"
@@ -34,7 +33,6 @@ const (
 var lightInk = map[string]string{
 	amber:  "#96591f",
 	blue:   "#2f5f8f",
-	green:  "#4a7336",
 	purple: "#6a4a94",
 	red:    "#a33c3c",
 	subtle: "#59636e",
@@ -48,31 +46,39 @@ func main() {
 }
 
 func run() error {
-	chips, err := collect()
+	stats, complete, err := collect()
 	if err != nil {
 		return err
+	}
+	// The card is one file, so a stat we could not measure would drop its whole
+	// column on the next commit. Leaving the committed card alone keeps the
+	// README honest and makes the missing token visible on the run summary.
+	if !complete {
+		fmt.Println("::warning::clone traffic was unavailable, so the stat card was left as committed; add a BADGE_TOKEN secret to refresh it")
+		return fillTrendshift(trendshiftBadge())
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
-	for name, chip := range chips {
-		light := chip
-		light.Color = lightInk[chip.Color]
-		if err := write(name+"-light.svg", light.SVG(badge.Light)); err != nil {
-			return err
-		}
-		if err := write(name+"-dark.svg", chip.SVG(badge.Dark)); err != nil {
-			return err
-		}
+	light := make([]badge.Stat, len(stats))
+	for i, stat := range stats {
+		light[i] = stat
+		light[i].Color = lightInk[stat.Color]
 	}
-	return nil
+	if err := write("stats-light.svg", badge.Card(light, badge.Light)); err != nil {
+		return err
+	}
+	if err := write("stats-dark.svg", badge.Card(stats, badge.Dark)); err != nil {
+		return err
+	}
+	return fillTrendshift(trendshiftBadge())
 }
 
 func write(name, svg string) error {
 	return os.WriteFile(filepath.Join(outDir, name), []byte(svg+"\n"), 0o644)
 }
 
-func collect() (map[string]badge.Chip, error) {
+func collect() ([]badge.Stat, bool, error) {
 	var repoInfo struct {
 		Stars   int `json:"stargazers_count"`
 		License struct {
@@ -80,77 +86,49 @@ func collect() (map[string]badge.Chip, error) {
 		} `json:"license"`
 	}
 	if err := get("https://api.github.com/repos/"+repo, &repoInfo); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	var releases []struct {
 		TagName string `json:"tag_name"`
 	}
 	if err := get("https://api.github.com/repos/"+repo+"/releases?per_page=1", &releases); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	latest := ""
 	if len(releases) > 0 {
 		latest = releases[0].TagName
 	}
 
-	clones := cloneCount()
-
-	goVersion, err := goDirective()
-	if err != nil {
-		return nil, err
-	}
+	clones, measured := cloneCount()
 
 	license := repoInfo.License.SPDX
 	if license == "" {
 		license = "MIT"
 	}
 
-	chips := map[string]badge.Chip{
-		"stars":    {Label: "stars", Value: compact(repoInfo.Stars), Color: amber, Icon: "star"},
-		"release":  {Label: "release", Value: latest, Color: blue, Icon: "tag"},
-		"go":       {Label: "go", Value: goVersion, Color: green, Icon: ""},
-		"license":  {Label: "license", Value: license, Color: subtle, Icon: "law"},
-		"platform": {Label: "platform", Value: "macOS/Linux/WSL2", Color: subtle, Icon: ""},
+	stats := []badge.Stat{{Value: compact(repoInfo.Stars), Label: "stars", Color: amber}}
+	if measured {
+		stats = append(stats, badge.Stat{Value: compact(clones), Label: "clones · 14d", Color: purple})
 	}
-	if clones > 0 {
-		chips["clones"] = badge.Chip{Label: "clones/14d", Value: compact(clones), Color: purple, Icon: "repo"}
-	}
-	return chips, nil
+	return append(stats,
+		badge.Stat{Value: latest, Label: "release", Color: blue},
+		badge.Stat{Value: license, Label: "license", Color: subtle},
+	), measured, nil
 }
 
 // cloneCount reads 14-day clone traffic. The endpoint needs push access, which
-// the Actions GITHUB_TOKEN does not carry, so an unreachable endpoint leaves the
-// committed clones chip in place and says so rather than failing the refresh or
-// publishing a wrong number.
-func cloneCount() int {
+// the Actions GITHUB_TOKEN does not carry, so the caller is told whether the
+// figure was actually measured rather than being handed a zero to publish.
+func cloneCount() (int, bool) {
 	var clones struct {
 		Count int `json:"count"`
 	}
 	if err := get("https://api.github.com/repos/"+repo+"/traffic/clones", &clones); err != nil {
-		fmt.Fprintf(os.Stderr, "badges: clone traffic unavailable (%v); leaving that chip untouched, set BADGE_TOKEN to refresh it\n", err)
-		return 0
+		fmt.Fprintf(os.Stderr, "badges: clone traffic unavailable: %v\n", err)
+		return 0, false
 	}
-	return clones.Count
-}
-
-// goDirective reads the module's minimum toolchain out of go.mod, so the chip
-// cannot drift from what the build actually requires.
-func goDirective() (string, error) {
-	raw, err := os.ReadFile("go.mod")
-	if err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(string(raw), "\n") {
-		if version, ok := strings.CutPrefix(strings.TrimSpace(line), "go "); ok {
-			parts := strings.Split(strings.TrimSpace(version), ".")
-			if len(parts) >= 2 {
-				return parts[0] + "." + parts[1] + "+", nil
-			}
-			return strings.TrimSpace(version), nil
-		}
-	}
-	return "", fmt.Errorf("no go directive in go.mod")
+	return clones.Count, true
 }
 
 // compact renders large counts as 1.9k rather than 1918, which keeps a chip
@@ -189,4 +167,53 @@ func get(url string, into any) error {
 		return fmt.Errorf("GET %s: %s", url, resp.Status)
 	}
 	return json.NewDecoder(resp.Body).Decode(into)
+}
+
+// trendshiftBadge is the banner Trendshift mints once a repository reaches
+// GitHub Trending. Ours has a profile but no badge yet: the endpoint answers
+// 500 until the day it trends, so the region in the README stays empty and
+// fills itself on the first run after that happens.
+func trendshiftBadge() string {
+	const id = "89312"
+	resp, err := http.Get("https://trendshift.io/api/badge/repositories/" + id)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "badges: trendshift unreachable:", err)
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	return fmt.Sprintf(
+		`<a href="https://trendshift.io/repositories/%s"><img src="https://trendshift.io/api/badge/repositories/%s" alt="agent-manager on Trendshift" width="250" height="55"></a>`,
+		id, id)
+}
+
+// fillTrendshift keeps the README's trendshift region in step with whether the
+// badge exists, without touching a byte outside the markers.
+func fillTrendshift(badge string) error {
+	const (
+		open  = "<!-- trendshift:start -->"
+		close = "<!-- trendshift:end -->"
+	)
+	raw, err := os.ReadFile("README.md")
+	if err != nil {
+		return err
+	}
+	readme := string(raw)
+	from := strings.Index(readme, open)
+	to := strings.Index(readme, close)
+	if from < 0 || to < 0 {
+		return fmt.Errorf("README is missing the trendshift markers")
+	}
+	updated := readme[:from+len(open)] + badge + readme[to:]
+	if updated == readme {
+		return nil
+	}
+	if badge == "" {
+		fmt.Println("::notice::trendshift badge is not minted yet, leaving its region empty")
+	} else {
+		fmt.Println("::notice::trendshift badge is live, added to the README")
+	}
+	return os.WriteFile("README.md", []byte(updated), 0o644)
 }

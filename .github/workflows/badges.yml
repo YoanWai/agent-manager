@@ -29,12 +29,12 @@ jobs:
         run: go run ./tools/badges
       - name: Commit when the numbers moved
         run: |
-          if [ -z "$(git status --porcelain docs/badges)" ]; then
+          if [ -z "$(git status --porcelain docs/badges README.md)" ]; then
             echo "chips unchanged"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/badges
-          git commit -m "chore(badges): refresh the README chips [skip ci]"
+          git add docs/badges README.md
+          git commit -m "chore(badges): refresh the README stats [skip ci]"
           git push
