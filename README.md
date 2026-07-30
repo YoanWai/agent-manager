@@ -3,16 +3,16 @@
 <p align="center"><b>Run every AI coding agent from one terminal.</b></p>
 
 <p align="center">
-  <a href="https://github.com/YoanWai/agent-manager/stargazers"><img src="https://img.shields.io/github/stars/YoanWai/agent-manager?style=flat-square&logo=github&logoColor=white&color=d08442" alt="GitHub stars"></a>
-  <a href="https://github.com/YoanWai/agent-manager/releases"><img src="https://img.shields.io/github/downloads/YoanWai/agent-manager/total?style=flat-square&logo=github&logoColor=white&label=downloads&color=6cb6a4" alt="Release downloads"></a>
-  <a href="https://github.com/YoanWai/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/YoanWai/agent-manager?style=flat-square&logo=github&logoColor=white&label=release&color=6f9fd0" alt="Latest release"></a>
+  <a href="https://github.com/YoanWai/agent-manager/stargazers"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/stars-dark.svg"><img src="docs/badges/stars-light.svg" alt="GitHub stars" height="28"></picture></a>
+  <a href="https://github.com/YoanWai/agent-manager/graphs/traffic"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/clones-dark.svg"><img src="docs/badges/clones-light.svg" alt="Git clones, last 14 days" height="28"></picture></a>
+  <a href="https://github.com/YoanWai/agent-manager/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/downloads-dark.svg"><img src="docs/badges/downloads-light.svg" alt="Release asset downloads" height="28"></picture></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/YoanWai/agent-manager/ci.yml?branch=main&style=flat-square&label=ci&color=85b26f" alt="CI status"></a>
-  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/YoanWai/agent-manager?style=flat-square&logo=go&logoColor=white&label=go&color=a78bd0" alt="Go version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/YoanWai/agent-manager?style=flat-square&color=646c78" alt="License"></a>
-  <a href="#install"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2-646c78?style=flat-square" alt="Platforms"></a>
+  <a href="https://github.com/YoanWai/agent-manager/releases/latest"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/release-dark.svg"><img src="docs/badges/release-light.svg" alt="Latest release" height="28"></picture></a>
+  <a href="go.mod"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/go-dark.svg"><img src="docs/badges/go-light.svg" alt="Minimum Go version" height="28"></picture></a>
+  <a href="LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/license-dark.svg"><img src="docs/badges/license-light.svg" alt="License" height="28"></picture></a>
+  <a href="#install"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/platform-dark.svg"><img src="docs/badges/platform-light.svg" alt="Supported platforms" height="28"></picture></a>
 </p>
 
 ![agent-manager demo](docs/demo.gif)
