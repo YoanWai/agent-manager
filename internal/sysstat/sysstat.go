@@ -221,7 +221,7 @@ func cachedTemps() tempReading {
 func classifyTemps(read []sensors.TemperatureStat) tempReading {
 	var reading tempReading
 	for _, sensor := range read {
-		if sensor.Temperature <= 0 {
+		if !plausibleTemp(sensor.Temperature) {
 			continue
 		}
 		key := strings.ToLower(sensor.SensorKey)
@@ -247,6 +247,14 @@ func classifyTemps(read []sensors.TemperatureStat) tempReading {
 		reading.soc, reading.socOK = 0, false
 	}
 	return reading
+}
+
+// plausibleTemp keeps a sensor that is reporting silicon rather than its own
+// absence: an unpopulated SMC key reads 0, a detached probe can read NaN or
+// an infinity, and a confused driver can report thousands of degrees. The
+// comparison also rejects NaN, which no ordering would have caught.
+func plausibleTemp(celsius float64) bool {
+	return celsius > 0 && celsius <= 150
 }
 
 func isGPUSensor(key string) bool {

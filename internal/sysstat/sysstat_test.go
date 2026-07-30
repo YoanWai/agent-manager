@@ -161,6 +161,23 @@ func TestClassifyTemps(t *testing.T) {
 			want: tempReading{},
 		},
 		{
+			name: "a sensor reporting its own absence is not a reading",
+			read: []sensors.TemperatureStat{
+				{SensorKey: "coretemp_core_0", Temperature: math.NaN()},
+				{SensorKey: "amdgpu_edge", Temperature: math.Inf(1)},
+				{SensorKey: "k10temp_tctl", Temperature: 3276.7},
+			},
+			want: tempReading{},
+		},
+		{
+			name: "a live sensor outlives its broken neighbours",
+			read: []sensors.TemperatureStat{
+				{SensorKey: "coretemp_core_0", Temperature: math.NaN()},
+				{SensorKey: "coretemp_package_id_0", Temperature: 58},
+			},
+			want: tempReading{cpu: 58, cpuOK: true},
+		},
+		{
 			name: "no sensors at all",
 			read: nil,
 			want: tempReading{},
