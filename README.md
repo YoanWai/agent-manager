@@ -1,6 +1,6 @@
 <h1 align="center">Agent Manager</h1>
 
-<p align="center"><b>Run every AI coding agent from one terminal.</b></p>
+<p align="center"><b>The fastest workflow for every AI coding agent.</b></p>
 
 <p align="center"><!-- trendshift:start --><!-- trendshift:end --></p>
 
