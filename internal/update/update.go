@@ -17,11 +17,13 @@ import (
 )
 
 const (
-	releasesURL   = "https://api.github.com/repos/YoanWai/agent-manager/releases/latest"
 	cacheFile     = "update-check.json"
-	checkInterval = 24 * time.Hour
+	checkInterval = 4 * time.Hour
 	requestBudget = 4 * time.Second
 )
+
+// releasesURL is a var so tests can point the fetch at a local server.
+var releasesURL = "https://api.github.com/repos/YoanWai/agent-manager/releases/latest"
 
 // Result is the newest release found. Latest is empty when the current
 // build is already up to date (or the version is a dev build).
