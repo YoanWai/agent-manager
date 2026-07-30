@@ -24,7 +24,7 @@ Status detection currently supports **Claude Code**, **OpenCode**, **Codex**, an
 brew install yoanwai/tap/agent-manager
 ```
 
-Installs tmux with it if missing.
+Installs tmux with it if missing. The tap ships a cask, so an install from the older formula switches over with `brew uninstall agent-manager` followed by the command above.
 
 ### Install script (macOS / Linux)
 
