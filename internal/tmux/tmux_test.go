@@ -69,41 +69,46 @@ func TestPrepareAttachRestoresAutoSize(t *testing.T) {
 	if err := driver.PrepareAttach(id); err != nil {
 		t.Fatalf("PrepareAttach: %v", err)
 	}
-	if got, want := windowSizeOption(t, id), driver.attachWindowSize(); got != want {
+	want := "latest"
+	if driver.attachSizeLargest.Load() {
+		want = "largest"
+	}
+	if got := windowSizeOption(t, id); got != want {
 		t.Fatalf("after PrepareAttach, window-size = %q, want %q", got, want)
 	}
 }
 
-// attachWindowSize shells out to `tmux -V`, so point bin at a stub that
-// reports an old version and check the pre-3.1 fallback kicks in.
-func TestAttachWindowSizeFallsBackOnOldTmux(t *testing.T) {
-	stub := t.TempDir() + "/tmux"
-	if err := os.WriteFile(stub, []byte("#!/bin/sh\necho 'tmux 3.0a'\n"), 0o700); err != nil {
+// A pre-3.1 server rejects window-size "latest" with "unknown value";
+// PrepareAttach must retry with "largest" and remember the verdict. A stub
+// tmux that rejects "latest" stands in for the old server and logs its
+// calls, so the test also proves the second attach skips the doomed try.
+func TestPrepareAttachFallsBackWhenLatestRejected(t *testing.T) {
+	dir := t.TempDir()
+	callLog := dir + "/calls"
+	stub := dir + "/tmux"
+	script := "#!/bin/sh\necho \"$@\" >> " + callLog + "\ncase \"$*\" in *latest*) echo 'unknown value: latest' >&2; exit 1;; esac\nexit 0\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
 		t.Fatalf("stub: %v", err)
 	}
 	driver := &Driver{bin: stub, socket: testSocket}
-	if got := driver.attachWindowSize(); got != "largest" {
-		t.Fatalf("attachWindowSize on tmux 3.0a = %q, want largest", got)
-	}
-}
 
-func TestVersionBefore31(t *testing.T) {
-	cases := []struct {
-		banner string
-		want   bool
-	}{
-		{"tmux 3.0a", true},
-		{"tmux 2.9", true},
-		{"tmux 3.1", false},
-		{"tmux 3.1b", false},
-		{"tmux 3.7b", false},
-		{"tmux next-3.4", false},
-		{"tmux master", false},
-		{"", false},
+	if err := driver.PrepareAttach("x1"); err != nil {
+		t.Fatalf("PrepareAttach with rejecting server: %v", err)
 	}
-	for _, c := range cases {
-		if got := versionBefore31(c.banner); got != c.want {
-			t.Errorf("versionBefore31(%q) = %v, want %v", c.banner, got, c.want)
+	if err := driver.PrepareAttach("x1"); err != nil {
+		t.Fatalf("second PrepareAttach: %v", err)
+	}
+	logged, err := os.ReadFile(callLog)
+	if err != nil {
+		t.Fatalf("read call log: %v", err)
+	}
+	calls := strings.Split(strings.TrimSpace(string(logged)), "\n")
+	if len(calls) != 3 {
+		t.Fatalf("got %d tmux calls, want 3 (latest, largest, largest):\n%s", len(calls), logged)
+	}
+	for i, wantValue := range []string{"latest", "largest", "largest"} {
+		if !strings.HasSuffix(calls[i], "window-size "+wantValue) {
+			t.Fatalf("call %d = %q, want window-size %s", i, calls[i], wantValue)
 		}
 	}
 }

@@ -5,11 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 )
 
@@ -29,8 +27,7 @@ type Driver struct {
 	bin    string
 	socket string
 
-	attachSizeOnce sync.Once
-	attachSize     string
+	attachSizeLargest atomic.Bool
 }
 
 func New() (*Driver, error) {
@@ -336,37 +333,21 @@ func (d *Driver) Resize(id string, width, height int) error {
 // attaching client and tracks terminal resizes while attached. Without it,
 // the manual size Resize pinned for the preview would leave the client's
 // extra columns painted with tmux's out-of-bounds dotted overlay.
+// "latest" needs tmux 3.1 (issue #114, Ubuntu 20.04 ships 3.0a); a server
+// that rejects it gets "largest", which sizes to the single attaching
+// client the same way. The rejection is the server's own verdict, so this
+// stays correct when client binary and running server versions diverge.
 func (d *Driver) PrepareAttach(id string) error {
-	_, err := d.run("set-window-option", "-t", sessionName(id), "window-size", d.attachWindowSize())
-	return err
-}
-
-// attachWindowSize picks the window-size value PrepareAttach sets. "latest"
-// only exists since tmux 3.1; on older servers "largest" tracks the single
-// attaching client the same way (issue #114, Ubuntu 20.04 ships tmux 3.0a).
-func (d *Driver) attachWindowSize() string {
-	d.attachSizeOnce.Do(func() {
-		d.attachSize = "latest"
-		banner, err := exec.Command(d.bin, "-V").CombinedOutput()
-		if err == nil && versionBefore31(string(banner)) {
-			d.attachSize = "largest"
-		}
-	})
-	return d.attachSize
-}
-
-var versionPattern = regexp.MustCompile(`(\d+)\.(\d+)`)
-
-// versionBefore31 reports whether a `tmux -V` banner names a release older
-// than 3.1. Banners without a version number (master builds) count as modern.
-func versionBefore31(banner string) bool {
-	match := versionPattern.FindStringSubmatch(banner)
-	if match == nil {
-		return false
+	if d.attachSizeLargest.Load() {
+		_, err := d.run("set-window-option", "-t", sessionName(id), "window-size", "largest")
+		return err
 	}
-	major, _ := strconv.Atoi(match[1])
-	minor, _ := strconv.Atoi(match[2])
-	return major < 3 || (major == 3 && minor < 1)
+	_, err := d.run("set-window-option", "-t", sessionName(id), "window-size", "latest")
+	if err != nil && strings.Contains(err.Error(), "unknown value") {
+		d.attachSizeLargest.Store(true)
+		_, err = d.run("set-window-option", "-t", sessionName(id), "window-size", "largest")
+	}
+	return err
 }
 
 func (d *Driver) PanePID(id string) (int, error) {
