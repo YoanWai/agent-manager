@@ -3,16 +3,16 @@
 <p align="center"><b>Run every AI coding agent from one terminal.</b></p>
 
 <p align="center">
-  <a href="https://github.com/YoanWai/agent-manager/stargazers"><img src="https://img.shields.io/github/stars/YoanWai/agent-manager?style=flat-square&logo=github&logoColor=c6ccd6&label=stars&color=d08442&labelColor=0f1115" alt="GitHub stars"></a>
-  <a href="https://github.com/YoanWai/agent-manager/releases"><img src="https://img.shields.io/github/downloads/YoanWai/agent-manager/total?style=flat-square&logo=github&logoColor=c6ccd6&label=downloads&color=6cb6a4&labelColor=0f1115" alt="Release downloads"></a>
-  <a href="https://github.com/YoanWai/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/YoanWai/agent-manager?style=flat-square&label=release&color=6f9fd0&labelColor=0f1115" alt="Latest release"></a>
+  <a href="https://github.com/YoanWai/agent-manager/stargazers"><img src="https://img.shields.io/github/stars/YoanWai/agent-manager?style=flat-square&logo=github&logoColor=white&color=d08442" alt="GitHub stars"></a>
+  <a href="https://github.com/YoanWai/agent-manager/releases"><img src="https://img.shields.io/github/downloads/YoanWai/agent-manager/total?style=flat-square&logo=github&logoColor=white&label=downloads&color=6cb6a4" alt="Release downloads"></a>
+  <a href="https://github.com/YoanWai/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/YoanWai/agent-manager?style=flat-square&logo=github&logoColor=white&label=release&color=6f9fd0" alt="Latest release"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/YoanWai/agent-manager/ci.yml?branch=main&style=flat-square&label=ci&color=85b26f&labelColor=0f1115" alt="CI status"></a>
-  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/YoanWai/agent-manager?style=flat-square&logo=go&logoColor=c6ccd6&label=go&color=a78bd0&labelColor=0f1115" alt="Go version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/YoanWai/agent-manager?style=flat-square&label=license&color=646c78&labelColor=0f1115" alt="License"></a>
-  <a href="#install"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2-646c78?style=flat-square&labelColor=0f1115" alt="Platforms"></a>
+  <a href="https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/YoanWai/agent-manager/ci.yml?branch=main&style=flat-square&label=ci&color=85b26f" alt="CI status"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/YoanWai/agent-manager?style=flat-square&logo=go&logoColor=white&label=go&color=a78bd0" alt="Go version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/YoanWai/agent-manager?style=flat-square&color=646c78" alt="License"></a>
+  <a href="#install"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2-646c78?style=flat-square" alt="Platforms"></a>
 </p>
 
 ![agent-manager demo](docs/demo.gif)
@@ -52,6 +52,8 @@ Downloads the latest release for your platform, verifies it against the publishe
 ```bash
 yay -S agent-manager-bin
 ```
+
+[![AUR version](https://img.shields.io/aur/version/agent-manager-bin?style=flat-square&logo=archlinux&logoColor=white&label=aur&color=6f9fd0)](https://aur.archlinux.org/packages/agent-manager-bin)
 
 [agent-manager-bin](https://aur.archlinux.org/packages/agent-manager-bin) in the AUR installs the released binary and pulls in tmux and git.
 
