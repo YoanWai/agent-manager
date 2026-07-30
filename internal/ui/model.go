@@ -167,12 +167,13 @@ type renameTarget struct {
 // at the caret as an "[Image #N]" token that renders as a chip and steps,
 // deletes, and wraps as one unit; on submit each token becomes its path.
 type quickState struct {
-	active      bool
-	input       textarea.Model
-	toolNames   []string
-	toolIndex   int
-	attachments []quickAttachment
-	lastImageID int
+	active         bool
+	input          textarea.Model
+	toolNames      []string
+	toolIndex      int
+	attachments    []quickAttachment
+	lastImageID    int
+	closeAfterSend bool
 }
 
 // quickAttachment is one pasted image: the id its token carries, and the
@@ -196,17 +197,19 @@ type quickImageMsg struct {
 }
 
 type settingsState struct {
-	toolNames   []string
-	toolIndex   int
-	themeIndex  int
-	field       int
-	layoutSplit bool
+	toolNames      []string
+	toolIndex      int
+	themeIndex     int
+	field          int
+	layoutSplit    bool
+	quickCloseSend bool
 }
 
 const (
 	settingsFieldTool = iota
 	settingsFieldTheme
 	settingsFieldLayout
+	settingsFieldQuickClose
 	settingsFieldCount
 )
 

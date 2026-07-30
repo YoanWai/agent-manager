@@ -1,0 +1,71 @@
+name: Bug report
+description: Something in the manager behaves differently than documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The fastest fixes come from issues that say exactly what you did and what you saw.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: |
+        1. Opened the manager with two claude sessions
+        2. Pressed `space` on the second one and sent a prompt
+        3. Expected the prompt in that pane; it landed in the first session
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: agent-manager version
+      description: Output of `agent-manager --version`
+      placeholder: v0.10.5
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows (WSL2)
+
+  - type: input
+    id: tmux-version
+    attributes:
+      label: tmux version
+      description: Output of `tmux -V`
+      placeholder: tmux 3.5a
+
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Which agent CLI
+      description: The tool running in the session, if the bug involves one.
+      options:
+        - Claude Code
+        - Codex
+        - OpenCode
+        - Grok Build
+        - A custom tool from my config
+        - Not tool specific
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config
+      description: The `[tools.<name>]` block or other config lines involved, if any.
+      render: toml
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshot or pane output
+      description: A screenshot of the manager, or the pane text the status was derived from. Drag images straight in.

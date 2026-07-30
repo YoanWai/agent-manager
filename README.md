@@ -26,6 +26,22 @@ brew install yoanwai/tap/agent-manager
 
 Installs tmux with it if missing.
 
+### Install script (macOS / Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh
+```
+
+Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Set `AGENT_MANAGER_INSTALL_DIR` for another directory and `AGENT_MANAGER_VERSION` to pin a version. Install tmux with your own package manager.
+
+### mise
+
+```bash
+mise use -g ubi:YoanWai/agent-manager
+```
+
+Reads the GitHub release directly, so it needs no registry entry. Install tmux with your own package manager.
+
 ### Go
 
 ```bash
@@ -40,7 +56,7 @@ Download from [Releases](https://github.com/YoanWai/agent-manager/releases) (mac
 
 ### Windows
 
-Run inside [WSL2](https://learn.microsoft.com/windows/wsl/install): agent-manager lives on tmux, which is a Linux/macOS tool. In a WSL shell, install with Homebrew or grab the Linux binary from Releases.
+Run inside [WSL2](https://learn.microsoft.com/windows/wsl/install): agent-manager lives on tmux, which is a Linux/macOS tool. In a WSL shell, install with the install script above, with Homebrew, or grab the Linux binary from Releases.
 
 ### Updating
 
@@ -48,6 +64,8 @@ The manager checks GitHub Releases once a day and shows a `↑ vX.Y.Z available`
 
 ```bash
 brew upgrade yoanwai/tap/agent-manager   # Homebrew
+curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh   # Install script
+mise upgrade --bump ubi:YoanWai/agent-manager   # mise
 go install github.com/YoanWai/agent-manager@latest   # Go
 ```
 
@@ -76,7 +94,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, line comments sent to the agent |
 | `f` | Fold / unfold group |
-| `s` | Settings (quick-spawn tool, theme, review layout) |
+| `s` | Settings (quick-spawn tool, theme, review layout, after quick send) |
 | `t` | Toggle archived view |
 | `e` | Hide / show empty groups |
 | `/` | Search |
@@ -199,6 +217,10 @@ State is stored next to the config in `state.db` (SQLite).
 go test ./...   # includes end-to-end tests against a real tmux server
 go run .
 ```
+
+## Contributing
+
+Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for setup and the checks CI runs. Questions and setups worth sharing go in [Discussions](https://github.com/YoanWai/agent-manager/discussions). Security reports go through a [private advisory](https://github.com/YoanWai/agent-manager/security/advisories/new); see [SECURITY.md](.github/SECURITY.md).
 
 ## License
 
