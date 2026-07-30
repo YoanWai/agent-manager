@@ -38,6 +38,9 @@ release:
     curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh
     mise use -g ubi:YoanWai/agent-manager
     go install github.com/YoanWai/agent-manager@latest
+
+    # Arch Linux
+    yay -S agent-manager-bin
     ```
 
     Prebuilt macOS and Linux binaries are attached below. Windows runs it inside WSL2.
