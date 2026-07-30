@@ -23,7 +23,6 @@ const (
 const (
 	amber  = "#d08442"
 	blue   = "#6f9fd0"
-	green  = "#85b26f"
 	purple = "#a78bd0"
 	red    = "#cc6a6a"
 	subtle = "#7d8590"
@@ -34,7 +33,6 @@ const (
 var lightInk = map[string]string{
 	amber:  "#96591f",
 	blue:   "#2f5f8f",
-	green:  "#4a7336",
 	purple: "#6a4a94",
 	red:    "#a33c3c",
 	subtle: "#59636e",
@@ -48,31 +46,29 @@ func main() {
 }
 
 func run() error {
-	chips, err := collect()
+	stats, err := collect()
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
-	for name, chip := range chips {
-		light := chip
-		light.Color = lightInk[chip.Color]
-		if err := write(name+"-light.svg", light.SVG(badge.Light)); err != nil {
-			return err
-		}
-		if err := write(name+"-dark.svg", chip.SVG(badge.Dark)); err != nil {
-			return err
-		}
+	light := make([]badge.Stat, len(stats))
+	for i, stat := range stats {
+		light[i] = stat
+		light[i].Color = lightInk[stat.Color]
 	}
-	return nil
+	if err := write("stats-light.svg", badge.Card(light, badge.Light)); err != nil {
+		return err
+	}
+	return write("stats-dark.svg", badge.Card(stats, badge.Dark))
 }
 
 func write(name, svg string) error {
 	return os.WriteFile(filepath.Join(outDir, name), []byte(svg+"\n"), 0o644)
 }
 
-func collect() (map[string]badge.Chip, error) {
+func collect() ([]badge.Stat, error) {
 	var repoInfo struct {
 		Stars   int `json:"stargazers_count"`
 		License struct {
@@ -96,27 +92,19 @@ func collect() (map[string]badge.Chip, error) {
 
 	clones := cloneCount()
 
-	goVersion, err := goDirective()
-	if err != nil {
-		return nil, err
-	}
-
 	license := repoInfo.License.SPDX
 	if license == "" {
 		license = "MIT"
 	}
 
-	chips := map[string]badge.Chip{
-		"stars":    {Label: "stars", Value: compact(repoInfo.Stars), Color: amber, Icon: "star"},
-		"release":  {Label: "release", Value: latest, Color: blue, Icon: "tag"},
-		"go":       {Label: "go", Value: goVersion, Color: green, Icon: ""},
-		"license":  {Label: "license", Value: license, Color: subtle, Icon: "law"},
-		"platform": {Label: "platform", Value: "macOS/Linux/WSL2", Color: subtle, Icon: ""},
-	}
+	stats := []badge.Stat{{Value: compact(repoInfo.Stars), Label: "stars", Color: amber}}
 	if clones > 0 {
-		chips["clones"] = badge.Chip{Label: "clones/14d", Value: compact(clones), Color: purple, Icon: "repo"}
+		stats = append(stats, badge.Stat{Value: compact(clones), Label: "clones · 14d", Color: purple})
 	}
-	return chips, nil
+	return append(stats,
+		badge.Stat{Value: latest, Label: "release", Color: blue},
+		badge.Stat{Value: license, Label: "license", Color: subtle},
+	), nil
 }
 
 // cloneCount reads 14-day clone traffic. The endpoint needs push access, which
@@ -132,25 +120,6 @@ func cloneCount() int {
 		return 0
 	}
 	return clones.Count
-}
-
-// goDirective reads the module's minimum toolchain out of go.mod, so the chip
-// cannot drift from what the build actually requires.
-func goDirective() (string, error) {
-	raw, err := os.ReadFile("go.mod")
-	if err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(string(raw), "\n") {
-		if version, ok := strings.CutPrefix(strings.TrimSpace(line), "go "); ok {
-			parts := strings.Split(strings.TrimSpace(version), ".")
-			if len(parts) >= 2 {
-				return parts[0] + "." + parts[1] + "+", nil
-			}
-			return strings.TrimSpace(version), nil
-		}
-	}
-	return "", fmt.Errorf("no go directive in go.mod")
 }
 
 // compact renders large counts as 1.9k rather than 1918, which keeps a chip

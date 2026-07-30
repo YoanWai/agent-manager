@@ -20,14 +20,3 @@ func TestCompact(t *testing.T) {
 		}
 	}
 }
-
-func TestGoDirectiveMatchesModule(t *testing.T) {
-	t.Chdir("../..")
-	version, err := goDirective()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if version == "" || version[len(version)-1] != '+' {
-		t.Fatalf("go directive %q is not rendered as a minimum", version)
-	}
-}
