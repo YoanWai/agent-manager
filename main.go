@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strconv"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -17,9 +19,37 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-var version = "dev"
+const devVersion = "dev"
+
+var version = devVersion
+
+// resolveVersion falls back to the module version so `go install` builds, which
+// carry no ldflags, report the tag they came from. Pseudo-versions stay "dev":
+// they name a commit rather than a release, and the update check compares
+// against release tags.
+func resolveVersion(embedded string, info *debug.BuildInfo, ok bool) string {
+	if embedded != devVersion {
+		return embedded
+	}
+	if !ok || info == nil {
+		return devVersion
+	}
+	moduleVersion := strings.TrimPrefix(info.Main.Version, "v")
+	if strings.ContainsAny(moduleVersion, "-+") || strings.Count(moduleVersion, ".") != 2 {
+		return devVersion
+	}
+	for _, field := range strings.Split(moduleVersion, ".") {
+		if _, err := strconv.Atoi(field); err != nil {
+			return devVersion
+		}
+	}
+	return moduleVersion
+}
 
 func main() {
+	info, hasInfo := debug.ReadBuildInfo()
+	version = resolveVersion(version, info, hasInfo)
+
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
 		fmt.Println("agent-manager", version)
 		return
