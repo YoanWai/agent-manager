@@ -96,6 +96,26 @@ func (m *Model) pruneQuickAttachments() {
 	}
 }
 
+// quickRoomForToken guards the paste against the prompt's char limit:
+// textarea.InsertString truncates silently there, which would leave a
+// half-written token and an image nothing points at. The two extra runes
+// are the spacing the insert may add.
+func (m *Model) quickRoomForToken(id int) bool {
+	limit := m.quick.input.CharLimit
+	if limit <= 0 {
+		return true
+	}
+	return m.quick.input.Length()+utf8.RuneCountInString(imageToken(id))+2 <= limit
+}
+
+// releaseQuickAttachments deletes every pasted image the prompt is holding.
+// Used when the prompt is abandoned, where the text goes too.
+func (m *Model) releaseQuickAttachments() {
+	for _, att := range append([]quickAttachment(nil), m.quick.attachments...) {
+		m.dropQuickAttachment(att.id)
+	}
+}
+
 // quickCursorOffset is the caret's rune offset into the whole prompt value.
 func (m *Model) quickCursorOffset() int {
 	rows := strings.Split(m.quick.input.Value(), "\n")

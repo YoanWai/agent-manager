@@ -1133,6 +1133,9 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.quick.active = false
+		// Reopening the bar starts a fresh prompt, so the images this one
+		// was holding have nowhere left to be referenced from.
+		m.releaseQuickAttachments()
 		return m, nil
 	case "up":
 		return m, m.moveCursor(-1)
@@ -1145,6 +1148,10 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+v":
 		if m.quickPasting() {
+			return m, nil
+		}
+		if !m.quickRoomForToken(m.quick.lastImageID + 1) {
+			m.err = "prompt is full - shorten it before pasting an image"
 			return m, nil
 		}
 		// The chip goes in at the caret now and fills in when the

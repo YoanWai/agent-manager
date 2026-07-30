@@ -1769,6 +1769,64 @@ func TestQuickPasteReservesTheChipUntilTheReadLands(t *testing.T) {
 	}
 }
 
+func TestQuickChipRemovalKeepsAMultiLinePrompt(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick.lastImageID = 1
+	m.quick.attachments = []quickAttachment{{id: 1, path: "/tmp/a.png"}}
+	m.quick.input.SetValue("first line\nsecond " + imageToken(1) + " line\nthird line")
+	m.quick.input.CursorUp()
+	m.quick.input.SetCursor(len("second ") + utf8.RuneCountInString(imageToken(1)))
+	if m.quick.input.Line() != 1 {
+		t.Fatalf("test setup: caret on row %d", m.quick.input.Line())
+	}
+
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	if got := m.quick.input.Value(); got != "first line\nsecond  line\nthird line" {
+		t.Fatalf("removing a chip should leave the other rows alone, got %q", got)
+	}
+	if m.quick.input.Line() != 1 || m.quickCursorOffset() != len("first line\nsecond ") {
+		t.Fatalf("caret should stay where the chip was: row %d offset %d", m.quick.input.Line(), m.quickCursorOffset())
+	}
+}
+
+func TestQuickPasteRefusedWhenThePromptIsFull(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick.input.SetValue(strings.Repeat("x", m.quick.input.CharLimit))
+	m.quick.input.CursorEnd()
+
+	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if cmd != nil {
+		t.Fatal("a full prompt should not start a clipboard read")
+	}
+	if m.err == "" {
+		t.Fatal("a refused paste should say why")
+	}
+	if len(m.quick.attachments) != 0 {
+		t.Fatalf("no chip should be reserved: %+v", m.quick.attachments)
+	}
+	if strings.Contains(m.quick.input.Value(), "[Image") {
+		t.Fatal("a truncated token must never reach the prompt")
+	}
+}
+
+func TestQuickEscReleasesPastedImages(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	path := tempImage(t, "abandoned.png")
+	m.quick.attachments = []quickAttachment{{id: 1, path: path}}
+	m.quick.input.SetValue("never mind " + imageToken(1))
+
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if len(m.quick.attachments) != 0 {
+		t.Fatalf("closing the bar should release its images: %+v", m.quick.attachments)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("abandoned temp file should be removed, err=%v", err)
+	}
+}
+
 func TestQuickImageMsgNoImageReachesTextPaste(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "answer-me", t.TempDir(), "")
