@@ -104,13 +104,7 @@ func collect() (map[string]badge.Chip, error) {
 		}
 	}
 
-	var clones struct {
-		Count   int `json:"count"`
-		Uniques int `json:"uniques"`
-	}
-	if err := get("https://api.github.com/repos/"+repo+"/traffic/clones", &clones); err != nil {
-		return nil, err
-	}
+	clones := cloneCount()
 
 	goVersion, err := goDirective()
 	if err != nil {
@@ -122,15 +116,33 @@ func collect() (map[string]badge.Chip, error) {
 		license = "MIT"
 	}
 
-	return map[string]badge.Chip{
+	chips := map[string]badge.Chip{
 		"stars":     {Label: "stars", Value: compact(repoInfo.Stars), Color: amber, Icon: "star"},
 		"downloads": {Label: "release downloads", Value: compact(downloads), Color: teal, Icon: "download"},
-		"clones":    {Label: "clones · 14d", Value: compact(clones.Count), Color: purple, Icon: "repo"},
 		"release":   {Label: "release", Value: latest, Color: blue, Icon: "tag"},
 		"go":        {Label: "go", Value: goVersion, Color: green, Icon: ""},
 		"license":   {Label: "license", Value: license, Color: subtle},
 		"platform":  {Label: "platform", Value: "macOS · Linux · WSL2", Color: subtle, Icon: ""},
-	}, nil
+	}
+	if clones > 0 {
+		chips["clones"] = badge.Chip{Label: "clones · 14d", Value: compact(clones), Color: purple, Icon: "repo"}
+	}
+	return chips, nil
+}
+
+// cloneCount reads 14-day clone traffic. The endpoint needs push access, which
+// the Actions GITHUB_TOKEN does not carry, so an unreachable endpoint leaves the
+// committed clones chip in place and says so rather than failing the refresh or
+// publishing a wrong number.
+func cloneCount() int {
+	var clones struct {
+		Count int `json:"count"`
+	}
+	if err := get("https://api.github.com/repos/"+repo+"/traffic/clones", &clones); err != nil {
+		fmt.Fprintf(os.Stderr, "badges: clone traffic unavailable (%v); leaving that chip untouched, set BADGE_TOKEN to refresh it\n", err)
+		return 0
+	}
+	return clones.Count
 }
 
 // goDirective reads the module's minimum toolchain out of go.mod, so the chip
@@ -171,7 +183,11 @@ func get(url string, into any) error {
 		return err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+	token := os.Getenv("BADGE_TOKEN")
+	if token == "" {
+		token = os.Getenv("GITHUB_TOKEN")
+	}
+	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	client := &http.Client{Timeout: 20 * time.Second}
