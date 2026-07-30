@@ -12,6 +12,8 @@ Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, and G
 
 Instead of hunting through terminal tabs to see which agent is done and which is stuck, every session shows up in one list with live status, grouped into a project tree you can fold and reorder. You answer any of them without attaching: `space` sends a prompt straight into a session's pane, or spawns a new agent in the selected group. A dead session revives where it left off with `v`. And `ctrl+r` opens a full-file diff of what an agent changed, syntax-highlighted, where a comment you leave on a line goes straight back to the agent's pane.
 
+Not here yet: worktree creation, cost tracking, mouse support, and agents that can talk to each other.
+
 ## Supported tools
 
 Status detection currently supports **Claude Code**, **OpenCode**, **Codex**, and **Grok Build** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](#configuration)).
