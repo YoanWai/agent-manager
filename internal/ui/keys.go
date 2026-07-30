@@ -97,6 +97,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.reviveSelected()
 	case "V", "shift+v":
 		return m.reviveAllDead()
+	case "x":
+		return m.killSelected()
 	case "a":
 		return m.archiveSelected()
 	case "u":
@@ -432,29 +434,38 @@ func (m *Model) reattach(id string, diffGen int) tea.Cmd {
 
 // reviveSelected relaunches a dead session's tmux session under the same
 // id, keeping its name, group, and history. Tools with a revive_command
-// resume where they left off (e.g. claude --continue).
+// resume where they left off (e.g. claude --continue). On a group row it
+// revives the whole subtree, mirroring the group kill.
 func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
-	sess, ok := m.selected()
+	entry, ok := m.selectedRow()
 	if !ok {
 		return m, nil
 	}
-	if err := m.reviveSession(sess); err != nil {
+	if entry.isGroup {
+		return m.reviveMany(m.sessionsInGroup(entry.group), "no dead sessions to revive in "+entry.group)
+	}
+	if err := m.reviveSession(entry.sess); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
-	m.err = m.degradedResumeNotice(sess)
+	m.err = m.degradedResumeNotice(entry.sess)
 	m.requestRefresh()
 	return m, nil
 }
 
 // reviveAllDead relaunches every dead session in the current view, resuming
-// each by its captured id where one exists. It revives what it can and names
-// the first failure rather than stopping, so one broken session does not
-// block the rest.
+// each by its captured id where one exists.
 func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
+	return m.reviveMany(m.visibleSessions(), "no dead sessions to revive")
+}
+
+// reviveMany relaunches every dead session in the list. It revives what it
+// can and names the first failure rather than stopping, so one broken
+// session does not block the rest.
+func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Model, tea.Cmd) {
 	revived, degraded := 0, 0
 	var firstErr string
-	for _, sess := range m.visibleSessions() {
+	for _, sess := range sessions {
 		if sess.Status != status.Dead {
 			continue
 		}
@@ -471,7 +482,7 @@ func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
 	}
 	switch {
 	case revived == 0 && firstErr == "":
-		m.err = "no dead sessions to revive"
+		m.err = emptyNotice
 	case firstErr != "":
 		m.err = fmt.Sprintf("revived %d, first error: %s", revived, firstErr)
 	case degraded > 0:
@@ -481,6 +492,18 @@ func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
 	}
 	m.requestRefresh()
 	return m, nil
+}
+
+// sessionsInGroup lists the sessions the current view shows at or below a
+// group, so a group action covers exactly the rows under it on screen.
+func (m *Model) sessionsInGroup(path string) []store.Session {
+	var sessions []store.Session
+	for _, sess := range m.visibleSessions() {
+		if inGroupSubtree(sess.Group, path) {
+			sessions = append(sessions, sess)
+		}
+	}
+	return sessions
 }
 
 // degradedResumeNotice warns when a revived session had to fall back to the
@@ -534,6 +557,103 @@ func (m *Model) reviveSession(sess store.Session) error {
 	// A leftover ack from the previous life must not swallow the revived
 	// agent's first finished alert.
 	return m.store.SetAcked(sess.ID, false)
+}
+
+// killSelected asks to end the selected session, or every live session
+// under the selected group, freeing the RAM their agents hold while the
+// rows stay put for v to revive.
+func (m *Model) killSelected() (tea.Model, tea.Cmd) {
+	entry, ok := m.selectedRow()
+	if !ok {
+		return m, nil
+	}
+	if entry.isGroup {
+		live, err := m.liveSessionsInGroup(entry.group)
+		if err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		if len(live) == 0 {
+			m.err = "no live sessions to kill in " + entry.group
+			return m, nil
+		}
+		m.confirm = confirmTarget{
+			isGroup:  true,
+			path:     entry.group,
+			action:   actionKill,
+			sessions: live,
+			label: fmt.Sprintf("kill group %s (%d live sessions)? frees their RAM, v revives them.",
+				entry.group, len(live)),
+		}
+	} else {
+		if !m.tmux.Exists(entry.sess.ID) {
+			m.err = entry.sess.Name + " is already dead"
+			return m, nil
+		}
+		m.confirm = confirmTarget{
+			action:   actionKill,
+			sessions: []store.Session{entry.sess},
+			label:    fmt.Sprintf("kill %s? frees its RAM, v revives it.", entry.sess.Name),
+		}
+	}
+	m.mode = modeConfirmDelete
+	return m, nil
+}
+
+// liveSessionsInGroup lists the sessions under a group that still hold a
+// tmux window. One pane listing answers for the whole subtree, so a wide
+// group costs one tmux call rather than one per session.
+func (m *Model) liveSessionsInGroup(path string) ([]store.Session, error) {
+	panes, err := m.tmux.Panes()
+	if err != nil {
+		return nil, err
+	}
+	var live []store.Session
+	for _, sess := range m.sessionsInGroup(path) {
+		if panes[sess.ID] > 0 {
+			live = append(live, sess)
+		}
+	}
+	return live, nil
+}
+
+// killSession ends one session's tmux window, freeing everything its agent
+// held, while the store row keeps the name, group, history and conversation
+// id that revive needs. The pane is captured first so the preview still
+// shows the agent's last output once the window is gone.
+func (m *Model) killSession(sess store.Session) error {
+	if !m.tmux.Exists(sess.ID) {
+		return nil
+	}
+	if pane, err := m.tmux.CapturePane(sess.ID); err == nil && pane != "" {
+		if err := m.setSnapshot(sess.ID, pane); err != nil {
+			return err
+		}
+	}
+	var killErr error
+	// Runs under the poller's lock so no pass can capture a half-killed
+	// pane, and drops the pane hash the revived session would be compared
+	// against.
+	m.poller.reflowSessions([]string{sess.ID}, func() {
+		killErr = m.tmux.Kill(sess.ID)
+	})
+	if killErr != nil {
+		return killErr
+	}
+	// The agent dies without running its session-end hook, so a leftover
+	// status file would otherwise decide what the revived session reads as.
+	if err := m.hooks.Remove(sess.ID); err != nil {
+		return err
+	}
+	if err := m.store.UpdateStatus(sess.ID, status.Dead); err != nil {
+		return err
+	}
+	for i := range m.sessions {
+		if m.sessions[i].ID == sess.ID {
+			m.sessions[i].Status = status.Dead
+		}
+	}
+	return nil
 }
 
 func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
@@ -707,6 +827,15 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.err = ""
+		case actionKill:
+			for _, sess := range m.confirm.sessions {
+				if err := m.killSession(sess); err != nil {
+					m.err = err.Error()
+					return m, nil
+				}
+			}
+			m.err = ""
+			m.rebuildRows()
 		case actionDelete:
 			for _, sess := range m.confirm.sessions {
 				if err := m.tmux.Kill(sess.ID); err != nil {

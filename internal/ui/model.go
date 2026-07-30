@@ -137,6 +137,7 @@ const (
 	actionDelete  = ""
 	actionArchive = "archive"
 	actionRestore = "restore"
+	actionKill    = "kill"
 )
 
 type confirmTarget struct {
@@ -483,22 +484,20 @@ func (m *Model) schedulePreview() tea.Cmd {
 func (m *Model) previewCmd(sess store.Session, gen uint64) tea.Cmd {
 	return func() tea.Msg {
 		msg := previewMsg{sessID: sess.ID, gen: gen}
-		if sess.Archived {
-			snapshot, err := archivedPreview(m.store, m.tmux, sess.ID)
+		if sess.Archived || !m.tmux.Exists(sess.ID) {
+			snapshot, err := storedPreview(m.store, m.tmux, sess.ID)
 			if err != nil {
 				return errMsg{err}
 			}
 			msg.preview = snapshot
 			return msg
 		}
-		if m.tmux.Exists(sess.ID) {
-			if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
-				msg.preview = pane
-			}
-			if pid, err := m.tmux.PanePID(sess.ID); err == nil {
-				memTotal, _ := sysstat.MemTotalBytes()
-				msg.proc = sysstat.Trees([]int{pid})[pid].ScaleToHost(sysstat.LogicalCPUs(), memTotal)
-			}
+		if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
+			msg.preview = pane
+		}
+		if pid, err := m.tmux.PanePID(sess.ID); err == nil {
+			memTotal, _ := sysstat.MemTotalBytes()
+			msg.proc = sysstat.Trees([]int{pid})[pid].ScaleToHost(sysstat.LogicalCPUs(), memTotal)
 		}
 		return msg
 	}
