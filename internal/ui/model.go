@@ -268,6 +268,7 @@ const previewSettle = 50 * time.Millisecond
 const (
 	previewIntervalLive = 300 * time.Millisecond
 	previewIntervalCalm = 1200 * time.Millisecond
+	updateTickInterval  = time.Hour
 )
 
 // previewTickMsg drives that timer.
@@ -393,26 +394,38 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.bannerTick(), m.previewTick())
+	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.updateTick(), m.bannerTick(), m.previewTick())
 }
 
 // updateMsg carries the result of the background GitHub release check.
+// failed marks a check that never reached a verdict, which leaves any
+// badge already on screen alone instead of clearing it on a blip.
 type updateMsg struct {
 	latest string
 	url    string
+	failed bool
 }
 
-// checkForUpdate hits GitHub Releases (throttled to once a day via an
+type updateTickMsg struct{}
+
+// updateTick re-runs the release check while the manager stays open for
+// days at a time. update.Check serves most ticks from its on-disk cache,
+// so this only reaches GitHub once the cache goes stale.
+func (m *Model) updateTick() tea.Cmd {
+	return tea.Tick(updateTickInterval, func(time.Time) tea.Msg { return updateTickMsg{} })
+}
+
+// checkForUpdate hits GitHub Releases (throttled by update.Check via an
 // on-disk cache) off the event loop and reports a newer release. Any
-// failure resolves to an empty message so the TUI simply shows no badge.
+// failure resolves to a failed message so the TUI simply shows no badge.
 func (m *Model) checkForUpdate() tea.Msg {
 	dir, err := config.Dir()
 	if err != nil {
-		return updateMsg{}
+		return updateMsg{failed: true}
 	}
 	result, err := update.Check(context.Background(), dir, m.version)
 	if err != nil {
-		return updateMsg{}
+		return updateMsg{failed: true}
 	}
 	return updateMsg{latest: result.Latest, url: result.URL}
 }
@@ -627,9 +640,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.diffRefreshCmd()
 
 	case updateMsg:
+		if msg.failed {
+			return m, nil
+		}
 		m.updateLatest = msg.latest
 		m.updateURL = msg.url
 		return m, nil
+
+	case updateTickMsg:
+		return m, tea.Batch(m.checkForUpdate, m.updateTick())
 
 	case previewSettleMsg:
 		if msg.gen != m.previewGen {
