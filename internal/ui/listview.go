@@ -577,12 +577,11 @@ func (m *Model) viewQuickBar(width int) string {
 			target = "answer " + entry.sess.Name
 		}
 	}
-	// Chips live in the textarea prompt so they sit on the same line as the
-	// typed text (Claude-style inline chips), not on a separate strip below.
-	m.syncQuickInlineChips()
 	m.quick.input.SetWidth(width)
 	m.quick.input.SetHeight(m.quickBarRows(width - 2))
-	return subtleStyle.Render(target) + "\n" + m.quick.input.View()
+	// Chips are tokens inside the typed text, so they wrap and reflow with
+	// the words around them; painting happens on the rendered prompt.
+	return subtleStyle.Render(target) + "\n" + m.renderQuickChips(m.quick.input.View())
 }
 
 // viewHeaderRows is the full-width band over both columns: the wordmark

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
@@ -1019,79 +1020,77 @@ var captureClipboardImage = clipboard.SaveImage
 // attachQuickImageCmd reads the clipboard image off the UI thread and
 // writes it once into the pastes directory. Returning a Cmd keeps the TUI
 // responsive and shows a pasting chip while the OS clipboard is read.
-func (m *Model) attachQuickImageCmd() tea.Cmd {
+func (m *Model) attachQuickImageCmd(id int) tea.Cmd {
 	return func() tea.Msg {
 		path, err := captureClipboardImage()
 		if err != nil {
 			if errors.Is(err, clipboard.ErrNoImage) {
-				return quickImageMsg{noImage: true}
+				return quickImageMsg{id: id, noImage: true}
 			}
-			return quickImageMsg{err: err}
+			return quickImageMsg{id: id, err: err}
 		}
-		return quickImageMsg{path: path}
+		return quickImageMsg{id: id, path: path}
 	}
 }
 
-// handleQuickImageMsg applies an async clipboard result: a path becomes a
-// chip, a real error surfaces, and no-image falls through to text paste.
+// handleQuickImageMsg applies an async clipboard result to the chip the
+// paste reserved: the path fills it in, a real error surfaces and takes
+// the chip back out, and no-image falls through to a text paste.
 func (m *Model) handleQuickImageMsg(msg quickImageMsg) (tea.Model, tea.Cmd) {
-	m.quick.pasting = false
-	if !m.quick.active {
+	att := m.quickAttachment(msg.id)
+	if att == nil || !m.quick.active {
 		if msg.path != "" {
 			_ = os.Remove(msg.path)
 		}
+		if att != nil {
+			m.dropQuickAttachment(msg.id)
+		}
 		return m, nil
-	}
-	if msg.noImage {
-		m.quick.input.SetHeight(quickBarMaxRows)
-		var cmd tea.Cmd
-		m.quick.input, cmd = m.quick.input.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
-		return m, cmd
 	}
 	if msg.err != nil {
+		cmd := m.removeQuickImage(msg.id)
 		m.err = msg.err.Error()
-		return m, nil
+		return m, cmd
 	}
-	m.quick.attachments = append(m.quick.attachments, msg.path)
+	if msg.noImage {
+		cmd := m.removeQuickImage(msg.id)
+		m.quick.input.SetHeight(quickBarMaxRows)
+		var pasteCmd tea.Cmd
+		m.quick.input, pasteCmd = m.quick.input.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+		return m, tea.Batch(cmd, pasteCmd)
+	}
+	att.path = msg.path
 	m.err = ""
 	return m, nil
 }
 
-// popQuickAttachment removes the last pasted image chip and deletes its
-// temp file. Used when the user backspaces at the start of the text.
-func (m *Model) popQuickAttachment() bool {
-	if len(m.quick.attachments) == 0 {
-		return false
+// removeQuickImage takes a chip out of the text by id, wherever it sits.
+func (m *Model) removeQuickImage(id int) tea.Cmd {
+	for _, span := range m.quickTokenSpans() {
+		if span.id == id {
+			return m.removeQuickToken(span)
+		}
 	}
-	last := m.quick.attachments[len(m.quick.attachments)-1]
-	m.quick.attachments = m.quick.attachments[:len(m.quick.attachments)-1]
-	_ = os.Remove(last)
-	m.err = ""
-	return true
+	m.dropQuickAttachment(id)
+	return nil
 }
 
-// quickCursorAtTextStart is true when the caret is on the first line at
-// column 0: the spot where the next backspace should remove an inline chip
-// rather than a character of typed text.
-func (m *Model) quickCursorAtTextStart() bool {
-	if m.quick.input.Line() != 0 {
-		return false
-	}
-	return m.quick.input.LineInfo().CharOffset == 0
-}
-
-// quickMessage is the text delivered on submit: the typed prompt with any
-// attachment paths appended so the target agent can open them.
+// quickMessage is the text delivered on submit: the typed prompt with each
+// chip swapped back for its path, so the paths reach the agent in the
+// order and the places the user pasted them.
 func (m *Model) quickMessage() string {
-	text := strings.TrimSpace(m.quick.input.Value())
-	if len(m.quick.attachments) == 0 {
-		return text
-	}
-	paths := strings.Join(m.quick.attachments, " ")
-	if text == "" {
-		return paths
-	}
-	return text + " " + paths
+	value := imageTokenPattern.ReplaceAllStringFunc(m.quick.input.Value(), func(token string) string {
+		id, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(token, "[Image #"), "]"))
+		if err != nil {
+			return token
+		}
+		att := m.quickAttachment(id)
+		if att == nil || att.path == "" {
+			return token
+		}
+		return att.path
+	})
+	return strings.TrimSpace(value)
 }
 
 func (m *Model) openQuickMode() {
@@ -1101,9 +1100,9 @@ func (m *Model) openQuickMode() {
 	input.ShowLineNumbers = false
 	input.SetPromptFunc(2, func(lineIndex int) string {
 		if lineIndex == 0 {
-			return "> "
+			return keyStyle.Render("❯ ")
 		}
-		return ""
+		return "  "
 	})
 	input.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	input.SetHeight(1)
@@ -1140,7 +1139,9 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.quick.active = false
-		m.quick.pasting = false
+		// Reopening the bar starts a fresh prompt, so the images this one
+		// was holding have nowhere left to be referenced from.
+		m.releaseQuickAttachments()
 		return m, nil
 	case "up":
 		return m, m.moveCursor(-1)
@@ -1152,18 +1153,39 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "ctrl+v":
-		if m.quick.pasting {
+		if m.quickPasting() {
 			return m, nil
 		}
-		// Image read runs off-thread; chips appear when quickImageMsg lands.
-		m.quick.pasting = true
-		m.err = ""
-		return m, m.attachQuickImageCmd()
-	case "backspace", "ctrl+h":
-		// Chips sit in the prompt, left of the text. Backspace at the
-		// start of the text peels the nearest chip (Claude-style).
-		if m.quickCursorAtTextStart() && m.popQuickAttachment() {
+		if !m.quickRoomForToken(m.quick.lastImageID + 1) {
+			m.err = "prompt is full - shorten it before pasting an image"
 			return m, nil
+		}
+		// The chip goes in at the caret now and fills in when the
+		// off-thread clipboard read lands, so it holds the spot the user
+		// pasted at even while they keep typing.
+		m.quick.lastImageID++
+		id := m.quick.lastImageID
+		m.quick.attachments = append(m.quick.attachments, quickAttachment{id: id})
+		m.insertQuickToken(&m.quick.attachments[len(m.quick.attachments)-1])
+		m.err = ""
+		return m, m.attachQuickImageCmd(id)
+	case "left":
+		if span, ok := m.tokenEndingAt(m.quickCursorOffset()); ok {
+			m.quick.input.SetCursor(m.quickCursorColumn() - span.length())
+			return m, nil
+		}
+	case "right":
+		if span, ok := m.tokenStartingAt(m.quickCursorOffset()); ok {
+			m.quick.input.SetCursor(m.quickCursorColumn() + span.length())
+			return m, nil
+		}
+	case "backspace", "ctrl+h":
+		if span, ok := m.tokenEndingAt(m.quickCursorOffset()); ok {
+			return m, m.removeQuickToken(span)
+		}
+	case "delete":
+		if span, ok := m.tokenStartingAt(m.quickCursorOffset()); ok {
+			return m, m.removeQuickToken(span)
 		}
 	case "enter":
 		return m.submitQuick()
@@ -1175,6 +1197,10 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.quick.input.SetHeight(quickBarMaxRows)
 	var cmd tea.Cmd
 	m.quick.input, cmd = m.quick.input.Update(msg)
+	// An edit that swallowed a chip (ctrl+u, word delete) releases its
+	// image, and the caret never rests inside a chip.
+	m.pruneQuickAttachments()
+	m.snapQuickCursorOutOfToken()
 	return m, cmd
 }
 
@@ -1186,6 +1212,10 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedRow()
 	if !ok {
 		m.err = "nothing selected"
+		return m, nil
+	}
+	if m.quickPasting() {
+		m.err = "still reading the pasted image - try again in a moment"
 		return m, nil
 	}
 	text := m.quickMessage()
@@ -1248,7 +1278,6 @@ func (m *Model) clearQuickAfterSend() {
 	m.quick.attachments = nil
 	if m.quick.closeAfterSend {
 		m.quick.active = false
-		m.quick.pasting = false
 	}
 }
 

@@ -70,12 +70,10 @@ func rebuildStyles() {
 	chipStyle = lipgloss.NewStyle().Background(colorSurface).Padding(0, 1)
 	imageChipStyle = lipgloss.NewStyle().
 		Foreground(colorBright).
-		Background(colorSurface).
-		Padding(0, 1)
+		Background(colorSurface)
 	imageChipPastingStyle = lipgloss.NewStyle().
 		Foreground(colorWorking).
-		Background(colorSurface).
-		Padding(0, 1)
+		Background(colorSurface)
 }
 
 // renderSelectedRow wraps a pre-styled line with the selected row's
@@ -225,12 +223,13 @@ func keyCap(key, label string) string {
 	return keyStyle.Render(key) + " " + mutedStyle.Render(label)
 }
 
-// imageChip renders an inline pasted-image token: icon + short label.
-func imageChip(label string) string {
-	return imageChipStyle.Render("🖼 " + label)
+// imageChip tints a pasted-image token. Color only: the token's own
+// characters are what the textarea measured when it wrapped the line.
+func imageChip(token string) string {
+	return imageChipStyle.Render(token)
 }
 
-// imageChipPasting is the transient chip shown during an async paste.
-func imageChipPasting() string {
-	return imageChipPastingStyle.Render("◌ pasting…")
+// imageChipPasting tints a chip whose clipboard read is still running.
+func imageChipPasting(token string) string {
+	return imageChipPastingStyle.Render(token)
 }

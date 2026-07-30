@@ -214,47 +214,6 @@ func divider(label string, width int) string {
 	return head + lipgloss.NewStyle().Foreground(colorBorder).Render(strings.Repeat("─", dashes))
 }
 
-// syncQuickInlineChips rebuilds the line-0 prompt as "> [chip] [chip] " so
-// pasted images render inline with the caret. Paths stay out of the value;
-// backspace at the text start peels chips off (see handleQuickKey).
-func (m *Model) syncQuickInlineChips() {
-	prefix := m.quickInlineChipPrompt()
-	// lipgloss.Width ignores SGR so the reserved prompt slot matches what
-	// the terminal paints; uniseg alone would mis-count styled chips.
-	promptWidth := max(lipgloss.Width(prefix), 2)
-	m.quick.input.SetPromptFunc(promptWidth, func(lineIndex int) string {
-		if lineIndex == 0 {
-			return prefix
-		}
-		return strings.Repeat(" ", promptWidth)
-	})
-}
-
-// quickInlineChipPrompt is the first-line prompt: a styled caret plus one
-// soft chip per attachment (and a transient pasting chip while the
-// clipboard read runs). Labels are short "Image N" tokens so the bar stays
-// readable; full paths still go out on submit via attachments.
-func (m *Model) quickInlineChipPrompt() string {
-	var b strings.Builder
-	b.WriteString(keyStyle.Render("❯ "))
-	for i := range m.quick.attachments {
-		if i > 0 {
-			b.WriteByte(' ')
-		}
-		b.WriteString(imageChip(fmt.Sprintf("Image %d", i+1)))
-	}
-	if m.quick.pasting {
-		if len(m.quick.attachments) > 0 {
-			b.WriteByte(' ')
-		}
-		b.WriteString(imageChipPasting())
-	}
-	if len(m.quick.attachments) > 0 || m.quick.pasting {
-		b.WriteByte(' ')
-	}
-	return b.String()
-}
-
 const quickBarMaxRows = 5
 
 // quickBarRows is the rows the typed text needs at the current width,
