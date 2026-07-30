@@ -369,12 +369,18 @@ func (m *Model) viewFooter() string {
 	if !m.enterFocuses() {
 		enterHint, attachHint = "attach / fold", "focus"
 	}
+	emptyGroupsAction := "hide empty"
+	if m.hideEmptyGroups {
+		emptyGroupsAction = "show empty"
+	}
 	pairs := [][2]string{
 		{"↑↓/jk", "navigate"}, {"K/J", "reorder"}, {"↵", enterHint}, {"A", attachHint},
 		{"F", "fold all"}, {"n", "new"}, {"g", "group"}, {"space", "prompt"},
 		{"ctrl+r", "review"}, {"r", "rename"}, {"m", "move"},
-		{"v/V", "revive / all"}, {"a/u", "archive / restore"}, {"d", "delete"},
-		{"t", "archived"}, {"/", "search"}, {"|", "resize"}, {"s", "settings"},
+		{"x/X", "kill / all"}, {"v/V", "revive / all"},
+		{"a/u", "archive / restore"}, {"d", "delete"},
+		{"t", "archived"}, {"e", emptyGroupsAction},
+		{"/", "search"}, {"|", "resize"}, {"s", "settings"},
 		{"?", "keys"}, {"q", "quit"},
 	}
 	if m.quick.active {

@@ -491,6 +491,50 @@ func TestReorderSyntheticGroupUpdatesImmediately(t *testing.T) {
 	}
 }
 
+func TestToggleEmptyGroupsFiltersTreeWithoutDeletingGroups(t *testing.T) {
+	m := buildModel(t)
+	for _, group := range []string{"empty", "work", "work/leaf", "work/unused"} {
+		if err := m.store.CreateGroup(group, ""); err != nil {
+			t.Fatalf("create group %q: %v", group, err)
+		}
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "nested", t.TempDir(), "work/leaf")
+
+	m.selectGroupRow(t, "empty")
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	if cmd != nil {
+		m.applyCmd(t, cmd)
+	}
+
+	wantVisible := []string{"work", "work/leaf"}
+	if got := m.groupRowPaths(); !slices.Equal(got, wantVisible) {
+		t.Fatalf("groups with empty subtrees should be hidden, got %v want %v", got, wantVisible)
+	}
+	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "show empty") {
+		t.Fatalf("footer should offer the inverse action while filtered:\n%s", footer)
+	}
+	groups, err := m.store.Groups()
+	if err != nil {
+		t.Fatalf("list stored groups: %v", err)
+	}
+	if len(groups) != 4 {
+		t.Fatalf("visual filter changed stored groups: got %d want 4", len(groups))
+	}
+
+	_, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	if cmd != nil {
+		m.applyCmd(t, cmd)
+	}
+	wantAll := []string{"empty", "work", "work/leaf", "work/unused"}
+	if got := m.groupRowPaths(); !slices.Equal(got, wantAll) {
+		t.Fatalf("second toggle should restore empty groups, got %v want %v", got, wantAll)
+	}
+	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "hide empty") {
+		t.Fatalf("footer should offer hiding while empty groups are visible:\n%s", footer)
+	}
+}
+
 func TestDeleteGroupSubtree(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

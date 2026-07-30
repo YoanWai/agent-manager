@@ -190,10 +190,11 @@ func ignoreDeletedSession(err error) error {
 	return err
 }
 
-// archivedPreview serves an archived session's stored pane snapshot,
-// backfilling it from a still-live tmux window for sessions archived
+// storedPreview serves a session's saved pane snapshot, which is what the
+// preview shows for any session with no window left to capture, however it
+// lost it. It backfills from a still-live tmux window for sessions archived
 // before snapshots existed.
-func archivedPreview(st *store.Store, driver *tmux.Driver, sessID string) (string, error) {
+func storedPreview(st *store.Store, driver *tmux.Driver, sessID string) (string, error) {
 	snapshot, err := st.Snapshot(sessID)
 	if err != nil || snapshot != "" {
 		return snapshot, err
@@ -344,8 +345,8 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	if preview == "" && selectedID != "" {
 		for _, sess := range sessions {
-			if sess.ID == selectedID && sess.Archived {
-				snapshot, err := archivedPreview(p.store, p.tmux, sess.ID)
+			if sess.ID == selectedID && (sess.Archived || panes[sess.ID] == 0) {
+				snapshot, err := storedPreview(p.store, p.tmux, sess.ID)
 				if err != nil {
 					return errMsg{err}
 				}

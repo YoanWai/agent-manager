@@ -3,6 +3,9 @@ package update
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,6 +87,98 @@ func TestCheckUsesFreshCache(t *testing.T) {
 	if r.Latest != "v0.9.0" || r.URL != "https://example/rel" {
 		t.Errorf("expected cached newer release, got %+v", r)
 	}
+}
+
+// A cache older than checkInterval must go back to the network, and the
+// answer it gets must replace the stale entry on disk.
+func TestCheckStaleCacheRefetches(t *testing.T) {
+	dir := t.TempDir()
+	seed := cache{CheckedAt: time.Now().Add(-checkInterval - time.Minute), Latest: "v0.9.0", URL: "https://example/old"}
+	raw, _ := json.Marshal(seed)
+	if err := os.WriteFile(filepath.Join(dir, cacheFile), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		fmt.Fprint(w, `{"tag_name":"v0.11.1","html_url":"https://example/new"}`)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	r, err := Check(context.Background(), dir, "v0.8.2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("stale cache should hit the network once, got %d calls", calls)
+	}
+	if r.Latest != "v0.11.1" || r.URL != "https://example/new" {
+		t.Errorf("expected the freshly fetched release, got %+v", r)
+	}
+	written, ok := readCache(filepath.Join(dir, cacheFile))
+	if !ok || written.Latest != "v0.11.1" {
+		t.Errorf("stale cache entry was not replaced, got %+v", written)
+	}
+	if time.Since(written.CheckedAt) > time.Minute {
+		t.Errorf("rewritten cache should carry a fresh timestamp, got %v", written.CheckedAt)
+	}
+}
+
+// A fresh cache must not reach the network at all.
+func TestCheckFreshCacheSkipsNetwork(t *testing.T) {
+	dir := t.TempDir()
+	seed := cache{CheckedAt: time.Now(), Latest: "v0.9.0", URL: "https://example/rel"}
+	raw, _ := json.Marshal(seed)
+	if err := os.WriteFile(filepath.Join(dir, cacheFile), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	if _, err := Check(context.Background(), dir, "v0.8.2"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 0 {
+		t.Errorf("fresh cache should skip the network, got %d calls", calls)
+	}
+}
+
+// A failed fetch must surface the error and leave the stale cache in place
+// so the next start retries instead of trusting a half-written entry.
+func TestCheckFetchFailureKeepsCache(t *testing.T) {
+	dir := t.TempDir()
+	seed := cache{CheckedAt: time.Now().Add(-checkInterval - time.Minute), Latest: "v0.9.0", URL: "https://example/old"}
+	raw, _ := json.Marshal(seed)
+	if err := os.WriteFile(filepath.Join(dir, cacheFile), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "rate limited", http.StatusForbidden)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	if _, err := Check(context.Background(), dir, "v0.8.2"); err == nil {
+		t.Fatal("expected an error when GitHub rejects the request")
+	}
+	kept, ok := readCache(filepath.Join(dir, cacheFile))
+	if !ok || kept.Latest != "v0.9.0" {
+		t.Errorf("failed fetch must not overwrite the cache, got %+v", kept)
+	}
+}
+
+func swapReleasesURL(url string) func() {
+	previous := releasesURL
+	releasesURL = url
+	return func() { releasesURL = previous }
 }
 
 func TestCheckFreshCacheNoUpdate(t *testing.T) {

@@ -55,8 +55,9 @@ type Model struct {
 	hooks  *hooks.Manager
 	gitDrv *git.Driver
 
-	// setSnapshot writes a session's pane capture; a seam so archival
-	// snapshot failures can be exercised without a broken store.
+	// setSnapshot writes a session's pane capture before archive or kill
+	// takes the window; a seam so snapshot failures can be exercised
+	// without a broken store.
 	setSnapshot func(id, snapshot string) error
 
 	sessions       []store.Session
@@ -109,6 +110,7 @@ type Model struct {
 	cursor            int
 	mode              mode
 	showArchived      bool
+	hideEmptyGroups   bool
 	collapsed         map[string]bool
 	search            string
 	searching         bool
@@ -167,6 +169,7 @@ const (
 	actionDelete  = ""
 	actionArchive = "archive"
 	actionRestore = "restore"
+	actionKill    = "kill"
 )
 
 type confirmTarget struct {
@@ -297,6 +300,7 @@ const previewSettle = 50 * time.Millisecond
 const (
 	previewIntervalLive = 300 * time.Millisecond
 	previewIntervalCalm = 1200 * time.Millisecond
+	updateTickInterval  = time.Hour
 )
 
 // cursorBlinkMsg toggles the focused pane's caret.
@@ -463,26 +467,38 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.bannerTick(), m.previewTick())
+	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.updateTick(), m.bannerTick(), m.previewTick())
 }
 
 // updateMsg carries the result of the background GitHub release check.
+// failed marks a check that never reached a verdict, which leaves any
+// badge already on screen alone instead of clearing it on a blip.
 type updateMsg struct {
 	latest string
 	url    string
+	failed bool
 }
 
-// checkForUpdate hits GitHub Releases (throttled to once a day via an
+type updateTickMsg struct{}
+
+// updateTick re-runs the release check while the manager stays open for
+// days at a time. update.Check serves most ticks from its on-disk cache,
+// so this only reaches GitHub once the cache goes stale.
+func (m *Model) updateTick() tea.Cmd {
+	return tea.Tick(updateTickInterval, func(time.Time) tea.Msg { return updateTickMsg{} })
+}
+
+// checkForUpdate hits GitHub Releases (throttled by update.Check via an
 // on-disk cache) off the event loop and reports a newer release. Any
-// failure resolves to an empty message so the TUI simply shows no badge.
+// failure resolves to a failed message so the TUI simply shows no badge.
 func (m *Model) checkForUpdate() tea.Msg {
 	dir, err := config.Dir()
 	if err != nil {
-		return updateMsg{}
+		return updateMsg{failed: true}
 	}
 	result, err := update.Check(context.Background(), dir, m.version)
 	if err != nil {
-		return updateMsg{}
+		return updateMsg{failed: true}
 	}
 	return updateMsg{latest: result.Latest, url: result.URL}
 }
@@ -556,22 +572,20 @@ func (m *Model) schedulePreview() tea.Cmd {
 func (m *Model) previewCmd(sess store.Session, gen uint64) tea.Cmd {
 	return func() tea.Msg {
 		msg := previewMsg{sessID: sess.ID, gen: gen}
-		if sess.Archived {
-			snapshot, err := archivedPreview(m.store, m.tmux, sess.ID)
+		if sess.Archived || !m.tmux.Exists(sess.ID) {
+			snapshot, err := storedPreview(m.store, m.tmux, sess.ID)
 			if err != nil {
 				return errMsg{err}
 			}
 			msg.preview = snapshot
 			return msg
 		}
-		if m.tmux.Exists(sess.ID) {
-			if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
-				msg.preview = pane
-			}
-			if pid, err := m.tmux.PanePID(sess.ID); err == nil {
-				memTotal, _ := sysstat.MemTotalBytes()
-				msg.proc = sysstat.Trees([]int{pid})[pid].ScaleToHost(sysstat.LogicalCPUs(), memTotal)
-			}
+		if pane, err := m.tmux.CapturePane(sess.ID); err == nil {
+			msg.preview = pane
+		}
+		if pid, err := m.tmux.PanePID(sess.ID); err == nil {
+			memTotal, _ := sysstat.MemTotalBytes()
+			msg.proc = sysstat.Trees([]int{pid})[pid].ScaleToHost(sysstat.LogicalCPUs(), memTotal)
 		}
 		return msg
 	}
@@ -725,9 +739,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(focusExit, m.diffRefreshCmd())
 
 	case updateMsg:
+		if msg.failed {
+			return m, nil
+		}
 		m.updateLatest = msg.latest
 		m.updateURL = msg.url
 		return m, nil
+
+	case updateTickMsg:
+		return m, tea.Batch(m.checkForUpdate, m.updateTick())
 
 	case previewSettleMsg:
 		if msg.gen != m.previewGen {
@@ -997,6 +1017,12 @@ func (m *Model) rebuildRows() {
 		if query != "" {
 			paths = pathsWithSessions(paths, sessionsByGroup)
 		}
+	}
+	if m.hideEmptyGroups {
+		// This is a presentation filter only: stored groups remain available
+		// to forms and return to the tree as soon as the toggle is switched
+		// off. Ancestors of groups with visible sessions stay in the tree.
+		paths = pathsWithSessions(paths, sessionsByGroup)
 	}
 	children := childIndex(paths, m.groups)
 

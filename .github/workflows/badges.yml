@@ -1,0 +1,40 @@
+name: Badges
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: badges
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Render chips
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BADGE_TOKEN: ${{ secrets.BADGE_TOKEN }}
+        run: go run ./tools/badges
+      - name: Commit when the numbers moved
+        run: |
+          if [ -z "$(git status --porcelain docs/badges README.md)" ]; then
+            echo "chips unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/badges README.md
+          git commit -m "chore(badges): refresh the README stats [skip ci]"
+          git push
