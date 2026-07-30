@@ -717,7 +717,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 			return m, nil
 		}
-		m.err = ""
+		m.err = msg.warn
 		return m, tea.ExecProcess(m.tmux.AttachCommand(msg.sessID), func(err error) tea.Msg {
 			return attachDoneMsg{sessID: msg.sessID, err: err}
 		})

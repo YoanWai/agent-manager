@@ -69,8 +69,42 @@ func TestPrepareAttachRestoresAutoSize(t *testing.T) {
 	if err := driver.PrepareAttach(id); err != nil {
 		t.Fatalf("PrepareAttach: %v", err)
 	}
-	if got := windowSizeOption(t, id); got != "latest" {
-		t.Fatalf("after PrepareAttach, window-size = %q, want latest", got)
+	if got, want := windowSizeOption(t, id), driver.attachWindowSize(); got != want {
+		t.Fatalf("after PrepareAttach, window-size = %q, want %q", got, want)
+	}
+}
+
+// attachWindowSize shells out to `tmux -V`, so point bin at a stub that
+// reports an old version and check the pre-3.1 fallback kicks in.
+func TestAttachWindowSizeFallsBackOnOldTmux(t *testing.T) {
+	stub := t.TempDir() + "/tmux"
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\necho 'tmux 3.0a'\n"), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+	if got := driver.attachWindowSize(); got != "largest" {
+		t.Fatalf("attachWindowSize on tmux 3.0a = %q, want largest", got)
+	}
+}
+
+func TestVersionBefore31(t *testing.T) {
+	cases := []struct {
+		banner string
+		want   bool
+	}{
+		{"tmux 3.0a", true},
+		{"tmux 2.9", true},
+		{"tmux 3.1", false},
+		{"tmux 3.1b", false},
+		{"tmux 3.7b", false},
+		{"tmux next-3.4", false},
+		{"tmux master", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := versionBefore31(c.banner); got != c.want {
+			t.Errorf("versionBefore31(%q) = %v, want %v", c.banner, got, c.want)
+		}
 	}
 }
 
