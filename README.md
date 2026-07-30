@@ -2,6 +2,8 @@
 
 <p align="center"><b>Run every AI coding agent from one terminal.</b></p>
 
+<p align="center"><!-- trendshift:start --><!-- trendshift:end --></p>
+
 <p align="center">
   <a href="https://github.com/YoanWai/agent-manager/pulse"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/stats-dark.svg"><img src="docs/badges/stats-light.svg" alt="168 stars, 1.9k clones in 14 days, release v0.11.1, MIT licensed"></picture></a>
 </p>

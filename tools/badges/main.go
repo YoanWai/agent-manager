@@ -55,7 +55,7 @@ func run() error {
 	// README honest and makes the missing token visible on the run summary.
 	if !complete {
 		fmt.Println("::warning::clone traffic was unavailable, so the stat card was left as committed; add a BADGE_TOKEN secret to refresh it")
-		return nil
+		return fillTrendshift(trendshiftBadge())
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
@@ -68,7 +68,10 @@ func run() error {
 	if err := write("stats-light.svg", badge.Card(light, badge.Light)); err != nil {
 		return err
 	}
-	return write("stats-dark.svg", badge.Card(stats, badge.Dark))
+	if err := write("stats-dark.svg", badge.Card(stats, badge.Dark)); err != nil {
+		return err
+	}
+	return fillTrendshift(trendshiftBadge())
 }
 
 func write(name, svg string) error {
@@ -164,4 +167,53 @@ func get(url string, into any) error {
 		return fmt.Errorf("GET %s: %s", url, resp.Status)
 	}
 	return json.NewDecoder(resp.Body).Decode(into)
+}
+
+// trendshiftBadge is the banner Trendshift mints once a repository reaches
+// GitHub Trending. Ours has a profile but no badge yet: the endpoint answers
+// 500 until the day it trends, so the region in the README stays empty and
+// fills itself on the first run after that happens.
+func trendshiftBadge() string {
+	const id = "89312"
+	resp, err := http.Get("https://trendshift.io/api/badge/repositories/" + id)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "badges: trendshift unreachable:", err)
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	return fmt.Sprintf(
+		`<a href="https://trendshift.io/repositories/%s"><img src="https://trendshift.io/api/badge/repositories/%s" alt="agent-manager on Trendshift" width="250" height="55"></a>`,
+		id, id)
+}
+
+// fillTrendshift keeps the README's trendshift region in step with whether the
+// badge exists, without touching a byte outside the markers.
+func fillTrendshift(badge string) error {
+	const (
+		open  = "<!-- trendshift:start -->"
+		close = "<!-- trendshift:end -->"
+	)
+	raw, err := os.ReadFile("README.md")
+	if err != nil {
+		return err
+	}
+	readme := string(raw)
+	from := strings.Index(readme, open)
+	to := strings.Index(readme, close)
+	if from < 0 || to < 0 {
+		return fmt.Errorf("README is missing the trendshift markers")
+	}
+	updated := readme[:from+len(open)] + badge + readme[to:]
+	if updated == readme {
+		return nil
+	}
+	if badge == "" {
+		fmt.Println("::notice::trendshift badge is not minted yet, leaving its region empty")
+	} else {
+		fmt.Println("::notice::trendshift badge is live, added to the README")
+	}
+	return os.WriteFile("README.md", []byte(updated), 0o644)
 }
