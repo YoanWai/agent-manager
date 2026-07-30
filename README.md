@@ -96,7 +96,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings |
 | `m` | Move session to another group |
 | `r` | Rename session / edit tool; edit group name and default path |
-| `x` | Kill a session, or every live session in a group: frees the RAM their agents hold, the rows stay |
+| `x` / `X` | Kill a session (or every live session in a group) / kill every live session: frees the RAM their agents hold, the rows stay |
 | `v` | Revive a dead session, or every dead session in a group (`revive_command`, e.g. `claude --continue`, resumes the conversation) |
 | `a` / `u` | Archive / restore a session, or a group and its entire subtree |
 | `d` | Delete session, or a group + its entire subtree |

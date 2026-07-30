@@ -99,6 +99,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.reviveAllDead()
 	case "x":
 		return m.killSelected()
+	case "X", "shift+x":
+		return m.killAllLive()
 	case "a":
 		return m.archiveSelected()
 	case "u":
@@ -568,7 +570,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if entry.isGroup {
-		live, err := m.liveSessionsInGroup(entry.group)
+		live, err := m.liveSessions(m.sessionsInGroup(entry.group))
 		if err != nil {
 			m.err = err.Error()
 			return m, nil
@@ -600,16 +602,37 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// liveSessionsInGroup lists the sessions under a group that still hold a
-// tmux window. One pane listing answers for the whole subtree, so a wide
-// group costs one tmux call rather than one per session.
-func (m *Model) liveSessionsInGroup(path string) ([]store.Session, error) {
+// killAllLive asks to end every live session in the current view, the
+// batch counterpart to V.
+func (m *Model) killAllLive() (tea.Model, tea.Cmd) {
+	live, err := m.liveSessions(m.visibleSessions())
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	if len(live) == 0 {
+		m.err = "no live sessions to kill"
+		return m, nil
+	}
+	m.confirm = confirmTarget{
+		action:   actionKill,
+		sessions: live,
+		label:    fmt.Sprintf("kill every live session (%d)? frees their RAM, v revives them.", len(live)),
+	}
+	m.mode = modeConfirmDelete
+	return m, nil
+}
+
+// liveSessions narrows a list to the sessions that still hold a tmux
+// window. One pane listing answers for all of them, so a wide selection
+// costs one tmux call rather than one per session.
+func (m *Model) liveSessions(sessions []store.Session) ([]store.Session, error) {
 	panes, err := m.tmux.Panes()
 	if err != nil {
 		return nil, err
 	}
 	var live []store.Session
-	for _, sess := range m.sessionsInGroup(path) {
+	for _, sess := range sessions {
 		if panes[sess.ID] > 0 {
 			live = append(live, sess)
 		}

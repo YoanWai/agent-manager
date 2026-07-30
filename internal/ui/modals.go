@@ -219,6 +219,7 @@ func (m *Model) viewHelp() string {
 		{"g", "new group (name, parent, default path)"},
 		{"r", "rename session / edit group (name + default path)"},
 		{"x", "kill session, or every live session in a group (frees their RAM)"},
+		{"X", "kill every live session"},
 		{"v", "revive killed session, or every dead session in a group (resumes the agent)"},
 		{"V", "revive every dead session"},
 		{"a / u", "archive / restore"},

@@ -145,6 +145,27 @@ func TestReviveGroupBringsBackEverySessionInside(t *testing.T) {
 	}
 }
 
+func TestKillAllEndsEveryLiveSessionInView(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	seedGroups(t, m, "work")
+	createSession(t, m, "alpha", dir, "work")
+	createSession(t, m, "outside", dir, "")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")})
+	m = updated.(*Model)
+	confirmKill(t, m)
+
+	for _, sess := range m.visibleSessions() {
+		if m.tmux.Exists(sess.ID) {
+			t.Fatalf("kill all should have ended %s", sess.Name)
+		}
+	}
+	if _, _ = m.killAllLive(); m.err == "" {
+		t.Fatal("kill all with nothing live should report it")
+	}
+}
+
 func TestKillRefusesWhenNothingIsRunning(t *testing.T) {
 	m := buildModel(t)
 	seedGroups(t, m, "work")
