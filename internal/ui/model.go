@@ -163,21 +163,33 @@ type renameTarget struct {
 
 // quickState is the inline prompt bar docked under the preview: active
 // across cursor moves, so the target follows the selection. The tool is
-// the spawn CLI for group targets, cycled with tab. Pasted images render
-// as inline chips in the prompt (same line as the text); backspace at the
-// text start removes the nearest chip. Paths append on submit only.
+// the spawn CLI for group targets, cycled with tab. A pasted image lands
+// at the caret as an "[Image #N]" token that renders as a chip and steps,
+// deletes, and wraps as one unit; on submit each token becomes its path.
 type quickState struct {
 	active      bool
 	input       textarea.Model
 	toolNames   []string
 	toolIndex   int
-	attachments []string
-	pasting     bool
+	attachments []quickAttachment
+	lastImageID int
+}
+
+// quickAttachment is one pasted image: the id its token carries, and the
+// temp file the clipboard read wrote (empty while that read is in flight).
+type quickAttachment struct {
+	id   int
+	path string
+	// Spacing the paste added around the token, given back when the chip
+	// goes away so the sentence reads as it did before.
+	leadPad  bool
+	trailPad bool
 }
 
 // quickImageMsg is the result of an async clipboard image read started
 // from the quick bar's ctrl+v handler.
 type quickImageMsg struct {
+	id      int
 	path    string
 	err     error
 	noImage bool
