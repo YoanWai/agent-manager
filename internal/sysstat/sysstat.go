@@ -165,9 +165,7 @@ func usedPercent(used, total uint64) float64 {
 	return 100 * float64(used) / float64(total)
 }
 
-// tempRefresh paces the sensor read. On Apple Silicon each read builds an
-// IOKit HID client and costs ~57ms, so temperatures keep a cadence of their
-// own rather than riding every gauge sample.
+// A read builds an IOKit HID client on Apple Silicon and costs ~57ms.
 const tempRefresh = 5 * time.Second
 
 type tempReading struct {
@@ -199,8 +197,8 @@ func cachedTemps() tempReading {
 	if tempCache.filled && time.Since(tempCache.at) < tempRefresh {
 		return tempCache.last
 	}
-	// Linux returns the sensors it could read alongside a warning for the
-	// ones it could not, so a non-nil error still carries usable readings.
+	// Linux reports a warning for the sensors it could not read and still
+	// returns the ones it could.
 	read, err := sensors.SensorsTemperatures()
 	if len(read) == 0 && err != nil {
 		return tempReading{}
@@ -211,12 +209,7 @@ func cachedTemps() tempReading {
 	return tempCache.last
 }
 
-// classifyTemps sorts hardware sensors into CPU and GPU readings. Names
-// differ by platform: Intel Macs expose SMC keys (TC0D/TG0D), Linux joins
-// the hwmon driver to its label (coretemp_core_0, k10temp_tctl, amdgpu_edge)
-// or names a thermal zone by type (cpu-thermal, x86_pkg_temp), and Apple
-// Silicon exposes only unlabeled per-chiplet die temperatures. When no
-// CPU/GPU split is available, the hottest die is reported as a single SoC
+// Apple Silicon draws no CPU/GPU line, so its dies collapse into one SoC
 // reading. Each category keeps its hottest sensor.
 func classifyTemps(read []sensors.TemperatureStat) tempReading {
 	var reading tempReading
@@ -249,10 +242,8 @@ func classifyTemps(read []sensors.TemperatureStat) tempReading {
 	return reading
 }
 
-// plausibleTemp keeps a sensor that is reporting silicon rather than its own
-// absence: an unpopulated SMC key reads 0, a detached probe can read NaN or
-// an infinity, and a confused driver can report thousands of degrees. The
-// comparison also rejects NaN, which no ordering would have caught.
+// An absent sensor reads 0, NaN or an infinity, and a confused driver reads
+// thousands of degrees. Requiring a positive value is what rejects NaN.
 func plausibleTemp(celsius float64) bool {
 	return celsius > 0 && celsius <= 150
 }
@@ -277,9 +268,6 @@ func isCPUSensor(key string) bool {
 		strings.Contains(key, "tccd")
 }
 
-// isDieSensor matches the whole-chip readings a machine reports when it
-// draws no CPU/GPU line: Apple Silicon's per-chiplet dies and the SoC
-// thermal zones on ARM boards.
 func isDieSensor(key string) bool {
 	return strings.Contains(key, "tdie") || strings.Contains(key, "soc")
 }

@@ -11,9 +11,7 @@ import (
 	"github.com/shirou/gopsutil/v4/sensors"
 )
 
-// TestReadTempsFromSysfs runs the real Linux sensor reader over a sysfs tree
-// we lay out ourselves, so the hwmon and thermal-zone shapes a machine can
-// present are checked end to end rather than from their names alone.
+// Runs the real Linux reader over a sysfs tree we lay out ourselves.
 func TestReadTempsFromSysfs(t *testing.T) {
 	cases := []struct {
 		name  string
