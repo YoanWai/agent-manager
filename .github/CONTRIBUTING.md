@@ -60,9 +60,9 @@ Release notes are generated from merged pull request titles, so give the PR the 
 
 In the pull request description, say what changed and why, and how you verified it. Screenshots or a short recording make UI changes much easier to review.
 
-## Contributor License Agreement
+## Licensing
 
-Every contributor signs the [CLA](CLA.md) once. A bot comments on your first pull request with the exact line to reply with, and remembers you from then on.
+Contributions come in under the project's [MIT license](../LICENSE), same as everything else here. There is nothing extra to sign.
 
 ## Review
 
