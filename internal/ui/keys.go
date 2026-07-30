@@ -1179,8 +1179,9 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // submitQuick answers the selected session, or spawns a new session with
-// the prompt embedded when a group is selected. The bar stays active so
-// consecutive prompts flow without re-arming.
+// the prompt embedded when a group is selected. The bar stays active by
+// default so consecutive prompts flow without re-arming; the "after quick
+// send" setting closes it instead.
 func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedRow()
 	if !ok {
@@ -1357,7 +1358,6 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err := m.store.SetSetting(quickCloseSetting, quickClose); err != nil {
 			m.err = err.Error()
 		}
-		m.quick.closeAfterSend = m.settings.quickCloseSend
 		m.mode = modeList
 	}
 	return m, nil
