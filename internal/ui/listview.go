@@ -86,8 +86,16 @@ func (m *Model) railLines(width, height int) []contentLine {
 	if listHeight < 3 {
 		listHeight, meters = height, nil
 	}
-	rows := []contentLine{{}}
+	var rows []contentLine
+	// A populated list keeps a breath of air at the top; the empty state
+	// centers itself in the full list area instead.
+	if len(m.rows) > 0 {
+		rows = append(rows, contentLine{})
+	}
 	if m.showArchived {
+		if len(rows) == 0 {
+			rows = append(rows, contentLine{})
+		}
 		rows = append(rows,
 			contentLine{text: strings.Repeat(" ", railInset) + scopeBadgeStyle.Render("ARCHIVED") +
 				subtleStyle.Render("  ") + keyCap("t", "back to active")},
@@ -113,7 +121,7 @@ func (m *Model) railLines(width, height int) []contentLine {
 func (m *Model) entryLines(width, height int) []contentLine {
 	if len(m.rows) == 0 {
 		var lines []contentLine
-		for _, line := range m.emptyRailLines(width) {
+		for _, line := range m.emptyRailLines(width, height) {
 			lines = append(lines, contentLine{text: line})
 		}
 		return lines
@@ -194,19 +202,47 @@ func lineWindow(heights []int, cursor, budget int) (int, int) {
 	return start, end
 }
 
-func (m *Model) emptyRailLines(width int) []string {
+func (m *Model) emptyRailLines(width, height int) []string {
 	title := "no sessions yet"
 	hint := keyCap("n", "starts one")
 	if m.showArchived {
 		title = "nothing archived"
 		hint = keyCap("t", "back to active")
 	}
-	if strings.TrimSpace(m.search) != "" {
+	if search := strings.TrimSpace(m.search); search != "" {
 		title = "no matches"
-		hint = subtleStyle.Render("for \"" + m.search + "\"")
+		hint = subtleStyle.Render("for \"" + search + "\"")
 	}
-	pad := strings.Repeat(" ", railInset)
-	return []string{"", pad + mutedStyle.Render(title), "", pad + hint}
+	titleLine := centerLine(
+		lipgloss.NewStyle().Bold(true).Foreground(colorBright).Render(title),
+		width,
+	)
+	hintLine := centerLine(hint, width)
+	block := []string{titleLine, "", hintLine}
+	if height <= 0 {
+		return block
+	}
+	if height < len(block) {
+		return block[:height]
+	}
+	out := make([]string, height)
+	start := (height - len(block)) / 2
+	copy(out[start:], block)
+	return out
+}
+
+// centerLine pads a styled string so its visible text sits in the middle
+// of width columns.
+func centerLine(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	w := ansi.StringWidth(s)
+	if w >= width {
+		return ansi.Truncate(s, width, "…")
+	}
+	left := (width - w) / 2
+	return strings.Repeat(" ", left) + s
 }
 
 // treeGuidesAt is the ancestry trail left of a nested entry: a branch
