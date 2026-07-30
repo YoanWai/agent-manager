@@ -1110,7 +1110,13 @@ func (m *Model) openQuickMode() {
 	input.Focus()
 	m.err = ""
 	names, index := m.defaultToolSelection()
-	m.quick = quickState{active: true, input: input, toolNames: names, toolIndex: index}
+	m.quick = quickState{
+		active:         true,
+		input:          input,
+		toolNames:      names,
+		toolIndex:      index,
+		closeAfterSend: m.quickCloseAfterSend(),
+	}
 }
 
 // defaultToolSelection returns the sorted tool names with the index of
@@ -1199,8 +1205,7 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 	}
 	// The prompt is delivered: clear the input before anything else can
 	// fail, so a retry cannot send it twice.
-	m.quick.input.SetValue("")
-	m.quick.attachments = nil
+	m.clearQuickAfterSend()
 	m.err = ""
 	// A queued answer means the user expects a fresh finished alert.
 	if err := m.store.SetAcked(entry.sess.ID, false); err != nil {
@@ -1230,10 +1235,20 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
-	m.quick.input.SetValue("")
-	m.quick.attachments = nil
+	m.clearQuickAfterSend()
 	m.err = ""
 	return m, m.refreshCmd()
+}
+
+// clearQuickAfterSend empties the bar for the next prompt, and dismisses it
+// entirely when the settings toggle asks for that.
+func (m *Model) clearQuickAfterSend() {
+	m.quick.input.SetValue("")
+	m.quick.attachments = nil
+	if m.quick.closeAfterSend {
+		m.quick.active = false
+		m.quick.pasting = false
+	}
 }
 
 // quickTool is the spawn CLI for the current quick-mode run: the settings
@@ -1280,6 +1295,20 @@ func (m *Model) defaultSplitLayout() bool {
 	return chosen != "unified"
 }
 
+const quickCloseSetting = "quick_prompt_close"
+
+// quickCloseAfterSend reports whether the quick bar should dismiss itself
+// once a prompt is delivered. Staying open is the default; a stored "close"
+// choice opts in. A store error is surfaced but still yields the default.
+func (m *Model) quickCloseAfterSend() bool {
+	chosen, err := m.store.Setting(quickCloseSetting)
+	if err != nil {
+		m.err = "reading quick prompt setting: " + err.Error()
+		return false
+	}
+	return chosen == "close"
+}
+
 func (m *Model) openSettings() {
 	if len(m.cfg.Tools) == 0 {
 		m.err = "no tools configured"
@@ -1288,10 +1317,11 @@ func (m *Model) openSettings() {
 	m.err = ""
 	names, index := m.defaultToolSelection()
 	m.settings = settingsState{
-		toolNames:   names,
-		toolIndex:   index,
-		themeIndex:  themeIndex(current.Name),
-		layoutSplit: m.defaultSplitLayout(),
+		toolNames:      names,
+		toolIndex:      index,
+		themeIndex:     themeIndex(current.Name),
+		layoutSplit:    m.defaultSplitLayout(),
+		quickCloseSend: m.quickCloseAfterSend(),
 	}
 	m.mode = modeSettings
 }
@@ -1320,6 +1350,14 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err := m.store.SetSetting(diffLayoutSetting, layout); err != nil {
 			m.err = err.Error()
 		}
+		quickClose := "stay"
+		if m.settings.quickCloseSend {
+			quickClose = "close"
+		}
+		if err := m.store.SetSetting(quickCloseSetting, quickClose); err != nil {
+			m.err = err.Error()
+		}
+		m.quick.closeAfterSend = m.settings.quickCloseSend
 		m.mode = modeList
 	}
 	return m, nil
@@ -1338,6 +1376,8 @@ func (m *Model) cycleSetting(step int) {
 		SyncTerminalBackground()
 	case settingsFieldLayout:
 		m.settings.layoutSplit = !m.settings.layoutSplit
+	case settingsFieldQuickClose:
+		m.settings.quickCloseSend = !m.settings.quickCloseSend
 	}
 }
 

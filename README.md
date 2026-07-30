@@ -76,7 +76,7 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, line comments sent to the agent |
 | `f` | Fold / unfold group |
-| `s` | Settings (quick-spawn tool, theme, review layout) |
+| `s` | Settings (quick-spawn tool, theme, review layout, after quick send) |
 | `t` | Toggle archived view |
 | `e` | Hide / show empty groups |
 | `/` | Search |

@@ -167,12 +167,13 @@ type renameTarget struct {
 // as inline chips in the prompt (same line as the text); backspace at the
 // text start removes the nearest chip. Paths append on submit only.
 type quickState struct {
-	active      bool
-	input       textarea.Model
-	toolNames   []string
-	toolIndex   int
-	attachments []string
-	pasting     bool
+	active         bool
+	input          textarea.Model
+	toolNames      []string
+	toolIndex      int
+	attachments    []string
+	pasting        bool
+	closeAfterSend bool
 }
 
 // quickImageMsg is the result of an async clipboard image read started
@@ -184,17 +185,19 @@ type quickImageMsg struct {
 }
 
 type settingsState struct {
-	toolNames   []string
-	toolIndex   int
-	themeIndex  int
-	field       int
-	layoutSplit bool
+	toolNames      []string
+	toolIndex      int
+	themeIndex     int
+	field          int
+	layoutSplit    bool
+	quickCloseSend bool
 }
 
 const (
 	settingsFieldTool = iota
 	settingsFieldTheme
 	settingsFieldLayout
+	settingsFieldQuickClose
 	settingsFieldCount
 )
 
