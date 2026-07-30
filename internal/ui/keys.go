@@ -374,23 +374,27 @@ func (m *Model) attachCmd(id string) tea.Cmd {
 	// attachDoneMsg re-pins it to the preview width on detach. Clearing the
 	// cached hash first keeps the poller from reading this reflow as
 	// streaming output, same as the detach-side resize (reflowSessions).
+	// A failure here still attaches: the worst outcome is a stale window
+	// size, which beats locking the session out (issue #114).
 	var prepErr error
 	m.poller.reflowSessions([]string{id}, func() {
 		prepErr = m.tmux.PrepareAttach(id)
 	})
 	if prepErr != nil {
 		m.err = prepErr.Error()
-		return nil
 	}
 	return tea.ExecProcess(m.tmux.AttachCommand(id), func(err error) tea.Msg {
 		return attachDoneMsg{sessID: id, err: err}
 	})
 }
 
+// warn carries a PrepareAttach failure: shown to the user, but the attach
+// still proceeds, unlike err which cancels it.
 type reattachPreparedMsg struct {
 	sessID  string
 	diffGen int
 	err     error
+	warn    string
 }
 
 func (m *Model) reattach(id string, diffGen int) tea.Cmd {
@@ -417,7 +421,11 @@ func (m *Model) reattach(id string, diffGen int) tea.Cmd {
 		poller.reflowSessions([]string{id}, func() {
 			prepErr = driver.PrepareAttach(id)
 		})
-		return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: prepErr}
+		var warn string
+		if prepErr != nil {
+			warn = prepErr.Error()
+		}
+		return reattachPreparedMsg{sessID: id, diffGen: diffGen, warn: warn}
 	}
 }
 

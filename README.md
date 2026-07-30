@@ -32,7 +32,7 @@ Installs tmux with it if missing.
 go install github.com/YoanWai/agent-manager@latest
 ```
 
-Requires Go 1.26+ and tmux; installs to `$(go env GOPATH)/bin`.
+Requires Go 1.26+ and tmux 3.0+; installs to `$(go env GOPATH)/bin`.
 
 ### Prebuilt binaries
 
