@@ -54,3 +54,30 @@ func TestComputerLinesTemperatures(t *testing.T) {
 		})
 	}
 }
+
+// A reading after the first sits behind the separator's own reset, so each
+// one carries its color rather than inheriting one from the reading before.
+func TestTemperatureReadingsEachKeepTheirColor(t *testing.T) {
+	forceANSI256(t)
+
+	row := tempReadings(sysstat.Snapshot{CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55})
+	want := sgrOf(valueStyle.Render("x"))
+	for _, reading := range []string{"cpu 61°C", "gpu 55°C"} {
+		before, _, found := strings.Cut(row, reading)
+		if !found {
+			t.Fatalf("row %q is missing %q", row, reading)
+		}
+		if got := lastSGR(before); got != want {
+			t.Fatalf("%q renders under %q, want %q", reading, got, want)
+		}
+	}
+}
+
+func lastSGR(s string) string {
+	idx := strings.LastIndex(s, "\x1b[")
+	if idx < 0 {
+		return ""
+	}
+	code, _, _ := strings.Cut(s[idx+2:], "m")
+	return code
+}

@@ -405,18 +405,15 @@ func (m *Model) computerLines(width int) []string {
 func tempReadings(snap sysstat.Snapshot) string {
 	var parts []string
 	if snap.CPUTempOK {
-		parts = append(parts, fmt.Sprintf("cpu %.0f°C", snap.CPUTemp))
+		parts = append(parts, valueStyle.Render(fmt.Sprintf("cpu %.0f°C", snap.CPUTemp)))
 	}
 	if snap.GPUTempOK {
-		parts = append(parts, fmt.Sprintf("gpu %.0f°C", snap.GPUTemp))
+		parts = append(parts, valueStyle.Render(fmt.Sprintf("gpu %.0f°C", snap.GPUTemp)))
 	}
 	if snap.SoCTempOK {
-		parts = append(parts, fmt.Sprintf("soc %.0f°C", snap.SoCTemp))
+		parts = append(parts, valueStyle.Render(fmt.Sprintf("soc %.0f°C", snap.SoCTemp)))
 	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return valueStyle.Render(strings.Join(parts, subtleStyle.Render("  ")))
+	return strings.Join(parts, subtleStyle.Render("  "))
 }
 
 // contentLines is the right column: what the cursor is on, then its live
