@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest something the manager should do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The situation you hit and what makes it awkward today.
+      placeholder: I keep several agents on the same repo and want to see at a glance which ones touched the same files.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+      description: The behavior you want. A keybinding, a panel, a config field, a rough sketch, whatever you have.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Sessions and groups
+        - Status detection
+        - Quick prompt
+        - Diff review
+        - Settings and themes
+        - Config and tool support
+        - MCP and agent subcommands
+        - Stats and gauges
+        - Something else
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Related issues, how another tool solves it, a mockup.
