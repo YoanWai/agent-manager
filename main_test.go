@@ -4,11 +4,43 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
 )
+
+func TestResolveVersion(t *testing.T) {
+	cases := []struct {
+		label         string
+		embedded      string
+		moduleVersion string
+		hasInfo       bool
+		want          string
+	}{
+		{"ldflags win", "0.11.0", "v0.11.0", true, "0.11.0"},
+		{"ldflags win over missing info", "0.11.0", "", false, "0.11.0"},
+		{"go install at a tag", devVersion, "v0.11.0", true, "0.11.0"},
+		{"pseudo-version", devVersion, "v0.10.6-0.20260730153639-3b5b8a9a5649", true, devVersion},
+		{"go run", devVersion, "(devel)", true, devVersion},
+		{"empty module version", devVersion, "", true, devVersion},
+		{"no build info", devVersion, "", false, devVersion},
+		{"two components", devVersion, "v0.11", true, devVersion},
+		{"non-numeric", devVersion, "vX.Y.Z", true, devVersion},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			var info *debug.BuildInfo
+			if tc.hasInfo {
+				info = &debug.BuildInfo{Main: debug.Module{Version: tc.moduleVersion}}
+			}
+			if got := resolveVersion(tc.embedded, info, tc.hasInfo); got != tc.want {
+				t.Fatalf("resolveVersion(%q, %q) = %q, want %q", tc.embedded, tc.moduleVersion, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestRunRenameWritesNameFile(t *testing.T) {
 	dir := t.TempDir()
