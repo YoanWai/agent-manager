@@ -87,6 +87,11 @@ type Model struct {
 	copied     int
 	sel        focusSelection
 	paneCursor paneCursor
+	// paneMouse and paneHistory mirror the focused pane's mouse ownership
+	// and history depth as the watcher last reported them, so the wheel
+	// routes without a tmux round trip mid-Update.
+	paneMouse   bool
+	paneHistory int
 	// cursorOn is the caret's blink phase while focused.
 	cursorOn bool
 	// focusScroll is how many lines the focused pane is scrolled back into
@@ -756,15 +761,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case focusPreviewMsg:
+		sess, ok := m.selected()
+		if !ok || sess.ID != msg.sessID {
+			return m, nil
+		}
+		m.paneMouse = msg.paneMouse
+		m.paneHistory = msg.historySize
 		// A scrolled-back pane holds still: live frames would yank the
 		// view back to the bottom mid-read.
 		if m.scrolledBack() {
 			return m, nil
 		}
-		if sess, ok := m.selected(); ok && sess.ID == msg.sessID {
-			m.preview = msg.preview
-			m.paneCursor = paneCursor{x: msg.cursorX, y: msg.cursorY, ok: msg.cursorOK}
-		}
+		m.preview = msg.preview
+		m.paneCursor = paneCursor{x: msg.cursorX, y: msg.cursorY, ok: msg.cursorOK}
 		return m, nil
 
 	case previewMsg:

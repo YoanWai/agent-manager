@@ -382,6 +382,10 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	m.copied = 0
 	m.cursorOn = true
 	m.focusScroll = 0
+	// Pane state from a previously focused session must not route this
+	// one's wheel; the first pushed capture reports the real values.
+	m.paneMouse = false
+	m.paneHistory = 0
 	// Mouse reporting makes the pane a closed window: clicks land here
 	// instead of the host terminal, so a drag selects pane text alone and
 	// never the rail beside it.
@@ -424,8 +428,8 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, resume
 	}
-	if m.focus == nil || !m.focus.command(command) {
-		// No control pipe up (yet); one forked send-keys keeps the key
+	if m.focus == nil || !m.focus.attempt(command) {
+		// Nothing went over the pipe; one forked send-keys keeps the key
 		// from being swallowed.
 		if err := m.tmux.SendRaw(command); err != nil {
 			m.err = err.Error()

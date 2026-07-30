@@ -3,6 +3,7 @@
 package clipboard
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // ErrNoImage means the clipboard held no image when it was read.
@@ -336,15 +338,25 @@ func SaveToTemp(data []byte, ext string) (string, error) {
 // WriteText puts plain text on the OS clipboard. Used by the focused
 // preview's own selection, which the host terminal never sees because
 // mouse reporting is on while a session has focus.
+//
+// stdout and stderr stay unwired (os/exec points them at /dev/null): X11
+// writers like xclip fork a daemon that holds the selection, and any pipe
+// it inherits keeps a capturing call waiting for EOF that never comes.
+// The timeout covers a writer that hangs before daemonizing.
 func WriteText(text string) error {
 	name, args, err := copyCommand()
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(name, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = strings.NewReader(text)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s: %w: %s", name, err, strings.TrimSpace(string(out)))
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("%s: timed out", name)
+		}
+		return fmt.Errorf("%s: %w", name, err)
 	}
 	return nil
 }

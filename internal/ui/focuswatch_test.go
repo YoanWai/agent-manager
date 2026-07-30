@@ -168,16 +168,31 @@ func TestFocusWatchBacksOffAfterFailure(t *testing.T) {
 	}
 
 	// The next selection sync must not reopen inside the backoff window.
+	failedAt := func() time.Time {
+		watch.mu.Lock()
+		defer watch.mu.Unlock()
+		return watch.failedAt
+	}
+	firstFailure := failedAt()
 	watch.setFocus(id)
 	if watch.watching() == id {
 		t.Fatal("failed session reopened without backoff")
 	}
 
-	// A deliberate focus lifts the pause immediately.
+	// A deliberate focus lifts the pause: the retry spawns, fails against
+	// the still-missing session, and stamps a fresh failure. The claim
+	// itself may already be released again, so the new stamp is the
+	// race-free evidence the attach was attempted.
 	watch.retryNow()
 	watch.setFocus(id)
-	if watch.watching() != id {
-		t.Fatal("retryNow did not lift the backoff")
+	deadline = time.After(5 * time.Second)
+	for !failedAt().After(firstFailure) {
+		select {
+		case <-deadline:
+			t.Fatal("retryNow did not lift the backoff")
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
 	}
 }
 

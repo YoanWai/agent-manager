@@ -124,6 +124,10 @@ func (m *Model) previewPaneHeight() int {
 // self-dismissing errors. Keeps the footer free for key hints.
 func (m *Model) viewStatus() string {
 	switch {
+	// Errors outrank the focus notices: a scrolled or focused pane must
+	// not hide a failure report.
+	case m.mode == modeFocus && m.err != "":
+		return "  " + errStyle.Render("✕ "+m.err)
 	case m.scrolledBack():
 		return "  " + keyStyle.Render("scrolled ") +
 			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", m.focusScroll))

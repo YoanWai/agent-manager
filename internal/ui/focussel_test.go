@@ -229,18 +229,35 @@ func TestControlCaptureKeepsTrailingBlankRows(t *testing.T) {
 	}
 }
 
-func TestParseCursor(t *testing.T) {
-	x, y, ok := parseCursor("12,34\n")
-	if !ok || x != 12 || y != 34 {
-		t.Fatalf("parseCursor = (%d,%d,%v)", x, y, ok)
+func TestApplyPaneState(t *testing.T) {
+	var msg focusPreviewMsg
+	applyPaneState(&msg, "12,34,010,250\n")
+	if !msg.cursorOK || msg.cursorX != 12 || msg.cursorY != 34 {
+		t.Fatalf("cursor = (%d,%d,%v)", msg.cursorX, msg.cursorY, msg.cursorOK)
 	}
+	if !msg.paneMouse {
+		t.Fatal("mouse flag 1 not read as pane-owned mouse")
+	}
+	if msg.historySize != 250 {
+		t.Fatalf("historySize = %d, want 250", msg.historySize)
+	}
+
+	var plain focusPreviewMsg
+	applyPaneState(&plain, "0,0,000,0")
+	if plain.paneMouse || plain.historySize != 0 || !plain.cursorOK {
+		t.Fatalf("plain pane state = %+v", plain)
+	}
+
 	// tmux answers an unquoted format with its default status message;
-	// that must never read as a cursor position.
-	if _, _, ok := parseCursor("[am_x] 0:zsh, current pane 0 - (00:43)"); ok {
-		t.Fatal("parseCursor accepted tmux's default message")
+	// that must never read as pane state.
+	var bogus focusPreviewMsg
+	applyPaneState(&bogus, "[am_x] 0:zsh, current pane 0 - (00:43)")
+	if bogus.cursorOK || bogus.paneMouse || bogus.historySize != 0 {
+		t.Fatal("applyPaneState accepted tmux's default message")
 	}
-	if _, _, ok := parseCursor("nonsense"); ok {
-		t.Fatal("parseCursor accepted junk")
+	applyPaneState(&bogus, "nonsense")
+	if bogus.cursorOK {
+		t.Fatal("applyPaneState accepted junk")
 	}
 }
 

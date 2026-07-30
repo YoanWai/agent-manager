@@ -3,6 +3,7 @@ package tmux
 import (
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -11,23 +12,40 @@ import (
 // what the client writes, standing in for a tmux server.
 type fakeServer struct {
 	control *Control
-	writes  *strings.Builder
+	writes  *syncBuf
 	feed    io.WriteCloser
 }
 
 func newFakeServer() *fakeServer {
 	stdoutRead, stdoutWrite := io.Pipe()
-	writes := &strings.Builder{}
+	writes := &syncBuf{}
 	return &fakeServer{
-		control: newControl(nopWriteCloser{writes}, stdoutRead),
+		control: newControl(writes, stdoutRead),
 		writes:  writes,
 		feed:    stdoutWrite,
 	}
 }
 
-type nopWriteCloser struct{ io.Writer }
+// syncBuf records the client's writes; Command writes from test goroutines
+// while assertions read, so access is locked.
+type syncBuf struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
 
-func (nopWriteCloser) Close() error { return nil }
+func (s *syncBuf) Write(data []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(data)
+}
+
+func (s *syncBuf) Close() error { return nil }
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
 
 func (f *fakeServer) send(lines ...string) {
 	io.WriteString(f.feed, strings.Join(lines, "\n")+"\n")
@@ -63,15 +81,7 @@ func TestControlCommandRoundTrip(t *testing.T) {
 		got <- result{text, err}
 	}()
 
-	deadline := time.After(2 * time.Second)
-	for server.writes.Len() == 0 {
-		select {
-		case <-deadline:
-			t.Fatal("command never written to stdin")
-		default:
-			time.Sleep(time.Millisecond)
-		}
-	}
+	waitWritten(t, server, "capture-pane -p\n")
 	if want := "capture-pane -p\n"; server.writes.String() != want {
 		t.Fatalf("stdin = %q, want %q", server.writes.String(), want)
 	}
@@ -179,6 +189,7 @@ func TestControlErrorBlock(t *testing.T) {
 		_, err := server.control.Command("bogus-command")
 		got <- err
 	}()
+	waitWritten(t, server, "bogus-command\n")
 	server.send("%begin 2 1 0", "unknown command: bogus-command", "%error 2 1 0")
 	select {
 	case err := <-got:

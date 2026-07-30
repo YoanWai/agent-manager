@@ -2,11 +2,9 @@ package ui
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
-
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -53,13 +51,13 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 	if !ok || m.mode != modeFocus || m.focus == nil {
 		return nil
 	}
-	if m.paneWantsMouse(sess.ID) {
+	if m.paneMouse {
 		row, col, inside := m.paneCell(x, y)
 		if !inside {
 			return nil
 		}
 		command := "send-keys -t " + tmux.SessionName(sess.ID) + " -H " + hexBytes(wheelSGR(up, col, row))
-		if !m.focus.command(command) {
+		if !m.focus.attempt(command) {
 			if err := m.tmux.SendRaw(command); err != nil {
 				m.err = err.Error()
 			}
@@ -71,20 +69,6 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 		delta = -1
 	}
 	return m.scrollFocus(delta)
-}
-
-// paneWantsMouse reports whether the application in the pane has turned on
-// mouse tracking, which means the wheel is its input, not ours.
-func (m *Model) paneWantsMouse(sessID string) bool {
-	if m.focus == nil {
-		return false
-	}
-	out, ok := m.focus.query(`display-message -p -t ` + tmux.SessionName(sessID) +
-		` "#{mouse_any_flag}#{mouse_button_flag}#{mouse_standard_flag}"`)
-	if !ok {
-		return false
-	}
-	return strings.Contains(strings.TrimSpace(out), "1")
 }
 
 // scrollFocus moves the focused pane through its scrollback and fetches
@@ -100,8 +84,8 @@ func (m *Model) scrollFocus(delta int) tea.Cmd {
 	if offset < 0 {
 		offset = 0
 	}
-	if limit := m.focusScrollLimit(sess.ID); offset > limit {
-		offset = limit
+	if offset > m.paneHistory {
+		offset = m.paneHistory
 	}
 	if offset == m.focusScroll {
 		return nil
@@ -113,23 +97,6 @@ func (m *Model) scrollFocus(delta int) tea.Cmd {
 		return m.focusRegionCmd(sess.ID, 0)
 	}
 	return m.focusRegionCmd(sess.ID, offset)
-}
-
-// focusScrollLimit is how far back this pane's history goes, so scrolling
-// stops at the top instead of capturing empty regions.
-func (m *Model) focusScrollLimit(sessID string) int {
-	if m.focus == nil {
-		return 0
-	}
-	out, ok := m.focus.query(`display-message -p -t ` + tmux.SessionName(sessID) + ` "#{history_size}"`)
-	if !ok {
-		return 0
-	}
-	size, err := strconv.Atoi(strings.TrimSpace(out))
-	if err != nil || size < 0 {
-		return 0
-	}
-	return size
 }
 
 // focusRegionCmd captures the pane region that sits offset lines above the

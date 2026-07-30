@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -60,9 +61,26 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	}
 	m.View()
 	// Tests discard the watcher's pushes, so seed the live frame the same
-	// way the scroll path fetches one.
+	// way the scroll path fetches one, and the history depth the wheel
+	// clamps against.
 	seedLive(t, m, sess.ID)
+	m.paneHistory = paneHistorySize(t, m, sess.ID)
 	return m, sess.ID
+}
+
+// paneHistorySize asks tmux for the pane's history depth over the control
+// pipe, standing in for the pushed capture that normally caches it.
+func paneHistorySize(t *testing.T, m *Model, sessID string) int {
+	t.Helper()
+	out, ok := m.focus.query(`display-message -p -t ` + tmux.SessionName(sessID) + ` "#{history_size}"`)
+	if !ok {
+		t.Fatal("history query failed over the control pipe")
+	}
+	size, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		t.Fatalf("history size %q: %v", out, err)
+	}
+	return size
 }
 
 // seedLive pulls the pane's current bottom into the model's preview.
@@ -166,7 +184,7 @@ func TestTypingResumesLiveView(t *testing.T) {
 // empty regions forever.
 func TestScrollStopsAtHistoryTop(t *testing.T) {
 	m, _ := focusedWithHistory(t, "topstop")
-	limit := m.focusScrollLimit(m.rows[m.cursor].sess.ID)
+	limit := m.paneHistory
 	if limit == 0 {
 		t.Skip("pane reported no history")
 	}
@@ -210,11 +228,12 @@ func TestRefreshReassertsPaneHeight(t *testing.T) {
 		t.Fatalf("initial pane height = %d, want %d", got, want)
 	}
 
+	full := m.previewPaneHeight()
 	// Opening the quick bar shrinks the box without any terminal resize.
 	m.openQuickMode()
 	shrunk := m.previewPaneHeight()
-	if shrunk == m.previewPaneHeight()+1 {
-		t.Fatal("quick bar did not change the box height")
+	if shrunk >= full {
+		t.Fatal("quick bar did not shrink the box height")
 	}
 	m.applyCmd(t, m.refreshCmd())
 	if got := windowHeight(t, sess.ID); got != shrunk {
@@ -256,7 +275,10 @@ func TestWheelReachesMouseTrackingApp(t *testing.T) {
 	m.selectSessionRow(t, "wheelapp")
 	sess := m.rows[m.cursor].sess
 
-	m.focus = newFocusWatch(m.tmux, func(tea.Msg) {})
+	// Pump the watcher's pushes through Update, the way the running app
+	// does, so the mouse-ownership cache the wheel reads gets populated.
+	msgs := make(chan tea.Msg, 64)
+	m.focus = newFocusWatch(m.tmux, func(msg tea.Msg) { msgs <- msg })
 	t.Cleanup(m.focus.Close)
 	m.focus.setFocus(sess.ID)
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -271,11 +293,17 @@ func TestWheelReachesMouseTrackingApp(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	deadline = time.Now().Add(5 * time.Second)
-	for !m.paneWantsMouse(sess.ID) {
+	for !m.paneMouse {
+		select {
+		case msg := <-msgs:
+			updated, _ := m.Update(msg)
+			*m = *updated.(*Model)
+		default:
+			time.Sleep(20 * time.Millisecond)
+		}
 		if time.Now().After(deadline) {
 			t.Skip("pane never reported mouse tracking on this host")
 		}
-		time.Sleep(50 * time.Millisecond)
 	}
 
 	// A wheel notch over the pane now goes to the app, not to tmux history.

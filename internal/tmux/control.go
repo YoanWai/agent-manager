@@ -15,8 +15,15 @@ import (
 // commands ride the same pipe, so a focused preview needs no per-tick
 // process forks and no polling: wait for Events, then Command a capture.
 type Control struct {
-	cmd   *exec.Cmd
-	stdin io.WriteCloser
+	cmd *exec.Cmd
+
+	// writeMu serializes stdin writes and, held across the queue append,
+	// keeps write order identical to waiter order. Writes never run under
+	// mu: the read loop needs mu to resolve replies, and a write blocked
+	// on a full pipe while holding it would stop stdout draining - a
+	// cycle no timeout breaks.
+	writeMu sync.Mutex
+	stdin   io.WriteCloser
 
 	mu      sync.Mutex
 	pending []chan reply
@@ -95,21 +102,10 @@ const commandTimeout = 2 * time.Second
 // output. Replies arrive strictly in command order, so each call enqueues
 // a waiter that the read loop resolves from the front of the queue.
 func (c *Control) Command(command string) (string, error) {
-	waiter := make(chan reply, 1)
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return "", fmt.Errorf("control client closed")
+	waiter, err := c.submit(command)
+	if err != nil {
+		return "", err
 	}
-	c.pending = append(c.pending, waiter)
-	if _, err := io.WriteString(c.stdin, command+"\n"); err != nil {
-		// Nothing went out, so no reply will come: leaving the waiter
-		// queued would shift every later reply onto the wrong caller.
-		c.pending = c.pending[:len(c.pending)-1]
-		c.mu.Unlock()
-		return "", fmt.Errorf("control write: %w", err)
-	}
-	c.mu.Unlock()
 	timeout := time.NewTimer(commandTimeout)
 	defer timeout.Stop()
 	select {
@@ -124,7 +120,48 @@ func (c *Control) Command(command string) (string, error) {
 	}
 }
 
-// Close detaches the client. tmux exits on stdin EOF.
+// Send writes one tmux command and returns without waiting for its reply.
+// For keystroke forwarding: once the write lands the pane owns the key,
+// and waiting for the acknowledgement would only stall the caller. The
+// discarded reply still pops this command's own waiter, so the queue
+// stays aligned.
+func (c *Control) Send(command string) error {
+	_, err := c.submit(command)
+	return err
+}
+
+// submit enqueues a reply waiter and writes the command line. The queue
+// append rides inside the write lock so waiter order always matches write
+// order, while mu itself is never held across the pipe write.
+func (c *Control) submit(command string) (chan reply, error) {
+	waiter := make(chan reply, 1)
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("control client closed")
+	}
+	c.pending = append(c.pending, waiter)
+	c.mu.Unlock()
+	if _, err := io.WriteString(c.stdin, command+"\n"); err != nil {
+		// Nothing went out, so no reply will come: leaving the waiter
+		// queued would shift every later reply onto the wrong caller.
+		c.mu.Lock()
+		for i := len(c.pending) - 1; i >= 0; i-- {
+			if c.pending[i] == waiter {
+				c.pending = append(c.pending[:i], c.pending[i+1:]...)
+				break
+			}
+		}
+		c.mu.Unlock()
+		return nil, fmt.Errorf("control write: %w", err)
+	}
+	return waiter, nil
+}
+
+// Close detaches the client. tmux exits on stdin EOF; one that ignores it
+// is killed after a bounded wait so the caller can never hang here.
 func (c *Control) Close() error {
 	c.mu.Lock()
 	closed := c.closed
@@ -134,7 +171,16 @@ func (c *Control) Close() error {
 		return nil
 	}
 	c.stdin.Close()
-	<-c.done
+	timeout := time.NewTimer(commandTimeout)
+	defer timeout.Stop()
+	select {
+	case <-c.done:
+	case <-timeout.C:
+		if c.cmd != nil && c.cmd.Process != nil {
+			c.cmd.Process.Kill()
+		}
+		<-c.done
+	}
 	return nil
 }
 

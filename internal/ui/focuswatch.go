@@ -19,6 +19,11 @@ type focusPreviewMsg struct {
 	cursorX  int
 	cursorY  int
 	cursorOK bool
+	// paneMouse and historySize let the wheel route without asking tmux
+	// mid-Update: whether the pane's application owns the mouse, and how
+	// far back its history goes.
+	paneMouse   bool
+	historySize int
 }
 
 // focusDebounce is how long the watcher lets a paint burst settle before
@@ -108,12 +113,20 @@ func (w *focusWatch) serving(id string) bool {
 	return w.id == id && w.control != nil
 }
 
-// command runs one tmux command over the current watcher's control pipe.
-// False when no client is up (watcher still opening, or dead); the caller
-// falls back to a forked tmux invocation.
-func (w *focusWatch) command(command string) bool {
-	_, ok := w.query(command)
-	return ok
+// attempt forwards one tmux command over the control pipe without waiting
+// for the reply. True once a client accepted the write: the pane owns the
+// command from that moment, even if the acknowledgement is lost, so a
+// caller that resent on a slow reply would type the keystroke twice.
+// False only when nothing went out - no client, or a failed write - which
+// is the one case a forked fallback is safe.
+func (w *focusWatch) attempt(command string) bool {
+	w.mu.Lock()
+	control := w.control
+	w.mu.Unlock()
+	if control == nil {
+		return false
+	}
+	return control.Send(command) == nil
 }
 
 // query runs one tmux command over the control pipe and returns its
@@ -142,6 +155,10 @@ func (w *focusWatch) stopLocked() {
 		close(w.stop)
 		w.stop = nil
 	}
+	// The stopped watcher's client is not ours to report or use anymore.
+	// Left in place until its goroutine unwound, serving() would claim a
+	// session nothing streams yet and freeze its preview on the old frame.
+	w.control = nil
 }
 
 // clearIfCurrent lets a dead watcher release its claim so a later
@@ -196,13 +213,16 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		}
 		msg := focusPreviewMsg{sessID: id, preview: matchExecShape(pane)}
 		// The capture carries no cursor, and a terminal without a visible
-		// cursor gives no sense of where typing lands.
+		// cursor gives no sense of where typing lands. Mouse ownership and
+		// history depth ride along so the wheel can route from cached state
+		// instead of a round trip on the UI loop.
 		// The format must be quoted: tmux's parser reads a bare { as the
 		// start of a command block and swallows the argument, which comes
 		// back as its default status message instead of coordinates.
-		if where, err := control.Command(
-			`display-message -p -t ` + target + ` "#{cursor_x},#{cursor_y}"`); err == nil {
-			msg.cursorX, msg.cursorY, msg.cursorOK = parseCursor(where)
+		if state, err := control.Command(
+			`display-message -p -t ` + target +
+				` "#{cursor_x},#{cursor_y},#{mouse_any_flag}#{mouse_button_flag}#{mouse_standard_flag},#{history_size}"`); err == nil {
+			applyPaneState(&msg, state)
 		}
 		// Skip the send once stopped: it could block on the UI loop for
 		// a frame, and its result is already stale.
@@ -254,19 +274,21 @@ func matchExecShape(pane string) string {
 	return strings.TrimSuffix(pane, "\n") + "\n"
 }
 
-// parseCursor reads "x,y" from display-message.
-func parseCursor(reply string) (x, y int, ok bool) {
+// applyPaneState reads "x,y,mouseflags,history" from display-message into
+// the preview message. A malformed reply leaves the zero values: no
+// cursor, no mouse claim, no history.
+func applyPaneState(msg *focusPreviewMsg, reply string) {
 	parts := strings.Split(strings.TrimSpace(reply), ",")
-	if len(parts) != 2 {
-		return 0, 0, false
+	if len(parts) != 4 {
+		return
 	}
-	values := make([]int, 2)
-	for i, part := range parts {
-		value, err := strconv.Atoi(strings.TrimSpace(part))
-		if err != nil {
-			return 0, 0, false
-		}
-		values[i] = value
+	x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
+	y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if errX == nil && errY == nil {
+		msg.cursorX, msg.cursorY, msg.cursorOK = x, y, true
 	}
-	return values[0], values[1], true
+	msg.paneMouse = strings.Contains(parts[2], "1")
+	if size, err := strconv.Atoi(strings.TrimSpace(parts[3])); err == nil && size > 0 {
+		msg.historySize = size
+	}
 }
