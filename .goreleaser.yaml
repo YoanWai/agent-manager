@@ -39,3 +39,26 @@ brews:
       - name: tmux
     test: |
       system "#{bin}/agent-manager", "--version"
+
+# git_url resolves to an empty string without AUR_KEY in the environment, and
+# goreleaser skips the publish on an empty url, so a release without the key
+# still succeeds.
+aurs:
+  - name: agent-manager-bin
+    homepage: https://github.com/YoanWai/agent-manager
+    description: Terminal UI to manage AI coding-agent tmux sessions
+    license: MIT
+    maintainers:
+      - Yoan Wai <106609173+YoanWai@users.noreply.github.com>
+    depends:
+      - tmux
+      - git
+    provides:
+      - agent-manager
+    conflicts:
+      - agent-manager
+    private_key: '{{ index .Env "AUR_KEY" }}'
+    git_url: '{{ if index .Env "AUR_KEY" }}ssh://aur@aur.archlinux.org/agent-manager-bin.git{{ end }}'
+    package: |-
+      install -Dm755 "./agent-manager" "${pkgdir}/usr/bin/agent-manager"
+      install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/agent-manager-bin/LICENSE"
