@@ -1,4 +1,9 @@
-<h1 align="center">Agent Manager</h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/wordmark-dark.svg">
+    <img src="docs/brand/wordmark-light.svg" alt="agent-manager" width="340">
+  </picture>
+</h1>
 
 <p align="center"><b>The fastest workflow for every AI coding agent.</b></p>
 
