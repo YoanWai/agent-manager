@@ -31,6 +31,12 @@ func wheelSGR(up bool, col, row int) string {
 	return fmt.Sprintf("\x1b[<%d;%d;%dM", button, col+1, row+1)
 }
 
+// motionSGR is a pointer move with no button held, at a one-based pane
+// cell: button 3 with the motion bit set.
+func motionSGR(col, row int) string {
+	return fmt.Sprintf("\x1b[<35;%d;%dM", col+1, row+1)
+}
+
 // hexBytes renders a string as the space-separated byte codes send-keys -H
 // takes, which sidesteps tmux quoting for control sequences entirely.
 func hexBytes(s string) string {
@@ -56,7 +62,15 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 		if !inside {
 			return nil
 		}
-		command := "send-keys -t " + tmux.SessionName(sess.ID) + " -H " + hexBytes(wheelSGR(up, col, row))
+		report := wheelSGR(up, col, row)
+		if m.paneMotion {
+			// An app tracking all motion places the wheel by where the
+			// pointer last moved, and focus mode keeps every move for its
+			// own selection, so the notch arrives with the pointer still
+			// wherever the app last saw it.
+			report = motionSGR(col, row) + report
+		}
+		command := "send-keys -t " + tmux.SessionName(sess.ID) + " -H " + hexBytes(report)
 		if !m.focus.attempt(command) {
 			if err := m.tmux.SendRaw(command); err != nil {
 				m.err = err.Error()

@@ -21,8 +21,10 @@ type focusPreviewMsg struct {
 	cursorOK bool
 	// paneMouse and historySize let the wheel route without asking tmux
 	// mid-Update: whether the pane's application owns the mouse, and how
-	// far back its history goes.
+	// far back its history goes. paneMotion narrows that to the apps that
+	// asked for every pointer move, not just clicks and drags.
 	paneMouse   bool
+	paneMotion  bool
 	historySize int
 }
 
@@ -221,7 +223,7 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		// back as its default status message instead of coordinates.
 		if state, err := control.Command(
 			`display-message -p -t ` + target +
-				` "#{cursor_x},#{cursor_y},#{mouse_any_flag}#{mouse_button_flag}#{mouse_standard_flag},#{history_size}"`); err == nil {
+				` "#{cursor_x},#{cursor_y},#{mouse_any_flag}#{mouse_button_flag}#{mouse_standard_flag},#{history_size},#{mouse_all_flag}"`); err == nil {
 			applyPaneState(&msg, state)
 		}
 		// Skip the send once stopped: it could block on the UI loop for
@@ -274,12 +276,12 @@ func matchExecShape(pane string) string {
 	return strings.TrimSuffix(pane, "\n") + "\n"
 }
 
-// applyPaneState reads "x,y,mouseflags,history" from display-message into
-// the preview message. A malformed reply leaves the zero values: no
-// cursor, no mouse claim, no history.
+// applyPaneState reads "x,y,mouseflags,history,allmotion" from
+// display-message into the preview message. A malformed reply leaves the
+// zero values: no cursor, no mouse claim, no history.
 func applyPaneState(msg *focusPreviewMsg, reply string) {
 	parts := strings.Split(strings.TrimSpace(reply), ",")
-	if len(parts) != 4 {
+	if len(parts) != 5 {
 		return
 	}
 	x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
@@ -291,4 +293,5 @@ func applyPaneState(msg *focusPreviewMsg, reply string) {
 	if size, err := strconv.Atoi(strings.TrimSpace(parts[3])); err == nil && size > 0 {
 		msg.historySize = size
 	}
+	msg.paneMotion = strings.TrimSpace(parts[4]) == "1"
 }

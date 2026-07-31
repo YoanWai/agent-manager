@@ -391,6 +391,7 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	// Pane state from a previously focused session must not route this
 	// one's wheel; the first pushed capture reports the real values.
 	m.paneMouse = false
+	m.paneMotion = false
 	m.paneHistory = 0
 	// Mouse reporting makes the pane a closed window: clicks land here
 	// instead of the host terminal, so a drag selects pane text alone and

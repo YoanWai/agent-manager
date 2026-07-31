@@ -321,12 +321,58 @@ func TestWheelReachesMouseTrackingApp(t *testing.T) {
 		// cat echoes the control bytes, so the wheel report shows up as
 		// text with the escape rendered as ^[.
 		if strings.Contains(pane, "[<64;") {
+			// The app tracks all motion, so the notch has to arrive with
+			// the pointer already reported at that cell.
+			move := strings.Index(pane, "[<35;")
+			if move < 0 {
+				t.Fatalf("no pointer move ahead of the wheel report: %q", pane)
+			}
+			if move > strings.Index(pane, "[<64;") {
+				t.Fatalf("pointer move landed after the wheel report: %q", pane)
+			}
 			break
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("wheel report never reached the pane: %q", pane)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// A pane whose app owns the wheel must not stay parked on a scrollback
+// offset: the wheel goes to the app from then on, so nothing would walk
+// the offset back down and the view would hold a stale frame for good.
+func TestAppMouseClearsScrollback(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "sticky", t.TempDir(), "")
+	m.selectSessionRow(t, "sticky")
+	sess := m.rows[m.cursor].sess
+	m.mode = modeFocus
+	m.focusScroll = 9
+	if !m.scrolledBack() {
+		t.Fatal("setup did not leave the view scrolled back")
+	}
+
+	updated, _ := m.Update(focusPreviewMsg{
+		sessID:    sess.ID,
+		preview:   "LIVE-FRAME\n",
+		paneMouse: true,
+	})
+	m = updated.(*Model)
+	if m.focusScroll != 0 {
+		t.Fatalf("focusScroll = %d, want the app-owned pane back at the bottom", m.focusScroll)
+	}
+	if m.preview != "LIVE-FRAME\n" {
+		t.Fatalf("preview = %q, want the live frame", m.preview)
+	}
+}
+
+func TestMotionSGREncoding(t *testing.T) {
+	if got, want := motionSGR(0, 0), "\x1b[<35;1;1M"; got != want {
+		t.Errorf("motion = %q, want %q", got, want)
+	}
+	if got, want := motionSGR(11, 4), "\x1b[<35;12;5M"; got != want {
+		t.Errorf("motion = %q, want %q", got, want)
 	}
 }
 
