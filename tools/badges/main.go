@@ -1,6 +1,7 @@
-// Command badges regenerates the README's status chips from live repo data.
-// It runs in CI, so the numbers in the README are the numbers GitHub reports
-// rather than a figure someone typed once and forgot.
+// Command badges publishes the one header figure GitHub will not serve
+// anonymously. Stars, release and licence are read live by shields.io each time
+// the README is viewed; clone traffic needs push access, so it travels through
+// the repository as a shields endpoint this command refreshes.
 package main
 
 import (
@@ -11,32 +12,13 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/YoanWai/agent-manager/internal/badge"
 )
 
 const (
-	repo   = "YoanWai/agent-manager"
-	outDir = "docs/badges"
+	repo     = "YoanWai/agent-manager"
+	outDir   = "docs/badges"
+	cloneInk = "6a4a94"
 )
-
-const (
-	amber  = "#d08442"
-	blue   = "#6f9fd0"
-	purple = "#a78bd0"
-	red    = "#cc6a6a"
-	subtle = "#7d8590"
-)
-
-// lightInk darkens the dark-theme accents enough to clear 4.5:1 against a
-// white surface, so the same chip reads in either GitHub theme.
-var lightInk = map[string]string{
-	amber:  "#96591f",
-	blue:   "#2f5f8f",
-	purple: "#6a4a94",
-	red:    "#a33c3c",
-	subtle: "#59636e",
-}
 
 func main() {
 	if err := run(); err != nil {
@@ -46,75 +28,35 @@ func main() {
 }
 
 func run() error {
-	stats, complete, err := collect()
-	if err != nil {
-		return err
-	}
-	// The card is one file, so a stat we could not measure would drop its whole
-	// column on the next commit. Leaving the committed card alone keeps the
-	// README honest and makes the missing token visible on the run summary.
-	if !complete {
-		fmt.Println("::warning::clone traffic was unavailable, so the stat card was left as committed; add a BADGE_TOKEN secret to refresh it")
-		return fillTrendshift(trendshiftBadge())
-	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
-	light := make([]badge.Stat, len(stats))
-	for i, stat := range stats {
-		light[i] = stat
-		light[i].Color = lightInk[stat.Color]
-	}
-	if err := write("stats-light.svg", badge.Card(light, badge.Light)); err != nil {
-		return err
-	}
-	if err := write("stats-dark.svg", badge.Card(stats, badge.Dark)); err != nil {
+	if err := writeCloneEndpoint(); err != nil {
 		return err
 	}
 	return fillTrendshift(trendshiftBadge())
 }
 
-func write(name, svg string) error {
-	return os.WriteFile(filepath.Join(outDir, name), []byte(svg+"\n"), 0o644)
-}
-
-func collect() ([]badge.Stat, bool, error) {
-	var repoInfo struct {
-		Stars   int `json:"stargazers_count"`
-		License struct {
-			SPDX string `json:"spdx_id"`
-		} `json:"license"`
+// writeCloneEndpoint leaves the committed figure alone when the traffic call
+// fails, so a missing token shows up on the run summary rather than as a zero
+// in the README.
+func writeCloneEndpoint() error {
+	count, measured := cloneCount()
+	if !measured {
+		fmt.Println("::warning::clone traffic was unavailable, so the count was left as committed; add a BADGE_TOKEN secret to refresh it")
+		return nil
 	}
-	if err := get("https://api.github.com/repos/"+repo, &repoInfo); err != nil {
-		return nil, false, err
+	endpoint := struct {
+		SchemaVersion int    `json:"schemaVersion"`
+		Label         string `json:"label"`
+		Message       string `json:"message"`
+		Color         string `json:"color"`
+	}{1, "clones · 14d", compact(count), cloneInk}
+	body, err := json.MarshalIndent(endpoint, "", "  ")
+	if err != nil {
+		return err
 	}
-
-	var releases []struct {
-		TagName string `json:"tag_name"`
-	}
-	if err := get("https://api.github.com/repos/"+repo+"/releases?per_page=1", &releases); err != nil {
-		return nil, false, err
-	}
-	latest := ""
-	if len(releases) > 0 {
-		latest = releases[0].TagName
-	}
-
-	clones, measured := cloneCount()
-
-	license := repoInfo.License.SPDX
-	if license == "" {
-		license = "MIT"
-	}
-
-	stats := []badge.Stat{{Value: compact(repoInfo.Stars), Label: "stars", Color: amber}}
-	if measured {
-		stats = append(stats, badge.Stat{Value: compact(clones), Label: "clones · 14d", Color: purple})
-	}
-	return append(stats,
-		badge.Stat{Value: latest, Label: "release", Color: blue},
-		badge.Stat{Value: license, Label: "license", Color: subtle},
-	), measured, nil
+	return os.WriteFile(filepath.Join(outDir, "clones.json"), append(body, '\n'), 0o644)
 }
 
 // cloneCount reads 14-day clone traffic. The endpoint needs push access, which
