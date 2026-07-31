@@ -64,7 +64,7 @@ Reads the GitHub release directly, so it needs no registry entry. Install tmux w
 go install github.com/YoanWai/agent-manager@latest
 ```
 
-Requires Go 1.26+ and tmux 3.0+; installs to `$(go env GOPATH)/bin`.
+Requires Go 1.26+ and tmux 3.1+; installs to `$(go env GOPATH)/bin`.
 
 ### Prebuilt binaries
 

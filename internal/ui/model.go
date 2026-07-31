@@ -36,6 +36,9 @@ const (
 	modeGroupForm
 	modeSettings
 	modeDiff
+	// modeFocus routes the keyboard into the selected session's pane while
+	// the list and live preview stay on screen.
+	modeFocus
 )
 
 type treeRow struct {
@@ -76,14 +79,41 @@ type Model struct {
 	prevNetAt   time.Time
 	prevNetOK   bool
 
-	poller          *poller
-	cursor          int
-	mode            mode
-	showArchived    bool
-	hideEmptyGroups bool
-	collapsed       map[string]bool
-	search          string
-	searching       bool
+	poller *poller
+	focus  *focusWatch
+	// Focused-pane selection and the geometry it hit-tests against, both
+	// written during paint so clicks resolve against the current frame.
+	// copied is the size of the last clipboard write, shown once in the
+	// status line and cleared on the next selection.
+	copied     int
+	sel        focusSelection
+	paneCursor paneCursor
+	// paneMouse and paneHistory mirror the focused pane's mouse ownership
+	// and history depth as the watcher last reported them, so the wheel
+	// routes without a tmux round trip mid-Update.
+	paneMouse   bool
+	paneHistory int
+	// cursorOn is the caret's blink phase while focused.
+	cursorOn bool
+	// focusScroll is how many lines the focused pane is scrolled back into
+	// its history; zero is live at the bottom.
+	focusScroll int
+	// focusOnEnter mirrors the persisted focus-key setting; the footer
+	// reads it every frame, so it lives here instead of the store.
+	focusOnEnter bool
+	// watchedGen is previewGen as of the last poll pass, so a selection
+	// that has not moved since can be recognised as at rest.
+	watchedGen        uint64
+	paneBox           paneBox
+	paneColumnX       int
+	previewBodyOffset int
+	cursor            int
+	mode              mode
+	showArchived      bool
+	hideEmptyGroups   bool
+	collapsed         map[string]bool
+	search            string
+	searching         bool
 
 	diff      diffState
 	form      form
@@ -206,6 +236,7 @@ type settingsState struct {
 	field          int
 	layoutSplit    bool
 	quickCloseSend bool
+	enterFocuses   bool
 }
 
 const (
@@ -213,6 +244,7 @@ const (
 	settingsFieldTheme
 	settingsFieldLayout
 	settingsFieldQuickClose
+	settingsFieldFocusKey
 	settingsFieldCount
 )
 
@@ -271,6 +303,19 @@ const (
 	updateTickInterval  = time.Hour
 )
 
+// cursorBlinkMsg toggles the focused pane's caret.
+type cursorBlinkMsg struct{}
+
+// cursorBlinkInterval is the caret's half period, matching the rate most
+// terminals blink their own.
+const cursorBlinkInterval = 530 * time.Millisecond
+
+// cursorBlink re-arms the caret timer. It runs only while a session is
+// focused; every other mode lets the timer die.
+func (m *Model) cursorBlink() tea.Cmd {
+	return tea.Tick(cursorBlinkInterval, func(time.Time) tea.Msg { return cursorBlinkMsg{} })
+}
+
 // previewTickMsg drives that timer.
 type previewTickMsg struct{}
 
@@ -305,17 +350,18 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	gitDriver, _ := git.New()
 	applyTheme(themes[themeIndex(storedTheme(st))])
 	return &Model{
-		cfg:         cfg,
-		store:       st,
-		tmux:        driver,
-		hooks:       hookManager,
-		gitDrv:      gitDriver,
-		setSnapshot: st.SetSnapshot,
-		poller:      newPoller(st, driver, engine, hookManager, statusSources, sessionStores, cfg.PollInterval.Duration),
-		collapsed:   loadCollapsed(st),
-		splitRatio:  loadSplitRatio(st),
-		mode:        modeList,
-		version:     version,
+		cfg:          cfg,
+		store:        st,
+		tmux:         driver,
+		hooks:        hookManager,
+		gitDrv:       gitDriver,
+		setSnapshot:  st.SetSnapshot,
+		poller:       newPoller(st, driver, engine, hookManager, statusSources, sessionStores, cfg.PollInterval.Duration),
+		collapsed:    loadCollapsed(st),
+		splitRatio:   loadSplitRatio(st),
+		focusOnEnter: storedFocusOnEnter(st),
+		mode:         modeList,
+		version:      version,
 	}
 }
 
@@ -373,16 +419,43 @@ func (m *Model) persistCollapsed() {
 // bubbletea event loop so statuses keep updating while the TUI is
 // suspended inside a tmux attach.
 func (m *Model) StartPoller(send func(tea.Msg)) {
+	m.focus = newFocusWatch(m.tmux, send)
 	m.syncPollInput()
 	go m.poller.run(send)
 }
 
 func (m *Model) syncPollInput() {
 	selectedID := ""
+	focusID := ""
 	if sess, ok := m.selected(); ok {
 		selectedID = sess.ID
+		if !sess.Archived {
+			focusID = sess.ID
+		}
 	}
 	m.poller.setInput(m.showArchived, selectedID)
+	// Only ever stop the watcher here. Opening a control client costs a
+	// process and a tmux attach, so holding j through twenty rows would
+	// pay that twenty times; the client is opened once the cursor settles
+	// instead. The watcher only exists once StartPoller has a send
+	// function; tests drive Update without one.
+	if m.focus != nil && m.focus.watching() != focusID {
+		m.focus.setFocus("")
+	}
+}
+
+// watchSelection points the control client at the current selection. Call
+// it where the selection has come to rest, never on every cursor move.
+func (m *Model) watchSelection() {
+	if m.focus == nil {
+		return
+	}
+	sess, ok := m.selected()
+	if !ok || sess.Archived {
+		m.focus.setFocus("")
+		return
+	}
+	m.focus.setFocus(sess.ID)
 }
 
 // requestRefresh publishes the current UI state to the poller and asks
@@ -602,13 +675,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// screens have no preview to feed, so they skip the capture and
 		// just keep the timer alive.
 		sess, ok := m.selected()
-		if !ok || (m.mode != modeList && m.mode != modeRename) {
+		if !ok || (m.mode != modeList && m.mode != modeRename && m.mode != modeFocus) {
+			return m, m.previewTick()
+		}
+		// A session with a control client already pushes every frame; a
+		// tick capture on top of that is work whose result is discarded.
+		if m.focus != nil && m.focus.serving(sess.ID) {
 			return m, m.previewTick()
 		}
 		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
 
 	case refreshMsg:
 		m.ageError()
+		// The focused session can die or vanish under us; fall back to the
+		// list rather than typing into nothing.
+		var focusExit tea.Cmd
+		if m.mode == modeFocus {
+			if sess, ok := m.selected(); !ok || sessionGone(msg.sessions, sess.ID) {
+				focusExit = m.leaveFocus()
+			}
+		}
 		m.sessions = msg.sessions
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
@@ -624,6 +710,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// size, which our cache knows nothing about, so the first pass
 			// re-asserts geometry for every one of them.
 			m.paneGeom = nil
+		}
+		// The preview box changes height for more reasons than a terminal
+		// resize: the quick bar opening, the status line appearing, a new
+		// badge in the header. A pane left at the old height paints a dead
+		// band under its output, so every pass re-asserts the geometry.
+		// The call is free when nothing moved: it diffs against paneGeom.
+		if m.sessionsSized && m.width > 0 {
 			m.resizeSessions()
 		}
 		m.rebuildRows()
@@ -632,12 +725,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
 			m.previewGen++
-			return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.diffRefreshCmd())
+			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd())
 		}
 		m.proc = msg.proc
 		m.procFor = msg.procFor
-		m.preview = msg.preview
-		return m, m.diffRefreshCmd()
+		m.setPreview(msg.procFor, msg.preview)
+		// A selection that has not moved since the last pass is at rest,
+		// so this covers the startup case where no settle ever fired.
+		if m.previewGen == m.watchedGen {
+			m.watchSelection()
+		}
+		m.watchedGen = m.previewGen
+		return m, tea.Batch(focusExit, m.diffRefreshCmd())
 
 	case updateMsg:
 		if msg.failed {
@@ -658,14 +757,51 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !ok {
 			return m, nil
 		}
+		// The cursor has come to rest: this is where the control client is
+		// worth opening.
+		m.watchSelection()
 		return m, m.previewCmd(sess, msg.gen)
+
+	case cursorBlinkMsg:
+		if m.mode != modeFocus {
+			return m, nil
+		}
+		m.cursorOn = !m.cursorOn
+		return m, m.cursorBlink()
+
+	case focusCopiedMsg:
+		m.err = ""
+		m.copied = msg.chars
+		return m, nil
+
+	case focusScrollMsg:
+		if sess, ok := m.selected(); ok && sess.ID == msg.sessID && msg.offset == m.focusScroll {
+			m.preview = msg.preview
+		}
+		return m, nil
+
+	case focusPreviewMsg:
+		sess, ok := m.selected()
+		if !ok || sess.ID != msg.sessID {
+			return m, nil
+		}
+		m.paneMouse = msg.paneMouse
+		m.paneHistory = msg.historySize
+		// A scrolled-back pane holds still: live frames would yank the
+		// view back to the bottom mid-read.
+		if m.scrolledBack() {
+			return m, nil
+		}
+		m.preview = msg.preview
+		m.paneCursor = paneCursor{x: msg.cursorX, y: msg.cursorY, ok: msg.cursorOK}
+		return m, nil
 
 	case previewMsg:
 		if msg.gen != 0 && msg.gen != m.previewGen {
 			return m, nil
 		}
 		if sess, ok := m.selected(); ok && sess.ID == msg.sessID {
-			m.preview = msg.preview
+			m.setPreview(msg.sessID, msg.preview)
 			m.proc = msg.proc
 			m.procFor = msg.sessID
 		}
@@ -766,6 +902,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return model, cmd
 	}
 	return m, nil
+}
+
+// setPreview stores a polled or ticked pane capture, unless the session's
+// control client is already pushing frames. Those two paths sample at
+// different times, and a capture taken a second ago repainting over a
+// pushed one is what makes typed characters blink in and out.
+func (m *Model) setPreview(sessID, preview string) {
+	if sessID != "" && m.focus != nil && m.focus.serving(sessID) {
+		return
+	}
+	m.preview = preview
+}
+
+// sessionGone reports whether id is absent from a refresh's session list.
+func sessionGone(sessions []store.Session, id string) bool {
+	for _, sess := range sessions {
+		if sess.ID == id {
+			return false
+		}
+	}
+	return true
 }
 
 // updateNetRates diffs cumulative interface counters between polls into

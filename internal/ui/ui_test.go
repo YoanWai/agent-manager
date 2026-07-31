@@ -54,6 +54,12 @@ func buildModel(t *testing.T) *Model {
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
 			},
+			// Stands in for the agent CLIs, which turn on mouse tracking and
+			// scroll themselves instead of leaving history for tmux.
+			"mouse-tool": {
+				Command:       `printf '\033[?1003h\033[?1006h' && cat`,
+				DefaultStatus: status.Idle,
+			},
 		},
 	}
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))

@@ -164,6 +164,13 @@ func (m *Model) onDivider(x int) bool {
 }
 
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Focus mode owns the mouse: clicks build a selection over the pane
+	// instead of moving the list cursor, which would silently retarget
+	// every following keystroke.
+	if m.mode == modeFocus {
+		return m.handleFocusMouse(msg)
+	}
+
 	// Mouse events are always consumed so the host terminal / outer tmux
 	// never scrolls the manager off-screen. Wheel maps to in-app
 	// navigation; clicks only drive the divider while resize mode is armed.

@@ -55,6 +55,12 @@ func sessionName(id string) string {
 	return prefix + id
 }
 
+// SessionName is the tmux session name for a manager session id, for
+// callers that assemble control-pipe commands themselves.
+func SessionName(id string) string {
+	return sessionName(id)
+}
+
 // args prefixes -L <socket> so every tmux invocation targets the driver's
 // private server. tmux requires the flag before the command word.
 func (d *Driver) args(a ...string) []string {
@@ -244,6 +250,14 @@ func (d *Driver) pasteAndEnter(target, text string) error {
 		return err
 	}
 	_, err = d.run("send-keys", "-t", target, "Enter")
+	return err
+}
+
+// SendRaw runs one pre-assembled tmux command line. The focus path builds
+// send-keys commands from fixed tokens and hex codes, so whitespace
+// splitting is exact; nothing quoted ever rides through here.
+func (d *Driver) SendRaw(command string) error {
+	_, err := d.run(strings.Fields(command)...)
 	return err
 }
 

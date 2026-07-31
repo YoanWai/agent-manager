@@ -124,6 +124,19 @@ func (m *Model) previewPaneHeight() int {
 // self-dismissing errors. Keeps the footer free for key hints.
 func (m *Model) viewStatus() string {
 	switch {
+	// Errors outrank the focus notices: a scrolled or focused pane must
+	// not hide a failure report.
+	case m.mode == modeFocus && m.err != "":
+		return "  " + errStyle.Render("✕ "+m.err)
+	case m.scrolledBack():
+		return "  " + keyStyle.Render("scrolled ") +
+			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", m.focusScroll))
+	case m.mode == modeFocus && m.copied > 0:
+		return "  " + keyStyle.Render("copied ") +
+			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", m.copied))
+	case m.mode == modeFocus:
+		return "  " + keyStyle.Render("focus ") +
+			subtleStyle.Render("typing goes to the agent · drag/double/triple click to copy · ctrl+q back")
 	case m.mode == modeConfirmDelete:
 		return "  " + errStyle.Render("⚠ "+m.confirm.label) + subtleStyle.Render("  y/n")
 	case m.resizeMode:
@@ -352,12 +365,16 @@ func padToHeight(s string, height int) string {
 // viewFooter lists every shortcut, wrapping onto extra lines when the
 // terminal is too narrow for one.
 func (m *Model) viewFooter() string {
+	enterHint, attachHint := "focus / fold", "attach"
+	if !m.enterFocuses() {
+		enterHint, attachHint = "attach / fold", "focus"
+	}
 	emptyGroupsAction := "hide empty"
 	if m.hideEmptyGroups {
 		emptyGroupsAction = "show empty"
 	}
 	pairs := [][2]string{
-		{"↑↓/jk", "navigate"}, {"K/J", "reorder"}, {"↵", "attach / fold"},
+		{"↑↓/jk", "navigate"}, {"K/J", "reorder"}, {"↵", enterHint}, {"A", attachHint},
 		{"F", "fold all"}, {"n", "new"}, {"g", "group"}, {"space", "prompt"},
 		{"ctrl+r", "review"}, {"r", "rename"}, {"m", "move"},
 		{"x/X", "kill / all"}, {"v/V", "revive / all"},
