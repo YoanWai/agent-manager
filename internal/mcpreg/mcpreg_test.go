@@ -3,6 +3,7 @@ package mcpreg
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -132,6 +133,17 @@ func TestApplyGeminiSkipsWhenMarkerMatches(t *testing.T) {
 	}
 	if command != "gemini" {
 		t.Fatalf("command = %q", command)
+	}
+}
+
+func TestEnsureRegisteredOnceNamesFailedCommand(t *testing.T) {
+	err := ensureRegisteredOnce("gemini", "/opt/bin/agent-manager", t.TempDir(),
+		exec.Command("agent-manager-no-such-binary"))
+	if err == nil {
+		t.Fatal("expected an error when the add command cannot run")
+	}
+	if !strings.HasPrefix(err.Error(), "gemini mcp add: ") {
+		t.Fatalf("error = %q, want it to name the tool's add command", err)
 	}
 }
 
