@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Enter on a live session row focuses it; typed keys land in its pane and
-// ctrl+q returns to the list without touching the pane.
+// Enter on a live session row focuses it; typed keys land in its pane, q
+// returns to the list, and ctrl+q quits the manager entirely.
 func TestFocusModeForwardsKeys(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "focusme", t.TempDir(), "")
@@ -49,10 +49,21 @@ func TestFocusModeForwardsKeys(t *testing.T) {
 		time.Sleep(30 * time.Millisecond)
 	}
 
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	*m = *updated.(*Model)
 	if m.mode != modeList {
-		t.Fatalf("ctrl+q left mode = %v", m.mode)
+		t.Fatalf("q left mode = %v", m.mode)
+	}
+
+	// ctrl+q while focused quits the whole manager, not just the focus.
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("re-focus failed, mode = %v", m.mode)
+	}
+	_, quitCmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	if quitCmd == nil || !batchContains(quitCmd(), tea.Quit()) {
+		t.Fatal("ctrl+q while focused did not quit the manager")
 	}
 }
 
@@ -98,7 +109,7 @@ func TestFocusExitReleasesMouse(t *testing.T) {
 		t.Fatalf("entering focus never enabled mouse reporting: %T", enterCmd())
 	}
 
-	updated, exitCmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	updated, exitCmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	*m = *updated.(*Model)
 	if exitCmd == nil {
 		t.Fatal("leaving focus issued no mouse command")

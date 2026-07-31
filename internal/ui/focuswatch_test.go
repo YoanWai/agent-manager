@@ -148,7 +148,14 @@ func TestFocusWatchRefocusWhileSendBlocked(t *testing.T) {
 // A session whose control client cannot open goes into backoff instead of
 // costing one tmux fork per poll pass; a deliberate act lifts the pause.
 func TestFocusWatchBacksOffAfterFailure(t *testing.T) {
-	driver := requireFocusDriver(t)
+	requireFocusDriver(t)
+	// A private socket: the failed attach spins up a transient tmux server
+	// that is mid-exit moments later, and on the shared socket that dying
+	// server takes the next test's fresh session down with it.
+	driver, err := tmux.NewWithSocket(testSocket + "backoff")
+	if err != nil {
+		t.Fatalf("NewWithSocket: %v", err)
+	}
 	id := "gone" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 
 	watch := newFocusWatch(driver, func(tea.Msg) {})
