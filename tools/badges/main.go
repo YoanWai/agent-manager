@@ -75,7 +75,32 @@ func run() error {
 	if err := setCardAlt(altText(stats)); err != nil {
 		return err
 	}
+	if err := writeCloneEndpoint(); err != nil {
+		return err
+	}
 	return fillTrendshift(trendshiftBadge())
+}
+
+// writeCloneEndpoint publishes the clone count as a shields.io endpoint. Stars,
+// release and licence are read live at render time, but clone traffic needs a
+// token no anonymous renderer can hold, so this figure is the one that has to
+// travel through the repository.
+func writeCloneEndpoint() error {
+	count, measured := cloneCount()
+	if !measured {
+		return nil
+	}
+	endpoint := struct {
+		SchemaVersion int    `json:"schemaVersion"`
+		Label         string `json:"label"`
+		Message       string `json:"message"`
+		Color         string `json:"color"`
+	}{1, "clones · 14d", compact(count), strings.TrimPrefix(lightInk[purple], "#")}
+	body, err := json.MarshalIndent(endpoint, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(outDir, "clones.json"), append(body, '\n'), 0o644)
 }
 
 var altLabel = strings.NewReplacer("·", "in the last", "14d", "14 days")

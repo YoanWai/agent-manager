@@ -10,7 +10,10 @@
 <p align="center"><!-- trendshift:start --><!-- trendshift:end --></p>
 
 <p align="center">
-  <a href="https://trendshift.io/repositories/89312"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/stats-dark.svg"><img src="docs/badges/stats-light.svg" alt="198 stars, 2.4k clones in the last 14 days, v0.13.1 release, MIT license"></picture></a>
+  <a href="https://github.com/YoanWai/agent-manager/stargazers"><img src="https://img.shields.io/github/stars/YoanWai/agent-manager?style=for-the-badge&label=stars&labelColor=1f2328&color=96591f" alt="stars"></a>
+  <a href="https://github.com/YoanWai/agent-manager"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FYoanWai%2Fagent-manager%2Fmain%2Fdocs%2Fbadges%2Fclones.json&style=for-the-badge&labelColor=1f2328" alt="clones in the last 14 days"></a>
+  <a href="https://github.com/YoanWai/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/YoanWai/agent-manager?style=for-the-badge&label=release&labelColor=1f2328&color=2f5f8f" alt="latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/YoanWai/agent-manager?style=for-the-badge&label=license&labelColor=1f2328&color=59636e" alt="licence"></a>
 </p>
 
 ![agent-manager demo](docs/demo.gif)
