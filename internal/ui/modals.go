@@ -219,6 +219,7 @@ func (m *Model) viewHelp() string {
 		{"n", "new session"},
 		{"↵", "attach session / fold group"},
 		{"ctrl+q", "inside a session: back to manager"},
+		{"q", "focused: back to the list"},
 		{"ctrl+r", "inside a session: review its diff, esc returns"},
 		{"m", "move session to another group"},
 		{"g", "new group (name, parent, default path)"},

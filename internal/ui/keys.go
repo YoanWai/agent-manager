@@ -76,7 +76,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "q", "ctrl+c", "ctrl+q":
 		return m, tea.Quit
 	case "up", "k":
 		return m, m.moveCursor(-1)
@@ -410,12 +410,17 @@ func (m *Model) leaveFocus() tea.Cmd {
 	})
 }
 
-// handleFocusKey forwards every key into the focused pane. Ctrl+Q is the
-// one reserved key: it returns to the list, mirroring detach from a real
-// attach.
+// handleFocusKey forwards every key into the focused pane, with two
+// reserved: q returns to the list, and Ctrl+Q quits the manager the same
+// way it does everywhere else. The agent never sees either.
 func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+q" {
+	switch msg.String() {
+	case "q":
 		return m, m.leaveFocus()
+	case "ctrl+q":
+		// Straight quit: bubbletea restores the terminal, mouse included,
+		// on shutdown.
+		return m, tea.Quit
 	}
 	sess, ok := m.selected()
 	if !ok {

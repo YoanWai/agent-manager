@@ -35,7 +35,7 @@ func TestCursorBlinks(t *testing.T) {
 		t.Fatal("typing left the caret hidden")
 	}
 
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	*m = *updated.(*Model)
 	if _, cmd := m.Update(cursorBlinkMsg{}); cmd != nil {
 		t.Fatal("blink timer kept running after focus ended")
@@ -81,7 +81,7 @@ func TestSwappedKeysRouteActions(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("enter did not focus by default, mode = %v", m.mode)
 	}
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	*m = *updated.(*Model)
 
 	// Swap through the settings screen, the same path a user takes.
