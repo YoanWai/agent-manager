@@ -16,6 +16,7 @@ func TestStyleResolution(t *testing.T) {
 		{"codex", "", "codex"},
 		{"opencode", "", "opencode"},
 		{"grok", "", "grok"},
+		{"gemini", "", "gemini"},
 		{"aider", "", "none"},
 		{"my-claude", "claude", "claude"},
 		{"claude", "none", "none"},
@@ -116,6 +117,20 @@ func TestApplyGrokSkipsWhenMarkerMatches(t *testing.T) {
 		t.Fatal(err)
 	}
 	if command != "grok" {
+		t.Fatalf("command = %q", command)
+	}
+}
+
+func TestApplyGeminiSkipsWhenMarkerMatches(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mcp-gemini-registered"), []byte("/opt/bin/agent-manager"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command, err := Apply("gemini", "/opt/bin/agent-manager", dir, "gemini", map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != "gemini" {
 		t.Fatalf("command = %q", command)
 	}
 }

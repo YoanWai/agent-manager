@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -24,6 +25,7 @@ var knownStyles = map[string]bool{
 	"codex":    true,
 	"opencode": true,
 	"grok":     true,
+	"gemini":   true,
 	"none":     true,
 }
 
@@ -74,6 +76,11 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 		return command, nil
 	case "grok":
 		if err := ensureGrokRegistered(exe, hooksDir); err != nil {
+			return "", err
+		}
+		return command, nil
+	case "gemini":
+		if err := ensureGeminiRegistered(exe, hooksDir); err != nil {
 			return "", err
 		}
 		return command, nil
@@ -133,21 +140,39 @@ func writeConfig(dir, name string, content []byte) (string, error) {
 }
 
 // ensureGrokRegistered adds the server to grok's user-scope config once
-// per binary path, via grok's own config writer. The marker file records
-// the registered path so upgrades that move the binary re-register.
-// The check-then-add window is benign: grok mcp add updates in place, so
-// two racing managers just write the same entry twice.
+// per binary path, via grok's own config writer.
 func ensureGrokRegistered(exe, hooksDir string) error {
-	marker := filepath.Join(hooksDir, "mcp-grok-registered")
-	if content, err := os.ReadFile(marker); err == nil && string(content) == exe {
-		return nil
-	}
 	cmd := exec.Command("grok", "mcp", "add",
 		"--scope", "user",
 		"-e", hooks.EnvSessionID+"=${"+hooks.EnvSessionID+"}",
 		serverName, "--", exe, "mcp")
+	return ensureRegisteredOnce("mcp-grok-registered", exe, hooksDir, cmd)
+}
+
+// ensureGeminiRegistered adds the server to gemini's user-scope
+// settings.json once per binary path, via gemini's own config writer.
+// Gemini expands ${VAR} in a server's env block at launch, so the entry
+// forwards the per-session id env var.
+func ensureGeminiRegistered(exe, hooksDir string) error {
+	cmd := exec.Command("gemini", "mcp", "add",
+		"--scope", "user",
+		"-e", hooks.EnvSessionID+"=${"+hooks.EnvSessionID+"}",
+		serverName, exe, "mcp")
+	return ensureRegisteredOnce("mcp-gemini-registered", exe, hooksDir, cmd)
+}
+
+// ensureRegisteredOnce runs a tool's own mcp-add command once per binary
+// path. The marker file records the registered path so upgrades that move
+// the binary re-register. The check-then-add window is benign: the add
+// commands update in place, so two racing managers just write the same
+// entry twice.
+func ensureRegisteredOnce(markerName, exe, hooksDir string, cmd *exec.Cmd) error {
+	marker := filepath.Join(hooksDir, markerName)
+	if content, err := os.ReadFile(marker); err == nil && string(content) == exe {
+		return nil
+	}
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("grok mcp add: %v: %s", err, out)
+		return fmt.Errorf("%s: %v: %s", strings.Join(cmd.Args[:3], " "), err, out)
 	}
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		return err

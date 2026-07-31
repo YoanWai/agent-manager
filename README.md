@@ -15,7 +15,7 @@
 
 ![agent-manager demo](docs/demo.gif)
 
-Claude Code, Codex, OpenCode, and Grok run side by side, each in its own tmux session, so they keep working after you quit the manager.
+Claude Code, Codex, OpenCode, Grok, and Gemini CLI run side by side, each in its own tmux session, so they keep working after you quit the manager.
 
 Instead of hunting through terminal tabs to see which agent is done and which is stuck, every session shows up in one list with live status, grouped into a project tree you can fold and reorder. You answer any of them without attaching: `space` sends a prompt straight into a session's pane, or spawns a new agent in the selected group. A dead session revives on its own conversation with `v`. And `ctrl+r` opens a full-file diff of what an agent changed, syntax-highlighted, where the comments you leave on lines go back to the agent's pane as one review prompt when you press `C`.
 
@@ -25,7 +25,7 @@ Not here yet: worktree creation, cost tracking, mouse-driven navigation, and age
 
 ## Supported tools
 
-Status detection currently supports **Claude Code**, **OpenCode**, **Codex**, and **Grok Build** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](#configuration)).
+Status detection currently supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, and **Gemini CLI** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](#configuration)).
 
 ## Install
 
@@ -146,7 +146,7 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 
 `x` ends a session that is holding RAM you want back, and on a group row it ends every live session under it; `X` ends every live session in view. Each asks to confirm first, and what it ends is the tmux session, not the record: the row stays in the tree, marked `dead`, with its name, group, and conversation id intact.
 
-`v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`.
+`v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`, `gemini --resume {id}`.
 
 The id arrives one of two ways: tools with a `session_id_flag` launch under an id the manager mints, and tools that mint their own are read back by a `session_store` capturer (`codex`, `opencode`). Without an id, revive falls back to `revive_command` (`claude --continue`), which resumes the working directory's most recent conversation, and the manager says so in the status line, since sessions sharing a directory would otherwise land on the wrong one. On a group row `v` revives every dead session under it, and `V` revives every dead session in view; both revive what they can and name the first failure rather than stopping.
 
@@ -168,7 +168,7 @@ Agents usually work in git worktrees, one branch per worktree, and those worktre
 
 Every session the manager spawns or revives carries the agent-manager MCP server, so MCP-capable agents see `rename`, `review_repo`, `review_base` and `review_mode` (which sets the diff scope review opens on) as native tools with descriptions telling them when to call each: no prompt injection, no per-project setup. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
 
-Registration is per tool. The built-in claude, codex, opencode and grok tools register automatically: claude gets a generated `--mcp-config` file, codex gets `-c mcp_servers...` overrides, opencode gets an `OPENCODE_CONFIG` merge file, and grok gets a one-time `grok mcp add --scope user` entry on its first launch. A custom tool opts in with `mcp = "<style>"` in its config section, or out with `mcp = "none"`. The `rename`, `review-repo` and `review-base` CLI subcommands keep working everywhere, MCP or not.
+Registration is per tool. The built-in claude, codex, opencode, grok and gemini tools register automatically: claude gets a generated `--mcp-config` file, codex gets `-c mcp_servers...` overrides, opencode gets an `OPENCODE_CONFIG` merge file, and grok and gemini each get a one-time `mcp add --scope user` entry on their first launch. A custom tool opts in with `mcp = "<style>"` in its config section, or out with `mcp = "none"`. The `rename`, `review-repo` and `review-base` CLI subcommands keep working everywhere, MCP or not.
 
 ### Diff review
 
@@ -270,7 +270,7 @@ Rules match top-down against the visible pane text; first match wins, and `defau
 
 **Prompts.** `prompt_flag` controls how the new-session form's optional prompt is embedded into the launch command. Tools that take the prompt as a positional argument (Claude Code: `claude 'the prompt'`) leave it empty; tools whose positional argument means something else declare the flag (OpenCode: `prompt_flag = "--prompt"`, since its positional argument is the project path). The prompt only shapes the launch command; revive (`v`) uses the revive commands untouched.
 
-**MCP.** `mcp = "claude" | "codex" | "opencode" | "grok" | "none"` picks how the agent-manager MCP server is registered into the tool's sessions (see [MCP](#mcp-how-agents-discover-these-commands)). An empty value uses the tool's config key when it names a known style.
+**MCP.** `mcp = "claude" | "codex" | "opencode" | "grok" | "gemini" | "none"` picks how the agent-manager MCP server is registered into the tool's sessions (see [MCP](#mcp-how-agents-discover-these-commands)). An empty value uses the tool's config key when it names a known style.
 
 State is stored next to the config in `state.db` (SQLite).
 

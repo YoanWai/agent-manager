@@ -30,7 +30,8 @@ type Tool struct {
 	// minted itself when it has no SessionIDFlag ("codex" or "opencode").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
-	// tool's sessions: "claude", "codex", "opencode", "grok" or "none".
+	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini" or
+	// "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP            string `toml:"mcp"`
 	StatusSource   string `toml:"status_source"`
@@ -317,5 +318,34 @@ rules = [
   # ("⠹ Delete file… 2.5s"). A pending approval freezes it to a ◆ glyph.
   { state = "working", pattern = "(?m)[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] .*… \\d" },
   { state = "errored", pattern = "(?im)^\\s*error:" },
+]
+
+[tools.gemini]
+command = "gemini"
+# revive (v) launches a new session with this id, so it can later resume
+# that exact conversation regardless of what else ran in the directory
+session_id_flag = "--session-id"
+resume_by_id_command = "gemini --resume {id}"
+# fallback when a session predates id tracking: resumes the project's most
+# recent session
+revive_command = "gemini --resume latest"
+default_status = "idle"
+# the composer line: "> " normally, "! " in shell mode, "* " in yolo mode
+activity_cutoff = "(?m)^\\s*[>!*] "
+# box borders, the composer's ▄/▀ background rows, the right-aligned
+# "? for shortcuts" hint (its ? must not read as a question) and the
+# approval-mode banner ("Shift+Tab to accept edits", "auto-accept edits
+# shift+tab to manual", ...) are all chrome above the composer
+chrome_line = "^\\s*[╭╮╰╯│─▄▀█]*\\s*$|^\\s*\\? for shortcuts\\s*$|^\\s*press tab twice for more\\s*$|^\\s*Press Ctrl\\+O to show more lines.*$|(?i)^\\s*(auto-accept edits |plan |yolo )?\\S*tab\\S* to (accept edits|manual|plan|auto-accept edits)\\s*$"
+rules = [
+  # selected row of an approval/trust dialog, inside its bordered box:
+  # "│ ● 1. Allow once"
+  { state = "waiting", pattern = "(?m)^[\\s│]*●\\s*\\d+\\." },
+  # loading-line tip while a tool call blocks on the user's answer
+  { state = "waiting", pattern = "Waiting for user confirmation" },
+  # active turn status line: "(esc to cancel, 12s)"
+  { state = "working", pattern = "esc to cancel" },
+  # error messages render with a "✕ " prefix
+  { state = "errored", pattern = "(?m)^✕ " },
 ]
 `

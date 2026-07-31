@@ -224,6 +224,60 @@ func TestCodexRealPanes(t *testing.T) {
 	}
 }
 
+// Gemini fixtures: idle, the auth dialog, the usage-limit dialog and the
+// API-error frame are captured from real gemini v0.53.0 panes (2026-07-31);
+// the working spinner and tool-confirmation frames reconstruct that
+// version's rendering source ("(esc to cancel, Ns)" loading suffix,
+// "Waiting for user confirmation..." tip, RadioButtonSelect's "● N."
+// selected row).
+func TestGeminiPanes(t *testing.T) {
+	engine := defaultEngine(t)
+	cases := []struct {
+		name string
+		tool string
+		pane string
+		want string
+	}{
+		{"gemini idle at prompt", "gemini",
+			" Gemini CLI v0.53.0\nTips for getting started:\n1. Create GEMINI.md files to customize your interactions\n──────────────────────────────\n Shift+Tab to accept edits\n▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n >   Type your message or @path/to/file\n▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n workspace (/directory)   branch   sandbox   /model\n /Users/dev/proj          main     no sandbox     gemini-2.5-flash", Idle},
+		{"gemini active turn", "gemini",
+			" Press Ctrl+O to show more lines of the last response\n ⠧ Thinking... (esc to cancel, 4s)                        ? for shortcuts\n──────────────────────────────\n Shift+Tab to accept edits\n▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n >   Type your message or @path/to/file\n▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀", Working},
+		{"gemini tool confirmation dialog", "gemini",
+			"╭──────────────────────────────────────╮\n│ Edit example.txt                     │\n│ Apply this change?                   │\n│ ● 1. Allow once                      │\n│   2. Allow always                    │\n│   3. No, suggest changes (esc)       │\n╰──────────────────────────────────────╯\n⡏ Waiting for user confirmation...", Waiting},
+		{"gemini confirmation tip without dialog rows", "gemini",
+			"⡏ Waiting for user confirmation...\n\n >   Type your message or @path/to/file", Waiting},
+		{"gemini errored", "gemini",
+			" > Count from 1 to 5, one number per line, then stop.\n▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n✕ [API Error: An unknown error occurred.]\nℹ This request failed. Press F12 for diagnostics, or run /settings and change \"Error Verbosity\" to full for\n  full details.\n▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n >   Type your message or @path/to/file", Errored},
+		{"gemini first-run auth dialog", "gemini",
+			"╭──────────────────────────────╮\n│ ? Get started                │\n│                              │\n│   How would you like to authenticate for this project?  │\n│                              │\n│   ● 1. Sign in with Google   │\n│     2. Use Gemini API Key    │\n│     3. Vertex AI             │\n│                              │\n│   (Use Enter to select)      │\n╰──────────────────────────────╯", Waiting},
+		{"gemini usage-limit dialog", "gemini",
+			"╭──────────────────────────────────────╮\n│                                      │\n│ Usage limit reached for gemini-3.5-flash.  │\n│ /stats model for usage details       │\n│ /model to switch models.             │\n│                                      │\n│ ● 1. Keep trying                     │\n│   2. Stop                            │\n│                                      │\n╰──────────────────────────────────────╯", Waiting},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, _ := engine.Match(tc.tool, tc.pane); got != tc.want {
+				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+// Gemini closes turns without a summary line, so resting status comes from
+// TurnEndedState over the quiet region. The "? for shortcuts" hint and the
+// approval-mode banner sit above the composer; both must count as chrome
+// or the hint's "?" would read every finished turn as a question.
+func TestGeminiTurnEndedState(t *testing.T) {
+	engine := defaultEngine(t)
+	finishedRegion := "✦ Dark screen glows with text\n  Commands flow, stories unfold\n  Prompt waits, ready now\n Press Ctrl+O to show more lines of the last response\n                    ? for shortcuts\n──────────────────────────────\n Shift+Tab to accept edits\n▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n"
+	if got := engine.TurnEndedState("gemini", finishedRegion); got != Finished {
+		t.Fatalf("TurnEndedState(finished region) = %q want %q", got, Finished)
+	}
+	questionRegion := "✦ Should I refactor module A or module B?\n\n                    ? for shortcuts\n Shift+Tab to accept edits\n"
+	if got := engine.TurnEndedState("gemini", questionRegion); got != Waiting {
+		t.Fatalf("TurnEndedState(question region) = %q want %q", got, Waiting)
+	}
+}
+
 func TestTurnEndedState(t *testing.T) {
 	engine := defaultEngine(t)
 	cases := []struct {

@@ -52,6 +52,18 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["grok"].PromptFlag; got != "" {
 		t.Fatalf("grok prompt_flag = %q want empty (positional prompt)", got)
 	}
+	if _, ok := cfg.Tools["gemini"]; !ok {
+		t.Fatal("expected gemini tool in default config")
+	}
+	if cfg.Tools["gemini"].Command != "gemini" {
+		t.Fatalf("gemini command = %q", cfg.Tools["gemini"].Command)
+	}
+	if got := cfg.Tools["gemini"].ReviveCommand; got != "gemini --resume latest" {
+		t.Fatalf("gemini revive_command = %q want \"gemini --resume latest\"", got)
+	}
+	if got := cfg.Tools["gemini"].PromptFlag; got != "" {
+		t.Fatalf("gemini prompt_flag = %q want empty (positional prompt)", got)
+	}
 	if cfg.Tools["claude"].Command != "claude" {
 		t.Fatalf("claude command = %q", cfg.Tools["claude"].Command)
 	}
@@ -98,7 +110,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		t.Fatalf("Default: %v", err)
 	}
 	// Tools that accept a chosen id launch with it and resume by it.
-	for _, name := range []string{"claude", "grok"} {
+	for _, name := range []string{"claude", "grok", "gemini"} {
 		tool := cfg.Tools[name]
 		if tool.SessionIDFlag != "--session-id" {
 			t.Fatalf("%s session_id_flag = %q want --session-id", name, tool.SessionIDFlag)
