@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,7 +63,7 @@ const StaleAfter = 7 * 24 * time.Hour
 func SweepStale(maxAge time.Duration) error {
 	entries, err := os.ReadDir(pastesDir())
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return err
@@ -75,7 +76,7 @@ func SweepStale(maxAge time.Duration) error {
 		}
 		info, err := entry.Info()
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
 			failures = append(failures, err)
@@ -86,7 +87,7 @@ func SweepStale(maxAge time.Duration) error {
 		}
 		// Another manager instance sweeping the shared temp directory can
 		// win the race; its removal is the outcome we wanted anyway.
-		if err := os.Remove(filepath.Join(pastesDir(), entry.Name())); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(filepath.Join(pastesDir(), entry.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			failures = append(failures, err)
 		}
 	}

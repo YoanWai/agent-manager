@@ -454,6 +454,29 @@ func TestSweepStaleLeavesForeignEntries(t *testing.T) {
 	}
 }
 
+func TestSweepStaleReportsRemovalFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	t.Setenv("TMPDIR", t.TempDir())
+	stale := writePaste(t, "paste-old.png", 8*24*time.Hour)
+	if err := os.Chmod(pastesDir(), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(pastesDir(), 0o755)
+
+	err := SweepStale(7 * 24 * time.Hour)
+	if err == nil {
+		t.Fatal("an undeletable paste must surface, not vanish silently")
+	}
+	if !strings.Contains(err.Error(), "paste-old.png") {
+		t.Fatalf("error should name the file, got %v", err)
+	}
+	if _, statErr := os.Stat(stale); statErr != nil {
+		t.Fatalf("file should still be there: %v", statErr)
+	}
+}
+
 func TestSweepStaleWithoutDirectory(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	if err := SweepStale(7 * 24 * time.Hour); err != nil {
