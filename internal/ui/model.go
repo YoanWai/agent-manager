@@ -88,12 +88,14 @@ type Model struct {
 	copied     int
 	sel        focusSelection
 	paneCursor paneCursor
-	// paneMouse, paneMotion and paneHistory mirror the focused pane's
-	// mouse ownership, its appetite for pointer moves and its history
-	// depth as the watcher last reported them, so the wheel routes
-	// without a tmux round trip mid-Update.
+	// paneMouse, paneMotion, paneSGR and paneHistory mirror the focused
+	// pane's mouse ownership, its appetite for pointer moves, the report
+	// encoding it asked for and its history depth as the watcher last
+	// reported them, so the wheel routes without a tmux round trip
+	// mid-Update.
 	paneMouse   bool
 	paneMotion  bool
+	paneSGR     bool
 	paneHistory int
 	// cursorOn is the caret's blink phase while focused.
 	cursorOn bool
@@ -789,6 +791,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.paneMouse = msg.paneMouse
 		m.paneMotion = msg.paneMotion
+		m.paneSGR = msg.paneSGR
 		m.paneHistory = msg.historySize
 		// Once the app owns the wheel, nothing can walk a leftover offset
 		// back down, and holding it would freeze the view for good.

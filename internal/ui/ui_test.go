@@ -60,6 +60,13 @@ func buildModel(t *testing.T) *Model {
 				Command:       `printf '\033[?1003h\033[?1006h' && cat`,
 				DefaultStatus: status.Idle,
 			},
+			// Same claim on the mouse without asking for SGR, which is the
+			// one case the reports have to fall back to the original
+			// encoding.
+			"x10-tool": {
+				Command:       `printf '\033[?1003h' && cat`,
+				DefaultStatus: status.Idle,
+			},
 		},
 	}
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))

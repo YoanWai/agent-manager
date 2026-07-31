@@ -48,16 +48,25 @@ func (m *Model) cursorCell(paneLines int) (row, col int, ok bool) {
 	if !cursor.ok || m.mode != modeFocus || paneLines <= 0 || !m.cursorOn || m.scrolledBack() {
 		return 0, 0, false
 	}
-	captured := len(strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n"))
-	offset := 0
-	if captured > paneLines {
-		offset = captured - paneLines
-	}
-	row = cursor.y - offset
+	row = cursor.y - m.paneRowOffset(paneLines)
 	if row < 0 || row >= paneLines {
 		return 0, 0, false
 	}
 	return row, cursor.x, true
+}
+
+// paneRowOffset is how many captured rows the panel dropped off the top.
+// A capture taller than the box is painted from its bottom, so a painted
+// row and the pane's own row differ by exactly that many lines.
+func (m *Model) paneRowOffset(paneLines int) int {
+	if paneLines <= 0 {
+		return 0
+	}
+	captured := len(strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n"))
+	if captured <= paneLines {
+		return 0
+	}
+	return captured - paneLines
 }
 
 // focusSelection is a text selection drawn over the focused pane. anchor

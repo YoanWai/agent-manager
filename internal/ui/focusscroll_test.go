@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -263,20 +264,19 @@ func windowHeight(t *testing.T, id string) int {
 	return height
 }
 
-// An application that turns on mouse tracking owns the wheel: agent CLIs
-// run on the alternate screen, where tmux keeps no scrollback at all, and
-// scroll themselves when they receive the event.
-func TestWheelReachesMouseTrackingApp(t *testing.T) {
+// focusedMouseApp focuses a session whose tool claims the mouse, with the
+// watcher's pushes pumped through Update the way the running app does, so
+// the pane-state cache the wheel routes on is populated.
+func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
+	t.Helper()
 	m := buildModel(t)
-	if err := m.spawnSession("mouse-tool", "wheelapp", t.TempDir(), "", "", true); err != nil {
+	if err := m.spawnSession(tool, name, t.TempDir(), "", "", true); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	m.selectSessionRow(t, "wheelapp")
+	m.selectSessionRow(t, name)
 	sess := m.rows[m.cursor].sess
 
-	// Pump the watcher's pushes through Update, the way the running app
-	// does, so the mouse-ownership cache the wheel reads gets populated.
 	msgs := make(chan tea.Msg, 64)
 	m.focus = newFocusWatch(m.tmux, func(msg tea.Msg) { msgs <- msg })
 	t.Cleanup(m.focus.Close)
@@ -305,6 +305,14 @@ func TestWheelReachesMouseTrackingApp(t *testing.T) {
 			t.Skip("pane never reported mouse tracking on this host")
 		}
 	}
+	return m, sess
+}
+
+// An application that turns on mouse tracking owns the wheel: agent CLIs
+// run on the alternate screen, where tmux keeps no scrollback at all, and
+// scroll themselves when they receive the event.
+func TestWheelReachesMouseTrackingApp(t *testing.T) {
+	m, sess := focusedMouseApp(t, "mouse-tool", "wheelapp")
 
 	// A wheel notch over the pane now goes to the app, not to tmux history.
 	before := m.focusScroll
@@ -312,7 +320,10 @@ func TestWheelReachesMouseTrackingApp(t *testing.T) {
 	if m.focusScroll != before {
 		t.Fatal("wheel scrolled tmux history while the app owned the mouse")
 	}
-	deadline = time.Now().Add(5 * time.Second)
+	if !m.paneSGR {
+		t.Fatal("pane asked for SGR reports but the model did not read it")
+	}
+	deadline := time.Now().Add(5 * time.Second)
 	for {
 		pane, err := m.tmux.CapturePane(sess.ID)
 		if err != nil {
@@ -390,23 +401,82 @@ func TestPolledFrameHoldsScrolledView(t *testing.T) {
 	}
 }
 
-func TestMotionSGREncoding(t *testing.T) {
-	if got, want := motionSGR(0, 0), "\x1b[<35;1;1M"; got != want {
-		t.Errorf("motion = %q, want %q", got, want)
+// An app that claims the mouse without asking for SGR reads the original
+// encoding, and reports in the newer one would reach it as text.
+func TestWheelFallsBackToX10Reports(t *testing.T) {
+	m, sess := focusedMouseApp(t, "x10-tool", "x10app")
+	if m.paneSGR {
+		t.Fatal("a pane that never asked for SGR reported it")
 	}
-	if got, want := motionSGR(11, 4), "\x1b[<35;12;5M"; got != want {
-		t.Errorf("motion = %q, want %q", got, want)
+
+	m.wheelFocus(true, m.paneBox.x+2, m.paneBox.y+1)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil {
+			t.Fatalf("capture: %v", err)
+		}
+		// cat echoes the bytes back, so an X10 report shows up as [M and
+		// its three coordinate characters, with no SGR report anywhere.
+		if strings.Contains(pane, "[M") {
+			if strings.Contains(pane, "[<") {
+				t.Fatalf("SGR report reached a pane that never asked for it: %q", pane)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("X10 wheel report never reached the pane: %q", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
-func TestWheelSGREncoding(t *testing.T) {
-	if got, want := wheelSGR(true, 0, 0), "\x1b[<64;1;1M"; got != want {
+func TestMouseReportEncodings(t *testing.T) {
+	if got, want := sgrMouse(motionButton, 0, 0), "\x1b[<35;1;1M"; got != want {
+		t.Errorf("motion = %q, want %q", got, want)
+	}
+	if got, want := sgrMouse(wheelUpButton, 0, 0), "\x1b[<64;1;1M"; got != want {
 		t.Errorf("wheel up = %q, want %q", got, want)
 	}
-	if got, want := wheelSGR(false, 11, 4), "\x1b[<65;12;5M"; got != want {
+	if got, want := sgrMouse(wheelDownButton, 11, 4), "\x1b[<65;12;5M"; got != want {
 		t.Errorf("wheel down = %q, want %q", got, want)
 	}
 	if got, want := hexBytes("\x1b[<64;1;1M"), "1b 5b 3c 36 34 3b 31 3b 31 4d"; got != want {
 		t.Errorf("hexBytes = %q, want %q", got, want)
+	}
+
+	got, ok := x10Mouse(wheelUpButton, 0, 0)
+	if !ok || got != "\x1b[M`!!" {
+		t.Errorf("x10 wheel up = %q (ok=%v), want %q", got, ok, "\x1b[M`!!")
+	}
+	if got, ok := x10Mouse(motionButton, 11, 4); !ok || got != "\x1b[MC,%" {
+		t.Errorf("x10 motion = %q (ok=%v), want %q", got, ok, "\x1b[MC,%")
+	}
+	// Past the cell the encoding can name, a report would land on the
+	// wrong column, so there is none to send.
+	if _, ok := x10Mouse(wheelUpButton, x10Limit, 4); ok {
+		t.Error("x10 named a column the encoding cannot carry")
+	}
+	if _, ok := x10Mouse(wheelUpButton, 4, x10Limit); ok {
+		t.Error("x10 named a row the encoding cannot carry")
+	}
+}
+
+// The wheel reports the pane's own row, which is the painted row plus
+// whatever the panel dropped off the top of a taller capture.
+func TestWheelReportUsesPaneRow(t *testing.T) {
+	m := paneAt(t, "one", "two")
+	m.paneSGR = true
+	m.preview = "a\nb\nc\nd\none\ntwo\n"
+
+	if got, want := m.paneRowOffset(m.paneBox.height), 4; got != want {
+		t.Fatalf("row offset = %d, want %d", got, want)
+	}
+	report, ok := m.wheelReport(true, 3, 1+m.paneRowOffset(m.paneBox.height))
+	if !ok {
+		t.Fatal("no wheel report for a pane inside the encoding's range")
+	}
+	if want := "\x1b[<64;4;6M"; report != want {
+		t.Fatalf("report = %q, want %q", report, want)
 	}
 }
