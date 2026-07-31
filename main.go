@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
@@ -181,6 +182,10 @@ func run() error {
 		return err
 	}
 	defer st.Close()
+
+	if err := clipboard.SweepStale(clipboard.StaleAfter); err != nil {
+		fmt.Fprintln(os.Stderr, "agent-manager: clearing old pasted images:", err)
+	}
 
 	model := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
 	// Mouse reporting stays off so the terminal keeps native text selection.
