@@ -134,7 +134,7 @@ func (m *Model) entryLines(width, height int) []contentLine {
 	}
 	heights := make([]int, len(m.rows))
 	for i := range heights {
-		heights[i] = entryHeight(m.rows[i])
+		heights[i] = m.entryHeight(m.rows[i])
 	}
 	start, end := lineWindow(heights, m.cursor, height)
 
@@ -162,10 +162,16 @@ func (m *Model) entryLines(width, height int) []contentLine {
 	return lines
 }
 
-// entryHeight is how many lines an entry paints. Every entry is one line,
-// groups included: a ragged list of one- and two-line rows reads as gaps
-// rather than as rhythm.
-func entryHeight(treeRow) int { return 1 }
+// entryHeight is how many lines an entry paints: one in the compact list,
+// two once the comfortable density unstacks the meta onto its own line.
+// Groups match sessions either way, since a ragged list of one- and
+// two-line rows reads as gaps rather than as rhythm.
+func (m *Model) entryHeight(treeRow) int {
+	if m.comfortableRows {
+		return 2
+	}
+	return 1
+}
 
 // lineWindow keeps the cursor's entry fully visible inside a line budget,
 // scrolling by whole entries so an entry is never cut in half.
@@ -299,7 +305,11 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 
 	if m.renamingRow(entry) {
 		line := pad + guides + m.renameRowInput(entry, width-railGutter-ansi.StringWidth(guides))
-		return paint(line, width, selectedHex())
+		row := paint(line, width, selectedHex())
+		if m.comfortableRows {
+			row += "\n" + paint("", width, selectedHex())
+		}
+		return row
 	}
 
 	if entry.isGroup {
@@ -330,7 +340,21 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	meta := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
 		metaStyle.Render(" · "+sess.Tool+" · "+relSince(lastActivity(sess)))
 
+	if m.comfortableRows {
+		return stackedRow(head, metaIndent(pad, guides)+meta, width, bg)
+	}
 	return paint(rowColumns(head, meta, width-railGutter), width, bg)
+}
+
+// metaIndent lines a second row line up under the name on the first, past
+// the entry's guides and the glyph column ahead of it.
+func metaIndent(pad, guides string) string {
+	return pad + strings.Repeat(" ", ansi.StringWidth(guides)+2)
+}
+
+// stackedRow paints an entry that carries its meta on a second line.
+func stackedRow(head, meta string, width int, bg string) string {
+	return paint(head, width, bg) + "\n" + paint(meta, width, bg)
 }
 
 func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, guides, bg string) string {
@@ -352,6 +376,9 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, g
 		meta = subtleStyle.Render("no agents yet")
 	}
 
+	if m.comfortableRows {
+		return stackedRow(head, metaIndent(pad, guides)+meta, width, bg)
+	}
 	return paint(rowColumns(head, meta, width-railGutter), width, bg)
 }
 

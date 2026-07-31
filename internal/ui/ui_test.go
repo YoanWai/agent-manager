@@ -2803,11 +2803,11 @@ func TestSettingsTogglesQuickClose(t *testing.T) {
 	if m.settings.quickCloseSend {
 		t.Fatal("settings should open on stay-open by default")
 	}
-	for i := 0; i < 3; i++ {
+	for i := 0; i < settingsFieldQuickClose; i++ {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	if m.settings.field != settingsFieldQuickClose {
-		t.Fatalf("third down should focus the quick send field, got %d", m.settings.field)
+		t.Fatalf("stepping down should reach the quick send field, got %d", m.settings.field)
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -2826,9 +2826,11 @@ func TestSettingsTogglesReviewLayout(t *testing.T) {
 	if m.settings.field != settingsFieldTheme {
 		t.Fatalf("first down should focus theme field, got %d", m.settings.field)
 	}
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	for i := settingsFieldTheme; i < settingsFieldLayout; i++ {
+		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
 	if m.settings.field != settingsFieldLayout {
-		t.Fatalf("down should focus layout field, got %d", m.settings.field)
+		t.Fatalf("stepping down should reach the layout field, got %d", m.settings.field)
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyLeft})
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
