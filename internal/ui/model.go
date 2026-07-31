@@ -920,6 +920,13 @@ func (m *Model) setPreview(sessID, preview string) {
 	if sessID != "" && m.focus != nil && m.focus.serving(sessID) {
 		return
 	}
+	// A scrolled-back pane holds still on this path too: without a control
+	// client the poll is the only source of frames, and a live bottom
+	// landing mid-read is the same yank the pushed frames are held back
+	// from.
+	if m.scrolledBack() {
+		return
+	}
 	m.preview = preview
 }
 

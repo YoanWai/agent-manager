@@ -367,6 +367,29 @@ func TestAppMouseClearsScrollback(t *testing.T) {
 	}
 }
 
+// The poll is the only source of frames once a control client dies, so
+// it owes a scrolled-back pane the same stillness the pushed frames do.
+func TestPolledFrameHoldsScrolledView(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "polled", t.TempDir(), "")
+	m.selectSessionRow(t, "polled")
+	sess := m.rows[m.cursor].sess
+	m.mode = modeFocus
+	m.preview = "SCROLLED-FRAME\n"
+	m.focusScroll = 6
+
+	m.setPreview(sess.ID, "LIVE-FRAME\n")
+	if m.preview != "SCROLLED-FRAME\n" {
+		t.Fatalf("preview = %q, want the scrolled frame held", m.preview)
+	}
+
+	m.focusScroll = 0
+	m.setPreview(sess.ID, "LIVE-FRAME\n")
+	if m.preview != "LIVE-FRAME\n" {
+		t.Fatalf("preview = %q, want the live frame back at the bottom", m.preview)
+	}
+}
+
 func TestMotionSGREncoding(t *testing.T) {
 	if got, want := motionSGR(0, 0), "\x1b[<35;1;1M"; got != want {
 		t.Errorf("motion = %q, want %q", got, want)
