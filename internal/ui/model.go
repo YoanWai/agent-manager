@@ -89,10 +89,14 @@ type Model struct {
 	copied     int
 	sel        focusSelection
 	paneCursor paneCursor
-	// paneMouse and paneHistory mirror the focused pane's mouse ownership
-	// and history depth as the watcher last reported them, so the wheel
-	// routes without a tmux round trip mid-Update.
+	// paneMouse, paneMotion, paneSGR and paneHistory mirror the focused
+	// pane's mouse ownership, its appetite for pointer moves, the report
+	// encoding it asked for and its history depth as the watcher last
+	// reported them, so the wheel routes without a tmux round trip
+	// mid-Update.
 	paneMouse   bool
+	paneMotion  bool
+	paneSGR     bool
 	paneHistory int
 	// cursorOn is the caret's blink phase while focused.
 	cursorOn bool
@@ -821,7 +825,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.paneMouse = msg.paneMouse
+		m.paneMotion = msg.paneMotion
+		m.paneSGR = msg.paneSGR
 		m.paneHistory = msg.historySize
+		// Once the app owns the wheel, nothing can walk a leftover offset
+		// back down, and holding it would freeze the view for good.
+		if m.paneMouse && m.focusScroll != 0 {
+			m.focusScroll = 0
+		}
 		// A scrolled-back pane holds still: live frames would yank the
 		// view back to the bottom mid-read.
 		if m.scrolledBack() {
@@ -945,6 +956,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // pushed one is what makes typed characters blink in and out.
 func (m *Model) setPreview(sessID, preview string) {
 	if sessID != "" && m.focus != nil && m.focus.serving(sessID) {
+		return
+	}
+	// A scrolled-back pane holds still on this path too: without a control
+	// client the poll is the only source of frames, and a live bottom
+	// landing mid-read is the same yank the pushed frames are held back
+	// from.
+	if m.scrolledBack() {
 		return
 	}
 	m.preview = preview

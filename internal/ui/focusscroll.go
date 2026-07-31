@@ -20,15 +20,32 @@ type focusScrollMsg struct {
 	preview string
 }
 
-// wheelSGR is one wheel event in SGR mouse encoding (button 64 up, 65
-// down) at a one-based pane cell, the form every app that turns on mouse
-// tracking expects.
-func wheelSGR(up bool, col, row int) string {
-	button := 65
-	if up {
-		button = 64
-	}
+// Mouse button codes as the reports carry them: the two wheel
+// directions, and a pointer move with no button held (button 3 with the
+// motion bit set).
+const (
+	wheelUpButton   = 64
+	wheelDownButton = 65
+	motionButton    = 35
+)
+
+// x10Limit is the highest cell the original encoding can name: each
+// coordinate is one byte biased by 32, so it runs out at 223.
+const x10Limit = 223
+
+// sgrMouse is one mouse report in SGR encoding at a one-based pane cell.
+func sgrMouse(button, col, row int) string {
 	return fmt.Sprintf("\x1b[<%d;%d;%dM", button, col+1, row+1)
+}
+
+// x10Mouse is one mouse report in the original encoding, for an app that
+// tracks the mouse without asking for SGR. Not ok past the cell the
+// encoding can name, where the report would land on the wrong column.
+func x10Mouse(button, col, row int) (string, bool) {
+	if col >= x10Limit || row >= x10Limit {
+		return "", false
+	}
+	return string([]byte{0x1b, '[', 'M', byte(32 + button), byte(33 + col), byte(33 + row)}), true
 }
 
 // hexBytes renders a string as the space-separated byte codes send-keys -H
@@ -39,6 +56,38 @@ func hexBytes(s string) string {
 		codes = append(codes, fmt.Sprintf("%02x", s[i]))
 	}
 	return strings.Join(codes, " ")
+}
+
+// wheelReport is what one wheel notch looks like on the wire for this
+// pane: the notch itself, in the encoding the pane asked for, behind a
+// pointer move when the app tracks all motion. An app tracking all
+// motion places the wheel by where the pointer last moved, and focus
+// mode keeps every move for its own selection, so without the move the
+// notch arrives with the pointer wherever the app last saw it.
+func (m *Model) wheelReport(up bool, col, row int) (string, bool) {
+	button := wheelDownButton
+	if up {
+		button = wheelUpButton
+	}
+	if m.paneSGR {
+		report := sgrMouse(button, col, row)
+		if m.paneMotion {
+			report = sgrMouse(motionButton, col, row) + report
+		}
+		return report, true
+	}
+	report, ok := x10Mouse(button, col, row)
+	if !ok {
+		return "", false
+	}
+	if m.paneMotion {
+		move, moveOK := x10Mouse(motionButton, col, row)
+		if !moveOK {
+			return "", false
+		}
+		report = move + report
+	}
+	return report, true
 }
 
 // wheelFocus routes one wheel notch. An application that has turned on
@@ -56,7 +105,11 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 		if !inside {
 			return nil
 		}
-		command := "send-keys -t " + tmux.SessionName(sess.ID) + " -H " + hexBytes(wheelSGR(up, col, row))
+		report, ok := m.wheelReport(up, col, row+m.paneRowOffset(m.paneBox.height))
+		if !ok {
+			return nil
+		}
+		command := "send-keys -t " + tmux.SessionName(sess.ID) + " -H " + hexBytes(report)
 		if !m.focus.attempt(command) {
 			if err := m.tmux.SendRaw(command); err != nil {
 				m.err = err.Error()

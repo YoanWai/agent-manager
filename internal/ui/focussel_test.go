@@ -231,7 +231,7 @@ func TestControlCaptureKeepsTrailingBlankRows(t *testing.T) {
 
 func TestApplyPaneState(t *testing.T) {
 	var msg focusPreviewMsg
-	applyPaneState(&msg, "12,34,010,250\n")
+	applyPaneState(&msg, "12,34,010,250,0,1\n")
 	if !msg.cursorOK || msg.cursorX != 12 || msg.cursorY != 34 {
 		t.Fatalf("cursor = (%d,%d,%v)", msg.cursorX, msg.cursorY, msg.cursorOK)
 	}
@@ -241,10 +241,21 @@ func TestApplyPaneState(t *testing.T) {
 	if msg.historySize != 250 {
 		t.Fatalf("historySize = %d, want 250", msg.historySize)
 	}
+	if msg.paneMotion {
+		t.Fatal("a button-tracking pane read as tracking all motion")
+	}
+
+	// tmux reports 1003 in mouse_all_flag, the apps that want a pointer
+	// move with every event.
+	var motion focusPreviewMsg
+	applyPaneState(&motion, "0,0,100,0,1,1")
+	if !motion.paneMouse || !motion.paneMotion {
+		t.Fatalf("all-motion pane state = %+v", motion)
+	}
 
 	var plain focusPreviewMsg
-	applyPaneState(&plain, "0,0,000,0")
-	if plain.paneMouse || plain.historySize != 0 || !plain.cursorOK {
+	applyPaneState(&plain, "0,0,000,0,0,0")
+	if plain.paneMouse || plain.paneMotion || plain.historySize != 0 || !plain.cursorOK {
 		t.Fatalf("plain pane state = %+v", plain)
 	}
 
