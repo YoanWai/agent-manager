@@ -108,3 +108,27 @@ func TestComfortableGroupRowStacks(t *testing.T) {
 		t.Fatalf("group row has no meta line:\n%s", strings.Join(lines, "\n"))
 	}
 }
+
+// A rail too short for the counters keeps the selected entry whole: a
+// two-line row trimmed to one reads as a compact row that lost its meta.
+func TestComfortableRowSurvivesShortRail(t *testing.T) {
+	m := buildModel(t)
+	m.comfortableRows = true
+	for _, name := range []string{"one", "two", "three", "four"} {
+		createSession(t, m, name, t.TempDir(), "")
+	}
+	m.selectSessionRow(t, "three")
+
+	lines := m.entryLines(60, 2)
+	if len(lines) != 2 {
+		t.Fatalf("entry lines = %d want 2", len(lines))
+	}
+	head := lineWith(t, []string{ansi.Strip(lines[0].text), ansi.Strip(lines[1].text)}, "three")
+	if head != 0 {
+		t.Fatalf("selected entry should start the window, got line %d", head)
+	}
+	meta := ansi.Strip(lines[1].text)
+	if !strings.Contains(meta, "claude") {
+		t.Fatalf("selected entry lost its meta line: %q", meta)
+	}
+}

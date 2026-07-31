@@ -139,9 +139,6 @@ func (m *Model) entryLines(width, height int) []contentLine {
 	start, end := lineWindow(heights, m.cursor, height)
 
 	var lines []contentLine
-	if start > 0 {
-		lines = append(lines, contentLine{text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↑ %d more", start))})
-	}
 	for i := start; i < end; i++ {
 		selected := i == m.cursor
 		entry := m.rows[i]
@@ -153,7 +150,15 @@ func (m *Model) entryLines(width, height int) []contentLine {
 			lines = append(lines, contentLine{text: line, tone: tone})
 		}
 	}
-	if end < len(m.rows) {
+	// The counters ride in whatever room the entries leave. Claiming a line
+	// they do not have would trim an entry's last line away, and half a
+	// two-line entry reads as a whole one that lost its meta.
+	spare := height - len(lines)
+	if start > 0 && spare > 0 {
+		lines = append([]contentLine{{text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↑ %d more", start))}}, lines...)
+		spare--
+	}
+	if end < len(m.rows) && spare > 0 {
 		lines = append(lines, contentLine{text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↓ %d more", len(m.rows)-end))})
 	}
 	if len(lines) > height {
@@ -352,7 +357,6 @@ func metaIndent(pad, guides string) string {
 	return pad + strings.Repeat(" ", ansi.StringWidth(guides)+2)
 }
 
-// stackedRow paints an entry that carries its meta on a second line.
 func stackedRow(head, meta string, width int, bg string) string {
 	return paint(head, width, bg) + "\n" + paint(meta, width, bg)
 }
