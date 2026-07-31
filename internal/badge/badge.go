@@ -1,6 +1,10 @@
 // Package badge renders the README's stat card as SVG the repo owns, so its
 // type, palette and spacing match the TUI instead of a badge host's house
 // style.
+//
+// Nothing imports it today: the README header reads its counts live from
+// shields.io, which a committed SVG cannot do. Kept because the card is the
+// only rendering of these stats in the project's own type and palette.
 package badge
 
 import "strings"
