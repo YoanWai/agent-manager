@@ -10,7 +10,7 @@
 <p align="center"><!-- trendshift:start --><!-- trendshift:end --></p>
 
 <p align="center">
-  <a href="https://trendshift.io/repositories/89312"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/stats-dark.svg"><img src="docs/badges/stats-light.svg" alt="168 stars, 1.9k clones in 14 days, release v0.11.1, MIT licensed"></picture></a>
+  <a href="https://trendshift.io/repositories/89312"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/badges/stats-dark.svg"><img src="docs/badges/stats-light.svg" alt="198 stars, 2.4k clones in the last 14 days, v0.13.1 release, MIT license"></picture></a>
 </p>
 
 ![agent-manager demo](docs/demo.gif)

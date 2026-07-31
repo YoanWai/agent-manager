@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -71,7 +72,39 @@ func run() error {
 	if err := write("stats-dark.svg", badge.Card(stats, badge.Dark)); err != nil {
 		return err
 	}
+	if err := setCardAlt(altText(stats)); err != nil {
+		return err
+	}
 	return fillTrendshift(trendshiftBadge())
+}
+
+var altLabel = strings.NewReplacer("·", "in the last", "14d", "14 days")
+
+// altText describes the card for readers who never see the SVG. It is built
+// from the same stats the card is drawn from, so the two cannot drift apart.
+func altText(stats []badge.Stat) string {
+	parts := make([]string, len(stats))
+	for i, stat := range stats {
+		parts[i] = stat.Value + " " + altLabel.Replace(stat.Label)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func setCardAlt(alt string) error {
+	raw, err := os.ReadFile("README.md")
+	if err != nil {
+		return err
+	}
+	readme := string(raw)
+	pattern := regexp.MustCompile(`(<img src="docs/badges/stats-light\.svg" alt=")[^"]*(")`)
+	if !pattern.MatchString(readme) {
+		return fmt.Errorf("README is missing the stat card image")
+	}
+	updated := pattern.ReplaceAllString(readme, "${1}"+alt+"${2}")
+	if updated == readme {
+		return nil
+	}
+	return os.WriteFile("README.md", []byte(updated), 0o644)
 }
 
 func write(name, svg string) error {
