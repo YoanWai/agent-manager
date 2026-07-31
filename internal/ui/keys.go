@@ -42,6 +42,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKey(msg)
 	case modeRename:
 		return m.handleRenameKey(msg)
+	case modeFork:
+		return m.handleForkKey(msg)
 	case modeSettings:
 		return m.handleSettingsKey(msg)
 	case modeMove:
@@ -97,6 +99,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openForm()
 	case "g":
 		m.openGroupForm()
+	case "f":
+		m.openFork()
 	case "v":
 		return m.reviveSelected()
 	case "V", "shift+v":

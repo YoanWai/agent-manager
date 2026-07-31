@@ -26,6 +26,9 @@ type Tool struct {
 	// with the session's agent id. Preferred over ReviveCommand, which only
 	// resumes the working directory's most recent conversation.
 	ResumeByIDCommand string `toml:"resume_by_id_command"`
+	// ForkCommand creates a new conversation from an existing one. Templates
+	// can use {id}, {new_id}, and {name}; Agent Manager quotes each value.
+	ForkCommand string `toml:"fork_command"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex" or "opencode").
 	SessionStore string `toml:"session_store"`
@@ -139,6 +142,7 @@ func mergeTool(user, def Tool) Tool {
 	fill(&user.PromptFlag, def.PromptFlag)
 	fill(&user.SessionIDFlag, def.SessionIDFlag)
 	fill(&user.ResumeByIDCommand, def.ResumeByIDCommand)
+	fill(&user.ForkCommand, def.ForkCommand)
 	fill(&user.SessionStore, def.SessionStore)
 	fill(&user.StatusSource, def.StatusSource)
 	fill(&user.DefaultStatus, def.DefaultStatus)

@@ -24,6 +24,8 @@ func (m *Model) View() string {
 		frame = m.viewHelp()
 	case modeSettings:
 		frame = m.viewSettings()
+	case modeFork:
+		frame = m.viewFork()
 	case modeMove:
 		frame = m.viewMove()
 	case modeRepoPick:
@@ -380,7 +382,7 @@ func (m *Model) viewFooter() string {
 	}
 	pairs := [][2]string{
 		{"↑↓/jk", "navigate"}, {"K/J", "reorder"}, {"↵", enterHint}, {"A", attachHint},
-		{"F", "fold all"}, {"n", "new"}, {"g", "group"}, {"space", "prompt"},
+		{"F", "fold all"}, {"n", "new"}, {"g", "group"}, {"f", "fork"}, {"space", "prompt"},
 		{"ctrl+r", "review"}, {"r", "rename"}, {"m", "move"},
 		{"x/X", "kill / all"}, {"v/V", "revive / all"},
 		{"a/u", "archive / restore"}, {"d", "delete"},

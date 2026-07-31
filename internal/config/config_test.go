@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -90,6 +91,24 @@ func TestBackfillToolDefaults(t *testing.T) {
 	}
 	if _, ok := cfg.Tools["claude"]; !ok {
 		t.Fatal("expected claude tool added from built-in defaults")
+	}
+}
+
+func TestDecodeForkCommand(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := `[tools.pi]
+command = "pi"
+fork_command = "pi --fork {id} --session-id {new_id} --name {name}"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var cfg Config
+	if err := decodeInto(path, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Tools["pi"].ForkCommand; got != "pi --fork {id} --session-id {new_id} --name {name}" {
+		t.Fatalf("fork_command = %q", got)
 	}
 }
 
