@@ -88,9 +88,10 @@ type Model struct {
 	copied     int
 	sel        focusSelection
 	paneCursor paneCursor
-	// paneMouse and paneHistory mirror the focused pane's mouse ownership
-	// and history depth as the watcher last reported them, so the wheel
-	// routes without a tmux round trip mid-Update.
+	// paneMouse, paneMotion and paneHistory mirror the focused pane's
+	// mouse ownership, its appetite for pointer moves and its history
+	// depth as the watcher last reported them, so the wheel routes
+	// without a tmux round trip mid-Update.
 	paneMouse   bool
 	paneMotion  bool
 	paneHistory int
