@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func restore() func() {
@@ -395,6 +396,91 @@ func TestSaveToTempWritesBytes(t *testing.T) {
 	}
 	if string(data) != "payload" {
 		t.Fatalf("got %q", data)
+	}
+}
+
+func writePaste(t *testing.T, name string, age time.Duration) string {
+	t.Helper()
+	path := filepath.Join(pastesDir(), name)
+	if err := os.MkdirAll(pastesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Now().Add(-age)
+	if err := os.Chtimes(path, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestSweepStaleRemovesOldPastesOnly(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	old := writePaste(t, "paste-old.png", 8*24*time.Hour)
+	fresh := writePaste(t, "paste-fresh.png", time.Hour)
+
+	if err := SweepStale(7 * 24 * time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("stale paste should be gone, stat err = %v", err)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatalf("fresh paste should survive: %v", err)
+	}
+}
+
+func TestSweepStaleLeavesForeignEntries(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	other := writePaste(t, "notes.txt", 30*24*time.Hour)
+	sub := filepath.Join(pastesDir(), "paste-dir")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Now().Add(-30 * 24 * time.Hour)
+	if err := os.Chtimes(sub, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SweepStale(7 * 24 * time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatalf("unrelated file should survive: %v", err)
+	}
+	if _, err := os.Stat(sub); err != nil {
+		t.Fatalf("directory should survive: %v", err)
+	}
+}
+
+func TestSweepStaleReportsRemovalFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	t.Setenv("TMPDIR", t.TempDir())
+	stale := writePaste(t, "paste-old.png", 8*24*time.Hour)
+	if err := os.Chmod(pastesDir(), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(pastesDir(), 0o755)
+
+	err := SweepStale(7 * 24 * time.Hour)
+	if err == nil {
+		t.Fatal("an undeletable paste must surface, not vanish silently")
+	}
+	if !strings.Contains(err.Error(), "paste-old.png") {
+		t.Fatalf("error should name the file, got %v", err)
+	}
+	if _, statErr := os.Stat(stale); statErr != nil {
+		t.Fatalf("file should still be there: %v", statErr)
+	}
+}
+
+func TestSweepStaleWithoutDirectory(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	if err := SweepStale(7 * 24 * time.Hour); err != nil {
+		t.Fatalf("missing pastes dir is not an error: %v", err)
 	}
 }
 

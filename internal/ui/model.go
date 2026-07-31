@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -467,7 +468,7 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.updateTick(), m.bannerTick(), m.previewTick())
+	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.updateTick(), m.bannerTick(), m.previewTick(), m.sweepPastes, m.pasteSweepTick())
 }
 
 // updateMsg carries the result of the background GitHub release check.
@@ -477,6 +478,31 @@ type updateMsg struct {
 	latest string
 	url    string
 	failed bool
+}
+
+// pasteSweepMsg carries the result of one pass over the pastes directory.
+type pasteSweepMsg struct{ err error }
+
+type pasteSweepTickMsg struct{}
+
+// pasteSweepInterval keeps clearing old pasted images while the manager
+// stays open. A manager left running for weeks would otherwise sweep once
+// at startup and then let screenshots pile up in temp until the next
+// restart.
+const pasteSweepInterval = 24 * time.Hour
+
+// sweepStalePastes is the seam tests swap for a fake sweep.
+var sweepStalePastes = func() error { return clipboard.SweepStale(clipboard.StaleAfter) }
+
+// sweepPastes clears images pasted long enough ago that no agent will open
+// them again. It runs off the event loop: the pastes directory lives in
+// temp, where a slow disk must not stall a keystroke.
+func (m *Model) sweepPastes() tea.Msg {
+	return pasteSweepMsg{err: sweepStalePastes()}
+}
+
+func (m *Model) pasteSweepTick() tea.Cmd {
+	return tea.Tick(pasteSweepInterval, func(time.Time) tea.Msg { return pasteSweepTickMsg{} })
 }
 
 type updateTickMsg struct{}
@@ -748,6 +774,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case updateTickMsg:
 		return m, tea.Batch(m.checkForUpdate, m.updateTick())
+
+	case pasteSweepMsg:
+		if msg.err != nil {
+			m.err = "clearing old pasted images: " + msg.err.Error()
+		}
+		return m, nil
+
+	case pasteSweepTickMsg:
+		return m, tea.Batch(m.sweepPastes, m.pasteSweepTick())
 
 	case previewSettleMsg:
 		if msg.gen != m.previewGen {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,6 +49,49 @@ var (
 // pastesDir is the shared temp directory for clipboard image files.
 func pastesDir() string {
 	return filepath.Join(os.TempDir(), "agent-manager-pastes")
+}
+
+// StaleAfter is how long a pasted image stays on disk before a sweep can
+// take it: long enough for an agent to reopen an image from an earlier
+// session, short enough that screenshots do not pile up in temp.
+const StaleAfter = 7 * 24 * time.Hour
+
+// SweepStale deletes paste files older than maxAge. A pasted image outlives
+// the prompt that names it, so nothing deletes it at send time; age is what
+// tells a spent paste from one an agent may still open. A pastes directory
+// that does not exist yet is nothing to sweep.
+func SweepStale(maxAge time.Duration) error {
+	entries, err := os.ReadDir(pastesDir())
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	cutoff := time.Now().Add(-maxAge)
+	var failures []error
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "paste-") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			failures = append(failures, err)
+			continue
+		}
+		if info.ModTime().After(cutoff) {
+			continue
+		}
+		// Another manager instance sweeping the shared temp directory can
+		// win the race; its removal is the outcome we wanted anyway.
+		if err := os.Remove(filepath.Join(pastesDir(), entry.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 // ReadImage returns the clipboard image as raw bytes plus its file
