@@ -109,6 +109,7 @@ const maxRepoDepth = 3
 var skipDirs = map[string]bool{
 	"node_modules":    true,
 	".worktrees":      true,
+	".claude":         true,
 	".archive":        true,
 	"dist":            true,
 	"build":           true,
