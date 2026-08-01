@@ -1,0 +1,540 @@
+package ui
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"unicode/utf8"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+)
+
+// pasteQuickImage runs a full ctrl+v paste against a fake clipboard that
+// yields the given file, and returns the id of the chip it left behind.
+func pasteQuickImage(t *testing.T, m *Model, path string) int {
+	t.Helper()
+	orig := captureClipboardImage
+	defer func() { captureClipboardImage = orig }()
+	captureClipboardImage = func() (string, error) { return path, nil }
+
+	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if cmd == nil {
+		t.Fatal("ctrl+v should start an async clipboard read")
+	}
+	id := m.quick.lastImageID
+	msg, ok := cmd().(quickImageMsg)
+	if !ok {
+		t.Fatalf("clipboard cmd returned %T", cmd())
+	}
+	updated, _ := m.Update(msg)
+	*m = *updated.(*Model)
+	if m.errBar.text != "" {
+		t.Fatalf("paste: %q", m.errBar.text)
+	}
+	return id
+}
+
+func tempImage(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte("png-bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func quickOffsetOf(t *testing.T, m *Model, needle string) int {
+	t.Helper()
+	idx := strings.Index(m.quick.input.Value(), needle)
+	if idx < 0 {
+		t.Fatalf("%q not in prompt %q", needle, m.quick.input.Value())
+	}
+	return utf8.RuneCountInString(m.quick.input.Value()[:idx])
+}
+
+func TestQuickPromptDeadSessionSetsError(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "gone", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	m.selectSessionRow(t, "gone")
+
+	m.openQuickMode()
+	m.quick.input.SetValue("hello?")
+	if _, _ = m.submitQuick(); m.errBar.text != "session is dead - press v to revive" {
+		t.Fatalf("err = %q", m.errBar.text)
+	}
+	if !m.quick.active {
+		t.Fatal("quick mode should stay open after a failed send")
+	}
+	if _, err := m.store.Get(sess.ID); err != nil {
+		t.Fatalf("session record should survive: %v", err)
+	}
+}
+
+func TestQuickPromptSendClearsAcked(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.store.SetAcked(sess.ID, true); err != nil {
+		t.Fatalf("set acked: %v", err)
+	}
+	m.selectSessionRow(t, "answer-me")
+
+	m.openQuickMode()
+	if !m.quick.active {
+		t.Fatalf("quick mode should activate, err = %q", m.errBar.text)
+	}
+	m.quick.input.SetValue("carry on with the plan")
+	if _, _ = m.submitQuick(); m.errBar.text != "" {
+		t.Fatalf("send: %q", m.errBar.text)
+	}
+	if !m.quick.active {
+		t.Fatal("quick mode should stay active after a send")
+	}
+	if m.quick.input.Value() != "" {
+		t.Fatal("input should clear after a send")
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Acked {
+		t.Fatal("quick prompt send should clear the acked flag")
+	}
+}
+
+func TestQuickPasteInsertsChipAtCursor(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+
+	m.quick.input.SetValue("fix header and footer")
+	m.quick.input.SetCursor(len("fix header"))
+	path := tempImage(t, "paste-test.png")
+	id := pasteQuickImage(t, m, path)
+
+	want := "fix header " + imageToken(id) + " and footer"
+	if got := m.quick.input.Value(); got != want {
+		t.Fatalf("chip should land at the caret: got %q, want %q", got, want)
+	}
+	if len(m.quick.attachments) != 1 || m.quick.attachments[0].path != path {
+		t.Fatalf("attachment = %+v", m.quick.attachments)
+	}
+	// Typing continues after the chip, leaving the text around it intact.
+	for _, r := range " now" {
+		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if got := m.quick.input.Value(); got != "fix header "+imageToken(id)+" now and footer" {
+		t.Fatalf("typing after the chip disturbed the text: %q", got)
+	}
+}
+
+func TestQuickChipRendersInlineInTheInput(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick.attachments = []quickAttachment{{id: 1, path: "/tmp/agent-manager-pastes/paste-123.png"}}
+	m.quick.input.SetValue("look at " + imageToken(1) + " please")
+	m.quick.input.SetWidth(60)
+
+	view := m.renderQuickChips(m.quick.input.View())
+	plain := ansi.Strip(view)
+	if !strings.Contains(plain, "look at "+imageToken(1)+" please") {
+		t.Fatalf("chip should read inline with the text, got %q", plain)
+	}
+	if strings.Contains(plain, "paste-123") {
+		t.Fatalf("chip should not show the temp path, got %q", plain)
+	}
+	if plain == view {
+		t.Fatal("chip should be styled in the rendered prompt")
+	}
+	// Styling must add color only: the token's width is what the textarea
+	// already used to wrap the line.
+	if lipgloss.Width(ansi.Strip(imageChip(imageToken(1)))) != lipgloss.Width(imageToken(1)) {
+		t.Fatal("styled chip must keep the token's width")
+	}
+
+	m.quick.attachments = []quickAttachment{{id: 2}}
+	m.quick.input.SetValue(imageToken(2))
+	pending := m.renderQuickChips(m.quick.input.View())
+	if !strings.Contains(pending, imageChipPasting(imageToken(2))) {
+		t.Fatal("a chip waiting on the clipboard should wear the pasting style")
+	}
+}
+
+func TestQuickMessageSubstitutesPathsInPlace(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+
+	m.quick.attachments = []quickAttachment{{id: 1, path: "/tmp/a.png"}, {id: 2, path: "/tmp/b.png"}}
+	m.quick.input.SetValue("compare " + imageToken(1) + " with " + imageToken(2))
+	if got := m.quickMessage(); got != "compare /tmp/a.png with /tmp/b.png" {
+		t.Fatalf("compose = %q", got)
+	}
+
+	m.quick.input.SetValue(imageToken(2) + " " + imageToken(1))
+	if got := m.quickMessage(); got != "/tmp/b.png /tmp/a.png" {
+		t.Fatalf("paths should follow the order they were pasted in: %q", got)
+	}
+}
+
+func TestQuickBackspaceDeletesTheWholeChipAtTheCaret(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+
+	first := tempImage(t, "first.png")
+	second := tempImage(t, "second.png")
+	m.quick.lastImageID = 2
+	m.quick.attachments = []quickAttachment{{id: 1, path: first}, {id: 2, path: second}}
+	m.quick.input.SetValue("this " + imageToken(1) + " and that " + imageToken(2))
+	m.quick.input.SetCursor(quickOffsetOf(t, m, imageToken(1)) + utf8.RuneCountInString(imageToken(1)))
+
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	if got := m.quick.input.Value(); got != "this  and that "+imageToken(2) {
+		t.Fatalf("backspace beside a chip should remove it whole, got %q", got)
+	}
+	if len(m.quick.attachments) != 1 || m.quick.attachments[0].id != 2 {
+		t.Fatalf("the other chip should stay: %+v", m.quick.attachments)
+	}
+	if _, err := os.Stat(first); !os.IsNotExist(err) {
+		t.Fatalf("deleted chip's temp file should be removed, err=%v", err)
+	}
+	if m.quickMessage() != "this  and that "+second {
+		t.Fatalf("the surviving chip should still send its path: %q", m.quickMessage())
+	}
+
+	// Away from a chip, backspace is ordinary text editing.
+	m.quick.input.CursorEnd()
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	if len(m.quick.attachments) != 1 {
+		t.Fatalf("plain backspace should leave chips alone: %+v", m.quick.attachments)
+	}
+}
+
+func TestQuickDeleteRemovesTheChipInFront(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	path := tempImage(t, "forward.png")
+	m.quick.lastImageID = 1
+	m.quick.attachments = []quickAttachment{{id: 1, path: path}}
+	m.quick.input.SetValue("head " + imageToken(1) + " tail")
+	m.quick.input.SetCursor(quickOffsetOf(t, m, imageToken(1)))
+
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDelete})
+	if got := m.quick.input.Value(); got != "head  tail" {
+		t.Fatalf("delete in front of a chip should remove it whole, got %q", got)
+	}
+	if len(m.quick.attachments) != 0 {
+		t.Fatalf("attachment should be released: %+v", m.quick.attachments)
+	}
+}
+
+func TestQuickArrowsStepOverAChip(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick.lastImageID = 1
+	m.quick.attachments = []quickAttachment{{id: 1, path: "/tmp/a.png"}}
+	m.quick.input.SetValue("a " + imageToken(1) + " b")
+	start := quickOffsetOf(t, m, imageToken(1))
+	end := start + utf8.RuneCountInString(imageToken(1))
+	m.quick.input.SetCursor(end)
+
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if got := m.quickCursorOffset(); got != start {
+		t.Fatalf("left should clear the chip in one step: offset %d, want %d", got, start)
+	}
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRight})
+	if got := m.quickCursorOffset(); got != end {
+		t.Fatalf("right should clear the chip in one step: offset %d, want %d", got, end)
+	}
+}
+
+func TestQuickChipsReflowAcrossWrappedRows(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick.attachments = []quickAttachment{{id: 1, path: "/tmp/a.png"}}
+	m.quick.input.SetWidth(24)
+	m.quick.input.SetHeight(quickBarMaxRows)
+	m.quick.input.SetValue(strings.Repeat("word ", 5) + imageToken(1) + " tail")
+
+	rendered := ansi.Strip(m.renderQuickChips(m.quick.input.View()))
+	for _, line := range strings.Split(rendered, "\n") {
+		if lipgloss.Width(line) > 24 {
+			t.Fatalf("wrapped row overflows the bar: %q", line)
+		}
+	}
+	if !strings.Contains(rendered, imageToken(1)) {
+		t.Fatalf("chip should survive wrapping, got %q", rendered)
+	}
+}
+
+func TestQuickBulkDeleteReleasesTheImage(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	path := tempImage(t, "orphan.png")
+	m.quick.lastImageID = 1
+	m.quick.attachments = []quickAttachment{{id: 1, path: path}}
+	m.quick.input.SetValue("note " + imageToken(1))
+	m.quick.input.CursorEnd()
+
+	// ctrl+u wipes the line without going through the chip-aware keys.
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlU})
+	if len(m.quick.attachments) != 0 {
+		t.Fatalf("a chip cut by a bulk delete should release its image: %+v", m.quick.attachments)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("orphaned temp file should be removed, err=%v", err)
+	}
+}
+
+func TestQuickPasteReservesTheChipUntilTheReadLands(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+
+	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if cmd == nil {
+		t.Fatal("ctrl+v should start an async clipboard read")
+	}
+	id := m.quick.lastImageID
+	if !strings.Contains(m.quick.input.Value(), imageToken(id)) {
+		t.Fatalf("the chip should hold its spot while the read runs, got %q", m.quick.input.Value())
+	}
+	if !m.quickPasting() {
+		t.Fatal("the reserved chip should read as pasting")
+	}
+	// The caret sits after the chip, so typing keeps flowing.
+	for _, r := range "later" {
+		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if got := m.quick.input.Value(); got != imageToken(id)+" later" {
+		t.Fatalf("typing during a paste = %q", got)
+	}
+	_, _ = m.submitQuick()
+	if m.errBar.text == "" {
+		t.Fatal("submitting mid-paste should say the image is not ready")
+	}
+
+	path := tempImage(t, "landed.png")
+	updated, _ := m.Update(quickImageMsg{id: id, path: path})
+	m = updated.(*Model)
+	if m.quickPasting() {
+		t.Fatal("the chip should settle once the read lands")
+	}
+	if got := m.quick.input.Value(); got != imageToken(id)+" later" {
+		t.Fatalf("the chip should resolve in place, got %q", got)
+	}
+	if got := m.quickMessage(); got != path+" later" {
+		t.Fatalf("compose after the read = %q", got)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "png-bytes" {
+		t.Fatalf("attachment file: %v %q", err, data)
+	}
+}
+
+func TestQuickChipRemovalKeepsAMultiLinePrompt(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick.lastImageID = 1
+	m.quick.attachments = []quickAttachment{{id: 1, path: "/tmp/a.png"}}
+	m.quick.input.SetValue("first line\nsecond " + imageToken(1) + " line\nthird line")
+	m.quick.input.CursorUp()
+	m.quick.input.SetCursor(len("second ") + utf8.RuneCountInString(imageToken(1)))
+	if m.quick.input.Line() != 1 {
+		t.Fatalf("test setup: caret on row %d", m.quick.input.Line())
+	}
+
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	if got := m.quick.input.Value(); got != "first line\nsecond  line\nthird line" {
+		t.Fatalf("removing a chip should leave the other rows alone, got %q", got)
+	}
+	if m.quick.input.Line() != 1 || m.quickCursorOffset() != len("first line\nsecond ") {
+		t.Fatalf("caret should stay where the chip was: row %d offset %d", m.quick.input.Line(), m.quickCursorOffset())
+	}
+}
+
+func TestQuickPasteRefusedWhenThePromptIsFull(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick.input.SetValue(strings.Repeat("x", m.quick.input.CharLimit))
+	m.quick.input.CursorEnd()
+
+	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if cmd != nil {
+		t.Fatal("a full prompt should not start a clipboard read")
+	}
+	if m.errBar.text == "" {
+		t.Fatal("a refused paste should say why")
+	}
+	if len(m.quick.attachments) != 0 {
+		t.Fatalf("no chip should be reserved: %+v", m.quick.attachments)
+	}
+	if strings.Contains(m.quick.input.Value(), "[Image") {
+		t.Fatal("a truncated token must never reach the prompt")
+	}
+}
+
+func TestQuickEscReleasesPastedImages(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	path := tempImage(t, "abandoned.png")
+	m.quick.attachments = []quickAttachment{{id: 1, path: path}}
+	m.quick.input.SetValue("never mind " + imageToken(1))
+
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if len(m.quick.attachments) != 0 {
+		t.Fatalf("closing the bar should release its images: %+v", m.quick.attachments)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("abandoned temp file should be removed, err=%v", err)
+	}
+}
+
+func TestQuickImageMsgNoImageReachesTextPaste(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+	m.quick.input.SetValue("keep this")
+	m.quick.input.CursorEnd()
+
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	id := m.quick.lastImageID
+	updated, cmd := m.Update(quickImageMsg{id: id, noImage: true})
+	m = updated.(*Model)
+	if m.quickPasting() || len(m.quick.attachments) != 0 {
+		t.Fatalf("a clipboard with no image should take the chip back out: %+v", m.quick.attachments)
+	}
+	if got := m.quick.input.Value(); got != "keep this" {
+		t.Fatalf("removing the chip should restore the typed text, got %q", got)
+	}
+	// Textarea paste returns a cmd for its own clipboard read, or nil if empty.
+	_ = cmd
+}
+
+func TestQuickAttachImageRealErrorSurfaces(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+	m.quick.input.SetValue("look")
+	m.quick.input.CursorEnd()
+
+	orig := captureClipboardImage
+	defer func() { captureClipboardImage = orig }()
+	captureClipboardImage = func() (string, error) {
+		return "", errors.New("install wl-clipboard or xclip to paste images")
+	}
+
+	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	msg := cmd().(quickImageMsg)
+	updated, _ := m.Update(msg)
+	m = updated.(*Model)
+	if m.errBar.text == "" {
+		t.Fatal("a real clipboard error should surface through m.errBar.text")
+	}
+	if m.quickPasting() || len(m.quick.attachments) != 0 {
+		t.Fatalf("a failed read should take the chip back out: %+v", m.quick.attachments)
+	}
+	if got := m.quick.input.Value(); got != "look" {
+		t.Fatalf("a failed read should leave the typed text, got %q", got)
+	}
+}
+
+func TestQuickSpawnOnGroupCreatesSession(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	for i, row := range m.rows {
+		if row.isGroup && row.group == "backend" {
+			m.cursor = i
+		}
+	}
+
+	m.openQuickMode()
+	m.quick.input.SetValue("build the api")
+	_, cmd := m.submitQuick()
+	if m.errBar.text != "" {
+		t.Fatalf("quick spawn: %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+
+	sessions := m.sessionRows()
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %d want 1", len(sessions))
+	}
+	spawned := sessions[0]
+	if spawned.Group != "backend" || spawned.Tool != "claude" || spawned.Cwd != dir {
+		t.Fatalf("spawned session fields wrong: %+v", spawned)
+	}
+	if !m.tmux.Exists(spawned.ID) {
+		t.Fatal("tmux session should exist after quick spawn")
+	}
+	if m.quick.input.Value() != "" {
+		t.Fatal("input should clear after a spawn")
+	}
+}
+
+func TestQuickSpawnUsesTabCycledTool(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	for i, row := range m.rows {
+		if row.isGroup && row.group == "backend" {
+			m.cursor = i
+		}
+	}
+
+	m.openQuickMode()
+	if m.quickTool() != "claude" {
+		t.Fatalf("quick tool starts at %q want claude", m.quickTool())
+	}
+	if _, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyTab}); m.quickTool() != "claude-hooked" {
+		t.Fatalf("after tab, quick tool = %q want claude-hooked", m.quickTool())
+	}
+
+	m.quick.input.SetValue("build the api")
+	_, cmd := m.submitQuick()
+	if m.errBar.text != "" {
+		t.Fatalf("quick spawn: %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+
+	sessions := m.sessionRows()
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %d want 1", len(sessions))
+	}
+	if sessions[0].Tool != "claude-hooked" {
+		t.Fatalf("spawned tool = %q want claude-hooked", sessions[0].Tool)
+	}
+}
