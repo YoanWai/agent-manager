@@ -10,6 +10,8 @@ updates:
       prefix: "chore(deps)"
     groups:
       go-minor-and-patch:
+        patterns:
+          - "*"
         update-types:
           - minor
           - patch
@@ -23,6 +25,8 @@ updates:
       prefix: "chore(ci)"
     groups:
       actions:
+        patterns:
+          - "*"
         update-types:
           - minor
           - patch
