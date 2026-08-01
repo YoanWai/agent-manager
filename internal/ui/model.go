@@ -203,11 +203,22 @@ type splitState struct {
 }
 
 // updateInfo is this build's release tag plus a newer release found on
-// GitHub, so the header can badge it.
+// GitHub, so the header can badge it. applying marks an in-flight
+// self-update; restartPath, once set, tells main to exec the freshly
+// swapped binary after the program exits.
 type updateInfo struct {
-	version string
-	latest  string
-	url     string
+	version     string
+	latest      string
+	url         string
+	applying    bool
+	restartPath string
+}
+
+// updateAppliedMsg reports the self-update download-and-swap: on success
+// path is the binary to restart into.
+type updateAppliedMsg struct {
+	path string
+	err  error
 }
 
 // confirmTarget.action values; the zero value means delete.
@@ -856,6 +867,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.update.url = msg.url
 		})
 		return m, nil
+
+	case updateAppliedMsg:
+		m.update.applying = false
+		if msg.err != nil {
+			m.errBar.text = "update failed: " + msg.err.Error()
+			return m, nil
+		}
+		m.update.restartPath = msg.path
+		return m, tea.Quit
 
 	case updateTickMsg:
 		return m, tea.Batch(m.checkForUpdate, m.checkFeed, m.updateTick())

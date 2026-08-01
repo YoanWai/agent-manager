@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"runtime"
 	"sort"
@@ -14,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/update"
 )
 
 const (
@@ -58,6 +61,7 @@ func (m *Model) activeNotices() []notice {
 			title:  "Update available",
 			body: []string{
 				"Release " + m.update.latest + " is out; this build is " + m.update.version + ".",
+				"u updates in place and restarts; sessions keep running.",
 				"Enter opens the release page with the changelog and install notes.",
 			},
 			url: m.update.url,
@@ -74,7 +78,7 @@ func (m *Model) activeNotices() []notice {
 				"This machine now runs " + m.update.version + ".",
 				"Enter opens the release notes for everything that changed.",
 			},
-			url: repoURL + "/releases/tag/" + m.update.version,
+			url: repoURL + "/releases/tag/v" + strings.TrimPrefix(m.update.version, "v"),
 		})
 	}
 	for _, msg := range m.feedMessages {
@@ -334,9 +338,48 @@ func (m *Model) keepNoticeSelection(apply func()) {
 	}
 }
 
+// RestartPath is the binary main execs into after the program exits;
+// empty when no self-update happened this run.
+func (m *Model) RestartPath() string { return m.update.restartPath }
+
+// isUpdateNotice marks the one notice that carries the in-place update
+// action.
+func isUpdateNotice(n notice) bool {
+	return strings.HasPrefix(n.id, "update-")
+}
+
+// applyUpdate is the self-update seam: tests swap it for a fake instead
+// of downloading a release.
+var applyUpdate = update.Apply
+
+// applyUpdateCmd downloads the latest release off the event loop, swaps
+// the running binary, and reports the path to restart into.
+func (m *Model) applyUpdateCmd() tea.Cmd {
+	tag := m.update.latest
+	return func() tea.Msg {
+		execPath, err := os.Executable()
+		if err != nil {
+			return updateAppliedMsg{err: err}
+		}
+		if err := applyUpdate(context.Background(), tag, execPath); err != nil {
+			return updateAppliedMsg{err: err}
+		}
+		return updateAppliedMsg{path: execPath}
+	}
+}
+
 func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	notices := m.activeNotices()
 	switch msg.String() {
+	case "u":
+		if m.update.applying {
+			return m, nil
+		}
+		if m.noticeCursor < len(notices) && isUpdateNotice(notices[m.noticeCursor]) {
+			m.update.applying = true
+			m.errBar.text = ""
+			return m, m.applyUpdateCmd()
+		}
 	case "up", "k":
 		if m.noticeCursor > 0 {
 			m.noticeCursor--
@@ -396,14 +439,21 @@ func (m *Model) viewNotices() string {
 	if selected.url != "" {
 		rows = append(rows, subtleStyle.Render("↗ "+truncateTail(strings.TrimPrefix(selected.url, "https://"), inner-2)))
 	}
+	if m.update.applying {
+		rows = append(rows, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+m.update.latest+"…"))
+	}
 	if m.errBar.text != "" {
 		rows = append(rows, errStyle.Render("✕ "+m.errBar.text))
 	}
 	rows = append(rows, "")
 
+	hint := "↑↓ pick · ↵ open · x dismiss · esc "
+	if isUpdateNotice(selected) {
+		hint = "↑↓ pick · u update · ↵ open · x dismiss · esc "
+	}
 	frame := noticeFrame(rows, inner,
 		noticeLegend(),
-		mutedStyle.Render("↑↓ pick · ↵ open · x dismiss · esc "))
+		mutedStyle.Render(hint))
 	return m.centerOnBackdrop(frame)
 }
 
