@@ -106,18 +106,14 @@ func (m *Model) previewPaneHeight() int {
 	if m.quick.active {
 		avail -= lipgloss.Height(m.viewQuickBar(inner)) + 1
 	}
-	// Mirrors contentLines: the detail head, the seam, then the preview
-	// under its label and the blank line beneath it.
+	// Mirrors contentLines: the detail head, the seam, then the pane
+	// filling everything below.
 	rest := avail - lipgloss.Height(m.viewDetail(inner)) - 1
 	if rest < 3 {
 		// Preview section is hidden; keep a tiny pane for create/attach paths.
 		return 3
 	}
-	h := rest - 2
-	if h < 1 {
-		return 1
-	}
-	return h
+	return rest
 }
 
 // viewStatus is the transient message line: prompts, search, and

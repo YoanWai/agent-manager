@@ -512,10 +512,15 @@ func (m *Model) contentLines(width, height int) []contentLine {
 	body := ours(splitLines(m.viewDetail(inner)))
 	rest := height - len(body) - len(bar) - 1
 	if rest >= 3 {
-		body = append(body, contentLine{rule: true})
 		if group, ok := m.selectedGroup(); ok {
+			body = append(body, contentLine{rule: true})
 			body = append(body, ours(splitLines(m.viewGroupAgents(group, inner, rest)))...)
 		} else {
+			separator := contentLine{rule: true}
+			if m.mode == modeFocus {
+				separator = contentLine{text: focusTopRule(width), raw: true}
+			}
+			body = append(body, separator)
 			m.previewBodyOffset = len(body)
 			body = append(body, m.previewLines(width, rest, gutter)...)
 		}
@@ -538,22 +543,14 @@ func focusTopRule(width int) string {
 	return rule
 }
 
-// previewLines is the captured pane under its label. The captured rows are
-// marked raw and drawn without the column's gutters: painting our backdrop
-// behind an agent's own CLI colors would replace the background it drew
-// itself, and insetting its output would put a margin around a terminal
-// that has its own. Only the label, which is ours, keeps the gutter.
+// previewLines is the captured pane, filling every row under the detail
+// separator. The captured rows are marked raw and drawn without the
+// column's gutters: painting our backdrop behind an agent's own CLI colors
+// would replace the background it drew itself, and insetting its output
+// would put a margin around a terminal that has its own.
 func (m *Model) previewLines(width, height int, gutter string) []contentLine {
-	rule := contentLine{raw: true}
-	if m.mode == modeFocus {
-		rule = contentLine{text: focusTopRule(width), raw: true}
-	}
-	lines := []contentLine{{text: gutter + subtleStyle.Render("preview")}, rule}
-	rows := height - len(lines)
-	if rows < 1 {
-		return lines
-	}
-	pane := paneExact(m.preview, rows)
+	var lines []contentLine
+	pane := paneExact(m.preview, height)
 	if len(pane) == 0 {
 		// No rows painted means nothing to hit-test: a box left over from
 		// the previous session would catch clicks on empty space.
@@ -564,7 +561,7 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	// geometry the paint used.
 	m.pane.box = paneBox{
 		x:      m.paneOriginX(),
-		y:      m.listChromeRows() + m.previewBodyOffset + len(lines),
+		y:      m.listChromeRows() + m.previewBodyOffset,
 		width:  width,
 		height: len(pane),
 		ok:     true,
