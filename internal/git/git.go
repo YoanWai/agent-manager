@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -653,6 +654,57 @@ func (d *Driver) Worktrees(root string) ([]Worktree, error) {
 		worktrees = append(worktrees, current)
 	}
 	return worktrees, nil
+}
+
+func (d *Driver) RepoRoot(dir string) (string, error) {
+	top, err := d.run(dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", fmt.Errorf("not inside a git repository: %s", dir)
+	}
+	return top, nil
+}
+
+var worktreeNamePattern = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+
+func sanitizeWorktreeName(name string) string {
+	return strings.Trim(worktreeNamePattern.ReplaceAllString(name, "-"), "-.")
+}
+
+// worktreeBase picks the ref a session worktree branches from: the remote
+// default branch when cached, else a local default branch, else HEAD.
+func (d *Driver) worktreeBase(root string) string {
+	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "origin/HEAD"); err == nil {
+		return "origin/HEAD"
+	}
+	for _, candidate := range []string{"main", "master"} {
+		if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+candidate); err == nil {
+			return candidate
+		}
+	}
+	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "HEAD"); err == nil {
+		return "HEAD"
+	}
+	return ""
+}
+
+func (d *Driver) AddWorktree(root, sessionName string) (string, string, error) {
+	name := sanitizeWorktreeName(sessionName)
+	if name == "" {
+		return "", "", fmt.Errorf("session name %q leaves nothing usable for a worktree directory", sessionName)
+	}
+	path := filepath.Join(filepath.Dir(root), filepath.Base(root)+"-worktrees", name)
+	if _, err := os.Stat(path); err == nil {
+		return "", "", fmt.Errorf("worktree path already exists: %s", path)
+	}
+	branch := "am/" + name
+	base := d.worktreeBase(root)
+	if base == "" {
+		return "", "", fmt.Errorf("no base ref for a worktree in %s: repository has no commits", root)
+	}
+	if _, err := d.run(root, "worktree", "add", "-b", branch, path, base); err != nil {
+		return "", "", err
+	}
+	return path, branch, nil
 }
 
 func (d *Driver) IsRepoRoot(dir string) bool {

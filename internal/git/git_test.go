@@ -583,3 +583,51 @@ func TestResolveReposSingleIncludesWorktrees(t *testing.T) {
 		t.Fatalf("cwd repo should stay first, got %v", roots)
 	}
 }
+
+func TestRepoRoot(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	root, err := driver.RepoRoot(dir)
+	if err != nil {
+		t.Fatalf("repo root: %v", err)
+	}
+	if resolved, _ := filepath.EvalSymlinks(dir); root != resolved && root != dir {
+		t.Fatalf("root = %q, want %q", root, dir)
+	}
+	if _, err := driver.RepoRoot(t.TempDir()); err == nil {
+		t.Fatal("non-repo dir should error")
+	}
+}
+
+func TestAddWorktree(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+
+	path, branch, err := driver.AddWorktree(dir, "my feat/1")
+	if err != nil {
+		t.Fatalf("add worktree: %v", err)
+	}
+	wantPath := filepath.Join(filepath.Dir(dir), filepath.Base(dir)+"-worktrees", "my-feat-1")
+	if path != wantPath {
+		t.Fatalf("path = %q, want %q", path, wantPath)
+	}
+	if branch != "am/my-feat-1" {
+		t.Fatalf("branch = %q", branch)
+	}
+	if _, err := os.Stat(filepath.Join(path, "a.txt")); err != nil {
+		t.Fatalf("worktree missing checkout: %v", err)
+	}
+
+	if _, _, err := driver.AddWorktree(dir, "my feat/1"); err == nil {
+		t.Fatal("existing path should error")
+	}
+}
+
+func TestAddWorktreeEmptyRepoFails(t *testing.T) {
+	driver, dir := testRepo(t)
+	if _, _, err := driver.AddWorktree(dir, "feat"); err == nil {
+		t.Fatal("repo with no commits has no base ref, want error")
+	}
+}
