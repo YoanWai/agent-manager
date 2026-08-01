@@ -50,49 +50,18 @@ func main() {
 	info, hasInfo := debug.ReadBuildInfo()
 	version = resolveVersion(version, info, hasInfo)
 
-	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
-		fmt.Println("agent-manager", version)
-		return
-	}
-	if len(os.Args) > 1 && os.Args[1] == "rename" {
-		if err := renameCommand(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, "agent-manager:", err)
-			os.Exit(1)
+	if len(os.Args) > 1 {
+		if os.Args[1] == "--version" || os.Args[1] == "-v" {
+			fmt.Println("agent-manager", version)
+			return
 		}
-		return
-	}
-	if len(os.Args) > 1 && os.Args[1] == "review-repo" {
-		dir, err := config.Dir()
-		if err == nil {
-			err = runReviewRepo(os.Args[2:], os.Getenv(hooks.EnvSessionID), dir)
+		if command, ok := subcommands()[os.Args[1]]; ok {
+			if err := command(os.Args[2:]); err != nil {
+				fmt.Fprintln(os.Stderr, "agent-manager:", err)
+				os.Exit(1)
+			}
+			return
 		}
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "agent-manager:", err)
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) > 1 && os.Args[1] == "review-base" {
-		dir, err := config.Dir()
-		if err == nil {
-			err = runReviewBase(os.Args[2:], os.Getenv(hooks.EnvSessionID), dir)
-		}
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "agent-manager:", err)
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) > 1 && os.Args[1] == "mcp" {
-		dir, err := config.Dir()
-		if err == nil {
-			err = mcpserver.Run(dir, os.Getenv(hooks.EnvSessionID), version)
-		}
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "agent-manager:", err)
-			os.Exit(1)
-		}
-		return
 	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "agent-manager:", err)
@@ -100,12 +69,25 @@ func main() {
 	}
 }
 
-func renameCommand(args []string) error {
-	dir, err := config.Dir()
-	if err != nil {
-		return err
+func subcommands() map[string]func(args []string) error {
+	return map[string]func(args []string) error{
+		"rename":      withConfigDir(runRename),
+		"review-repo": withConfigDir(runReviewRepo),
+		"review-base": withConfigDir(runReviewBase),
+		"mcp": withConfigDir(func(args []string, sessionID, configDir string) error {
+			return mcpserver.Run(configDir, sessionID, version)
+		}),
 	}
-	return runRename(args, os.Getenv(hooks.EnvSessionID), dir)
+}
+
+func withConfigDir(command func(args []string, sessionID, configDir string) error) func([]string) error {
+	return func(args []string) error {
+		dir, err := config.Dir()
+		if err != nil {
+			return err
+		}
+		return command(args, os.Getenv(hooks.EnvSessionID), dir)
+	}
 }
 
 func runRename(args []string, sessionID, configDir string) error {
