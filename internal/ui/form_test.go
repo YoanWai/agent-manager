@@ -322,3 +322,29 @@ func TestSpawnWorktreeInNonRepoBlocks(t *testing.T) {
 		t.Fatal("no session row should exist after a blocked spawn")
 	}
 }
+
+func TestSpawnWorktreeRollsBackWhenLaunchBuildFails(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	hooksDir := m.hooks.Dir()
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(hooksDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(hooksDir, 0o755) })
+
+	err := m.spawnSession("claude", "wt-launchfail", repo, "", "", false, true)
+	if err == nil {
+		t.Fatal("launch-build failure must block the spawn")
+	}
+	worktreePath := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-worktrees", "wt-launchfail")
+	if _, statErr := os.Stat(worktreePath); !os.IsNotExist(statErr) {
+		t.Fatal("worktree must be rolled back when the launch command cannot be built")
+	}
+}

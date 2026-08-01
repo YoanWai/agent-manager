@@ -444,6 +444,9 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	}
 	command, env, err := m.buildLaunch(toolName, tool, base, id)
 	if err != nil {
+		if worktreeRepo != "" {
+			_, _ = m.gitDrv.RemoveWorktreeIfClean(worktreeRepo, dir, worktreeBranch)
+		}
 		return err
 	}
 	if err := m.tmux.Create(id, dir, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {

@@ -5,7 +5,7 @@ Status: approved
 
 ## Goal
 
-A session can run in its own git worktree, so parallel agents on the same repo never edit the same checkout. The worktree option appears in the new-session form (`n`) and as a toggle in the quick prompt bar (`space`), with a settings default.
+A session can run in its own git worktree, so parallel agents on the same repo never edit the same checkout. The worktree option appears in the new-session form (`n`) and as a toggle in the quick prompt bar (`alt+w`), with a settings default.
 
 ## Decisions
 
@@ -42,7 +42,7 @@ The worktree directory and branch keep the launch-time session name; a later `ag
 - `spawnSession` gains a `worktree bool` parameter. When set: resolve the repo root from the chosen dir, call `AddWorktree`, use the returned path as the session `Cwd`, and persist `worktree_repo` + `worktree_branch`. Any error aborts the spawn before tmux is touched.
 - Form (`form.go`): new `fieldWorktree` between directory and prompt, seeded from the settings default.
 - Quick bar (`quick.go`): `quickState` gains `worktree bool` seeded from the settings default; `alt+w` toggles it; `quickSpawn` passes it through. The bar footer renders a `wt` chip beside the tool name while on.
-- Settings (`settings.go`): new entry "worktree default" (on/off), stored in the settings table like the existing quick-close key.
+- Settings (`settings.go`): new entry "worktree sessions" (on/off), stored in the settings table like the existing quick-close key.
 - Lifecycle (`lifecycle.go`): the delete path calls `RemoveWorktreeIfClean` when `worktree_repo` is set. Dirty worktrees are kept and the result message shows the kept path.
 
 Status polling, preview, quick answers, and ctrl+r diff review all operate on `Cwd` and need no changes: the worktree is a normal repo checkout.
