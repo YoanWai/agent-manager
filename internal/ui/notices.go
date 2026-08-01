@@ -63,7 +63,7 @@ func (m *Model) activeNotices() []notice {
 			url: m.update.url,
 		})
 	}
-	if updated, err := m.store.Setting(whatsNewVersionSetting); err == nil && updated == m.update.version {
+	if m.whatsNewVersion == m.update.version {
 		notices = append(notices, notice{
 			id:     "whatsnew-" + m.update.version,
 			glyph:  "✦",
@@ -153,7 +153,18 @@ func (m *Model) startupNotice() string {
 	if err := m.store.SetSetting(whatsNewVersionSetting, m.update.version); err != nil {
 		m.errBar.text = err.Error()
 	}
+	m.whatsNewVersion = m.update.version
 	return "whatsnew-" + m.update.version
+}
+
+// loadWhatsNewVersion restores the version whose what's-new notice is
+// still current. A read failure just means no notice.
+func loadWhatsNewVersion(st *store.Store) string {
+	version, err := st.Setting(whatsNewVersionSetting)
+	if err != nil {
+		return ""
+	}
+	return version
 }
 
 // noticePanelMin is the narrowest messages column worth reading; a rail
@@ -308,6 +319,28 @@ func (m *Model) openStartupNotice() {
 	}
 	if id := m.startupNotice(); id != "" {
 		m.openNotices(id)
+	}
+}
+
+// keepNoticeSelection applies a mutation that may add or remove notices
+// and re-points the cursor at the notice that was selected before, by id.
+// Index arithmetic cannot do this: whether the list actually changed
+// depends on dismissals and on what the mutation replaced.
+func (m *Model) keepNoticeSelection(apply func()) {
+	if m.mode != modeNotices {
+		apply()
+		return
+	}
+	selected := ""
+	if notices := m.activeNotices(); m.noticeCursor < len(notices) {
+		selected = notices[m.noticeCursor].id
+	}
+	apply()
+	m.noticeCursor = 0
+	for i, n := range m.activeNotices() {
+		if n.id == selected {
+			m.noticeCursor = i
+		}
 	}
 }
 

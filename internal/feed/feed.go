@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -126,7 +127,7 @@ func sanitize(raw []rawMessage, version string) []Message {
 		if !validFeedID.MatchString(entry.ID) {
 			continue
 		}
-		if entry.URL != "" && (!strings.HasPrefix(entry.URL, "https://") || len(entry.URL) > maxURLLen) {
+		if entry.URL != "" && !safeURL(entry.URL) {
 			continue
 		}
 		if !update.VersionWithin(version, entry.MinVersion, entry.MaxVersion) {
@@ -152,6 +153,19 @@ func sanitize(raw []rawMessage, version string) []Message {
 		messages = append(messages, msg)
 	}
 	return messages
+}
+
+// safeURL admits only an https URL with a real host that is already
+// clean: one that stripping control sequences would alter is rejected
+// whole rather than repaired, because a repaired URL is a different URL.
+// The check guards both the modal's link line and the argument later
+// handed to the OS opener.
+func safeURL(raw string) bool {
+	if raw != cleanText(raw, maxURLLen) {
+		return false
+	}
+	parsed, err := url.Parse(raw)
+	return err == nil && parsed.Scheme == "https" && parsed.Host != ""
 }
 
 // cleanText makes one remote string safe for a terminal: ANSI sequences

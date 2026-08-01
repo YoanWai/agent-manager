@@ -198,7 +198,11 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
 		actionRow(settingsFieldBugReport, "report a bug", "open a prefilled GitHub issue") + "\n\n" +
 		subtleStyle.Render("  version ") + valueStyle.Render(m.update.version) + m.versionStatus()
-	return m.card("⚙ Settings", body, "↑↓ field · ←→ change · ↵/esc save")
+	hint := "↑↓ field · ←→ change · ↵/esc save"
+	if m.settings.field == settingsFieldBugReport {
+		hint = "↑↓ field · ↵ open issue · esc save"
+	}
+	return m.card("⚙ Settings", body, hint)
 }
 
 // themeSwatch previews a palette as a run of blocks, so a theme can be

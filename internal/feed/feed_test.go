@@ -56,6 +56,8 @@ func TestFetchDropsInvalidEntries(t *testing.T) {
 		{"id":"","banner":"no id","title":"x"},
 		{"id":"BAD ID!","banner":"bad id","title":"x"},
 		{"id":"bad-url","banner":"x","title":"x","url":"file:///etc/passwd"},
+		{"id":"sneaky-url","banner":"x","title":"x","url":"https://evil.com/\u001b[2Jx"},
+		{"id":"hostless-url","banner":"x","title":"x","url":"https://"},
 		{"id":"no-banner","title":"x"}
 	]`)
 	messages := fetch(t, t.TempDir(), "v0.14.2")
