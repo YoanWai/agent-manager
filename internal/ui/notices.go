@@ -6,6 +6,9 @@ import (
 	"net/url"
 	"runtime"
 	"sort"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/YoanWai/agent-manager/internal/store"
 )
@@ -32,6 +35,9 @@ type notice struct {
 }
 
 func (m *Model) activeNotices() []notice {
+	if m.store == nil {
+		return nil
+	}
 	var notices []notice
 	if m.update.latest != "" {
 		notices = append(notices, notice{
@@ -119,6 +125,61 @@ func (m *Model) startupNotice() string {
 		m.errBar.text = err.Error()
 	}
 	return "whatsnew-" + m.update.version
+}
+
+// noticePanelMin is the narrowest messages column worth reading; a rail
+// too tight for it keeps the machine meters alone.
+const noticePanelMin = 16
+
+// railFootLines is the rail's foot: the machine meters with the messages
+// panel docked to their right when both notices and width exist.
+func (m *Model) railFootLines(width int) []string {
+	meters := m.computerLines(width)
+	notices := m.activeNotices()
+	metersWidth := 0
+	for _, line := range meters {
+		if w := lipgloss.Width(line); w > metersWidth {
+			metersWidth = w
+		}
+	}
+	panelWidth := width - metersWidth - railGutter
+	if len(notices) == 0 || panelWidth < noticePanelMin {
+		return meters
+	}
+
+	panel := m.noticePanelLines(notices, panelWidth, len(meters))
+	gap := strings.Repeat(" ", railGutter)
+	lines := make([]string, len(meters))
+	for i := range meters {
+		if i >= len(panel) {
+			lines[i] = meters[i]
+			continue
+		}
+		lines[i] = padRight(meters[i], metersWidth) + gap + panel[i]
+	}
+	return lines
+}
+
+// noticePanelLines is the messages column: a quiet header, one banner per
+// notice, and an overflow count when the meters block is shorter than the
+// list. Height mirrors the meters so the two columns read as one block.
+func (m *Model) noticePanelLines(notices []notice, width, height int) []string {
+	lines := []string{subtleStyle.Render("messages") + subtleStyle.Render("  M")}
+	room := height - 2
+	if room < 1 {
+		room = 1
+	}
+	shown := notices
+	if len(shown) > room {
+		shown = shown[:room-1]
+	}
+	for _, n := range shown {
+		lines = append(lines, truncateTail(valueStyle.Render(n.banner), width))
+	}
+	if rest := len(notices) - len(shown); rest > 0 {
+		lines = append(lines, subtleStyle.Render(fmt.Sprintf("+%d more · M", rest)))
+	}
+	return lines
 }
 
 func loadDismissed(st *store.Store) map[string]bool {

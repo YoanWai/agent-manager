@@ -85,7 +85,7 @@ func (m *Model) viewListFrame() string {
 // railLines is the sessions rail: the entry list on top, the machine
 // meters docked at the bottom behind their seam.
 func (m *Model) railLines(width, height int) []contentLine {
-	meters := m.computerLines(width)
+	meters := m.railFootLines(width)
 	listHeight := height - len(meters) - 1
 	if listHeight < 3 {
 		listHeight, meters = height, nil
