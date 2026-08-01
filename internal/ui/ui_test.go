@@ -142,10 +142,11 @@ func (m *Model) selectGroupRow(t *testing.T, path string) {
 	t.Fatalf("no group row for %q", path)
 }
 
+// groupRowPaths lists the stored groups the tree paints, skipping root.
 func (m *Model) groupRowPaths() []string {
 	var paths []string
 	for _, r := range m.rows {
-		if r.isGroup {
+		if r.isGroup && !r.isRoot() {
 			paths = append(paths, r.group)
 		}
 	}
@@ -353,12 +354,7 @@ func TestNestedGroupsTree(t *testing.T) {
 	createSession(t, m, "deep", dir, "backend/api/auth")
 	createSession(t, m, "top", dir, "")
 
-	var groupPaths []string
-	for _, r := range m.rows {
-		if r.isGroup {
-			groupPaths = append(groupPaths, r.group)
-		}
-	}
+	groupPaths := m.groupRowPaths()
 	want := []string{"backend", "backend/api", "backend/api/auth"}
 	if len(groupPaths) != len(want) {
 		t.Fatalf("group rows = %v want %v", groupPaths, want)
@@ -369,8 +365,11 @@ func TestNestedGroupsTree(t *testing.T) {
 		}
 	}
 
-	if m.rows[0].isGroup || m.rows[0].sess.Name != "top" {
-		t.Fatalf("root session should render first, rows[0] = %+v", m.rows[0])
+	if !m.rows[0].isRoot() {
+		t.Fatalf("root row should lead the list, rows[0] = %+v", m.rows[0])
+	}
+	if m.rows[1].isGroup || m.rows[1].sess.Name != "top" {
+		t.Fatalf("the top-level session should follow root, rows[1] = %+v", m.rows[1])
 	}
 
 	deep := m.sessionRows()[1]
