@@ -25,7 +25,7 @@ func TestRailFootPutsMessagesRightOfComputer(t *testing.T) {
 	lines := m.railFootLines(70)
 
 	joined := ansi.Strip(strings.Join(lines, "\n"))
-	if !strings.Contains(joined, "MESSAGES") {
+	if !strings.Contains(joined, "messages") {
 		t.Fatalf("want a messages card, got %q", joined)
 	}
 	if !strings.Contains(joined, "welcome") {
@@ -34,10 +34,10 @@ func TestRailFootPutsMessagesRightOfComputer(t *testing.T) {
 
 	for _, line := range lines {
 		clean := ansi.Strip(line)
-		if !strings.Contains(clean, "MESSAGES") {
+		if !strings.Contains(clean, "messages") {
 			continue
 		}
-		if strings.Index(clean, "MESSAGES") < strings.Index(ansi.Strip(lines[0]), "computer") {
+		if strings.Index(clean, "messages") < strings.Index(ansi.Strip(lines[0]), "computer") {
 			t.Fatalf("messages must sit right of computer, got %q", clean)
 		}
 		return

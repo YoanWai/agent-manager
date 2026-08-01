@@ -159,6 +159,12 @@ func noticeBorderStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Subtle, "#e2c044", 0.45)))
 }
 
+// noticeLegend is the card's title, set into the border: lowercase, warm,
+// no fill, so it reads as a fieldset legend rather than a badge.
+func noticeLegend() string {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Bright, "#e2c044", 0.5))).Bold(true).Render(" messages ")
+}
+
 // railFootLines is the rail's foot: the machine meters with the messages
 // card docked to their right when both notices and width exist. The card
 // hugs its content behind a rule that separates the two blocks.
@@ -189,10 +195,9 @@ func (m *Model) railFootLines(width int) []string {
 	return lines
 }
 
-// noticeCardLines is the messages card: a fieldset — the MESSAGES badge
-// set as a legend into the rounded top border, the open key as a legend
-// into the bottom one — hugging its content in width and spanning the
-// meters block in height.
+// noticeCardLines is the messages card: a fieldset — the messages legend
+// set into the rounded top border, the open key into the bottom one —
+// hugging its content in width and spanning the meters block in height.
 func (m *Model) noticeCardLines(notices []notice, maxWidth, height int) []string {
 	room := height - 2
 	if room < 1 {
@@ -213,7 +218,7 @@ func (m *Model) noticeCardLines(notices []notice, maxWidth, height int) []string
 		rows = append(rows, overflow)
 	}
 
-	head := focusBadgeStyle.Render(" MESSAGES ")
+	head := noticeLegend()
 	foot := keyCap("M", "open") + subtleStyle.Render(" ")
 	inner := lipgloss.Width(head) + 2
 	if w := lipgloss.Width(foot) + 2; w > inner {
@@ -339,7 +344,7 @@ func (m *Model) viewNotices() string {
 	notices := m.activeNotices()
 	if len(notices) == 0 {
 		frame := noticeFrame([]string{subtleStyle.Render("nothing new")}, inner,
-			focusBadgeStyle.Render(" MESSAGES "), keyCap("esc", "close"))
+			noticeLegend(), keyCap("esc", "close"))
 		return m.noticeOverlay(frame)
 	}
 	if m.noticeCursor >= len(notices) {
@@ -370,7 +375,7 @@ func (m *Model) viewNotices() string {
 	rows = append(rows, "")
 
 	frame := noticeFrame(rows, inner,
-		focusBadgeStyle.Render(" MESSAGES "),
+		noticeLegend(),
 		mutedStyle.Render("↑↓ pick · ↵ open · x dismiss · esc "))
 	return m.noticeOverlay(frame)
 }
