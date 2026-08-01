@@ -178,6 +178,10 @@ func (m *Model) viewSettings() string {
 	if !m.settings.enterFocuses {
 		focusKey = "↵ attach · A focus"
 	}
+	worktreeDefault := "off"
+	if m.settings.worktreeDefault {
+		worktreeDefault = "on"
+	}
 	row := func(field int, name, value string) string {
 		marker := "  "
 		labelStyle := valueStyle
@@ -194,7 +198,8 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldDensity, "list density", density) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
-		row(settingsFieldFocusKey, "session keys", focusKey) + "\n\n" +
+		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
+		row(settingsFieldWorktree, "worktree sessions", worktreeDefault) + "\n\n" +
 		subtleStyle.Render("  version ") + valueStyle.Render(m.update.version) + m.versionStatus()
 	return m.card("⚙ Settings", body, "↑↓ field · ←→ change · ↵/esc save")
 }

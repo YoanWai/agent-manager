@@ -267,6 +267,7 @@ type settingsState struct {
 	quickCloseSend  bool
 	enterFocuses    bool
 	comfortableRows bool
+	worktreeDefault bool
 }
 
 const (
@@ -276,6 +277,7 @@ const (
 	settingsFieldLayout
 	settingsFieldQuickClose
 	settingsFieldFocusKey
+	settingsFieldWorktree
 	settingsFieldCount
 )
 

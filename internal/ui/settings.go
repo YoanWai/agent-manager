@@ -94,6 +94,7 @@ func (m *Model) openSettings() {
 		enterFocuses:   m.enterFocuses(),
 
 		comfortableRows: m.comfortableRows,
+		worktreeDefault: m.defaultWorktree(),
 	}
 	m.mode = modeSettings
 }
@@ -143,6 +144,13 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err := m.store.SetSetting(listDensitySetting, density); err != nil {
 			m.errBar.text = err.Error()
 		}
+		worktreeChoice := "off"
+		if m.settings.worktreeDefault {
+			worktreeChoice = "on"
+		}
+		if err := m.store.SetSetting(worktreeSetting, worktreeChoice); err != nil {
+			m.errBar.text = err.Error()
+		}
 		m.focusOnEnter = m.settings.enterFocuses
 		m.comfortableRows = m.settings.comfortableRows
 		m.mode = modeList
@@ -169,5 +177,7 @@ func (m *Model) cycleSetting(step int) {
 		m.settings.quickCloseSend = !m.settings.quickCloseSend
 	case settingsFieldFocusKey:
 		m.settings.enterFocuses = !m.settings.enterFocuses
+	case settingsFieldWorktree:
+		m.settings.worktreeDefault = !m.settings.worktreeDefault
 	}
 }
