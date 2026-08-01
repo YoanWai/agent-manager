@@ -110,6 +110,7 @@ func (m *Model) openQuickMode() {
 		toolNames:      names,
 		toolIndex:      index,
 		closeAfterSend: m.quickCloseAfterSend(),
+		worktree:       m.defaultWorktree(),
 	}
 }
 
@@ -146,6 +147,9 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.quick.toolNames) > 0 {
 			m.quick.toolIndex = (m.quick.toolIndex + 1) % len(m.quick.toolNames)
 		}
+		return m, nil
+	case "alt+w":
+		m.quick.worktree = !m.quick.worktree
 		return m, nil
 	case "ctrl+v":
 		if m.quickPasting() {
@@ -257,7 +261,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	name := toolName + "-" + newID()[:4]
-	if err := m.spawnSession(toolName, name, dir, group, prompt, true, false); err != nil {
+	if err := m.spawnSession(toolName, name, dir, group, prompt, true, m.quick.worktree); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}

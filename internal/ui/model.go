@@ -235,6 +235,7 @@ type quickState struct {
 	attachments    []quickAttachment
 	lastImageID    int
 	closeAfterSend bool
+	worktree       bool
 }
 
 // quickAttachment is one pasted image: the id its token carries, and the
