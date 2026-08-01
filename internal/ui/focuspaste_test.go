@@ -35,7 +35,7 @@ func TestFocusPasteKeepsPromptInComposer(t *testing.T) {
 	*m = *updated.(*Model)
 
 	if calls != 1 {
-		t.Fatalf("paste path called %d times, want 1 (err=%q)", calls, m.err)
+		t.Fatalf("paste path called %d times, want 1 (err=%q)", calls, m.errBar.text)
 	}
 	if pastedText != text {
 		t.Fatalf("pasted text = %q, want %q", pastedText, text)

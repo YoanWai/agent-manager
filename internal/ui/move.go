@@ -10,7 +10,7 @@ func (m *Model) openMove() {
 	m.moveID = sess.ID
 	m.rebuildGroupOptions(sess.Group)
 	m.mode = modeMove
-	m.err = ""
+	m.errBar.text = ""
 }
 
 func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -31,7 +31,7 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		group := m.selectedGroupPath()
 		if err := m.store.MoveSession(m.moveID, group); err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 			return m, nil
 		}
 		m.relabelSession(m.moveID)

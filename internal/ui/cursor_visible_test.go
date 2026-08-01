@@ -35,7 +35,7 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 			m := &Model{
 				width: size.w, height: size.h, mode: modeList,
 				sessions: sessions, rows: rows, cursor: cursor,
-				collapsed: map[string]bool{}, splitRatio: defaultSplitRatio,
+				collapsed: map[string]bool{}, split: splitState{ratio: defaultSplitRatio},
 			}
 			view := ansi.Strip(m.View())
 			if !strings.Contains(view, sessions[cursor].Name) {

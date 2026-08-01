@@ -44,7 +44,7 @@ func (m *Model) handleQuickImageMsg(msg quickImageMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.err != nil {
 		cmd := m.removeQuickImage(msg.id)
-		m.err = msg.err.Error()
+		m.errBar.text = msg.err.Error()
 		return m, cmd
 	}
 	if msg.noImage {
@@ -55,7 +55,7 @@ func (m *Model) handleQuickImageMsg(msg quickImageMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, pasteCmd)
 	}
 	att.path = msg.path
-	m.err = ""
+	m.errBar.text = ""
 	return m, nil
 }
 
@@ -102,7 +102,7 @@ func (m *Model) openQuickMode() {
 	input.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	input.SetHeight(1)
 	input.Focus()
-	m.err = ""
+	m.errBar.text = ""
 	names, index := m.defaultToolSelection()
 	m.quick = quickState{
 		active:         true,
@@ -152,7 +152,7 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if !m.quickRoomForToken(m.quick.lastImageID + 1) {
-			m.err = "prompt is full - shorten it before pasting an image"
+			m.errBar.text = "prompt is full - shorten it before pasting an image"
 			return m, nil
 		}
 		// The chip goes in at the caret now and fills in when the
@@ -162,7 +162,7 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		id := m.quick.lastImageID
 		m.quick.attachments = append(m.quick.attachments, quickAttachment{id: id})
 		m.insertQuickToken(&m.quick.attachments[len(m.quick.attachments)-1])
-		m.err = ""
+		m.errBar.text = ""
 		return m, m.attachQuickImageCmd(id)
 	case "left":
 		if span, ok := m.tokenEndingAt(m.quickCursorOffset()); ok {
@@ -206,36 +206,36 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedRow()
 	if !ok {
-		m.err = "nothing selected"
+		m.errBar.text = "nothing selected"
 		return m, nil
 	}
 	if m.quickPasting() {
-		m.err = "still reading the pasted image - try again in a moment"
+		m.errBar.text = "still reading the pasted image - try again in a moment"
 		return m, nil
 	}
 	text := m.quickMessage()
 	if text == "" {
-		m.err = "prompt cannot be empty"
+		m.errBar.text = "prompt cannot be empty"
 		return m, nil
 	}
 	if entry.isGroup {
 		return m.quickSpawn(entry.group, text)
 	}
 	if !m.tmux.Exists(entry.sess.ID) {
-		m.err = "session is dead - press v to revive"
+		m.errBar.text = "session is dead - press v to revive"
 		return m, nil
 	}
 	if err := m.tmux.SendText(entry.sess.ID, text); err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return m, nil
 	}
 	// The prompt is delivered: clear the input before anything else can
 	// fail, so a retry cannot send it twice.
 	m.clearQuickAfterSend()
-	m.err = ""
+	m.errBar.text = ""
 	// A queued answer means the user expects a fresh finished alert.
 	if err := m.store.SetAcked(entry.sess.ID, false); err != nil {
-		m.err = "prompt sent, but clearing the alert ack failed: " + err.Error()
+		m.errBar.text = "prompt sent, but clearing the alert ack failed: " + err.Error()
 	}
 	m.requestRefresh()
 	return m, nil
@@ -243,26 +243,26 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 
 func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 	if strings.HasPrefix(prompt, "-") {
-		m.err = `prompt cannot start with "-": the tool would read it as a flag`
+		m.errBar.text = `prompt cannot start with "-": the tool would read it as a flag`
 		return m, nil
 	}
 	toolName := m.quickTool()
 	if toolName == "" {
-		m.err = "no tools configured"
+		m.errBar.text = "no tools configured"
 		return m, nil
 	}
 	dir, ok := resolveExistingDir(m.groupPaths[group], m.groupDefaultDir(group))
 	if !ok {
-		m.err = "group has no valid default path: " + dir
+		m.errBar.text = "group has no valid default path: " + dir
 		return m, nil
 	}
 	name := toolName + "-" + newID()[:4]
 	if err := m.spawnSession(toolName, name, dir, group, prompt, true); err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return m, nil
 	}
 	m.clearQuickAfterSend()
-	m.err = ""
+	m.errBar.text = ""
 	return m, m.refreshCmd()
 }
 
@@ -291,7 +291,7 @@ func (m *Model) quickTool() string {
 func (m *Model) quickCloseAfterSend() bool {
 	chosen, err := m.store.Setting(quickCloseSetting)
 	if err != nil {
-		m.err = "reading quick prompt setting: " + err.Error()
+		m.errBar.text = "reading quick prompt setting: " + err.Error()
 		return false
 	}
 	return chosen == "close"

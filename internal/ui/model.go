@@ -72,13 +72,7 @@ type Model struct {
 	preview        string
 	agents         agentStats
 
-	netUp       uint64
-	netDown     uint64
-	netRates    bool
-	prevNetSent uint64
-	prevNetRecv uint64
-	prevNetAt   time.Time
-	prevNetOK   bool
+	net netStats
 
 	poller *poller
 	focus  *focusWatch
@@ -86,18 +80,9 @@ type Model struct {
 	// written during paint so clicks resolve against the current frame.
 	// copied is the size of the last clipboard write, shown once in the
 	// status line and cleared on the next selection.
-	copied     int
-	sel        focusSelection
-	paneCursor paneCursor
-	// paneMouse, paneMotion, paneSGR and paneHistory mirror the focused
-	// pane's mouse ownership, its appetite for pointer moves, the report
-	// encoding it asked for and its history depth as the watcher last
-	// reported them, so the wheel routes without a tmux round trip
-	// mid-Update.
-	paneMouse   bool
-	paneMotion  bool
-	paneSGR     bool
-	paneHistory int
+	copied int
+	sel    focusSelection
+	pane   paneMirror
 	// cursorOn is the caret's blink phase while focused.
 	cursorOn bool
 	// focusScroll is how many lines the focused pane is scrolled back into
@@ -113,8 +98,6 @@ type Model struct {
 	// watchedGen is previewGen as of the last poll pass, so a selection
 	// that has not moved since can be recognised as at rest.
 	watchedGen        uint64
-	paneBox           paneBox
-	paneColumnX       int
 	previewBodyOffset int
 	cursor            int
 	mode              mode
@@ -144,19 +127,8 @@ type Model struct {
 	// sessionsSized flips after the first refresh shrinks sessions left
 	// over from a previous manager run to the preview panel's width.
 	sessionsSized bool
-	err           string
-	errShown      string
-	errAge        int
-
-	// Horizontal sessions/sidebar split. splitRatio is the left panel's
-	// share of the terminal width; resizeMode arms keyboard divider nudging.
-	splitRatio       float64
-	splitRatioBefore float64
-	resizeMode       bool
-	splitDragging    bool
-	// paneGeom is the last width×height we told tmux for each session id.
-	// Skips no-op resize-window calls that otherwise stall the UI.
-	paneGeom map[string][2]int
+	errBar        errBar
+	split         splitState
 	// previewGen increments on every cursor move. In-flight captures and
 	// settle timers with an older gen are dropped so key-repeat cannot
 	// queue a second of tmux work after the user stops.
@@ -166,11 +138,57 @@ type Model struct {
 	// the frame is not repainted forever.
 	bannerPhase int
 
-	// version is this build's release tag; updateLatest/updateURL hold a
-	// newer release found on GitHub so the header can badge it.
-	version      string
-	updateLatest string
-	updateURL    string
+	update updateInfo
+}
+
+type netStats struct {
+	up       uint64
+	down     uint64
+	rates    bool
+	prevSent uint64
+	prevRecv uint64
+	prevAt   time.Time
+	prevOK   bool
+}
+
+// paneMirror mirrors the focused pane as the watcher last reported it:
+// mouse ownership, appetite for pointer moves, report encoding and history
+// depth, so the wheel routes without a tmux round trip mid-Update. geom is
+// the last width×height told to tmux per session id, skipping no-op
+// resize-window calls that otherwise stall the UI.
+type paneMirror struct {
+	mouse   bool
+	motion  bool
+	sgr     bool
+	history int
+	box     paneBox
+	columnX int
+	cursor  paneCursor
+	geom    map[string][2]int
+}
+
+type errBar struct {
+	text  string
+	shown string
+	age   int
+}
+
+// splitState is the horizontal sessions/sidebar split. ratio is the left
+// panel's share of the terminal width; resizeMode arms keyboard divider
+// nudging.
+type splitState struct {
+	ratio       float64
+	ratioBefore float64
+	resizeMode  bool
+	dragging    bool
+}
+
+// updateInfo is this build's release tag plus a newer release found on
+// GitHub, so the header can badge it.
+type updateInfo struct {
+	version string
+	latest  string
+	url     string
 }
 
 // confirmTarget.action values; the zero value means delete.
@@ -369,11 +387,11 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		setSnapshot:     st.SetSnapshot,
 		poller:          newPoller(st, driver, engine, hookManager, statusSources, sessionStores, cfg.PollInterval.Duration),
 		collapsed:       loadCollapsed(st),
-		splitRatio:      loadSplitRatio(st),
+		split:           splitState{ratio: loadSplitRatio(st)},
 		focusOnEnter:    storedFocusOnEnter(st),
 		comfortableRows: storedComfortableRows(st),
 		mode:            modeList,
-		version:         version,
+		update:          updateInfo{version: version},
 	}
 }
 
@@ -419,11 +437,11 @@ func (m *Model) persistCollapsed() {
 	sort.Strings(paths)
 	raw, err := json.Marshal(paths)
 	if err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return
 	}
 	if err := m.store.SetSetting(collapsedSetting, string(raw)); err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 	}
 }
 
@@ -533,7 +551,7 @@ func (m *Model) checkForUpdate() tea.Msg {
 	if err != nil {
 		return updateMsg{failed: true}
 	}
-	result, err := update.Check(context.Background(), dir, m.version)
+	result, err := update.Check(context.Background(), dir, m.update.version)
 	if err != nil {
 		return updateMsg{failed: true}
 	}
@@ -646,15 +664,15 @@ func (m *Model) resizeSessions() {
 	if width <= 0 || height <= 0 {
 		return
 	}
-	if m.paneGeom == nil {
-		m.paneGeom = map[string][2]int{}
+	if m.pane.geom == nil {
+		m.pane.geom = map[string][2]int{}
 	}
 	var todo []string
 	for _, sess := range m.sessions {
 		if sess.Archived {
 			continue
 		}
-		if last, ok := m.paneGeom[sess.ID]; ok && last[0] == width && last[1] == height {
+		if last, ok := m.pane.geom[sess.ID]; ok && last[0] == width && last[1] == height {
 			continue
 		}
 		todo = append(todo, sess.ID)
@@ -678,7 +696,7 @@ func (m *Model) resizeSessions() {
 		for range todo {
 			r := <-results
 			if r.err == nil {
-				m.paneGeom[r.id] = [2]int{width, height}
+				m.pane.geom[r.id] = [2]int{width, height}
 			}
 		}
 	})
@@ -699,7 +717,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// terminal delivers a size message and may carry stale colors.
 		SyncTerminalBackground()
 		// Geometry cache is stale for every session after a real resize.
-		m.paneGeom = nil
+		m.pane.geom = nil
 		m.resizeSessions()
 		return m, nil
 
@@ -746,7 +764,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Sessions left from a previous run carry that run's window
 			// size, which our cache knows nothing about, so the first pass
 			// re-asserts geometry for every one of them.
-			m.paneGeom = nil
+			m.pane.geom = nil
 		}
 		// The preview box changes height for more reasons than a terminal
 		// resize: the quick bar opening, the status line appearing, a new
@@ -779,8 +797,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.failed {
 			return m, nil
 		}
-		m.updateLatest = msg.latest
-		m.updateURL = msg.url
+		m.update.latest = msg.latest
+		m.update.url = msg.url
 		return m, nil
 
 	case updateTickMsg:
@@ -788,7 +806,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case pasteSweepMsg:
 		if msg.err != nil {
-			m.err = "clearing old pasted images: " + msg.err.Error()
+			m.errBar.text = "clearing old pasted images: " + msg.err.Error()
 		}
 		return m, nil
 
@@ -816,7 +834,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.cursorBlink()
 
 	case focusCopiedMsg:
-		m.err = ""
+		m.errBar.text = ""
 		m.copied = msg.chars
 		return m, nil
 
@@ -831,13 +849,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !ok || sess.ID != msg.sessID {
 			return m, nil
 		}
-		m.paneMouse = msg.paneMouse
-		m.paneMotion = msg.paneMotion
-		m.paneSGR = msg.paneSGR
-		m.paneHistory = msg.historySize
+		m.pane.mouse = msg.paneMouse
+		m.pane.motion = msg.paneMotion
+		m.pane.sgr = msg.paneSGR
+		m.pane.history = msg.historySize
 		// Once the app owns the wheel, nothing can walk a leftover offset
 		// back down, and holding it would freeze the view for good.
-		if m.paneMouse && m.focusScroll != 0 {
+		if m.pane.mouse && m.focusScroll != 0 {
 			m.focusScroll = 0
 		}
 		// A scrolled-back pane holds still: live frames would yank the
@@ -846,7 +864,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.preview = msg.preview
-		m.paneCursor = paneCursor{x: msg.cursorX, y: msg.cursorY, ok: msg.cursorOK}
+		m.pane.cursor = paneCursor{x: msg.cursorX, y: msg.cursorY, ok: msg.cursorOK}
 		return m, nil
 
 	case previewMsg:
@@ -883,7 +901,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleDiffProbe(msg)
 
 	case errMsg:
-		m.err = msg.err.Error()
+		m.errBar.text = msg.err.Error()
 		return m, nil
 
 	case quickImageMsg:
@@ -893,19 +911,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; shrink it back to the preview panel so
 		// the capture is not clipped on the right.
-		if m.paneGeom != nil {
-			delete(m.paneGeom, msg.sessID)
+		if m.pane.geom != nil {
+			delete(m.pane.geom, msg.sessID)
 		}
 		width, height := m.previewPaneWidth(), m.previewPaneHeight()
 		m.poller.reflowSessions([]string{msg.sessID}, func() {
 			_ = m.tmux.Resize(msg.sessID, width, height)
 		})
-		if m.paneGeom == nil {
-			m.paneGeom = map[string][2]int{}
+		if m.pane.geom == nil {
+			m.pane.geom = map[string][2]int{}
 		}
-		m.paneGeom[msg.sessID] = [2]int{width, height}
+		m.pane.geom[msg.sessID] = [2]int{width, height}
 		if msg.err != nil {
-			m.err = msg.err.Error()
+			m.errBar.text = msg.err.Error()
 			m.requestRefresh()
 			return m, nil
 		}
@@ -913,13 +931,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// it here and jump straight to review for the session just attached.
 		requested, err := m.tmux.ReviewRequested()
 		if err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 		} else if requested {
 			// A failed clear leaves the marker set, which would reopen review
 			// on every later detach, so surface it and stay in the list rather
-			// than letting openDiff reset m.err and hide it.
+			// than letting openDiff reset m.errBar.text and hide it.
 			if clearErr := m.tmux.ClearReviewRequest(); clearErr != nil {
-				m.err = clearErr.Error()
+				m.errBar.text = clearErr.Error()
 				m.requestRefresh()
 				return m, nil
 			}
@@ -938,10 +956,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.err != nil {
-			m.err = msg.err.Error()
+			m.errBar.text = msg.err.Error()
 			return m, nil
 		}
-		m.err = msg.warn
+		m.errBar.text = msg.warn
 		return m, tea.ExecProcess(m.tmux.AttachCommand(msg.sessID), func(err error) tea.Msg {
 			return attachDoneMsg{sessID: msg.sessID, err: err}
 		})
@@ -990,34 +1008,34 @@ func sessionGone(sessions []store.Session, id string) bool {
 // so a backwards jump just reseeds the baseline.
 func (m *Model) updateNetRates(snap sysstat.Snapshot) {
 	now := time.Now()
-	if m.prevNetOK && snap.NetOK &&
-		snap.NetSent >= m.prevNetSent && snap.NetRecv >= m.prevNetRecv {
-		if dt := now.Sub(m.prevNetAt).Seconds(); dt > 0 {
-			m.netUp = uint64(float64(snap.NetSent-m.prevNetSent) / dt)
-			m.netDown = uint64(float64(snap.NetRecv-m.prevNetRecv) / dt)
-			m.netRates = true
+	if m.net.prevOK && snap.NetOK &&
+		snap.NetSent >= m.net.prevSent && snap.NetRecv >= m.net.prevRecv {
+		if dt := now.Sub(m.net.prevAt).Seconds(); dt > 0 {
+			m.net.up = uint64(float64(snap.NetSent-m.net.prevSent) / dt)
+			m.net.down = uint64(float64(snap.NetRecv-m.net.prevRecv) / dt)
+			m.net.rates = true
 		}
 	}
-	m.prevNetSent = snap.NetSent
-	m.prevNetRecv = snap.NetRecv
-	m.prevNetAt = now
-	m.prevNetOK = snap.NetOK
+	m.net.prevSent = snap.NetSent
+	m.net.prevRecv = snap.NetRecv
+	m.net.prevAt = now
+	m.net.prevOK = snap.NetOK
 }
 
 // ageError clears a status message after it has survived a couple of poll
 // ticks, so transient errors self-dismiss without any per-callsite timers.
 func (m *Model) ageError() {
-	if m.err == "" {
-		m.errShown, m.errAge = "", 0
+	if m.errBar.text == "" {
+		m.errBar.shown, m.errBar.age = "", 0
 		return
 	}
-	if m.err != m.errShown {
-		m.errShown, m.errAge = m.err, 0
+	if m.errBar.text != m.errBar.shown {
+		m.errBar.shown, m.errBar.age = m.errBar.text, 0
 		return
 	}
-	m.errAge++
-	if m.errAge >= 2 {
-		m.err, m.errShown, m.errAge = "", "", 0
+	m.errBar.age++
+	if m.errBar.age >= 2 {
+		m.errBar.text, m.errBar.shown, m.errBar.age = "", "", 0
 	}
 }
 

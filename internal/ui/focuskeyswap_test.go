@@ -96,6 +96,6 @@ func TestSwappedKeysRouteActions(t *testing.T) {
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
-		t.Fatalf("A did not focus after the swap, mode = %v, err = %q", m.mode, m.err)
+		t.Fatalf("A did not focus after the swap, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 }

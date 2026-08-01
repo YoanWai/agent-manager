@@ -33,12 +33,12 @@ func waitForPane(t *testing.T, m *Model, id, marker string) {
 func confirmKill(t *testing.T, m *Model) {
 	t.Helper()
 	if m.mode != modeConfirmDelete {
-		t.Fatalf("kill should ask before acting, mode = %v, err = %q", m.mode, m.err)
+		t.Fatalf("kill should ask before acting, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
-	if m.err != "" {
-		t.Fatalf("kill: %q", m.err)
+	if m.errBar.text != "" {
+		t.Fatalf("kill: %q", m.errBar.text)
 	}
 }
 
@@ -91,8 +91,8 @@ func TestKillEndsTheSessionAndKeepsItRevivable(t *testing.T) {
 	}
 
 	m.selectSessionRow(t, "hungry")
-	if _, _ = m.reviveSelected(); m.err != "" {
-		t.Fatalf("revive after kill: %q", m.err)
+	if _, _ = m.reviveSelected(); m.errBar.text != "" {
+		t.Fatalf("revive after kill: %q", m.errBar.text)
 	}
 	if !m.tmux.Exists(sess.ID) {
 		t.Fatal("revive should bring a killed session back")
@@ -135,8 +135,8 @@ func TestReviveGroupBringsBackEverySessionInside(t *testing.T) {
 	confirmKill(t, m)
 
 	m.selectGroupRow(t, "work")
-	if _, _ = m.reviveSelected(); m.err != "" {
-		t.Fatalf("revive group: %q", m.err)
+	if _, _ = m.reviveSelected(); m.errBar.text != "" {
+		t.Fatalf("revive group: %q", m.errBar.text)
 	}
 	for _, sess := range m.visibleSessions() {
 		if !m.tmux.Exists(sess.ID) {
@@ -161,7 +161,7 @@ func TestKillAllEndsEveryLiveSessionInView(t *testing.T) {
 			t.Fatalf("kill all should have ended %s", sess.Name)
 		}
 	}
-	if _, _ = m.killAllLive(); m.err == "" {
+	if _, _ = m.killAllLive(); m.errBar.text == "" {
 		t.Fatal("kill all with nothing live should report it")
 	}
 }
@@ -176,7 +176,7 @@ func TestKillRefusesWhenNothingIsRunning(t *testing.T) {
 	}
 
 	m.selectSessionRow(t, "ghost")
-	if _, _ = m.killSelected(); m.err == "" {
+	if _, _ = m.killSelected(); m.errBar.text == "" {
 		t.Fatal("killing a dead session should report it is already dead")
 	}
 	if m.mode == modeConfirmDelete {
@@ -184,8 +184,8 @@ func TestKillRefusesWhenNothingIsRunning(t *testing.T) {
 	}
 
 	m.selectGroupRow(t, "work")
-	m.err = ""
-	if _, _ = m.killSelected(); m.err == "" {
+	m.errBar.text = ""
+	if _, _ = m.killSelected(); m.errBar.text == "" {
 		t.Fatal("killing a group with nothing live should report it")
 	}
 	if m.mode == modeConfirmDelete {

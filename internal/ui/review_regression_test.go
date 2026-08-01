@@ -182,7 +182,7 @@ func TestBranchPickerListsWorktreesAndSwitches(t *testing.T) {
 
 	m.pressDiffKey(t, 'b')
 	if m.mode != modeRepoPick {
-		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.err)
+		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
 	rendered := m.viewRepoPick()
 	if !strings.Contains(rendered, "feature/pick-me") {
@@ -238,8 +238,8 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.drainCmds(t, m.openDiff())
-	if m.err != "" {
-		t.Fatalf("declared worktree must not be reported missing, err = %q", m.err)
+	if m.errBar.text != "" {
+		t.Fatalf("declared worktree must not be reported missing, err = %q", m.errBar.text)
 	}
 	if m.diff.repoSel != rawWorktree {
 		t.Fatalf("repoSel should stay the raw declared path, got %q", m.diff.repoSel)
@@ -247,7 +247,7 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 
 	m.pressDiffKey(t, 'b')
 	if m.mode != modeRepoPick {
-		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.err)
+		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
 	resolvedWorktree, _ := filepath.EvalSymlinks(rawWorktree)
 	rows := m.filteredRows()
@@ -382,7 +382,7 @@ func openReviewOn(t *testing.T, m *Model, name, dir string) {
 	m.selectSessionRow(t, name)
 	m.drainCmds(t, m.openDiff())
 	if m.mode != modeDiff {
-		t.Fatalf("openDiff should enter review, err = %q", m.err)
+		t.Fatalf("openDiff should enter review, err = %q", m.errBar.text)
 	}
 }
 
@@ -967,15 +967,15 @@ func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(umbrella, "bravo")); err != nil {
 		t.Fatal(err)
 	}
-	m.err = ""
+	m.errBar.text = ""
 	m.diff.gen++
 	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false))
 
-	if !strings.Contains(m.err, "bravo") {
-		t.Fatalf("a vanished hand-picked repo must be surfaced, got err %q", m.err)
+	if !strings.Contains(m.errBar.text, "bravo") {
+		t.Fatalf("a vanished hand-picked repo must be surfaced, got err %q", m.errBar.text)
 	}
-	if !strings.Contains(m.viewDiffStatus(), m.err) {
-		t.Fatalf("review status should show %q", m.err)
+	if !strings.Contains(m.viewDiffStatus(), m.errBar.text) {
+		t.Fatalf("review status should show %q", m.errBar.text)
 	}
 	if _, still := m.pickedRepos[sess.ID]; still {
 		t.Fatal("the dead pick must be forgotten so the declaration can take over")
@@ -1013,8 +1013,8 @@ func TestDeclaredWorktreeOutsideCwdIsAccepted(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.drainCmds(t, m.openDiff())
-	if m.err != "" {
-		t.Fatalf("declared worktree must not be reported missing, err = %q", m.err)
+	if m.errBar.text != "" {
+		t.Fatalf("declared worktree must not be reported missing, err = %q", m.errBar.text)
 	}
 	resolved, _ := filepath.EvalSymlinks(outside)
 	sel, _ := filepath.EvalSymlinks(m.diff.repoSel)
@@ -1080,11 +1080,11 @@ func TestDeclaredRepoOutsideCwdIsReported(t *testing.T) {
 	}
 	m.drainCmds(t, m.openDiff())
 
-	if m.err == "" {
+	if m.errBar.text == "" {
 		t.Fatal("a declared repo outside the session cwd must be surfaced")
 	}
-	if !strings.Contains(m.viewDiffStatus(), m.err) {
-		t.Fatalf("review status should show %q", m.err)
+	if !strings.Contains(m.viewDiffStatus(), m.errBar.text) {
+		t.Fatalf("review status should show %q", m.errBar.text)
 	}
 	if len(m.diff.repoRoots) < 2 {
 		t.Fatal("the picker must stay usable so the user can recover")
@@ -1117,14 +1117,14 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("a missing session must not kick off a diff load")
 	}
-	if m.err == "" {
+	if m.errBar.text == "" {
 		t.Fatal("picking a repo for a missing session must surface an error")
 	}
 	if m.diff.repoSel != before {
 		t.Fatalf("repo should not change when the session is gone, got %q", m.diff.repoSel)
 	}
-	if !strings.Contains(m.viewDiffStatus(), m.err) {
-		t.Fatalf("review status should show the error %q", m.err)
+	if !strings.Contains(m.viewDiffStatus(), m.errBar.text) {
+		t.Fatalf("review status should show the error %q", m.errBar.text)
 	}
 }
 
@@ -1227,7 +1227,7 @@ func TestCtrlRFromListOpensReview(t *testing.T) {
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 	if m.mode != modeDiff {
-		t.Fatalf("ctrl+r from the list should open review, mode = %v (err=%q)", m.mode, m.err)
+		t.Fatalf("ctrl+r from the list should open review, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
 	if m.diff.reattachID != "" {
 		t.Fatal("review opened from the list should return to the list, not re-attach")
@@ -1421,7 +1421,7 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 
 	m.drainCmds(t, m.openBasePick())
 	if m.mode != modeRepoPick {
-		t.Fatalf("B must open the base picker after the load errored, mode = %v (err=%q)", m.mode, m.err)
+		t.Fatalf("B must open the base picker after the load errored, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
 	labels := map[string]bool{}
 	for _, row := range m.repoPick.rows {

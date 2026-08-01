@@ -13,7 +13,7 @@ func (m *Model) openRename() {
 		return
 	}
 	if entry.isRoot() {
-		m.err = "root is the top level, not a group to rename"
+		m.errBar.text = "root is the top level, not a group to rename"
 		return
 	}
 	input := textinput.New()
@@ -55,7 +55,7 @@ func (m *Model) openRename() {
 		}
 	}
 	m.mode = modeRename
-	m.err = ""
+	m.errBar.text = ""
 }
 
 func (m *Model) renameFocus(delta int) {
@@ -159,14 +159,14 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 	name := strings.TrimSpace(m.rename.input.Value())
 	name = strings.ReplaceAll(name, "/", "-")
 	if name == "" {
-		m.err = "name cannot be empty"
+		m.errBar.text = "name cannot be empty"
 		return m, nil
 	}
 	if m.rename.isGroup {
 		parent := parentGroup(m.rename.path)
 		dir, ok := resolveExistingDir(m.rename.dir.Value(), m.groupDefaultDir(parent))
 		if !ok {
-			m.err = "default path does not exist: " + dir
+			m.errBar.text = "default path does not exist: " + dir
 			return m, nil
 		}
 		newPath := name
@@ -174,19 +174,19 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 			newPath = parent + "/" + name
 		}
 		if err := m.store.RenameGroup(m.rename.path, newPath); err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 			return m, nil
 		}
 		// CreateGroup upserts, so it doubles as the default-path setter.
 		if err := m.store.CreateGroup(newPath, dir); err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 			return m, nil
 		}
 		m.renameGroupLocally(m.rename.path, newPath, dir)
 		m.relabelSubtree(newPath)
 	} else {
 		if err := m.store.RenameSession(m.rename.sessID, name); err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 			return m, nil
 		}
 		tool := m.renameTool()
@@ -200,7 +200,7 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		toolChanged := tool != "" && tool != prevTool
 		if toolChanged {
 			if err := m.store.UpdateTool(m.rename.sessID, tool); err != nil {
-				m.err = err.Error()
+				m.errBar.text = err.Error()
 				return m, nil
 			}
 		}
@@ -257,14 +257,14 @@ func (m *Model) renameGroupLocally(old, newPath, dir string) {
 func (m *Model) relabelSession(id string) {
 	sess, err := m.store.Get(id)
 	if err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return
 	}
 	if !m.tmux.Exists(id) {
 		return
 	}
 	if err := m.tmux.SetLabel(id, sessionLabel(sess.Group, sess.Name)); err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 	}
 }
 
@@ -272,7 +272,7 @@ func (m *Model) relabelSession(id string) {
 func (m *Model) relabelSubtree(path string) {
 	sessions, err := m.store.SessionsInSubtree(path)
 	if err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return
 	}
 	for _, sess := range sessions {

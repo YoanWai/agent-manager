@@ -7,7 +7,7 @@ import (
 
 func TestSettingsShowsVersion(t *testing.T) {
 	m := &Model{
-		version:  "v0.9.0",
+		update:   updateInfo{version: "v0.9.0"},
 		settings: settingsState{toolNames: []string{"claude"}},
 	}
 	out := m.viewSettings()
@@ -17,7 +17,7 @@ func TestSettingsShowsVersion(t *testing.T) {
 	if strings.Contains(out, "available") {
 		t.Errorf("no badge expected when up to date: %q", out)
 	}
-	m.updateLatest = "v0.9.1"
+	m.update.latest = "v0.9.1"
 	if out := m.viewSettings(); !strings.Contains(out, "v0.9.1") || !strings.Contains(out, "available") {
 		t.Errorf("settings missing update badge: %q", out)
 	}

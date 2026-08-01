@@ -17,12 +17,12 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if !m.tmux.Exists(sess.ID) {
-		m.err = "session is dead - press v to revive"
+		m.errBar.text = "session is dead - press v to revive"
 		return m, nil
 	}
-	m.err = ""
+	m.errBar.text = ""
 	if err := m.acknowledgeFinished(sess); err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return m, nil
 	}
 	return m, m.attachCmd(sess.ID)
@@ -52,7 +52,7 @@ func (m *Model) attachCmd(id string) tea.Cmd {
 		prepErr = m.tmux.PrepareAttach(id)
 	})
 	if prepErr != nil {
-		m.err = prepErr.Error()
+		m.errBar.text = prepErr.Error()
 	}
 	return tea.ExecProcess(m.tmux.AttachCommand(id), func(err error) tea.Msg {
 		return attachDoneMsg{sessID: id, err: err}
@@ -104,10 +104,10 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		return m.reviveMany(m.sessionsInGroup(entry.group), "no dead sessions to revive in "+entry.group)
 	}
 	if err := m.reviveSession(entry.sess); err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return m, nil
 	}
-	m.err = m.degradedResumeNotice(entry.sess)
+	m.errBar.text = m.degradedResumeNotice(entry.sess)
 	m.requestRefresh()
 	return m, nil
 }
@@ -141,13 +141,13 @@ func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Mo
 	}
 	switch {
 	case revived == 0 && firstErr == "":
-		m.err = emptyNotice
+		m.errBar.text = emptyNotice
 	case firstErr != "":
-		m.err = fmt.Sprintf("revived %d, first error: %s", revived, firstErr)
+		m.errBar.text = fmt.Sprintf("revived %d, first error: %s", revived, firstErr)
 	case degraded > 0:
-		m.err = fmt.Sprintf("revived %d, %d without a captured id (used --continue)", revived, degraded)
+		m.errBar.text = fmt.Sprintf("revived %d, %d without a captured id (used --continue)", revived, degraded)
 	default:
-		m.err = ""
+		m.errBar.text = ""
 	}
 	m.requestRefresh()
 	return m, nil
@@ -234,11 +234,11 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 	if entry.isGroup {
 		live, err := m.liveSessions(m.sessionsInGroup(entry.group))
 		if err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 			return m, nil
 		}
 		if len(live) == 0 {
-			m.err = "no live sessions to kill in " + entry.group
+			m.errBar.text = "no live sessions to kill in " + entry.group
 			return m, nil
 		}
 		m.confirm = confirmTarget{
@@ -251,7 +251,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 		}
 	} else {
 		if !m.tmux.Exists(entry.sess.ID) {
-			m.err = entry.sess.Name + " is already dead"
+			m.errBar.text = entry.sess.Name + " is already dead"
 			return m, nil
 		}
 		m.confirm = confirmTarget{
@@ -269,11 +269,11 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 func (m *Model) killAllLive() (tea.Model, tea.Cmd) {
 	live, err := m.liveSessions(m.visibleSessions())
 	if err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return m, nil
 	}
 	if len(live) == 0 {
-		m.err = "no live sessions to kill"
+		m.errBar.text = "no live sessions to kill"
 		return m, nil
 	}
 	m.confirm = confirmTarget{
@@ -349,7 +349,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 	if entry.isGroup {
 		subtree, err := m.store.SessionsInSubtree(entry.group)
 		if err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 			return m, nil
 		}
 		m.confirm = confirmTarget{
@@ -378,7 +378,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 	if entry.isGroup {
 		subtree, err := m.store.SessionsInSubtree(entry.group)
 		if err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 			return m, nil
 		}
 		m.confirm = confirmTarget{
@@ -431,7 +431,7 @@ func (m *Model) prepareDelete() {
 		return
 	}
 	if entry.isRoot() {
-		m.err = "root is the top level; delete the sessions under it instead"
+		m.errBar.text = "root is the top level; delete the sessions under it instead"
 		return
 	}
 	if !entry.isGroup {
@@ -444,7 +444,7 @@ func (m *Model) prepareDelete() {
 	}
 	subtree, err := m.store.SessionsInSubtree(entry.group)
 	if err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return
 	}
 	if m.showArchived {
@@ -502,65 +502,65 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.confirm.action {
 		case actionArchive:
 			if err := m.archivalSnapshot(); err != nil {
-				m.err = err.Error()
+				m.errBar.text = err.Error()
 				return m, nil
 			}
 			if err := m.applyConfirmedArchived(true); err != nil {
-				m.err = err.Error()
+				m.errBar.text = err.Error()
 				return m, nil
 			}
-			m.err = ""
+			m.errBar.text = ""
 		case actionRestore:
 			if err := m.applyConfirmedArchived(false); err != nil {
-				m.err = err.Error()
+				m.errBar.text = err.Error()
 				return m, nil
 			}
-			m.err = ""
+			m.errBar.text = ""
 		case actionKill:
 			for _, sess := range m.confirm.sessions {
 				if err := m.killSession(sess); err != nil {
-					m.err = err.Error()
+					m.errBar.text = err.Error()
 					return m, nil
 				}
 			}
-			m.err = ""
+			m.errBar.text = ""
 			m.rebuildRows()
 		case actionDelete:
 			for _, sess := range m.confirm.sessions {
 				if err := m.tmux.Kill(sess.ID); err != nil {
-					m.err = err.Error()
+					m.errBar.text = err.Error()
 					return m, nil
 				}
 				if err := m.hooks.Remove(sess.ID); err != nil {
-					m.err = err.Error()
+					m.errBar.text = err.Error()
 					return m, nil
 				}
 				if err := m.hooks.RemoveName(sess.ID); err != nil {
-					m.err = err.Error()
+					m.errBar.text = err.Error()
 					return m, nil
 				}
 				if err := m.hooks.RemoveReviewRepo(sess.ID); err != nil {
-					m.err = err.Error()
+					m.errBar.text = err.Error()
 					return m, nil
 				}
 				if err := m.hooks.RemoveReviewBase(sess.ID); err != nil {
-					m.err = err.Error()
+					m.errBar.text = err.Error()
 					return m, nil
 				}
 				if err := m.hooks.RemoveReviewScope(sess.ID); err != nil {
-					m.err = err.Error()
+					m.errBar.text = err.Error()
 					return m, nil
 				}
 				delete(m.pickedRepos, sess.ID)
 				if err := m.store.Delete(sess.ID); err != nil {
-					m.err = err.Error()
+					m.errBar.text = err.Error()
 					return m, nil
 				}
 			}
 			if m.confirm.isGroup {
 				removed, err := m.deleteConfirmedGroups()
 				if err != nil {
-					m.err = err.Error()
+					m.errBar.text = err.Error()
 					return m, nil
 				}
 				for _, path := range removed {
@@ -569,7 +569,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.persistCollapsed()
 			}
 		default:
-			m.err = fmt.Sprintf("unknown confirm action %q", m.confirm.action)
+			m.errBar.text = fmt.Sprintf("unknown confirm action %q", m.confirm.action)
 			return m, nil
 		}
 		m.confirm = confirmTarget{}

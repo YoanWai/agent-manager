@@ -15,7 +15,7 @@ func (m *Model) defaultTool() string {
 	}
 	chosen, err := m.store.Setting("default_tool")
 	if err != nil {
-		m.err = "reading default tool setting: " + err.Error()
+		m.errBar.text = "reading default tool setting: " + err.Error()
 		return names[0]
 	}
 	if chosen != "" {
@@ -32,7 +32,7 @@ func (m *Model) defaultTool() string {
 func (m *Model) defaultSplitLayout() bool {
 	chosen, err := m.store.Setting(diffLayoutSetting)
 	if err != nil {
-		m.err = "reading diff layout setting: " + err.Error()
+		m.errBar.text = "reading diff layout setting: " + err.Error()
 		return true
 	}
 	return chosen != "unified"
@@ -68,10 +68,10 @@ func storedFocusOnEnter(st *store.Store) bool {
 
 func (m *Model) openSettings() {
 	if len(m.cfg.Tools) == 0 {
-		m.err = "no tools configured"
+		m.errBar.text = "no tools configured"
 		return
 	}
-	m.err = ""
+	m.errBar.text = ""
 	names, index := m.defaultToolSelection()
 	m.settings = settingsState{
 		toolNames:      names,
@@ -98,38 +98,38 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cycleSetting(1)
 	case "enter", "esc":
 		if err := m.store.SetSetting("default_tool", m.settings.toolNames[m.settings.toolIndex]); err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 		}
 		if err := m.store.SetSetting(themeSetting, themes[m.settings.themeIndex].Name); err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 		}
 		layout := "split"
 		if !m.settings.layoutSplit {
 			layout = "unified"
 		}
 		if err := m.store.SetSetting(diffLayoutSetting, layout); err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 		}
 		quickClose := "stay"
 		if m.settings.quickCloseSend {
 			quickClose = "close"
 		}
 		if err := m.store.SetSetting(quickCloseSetting, quickClose); err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 		}
 		focusKey := "focus"
 		if !m.settings.enterFocuses {
 			focusKey = "attach"
 		}
 		if err := m.store.SetSetting(focusKeySetting, focusKey); err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 		}
 		density := "compact"
 		if m.settings.comfortableRows {
 			density = "comfortable"
 		}
 		if err := m.store.SetSetting(listDensitySetting, density); err != nil {
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 		}
 		m.focusOnEnter = m.settings.enterFocuses
 		m.comfortableRows = m.settings.comfortableRows

@@ -29,7 +29,7 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	*m = *updated.(*Model)
 
 	if m.mode != modeDiff {
-		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.err)
+		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	if m.diff.reattachID != sess.ID {
 		t.Fatalf("review origin = %q, want %q", m.diff.reattachID, sess.ID)
@@ -61,7 +61,7 @@ func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
 
 	m.drainCmds(t, m.openDiff())
 	if m.mode != modeDiff {
-		t.Fatalf("openDiff should enter review, mode = %v, err = %q", m.mode, m.err)
+		t.Fatalf("openDiff should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	if m.diff.reattachID != "" {
 		t.Fatalf("list review should not set a reattach origin, got %q", m.diff.reattachID)
@@ -101,13 +101,13 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 	updated, _ := m.Update(attachDoneMsg{})
 	*m = *updated.(*Model)
 	if m.mode != modeDiff {
-		t.Fatalf("expected review, mode = %v, err = %q", m.mode, m.err)
+		t.Fatalf("expected review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	*m = *updated.(*Model)
 	if cmd == nil {
-		t.Fatalf("esc should re-attach, err = %q", m.err)
+		t.Fatalf("esc should re-attach, err = %q", m.errBar.text)
 	}
 	prepared, ok := cmd().(reattachPreparedMsg)
 	if !ok {

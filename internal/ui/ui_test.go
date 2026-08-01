@@ -210,7 +210,7 @@ func createSession(t *testing.T, m *Model, name, dir, group string) {
 	pickGroup(t, m, group)
 	_, cmd := m.submitForm()
 	if m.mode != modeList {
-		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.err)
+		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
 }
@@ -256,7 +256,7 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 
 	createSession(t, m, "alpha", dir, "")
 	if len(m.sessionRows()) != 1 {
-		t.Fatalf("after create, sessions = %d want 1 (err=%q)", len(m.sessionRows()), m.err)
+		t.Fatalf("after create, sessions = %d want 1 (err=%q)", len(m.sessionRows()), m.errBar.text)
 	}
 	sess := m.sessionRows()[0]
 	if !m.tmux.Exists(sess.ID) {
@@ -884,7 +884,7 @@ func TestGroupFormCreatesUnderParent(t *testing.T) {
 	m.groupForm.path.SetValue(t.TempDir())
 	_, cmd := m.submitGroupForm()
 	if m.mode != modeList {
-		t.Fatalf("group form should close, err=%q", m.err)
+		t.Fatalf("group form should close, err=%q", m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
 
@@ -1189,7 +1189,7 @@ func TestLiveQuietTurnResolvesFinished(t *testing.T) {
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
 	if m.mode != modeList {
-		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.err)
+		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
 	sess := m.sessionRows()[0]
@@ -1244,7 +1244,7 @@ func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
 	updated, _ := m.Update(attachDoneMsg{})
 	*m = *updated.(*Model)
 	if m.mode != modeDiff {
-		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.err)
+		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 
 	requested, err := m.tmux.ReviewRequested()
@@ -1284,7 +1284,7 @@ func TestAttachAcknowledgesFinished(t *testing.T) {
 	m.selectSessionRow(t, "alert-me")
 
 	if _, cmd := m.attachSelected(); cmd == nil {
-		t.Fatalf("attach did not start, err = %q", m.err)
+		t.Fatalf("attach did not start, err = %q", m.errBar.text)
 	}
 	got, err := m.store.Get(sess.ID)
 	if err != nil {
@@ -1311,7 +1311,7 @@ func TestAttachKeepsWorking(t *testing.T) {
 	m.selectSessionRow(t, "busy-one")
 
 	if _, cmd := m.attachSelected(); cmd == nil {
-		t.Fatalf("attach did not start, err = %q", m.err)
+		t.Fatalf("attach did not start, err = %q", m.errBar.text)
 	}
 	got, err := m.store.Get(sess.ID)
 	if err != nil {
@@ -1336,7 +1336,7 @@ func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
 	if m.mode != modeList {
-		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.err)
+		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
 
@@ -1361,7 +1361,7 @@ func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
 	}
 
 	if _, cmd := m.attachSelected(); cmd == nil {
-		t.Fatalf("attach did not start, err = %q", m.err)
+		t.Fatalf("attach did not start, err = %q", m.errBar.text)
 	}
 
 	entered, err := m.store.Get(sess.ID)
@@ -1390,8 +1390,8 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 		t.Fatalf("set acked: %v", err)
 	}
 
-	if _, _ = m.reviveSelected(); m.err != "" {
-		t.Fatalf("revive: %q", m.err)
+	if _, _ = m.reviveSelected(); m.errBar.text != "" {
+		t.Fatalf("revive: %q", m.errBar.text)
 	}
 	if !m.tmux.Exists(sess.ID) {
 		t.Fatal("revive should recreate the tmux session")
@@ -1417,8 +1417,8 @@ func TestNewSessionShowsStartingImmediately(t *testing.T) {
 	pickGroup(t, m, "")
 	// submitForm without the follow-up refresh: the row must already show the
 	// launch state from the optimistic insert alone.
-	if _, _ = m.submitForm(); m.err != "" {
-		t.Fatalf("submit: %q", m.err)
+	if _, _ = m.submitForm(); m.errBar.text != "" {
+		t.Fatalf("submit: %q", m.errBar.text)
 	}
 	rows := m.sessionRows()
 	if len(rows) != 1 {
@@ -1444,8 +1444,8 @@ func TestReviveAllRecreatesEveryDeadSession(t *testing.T) {
 	// A refresh marks the pane-less sessions dead so revive-all picks them up.
 	m.applyCmd(t, m.refreshCmd())
 
-	if _, _ = m.reviveAllDead(); m.err != "" {
-		t.Fatalf("revive all: %q", m.err)
+	if _, _ = m.reviveAllDead(); m.errBar.text != "" {
+		t.Fatalf("revive all: %q", m.errBar.text)
 	}
 	for _, sess := range m.visibleSessions() {
 		if !m.tmux.Exists(sess.ID) {
@@ -1459,7 +1459,7 @@ func TestReviveRefusesLiveSession(t *testing.T) {
 	createSession(t, m, "alive", t.TempDir(), "")
 	m.selectSessionRow(t, "alive")
 
-	if _, _ = m.reviveSelected(); m.err == "" {
+	if _, _ = m.reviveSelected(); m.errBar.text == "" {
 		t.Fatal("revive on a live session should error")
 	}
 	if !m.tmux.Exists(m.sessionRows()[0].ID) {
@@ -1481,7 +1481,7 @@ func TestReviveRefusesMissingDir(t *testing.T) {
 	}
 	m.selectSessionRow(t, "homeless")
 
-	if _, _ = m.reviveSelected(); m.err == "" {
+	if _, _ = m.reviveSelected(); m.errBar.text == "" {
 		t.Fatal("revive without a working directory should error")
 	}
 }
@@ -1498,8 +1498,8 @@ func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 
 	m.openQuickMode()
 	m.quick.input.SetValue("hello?")
-	if _, _ = m.submitQuick(); m.err != "session is dead - press v to revive" {
-		t.Fatalf("err = %q", m.err)
+	if _, _ = m.submitQuick(); m.errBar.text != "session is dead - press v to revive" {
+		t.Fatalf("err = %q", m.errBar.text)
 	}
 	if !m.quick.active {
 		t.Fatal("quick mode should stay open after a failed send")
@@ -1521,11 +1521,11 @@ func TestQuickPromptSendClearsAcked(t *testing.T) {
 
 	m.openQuickMode()
 	if !m.quick.active {
-		t.Fatalf("quick mode should activate, err = %q", m.err)
+		t.Fatalf("quick mode should activate, err = %q", m.errBar.text)
 	}
 	m.quick.input.SetValue("carry on with the plan")
-	if _, _ = m.submitQuick(); m.err != "" {
-		t.Fatalf("send: %q", m.err)
+	if _, _ = m.submitQuick(); m.errBar.text != "" {
+		t.Fatalf("send: %q", m.errBar.text)
 	}
 	if !m.quick.active {
 		t.Fatal("quick mode should stay active after a send")
@@ -1561,8 +1561,8 @@ func pasteQuickImage(t *testing.T, m *Model, path string) int {
 	}
 	updated, _ := m.Update(msg)
 	*m = *updated.(*Model)
-	if m.err != "" {
-		t.Fatalf("paste: %q", m.err)
+	if m.errBar.text != "" {
+		t.Fatalf("paste: %q", m.errBar.text)
 	}
 	return id
 }
@@ -1803,7 +1803,7 @@ func TestQuickPasteReservesTheChipUntilTheReadLands(t *testing.T) {
 		t.Fatalf("typing during a paste = %q", got)
 	}
 	_, _ = m.submitQuick()
-	if m.err == "" {
+	if m.errBar.text == "" {
 		t.Fatal("submitting mid-paste should say the image is not ready")
 	}
 
@@ -1856,7 +1856,7 @@ func TestQuickPasteRefusedWhenThePromptIsFull(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("a full prompt should not start a clipboard read")
 	}
-	if m.err == "" {
+	if m.errBar.text == "" {
 		t.Fatal("a refused paste should say why")
 	}
 	if len(m.quick.attachments) != 0 {
@@ -1923,8 +1923,8 @@ func TestQuickAttachImageRealErrorSurfaces(t *testing.T) {
 	msg := cmd().(quickImageMsg)
 	updated, _ := m.Update(msg)
 	m = updated.(*Model)
-	if m.err == "" {
-		t.Fatal("a real clipboard error should surface through m.err")
+	if m.errBar.text == "" {
+		t.Fatal("a real clipboard error should surface through m.errBar.text")
 	}
 	if m.quickPasting() || len(m.quick.attachments) != 0 {
 		t.Fatalf("a failed read should take the chip back out: %+v", m.quick.attachments)
@@ -1953,8 +1953,8 @@ func TestQuickSpawnOnGroupCreatesSession(t *testing.T) {
 	m.openQuickMode()
 	m.quick.input.SetValue("build the api")
 	_, cmd := m.submitQuick()
-	if m.err != "" {
-		t.Fatalf("quick spawn: %q", m.err)
+	if m.errBar.text != "" {
+		t.Fatalf("quick spawn: %q", m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
 
@@ -2190,7 +2190,7 @@ func TestFormRejectsDashLeadingPrompt(t *testing.T) {
 	m.form.toolIndex = 0
 	m.form.prompt.SetValue("--version")
 
-	if _, _ = m.submitForm(); m.err == "" {
+	if _, _ = m.submitForm(); m.errBar.text == "" {
 		t.Fatal("dash-leading prompt should be rejected")
 	}
 	if m.mode != modeForm {
@@ -2224,8 +2224,8 @@ func TestQuickSpawnUsesTabCycledTool(t *testing.T) {
 
 	m.quick.input.SetValue("build the api")
 	_, cmd := m.submitQuick()
-	if m.err != "" {
-		t.Fatalf("quick spawn: %q", m.err)
+	if m.errBar.text != "" {
+		t.Fatalf("quick spawn: %q", m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
 
@@ -2261,8 +2261,8 @@ func TestEditGroupRenamesAndSetsPath(t *testing.T) {
 	}
 	m.rename.input.SetValue("platform")
 	m.rename.dir.SetValue(newDir)
-	if _, _ = m.applyRename(); m.err != "" {
-		t.Fatalf("apply: %q", m.err)
+	if _, _ = m.applyRename(); m.errBar.text != "" {
+		t.Fatalf("apply: %q", m.errBar.text)
 	}
 	m.applyCmd(t, m.refreshCmd())
 
@@ -2287,7 +2287,7 @@ func TestEditGroupRejectsMissingPath(t *testing.T) {
 	}
 	m.openRename()
 	m.rename.dir.SetValue("/nope/definitely/missing")
-	if _, _ = m.applyRename(); m.err == "" {
+	if _, _ = m.applyRename(); m.errBar.text == "" {
 		t.Fatal("missing path should be rejected")
 	}
 	if m.mode != modeRename {
@@ -2303,8 +2303,8 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 	}
 	m.groupForm.name.SetValue("zone")
 	m.groupForm.path.SetValue("")
-	if _, _ = m.submitGroupForm(); m.err != "" {
-		t.Fatalf("submit: %q", m.err)
+	if _, _ = m.submitGroupForm(); m.errBar.text != "" {
+		t.Fatalf("submit: %q", m.errBar.text)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	if m.groupPaths["zone"] == "" {
@@ -2321,8 +2321,8 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 		t.Fatal("edit modal should prefill the path")
 	}
 	m.rename.dir.SetValue("")
-	if _, _ = m.applyRename(); m.err != "" {
-		t.Fatalf("apply: %q", m.err)
+	if _, _ = m.applyRename(); m.errBar.text != "" {
+		t.Fatalf("apply: %q", m.errBar.text)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	if m.groupPaths["zone"] == "" {
@@ -2415,23 +2415,23 @@ func TestArchiveRestoreClearStaleError(t *testing.T) {
 	createSession(t, m, "alpha", dir, "")
 
 	m.selectSessionRow(t, "alpha")
-	m.err = "stale failure from an earlier action"
+	m.errBar.text = "stale failure from an earlier action"
 	m.archiveSelected()
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
-	if m.err != "" {
-		t.Fatalf("archive should clear the stale error, err = %q", m.err)
+	if m.errBar.text != "" {
+		t.Fatalf("archive should clear the stale error, err = %q", m.errBar.text)
 	}
 
 	m.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "alpha")
-	m.err = "stale failure from an earlier action"
+	m.errBar.text = "stale failure from an earlier action"
 	m.restoreSelected()
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
-	if m.err != "" {
-		t.Fatalf("restore should clear the stale error, err = %q", m.err)
+	if m.errBar.text != "" {
+		t.Fatalf("restore should clear the stale error, err = %q", m.errBar.text)
 	}
 }
 
@@ -2448,8 +2448,8 @@ func TestArchiveAbortsWhenSnapshotFails(t *testing.T) {
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
-	if m.err != "disk full" {
-		t.Fatalf("snapshot failure should surface, err = %q", m.err)
+	if m.errBar.text != "disk full" {
+		t.Fatalf("snapshot failure should surface, err = %q", m.errBar.text)
 	}
 	if len(m.sessionRows()) != 1 {
 		t.Fatalf("failed snapshot must not archive, active sessions = %d want 1", len(m.sessionRows()))
@@ -2655,7 +2655,7 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 		t.Fatal("annotations should clear after send")
 	}
 	if !strings.Contains(m.diff.notice, "review comment") {
-		t.Fatalf("feedback = %q", m.err)
+		t.Fatalf("feedback = %q", m.errBar.text)
 	}
 	sess := m.sessionRows()[0]
 	// Join wrapped lines so the delivery check does not depend on where the
@@ -2788,8 +2788,8 @@ func TestQuickPromptClosesAfterSendWhenEnabled(t *testing.T) {
 
 	m.openQuickMode()
 	m.quick.input.SetValue("carry on with the plan")
-	if _, _ = m.submitQuick(); m.err != "" {
-		t.Fatalf("send: %q", m.err)
+	if _, _ = m.submitQuick(); m.errBar.text != "" {
+		t.Fatalf("send: %q", m.errBar.text)
 	}
 	if m.quick.active {
 		t.Fatal("quick mode should close after a send when the setting is on")

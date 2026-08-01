@@ -282,7 +282,7 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	if picked, ok := m.pickedRepos[sess.ID]; ok {
 		m.diff.repoSel = picked
 	} else if declared, err := m.store.ReviewRepo(sess.ID); err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 	} else if declared != "" {
 		m.diff.repoSel = declared
 	}
@@ -331,7 +331,7 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 		override, err := m.store.ReviewBase(sess.ID, resolveSymlinksOrSelf(m.diff.repoSel))
 		if err != nil {
 			m.diff.loading = false
-			m.err = err.Error()
+			m.errBar.text = err.Error()
 			return nil
 		}
 		return m.diffReloadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, override, m.diff.repoRoots)
@@ -382,7 +382,7 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	m.diff.repoSel = msg.repoRoot
 	m.diff.worktrees = msg.worktrees
 	if msg.missingRepo != "" {
-		m.err = fmt.Sprintf("picked or declared repo %s is no longer under the session directory",
+		m.errBar.text = fmt.Sprintf("picked or declared repo %s is no longer under the session directory",
 			filepath.Base(msg.missingRepo))
 		if m.pickedRepos[msg.sessID] == msg.missingRepo {
 			delete(m.pickedRepos, msg.sessID)
@@ -805,7 +805,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.removeAnnotation()
 	case "C":
 		if len(m.diff.annotations[m.reviewKey()]) == 0 {
-			m.err = "no comments to send - press c on a line first"
+			m.errBar.text = "no comments to send - press c on a line first"
 		} else {
 			m.diff.sendConfirm = true
 		}
@@ -1085,11 +1085,11 @@ func (m *Model) removeAnnotation() {
 func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 	sess, ok := m.diffSession()
 	if !ok {
-		m.err = "session is gone"
+		m.errBar.text = "session is gone"
 		return m, nil
 	}
 	if !m.tmux.Exists(sess.ID) {
-		m.err = "session is dead - press v to revive"
+		m.errBar.text = "session is dead - press v to revive"
 		return m, nil
 	}
 	notes := m.diff.annotations[m.reviewKey()]
@@ -1107,7 +1107,7 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 		"Code review of %s — address each numbered point, then summarize what you changed per point: %s",
 		scopePhrase(m.diff.scope), strings.Join(parts, "; "))
 	if err := m.tmux.SendText(sess.ID, prompt); err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return m, nil
 	}
 	count := len(notes)
@@ -1115,7 +1115,7 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 	m.diff.notice = fmt.Sprintf("sent %d review %s to %s", count, commentNoun(count), sess.Name)
 	if err := m.store.SetAcked(sess.ID, false); err != nil {
 		m.diff.notice = ""
-		m.err = "comments sent, but clearing the alert ack failed: " + err.Error()
+		m.errBar.text = "comments sent, but clearing the alert ack failed: " + err.Error()
 	}
 	m.requestRefresh()
 	return m, nil
@@ -1160,12 +1160,12 @@ const diffGutterSign = 2
 // content scrolls freely instead of sharing the narrow sidebar.
 func (m *Model) openDiff() tea.Cmd {
 	if m.gitDrv == nil {
-		m.err = "git not found in PATH"
+		m.errBar.text = "git not found in PATH"
 		return nil
 	}
 	sess, ok := m.selected()
 	if !ok {
-		m.err = "select a session to diff"
+		m.errBar.text = "select a session to diff"
 		return nil
 	}
 	if m.diff.scrollByFile == nil {
@@ -1179,7 +1179,7 @@ func (m *Model) openDiff() tea.Cmd {
 	}
 	m.diff.active = true
 	m.mode = modeDiff
-	m.err = ""
+	m.errBar.text = ""
 	// Default to returning to the list; the in-session Ctrl+R path sets this
 	// afterward when review should return to the session instead.
 	m.diff.reattachID = ""

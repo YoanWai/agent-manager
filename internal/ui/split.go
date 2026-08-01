@@ -41,8 +41,8 @@ func (m *Model) persistSplitRatio() {
 	if m.store == nil {
 		return
 	}
-	if err := m.store.SetSetting(splitRatioSetting, strconv.FormatFloat(m.splitRatio, 'f', 4, 64)); err != nil {
-		m.err = err.Error()
+	if err := m.store.SetSetting(splitRatioSetting, strconv.FormatFloat(m.split.ratio, 'f', 4, 64)); err != nil {
+		m.errBar.text = err.Error()
 	}
 }
 
@@ -81,7 +81,7 @@ func (m *Model) setSplitFromX(x int) {
 		return
 	}
 	left := clampSplitLeft(x, m.width)
-	m.splitRatio = float64(left) / float64(m.width)
+	m.split.ratio = float64(left) / float64(m.width)
 }
 
 // enterResizeMode arms divider dragging. Mouse is never enabled by the
@@ -90,10 +90,10 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	if m.mode != modeList || m.searching || m.quick.active {
 		return m, nil
 	}
-	m.resizeMode = true
-	m.splitDragging = false
-	m.splitRatioBefore = m.splitRatio
-	m.err = ""
+	m.split.resizeMode = true
+	m.split.dragging = false
+	m.split.ratioBefore = m.split.ratio
+	m.errBar.text = ""
 	return m, nil
 }
 
@@ -101,16 +101,16 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 // ratio is persisted; cancel restores the pre-mode ratio. Either path ends
 // with a pane resize so the preview stays 1:1 with the panel.
 func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
-	if !m.resizeMode && !m.splitDragging {
+	if !m.split.resizeMode && !m.split.dragging {
 		return m, nil
 	}
 	if !commit {
-		m.splitRatio = m.splitRatioBefore
+		m.split.ratio = m.split.ratioBefore
 	} else {
 		m.persistSplitRatio()
 	}
-	m.splitDragging = false
-	m.resizeMode = false
+	m.split.dragging = false
+	m.split.resizeMode = false
 	m.resizeSessions()
 	return m, nil
 }
@@ -177,7 +177,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if tea.MouseEvent(msg).IsWheel() {
 		return m.handleMouseWheel(msg)
 	}
-	if !m.resizeMode {
+	if !m.split.resizeMode {
 		return m, nil
 	}
 
@@ -193,13 +193,13 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if !m.onDivider(msg.X) {
 			return m, nil
 		}
-		m.splitDragging = true
-		m.splitRatioBefore = m.splitRatio
+		m.split.dragging = true
+		m.split.ratioBefore = m.split.ratio
 		m.setSplitFromX(msg.X)
 		return m, nil
 
 	case tea.MouseActionMotion:
-		if !m.splitDragging {
+		if !m.split.dragging {
 			return m, nil
 		}
 		// Button may be reported as left or none depending on terminal;
@@ -208,7 +208,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseActionRelease:
-		if !m.splitDragging {
+		if !m.split.dragging {
 			return m, nil
 		}
 		m.setSplitFromX(msg.X)
@@ -220,7 +220,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // handleMouseWheel keeps the wheel inside the app: list cursor, diff
 // scroll, or a no-op swallow so the outer terminal cannot scroll away.
 func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.resizeMode {
+	if m.split.resizeMode {
 		return m, nil
 	}
 	delta := 0

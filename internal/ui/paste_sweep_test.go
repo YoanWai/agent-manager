@@ -25,13 +25,13 @@ func TestSweepPastesReportsSweepError(t *testing.T) {
 func TestPasteSweepMsgSurfacesErrorOnce(t *testing.T) {
 	m := buildModel(t)
 	m.Update(pasteSweepMsg{err: errors.New("permission denied")})
-	if m.err == "" {
+	if m.errBar.text == "" {
 		t.Fatal("a failed sweep must reach the user")
 	}
-	m.err = ""
+	m.errBar.text = ""
 	m.Update(pasteSweepMsg{})
-	if m.err != "" {
-		t.Fatalf("a clean sweep must stay silent, got %q", m.err)
+	if m.errBar.text != "" {
+		t.Fatalf("a clean sweep must stay silent, got %q", m.errBar.text)
 	}
 }
 

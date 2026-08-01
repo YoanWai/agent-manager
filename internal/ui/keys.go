@@ -12,7 +12,7 @@ import (
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Resize mode owns the keyboard until the drag commits or the user
 	// cancels: other bindings would fight the mouse-gated session.
-	if m.resizeMode {
+	if m.split.resizeMode {
 		switch msg.String() {
 		case "left", "h":
 			m.nudgeSplit(-1)
@@ -27,8 +27,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.exitResizeMode(false)
 		case "q", "ctrl+c":
 			m.persistSplitRatio()
-			m.resizeMode = false
-			m.splitDragging = false
+			m.split.resizeMode = false
+			m.split.dragging = false
 			return m, tea.Quit
 		default:
 			return m, nil
@@ -124,7 +124,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.toggleEmptyGroups()
 	case "/":
 		m.searching = true
-		m.err = ""
+		m.errBar.text = ""
 	case "r":
 		m.openRename()
 	case "m":
@@ -173,7 +173,7 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if entry.isRoot() {
-		m.err = "root stays at the top of the list"
+		m.errBar.text = "root stays at the top of the list"
 		return m, nil
 	}
 	target, ok := m.visibleReorderTarget(entry, delta)
@@ -186,7 +186,7 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 		if !entry.isGroup {
 			what = "session"
 		}
-		m.err = fmt.Sprintf("%s already at the %s of its level", what, edge)
+		m.errBar.text = fmt.Sprintf("%s already at the %s of its level", what, edge)
 		return m, nil
 	}
 
@@ -199,7 +199,7 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 		err = m.store.SwapSessionOrder(entry.sess.ID, target.sess.ID)
 	}
 	if err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return m, nil
 	}
 	// Mirror the swap in memory so the list redraws instantly; the next
@@ -210,7 +210,7 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 	} else {
 		m.swapSessionLocal(entry.sess.ID, target.sess.ID)
 	}
-	m.err = ""
+	m.errBar.text = ""
 	m.rebuildRows()
 	m.requestRefresh()
 	return m, nil

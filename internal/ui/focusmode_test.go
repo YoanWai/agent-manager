@@ -19,7 +19,7 @@ func TestFocusModeForwardsKeys(t *testing.T) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
-		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.err)
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 
 	sess := m.rows[m.cursor].sess
@@ -30,8 +30,8 @@ func TestFocusModeForwardsKeys(t *testing.T) {
 		updated, _ := m.handleKey(msg)
 		*m = *updated.(*Model)
 	}
-	if m.err != "" {
-		t.Fatalf("forwarding set err: %q", m.err)
+	if m.errBar.text != "" {
+		t.Fatalf("forwarding set err: %q", m.errBar.text)
 	}
 
 	deadline := time.Now().Add(5 * time.Second)

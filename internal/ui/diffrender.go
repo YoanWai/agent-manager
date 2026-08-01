@@ -896,8 +896,8 @@ func (m *Model) renderSideCell(fd *diff.FileDiff, hl *fileHL, index, width int, 
 }
 
 func (m *Model) viewDiffStatus() string {
-	if m.err != "" {
-		return padRight(errStyle.Render(" ✖ "+m.err), m.width)
+	if m.errBar.text != "" {
+		return padRight(errStyle.Render(" ✖ "+m.errBar.text), m.width)
 	}
 	if m.diff.notice != "" {
 		return padRight(lipgloss.NewStyle().Foreground(colorFinished).Render(" ✔ "+m.diff.notice), m.width)

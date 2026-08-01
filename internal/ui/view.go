@@ -62,7 +62,7 @@ func (m *Model) splitWidths() (int, int) {
 	if m.width <= 0 {
 		return 0, 0
 	}
-	ratio := m.splitRatio
+	ratio := m.split.ratio
 	if ratio <= 0 || ratio >= 1 {
 		ratio = defaultSplitRatio
 	}
@@ -126,8 +126,8 @@ func (m *Model) viewStatus() string {
 	switch {
 	// Errors outrank the focus notices: a scrolled or focused pane must
 	// not hide a failure report.
-	case m.mode == modeFocus && m.err != "":
-		return "  " + errStyle.Render("✕ "+m.err)
+	case m.mode == modeFocus && m.errBar.text != "":
+		return "  " + errStyle.Render("✕ "+m.errBar.text)
 	case m.scrolledBack():
 		return "  " + keyStyle.Render("scrolled ") +
 			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", m.focusScroll))
@@ -139,9 +139,9 @@ func (m *Model) viewStatus() string {
 			subtleStyle.Render("typing goes to the agent · drag/double/triple click to copy · ctrl+q back")
 	case m.mode == modeConfirmDelete:
 		return "  " + errStyle.Render("⚠ "+m.confirm.label) + subtleStyle.Render("  y/n")
-	case m.resizeMode:
+	case m.split.resizeMode:
 		hint := "←→ resize · drag divider · enter set · esc cancel"
-		if m.splitDragging {
+		if m.split.dragging {
 			hint = "release to set · esc cancels"
 		}
 		return "  " + keyStyle.Render("resize ") + subtleStyle.Render(hint)
@@ -149,8 +149,8 @@ func (m *Model) viewStatus() string {
 		cursor := lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
 		return "  " + keyStyle.Render("search ") + valueStyle.Render(m.search) + cursor +
 			subtleStyle.Render("  enter/esc to close")
-	case m.err != "":
-		return "  " + errStyle.Render("✕ "+m.err)
+	case m.errBar.text != "":
+		return "  " + errStyle.Render("✕ "+m.errBar.text)
 	case m.diff.notice != "":
 		return "  " + lipgloss.NewStyle().Foreground(colorFinished).Render("● "+m.diff.notice)
 	default:
@@ -389,7 +389,7 @@ func (m *Model) viewFooter() string {
 			{"esc", "close"},
 		}
 	}
-	if m.resizeMode {
+	if m.split.resizeMode {
 		pairs = [][2]string{
 			{"←→", "nudge"}, {"drag", "divider"}, {"| / release", "commit"}, {"esc", "cancel"},
 		}

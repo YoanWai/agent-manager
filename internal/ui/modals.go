@@ -28,8 +28,8 @@ func (m *Model) card(title, body, hint string) string {
 func (m *Model) cardSized(width int, title, body, hint string) string {
 	head := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(title)
 	content := head + "\n\n" + body
-	if m.err != "" {
-		content += "\n" + errStyle.Render("✕ "+m.err)
+	if m.errBar.text != "" {
+		content += "\n" + errStyle.Render("✕ "+m.errBar.text)
 	}
 	content += "\n\n" + subtleStyle.Render(hint)
 
@@ -190,7 +190,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n\n" +
-		subtleStyle.Render("  version ") + valueStyle.Render(m.version) + m.versionStatus()
+		subtleStyle.Render("  version ") + valueStyle.Render(m.update.version) + m.versionStatus()
 	return m.card("⚙ Settings", body, "↑↓ field · ←→ change · ↵/esc save")
 }
 
@@ -207,12 +207,12 @@ func themeSwatch(t Theme) string {
 // versionStatus reports whether a newer release is known, as a suffix for
 // the settings version line. Empty when the daily check has not found one.
 func (m *Model) versionStatus() string {
-	if m.updateLatest == "" {
+	if m.update.latest == "" {
 		return ""
 	}
 	return subtleStyle.Render(" · ") +
 		lipgloss.NewStyle().Foreground(colorAccent).Bold(true).
-			Render("↑ "+m.updateLatest+" available")
+			Render("↑ "+m.update.latest+" available")
 }
 
 func (m *Model) viewMove() string {

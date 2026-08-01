@@ -83,7 +83,7 @@ func TestCaretKeepsRowColours(t *testing.T) {
 	raw := "\x1b[48;5;237m\x1b[38;5;231mprompt text here\x1b[0m"
 	width := 30
 	m := paneAt(t, raw)
-	m.paneCursor = paneCursor{x: 3, y: 0, ok: true}
+	m.pane.cursor = paneCursor{x: 3, y: 0, ok: true}
 	m.cursorOn = true
 
 	plainRow := previewLine(raw, width)

@@ -45,7 +45,7 @@ func TestRootRowRefusesGroupEdits(t *testing.T) {
 			m.rebuildRows()
 			m.cursor = 0
 			tc.run(m)
-			if m.err == "" {
+			if m.errBar.text == "" {
 				t.Fatal("no message explaining the refusal")
 			}
 			if m.mode != modeList {

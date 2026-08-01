@@ -184,7 +184,7 @@ func (m *Model) removeQuickToken(span tokenSpan) tea.Cmd {
 	m.quick.input.SetHeight(quickBarMaxRows)
 	cmd := m.setQuickValue(string(runes[:span.start])+string(runes[span.end:]), cursor)
 	m.dropQuickAttachment(span.id)
-	m.err = ""
+	m.errBar.text = ""
 	return cmd
 }
 
