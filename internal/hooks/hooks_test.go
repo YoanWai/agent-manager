@@ -58,6 +58,23 @@ func TestEnsureSettingsWritesValidHookJSON(t *testing.T) {
 			t.Fatalf("%s matcher = %q, want *", event, got)
 		}
 	}
+	notification := parsed.Hooks["Notification"][0]
+	if notification.Matcher != blockingNotifications {
+		t.Fatalf("Notification matcher = %q, want %q", notification.Matcher, blockingNotifications)
+	}
+	// the idle reminder, auth success and background agents finishing all
+	// arrive as Notification too, and the matcher is what keeps them out
+	for _, unwanted := range []string{"idle_prompt", "auth_success", "agent_completed"} {
+		if strings.Contains(notification.Matcher, unwanted) {
+			t.Fatalf("Notification matcher %q subscribes to %s", notification.Matcher, unwanted)
+		}
+	}
+	if command := notification.Hooks[0].Command; !strings.Contains(command, "printf "+status.Waiting) || strings.Contains(command, "grep") {
+		t.Fatalf("Notification command = %q, want a plain %s write", command, status.Waiting)
+	}
+	if got := parsed.Hooks["SessionStart"][0].Matcher; got != "startup|resume|clear" {
+		t.Fatalf("SessionStart matcher = %q, want startup|resume|clear", got)
+	}
 }
 
 func TestEnsureSettingsIdempotent(t *testing.T) {

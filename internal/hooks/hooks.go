@@ -63,13 +63,11 @@ func statusCommand(state string) string {
 	return `[ -z "$` + EnvStatusFile + `" ] || printf ` + state + ` > "$` + EnvStatusFile + `"`
 }
 
-// notificationCommand filters the payload on stdin: Claude Code fires
-// Notification both for permission prompts and for the 60-second idle
-// "waiting for your input" reminder, and only the former means the agent
-// is blocked.
-func notificationCommand() string {
-	return `[ -z "$` + EnvStatusFile + `" ] || grep -q "waiting for your input" || printf ` + status.Waiting + ` > "$` + EnvStatusFile + `"`
-}
+// blockingNotifications are the Notification types that leave the turn
+// stuck on the user. The event also fires for the idle reminder, for
+// authentication and for background agents finishing, none of which
+// block, so the matcher names the two that do.
+const blockingNotifications = "permission_prompt|elicitation_dialog"
 
 func settingsContent() ([]byte, error) {
 	report := func(matcher, state string) []hookMatcher {
@@ -79,7 +77,7 @@ func settingsContent() ([]byte, error) {
 		"UserPromptSubmit": report("", status.Working),
 		"PreToolUse":       report("*", status.Working),
 		"PostToolUse":      report("*", status.Working),
-		"Notification":     {{Hooks: []hookCommand{{Type: "command", Command: notificationCommand()}}}},
+		"Notification":     report(blockingNotifications, status.Waiting),
 		"Stop":             report("", status.Finished),
 		// compact fires SessionStart in the middle of an active turn
 		"SessionStart": report("startup|resume|clear", status.Idle),
