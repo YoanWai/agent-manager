@@ -383,12 +383,6 @@ type attachDoneMsg struct {
 }
 
 func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) *Model {
-	model := newModel(cfg, st, driver, engine, hookManager, version)
-	model.openStartupNotice()
-	return model
-}
-
-func newModel(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) *Model {
 	statusSources := make(map[string]string, len(cfg.Tools))
 	sessionStores := make(map[string]string, len(cfg.Tools))
 	for name, tool := range cfg.Tools {
@@ -399,7 +393,7 @@ func newModel(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *s
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
 	applyTheme(themes[themeIndex(storedTheme(st))])
-	return &Model{
+	model := &Model{
 		cfg:             cfg,
 		store:           st,
 		tmux:            driver,
@@ -416,6 +410,8 @@ func newModel(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *s
 		dismissed:       loadDismissed(st),
 		whatsNewVersion: loadWhatsNewVersion(st),
 	}
+	model.openStartupNotice()
+	return model
 }
 
 // storedTheme reads the persisted theme name. A read failure falls back to

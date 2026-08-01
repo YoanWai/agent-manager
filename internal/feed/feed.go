@@ -173,7 +173,7 @@ func safeURL(raw string) bool {
 func cleanText(s string, maxLen int) string {
 	var b strings.Builder
 	for _, r := range ansi.Strip(s) {
-		if r == '\x1b' || r < ' ' || r == 0x7f {
+		if r < ' ' || r == 0x7f {
 			continue
 		}
 		b.WriteRune(r)

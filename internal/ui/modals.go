@@ -41,20 +41,36 @@ func (m *Model) cardSized(width int, title, body, hint string) string {
 		lines = append(lines, paint(pad+padRight(line, inner), width, blockHex()))
 	}
 	lines = append(lines, paint("", width, blockHex()))
+	return m.centerOnBackdrop(lines)
+}
 
-	height := max(m.height, len(lines))
+// centerOnBackdrop floats a block of pre-painted lines in the middle of
+// the app frame, filling the rest with the backdrop.
+func (m *Model) centerOnBackdrop(box []string) string {
+	width := maxLineWidth(box)
+	height := max(m.height, len(box))
 	left := max((m.width-width)/2, 0)
 	frameWidth := max(m.width, left+width)
-	top := max((height-len(lines))/2, 0)
+	top := max((height-len(box))/2, 0)
 	frame := make([]string, 0, height)
 	for i := 0; i < height; i++ {
 		row := ""
-		if i >= top && i-top < len(lines) {
-			row = paint("", left, backdropHex()) + lines[i-top]
+		if i >= top && i-top < len(box) {
+			row = paint("", left, backdropHex()) + box[i-top]
 		}
 		frame = append(frame, paint(row, frameWidth, backdropHex()))
 	}
 	return strings.Join(frame, "\n")
+}
+
+func maxLineWidth(lines []string) int {
+	width := 0
+	for _, line := range lines {
+		if w := lipgloss.Width(line); w > width {
+			width = w
+		}
+	}
+	return width
 }
 
 func (m *Model) viewForm() string {

@@ -193,12 +193,7 @@ func noticeLegend() string {
 func (m *Model) railFootLines(width int) []string {
 	meters := m.computerLines(width)
 	notices := m.activeNotices()
-	metersWidth := 0
-	for _, line := range meters {
-		if w := lipgloss.Width(line); w > metersWidth {
-			metersWidth = w
-		}
-	}
+	metersWidth := maxLineWidth(meters)
 	room := width - metersWidth - 3
 	if len(notices) == 0 || room < noticePanelMin {
 		return meters
@@ -222,9 +217,6 @@ func (m *Model) railFootLines(width int) []string {
 // hugging its content in width and spanning the meters block in height.
 func (m *Model) noticeCardLines(notices []notice, maxWidth, height int) []string {
 	room := height - 2
-	if room < 1 {
-		room = 1
-	}
 	shown := notices
 	overflow := ""
 	if len(shown) > room {
@@ -242,14 +234,9 @@ func (m *Model) noticeCardLines(notices []notice, maxWidth, height int) []string
 
 	head := noticeLegend()
 	foot := keyCap("M", "open") + subtleStyle.Render(" ")
-	inner := lipgloss.Width(head) + 2
-	if w := lipgloss.Width(foot) + 2; w > inner {
+	inner := max(lipgloss.Width(head), lipgloss.Width(foot)) + 2
+	if w := maxLineWidth(rows); w > inner {
 		inner = w
-	}
-	for _, row := range rows {
-		if w := lipgloss.Width(row); w > inner {
-			inner = w
-		}
 	}
 	if inner > maxWidth-4 {
 		inner = maxWidth - 4
@@ -304,6 +291,7 @@ func (m *Model) openNotices(selectID string) {
 	for i, n := range notices {
 		if n.id == selectID {
 			m.noticeCursor = i
+			break
 		}
 	}
 	m.mode = modeNotices
@@ -340,6 +328,7 @@ func (m *Model) keepNoticeSelection(apply func()) {
 	for i, n := range m.activeNotices() {
 		if n.id == selected {
 			m.noticeCursor = i
+			break
 		}
 	}
 }
@@ -365,15 +354,11 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.noticeCursor < len(notices) {
 			m.dismissNotice(notices[m.noticeCursor].id)
 		}
-		if remaining := len(notices) - 1; m.noticeCursor >= remaining {
-			m.noticeCursor = remaining - 1
-		}
-		if m.noticeCursor < 0 {
-			m.noticeCursor = 0
-		}
 		if len(notices) <= 1 {
 			m.mode = modeList
+			return m, nil
 		}
+		m.noticeCursor = min(m.noticeCursor, len(notices)-2)
 	case "esc", "q", "M":
 		m.mode = modeList
 	}
@@ -389,10 +374,7 @@ func (m *Model) viewNotices() string {
 	if len(notices) == 0 {
 		frame := noticeFrame([]string{subtleStyle.Render("nothing new")}, inner,
 			noticeLegend(), keyCap("esc", "close"))
-		return m.noticeOverlay(frame)
-	}
-	if m.noticeCursor >= len(notices) {
-		m.noticeCursor = len(notices) - 1
+		return m.centerOnBackdrop(frame)
 	}
 	var rows []string
 	rows = append(rows, "")
@@ -421,36 +403,12 @@ func (m *Model) viewNotices() string {
 	frame := noticeFrame(rows, inner,
 		noticeLegend(),
 		mutedStyle.Render("↑↓ pick · ↵ open · x dismiss · esc "))
-	return m.noticeOverlay(frame)
+	return m.centerOnBackdrop(frame)
 }
 
 // noticeModalInner is the modal's content column, sized for the welcome
 // notice's longest body line.
 const noticeModalInner = 62
-
-// noticeOverlay centers the framed card on the app backdrop, mirroring
-// what card does for the plain modals.
-func (m *Model) noticeOverlay(box []string) string {
-	width := 0
-	for _, line := range box {
-		if w := lipgloss.Width(line); w > width {
-			width = w
-		}
-	}
-	height := max(m.height, len(box))
-	left := max((m.width-width)/2, 0)
-	frameWidth := max(m.width, left+width)
-	top := max((height-len(box))/2, 0)
-	frame := make([]string, 0, height)
-	for i := 0; i < height; i++ {
-		row := ""
-		if i >= top && i-top < len(box) {
-			row = paint("", left, backdropHex()) + box[i-top]
-		}
-		frame = append(frame, paint(row, frameWidth, backdropHex()))
-	}
-	return strings.Join(frame, "\n")
-}
 
 func loadDismissed(st *store.Store) map[string]bool {
 	dismissed := map[string]bool{}
