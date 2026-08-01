@@ -141,6 +141,31 @@ func parseVersion(v string) ([3]int, bool) {
 	return parts, true
 }
 
+// VersionWithin reports whether version falls inside the inclusive
+// [minimum, maximum] range. An empty bound is open; an unparseable
+// version (a dev build) matches only fully open ranges, so targeted
+// messages never reach builds whose version they cannot describe.
+func VersionWithin(version, minimum, maximum string) bool {
+	if minimum == "" && maximum == "" {
+		return true
+	}
+	parts, ok := parseVersion(version)
+	if !ok {
+		return false
+	}
+	if minimum != "" {
+		if low, ok := parseVersion(minimum); !ok || greater(low, parts) {
+			return false
+		}
+	}
+	if maximum != "" {
+		if high, ok := parseVersion(maximum); !ok || greater(parts, high) {
+			return false
+		}
+	}
+	return true
+}
+
 func greater(a, b [3]int) bool {
 	for i := range a {
 		if a[i] != b[i] {

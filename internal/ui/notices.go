@@ -77,6 +77,17 @@ func (m *Model) activeNotices() []notice {
 			url: repoURL + "/releases/tag/" + m.update.version,
 		})
 	}
+	for _, msg := range m.feedMessages {
+		notices = append(notices, notice{
+			id:     msg.ID,
+			glyph:  "◆",
+			tint:   colorAccent2,
+			banner: msg.Banner,
+			title:  msg.Title,
+			body:   msg.Body,
+			url:    msg.URL,
+		})
+	}
 	notices = append(notices,
 		notice{
 			id:     noticeWelcome,

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
@@ -150,6 +151,33 @@ func TestFreshInstallNeverShowsWhatsNew(t *testing.T) {
 		if strings.HasPrefix(id, "whatsnew-") {
 			t.Fatalf("fresh install must not list what's new, got %v", noticeIDs(m.activeNotices()))
 		}
+	}
+}
+
+func TestFeedMessagesBecomeNotices(t *testing.T) {
+	st := noticeStore(t)
+	m := noticeModel(st, "v0.2.0")
+	m.feedMessages = []feed.Message{{
+		ID:     "feed-holdoff",
+		Banner: "known issue in v0.2.0",
+		Title:  "Hold off",
+		Body:   []string{"details"},
+		URL:    "https://example.com",
+	}}
+
+	ids := noticeIDs(m.activeNotices())
+	if !contains(ids, "feed-holdoff") {
+		t.Fatalf("feed message should be a notice, got %v", ids)
+	}
+
+	m.dismissNotice("feed-holdoff")
+	if contains(noticeIDs(m.activeNotices()), "feed-holdoff") {
+		t.Fatal("dismissed feed notice still active")
+	}
+	reopened := noticeModel(st, "v0.2.0")
+	reopened.feedMessages = m.feedMessages
+	if contains(noticeIDs(reopened.activeNotices()), "feed-holdoff") {
+		t.Fatal("feed dismissal must survive restart")
 	}
 }
 

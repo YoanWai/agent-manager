@@ -12,6 +12,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -145,6 +146,9 @@ type Model struct {
 	// persists in settings so a dismissed message never comes back.
 	dismissed    map[string]bool
 	noticeCursor int
+	// feedMessages is the remote message feed, refreshed on the update
+	// tick and folded into the notices next to the built-in ones.
+	feedMessages []feed.Message
 }
 
 type netStats struct {
@@ -512,7 +516,7 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.updateTick(), m.bannerTick(), m.previewTick(), m.sweepPastes, m.pasteSweepTick())
+	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.sweepPastes, m.pasteSweepTick())
 }
 
 // updateMsg carries the result of the background GitHub release check.
@@ -522,6 +526,13 @@ type updateMsg struct {
 	latest string
 	url    string
 	failed bool
+}
+
+// feedMsg carries the remote message feed. failed marks a fetch that
+// never reached a verdict, which keeps whatever is already on screen.
+type feedMsg struct {
+	messages []feed.Message
+	failed   bool
 }
 
 // pasteSweepMsg carries the result of one pass over the pastes directory.
@@ -571,6 +582,20 @@ func (m *Model) checkForUpdate() tea.Msg {
 		return updateMsg{failed: true}
 	}
 	return updateMsg{latest: result.Latest, url: result.URL}
+}
+
+// checkFeed pulls the remote message feed off the event loop. Like the
+// release check it is cache-backed, so most ticks cost one disk read.
+func (m *Model) checkFeed() tea.Msg {
+	dir, err := config.Dir()
+	if err != nil {
+		return feedMsg{failed: true}
+	}
+	messages, err := feed.Fetch(context.Background(), dir, m.update.version)
+	if err != nil {
+		return feedMsg{failed: true}
+	}
+	return feedMsg{messages: messages}
 }
 
 // refreshExistingSessionUX re-applies the tmux bindings and status bar to
@@ -822,7 +847,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case updateTickMsg:
-		return m, tea.Batch(m.checkForUpdate, m.updateTick())
+		return m, tea.Batch(m.checkForUpdate, m.checkFeed, m.updateTick())
+
+	case feedMsg:
+		if !msg.failed {
+			m.feedMessages = msg.messages
+		}
+		return m, nil
 
 	case pasteSweepMsg:
 		if msg.err != nil {
