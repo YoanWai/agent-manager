@@ -140,12 +140,14 @@ func TestFrameFitsTerminal(t *testing.T) {
 	}
 }
 
-// The pane's soft edges: the opening row bleeds down, the closing row up,
-// and every body row ends with the ▐ half-block edge one column past the
-// seam. The end cells of the edge rows are the corners: the first is a
-// foreground half block so the window margin cannot inherit pane tone and
-// smear past the corner, and the last is a quadrant so the bleed's
-// half-cell fill closes at the corner instead of jutting right.
+// The pane's soft edges: the opening row is drawn in sextants and stops a
+// third of a cell under the wordmark, the closing row bleeds up by half, and
+// every body row ends with the ▐ half-block edge one column past the seam.
+// The end cells of the edge rows are the corners: the first is a foreground
+// block so the window margin cannot inherit pane tone and smear past the
+// corner, and the last is narrowed to the bleed's half width so the fill
+// closes at the corner instead of jutting right. The top row's corner is
+// also a sextant, which is what keeps its edge level with the run beside it.
 func TestPaneSoftEdges(t *testing.T) {
 	m := shotModel()
 	rows := strings.Split(m.View(), "\n")
@@ -153,23 +155,23 @@ func TestPaneSoftEdges(t *testing.T) {
 
 	top := []rune(ansi.Strip(rows[m.headerRows()]))
 	bottom := []rune(ansi.Strip(rows[m.headerRows()+1+m.listBodyHeight()]))
-	if top[0] != '▄' || bottom[0] != '▀' {
-		t.Fatalf("edge rows should open with foreground half blocks, got %q and %q",
+	if top[0] != '🬹' || bottom[0] != '▀' {
+		t.Fatalf("edge rows should open with foreground blocks, got %q and %q",
 			string(top[0]), string(bottom[0]))
 	}
 	for col := 1; col <= leftWidth; col++ {
-		if top[col] != '▀' {
-			t.Fatalf("top edge col %d is %q, want ▀:\n%s", col, string(top[col]), string(top))
+		if top[col] != '🬂' {
+			t.Fatalf("top edge col %d is %q, want 🬂:\n%s", col, string(top[col]), string(top))
 		}
 		if bottom[col] != '▄' {
 			t.Fatalf("bottom edge col %d is %q, want ▄:\n%s", col, string(bottom[col]), string(bottom))
 		}
 	}
-	if top[leftWidth+1] != '▜' || bottom[leftWidth+1] != '▟' {
-		t.Fatalf("edge rows should close with corner quadrants, got %q and %q",
+	if top[leftWidth+1] != '🬨' || bottom[leftWidth+1] != '▟' {
+		t.Fatalf("edge rows should close on the bleed's half width, got %q and %q",
 			string(top[leftWidth+1]), string(bottom[leftWidth+1]))
 	}
-	if top[leftWidth+2] == '▀' || bottom[leftWidth+2] == '▄' {
+	if top[leftWidth+2] == '🬂' || bottom[leftWidth+2] == '▄' {
 		t.Fatalf("the bleed should stop after the seam's edge column")
 	}
 	for i := m.headerRows() + 1; i < m.headerRows()+1+m.listBodyHeight(); i++ {

@@ -189,6 +189,8 @@ func TestGroupFormInheritsParentPath(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 
+	// The cursor starts on root, which has no stored path to inherit.
+	m.selectGroupRow(t, "projects")
 	m.openGroupForm()
 	if m.groupForm.path.Value() != parentPath {
 		t.Fatalf("cursor on group should inherit its path, got %q want %q", m.groupForm.path.Value(), parentPath)
