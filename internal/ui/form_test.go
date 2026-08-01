@@ -11,6 +11,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestNewSessionPreselectsContextGroup(t *testing.T) {
@@ -346,5 +347,44 @@ func TestSpawnWorktreeRollsBackWhenLaunchBuildFails(t *testing.T) {
 	worktreePath := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-worktrees", "wt-launchfail")
 	if _, statErr := os.Stat(worktreePath); !os.IsNotExist(statErr) {
 		t.Fatal("worktree must be rolled back when the launch command cannot be built")
+	}
+}
+
+func TestFormWorktreeSeedsFromGroupDefault(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("grp", t.TempDir()); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.store.SetGroupWorktree("grp", "on"); err != nil {
+		t.Fatalf("set worktree: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp")
+	m.openForm()
+	if !m.form.worktree {
+		t.Fatal("form should seed worktree on from the group default")
+	}
+	pickGroup(t, m, "")
+	m.moveGroupCursor(0)
+	if m.form.worktree {
+		t.Fatal("moving to root should follow its default off")
+	}
+}
+
+func TestGroupFormStoresWorktreeChoice(t *testing.T) {
+	m := buildModel(t)
+	m.openGroupForm()
+	m.groupForm.name.SetValue("wtgrp")
+	m.groupForm.path.SetValue(t.TempDir())
+	m.groupForm.focus = gfWorktree
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	_, cmd := m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	groups, err := m.store.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Worktree != "on" {
+		t.Fatalf("group form should store the worktree choice, got %+v", groups)
 	}
 }

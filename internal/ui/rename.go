@@ -30,7 +30,13 @@ func (m *Model) openRename() {
 		}
 		dir.SetValue(dirValue)
 		m.pathSugg.reset()
-		m.rename = renameTarget{isGroup: true, path: entry.group, input: input, dir: dir}
+		m.rename = renameTarget{
+			isGroup:       true,
+			path:          entry.group,
+			input:         input,
+			dir:           dir,
+			worktreeIndex: groupWorktreeIndex(m.groupWorktrees[entry.group]),
+		}
 	} else {
 		input.SetValue(entry.sess.Name)
 		tools := sortedToolNames(m.cfg)
@@ -60,12 +66,17 @@ func (m *Model) openRename() {
 
 func (m *Model) renameFocus(delta int) {
 	m.pathSugg.reset()
-	m.rename.focus = (m.rename.focus + delta + 2) % 2
+	fields := 2
+	if m.rename.isGroup {
+		fields = 3
+	}
+	m.rename.focus = (m.rename.focus + delta + fields) % fields
 	m.rename.input.Blur()
 	m.rename.dir.Blur()
-	if m.rename.focus == 0 {
+	switch m.rename.focus {
+	case 0:
 		m.rename.input.Focus()
-	} else {
+	case 1:
 		m.rename.dir.Focus()
 	}
 }
@@ -123,6 +134,16 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.renameFocus(1)
 		}
 		return m, nil
+	case "left", "right":
+		if m.rename.isGroup && m.rename.focus == 2 {
+			delta := 1
+			if msg.String() == "left" {
+				delta = -1
+			}
+			count := len(groupWorktreeOptions)
+			m.rename.worktreeIndex = (m.rename.worktreeIndex + delta + count) % count
+			return m, nil
+		}
 	case "enter":
 		if pathSuggesting && m.pathSugg.chosen {
 			m.applyPathSuggestion()
@@ -131,9 +152,10 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.applyRename()
 	}
 	var cmd tea.Cmd
-	if m.rename.focus == 0 {
+	switch m.rename.focus {
+	case 0:
 		m.rename.input, cmd = m.rename.input.Update(msg)
-	} else {
+	case 1:
 		m.rename.dir, cmd = m.rename.dir.Update(msg)
 		m.pathSugg.recompute(m.rename.dir.Value())
 	}
@@ -182,7 +204,12 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
-		m.renameGroupLocally(m.rename.path, newPath, dir)
+		worktree := groupWorktreeValue(m.rename.worktreeIndex)
+		if err := m.store.SetGroupWorktree(newPath, worktree); err != nil {
+			m.errBar.text = err.Error()
+			return m, nil
+		}
+		m.renameGroupLocally(m.rename.path, newPath, dir, worktree)
 		m.relabelSubtree(newPath)
 	} else {
 		if err := m.store.RenameSession(m.rename.sessID, name); err != nil {
@@ -224,7 +251,7 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 // renameGroupLocally rewrites the in-memory tree right away, so the
 // frames between saving and the poller's next refresh already show the
 // new name and path instead of flashing the stale ones.
-func (m *Model) renameGroupLocally(old, newPath, dir string) {
+func (m *Model) renameGroupLocally(old, newPath, dir, worktree string) {
 	moved := func(group string) (string, bool) {
 		if group == old || strings.HasPrefix(group, old+"/") {
 			return newPath + group[len(old):], true
@@ -244,6 +271,17 @@ func (m *Model) renameGroupLocally(old, newPath, dir string) {
 	}
 	groupPaths[newPath] = dir
 	m.groupPaths = groupPaths
+	groupWorktrees := make(map[string]string, len(m.groupWorktrees))
+	for group, choice := range m.groupWorktrees {
+		group, _ = moved(group)
+		groupWorktrees[group] = choice
+	}
+	if worktree == "" {
+		delete(groupWorktrees, newPath)
+	} else {
+		groupWorktrees[newPath] = worktree
+	}
+	m.groupWorktrees = groupWorktrees
 	for group, folded := range m.collapsed {
 		if renamed, ok := moved(group); ok {
 			delete(m.collapsed, group)

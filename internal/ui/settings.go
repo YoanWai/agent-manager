@@ -35,6 +35,20 @@ func (m *Model) defaultWorktree() bool {
 	return chosen == "on"
 }
 
+// groupWorktree resolves a group's spawn-in-worktree default: the nearest
+// ancestor with an explicit choice wins, else the global setting.
+func (m *Model) groupWorktree(group string) bool {
+	for g := group; g != ""; g = parentGroup(g) {
+		switch m.groupWorktrees[g] {
+		case "on":
+			return true
+		case "off":
+			return false
+		}
+	}
+	return m.defaultWorktree()
+}
+
 // defaultSplitLayout reports whether review mode should open in split
 // (side-by-side) layout. Split is the default; a stored "unified" choice
 // opts out. A store error is surfaced but still yields the split default.
