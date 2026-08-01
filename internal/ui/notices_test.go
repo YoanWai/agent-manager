@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -482,5 +484,84 @@ func TestLateFeedKeepsModalSelection(t *testing.T) {
 	}
 	if got := m.activeNotices()[m.noticeCursor].id; got != selected {
 		t.Fatalf("selection moved from %q to %q when the feed arrived", selected, got)
+	}
+}
+
+func TestUpdateNoticeAppliesOnU(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	m.update.latest = "v0.3.0"
+	m.openNotices("update-v0.3.0")
+	if m.mode != modeNotices || m.noticeCursor != 0 {
+		t.Fatalf("update notice should open selected, mode=%v cursor=%d", m.mode, m.noticeCursor)
+	}
+
+	applied := ""
+	orig := applyUpdate
+	defer func() { applyUpdate = orig }()
+	applyUpdate = func(_ context.Context, tag, execPath string) error {
+		applied = tag + " " + execPath
+		return nil
+	}
+
+	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if cmd == nil {
+		t.Fatal("u on the update notice should start the update")
+	}
+	if !m.update.applying {
+		t.Fatal("applying should be marked while the download runs")
+	}
+	msg, ok := cmd().(updateAppliedMsg)
+	if !ok {
+		t.Fatalf("cmd returned %T", cmd())
+	}
+	if msg.err != nil {
+		t.Fatalf("apply: %v", msg.err)
+	}
+	if !strings.HasPrefix(applied, "v0.3.0 ") {
+		t.Fatalf("applyUpdate saw %q", applied)
+	}
+	updated, quit := m.Update(msg)
+	m = updated.(*Model)
+	if m.update.applying {
+		t.Fatal("applying should clear once the swap lands")
+	}
+	if m.RestartPath() == "" {
+		t.Fatal("a successful swap must set the restart path")
+	}
+	if quit == nil {
+		t.Fatal("a successful swap must quit so main can exec the new build")
+	}
+}
+
+func TestUpdateNoticeApplyFailureSurfaces(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	m.update.latest = "v0.3.0"
+	m.openNotices("update-v0.3.0")
+
+	orig := applyUpdate
+	defer func() { applyUpdate = orig }()
+	applyUpdate = func(_ context.Context, _, _ string) error {
+		return errors.New("permission denied")
+	}
+	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	updated, _ := m.Update(cmd().(updateAppliedMsg))
+	m = updated.(*Model)
+	if m.update.applying {
+		t.Fatal("applying should clear on failure")
+	}
+	if m.RestartPath() != "" {
+		t.Fatal("a failed swap must not restart")
+	}
+	if !strings.Contains(m.errBar.text, "permission denied") {
+		t.Fatalf("failure should surface, err=%q", m.errBar.text)
+	}
+}
+
+func TestUOutsideUpdateNoticeDoesNothing(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	m.openNotices(noticeWelcome)
+	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if cmd != nil || m.update.applying {
+		t.Fatal("u on a plain notice must not start an update")
 	}
 }

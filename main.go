@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -178,10 +179,18 @@ func run() error {
 	ui.EnableTerminalPassthrough()
 	ui.SyncTerminalBackground()
 	model.StartPoller(program.Send)
-	_, runErr := program.Run()
+	final, runErr := program.Run()
 	ui.ResetTerminalBackground()
 	if err := ui.DisableAlternateScroll(); err != nil && runErr == nil {
 		runErr = err
+	}
+	if runErr == nil {
+		if finished, ok := final.(*ui.Model); ok && finished.RestartPath() != "" {
+			// A self-update swapped the binary on disk; exec replaces this
+			// process with the new build so the manager comes back updated
+			// without touching the tmux sessions it manages.
+			return syscall.Exec(finished.RestartPath(), os.Args, os.Environ())
+		}
 	}
 	return runErr
 }
