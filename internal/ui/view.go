@@ -31,6 +31,8 @@ func (m *Model) View() string {
 		frame = m.viewGroupForm()
 	case modeDiff:
 		frame = m.viewDiffFull()
+	case modeNotices:
+		frame = m.viewNotices()
 	default:
 		frame = m.viewListFrame()
 	}

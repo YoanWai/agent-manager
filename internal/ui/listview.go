@@ -83,9 +83,9 @@ func (m *Model) viewListFrame() string {
 }
 
 // railLines is the sessions rail: the entry list on top, the machine
-// meters docked at the bottom behind their seam.
+// meters and the messages card docked at the bottom behind their seam.
 func (m *Model) railLines(width, height int) []contentLine {
-	meters := m.computerLines(width)
+	meters := m.railFootLines(width)
 	listHeight := height - len(meters) - 1
 	if listHeight < 3 {
 		listHeight, meters = height, nil
@@ -708,6 +708,10 @@ func (m *Model) viewQuickBar(width int) string {
 // alone).
 func (m *Model) viewHeaderRows() []string {
 	left := m.viewBanner()[0]
+	if m.update.latest != "" {
+		left += subtleStyle.Render("  ") +
+			lipgloss.NewStyle().Foreground(colorAccent).Render("↑ "+m.update.latest+" available")
+	}
 	sep := subtleStyle.Render("   ")
 	scope := m.headerScope()
 	agents := m.headerAgents()
@@ -738,10 +742,10 @@ func joinHeaderPieces(sep string, pieces ...string) string {
 	return strings.Join(kept, sep)
 }
 
-// headerScope names what the list is showing and badges a newer release.
-// The count is of the same sessions the rollup beside it breaks down, so
-// the two lines always add up; counting painted rows instead would drop
-// everything folded inside a collapsed group.
+// headerScope names what the list is showing. The count is of the same
+// sessions the rollup beside it breaks down, so the two lines always add
+// up; counting painted rows instead would drop everything folded inside
+// a collapsed group.
 func (m *Model) headerScope() string {
 	count := len(m.visibleSessions())
 	label := " sessions"
@@ -752,12 +756,7 @@ func (m *Model) headerScope() string {
 	if m.showArchived {
 		scope = subtleStyle.Render(" · ") + scopeBadgeStyle.Render("ARCHIVED")
 	}
-	line := valueStyle.Render(fmt.Sprintf("%d", count)) + subtleStyle.Render(label) + scope
-	if m.update.latest != "" {
-		line += subtleStyle.Render("   ") +
-			lipgloss.NewStyle().Foreground(colorAccent).Render("↑ "+m.update.latest+" available")
-	}
-	return line
+	return valueStyle.Render(fmt.Sprintf("%d", count)) + subtleStyle.Render(label) + scope
 }
 
 // headerAgents is the fleet's process cost as shares of this machine,

@@ -41,20 +41,36 @@ func (m *Model) cardSized(width int, title, body, hint string) string {
 		lines = append(lines, paint(pad+padRight(line, inner), width, blockHex()))
 	}
 	lines = append(lines, paint("", width, blockHex()))
+	return m.centerOnBackdrop(lines)
+}
 
-	height := max(m.height, len(lines))
+// centerOnBackdrop floats a block of pre-painted lines in the middle of
+// the app frame, filling the rest with the backdrop.
+func (m *Model) centerOnBackdrop(box []string) string {
+	width := maxLineWidth(box)
+	height := max(m.height, len(box))
 	left := max((m.width-width)/2, 0)
 	frameWidth := max(m.width, left+width)
-	top := max((height-len(lines))/2, 0)
+	top := max((height-len(box))/2, 0)
 	frame := make([]string, 0, height)
 	for i := 0; i < height; i++ {
 		row := ""
-		if i >= top && i-top < len(lines) {
-			row = paint("", left, backdropHex()) + lines[i-top]
+		if i >= top && i-top < len(box) {
+			row = paint("", left, backdropHex()) + box[i-top]
 		}
 		frame = append(frame, paint(row, frameWidth, backdropHex()))
 	}
 	return strings.Join(frame, "\n")
+}
+
+func maxLineWidth(lines []string) int {
+	width := 0
+	for _, line := range lines {
+		if w := lipgloss.Width(line); w > width {
+			width = w
+		}
+	}
+	return width
 }
 
 func (m *Model) viewForm() string {
@@ -173,15 +189,21 @@ func (m *Model) viewSettings() string {
 	if !m.settings.enterFocuses {
 		focusKey = "↵ attach · A focus"
 	}
-	row := func(field int, name, value string) string {
+	lead := func(field int, name string) string {
 		marker := "  "
 		labelStyle := valueStyle
 		if m.settings.field == field {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
-		picker := subtleStyle.Render("◂ ") + valueStyle.Render(value) + subtleStyle.Render(" ▸")
-		return marker + padRight(labelStyle.Render(name), 18) + picker
+		return marker + padRight(labelStyle.Render(name), 18)
+	}
+	row := func(field int, name, value string) string {
+		return lead(field, name) + subtleStyle.Render("◂ ") + valueStyle.Render(value) + subtleStyle.Render(" ▸")
+	}
+	// An action row: enter runs it, so it carries no picker arrows.
+	actionRow := func(field int, name, action string) string {
+		return lead(field, name) + keyStyle.Render("↵") + mutedStyle.Render(" "+action)
 	}
 	body := row(settingsFieldTool, "quick spawn tool", m.settings.toolNames[m.settings.toolIndex]) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
@@ -189,9 +211,14 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldDensity, "list density", density) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
-		row(settingsFieldFocusKey, "session keys", focusKey) + "\n\n" +
+		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
+		actionRow(settingsFieldBugReport, "report a bug", "open a prefilled GitHub issue") + "\n\n" +
 		subtleStyle.Render("  version ") + valueStyle.Render(m.update.version) + m.versionStatus()
-	return m.card("⚙ Settings", body, "↑↓ field · ←→ change · ↵/esc save")
+	hint := "↑↓ field · ←→ change · ↵/esc save"
+	if m.settings.field == settingsFieldBugReport {
+		hint = "↑↓ field · ↵ open issue · esc save"
+	}
+	return m.card("⚙ Settings", body, hint)
 }
 
 // themeSwatch previews a palette as a run of blocks, so a theme can be
@@ -248,6 +275,7 @@ func (m *Model) viewHelp() string {
 		{"s", "settings (quick spawn tool, review layout, after quick send)"},
 		{"|", "resize split (←→ / drag, enter commits, esc cancels)"},
 		{"t", "toggle archived view"},
+		{"M", "messages (updates, tips, bug reporting; x dismisses)"},
 		{"e", "hide / show empty groups"},
 		{"/", "search"},
 		{"↑↓ / jk", "move cursor"},

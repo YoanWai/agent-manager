@@ -298,14 +298,18 @@ func TestPaneSoftEdges(t *testing.T) {
 	}
 }
 
-func TestHeaderShowsUpdateBadge(t *testing.T) {
+func TestHeaderShowsUpdateBadgeBesideWordmark(t *testing.T) {
 	m := &Model{width: 120, update: updateInfo{latest: "v0.9.0"}}
-	if got := m.headerScope(); !strings.Contains(got, "v0.9.0") || !strings.Contains(got, "available") {
-		t.Errorf("header missing update badge: %q", got)
+	header := ansi.Strip(m.viewHeaderRows()[0])
+	if !strings.Contains(header, "v0.9.0") || !strings.Contains(header, "available") {
+		t.Errorf("header missing update badge: %q", header)
+	}
+	if strings.Index(header, "available") > strings.Index(header, "sessions") {
+		t.Errorf("badge should sit left, by the wordmark: %q", header)
 	}
 	m.update.latest = ""
-	if got := m.headerScope(); strings.Contains(got, "available") {
-		t.Errorf("header should have no badge when up to date: %q", got)
+	if header := ansi.Strip(m.viewHeaderRows()[0]); strings.Contains(header, "available") {
+		t.Errorf("header should have no badge when up to date: %q", header)
 	}
 }
 
