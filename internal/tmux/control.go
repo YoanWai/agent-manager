@@ -274,32 +274,3 @@ func (c *Control) fail(err error) {
 	c.mu.Unlock()
 	close(c.done)
 }
-
-// OutputData decodes the octal escapes tmux applies to %output payloads.
-// Exposed for the day the preview consumes pane deltas directly instead of
-// re-capturing; the event path above does not need it.
-func OutputData(escaped string) string {
-	var out strings.Builder
-	for i := 0; i < len(escaped); i++ {
-		if escaped[i] == '\\' && i+3 < len(escaped) && isOctal(escaped[i+1:i+4]) {
-			value := (escaped[i+1]-'0')<<6 | (escaped[i+2]-'0')<<3 | (escaped[i+3] - '0')
-			out.WriteByte(value)
-			i += 3
-			continue
-		}
-		out.WriteByte(escaped[i])
-	}
-	return out.String()
-}
-
-func isOctal(s string) bool {
-	if len(s) != 3 {
-		return false
-	}
-	for i := 0; i < 3; i++ {
-		if s[i] < '0' || s[i] > '7' {
-			return false
-		}
-	}
-	return true
-}

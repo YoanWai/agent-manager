@@ -13,9 +13,570 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/status"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
+
+func gitTestRepo(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "t@t")
+	run("config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "-m", "init")
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() { println(1) }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "extra.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestDiffReviewShowsWholeFile(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+
+	m.drainCmds(t, m.openDiff())
+	if !m.diff.active || m.mode != modeDiff || m.diff.loading {
+		t.Fatalf("diff should be loaded fullscreen, active=%v mode=%v err=%q", m.diff.active, m.mode, m.diff.errText)
+	}
+	if len(m.diff.set.Files) != 2 {
+		t.Fatalf("files = %+v", m.diff.set.Files)
+	}
+
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "review · coder") || !strings.Contains(view, "files") {
+		t.Fatalf("fullscreen review layout missing:\n%s", view)
+	}
+	if !strings.Contains(view, "package main") || !strings.Contains(view, "println(1)") {
+		t.Fatalf("whole-file content missing:\n%s", view)
+	}
+	if !strings.Contains(view, "func main() {}") {
+		t.Fatalf("deleted line should interleave:\n%s", view)
+	}
+}
+
+func TestDiffScopeCycleAndLayout(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	m.drainCmds(t, m.openDiff())
+
+	m.applyCmd(t, m.cycleDiffScope())
+	if m.diff.scope.String() != "vs target" {
+		t.Fatalf("scope = %q", m.diff.scope)
+	}
+
+	m.diff.sideBySide = true
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "split") {
+		t.Fatalf("split pill missing:\n%s", view)
+	}
+}
+
+func TestDiffAnnotateAndSend(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	m.drainCmds(t, m.openDiff())
+	m.diff.sideBySide = false
+
+	for i, fd := range m.diff.set.Files {
+		if fd.File.Path == "main.go" {
+			m.diff.fileIdx = i
+		}
+	}
+	m.drainCmds(t, m.loadCurrentDiffFile())
+	fd := m.currentFileDiff()
+	target := -1
+	for i, line := range fd.Lines {
+		if line.NewNum > 0 && strings.Contains(line.Text, "println") {
+			target = i
+		}
+	}
+	if target < 0 {
+		t.Fatalf("no add line found: %+v", fd.Lines)
+	}
+	m.diff.cursorLine = target
+	m.openAnnotate()
+	m.diff.annInput.SetValue("use fmt.Println here")
+	m.saveAnnotation()
+	if len(m.diff.annotations[m.reviewKey()]) != 1 {
+		t.Fatalf("annotations = %+v", m.diff.annotations)
+	}
+
+	_, cmd := m.sendAnnotations()
+	m.applyCmd(t, cmd)
+	if len(m.diff.annotations[m.reviewKey()]) != 0 {
+		t.Fatal("annotations should clear after send")
+	}
+	if !strings.Contains(m.diff.notice, "review comment") {
+		t.Fatalf("notice = %q (err=%q)", m.diff.notice, m.errBar.text)
+	}
+	sess := m.sessionRows()[0]
+	// Join wrapped lines so the delivery check does not depend on where the
+	// pane's width breaks the prompt; the session sizes to the model width.
+	out, err := tmuxCmd("capture-pane", "-p", "-J", "-t", "am_"+sess.ID).CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pane := string(out)
+	if !strings.Contains(pane, "use fmt.Println here") || !strings.Contains(pane, "main.go:3") {
+		t.Fatalf("prompt not delivered:\n%s", pane)
+	}
+}
+
+func TestDiffCommentVisibleInBothLayouts(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	m.drainCmds(t, m.openDiff())
+	m.diff.sideBySide = false
+
+	for i, fd := range m.diff.set.Files {
+		if fd.File.Path == "main.go" {
+			m.diff.fileIdx = i
+		}
+	}
+	m.drainCmds(t, m.loadCurrentDiffFile())
+	fd := m.currentFileDiff()
+	for i, line := range fd.Lines {
+		if line.NewNum > 0 && strings.Contains(line.Text, "println") {
+			m.diff.cursorLine = i
+		}
+	}
+	m.openAnnotate()
+	m.diff.annInput.SetValue("use fmt.Println here")
+	m.saveAnnotation()
+
+	m.diff.sideBySide = false
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
+		t.Fatalf("comment missing in unified layout:\n%s", view)
+	}
+	m.diff.sideBySide = true
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
+		t.Fatalf("comment missing in split layout:\n%s", view)
+	}
+}
+
+// Review has to paint exactly the terminal it was given. A frame with more
+// rows than the terminal scrolls the top away; a line wider than the
+// terminal wraps and pushes every row below it off the bottom, which is how
+// the end of a file ends up selected but off screen.
+func TestDiffFrameFitsTerminal(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithLongFile(t, 400)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	m.drainCmds(t, m.openDiff())
+	if m.diff.loading || len(m.diff.set.Files) == 0 {
+		t.Fatalf("diff did not load: %q", m.diff.errText)
+	}
+
+	// Narrow widths matter as much as short ones: the footer wraps onto
+	// extra lines there, and every row the footer takes is a row the body
+	// must give back.
+	sizes := []struct{ w, h int }{
+		{60, 16}, {60, 20}, {70, 18}, {80, 24}, {90, 22}, {96, 28}, {100, 30},
+		{110, 26}, {120, 40}, {132, 34}, {160, 50}, {200, 60}, {240, 70},
+	}
+	for _, split := range []bool{false, true} {
+		for _, annotating := range []bool{false, true} {
+			for _, size := range sizes {
+				m.width, m.height = size.w, size.h
+				m.diff.sideBySide = split
+				m.diff.annotating = false
+				if annotating {
+					m.openAnnotate()
+					m.diff.annInput.SetValue("note")
+				}
+
+				raw := strings.Split(m.viewDiffFull(), "\n")
+				if len(raw) != size.h {
+					t.Errorf("split=%v annotating=%v %dx%d: frame paints %d rows",
+						split, annotating, size.w, size.h, len(raw))
+				}
+				for i, line := range raw {
+					if got := ansi.StringWidth(line); got > size.w {
+						t.Errorf("split=%v annotating=%v %dx%d: line %d is %d wide: %q",
+							split, annotating, size.w, size.h, i, got, ansi.Strip(line))
+					}
+				}
+			}
+		}
+	}
+}
+
+// The cursor's line has to be inside the rows review actually paints. A
+// viewport taller than its painted area lets the cursor walk past the last
+// visible row: the selection is at the end of the file, the screen is not.
+func TestDiffCursorStaysOnScreen(t *testing.T) {
+	const lines = 400
+	m := buildModel(t)
+	dir := gitRepoWithLongFile(t, lines)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	m.drainCmds(t, m.openDiff())
+	if m.diff.loading || len(m.diff.set.Files) == 0 {
+		t.Fatalf("diff did not load: %q", m.diff.errText)
+	}
+
+	for _, size := range []struct{ w, h int }{{80, 24}, {100, 30}, {120, 40}, {160, 50}} {
+		m.width, m.height = size.w, size.h
+		m.diff.scroll = 0
+		m.diff.cursorLine = 0
+		m.moveDiffCursor(lines*2, m.diffCodeHeight())
+
+		fd := m.currentFileDiff()
+		if fd == nil {
+			t.Fatal("no file diff")
+		}
+		want := fd.Lines[m.cursorDiffLine()]
+		if want.Text == "" {
+			continue
+		}
+		view := ansi.Strip(m.viewDiffFull())
+		if !strings.Contains(view, strings.TrimSpace(want.Text)) {
+			t.Errorf("%dx%d: cursor sits on %q, which the frame never paints",
+				size.w, size.h, strings.TrimSpace(want.Text))
+		}
+	}
+}
+
+// gitRepoWithLongFile is a repo whose single change is far taller than any
+// terminal, so the review viewport has to scroll to reach the end.
+func gitRepoWithLongFile(t *testing.T, lines int) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "t@t")
+	run("config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(dir, "long.txt"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "-m", "init")
+
+	var b strings.Builder
+	for i := 1; i <= lines; i++ {
+		fmt.Fprintf(&b, "line-%03d\n", i)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "long.txt"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// The end of a file has to be reachable in review. A viewport sized larger
+// than the rows the frame actually paints leaves a tail of lines the cursor
+// can address but the screen never shows, which is how the last screenful
+// silently went missing once before.
+func TestDiffReviewReachesLastLine(t *testing.T) {
+	const lines = 400
+	for _, layout := range []struct {
+		name  string
+		split bool
+	}{{"unified", false}, {"side-by-side", true}} {
+		t.Run(layout.name, func(t *testing.T) {
+			m := buildModel(t)
+			dir := gitRepoWithLongFile(t, lines)
+			createSession(t, m, "coder", dir, "")
+			m.selectSessionRow(t, "coder")
+			m.drainCmds(t, m.openDiff())
+			if m.diff.loading || len(m.diff.set.Files) == 0 {
+				t.Fatalf("diff did not load: %q", m.diff.errText)
+			}
+			m.diff.sideBySide = layout.split
+
+			last := fmt.Sprintf("line-%03d", lines)
+			view := ansi.Strip(m.View())
+			if strings.Contains(view, last) {
+				t.Fatalf("the file's end should start off screen, got:\n%s", view)
+			}
+
+			// G jumps to the end; the final line must be painted, not merely
+			// selected, and the cursor must sit on it.
+			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+			view = ansi.Strip(m.View())
+			if !strings.Contains(view, last) {
+				t.Fatalf("G should paint the last line %q, got:\n%s", last, view)
+			}
+			// The whole tail has to be on screen, not just the final line:
+			// a viewport that outruns its painted rows shows the last line
+			// and silently drops the ones just above it.
+			for n := lines; n > lines-6; n-- {
+				if !strings.Contains(view, fmt.Sprintf("line-%03d", n)) {
+					t.Fatalf("line %d missing from the end of the file, got:\n%s", n, view)
+				}
+			}
+		})
+	}
+}
+
+// Stepping down one line at a time has to arrive at the same place G does:
+// if the viewport is taller than the painted rows, the walk stops short and
+// the tail of the file becomes unreachable by keyboard.
+func TestDiffReviewStepsDownToTheEnd(t *testing.T) {
+	const lines = 120
+	m := buildModel(t)
+	dir := gitRepoWithLongFile(t, lines)
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	m.drainCmds(t, m.openDiff())
+	if m.diff.loading || len(m.diff.set.Files) == 0 {
+		t.Fatalf("diff did not load: %q", m.diff.errText)
+	}
+
+	for i := 0; i < lines*2; i++ {
+		m.handleDiffKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	last := fmt.Sprintf("line-%03d", lines)
+	if view := ansi.Strip(m.View()); !strings.Contains(view, last) {
+		t.Fatalf("stepping down should reach the last line %q, got:\n%s", last, view)
+	}
+}
+
+// gitRepoWithWideFile is a repo whose changed lines are far wider than any
+// pane, so every line soft-wraps onto several painted rows.
+func gitRepoWithWideFile(t *testing.T, lines, lineWidth int) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "t@t")
+	run("config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(dir, "wide.txt"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "-m", "init")
+
+	var b strings.Builder
+	for i := 1; i <= lines; i++ {
+		fmt.Fprintf(&b, "wide-%03d %s\n", i, strings.Repeat("x", lineWidth))
+	}
+	if err := os.WriteFile(filepath.Join(dir, "wide.txt"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// Long lines wrap onto several painted rows, but the cursor and scroll
+// count logical lines. If the window math ignores the wraps, every wrapped
+// line on screen pushes one more line of the file's tail off the bottom:
+// the cursor lands on the last line and the screen never shows it.
+func TestDiffReviewReachesEndWithWrappedLines(t *testing.T) {
+	const lines = 80
+	for _, layout := range []struct {
+		name  string
+		split bool
+	}{{"unified", false}, {"side-by-side", true}} {
+		t.Run(layout.name, func(t *testing.T) {
+			m := buildModel(t)
+			dir := gitRepoWithWideFile(t, lines, 220)
+			createSession(t, m, "coder", dir, "")
+			m.selectSessionRow(t, "coder")
+			m.drainCmds(t, m.openDiff())
+			if m.diff.loading || len(m.diff.set.Files) == 0 {
+				t.Fatalf("diff did not load: %q", m.diff.errText)
+			}
+			m.width, m.height = 120, 34
+			m.diff.sideBySide = layout.split
+
+			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+			last := fmt.Sprintf("wide-%03d", lines)
+			if view := ansi.Strip(m.View()); !strings.Contains(view, last) {
+				t.Fatalf("G should paint the last line %q, got:\n%s", last, view)
+			}
+
+			// Stepping down must keep the cursor painted the whole way.
+			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+			for i := 0; i < lines+5; i++ {
+				m.handleDiffKey(tea.KeyMsg{Type: tea.KeyDown})
+				fd := m.currentFileDiff()
+				lineIdx := m.cursorDiffLine()
+				if fd == nil || lineIdx >= len(fd.Lines) {
+					t.Fatal("cursor out of range")
+				}
+				marker := strings.Fields(fd.Lines[lineIdx].Text)[0]
+				if view := ansi.Strip(m.View()); !strings.Contains(view, marker) {
+					t.Fatalf("step %d: cursor on %q but the frame never paints it:\n%s", i, marker, view)
+				}
+			}
+		})
+	}
+}
+
+// Ctrl+R inside a session opens review and remembers the session, so leaving
+// review returns to it rather than dropping to the list.
+func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	createSession(t, m, "reviewme", t.TempDir(), "")
+	m.selectSessionRow(t, "reviewme")
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("no session selected")
+	}
+	t.Cleanup(func() { m.tmux.ClearReviewRequest() })
+
+	if _, err := tmuxCmd("set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
+		t.Fatalf("set marker: %v", err)
+	}
+	updated, _ := m.Update(attachDoneMsg{})
+	*m = *updated.(*Model)
+
+	if m.mode != modeDiff {
+		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	if m.diff.reattachID != sess.ID {
+		t.Fatalf("review origin = %q, want %q", m.diff.reattachID, sess.ID)
+	}
+
+	// esc leaves review; the live origin session re-attaches.
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("esc should leave review, mode = %v", m.mode)
+	}
+	if m.diff.reattachID != "" {
+		t.Fatalf("reattach origin should be consumed, got %q", m.diff.reattachID)
+	}
+	if cmd == nil {
+		t.Fatal("esc from in-session review should re-attach the session, got nil command")
+	}
+}
+
+// Review opened from the list has no origin, so esc returns to the list with
+// no re-attach.
+func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	createSession(t, m, "listreview", t.TempDir(), "")
+	m.selectSessionRow(t, "listreview")
+
+	m.drainCmds(t, m.openDiff())
+	if m.mode != modeDiff {
+		t.Fatalf("openDiff should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	if m.diff.reattachID != "" {
+		t.Fatalf("list review should not set a reattach origin, got %q", m.diff.reattachID)
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("esc should return to list, mode = %v", m.mode)
+	}
+	if cmd != nil {
+		t.Fatal("list review esc should not re-attach")
+	}
+}
+
+// Leaving review back into a session acknowledges a finished alert, matching
+// what entering the session from the list does.
+func TestReattachAcknowledgesFinished(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	createSession(t, m, "finisher", t.TempDir(), "")
+	m.selectSessionRow(t, "finisher")
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("no session selected")
+	}
+	t.Cleanup(func() { m.tmux.ClearReviewRequest() })
+
+	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+		t.Fatalf("set finished: %v", err)
+	}
+	if _, err := tmuxCmd("set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
+		t.Fatalf("set marker: %v", err)
+	}
+	updated, _ := m.Update(attachDoneMsg{})
+	*m = *updated.(*Model)
+	if m.mode != modeDiff {
+		t.Fatalf("expected review, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	if cmd == nil {
+		t.Fatalf("esc should re-attach, err = %q", m.errBar.text)
+	}
+	prepared, ok := cmd().(reattachPreparedMsg)
+	if !ok {
+		t.Fatal("re-attach preparation should run in the returned command")
+	}
+	if prepared.err != nil {
+		t.Fatalf("prepare re-attach: %v", prepared.err)
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Idle || !got.Acked {
+		t.Fatalf("re-attach should acknowledge finished: status = %q acked = %v", got.Status, got.Acked)
+	}
+}
+
+func TestStaleReattachDoesNotInterruptReopenedReview(t *testing.T) {
+	m := &Model{mode: modeDiff, diff: diffState{active: true, gen: 9}}
+	updated, cmd := m.Update(reattachPreparedMsg{sessID: "old", diffGen: 8})
+	m = updated.(*Model)
+	if cmd != nil {
+		t.Fatal("stale re-attach should not return an attach command")
+	}
+	if m.mode != modeDiff || !m.diff.active {
+		t.Fatal("stale re-attach should leave the reopened review untouched")
+	}
+}
 
 func gitRepoWithTwoChangedFiles(t *testing.T) string {
 	t.Helper()
@@ -182,7 +743,7 @@ func TestBranchPickerListsWorktreesAndSwitches(t *testing.T) {
 
 	m.pressDiffKey(t, 'b')
 	if m.mode != modeRepoPick {
-		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.err)
+		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
 	rendered := m.viewRepoPick()
 	if !strings.Contains(rendered, "feature/pick-me") {
@@ -238,8 +799,8 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.drainCmds(t, m.openDiff())
-	if m.err != "" {
-		t.Fatalf("declared worktree must not be reported missing, err = %q", m.err)
+	if m.errBar.text != "" {
+		t.Fatalf("declared worktree must not be reported missing, err = %q", m.errBar.text)
 	}
 	if m.diff.repoSel != rawWorktree {
 		t.Fatalf("repoSel should stay the raw declared path, got %q", m.diff.repoSel)
@@ -247,7 +808,7 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 
 	m.pressDiffKey(t, 'b')
 	if m.mode != modeRepoPick {
-		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.err)
+		t.Fatalf("b should open the branch picker, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
 	resolvedWorktree, _ := filepath.EvalSymlinks(rawWorktree)
 	rows := m.filteredRows()
@@ -382,7 +943,7 @@ func openReviewOn(t *testing.T, m *Model, name, dir string) {
 	m.selectSessionRow(t, name)
 	m.drainCmds(t, m.openDiff())
 	if m.mode != modeDiff {
-		t.Fatalf("openDiff should enter review, err = %q", m.err)
+		t.Fatalf("openDiff should enter review, err = %q", m.errBar.text)
 	}
 }
 
@@ -647,7 +1208,7 @@ func TestReanchorKeepsAmbiguousAndAvoidsCollapse(t *testing.T) {
 			lineOf(diff.Same, 3, "unique()"),
 		},
 	}}}
-	m.reanchorAnnotations()
+	m.reanchorAnnotationsFor("")
 	notes := m.diff.annotations[m.reviewKey()]
 	if notes[0].line != 2 {
 		t.Errorf("blank excerpt should not move: line=%d", notes[0].line)
@@ -967,15 +1528,15 @@ func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(umbrella, "bravo")); err != nil {
 		t.Fatal(err)
 	}
-	m.err = ""
+	m.errBar.text = ""
 	m.diff.gen++
 	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false))
 
-	if !strings.Contains(m.err, "bravo") {
-		t.Fatalf("a vanished hand-picked repo must be surfaced, got err %q", m.err)
+	if !strings.Contains(m.errBar.text, "bravo") {
+		t.Fatalf("a vanished hand-picked repo must be surfaced, got err %q", m.errBar.text)
 	}
-	if !strings.Contains(m.viewDiffStatus(), m.err) {
-		t.Fatalf("review status should show %q", m.err)
+	if !strings.Contains(m.viewDiffStatus(), m.errBar.text) {
+		t.Fatalf("review status should show %q", m.errBar.text)
 	}
 	if _, still := m.pickedRepos[sess.ID]; still {
 		t.Fatal("the dead pick must be forgotten so the declaration can take over")
@@ -1013,8 +1574,8 @@ func TestDeclaredWorktreeOutsideCwdIsAccepted(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.drainCmds(t, m.openDiff())
-	if m.err != "" {
-		t.Fatalf("declared worktree must not be reported missing, err = %q", m.err)
+	if m.errBar.text != "" {
+		t.Fatalf("declared worktree must not be reported missing, err = %q", m.errBar.text)
 	}
 	resolved, _ := filepath.EvalSymlinks(outside)
 	sel, _ := filepath.EvalSymlinks(m.diff.repoSel)
@@ -1080,11 +1641,11 @@ func TestDeclaredRepoOutsideCwdIsReported(t *testing.T) {
 	}
 	m.drainCmds(t, m.openDiff())
 
-	if m.err == "" {
+	if m.errBar.text == "" {
 		t.Fatal("a declared repo outside the session cwd must be surfaced")
 	}
-	if !strings.Contains(m.viewDiffStatus(), m.err) {
-		t.Fatalf("review status should show %q", m.err)
+	if !strings.Contains(m.viewDiffStatus(), m.errBar.text) {
+		t.Fatalf("review status should show %q", m.errBar.text)
 	}
 	if len(m.diff.repoRoots) < 2 {
 		t.Fatal("the picker must stay usable so the user can recover")
@@ -1117,14 +1678,14 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("a missing session must not kick off a diff load")
 	}
-	if m.err == "" {
+	if m.errBar.text == "" {
 		t.Fatal("picking a repo for a missing session must surface an error")
 	}
 	if m.diff.repoSel != before {
 		t.Fatalf("repo should not change when the session is gone, got %q", m.diff.repoSel)
 	}
-	if !strings.Contains(m.viewDiffStatus(), m.err) {
-		t.Fatalf("review status should show the error %q", m.err)
+	if !strings.Contains(m.viewDiffStatus(), m.errBar.text) {
+		t.Fatalf("review status should show the error %q", m.errBar.text)
 	}
 }
 
@@ -1227,7 +1788,7 @@ func TestCtrlRFromListOpensReview(t *testing.T) {
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 	if m.mode != modeDiff {
-		t.Fatalf("ctrl+r from the list should open review, mode = %v (err=%q)", m.mode, m.err)
+		t.Fatalf("ctrl+r from the list should open review, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
 	if m.diff.reattachID != "" {
 		t.Fatal("review opened from the list should return to the list, not re-attach")
@@ -1421,7 +1982,7 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 
 	m.drainCmds(t, m.openBasePick())
 	if m.mode != modeRepoPick {
-		t.Fatalf("B must open the base picker after the load errored, mode = %v (err=%q)", m.mode, m.err)
+		t.Fatalf("B must open the base picker after the load errored, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
 	labels := map[string]bool{}
 	for _, row := range m.repoPick.rows {
@@ -1551,79 +2112,6 @@ func TestCLIReviewBaseReachesLoadAcrossSymlinkBoundary(t *testing.T) {
 	}
 	if len(m.diff.set.Files) == 0 {
 		t.Fatal("the feature base should surface the diverging file in review")
-	}
-}
-
-// The review header always names the repo and its branch; in branch scope it
-// shows the base and the branch it diffs into.
-func TestReviewHeaderShowsRepoBranchAndBase(t *testing.T) {
-	m := buildModel(t)
-	if m.gitDrv == nil {
-		t.Skip("git not installed")
-	}
-	dir := gitRepoWithTwoChangedFiles(t)
-	openReviewOn(t, m, "hdr", dir)
-
-	header := m.viewDiffHeader("hdr")
-	if !strings.Contains(header, filepath.Base(dir)) {
-		t.Fatalf("header should name the repo, got %q", header)
-	}
-	if !strings.Contains(header, "main") {
-		t.Fatalf("header should show the branch, got %q", header)
-	}
-
-	for m.diff.scope != git.ScopeBranch {
-		m.drainCmds(t, m.cycleDiffScope())
-	}
-	header = m.viewDiffHeader("hdr")
-	if !strings.Contains(header, "→ main") {
-		t.Fatalf("branch scope header should show base → branch, got %q", header)
-	}
-}
-
-// The target pill in the header is the one place a reviewer figures out
-// what they are diffing into, so it has to read cleanly: the @<hash>
-// suffix BaseDesc carries internally is dropped, each changeable pill
-// wears its key, and an auto-detected target says so out loud while an
-// explicitly set one does not.
-func TestReviewHeaderTargetLabelCleanAndKeyed(t *testing.T) {
-	m := buildModel(t)
-	if m.gitDrv == nil {
-		t.Skip("git not installed")
-	}
-	dir := gitRepoWithSecondBranch(t)
-	openReviewOn(t, m, "hdr", dir)
-	sess, ok := m.diffSession()
-	if !ok {
-		t.Fatal("no diff session")
-	}
-	for m.diff.scope != git.ScopeBranch {
-		m.drainCmds(t, m.cycleDiffScope())
-	}
-
-	header := ansi.Strip(m.viewDiffHeader("hdr"))
-	if !strings.Contains(header, "B ") || !strings.Contains(header, "main") {
-		t.Fatalf("target pill should wear its B key, got %q", header)
-	}
-	if strings.Contains(header, "@") {
-		t.Fatalf("header should drop the @hash suffix from the target, got %q", header)
-	}
-	if !strings.Contains(header, "(auto)") {
-		t.Fatalf("auto-detected target should be marked, got %q", header)
-	}
-
-	if err := m.store.SetReviewBase(sess.ID, m.diff.repoSel, "feature"); err != nil {
-		t.Fatal(err)
-	}
-	m.diff.set.BaseOverride = "feature"
-	m.diff.set.BaseDesc = "feature@deadbee"
-	m.diff.set.Repo.Branch = "feature"
-	header = ansi.Strip(m.viewDiffHeader("hdr"))
-	if strings.Contains(header, "(auto)") {
-		t.Fatalf("explicit target should not be marked auto, got %q", header)
-	}
-	if !strings.Contains(header, "feature → feature") {
-		t.Fatalf("header should show the cleaned target → branch, got %q", header)
 	}
 }
 

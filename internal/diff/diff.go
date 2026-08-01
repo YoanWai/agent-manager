@@ -125,20 +125,6 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride stri
 	return set, nil
 }
 
-// EnsureFile synchronously loads one file. Interactive callers should use
-// LoadFile from a background command and install the returned value on their
-// event loop instead.
-func EnsureFile(driver *git.Driver, set *Set, index int) {
-	if index < 0 || index >= len(set.Files) {
-		return
-	}
-	fd := &set.Files[index]
-	if fd.loaded {
-		return
-	}
-	*fd = LoadFile(driver, *set, index)
-}
-
 // LoadFile builds one file's line model without mutating set, which makes it
 // safe to call from an asynchronous UI command using a snapshot of the set.
 func LoadFile(driver *git.Driver, set Set, index int) FileDiff {
@@ -197,7 +183,6 @@ func countUnknownStat(driver *git.Driver, root string, fd *FileDiff) error {
 // StatKnown reports whether Stat holds a real count rather than an unknown one.
 func (fd *FileDiff) StatKnown() bool { return fd.statKnown }
 
-// Loaded reports whether the file's contents have been read and modeled.
 func (fd *FileDiff) Loaded() bool { return fd.loaded }
 
 func fileSides(driver *git.Driver, root string, scope git.Scope, baseRef string, file git.ChangedFile) (oldContent, newContent []byte, err error) {

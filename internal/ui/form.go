@@ -171,7 +171,7 @@ func (m *Model) openForm() {
 	m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	m.pathSugg.reset()
 	m.mode = modeForm
-	m.err = ""
+	m.errBar.text = ""
 }
 
 func (m *Model) selectedGroupPath() string {
@@ -329,7 +329,7 @@ func (m *Model) cycleTool(delta int) {
 
 func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	if len(m.form.toolNames) == 0 {
-		m.err = "no tools configured"
+		m.errBar.text = "no tools configured"
 		m.mode = modeList
 		return m, nil
 	}
@@ -343,18 +343,18 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	cwd, _ := os.Getwd()
 	dir, ok := resolveExistingDir(m.form.dir.Value(), cwd)
 	if !ok {
-		m.err = "working directory does not exist: " + dir
+		m.errBar.text = "working directory does not exist: " + dir
 		return m, nil
 	}
 	group := m.selectedGroupPath()
 	prompt := strings.TrimSpace(m.form.prompt.Value())
 	if strings.HasPrefix(prompt, "-") {
-		m.err = `prompt cannot start with "-": the tool would read it as a flag`
+		m.errBar.text = `prompt cannot start with "-": the tool would read it as a flag`
 		return m, nil
 	}
 
 	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed); err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return m, nil
 	}
 	m.mode = modeList
@@ -513,7 +513,7 @@ func (m *Model) openGroupForm() {
 	m.groupForm.path.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	m.pathSugg.reset()
 	m.mode = modeGroupForm
-	m.err = ""
+	m.errBar.text = ""
 }
 
 func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -599,7 +599,7 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 	name := strings.TrimSpace(m.groupForm.name.Value())
 	name = strings.ReplaceAll(name, "/", "-")
 	if name == "" {
-		m.err = "group name cannot be empty"
+		m.errBar.text = "group name cannot be empty"
 		return m, nil
 	}
 	parent := m.selectedGroupPath()
@@ -609,11 +609,11 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 	}
 	path, ok := resolveExistingDir(m.groupForm.path.Value(), m.groupDefaultDir(parent))
 	if !ok {
-		m.err = "default path does not exist: " + path
+		m.errBar.text = "default path does not exist: " + path
 		return m, nil
 	}
 	if err := m.store.CreateGroup(full, path); err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return m, nil
 	}
 	m.mode = modeList

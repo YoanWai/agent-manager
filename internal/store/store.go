@@ -357,7 +357,6 @@ func (s *Store) SetSnapshot(id, snapshot string) error {
 	return requireRow(res, id)
 }
 
-// Snapshot returns the stored pane capture for a session, "" if none.
 func (s *Store) Snapshot(id string) (string, error) {
 	var snapshot string
 	err := s.db.QueryRow(`SELECT snapshot FROM sessions WHERE id = ?`, id).Scan(&snapshot)
@@ -488,7 +487,6 @@ func (s *Store) MoveSession(id, group string) error {
 	return s.ensureGroup(group)
 }
 
-// RenameSession changes a session's display name.
 func (s *Store) RenameSession(id, name string) error {
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("session name cannot be empty")

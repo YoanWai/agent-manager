@@ -42,7 +42,7 @@ type paneCursor struct {
 // taller than the panel is shown from its bottom, so the row shifts by
 // exactly the lines the panel dropped.
 func (m *Model) cursorCell(paneLines int) (row, col int, ok bool) {
-	cursor := m.paneCursor
+	cursor := m.pane.cursor
 	// The caret belongs to the live bottom, and only to the lit half of
 	// the blink.
 	if !cursor.ok || m.mode != modeFocus || paneLines <= 0 || !m.cursorOn || m.scrolledBack() {
@@ -89,12 +89,12 @@ type focusSelection struct {
 
 // paneOriginX is the first terminal column of the content panel's pane
 // area: past the rail's edge cell, the rail, the seam and the bleed.
-func (m *Model) paneOriginX() int { return m.paneColumnX }
+func (m *Model) paneOriginX() int { return m.pane.columnX }
 
 // paneCell converts a terminal cell to a pane-relative coordinate. ok is
 // false for anything outside the painted pane.
 func (m *Model) paneCell(x, y int) (row, col int, ok bool) {
-	box := m.paneBox
+	box := m.pane.box
 	if !box.ok || box.width <= 0 || box.height <= 0 {
 		return 0, 0, false
 	}
@@ -108,7 +108,7 @@ func (m *Model) paneCell(x, y int) (row, col int, ok bool) {
 // same slice the renderer paints, so selection indices line up with what
 // is on screen.
 func (m *Model) paneTextLines() []string {
-	rows := paneExact(m.preview, m.paneBox.height)
+	rows := paneExact(m.preview, m.pane.box.height)
 	out := make([]string, len(rows))
 	for i, row := range rows {
 		out[i] = ansi.Strip(previewDangerSeqs.ReplaceAllString(row, ""))
@@ -341,7 +341,7 @@ func (m *Model) renderPaneRow(row int, raw string, width int) string {
 // drew: only the caret cell is overpainted, spliced in by display column
 // so the surrounding escape state survives on both sides of it.
 func (m *Model) withCursor(row int, raw string, line []rune, width int) string {
-	cursorRow, cursorCol, ok := m.cursorCell(m.paneBox.height)
+	cursorRow, cursorCol, ok := m.cursorCell(m.pane.box.height)
 	if !ok || cursorRow != row {
 		return previewLine(raw, width)
 	}

@@ -69,9 +69,9 @@ func (m *Model) wheelReport(up bool, col, row int) (string, bool) {
 	if up {
 		button = wheelUpButton
 	}
-	if m.paneSGR {
+	if m.pane.sgr {
 		report := sgrMouse(button, col, row)
-		if m.paneMotion {
+		if m.pane.motion {
 			report = sgrMouse(motionButton, col, row) + report
 		}
 		return report, true
@@ -80,7 +80,7 @@ func (m *Model) wheelReport(up bool, col, row int) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	if m.paneMotion {
+	if m.pane.motion {
 		move, moveOK := x10Mouse(motionButton, col, row)
 		if !moveOK {
 			return "", false
@@ -100,19 +100,19 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 	if !ok || m.mode != modeFocus || m.focus == nil {
 		return nil
 	}
-	if m.paneMouse {
+	if m.pane.mouse {
 		row, col, inside := m.paneCell(x, y)
 		if !inside {
 			return nil
 		}
-		report, ok := m.wheelReport(up, col, row+m.paneRowOffset(m.paneBox.height))
+		report, ok := m.wheelReport(up, col, row+m.paneRowOffset(m.pane.box.height))
 		if !ok {
 			return nil
 		}
 		command := "send-keys -t " + tmux.SessionName(sess.ID) + " -H " + hexBytes(report)
 		if !m.focus.attempt(command) {
 			if err := m.tmux.SendRaw(command); err != nil {
-				m.err = err.Error()
+				m.errBar.text = err.Error()
 			}
 		}
 		return nil
@@ -137,8 +137,8 @@ func (m *Model) scrollFocus(delta int) tea.Cmd {
 	if offset < 0 {
 		offset = 0
 	}
-	if offset > m.paneHistory {
-		offset = m.paneHistory
+	if offset > m.pane.history {
+		offset = m.pane.history
 	}
 	if offset == m.focusScroll {
 		return nil
@@ -157,7 +157,7 @@ func (m *Model) scrollFocus(delta int) tea.Cmd {
 // above it with negative lines, so a scrolled window is just a shifted
 // start and end.
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
-	rows := m.paneBox.height
+	rows := m.pane.box.height
 	if rows < 1 {
 		rows = 1
 	}

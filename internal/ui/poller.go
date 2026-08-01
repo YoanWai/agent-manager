@@ -131,7 +131,6 @@ func (p *poller) sweepDirectives(sessions []store.Session) {
 	}
 }
 
-// setInput publishes the UI state the next refresh should honor.
 func (p *poller) setInput(includeArchived bool, selectedID string) {
 	p.mu.Lock()
 	p.includeArchived = includeArchived
@@ -139,7 +138,6 @@ func (p *poller) setInput(includeArchived bool, selectedID string) {
 	p.mu.Unlock()
 }
 
-// requestRefresh asks the polling loop for an immediate pass.
 func (p *poller) requestRefresh() {
 	select {
 	case p.poke <- struct{}{}:

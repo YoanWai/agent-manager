@@ -29,7 +29,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
-		t.Fatalf("did not enter focus: %q", m.err)
+		t.Fatalf("did not enter focus: %q", m.errBar.text)
 	}
 	// Wait for the control client, which every scroll query rides.
 	deadline := time.Now().Add(5 * time.Second)
@@ -65,7 +65,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	// way the scroll path fetches one, and the history depth the wheel
 	// clamps against.
 	seedLive(t, m, sess.ID)
-	m.paneHistory = paneHistorySize(t, m, sess.ID)
+	m.pane.history = paneHistorySize(t, m, sess.ID)
 	return m, sess.ID
 }
 
@@ -185,7 +185,7 @@ func TestTypingResumesLiveView(t *testing.T) {
 // empty regions forever.
 func TestScrollStopsAtHistoryTop(t *testing.T) {
 	m, _ := focusedWithHistory(t, "topstop")
-	limit := m.paneHistory
+	limit := m.pane.history
 	if limit == 0 {
 		t.Skip("pane reported no history")
 	}
@@ -205,7 +205,7 @@ func TestScrollStopsAtHistoryTop(t *testing.T) {
 // The caret belongs to the live pane; a scrolled view must not paint it.
 func TestNoCaretWhileScrolled(t *testing.T) {
 	m := paneAt(t, "one", "two")
-	m.paneCursor = paneCursor{x: 1, y: 0, ok: true}
+	m.pane.cursor = paneCursor{x: 1, y: 0, ok: true}
 	m.cursorOn = true
 	if _, _, ok := m.cursorCell(2); !ok {
 		t.Fatal("caret missing on the live view")
@@ -293,7 +293,7 @@ func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	deadline = time.Now().Add(5 * time.Second)
-	for !m.paneMouse {
+	for !m.pane.mouse {
 		select {
 		case msg := <-msgs:
 			updated, _ := m.Update(msg)
@@ -316,11 +316,11 @@ func TestWheelReachesMouseTrackingApp(t *testing.T) {
 
 	// A wheel notch over the pane now goes to the app, not to tmux history.
 	before := m.focusScroll
-	m.wheelFocus(true, m.paneBox.x+2, m.paneBox.y+1)
+	m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
 	if m.focusScroll != before {
 		t.Fatal("wheel scrolled tmux history while the app owned the mouse")
 	}
-	if !m.paneSGR {
+	if !m.pane.sgr {
 		t.Fatal("pane asked for SGR reports but the model did not read it")
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -405,11 +405,11 @@ func TestPolledFrameHoldsScrolledView(t *testing.T) {
 // encoding, and reports in the newer one would reach it as text.
 func TestWheelFallsBackToX10Reports(t *testing.T) {
 	m, sess := focusedMouseApp(t, "x10-tool", "x10app")
-	if m.paneSGR {
+	if m.pane.sgr {
 		t.Fatal("a pane that never asked for SGR reported it")
 	}
 
-	m.wheelFocus(true, m.paneBox.x+2, m.paneBox.y+1)
+	m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		pane, err := m.tmux.CapturePane(sess.ID)
@@ -466,13 +466,13 @@ func TestMouseReportEncodings(t *testing.T) {
 // whatever the panel dropped off the top of a taller capture.
 func TestWheelReportUsesPaneRow(t *testing.T) {
 	m := paneAt(t, "one", "two")
-	m.paneSGR = true
+	m.pane.sgr = true
 	m.preview = "a\nb\nc\nd\none\ntwo\n"
 
-	if got, want := m.paneRowOffset(m.paneBox.height), 4; got != want {
+	if got, want := m.paneRowOffset(m.pane.box.height), 4; got != want {
 		t.Fatalf("row offset = %d, want %d", got, want)
 	}
-	report, ok := m.wheelReport(true, 3, 1+m.paneRowOffset(m.paneBox.height))
+	report, ok := m.wheelReport(true, 3, 1+m.paneRowOffset(m.pane.box.height))
 	if !ok {
 		t.Fatal("no wheel report for a pane inside the encoding's range")
 	}

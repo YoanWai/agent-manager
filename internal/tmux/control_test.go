@@ -265,22 +265,6 @@ func TestControlServerExitWakesWaiters(t *testing.T) {
 	}
 }
 
-func TestOutputData(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{`plain`, "plain"},
-		{`a\015\012b`, "a\r\nb"},
-		{`\033[31mred`, "\x1b[31mred"},
-		{`trailing\`, `trailing\`},
-		{`short\07`, `short\07`},
-		{`not\999octal`, `not\999octal`},
-	}
-	for _, c := range cases {
-		if got := OutputData(c.in); got != c.want {
-			t.Errorf("OutputData(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
 // Integration: a real control client against the isolated test server.
 // Proves the fork-free capture path and measures paint-to-event latency.
 func TestControlLiveCaptureAndEvents(t *testing.T) {
