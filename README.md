@@ -32,6 +32,8 @@ Status detection currently supports **Claude Code**, **OpenCode**, **Codex**, **
 
 ## Install
 
+Runs on macOS and Linux, and on Windows inside [WSL2](docs/install.md#windows).
+
 ### Homebrew (macOS / Linux)
 
 ```bash
