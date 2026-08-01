@@ -37,13 +37,13 @@ func run() error {
 	return fillTrendshift(trendshiftBadge())
 }
 
-// writeCloneEndpoint leaves the committed figure alone when the traffic call
-// fails, so a missing token shows up on the run summary rather than as a zero
-// in the README.
+// writeCloneEndpoint writes nothing when the traffic call fails, so the
+// badges branch keeps its published figure and a missing token shows up on
+// the run summary rather than as a zero in the README.
 func writeCloneEndpoint() error {
 	count, measured := cloneCount()
 	if !measured {
-		fmt.Println("::warning::clone traffic was unavailable, so the count was left as committed; add a BADGE_TOKEN secret to refresh it")
+		fmt.Println("::warning::clone traffic was unavailable, so the published count was left alone; add a BADGE_TOKEN secret to refresh it")
 		return nil
 	}
 	endpoint := struct {

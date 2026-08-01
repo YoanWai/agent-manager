@@ -37,7 +37,8 @@ else's commit. Branch from `origin/main` after a fetch, not from the local
   `internal/store` is the SQLite state; `internal/status` classifies pane
   output into agent states; `internal/config` loads `config.toml` and the
   tool rules.
-- `docs/badges/` is written by the badges workflow, not by hand.
+- The badges workflow publishes the clone count to the `badges` branch and
+  keeps the README's trendshift region current; neither is edited by hand.
 
 ## Style
 
