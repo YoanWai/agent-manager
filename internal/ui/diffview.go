@@ -1154,3 +1154,35 @@ func scopePhrase(scope git.Scope) string {
 // ---- rendering ----
 
 const diffGutterSign = 2
+
+// openDiff enters the full-screen review for the selected session,
+// loading its diff. The whole review takes over the screen so the
+// content scrolls freely instead of sharing the narrow sidebar.
+func (m *Model) openDiff() tea.Cmd {
+	if m.gitDrv == nil {
+		m.err = "git not found in PATH"
+		return nil
+	}
+	sess, ok := m.selected()
+	if !ok {
+		m.err = "select a session to diff"
+		return nil
+	}
+	if m.diff.scrollByFile == nil {
+		m.diff.scrollByFile = map[string]int{}
+		m.diff.reviewed = map[string]map[string]uint64{}
+		m.diff.annotations = map[string][]annotation{}
+		m.diff.sideBySide = m.defaultSplitLayout()
+	}
+	if m.diff.hl == nil {
+		m.diff.hl = newHLCache()
+	}
+	m.diff.active = true
+	m.mode = modeDiff
+	m.err = ""
+	// Default to returning to the list; the in-session Ctrl+R path sets this
+	// afterward when review should return to the session instead.
+	m.diff.reattachID = ""
+	m.applyStoredScope(sess.ID)
+	return m.retargetDiff(sess)
+}

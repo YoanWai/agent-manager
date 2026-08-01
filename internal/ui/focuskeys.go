@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -92,4 +93,98 @@ func focusKeyCommand(target string, msg tea.KeyMsg) (string, bool) {
 		name = "M-" + name
 	}
 	return "send-keys -t " + target + " " + name, true
+}
+
+// focusSelected enters focus mode: keys go to the selected session's pane
+// while the manager, its rail and its live preview stay on screen.
+func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
+	sess, ok := m.selected()
+	if !ok {
+		return m, nil
+	}
+	if sess.Archived {
+		return m.attachSelected()
+	}
+	if !m.tmux.Exists(sess.ID) {
+		m.err = "session is dead - press v to revive"
+		return m, nil
+	}
+	m.err = ""
+	if err := m.acknowledgeFinished(sess); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	m.mode = modeFocus
+	// Focusing is deliberate, so the client opens now rather than waiting
+	// for the cursor to settle, and any failure backoff is lifted.
+	if m.focus != nil {
+		m.focus.retryNow()
+	}
+	m.watchSelection()
+	m.sel = focusSelection{}
+	m.copied = 0
+	m.cursorOn = true
+	m.focusScroll = 0
+	// Pane state from a previously focused session must not route this
+	// one's wheel; the first pushed capture reports the real values.
+	m.paneMouse = false
+	m.paneMotion = false
+	m.paneSGR = false
+	m.paneHistory = 0
+	// Mouse reporting makes the pane a closed window: clicks land here
+	// instead of the host terminal, so a drag selects pane text alone and
+	// never the rail beside it.
+	return m, tea.Batch(tea.EnableMouseCellMotion, m.cursorBlink())
+}
+
+// leaveFocus returns to the list and gives the mouse back to the terminal,
+// restoring native selection and wheel-as-arrows.
+func (m *Model) leaveFocus() tea.Cmd {
+	m.mode = modeList
+	m.sel = focusSelection{}
+	m.copied = 0
+	return tea.Sequence(tea.DisableMouse, func() tea.Msg {
+		_ = EnableAlternateScroll()
+		return nil
+	})
+}
+
+// handleFocusKey forwards every key into the focused pane. Ctrl+Q is the
+// one reserved key: it returns to the list, mirroring detach from a real
+// attach, and every plain character - q included - reaches the agent.
+func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+q" {
+		return m, m.leaveFocus()
+	}
+	sess, ok := m.selected()
+	if !ok {
+		return m, m.leaveFocus()
+	}
+	// Typing puts the cursor back on: a caret that blinks out mid-keystroke
+	// reads as a dropped character.
+	m.cursorOn = true
+	// Keystrokes land at the live bottom, so the view follows them there.
+	var resume tea.Cmd
+	if m.scrolledBack() {
+		m.focusScroll = 0
+		resume = m.focusRegionCmd(sess.ID, 0)
+	}
+	if msg.Paste {
+		if err := pasteFocused(m.tmux, sess.ID, string(msg.Runes)); err != nil {
+			m.err = err.Error()
+		}
+		return m, resume
+	}
+	command, ok := focusKeyCommand(tmux.SessionName(sess.ID), msg)
+	if !ok {
+		return m, resume
+	}
+	if m.focus == nil || !m.focus.attempt(command) {
+		// Nothing went over the pipe; one forked send-keys keeps the key
+		// from being swallowed.
+		if err := m.tmux.SendRaw(command); err != nil {
+			m.err = err.Error()
+		}
+	}
+	return m, resume
 }

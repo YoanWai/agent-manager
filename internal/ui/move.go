@@ -1,0 +1,43 @@
+package ui
+
+import tea "github.com/charmbracelet/bubbletea"
+
+func (m *Model) openMove() {
+	sess, ok := m.selected()
+	if !ok {
+		return
+	}
+	m.moveID = sess.ID
+	m.rebuildGroupOptions(sess.Group)
+	m.mode = modeMove
+	m.err = ""
+}
+
+func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = modeList
+		return m, nil
+	case "up":
+		if !m.moveGroupCursor(-1) && len(m.form.groups) > 0 {
+			m.form.groupIndex = len(m.form.groups) - 1
+		}
+		return m, nil
+	case "down":
+		if !m.moveGroupCursor(1) && len(m.form.groups) > 0 {
+			m.form.groupIndex = 0
+		}
+		return m, nil
+	case "enter":
+		group := m.selectedGroupPath()
+		if err := m.store.MoveSession(m.moveID, group); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.relabelSession(m.moveID)
+		m.mode = modeList
+		m.requestRefresh()
+		return m, nil
+	}
+	return m, nil
+}
