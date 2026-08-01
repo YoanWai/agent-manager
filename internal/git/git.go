@@ -707,6 +707,40 @@ func (d *Driver) AddWorktree(root, sessionName string) (string, string, error) {
 	return path, branch, nil
 }
 
+// RemoveWorktreeIfClean removes a session's worktree and its am/ branch
+// only when nothing would be lost: no uncommitted or untracked files, and
+// no commits missing from the base branch. A kept worktree is not an error.
+func (d *Driver) RemoveWorktreeIfClean(root, path, branch string) (bool, error) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return false, nil
+	}
+	porcelain, err := d.run(path, "status", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+	if porcelain != "" {
+		return false, nil
+	}
+	base := d.worktreeBase(root)
+	if base == "" {
+		return false, fmt.Errorf("no base ref in %s to compare %s against", root, branch)
+	}
+	ahead, err := d.run(path, "rev-list", "--count", base+"..HEAD")
+	if err != nil {
+		return false, err
+	}
+	if ahead != "0" {
+		return false, nil
+	}
+	if _, err := d.run(root, "worktree", "remove", path); err != nil {
+		return false, err
+	}
+	if _, err := d.run(root, "branch", "-d", branch); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (d *Driver) IsRepoRoot(dir string) bool {
 	top, err := d.run(dir, "rev-parse", "--show-toplevel")
 	if err != nil {

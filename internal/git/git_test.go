@@ -631,3 +631,58 @@ func TestAddWorktreeEmptyRepoFails(t *testing.T) {
 		t.Fatal("repo with no commits has no base ref, want error")
 	}
 }
+
+func TestRemoveWorktreeIfClean(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "clean")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	removed, err := driver.RemoveWorktreeIfClean(dir, path, branch)
+	if err != nil || !removed {
+		t.Fatalf("clean worktree should remove: removed=%v err=%v", removed, err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("worktree directory still on disk")
+	}
+	if _, err := driver.run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		t.Fatal("branch should be deleted")
+	}
+}
+
+func TestRemoveWorktreeKeepsDirtyAndAhead(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+
+	dirtyPath, dirtyBranch, err := driver.AddWorktree(dir, "dirty")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	write(t, dirtyPath, "b.txt", "uncommitted")
+	if removed, err := driver.RemoveWorktreeIfClean(dir, dirtyPath, dirtyBranch); err != nil || removed {
+		t.Fatalf("dirty worktree must be kept: removed=%v err=%v", removed, err)
+	}
+
+	aheadPath, aheadBranch, err := driver.AddWorktree(dir, "ahead")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	write(t, aheadPath, "c.txt", "committed")
+	commit(t, aheadPath, "work")
+	if removed, err := driver.RemoveWorktreeIfClean(dir, aheadPath, aheadBranch); err != nil || removed {
+		t.Fatalf("worktree with unmerged commits must be kept: removed=%v err=%v", removed, err)
+	}
+}
+
+func TestRemoveWorktreeMissingDirKeeps(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	removed, err := driver.RemoveWorktreeIfClean(dir, filepath.Join(t.TempDir(), "gone"), "am/gone")
+	if err != nil || removed {
+		t.Fatalf("missing dir: removed=%v err=%v", removed, err)
+	}
+}
