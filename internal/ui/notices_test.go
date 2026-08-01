@@ -353,19 +353,23 @@ func TestNoticesViewListsAndDetails(t *testing.T) {
 		}
 	}
 
-	var widths []int
-	for _, line := range strings.Split(frame, "\n") {
-		trimmed := strings.TrimRight(line, " ")
-		if strings.ContainsAny(trimmed, "╭╰│") {
-			widths = append(widths, len([]rune(trimmed)))
+	for _, terminal := range []int{100, 40} {
+		m.width = terminal
+		frame := ansi.Strip(m.View())
+		var widths []int
+		for _, line := range strings.Split(frame, "\n") {
+			trimmed := strings.TrimRight(line, " ")
+			if strings.ContainsAny(trimmed, "╭╰│") {
+				widths = append(widths, len([]rune(trimmed)))
+			}
 		}
-	}
-	if len(widths) == 0 {
-		t.Fatal("no frame rows found")
-	}
-	for i, width := range widths {
-		if width != widths[0] {
-			t.Fatalf("frame rows must align: row %d is %d, first is %d\n%s", i, width, widths[0], frame)
+		if len(widths) == 0 {
+			t.Fatalf("width %d: no frame rows found", terminal)
+		}
+		for i, width := range widths {
+			if width != widths[0] {
+				t.Fatalf("width %d: frame rows must align: row %d is %d, first is %d\n%s", terminal, i, width, widths[0], frame)
+			}
 		}
 	}
 }

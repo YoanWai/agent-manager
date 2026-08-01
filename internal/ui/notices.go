@@ -254,6 +254,7 @@ func noticeFrame(rows []string, inner int, topLegend, bottomLegend string) []str
 	border := noticeBorderStyle()
 	edge := border.Render("│")
 	legend := func(left, label, right string) string {
+		label = ansi.Truncate(label, inner+1, "…")
 		dashes := inner + 2 - lipgloss.Width(label)
 		if label != "" {
 			label = border.Render("─") + label
