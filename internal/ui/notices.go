@@ -149,8 +149,14 @@ func (m *Model) startupNotice() string {
 // too tight for it keeps the machine meters alone.
 const noticePanelMin = 16
 
+// noticeCardHex is the messages card's fill: the rail's panel tone warmed
+// toward yellow, so the card reads as a sticky note in any theme.
+func noticeCardHex() string { return mix(panelHex(), "#e2c044", 0.16) }
+
 // railFootLines is the rail's foot: the machine meters with the messages
-// panel docked to their right when both notices and width exist.
+// card docked to their right when both notices and width exist. The card
+// flexes to all remaining width and the meters' full height, behind a
+// rule that separates the two blocks.
 func (m *Model) railFootLines(width int) []string {
 	meters := m.computerLines(width)
 	notices := m.activeNotices()
@@ -160,20 +166,20 @@ func (m *Model) railFootLines(width int) []string {
 			metersWidth = w
 		}
 	}
-	panelWidth := width - metersWidth - railGutter
+	panelWidth := width - metersWidth - 3
 	if len(notices) == 0 || panelWidth < noticePanelMin {
 		return meters
 	}
 
-	panel := m.noticePanelLines(notices, panelWidth, len(meters))
-	gap := strings.Repeat(" ", railGutter)
+	panel := m.noticePanelLines(notices, panelWidth-2, len(meters))
+	separator := subtleStyle.Render("│")
 	lines := make([]string, len(meters))
 	for i := range meters {
-		if i >= len(panel) {
-			lines[i] = meters[i]
-			continue
+		row := ""
+		if i < len(panel) {
+			row = panel[i]
 		}
-		lines[i] = padRight(meters[i], metersWidth) + gap + panel[i]
+		lines[i] = padRight(meters[i], metersWidth) + " " + separator + " " + paint(" "+row, panelWidth, noticeCardHex())
 	}
 	return lines
 }

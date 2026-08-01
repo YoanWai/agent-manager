@@ -74,6 +74,23 @@ func TestRailFootAllDismissedShowsOnlyMeters(t *testing.T) {
 	}
 }
 
+func TestRailFootCardSeparatorAndFill(t *testing.T) {
+	m := footModel(t)
+	lines := m.railFootLines(70)
+	fill := bgSeq(noticeCardHex())
+	for i, line := range lines {
+		if !strings.Contains(ansi.Strip(line), "│") {
+			t.Fatalf("row %d missing the separator: %q", i, ansi.Strip(line))
+		}
+		if !strings.Contains(line, fill) {
+			t.Fatalf("row %d missing the card fill", i)
+		}
+		if got := lipgloss.Width(line); got != 70 {
+			t.Fatalf("card must flex to the full width, row %d is %d", i, got)
+		}
+	}
+}
+
 func TestRailFootLinesFitWidth(t *testing.T) {
 	m := footModel(t)
 	m.update.latest = "v0.9.9"
