@@ -1,1 +1,25 @@
-[]
+[
+  {
+    "id": "worktree-sessions",
+    "banner": "new: worktree sessions",
+    "title": "Sessions can now spawn in their own git worktree",
+    "body": [
+      "Parallel agents on one repo never edit the same checkout again.",
+      "Toggle it on the new-session form (n), with alt+w on the quick prompt,",
+      "or set the default for both in settings (s).",
+      "Deleting a session cleans up its worktree and branch when they are clean."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases"
+  },
+  {
+    "id": "messages-card",
+    "banner": "this card is new",
+    "title": "Updates and tips now land here",
+    "body": [
+      "Release notes, known issues, and tips from the maintainer show up in",
+      "this card next to the computer stats. M opens the full list,",
+      "x dismisses a message for good, and enter opens its link."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager#readme"
+  }
+]
