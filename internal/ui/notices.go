@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/YoanWai/agent-manager/internal/store"
 )
@@ -176,7 +177,7 @@ func (m *Model) noticePanelLines(notices []notice, width, height int) []string {
 		shown = shown[:room-1]
 	}
 	for _, n := range shown {
-		lines = append(lines, truncateTail(valueStyle.Render(n.banner), width))
+		lines = append(lines, ansi.Truncate(valueStyle.Render(n.banner), width, "…"))
 	}
 	if rest := len(notices) - len(shown); rest > 0 {
 		lines = append(lines, subtleStyle.Render(fmt.Sprintf("+%d more · M", rest)))

@@ -811,6 +811,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.failed {
 			return m, nil
 		}
+		// A release found while the notices modal is open prepends a new
+		// entry; the cursor follows so the selected notice stays selected.
+		if m.mode == modeNotices && m.update.latest == "" && msg.latest != "" {
+			m.noticeCursor++
+		}
 		m.update.latest = msg.latest
 		m.update.url = msg.url
 		return m, nil
