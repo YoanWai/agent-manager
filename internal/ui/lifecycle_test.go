@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -829,5 +830,61 @@ func TestKillRefusesWhenNothingIsRunning(t *testing.T) {
 	}
 	if m.mode == modeConfirmDelete {
 		t.Fatal("a group with nothing live must not open the kill confirm")
+	}
+}
+
+func deleteSession(t *testing.T, m *Model, name string) {
+	t.Helper()
+	m.selectSessionRow(t, name)
+	m.prepareDelete()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+}
+
+func TestDeleteRemovesCleanWorktree(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	if err := m.spawnSession("claude", "wt-clean", repo, "", "", false, true); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sessions, _ := m.store.ListSessions(true)
+	worktreePath := sessions[0].Cwd
+	m.applyCmd(t, m.refreshCmd())
+
+	deleteSession(t, m, "wt-clean")
+	if _, err := os.Stat(worktreePath); !os.IsNotExist(err) {
+		t.Fatal("clean worktree should be removed on delete")
+	}
+}
+
+func TestDeleteKeepsDirtyWorktree(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	if err := m.spawnSession("claude", "wt-dirty", repo, "", "", false, true); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sessions, _ := m.store.ListSessions(true)
+	worktreePath := sessions[0].Cwd
+	if err := os.WriteFile(filepath.Join(worktreePath, "wip.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	deleteSession(t, m, "wt-dirty")
+	if _, err := os.Stat(worktreePath); err != nil {
+		t.Fatal("dirty worktree must survive delete")
+	}
+	if !strings.Contains(m.errBar.text, worktreePath) {
+		t.Fatalf("error bar should name the kept path, got %q", m.errBar.text)
+	}
+	if remaining, _ := m.store.ListSessions(true); len(remaining) != 0 {
+		t.Fatal("session record should still be deleted")
 	}
 }
