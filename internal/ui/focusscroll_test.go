@@ -503,6 +503,16 @@ func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+
+	// A cache stamped by another session's capture still resets, serving
+	// client or not: this session's first capture may not have landed.
+	m.leaveFocus()
+	m.pane.forID = "someone-else"
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.pane.mouse {
+		t.Fatal("another session's cached flags survived focus entry")
+	}
 }
 
 // The wheel reports the pane's own row, which is the painted row plus

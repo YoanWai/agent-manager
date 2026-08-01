@@ -158,6 +158,10 @@ type netStats struct {
 // is the last width×height told to tmux per session id, skipping no-op
 // resize-window calls that otherwise stall the UI.
 type paneMirror struct {
+	// forID is the session whose pushed capture wrote the fields below;
+	// a serving watcher alone does not prove them current, since its
+	// first capture may still be in flight.
+	forID   string
 	mouse   bool
 	motion  bool
 	sgr     bool
@@ -850,6 +854,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !ok || sess.ID != msg.sessID {
 			return m, nil
 		}
+		m.pane.forID = msg.sessID
 		m.pane.mouse = msg.paneMouse
 		m.pane.motion = msg.paneMotion
 		m.pane.sgr = msg.paneSGR

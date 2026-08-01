@@ -127,11 +127,11 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	m.focusScroll = 0
 	// Pane state from a previously watched session must not route this
 	// one's wheel; a fresh watcher's first pushed capture reports the real
-	// values. When the watcher is already streaming this session the cache
-	// is this pane's own and stays: a quiet pane pushes nothing, so a
-	// reset here would leave the wheel routed as a plain pane with no
-	// history until the agent next paints.
-	if m.focus == nil || !m.focus.serving(sess.ID) {
+	// values. When the watcher is already streaming this session and the
+	// cache came from its own capture, it stays: a quiet pane pushes
+	// nothing, so a reset here would leave the wheel routed as a plain
+	// pane with no history until the agent next paints.
+	if m.focus == nil || !m.focus.serving(sess.ID) || m.pane.forID != sess.ID {
 		m.pane.mouse = false
 		m.pane.motion = false
 		m.pane.sgr = false
