@@ -139,6 +139,10 @@ type Model struct {
 	bannerPhase int
 
 	update updateInfo
+
+	// dismissed holds the notice ids the user closed for good; the set
+	// persists in settings so a dismissed message never comes back.
+	dismissed map[string]bool
 }
 
 type netStats struct {
@@ -393,6 +397,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		comfortableRows: storedComfortableRows(st),
 		mode:            modeList,
 		update:          updateInfo{version: version},
+		dismissed:       loadDismissed(st),
 	}
 }
 
