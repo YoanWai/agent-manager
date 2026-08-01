@@ -677,6 +677,46 @@ func TestRemoveWorktreeKeepsDirtyAndAhead(t *testing.T) {
 	}
 }
 
+func TestRemoveWorktreeIfCleanBranchNotMergedIntoCurrentHEAD(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "c1")
+
+	for _, args := range [][]string{{"branch", "feature"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+
+	write(t, dir, "b.txt", "y")
+	commit(t, dir, "c2")
+
+	for _, args := range [][]string{{"checkout", "feature"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+
+	path, branch, err := driver.AddWorktree(dir, "clean")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	removed, err := driver.RemoveWorktreeIfClean(dir, path, branch)
+	if err != nil || !removed {
+		t.Fatalf("clean worktree merged into base should remove even when main checkout sits elsewhere: removed=%v err=%v", removed, err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("worktree directory still on disk")
+	}
+	if _, err := driver.run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		t.Fatal("branch should be deleted")
+	}
+}
+
 func TestRemoveWorktreeMissingDirKeeps(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "a.txt", "x")

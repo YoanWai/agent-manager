@@ -735,7 +735,7 @@ func (d *Driver) RemoveWorktreeIfClean(root, path, branch string) (bool, error) 
 	if _, err := d.run(root, "worktree", "remove", path); err != nil {
 		return false, err
 	}
-	if _, err := d.run(root, "branch", "-d", branch); err != nil {
+	if _, err := d.run(root, "branch", "-D", branch); err != nil {
 		return false, err
 	}
 	return true, nil
