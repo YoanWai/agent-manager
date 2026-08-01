@@ -363,10 +363,14 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	names := make([]string, len(groups))
 	paths := make(map[string]string, len(groups))
+	worktrees := make(map[string]string, len(groups))
 	archivedGroups := make(map[string]bool, len(groups))
 	for i, g := range groups {
 		names[i] = g.Name
 		paths[g.Name] = g.Path
+		if g.Worktree != "" {
+			worktrees[g.Name] = g.Worktree
+		}
 		if g.Archived {
 			archivedGroups[g.Name] = true
 		}
@@ -387,6 +391,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		sessions:       sessions,
 		groups:         names,
 		groupPaths:     paths,
+		groupWorktrees: worktrees,
 		archivedGroups: archivedGroups,
 		proc:           proc,
 		procFor:        selectedID,

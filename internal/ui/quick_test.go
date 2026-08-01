@@ -606,7 +606,10 @@ func TestQuickSpawnRespectsWorktreeToggleInNonRepo(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
-	m.quick.worktree = true
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if !m.quick.worktree {
+		t.Fatal("shift+tab should toggle worktree on")
+	}
 	m.quick.input.SetValue("do a thing")
 	m.submitQuick()
 	if m.errBar.text == "" {
@@ -618,5 +621,57 @@ func TestQuickSpawnRespectsWorktreeToggleInNonRepo(t *testing.T) {
 	}
 	if len(sessions) != 0 {
 		t.Fatal("blocked spawn must not create a session")
+	}
+}
+
+func TestQuickSpawnUsesGroupWorktreeDefault(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("grp", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.store.SetGroupWorktree("grp", "on"); err != nil {
+		t.Fatalf("set worktree: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp")
+	m.openQuickMode()
+	if !m.quickWorktreeOn() {
+		t.Fatal("quick bar should show the group's worktree default on")
+	}
+	m.quick.input.SetValue("do a thing")
+	m.submitQuick()
+	if m.errBar.text == "" {
+		t.Fatal("group-default worktree spawn into a non-repo dir must surface an error")
+	}
+	sessions, err := m.store.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatal("blocked spawn must not create a session")
+	}
+}
+
+func TestQuickWorktreeToggleOverridesGroupDefault(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("grp", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.store.SetGroupWorktree("grp", "on"); err != nil {
+		t.Fatalf("set worktree: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp")
+	m.openQuickMode()
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.quickWorktreeOn() {
+		t.Fatal("shift+tab should override the group default off")
+	}
+	m.quick.input.SetValue("do a thing")
+	m.submitQuick()
+	if m.errBar.text != "" {
+		t.Fatalf("plain spawn should succeed: %q", m.errBar.text)
 	}
 }

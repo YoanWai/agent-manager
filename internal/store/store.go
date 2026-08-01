@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS settings (
 		)`,
 		`ALTER TABLE sessions ADD COLUMN worktree_repo TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN worktree_branch TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE groups ADD COLUMN worktree TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -638,10 +639,14 @@ type Group struct {
 	Name     string
 	Path     string
 	Archived bool
+	// Worktree is the group's spawn-in-worktree choice: "on", "off", or
+	// "" to inherit from the nearest ancestor with a choice, else the
+	// global setting.
+	Worktree string
 }
 
 func (s *Store) Groups() ([]Group, error) {
-	rows, err := s.db.Query(`SELECT name, path, archived FROM groups ORDER BY sort_order, name`)
+	rows, err := s.db.Query(`SELECT name, path, archived, worktree FROM groups ORDER BY sort_order, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -650,13 +655,20 @@ func (s *Store) Groups() ([]Group, error) {
 	for rows.Next() {
 		var g Group
 		var archived int
-		if err := rows.Scan(&g.Name, &g.Path, &archived); err != nil {
+		if err := rows.Scan(&g.Name, &g.Path, &archived, &g.Worktree); err != nil {
 			return nil, err
 		}
 		g.Archived = archived != 0
 		groups = append(groups, g)
 	}
 	return groups, rows.Err()
+}
+
+// SetGroupWorktree stores a group's spawn-in-worktree choice: "on",
+// "off", or "" to inherit.
+func (s *Store) SetGroupWorktree(name, worktree string) error {
+	_, err := s.db.Exec(`UPDATE groups SET worktree = ? WHERE name = ?`, worktree, name)
+	return err
 }
 
 // SetGroupArchived flips the archived flag on a group, every descendant

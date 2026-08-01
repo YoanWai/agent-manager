@@ -148,8 +148,9 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.quick.toolIndex = (m.quick.toolIndex + 1) % len(m.quick.toolNames)
 		}
 		return m, nil
-	case "alt+w":
-		m.quick.worktree = !m.quick.worktree
+	case "shift+tab", "alt+w":
+		m.quick.worktree = !m.quickWorktreeOn()
+		m.quick.worktreeTouched = true
 		return m, nil
 	case "ctrl+v":
 		if m.quickPasting() {
@@ -260,8 +261,12 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		m.errBar.text = "group has no valid default path: " + dir
 		return m, nil
 	}
+	worktree := m.quick.worktree
+	if !m.quick.worktreeTouched {
+		worktree = m.groupWorktree(group)
+	}
 	name := toolName + "-" + newID()[:4]
-	if err := m.spawnSession(toolName, name, dir, group, prompt, true, m.quick.worktree); err != nil {
+	if err := m.spawnSession(toolName, name, dir, group, prompt, true, worktree); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
@@ -278,6 +283,23 @@ func (m *Model) clearQuickAfterSend() {
 	if m.quick.closeAfterSend {
 		m.quick.active = false
 	}
+}
+
+// quickWorktreeOn is the worktree state the quick bar shows and spawns
+// with: the target group's default until shift+tab overrides it.
+func (m *Model) quickWorktreeOn() bool {
+	if m.quick.worktreeTouched {
+		return m.quick.worktree
+	}
+	group := ""
+	if entry, ok := m.selectedRow(); ok {
+		if entry.isGroup {
+			group = entry.group
+		} else {
+			group = entry.sess.Group
+		}
+	}
+	return m.groupWorktree(group)
 }
 
 // quickTool is the spawn CLI for the current quick-mode run: the settings

@@ -32,8 +32,33 @@ const (
 	gfName = iota
 	gfParent
 	gfPath
+	gfWorktree
 	gfCount
 )
+
+// groupWorktreeOptions are the picker states for a group's spawn-in-worktree
+// choice; index 0 stores as "" so the group keeps inheriting.
+var groupWorktreeOptions = []string{"inherit", "on", "off"}
+
+func groupWorktreeValue(index int) string {
+	switch index {
+	case 1:
+		return "on"
+	case 2:
+		return "off"
+	}
+	return ""
+}
+
+func groupWorktreeIndex(value string) int {
+	switch value {
+	case "on":
+		return 1
+	case "off":
+		return 2
+	}
+	return 0
+}
 
 type groupOption struct {
 	path  string
@@ -41,23 +66,25 @@ type groupOption struct {
 }
 
 type form struct {
-	name       textinput.Model
-	dir        textinput.Model
-	prompt     textinput.Model
-	dirAuto    bool
-	toolNames  []string
-	toolIndex  int
-	groups     []groupOption
-	groupIndex int
-	worktree   bool
-	focus      int
+	name         textinput.Model
+	dir          textinput.Model
+	prompt       textinput.Model
+	dirAuto      bool
+	toolNames    []string
+	toolIndex    int
+	groups       []groupOption
+	groupIndex   int
+	worktree     bool
+	worktreeAuto bool
+	focus        int
 }
 
 type groupForm struct {
-	name     textinput.Model
-	path     textinput.Model
-	pathAuto bool
-	focus    int
+	name          textinput.Model
+	path          textinput.Model
+	pathAuto      bool
+	worktreeIndex int
+	focus         int
 }
 
 // sessionLabel renders a session's identity for the tmux status bar.
@@ -173,7 +200,8 @@ func (m *Model) openForm() {
 	m.errBar.text = ""
 	m.rebuildGroupOptions(m.contextGroup())
 	m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
-	m.form.worktree = m.defaultWorktree()
+	m.form.worktree = m.groupWorktree(m.selectedGroupPath())
+	m.form.worktreeAuto = true
 	m.pathSugg.reset()
 	m.mode = modeForm
 }
@@ -266,6 +294,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.form.focus == fieldWorktree {
 			m.form.worktree = !m.form.worktree
+			m.form.worktreeAuto = false
 			return m, nil
 		}
 	case "right":
@@ -275,6 +304,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.form.focus == fieldWorktree {
 			m.form.worktree = !m.form.worktree
+			m.form.worktreeAuto = false
 			return m, nil
 		}
 	case "enter":
@@ -309,6 +339,9 @@ func (m *Model) moveGroupCursor(delta int) bool {
 	m.form.groupIndex = next
 	if m.mode == modeForm && m.form.dirAuto {
 		m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
+	}
+	if m.mode == modeForm && m.form.worktreeAuto {
+		m.form.worktree = m.groupWorktree(m.selectedGroupPath())
 	}
 	if m.mode == modeGroupForm && m.groupForm.pathAuto {
 		m.groupForm.path.SetValue(m.ancestorGroupDir(m.selectedGroupPath()))
@@ -604,6 +637,17 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.groupFormFocus(1)
 		}
 		return m, nil
+	case "left":
+		if m.groupForm.focus == gfWorktree {
+			count := len(groupWorktreeOptions)
+			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + count - 1) % count
+			return m, nil
+		}
+	case "right":
+		if m.groupForm.focus == gfWorktree {
+			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + 1) % len(groupWorktreeOptions)
+			return m, nil
+		}
 	case "enter":
 		if pathSuggesting && m.pathSugg.chosen {
 			m.applyPathSuggestion()
@@ -655,6 +699,10 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if err := m.store.CreateGroup(full, path); err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
+	if err := m.store.SetGroupWorktree(full, groupWorktreeValue(m.groupForm.worktreeIndex)); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}

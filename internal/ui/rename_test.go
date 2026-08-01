@@ -213,3 +213,34 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 		t.Fatal("edited group should keep a resolved path when cleared")
 	}
 }
+
+func TestGroupEditPersistsWorktreeChoice(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("grp", t.TempDir()); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp")
+	m.openRename()
+	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
+	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.rename.focus != 2 {
+		t.Fatalf("focus should reach the worktree field, got %d", m.rename.focus)
+	}
+	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyRight})
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	groups, err := m.store.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Worktree != "on" {
+		t.Fatalf("worktree choice should persist, got %+v", groups)
+	}
+	if !m.groupWorktree("grp") {
+		t.Fatal("group worktree should resolve on")
+	}
+	if !m.groupWorktree("grp/child") {
+		t.Fatal("child group should inherit the parent's worktree choice")
+	}
+}

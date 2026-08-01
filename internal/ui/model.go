@@ -67,6 +67,7 @@ type Model struct {
 	rows           []treeRow
 	groups         []string
 	groupPaths     map[string]string
+	groupWorktrees map[string]string
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	proc           sysstat.ProcStat
@@ -229,14 +230,15 @@ type confirmTarget struct {
 }
 
 type renameTarget struct {
-	isGroup   bool
-	path      string
-	sessID    string
-	input     textinput.Model
-	dir       textinput.Model
-	focus     int
-	toolNames []string
-	toolIndex int
+	isGroup       bool
+	path          string
+	sessID        string
+	input         textinput.Model
+	dir           textinput.Model
+	worktreeIndex int
+	focus         int
+	toolNames     []string
+	toolIndex     int
 }
 
 // quickState is the inline prompt bar docked under the preview: active
@@ -253,6 +255,9 @@ type quickState struct {
 	lastImageID    int
 	closeAfterSend bool
 	worktree       bool
+	// worktreeTouched marks an explicit toggle this run; until then the
+	// hint and spawn follow the target group's default.
+	worktreeTouched bool
 }
 
 // quickAttachment is one pasted image: the id its token carries, and the
@@ -312,6 +317,7 @@ type refreshMsg struct {
 	sessions       []store.Session
 	groups         []string
 	groupPaths     map[string]string
+	groupWorktrees map[string]string
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	snapOK         bool
@@ -800,6 +806,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions = msg.sessions
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
+		m.groupWorktrees = msg.groupWorktrees
 		m.archivedGroups = msg.archivedGroups
 		m.agents = msg.agents
 		if msg.snapOK {

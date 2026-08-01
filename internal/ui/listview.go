@@ -621,17 +621,23 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	head := rowColumns(title, subtleStyle.Render(countLabel), width)
 
 	if m.renamingGroup(group) {
-		label := labelStyle
+		pathLabel := labelStyle
 		if m.rename.focus == 1 {
-			label = lipgloss.NewStyle().Foreground(colorAccent)
+			pathLabel = lipgloss.NewStyle().Foreground(colorAccent)
 		}
-		if fieldWidth := width - 8; fieldWidth >= 10 {
+		worktreeLabel := labelStyle
+		if m.rename.focus == 2 {
+			worktreeLabel = lipgloss.NewStyle().Foreground(colorAccent)
+		}
+		if fieldWidth := width - 12; fieldWidth >= 10 {
 			m.rename.dir.Width = fieldWidth
 		}
-		out := head + "\n" + label.Width(6).Render("path") + m.rename.dir.View()
+		out := head + "\n" + pathLabel.Width(10).Render("path") + m.rename.dir.View()
 		if m.rename.focus == 1 && m.pathSugg.active() {
 			out += "\n" + m.viewPathSuggestions()
 		}
+		out += "\n" + worktreeLabel.Width(10).Render("worktree") +
+			subtleStyle.Render("◂ ") + valueStyle.Render(groupWorktreeOptions[m.rename.worktreeIndex]) + subtleStyle.Render(" ▸")
 		return out
 	}
 

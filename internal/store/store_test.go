@@ -704,3 +704,37 @@ func TestSessionWorktreeColumnsRoundTrip(t *testing.T) {
 		t.Fatalf("list dropped worktree fields: %+v", list[0])
 	}
 }
+
+func TestGroupWorktreeRoundtrip(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("backend", ""); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Worktree != "" {
+		t.Fatalf("new group should inherit worktree, got %+v", groups)
+	}
+	if err := st.SetGroupWorktree("backend", "on"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	groups, err = st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if groups[0].Worktree != "on" {
+		t.Fatalf("worktree choice lost: %+v", groups[0])
+	}
+	if err := st.SetGroupWorktree("backend", ""); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	groups, err = st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if groups[0].Worktree != "" {
+		t.Fatalf("worktree choice should clear back to inherit: %+v", groups[0])
+	}
+}

@@ -383,12 +383,12 @@ func (m *Model) viewFooter() string {
 	}
 	if m.quick.active {
 		worktreeHint := "off"
-		if m.quick.worktree {
+		if m.quickWorktreeOn() {
 			worktreeHint = "on"
 		}
 		pairs = [][2]string{
 			{"↵", "send"}, {"↑↓", "switch target"}, {"⇥", "tool: " + m.quickTool()},
-			{"⌥w", "worktree: " + worktreeHint}, {"esc", "close"},
+			{"⇤", "worktree: " + worktreeHint}, {"esc", "close"},
 		}
 	}
 	if m.split.resizeMode {

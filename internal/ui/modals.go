@@ -164,12 +164,17 @@ func (m *Model) viewGroupForm() string {
 	if m.groupForm.focus == gfPath && m.pathSugg.active() {
 		b.WriteString(m.viewPathSuggestions() + "\n")
 	}
+	worktreeVal := subtleStyle.Render("◂ ") + valueStyle.Render(groupWorktreeOptions[m.groupForm.worktreeIndex]) + subtleStyle.Render(" ▸")
+	b.WriteString(formField("worktree", worktreeVal, m.groupForm.focus == gfWorktree))
 	if m.groupForm.focus == gfParent {
 		b.WriteString("\n" + m.viewGroupPicker())
 	}
 	hint := "tab/↑↓ move · ↵ create · esc cancel"
 	if m.groupForm.focus == gfParent {
 		hint = "↑↓ pick parent · tab next field · ↵ create · esc cancel"
+	}
+	if m.groupForm.focus == gfWorktree {
+		hint = "tab/↑↓ move · ←→ change · ↵ create · esc cancel"
 	}
 	if m.groupForm.focus == gfPath && m.pathSugg.active() {
 		hint = pathSuggestHint(m.pathSugg.chosen)
@@ -221,7 +226,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
-		row(settingsFieldWorktree, "worktree sessions", worktreeDefault) + "\n" +
+		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
 		actionRow(settingsFieldBugReport, "report a bug", "open a prefilled GitHub issue") + "\n\n" +
 		subtleStyle.Render("  version ") + valueStyle.Render(m.update.version) + m.versionStatus()
 	hint := "↑↓ field · ←→ change · ↵/esc save"
@@ -263,8 +268,8 @@ func (m *Model) viewHelp() string {
 		{"ctrl+q", "inside a session: back to manager"},
 		{"ctrl+r", "inside a session: review its diff, esc returns"},
 		{"m", "move session to another group"},
-		{"g", "new group (name, parent, default path)"},
-		{"r", "rename session / edit group (name + default path)"},
+		{"g", "new group (name, parent, default path, worktree)"},
+		{"r", "rename session / edit group (name, default path, worktree)"},
 		{"x", "kill session, or every live session in a group (frees their RAM)"},
 		{"X", "kill every live session"},
 		{"v", "revive killed session, or every dead session in a group (resumes the agent)"},
@@ -274,7 +279,7 @@ func (m *Model) viewHelp() string {
 		{"K / J", "reorder row up / down (shift+↑↓ also works)"},
 		{"space", "quick prompt: answer session / spawn agent in group"},
 		{"⇥", "in quick prompt: switch spawn tool"},
-		{"⌥w", "in quick prompt: toggle worktree for the spawned agent"},
+		{"⇤", "in quick prompt: toggle worktree for the spawned agent"},
 		{"^v", "in quick prompt: paste image as a chip at the cursor"},
 		{"⌫", "in quick prompt: next to a chip, delete the whole chip"},
 		{"ctrl+r", "review changes: whole-file diffs, comment lines, send to agent"},
