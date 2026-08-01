@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -103,5 +104,35 @@ func TestSettingsShowsVersion(t *testing.T) {
 	m.update.latest = "v0.9.1"
 	if out := m.viewSettings(); !strings.Contains(out, "v0.9.1") || !strings.Contains(out, "available") {
 		t.Errorf("settings missing update badge: %q", out)
+	}
+}
+
+func TestSettingsBugReportRowOpensIssue(t *testing.T) {
+	m := footModel(t)
+	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.openSettings()
+	if m.mode != modeSettings {
+		t.Fatalf("settings should open, mode=%v", m.mode)
+	}
+
+	var opened string
+	openBrowser = func(url string) error {
+		opened = url
+		return nil
+	}
+	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+
+	m.settings.field = settingsFieldBugReport
+	m.handleSettingsKey(key("enter"))
+	if !strings.Contains(opened, "issues/new") {
+		t.Fatalf("enter should open the issue page, got %q", opened)
+	}
+	if m.mode != modeSettings {
+		t.Fatal("the action row must not close settings")
+	}
+
+	m.handleSettingsKey(key("esc"))
+	if m.mode != modeList {
+		t.Fatal("esc should still save and close")
 	}
 }

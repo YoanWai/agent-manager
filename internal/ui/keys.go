@@ -54,6 +54,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDiffKey(msg)
 	case modeFocus:
 		return m.handleFocusKey(msg)
+	case modeNotices:
+		return m.handleNoticesKey(msg)
 	case modeHelp:
 		m.mode = modeList
 		return m, nil
@@ -129,6 +131,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openRename()
 	case "m":
 		m.openMove()
+	case "M", "shift+m":
+		m.openNotices("")
 	case "?":
 		m.mode = modeHelp
 	case "ctrl+r":

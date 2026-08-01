@@ -12,6 +12,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -37,6 +38,7 @@ const (
 	modeGroupForm
 	modeSettings
 	modeDiff
+	modeNotices
 	// modeFocus routes the keyboard into the selected session's pane while
 	// the list and live preview stay on screen.
 	modeFocus
@@ -139,6 +141,17 @@ type Model struct {
 	bannerPhase int
 
 	update updateInfo
+
+	// dismissed holds the notice ids the user closed for good; the set
+	// persists in settings so a dismissed message never comes back.
+	dismissed    map[string]bool
+	noticeCursor int
+	// whatsNewVersion mirrors the persisted whats_new_version setting so
+	// the notices list, rebuilt every frame, never reads the database.
+	whatsNewVersion string
+	// feedMessages is the remote message feed, refreshed on the update
+	// tick and folded into the notices next to the built-in ones.
+	feedMessages []feed.Message
 }
 
 type netStats struct {
@@ -158,6 +171,10 @@ type netStats struct {
 // is the last width×height told to tmux per session id, skipping no-op
 // resize-window calls that otherwise stall the UI.
 type paneMirror struct {
+	// forID is the session whose pushed capture wrote the fields below;
+	// a serving watcher alone does not prove them current, since its
+	// first capture may still be in flight.
+	forID   string
 	mouse   bool
 	motion  bool
 	sgr     bool
@@ -278,6 +295,7 @@ const (
 	settingsFieldQuickClose
 	settingsFieldFocusKey
 	settingsFieldWorktree
+	settingsFieldBugReport
 	settingsFieldCount
 )
 
@@ -382,7 +400,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
 	applyTheme(themes[themeIndex(storedTheme(st))])
-	return &Model{
+	model := &Model{
 		cfg:             cfg,
 		store:           st,
 		tmux:            driver,
@@ -396,7 +414,11 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		comfortableRows: storedComfortableRows(st),
 		mode:            modeList,
 		update:          updateInfo{version: version},
+		dismissed:       loadDismissed(st),
+		whatsNewVersion: loadWhatsNewVersion(st),
 	}
+	model.openStartupNotice()
+	return model
 }
 
 // storedTheme reads the persisted theme name. A read failure falls back to
@@ -501,7 +523,7 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.updateTick(), m.bannerTick(), m.previewTick(), m.sweepPastes, m.pasteSweepTick())
+	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.sweepPastes, m.pasteSweepTick())
 }
 
 // updateMsg carries the result of the background GitHub release check.
@@ -511,6 +533,13 @@ type updateMsg struct {
 	latest string
 	url    string
 	failed bool
+}
+
+// feedMsg carries the remote message feed. failed marks a fetch that
+// never reached a verdict, which keeps whatever is already on screen.
+type feedMsg struct {
+	messages []feed.Message
+	failed   bool
 }
 
 // pasteSweepMsg carries the result of one pass over the pastes directory.
@@ -560,6 +589,20 @@ func (m *Model) checkForUpdate() tea.Msg {
 		return updateMsg{failed: true}
 	}
 	return updateMsg{latest: result.Latest, url: result.URL}
+}
+
+// checkFeed pulls the remote message feed off the event loop. Like the
+// release check it is cache-backed, so most ticks cost one disk read.
+func (m *Model) checkFeed() tea.Msg {
+	dir, err := config.Dir()
+	if err != nil {
+		return feedMsg{failed: true}
+	}
+	messages, err := feed.Fetch(context.Background(), dir, m.update.version)
+	if err != nil {
+		return feedMsg{failed: true}
+	}
+	return feedMsg{messages: messages}
 }
 
 // refreshExistingSessionUX re-applies the tmux bindings and status bar to
@@ -801,12 +844,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.failed {
 			return m, nil
 		}
-		m.update.latest = msg.latest
-		m.update.url = msg.url
+		m.keepNoticeSelection(func() {
+			m.update.latest = msg.latest
+			m.update.url = msg.url
+		})
 		return m, nil
 
 	case updateTickMsg:
-		return m, tea.Batch(m.checkForUpdate, m.updateTick())
+		return m, tea.Batch(m.checkForUpdate, m.checkFeed, m.updateTick())
+
+	case feedMsg:
+		if !msg.failed {
+			m.keepNoticeSelection(func() { m.feedMessages = msg.messages })
+		}
+		return m, nil
 
 	case pasteSweepMsg:
 		if msg.err != nil {
@@ -853,6 +904,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !ok || sess.ID != msg.sessID {
 			return m, nil
 		}
+		m.pane.forID = msg.sessID
 		m.pane.mouse = msg.paneMouse
 		m.pane.motion = msg.paneMotion
 		m.pane.sgr = msg.paneSGR
