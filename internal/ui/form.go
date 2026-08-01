@@ -170,12 +170,12 @@ func (m *Model) openForm() {
 		toolNames: tools,
 		focus:     fieldName,
 	}
+	m.errBar.text = ""
 	m.rebuildGroupOptions(m.contextGroup())
 	m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	m.form.worktree = m.defaultWorktree()
 	m.pathSugg.reset()
 	m.mode = modeForm
-	m.errBar.text = ""
 }
 
 func (m *Model) selectedGroupPath() string {
