@@ -37,6 +37,7 @@ const (
 	modeGroupForm
 	modeSettings
 	modeDiff
+	modeNotices
 	// modeFocus routes the keyboard into the selected session's pane while
 	// the list and live preview stay on screen.
 	modeFocus
@@ -142,7 +143,8 @@ type Model struct {
 
 	// dismissed holds the notice ids the user closed for good; the set
 	// persists in settings so a dismissed message never comes back.
-	dismissed map[string]bool
+	dismissed    map[string]bool
+	noticeCursor int
 }
 
 type netStats struct {
@@ -373,6 +375,12 @@ type attachDoneMsg struct {
 }
 
 func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) *Model {
+	model := newModel(cfg, st, driver, engine, hookManager, version)
+	model.openStartupNotice()
+	return model
+}
+
+func newModel(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) *Model {
 	statusSources := make(map[string]string, len(cfg.Tools))
 	sessionStores := make(map[string]string, len(cfg.Tools))
 	for name, tool := range cfg.Tools {

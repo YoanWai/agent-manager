@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os/exec"
 	"runtime"
 	"sort"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -180,6 +182,104 @@ func (m *Model) noticePanelLines(notices []notice, width, height int) []string {
 		lines = append(lines, subtleStyle.Render(fmt.Sprintf("+%d more · M", rest)))
 	}
 	return lines
+}
+
+// openBrowser is a var so tests can capture the URL instead of opening one.
+var openBrowser = defaultOpenBrowser
+
+func defaultOpenBrowser(target string) error {
+	if runtime.GOOS == "darwin" {
+		return exec.Command("open", target).Start()
+	}
+	return exec.Command("xdg-open", target).Start()
+}
+
+func (m *Model) openNotices(selectID string) {
+	notices := m.activeNotices()
+	if len(notices) == 0 {
+		return
+	}
+	m.noticeCursor = 0
+	for i, n := range notices {
+		if n.id == selectID {
+			m.noticeCursor = i
+		}
+	}
+	m.mode = modeNotices
+}
+
+// openStartupNotice greets the launch when there is something to say:
+// the welcome message on the first run ever, what's new on the first run
+// after an update. A dev build is the developer's own tree, not an
+// install, so it never greets and never advances the stored version.
+func (m *Model) openStartupNotice() {
+	if m.update.version == "dev" {
+		return
+	}
+	if id := m.startupNotice(); id != "" {
+		m.openNotices(id)
+	}
+}
+
+func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	notices := m.activeNotices()
+	switch msg.String() {
+	case "up", "k":
+		if m.noticeCursor > 0 {
+			m.noticeCursor--
+		}
+	case "down", "j":
+		if m.noticeCursor < len(notices)-1 {
+			m.noticeCursor++
+		}
+	case "enter":
+		if m.noticeCursor < len(notices) && notices[m.noticeCursor].url != "" {
+			if err := openBrowser(notices[m.noticeCursor].url); err != nil {
+				m.errBar.text = err.Error()
+			}
+		}
+	case "x", "d":
+		if m.noticeCursor < len(notices) {
+			m.dismissNotice(notices[m.noticeCursor].id)
+		}
+		if remaining := len(notices) - 1; m.noticeCursor >= remaining {
+			m.noticeCursor = remaining - 1
+		}
+		if m.noticeCursor < 0 {
+			m.noticeCursor = 0
+		}
+		if len(notices) <= 1 {
+			m.mode = modeList
+		}
+	case "esc", "q", "M":
+		m.mode = modeList
+	}
+	return m, nil
+}
+
+func (m *Model) viewNotices() string {
+	notices := m.activeNotices()
+	if len(notices) == 0 {
+		return m.card("messages", subtleStyle.Render("nothing new"), "esc close")
+	}
+	if m.noticeCursor >= len(notices) {
+		m.noticeCursor = len(notices) - 1
+	}
+	var body strings.Builder
+	for i, n := range notices {
+		marker := subtleStyle.Render("  ")
+		title := valueStyle.Render(n.title)
+		if i == m.noticeCursor {
+			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("▸ ")
+			title = lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(n.title)
+		}
+		body.WriteString(marker + title + "\n")
+	}
+	body.WriteString("\n")
+	for _, line := range notices[m.noticeCursor].body {
+		body.WriteString(subtleStyle.Render(line) + "\n")
+	}
+	return m.card("messages", strings.TrimRight(body.String(), "\n"), "↑↓ pick · ↵ open link · x dismiss · esc close")
 }
 
 func loadDismissed(st *store.Store) map[string]bool {

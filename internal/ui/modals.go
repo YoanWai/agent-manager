@@ -248,6 +248,7 @@ func (m *Model) viewHelp() string {
 		{"s", "settings (quick spawn tool, review layout, after quick send)"},
 		{"|", "resize split (←→ / drag, enter commits, esc cancels)"},
 		{"t", "toggle archived view"},
+		{"M", "messages (updates, tips, bug reporting; x dismisses)"},
 		{"e", "hide / show empty groups"},
 		{"/", "search"},
 		{"↑↓ / jk", "move cursor"},
