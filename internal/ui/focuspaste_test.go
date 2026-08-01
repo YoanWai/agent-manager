@@ -3,8 +3,8 @@ package ui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // A paste while focused goes through the tmux paste path as one block, so
