@@ -462,6 +462,49 @@ func TestMouseReportEncodings(t *testing.T) {
 	}
 }
 
+// Entering focus on a pane that has gone quiet keeps the cached pane
+// state. The watcher is already streaming this session and a quiet pane
+// pushes no fresh capture, so a reset on entry would route the wheel as
+// a plain pane with no history — dead until the agent next paints,
+// which is exactly the shape of scrolling a finished agent's pane.
+func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
+	m, sess := focusedMouseApp(t, "mouse-tool", "quietapp")
+
+	// Out to the list and back in, with the pane painting nothing in
+	// between — checking on an agent whose turn has ended.
+	m.leaveFocus()
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("did not re-enter focus: %q", m.errBar.text)
+	}
+
+	if !m.pane.mouse {
+		t.Fatal("re-entering focus dropped the pane's mouse claim")
+	}
+	if !m.pane.sgr {
+		t.Fatal("re-entering focus dropped the pane's SGR encoding")
+	}
+	m.View()
+
+	// The wheel still reaches the app, with no pushed capture in between.
+	m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil {
+			t.Fatalf("capture: %v", err)
+		}
+		if strings.Contains(pane, "[<64;") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("wheel report never reached the quiet pane: %q", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // The wheel reports the pane's own row, which is the painted row plus
 // whatever the panel dropped off the top of a taller capture.
 func TestWheelReportUsesPaneRow(t *testing.T) {
