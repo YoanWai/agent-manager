@@ -59,11 +59,13 @@ func TestSplitWidthsUsesRatio(t *testing.T) {
 	if left != 40 || right != 60 {
 		t.Fatalf("splitWidths = %d,%d want 40,60", left, right)
 	}
-	// Default ratio when unset.
+	// Default ratio when unset, floored by the minimum side.
 	m.splitRatio = 0
 	left, right = m.splitWidths()
-	if left != 34 || right != 66 {
-		t.Fatalf("default split = %d,%d want 34,66", left, right)
+	ratio := defaultSplitRatio
+	wantLeft := clampSplitLeft(int(ratio*100), 100)
+	if left != wantLeft || right != 100-wantLeft {
+		t.Fatalf("default split = %d,%d want %d,%d", left, right, wantLeft, 100-wantLeft)
 	}
 }
 

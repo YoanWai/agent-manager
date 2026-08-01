@@ -132,3 +132,43 @@ func TestComfortableRowSurvivesShortRail(t *testing.T) {
 		t.Fatalf("selected entry lost its meta line: %q", meta)
 	}
 }
+
+// A nested entry's second line carries its ancestors' branches straight
+// down, so the tree column has no gap between an entry and the next.
+func TestComfortableMetaLineKeepsTreeGuides(t *testing.T) {
+	m := buildModel(t)
+	m.comfortableRows = true
+	m.openGroupForm()
+	m.groupForm.name.SetValue("outer")
+	if _, _ = m.submitGroupForm(); m.err != "" {
+		t.Fatalf("create outer group: %q", m.err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "outer")
+	m.openGroupForm()
+	m.groupForm.name.SetValue("inner")
+	if _, _ = m.submitGroupForm(); m.err != "" {
+		t.Fatalf("create inner group: %q", m.err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "nested", t.TempDir(), "outer/inner")
+	createSession(t, m, "sibling", t.TempDir(), "outer")
+
+	lines := railText(t, m)
+	head := lineWith(t, lines, "sibling")
+	name, meta := lines[head], lines[head+1]
+	nameRunes, metaRunes := []rune(name), []rune(meta)
+	guideAt := -1
+	for i, r := range nameRunes {
+		if r == '├' {
+			guideAt = i
+			break
+		}
+	}
+	if guideAt < 0 {
+		t.Fatalf("entry has no branch connector: %q\n%s", name, strings.Join(lines, "\n"))
+	}
+	if len(metaRunes) <= guideAt || metaRunes[guideAt] != '│' {
+		t.Fatalf("meta line breaks the guide column at %d:\n%q\n%q", guideAt, name, meta)
+	}
+}

@@ -277,16 +277,7 @@ func (m *Model) treeGuidesAt(index int) string {
 	}
 	var guides strings.Builder
 	for slot := 1; slot <= depth; slot++ {
-		continues := false
-		for j := index + 1; j < len(m.rows); j++ {
-			if m.rows[j].depth < slot {
-				break
-			}
-			if m.rows[j].depth == slot {
-				continues = true
-				break
-			}
-		}
+		continues := m.slotContinues(index, slot)
 		switch {
 		case slot < depth && continues:
 			guides.WriteString("│  ")
@@ -301,29 +292,67 @@ func (m *Model) treeGuidesAt(index int) string {
 	return subtleStyle.Render(guides.String())
 }
 
+// treeGuideTrail is the same ancestry read one line lower: every branch
+// the entry's own row connected to carries straight down past its second
+// line, so a two-line entry cannot leave a gap in the tree.
+func (m *Model) treeGuideTrail(index int) string {
+	if index < 0 || index >= len(m.rows) {
+		return ""
+	}
+	depth := m.rows[index].depth
+	if depth <= 0 {
+		return ""
+	}
+	var guides strings.Builder
+	for slot := 1; slot <= depth; slot++ {
+		if m.slotContinues(index, slot) {
+			guides.WriteString("│  ")
+			continue
+		}
+		guides.WriteString("   ")
+	}
+	return subtleStyle.Render(guides.String())
+}
+
+// slotContinues reports whether the level named by slot has another entry
+// below index. A slot goes quiet once its level has no further siblings,
+// which is what closes a branch off.
+func (m *Model) slotContinues(index, slot int) bool {
+	for j := index + 1; j < len(m.rows); j++ {
+		if m.rows[j].depth < slot {
+			return false
+		}
+		if m.rows[j].depth == slot {
+			return true
+		}
+	}
+	return false
+}
+
 // renderTreeRow paints one entry: a status dot, the name, and what the
 // entry is doing set against the row's far edge. The selected entry lifts
 // onto its own band instead of wearing a marker.
 func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg string) string {
 	pad := strings.Repeat(" ", railInset)
 	guides := m.treeGuidesAt(index)
+	trail := m.treeGuideTrail(index)
 
 	if m.renamingRow(entry) {
 		line := pad + guides + m.renameRowInput(entry, width-railGutter-ansi.StringWidth(guides))
 		row := paint(line, width, selectedHex())
 		if m.comfortableRows {
-			row += "\n" + paint("", width, selectedHex())
+			row += "\n" + paint(pad+trail, width, selectedHex())
 		}
 		return row
 	}
 
 	if entry.isGroup {
-		return m.renderGroupEntry(entry, selected, width, pad, guides, bg)
+		return m.renderGroupEntry(entry, selected, width, pad, guides, trail, bg)
 	}
-	return m.renderSessionEntry(entry, selected, width, pad, guides, bg)
+	return m.renderSessionEntry(entry, selected, width, pad, guides, trail, bg)
 }
 
-func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, bg string) string {
+func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
 	sess := entry.sess
 	dot := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
 	nameStyle := valueStyle
@@ -346,22 +375,22 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 		metaStyle.Render(" · "+sess.Tool+" · "+relSince(lastActivity(sess)))
 
 	if m.comfortableRows {
-		return stackedRow(head, metaIndent(pad, guides)+meta, width, bg)
+		return stackedRow(head, metaIndent(pad, trail)+meta, width, bg)
 	}
 	return paint(rowColumns(head, meta, width-railGutter), width, bg)
 }
 
 // metaIndent lines a second row line up under the name on the first, past
 // the entry's guides and the glyph column ahead of it.
-func metaIndent(pad, guides string) string {
-	return pad + strings.Repeat(" ", ansi.StringWidth(guides)+2)
+func metaIndent(pad, trail string) string {
+	return pad + trail + "  "
 }
 
 func stackedRow(head, meta string, width int, bg string) string {
 	return paint(head, width, bg) + "\n" + paint(meta, width, bg)
 }
 
-func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, guides, bg string) string {
+func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
 	marker := "▾"
 	if m.collapsed[entry.group] {
 		marker = "▸"
@@ -389,7 +418,7 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, g
 	}
 
 	if m.comfortableRows {
-		return stackedRow(head, metaIndent(pad, guides)+meta, width, bg)
+		return stackedRow(head, metaIndent(pad, trail)+meta, width, bg)
 	}
 	return paint(rowColumns(head, meta, width-railGutter), width, bg)
 }
