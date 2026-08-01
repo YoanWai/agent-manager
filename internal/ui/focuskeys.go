@@ -63,6 +63,11 @@ func init() {
 // tmux command-line quoting entirely; special keys go by tmux key name.
 // ok is false for keys tmux cannot represent, which are dropped.
 func focusKeyCommand(target string, msg tea.KeyMsg) (string, bool) {
+	// Pastes go through the tmux buffer path: as raw bytes their newlines
+	// would land as Enter presses and submit the agent's prompt.
+	if msg.Paste {
+		return "", false
+	}
 	if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
 		runes := msg.Runes
 		if msg.Type == tea.KeySpace {

@@ -219,11 +219,28 @@ func (d *Driver) SendText(id, text string) error {
 	return d.pasteAndEnter(sessionName(id), text)
 }
 
+// Paste delivers text into the session's pane without submitting it. The
+// focus path uses this for clipboard pastes: sending the bytes as raw
+// keystrokes would turn every newline into an Enter press and submit the
+// agent's prompt mid-paste.
+func (d *Driver) Paste(id, text string) error {
+	return d.paste(sessionName(id), text)
+}
+
 var pasteSeq atomic.Uint64
 
 // pasteAndEnter pastes text of any length into a pane and submits it.
-// tmux send-keys silently stops around 1024 bytes; load-buffer does not.
 func (d *Driver) pasteAndEnter(target, text string) error {
+	if err := d.paste(target, text); err != nil {
+		return err
+	}
+	_, err := d.run("send-keys", "-t", target, "Enter")
+	return err
+}
+
+// paste loads text into a tmux buffer and pastes it into the pane.
+// tmux send-keys silently stops around 1024 bytes; load-buffer does not.
+func (d *Driver) paste(target, text string) error {
 	file, err := os.CreateTemp("", "am-paste-*")
 	if err != nil {
 		return fmt.Errorf("paste temp file: %w", err)
@@ -249,8 +266,7 @@ func (d *Driver) pasteAndEnter(target, text string) error {
 		_, _ = d.run("delete-buffer", "-b", buf)
 		return err
 	}
-	_, err = d.run("send-keys", "-t", target, "Enter")
-	return err
+	return nil
 }
 
 // SendRaw runs one pre-assembled tmux command line. The focus path builds

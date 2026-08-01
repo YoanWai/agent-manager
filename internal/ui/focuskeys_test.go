@@ -27,6 +27,9 @@ func TestFocusKeyCommand(t *testing.T) {
 		{"alt-up", tea.KeyMsg{Type: tea.KeyUp, Alt: true}, "send-keys -t am_x M-Up", true},
 		{"pgup", tea.KeyMsg{Type: tea.KeyPgUp}, "send-keys -t am_x PPage", true},
 		{"backspace", tea.KeyMsg{Type: tea.KeyBackspace}, "send-keys -t am_x BSpace", true},
+		// A bracketed paste never rides the raw-bytes path: its newlines
+		// would reach the agent as bare Enter presses and submit the prompt.
+		{"paste", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("do it\n"), Paste: true}, "", false},
 	}
 	for _, c := range cases {
 		got, ok := focusKeyCommand("am_x", c.msg)
