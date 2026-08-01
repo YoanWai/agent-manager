@@ -1027,6 +1027,21 @@ func hashString(s string) uint64 {
 	return h.Sum64()
 }
 
+// rootGroup is the path every ungrouped session already carries.
+const rootGroup = ""
+
+// isRoot marks the pinned top-level row, which is not a stored group.
+func (e treeRow) isRoot() bool { return e.isGroup && e.group == rootGroup }
+
+// rowsBelowRoot is the tree without its pinned row: empty means the rail
+// has nothing to list, however many rows it paints.
+func (m *Model) rowsBelowRoot() []treeRow {
+	if len(m.rows) > 0 && m.rows[0].isRoot() {
+		return m.rows[1:]
+	}
+	return m.rows
+}
+
 func rowKey(entry treeRow) string {
 	if entry.isGroup {
 		return "g:" + entry.group
@@ -1091,7 +1106,9 @@ func (m *Model) rebuildRows() {
 	// there would hide the very sessions the user came to act on.
 	honorFolds := query == "" && !m.showArchived
 
-	rows := make([]treeRow, 0, len(m.sessions)+len(paths))
+	// Root is a standing move and spawn target; its sessions stay flat.
+	rows := make([]treeRow, 0, len(m.sessions)+len(paths)+1)
+	rows = append(rows, treeRow{isGroup: true, group: rootGroup})
 	for _, sess := range sessionsByGroup[""] {
 		rows = append(rows, treeRow{sess: sess})
 	}
@@ -1120,6 +1137,9 @@ func (m *Model) rebuildRows() {
 				break
 			}
 		}
+	} else if m.cursor == 0 && len(rows) > 1 && rows[0].isRoot() {
+		// A launch opens on a session, not on root's rollup.
+		m.cursor = 1
 	}
 	if m.cursor >= len(rows) {
 		m.cursor = len(rows) - 1

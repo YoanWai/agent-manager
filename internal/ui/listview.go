@@ -53,16 +53,14 @@ func (m *Model) viewListFrame() string {
 	seam := make([]string, bodyHeight)
 	edge := make([]string, bodyHeight)
 	for i := range seam {
-		leftRule := i < len(railRows) && railRows[i].rule
-		rightRule := i < len(contentRows) && contentRows[i].rule
-		seam[i] = m.seamCell(leftRule, rightRule)
+		seam[i] = m.seamCell(i < len(railRows) && railRows[i].rule)
 		tone := panelHex()
 		if i < len(railRows) && railRows[i].tone != "" {
 			tone = railRows[i].tone
 		}
 		edge[i] = railEdgeCell(tone)
 	}
-	frame = append(frame, m.boundedRuleRow(leftWidth+1, m.width, "▀"))
+	frame = append(frame, m.railTopRow(leftWidth+1, m.width))
 	frame = append(frame, joinColumns(
 		edge,
 		paintContent(railRows, railWidth, bodyHeight, panelHex()),
@@ -93,15 +91,10 @@ func (m *Model) railLines(width, height int) []contentLine {
 		listHeight, meters = height, nil
 	}
 	var rows []contentLine
-	// A populated list keeps a breath of air at the top; the empty state
+	// The list starts straight under the pane's top edge; the empty state
 	// centers itself in the full list area instead.
-	if len(m.rows) > 0 {
-		rows = append(rows, contentLine{})
-	}
 	if m.showArchived {
-		if len(rows) == 0 {
-			rows = append(rows, contentLine{})
-		}
+		rows = append(rows, contentLine{})
 		rows = append(rows,
 			contentLine{text: strings.Repeat(" ", railInset) + scopeBadgeStyle.Render("ARCHIVED") +
 				subtleStyle.Render("  ") + keyCap("t", "back to active")},
@@ -125,9 +118,16 @@ func (m *Model) railLines(width, height int) []contentLine {
 // tall, so the window is measured in lines rather than rows. Each line
 // carries the tone its entry painted, which the edge column matches.
 func (m *Model) entryLines(width, height int) []contentLine {
-	if len(m.rows) == 0 {
+	// Root alone is still an empty list: it says what the rail holds, not
+	// what to do about it being empty.
+	if rest := m.rowsBelowRoot(); len(rest) == 0 {
 		var lines []contentLine
-		for _, line := range m.emptyRailLines(width, height) {
+		for _, entry := range m.rows {
+			for _, line := range splitLines(m.renderTreeRow(entry, m.cursor == 0, width, 0, panelHex())) {
+				lines = append(lines, contentLine{text: line})
+			}
+		}
+		for _, line := range m.emptyRailLines(width, height-len(lines)) {
 			lines = append(lines, contentLine{text: line})
 		}
 		return lines
@@ -370,7 +370,15 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, g
 	if selected {
 		nameStyle = nameStyle.Foreground(colorBright)
 	}
-	head := pad + guides + subtleStyle.Render(marker) + " " + nameStyle.Render(baseName(entry.group))
+	name := baseName(entry.group)
+	if entry.isRoot() {
+		// Nothing nests under root, so the marker is a blank that holds the column.
+		marker, name = " ", "root"
+		if !selected {
+			nameStyle = nameStyle.Foreground(lipgloss.Color(mix(current.Accent2, current.Subtle, 0.5)))
+		}
+	}
+	head := pad + guides + subtleStyle.Render(marker) + " " + nameStyle.Render(name)
 
 	// What the group is doing rides on the same line as its name, so a
 	// folded group still reports its subtree without being opened. It is

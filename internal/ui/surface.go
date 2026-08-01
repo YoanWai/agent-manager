@@ -41,11 +41,25 @@ func hrule(width int) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(ruleHex())).Render(strings.Repeat("─", width))
 }
 
-// boundedRuleRow is the row that opens or closes the body. Over the pane
-// it draws half blocks in the pane's own tone — the fill bleeding half a
-// cell past its box, which is as far as a character cell can be divided —
-// and across the content it draws the thin rule, whose center line meets
-// the half blocks' edge at the same height.
+// railTopRow opens the body a third of a cell under the wordmark. Sextants,
+// not half blocks: no half block fits the corner over the half-width bleed
+// column at the height of the run beside it, so that cell always stepped.
+func (m *Model) railTopRow(paneWidth, width int) string {
+	if paneWidth < 2 || paneWidth >= width {
+		return paint(hrule(width), width, backdropHex())
+	}
+	fill := lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex()))
+	first := plain(fill.Render("🬹"), 1)
+	interior := lipgloss.NewStyle().Foreground(colorBg).Render(strings.Repeat("🬂", paneWidth-1))
+	last := lipgloss.NewStyle().Foreground(colorBg).Render("🬨")
+	return first + paint(interior, paneWidth-1, panelHex()) + paint(last, 1, panelHex()) +
+		paint(hrule(width-paneWidth-1), width-paneWidth-1, backdropHex())
+}
+
+// boundedRuleRow closes the body. Over the pane it draws half blocks in the
+// pane's own tone — the fill bleeding half a cell past its box — and across
+// the content it draws the thin rule, whose center line meets the half
+// blocks' edge at the same height.
 // The run's interior is drawn inverted — the cell background carries the
 // pane tone and the glyph paints the backdrop half in the theme's backdrop
 // color — but both end cells are not. The terminal extends a row's edge
@@ -84,7 +98,7 @@ func railEdgeCell(tone string) string {
 func (m *Model) vruleColumn(height int) []string {
 	lines := make([]string, height)
 	for i := range lines {
-		lines[i] = m.seamCell(false, false)
+		lines[i] = m.seamCell(false)
 	}
 	return lines
 }
@@ -131,11 +145,10 @@ func (m *Model) focusBottomRule(paneWidth, width int) string {
 		paint(focusEdgeStyle.Render(strings.Repeat("─", tail)), tail, backdropHex())
 }
 
-// seamCell is one row of the vertical seam. A rule arriving from either
-// side turns the cell into the matching junction, so crossing lines meet
-// instead of butting against each other; while the divider is being moved
-// the whole seam becomes the grip and junctions give way to it.
-func (m *Model) seamCell(leftRule, rightRule bool) string {
+// seamCell is one row of the vertical seam. The column is the pane's own
+// fill, so only the pane's rules cross it: a content rule carried across
+// reads as the content's separator running into the sessions list.
+func (m *Model) seamCell(railRule bool) string {
 	// While the divider is being moved the seam becomes the grip.
 	if m.splitDragging || m.resizeMode {
 		color := colorAccent
@@ -144,10 +157,7 @@ func (m *Model) seamCell(leftRule, rightRule bool) string {
 		}
 		return paint(lipgloss.NewStyle().Foreground(color).Render("║"), 1, panelHex())
 	}
-	// Otherwise the seam is the pane's own fill — its edge is drawn by the
-	// bleed column beside it, not by a line — and a rule arriving from
-	// either side crosses it as a rule cell on that fill.
-	if leftRule || rightRule {
+	if railRule {
 		return paint(hrule(1), 1, panelHex())
 	}
 	return paint("", 1, panelHex())

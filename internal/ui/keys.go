@@ -213,6 +213,10 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if entry.isRoot() {
+		m.err = "root stays at the top of the list"
+		return m, nil
+	}
 	target, ok := m.visibleReorderTarget(entry, delta)
 	if !ok {
 		edge := "top"
@@ -262,6 +266,11 @@ func (m *Model) visibleReorderTarget(entry treeRow, delta int) (treeRow, bool) {
 	}
 	for i := m.cursor + step; i >= 0 && i < len(m.rows); i += step {
 		candidate := m.rows[i]
+		if candidate.isRoot() {
+			// parentGroup("") is "" too, so root would match a top-level
+			// group as its own sibling.
+			continue
+		}
 		if entry.isGroup {
 			if candidate.isGroup && parentGroup(candidate.group) == parentGroup(entry.group) {
 				return candidate, true
@@ -903,6 +912,10 @@ func (m *Model) prepareDelete() {
 	if !ok {
 		return
 	}
+	if entry.isRoot() {
+		m.err = "root is the top level; delete the sessions under it instead"
+		return
+	}
 	if !entry.isGroup {
 		m.confirm = confirmTarget{
 			label:    "delete " + entry.sess.Name + "? kills its tmux session.",
@@ -1061,6 +1074,10 @@ func (m *Model) deleteConfirmedGroups() ([]string, error) {
 func (m *Model) openRename() {
 	entry, ok := m.selectedRow()
 	if !ok {
+		return
+	}
+	if entry.isRoot() {
+		m.err = "root is the top level, not a group to rename"
 		return
 	}
 	input := textinput.New()
