@@ -82,7 +82,7 @@ func (m *Model) viewForm() string {
 		b.WriteString("\n" + m.viewGroupPicker())
 	}
 
-	hint := "tab/↑↓ move · ←→ tool · ↵ create · esc cancel"
+	hint := "tab/↑↓ move · ←→ change · ↵ create · esc cancel"
 	if m.form.focus == fieldGroup {
 		hint = "↑↓ pick group · tab next field · ↵ create · esc cancel"
 	}
@@ -247,6 +247,7 @@ func (m *Model) viewHelp() string {
 		{"K / J", "reorder row up / down (shift+↑↓ also works)"},
 		{"space", "quick prompt: answer session / spawn agent in group"},
 		{"⇥", "in quick prompt: switch spawn tool"},
+		{"⌥w", "in quick prompt: toggle worktree for the spawned agent"},
 		{"^v", "in quick prompt: paste image as a chip at the cursor"},
 		{"⌫", "in quick prompt: next to a chip, delete the whole chip"},
 		{"ctrl+r", "review changes: whole-file diffs, comment lines, send to agent"},

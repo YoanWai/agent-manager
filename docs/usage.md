@@ -29,7 +29,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
-| `s` | Settings (quick-spawn tool, theme, list density, review layout, after quick send) |
+| `s` | Settings (quick-spawn tool, theme, list density, review layout, after quick send, session keys, worktree sessions) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
 | `e` | Hide / show empty groups |
@@ -58,7 +58,7 @@ A session can spawn into its own git worktree instead of the shared working dire
 
 The worktree lives at `<repo>-worktrees/<name>` next to the repo, on a new branch `am/<name>`. Its starting point is the remote's default branch (`origin/HEAD`) when that resolves, falling back to a local `main` or `master`, and finally to `HEAD`. A directory that is not a git repo, or a worktree that fails to create, blocks the spawn with an error instead of falling back to a shared directory.
 
-Deleting (`d`) a session that holds a worktree removes the worktree and its branch when it is clean: no uncommitted changes and no commits ahead of its base. A dirty worktree is left in place and its path shown, so nothing is lost. Killing, archiving, and reviving a session never touch its worktree.
+Deleting (`d`) a session that holds a worktree removes the worktree and its branch when it is clean: no uncommitted changes and no commits ahead of its base. A dirty worktree is left in place and its path shown, so nothing is lost. Note that "clean" is judged by `git status`, so gitignored files inside the worktree (a `.env`, local config, build output) are removed along with the directory. Killing, archiving, and reviving a session never touch its worktree.
 
 ## Killing and reviving sessions
 
