@@ -282,5 +282,5 @@ func formField(label, value string, focused bool) string {
 		marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 		style = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	}
-	return fmt.Sprintf("%s%s %s\n", marker, style.Width(7).Render(label), value)
+	return fmt.Sprintf("%s%s %s\n", marker, style.Width(9).Render(label), value)
 }

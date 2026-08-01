@@ -411,6 +411,15 @@ func launchPrompt(prompt string, autoNamed bool) string {
 // the New Session form and quick spawn. autoNamed marks sessions whose
 // name is a generated placeholder; those are asked to rename once.
 // Custom-named sessions only get a short note that rename is available later.
+// discardWorktree rolls back a worktree created for a spawn that failed
+// partway; a fresh worktree is clean by construction, so the removal fires.
+func (m *Model) discardWorktree(repo, path, branch string) {
+	if repo == "" {
+		return
+	}
+	_, _ = m.gitDrv.RemoveWorktreeIfClean(repo, path, branch)
+}
+
 func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool) error {
 	tool := m.cfg.Tools[toolName]
 	id := newID()
@@ -444,15 +453,11 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	}
 	command, env, err := m.buildLaunch(toolName, tool, base, id)
 	if err != nil {
-		if worktreeRepo != "" {
-			_, _ = m.gitDrv.RemoveWorktreeIfClean(worktreeRepo, dir, worktreeBranch)
-		}
+		m.discardWorktree(worktreeRepo, dir, worktreeBranch)
 		return err
 	}
 	if err := m.tmux.Create(id, dir, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
-		if worktreeRepo != "" {
-			_, _ = m.gitDrv.RemoveWorktreeIfClean(worktreeRepo, dir, worktreeBranch)
-		}
+		m.discardWorktree(worktreeRepo, dir, worktreeBranch)
 		return err
 	}
 	sess := store.Session{
@@ -471,9 +476,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	if err := m.store.CreateSession(sess); err != nil {
 		_ = m.tmux.Kill(id)
 		_ = m.hooks.Remove(id)
-		if worktreeRepo != "" {
-			_, _ = m.gitDrv.RemoveWorktreeIfClean(worktreeRepo, dir, worktreeBranch)
-		}
+		m.discardWorktree(worktreeRepo, dir, worktreeBranch)
 		return err
 	}
 	if deferDirective {

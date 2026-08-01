@@ -15,29 +15,25 @@ func testRepo(t *testing.T) (*Driver, string) {
 		t.Skip("git not installed")
 	}
 	dir := t.TempDir()
-	for _, args := range [][]string{
-		{"init", "-b", "main"},
-		{"config", "user.email", "test@test"},
-		{"config", "user.name", "test"},
-	} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
+	gitIn(t, dir, "init", "-b", "main")
+	gitIn(t, dir, "config", "user.email", "test@test")
+	gitIn(t, dir, "config", "user.name", "test")
 	return driver, dir
+}
+
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
 }
 
 func commit(t *testing.T, dir, message string) {
 	t.Helper()
-	for _, args := range [][]string{{"add", "-A"}, {"commit", "-m", message}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
+	gitIn(t, dir, "add", "-A")
+	gitIn(t, dir, "commit", "-m", message)
 }
 
 func write(t *testing.T, dir, name, content string) {
@@ -682,24 +678,12 @@ func TestRemoveWorktreeIfCleanBranchNotMergedIntoCurrentHEAD(t *testing.T) {
 	write(t, dir, "a.txt", "x")
 	commit(t, dir, "c1")
 
-	for _, args := range [][]string{{"branch", "feature"}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
+	gitIn(t, dir, "branch", "feature")
 
 	write(t, dir, "b.txt", "y")
 	commit(t, dir, "c2")
 
-	for _, args := range [][]string{{"checkout", "feature"}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
+	gitIn(t, dir, "checkout", "feature")
 
 	path, branch, err := driver.AddWorktree(dir, "clean")
 	if err != nil {
