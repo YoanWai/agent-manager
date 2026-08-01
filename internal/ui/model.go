@@ -76,10 +76,10 @@ type Model struct {
 
 	poller *poller
 	focus  *focusWatch
-	// Focused-pane selection and the geometry it hit-tests against, both
-	// written during paint so clicks resolve against the current frame.
-	// copied is the size of the last clipboard write, shown once in the
-	// status line and cleared on the next selection.
+	// sel is the focused-pane selection, written during paint so clicks
+	// resolve against the current frame. copied is the size of the last
+	// clipboard write, shown once in the status line and cleared on the
+	// next selection.
 	copied int
 	sel    focusSelection
 	pane   paneMirror
@@ -151,10 +151,11 @@ type netStats struct {
 	prevOK   bool
 }
 
-// paneMirror mirrors the focused pane as the watcher last reported it:
-// mouse ownership, appetite for pointer moves, report encoding and history
-// depth, so the wheel routes without a tmux round trip mid-Update. geom is
-// the last width×height told to tmux per session id, skipping no-op
+// paneMirror is the focused pane's state: mouse ownership, appetite for
+// pointer moves, report encoding and history depth as the watcher last
+// reported them, so the wheel routes without a tmux round trip mid-Update.
+// box, columnX and cursor are hit-test geometry written during paint; geom
+// is the last width×height told to tmux per session id, skipping no-op
 // resize-window calls that otherwise stall the UI.
 type paneMirror struct {
 	mouse   bool
