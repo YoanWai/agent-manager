@@ -25,30 +25,24 @@ func TestRailFootPutsMessagesRightOfComputer(t *testing.T) {
 	lines := m.railFootLines(70)
 
 	joined := ansi.Strip(strings.Join(lines, "\n"))
-	if !strings.Contains(joined, "messages") {
-		t.Fatalf("want a messages panel, got %q", joined)
+	if !strings.Contains(joined, "MESSAGES") {
+		t.Fatalf("want a messages card, got %q", joined)
 	}
 	if !strings.Contains(joined, "welcome") {
 		t.Fatalf("want the welcome banner, got %q", joined)
 	}
 
-	var computerRow, messagesRow int
-	for i, line := range lines {
+	for _, line := range lines {
 		clean := ansi.Strip(line)
-		if strings.Contains(clean, "computer") {
-			computerRow = i
+		if !strings.Contains(clean, "MESSAGES") {
+			continue
 		}
-		if strings.Contains(clean, "messages") {
-			messagesRow = i
+		if strings.Index(clean, "MESSAGES") < strings.Index(ansi.Strip(lines[0]), "computer") {
+			t.Fatalf("messages must sit right of computer, got %q", clean)
 		}
+		return
 	}
-	if computerRow != messagesRow {
-		t.Fatalf("panels should share their header row: computer=%d messages=%d", computerRow, messagesRow)
-	}
-	header := ansi.Strip(lines[computerRow])
-	if strings.Index(header, "computer") > strings.Index(header, "messages") {
-		t.Fatalf("messages must sit right of computer, got %q", header)
-	}
+	t.Fatal("MESSAGES header row not found")
 }
 
 func TestRailFootNarrowDropsMessages(t *testing.T) {
@@ -74,20 +68,32 @@ func TestRailFootAllDismissedShowsOnlyMeters(t *testing.T) {
 	}
 }
 
-func TestRailFootCardSeparatorAndFill(t *testing.T) {
+func TestRailFootCardBorderAndFit(t *testing.T) {
 	m := footModel(t)
-	lines := m.railFootLines(70)
-	fill := bgSeq(noticeCardHex())
+	lines := m.railFootLines(90)
+	joined := ansi.Strip(strings.Join(lines, "\n"))
+	for _, corner := range []string{"╭", "╮", "╰", "╯"} {
+		if !strings.Contains(joined, corner) {
+			t.Fatalf("card border missing %q:\n%s", corner, joined)
+		}
+	}
+	if !strings.Contains(strings.Join(lines, "\n"), bgSeq(noticeCardHex())) {
+		t.Fatal("card interior missing its fill")
+	}
 	for i, line := range lines {
 		if !strings.Contains(ansi.Strip(line), "│") {
 			t.Fatalf("row %d missing the separator: %q", i, ansi.Strip(line))
 		}
-		if !strings.Contains(line, fill) {
-			t.Fatalf("row %d missing the card fill", i)
+	}
+
+	var top string
+	for _, line := range lines {
+		if strings.Contains(ansi.Strip(line), "╭") {
+			top = line
 		}
-		if got := lipgloss.Width(line); got != 70 {
-			t.Fatalf("card must flex to the full width, row %d is %d", i, got)
-		}
+	}
+	if got := lipgloss.Width(top); got >= 90 {
+		t.Fatalf("card must hug its content, top border spans %d of 90", got)
 	}
 }
 

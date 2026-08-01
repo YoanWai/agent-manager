@@ -153,10 +153,15 @@ const noticePanelMin = 16
 // toward yellow, so the card reads as a sticky note in any theme.
 func noticeCardHex() string { return mix(panelHex(), "#e2c044", 0.16) }
 
+// noticeBorderStyle is the card's rounded frame, dimmed toward the same
+// yellow so the outline and the fill read as one object.
+func noticeBorderStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Subtle, "#e2c044", 0.45)))
+}
+
 // railFootLines is the rail's foot: the machine meters with the messages
 // card docked to their right when both notices and width exist. The card
-// flexes to all remaining width and the meters' full height, behind a
-// rule that separates the two blocks.
+// hugs its content behind a rule that separates the two blocks.
 func (m *Model) railFootLines(width int) []string {
 	meters := m.computerLines(width)
 	notices := m.activeNotices()
@@ -166,43 +171,65 @@ func (m *Model) railFootLines(width int) []string {
 			metersWidth = w
 		}
 	}
-	panelWidth := width - metersWidth - 3
-	if len(notices) == 0 || panelWidth < noticePanelMin {
+	room := width - metersWidth - 3
+	if len(notices) == 0 || room < noticePanelMin {
 		return meters
 	}
 
-	panel := m.noticePanelLines(notices, panelWidth-2, len(meters))
+	card := m.noticeCardLines(notices, room, len(meters))
 	separator := subtleStyle.Render("│")
 	lines := make([]string, len(meters))
 	for i := range meters {
 		row := ""
-		if i < len(panel) {
-			row = panel[i]
+		if i < len(card) {
+			row = card[i]
 		}
-		lines[i] = padRight(meters[i], metersWidth) + " " + separator + " " + paint(" "+row, panelWidth, noticeCardHex())
+		lines[i] = padRight(meters[i], metersWidth) + " " + separator + " " + row
 	}
 	return lines
 }
 
-// noticePanelLines is the messages column: a quiet header, one banner per
-// notice, and an overflow count when the meters block is shorter than the
-// list. Height mirrors the meters so the two columns read as one block.
-func (m *Model) noticePanelLines(notices []notice, width, height int) []string {
-	lines := []string{subtleStyle.Render("messages  ") + keyCap("M", "open")}
-	room := height - 2
+// noticeCardLines is the messages card: a rounded border hugging a badge
+// header and one banner per notice, with an overflow count when the
+// meters block is shorter than the list.
+func (m *Model) noticeCardLines(notices []notice, maxWidth, maxRows int) []string {
+	room := maxRows - 3
 	if room < 1 {
 		room = 1
 	}
 	shown := notices
+	overflow := ""
 	if len(shown) > room {
 		shown = shown[:room-1]
+		overflow = subtleStyle.Render(fmt.Sprintf("+%d more · M", len(notices)-len(shown)))
 	}
+
+	rows := []string{focusBadgeStyle.Render(" MESSAGES ") + subtleStyle.Render("  ") + keyCap("M", "open")}
 	for _, n := range shown {
-		lines = append(lines, ansi.Truncate(n.mark()+" "+valueStyle.Render(n.banner), width, "…"))
+		rows = append(rows, n.mark()+" "+valueStyle.Render(n.banner))
 	}
-	if rest := len(notices) - len(shown); rest > 0 {
-		lines = append(lines, subtleStyle.Render(fmt.Sprintf("+%d more · M", rest)))
+	if overflow != "" {
+		rows = append(rows, overflow)
 	}
+
+	inner := 0
+	for _, row := range rows {
+		if w := lipgloss.Width(row); w > inner {
+			inner = w
+		}
+	}
+	if inner > maxWidth-4 {
+		inner = maxWidth - 4
+	}
+
+	border := noticeBorderStyle()
+	edge := border.Render("│")
+	lines := []string{border.Render("╭" + strings.Repeat("─", inner+2) + "╮")}
+	for _, row := range rows {
+		row = ansi.Truncate(row, inner, "…")
+		lines = append(lines, edge+paint(" "+row, inner+2, noticeCardHex())+edge)
+	}
+	lines = append(lines, border.Render("╰"+strings.Repeat("─", inner+2)+"╯"))
 	return lines
 }
 
