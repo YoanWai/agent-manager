@@ -189,11 +189,12 @@ func (m *Model) railFootLines(width int) []string {
 	return lines
 }
 
-// noticeCardLines is the messages card: a rounded border hugging a badge
-// header and one banner per notice, with an overflow count when the
-// meters block is shorter than the list.
-func (m *Model) noticeCardLines(notices []notice, maxWidth, maxRows int) []string {
-	room := maxRows - 3
+// noticeCardLines is the messages card: a fieldset — the MESSAGES badge
+// set as a legend into the rounded top border, the open key as a legend
+// into the bottom one — hugging its content in width and spanning the
+// meters block in height.
+func (m *Model) noticeCardLines(notices []notice, maxWidth, height int) []string {
+	room := height - 2
 	if room < 1 {
 		room = 1
 	}
@@ -204,7 +205,7 @@ func (m *Model) noticeCardLines(notices []notice, maxWidth, maxRows int) []strin
 		overflow = subtleStyle.Render(fmt.Sprintf("+%d more · M", len(notices)-len(shown)))
 	}
 
-	rows := []string{focusBadgeStyle.Render(" MESSAGES ") + subtleStyle.Render("  ") + keyCap("M", "open")}
+	var rows []string
 	for _, n := range shown {
 		rows = append(rows, n.mark()+" "+valueStyle.Render(n.banner))
 	}
@@ -212,7 +213,12 @@ func (m *Model) noticeCardLines(notices []notice, maxWidth, maxRows int) []strin
 		rows = append(rows, overflow)
 	}
 
-	inner := 0
+	head := focusBadgeStyle.Render(" MESSAGES ")
+	foot := keyCap("M", "open") + subtleStyle.Render(" ")
+	inner := lipgloss.Width(head) + 2
+	if w := lipgloss.Width(foot) + 2; w > inner {
+		inner = w
+	}
 	for _, row := range rows {
 		if w := lipgloss.Width(row); w > inner {
 			inner = w
@@ -222,15 +228,34 @@ func (m *Model) noticeCardLines(notices []notice, maxWidth, maxRows int) []strin
 		inner = maxWidth - 4
 	}
 
+	filled := make([]string, height-2)
+	copy(filled, rows)
+	return noticeFrame(filled, inner, head, foot)
+}
+
+// noticeFrame wraps content rows in the notices fieldset: a rounded
+// yellow border with legends set into the top and bottom edges and the
+// card fill behind every row. inner is the content column's width.
+func noticeFrame(rows []string, inner int, topLegend, bottomLegend string) []string {
 	border := noticeBorderStyle()
 	edge := border.Render("│")
-	lines := []string{border.Render("╭" + strings.Repeat("─", inner+2) + "╮")}
+	legend := func(left, label, right string) string {
+		dashes := inner + 2 - lipgloss.Width(label)
+		if label != "" {
+			label = border.Render("─") + label
+			dashes--
+		}
+		if dashes < 0 {
+			dashes = 0
+		}
+		return border.Render(left) + label + border.Render(strings.Repeat("─", dashes)+right)
+	}
+	lines := []string{legend("╭", topLegend, "╮")}
 	for _, row := range rows {
 		row = ansi.Truncate(row, inner, "…")
 		lines = append(lines, edge+paint(" "+row, inner+2, noticeCardHex())+edge)
 	}
-	lines = append(lines, border.Render("╰"+strings.Repeat("─", inner+2)+"╯"))
-	return lines
+	return append(lines, legend("╰", bottomLegend, "╯"))
 }
 
 // openBrowser is a var so tests can capture the URL instead of opening one.
@@ -307,14 +332,21 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) viewNotices() string {
+	inner := noticeModalInner
+	if m.width >= 8 && inner > m.width-8 {
+		inner = m.width - 8
+	}
 	notices := m.activeNotices()
 	if len(notices) == 0 {
-		return m.card("messages", subtleStyle.Render("nothing new"), "esc close")
+		frame := noticeFrame([]string{subtleStyle.Render("nothing new")}, inner,
+			focusBadgeStyle.Render(" MESSAGES "), keyCap("esc", "close"))
+		return m.noticeOverlay(frame)
 	}
 	if m.noticeCursor >= len(notices) {
 		m.noticeCursor = len(notices) - 1
 	}
-	var body strings.Builder
+	var rows []string
+	rows = append(rows, "")
 	for i, n := range notices {
 		marker := "  "
 		title := valueStyle.Render(n.title)
@@ -322,21 +354,54 @@ func (m *Model) viewNotices() string {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("▸ ")
 			title = lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(n.title)
 		}
-		body.WriteString(marker + n.mark() + " " + title + "\n")
+		rows = append(rows, marker+n.mark()+" "+title)
 	}
 	selected := notices[m.noticeCursor]
-	body.WriteString(subtleStyle.Render(strings.Repeat("─", noticeRuleWidth)) + "\n")
+	rows = append(rows, noticeBorderStyle().Render(strings.Repeat("┄", inner)))
 	for _, line := range selected.body {
-		body.WriteString(mutedStyle.Render(line) + "\n")
+		rows = append(rows, mutedStyle.Render(line))
 	}
 	if selected.url != "" {
-		body.WriteString(subtleStyle.Render("↗ " + truncateTail(strings.TrimPrefix(selected.url, "https://"), noticeRuleWidth-2)))
+		rows = append(rows, subtleStyle.Render("↗ "+truncateTail(strings.TrimPrefix(selected.url, "https://"), inner-2)))
 	}
-	return m.card("messages", strings.TrimRight(body.String(), "\n"), "↑↓ pick · ↵ open link · x dismiss · esc close")
+	if m.errBar.text != "" {
+		rows = append(rows, errStyle.Render("✕ "+m.errBar.text))
+	}
+	rows = append(rows, "")
+
+	frame := noticeFrame(rows, inner,
+		focusBadgeStyle.Render(" MESSAGES "),
+		mutedStyle.Render("↑↓ pick · ↵ open · x dismiss · esc "))
+	return m.noticeOverlay(frame)
 }
 
-// noticeRuleWidth matches the card's inner column so the divider spans it.
-const noticeRuleWidth = 54
+// noticeModalInner is the modal's content column, sized for the welcome
+// notice's longest body line.
+const noticeModalInner = 62
+
+// noticeOverlay centers the framed card on the app backdrop, mirroring
+// what card does for the plain modals.
+func (m *Model) noticeOverlay(box []string) string {
+	width := 0
+	for _, line := range box {
+		if w := lipgloss.Width(line); w > width {
+			width = w
+		}
+	}
+	height := max(m.height, len(box))
+	left := max((m.width-width)/2, 0)
+	frameWidth := max(m.width, left+width)
+	top := max((height-len(box))/2, 0)
+	frame := make([]string, 0, height)
+	for i := 0; i < height; i++ {
+		row := ""
+		if i >= top && i-top < len(box) {
+			row = paint("", left, backdropHex()) + box[i-top]
+		}
+		frame = append(frame, paint(row, frameWidth, backdropHex()))
+	}
+	return strings.Join(frame, "\n")
+}
 
 func loadDismissed(st *store.Store) map[string]bool {
 	dismissed := map[string]bool{}

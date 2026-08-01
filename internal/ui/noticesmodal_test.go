@@ -44,9 +44,25 @@ func TestOpenNoticesFromList(t *testing.T) {
 func TestNoticesViewListsAndDetails(t *testing.T) {
 	m := modalModel(t)
 	frame := ansi.Strip(m.View())
-	for _, want := range []string{"messages", "Welcome to agent-manager", "Found a bug?", "dismiss"} {
+	for _, want := range []string{"MESSAGES", "Welcome to agent-manager", "Found a bug?", "dismiss"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("modal missing %q:\n%s", want, frame)
+		}
+	}
+
+	var widths []int
+	for _, line := range strings.Split(frame, "\n") {
+		trimmed := strings.TrimRight(line, " ")
+		if strings.ContainsAny(trimmed, "╭╰│") {
+			widths = append(widths, len([]rune(trimmed)))
+		}
+	}
+	if len(widths) == 0 {
+		t.Fatal("no frame rows found")
+	}
+	for i, width := range widths {
+		if width != widths[0] {
+			t.Fatalf("frame rows must align: row %d is %d, first is %d\n%s", i, width, widths[0], frame)
 		}
 	}
 }
