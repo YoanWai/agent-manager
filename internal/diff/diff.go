@@ -183,7 +183,6 @@ func countUnknownStat(driver *git.Driver, root string, fd *FileDiff) error {
 // StatKnown reports whether Stat holds a real count rather than an unknown one.
 func (fd *FileDiff) StatKnown() bool { return fd.statKnown }
 
-// Loaded reports whether the file's contents have been read and modeled.
 func (fd *FileDiff) Loaded() bool { return fd.loaded }
 
 func fileSides(driver *git.Driver, root string, scope git.Scope, baseRef string, file git.ChangedFile) (oldContent, newContent []byte, err error) {

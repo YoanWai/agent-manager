@@ -338,7 +338,6 @@ func (d *Driver) BranchRefs(root string) ([]string, error) {
 	return refs, nil
 }
 
-// ResolveRef reports whether ref names a commit reachable in root.
 func (d *Driver) ResolveRef(root, ref string) error {
 	if _, err := d.run(root, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil {
 		return fmt.Errorf("ref %q does not resolve to a commit", ref)
@@ -517,7 +516,6 @@ func (d *Driver) ShowFile(root, ref, path string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-// IndexFile reads a file's staged content.
 func (d *Driver) IndexFile(root, path string) ([]byte, error) {
 	return d.ShowFile(root, ":0", path)
 }
