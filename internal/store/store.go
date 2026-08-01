@@ -30,6 +30,11 @@ type Session struct {
 	// gemini session UUID, codex rollout id, opencode session id). Revive resumes
 	// this exact conversation instead of the cwd's most recent one.
 	AgentSessionID string
+	// WorktreeRepo and WorktreeBranch are set only for sessions running in
+	// their own git worktree: the main repo root and the am/ branch recorded
+	// at creation, so delete-time cleanup survives later renames.
+	WorktreeRepo   string
+	WorktreeBranch string
 }
 
 type Store struct {
@@ -108,6 +113,8 @@ CREATE TABLE IF NOT EXISTS settings (
 			session_id TEXT PRIMARY KEY,
 			scope      TEXT NOT NULL
 		)`,
+		`ALTER TABLE sessions ADD COLUMN worktree_repo TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN worktree_branch TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -222,11 +229,12 @@ func (s *Store) CreateSession(sess Session) error {
 		sess.LastStatusAt = sess.CreatedAt
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
-		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID, sess.Group,
+		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID,
+		sess.WorktreeRepo, sess.WorktreeBranch, sess.Group,
 	)
 	if err != nil {
 		return err
@@ -261,7 +269,7 @@ func (s *Store) CreateGroup(name, path string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -280,7 +288,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		var created, lastStatus int64
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
-			&sess.AgentSessionID); err != nil {
+			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch); err != nil {
 			return nil, err
 		}
 		sess.Archived = archived != 0
@@ -297,10 +305,11 @@ func (s *Store) Get(id string) (Session, error) {
 	var archived, acked int
 	var created, lastStatus int64
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
-		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID)
+		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
+		&sess.WorktreeRepo, &sess.WorktreeBranch)
 	if err != nil {
 		return Session{}, err
 	}

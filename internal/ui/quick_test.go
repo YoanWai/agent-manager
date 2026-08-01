@@ -569,3 +569,54 @@ func TestQuickPromptClosesAfterSendWhenEnabled(t *testing.T) {
 		t.Fatal("quick mode should close after a send when the setting is on")
 	}
 }
+
+func TestQuickWorktreeToggle(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	if m.quick.worktree {
+		t.Fatal("worktree should default off")
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}, Alt: true})
+	if !m.quick.worktree {
+		t.Fatal("alt+w should toggle worktree on")
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}, Alt: true})
+	if m.quick.worktree {
+		t.Fatal("alt+w should toggle worktree back off")
+	}
+}
+
+func TestQuickWorktreeSeedsFromSetting(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.openQuickMode()
+	if !m.quick.worktree {
+		t.Fatal("quick bar should seed worktree on from setting")
+	}
+}
+
+func TestQuickSpawnRespectsWorktreeToggleInNonRepo(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("grp", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp")
+	m.openQuickMode()
+	m.quick.worktree = true
+	m.quick.input.SetValue("do a thing")
+	m.submitQuick()
+	if m.errBar.text == "" {
+		t.Fatal("worktree spawn into a non-repo group dir must surface an error")
+	}
+	sessions, err := m.store.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatal("blocked spawn must not create a session")
+	}
+}

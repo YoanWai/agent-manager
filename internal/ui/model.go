@@ -252,6 +252,7 @@ type quickState struct {
 	attachments    []quickAttachment
 	lastImageID    int
 	closeAfterSend bool
+	worktree       bool
 }
 
 // quickAttachment is one pasted image: the id its token carries, and the
@@ -283,6 +284,7 @@ type settingsState struct {
 	quickCloseSend  bool
 	enterFocuses    bool
 	comfortableRows bool
+	worktreeDefault bool
 }
 
 const (
@@ -292,6 +294,7 @@ const (
 	settingsFieldLayout
 	settingsFieldQuickClose
 	settingsFieldFocusKey
+	settingsFieldWorktree
 	settingsFieldBugReport
 	settingsFieldCount
 )

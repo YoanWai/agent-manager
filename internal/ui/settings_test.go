@@ -73,6 +73,22 @@ func TestSettingsTogglesReviewLayout(t *testing.T) {
 	}
 }
 
+func TestSettingsWorktreeDefaultPersists(t *testing.T) {
+	m := buildModel(t)
+	m.openSettings()
+	for m.settings.field != settingsFieldWorktree {
+		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if chosen, err := m.store.Setting(worktreeSetting); err != nil || chosen != "on" {
+		t.Fatalf("want stored on, got %q err %v", chosen, err)
+	}
+	if !m.defaultWorktree() {
+		t.Fatal("defaultWorktree should now report on")
+	}
+}
+
 func TestSettingsShowsVersion(t *testing.T) {
 	m := &Model{
 		update:   updateInfo{version: "v0.9.0"},

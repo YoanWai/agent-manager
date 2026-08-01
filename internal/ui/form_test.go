@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -151,7 +154,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "/compact", true); err != nil {
+	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "/compact", true, false); err != nil {
 		t.Fatalf("slash spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -160,10 +163,10 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 		t.Fatal("slash-prompt spawn should defer the directive")
 	}
 
-	if err := m.spawnSession("claude", "claude-bbbb", dir, "", "do things", true); err != nil {
+	if err := m.spawnSession("claude", "claude-bbbb", dir, "", "do things", true, false); err != nil {
 		t.Fatalf("plain spawn: %v", err)
 	}
-	if err := m.spawnSession("claude", "custom", dir, "", "/compact", false); err != nil {
+	if err := m.spawnSession("claude", "custom", dir, "", "/compact", false, false); err != nil {
 		t.Fatalf("custom spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -179,7 +182,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 
 func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true); err != nil {
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -241,5 +244,107 @@ func TestSortedToolNamesOrder(t *testing.T) {
 	want := []string{"claude", "opencode", "codex", "grok", "gemini", "acme", "zephyr"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("sortedToolNames = %v want %v", got, want)
+	}
+}
+
+func initGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	for _, args := range [][]string{
+		{"init", "-b", "main"},
+		{"config", "user.email", "test@test"},
+		{"config", "user.name", "test"},
+		{"commit", "--allow-empty", "-m", "seed"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+}
+
+func TestFormWorktreeToggleSeedsFromSetting(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	if m.form.worktree {
+		t.Fatal("worktree should default off with no setting")
+	}
+	m.mode = modeList
+	if err := m.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.openForm()
+	if !m.form.worktree {
+		t.Fatal("worktree should seed on from setting")
+	}
+}
+
+func TestSpawnWorktreeSessionCreatesWorktree(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+
+	if err := m.spawnSession("claude", "wt-feat", repo, "", "", false, true); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sessions, err := m.store.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	sess := sessions[0]
+	wantCwd := filepath.Join(filepath.Dir(sess.WorktreeRepo), filepath.Base(sess.WorktreeRepo)+"-worktrees", "wt-feat")
+	if sess.Cwd != wantCwd {
+		t.Fatalf("cwd = %q, want %q", sess.Cwd, wantCwd)
+	}
+	if sess.WorktreeBranch != "am/wt-feat" {
+		t.Fatalf("branch = %q", sess.WorktreeBranch)
+	}
+	if _, err := os.Stat(sess.Cwd); err != nil {
+		t.Fatalf("worktree dir missing: %v", err)
+	}
+}
+
+func TestSpawnWorktreeInNonRepoBlocks(t *testing.T) {
+	m := buildModel(t)
+	plain := t.TempDir()
+	err := m.spawnSession("claude", "wt-fail", plain, "", "", false, true)
+	if err == nil {
+		t.Fatal("non-repo dir must block the spawn")
+	}
+	sessions, listErr := m.store.ListSessions(true)
+	if listErr != nil {
+		t.Fatalf("list: %v", listErr)
+	}
+	if len(sessions) != 0 {
+		t.Fatal("no session row should exist after a blocked spawn")
+	}
+}
+
+func TestSpawnWorktreeRollsBackWhenLaunchBuildFails(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	hooksDir := m.hooks.Dir()
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(hooksDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(hooksDir, 0o755) })
+
+	err := m.spawnSession("claude", "wt-launchfail", repo, "", "", false, true)
+	if err == nil {
+		t.Fatal("launch-build failure must block the spawn")
+	}
+	worktreePath := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-worktrees", "wt-launchfail")
+	if _, statErr := os.Stat(worktreePath); !os.IsNotExist(statErr) {
+		t.Fatal("worktree must be rolled back when the launch command cannot be built")
 	}
 }

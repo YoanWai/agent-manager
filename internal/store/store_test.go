@@ -679,3 +679,28 @@ func TestReviewBaseRoundTrip(t *testing.T) {
 		t.Fatalf("alpha base after clear = %q, want empty", got)
 	}
 }
+
+func TestSessionWorktreeColumnsRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	sess := Session{
+		ID: "wt1", Name: "feat", Tool: "claude", Cwd: "/tmp/repo-worktrees/feat",
+		WorktreeRepo: "/tmp/repo", WorktreeBranch: "am/feat",
+	}
+	if err := s.CreateSession(sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.Get("wt1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.WorktreeRepo != "/tmp/repo" || got.WorktreeBranch != "am/feat" {
+		t.Fatalf("worktree fields lost: %+v", got)
+	}
+	list, err := s.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if list[0].WorktreeRepo != "/tmp/repo" || list[0].WorktreeBranch != "am/feat" {
+		t.Fatalf("list dropped worktree fields: %+v", list[0])
+	}
+}

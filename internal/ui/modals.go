@@ -86,6 +86,11 @@ func (m *Model) viewForm() string {
 	if m.form.focus == fieldDir && m.pathSugg.active() {
 		b.WriteString(m.viewPathSuggestions() + "\n")
 	}
+	worktreeVal := "off"
+	if m.form.worktree {
+		worktreeVal = "on"
+	}
+	b.WriteString(formField("worktree", subtleStyle.Render("◂ ")+valueStyle.Render(worktreeVal)+subtleStyle.Render(" ▸"), m.form.focus == fieldWorktree))
 	b.WriteString(formField("prompt", m.form.prompt.View(), m.form.focus == fieldPrompt))
 	b.WriteString(formField("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), m.form.focus == fieldGroup))
 
@@ -93,7 +98,7 @@ func (m *Model) viewForm() string {
 		b.WriteString("\n" + m.viewGroupPicker())
 	}
 
-	hint := "tab/↑↓ move · ←→ tool · ↵ create · esc cancel"
+	hint := "tab/↑↓ move · ←→ change · ↵ create · esc cancel"
 	if m.form.focus == fieldGroup {
 		hint = "↑↓ pick group · tab next field · ↵ create · esc cancel"
 	}
@@ -189,6 +194,10 @@ func (m *Model) viewSettings() string {
 	if !m.settings.enterFocuses {
 		focusKey = "↵ attach · A focus"
 	}
+	worktreeDefault := "off"
+	if m.settings.worktreeDefault {
+		worktreeDefault = "on"
+	}
 	lead := func(field int, name string) string {
 		marker := "  "
 		labelStyle := valueStyle
@@ -212,6 +221,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
+		row(settingsFieldWorktree, "worktree sessions", worktreeDefault) + "\n" +
 		actionRow(settingsFieldBugReport, "report a bug", "open a prefilled GitHub issue") + "\n\n" +
 		subtleStyle.Render("  version ") + valueStyle.Render(m.update.version) + m.versionStatus()
 	hint := "↑↓ field · ←→ change · ↵/esc save"
@@ -264,6 +274,7 @@ func (m *Model) viewHelp() string {
 		{"K / J", "reorder row up / down (shift+↑↓ also works)"},
 		{"space", "quick prompt: answer session / spawn agent in group"},
 		{"⇥", "in quick prompt: switch spawn tool"},
+		{"⌥w", "in quick prompt: toggle worktree for the spawned agent"},
 		{"^v", "in quick prompt: paste image as a chip at the cursor"},
 		{"⌫", "in quick prompt: next to a chip, delete the whole chip"},
 		{"ctrl+r", "review changes: whole-file diffs, comment lines, send to agent"},
@@ -299,5 +310,5 @@ func formField(label, value string, focused bool) string {
 		marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 		style = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	}
-	return fmt.Sprintf("%s%s %s\n", marker, style.Width(7).Render(label), value)
+	return fmt.Sprintf("%s%s %s\n", marker, style.Width(9).Render(label), value)
 }

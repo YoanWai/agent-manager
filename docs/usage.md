@@ -12,7 +12,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 
 | Key | Action |
 |-----|--------|
-| `n` | New session (name, tool, directory, optional starting prompt, group picker) |
+| `n` | New session (name, tool, directory, worktree toggle, optional starting prompt, group picker) |
 | `g` | New group (name, parent, default path) |
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
 | `A` | Attach session full screen (Settings can swap it with `enter`) |
@@ -29,7 +29,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
-| `s` | Settings (quick-spawn tool, theme, list density, review layout, after quick send) |
+| `s` | Settings (quick-spawn tool, theme, list density, review layout, after quick send, session keys, worktree sessions) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
 | `e` | Hide / show empty groups |
@@ -44,13 +44,21 @@ The wheel scrolls the list and the diff. Mouse tracking stays off so click-drag 
 Press `space` to dock a prompt bar at the bottom of the sidebar. The target follows the cursor while the bar is open (`↑↓` still navigate):
 
 - On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar clears and stays open, ready for the next answer; Settings (`s`) can make it close instead.
-- On a **group** row, `enter` spawns a new agent in that group with the prompt embedded, using the group's default path. The spawn tool starts at the Settings default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. The agent starts working on the prompt immediately.
+- On a **group** row, `enter` spawns a new agent in that group with the prompt embedded, using the group's default path. The spawn tool starts at the Settings default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. `alt+w` toggles whether the new agent spawns into its own git worktree, starting from the Settings default; the footer shows `worktree: on` or `worktree: off`. Answering an existing session ignores the toggle, since there is no new session to place in a worktree. The agent starts working on the prompt immediately.
 
 `ctrl+v` pastes an image from the system clipboard as an `[Image #1]` chip at the caret. The image is saved under `agent-manager-pastes` in your temp directory, and on send each chip is swapped back for its path, so the paths reach the agent in the order and the places you pasted them. `backspace` next to a chip removes the whole chip, and an edit that swallows one releases its image. A clipboard holding text rather than an image pastes as text. Pasted images older than seven days are cleared at startup and once a day while the manager runs, so an agent can still open one from an earlier session while temp stays tidy.
 
 `esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](configuration.md)).
 
 ![answering a working Claude Code session from the prompt bar, without attaching](demo-space.gif)
+
+## Worktree sessions
+
+A session can spawn into its own git worktree instead of the shared working directory: the `n` form has a `worktree` field between `dir` and `prompt` (`◂ on ▸` / `◂ off ▸`, toggled with `←→`), and the quick prompt's `alt+w` does the same for a group spawn. Settings (`s`) has a "worktree sessions" row that sets the default both start from.
+
+The worktree lives at `<repo>-worktrees/<name>` next to the repo, on a new branch `am/<name>`. Its starting point is the remote's default branch (`origin/HEAD`) when that resolves, falling back to a local `main` or `master`, and finally to `HEAD`. A directory that is not a git repo, or a worktree that fails to create, blocks the spawn with an error instead of falling back to a shared directory.
+
+Deleting (`d`) a session that holds a worktree removes the worktree and its branch when it is clean: no uncommitted changes and no commits ahead of its base. A dirty worktree is left in place and its path shown, so nothing is lost. Note that "clean" is judged by `git status`, so gitignored files inside the worktree (a `.env`, local config, build output) are removed along with the directory. Killing, archiving, and reviving a session never touch its worktree.
 
 ## Killing and reviving sessions
 

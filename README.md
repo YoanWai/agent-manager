@@ -22,7 +22,7 @@ Claude Code, Codex, OpenCode, Grok, and Gemini CLI run side by side, each in its
 
 Instead of hunting through terminal tabs to see which agent is done and which is stuck, every session shows up in one list with live status, grouped into a project tree you can fold and reorder. You answer any of them without attaching: `space` sends a prompt straight into a session's pane, or spawns a new agent in the selected group. A dead session revives on its own conversation with `v`. And `ctrl+r` opens a full-file diff of what an agent changed, syntax-highlighted, where the comments you leave on lines go back to the agent's pane as one review prompt when you press `C`.
 
-Not here yet: worktree creation, cost tracking, mouse-driven navigation, and agents that can talk to each other.
+Not here yet: cost tracking, mouse-driven navigation, and agents that can talk to each other.
 
 **Jump to:** [Install](#install) · [Usage](#usage) · [Keys](docs/usage.md#keys) · [Diff review](docs/usage.md#diff-review) · [Configuration](docs/configuration.md)
 
@@ -73,6 +73,8 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |
 | `s` | Settings (default tool, theme, list density, review layout) |
 | `?` | Help with every binding |
+
+A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch `am/<name>`), toggled on the `n` form, with `alt+w` in the quick prompt, or by default in Settings.
 
 ![the session tree, with a waiting agent's permission prompt in the preview](docs/screenshot-sessions.png)
 

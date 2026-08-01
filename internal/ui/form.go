@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -21,6 +22,7 @@ const (
 	fieldName = iota
 	fieldTool
 	fieldDir
+	fieldWorktree
 	fieldPrompt
 	fieldGroup
 	fieldCount
@@ -47,6 +49,7 @@ type form struct {
 	toolIndex  int
 	groups     []groupOption
 	groupIndex int
+	worktree   bool
 	focus      int
 }
 
@@ -167,11 +170,12 @@ func (m *Model) openForm() {
 		toolNames: tools,
 		focus:     fieldName,
 	}
+	m.errBar.text = ""
 	m.rebuildGroupOptions(m.contextGroup())
 	m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
+	m.form.worktree = m.defaultWorktree()
 	m.pathSugg.reset()
 	m.mode = modeForm
-	m.errBar.text = ""
 }
 
 func (m *Model) selectedGroupPath() string {
@@ -260,9 +264,17 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cycleTool(-1)
 			return m, nil
 		}
+		if m.form.focus == fieldWorktree {
+			m.form.worktree = !m.form.worktree
+			return m, nil
+		}
 	case "right":
 		if m.form.focus == fieldTool {
 			m.cycleTool(1)
+			return m, nil
+		}
+		if m.form.focus == fieldWorktree {
+			m.form.worktree = !m.form.worktree
 			return m, nil
 		}
 	case "enter":
@@ -353,7 +365,7 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed); err != nil {
+	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, m.form.worktree); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
@@ -399,9 +411,34 @@ func launchPrompt(prompt string, autoNamed bool) string {
 // the New Session form and quick spawn. autoNamed marks sessions whose
 // name is a generated placeholder; those are asked to rename once.
 // Custom-named sessions only get a short note that rename is available later.
-func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed bool) error {
+// discardWorktree rolls back a worktree created for a spawn that failed
+// partway; a fresh worktree is clean by construction, so the removal fires.
+func (m *Model) discardWorktree(repo, path, branch string) {
+	if repo == "" {
+		return
+	}
+	_, _ = m.gitDrv.RemoveWorktreeIfClean(repo, path, branch)
+}
+
+func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool) error {
 	tool := m.cfg.Tools[toolName]
 	id := newID()
+	worktreeRepo, worktreeBranch := "", ""
+	if worktree {
+		if m.gitDrv == nil {
+			return errors.New("worktree sessions need git installed")
+		}
+		root, err := m.gitDrv.RepoRoot(dir)
+		if err != nil {
+			return err
+		}
+		path, branch, err := m.gitDrv.AddWorktree(root, name)
+		if err != nil {
+			return err
+		}
+		dir = path
+		worktreeRepo, worktreeBranch = root, branch
+	}
 	deferDirective := autoNamed && !directiveEmbeddable(prompt)
 	prompt = launchPrompt(prompt, autoNamed)
 	base := withPrompt(tool, tool.Command, prompt)
@@ -416,9 +453,11 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	}
 	command, env, err := m.buildLaunch(toolName, tool, base, id)
 	if err != nil {
+		m.discardWorktree(worktreeRepo, dir, worktreeBranch)
 		return err
 	}
 	if err := m.tmux.Create(id, dir, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
+		m.discardWorktree(worktreeRepo, dir, worktreeBranch)
 		return err
 	}
 	sess := store.Session{
@@ -431,10 +470,13 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		// a launch state immediately; the poller flips it to the real status.
 		Status:         status.Starting,
 		AgentSessionID: agentSessionID,
+		WorktreeRepo:   worktreeRepo,
+		WorktreeBranch: worktreeBranch,
 	}
 	if err := m.store.CreateSession(sess); err != nil {
 		_ = m.tmux.Kill(id)
 		_ = m.hooks.Remove(id)
+		m.discardWorktree(worktreeRepo, dir, worktreeBranch)
 		return err
 	}
 	if deferDirective {
