@@ -9,7 +9,7 @@ import (
 
 const (
 	splitRatioSetting = "split_ratio"
-	defaultSplitRatio = 0.34
+	defaultSplitRatio = 0.3
 	minSplitSide      = 30
 	// How many columns on either side of the panel junction count as the
 	// divider hit target. Wide enough to grab without hunting.
@@ -21,7 +21,7 @@ type settingReader interface {
 	Setting(key string) (string, error)
 }
 
-// loadSplitRatio restores the sessions/sidebar ratio, or the 34% default
+// loadSplitRatio restores the sessions/sidebar ratio, or the 30% default
 // when nothing is stored or the value is unusable.
 func loadSplitRatio(st settingReader) float64 {
 	raw, err := st.Setting(splitRatioSetting)

@@ -53,11 +53,11 @@ func TestSettingsSwapsFocusKey(t *testing.T) {
 	if !strings.Contains(card, "session keys") {
 		t.Fatalf("settings card has no session keys row:\n%s", card)
 	}
-	for i := 0; i < 4; i++ {
+	for i := 0; i < settingsFieldFocusKey; i++ {
 		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	if m.settings.field != settingsFieldFocusKey {
-		t.Fatalf("fourth down should focus the session keys field, got %d", m.settings.field)
+		t.Fatalf("stepping down should reach the session keys field, got %d", m.settings.field)
 	}
 	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
 	if !strings.Contains(ansi.Strip(m.viewSettings()), "attach") {

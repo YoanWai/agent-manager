@@ -161,6 +161,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.layoutSplit {
 		layout = "split"
 	}
+	density := "compact"
+	if m.settings.comfortableRows {
+		density = "comfortable"
+	}
 	quickClose := "stay open"
 	if m.settings.quickCloseSend {
 		quickClose = "close"
@@ -182,6 +186,7 @@ func (m *Model) viewSettings() string {
 	body := row(settingsFieldTool, "quick spawn tool", m.settings.toolNames[m.settings.toolIndex]) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
+		row(settingsFieldDensity, "list density", density) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n\n" +

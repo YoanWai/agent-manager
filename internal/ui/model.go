@@ -106,6 +106,10 @@ type Model struct {
 	// focusOnEnter mirrors the persisted focus-key setting; the footer
 	// reads it every frame, so it lives here instead of the store.
 	focusOnEnter bool
+	// comfortableRows mirrors the persisted list density: entries paint
+	// their meta on a second line instead of alongside the name. Every
+	// rail frame reads it, so it lives here instead of the store.
+	comfortableRows bool
 	// watchedGen is previewGen as of the last poll pass, so a selection
 	// that has not moved since can be recognised as at rest.
 	watchedGen        uint64
@@ -235,18 +239,20 @@ type quickImageMsg struct {
 }
 
 type settingsState struct {
-	toolNames      []string
-	toolIndex      int
-	themeIndex     int
-	field          int
-	layoutSplit    bool
-	quickCloseSend bool
-	enterFocuses   bool
+	toolNames       []string
+	toolIndex       int
+	themeIndex      int
+	field           int
+	layoutSplit     bool
+	quickCloseSend  bool
+	enterFocuses    bool
+	comfortableRows bool
 }
 
 const (
 	settingsFieldTool = iota
 	settingsFieldTheme
+	settingsFieldDensity
 	settingsFieldLayout
 	settingsFieldQuickClose
 	settingsFieldFocusKey
@@ -355,18 +361,19 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	gitDriver, _ := git.New()
 	applyTheme(themes[themeIndex(storedTheme(st))])
 	return &Model{
-		cfg:          cfg,
-		store:        st,
-		tmux:         driver,
-		hooks:        hookManager,
-		gitDrv:       gitDriver,
-		setSnapshot:  st.SetSnapshot,
-		poller:       newPoller(st, driver, engine, hookManager, statusSources, sessionStores, cfg.PollInterval.Duration),
-		collapsed:    loadCollapsed(st),
-		splitRatio:   loadSplitRatio(st),
-		focusOnEnter: storedFocusOnEnter(st),
-		mode:         modeList,
-		version:      version,
+		cfg:             cfg,
+		store:           st,
+		tmux:            driver,
+		hooks:           hookManager,
+		gitDrv:          gitDriver,
+		setSnapshot:     st.SetSnapshot,
+		poller:          newPoller(st, driver, engine, hookManager, statusSources, sessionStores, cfg.PollInterval.Duration),
+		collapsed:       loadCollapsed(st),
+		splitRatio:      loadSplitRatio(st),
+		focusOnEnter:    storedFocusOnEnter(st),
+		comfortableRows: storedComfortableRows(st),
+		mode:            modeList,
+		version:         version,
 	}
 }
 

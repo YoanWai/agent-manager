@@ -56,7 +56,7 @@ func clampFrame(frame string, height int) string {
 }
 
 // splitWidths is the body's horizontal split: the sessions panel takes
-// splitRatio of the terminal (default 34%), floored so both sides stay
+// splitRatio of the terminal (default 30%), floored so both sides stay
 // usable when the window is wide enough.
 func (m *Model) splitWidths() (int, int) {
 	if m.width <= 0 {

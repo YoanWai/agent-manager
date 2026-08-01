@@ -1629,6 +1629,18 @@ func (m *Model) defaultSplitLayout() bool {
 	return chosen != "unified"
 }
 
+const listDensitySetting = "list_density"
+
+// storedComfortableRows reads the persisted list density. Compact is the
+// default; a stored "comfortable" choice gives every entry a second line.
+func storedComfortableRows(st *store.Store) bool {
+	chosen, err := st.Setting(listDensitySetting)
+	if err != nil {
+		return false
+	}
+	return chosen == "comfortable"
+}
+
 const focusKeySetting = "focus_key"
 
 // enterFocuses reports which key opens a session where. Enter focuses the
@@ -1677,6 +1689,8 @@ func (m *Model) openSettings() {
 		layoutSplit:    m.defaultSplitLayout(),
 		quickCloseSend: m.quickCloseAfterSend(),
 		enterFocuses:   m.enterFocuses(),
+
+		comfortableRows: m.comfortableRows,
 	}
 	m.mode = modeSettings
 }
@@ -1719,7 +1733,15 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err := m.store.SetSetting(focusKeySetting, focusKey); err != nil {
 			m.err = err.Error()
 		}
+		density := "compact"
+		if m.settings.comfortableRows {
+			density = "comfortable"
+		}
+		if err := m.store.SetSetting(listDensitySetting, density); err != nil {
+			m.err = err.Error()
+		}
 		m.focusOnEnter = m.settings.enterFocuses
+		m.comfortableRows = m.settings.comfortableRows
 		m.mode = modeList
 	}
 	return m, nil
@@ -1736,6 +1758,8 @@ func (m *Model) cycleSetting(step int) {
 		m.settings.themeIndex = (m.settings.themeIndex + step + len(themes)) % len(themes)
 		applyTheme(themes[m.settings.themeIndex])
 		SyncTerminalBackground()
+	case settingsFieldDensity:
+		m.settings.comfortableRows = !m.settings.comfortableRows
 	case settingsFieldLayout:
 		m.settings.layoutSplit = !m.settings.layoutSplit
 	case settingsFieldQuickClose:
