@@ -230,7 +230,7 @@ var themes = []Theme{
 		Dim:     "#657b83",
 		Subtle:  "#93a1a1",
 		Accent:  "#268bd2",
-		Accent2: "#2aa198",
+		Accent2: "#218a80",
 
 		Working:  "#268bd2",
 		Waiting:  "#b58900",
