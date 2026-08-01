@@ -28,13 +28,20 @@ const (
 )
 
 // notice is one dismissible message shown in the rail's messages panel
-// and readable in full from the notices modal. url is what enter opens.
+// and readable in full from the notices modal. url is what enter opens;
+// glyph and tint are its mark in both places.
 type notice struct {
 	id     string
+	glyph  string
+	tint   lipgloss.Color
 	banner string
 	title  string
 	body   []string
 	url    string
+}
+
+func (n notice) mark() string {
+	return lipgloss.NewStyle().Foreground(n.tint).Render(n.glyph)
 }
 
 func (m *Model) activeNotices() []notice {
@@ -45,7 +52,9 @@ func (m *Model) activeNotices() []notice {
 	if m.update.latest != "" {
 		notices = append(notices, notice{
 			id:     "update-" + m.update.latest,
-			banner: "↑ " + m.update.latest + " available",
+			glyph:  "↑",
+			tint:   colorAccent,
+			banner: m.update.latest + " available",
 			title:  "Update available",
 			body: []string{
 				"Release " + m.update.latest + " is out; this build is " + m.update.version + ".",
@@ -57,7 +66,9 @@ func (m *Model) activeNotices() []notice {
 	if updated, err := m.store.Setting(whatsNewVersionSetting); err == nil && updated == m.update.version {
 		notices = append(notices, notice{
 			id:     "whatsnew-" + m.update.version,
-			banner: "✦ updated to " + m.update.version,
+			glyph:  "✦",
+			tint:   colorAccent2,
+			banner: "updated to " + m.update.version,
 			title:  "What's new in " + m.update.version,
 			body: []string{
 				"This machine now runs " + m.update.version + ".",
@@ -69,7 +80,9 @@ func (m *Model) activeNotices() []notice {
 	notices = append(notices,
 		notice{
 			id:     noticeWelcome,
-			banner: "✳ welcome — press M",
+			glyph:  "✳",
+			tint:   colorAccent2,
+			banner: "welcome — press M",
 			title:  "Welcome to agent-manager",
 			body: []string{
 				"Every row on the left is a live agent session: enter attaches,",
@@ -80,7 +93,9 @@ func (m *Model) activeNotices() []notice {
 		},
 		notice{
 			id:     noticeBugReport,
-			banner: "? report a bug",
+			glyph:  "?",
+			tint:   colorAccent,
+			banner: "report a bug",
 			title:  "Found a bug?",
 			body: []string{
 				"Enter opens a GitHub issue prefilled with your version and OS.",
@@ -167,7 +182,7 @@ func (m *Model) railFootLines(width int) []string {
 // notice, and an overflow count when the meters block is shorter than the
 // list. Height mirrors the meters so the two columns read as one block.
 func (m *Model) noticePanelLines(notices []notice, width, height int) []string {
-	lines := []string{subtleStyle.Render("messages") + subtleStyle.Render("  M")}
+	lines := []string{subtleStyle.Render("messages  ") + keyCap("M", "open")}
 	room := height - 2
 	if room < 1 {
 		room = 1
@@ -177,7 +192,7 @@ func (m *Model) noticePanelLines(notices []notice, width, height int) []string {
 		shown = shown[:room-1]
 	}
 	for _, n := range shown {
-		lines = append(lines, ansi.Truncate(valueStyle.Render(n.banner), width, "…"))
+		lines = append(lines, ansi.Truncate(n.mark()+" "+valueStyle.Render(n.banner), width, "…"))
 	}
 	if rest := len(notices) - len(shown); rest > 0 {
 		lines = append(lines, subtleStyle.Render(fmt.Sprintf("+%d more · M", rest)))
@@ -268,20 +283,27 @@ func (m *Model) viewNotices() string {
 	}
 	var body strings.Builder
 	for i, n := range notices {
-		marker := subtleStyle.Render("  ")
+		marker := "  "
 		title := valueStyle.Render(n.title)
 		if i == m.noticeCursor {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("▸ ")
 			title = lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(n.title)
 		}
-		body.WriteString(marker + title + "\n")
+		body.WriteString(marker + n.mark() + " " + title + "\n")
 	}
-	body.WriteString("\n")
-	for _, line := range notices[m.noticeCursor].body {
-		body.WriteString(subtleStyle.Render(line) + "\n")
+	selected := notices[m.noticeCursor]
+	body.WriteString(subtleStyle.Render(strings.Repeat("─", noticeRuleWidth)) + "\n")
+	for _, line := range selected.body {
+		body.WriteString(mutedStyle.Render(line) + "\n")
+	}
+	if selected.url != "" {
+		body.WriteString(subtleStyle.Render("↗ " + truncateTail(strings.TrimPrefix(selected.url, "https://"), noticeRuleWidth-2)))
 	}
 	return m.card("messages", strings.TrimRight(body.String(), "\n"), "↑↓ pick · ↵ open link · x dismiss · esc close")
 }
+
+// noticeRuleWidth matches the card's inner column so the divider spans it.
+const noticeRuleWidth = 54
 
 func loadDismissed(st *store.Store) map[string]bool {
 	dismissed := map[string]bool{}

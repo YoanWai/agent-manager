@@ -173,15 +173,21 @@ func (m *Model) viewSettings() string {
 	if !m.settings.enterFocuses {
 		focusKey = "↵ attach · A focus"
 	}
-	row := func(field int, name, value string) string {
+	lead := func(field int, name string) string {
 		marker := "  "
 		labelStyle := valueStyle
 		if m.settings.field == field {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
-		picker := subtleStyle.Render("◂ ") + valueStyle.Render(value) + subtleStyle.Render(" ▸")
-		return marker + padRight(labelStyle.Render(name), 18) + picker
+		return marker + padRight(labelStyle.Render(name), 18)
+	}
+	row := func(field int, name, value string) string {
+		return lead(field, name) + subtleStyle.Render("◂ ") + valueStyle.Render(value) + subtleStyle.Render(" ▸")
+	}
+	// An action row: enter runs it, so it carries no picker arrows.
+	actionRow := func(field int, name, action string) string {
+		return lead(field, name) + keyStyle.Render("↵") + mutedStyle.Render(" "+action)
 	}
 	body := row(settingsFieldTool, "quick spawn tool", m.settings.toolNames[m.settings.toolIndex]) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
@@ -189,7 +195,8 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldDensity, "list density", density) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
-		row(settingsFieldFocusKey, "session keys", focusKey) + "\n\n" +
+		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
+		actionRow(settingsFieldBugReport, "report a bug", "open a prefilled GitHub issue") + "\n\n" +
 		subtleStyle.Render("  version ") + valueStyle.Render(m.update.version) + m.versionStatus()
 	return m.card("⚙ Settings", body, "↑↓ field · ←→ change · ↵/esc save")
 }

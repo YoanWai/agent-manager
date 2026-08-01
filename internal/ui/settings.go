@@ -97,6 +97,13 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right", "l":
 		m.cycleSetting(1)
 	case "enter", "esc":
+		// Enter on the bug-report row is the action itself, not save-and-close.
+		if msg.String() == "enter" && m.settings.field == settingsFieldBugReport {
+			if err := openBrowser(bugReportURL(m.update.version)); err != nil {
+				m.errBar.text = err.Error()
+			}
+			return m, nil
+		}
 		if err := m.store.SetSetting("default_tool", m.settings.toolNames[m.settings.toolIndex]); err != nil {
 			m.errBar.text = err.Error()
 		}

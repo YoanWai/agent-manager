@@ -281,6 +281,7 @@ const (
 	settingsFieldLayout
 	settingsFieldQuickClose
 	settingsFieldFocusKey
+	settingsFieldBugReport
 	settingsFieldCount
 )
 

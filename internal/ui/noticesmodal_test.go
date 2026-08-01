@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -92,6 +93,36 @@ func TestNoticesEscCloses(t *testing.T) {
 	}
 	if len(m.activeNotices()) == 0 {
 		t.Fatal("esc must not dismiss anything")
+	}
+}
+
+func TestSettingsBugReportRowOpensIssue(t *testing.T) {
+	m := footModel(t)
+	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.openSettings()
+	if m.mode != modeSettings {
+		t.Fatalf("settings should open, mode=%v", m.mode)
+	}
+
+	var opened string
+	openBrowser = func(url string) error {
+		opened = url
+		return nil
+	}
+	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+
+	m.settings.field = settingsFieldBugReport
+	m.handleSettingsKey(key("enter"))
+	if !strings.Contains(opened, "issues/new") {
+		t.Fatalf("enter should open the issue page, got %q", opened)
+	}
+	if m.mode != modeSettings {
+		t.Fatal("the action row must not close settings")
+	}
+
+	m.handleSettingsKey(key("esc"))
+	if m.mode != modeList {
+		t.Fatal("esc should still save and close")
 	}
 }
 
