@@ -265,7 +265,7 @@ func (m *Model) viewHelp() string {
 	rows := [][2]string{
 		{"n", "new session"},
 		{"↵", "attach session / fold group"},
-		{"ctrl+q", "inside a session: back to manager"},
+		{"ctrl+q", "inside a session: back to manager (ctrl+\\ also works)"},
 		{"ctrl+r", "inside a session: review its diff, esc returns"},
 		{"m", "move session to another group"},
 		{"g", "new group (name, parent, default path, worktree)"},

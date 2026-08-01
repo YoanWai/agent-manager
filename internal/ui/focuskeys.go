@@ -155,11 +155,12 @@ func (m *Model) leaveFocus() tea.Cmd {
 	})
 }
 
-// handleFocusKey forwards every key into the focused pane. Ctrl+Q is the
-// one reserved key: it returns to the list, mirroring detach from a real
-// attach, and every plain character - q included - reaches the agent.
+// handleFocusKey forwards every key into the focused pane. Ctrl+Q and
+// ctrl+\ are the reserved keys: they return to the list, mirroring detach
+// from a real attach, and every plain character - q included - reaches
+// the agent.
 func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+q" {
+	if msg.String() == "ctrl+q" || msg.String() == `ctrl+\` {
 		return m, m.leaveFocus()
 	}
 	sess, ok := m.selected()

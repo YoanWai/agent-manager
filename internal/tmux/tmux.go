@@ -178,13 +178,14 @@ func (d *Driver) styleStatusBar(name string) error {
 	return nil
 }
 
-// EnsureBindings installs the server-global Ctrl+Q detach and Ctrl+R review
-// bindings. Both only act inside am_* sessions; elsewhere the key passes
-// through to the pane. Idempotent, so it is safe to re-run for sessions that
-// predate a binding.
+// EnsureBindings installs the server-global Ctrl+Q / Ctrl+\ detach and
+// Ctrl+R review bindings. All only act inside am_* sessions; elsewhere the
+// key passes through to the pane. Idempotent, so it is safe to re-run for
+// sessions that predate a binding.
 func (d *Driver) EnsureBindings() error {
 	binds := [][]string{
 		{"bind-key", "-n", "C-q", "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "detach-client", "send-keys C-q"},
+		{"bind-key", "-n", `C-\`, "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "detach-client", `send-keys C-\\`},
 		{"bind-key", "-n", "C-r", "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "set-option -g " + reviewOption + " 1 ; detach-client", "send-keys C-r"},
 	}
 	for _, args := range binds {

@@ -422,3 +422,21 @@ func TestDetachNoMouseReArm(t *testing.T) {
 		t.Fatalf("detach should not re-arm mouse, got %T", cmd)
 	}
 }
+
+// Ctrl+\ mirrors ctrl+q: it leaves focus without touching the pane.
+func TestFocusModeCtrlBackslashUnfocuses(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "focusme", t.TempDir(), "")
+	m.selectSessionRow(t, "focusme")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlBackslash})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("ctrl+\\ left mode = %v", m.mode)
+	}
+}

@@ -1,11 +1,24 @@
 [
   {
+    "id": "group-worktree-defaults",
+    "banner": "new: worktree defaults per group",
+    "title": "Groups now carry their own worktree default",
+    "body": [
+      "Each group can choose inherit, on, or off for spawning sessions in",
+      "their own git worktree, set when creating a group (g) or editing one (r);",
+      "children inherit from their parents, and the global setting stays the",
+      "root fallback. The quick-prompt toggle moved to shift+tab, which every",
+      "terminal delivers, and ctrl+\\ now leaves a focused session, same as ctrl+q."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases"
+  },
+  {
     "id": "worktree-sessions",
     "banner": "new: worktree sessions",
     "title": "Sessions can now spawn in their own git worktree",
     "body": [
       "Parallel agents on one repo never edit the same checkout again.",
-      "Toggle it on the new-session form (n), with alt+w on the quick prompt,",
+      "Toggle it on the new-session form (n), with shift+tab on the quick prompt,",
       "or set the default for both in settings (s).",
       "Deleting a session cleans up its worktree and branch when they are clean."
     ],
