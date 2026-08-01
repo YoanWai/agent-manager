@@ -54,13 +54,13 @@ func TestClampSplitLeft(t *testing.T) {
 }
 
 func TestSplitWidthsUsesRatio(t *testing.T) {
-	m := &Model{width: 100, splitRatio: 0.4}
+	m := &Model{width: 100, split: splitState{ratio: 0.4}}
 	left, right := m.splitWidths()
 	if left != 40 || right != 60 {
 		t.Fatalf("splitWidths = %d,%d want 40,60", left, right)
 	}
 	// Default ratio when unset, floored by the minimum side.
-	m.splitRatio = 0
+	m.split.ratio = 0
 	left, right = m.splitWidths()
 	ratio := defaultSplitRatio
 	wantLeft := clampSplitLeft(int(ratio*100), 100)
@@ -70,10 +70,10 @@ func TestSplitWidthsUsesRatio(t *testing.T) {
 }
 
 func TestSetSplitFromXClampsAndUpdatesRatio(t *testing.T) {
-	m := &Model{width: 100, splitRatio: defaultSplitRatio}
+	m := &Model{width: 100, split: splitState{ratio: defaultSplitRatio}}
 	m.setSplitFromX(50)
-	if m.splitRatio != 0.5 {
-		t.Fatalf("ratio = %v want 0.5", m.splitRatio)
+	if m.split.ratio != 0.5 {
+		t.Fatalf("ratio = %v want 0.5", m.split.ratio)
 	}
 	left, _ := m.splitWidths()
 	if left != 50 {
@@ -87,10 +87,10 @@ func TestSetSplitFromXClampsAndUpdatesRatio(t *testing.T) {
 }
 
 func TestResizeModeKeyArmsDrag(t *testing.T) {
-	m := &Model{mode: modeList, splitRatio: defaultSplitRatio, width: 120, height: 40}
+	m := &Model{mode: modeList, split: splitState{ratio: defaultSplitRatio}, width: 120, height: 40}
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
 	m = updated.(*Model)
-	if !m.resizeMode {
+	if !m.split.resizeMode {
 		t.Fatal("| should enter resize mode")
 	}
 	if cmd != nil {
@@ -100,7 +100,7 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 	// Other keys are swallowed while armed.
 	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	m = updated.(*Model)
-	if m.mode != modeList || !m.resizeMode {
+	if m.mode != modeList || !m.split.resizeMode {
 		t.Fatal("resize mode should swallow n")
 	}
 	if cmd != nil {
@@ -109,7 +109,7 @@ func TestResizeModeKeyArmsDrag(t *testing.T) {
 
 	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(*Model)
-	if m.resizeMode {
+	if m.split.resizeMode {
 		t.Fatal("esc should leave resize mode")
 	}
 	if cmd != nil {
@@ -125,11 +125,11 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 
 	m := &Model{
-		store:      st,
-		mode:       modeList,
-		width:      100,
-		height:     40,
-		splitRatio: 0.34,
+		store:  st,
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: 0.34},
 	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
@@ -149,7 +149,7 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
 	m = updated.(*Model)
-	if m.resizeMode {
+	if m.split.resizeMode {
 		t.Fatal("| should commit and exit resize mode")
 	}
 	if cmd != nil {
@@ -172,11 +172,11 @@ func TestEnterCommitsResize(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 
 	m := &Model{
-		store:      st,
-		mode:       modeList,
-		width:      100,
-		height:     40,
-		splitRatio: 0.34,
+		store:  st,
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: 0.34},
 	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
@@ -184,7 +184,7 @@ func TestEnterCommitsResize(t *testing.T) {
 
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(*Model)
-	if m.resizeMode || m.splitDragging {
+	if m.split.resizeMode || m.split.dragging {
 		t.Fatal("enter should commit and leave resize mode")
 	}
 	if cmd != nil {
@@ -196,14 +196,14 @@ func TestEnterCommitsResize(t *testing.T) {
 }
 
 func TestArrowCancelRestoresRatio(t *testing.T) {
-	m := &Model{mode: modeList, width: 100, height: 40, splitRatio: 0.34}
+	m := &Model{mode: modeList, width: 100, height: 40, split: splitState{ratio: 0.34}}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(*Model)
-	if m.resizeMode {
+	if m.split.resizeMode {
 		t.Fatal("esc should exit")
 	}
 	if left, _ := m.splitWidths(); left != 34 {
@@ -219,11 +219,11 @@ func TestQuitFromResizePersistsRatio(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 
 	m := &Model{
-		store:      st,
-		mode:       modeList,
-		width:      100,
-		height:     40,
-		splitRatio: 0.34,
+		store:  st,
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: 0.34},
 	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
@@ -231,7 +231,7 @@ func TestQuitFromResizePersistsRatio(t *testing.T) {
 
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	m = updated.(*Model)
-	if m.resizeMode || m.splitDragging {
+	if m.split.resizeMode || m.split.dragging {
 		t.Fatal("quit should clear resize state")
 	}
 	if cmd == nil {
@@ -253,11 +253,11 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 
 	m := &Model{
-		store:      st,
-		mode:       modeList,
-		width:      100,
-		height:     40,
-		splitRatio: defaultSplitRatio,
+		store:  st,
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: defaultSplitRatio},
 	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
@@ -268,7 +268,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 		X: div, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
-	if !m.splitDragging {
+	if !m.split.dragging {
 		t.Fatal("press on divider should start drag")
 	}
 
@@ -284,7 +284,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 		X: 50, Y: 5, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
-	if m.splitDragging || m.resizeMode {
+	if m.split.dragging || m.split.resizeMode {
 		t.Fatal("release should end drag and exit resize mode")
 	}
 	if cmd != nil {
@@ -309,7 +309,7 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "split-drag", t.TempDir(), "")
 	id := m.sessionRows()[0].ID
-	m.splitRatio = defaultSplitRatio
+	m.split.ratio = defaultSplitRatio
 	m.resizeSessions()
 	before := windowWidth(t, id)
 	if before != m.previewPaneWidth() {
@@ -356,18 +356,17 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 
 func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 	m := &Model{
-		mode:       modeList,
-		width:      100,
-		height:     40,
-		splitRatio: 0.34,
-		resizeMode: true,
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: 0.34, resizeMode: true},
 	}
 	div := m.dividerX()
 	updated, _ := m.handleMouse(tea.MouseMsg{
 		X: div, Y: 0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
-	if m.splitDragging {
+	if m.split.dragging {
 		t.Fatal("press on header row must not start drag")
 	}
 	y0, y1 := m.bodyYRange()
@@ -378,29 +377,29 @@ func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 		X: div, Y: y1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
-	if m.splitDragging {
+	if m.split.dragging {
 		t.Fatal("press on exclusive body end must not start drag")
 	}
 }
 
 func TestEnterResizeBlockedWhenSearchingOrQuick(t *testing.T) {
-	m := &Model{mode: modeList, width: 100, height: 40, splitRatio: defaultSplitRatio, searching: true}
+	m := &Model{mode: modeList, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, searching: true}
 	updated, cmd := m.enterResizeMode()
 	m = updated.(*Model)
-	if m.resizeMode || cmd != nil {
+	if m.split.resizeMode || cmd != nil {
 		t.Fatal("searching should block resize mode")
 	}
 	m.searching = false
 	m.quick.active = true
 	updated, cmd = m.enterResizeMode()
 	m = updated.(*Model)
-	if m.resizeMode || cmd != nil {
+	if m.split.resizeMode || cmd != nil {
 		t.Fatal("quick prompt should block resize mode")
 	}
 }
 
 func TestBodyYRangeMatchesListChrome(t *testing.T) {
-	m := &Model{width: 120, height: 40, splitRatio: defaultSplitRatio, mode: modeList}
+	m := &Model{width: 120, height: 40, split: splitState{ratio: defaultSplitRatio}, mode: modeList}
 	start, end := m.bodyYRange()
 	if start != m.listChromeRows() {
 		t.Fatalf("start = %d want listChromeRows=%d", start, m.listChromeRows())
@@ -419,10 +418,10 @@ func TestBodyYRangeMatchesListChrome(t *testing.T) {
 
 func TestDragCancelRestoresRatio(t *testing.T) {
 	m := &Model{
-		mode:       modeList,
-		width:      100,
-		height:     40,
-		splitRatio: 0.34,
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: 0.34},
 	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
@@ -441,7 +440,7 @@ func TestDragCancelRestoresRatio(t *testing.T) {
 
 	updated, _ = m.exitResizeMode(false)
 	m = updated.(*Model)
-	if m.resizeMode || m.splitDragging {
+	if m.split.resizeMode || m.split.dragging {
 		t.Fatal("cancel should clear resize state")
 	}
 	if left, _ := m.splitWidths(); left != 34 {
@@ -451,17 +450,16 @@ func TestDragCancelRestoresRatio(t *testing.T) {
 
 func TestPressOffDividerDoesNotDrag(t *testing.T) {
 	m := &Model{
-		mode:       modeList,
-		width:      100,
-		height:     40,
-		splitRatio: 0.34,
-		resizeMode: true,
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: 0.34, resizeMode: true},
 	}
 	updated, _ := m.handleMouse(tea.MouseMsg{
 		X: 5, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
-	if m.splitDragging {
+	if m.split.dragging {
 		t.Fatal("press far from divider should not start drag")
 	}
 }
@@ -472,8 +470,8 @@ func TestNewLoadsPersistedSplitRatio(t *testing.T) {
 		t.Fatalf("set setting: %v", err)
 	}
 	loaded := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
-	if loaded.splitRatio != 0.45 {
-		t.Fatalf("New splitRatio = %v want 0.45", loaded.splitRatio)
+	if loaded.split.ratio != 0.45 {
+		t.Fatalf("New splitRatio = %v want 0.45", loaded.split.ratio)
 	}
 }
 
@@ -505,12 +503,12 @@ func TestWheelScrollMovesListCursor(t *testing.T) {
 
 func TestWheelSwallowedInResizeMode(t *testing.T) {
 	m := &Model{
-		mode:       modeList,
-		resizeMode: true,
-		cursor:     0,
-		rows:       []treeRow{{}, {}},
-		width:      80,
-		height:     24,
+		mode:   modeList,
+		split:  splitState{resizeMode: true},
+		cursor: 0,
+		rows:   []treeRow{{}, {}},
+		width:  80,
+		height: 24,
 	}
 	updated, _ := m.handleMouse(tea.MouseMsg{
 		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,

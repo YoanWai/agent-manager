@@ -1,9 +1,10 @@
 /agent-manager
 /am
 .worktrees/
+.claude/worktrees/
 *.db
 *.db-*
 .DS_Store
-/dist/
 dist/
 .playwright-mcp/
+docs/badges/

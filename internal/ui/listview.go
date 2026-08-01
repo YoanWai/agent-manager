@@ -47,7 +47,7 @@ func (m *Model) viewListFrame() string {
 	// background and the fill's corners land exactly on the cell grid.
 	bleedWidth := contentWidth - 1
 	railWidth := leftWidth - 1
-	m.paneColumnX = leftWidth + 2
+	m.pane.columnX = leftWidth + 2
 	railRows := m.railLines(railWidth, bodyHeight)
 	contentRows := m.contentLines(bleedWidth, bodyHeight)
 	seam := make([]string, bodyHeight)
@@ -69,7 +69,7 @@ func (m *Model) viewListFrame() string {
 		paintContent(contentRows, bleedWidth, bodyHeight, backdropHex()),
 	)...)
 	bottom := m.boundedRuleRow(leftWidth+1, m.width, "▄")
-	if m.mode == modeFocus && m.paneBox.ok {
+	if m.mode == modeFocus && m.pane.box.ok {
 		bottom = m.focusBottomRule(leftWidth+1, m.width)
 	}
 	frame = append(frame,
@@ -468,10 +468,10 @@ func (m *Model) computerLines(width int) []string {
 	if temps := tempReadings(snap); temps != "" {
 		lines = append(lines, pad+labelStyle.Width(5).Render("temp")+temps)
 	}
-	if m.netRates {
+	if m.net.rates {
 		lines = append(lines, pad+labelStyle.Width(5).Render("net")+
-			valueStyle.Render("↓ "+humanBytes(m.netDown)+"/s")+
-			subtleStyle.Render("  ↑ "+humanBytes(m.netUp)+"/s"))
+			valueStyle.Render("↓ "+humanBytes(m.net.down)+"/s")+
+			subtleStyle.Render("  ↑ "+humanBytes(m.net.up)+"/s"))
 	}
 	return append(lines, "")
 }
@@ -557,12 +557,12 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	if len(pane) == 0 {
 		// No rows painted means nothing to hit-test: a box left over from
 		// the previous session would catch clicks on empty space.
-		m.paneBox = paneBox{}
+		m.pane.box = paneBox{}
 		return append(lines, contentLine{text: gutter + mutedStyle.Render("(no output yet)")})
 	}
 	// Record where these rows land so mouse hit-testing reads the same
 	// geometry the paint used.
-	m.paneBox = paneBox{
+	m.pane.box = paneBox{
 		x:      m.paneOriginX(),
 		y:      m.listChromeRows() + m.previewBodyOffset + len(lines),
 		width:  width,
@@ -756,9 +756,9 @@ func (m *Model) headerScope() string {
 		scope = subtleStyle.Render(" · ") + scopeBadgeStyle.Render("ARCHIVED")
 	}
 	line := valueStyle.Render(fmt.Sprintf("%d", count)) + subtleStyle.Render(label) + scope
-	if m.updateLatest != "" {
+	if m.update.latest != "" {
 		line += subtleStyle.Render("   ") +
-			lipgloss.NewStyle().Foreground(colorAccent).Render("↑ "+m.updateLatest+" available")
+			lipgloss.NewStyle().Foreground(colorAccent).Render("↑ "+m.update.latest+" available")
 	}
 	return line
 }

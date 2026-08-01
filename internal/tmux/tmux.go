@@ -45,8 +45,6 @@ func NewWithSocket(socket string) (*Driver, error) {
 	return &Driver{bin: bin, socket: socket}, nil
 }
 
-// SocketName is the tmux server name this driver targets. Tests use it to aim
-// raw tmux commands at the same private socket the driver runs on.
 func (d *Driver) SocketName() string {
 	return d.socket
 }
@@ -55,14 +53,11 @@ func sessionName(id string) string {
 	return prefix + id
 }
 
-// SessionName is the tmux session name for a manager session id, for
-// callers that assemble control-pipe commands themselves.
 func SessionName(id string) string {
 	return sessionName(id)
 }
 
-// args prefixes -L <socket> so every tmux invocation targets the driver's
-// private server. tmux requires the flag before the command word.
+// tmux requires -L <socket> before the command word.
 func (d *Driver) args(a ...string) []string {
 	return append([]string{"-L", d.socket}, a...)
 }
@@ -116,7 +111,6 @@ func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// envCommand builds VAR='value' … command for a POSIX shell.
 func envCommand(env map[string]string, command string) string {
 	keys := make([]string, 0, len(env))
 	for key := range env {
@@ -135,8 +129,6 @@ func launchScriptPath(id string) string {
 	return filepath.Join(os.TempDir(), "am-launch-"+id+".sh")
 }
 
-// writeLaunchScript writes a one-shot shell script that runs the launch
-// line then replaces itself with an interactive shell.
 func writeLaunchScript(id, line string) (string, error) {
 	path := launchScriptPath(id)
 	shell := os.Getenv("SHELL")
@@ -150,8 +142,6 @@ func writeLaunchScript(id, line string) (string, error) {
 	return path, nil
 }
 
-// installSessionUX styles a new session's status bar, seeds an empty label
-// until SetLabel runs, and installs the server-global key bindings.
 func (d *Driver) installSessionUX(name string) error {
 	if err := d.EnsureBindings(); err != nil {
 		return err
@@ -212,9 +202,8 @@ func (d *Driver) RefreshChrome(id string) error {
 	return d.styleStatusBar(sessionName(id))
 }
 
-// SendText delivers text into the session's pane and presses Enter, so
-// the agent inside receives it as a user message. Uses paste-buffer so
-// long prompts are not truncated the way send-keys is.
+// SendText delivers text into the session's pane and presses Enter, so the
+// agent inside receives it as a user message.
 func (d *Driver) SendText(id, text string) error {
 	return d.pasteAndEnter(sessionName(id), text)
 }
@@ -229,7 +218,6 @@ func (d *Driver) Paste(id, text string) error {
 
 var pasteSeq atomic.Uint64
 
-// pasteAndEnter pastes text of any length into a pane and submits it.
 func (d *Driver) pasteAndEnter(target, text string) error {
 	if err := d.paste(target, text); err != nil {
 		return err

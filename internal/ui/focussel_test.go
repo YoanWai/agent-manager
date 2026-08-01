@@ -19,7 +19,7 @@ func paneAt(t *testing.T, lines ...string) *Model {
 	m.mode = modeFocus
 	m.cursorOn = true
 	m.preview = strings.Join(lines, "\n") + "\n"
-	m.paneBox = paneBox{x: 10, y: 5, width: 40, height: len(lines), ok: true}
+	m.pane.box = paneBox{x: 10, y: 5, width: 40, height: len(lines), ok: true}
 	return m
 }
 
@@ -109,20 +109,20 @@ func TestPaneBoxMatchesPaintedFrame(t *testing.T) {
 	*m = *updated.(*Model)
 
 	frame := splitLines(m.View())
-	if !m.paneBox.ok {
+	if !m.pane.box.ok {
 		t.Fatal("pane box never recorded")
 	}
-	if m.paneBox.y >= len(frame) {
-		t.Fatalf("pane box row %d past frame of %d rows", m.paneBox.y, len(frame))
+	if m.pane.box.y >= len(frame) {
+		t.Fatalf("pane box row %d past frame of %d rows", m.pane.box.y, len(frame))
 	}
-	row := plainCells(frame[m.paneBox.y])
-	if m.paneBox.x+len(marker) > len(row) {
-		t.Fatalf("pane box x %d past row width %d", m.paneBox.x, len(row))
+	row := plainCells(frame[m.pane.box.y])
+	if m.pane.box.x+len(marker) > len(row) {
+		t.Fatalf("pane box x %d past row width %d", m.pane.box.x, len(row))
 	}
-	got := string(row[m.paneBox.x : m.paneBox.x+len(marker)])
+	got := string(row[m.pane.box.x : m.pane.box.x+len(marker)])
 	if got != marker {
 		t.Fatalf("row %d at column %d = %q, want %q\nrow: %q",
-			m.paneBox.y, m.paneBox.x, got, marker, string(row))
+			m.pane.box.y, m.pane.box.x, got, marker, string(row))
 	}
 }
 
@@ -138,9 +138,9 @@ func TestTripleClickOnRealFrameTakesPaneRowOnly(t *testing.T) {
 	*m = *updated.(*Model)
 	m.View()
 
-	y := m.paneBox.y + 1
+	y := m.pane.box.y + 1
 	for i := 0; i < 3; i++ {
-		press(m, m.paneBox.x+3, y)
+		press(m, m.pane.box.x+3, y)
 	}
 	got := m.selectionText()
 	if got != "pane row two" {
@@ -276,7 +276,7 @@ func TestApplyPaneState(t *testing.T) {
 // capture is taller than the panel showing its bottom rows.
 func TestCursorCellMapsIntoVisibleRows(t *testing.T) {
 	m := paneAt(t, "one", "two", "three")
-	m.paneCursor = paneCursor{x: 2, y: 1, ok: true}
+	m.pane.cursor = paneCursor{x: 2, y: 1, ok: true}
 	row, col, ok := m.cursorCell(3)
 	if !ok || row != 1 || col != 2 {
 		t.Fatalf("cursorCell = (%d,%d,%v), want (1,2,true)", row, col, ok)
@@ -285,15 +285,15 @@ func TestCursorCellMapsIntoVisibleRows(t *testing.T) {
 	// A capture taller than the panel is shown from its bottom, so the
 	// cursor row shifts by the lines the panel dropped.
 	tall := paneAt(t, "r0", "r1", "r2", "r3", "r4")
-	tall.paneBox.height = 3
-	tall.paneCursor = paneCursor{x: 4, y: 4, ok: true}
+	tall.pane.box.height = 3
+	tall.pane.cursor = paneCursor{x: 4, y: 4, ok: true}
 	row, col, ok = tall.cursorCell(3)
 	if !ok || row != 2 || col != 4 {
 		t.Fatalf("shifted cursorCell = (%d,%d,%v), want (2,4,true)", row, col, ok)
 	}
 
 	// A cursor above the visible window is not drawn.
-	tall.paneCursor = paneCursor{x: 0, y: 1, ok: true}
+	tall.pane.cursor = paneCursor{x: 0, y: 1, ok: true}
 	if _, _, ok := tall.cursorCell(3); ok {
 		t.Fatal("cursor above the shown rows was mapped in")
 	}
@@ -306,7 +306,7 @@ func TestCursorPaintedOnItsRow(t *testing.T) {
 	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := paneAt(t, "abc", "def")
-	m.paneCursor = paneCursor{x: 1, y: 0, ok: true}
+	m.pane.cursor = paneCursor{x: 1, y: 0, ok: true}
 	withCursor := m.renderPaneRow(0, "abc", 20)
 	if !strings.Contains(withCursor, "\x1b[") {
 		t.Fatalf("cursor row carries no styling: %q", withCursor)
@@ -350,7 +350,7 @@ func TestCursorPastEndOfLine(t *testing.T) {
 	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := paneAt(t, "ab")
-	m.paneCursor = paneCursor{x: 5, y: 0, ok: true}
+	m.pane.cursor = paneCursor{x: 5, y: 0, ok: true}
 	row := m.renderPaneRow(0, "ab", 20)
 	if !strings.Contains(row, "\x1b[") {
 		t.Fatalf("no cursor drawn past end of line: %q", row)

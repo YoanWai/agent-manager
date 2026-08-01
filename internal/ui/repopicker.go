@@ -54,12 +54,12 @@ func (m *Model) openRepoPick() {
 func (m *Model) openBranchPick() tea.Cmd {
 	root := m.diff.set.Repo.Root
 	if m.gitDrv == nil || root == "" {
-		m.err = "no repo under review"
+		m.errBar.text = "no repo under review"
 		return nil
 	}
 	worktrees, err := m.gitDrv.Worktrees(root)
 	if err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return nil
 	}
 	rows := make([]pickRow, len(worktrees))
@@ -79,23 +79,23 @@ func (m *Model) openBasePick() tea.Cmd {
 	// that clears the bad base unreachable exactly when it is needed.
 	root := m.diff.repoSel
 	if m.gitDrv == nil || root == "" {
-		m.err = "no repo under review"
+		m.errBar.text = "no repo under review"
 		return nil
 	}
 	refs, err := m.gitDrv.BranchRefs(root)
 	if err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return nil
 	}
 	sess, ok := m.diffSession()
 	if !ok {
-		m.err = "session is gone"
+		m.errBar.text = "session is gone"
 		return nil
 	}
 	// Resolve symlinks so the key matches the CLI's symlink-expanded toplevel.
 	current, err := m.store.ReviewBase(sess.ID, resolveSymlinksOrSelf(root))
 	if err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return nil
 	}
 	rows := make([]pickRow, 0, len(refs)+1)
@@ -117,7 +117,7 @@ func (m *Model) openPick(rows []pickRow, title string, kind pickKind, current st
 		}
 	}
 	m.mode = modeRepoPick
-	m.err = ""
+	m.errBar.text = ""
 }
 
 func resolveSymlinksOrSelf(path string) string {
@@ -192,7 +192,7 @@ func (m *Model) moveRepoPickCursor(delta, count int) {
 func (m *Model) selectRepo(root string) tea.Cmd {
 	sess, ok := m.diffSession()
 	if !ok {
-		m.err = "session is gone"
+		m.errBar.text = "session is gone"
 		return nil
 	}
 	m.diff.repoSel = root
@@ -218,12 +218,12 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 func (m *Model) selectBase(ref string) tea.Cmd {
 	sess, ok := m.diffSession()
 	if !ok {
-		m.err = "session is gone"
+		m.errBar.text = "session is gone"
 		return nil
 	}
 	// Resolve symlinks so the key matches the CLI's symlink-expanded toplevel.
 	if err := m.store.SetReviewBase(sess.ID, resolveSymlinksOrSelf(m.diff.repoSel), ref); err != nil {
-		m.err = err.Error()
+		m.errBar.text = err.Error()
 		return nil
 	}
 	m.diff.scope = git.ScopeBranch

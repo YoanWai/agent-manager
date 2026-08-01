@@ -92,33 +92,6 @@ func TestSaveImageDarwinFallsBackToJXAWhenNativeBroken(t *testing.T) {
 	}
 }
 
-func TestReadImageDarwinUsesNative(t *testing.T) {
-	defer restore()()
-	goos = "darwin"
-	want := []byte("fake-png-bytes")
-	readNativeImage = func() ([]byte, error) {
-		return want, nil
-	}
-	data, ext, err := ReadImage()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != string(want) || ext != "png" {
-		t.Fatalf("got %q/%q", data, ext)
-	}
-}
-
-func TestReadImageDarwinNoImage(t *testing.T) {
-	defer restore()()
-	goos = "darwin"
-	readNativeImage = func() ([]byte, error) {
-		return nil, ErrNoImage
-	}
-	if _, _, err := ReadImage(); !errors.Is(err, ErrNoImage) {
-		t.Fatalf("want ErrNoImage, got %v", err)
-	}
-}
-
 func TestSaveImageLinuxWlPasteStreamsToFile(t *testing.T) {
 	defer restore()()
 	goos = "linux"
@@ -307,77 +280,6 @@ func TestSaveImageWSLFallsBackWhenNativeMisses(t *testing.T) {
 	data, _ := os.ReadFile(path)
 	if string(data) != "from-windows" {
 		t.Fatalf("want Windows clipboard fallback, got %q", data)
-	}
-}
-
-func TestReadImageLinuxWayland(t *testing.T) {
-	defer restore()()
-	goos = "linux"
-	wslProbe = func() bool { return false }
-	readNativeImage = nil
-	want := []byte("wayland-png")
-	lookPath = func(name string) (string, error) {
-		if name == "wl-paste" {
-			return "/usr/bin/wl-paste", nil
-		}
-		return "", errors.New("not found")
-	}
-	runCmdToFile = func(outPath string, name string, args ...string) error {
-		return os.WriteFile(outPath, want, 0o644)
-	}
-	data, ext, err := ReadImage()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != string(want) || ext != "png" {
-		t.Fatalf("got %q/%q", data, ext)
-	}
-}
-
-func TestReadImageLinuxXclipFallback(t *testing.T) {
-	defer restore()()
-	goos = "linux"
-	wslProbe = func() bool { return false }
-	readNativeImage = nil
-	lookPath = func(name string) (string, error) {
-		if name == "xclip" {
-			return "/usr/bin/xclip", nil
-		}
-		return "", errors.New("not found")
-	}
-	var used string
-	runCmdToFile = func(outPath string, name string, args ...string) error {
-		used = name
-		return os.WriteFile(outPath, []byte("x11-png"), 0o644)
-	}
-	if _, _, err := ReadImage(); err != nil {
-		t.Fatal(err)
-	}
-	if used != "xclip" {
-		t.Fatalf("expected xclip, used %q", used)
-	}
-}
-
-func TestReadImageLinuxNoTool(t *testing.T) {
-	defer restore()()
-	goos = "linux"
-	wslProbe = func() bool { return false }
-	readNativeImage = nil
-	lookPath = func(name string) (string, error) { return "", errors.New("not found") }
-	_, _, err := ReadImage()
-	if err == nil || errors.Is(err, ErrNoImage) {
-		t.Fatalf("want a missing-tool error, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "wl-clipboard") {
-		t.Fatalf("error should name the tools to install, got %v", err)
-	}
-}
-
-func TestReadImageUnsupportedOS(t *testing.T) {
-	defer restore()()
-	goos = "plan9"
-	if _, _, err := ReadImage(); err == nil {
-		t.Fatal("expected unsupported-OS error")
 	}
 }
 

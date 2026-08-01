@@ -233,7 +233,7 @@ func TestRelativePathsStoredAbsolute(t *testing.T) {
 	m.groupForm.name.SetValue("relgrp")
 	m.groupForm.path.SetValue("sub")
 	if _, cmd := m.submitGroupForm(); cmd == nil {
-		t.Fatalf("group form should submit, err=%q", m.err)
+		t.Fatalf("group form should submit, err=%q", m.errBar.text)
 	}
 	groups, _ := m.store.Groups()
 	for _, g := range groups {

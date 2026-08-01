@@ -29,14 +29,30 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BADGE_TOKEN: ${{ secrets.BADGE_TOKEN }}
         run: go run ./tools/badges
-      - name: Commit when the numbers moved
+      - name: Commit the README when the trendshift region moved
         run: |
-          if [ -z "$(git status --porcelain docs/badges README.md)" ]; then
-            echo "chips unchanged"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/badges README.md
-          git commit -m "chore(badges): refresh the README stats [skip ci]"
-          git push
+          if [ -z "$(git status --porcelain README.md)" ]; then
+            echo "README unchanged"
+          else
+            git add README.md
+            git commit -m "chore(badges): refresh the README stats [skip ci]"
+            git push
+          fi
+      - name: Publish the clone count to the badges branch
+        run: |
+          if [ ! -f docs/badges/clones.json ]; then
+            echo "no fresh clone count, leaving the badges branch as published"
+            exit 0
+          fi
+          git fetch origin refs/heads/badges:refs/remotes/origin/badges
+          git checkout -B badges origin/badges
+          cp docs/badges/clones.json clones.json
+          if [ -z "$(git status --porcelain clones.json)" ]; then
+            echo "clone count unchanged"
+            exit 0
+          fi
+          git add clones.json
+          git commit -m "chore(badges): refresh the clone count"
+          git push origin badges
