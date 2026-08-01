@@ -70,6 +70,11 @@ func (m *Model) viewForm() string {
 	if m.form.focus == fieldDir && m.pathSugg.active() {
 		b.WriteString(m.viewPathSuggestions() + "\n")
 	}
+	worktreeVal := "off"
+	if m.form.worktree {
+		worktreeVal = "on"
+	}
+	b.WriteString(formField("worktree", subtleStyle.Render("◂ ")+valueStyle.Render(worktreeVal)+subtleStyle.Render(" ▸"), m.form.focus == fieldWorktree))
 	b.WriteString(formField("prompt", m.form.prompt.View(), m.form.focus == fieldPrompt))
 	b.WriteString(formField("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), m.form.focus == fieldGroup))
 

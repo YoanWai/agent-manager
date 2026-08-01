@@ -257,7 +257,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	name := toolName + "-" + newID()[:4]
-	if err := m.spawnSession(toolName, name, dir, group, prompt, true); err != nil {
+	if err := m.spawnSession(toolName, name, dir, group, prompt, true, false); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}

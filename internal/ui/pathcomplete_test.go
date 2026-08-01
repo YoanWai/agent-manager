@@ -103,8 +103,8 @@ func TestPathSuggestionsExitToAdjacentFormFields(t *testing.T) {
 		t.Fatalf("second down should select the second suggestion, index=%d", m.pathSugg.index)
 	}
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.form.focus != fieldPrompt {
-		t.Fatalf("down past the last suggestion should focus prompt, focus=%d", m.form.focus)
+	if m.form.focus != fieldWorktree {
+		t.Fatalf("down past the last suggestion should focus worktree, focus=%d", m.form.focus)
 	}
 
 	m.formFocus(-1)

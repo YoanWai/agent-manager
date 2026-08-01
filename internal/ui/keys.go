@@ -381,6 +381,8 @@ const focusKeySetting = "focus_key"
 
 const quickCloseSetting = "quick_prompt_close"
 
+const worktreeSetting = "worktree_default"
+
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter", "esc":

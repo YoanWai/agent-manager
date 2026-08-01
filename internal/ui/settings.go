@@ -26,6 +26,18 @@ func (m *Model) defaultTool() string {
 	return names[0]
 }
 
+// defaultWorktree reports whether new sessions spawn into their own git
+// worktree by default. Off unless the stored choice says "on"; a store
+// error is surfaced but still yields off.
+func (m *Model) defaultWorktree() bool {
+	chosen, err := m.store.Setting(worktreeSetting)
+	if err != nil {
+		m.errBar.text = "reading worktree setting: " + err.Error()
+		return false
+	}
+	return chosen == "on"
+}
+
 // defaultSplitLayout reports whether review mode should open in split
 // (side-by-side) layout. Split is the default; a stored "unified" choice
 // opts out. A store error is surfaced but still yields the split default.

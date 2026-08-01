@@ -270,7 +270,7 @@ func windowHeight(t *testing.T, id string) int {
 func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 	t.Helper()
 	m := buildModel(t)
-	if err := m.spawnSession(tool, name, t.TempDir(), "", "", true); err != nil {
+	if err := m.spawnSession(tool, name, t.TempDir(), "", "", true, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
