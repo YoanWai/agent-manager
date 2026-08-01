@@ -129,34 +129,6 @@ var validScopes = map[string]bool{
 	"staged":      true,
 }
 
-func scopeToString(s git.Scope) string {
-	switch s {
-	case git.ScopeBranch:
-		return "branch"
-	case git.ScopeLastCommit:
-		return "last_commit"
-	case git.ScopeStaged:
-		return "staged"
-	default:
-		return "uncommitted"
-	}
-}
-
-func parseScope(s string) (git.Scope, bool) {
-	switch strings.TrimSpace(s) {
-	case "branch":
-		return git.ScopeBranch, true
-	case "last_commit":
-		return git.ScopeLastCommit, true
-	case "staged":
-		return git.ScopeStaged, true
-	case "uncommitted":
-		return git.ScopeUncommitted, true
-	default:
-		return 0, false
-	}
-}
-
 // ReviewScope records the diff scope the review screen should open with
 // for this session: uncommitted, branch (vs target), last_commit, or staged.
 func ReviewScope(configDir, sessionID, scope string) (string, error) {

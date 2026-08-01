@@ -965,14 +965,10 @@ func (m *Model) annotationAt(path string, line diff.Line) *annotation {
 	return nil
 }
 
-// reanchorAnnotations re-points saved comments at the line that still
+// reanchorAnnotationsFor re-points saved comments at the line that still
 // carries their excerpt after a reload shifted line numbers (the agent
 // edits while the user reviews), choosing the nearest match. A comment
 // whose line vanished entirely keeps its number as the best guess.
-func (m *Model) reanchorAnnotations() {
-	m.reanchorAnnotationsFor("")
-}
-
 func (m *Model) reanchorAnnotationsFor(path string) {
 	notes := m.diff.annotations[m.reviewKey()]
 	for i := range notes {

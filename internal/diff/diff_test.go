@@ -167,7 +167,7 @@ func TestUntrackedFileGetsLineCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range set.Files {
-		EnsureFile(driver, &set, i)
+		ensureFile(driver, &set, i)
 	}
 	byPath := map[string]FileDiff{}
 	for _, fd := range set.Files {
@@ -218,7 +218,7 @@ func TestUntrackedFileOverLineCapCountsTrueLines(t *testing.T) {
 	if huge == nil {
 		t.Fatal("huge.txt missing from the set")
 	}
-	EnsureFile(driver, &set, 0)
+	ensureFile(driver, &set, 0)
 	huge = &set.Files[0]
 	if !huge.StatKnown() {
 		t.Fatal("huge.txt stat should be known")
@@ -254,7 +254,7 @@ func TestUntrackedFileOverByteCapStillCounts(t *testing.T) {
 	if wide == nil {
 		t.Fatal("wide.txt missing from the set")
 	}
-	EnsureFile(driver, &set, 0)
+	ensureFile(driver, &set, 0)
 	wide = &set.Files[0]
 	if !wide.StatKnown() {
 		t.Fatal("wide.txt stat should be known")
@@ -287,7 +287,7 @@ func TestTruncatedTrackedFileKeepsNumstat(t *testing.T) {
 	if len(set.Files) != 1 {
 		t.Fatalf("files = %d, want 1", len(set.Files))
 	}
-	EnsureFile(driver, &set, 0)
+	ensureFile(driver, &set, 0)
 	big := set.Files[0]
 	if !big.StatKnown() {
 		t.Fatal("big.txt stat should stay known after the truncated load")
@@ -326,7 +326,7 @@ func TestUntrackedStatsLoadLazily(t *testing.T) {
 	}
 
 	for i := range set.Files {
-		EnsureFile(driver, &set, i)
+		ensureFile(driver, &set, i)
 	}
 	adds := 0
 	for _, fd := range set.Files {
@@ -361,7 +361,7 @@ func TestUnreadableUntrackedFileDoesNotAbortSet(t *testing.T) {
 		t.Fatalf("BuildSet aborted on one unreadable file: %v", err)
 	}
 	for i := range set.Files {
-		EnsureFile(driver, &set, i)
+		ensureFile(driver, &set, i)
 	}
 	byPath := map[string]FileDiff{}
 	for _, fd := range set.Files {
@@ -397,6 +397,13 @@ func gitRun(t *testing.T, dir string, args ...string) {
 
 // A stored base ref drives the vs-base diff: the branch diffs against the
 // override's merge base, not the auto-detected main.
+func ensureFile(driver *git.Driver, set *Set, index int) {
+	if set.Files[index].loaded {
+		return
+	}
+	set.Files[index] = LoadFile(driver, *set, index)
+}
+
 func TestBuildSetBranchBaseOverride(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "a.go", "package a\n\nfunc A() int { return 1 }\n")

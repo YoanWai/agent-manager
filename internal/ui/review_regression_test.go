@@ -647,7 +647,7 @@ func TestReanchorKeepsAmbiguousAndAvoidsCollapse(t *testing.T) {
 			lineOf(diff.Same, 3, "unique()"),
 		},
 	}}}
-	m.reanchorAnnotations()
+	m.reanchorAnnotationsFor("")
 	notes := m.diff.annotations[m.reviewKey()]
 	if notes[0].line != 2 {
 		t.Errorf("blank excerpt should not move: line=%d", notes[0].line)

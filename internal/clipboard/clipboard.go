@@ -94,20 +94,6 @@ func SweepStale(maxAge time.Duration) error {
 	return errors.Join(failures...)
 }
 
-// ReadImage returns the clipboard image as raw bytes plus its file
-// extension. It errors when the clipboard holds no image, the platform
-// tooling is missing, or the OS is unsupported.
-func ReadImage() ([]byte, string, error) {
-	switch goos {
-	case "darwin":
-		return readDarwin()
-	case "linux":
-		return readLinux()
-	default:
-		return nil, "", fmt.Errorf("clipboard image paste is not supported on %s", goos)
-	}
-}
-
 // SaveImage writes a clipboard image into the pastes directory and returns
 // its absolute path. Prefers an in-process native pasteboard read when
 // available, then platform shell tools.
@@ -187,23 +173,6 @@ func saveDarwinImage() (string, error) {
 	return path, nil
 }
 
-// readDarwin pulls PNG bytes for callers that still want the raw payload.
-func readDarwin() ([]byte, string, error) {
-	path, err := saveDarwinImage()
-	if err != nil {
-		return nil, "", err
-	}
-	defer os.Remove(path)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, "", err
-	}
-	if len(data) == 0 {
-		return nil, "", ErrNoImage
-	}
-	return data, "png", nil
-}
-
 // saveLinuxImage writes a clipboard PNG. Order:
 //  1. In-process native pasteboard (X11/Wayland via golang.design/x/clipboard)
 //  2. wl-paste (Wayland CLI)
@@ -249,23 +218,6 @@ func saveLinuxImage() (string, error) {
 		return "", errors.New("install wl-clipboard or xclip to paste images")
 	}
 	return "", ErrNoImage
-}
-
-// readLinux pulls PNG bytes for the ReadImage API.
-func readLinux() ([]byte, string, error) {
-	path, err := saveLinuxImage()
-	if err != nil {
-		return nil, "", err
-	}
-	defer os.Remove(path)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, "", err
-	}
-	if len(data) == 0 {
-		return nil, "", ErrNoImage
-	}
-	return data, "png", nil
 }
 
 // writePasteFromCmd creates a paste file and streams the command's stdout
