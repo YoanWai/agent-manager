@@ -18,8 +18,7 @@ func TestPreviewSettleDropsStaleGen(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("stale settle should not schedule previewCmd")
 	}
-	updated, cmd = m.Update(previewSettleMsg{gen: 3})
-	m = updated.(*Model)
+	_, cmd = m.Update(previewSettleMsg{gen: 3})
 	if cmd != nil {
 		t.Fatal("settle without a session row should not capture")
 	}
@@ -59,8 +58,7 @@ func TestMoveCursorDebouncesPreview(t *testing.T) {
 		t.Fatal("stale settle after second move must not capture")
 	}
 	// Fresh settle for the current gen with a session should schedule previewCmd.
-	updated, next = m.Update(previewSettleMsg{gen: m.previewGen})
-	m = updated.(*Model)
+	_, next = m.Update(previewSettleMsg{gen: m.previewGen})
 	if next == nil {
 		t.Fatal("current settle should schedule a capture")
 	}

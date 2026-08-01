@@ -1,6 +1,6 @@
 # Configuration
 
-Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux) and is created on first run with working defaults for Claude Code, OpenCode, Codex, and Grok Build.
+Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux, with `XDG_CONFIG_HOME` honored when set) and is created on first run with working defaults for Claude Code, OpenCode, Codex, and Grok Build.
 
 Top-level: `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats.
 

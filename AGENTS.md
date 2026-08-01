@@ -31,7 +31,7 @@ else's commit. Branch from `origin/main` after a fetch, not from the local
 
 - `main.go` dispatches subcommands (`rename`, `review-repo`, `review-base`,
   `mcp`) and boots the TUI.
-- `internal/ui` is the bubbletea program: one `Model`, files grouped by
+- `internal/ui` is the Bubble Tea program: one `Model`, files grouped by
   feature (list, diff review, focus, quick prompt, settings).
 - `internal/tmux` owns the dedicated tmux socket and control-mode client;
   `internal/store` is the SQLite state; `internal/status` classifies pane

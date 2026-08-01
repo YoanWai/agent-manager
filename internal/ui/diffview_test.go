@@ -130,7 +130,7 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 		t.Fatal("annotations should clear after send")
 	}
 	if !strings.Contains(m.diff.notice, "review comment") {
-		t.Fatalf("feedback = %q", m.errBar.text)
+		t.Fatalf("notice = %q (err=%q)", m.diff.notice, m.errBar.text)
 	}
 	sess := m.sessionRows()[0]
 	// Join wrapped lines so the delivery check does not depend on where the

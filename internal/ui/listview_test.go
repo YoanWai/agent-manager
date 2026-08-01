@@ -291,6 +291,9 @@ func TestComfortableMetaLineKeepsTreeGuides(t *testing.T) {
 
 	lines := railText(t, m)
 	head := lineWith(t, lines, "sibling")
+	if head+1 >= len(lines) {
+		t.Fatalf("entry has no meta line:\n%s", strings.Join(lines, "\n"))
+	}
 	name, meta := lines[head], lines[head+1]
 	nameRunes, metaRunes := []rune(name), []rune(meta)
 	guideAt := -1
