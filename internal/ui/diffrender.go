@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"fmt"
 	"hash/fnv"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -350,4 +353,581 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 		closeRow()
 	}
 	return rows
+}
+
+// annotationRows renders the comment attached to line lineIdx, if any, as
+// its own indented full-width rows beneath the code line. Shared by the
+// unified and side-by-side layouts so both surface saved comments.
+func (m *Model) annotationRows(fd *diff.FileDiff, lineIdx, width int) []string {
+	note := m.annotationAt(fd.File.Path, fd.Lines[lineIdx])
+	if note == nil {
+		return nil
+	}
+	comment := annotationStyle.Render("  ¶ " + note.text)
+	return wrapTinted(comment, nil, annotationBg(), annotationBg(), width)
+}
+
+func (m *Model) diffEmptyText() string {
+	if m.diff.loading && len(m.diff.set.Files) == 0 {
+		return mutedStyle.Render("(loading diff…)")
+	}
+	if m.diff.errText != "" {
+		return errStyle.Render("✖ " + m.diff.errText)
+	}
+	if m.diff.sessID == "" {
+		return mutedStyle.Render("(select a session to diff)")
+	}
+	if len(m.diff.set.Files) == 0 {
+		return mutedStyle.Render(fmt.Sprintf("✓ no changes (%s)", m.diff.scope)) + "\n" +
+			subtleStyle.Render("s cycles scope")
+	}
+	return ""
+}
+
+func (m *Model) diffBodyNote(fd *diff.FileDiff) string {
+	switch {
+	case !fd.Loaded():
+		return mutedStyle.Render("(loading file…)")
+	case fd.Err != nil:
+		return errStyle.Render("✖ " + fd.Err.Error())
+	case fd.Binary:
+		return mutedStyle.Render("(binary file)")
+	case fd.Truncated && len(fd.Lines) == 0:
+		return mutedStyle.Render("(file too large to diff)")
+	case len(fd.Lines) == 0:
+		return mutedStyle.Render("(empty file)")
+	}
+	return ""
+}
+
+// renderDiffRow renders one whole-file diff line into one or more visual
+// rows: line numbers, change sign, syntax-highlighted text with the diff
+// background tinted through, long lines wrapped with the gutter blanked
+// on continuation rows.
+func (m *Model) renderDiffRow(fd *diff.FileDiff, hl *fileHL, index, width int, cursor bool) []string {
+	line := fd.Lines[index]
+	gutterWidth := numWidth(fd)
+	gutter := numCell(line.OldNum, gutterWidth) + numCell(line.NewNum, gutterWidth)
+
+	sign, baseBg, spanBg := " ", "", ""
+	switch line.Kind {
+	case diff.Add:
+		sign, baseBg, spanBg = "+", bgAdd, bgAddSpan
+	case diff.Del:
+		sign, baseBg, spanBg = "−", bgDel, bgDelSpan
+	}
+
+	textWidth := width - ansi.StringWidth(gutter) - diffGutterSign
+	if textWidth < 4 {
+		textWidth = 4
+	}
+	textRows := wrapTinted(hl.hlLine(line), line.Spans, baseBg, spanBg, textWidth)
+
+	marker := " "
+	if m.annotationAt(fd.File.Path, line) != nil {
+		marker = lipgloss.NewStyle().Foreground(colorAccent).Render("¶")
+	}
+	signCell := sign
+	switch line.Kind {
+	case diff.Add:
+		signCell = lipgloss.NewStyle().Foreground(colorFinished).Render(sign)
+	case diff.Del:
+		signCell = lipgloss.NewStyle().Foreground(colorErrored).Render(sign)
+	}
+	blankGutter := strings.Repeat(" ", ansi.StringWidth(gutter))
+
+	out := make([]string, len(textRows))
+	for i, text := range textRows {
+		prefix := subtleStyle.Render(blankGutter) + "  "
+		if i == 0 {
+			prefix = subtleStyle.Render(gutter) + marker + signCell
+		}
+		row := padRight(prefix+text, width)
+		if cursor {
+			row = renderSelectedRow(row)
+		}
+		out[i] = row
+	}
+	return out
+}
+
+// unifiedRows fills the code viewport with wrapped whole-file rows,
+// starting at the scroll line and reserving rows for the overflow
+// indicators. A logical line can span several visual rows; annotation
+// comments render on their own indented rows beneath the marked line.
+func (m *Model) unifiedRows(fd *diff.FileDiff, hl *fileHL, width, height int) []string {
+	total := len(fd.Lines)
+	scroll := m.diff.scroll
+	if scroll > total-1 {
+		scroll = total - 1
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+
+	var rows []string
+	if scroll > 0 {
+		rows = append(rows, subtleStyle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
+	}
+	i := scroll
+	for ; i < total && len(rows) < height; i++ {
+		rows = append(rows, m.renderDiffRow(fd, hl, i, width, i == m.diff.cursorLine)...)
+		rows = append(rows, m.annotationRows(fd, i, width)...)
+	}
+	if i < total {
+		if len(rows) >= height {
+			rows = rows[:height-1]
+		}
+		rows = append(rows, subtleStyle.Render(fmt.Sprintf("  ↓ %d more", total-i)))
+	} else if len(rows) > height {
+		rows = rows[:height]
+	}
+	return rows
+}
+
+func numWidth(fd *diff.FileDiff) int {
+	largest := fd.NewTotal
+	if fd.OldTotal > largest {
+		largest = fd.OldTotal
+	}
+	width := len(fmt.Sprintf("%d", largest))
+	if width < 3 {
+		width = 3
+	}
+	return width + 1
+}
+
+func numCell(num, width int) string {
+	if num == 0 {
+		return strings.Repeat(" ", width)
+	}
+	return fmt.Sprintf("%*d ", width-1, num)
+}
+
+// viewDiffFull is the full-screen review mode: file list on the left,
+// whole-file code on the right, annotation bar docked when typing.
+func (m *Model) viewDiffFull() string {
+	sess, _ := m.diffSession()
+	footer := m.viewDiffFooter()
+	bodyHeight := m.height - 4 - lipgloss.Height(footer)
+	if bodyHeight < 5 {
+		bodyHeight = 5
+	}
+
+	fileWidth := m.width * 24 / 100
+	if fileWidth < 28 {
+		fileWidth = 28
+	}
+	// Two columns go to the seam and the fill's bleed edge between the
+	// two surfaces.
+	codeWidth := m.width - fileWidth - 2
+
+	// Files sit on the rail surface, the code on the backdrop: the same
+	// two-surface split the session list uses, so review reads as the same
+	// application rather than a second one.
+	fileLines := append([]string{"", strings.Repeat(" ", railInset) + subtleStyle.Render("files")},
+		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railInset)...)
+	codeLines := append([]string{"", "  " + subtleStyle.Render(ansi.Strip(m.diffCodeTitle()))},
+		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
+
+	// The column seam tees into the rules that open and close the body,
+	// same as the list view, so the two screens share one frame language.
+	frame := []string{
+		paint(m.viewDiffHeader(sess.Name), m.width, backdropHex()),
+		m.boundedRuleRow(fileWidth+1, m.width, "▀"),
+	}
+	edge := make([]string, bodyHeight)
+	for i := range edge {
+		edge[i] = railEdgeCell(panelHex())
+	}
+	frame = append(frame, joinColumns(
+		edge,
+		paintRows(fileLines, fileWidth-1, bodyHeight, panelHex()),
+		m.vruleColumn(bodyHeight),
+		m.bleedColumn(bodyHeight),
+		paintRows(codeLines, codeWidth, bodyHeight, backdropHex()),
+	)...)
+	frame = append(frame,
+		m.boundedRuleRow(fileWidth+1, m.width, "▄"),
+		paint(m.viewDiffStatus(), m.width, backdropHex()),
+	)
+	for _, line := range splitLines(footer) {
+		frame = append(frame, paint(line, m.width, backdropHex()))
+	}
+	return strings.Join(frame, "\n")
+}
+
+// stripBaseHash drops the @<short-sha> suffix BaseDesc carries from
+// baseRefFor. The hash matters for telling two merge-bases apart in logs
+// but reads as noise in the header, where only the ref name carries
+// signal for the user picking a target.
+func stripBaseHash(desc string) string {
+	if i := strings.LastIndexByte(desc, '@'); i >= 0 {
+		return desc[:i]
+	}
+	return desc
+}
+
+func (m *Model) viewDiffHeader(sessName string) string {
+	layout := "unified"
+	if m.diff.sideBySide {
+		layout = "split"
+	}
+	left := "  " + lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("review · "+sessName) + "  " +
+		keyPill("s", m.diff.scope.String(), colorAccent2) + "  " +
+		keyPill("u", layout, colorAccent)
+	if root := m.diff.set.Repo.Root; root != "" {
+		name := filepath.Base(m.diff.repoSel)
+		if name == "" || name == "." {
+			name = filepath.Base(root)
+		}
+		if len(m.diff.repoRoots) > 1 {
+			name = fmt.Sprintf("%s · %d repos", name, len(m.diff.repoRoots))
+		}
+		left += "  " + keyPill("r", name, colorAccent)
+		branch := m.diff.set.Repo.Branch
+		if m.diff.scope == git.ScopeBranch && m.diff.set.BaseDesc != "" && branch != "" {
+			target := stripBaseHash(m.diff.set.BaseDesc)
+			summary := target + " → " + branch
+			if m.diff.set.BaseOverride == "" {
+				summary += " " + subtleStyle.Render("(auto)")
+			}
+			left += "  " + keyPill("B", summary, colorAccent)
+		} else if branch != "" {
+			left += "  " + subtleStyle.Render(branch)
+		}
+	}
+
+	adds, dels := 0, 0
+	uncounted := false
+	for _, fd := range m.diff.set.Files {
+		if !fd.StatKnown() {
+			uncounted = true
+			continue
+		}
+		adds += fd.Stat.Adds
+		dels += fd.Stat.Dels
+	}
+	right := mutedStyle.Render(fmt.Sprintf("%d files", len(m.diff.set.Files))) + subtleStyle.Render(" · ") +
+		lipgloss.NewStyle().Foreground(colorFinished).Render(fmt.Sprintf("+%d", adds)) + " " +
+		lipgloss.NewStyle().Foreground(colorErrored).Render(fmt.Sprintf("−%d", dels))
+	if uncounted {
+		right += " " + mutedStyle.Render("+?")
+	}
+	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
+		right += subtleStyle.Render(" · ") + lipgloss.NewStyle().Foreground(colorAccent).Render(fmt.Sprintf("¶%d", count))
+	}
+	right += " "
+
+	gap := m.width - ansi.StringWidth(left) - ansi.StringWidth(right)
+	if gap < 1 {
+		return padRight(left, m.width)
+	}
+	return left + strings.Repeat(" ", gap) + right
+}
+
+func (m *Model) diffCodeTitle() string {
+	fd := m.currentFileDiff()
+	if fd == nil {
+		return "Diff"
+	}
+	return fd.File.Path
+}
+
+func (m *Model) viewDiffFileList(width, height int) string {
+	if empty := m.diffEmptyText(); empty != "" {
+		return empty
+	}
+	files := m.diff.set.Files
+	start, end := scrollWindow(len(files), m.diff.fileIdx, height)
+	var b strings.Builder
+	if start > 0 {
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
+	}
+	notes := map[string]int{}
+	for _, note := range m.diff.annotations[m.reviewKey()] {
+		notes[note.file]++
+	}
+	for i := start; i < end; i++ {
+		fd := files[i]
+		glyph := subtleStyle.Render("○")
+		if m.fileReviewed(fd.File.Path) {
+			glyph = lipgloss.NewStyle().Foreground(colorFinished).Render("✔")
+		}
+		bar := " "
+		if i == m.diff.fileIdx {
+			bar = lipgloss.NewStyle().Foreground(colorAccent).Render("▎")
+		}
+		counts := lipgloss.NewStyle().Foreground(colorFinished).Render(fmt.Sprintf("+%d", fd.Stat.Adds)) +
+			" " + lipgloss.NewStyle().Foreground(colorErrored).Render(fmt.Sprintf("−%d", fd.Stat.Dels))
+		if !fd.StatKnown() {
+			counts = mutedStyle.Render("?")
+		}
+		if fd.Binary || fd.Stat.Binary {
+			counts = mutedStyle.Render("binary")
+		}
+		if count := notes[fd.File.Path]; count > 0 {
+			counts = lipgloss.NewStyle().Foreground(colorAccent).Render(fmt.Sprintf("¶%d ", count)) + counts
+		}
+		name := truncateTail(fd.File.Path, width-ansi.StringWidth(counts)-6)
+		left := bar + glyph + " " + valueStyle.Render(name)
+		gap := width - ansi.StringWidth(left) - ansi.StringWidth(counts)
+		if gap < 1 {
+			gap = 1
+		}
+		row := left + strings.Repeat(" ", gap) + counts
+		if i == m.diff.fileIdx {
+			row = renderSelectedRow(padRight(row, width))
+		}
+		b.WriteString(row + "\n")
+	}
+	if end < len(files) {
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(files)-end)))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (m *Model) viewDiffCode(width, height int) string {
+	if empty := m.diffEmptyText(); empty != "" {
+		return empty
+	}
+	fd := m.currentFileDiff()
+	if body := m.diffBodyNote(fd); body != "" {
+		return body
+	}
+
+	var bar string
+	if m.diff.annotating {
+		fdLine := fd.Lines[m.cursorDiffLine()]
+		num, _ := annotationLine(fdLine)
+		m.diff.annInput.SetWidth(width)
+		m.diff.annInput.SetHeight(1)
+		bar = divider(fmt.Sprintf("Comment · %s:%d", fd.File.Path, num), width) + "\n" + m.diff.annInput.View()
+		height -= lipgloss.Height(bar) + 1
+		if height < 3 {
+			height = 3
+		}
+	}
+
+	hl := m.currentHL()
+	m.ensureDiffCursorVisible(fd, hl, width, height)
+	var b strings.Builder
+	if m.diff.sideBySide {
+		m.renderSideBySide(&b, fd, hl, width, height)
+	} else {
+		b.WriteString(strings.Join(m.unifiedRows(fd, hl, width, height), "\n"))
+	}
+
+	body := strings.TrimRight(b.String(), "\n")
+	if bar != "" {
+		return padToHeight(body, height) + "\n" + bar
+	}
+	return body
+}
+
+// ensureDiffCursorVisible raises the scroll until every painted row of the
+// window from the scroll through the cursor fits the viewport. The cursor
+// and scroll count logical lines, but a long line wraps onto several
+// painted rows, and a comment adds more below its line; sizing the window
+// by line count alone lets the cursor walk below the last painted row, so
+// the end of a wrapped file is selected but never on screen.
+func (m *Model) ensureDiffCursorVisible(fd *diff.FileDiff, hl *fileHL, width, height int) {
+	total := len(fd.Lines)
+	span := func(i int) int {
+		return len(m.renderDiffRow(fd, hl, i, width, false)) + len(m.annotationRows(fd, i, width))
+	}
+	if m.diff.sideBySide && m.mode == modeDiff {
+		rows := fd.SideBySideRows()
+		total = len(rows)
+		half := (width - 1) / 2
+		span = func(i int) int {
+			row := rows[i]
+			tallest := len(m.renderSideCell(fd, hl, row.Left, half, true))
+			if right := len(m.renderSideCell(fd, hl, row.Right, width-half-1, false)); right > tallest {
+				tallest = right
+			}
+			if row.Left >= 0 {
+				tallest += len(m.annotationRows(fd, row.Left, width))
+			}
+			if row.Right >= 0 && row.Right != row.Left {
+				tallest += len(m.annotationRows(fd, row.Right, width))
+			}
+			return tallest
+		}
+	}
+
+	cursor := m.diff.cursorLine
+	if cursor > total-1 {
+		cursor = total - 1
+	}
+	if cursor < 0 {
+		return
+	}
+	if m.diff.scroll > cursor {
+		m.diff.scroll = cursor
+	}
+	if m.diff.scroll < 0 {
+		m.diff.scroll = 0
+	}
+	for m.diff.scroll < cursor {
+		// Each overflow indicator takes a row of the same budget.
+		used := 0
+		if m.diff.scroll > 0 {
+			used++
+		}
+		if cursor < total-1 {
+			used++
+		}
+		fits := true
+		for i := m.diff.scroll; i <= cursor; i++ {
+			used += span(i)
+			if used > height {
+				fits = false
+				break
+			}
+		}
+		if fits {
+			break
+		}
+		m.diff.scroll++
+	}
+}
+
+func (m *Model) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *fileHL, width, height int) {
+	rows := fd.SideBySideRows()
+	half := (width - 1) / 2
+	sep := subtleStyle.Render("│")
+
+	scroll := m.diff.scroll
+	if scroll > len(rows)-1 {
+		scroll = len(rows) - 1
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+	var out []string
+	if scroll > 0 {
+		out = append(out, subtleStyle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
+	}
+	i := scroll
+	for ; i < len(rows) && len(out) < height; i++ {
+		row := rows[i]
+		left := m.renderSideCell(fd, hl, row.Left, half, true)
+		right := m.renderSideCell(fd, hl, row.Right, width-half-1, false)
+		// A wrapped cell can be taller than its partner; pad the shorter
+		// side with blank cells so the columns stay aligned.
+		lines := len(left)
+		if len(right) > lines {
+			lines = len(right)
+		}
+		for r := 0; r < lines; r++ {
+			leftCell, rightCell := padRight("", half), padRight("", width-half-1)
+			if r < len(left) {
+				leftCell = left[r]
+			}
+			if r < len(right) {
+				rightCell = right[r]
+			}
+			line := leftCell + sep + rightCell
+			if i == m.diff.cursorLine {
+				line = renderSelectedRow(padRight(line, width))
+			}
+			out = append(out, line)
+		}
+		if row.Left >= 0 {
+			out = append(out, m.annotationRows(fd, row.Left, width)...)
+		}
+		if row.Right >= 0 && row.Right != row.Left {
+			out = append(out, m.annotationRows(fd, row.Right, width)...)
+		}
+	}
+	if i < len(rows) {
+		if len(out) >= height {
+			out = out[:height-1]
+		}
+		out = append(out, subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-i)))
+	} else if len(out) > height {
+		out = out[:height]
+	}
+	b.WriteString(strings.Join(out, "\n"))
+}
+
+// renderSideCell renders one half of a side-by-side row into wrapped
+// visual rows; -1 renders a single dim filler for an unpaired line.
+func (m *Model) renderSideCell(fd *diff.FileDiff, hl *fileHL, index, width int, leftSide bool) []string {
+	if index < 0 {
+		return []string{padRight(subtleStyle.Render(" ·"), width)}
+	}
+	line := fd.Lines[index]
+	// The left column carries old-side content: skip adds there.
+	if leftSide && line.Kind == diff.Add {
+		return []string{padRight("", width)}
+	}
+	gutterWidth := numWidth(fd)
+	num := line.NewNum
+	if leftSide {
+		num = line.OldNum
+	}
+	gutter := numCell(num, gutterWidth)
+
+	baseBg, spanBg := "", ""
+	switch line.Kind {
+	case diff.Add:
+		baseBg, spanBg = bgAdd, bgAddSpan
+	case diff.Del:
+		baseBg, spanBg = bgDel, bgDelSpan
+	}
+
+	textWidth := width - gutterWidth
+	if textWidth < 4 {
+		textWidth = 4
+	}
+	textRows := wrapTinted(hl.hlLine(line), line.Spans, baseBg, spanBg, textWidth)
+	blankGutter := strings.Repeat(" ", gutterWidth)
+	out := make([]string, len(textRows))
+	for i, text := range textRows {
+		g := blankGutter
+		if i == 0 {
+			g = gutter
+		}
+		out[i] = padRight(subtleStyle.Render(g)+text, width)
+	}
+	return out
+}
+
+func (m *Model) viewDiffStatus() string {
+	if m.err != "" {
+		return padRight(errStyle.Render(" ✖ "+m.err), m.width)
+	}
+	if m.diff.notice != "" {
+		return padRight(lipgloss.NewStyle().Foreground(colorFinished).Render(" ✔ "+m.diff.notice), m.width)
+	}
+	if m.diff.sendConfirm {
+		count := len(m.diff.annotations[m.reviewKey()])
+		return padRight(errStyle.Render(fmt.Sprintf(" ¶ send %d %s to the agent?", count, commentNoun(count)))+
+			subtleStyle.Render("  ↵/y send · esc cancel"), m.width)
+	}
+	return ""
+}
+
+func (m *Model) viewDiffFooter() string {
+	if m.diff.annotating {
+		return footerLine([][2]string{{"↵", "save"}, {"esc", "cancel"}}, m.width)
+	}
+	repo := "repo"
+	if len(m.diff.repoRoots) > 0 {
+		repo = "repo: " + filepath.Base(m.diff.repoSel)
+	}
+	send := "send"
+	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
+		send = fmt.Sprintf("send %d", count)
+	}
+	pairs := [][2]string{
+		{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"},
+		{"n/N", "change"}, {"space", "reviewed"}, {"u", "layout"},
+		{"s", "scope: " + m.diff.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
+		{"c", "comment"}, {"d", "remove"}, {"C", send},
+		{"esc/q", "close"}, {"ctrl+c", "quit"},
+	}
+	return footerLine(pairs, m.width)
 }
