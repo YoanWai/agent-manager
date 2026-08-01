@@ -203,6 +203,49 @@ func TestSendTextKeepsEnterOutsideBracketedPaste(t *testing.T) {
 	t.Fatalf("pane input = %q, want bracketed paste followed by Enter %q", got, want)
 }
 
+// A clipboard paste forwarded into a focused pane must arrive inside the
+// pane's bracketed-paste markers with no Enter after it, so agent composers
+// keep multi-line text instead of submitting on the first newline.
+func TestPasteDeliversWithoutSubmitting(t *testing.T) {
+	driver := requireTmux(t)
+	id := "paste" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	marker := "/tmp/am-paste-nosubmit-" + id
+	t.Cleanup(func() { os.Remove(marker) })
+
+	text := "first line\nsecond line\n"
+	// paste-buffer converts newlines to carriage returns, the same bytes a
+	// terminal emits when pasting; composers read them as line breaks.
+	want := "\x1b[200~first line\rsecond line\r\x1b[201~"
+	command := "stty raw -echo; printf '\\033[?2004h'; dd bs=1 count=" +
+		strconv.Itoa(len(want)+1) + " of=" + ShellQuote(marker) + " 2>/dev/null"
+	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	time.Sleep(100 * time.Millisecond)
+	if err := driver.Paste(id, text); err != nil {
+		t.Fatalf("Paste: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err := os.ReadFile(marker)
+		if err == nil && string(got) == want {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if got, _ := os.ReadFile(marker); string(got) != want {
+		t.Fatalf("pane input = %q, want bracketed paste %q", got, want)
+	}
+	// dd is still waiting for one more byte; a stray Enter would land now.
+	time.Sleep(300 * time.Millisecond)
+	if got, _ := os.ReadFile(marker); string(got) != want {
+		t.Fatalf("pane received extra input after the paste: %q", got)
+	}
+}
+
 // Create used to type the launch line with send-keys, which silently
 // truncates around 1024 bytes and left long first prompts as a broken
 // shell command. paste-buffer must deliver the full line.

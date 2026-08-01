@@ -421,6 +421,11 @@ func (m *Model) leaveFocus() tea.Cmd {
 	})
 }
 
+// pasteFocused is the seam tests swap to observe pastes into the pane.
+var pasteFocused = func(driver *tmux.Driver, id, text string) error {
+	return driver.Paste(id, text)
+}
+
 // handleFocusKey forwards every key into the focused pane. Ctrl+Q is the
 // one reserved key: it returns to the list, mirroring detach from a real
 // attach, and every plain character - q included - reaches the agent.
@@ -440,6 +445,12 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.scrolledBack() {
 		m.focusScroll = 0
 		resume = m.focusRegionCmd(sess.ID, 0)
+	}
+	if msg.Paste {
+		if err := pasteFocused(m.tmux, sess.ID, string(msg.Runes)); err != nil {
+			m.err = err.Error()
+		}
+		return m, resume
 	}
 	command, ok := focusKeyCommand(tmux.SessionName(sess.ID), msg)
 	if !ok {
