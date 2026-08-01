@@ -538,3 +538,34 @@ func TestQuickSpawnUsesTabCycledTool(t *testing.T) {
 		t.Fatalf("spawned tool = %q want claude-hooked", sessions[0].Tool)
 	}
 }
+
+func TestQuickCloseAfterSendDefaultsToStayingOpen(t *testing.T) {
+	m := buildModel(t)
+	if m.quickCloseAfterSend() {
+		t.Fatal("quick bar should stay open by default")
+	}
+	if err := m.store.SetSetting(quickCloseSetting, "close"); err != nil {
+		t.Fatal(err)
+	}
+	if !m.quickCloseAfterSend() {
+		t.Fatal("stored close choice should opt in")
+	}
+}
+
+func TestQuickPromptClosesAfterSendWhenEnabled(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	if err := m.store.SetSetting(quickCloseSetting, "close"); err != nil {
+		t.Fatal(err)
+	}
+
+	m.openQuickMode()
+	m.quick.input.SetValue("carry on with the plan")
+	if _, _ = m.submitQuick(); m.errBar.text != "" {
+		t.Fatalf("send: %q", m.errBar.text)
+	}
+	if m.quick.active {
+		t.Fatal("quick mode should close after a send when the setting is on")
+	}
+}
