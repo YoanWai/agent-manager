@@ -133,6 +133,15 @@ func TestFormLongPromptWrapsAcrossRows(t *testing.T) {
 	}
 }
 
+func TestTextareaRowsCountsExactMultipleWrap(t *testing.T) {
+	in := promptField()
+	in.SetWidth(12) // content width 10
+	in.SetValue("1234567890\nx")
+	if rows := textareaRows(in, 10, 5); rows != 3 {
+		t.Fatalf("a line filling its row exactly adds a wrap row: want 3, got %d", rows)
+	}
+}
+
 func TestFormRejectsDashLeadingPrompt(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()

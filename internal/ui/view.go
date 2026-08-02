@@ -244,8 +244,9 @@ func textareaRows(input textarea.Model, textWidth, maxRows int) int {
 		if textWidth < 1 {
 			textWidth = 1
 		}
+		// A line filling its last row exactly wraps onto one more empty row.
 		for _, line := range strings.Split(input.Value(), "\n") {
-			rows += 1 + (max(lipgloss.Width(line), 1)-1)/textWidth
+			rows += 1 + max(lipgloss.Width(line), 1)/textWidth
 		}
 	}
 	if rows > maxRows {

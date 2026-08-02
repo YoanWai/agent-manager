@@ -155,6 +155,11 @@ func (m *Model) syncFormFieldWidths() {
 	inner := m.formValueWidth()
 	m.form.name.Width = inner - 3
 	m.form.dir.Width = inner - 3
+	// textinput recomputes its scroll window only inside Update/SetValue/
+	// SetCursor, so a width change alone would render a stale window until
+	// the next keystroke.
+	m.form.name.SetCursor(m.form.name.Position())
+	m.form.dir.SetCursor(m.form.dir.Position())
 	m.form.prompt.SetWidth(inner)
 }
 
