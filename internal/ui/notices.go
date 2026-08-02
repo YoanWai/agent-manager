@@ -410,11 +410,18 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) viewNotices() string {
+	notices := m.activeNotices()
 	inner := noticeModalInner
+	for _, n := range notices {
+		for _, line := range n.body {
+			if w := lipgloss.Width(line); w > inner {
+				inner = w
+			}
+		}
+	}
 	if m.width >= 8 && inner > m.width-8 {
 		inner = m.width - 8
 	}
-	notices := m.activeNotices()
 	if len(notices) == 0 {
 		frame := noticeFrame([]string{subtleStyle.Render("nothing new")}, inner,
 			noticeLegend(), keyCap("esc", "close"))
@@ -434,7 +441,9 @@ func (m *Model) viewNotices() string {
 	selected := notices[m.noticeCursor]
 	rows = append(rows, noticeBorderStyle().Render(strings.Repeat("┄", inner)))
 	for _, line := range selected.body {
-		rows = append(rows, mutedStyle.Render(line))
+		for _, wrapped := range strings.Split(ansi.Wordwrap(line, inner, "-"), "\n") {
+			rows = append(rows, mutedStyle.Render(wrapped))
+		}
 	}
 	if selected.url != "" {
 		rows = append(rows, subtleStyle.Render("↗ "+truncateTail(strings.TrimPrefix(selected.url, "https://"), inner-2)))
@@ -457,8 +466,9 @@ func (m *Model) viewNotices() string {
 	return m.centerOnBackdrop(frame)
 }
 
-// noticeModalInner is the modal's content column, sized for the welcome
-// notice's longest body line.
+// noticeModalInner is the modal content column's floor, sized for the
+// welcome notice's longest body line; longer bodies widen it up to the
+// terminal.
 const noticeModalInner = 62
 
 func loadDismissed(st *store.Store) map[string]bool {

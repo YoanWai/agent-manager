@@ -376,6 +376,39 @@ func TestNoticesViewListsAndDetails(t *testing.T) {
 	}
 }
 
+func TestNoticesLongBodyWrapsFully(t *testing.T) {
+	m := modalModel(t)
+	m.feedMessages = []feed.Message{{
+		ID:     "feed-long",
+		Banner: "long banner",
+		Title:  "Long body message",
+		Body: []string{
+			"Each group can choose inherit, on, or off for spawning sessions into their own git worktree, set when creating a group or editing it later; children inherit from their parents, and the global setting stays the root fallback.",
+		},
+	}}
+	m.openNotices("feed-long")
+	frame := ansi.Strip(m.View())
+	for _, line := range strings.Split(frame, "\n") {
+		if !strings.Contains(line, "╭") {
+			continue
+		}
+		if got := lipgloss.Width(strings.TrimSpace(line)); got <= noticeModalInner+4 {
+			t.Fatalf("wide terminal must widen the modal past %d, got %d", noticeModalInner+4, got)
+		}
+		break
+	}
+	for _, word := range []string{"worktree,", "parents,", "fallback."} {
+		if !strings.Contains(frame, word) {
+			t.Fatalf("long body must wrap, %q missing:\n%s", word, frame)
+		}
+	}
+	for _, line := range strings.Split(frame, "\n") {
+		if got := lipgloss.Width(line); got > m.width {
+			t.Fatalf("line overflows terminal at %d: %q", got, line)
+		}
+	}
+}
+
 func TestNoticesDismissAdvancesAndCloses(t *testing.T) {
 	m := modalModel(t)
 	total := len(m.activeNotices())
