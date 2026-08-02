@@ -508,6 +508,17 @@ func (s *Store) RenameSession(id, name string) error {
 	return requireRow(res, id)
 }
 
+// MoveSessionWorktree records a worktree that followed its session's new
+// name: the directory the session now runs in and the branch checked out
+// there. The repo root the worktree hangs off stays as it was.
+func (s *Store) MoveSessionWorktree(id, cwd, branch string) error {
+	res, err := s.db.Exec(`UPDATE sessions SET cwd = ?, worktree_branch = ? WHERE id = ?`, cwd, branch, id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
+}
+
 // UpdateTool changes which tool status rules and revive use for a session.
 // Clears the captured agent conversation id: that id only makes sense for
 // the tool that minted it, and a manual tool swap means the user swapped
