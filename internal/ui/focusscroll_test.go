@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -40,10 +39,9 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	for i := 1; i <= 120; i++ {
-		if err := m.tmux.SendText(sess.ID, fmt.Sprintf("echo history-line-%03d", i)); err != nil {
-			t.Fatalf("SendText: %v", err)
-		}
+	command := `i=1; while [ "$i" -le 120 ]; do printf 'history-line-%03d\n' "$i"; i=$((i+1)); done`
+	if err := m.tmux.SendText(sess.ID, command); err != nil {
+		t.Fatalf("SendText: %v", err)
 	}
 	// Let the pane finish painting so the history is really there.
 	deadline = time.Now().Add(10 * time.Second)
