@@ -380,14 +380,14 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// moveGroupCursor moves within the expanded group picker without wrapping.
-// A false result reports the cursor was already at that edge.
-func (m *Model) moveGroupCursor(delta int) bool {
-	next := m.form.groupIndex + delta
-	if next < 0 || next >= len(m.form.groups) {
-		return false
+// moveGroupCursor moves within the expanded group picker, wrapping at the
+// ends; a delta of 0 re-resolves the dependent defaults in place.
+func (m *Model) moveGroupCursor(delta int) {
+	count := len(m.form.groups)
+	if count == 0 {
+		return
 	}
-	m.form.groupIndex = next
+	m.form.groupIndex = (m.form.groupIndex + delta + count) % count
 	if m.mode == modeForm && m.form.dirAuto {
 		m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	}
@@ -397,7 +397,6 @@ func (m *Model) moveGroupCursor(delta int) bool {
 	if m.mode == modeGroupForm && m.groupForm.pathAuto {
 		m.groupForm.path.SetValue(m.ancestorGroupDir(m.selectedGroupPath()))
 	}
-	return true
 }
 
 func (m *Model) formFocus(delta int) {

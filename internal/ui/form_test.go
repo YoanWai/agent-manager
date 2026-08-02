@@ -173,6 +173,14 @@ func TestFormGroupArrowsMoveFocusNotSelection(t *testing.T) {
 	if m.form.groupIndex != 0 {
 		t.Fatalf("left should cycle back, index = %d", m.form.groupIndex)
 	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if m.form.groupIndex != len(m.form.groups)-1 {
+		t.Fatalf("left at the first group should wrap to the last, index = %d", m.form.groupIndex)
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if m.form.groupIndex != 0 {
+		t.Fatalf("right at the last group should wrap to the first, index = %d", m.form.groupIndex)
+	}
 }
 
 func TestGroupFormParentArrowsMoveFocusNotSelection(t *testing.T) {
