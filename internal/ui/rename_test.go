@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -177,12 +178,16 @@ func TestRenameSessionWorktreePutsItBackWhenTheStoreRefuses(t *testing.T) {
 	if _, err := os.Stat(moved); !os.IsNotExist(err) {
 		t.Fatalf("worktree left behind at the new path: %v", err)
 	}
-	branches, err := exec.Command("git", "-C", repo, "branch", "--format=%(refname:short)").Output()
+	out, err := exec.Command("git", "-C", repo, "branch", "--format=%(refname:short)").Output()
 	if err != nil {
 		t.Fatalf("branch: %v", err)
 	}
-	if !strings.Contains(string(branches), spawned.WorktreeBranch) {
-		t.Fatalf("branch was not put back, have: %s", branches)
+	branches := strings.Fields(string(out))
+	if !slices.Contains(branches, spawned.WorktreeBranch) {
+		t.Fatalf("branch was not put back, have: %v", branches)
+	}
+	if slices.Contains(branches, "am/renamed") {
+		t.Fatalf("rollback left the new branch behind, have: %v", branches)
 	}
 }
 
