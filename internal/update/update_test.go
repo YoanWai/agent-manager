@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -156,14 +157,14 @@ func TestCheckUsesFreshCatalogWithoutNetwork(t *testing.T) {
 		},
 	})
 
-	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
 
 	result, err := Check(context.Background(), dir, "v0.8.2")
-	if err != nil || result.Latest != "v0.9.0" || calls != 0 {
-		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
+	if err != nil || result.Latest != "v0.9.0" || calls.Load() != 0 {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 	}
 }
 
@@ -174,14 +175,14 @@ func TestUpToDateCatalogRetriesAfterTenMinutes(t *testing.T) {
 		Releases:  []Release{testRelease("v0.8.2", "old latest")},
 	})
 
-	calls := 0
+	var calls atomic.Int32
 	server := releaseServer(t, &calls, "v0.8.3")
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
 
 	result, err := Check(context.Background(), dir, "v0.8.2")
-	if err != nil || calls != 1 || result.Latest != "v0.8.3" {
-		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
+	if err != nil || calls.Load() != 1 || result.Latest != "v0.8.3" {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 	}
 }
 
@@ -195,28 +196,28 @@ func TestKnownUpdateAlsoRetriesAfterTenMinutes(t *testing.T) {
 		},
 	})
 
-	calls := 0
+	var calls atomic.Int32
 	server := releaseServer(t, &calls, "v0.10.0")
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
 
 	result, err := Check(context.Background(), dir, "v0.8.2")
-	if err != nil || calls != 1 || result.Latest != "v0.10.0" {
-		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
+	if err != nil || calls.Load() != 1 || result.Latest != "v0.10.0" {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 	}
 }
 
 func TestRefreshBypassesFreshCatalog(t *testing.T) {
 	dir := t.TempDir()
 	seedCache(t, dir, cache{CheckedAt: time.Now(), Releases: []Release{testRelease("v0.8.2", "current")}})
-	calls := 0
+	var calls atomic.Int32
 	server := releaseServer(t, &calls, "v0.9.0")
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
 
 	result, err := Refresh(context.Background(), dir, "v0.8.2")
-	if err != nil || calls != 1 || result.Latest != "v0.9.0" {
-		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
+	if err != nil || calls.Load() != 1 || result.Latest != "v0.9.0" {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 	}
 }
 
@@ -228,9 +229,9 @@ func TestStaleCatalogUsesConditionalRequest(t *testing.T) {
 		ETag:      `"catalog-1"`,
 		Releases:  []Release{testRelease("v0.8.2", "current")},
 	})
-	calls := 0
+	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		calls.Add(1)
 		if got := r.Header.Get("If-None-Match"); got != `"catalog-1"` {
 			t.Errorf("If-None-Match = %q", got)
 		}
@@ -240,8 +241,8 @@ func TestStaleCatalogUsesConditionalRequest(t *testing.T) {
 	defer swapReleasesURL(server.URL)()
 
 	result, err := Check(context.Background(), dir, "v0.8.2")
-	if err != nil || calls != 1 || len(result.Releases) != 1 {
-		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
+	if err != nil || calls.Load() != 1 || len(result.Releases) != 1 {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 	}
 	written, ok := readCache(filepath.Join(dir, cacheFile))
 	if !ok || !written.CheckedAt.After(oldCheckedAt) || written.ETag != `"catalog-1"` {
@@ -252,14 +253,14 @@ func TestStaleCatalogUsesConditionalRequest(t *testing.T) {
 func TestLegacyCacheWithoutCatalogRefetches(t *testing.T) {
 	dir := t.TempDir()
 	seedCache(t, dir, cache{CheckedAt: time.Now(), Latest: "v0.9.0", URL: "https://github.com/old"})
-	calls := 0
+	var calls atomic.Int32
 	server := releaseServer(t, &calls, "v0.10.0")
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
 
 	result, err := Check(context.Background(), dir, "v0.8.2")
-	if err != nil || calls != 1 || result.Latest != "v0.10.0" {
-		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
+	if err != nil || calls.Load() != 1 || result.Latest != "v0.10.0" {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 	}
 }
 
@@ -329,10 +330,10 @@ func seedCache(t *testing.T, dir string, value cache) {
 	}
 }
 
-func releaseServer(t *testing.T, calls *int, version string) *httptest.Server {
+func releaseServer(t *testing.T, calls *atomic.Int32, version string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		*calls++
+		calls.Add(1)
 		fmt.Fprintf(w, `[{"tag_name":%q,"html_url":%q,"body":"## What's Changed\n* fix(ui): refreshed"}]`,
 			version,
 			"https://github.com/YoanWai/agent-manager/releases/tag/"+version,

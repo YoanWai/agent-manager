@@ -179,6 +179,15 @@ func TestVersionDowngradeDoesNotClaimAnUpdate(t *testing.T) {
 	if m.whatsNewVersion == "v0.4.0" {
 		t.Fatal("downgrade was recorded as an upgrade")
 	}
+	if version, _ := st.Setting(whatsNewVersionSetting); version != "" {
+		t.Fatalf("what's-new version persisted on downgrade: %q", version)
+	}
+	if version, _ := st.Setting(whatsNewFromSetting); version != "" {
+		t.Fatalf("what's-new source persisted on downgrade: %q", version)
+	}
+	if version, _ := st.Setting(lastSeenVersionSetting); version != "v0.4.0" {
+		t.Fatalf("last seen version = %q, want v0.4.0", version)
+	}
 }
 
 func TestStartupNoticeFirstLaunch(t *testing.T) {
@@ -577,6 +586,19 @@ func TestNoticesBodyScrollIsBoundedAndVisible(t *testing.T) {
 	}
 }
 
+func TestReleaseSummaryMarksOmittedChangesAndPartialRange(t *testing.T) {
+	n := notice{
+		releases:      []update.Release{uiReleaseWithTotal("v0.3.0", 4, "Visible change")},
+		rangeComplete: false,
+	}
+	body := ansi.Strip(strings.Join(renderNoticeBody(n, noticeModalInner), "\n"))
+	for _, want := range []string{"v0.3.0 · 4 changes", "+3 more in the full notes", "catalog covers part of this range"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("partial summary missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestNoticesManualRefreshWaitsForBothSources(t *testing.T) {
 	m := modalModel(t)
 	_, cmd := m.handleNoticesKey(key("r"))
@@ -832,7 +854,7 @@ func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
 	origRefresh := refreshUpdatesForApply
 	defer func() { refreshUpdatesForApply = origRefresh }()
 	refreshUpdatesForApply = func(context.Context, string, string) (update.Result, error) {
-		return update.Result{Releases: []update.Release{uiRelease("v0.3.0", "Current release")}}, nil
+		return update.Result{}, nil
 	}
 	origApply := applyUpdate
 	defer func() { applyUpdate = origApply }()
@@ -875,10 +897,14 @@ func TestNoticesTinyTerminalStaysInside(t *testing.T) {
 }
 
 func uiRelease(version string, changes ...string) update.Release {
+	return uiReleaseWithTotal(version, len(changes), changes...)
+}
+
+func uiReleaseWithTotal(version string, total int, changes ...string) update.Release {
 	return update.Release{
 		Version:      version,
 		URL:          "https://github.com/YoanWai/agent-manager/releases/tag/" + version,
 		Changes:      changes,
-		TotalChanges: len(changes),
+		TotalChanges: total,
 	}
 }

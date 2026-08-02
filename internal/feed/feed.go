@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/atomicfile"
 	"github.com/YoanWai/agent-manager/internal/update"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -63,6 +64,7 @@ type rawMessage struct {
 	URL        string   `json:"url"`
 	MinVersion string   `json:"min_version"`
 	MaxVersion string   `json:"max_version"`
+	ExpiresAt  string   `json:"expires_at"`
 }
 
 type cache struct {
@@ -87,10 +89,11 @@ func Refresh(ctx context.Context, configDir, version string) ([]Message, error) 
 }
 
 func fetchMessages(ctx context.Context, configDir, version string, force bool) ([]Message, error) {
+	now := time.Now()
 	cachePath := filepath.Join(configDir, cacheFile)
 	cached, haveCache := readCache(cachePath)
-	if !force && haveCache && time.Since(cached.CheckedAt) < checkInterval {
-		return sanitize(cached.Messages, version), nil
+	if !force && haveCache && now.Sub(cached.CheckedAt) < checkInterval {
+		return sanitize(cached.Messages, version, now), nil
 	}
 
 	etag := ""
@@ -100,7 +103,7 @@ func fetchMessages(ctx context.Context, configDir, version string, force bool) (
 	raw, nextETag, notModified, err := download(ctx, etag)
 	if err != nil {
 		if haveCache {
-			messages := sanitize(cached.Messages, version)
+			messages := sanitize(cached.Messages, version, now)
 			if force {
 				return messages, err
 			}
@@ -109,12 +112,12 @@ func fetchMessages(ctx context.Context, configDir, version string, force bool) (
 		return nil, err
 	}
 	if notModified {
-		cached.CheckedAt = time.Now()
+		cached.CheckedAt = now
 		writeCache(cachePath, cached)
-		return sanitize(cached.Messages, version), nil
+		return sanitize(cached.Messages, version, now), nil
 	}
-	writeCache(cachePath, cache{CheckedAt: time.Now(), ETag: nextETag, Messages: raw})
-	return sanitize(raw, version), nil
+	writeCache(cachePath, cache{CheckedAt: now, ETag: nextETag, Messages: raw})
+	return sanitize(raw, version, now), nil
 }
 
 func download(ctx context.Context, etag string) ([]rawMessage, string, bool, error) {
@@ -147,11 +150,10 @@ func download(ctx context.Context, etag string) ([]rawMessage, string, bool, err
 	return raw, resp.Header.Get("ETag"), false, nil
 }
 
-// sanitize turns the untrusted payload into renderable messages: entries
-// with a bad id, a non-https url, or outside their version bounds are
-// dropped whole; surviving text is stripped of terminal control
-// sequences and cut to bounded lengths.
-func sanitize(raw []rawMessage, version string) []Message {
+// sanitize turns the untrusted payload into renderable messages. Invalid,
+// out-of-range, and expired entries are dropped whole; surviving text is
+// stripped of terminal control sequences and cut to bounded lengths.
+func sanitize(raw []rawMessage, version string, now time.Time) []Message {
 	var messages []Message
 	for _, entry := range raw {
 		if len(messages) == maxMessages {
@@ -165,6 +167,12 @@ func sanitize(raw []rawMessage, version string) []Message {
 		}
 		if !update.VersionWithin(version, entry.MinVersion, entry.MaxVersion) {
 			continue
+		}
+		if entry.ExpiresAt != "" {
+			expiresAt, err := time.Parse(time.RFC3339, entry.ExpiresAt)
+			if err != nil || !now.Before(expiresAt) {
+				continue
+			}
 		}
 		msg := Message{
 			ID:     "feed-" + entry.ID,
@@ -235,25 +243,5 @@ func writeCache(path string, c cache) {
 	if err != nil {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".message-feed-*")
-	if err != nil {
-		return
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0o644); err != nil {
-		tmp.Close()
-		return
-	}
-	if _, err := tmp.Write(raw); err != nil {
-		tmp.Close()
-		return
-	}
-	if err := tmp.Close(); err != nil {
-		return
-	}
-	_ = os.Rename(tmpPath, path)
+	_ = atomicfile.WriteFile(path, raw, 0o644)
 }

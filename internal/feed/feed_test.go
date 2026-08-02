@@ -92,6 +92,19 @@ func TestFetchHonorsVersionBounds(t *testing.T) {
 	}
 }
 
+func TestFetchHonorsExpiry(t *testing.T) {
+	serve(t, `[
+		{"id":"expired","banner":"x","title":"x","expires_at":"2020-01-01T00:00:00Z"},
+		{"id":"future","banner":"x","title":"x","expires_at":"2999-01-01T00:00:00Z"},
+		{"id":"invalid","banner":"x","title":"x","expires_at":"someday"},
+		{"id":"open","banner":"x","title":"x"}
+	]`)
+	messages := fetch(t, t.TempDir(), "v0.14.2")
+	if len(messages) != 2 || messages[0].ID != "feed-future" || messages[1].ID != "feed-open" {
+		t.Fatalf("expiry filtering = %+v", messages)
+	}
+}
+
 func TestFetchCachesBetweenCalls(t *testing.T) {
 	var hits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

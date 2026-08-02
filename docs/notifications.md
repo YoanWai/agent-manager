@@ -17,9 +17,11 @@ Changed** section. agent-manager reads that section, removes the commit prefix,
 author, and pull request URL, then shows the result in the messages modal. There
 is no second changelog or message entry to maintain.
 
-When an install skips releases, the modal groups every intervening release into
-one summary. Updating is still one operation straight to the latest version.
-After restart, the same cached catalog explains everything that was installed.
+When an install skips releases, the modal groups the intervening releases in the
+retained catalog into one summary. If the installed version is older than that
+window, the modal marks the summary as partial and links to the complete notes.
+Updating remains one operation straight to the latest version. After restart,
+the same cached catalog explains what was installed.
 
 The client bounds remote data to keep rendering predictable: 100 stable
 releases, 12 summarized changes per release, and 120 characters per change.
@@ -45,7 +47,8 @@ target a version range.
     ],
     "url": "https://github.com/YoanWai/agent-manager/issues/234",
     "min_version": "v0.18.0",
-    "max_version": "v0.18.0"
+    "max_version": "v0.18.0",
+    "expires_at": "2026-08-09T12:00:00Z"
   }
 ]
 ```
@@ -59,7 +62,9 @@ Rules:
 - `body` explains impact and action in short plain-text lines.
 - `url` is optional and must be HTTPS.
 - `min_version` and `max_version` are inclusive and optional. Time-sensitive or
-  version-specific messages should always have an expiry bound.
+  version-specific messages should have narrow version bounds.
+- `expires_at` is an optional RFC 3339 timestamp. Expired or invalid timestamps
+  are rejected by the client; every time-sensitive message must set one.
 
 Pressing `r` in the messages modal bypasses both local cache ages and refreshes
 the release catalog and editorial feed from GitHub. Normal background checks do

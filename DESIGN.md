@@ -14,6 +14,7 @@ colors:
   working: "#d08442"
   waiting: "#a78bd0"
   finished: "#85b26f"
+  idle: "#646c78"
   error: "#cc6a6a"
 typography:
   title:

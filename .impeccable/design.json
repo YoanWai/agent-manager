@@ -13,6 +13,11 @@
         "role": "secondary",
         "displayName": "Group Teal",
         "canonical": "#6cb6a4"
+      },
+      "idle": {
+        "role": "status",
+        "displayName": "Idle",
+        "canonical": "#646c78"
       }
     },
     "typographyMeta": {

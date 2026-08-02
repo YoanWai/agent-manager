@@ -963,6 +963,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.upToDate {
+			m.keepNoticeSelection(func() {
+				m.update.latest = ""
+				m.update.url = ""
+				if len(msg.result.Releases) == 0 {
+					m.update.releases = nil
+					m.update.checked = true
+				}
+				m.indexReleaseRanges()
+			})
 			m.errBar.text = "already up to date"
 			return m, nil
 		}

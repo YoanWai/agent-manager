@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/YoanWai/agent-manager/internal/atomicfile"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -26,7 +27,7 @@ const (
 	cacheFile            = "update-check.json"
 	checkInterval        = 10 * time.Minute
 	requestBudget        = 4 * time.Second
-	maxPayload           = 2 << 20
+	maxPayload           = 16 << 20
 	maxReleases          = 100
 	maxChangesPerRelease = 12
 	maxChangeLength      = 120
@@ -387,27 +388,7 @@ func writeCache(path string, c cache) {
 	if err != nil {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".update-check-*")
-	if err != nil {
-		return
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0o644); err != nil {
-		tmp.Close()
-		return
-	}
-	if _, err := tmp.Write(raw); err != nil {
-		tmp.Close()
-		return
-	}
-	if err := tmp.Close(); err != nil {
-		return
-	}
-	_ = os.Rename(tmpPath, path)
+	_ = atomicfile.WriteFile(path, raw, 0o644)
 }
 
 // parseVersion turns "v0.8.2" or "0.8.2" into its three numeric parts.

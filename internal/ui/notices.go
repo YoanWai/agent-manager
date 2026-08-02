@@ -58,6 +58,14 @@ func (m *Model) indexReleaseRanges() {
 	m.update.installed = update.Between(m.update.releases, m.whatsNewFromVersion, m.update.version)
 }
 
+func releaseCountLabel(releaseRange update.ReleaseRange) string {
+	count := fmt.Sprint(len(releaseRange.Releases))
+	if !releaseRange.Complete {
+		count += "+"
+	}
+	return count
+}
+
 func (m *Model) activeNotices() []notice {
 	if m.store == nil {
 		return nil
@@ -67,11 +75,7 @@ func (m *Model) activeNotices() []notice {
 		releaseRange := m.update.available
 		title := m.update.latest + " available"
 		if len(releaseRange.Releases) > 1 {
-			count := fmt.Sprint(len(releaseRange.Releases))
-			if !releaseRange.Complete {
-				count += "+"
-			}
-			title = count + " releases available · " + m.update.latest
+			title = releaseCountLabel(releaseRange) + " releases available · " + m.update.latest
 		}
 		body := []string{"You are on " + m.update.version + ". Here is everything released since then:"}
 		if len(releaseRange.Releases) == 0 {
@@ -96,11 +100,7 @@ func (m *Model) activeNotices() []notice {
 		releaseRange := m.update.installed
 		title := "Updated to " + m.update.version
 		if len(releaseRange.Releases) > 1 {
-			count := fmt.Sprint(len(releaseRange.Releases))
-			if !releaseRange.Complete {
-				count += "+"
-			}
-			title = "Updated across " + count + " releases · " + m.update.version
+			title = "Updated across " + releaseCountLabel(releaseRange) + " releases · " + m.update.version
 		}
 		body := []string{"Updated from " + m.whatsNewFromVersion + " to " + m.update.version + "."}
 		if len(releaseRange.Releases) == 0 && !m.update.checked {
@@ -528,8 +528,12 @@ func (m *Model) noticeScrollLimit(notices []notice) int {
 	if m.errBar.text != "" {
 		tailRows++
 	}
-	bodyRoom := max(1, m.height-2-(len(notices)+2)-tailRows)
+	bodyRoom := noticeBodyRoom(m.height, len(notices), tailRows)
 	return max(0, bodyRows-bodyRoom)
+}
+
+func noticeBodyRoom(height, noticeCount, tailRows int) int {
+	return max(1, height-2-(noticeCount+2)-tailRows)
 }
 
 func (m *Model) viewNotices() string {
@@ -570,7 +574,7 @@ func (m *Model) viewNotices() string {
 	}
 	tail = append(tail, "")
 
-	rows = append(rows, fitBody(body, m.height-2-len(rows)-len(tail), m.noticeScroll)...)
+	rows = append(rows, fitBody(body, noticeBodyRoom(m.height, len(notices), len(tail)), m.noticeScroll)...)
 	rows = append(rows, tail...)
 
 	hint := "↑↓ pick · pgup/pgdn scroll · r refresh · ↵ open · x dismiss · esc "
