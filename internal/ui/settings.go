@@ -334,6 +334,7 @@ func (m *Model) toggleCLIHidden(name string) {
 	}
 	if m.settings.cliHidden[name] {
 		delete(m.settings.cliHidden, name)
+		m.errBar.text = ""
 		return
 	}
 	enabled := 0
