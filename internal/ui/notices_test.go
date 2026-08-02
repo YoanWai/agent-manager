@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -27,10 +29,11 @@ func noticeStore(t *testing.T) *store.Store {
 
 func noticeModel(st *store.Store, version string) *Model {
 	return &Model{
-		store:           st,
-		update:          updateInfo{version: version},
-		dismissed:       loadDismissed(st),
-		whatsNewVersion: loadWhatsNewVersion(st),
+		store:               st,
+		update:              updateInfo{version: version},
+		dismissed:           loadDismissed(st),
+		whatsNewVersion:     loadWhatsNewVersion(st),
+		whatsNewFromVersion: loadWhatsNewFromVersion(st),
 	}
 }
 
@@ -88,6 +91,102 @@ func TestUpdateNoticePerRelease(t *testing.T) {
 	m.update.latest = "v0.4.0"
 	if !contains(noticeIDs(m.activeNotices()), "update-v0.4.0") {
 		t.Fatal("a newer release must surface its own notice")
+	}
+}
+
+func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
+	m := modalModel(t)
+	releases := []update.Release{
+		uiRelease("v0.6.0", "Sessions: Keep focus after refresh"),
+		uiRelease("v0.5.0", "Groups: Create immediately"),
+		uiRelease("v0.4.0", "UI: Scroll long prompts"),
+		uiRelease("v0.3.0", "Worktree: Respect group defaults"),
+		uiRelease("v0.2.0", "Current release"),
+	}
+	m.Update(updateMsg{
+		latest:   "v0.6.0",
+		url:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.6.0",
+		releases: releases,
+	})
+	m.openNotices("update-v0.6.0")
+
+	n := m.activeNotices()[m.noticeCursor]
+	if n.title != "4 releases available · v0.6.0" {
+		t.Fatalf("title = %q", n.title)
+	}
+	if len(n.releases) != 4 {
+		t.Fatalf("summary has %d releases, want 4", len(n.releases))
+	}
+	frame := ansi.Strip(m.View())
+	for _, want := range []string{
+		"4 releases available · v0.6.0",
+		"v0.3.0 · 1 change",
+		"Worktree: Respect group defaults",
+		"v0.6.0 · 1 change",
+		"updates once to v0.6.0",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("cumulative modal missing %q:\n%s", want, frame)
+		}
+	}
+}
+
+func TestPostUpdateNoticeUsesPersistedStartingVersion(t *testing.T) {
+	st := noticeStore(t)
+	if err := st.SetSetting(lastSeenVersionSetting, "v0.1.0"); err != nil {
+		t.Fatal(err)
+	}
+	m := noticeModel(st, "v0.5.0")
+	m.width, m.height = 100, 34
+	m.update.checked = true
+	m.update.releases = []update.Release{
+		uiRelease("v0.5.0", "Groups: Create immediately"),
+		uiRelease("v0.4.0", "UI: Scroll long prompts"),
+		uiRelease("v0.3.0", "Worktree: Respect defaults"),
+		uiRelease("v0.2.0", "Notices: Summarize releases"),
+		uiRelease("v0.1.0", "Starting release"),
+	}
+	if got := m.startupNotice(); got != "whatsnew-v0.5.0" {
+		t.Fatalf("startup notice = %q", got)
+	}
+	m.openNotices("whatsnew-v0.5.0")
+
+	if from, _ := st.Setting(whatsNewFromSetting); from != "v0.1.0" {
+		t.Fatalf("persisted starting version = %q", from)
+	}
+	frame := ansi.Strip(m.View())
+	for _, want := range []string{
+		"Updated across 4 releases · v0.5.0",
+		"Updated from v0.1.0 to v0.5.0.",
+		"v0.2.0 · 1 change",
+		"v0.5.0 · 1 change",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("post-update modal missing %q:\n%s", want, frame)
+		}
+	}
+}
+
+func TestVersionDowngradeDoesNotClaimAnUpdate(t *testing.T) {
+	st := noticeStore(t)
+	if err := st.SetSetting(lastSeenVersionSetting, "v0.5.0"); err != nil {
+		t.Fatal(err)
+	}
+	m := noticeModel(st, "v0.4.0")
+	if got := m.startupNotice(); got != "" {
+		t.Fatalf("downgrade should not open what's new, got %q", got)
+	}
+	if m.whatsNewVersion == "v0.4.0" {
+		t.Fatal("downgrade was recorded as an upgrade")
+	}
+	if version, _ := st.Setting(whatsNewVersionSetting); version != "" {
+		t.Fatalf("what's-new version persisted on downgrade: %q", version)
+	}
+	if version, _ := st.Setting(whatsNewFromSetting); version != "" {
+		t.Fatalf("what's-new source persisted on downgrade: %q", version)
+	}
+	if version, _ := st.Setting(lastSeenVersionSetting); version != "v0.4.0" {
+		t.Fatalf("last seen version = %q, want v0.4.0", version)
 	}
 }
 
@@ -188,6 +287,28 @@ func TestFeedMessagesBecomeNotices(t *testing.T) {
 	}
 }
 
+func TestFeedUsesOneCanonicalTitleInCardAndModal(t *testing.T) {
+	m := modalModel(t)
+	m.feedMessages = []feed.Message{{
+		ID:     "feed-canonical",
+		Banner: "legacy compact copy",
+		Title:  "One title everywhere",
+		Body:   []string{"details"},
+	}}
+	m.dismissNotice(noticeWelcome)
+	m.dismissNotice(noticeBugReport)
+
+	card := ansi.Strip(strings.Join(m.noticeCardLines(m.activeNotices(), 50, 5), "\n"))
+	if !strings.Contains(card, "One title everywhere") || strings.Contains(card, "legacy compact copy") {
+		t.Fatalf("card did not use canonical title:\n%s", card)
+	}
+	m.openNotices("feed-canonical")
+	modal := ansi.Strip(m.View())
+	if !strings.Contains(modal, "One title everywhere") || strings.Contains(modal, "legacy compact copy") {
+		t.Fatalf("modal and card titles diverged:\n%s", modal)
+	}
+}
+
 func TestBugReportNoticeCarriesPrefilledURL(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	var bug notice
@@ -232,8 +353,8 @@ func TestRailFootPutsMessagesRightOfComputer(t *testing.T) {
 	if !strings.Contains(joined, "messages") {
 		t.Fatalf("want a messages card, got %q", joined)
 	}
-	if !strings.Contains(joined, "welcome") {
-		t.Fatalf("want the welcome banner, got %q", joined)
+	if !strings.Contains(joined, "Welcome to agent-manager") {
+		t.Fatalf("want the canonical welcome title, got %q", joined)
 	}
 
 	for _, line := range lines {
@@ -437,6 +558,63 @@ func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 	}
 }
 
+func TestNoticesBodyScrollIsBoundedAndVisible(t *testing.T) {
+	m := modalModel(t)
+	m.width, m.height = 70, 14
+	var body []string
+	for i := 0; i < 30; i++ {
+		body = append(body, fmt.Sprintf("change line %02d", i))
+	}
+	m.feedMessages = []feed.Message{{ID: "feed-scroll", Banner: "scroll", Title: "Scrollable summary", Body: body}}
+	m.openNotices("feed-scroll")
+
+	before := ansi.Strip(m.View())
+	if !strings.Contains(before, "↓ more below…") {
+		t.Fatalf("clipped summary did not advertise more content:\n%s", before)
+	}
+	m.handleNoticesKey(key("pgdown"))
+	after := ansi.Strip(m.View())
+	if m.noticeScroll == 0 || !strings.Contains(after, "↑ more above…") {
+		t.Fatalf("page down did not move the summary:\n%s", after)
+	}
+	limit := m.noticeScrollLimit(m.activeNotices())
+	for i := 0; i < 20; i++ {
+		m.handleNoticesKey(key("pgdown"))
+	}
+	if m.noticeScroll != limit {
+		t.Fatalf("scroll offset = %d, want bounded limit %d", m.noticeScroll, limit)
+	}
+}
+
+func TestReleaseSummaryMarksOmittedChangesAndPartialRange(t *testing.T) {
+	n := notice{
+		releases:      []update.Release{uiReleaseWithTotal("v0.3.0", 4, "Visible change")},
+		rangeComplete: false,
+	}
+	body := ansi.Strip(strings.Join(renderNoticeBody(n, noticeModalInner), "\n"))
+	for _, want := range []string{"v0.3.0 · 4 changes", "+3 more in the full notes", "catalog covers part of this range"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("partial summary missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestNoticesManualRefreshWaitsForBothSources(t *testing.T) {
+	m := modalModel(t)
+	_, cmd := m.handleNoticesKey(key("r"))
+	if cmd == nil || !m.update.refreshing || m.update.refreshPending != 2 {
+		t.Fatalf("refresh did not start both sources: refreshing=%v pending=%d", m.update.refreshing, m.update.refreshPending)
+	}
+	m.Update(updateMsg{manual: true, releases: []update.Release{uiRelease("v0.2.0", "Current")}})
+	if !m.update.refreshing || m.update.refreshPending != 1 {
+		t.Fatalf("first result ended refresh early: refreshing=%v pending=%d", m.update.refreshing, m.update.refreshPending)
+	}
+	m.Update(feedMsg{manual: true})
+	if m.update.refreshing || m.update.refreshPending != 0 {
+		t.Fatalf("refresh did not finish after both results: refreshing=%v pending=%d", m.update.refreshing, m.update.refreshPending)
+	}
+}
+
 func TestNoticesDismissAdvancesAndCloses(t *testing.T) {
 	m := modalModel(t)
 	total := len(m.activeNotices())
@@ -559,6 +737,18 @@ func TestUpdateNoticeAppliesOnU(t *testing.T) {
 	applied := ""
 	orig := applyUpdate
 	defer func() { applyUpdate = orig }()
+	origRefresh := refreshUpdatesForApply
+	defer func() { refreshUpdatesForApply = origRefresh }()
+	refreshUpdatesForApply = func(context.Context, string, string) (update.Result, error) {
+		return update.Result{
+			Latest: "v0.6.0",
+			URL:    "https://github.com/YoanWai/agent-manager/releases/tag/v0.6.0",
+			Releases: []update.Release{
+				uiRelease("v0.6.0", "Newest release"),
+				uiRelease("v0.2.0", "Current release"),
+			},
+		}, nil
+	}
 	applyUpdate = func(_ context.Context, tag, execPath string) error {
 		applied = tag + " " + execPath
 		return nil
@@ -578,7 +768,7 @@ func TestUpdateNoticeAppliesOnU(t *testing.T) {
 	if msg.err != nil {
 		t.Fatalf("apply: %v", msg.err)
 	}
-	if !strings.HasPrefix(applied, "v0.3.0 ") {
+	if !strings.HasPrefix(applied, "v0.6.0 ") {
 		t.Fatalf("applyUpdate saw %q", applied)
 	}
 	updated, quit := m.Update(msg)
@@ -601,6 +791,15 @@ func TestUpdateNoticeApplyFailureSurfaces(t *testing.T) {
 
 	orig := applyUpdate
 	defer func() { applyUpdate = orig }()
+	origRefresh := refreshUpdatesForApply
+	defer func() { refreshUpdatesForApply = origRefresh }()
+	refreshUpdatesForApply = func(context.Context, string, string) (update.Result, error) {
+		return update.Result{
+			Latest:   "v0.3.0",
+			URL:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
+			Releases: []update.Release{uiRelease("v0.3.0", "Newest release"), uiRelease("v0.2.0", "Current release")},
+		}, nil
+	}
 	applyUpdate = func(_ context.Context, _, _ string) error {
 		return errors.New("permission denied")
 	}
@@ -615,6 +814,64 @@ func TestUpdateNoticeApplyFailureSurfaces(t *testing.T) {
 	}
 	if !strings.Contains(m.errBar.text, "permission denied") {
 		t.Fatalf("failure should surface, err=%q", m.errBar.text)
+	}
+}
+
+func TestUpdateRefreshFailureDoesNotInstallCachedTag(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	m.update.latest = "v0.3.0"
+	m.openNotices("update-v0.3.0")
+
+	origRefresh := refreshUpdatesForApply
+	defer func() { refreshUpdatesForApply = origRefresh }()
+	refreshUpdatesForApply = func(context.Context, string, string) (update.Result, error) {
+		return update.Result{}, errors.New("github unavailable")
+	}
+	origApply := applyUpdate
+	defer func() { applyUpdate = origApply }()
+	called := false
+	applyUpdate = func(context.Context, string, string) error {
+		called = true
+		return nil
+	}
+
+	_, cmd := m.handleNoticesKey(key("u"))
+	updated, _ := m.Update(cmd().(updateAppliedMsg))
+	m = updated.(*Model)
+	if called || m.RestartPath() != "" {
+		t.Fatal("a failed latest-release refresh must not install a stale tag")
+	}
+	if !strings.Contains(m.errBar.text, "github unavailable") {
+		t.Fatalf("refresh error not surfaced: %q", m.errBar.text)
+	}
+}
+
+func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.3.0")
+	m.update.latest = "v0.4.0"
+	m.openNotices("update-v0.4.0")
+
+	origRefresh := refreshUpdatesForApply
+	defer func() { refreshUpdatesForApply = origRefresh }()
+	refreshUpdatesForApply = func(context.Context, string, string) (update.Result, error) {
+		return update.Result{}, nil
+	}
+	origApply := applyUpdate
+	defer func() { applyUpdate = origApply }()
+	called := false
+	applyUpdate = func(context.Context, string, string) error {
+		called = true
+		return nil
+	}
+
+	_, cmd := m.handleNoticesKey(key("u"))
+	updated, quit := m.Update(cmd().(updateAppliedMsg))
+	m = updated.(*Model)
+	if called || quit != nil || m.update.latest != "" || m.RestartPath() != "" {
+		t.Fatal("an already-current refresh should clear the stale notice without installing")
+	}
+	if m.errBar.text != "already up to date" {
+		t.Fatalf("status = %q", m.errBar.text)
 	}
 }
 
@@ -636,5 +893,18 @@ func TestNoticesTinyTerminalStaysInside(t *testing.T) {
 				t.Fatalf("width %d: line overflows at %d: %q", width, got, line)
 			}
 		}
+	}
+}
+
+func uiRelease(version string, changes ...string) update.Release {
+	return uiReleaseWithTotal(version, len(changes), changes...)
+}
+
+func uiReleaseWithTotal(version string, total int, changes ...string) update.Release {
+	return update.Release{
+		Version:      version,
+		URL:          "https://github.com/YoanWai/agent-manager/releases/tag/" + version,
+		Changes:      changes,
+		TotalChanges: total,
 	}
 }

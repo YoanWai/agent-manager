@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func serve(t *testing.T, body string) *httptest.Server {
@@ -91,6 +92,19 @@ func TestFetchHonorsVersionBounds(t *testing.T) {
 	}
 }
 
+func TestFetchHonorsExpiry(t *testing.T) {
+	serve(t, `[
+		{"id":"expired","banner":"x","title":"x","expires_at":"2020-01-01T00:00:00Z"},
+		{"id":"future","banner":"x","title":"x","expires_at":"2999-01-01T00:00:00Z"},
+		{"id":"invalid","banner":"x","title":"x","expires_at":"someday"},
+		{"id":"open","banner":"x","title":"x"}
+	]`)
+	messages := fetch(t, t.TempDir(), "v0.14.2")
+	if len(messages) != 2 || messages[0].ID != "feed-future" || messages[1].ID != "feed-open" {
+		t.Fatalf("expiry filtering = %+v", messages)
+	}
+}
+
 func TestFetchCachesBetweenCalls(t *testing.T) {
 	var hits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -107,6 +121,65 @@ func TestFetchCachesBetweenCalls(t *testing.T) {
 	fetch(t, dir, "v0.14.2")
 	if got := hits.Load(); got != 1 {
 		t.Fatalf("second fetch should come from the cache, got %d hits", got)
+	}
+}
+
+func TestRefreshBypassesCache(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Write([]byte(`[{"id":"one","banner":"x","title":"x"}]`))
+	}))
+	t.Cleanup(server.Close)
+	old := feedURL
+	feedURL = server.URL
+	t.Cleanup(func() { feedURL = old })
+
+	dir := t.TempDir()
+	fetch(t, dir, "v0.14.2")
+	if _, err := Refresh(t.Context(), dir, "v0.14.2"); err != nil {
+		t.Fatal(err)
+	}
+	if got := hits.Load(); got != 2 {
+		t.Fatalf("manual refresh should bypass the cache, got %d hits", got)
+	}
+}
+
+func TestFetchRefetchesFutureDatedCache(t *testing.T) {
+	dir := t.TempDir()
+	writeCache(filepath.Join(dir, cacheFile), cache{
+		CheckedAt: time.Now().Add(time.Hour),
+		Messages:  []rawMessage{{ID: "stale", Banner: "x", Title: "x"}},
+	})
+	serve(t, `[{"id":"fresh","banner":"x","title":"x"}]`)
+
+	messages := fetch(t, dir, "v0.14.2")
+	if len(messages) != 1 || messages[0].ID != "feed-fresh" {
+		t.Fatalf("future-dated cache was trusted: %+v", messages)
+	}
+}
+
+func TestRefreshUsesConditionalRequest(t *testing.T) {
+	dir := t.TempDir()
+	writeCache(filepath.Join(dir, cacheFile), cache{
+		CheckedAt: time.Now().Add(-checkInterval),
+		ETag:      `"feed-1"`,
+		Messages:  []rawMessage{{ID: "one", Banner: "x", Title: "x"}},
+	})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("If-None-Match"); got != `"feed-1"` {
+			t.Errorf("If-None-Match = %q", got)
+		}
+		w.WriteHeader(http.StatusNotModified)
+	}))
+	t.Cleanup(server.Close)
+	old := feedURL
+	feedURL = server.URL
+	t.Cleanup(func() { feedURL = old })
+
+	messages, err := Refresh(t.Context(), dir, "v0.14.2")
+	if err != nil || len(messages) != 1 || messages[0].ID != "feed-one" {
+		t.Fatalf("messages=%+v err=%v", messages, err)
 	}
 }
 

@@ -58,6 +58,11 @@ docs: document the review-base subcommand
 
 Release notes are generated from merged pull request titles, so give the PR the title you want readers to see in the changelog.
 
+The TUI turns those generated notes into cumulative update summaries
+automatically. Do not duplicate feature and fix notes in the maintainer message
+feed; see [Release summaries and messages](../docs/notifications.md) for the two
+publishing paths.
+
 In the pull request description, say what changed and why, and how you verified it. Screenshots or a short recording make UI changes much easier to review.
 
 ## Licensing

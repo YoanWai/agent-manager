@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/atomicfile"
 	"github.com/YoanWai/agent-manager/internal/update"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -46,7 +47,9 @@ var validFeedID = regexp.MustCompile(feedIDPattern)
 // render. ID carries a "feed-" prefix so remote entries can never collide
 // with the notices built into the binary.
 type Message struct {
-	ID     string
+	ID string
+	// Banner remains in the wire contract for released clients; current UI
+	// surfaces use Title as their one canonical label.
 	Banner string
 	Title  string
 	Body   []string
@@ -61,10 +64,12 @@ type rawMessage struct {
 	URL        string   `json:"url"`
 	MinVersion string   `json:"min_version"`
 	MaxVersion string   `json:"max_version"`
+	ExpiresAt  string   `json:"expires_at"`
 }
 
 type cache struct {
 	CheckedAt time.Time    `json:"checked_at"`
+	ETag      string       `json:"etag,omitempty"`
 	Messages  []rawMessage `json:"messages"`
 }
 
@@ -73,52 +78,83 @@ type cache struct {
 // stale cache when the network fails, so the TUI never blocks or loses
 // messages to a flaky connection.
 func Fetch(ctx context.Context, configDir, version string) ([]Message, error) {
+	return fetchMessages(ctx, configDir, version, false)
+}
+
+// Refresh bypasses the cache age so the messages modal can explicitly check
+// GitHub. A stale feed is still returned with the error, keeping the screen
+// stable while the caller reports that the refresh failed.
+func Refresh(ctx context.Context, configDir, version string) ([]Message, error) {
+	return fetchMessages(ctx, configDir, version, true)
+}
+
+func fetchMessages(ctx context.Context, configDir, version string, force bool) ([]Message, error) {
+	now := time.Now()
 	cachePath := filepath.Join(configDir, cacheFile)
 	cached, haveCache := readCache(cachePath)
-	if haveCache && time.Since(cached.CheckedAt) < checkInterval {
-		return sanitize(cached.Messages, version), nil
+	age := now.Sub(cached.CheckedAt)
+	if !force && haveCache && age >= 0 && age < checkInterval {
+		return sanitize(cached.Messages, version, now), nil
 	}
 
-	raw, err := download(ctx)
+	etag := ""
+	if haveCache {
+		etag = cached.ETag
+	}
+	raw, nextETag, notModified, err := download(ctx, etag)
 	if err != nil {
 		if haveCache {
-			return sanitize(cached.Messages, version), nil
+			messages := sanitize(cached.Messages, version, now)
+			if force {
+				return messages, err
+			}
+			return messages, nil
 		}
 		return nil, err
 	}
-	writeCache(cachePath, cache{CheckedAt: time.Now(), Messages: raw})
-	return sanitize(raw, version), nil
+	if notModified {
+		cached.CheckedAt = now
+		writeCache(cachePath, cached)
+		return sanitize(cached.Messages, version, now), nil
+	}
+	writeCache(cachePath, cache{CheckedAt: now, ETag: nextETag, Messages: raw})
+	return sanitize(raw, version, now), nil
 }
 
-func download(ctx context.Context) ([]rawMessage, error) {
+func download(ctx context.Context, etag string) ([]rawMessage, string, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestBudget)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", false, err
+	}
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, "", false, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotModified && etag != "" {
+		return nil, etag, true, nil
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("feed: server returned %s", resp.Status)
+		return nil, "", false, fmt.Errorf("feed: server returned %s", resp.Status)
 	}
 
 	var raw []rawMessage
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxPayload)).Decode(&raw); err != nil {
-		return nil, err
+		return nil, "", false, err
 	}
-	return raw, nil
+	return raw, resp.Header.Get("ETag"), false, nil
 }
 
-// sanitize turns the untrusted payload into renderable messages: entries
-// with a bad id, a non-https url, or outside their version bounds are
-// dropped whole; surviving text is stripped of terminal control
-// sequences and cut to bounded lengths.
-func sanitize(raw []rawMessage, version string) []Message {
+// sanitize turns the untrusted payload into renderable messages. Invalid,
+// out-of-range, and expired entries are dropped whole; surviving text is
+// stripped of terminal control sequences and cut to bounded lengths.
+func sanitize(raw []rawMessage, version string, now time.Time) []Message {
 	var messages []Message
 	for _, entry := range raw {
 		if len(messages) == maxMessages {
@@ -132,6 +168,12 @@ func sanitize(raw []rawMessage, version string) []Message {
 		}
 		if !update.VersionWithin(version, entry.MinVersion, entry.MaxVersion) {
 			continue
+		}
+		if entry.ExpiresAt != "" {
+			expiresAt, err := time.Parse(time.RFC3339, entry.ExpiresAt)
+			if err != nil || !now.Before(expiresAt) {
+				continue
+			}
 		}
 		msg := Message{
 			ID:     "feed-" + entry.ID,
@@ -202,5 +244,5 @@ func writeCache(path string, c cache) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(path, raw, 0o644)
+	_ = atomicfile.WriteFile(path, raw, 0o644)
 }

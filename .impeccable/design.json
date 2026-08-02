@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-02T17:10:00+03:00",
+  "title": "Design System: agent-manager",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Operator Blue",
+        "canonical": "#6f9fd0"
+      },
+      "accent-secondary": {
+        "role": "secondary",
+        "displayName": "Group Teal",
+        "canonical": "#6cb6a4"
+      },
+      "idle": {
+        "role": "status",
+        "displayName": "Idle",
+        "canonical": "#646c78"
+      }
+    },
+    "typographyMeta": {
+      "body": {
+        "displayName": "Terminal Body",
+        "purpose": "All interface text and readable prose."
+      }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": [
+      {
+        "name": "narrow-terminal",
+        "value": "80 columns"
+      }
+    ]
+  },
+  "components": []
+}
