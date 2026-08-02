@@ -142,6 +142,65 @@ func TestTextareaRowsCountsExactMultipleWrap(t *testing.T) {
 	}
 }
 
+func TestFormGroupArrowsMoveFocusNotSelection(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("alpha", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.openForm()
+	m.formFocus(-1) // wrap from name to group
+	if m.form.focus != fieldGroup {
+		t.Fatalf("focus = %v, want fieldGroup", m.form.focus)
+	}
+
+	initial := m.form.groupIndex
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.form.groupIndex != initial {
+		t.Fatalf("down must not change the group selection, index = %d, want %d", m.form.groupIndex, initial)
+	}
+	if m.form.focus == fieldGroup {
+		t.Fatal("down should move focus off the group field")
+	}
+
+	m.form.focus = fieldGroup
+	m.form.groupIndex = 0
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if m.form.groupIndex != 1 {
+		t.Fatalf("right should cycle the group selection, index = %d", m.form.groupIndex)
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if m.form.groupIndex != 0 {
+		t.Fatalf("left should cycle back, index = %d", m.form.groupIndex)
+	}
+}
+
+func TestGroupFormParentArrowsMoveFocusNotSelection(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("alpha", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.openGroupForm()
+	m.groupForm.focus = gfParent
+
+	initial := m.form.groupIndex
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.form.groupIndex != initial {
+		t.Fatalf("down must not change the parent selection, index = %d, want %d", m.form.groupIndex, initial)
+	}
+	if m.groupForm.focus == gfParent {
+		t.Fatal("down should move focus off the parent field")
+	}
+
+	m.groupForm.focus = gfParent
+	m.form.groupIndex = 0
+	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if m.form.groupIndex != 1 {
+		t.Fatalf("right should cycle the parent selection, index = %d", m.form.groupIndex)
+	}
+}
+
 func TestFormRejectsDashLeadingPrompt(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()

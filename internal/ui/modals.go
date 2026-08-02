@@ -102,7 +102,7 @@ func (m *Model) viewForm() string {
 
 	hint := "tab/↑↓ move · ←→ change · ↵ create · esc cancel"
 	if m.form.focus == fieldGroup {
-		hint = "↑↓ pick group · tab next field · ↵ create · esc cancel"
+		hint = "←→ pick group · tab/↑↓ move · ↵ create · esc cancel"
 	}
 	if m.form.focus == fieldDir && m.pathSugg.active() {
 		hint = pathSuggestHint(m.pathSugg.chosen)
@@ -173,7 +173,7 @@ func (m *Model) viewGroupForm() string {
 	}
 	hint := "tab/↑↓ move · ↵ create · esc cancel"
 	if m.groupForm.focus == gfParent {
-		hint = "↑↓ pick parent · tab next field · ↵ create · esc cancel"
+		hint = "←→ pick parent · tab/↑↓ move · ↵ create · esc cancel"
 	}
 	if m.groupForm.focus == gfWorktree {
 		hint = "tab/↑↓ move · ←→ change · ↵ create · esc cancel"

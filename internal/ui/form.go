@@ -309,11 +309,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.formFocus(-1)
 		return m, nil
 	case "up":
-		if m.form.focus == fieldGroup {
-			if !m.moveGroupCursor(-1) {
-				m.formFocus(-1)
-			}
-		} else if dirSuggesting {
+		if dirSuggesting {
 			if !m.pathSugg.move(-1) {
 				m.formFocus(-1)
 			}
@@ -322,11 +318,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down":
-		if m.form.focus == fieldGroup {
-			if !m.moveGroupCursor(1) {
-				m.formFocus(1)
-			}
-		} else if dirSuggesting {
+		if dirSuggesting {
 			if !m.pathSugg.move(1) {
 				m.formFocus(1)
 			}
@@ -344,6 +336,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.form.worktreeAuto = false
 			return m, nil
 		}
+		if m.form.focus == fieldGroup {
+			m.moveGroupCursor(-1)
+			return m, nil
+		}
 	case "right":
 		if m.form.focus == fieldTool {
 			m.cycleTool(1)
@@ -352,6 +348,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.form.focus == fieldWorktree {
 			m.form.worktree = !m.form.worktree
 			m.form.worktreeAuto = false
+			return m, nil
+		}
+		if m.form.focus == fieldGroup {
+			m.moveGroupCursor(1)
 			return m, nil
 		}
 	case "enter":
@@ -663,11 +663,7 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.groupFormFocus(-1)
 		return m, nil
 	case "up":
-		if m.groupForm.focus == gfParent {
-			if !m.moveGroupCursor(-1) {
-				m.groupFormFocus(-1)
-			}
-		} else if pathSuggesting {
+		if pathSuggesting {
 			if !m.pathSugg.move(-1) {
 				m.groupFormFocus(-1)
 			}
@@ -676,11 +672,7 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down":
-		if m.groupForm.focus == gfParent {
-			if !m.moveGroupCursor(1) {
-				m.groupFormFocus(1)
-			}
-		} else if pathSuggesting {
+		if pathSuggesting {
 			if !m.pathSugg.move(1) {
 				m.groupFormFocus(1)
 			}
@@ -694,9 +686,17 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + count - 1) % count
 			return m, nil
 		}
+		if m.groupForm.focus == gfParent {
+			m.moveGroupCursor(-1)
+			return m, nil
+		}
 	case "right":
 		if m.groupForm.focus == gfWorktree {
 			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + 1) % len(groupWorktreeOptions)
+			return m, nil
+		}
+		if m.groupForm.focus == gfParent {
+			m.moveGroupCursor(1)
 			return m, nil
 		}
 	case "enter":
