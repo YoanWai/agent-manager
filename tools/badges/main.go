@@ -112,12 +112,11 @@ func get(url string, into any) error {
 }
 
 // trendshiftBadge is the banner Trendshift mints once a repository reaches
-// GitHub Trending. Ours has a profile but no badge yet: the endpoint answers
-// 500 until the day it trends, so the region in the README stays empty and
-// fills itself on the first run after that happens.
+// GitHub Trending.
 func trendshiftBadge() string {
 	const id = "89312"
-	resp, err := http.Get("https://trendshift.io/api/badge/repositories/" + id)
+	const badgeURL = "https://trendshift.io/api/badge/trendshift/repositories/" + id + "/daily?language=Go"
+	resp, err := http.Get(badgeURL)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "badges: trendshift unreachable:", err)
 		return ""
@@ -127,8 +126,8 @@ func trendshiftBadge() string {
 		return ""
 	}
 	return fmt.Sprintf(
-		`<a href="https://trendshift.io/repositories/%s"><img src="https://trendshift.io/api/badge/repositories/%s" alt="agent-manager on Trendshift" width="250" height="55"></a>`,
-		id, id)
+		`<a href="https://trendshift.io/repositories/%s?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-%s" target="_blank" rel="noopener noreferrer"><img src="%s" alt="agent-manager on Trendshift" width="250" height="55"></a>`,
+		id, id, badgeURL)
 }
 
 // fillTrendshift keeps the README's trendshift region in step with whether the

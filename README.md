@@ -7,7 +7,7 @@
 
 <p align="center"><b>The fastest workflow for every AI coding agent.</b></p>
 
-<p align="center"><!-- trendshift:start --><!-- trendshift:end --></p>
+<p align="center"><!-- trendshift:start --><a href="https://trendshift.io/repositories/89312?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-89312" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/89312/daily?language=Go" alt="agent-manager on Trendshift" width="250" height="55"></a><!-- trendshift:end --></p>
 
 <p align="center">
   <a href="https://github.com/YoanWai/agent-manager/stargazers"><img src="https://img.shields.io/github/stars/YoanWai/agent-manager?style=for-the-badge&label=stars&labelColor=1f2328&color=96591f" alt="stars"></a>
