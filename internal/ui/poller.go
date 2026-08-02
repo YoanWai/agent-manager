@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/agentsession"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -27,6 +29,7 @@ type poller struct {
 	tmux          *tmux.Driver
 	engine        *status.Engine
 	hooks         *hooks.Manager
+	gitDrv        *git.Driver
 	statusSources map[string]string
 	sessionStores map[string]string
 	interval      time.Duration
@@ -77,12 +80,13 @@ func paneBooted(pane string) bool {
 	return strings.TrimSpace(ansi.Strip(pane)) != ""
 }
 
-func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, statusSources, sessionStores map[string]string, interval time.Duration) *poller {
+func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores map[string]string, interval time.Duration) *poller {
 	return &poller{
 		store:            st,
 		tmux:             driver,
 		engine:           engine,
 		hooks:            hookManager,
+		gitDrv:           gitDriver,
 		statusSources:    statusSources,
 		sessionStores:    sessionStores,
 		interval:         interval,
@@ -363,10 +367,14 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	names := make([]string, len(groups))
 	paths := make(map[string]string, len(groups))
+	worktrees := make(map[string]string, len(groups))
 	archivedGroups := make(map[string]bool, len(groups))
 	for i, g := range groups {
 		names[i] = g.Name
 		paths[g.Name] = g.Path
+		if g.Worktree != "" {
+			worktrees[g.Name] = g.Worktree
+		}
 		if g.Archived {
 			archivedGroups[g.Name] = true
 		}
@@ -387,6 +395,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		sessions:       sessions,
 		groups:         names,
 		groupPaths:     paths,
+		groupWorktrees: worktrees,
 		archivedGroups: archivedGroups,
 		proc:           proc,
 		procFor:        selectedID,
@@ -501,13 +510,20 @@ func (p *poller) maybeSendDirective(sess store.Session, pane string, agentAlive 
 // keeping the manager the sole database writer. The file is consumed
 // even when the name is unchanged so it never lingers. A dead tmux
 // session cannot take a label, which is fine; the label is rewritten on
-// revive.
+// revive. A worktree session's directory and branch follow the new name,
+// and a name git cannot give them keeps the session on the one it has:
+// the file is consumed either way, so the reason is reported once rather
+// than on every poll from here on.
 func (p *poller) applyPendingRename(sess *store.Session) error {
 	name, found := p.hooks.ReadName(sess.ID)
 	if !found {
 		return nil
 	}
 	if name != "" && name != sess.Name {
+		if err := renameSessionWorktree(p.gitDrv, p.store, sess, name); err != nil {
+			_ = p.hooks.RemoveName(sess.ID)
+			return fmt.Errorf("worktree rename: %w", err)
+		}
 		if err := ignoreDeletedSession(p.store.RenameSession(sess.ID, name)); err != nil {
 			return err
 		}

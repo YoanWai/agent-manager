@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -40,10 +39,9 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	for i := 1; i <= 120; i++ {
-		if err := m.tmux.SendText(sess.ID, fmt.Sprintf("echo history-line-%03d", i)); err != nil {
-			t.Fatalf("SendText: %v", err)
-		}
+	command := `i=1; while [ "$i" -le 120 ]; do printf 'history-line-%03d\n' "$i"; i=$((i+1)); done`
+	if err := m.tmux.SendText(sess.ID, command); err != nil {
+		t.Fatalf("SendText: %v", err)
 	}
 	// Let the pane finish painting so the history is really there.
 	deadline = time.Now().Add(10 * time.Second)
@@ -270,7 +268,7 @@ func windowHeight(t *testing.T, id string) int {
 func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 	t.Helper()
 	m := buildModel(t)
-	if err := m.spawnSession(tool, name, t.TempDir(), "", "", true); err != nil {
+	if err := m.spawnSession(tool, name, t.TempDir(), "", "", true, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -459,6 +457,59 @@ func TestMouseReportEncodings(t *testing.T) {
 	}
 	if _, ok := x10Mouse(wheelUpButton, 4, x10Limit); ok {
 		t.Error("x10 named a row the encoding cannot carry")
+	}
+}
+
+// Entering focus on a pane that has gone quiet keeps the cached pane
+// state. The watcher is already streaming this session and a quiet pane
+// pushes no fresh capture, so a reset on entry would route the wheel as
+// a plain pane with no history — dead until the agent next paints,
+// which is exactly the shape of scrolling a finished agent's pane.
+func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
+	m, sess := focusedMouseApp(t, "mouse-tool", "quietapp")
+
+	// Out to the list and back in, with the pane painting nothing in
+	// between — checking on an agent whose turn has ended.
+	m.leaveFocus()
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("did not re-enter focus: %q", m.errBar.text)
+	}
+
+	if !m.pane.mouse {
+		t.Fatal("re-entering focus dropped the pane's mouse claim")
+	}
+	if !m.pane.sgr {
+		t.Fatal("re-entering focus dropped the pane's SGR encoding")
+	}
+	m.View()
+
+	// The wheel still reaches the app, with no pushed capture in between.
+	m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil {
+			t.Fatalf("capture: %v", err)
+		}
+		if strings.Contains(pane, "[<64;") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("wheel report never reached the quiet pane: %q", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// A cache stamped by another session's capture still resets, serving
+	// client or not: this session's first capture may not have landed.
+	m.leaveFocus()
+	m.pane.forID = "someone-else"
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.pane.mouse {
+		t.Fatal("another session's cached flags survived focus entry")
 	}
 }
 

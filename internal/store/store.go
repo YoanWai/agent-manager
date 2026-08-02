@@ -15,6 +15,8 @@ import (
 // listed a moment earlier can tell that race apart from a real failure.
 var ErrSessionGone = errors.New("session no longer exists")
 
+var ErrGroupExists = errors.New("group already exists")
+
 type Session struct {
 	ID           string
 	Name         string
@@ -30,6 +32,11 @@ type Session struct {
 	// gemini session UUID, codex rollout id, opencode session id). Revive resumes
 	// this exact conversation instead of the cwd's most recent one.
 	AgentSessionID string
+	// WorktreeRepo and WorktreeBranch are set only for sessions running in
+	// their own git worktree: the main repo root and the am/ branch recorded
+	// at creation, so delete-time cleanup survives later renames.
+	WorktreeRepo   string
+	WorktreeBranch string
 }
 
 type Store struct {
@@ -108,6 +115,9 @@ CREATE TABLE IF NOT EXISTS settings (
 			session_id TEXT PRIMARY KEY,
 			scope      TEXT NOT NULL
 		)`,
+		`ALTER TABLE sessions ADD COLUMN worktree_repo TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN worktree_branch TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE groups ADD COLUMN worktree TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -222,11 +232,12 @@ func (s *Store) CreateSession(sess Session) error {
 		sess.LastStatusAt = sess.CreatedAt
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
-		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID, sess.Group,
+		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID,
+		sess.WorktreeRepo, sess.WorktreeBranch, sess.Group,
 	)
 	if err != nil {
 		return err
@@ -260,8 +271,29 @@ func (s *Store) CreateGroup(name, path string) error {
 	return err
 }
 
+func (s *Store) AddGroup(name, path, worktree string) error {
+	if name == "" {
+		return errors.New("group name cannot be empty")
+	}
+	res, err := s.db.Exec(
+		`INSERT INTO groups (name, path, worktree, sort_order)
+		 VALUES (?, ?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+		 ON CONFLICT(name) DO NOTHING`, name, path, worktree)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("group %q: %w", name, ErrGroupExists)
+	}
+	return nil
+}
+
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -280,7 +312,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		var created, lastStatus int64
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
-			&sess.AgentSessionID); err != nil {
+			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch); err != nil {
 			return nil, err
 		}
 		sess.Archived = archived != 0
@@ -297,10 +329,11 @@ func (s *Store) Get(id string) (Session, error) {
 	var archived, acked int
 	var created, lastStatus int64
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
-		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID)
+		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
+		&sess.WorktreeRepo, &sess.WorktreeBranch)
 	if err != nil {
 		return Session{}, err
 	}
@@ -498,6 +531,17 @@ func (s *Store) RenameSession(id, name string) error {
 	return requireRow(res, id)
 }
 
+// MoveSessionWorktree records a worktree that followed its session's new
+// name: the directory the session now runs in and the branch checked out
+// there. The repo root the worktree hangs off stays as it was.
+func (s *Store) MoveSessionWorktree(id, cwd, branch string) error {
+	res, err := s.db.Exec(`UPDATE sessions SET cwd = ?, worktree_branch = ? WHERE id = ?`, cwd, branch, id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
+}
+
 // UpdateTool changes which tool status rules and revive use for a session.
 // Clears the captured agent conversation id: that id only makes sense for
 // the tool that minted it, and a manual tool swap means the user swapped
@@ -629,10 +673,14 @@ type Group struct {
 	Name     string
 	Path     string
 	Archived bool
+	// Worktree is the group's spawn-in-worktree choice: "on", "off", or
+	// "" to inherit from the nearest ancestor with a choice, else the
+	// global setting.
+	Worktree string
 }
 
 func (s *Store) Groups() ([]Group, error) {
-	rows, err := s.db.Query(`SELECT name, path, archived FROM groups ORDER BY sort_order, name`)
+	rows, err := s.db.Query(`SELECT name, path, archived, worktree FROM groups ORDER BY sort_order, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -641,13 +689,20 @@ func (s *Store) Groups() ([]Group, error) {
 	for rows.Next() {
 		var g Group
 		var archived int
-		if err := rows.Scan(&g.Name, &g.Path, &archived); err != nil {
+		if err := rows.Scan(&g.Name, &g.Path, &archived, &g.Worktree); err != nil {
 			return nil, err
 		}
 		g.Archived = archived != 0
 		groups = append(groups, g)
 	}
 	return groups, rows.Err()
+}
+
+// SetGroupWorktree stores a group's spawn-in-worktree choice: "on",
+// "off", or "" to inherit.
+func (s *Store) SetGroupWorktree(name, worktree string) error {
+	_, err := s.db.Exec(`UPDATE groups SET worktree = ? WHERE name = ?`, worktree, name)
+	return err
 }
 
 // SetGroupArchived flips the archived flag on a group, every descendant

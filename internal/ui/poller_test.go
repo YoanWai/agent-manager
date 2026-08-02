@@ -159,6 +159,78 @@ func TestPendingRenameForADeletedSessionDoesNotFailThePoll(t *testing.T) {
 	}
 }
 
+func TestPendingRenameMovesTheWorktree(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
+	writeName(t, m, spawned.ID, "audit the poller")
+
+	sess := spawned
+	if err := m.poller.applyPendingRename(&sess); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+
+	wantDir := filepath.Join(filepath.Dir(spawned.Cwd), "audit-the-poller")
+	if sess.Cwd != wantDir || sess.WorktreeBranch != "am/audit-the-poller" {
+		t.Fatalf("session did not follow the name: %+v", sess)
+	}
+	if sess.Name != "audit the poller" {
+		t.Fatalf("name = %q", sess.Name)
+	}
+	stored, err := m.store.Get(spawned.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Cwd != wantDir || stored.WorktreeBranch != "am/audit-the-poller" || stored.Name != "audit the poller" {
+		t.Fatalf("store did not follow the name: %+v", stored)
+	}
+	if _, err := os.Stat(wantDir); err != nil {
+		t.Fatalf("worktree directory did not follow: %v", err)
+	}
+	if _, found := m.hooks.ReadName(spawned.ID); found {
+		t.Fatal("the name file should be consumed")
+	}
+}
+
+func TestPendingRenameOnATakenWorktreeNameStopsAfterOneReport(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "mover", repo)
+	createWorktreeSession(t, m, "taken", repo)
+	writeName(t, m, spawned.ID, "taken")
+
+	sess := spawned
+	if err := m.poller.applyPendingRename(&sess); err == nil {
+		t.Fatal("a taken worktree name should report why")
+	}
+	if _, found := m.hooks.ReadName(spawned.ID); found {
+		t.Fatal("the name file must be consumed so later polls are not stuck on it")
+	}
+	stored, err := m.store.Get(spawned.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Name != "mover" || stored.Cwd != spawned.Cwd || stored.WorktreeBranch != spawned.WorktreeBranch {
+		t.Fatalf("refused rename still moved something: %+v", stored)
+	}
+
+	// The next poll runs clean, so one bad name does not stall the loop.
+	if err := m.poller.applyPendingRename(&sess); err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+}
+
+func writeName(t *testing.T, m *Model, id, name string) {
+	t.Helper()
+	path := m.hooks.NameFile(id)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("hooks dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(name), 0o644); err != nil {
+		t.Fatalf("write name file: %v", err)
+	}
+}
+
 func writeHookStatus(t *testing.T, m *Model, id, state string) {
 	t.Helper()
 	path := m.hooks.StatusFile(id)

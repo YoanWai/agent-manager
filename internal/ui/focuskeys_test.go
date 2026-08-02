@@ -53,6 +53,7 @@ func TestFocusKeyCommand(t *testing.T) {
 // bgRun returns, for each column, whether a background color is active,
 // by walking the row's SGR sequences the way a terminal would.
 func bgRun(row string, width int) []bool {
+	row = strings.NewReplacer("\u2066", "", "\u2069", "").Replace(row)
 	out := make([]bool, 0, width)
 	bg := false
 	i := 0
@@ -420,5 +421,23 @@ func TestDetachNoMouseReArm(t *testing.T) {
 	_, cmd := m.Update(attachDoneMsg{})
 	if cmd != nil {
 		t.Fatalf("detach should not re-arm mouse, got %T", cmd)
+	}
+}
+
+// Ctrl+\ mirrors ctrl+q: it leaves focus without touching the pane.
+func TestFocusModeCtrlBackslashUnfocuses(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "focusme", t.TempDir(), "")
+	m.selectSessionRow(t, "focusme")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlBackslash})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("ctrl+\\ left mode = %v", m.mode)
 	}
 }

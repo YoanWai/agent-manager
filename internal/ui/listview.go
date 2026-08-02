@@ -83,9 +83,9 @@ func (m *Model) viewListFrame() string {
 }
 
 // railLines is the sessions rail: the entry list on top, the machine
-// meters docked at the bottom behind their seam.
+// meters and the messages card docked at the bottom behind their seam.
 func (m *Model) railLines(width, height int) []contentLine {
-	meters := m.computerLines(width)
+	meters := m.railFootLines(width)
 	listHeight := height - len(meters) - 1
 	if listHeight < 3 {
 		listHeight, meters = height, nil
@@ -621,17 +621,23 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	head := rowColumns(title, subtleStyle.Render(countLabel), width)
 
 	if m.renamingGroup(group) {
-		label := labelStyle
+		pathLabel := labelStyle
 		if m.rename.focus == 1 {
-			label = lipgloss.NewStyle().Foreground(colorAccent)
+			pathLabel = lipgloss.NewStyle().Foreground(colorAccent)
 		}
-		if fieldWidth := width - 8; fieldWidth >= 10 {
+		worktreeLabel := labelStyle
+		if m.rename.focus == 2 {
+			worktreeLabel = lipgloss.NewStyle().Foreground(colorAccent)
+		}
+		if fieldWidth := width - 12; fieldWidth >= 10 {
 			m.rename.dir.Width = fieldWidth
 		}
-		out := head + "\n" + label.Width(6).Render("path") + m.rename.dir.View()
+		out := head + "\n" + pathLabel.Width(10).Render("path") + m.rename.dir.View()
 		if m.rename.focus == 1 && m.pathSugg.active() {
 			out += "\n" + m.viewPathSuggestions()
 		}
+		out += "\n" + worktreeLabel.Width(10).Render("worktree") +
+			subtleStyle.Render("◂ ") + valueStyle.Render(groupWorktreeOptions[m.rename.worktreeIndex]) + subtleStyle.Render(" ▸")
 		return out
 	}
 
@@ -708,6 +714,10 @@ func (m *Model) viewQuickBar(width int) string {
 // alone).
 func (m *Model) viewHeaderRows() []string {
 	left := m.viewBanner()[0]
+	if m.update.latest != "" {
+		left += subtleStyle.Render("  ") +
+			lipgloss.NewStyle().Foreground(colorAccent).Render("↑ "+m.update.latest+" available")
+	}
 	sep := subtleStyle.Render("   ")
 	scope := m.headerScope()
 	agents := m.headerAgents()
@@ -738,10 +748,10 @@ func joinHeaderPieces(sep string, pieces ...string) string {
 	return strings.Join(kept, sep)
 }
 
-// headerScope names what the list is showing and badges a newer release.
-// The count is of the same sessions the rollup beside it breaks down, so
-// the two lines always add up; counting painted rows instead would drop
-// everything folded inside a collapsed group.
+// headerScope names what the list is showing. The count is of the same
+// sessions the rollup beside it breaks down, so the two lines always add
+// up; counting painted rows instead would drop everything folded inside
+// a collapsed group.
 func (m *Model) headerScope() string {
 	count := len(m.visibleSessions())
 	label := " sessions"
@@ -752,12 +762,7 @@ func (m *Model) headerScope() string {
 	if m.showArchived {
 		scope = subtleStyle.Render(" · ") + scopeBadgeStyle.Render("ARCHIVED")
 	}
-	line := valueStyle.Render(fmt.Sprintf("%d", count)) + subtleStyle.Render(label) + scope
-	if m.update.latest != "" {
-		line += subtleStyle.Render("   ") +
-			lipgloss.NewStyle().Foreground(colorAccent).Render("↑ "+m.update.latest+" available")
-	}
-	return line
+	return valueStyle.Render(fmt.Sprintf("%d", count)) + subtleStyle.Render(label) + scope
 }
 
 // headerAgents is the fleet's process cost as shares of this machine,

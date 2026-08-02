@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -24,6 +26,64 @@ func (m *Model) defaultTool() string {
 		}
 	}
 	return names[0]
+}
+
+func (m *Model) defaultWorktree() bool {
+	chosen, err := m.store.Setting(worktreeSetting)
+	if err != nil {
+		m.errBar.text = "reading worktree setting: " + err.Error()
+		return false
+	}
+	return chosen == "on"
+}
+
+// groupWorktree resolves a group's spawn-in-worktree default: the nearest
+// ancestor with an explicit choice wins, else the global setting.
+func (m *Model) groupWorktree(group string) bool {
+	for g := group; g != ""; g = parentGroup(g) {
+		switch m.groupWorktrees[g] {
+		case "on":
+			return true
+		case "off":
+			return false
+		}
+	}
+	return m.defaultWorktree()
+}
+
+// worktreeUnavailable is what the worktree toggle reads when the target
+// directory cannot host one.
+const worktreeUnavailable = "unavailable (not a git repo)"
+
+// worktreeLookupTTL bounds how long a directory's repo answer is reused.
+// The quick bar stays open across prompts, so a directory git-initialised
+// meanwhile has to be seen without closing it, while a frame that repaints
+// on every keystroke must not shell out to git each time.
+const worktreeLookupTTL = 2 * time.Second
+
+// worktreeCapable reports whether dir can host a worktree session: git
+// installed, and the directory inside a repository. An umbrella directory
+// that merely contains repos cannot, so the toggle is gated up front
+// instead of failing once the prompt is already typed.
+func (m *Model) worktreeCapable(dir string) bool {
+	if m.gitDrv == nil || dir == "" {
+		return false
+	}
+	if answer, seen := m.worktreeRepos[dir]; seen && time.Since(answer.at) < worktreeLookupTTL {
+		return answer.capable
+	}
+	_, err := m.gitDrv.RepoRoot(dir)
+	if m.worktreeRepos == nil {
+		m.worktreeRepos = make(map[string]repoAnswer)
+	}
+	m.worktreeRepos[dir] = repoAnswer{capable: err == nil, at: time.Now()}
+	return err == nil
+}
+
+// forgetWorktreeCapability drops the memo so the next look is a fresh one.
+// Opening the form or the quick bar calls it.
+func (m *Model) forgetWorktreeCapability() {
+	m.worktreeRepos = nil
 }
 
 // defaultSplitLayout reports whether review mode should open in split
@@ -82,6 +142,7 @@ func (m *Model) openSettings() {
 		enterFocuses:   m.enterFocuses(),
 
 		comfortableRows: m.comfortableRows,
+		worktreeDefault: m.defaultWorktree(),
 	}
 	m.mode = modeSettings
 }
@@ -97,6 +158,13 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right", "l":
 		m.cycleSetting(1)
 	case "enter", "esc":
+		// Enter on the bug-report row is the action itself, not save-and-close.
+		if msg.String() == "enter" && m.settings.field == settingsFieldBugReport {
+			if err := openBrowser(bugReportURL(m.update.version)); err != nil {
+				m.errBar.text = err.Error()
+			}
+			return m, nil
+		}
 		if err := m.store.SetSetting("default_tool", m.settings.toolNames[m.settings.toolIndex]); err != nil {
 			m.errBar.text = err.Error()
 		}
@@ -131,6 +199,13 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err := m.store.SetSetting(listDensitySetting, density); err != nil {
 			m.errBar.text = err.Error()
 		}
+		worktreeChoice := "off"
+		if m.settings.worktreeDefault {
+			worktreeChoice = "on"
+		}
+		if err := m.store.SetSetting(worktreeSetting, worktreeChoice); err != nil {
+			m.errBar.text = err.Error()
+		}
 		m.focusOnEnter = m.settings.enterFocuses
 		m.comfortableRows = m.settings.comfortableRows
 		m.mode = modeList
@@ -157,5 +232,7 @@ func (m *Model) cycleSetting(step int) {
 		m.settings.quickCloseSend = !m.settings.quickCloseSend
 	case settingsFieldFocusKey:
 		m.settings.enterFocuses = !m.settings.enterFocuses
+	case settingsFieldWorktree:
+		m.settings.worktreeDefault = !m.settings.worktreeDefault
 	}
 }

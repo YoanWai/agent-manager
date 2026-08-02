@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -31,6 +32,8 @@ func (m *Model) View() string {
 		frame = m.viewGroupForm()
 	case modeDiff:
 		frame = m.viewDiffFull()
+	case modeNotices:
+		frame = m.viewNotices()
 	default:
 		frame = m.viewListFrame()
 	}
@@ -132,7 +135,7 @@ func (m *Model) viewStatus() string {
 			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", m.copied))
 	case m.mode == modeFocus:
 		return "  " + keyStyle.Render("focus ") +
-			subtleStyle.Render("typing goes to the agent · drag/double/triple click to copy · ctrl+q back")
+			subtleStyle.Render("typing goes to the agent · drag/double/triple click to copy · ctrl+q or ctrl+\\ back")
 	case m.mode == modeConfirmDelete:
 		return "  " + errStyle.Render("⚠ "+m.confirm.label) + subtleStyle.Render("  y/n")
 	case m.split.resizeMode:
@@ -230,19 +233,24 @@ const quickBarMaxRows = 5
 // normal case) count exact soft-wrap rows; pasted multi-line values are
 // estimated, with the textarea scrolling to keep the cursor visible.
 func (m *Model) quickBarRows(textWidth int) int {
+	return textareaRows(m.quick.input, textWidth, quickBarMaxRows)
+}
+
+func textareaRows(input textarea.Model, textWidth, maxRows int) int {
 	rows := 0
-	if m.quick.input.LineCount() == 1 {
-		rows = m.quick.input.LineInfo().Height
+	if input.LineCount() == 1 {
+		rows = input.LineInfo().Height
 	} else {
 		if textWidth < 1 {
 			textWidth = 1
 		}
-		for _, line := range strings.Split(m.quick.input.Value(), "\n") {
-			rows += 1 + (max(lipgloss.Width(line), 1)-1)/textWidth
+		// A line filling its last row exactly wraps onto one more empty row.
+		for _, line := range strings.Split(input.Value(), "\n") {
+			rows += 1 + max(lipgloss.Width(line), 1)/textWidth
 		}
 	}
-	if rows > quickBarMaxRows {
-		rows = quickBarMaxRows
+	if rows > maxRows {
+		rows = maxRows
 	}
 	if rows < 1 {
 		rows = 1
@@ -330,7 +338,8 @@ func previewLine(line string, width int) string {
 	if strings.ContainsRune(line, 0x1b) {
 		line += "\x1b[0m"
 	}
-	return line
+	// Keep a leading RTL run inside the preview instead of the terminal's full row.
+	return "\u2066" + line + "\u2069"
 }
 
 // paneExact returns up to n lines of pane text as captured, preserving
@@ -380,9 +389,16 @@ func (m *Model) viewFooter() string {
 		{"?", "keys"}, {"q", "quit"},
 	}
 	if m.quick.active {
+		worktreeHint := "off"
+		switch {
+		case !m.worktreeCapable(m.quickTargetDir()):
+			worktreeHint = worktreeUnavailable
+		case m.quickWorktreeOn():
+			worktreeHint = "on"
+		}
 		pairs = [][2]string{
 			{"↵", "send"}, {"↑↓", "switch target"}, {"⇥", "tool: " + m.quickTool()},
-			{"esc", "close"},
+			{"⇤", "worktree: " + worktreeHint}, {"esc", "close"},
 		}
 	}
 	if m.split.resizeMode {

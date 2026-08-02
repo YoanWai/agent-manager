@@ -103,6 +103,7 @@ func (m *Model) openQuickMode() {
 	input.SetHeight(1)
 	input.Focus()
 	m.errBar.text = ""
+	m.forgetWorktreeCapability()
 	names, index := m.defaultToolSelection()
 	m.quick = quickState{
 		active:         true,
@@ -110,6 +111,7 @@ func (m *Model) openQuickMode() {
 		toolNames:      names,
 		toolIndex:      index,
 		closeAfterSend: m.quickCloseAfterSend(),
+		worktree:       m.defaultWorktree(),
 	}
 }
 
@@ -146,6 +148,16 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.quick.toolNames) > 0 {
 			m.quick.toolIndex = (m.quick.toolIndex + 1) % len(m.quick.toolNames)
 		}
+		return m, nil
+	case "shift+tab", "alt+w":
+		dir := m.quickTargetDir()
+		if !m.worktreeCapable(dir) {
+			m.errBar.text = "worktree sessions need a git repository: " + dir + " is not one"
+			return m, nil
+		}
+		m.errBar.text = ""
+		m.quick.worktree = !m.quickWorktreeOn()
+		m.quick.worktreeTouched = true
 		return m, nil
 	case "ctrl+v":
 		if m.quickPasting() {
@@ -257,7 +269,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	name := toolName + "-" + newID()[:4]
-	if err := m.spawnSession(toolName, name, dir, group, prompt, true); err != nil {
+	if err := m.spawnSession(toolName, name, dir, group, prompt, true, m.quickWorktreeOn()); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
@@ -274,6 +286,40 @@ func (m *Model) clearQuickAfterSend() {
 	if m.quick.closeAfterSend {
 		m.quick.active = false
 	}
+}
+
+// quickWorktreeOn is the worktree state the quick bar shows and spawns
+// with: the target group's default until shift+tab overrides it, and off
+// whenever the target directory cannot host a worktree.
+func (m *Model) quickWorktreeOn() bool {
+	if !m.worktreeCapable(m.quickTargetDir()) {
+		return false
+	}
+	if m.quick.worktreeTouched {
+		return m.quick.worktree
+	}
+	return m.groupWorktree(m.quickTargetGroup())
+}
+
+// quickTargetGroup is the group a quick spawn would land in: the selected
+// group, or the group holding the selected session.
+func (m *Model) quickTargetGroup() string {
+	entry, ok := m.selectedRow()
+	if !ok {
+		return ""
+	}
+	if entry.isGroup {
+		return entry.group
+	}
+	return entry.sess.Group
+}
+
+// quickTargetDir is the directory a quick spawn would launch in, resolved
+// the same way quickSpawn resolves it.
+func (m *Model) quickTargetDir() string {
+	group := m.quickTargetGroup()
+	dir, _ := resolveExistingDir(m.groupPaths[group], m.groupDefaultDir(group))
+	return dir
 }
 
 // quickTool is the spawn CLI for the current quick-mode run: the settings

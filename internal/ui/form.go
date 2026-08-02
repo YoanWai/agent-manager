@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,8 +13,10 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 )
 
@@ -21,6 +24,7 @@ const (
 	fieldName = iota
 	fieldTool
 	fieldDir
+	fieldWorktree
 	fieldPrompt
 	fieldGroup
 	fieldCount
@@ -30,8 +34,33 @@ const (
 	gfName = iota
 	gfParent
 	gfPath
+	gfWorktree
 	gfCount
 )
+
+// groupWorktreeOptions are the picker states for a group's spawn-in-worktree
+// choice; index 0 stores as "" so the group keeps inheriting.
+var groupWorktreeOptions = []string{"inherit", "on", "off"}
+
+func groupWorktreeValue(index int) string {
+	switch index {
+	case 1:
+		return "on"
+	case 2:
+		return "off"
+	}
+	return ""
+}
+
+func groupWorktreeIndex(value string) int {
+	switch value {
+	case "on":
+		return 1
+	case "off":
+		return 2
+	}
+	return 0
+}
 
 type groupOption struct {
 	path  string
@@ -39,22 +68,25 @@ type groupOption struct {
 }
 
 type form struct {
-	name       textinput.Model
-	dir        textinput.Model
-	prompt     textinput.Model
-	dirAuto    bool
-	toolNames  []string
-	toolIndex  int
-	groups     []groupOption
-	groupIndex int
-	focus      int
+	name         textinput.Model
+	dir          textinput.Model
+	prompt       textarea.Model
+	dirAuto      bool
+	toolNames    []string
+	toolIndex    int
+	groups       []groupOption
+	groupIndex   int
+	worktree     bool
+	worktreeAuto bool
+	focus        int
 }
 
 type groupForm struct {
-	name     textinput.Model
-	path     textinput.Model
-	pathAuto bool
-	focus    int
+	name          textinput.Model
+	path          textinput.Model
+	pathAuto      bool
+	worktreeIndex int
+	focus         int
 }
 
 // sessionLabel renders a session's identity for the tmux status bar.
@@ -85,6 +117,58 @@ func textField(placeholder string, limit int) textinput.Model {
 	in.Placeholder = placeholder
 	in.CharLimit = limit
 	return in
+}
+
+const (
+	// formLabelColumn is the columns before a field value: marker (2),
+	// label (9), separator space (1).
+	formLabelColumn   = 12
+	formPromptMaxRows = 4
+)
+
+func promptField() textarea.Model {
+	in := textarea.New()
+	in.CharLimit = 2000
+	in.Placeholder = "first task (optional)"
+	in.ShowLineNumbers = false
+	in.SetPromptFunc(2, func(lineIndex int) string {
+		if lineIndex == 0 {
+			return "> "
+		}
+		return "  "
+	})
+	in.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	in.SetHeight(1)
+	return in
+}
+
+// formValueWidth is the columns a field value can occupy inside the card.
+func (m *Model) formValueWidth() int {
+	return m.cardWidth() - 2*cardPaddingX - formLabelColumn
+}
+
+// syncFormFieldWidths fits the field widgets to the card so long values
+// scroll (inputs) or wrap (prompt) instead of clipping at the card edge.
+// Inputs reserve 3 columns: their "> " prompt plus the cursor cell that
+// renders past the last character.
+func (m *Model) syncFormFieldWidths() {
+	inner := m.formValueWidth()
+	m.form.name.Width = inner - 3
+	m.form.dir.Width = inner - 3
+	// textinput recomputes its scroll window only inside Update/SetValue/
+	// SetCursor, so a width change alone would render a stale window until
+	// the next keystroke.
+	m.form.name.SetCursor(m.form.name.Position())
+	m.form.dir.SetCursor(m.form.dir.Position())
+	m.form.prompt.SetWidth(inner)
+}
+
+func (m *Model) syncGroupFormFieldWidths() {
+	width := m.formValueWidth() - 3
+	m.groupForm.name.Width = width
+	m.groupForm.path.Width = width
+	m.groupForm.name.SetCursor(m.groupForm.name.Position())
+	m.groupForm.path.SetCursor(m.groupForm.path.Position())
 }
 
 // contextGroup is the group the cursor currently sits in: a highlighted
@@ -157,7 +241,7 @@ func (m *Model) openForm() {
 	name.Focus()
 
 	dir := textField("", 400)
-	prompt := textField("first task (optional)", 2000)
+	prompt := promptField()
 
 	m.form = form{
 		name:      name,
@@ -167,11 +251,15 @@ func (m *Model) openForm() {
 		toolNames: tools,
 		focus:     fieldName,
 	}
+	m.errBar.text = ""
+	m.syncFormFieldWidths()
+	m.forgetWorktreeCapability()
 	m.rebuildGroupOptions(m.contextGroup())
 	m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
+	m.form.worktree = m.groupWorktree(m.selectedGroupPath())
+	m.form.worktreeAuto = true
 	m.pathSugg.reset()
 	m.mode = modeForm
-	m.errBar.text = ""
 }
 
 func (m *Model) selectedGroupPath() string {
@@ -185,6 +273,11 @@ func (m *Model) selectedGroupPath() string {
 // Index 0 is always the root; selectPath moves the highlight when given.
 func (m *Model) rebuildGroupOptions(selectPath string) {
 	paths := groupClosure(m.groups, m.sessions)
+	for path := range paths {
+		if m.groupEffectivelyArchived(path) {
+			delete(paths, path)
+		}
+	}
 	children := childIndex(paths, m.groups)
 
 	options := []groupOption{{path: "", depth: 0}}
@@ -230,11 +323,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.formFocus(-1)
 		return m, nil
 	case "up":
-		if m.form.focus == fieldGroup {
-			if !m.moveGroupCursor(-1) {
-				m.formFocus(-1)
-			}
-		} else if dirSuggesting {
+		if dirSuggesting {
 			if !m.pathSugg.move(-1) {
 				m.formFocus(-1)
 			}
@@ -243,11 +332,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down":
-		if m.form.focus == fieldGroup {
-			if !m.moveGroupCursor(1) {
-				m.formFocus(1)
-			}
-		} else if dirSuggesting {
+		if dirSuggesting {
 			if !m.pathSugg.move(1) {
 				m.formFocus(1)
 			}
@@ -260,9 +345,25 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cycleTool(-1)
 			return m, nil
 		}
+		if m.form.focus == fieldWorktree {
+			m.toggleFormWorktree()
+			return m, nil
+		}
+		if m.form.focus == fieldGroup {
+			m.moveGroupCursor(-1)
+			return m, nil
+		}
 	case "right":
 		if m.form.focus == fieldTool {
 			m.cycleTool(1)
+			return m, nil
+		}
+		if m.form.focus == fieldWorktree {
+			m.toggleFormWorktree()
+			return m, nil
+		}
+		if m.form.focus == fieldGroup {
+			m.moveGroupCursor(1)
 			return m, nil
 		}
 	case "enter":
@@ -282,26 +383,32 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form.dirAuto = false
 		m.pathSugg.recompute(m.form.dir.Value())
 	case fieldPrompt:
+		// Update repositions the viewport against the height set at the
+		// last render; full cap height here keeps the first row from
+		// scrolling away when a keystroke adds a wrapped row.
+		m.form.prompt.SetHeight(formPromptMaxRows)
 		m.form.prompt, cmd = m.form.prompt.Update(msg)
 	}
 	return m, cmd
 }
 
-// moveGroupCursor moves within the expanded group picker without wrapping.
-// A false result lets the form move focus to the adjacent field.
-func (m *Model) moveGroupCursor(delta int) bool {
-	next := m.form.groupIndex + delta
-	if next < 0 || next >= len(m.form.groups) {
-		return false
+// moveGroupCursor moves within the expanded group picker, wrapping at the
+// ends; a delta of 0 re-resolves the dependent defaults in place.
+func (m *Model) moveGroupCursor(delta int) {
+	count := len(m.form.groups)
+	if count == 0 {
+		return
 	}
-	m.form.groupIndex = next
+	m.form.groupIndex = (m.form.groupIndex + delta + count) % count
 	if m.mode == modeForm && m.form.dirAuto {
 		m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
+	}
+	if m.mode == modeForm && m.form.worktreeAuto {
+		m.form.worktree = m.groupWorktree(m.selectedGroupPath())
 	}
 	if m.mode == modeGroupForm && m.groupForm.pathAuto {
 		m.groupForm.path.SetValue(m.ancestorGroupDir(m.selectedGroupPath()))
 	}
-	return true
 }
 
 func (m *Model) formFocus(delta int) {
@@ -325,6 +432,33 @@ func (m *Model) cycleTool(delta int) {
 		return
 	}
 	m.form.toolIndex = (m.form.toolIndex + delta + len(m.form.toolNames)) % len(m.form.toolNames)
+}
+
+// formSpawnDir is the directory the form would launch in, resolved the
+// same way submit resolves it.
+func (m *Model) formSpawnDir() string {
+	cwd, _ := os.Getwd()
+	dir, _ := resolveExistingDir(m.form.dir.Value(), cwd)
+	return dir
+}
+
+// formWorktreeOn is the worktree state the form shows and spawns with: the
+// toggle, unless the chosen directory cannot host a worktree.
+func (m *Model) formWorktreeOn() bool {
+	return m.form.worktree && m.worktreeCapable(m.formSpawnDir())
+}
+
+// toggleFormWorktree flips the toggle, or explains why the chosen
+// directory rules a worktree out.
+func (m *Model) toggleFormWorktree() {
+	dir := m.formSpawnDir()
+	if !m.worktreeCapable(dir) {
+		m.errBar.text = "worktree sessions need a git repository: " + dir + " is not one"
+		return
+	}
+	m.errBar.text = ""
+	m.form.worktree = !m.form.worktree
+	m.form.worktreeAuto = false
 }
 
 func (m *Model) submitForm() (tea.Model, tea.Cmd) {
@@ -353,7 +487,7 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed); err != nil {
+	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, m.formWorktreeOn()); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
@@ -399,9 +533,34 @@ func launchPrompt(prompt string, autoNamed bool) string {
 // the New Session form and quick spawn. autoNamed marks sessions whose
 // name is a generated placeholder; those are asked to rename once.
 // Custom-named sessions only get a short note that rename is available later.
-func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed bool) error {
+// discardWorktree rolls back a worktree created for a spawn that failed
+// partway; a fresh worktree is clean by construction, so the removal fires.
+func (m *Model) discardWorktree(repo, path, branch string) {
+	if repo == "" {
+		return
+	}
+	_, _ = m.gitDrv.RemoveWorktreeIfClean(repo, path, branch)
+}
+
+func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool) error {
 	tool := m.cfg.Tools[toolName]
 	id := newID()
+	worktreeRepo, worktreeBranch := "", ""
+	if worktree {
+		if m.gitDrv == nil {
+			return errors.New("worktree sessions need git installed")
+		}
+		root, err := m.gitDrv.RepoRoot(dir)
+		if err != nil {
+			return err
+		}
+		path, branch, err := m.gitDrv.AddWorktree(root, name)
+		if err != nil {
+			return err
+		}
+		dir = path
+		worktreeRepo, worktreeBranch = root, branch
+	}
 	deferDirective := autoNamed && !directiveEmbeddable(prompt)
 	prompt = launchPrompt(prompt, autoNamed)
 	base := withPrompt(tool, tool.Command, prompt)
@@ -416,9 +575,11 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	}
 	command, env, err := m.buildLaunch(toolName, tool, base, id)
 	if err != nil {
+		m.discardWorktree(worktreeRepo, dir, worktreeBranch)
 		return err
 	}
 	if err := m.tmux.Create(id, dir, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
+		m.discardWorktree(worktreeRepo, dir, worktreeBranch)
 		return err
 	}
 	sess := store.Session{
@@ -431,10 +592,13 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		// a launch state immediately; the poller flips it to the real status.
 		Status:         status.Starting,
 		AgentSessionID: agentSessionID,
+		WorktreeRepo:   worktreeRepo,
+		WorktreeBranch: worktreeBranch,
 	}
 	if err := m.store.CreateSession(sess); err != nil {
 		_ = m.tmux.Kill(id)
 		_ = m.hooks.Remove(id)
+		m.discardWorktree(worktreeRepo, dir, worktreeBranch)
 		return err
 	}
 	if deferDirective {
@@ -511,6 +675,7 @@ func (m *Model) openGroupForm() {
 	}
 	m.rebuildGroupOptions(m.contextGroup())
 	m.groupForm.path.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
+	m.syncGroupFormFieldWidths()
 	m.pathSugg.reset()
 	m.mode = modeGroupForm
 	m.errBar.text = ""
@@ -537,11 +702,7 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.groupFormFocus(-1)
 		return m, nil
 	case "up":
-		if m.groupForm.focus == gfParent {
-			if !m.moveGroupCursor(-1) {
-				m.groupFormFocus(-1)
-			}
-		} else if pathSuggesting {
+		if pathSuggesting {
 			if !m.pathSugg.move(-1) {
 				m.groupFormFocus(-1)
 			}
@@ -550,11 +711,7 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down":
-		if m.groupForm.focus == gfParent {
-			if !m.moveGroupCursor(1) {
-				m.groupFormFocus(1)
-			}
-		} else if pathSuggesting {
+		if pathSuggesting {
 			if !m.pathSugg.move(1) {
 				m.groupFormFocus(1)
 			}
@@ -562,6 +719,25 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.groupFormFocus(1)
 		}
 		return m, nil
+	case "left":
+		if m.groupForm.focus == gfWorktree {
+			count := len(groupWorktreeOptions)
+			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + count - 1) % count
+			return m, nil
+		}
+		if m.groupForm.focus == gfParent {
+			m.moveGroupCursor(-1)
+			return m, nil
+		}
+	case "right":
+		if m.groupForm.focus == gfWorktree {
+			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + 1) % len(groupWorktreeOptions)
+			return m, nil
+		}
+		if m.groupForm.focus == gfParent {
+			m.moveGroupCursor(1)
+			return m, nil
+		}
 	case "enter":
 		if pathSuggesting && m.pathSugg.chosen {
 			m.applyPathSuggestion()
@@ -612,10 +788,40 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 		m.errBar.text = "default path does not exist: " + path
 		return m, nil
 	}
-	if err := m.store.CreateGroup(full, path); err != nil {
+	worktree := groupWorktreeValue(m.groupForm.worktreeIndex)
+	if err := m.store.AddGroup(full, path, worktree); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
+	m.materializeGroupsLocal([]string{full})
+	if m.groupPaths == nil {
+		m.groupPaths = map[string]string{}
+	}
+	m.groupPaths[full] = path
+	if m.groupWorktrees == nil {
+		m.groupWorktrees = map[string]string{}
+	}
+	if worktree == "" {
+		delete(m.groupWorktrees, full)
+	} else {
+		m.groupWorktrees[full] = worktree
+	}
+	for group := parent; group != ""; group = parentGroup(group) {
+		delete(m.collapsed, group)
+	}
+	m.persistCollapsed()
+	m.search = ""
+	m.searching = false
+	m.showArchived = false
+	m.hideEmptyGroups = false
+	m.errBar.text = ""
 	m.mode = modeList
+	m.rebuildRows()
+	for i, row := range m.rows {
+		if row.isGroup && row.group == full {
+			m.cursor = i
+			break
+		}
+	}
 	return m, m.refreshCmd()
 }

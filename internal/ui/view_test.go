@@ -82,21 +82,21 @@ func TestPreviewLine(t *testing.T) {
 	if !strings.Contains(got, "\x1b[38;5;42m") {
 		t.Fatalf("color escapes should survive: %q", got)
 	}
-	if !strings.HasSuffix(got, "\x1b[0m") {
+	if !strings.HasSuffix(got, "\x1b[0m\u2069") {
 		t.Fatalf("line with ANSI must end in SGR reset: %q", got)
 	}
 
 	erased := "abc\x1b[K\x1b[2Jdef"
-	if got := previewLine(erased, 80); got != "abcdef" {
+	if got := previewLine(erased, 80); ansi.Strip(got) != "\u2066abcdef\u2069" {
 		t.Fatalf("erase sequences should be stripped: %q", got)
 	}
 	scrolled := "a\x1b[1Sb\x1bMc\x1b[2Td"
-	if got := previewLine(scrolled, 80); got != "abcd" {
+	if got := previewLine(scrolled, 80); ansi.Strip(got) != "\u2066abcd\u2069" {
 		t.Fatalf("scroll sequences should be stripped: %q", got)
 	}
 
 	control := "a\rb\bc"
-	if got := previewLine(control, 80); got != "abc" {
+	if got := previewLine(control, 80); ansi.Strip(got) != "\u2066abc\u2069" {
 		t.Fatalf("control chars should be dropped: %q", got)
 	}
 
@@ -109,6 +109,12 @@ func TestPreviewLine(t *testing.T) {
 	plain := previewLine("plain", 80)
 	if strings.Contains(plain, "\x1b") {
 		t.Fatalf("plain line should gain no escapes: %q", plain)
+	}
+	if !strings.HasPrefix(plain, "\u2066") || !strings.HasSuffix(plain, "\u2069") {
+		t.Fatalf("pane row should be directionally isolated: %q", plain)
+	}
+	if got := ansi.Strip(previewLine("קודינג\",\"slowly\":false", 80)); got != "\u2066קודינג\",\"slowly\":false\u2069" {
+		t.Fatalf("mixed-direction pane row lost its isolation: %q", got)
 	}
 }
 
@@ -298,14 +304,18 @@ func TestPaneSoftEdges(t *testing.T) {
 	}
 }
 
-func TestHeaderShowsUpdateBadge(t *testing.T) {
+func TestHeaderShowsUpdateBadgeBesideWordmark(t *testing.T) {
 	m := &Model{width: 120, update: updateInfo{latest: "v0.9.0"}}
-	if got := m.headerScope(); !strings.Contains(got, "v0.9.0") || !strings.Contains(got, "available") {
-		t.Errorf("header missing update badge: %q", got)
+	header := ansi.Strip(m.viewHeaderRows()[0])
+	if !strings.Contains(header, "v0.9.0") || !strings.Contains(header, "available") {
+		t.Errorf("header missing update badge: %q", header)
+	}
+	if strings.Index(header, "available") > strings.Index(header, "sessions") {
+		t.Errorf("badge should sit left, by the wordmark: %q", header)
 	}
 	m.update.latest = ""
-	if got := m.headerScope(); strings.Contains(got, "available") {
-		t.Errorf("header should have no badge when up to date: %q", got)
+	if header := ansi.Strip(m.viewHeaderRows()[0]); strings.Contains(header, "available") {
+		t.Errorf("header should have no badge when up to date: %q", header)
 	}
 }
 

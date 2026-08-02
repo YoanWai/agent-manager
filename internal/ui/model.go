@@ -12,6 +12,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -37,6 +38,7 @@ const (
 	modeGroupForm
 	modeSettings
 	modeDiff
+	modeNotices
 	// modeFocus routes the keyboard into the selected session's pane while
 	// the list and live preview stay on screen.
 	modeFocus
@@ -65,6 +67,12 @@ type Model struct {
 	rows           []treeRow
 	groups         []string
 	groupPaths     map[string]string
+	groupWorktrees map[string]string
+	// worktreeRepos memoizes which spawn directories sit inside a git
+	// repo, so gating the worktree toggle does not shell out to git on
+	// every frame. Entries expire, so a directory git-initialised while
+	// the bar is open stops reading as unavailable.
+	worktreeRepos  map[string]repoAnswer
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	proc           sysstat.ProcStat
@@ -139,6 +147,19 @@ type Model struct {
 	bannerPhase int
 
 	update updateInfo
+
+	// dismissed holds the notice ids the user closed for good; the set
+	// persists in settings so a dismissed message never comes back.
+	dismissed    map[string]bool
+	noticeCursor int
+	noticeScroll int
+	// whatsNewVersion mirrors the persisted whats_new_version setting so
+	// the notices list, rebuilt every frame, never reads the database.
+	whatsNewVersion     string
+	whatsNewFromVersion string
+	// feedMessages is the remote message feed, refreshed on the update
+	// tick and folded into the notices next to the built-in ones.
+	feedMessages []feed.Message
 }
 
 type netStats struct {
@@ -158,6 +179,10 @@ type netStats struct {
 // is the last width×height told to tmux per session id, skipping no-op
 // resize-window calls that otherwise stall the UI.
 type paneMirror struct {
+	// forID is the session whose pushed capture wrote the fields below;
+	// a serving watcher alone does not prove them current, since its
+	// first capture may still be in flight.
+	forID   string
 	mouse   bool
 	motion  bool
 	sgr     bool
@@ -185,11 +210,30 @@ type splitState struct {
 }
 
 // updateInfo is this build's release tag plus a newer release found on
-// GitHub, so the header can badge it.
+// GitHub, so the header can badge it. applying marks an in-flight
+// self-update; restartPath, once set, tells main to exec the freshly
+// swapped binary after the program exits.
 type updateInfo struct {
-	version string
-	latest  string
-	url     string
+	version        string
+	latest         string
+	url            string
+	releases       []update.Release
+	available      update.ReleaseRange
+	installed      update.ReleaseRange
+	checked        bool
+	refreshing     bool
+	refreshPending int
+	applying       bool
+	restartPath    string
+}
+
+// updateAppliedMsg reports the self-update download-and-swap: on success
+// path is the binary to restart into.
+type updateAppliedMsg struct {
+	path     string
+	result   update.Result
+	upToDate bool
+	err      error
 }
 
 // confirmTarget.action values; the zero value means delete.
@@ -212,14 +256,15 @@ type confirmTarget struct {
 }
 
 type renameTarget struct {
-	isGroup   bool
-	path      string
-	sessID    string
-	input     textinput.Model
-	dir       textinput.Model
-	focus     int
-	toolNames []string
-	toolIndex int
+	isGroup       bool
+	path          string
+	sessID        string
+	input         textinput.Model
+	dir           textinput.Model
+	worktreeIndex int
+	focus         int
+	toolNames     []string
+	toolIndex     int
 }
 
 // quickState is the inline prompt bar docked under the preview: active
@@ -235,6 +280,16 @@ type quickState struct {
 	attachments    []quickAttachment
 	lastImageID    int
 	closeAfterSend bool
+	worktree       bool
+	// worktreeTouched marks an explicit toggle this run; until then the
+	// hint and spawn follow the target group's default.
+	worktreeTouched bool
+}
+
+// repoAnswer is one directory's git-repo verdict and when it was taken.
+type repoAnswer struct {
+	capable bool
+	at      time.Time
 }
 
 // quickAttachment is one pasted image: the id its token carries, and the
@@ -266,6 +321,7 @@ type settingsState struct {
 	quickCloseSend  bool
 	enterFocuses    bool
 	comfortableRows bool
+	worktreeDefault bool
 }
 
 const (
@@ -275,6 +331,8 @@ const (
 	settingsFieldLayout
 	settingsFieldQuickClose
 	settingsFieldFocusKey
+	settingsFieldWorktree
+	settingsFieldBugReport
 	settingsFieldCount
 )
 
@@ -291,6 +349,7 @@ type refreshMsg struct {
 	sessions       []store.Session
 	groups         []string
 	groupPaths     map[string]string
+	groupWorktrees map[string]string
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	snapOK         bool
@@ -330,7 +389,7 @@ const previewSettle = 50 * time.Millisecond
 const (
 	previewIntervalLive = 300 * time.Millisecond
 	previewIntervalCalm = 1200 * time.Millisecond
-	updateTickInterval  = time.Hour
+	updateTickInterval  = 10 * time.Minute
 )
 
 // cursorBlinkMsg toggles the focused pane's caret.
@@ -379,21 +438,34 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
 	applyTheme(themes[themeIndex(storedTheme(st))])
-	return &Model{
-		cfg:             cfg,
-		store:           st,
-		tmux:            driver,
-		hooks:           hookManager,
-		gitDrv:          gitDriver,
-		setSnapshot:     st.SetSnapshot,
-		poller:          newPoller(st, driver, engine, hookManager, statusSources, sessionStores, cfg.PollInterval.Duration),
-		collapsed:       loadCollapsed(st),
-		split:           splitState{ratio: loadSplitRatio(st)},
-		focusOnEnter:    storedFocusOnEnter(st),
-		comfortableRows: storedComfortableRows(st),
-		mode:            modeList,
-		update:          updateInfo{version: version},
+	model := &Model{
+		cfg:                 cfg,
+		store:               st,
+		tmux:                driver,
+		hooks:               hookManager,
+		gitDrv:              gitDriver,
+		setSnapshot:         st.SetSnapshot,
+		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, cfg.PollInterval.Duration),
+		collapsed:           loadCollapsed(st),
+		split:               splitState{ratio: loadSplitRatio(st)},
+		focusOnEnter:        storedFocusOnEnter(st),
+		comfortableRows:     storedComfortableRows(st),
+		mode:                modeList,
+		update:              updateInfo{version: version},
+		dismissed:           loadDismissed(st),
+		whatsNewVersion:     loadWhatsNewVersion(st),
+		whatsNewFromVersion: loadWhatsNewFromVersion(st),
 	}
+	if dir, err := config.Dir(); err == nil {
+		cached := update.Cached(dir, version)
+		model.update.latest = cached.Latest
+		model.update.url = cached.URL
+		model.update.releases = cached.Releases
+		model.update.checked = len(cached.Releases) > 0
+	}
+	model.openStartupNotice()
+	model.indexReleaseRanges()
+	return model
 }
 
 // storedTheme reads the persisted theme name. A read failure falls back to
@@ -498,16 +570,26 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.updateTick(), m.bannerTick(), m.previewTick(), m.sweepPastes, m.pasteSweepTick())
+	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.sweepPastes, m.pasteSweepTick())
 }
 
-// updateMsg carries the result of the background GitHub release check.
-// failed marks a check that never reached a verdict, which leaves any
-// badge already on screen alone instead of clearing it on a blip.
+// updateMsg carries the result of a GitHub release check. A failed check may
+// still carry a stale catalog; an empty failure leaves the screen unchanged.
 type updateMsg struct {
-	latest string
-	url    string
-	failed bool
+	latest   string
+	url      string
+	releases []update.Release
+	failed   bool
+	manual   bool
+	err      error
+}
+
+// feedMsg carries the editorial message feed and any refresh failure.
+type feedMsg struct {
+	messages []feed.Message
+	failed   bool
+	manual   bool
+	err      error
 }
 
 // pasteSweepMsg carries the result of one pass over the pastes directory.
@@ -548,15 +630,58 @@ func (m *Model) updateTick() tea.Cmd {
 // on-disk cache) off the event loop and reports a newer release. Any
 // failure resolves to a failed message so the TUI simply shows no badge.
 func (m *Model) checkForUpdate() tea.Msg {
+	return m.fetchUpdates(false)
+}
+
+func (m *Model) refreshUpdates() tea.Msg {
+	return m.fetchUpdates(true)
+}
+
+func (m *Model) fetchUpdates(force bool) tea.Msg {
 	dir, err := config.Dir()
 	if err != nil {
-		return updateMsg{failed: true}
+		return updateMsg{failed: true, manual: force, err: err}
 	}
-	result, err := update.Check(context.Background(), dir, m.update.version)
+	var result update.Result
+	if force {
+		result, err = update.Refresh(context.Background(), dir, m.update.version)
+	} else {
+		result, err = update.Check(context.Background(), dir, m.update.version)
+	}
 	if err != nil {
-		return updateMsg{failed: true}
+		return updateMsg{
+			latest: result.Latest, url: result.URL, releases: result.Releases,
+			failed: true, manual: force, err: err,
+		}
 	}
-	return updateMsg{latest: result.Latest, url: result.URL}
+	return updateMsg{latest: result.Latest, url: result.URL, releases: result.Releases, manual: force}
+}
+
+// checkFeed pulls the remote message feed off the event loop. Like the
+// release check it is cache-backed, so most ticks cost one disk read.
+func (m *Model) checkFeed() tea.Msg {
+	return m.fetchFeed(false)
+}
+
+func (m *Model) refreshFeed() tea.Msg {
+	return m.fetchFeed(true)
+}
+
+func (m *Model) fetchFeed(force bool) tea.Msg {
+	dir, err := config.Dir()
+	if err != nil {
+		return feedMsg{failed: true, manual: force, err: err}
+	}
+	var messages []feed.Message
+	if force {
+		messages, err = feed.Refresh(context.Background(), dir, m.update.version)
+	} else {
+		messages, err = feed.Fetch(context.Background(), dir, m.update.version)
+	}
+	if err != nil {
+		return feedMsg{messages: messages, failed: true, manual: force, err: err}
+	}
+	return feedMsg{messages: messages, manual: force}
 }
 
 // refreshExistingSessionUX re-applies the tmux bindings and status bar to
@@ -720,6 +845,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Geometry cache is stale for every session after a real resize.
 		m.pane.geom = nil
 		m.resizeSessions()
+		if m.mode == modeForm {
+			m.syncFormFieldWidths()
+		} else if m.mode == modeGroupForm {
+			m.syncGroupFormFieldWidths()
+		}
 		return m, nil
 
 	case bannerTickMsg:
@@ -754,6 +884,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions = msg.sessions
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
+		m.groupWorktrees = msg.groupWorktrees
 		m.archivedGroups = msg.archivedGroups
 		m.agents = msg.agents
 		if msg.snapOK {
@@ -795,15 +926,72 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(focusExit, m.diffRefreshCmd())
 
 	case updateMsg:
-		if msg.failed {
+		if msg.manual {
+			m.finishNoticeRefresh()
+		}
+		if msg.failed && len(msg.releases) == 0 {
+			if msg.manual && msg.err != nil {
+				m.errBar.text = "refresh failed: " + msg.err.Error()
+			}
 			return m, nil
 		}
-		m.update.latest = msg.latest
-		m.update.url = msg.url
+		m.keepNoticeSelection(func() {
+			m.update.latest = msg.latest
+			m.update.url = msg.url
+			m.update.releases = msg.releases
+			m.update.checked = true
+			m.indexReleaseRanges()
+		})
+		if msg.manual && msg.err != nil {
+			m.errBar.text = "refresh failed: " + msg.err.Error()
+		}
 		return m, nil
 
+	case updateAppliedMsg:
+		m.update.applying = false
+		if len(msg.result.Releases) > 0 {
+			m.keepNoticeSelection(func() {
+				m.update.latest = msg.result.Latest
+				m.update.url = msg.result.URL
+				m.update.releases = msg.result.Releases
+				m.update.checked = true
+				m.indexReleaseRanges()
+			})
+		}
+		if msg.err != nil {
+			m.errBar.text = "update failed: " + msg.err.Error()
+			return m, nil
+		}
+		if msg.upToDate {
+			m.keepNoticeSelection(func() {
+				m.update.latest = ""
+				m.update.url = ""
+				if len(msg.result.Releases) == 0 {
+					m.update.releases = nil
+					m.update.checked = true
+				}
+				m.indexReleaseRanges()
+			})
+			m.errBar.text = "already up to date"
+			return m, nil
+		}
+		m.update.restartPath = msg.path
+		return m, tea.Quit
+
 	case updateTickMsg:
-		return m, tea.Batch(m.checkForUpdate, m.updateTick())
+		return m, tea.Batch(m.checkForUpdate, m.checkFeed, m.updateTick())
+
+	case feedMsg:
+		if msg.manual {
+			m.finishNoticeRefresh()
+		}
+		if !msg.failed || len(msg.messages) > 0 {
+			m.keepNoticeSelection(func() { m.feedMessages = msg.messages })
+		}
+		if msg.manual && msg.err != nil {
+			m.errBar.text = "refresh failed: " + msg.err.Error()
+		}
+		return m, nil
 
 	case pasteSweepMsg:
 		if msg.err != nil {
@@ -850,6 +1038,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !ok || sess.ID != msg.sessID {
 			return m, nil
 		}
+		m.pane.forID = msg.sessID
 		m.pane.mouse = msg.paneMouse
 		m.pane.motion = msg.paneMotion
 		m.pane.sgr = msg.paneSGR

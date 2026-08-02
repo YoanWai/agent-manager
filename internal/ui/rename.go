@@ -1,11 +1,42 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// renameSessionWorktree moves a session's worktree and branch onto its new
+// name, so a session named after the work it ended up doing is reviewed
+// under that name too. Sessions running in a shared directory have nothing
+// to move. The session's own fields are updated in place, leaving the
+// caller a session that already knows where it runs.
+func renameSessionWorktree(gitDrv *git.Driver, st *store.Store, sess *store.Session, name string) error {
+	if gitDrv == nil || sess.WorktreeRepo == "" || sess.WorktreeBranch == "" {
+		return nil
+	}
+	path, branch, err := gitDrv.MoveWorktree(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch, name)
+	if err != nil {
+		return err
+	}
+	if path == sess.Cwd && branch == sess.WorktreeBranch {
+		return nil
+	}
+	if err := st.MoveSessionWorktree(sess.ID, path, branch); err != nil {
+		// The directory already moved, so put it back rather than leave the
+		// store pointing at one that is no longer there. The old directory
+		// is named for the session it held, which is the name that rebuilds
+		// the pair it was moved from.
+		_, _, _ = gitDrv.MoveWorktree(sess.WorktreeRepo, path, branch, filepath.Base(sess.Cwd))
+		return err
+	}
+	sess.Cwd, sess.WorktreeBranch = path, branch
+	return nil
+}
 
 func (m *Model) openRename() {
 	entry, ok := m.selectedRow()
@@ -30,7 +61,13 @@ func (m *Model) openRename() {
 		}
 		dir.SetValue(dirValue)
 		m.pathSugg.reset()
-		m.rename = renameTarget{isGroup: true, path: entry.group, input: input, dir: dir}
+		m.rename = renameTarget{
+			isGroup:       true,
+			path:          entry.group,
+			input:         input,
+			dir:           dir,
+			worktreeIndex: groupWorktreeIndex(m.groupWorktrees[entry.group]),
+		}
 	} else {
 		input.SetValue(entry.sess.Name)
 		tools := sortedToolNames(m.cfg)
@@ -60,12 +97,17 @@ func (m *Model) openRename() {
 
 func (m *Model) renameFocus(delta int) {
 	m.pathSugg.reset()
-	m.rename.focus = (m.rename.focus + delta + 2) % 2
+	fields := 2
+	if m.rename.isGroup {
+		fields = 3
+	}
+	m.rename.focus = (m.rename.focus + delta + fields) % fields
 	m.rename.input.Blur()
 	m.rename.dir.Blur()
-	if m.rename.focus == 0 {
+	switch m.rename.focus {
+	case 0:
 		m.rename.input.Focus()
-	} else {
+	case 1:
 		m.rename.dir.Focus()
 	}
 }
@@ -123,6 +165,16 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.renameFocus(1)
 		}
 		return m, nil
+	case "left", "right":
+		if m.rename.isGroup && m.rename.focus == 2 {
+			delta := 1
+			if msg.String() == "left" {
+				delta = -1
+			}
+			count := len(groupWorktreeOptions)
+			m.rename.worktreeIndex = (m.rename.worktreeIndex + delta + count) % count
+			return m, nil
+		}
 	case "enter":
 		if pathSuggesting && m.pathSugg.chosen {
 			m.applyPathSuggestion()
@@ -131,9 +183,10 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.applyRename()
 	}
 	var cmd tea.Cmd
-	if m.rename.focus == 0 {
+	switch m.rename.focus {
+	case 0:
 		m.rename.input, cmd = m.rename.input.Update(msg)
-	} else {
+	case 1:
 		m.rename.dir, cmd = m.rename.dir.Update(msg)
 		m.pathSugg.recompute(m.rename.dir.Value())
 	}
@@ -182,20 +235,38 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
-		m.renameGroupLocally(m.rename.path, newPath, dir)
+		worktree := groupWorktreeValue(m.rename.worktreeIndex)
+		if err := m.store.SetGroupWorktree(newPath, worktree); err != nil {
+			m.errBar.text = err.Error()
+			return m, nil
+		}
+		m.renameGroupLocally(m.rename.path, newPath, dir, worktree)
 		m.relabelSubtree(newPath)
 	} else {
+		index := -1
+		for i := range m.sessions {
+			if m.sessions[i].ID == m.rename.sessID {
+				index = i
+				break
+			}
+		}
+		// The worktree moves before the name is stored, so a directory or
+		// branch the new name cannot have leaves the rename card open with
+		// the reason instead of splitting the two apart.
+		if index >= 0 {
+			if err := renameSessionWorktree(m.gitDrv, m.store, &m.sessions[index], name); err != nil {
+				m.errBar.text = "worktree rename: " + err.Error()
+				return m, nil
+			}
+		}
 		if err := m.store.RenameSession(m.rename.sessID, name); err != nil {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
 		tool := m.renameTool()
-		var prevTool string
-		for i := range m.sessions {
-			if m.sessions[i].ID == m.rename.sessID {
-				prevTool = m.sessions[i].Tool
-				break
-			}
+		prevTool := ""
+		if index >= 0 {
+			prevTool = m.sessions[index].Tool
 		}
 		toolChanged := tool != "" && tool != prevTool
 		if toolChanged {
@@ -204,13 +275,11 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		for i := range m.sessions {
-			if m.sessions[i].ID == m.rename.sessID {
-				m.sessions[i].Name = name
-				if toolChanged {
-					m.sessions[i].Tool = tool
-					m.sessions[i].AgentSessionID = ""
-				}
+		if index >= 0 {
+			m.sessions[index].Name = name
+			if toolChanged {
+				m.sessions[index].Tool = tool
+				m.sessions[index].AgentSessionID = ""
 			}
 		}
 		m.relabelSession(m.rename.sessID)
@@ -224,7 +293,7 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 // renameGroupLocally rewrites the in-memory tree right away, so the
 // frames between saving and the poller's next refresh already show the
 // new name and path instead of flashing the stale ones.
-func (m *Model) renameGroupLocally(old, newPath, dir string) {
+func (m *Model) renameGroupLocally(old, newPath, dir, worktree string) {
 	moved := func(group string) (string, bool) {
 		if group == old || strings.HasPrefix(group, old+"/") {
 			return newPath + group[len(old):], true
@@ -244,6 +313,17 @@ func (m *Model) renameGroupLocally(old, newPath, dir string) {
 	}
 	groupPaths[newPath] = dir
 	m.groupPaths = groupPaths
+	groupWorktrees := make(map[string]string, len(m.groupWorktrees))
+	for group, choice := range m.groupWorktrees {
+		group, _ = moved(group)
+		groupWorktrees[group] = choice
+	}
+	if worktree == "" {
+		delete(groupWorktrees, newPath)
+	} else {
+		groupWorktrees[newPath] = worktree
+	}
+	m.groupWorktrees = groupWorktrees
 	for group, folded := range m.collapsed {
 		if renamed, ok := moved(group); ok {
 			delete(m.collapsed, group)

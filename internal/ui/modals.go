@@ -41,23 +41,41 @@ func (m *Model) cardSized(width int, title, body, hint string) string {
 		lines = append(lines, paint(pad+padRight(line, inner), width, blockHex()))
 	}
 	lines = append(lines, paint("", width, blockHex()))
+	return m.centerOnBackdrop(lines)
+}
 
-	height := max(m.height, len(lines))
+// centerOnBackdrop floats a block of pre-painted lines in the middle of
+// the app frame, filling the rest with the backdrop.
+func (m *Model) centerOnBackdrop(box []string) string {
+	width := maxLineWidth(box)
+	height := max(m.height, len(box))
 	left := max((m.width-width)/2, 0)
 	frameWidth := max(m.width, left+width)
-	top := max((height-len(lines))/2, 0)
+	top := max((height-len(box))/2, 0)
 	frame := make([]string, 0, height)
 	for i := 0; i < height; i++ {
 		row := ""
-		if i >= top && i-top < len(lines) {
-			row = paint("", left, backdropHex()) + lines[i-top]
+		if i >= top && i-top < len(box) {
+			row = paint("", left, backdropHex()) + box[i-top]
 		}
 		frame = append(frame, paint(row, frameWidth, backdropHex()))
 	}
 	return strings.Join(frame, "\n")
 }
 
+func maxLineWidth(lines []string) int {
+	width := 0
+	for _, line := range lines {
+		if w := lipgloss.Width(line); w > width {
+			width = w
+		}
+	}
+	return width
+}
+
 func (m *Model) viewForm() string {
+	m.form.prompt.SetHeight(textareaRows(m.form.prompt, m.formValueWidth()-2, formPromptMaxRows))
+
 	var b strings.Builder
 	b.WriteString(formField("name", m.form.name.View(), m.form.focus == fieldName))
 
@@ -70,6 +88,15 @@ func (m *Model) viewForm() string {
 	if m.form.focus == fieldDir && m.pathSugg.active() {
 		b.WriteString(m.viewPathSuggestions() + "\n")
 	}
+	worktreeField := subtleStyle.Render(worktreeUnavailable)
+	if m.worktreeCapable(m.formSpawnDir()) {
+		worktreeVal := "off"
+		if m.form.worktree {
+			worktreeVal = "on"
+		}
+		worktreeField = subtleStyle.Render("◂ ") + valueStyle.Render(worktreeVal) + subtleStyle.Render(" ▸")
+	}
+	b.WriteString(formField("worktree", worktreeField, m.form.focus == fieldWorktree))
 	b.WriteString(formField("prompt", m.form.prompt.View(), m.form.focus == fieldPrompt))
 	b.WriteString(formField("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), m.form.focus == fieldGroup))
 
@@ -77,9 +104,9 @@ func (m *Model) viewForm() string {
 		b.WriteString("\n" + m.viewGroupPicker())
 	}
 
-	hint := "tab/↑↓ move · ←→ tool · ↵ create · esc cancel"
+	hint := "tab/↑↓ move · ←→ change · ↵ create · esc cancel"
 	if m.form.focus == fieldGroup {
-		hint = "↑↓ pick group · tab next field · ↵ create · esc cancel"
+		hint = "←→ pick group · tab/↑↓ move · ↵ create · esc cancel"
 	}
 	if m.form.focus == fieldDir && m.pathSugg.active() {
 		hint = pathSuggestHint(m.pathSugg.chosen)
@@ -143,12 +170,17 @@ func (m *Model) viewGroupForm() string {
 	if m.groupForm.focus == gfPath && m.pathSugg.active() {
 		b.WriteString(m.viewPathSuggestions() + "\n")
 	}
+	worktreeVal := subtleStyle.Render("◂ ") + valueStyle.Render(groupWorktreeOptions[m.groupForm.worktreeIndex]) + subtleStyle.Render(" ▸")
+	b.WriteString(formField("worktree", worktreeVal, m.groupForm.focus == gfWorktree))
 	if m.groupForm.focus == gfParent {
 		b.WriteString("\n" + m.viewGroupPicker())
 	}
 	hint := "tab/↑↓ move · ↵ create · esc cancel"
 	if m.groupForm.focus == gfParent {
-		hint = "↑↓ pick parent · tab next field · ↵ create · esc cancel"
+		hint = "←→ pick parent · tab/↑↓ move · ↵ create · esc cancel"
+	}
+	if m.groupForm.focus == gfWorktree {
+		hint = "tab/↑↓ move · ←→ change · ↵ create · esc cancel"
 	}
 	if m.groupForm.focus == gfPath && m.pathSugg.active() {
 		hint = pathSuggestHint(m.pathSugg.chosen)
@@ -173,15 +205,25 @@ func (m *Model) viewSettings() string {
 	if !m.settings.enterFocuses {
 		focusKey = "↵ attach · A focus"
 	}
-	row := func(field int, name, value string) string {
+	worktreeDefault := "off"
+	if m.settings.worktreeDefault {
+		worktreeDefault = "on"
+	}
+	lead := func(field int, name string) string {
 		marker := "  "
 		labelStyle := valueStyle
 		if m.settings.field == field {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
-		picker := subtleStyle.Render("◂ ") + valueStyle.Render(value) + subtleStyle.Render(" ▸")
-		return marker + padRight(labelStyle.Render(name), 18) + picker
+		return marker + padRight(labelStyle.Render(name), 18)
+	}
+	row := func(field int, name, value string) string {
+		return lead(field, name) + subtleStyle.Render("◂ ") + valueStyle.Render(value) + subtleStyle.Render(" ▸")
+	}
+	// An action row: enter runs it, so it carries no picker arrows.
+	actionRow := func(field int, name, action string) string {
+		return lead(field, name) + keyStyle.Render("↵") + mutedStyle.Render(" "+action)
 	}
 	body := row(settingsFieldTool, "quick spawn tool", m.settings.toolNames[m.settings.toolIndex]) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
@@ -189,9 +231,15 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldDensity, "list density", density) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
-		row(settingsFieldFocusKey, "session keys", focusKey) + "\n\n" +
+		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
+		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
+		actionRow(settingsFieldBugReport, "report a bug", "open a prefilled GitHub issue") + "\n\n" +
 		subtleStyle.Render("  version ") + valueStyle.Render(m.update.version) + m.versionStatus()
-	return m.card("⚙ Settings", body, "↑↓ field · ←→ change · ↵/esc save")
+	hint := "↑↓ field · ←→ change · ↵/esc save"
+	if m.settings.field == settingsFieldBugReport {
+		hint = "↑↓ field · ↵ open issue · esc save"
+	}
+	return m.card("⚙ Settings", body, hint)
 }
 
 // themeSwatch previews a palette as a run of blocks, so a theme can be
@@ -223,11 +271,11 @@ func (m *Model) viewHelp() string {
 	rows := [][2]string{
 		{"n", "new session"},
 		{"↵", "attach session / fold group"},
-		{"ctrl+q", "inside a session: back to manager"},
+		{"ctrl+q", "inside a session: back to manager (ctrl+\\ also works)"},
 		{"ctrl+r", "inside a session: review its diff, esc returns"},
 		{"m", "move session to another group"},
-		{"g", "new group (name, parent, default path)"},
-		{"r", "rename session / edit group (name + default path)"},
+		{"g", "new group (name, parent, default path, worktree)"},
+		{"r", "rename session / edit group (name, default path, worktree)"},
 		{"x", "kill session, or every live session in a group (frees their RAM)"},
 		{"X", "kill every live session"},
 		{"v", "revive killed session, or every dead session in a group (resumes the agent)"},
@@ -237,6 +285,7 @@ func (m *Model) viewHelp() string {
 		{"K / J", "reorder row up / down (shift+↑↓ also works)"},
 		{"space", "quick prompt: answer session / spawn agent in group"},
 		{"⇥", "in quick prompt: switch spawn tool"},
+		{"⇤", "in quick prompt: toggle worktree for the spawned agent"},
 		{"^v", "in quick prompt: paste image as a chip at the cursor"},
 		{"⌫", "in quick prompt: next to a chip, delete the whole chip"},
 		{"ctrl+r", "review changes: whole-file diffs, comment lines, send to agent"},
@@ -248,6 +297,7 @@ func (m *Model) viewHelp() string {
 		{"s", "settings (quick spawn tool, review layout, after quick send)"},
 		{"|", "resize split (←→ / drag, enter commits, esc cancels)"},
 		{"t", "toggle archived view"},
+		{"M", "messages (updates, tips, bug reporting; x dismisses)"},
 		{"e", "hide / show empty groups"},
 		{"/", "search"},
 		{"↑↓ / jk", "move cursor"},
@@ -271,5 +321,11 @@ func formField(label, value string, focused bool) string {
 		marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 		style = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	}
-	return fmt.Sprintf("%s%s %s\n", marker, style.Width(7).Render(label), value)
+	lines := strings.Split(value, "\n")
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("%s%s %s\n", marker, style.Width(9).Render(label), lines[0]))
+	for _, line := range lines[1:] {
+		b.WriteString(strings.Repeat(" ", formLabelColumn) + line + "\n")
+	}
+	return b.String()
 }

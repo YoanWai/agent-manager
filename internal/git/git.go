@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -653,6 +654,138 @@ func (d *Driver) Worktrees(root string) ([]Worktree, error) {
 		worktrees = append(worktrees, current)
 	}
 	return worktrees, nil
+}
+
+func (d *Driver) RepoRoot(dir string) (string, error) {
+	top, err := d.run(dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", fmt.Errorf("not inside a git repository: %s", dir)
+	}
+	return top, nil
+}
+
+var worktreeNamePattern = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+
+func sanitizeWorktreeName(name string) string {
+	return strings.Trim(worktreeNamePattern.ReplaceAllString(name, "-"), "-.")
+}
+
+// worktreeBase picks the ref a session worktree branches from: the remote
+// default branch when cached, else a local default branch, else HEAD.
+func (d *Driver) worktreeBase(root string) string {
+	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "origin/HEAD"); err == nil {
+		return "origin/HEAD"
+	}
+	for _, candidate := range []string{"main", "master"} {
+		if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+candidate); err == nil {
+			return candidate
+		}
+	}
+	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "HEAD"); err == nil {
+		return "HEAD"
+	}
+	return ""
+}
+
+// worktreePlacement is where a session of this name keeps its worktree:
+// a directory beside the repo and the am/ branch checked out in it.
+func worktreePlacement(root, name string) (string, string) {
+	return filepath.Join(filepath.Dir(root), filepath.Base(root)+"-worktrees", name), "am/" + name
+}
+
+func (d *Driver) AddWorktree(root, sessionName string) (string, string, error) {
+	name := sanitizeWorktreeName(sessionName)
+	if name == "" {
+		return "", "", fmt.Errorf("session name %q leaves nothing usable for a worktree directory", sessionName)
+	}
+	path, branch := worktreePlacement(root, name)
+	if _, err := os.Stat(path); err == nil {
+		return "", "", fmt.Errorf("worktree path already exists: %s", path)
+	}
+	base := d.worktreeBase(root)
+	if base == "" {
+		return "", "", fmt.Errorf("no base ref for a worktree in %s: repository has no commits", root)
+	}
+	if _, err := d.run(root, "worktree", "add", "-b", branch, path, base); err != nil {
+		return "", "", err
+	}
+	return path, branch, nil
+}
+
+// MoveWorktree renames a session's worktree and its branch to the ones a
+// session of newName would have been given at spawn, and reports where
+// they ended up. The recorded pair is returned untouched when there is
+// nothing to do: a name that lands on the same directory, or a worktree
+// git no longer has under the recorded path and branch, which is what a
+// worktree renamed or deleted by hand looks like. A destination already
+// taken is an error, so a session's name, directory and branch never
+// drift apart.
+func (d *Driver) MoveWorktree(root, path, branch, newName string) (string, string, error) {
+	name := sanitizeWorktreeName(newName)
+	if name == "" {
+		return "", "", fmt.Errorf("session name %q leaves nothing usable for a worktree directory", newName)
+	}
+	newPath, newBranch := worktreePlacement(root, name)
+	if newPath == path && newBranch == branch {
+		return path, branch, nil
+	}
+	if _, err := os.Stat(path); err != nil {
+		if !os.IsNotExist(err) {
+			return "", "", err
+		}
+		return path, branch, nil
+	}
+	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
+		return path, branch, nil
+	}
+	if _, err := os.Stat(newPath); err == nil {
+		return "", "", fmt.Errorf("worktree path already exists: %s", newPath)
+	}
+	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+newBranch); err == nil {
+		return "", "", fmt.Errorf("branch already exists: %s", newBranch)
+	}
+	if _, err := d.run(root, "worktree", "move", path, newPath); err != nil {
+		return "", "", err
+	}
+	if _, err := d.run(root, "branch", "-m", branch, newBranch); err != nil {
+		_, _ = d.run(root, "worktree", "move", newPath, path)
+		return "", "", err
+	}
+	return newPath, newBranch, nil
+}
+
+// RemoveWorktreeIfClean removes a session's worktree and its am/ branch
+// only when nothing would be lost: no uncommitted or untracked files, and
+// no commits missing from the base branch. A kept worktree is not an error.
+func (d *Driver) RemoveWorktreeIfClean(root, path, branch string) (bool, error) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return false, nil
+	}
+	porcelain, err := d.run(path, "status", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+	if porcelain != "" {
+		return false, nil
+	}
+	base := d.worktreeBase(root)
+	if base == "" {
+		return false, fmt.Errorf("no base ref in %s to compare %s against", root, branch)
+	}
+	ahead, err := d.run(path, "rev-list", "--count", base+"..HEAD")
+	if err != nil {
+		return false, err
+	}
+	if ahead != "0" {
+		return false, nil
+	}
+	if _, err := d.run(root, "worktree", "remove", path); err != nil {
+		return false, err
+	}
+	if _, err := d.run(root, "branch", "-D", branch); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (d *Driver) IsRepoRoot(dir string) bool {

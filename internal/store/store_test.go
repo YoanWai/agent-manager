@@ -679,3 +679,107 @@ func TestReviewBaseRoundTrip(t *testing.T) {
 		t.Fatalf("alpha base after clear = %q, want empty", got)
 	}
 }
+
+func TestSessionWorktreeColumnsRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	sess := Session{
+		ID: "wt1", Name: "feat", Tool: "claude", Cwd: "/tmp/repo-worktrees/feat",
+		WorktreeRepo: "/tmp/repo", WorktreeBranch: "am/feat",
+	}
+	if err := s.CreateSession(sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.Get("wt1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.WorktreeRepo != "/tmp/repo" || got.WorktreeBranch != "am/feat" {
+		t.Fatalf("worktree fields lost: %+v", got)
+	}
+	list, err := s.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if list[0].WorktreeRepo != "/tmp/repo" || list[0].WorktreeBranch != "am/feat" {
+		t.Fatalf("list dropped worktree fields: %+v", list[0])
+	}
+}
+
+func TestMoveSessionWorktree(t *testing.T) {
+	s := newTestStore(t)
+	sess := Session{
+		ID: "wt2", Name: "claude-7a72", Tool: "claude", Cwd: "/tmp/repo-worktrees/claude-7a72",
+		WorktreeRepo: "/tmp/repo", WorktreeBranch: "am/claude-7a72",
+	}
+	if err := s.CreateSession(sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := s.MoveSessionWorktree("wt2", "/tmp/repo-worktrees/renamed", "am/renamed"); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	got, err := s.Get("wt2")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Cwd != "/tmp/repo-worktrees/renamed" || got.WorktreeBranch != "am/renamed" {
+		t.Fatalf("move did not land: %+v", got)
+	}
+	if got.WorktreeRepo != "/tmp/repo" {
+		t.Fatalf("move disturbed the repo root: %q", got.WorktreeRepo)
+	}
+	if err := s.MoveSessionWorktree("ghost", "/tmp/x", "am/x"); err == nil {
+		t.Fatal("moving an unknown session should error")
+	}
+}
+
+func TestGroupWorktreeRoundtrip(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("backend", ""); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Worktree != "" {
+		t.Fatalf("new group should inherit worktree, got %+v", groups)
+	}
+	if err := st.SetGroupWorktree("backend", "on"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	groups, err = st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if groups[0].Worktree != "on" {
+		t.Fatalf("worktree choice lost: %+v", groups[0])
+	}
+	if err := st.SetGroupWorktree("backend", ""); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	groups, err = st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if groups[0].Worktree != "" {
+		t.Fatalf("worktree choice should clear back to inherit: %+v", groups[0])
+	}
+}
+
+func TestAddGroupStoresSettingsWithoutReplacingExistingGroup(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.AddGroup("backend", "/first", "off"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := st.AddGroup("backend", "/second", "on"); !errors.Is(err, ErrGroupExists) {
+		t.Fatalf("duplicate add error = %v, want ErrGroupExists", err)
+	}
+
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Path != "/first" || groups[0].Worktree != "off" {
+		t.Fatalf("duplicate add changed group: %+v", groups)
+	}
+}

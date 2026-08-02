@@ -19,14 +19,10 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 		return m, nil
 	case "up":
-		if !m.moveGroupCursor(-1) && len(m.form.groups) > 0 {
-			m.form.groupIndex = len(m.form.groups) - 1
-		}
+		m.moveGroupCursor(-1)
 		return m, nil
 	case "down":
-		if !m.moveGroupCursor(1) && len(m.form.groups) > 0 {
-			m.form.groupIndex = 0
-		}
+		m.moveGroupCursor(1)
 		return m, nil
 	case "enter":
 		group := m.selectedGroupPath()
