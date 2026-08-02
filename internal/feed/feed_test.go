@@ -145,6 +145,20 @@ func TestRefreshBypassesCache(t *testing.T) {
 	}
 }
 
+func TestFetchRefetchesFutureDatedCache(t *testing.T) {
+	dir := t.TempDir()
+	writeCache(filepath.Join(dir, cacheFile), cache{
+		CheckedAt: time.Now().Add(time.Hour),
+		Messages:  []rawMessage{{ID: "stale", Banner: "x", Title: "x"}},
+	})
+	serve(t, `[{"id":"fresh","banner":"x","title":"x"}]`)
+
+	messages := fetch(t, dir, "v0.14.2")
+	if len(messages) != 1 || messages[0].ID != "feed-fresh" {
+		t.Fatalf("future-dated cache was trusted: %+v", messages)
+	}
+}
+
 func TestRefreshUsesConditionalRequest(t *testing.T) {
 	dir := t.TempDir()
 	writeCache(filepath.Join(dir, cacheFile), cache{

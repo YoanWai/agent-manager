@@ -92,7 +92,8 @@ func fetchMessages(ctx context.Context, configDir, version string, force bool) (
 	now := time.Now()
 	cachePath := filepath.Join(configDir, cacheFile)
 	cached, haveCache := readCache(cachePath)
-	if !force && haveCache && now.Sub(cached.CheckedAt) < checkInterval {
+	age := now.Sub(cached.CheckedAt)
+	if !force && haveCache && age >= 0 && age < checkInterval {
 		return sanitize(cached.Messages, version, now), nil
 	}
 
