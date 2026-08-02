@@ -387,6 +387,10 @@ const quickCloseSetting = "quick_prompt_close"
 
 const worktreeSetting = "worktree_default"
 
+// hiddenToolsSetting lists CLI tools omitted from new-session pickers
+// (comma-separated names). Empty means every configured tool is shown.
+const hiddenToolsSetting = "hidden_tools"
+
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter", "esc":

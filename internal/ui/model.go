@@ -322,6 +322,11 @@ type settingsState struct {
 	enterFocuses    bool
 	comfortableRows bool
 	worktreeDefault bool
+	// cliPicker is the sub-panel for which CLIs appear when creating sessions.
+	cliPicker bool
+	cliNames  []string
+	cliHidden map[string]bool
+	cliCursor int
 }
 
 const (
@@ -332,6 +337,7 @@ const (
 	settingsFieldQuickClose
 	settingsFieldFocusKey
 	settingsFieldWorktree
+	settingsFieldCLIs
 	settingsFieldBugReport
 	settingsFieldCount
 )

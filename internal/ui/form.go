@@ -234,8 +234,29 @@ func sortedToolNames(cfg config.Config) []string {
 	return names
 }
 
+// enabledToolNames is the create-session picker: configured tools minus any
+// the user hid in settings. Existing sessions keep their tool even when hidden.
+func (m *Model) enabledToolNames() []string {
+	all := sortedToolNames(m.cfg)
+	hidden := m.hiddenTools()
+	if len(hidden) == 0 {
+		return all
+	}
+	out := make([]string, 0, len(all))
+	for _, name := range all {
+		if !hidden[name] {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 func (m *Model) openForm() {
-	tools := sortedToolNames(m.cfg)
+	tools := m.enabledToolNames()
+	if len(tools) == 0 {
+		m.errBar.text = "no CLIs enabled: open settings (s), then CLIs, to turn some on"
+		return
+	}
 
 	name := textField("my-session", 60)
 	name.Focus()
