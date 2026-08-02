@@ -381,7 +381,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // moveGroupCursor moves within the expanded group picker without wrapping.
-// A false result lets the form move focus to the adjacent field.
+// A false result reports the cursor was already at that edge.
 func (m *Model) moveGroupCursor(delta int) bool {
 	next := m.form.groupIndex + delta
 	if next < 0 || next >= len(m.form.groups) {
