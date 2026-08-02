@@ -376,6 +376,67 @@ func TestNoticesViewListsAndDetails(t *testing.T) {
 	}
 }
 
+func TestNoticesLongBodyWrapsFully(t *testing.T) {
+	m := modalModel(t)
+	m.feedMessages = []feed.Message{{
+		ID:     "feed-long",
+		Banner: "long banner",
+		Title:  "Long body message",
+		Body: []string{
+			"Each group can choose inherit, on, or off for spawning sessions into their own git worktree, set when creating a group or editing it later; children inherit from their parents, and the global setting stays the root fallback.",
+		},
+	}}
+	m.openNotices("feed-long")
+	frame := ansi.Strip(m.View())
+	for _, line := range strings.Split(frame, "\n") {
+		if !strings.Contains(line, "╭") {
+			continue
+		}
+		if got := lipgloss.Width(strings.TrimSpace(line)); got <= noticeModalInner+4 {
+			t.Fatalf("wide terminal must widen the modal past %d, got %d", noticeModalInner+4, got)
+		}
+		break
+	}
+	for _, word := range []string{"worktree,", "parents,", "fallback."} {
+		if !strings.Contains(frame, word) {
+			t.Fatalf("long body must wrap, %q missing:\n%s", word, frame)
+		}
+	}
+	for _, line := range strings.Split(frame, "\n") {
+		if got := lipgloss.Width(line); got > m.width {
+			t.Fatalf("line overflows terminal at %d: %q", got, line)
+		}
+	}
+}
+
+func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
+	m := modalModel(t)
+	m.width, m.height = 30, 12
+	m.feedMessages = []feed.Message{{
+		ID:     "feed-long",
+		Banner: "long banner",
+		Title:  "Long body message",
+		Body: []string{
+			"Each group can choose inherit, on, or off for spawning sessions into their own git worktree, set when creating a group or editing it later.",
+		},
+	}}
+	m.openNotices("feed-long")
+	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	if len(lines) > m.height {
+		t.Fatalf("frame must fit %d rows, got %d", m.height, len(lines))
+	}
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "╰") {
+		t.Fatalf("short terminal ate the modal's bottom border:\n%s", joined)
+	}
+	if !strings.Contains(joined, "↑↓ pick") {
+		t.Fatalf("short terminal ate the key hint:\n%s", joined)
+	}
+	if !strings.Contains(joined, "…") {
+		t.Fatalf("a clipped body must say so:\n%s", joined)
+	}
+}
+
 func TestNoticesDismissAdvancesAndCloses(t *testing.T) {
 	m := modalModel(t)
 	total := len(m.activeNotices())
@@ -563,5 +624,17 @@ func TestUOutsideUpdateNoticeDoesNothing(t *testing.T) {
 	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	if cmd != nil || m.update.applying {
 		t.Fatal("u on a plain notice must not start an update")
+	}
+}
+
+func TestNoticesTinyTerminalStaysInside(t *testing.T) {
+	m := modalModel(t)
+	for _, width := range []int{5, 12, 30} {
+		m.width, m.height = width, 10
+		for _, line := range strings.Split(ansi.Strip(m.View()), "\n") {
+			if got := lipgloss.Width(line); got > width {
+				t.Fatalf("width %d: line overflows at %d: %q", width, got, line)
+			}
+		}
 	}
 }

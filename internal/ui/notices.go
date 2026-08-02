@@ -410,11 +410,18 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) viewNotices() string {
-	inner := noticeModalInner
-	if m.width >= 8 && inner > m.width-8 {
-		inner = m.width - 8
-	}
 	notices := m.activeNotices()
+	inner := noticeModalInner
+	for _, n := range notices {
+		for _, line := range n.body {
+			if w := lipgloss.Width(line); w > inner {
+				inner = w
+			}
+		}
+	}
+	if fit := m.width - 8; inner > fit {
+		inner = max(fit, 1)
+	}
 	if len(notices) == 0 {
 		frame := noticeFrame([]string{subtleStyle.Render("nothing new")}, inner,
 			noticeLegend(), keyCap("esc", "close"))
@@ -433,19 +440,27 @@ func (m *Model) viewNotices() string {
 	}
 	selected := notices[m.noticeCursor]
 	rows = append(rows, noticeBorderStyle().Render(strings.Repeat("┄", inner)))
+
+	var body []string
 	for _, line := range selected.body {
-		rows = append(rows, mutedStyle.Render(line))
+		for _, wrapped := range strings.Split(ansi.Wordwrap(line, inner, "-"), "\n") {
+			body = append(body, mutedStyle.Render(wrapped))
+		}
 	}
+	var tail []string
 	if selected.url != "" {
-		rows = append(rows, subtleStyle.Render("↗ "+truncateTail(strings.TrimPrefix(selected.url, "https://"), inner-2)))
+		tail = append(tail, subtleStyle.Render("↗ "+truncateTail(strings.TrimPrefix(selected.url, "https://"), inner-2)))
 	}
 	if m.update.applying {
-		rows = append(rows, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+m.update.latest+"…"))
+		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+m.update.latest+"…"))
 	}
 	if m.errBar.text != "" {
-		rows = append(rows, errStyle.Render("✕ "+m.errBar.text))
+		tail = append(tail, errStyle.Render("✕ "+m.errBar.text))
 	}
-	rows = append(rows, "")
+	tail = append(tail, "")
+
+	rows = append(rows, fitBody(body, m.height-2-len(rows)-len(tail))...)
+	rows = append(rows, tail...)
 
 	hint := "↑↓ pick · ↵ open · x dismiss · esc "
 	if isUpdateNotice(selected) {
@@ -457,8 +472,22 @@ func (m *Model) viewNotices() string {
 	return m.centerOnBackdrop(frame)
 }
 
-// noticeModalInner is the modal's content column, sized for the welcome
-// notice's longest body line.
+// fitBody keeps the body inside the rows a terminal this short can hold,
+// marking the cut so a clipped message reads as clipped. Without it the
+// outer frame clamp eats the modal's own border and key hints instead.
+func fitBody(body []string, room int) []string {
+	if room >= len(body) {
+		return body
+	}
+	if room < 1 {
+		room = 1
+	}
+	return append(body[:room-1:room-1], mutedStyle.Render("…"))
+}
+
+// noticeModalInner is the modal content column's floor, sized for the
+// welcome notice's longest body line; longer bodies widen it up to the
+// terminal.
 const noticeModalInner = 62
 
 func loadDismissed(st *store.Store) map[string]bool {
