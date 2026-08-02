@@ -783,6 +783,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Geometry cache is stale for every session after a real resize.
 		m.pane.geom = nil
 		m.resizeSessions()
+		if m.mode == modeForm {
+			m.syncFormFieldWidths()
+		}
 		return m, nil
 
 	case bannerTickMsg:

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -232,19 +233,23 @@ const quickBarMaxRows = 5
 // normal case) count exact soft-wrap rows; pasted multi-line values are
 // estimated, with the textarea scrolling to keep the cursor visible.
 func (m *Model) quickBarRows(textWidth int) int {
+	return textareaRows(m.quick.input, textWidth, quickBarMaxRows)
+}
+
+func textareaRows(input textarea.Model, textWidth, maxRows int) int {
 	rows := 0
-	if m.quick.input.LineCount() == 1 {
-		rows = m.quick.input.LineInfo().Height
+	if input.LineCount() == 1 {
+		rows = input.LineInfo().Height
 	} else {
 		if textWidth < 1 {
 			textWidth = 1
 		}
-		for _, line := range strings.Split(m.quick.input.Value(), "\n") {
+		for _, line := range strings.Split(input.Value(), "\n") {
 			rows += 1 + (max(lipgloss.Width(line), 1)-1)/textWidth
 		}
 	}
-	if rows > quickBarMaxRows {
-		rows = quickBarMaxRows
+	if rows > maxRows {
+		rows = maxRows
 	}
 	if rows < 1 {
 		rows = 1
