@@ -344,8 +344,8 @@ func TestRailFootPutsMessagesRightOfComputer(t *testing.T) {
 	if !strings.Contains(joined, "messages") {
 		t.Fatalf("want a messages card, got %q", joined)
 	}
-	if !strings.Contains(joined, "welcome") {
-		t.Fatalf("want the welcome banner, got %q", joined)
+	if !strings.Contains(joined, "Welcome to agent-manager") {
+		t.Fatalf("want the canonical welcome title, got %q", joined)
 	}
 
 	for _, line := range lines {
