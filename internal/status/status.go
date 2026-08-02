@@ -84,18 +84,29 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 
 // Match derives a status and reports whether any signal matched, so the
 // caller can distinguish a real signal from the default fallback. Rules
-// run first, scoped to the current turn; when none hit, the newest turn
-// in the content region decides finished versus waiting.
+// run first, scoped to the current turn. If the first matching rule is
+// working, a matching waiting rule later in the list overrides it so persisted
+// rule order cannot mask a user prompt. Every other first match returns as
+// configured. When no rule hits, the newest turn in the content region decides
+// finished versus waiting.
 func (e *Engine) Match(tool, pane string) (string, bool) {
 	tr, ok := e.tools[tool]
 	if !ok {
 		return Idle, false
 	}
 	scope := tr.matchScope(pane)
-	for _, r := range tr.rules {
-		if r.re.MatchString(scope) {
-			return r.state, true
+	for i, r := range tr.rules {
+		if !r.re.MatchString(scope) {
+			continue
 		}
+		if r.state == Working {
+			for _, later := range tr.rules[i+1:] {
+				if later.state == Waiting && later.re.MatchString(scope) {
+					return Waiting, true
+				}
+			}
+		}
+		return r.state, true
 	}
 	if tr.isBusy(pane) {
 		return Working, true
@@ -134,8 +145,9 @@ func (tr toolRules) isBusy(pane string) bool {
 // the newest turn_end marker in the content region. Completed turns can
 // quote spinner lines or dialog text verbatim (any session working on
 // terminal tooling will), and whole-pane matching would read those
-// echoes as live signals. Panes without a marker (fresh sessions,
-// dialogs that replace the input box) match in full.
+// echoes as live signals. Dialogs that replace the input box match in full.
+// With an input box but no marker, matching stays in the content region so
+// typed input cannot masquerade as a status signal.
 func (tr toolRules) matchScope(pane string) string {
 	if tr.turnEnd == nil {
 		return pane
@@ -144,11 +156,39 @@ func (tr toolRules) matchScope(pane string) string {
 	if !ok {
 		return pane
 	}
+	cutoffTail := pane[len(region):]
+	hasWaitingFooter := tr.hasWaitingFooter(cutoffTail)
 	lines := strings.Split(region, "\n")
 	if lastEnd := tr.lastTurnEndIndex(lines); lastEnd >= 0 {
-		return strings.Join(lines[lastEnd+1:], "\n")
+		scope := strings.Join(lines[lastEnd+1:], "\n")
+		if hasWaitingFooter {
+			return scope + cutoffTail
+		}
+		return scope
 	}
-	return pane
+	// Some selection dialogs reuse the prompt marker as their first option.
+	// Keep treating ordinary typed input as outside the match scope, but include
+	// the full pane when a separate waiting signal appears below that marker.
+	// Codex overlays render such a footer; the selected option line alone is
+	// indistinguishable from a numbered draft and must not expand the scope.
+	if hasWaitingFooter {
+		return pane
+	}
+	return region
+}
+
+func (tr toolRules) hasWaitingFooter(cutoffTail string) bool {
+	lineEnd := strings.IndexByte(cutoffTail, '\n')
+	if lineEnd < 0 {
+		return false
+	}
+	footer := cutoffTail[lineEnd+1:]
+	for _, r := range tr.rules {
+		if r.state == Waiting && r.re.MatchString(footer) {
+			return true
+		}
+	}
+	return false
 }
 
 // lastTurnEndIndex finds the newest turn_end marker line, -1 when absent.

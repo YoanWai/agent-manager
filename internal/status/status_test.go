@@ -15,6 +15,7 @@ func testEngine(t *testing.T) *Engine {
 				DefaultStatus: "idle",
 				Rules: []config.Rule{
 					{State: "working", Pattern: "esc to interrupt"},
+					{State: "waiting", Pattern: `(?m)^ ❯ 1\.`},
 					{State: "errored", Pattern: "(?i)^error:"},
 				},
 			},
@@ -36,6 +37,8 @@ func TestMatch(t *testing.T) {
 		want string
 	}{
 		{"working spinner", "claude", "thinking... (esc to interrupt)", Working},
+		{"persisted working-first rules still prefer waiting", "claude",
+			"✶ Cooking… (2m 14s · esc to interrupt)\nDo you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently", Waiting},
 		{"errored", "claude", "Error: something broke", Errored},
 		{"idle fallback", "claude", "> ", Idle},
 		{"first rule wins", "claude", "Error: x\nesc to interrupt", Working},
@@ -47,6 +50,86 @@ func TestMatch(t *testing.T) {
 				t.Fatalf("Match(%q)=%q want %q", tc.pane, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestMatchWaitingOnlyOverridesWorkingFirstMatch(t *testing.T) {
+	cfg := config.Config{Tools: map[string]config.Tool{
+		"custom": {Rules: []config.Rule{
+			{State: "errored", Pattern: "error signal"},
+			{State: "working", Pattern: "working signal"},
+			{State: "waiting", Pattern: "waiting signal"},
+		}},
+	}}
+	engine, err := NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	if got, _ := engine.Match("custom", "error signal\nworking signal\nwaiting signal"); got != Errored {
+		t.Fatalf("Match() = %q want %q", got, Errored)
+	}
+
+	cfg.Tools["custom"] = config.Tool{Rules: []config.Rule{
+		{State: "working", Pattern: "working signal"},
+		{State: "errored", Pattern: "error signal"},
+		{State: "waiting", Pattern: "waiting signal"},
+	}}
+	engine, err = NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	if got, _ := engine.Match("custom", "working signal\nerror signal\nwaiting signal"); got != Waiting {
+		t.Fatalf("Match() = %q want %q", got, Waiting)
+	}
+}
+
+func TestMatchLegacyClaudeRuleOrderStillResolvesWaiting(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	claude := cfg.Tools["claude"]
+	claude.Rules = []config.Rule{
+		{State: Working, Pattern: `(?m)^[✻✳✶✽✢·✦✧+*] \S+… \(`},
+		{State: Working, Pattern: "esc to interrupt"},
+		{State: Waiting, Pattern: "Enter to confirm"},
+		{State: Waiting, Pattern: `(?m)^[ \x{A0}]*❯[ \x{A0}]+\d+\.`},
+		{State: Errored, Pattern: `(?im)^\s*error:`},
+	}
+	cfg.Tools["claude"] = claude
+	engine, err := NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	// Include a prior turn and the input cutoff so the real Claude scope
+	// settings narrow matching to the current mixed-signal turn.
+	pane := "⏺ Previous turn\n✻ Worked for 1s\n" +
+		"✶ Cooking… (2m 14s · esc to interrupt)\nDo you want to proceed?\n" +
+		" ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n❯ "
+	if got, matched := engine.Match("claude", pane); got != Waiting || !matched {
+		t.Fatalf("Match() = (%q, %t) want (%q, true)", got, matched, Waiting)
+	}
+}
+
+// Reconstructs the mixed signals reported in issue #112: an unanswered
+// approval dialog while Claude's active-turn hint remains visible.
+func TestClaudeMixedApprovalPane(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "✶ Cooking… (2m 14s · esc to interrupt)\nDo you want to proceed?\n" +
+		" ❯ 1. Yes\n   2. Yes, and don't ask again\n" +
+		"   3. No, and tell Claude what to do differently"
+	if got, matched := engine.Match("claude", pane); got != Waiting || !matched {
+		t.Fatalf("Match() = (%q, %t) want (%q, true)", got, matched, Waiting)
+	}
+}
+
+func TestClaudeNumberedInputDoesNotLookLikeDialog(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "✳ Drizzling… (6s · esc to interrupt)\n❯ 1. refactor the parser"
+	if got, matched := engine.Match("claude", pane); got != Working || !matched {
+		t.Fatalf("Match() = (%q, %t) want (%q, true)", got, matched, Working)
 	}
 }
 
@@ -202,12 +285,20 @@ func TestCodexRealPanes(t *testing.T) {
 			"• Working (0s • esc to interrupt)\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Working},
 		{"codex active turn, other status verb", "codex",
 			"• Analyzing (12s • esc to interrupt)\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Working},
+		{"codex numbered draft is not a dialog", "codex",
+			"• Working (0s • esc to interrupt)\n\n› 1. keep this as ordinary input\n  gpt-5.6-terra medium · /home/dev", Working},
+		{"codex option-shaped draft without footer is not a dialog", "codex",
+			"• Working (0s • esc to interrupt)\n\n› 1. Yes, proceed (y)", Working},
 		{"codex finished work turn", "codex",
 			"• Ran echo preparing\n  └ preparing\n\n────────────────────────────────\n\n• Final response.\n\n─ Worked for 2m 05s ─────────────\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Finished},
 		{"codex finished turn ending on a question", "codex",
 			"• Which file should I edit, A or B?\n\n─ Worked for 3s ─────────────────\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Waiting},
 		{"codex command-approval modal", "codex",
 			"  $ echo hello world\n\n› 1. Yes, proceed (y)\n  2. Yes, and don't ask again for commands that start with `echo hello world` (p)\n  3. No, and tell Codex what to do differently (esc)\n\n  Press enter to confirm or esc to cancel", Waiting},
+		{"codex command-approval modal overrides stale working signal", "codex",
+			"• Working (0s • esc to interrupt)\n\n  $ echo hello world\n\n› 1. Yes, proceed (y)\n  2. No, and tell Codex what to do differently (esc)\n\n  Press enter to confirm or esc to cancel", Waiting},
+		{"codex command-approval modal after completed turn", "codex",
+			"• Previous response.\n\n─ Worked for 1s ─────────────\n\n• Working (0s • esc to interrupt)\n\n  $ echo hello world\n\n› 1. Yes, proceed (y)\n  2. No, and tell Codex what to do differently (esc)\n\n  Press enter to confirm or esc to cancel", Waiting},
 		{"codex first-run trust dialog", "codex",
 			"Do you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt injection.\n\n› 1. Yes, continue\n  2. No, quit\n\n  Press enter to continue", Waiting},
 		{"codex request-user-input selection", "codex",

@@ -75,6 +75,34 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	}
 }
 
+func TestDefaultWaitingRulesPrecedeWorking(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+
+	for name, tool := range cfg.Tools {
+		firstWorking := -1
+		lastWaiting := -1
+		for i, rule := range tool.Rules {
+			switch rule.State {
+			case "working":
+				if firstWorking < 0 {
+					firstWorking = i
+				}
+			case "waiting":
+				lastWaiting = i
+			}
+		}
+		if name == "claude" && (firstWorking < 0 || lastWaiting < 0) {
+			t.Fatalf("claude defaults need both working and waiting rules: %#v", tool.Rules)
+		}
+		if firstWorking >= 0 && lastWaiting > firstWorking {
+			t.Errorf("%s waiting rule at %d follows first working rule at %d", name, lastWaiting, firstWorking)
+		}
+	}
+}
+
 func TestBackfillToolDefaults(t *testing.T) {
 	cfg := Config{Tools: map[string]Tool{
 		"opencode": {Command: "opencode", ReviveCommand: "opencode --continue"},
