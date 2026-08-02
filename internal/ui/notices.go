@@ -419,8 +419,8 @@ func (m *Model) viewNotices() string {
 			}
 		}
 	}
-	if m.width >= 8 && inner > m.width-8 {
-		inner = m.width - 8
+	if fit := m.width - 8; inner > fit {
+		inner = max(fit, 1)
 	}
 	if len(notices) == 0 {
 		frame := noticeFrame([]string{subtleStyle.Render("nothing new")}, inner,
@@ -440,21 +440,27 @@ func (m *Model) viewNotices() string {
 	}
 	selected := notices[m.noticeCursor]
 	rows = append(rows, noticeBorderStyle().Render(strings.Repeat("┄", inner)))
+
+	var body []string
 	for _, line := range selected.body {
 		for _, wrapped := range strings.Split(ansi.Wordwrap(line, inner, "-"), "\n") {
-			rows = append(rows, mutedStyle.Render(wrapped))
+			body = append(body, mutedStyle.Render(wrapped))
 		}
 	}
+	var tail []string
 	if selected.url != "" {
-		rows = append(rows, subtleStyle.Render("↗ "+truncateTail(strings.TrimPrefix(selected.url, "https://"), inner-2)))
+		tail = append(tail, subtleStyle.Render("↗ "+truncateTail(strings.TrimPrefix(selected.url, "https://"), inner-2)))
 	}
 	if m.update.applying {
-		rows = append(rows, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+m.update.latest+"…"))
+		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+m.update.latest+"…"))
 	}
 	if m.errBar.text != "" {
-		rows = append(rows, errStyle.Render("✕ "+m.errBar.text))
+		tail = append(tail, errStyle.Render("✕ "+m.errBar.text))
 	}
-	rows = append(rows, "")
+	tail = append(tail, "")
+
+	rows = append(rows, fitBody(body, m.height-2-len(rows)-len(tail))...)
+	rows = append(rows, tail...)
 
 	hint := "↑↓ pick · ↵ open · x dismiss · esc "
 	if isUpdateNotice(selected) {
@@ -464,6 +470,19 @@ func (m *Model) viewNotices() string {
 		noticeLegend(),
 		mutedStyle.Render(hint))
 	return m.centerOnBackdrop(frame)
+}
+
+// fitBody keeps the body inside the rows a terminal this short can hold,
+// marking the cut so a clipped message reads as clipped. Without it the
+// outer frame clamp eats the modal's own border and key hints instead.
+func fitBody(body []string, room int) []string {
+	if room >= len(body) {
+		return body
+	}
+	if room < 1 {
+		room = 1
+	}
+	return append(body[:room-1:room-1], mutedStyle.Render("…"))
 }
 
 // noticeModalInner is the modal content column's floor, sized for the
