@@ -20,6 +20,8 @@
 
 Claude Code, Codex, OpenCode, Grok, and Gemini CLI run side by side, each in its own tmux session, so they keep working after you quit the manager.
 
+agent-manager is a thin layer over the CLIs you already have. Each session launches your own installed tool as-is: your login, your subscription, your config files, your MCP servers, and every feature the tool ships all carry over, exactly as they behave in a plain terminal.
+
 Instead of hunting through terminal tabs to see which agent is done and which is stuck, every session shows up in one list with live status, grouped into a project tree you can fold and reorder. You answer any of them without attaching: `space` sends a prompt straight into a session's pane, or spawns a new agent in the selected group. A dead session revives on its own conversation with `v`. And `ctrl+r` opens a full-file diff of what an agent changed, syntax-highlighted, where the comments you leave on lines go back to the agent's pane as one review prompt when you press `C`.
 
 Not here yet: cost tracking, mouse-driven navigation, and agents that can talk to each other.
