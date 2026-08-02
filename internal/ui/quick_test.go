@@ -597,39 +597,64 @@ func TestQuickWorktreeSeedsFromSetting(t *testing.T) {
 	}
 }
 
-func TestQuickSpawnRespectsWorktreeToggleInNonRepo(t *testing.T) {
+// quickGroupModel selects a quick-bar target group pointing at dir.
+func quickGroupModel(t *testing.T, dir string) *Model {
+	t.Helper()
 	m := buildModel(t)
-	dir := t.TempDir()
 	if err := m.store.CreateGroup("grp", dir); err != nil {
 		t.Fatalf("group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp")
+	return m
+}
+
+func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
+	dir := t.TempDir()
+	m := quickGroupModel(t, dir)
+	if err := m.store.SetGroupWorktree("grp", "on"); err != nil {
+		t.Fatalf("set worktree: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
+	if m.quickWorktreeOn() {
+		t.Fatal("a non-repo group dir cannot host a worktree, even with the group default on")
+	}
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if !m.quick.worktree {
-		t.Fatal("shift+tab should toggle worktree on")
+	if m.quickWorktreeOn() {
+		t.Fatal("shift+tab must not turn worktree on for a non-repo dir")
+	}
+	if !strings.Contains(m.errBar.text, "need a git repository") {
+		t.Fatalf("refused toggle should say why, got %q", m.errBar.text)
+	}
+	if hint := m.viewFooter(); !strings.Contains(hint, worktreeUnavailable) {
+		t.Fatalf("footer should mark worktree unavailable, got %q", hint)
 	}
 	m.quick.input.SetValue("do a thing")
 	m.submitQuick()
-	if m.errBar.text == "" {
-		t.Fatal("worktree spawn into a non-repo group dir must surface an error")
-	}
 	sessions, err := m.store.ListSessions(true)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if len(sessions) != 0 {
-		t.Fatal("blocked spawn must not create a session")
+	if len(sessions) != 1 {
+		t.Fatalf("gated spawn should still launch a plain session, got %d", len(sessions))
+	}
+	if sessions[0].WorktreeRepo != "" {
+		t.Fatalf("gated spawn must not record a worktree: %q", sessions[0].WorktreeRepo)
+	}
+	if sessions[0].Cwd != dir {
+		t.Fatalf("cwd = %q, want the group dir %q", sessions[0].Cwd, dir)
 	}
 }
 
 func TestQuickSpawnUsesGroupWorktreeDefault(t *testing.T) {
-	m := buildModel(t)
-	dir := t.TempDir()
-	if err := m.store.CreateGroup("grp", dir); err != nil {
-		t.Fatalf("group: %v", err)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	initGitRepo(t, repo)
+	m := quickGroupModel(t, repo)
 	if err := m.store.SetGroupWorktree("grp", "on"); err != nil {
 		t.Fatalf("set worktree: %v", err)
 	}
@@ -641,24 +666,25 @@ func TestQuickSpawnUsesGroupWorktreeDefault(t *testing.T) {
 	}
 	m.quick.input.SetValue("do a thing")
 	m.submitQuick()
-	if m.errBar.text == "" {
-		t.Fatal("group-default worktree spawn into a non-repo dir must surface an error")
+	if m.errBar.text != "" {
+		t.Fatalf("worktree spawn should succeed: %q", m.errBar.text)
 	}
 	sessions, err := m.store.ListSessions(true)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if len(sessions) != 0 {
-		t.Fatal("blocked spawn must not create a session")
+	if len(sessions) != 1 || sessions[0].WorktreeRepo == "" {
+		t.Fatalf("group default should have spawned a worktree session, got %+v", sessions)
 	}
 }
 
 func TestQuickWorktreeToggleOverridesGroupDefault(t *testing.T) {
-	m := buildModel(t)
-	dir := t.TempDir()
-	if err := m.store.CreateGroup("grp", dir); err != nil {
-		t.Fatalf("group: %v", err)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	initGitRepo(t, repo)
+	m := quickGroupModel(t, repo)
 	if err := m.store.SetGroupWorktree("grp", "on"); err != nil {
 		t.Fatalf("set worktree: %v", err)
 	}

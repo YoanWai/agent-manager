@@ -49,6 +49,35 @@ func (m *Model) groupWorktree(group string) bool {
 	return m.defaultWorktree()
 }
 
+// worktreeUnavailable is what the worktree toggle reads when the target
+// directory cannot host one.
+const worktreeUnavailable = "unavailable (not a git repo)"
+
+// worktreeCapable reports whether dir can host a worktree session: git
+// installed, and the directory inside a repository. An umbrella directory
+// that merely contains repos cannot, so the toggle is gated up front
+// instead of failing once the prompt is already typed.
+func (m *Model) worktreeCapable(dir string) bool {
+	if m.gitDrv == nil || dir == "" {
+		return false
+	}
+	if capable, seen := m.worktreeRepos[dir]; seen {
+		return capable
+	}
+	_, err := m.gitDrv.RepoRoot(dir)
+	if m.worktreeRepos == nil {
+		m.worktreeRepos = make(map[string]bool)
+	}
+	m.worktreeRepos[dir] = err == nil
+	return err == nil
+}
+
+// forgetWorktreeCapability drops the memo so a repo created since the last
+// look is seen. Opening the form or the quick bar calls it.
+func (m *Model) forgetWorktreeCapability() {
+	m.worktreeRepos = nil
+}
+
 // defaultSplitLayout reports whether review mode should open in split
 // (side-by-side) layout. Split is the default; a stored "unified" choice
 // opts out. A store error is surfaced but still yields the split default.
