@@ -348,6 +348,27 @@ func TestFormWorktreeGatedInNonRepoDir(t *testing.T) {
 	}
 }
 
+func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
+	m := buildModel(t)
+	dir := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if m.worktreeCapable(dir) {
+		t.Fatal("a plain directory cannot host a worktree")
+	}
+	initGitRepo(t, dir)
+	if m.worktreeCapable(dir) {
+		t.Fatal("the memo should still answer from the look taken a moment ago")
+	}
+	answer := m.worktreeRepos[dir]
+	answer.at = answer.at.Add(-worktreeLookupTTL)
+	m.worktreeRepos[dir] = answer
+	if !m.worktreeCapable(dir) {
+		t.Fatal("an expired entry should be looked up again and see the new repo")
+	}
+}
+
 func TestFormWorktreeStaysOnInRepoDir(t *testing.T) {
 	m := buildModel(t)
 	repo := filepath.Join(t.TempDir(), "repo")

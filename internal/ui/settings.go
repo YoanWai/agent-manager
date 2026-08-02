@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -53,6 +55,12 @@ func (m *Model) groupWorktree(group string) bool {
 // directory cannot host one.
 const worktreeUnavailable = "unavailable (not a git repo)"
 
+// worktreeLookupTTL bounds how long a directory's repo answer is reused.
+// The quick bar stays open across prompts, so a directory git-initialised
+// meanwhile has to be seen without closing it, while a frame that repaints
+// on every keystroke must not shell out to git each time.
+const worktreeLookupTTL = 2 * time.Second
+
 // worktreeCapable reports whether dir can host a worktree session: git
 // installed, and the directory inside a repository. An umbrella directory
 // that merely contains repos cannot, so the toggle is gated up front
@@ -61,19 +69,19 @@ func (m *Model) worktreeCapable(dir string) bool {
 	if m.gitDrv == nil || dir == "" {
 		return false
 	}
-	if capable, seen := m.worktreeRepos[dir]; seen {
-		return capable
+	if answer, seen := m.worktreeRepos[dir]; seen && time.Since(answer.at) < worktreeLookupTTL {
+		return answer.capable
 	}
 	_, err := m.gitDrv.RepoRoot(dir)
 	if m.worktreeRepos == nil {
-		m.worktreeRepos = make(map[string]bool)
+		m.worktreeRepos = make(map[string]repoAnswer)
 	}
-	m.worktreeRepos[dir] = err == nil
+	m.worktreeRepos[dir] = repoAnswer{capable: err == nil, at: time.Now()}
 	return err == nil
 }
 
-// forgetWorktreeCapability drops the memo so a repo created since the last
-// look is seen. Opening the form or the quick bar calls it.
+// forgetWorktreeCapability drops the memo so the next look is a fresh one.
+// Opening the form or the quick bar calls it.
 func (m *Model) forgetWorktreeCapability() {
 	m.worktreeRepos = nil
 }
