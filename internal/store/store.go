@@ -15,7 +15,6 @@ import (
 // listed a moment earlier can tell that race apart from a real failure.
 var ErrSessionGone = errors.New("session no longer exists")
 
-// ErrGroupExists reports an add that would replace an existing group.
 var ErrGroupExists = errors.New("group already exists")
 
 type Session struct {
@@ -272,8 +271,6 @@ func (s *Store) CreateGroup(name, path string) error {
 	return err
 }
 
-// AddGroup inserts a new group and its worktree choice in one statement.
-// Unlike CreateGroup, it refuses to overwrite an existing group.
 func (s *Store) AddGroup(name, path, worktree string) error {
 	if name == "" {
 		return errors.New("group name cannot be empty")
