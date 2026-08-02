@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/update"
 )
@@ -26,6 +27,7 @@ const (
 	dismissedNoticesSetting = "dismissed_notices"
 	lastSeenVersionSetting  = "last_seen_version"
 	whatsNewVersionSetting  = "whats_new_version"
+	whatsNewFromSetting     = "whats_new_from_version"
 
 	repoURL = "https://github.com/YoanWai/agent-manager"
 )
@@ -34,17 +36,26 @@ const (
 // and readable in full from the notices modal. url is what enter opens;
 // glyph and tint are its mark in both places.
 type notice struct {
-	id     string
-	glyph  string
-	tint   lipgloss.Color
-	banner string
-	title  string
-	body   []string
-	url    string
+	id            string
+	glyph         string
+	tint          lipgloss.Color
+	title         string
+	body          []string
+	releases      []update.Release
+	after         []string
+	rangeComplete bool
+	url           string
 }
 
 func (n notice) mark() string {
 	return lipgloss.NewStyle().Foreground(n.tint).Render(n.glyph)
+}
+
+// indexReleaseRanges keeps catalog scans out of the paint path. It runs only
+// when startup state or a background GitHub result changes.
+func (m *Model) indexReleaseRanges() {
+	m.update.available = update.Between(m.update.releases, m.update.version, m.update.latest)
+	m.update.installed = update.Between(m.update.releases, m.whatsNewFromVersion, m.update.version)
 }
 
 func (m *Model) activeNotices() []notice {
@@ -53,52 +64,80 @@ func (m *Model) activeNotices() []notice {
 	}
 	var notices []notice
 	if m.update.latest != "" {
+		releaseRange := m.update.available
+		title := m.update.latest + " available"
+		if len(releaseRange.Releases) > 1 {
+			count := fmt.Sprint(len(releaseRange.Releases))
+			if !releaseRange.Complete {
+				count += "+"
+			}
+			title = count + " releases available · " + m.update.latest
+		}
+		body := []string{"You are on " + m.update.version + ". Here is everything released since then:"}
+		if len(releaseRange.Releases) == 0 {
+			body = append(body, "The generated change summary is not available yet; r refreshes it now.")
+		}
 		notices = append(notices, notice{
-			id:     "update-" + m.update.latest,
-			glyph:  "↑",
-			tint:   colorAccent,
-			banner: m.update.latest + " available",
-			title:  "Update available",
-			body: []string{
-				"Release " + m.update.latest + " is out; this build is " + m.update.version + ".",
-				"u updates in place and restarts; sessions keep running.",
-				"Enter opens the release page with the changelog and install notes.",
+			id:            "update-" + m.update.latest,
+			glyph:         "↑",
+			tint:          colorAccent,
+			title:         title,
+			body:          body,
+			releases:      releaseRange.Releases,
+			rangeComplete: releaseRange.Complete,
+			after: []string{
+				"u updates once to " + m.update.latest + " and restarts; every release above is included.",
+				"Enter opens the full release notes.",
 			},
 			url: m.update.url,
 		})
 	}
 	if m.whatsNewVersion == m.update.version {
+		releaseRange := m.update.installed
+		title := "Updated to " + m.update.version
+		if len(releaseRange.Releases) > 1 {
+			count := fmt.Sprint(len(releaseRange.Releases))
+			if !releaseRange.Complete {
+				count += "+"
+			}
+			title = "Updated across " + count + " releases · " + m.update.version
+		}
+		body := []string{"Updated from " + m.whatsNewFromVersion + " to " + m.update.version + "."}
+		if len(releaseRange.Releases) == 0 && !m.update.checked {
+			body = append(body, "Loading the change summary from GitHub…")
+		} else if len(releaseRange.Releases) == 0 {
+			body = append(body, "No generated change summary was found; r refreshes GitHub now.")
+		}
 		notices = append(notices, notice{
-			id:     "whatsnew-" + m.update.version,
-			glyph:  "✦",
-			tint:   colorAccent2,
-			banner: "updated to " + m.update.version,
-			title:  "What's new in " + m.update.version,
-			body: []string{
-				"This machine now runs " + m.update.version + ".",
-				"Enter opens the release notes for everything that changed.",
+			id:       "whatsnew-" + m.update.version,
+			glyph:    "✦",
+			tint:     colorAccent2,
+			title:    title,
+			body:     body,
+			releases: releaseRange.Releases,
+			after: []string{
+				"Enter opens the full release notes.",
 			},
-			url: repoURL + "/releases/tag/v" + strings.TrimPrefix(m.update.version, "v"),
+			rangeComplete: releaseRange.Complete,
+			url:           repoURL + "/releases/tag/v" + strings.TrimPrefix(m.update.version, "v"),
 		})
 	}
 	for _, msg := range m.feedMessages {
 		notices = append(notices, notice{
-			id:     msg.ID,
-			glyph:  "◆",
-			tint:   colorAccent2,
-			banner: msg.Banner,
-			title:  msg.Title,
-			body:   msg.Body,
-			url:    msg.URL,
+			id:    msg.ID,
+			glyph: "◆",
+			tint:  colorAccent2,
+			title: msg.Title,
+			body:  msg.Body,
+			url:   msg.URL,
 		})
 	}
 	notices = append(notices,
 		notice{
-			id:     noticeWelcome,
-			glyph:  "✳",
-			tint:   colorAccent2,
-			banner: "welcome — press M",
-			title:  "Welcome to agent-manager",
+			id:    noticeWelcome,
+			glyph: "✳",
+			tint:  colorAccent2,
+			title: "Welcome to agent-manager",
 			body: []string{
 				"Every row on the left is a live agent session: enter attaches,",
 				"space sends a quick prompt, ? shows every key.",
@@ -107,11 +146,10 @@ func (m *Model) activeNotices() []notice {
 			url: repoURL + "#readme",
 		},
 		notice{
-			id:     noticeBugReport,
-			glyph:  "?",
-			tint:   colorAccent,
-			banner: "report a bug",
-			title:  "Found a bug?",
+			id:    noticeBugReport,
+			glyph: "?",
+			tint:  colorAccent,
+			title: "Found a bug?",
 			body: []string{
 				"Enter opens a GitHub issue prefilled with your version and OS.",
 				"A pane screenshot and the steps that led there help the most.",
@@ -147,17 +185,34 @@ func (m *Model) startupNotice() string {
 	if seen == m.update.version {
 		return ""
 	}
+	if seen == "" {
+		if err := m.store.SetSetting(lastSeenVersionSetting, m.update.version); err != nil {
+			m.errBar.text = err.Error()
+			return ""
+		}
+		return noticeWelcome
+	}
+	if !update.Newer(m.update.version, seen) {
+		if err := m.store.SetSetting(lastSeenVersionSetting, m.update.version); err != nil {
+			m.errBar.text = err.Error()
+		}
+		return ""
+	}
+	if err := m.store.SetSetting(whatsNewFromSetting, seen); err != nil {
+		m.errBar.text = err.Error()
+		return ""
+	}
+	if err := m.store.SetSetting(whatsNewVersionSetting, m.update.version); err != nil {
+		m.errBar.text = err.Error()
+		return ""
+	}
 	if err := m.store.SetSetting(lastSeenVersionSetting, m.update.version); err != nil {
 		m.errBar.text = err.Error()
 		return ""
 	}
-	if seen == "" {
-		return noticeWelcome
-	}
-	if err := m.store.SetSetting(whatsNewVersionSetting, m.update.version); err != nil {
-		m.errBar.text = err.Error()
-	}
+	m.whatsNewFromVersion = seen
 	m.whatsNewVersion = m.update.version
+	m.indexReleaseRanges()
 	return "whatsnew-" + m.update.version
 }
 
@@ -165,6 +220,14 @@ func (m *Model) startupNotice() string {
 // still current. A read failure just means no notice.
 func loadWhatsNewVersion(st *store.Store) string {
 	version, err := st.Setting(whatsNewVersionSetting)
+	if err != nil {
+		return ""
+	}
+	return version
+}
+
+func loadWhatsNewFromVersion(st *store.Store) string {
+	version, err := st.Setting(whatsNewFromSetting)
 	if err != nil {
 		return ""
 	}
@@ -230,7 +293,7 @@ func (m *Model) noticeCardLines(notices []notice, maxWidth, height int) []string
 
 	var rows []string
 	for _, n := range shown {
-		rows = append(rows, n.mark()+" "+valueStyle.Render(n.banner))
+		rows = append(rows, n.mark()+" "+valueStyle.Render(n.title))
 	}
 	if overflow != "" {
 		rows = append(rows, overflow)
@@ -293,6 +356,7 @@ func (m *Model) openNotices(selectID string) {
 		return
 	}
 	m.noticeCursor = 0
+	m.noticeScroll = 0
 	for i, n := range notices {
 		if n.id == selectID {
 			m.noticeCursor = i
@@ -352,25 +416,47 @@ func isUpdateNotice(n notice) bool {
 // of downloading a release.
 var applyUpdate = update.Apply
 
+// refreshUpdatesForApply makes u resolve the newest release at action time,
+// even when several releases landed after the notice was first cached.
+var refreshUpdatesForApply = update.Refresh
+
 // applyUpdateCmd downloads the latest release off the event loop, swaps
 // the running binary, and reports the path to restart into.
 func (m *Model) applyUpdateCmd() tea.Cmd {
-	tag := m.update.latest
 	return func() tea.Msg {
-		execPath, err := os.Executable()
+		dir, err := config.Dir()
 		if err != nil {
 			return updateAppliedMsg{err: err}
 		}
-		if err := applyUpdate(context.Background(), tag, execPath); err != nil {
-			return updateAppliedMsg{err: err}
+		result, err := refreshUpdatesForApply(context.Background(), dir, m.update.version)
+		if err != nil {
+			return updateAppliedMsg{result: result, err: err}
 		}
-		return updateAppliedMsg{path: execPath}
+		if result.Latest == "" {
+			return updateAppliedMsg{result: result, upToDate: true}
+		}
+		execPath, err := os.Executable()
+		if err != nil {
+			return updateAppliedMsg{result: result, err: err}
+		}
+		if err := applyUpdate(context.Background(), result.Latest, execPath); err != nil {
+			return updateAppliedMsg{result: result, err: err}
+		}
+		return updateAppliedMsg{path: execPath, result: result}
 	}
 }
 
 func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	notices := m.activeNotices()
 	switch msg.String() {
+	case "r":
+		if m.update.refreshing {
+			return m, nil
+		}
+		m.update.refreshing = true
+		m.update.refreshPending = 2
+		m.errBar.text = ""
+		return m, tea.Batch(m.refreshUpdates, m.refreshFeed)
 	case "u":
 		if m.update.applying {
 			return m, nil
@@ -383,11 +469,17 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if m.noticeCursor > 0 {
 			m.noticeCursor--
+			m.noticeScroll = 0
 		}
 	case "down", "j":
 		if m.noticeCursor < len(notices)-1 {
 			m.noticeCursor++
+			m.noticeScroll = 0
 		}
+	case "pgup", "ctrl+u":
+		m.noticeScroll = max(0, m.noticeScroll-max(4, m.height/3))
+	case "pgdown", "ctrl+d":
+		m.noticeScroll = min(m.noticeScroll+max(4, m.height/3), m.noticeScrollLimit(notices))
 	case "enter":
 		if m.noticeCursor < len(notices) && notices[m.noticeCursor].url != "" {
 			if err := openBrowser(notices[m.noticeCursor].url); err != nil {
@@ -403,25 +495,46 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.noticeCursor = min(m.noticeCursor, len(notices)-2)
+		m.noticeScroll = 0
 	case "esc", "q", "M":
 		m.mode = modeList
 	}
 	return m, nil
 }
 
+func (m *Model) finishNoticeRefresh() {
+	if m.update.refreshPending > 0 {
+		m.update.refreshPending--
+	}
+	m.update.refreshing = m.update.refreshPending > 0
+}
+
+func (m *Model) noticeScrollLimit(notices []notice) int {
+	if m.noticeCursor >= len(notices) {
+		return 0
+	}
+	selected := notices[m.noticeCursor]
+	bodyRows := len(renderNoticeBody(selected, noticeInnerWidth(notices, m.width)))
+	tailRows := 1
+	if selected.url != "" {
+		tailRows++
+	}
+	if m.update.refreshing {
+		tailRows++
+	}
+	if m.update.applying {
+		tailRows++
+	}
+	if m.errBar.text != "" {
+		tailRows++
+	}
+	bodyRoom := max(1, m.height-2-(len(notices)+2)-tailRows)
+	return max(0, bodyRows-bodyRoom)
+}
+
 func (m *Model) viewNotices() string {
 	notices := m.activeNotices()
-	inner := noticeModalInner
-	for _, n := range notices {
-		for _, line := range n.body {
-			if w := lipgloss.Width(line); w > inner {
-				inner = w
-			}
-		}
-	}
-	if fit := m.width - 8; inner > fit {
-		inner = max(fit, 1)
-	}
+	inner := noticeInnerWidth(notices, m.width)
 	if len(notices) == 0 {
 		frame := noticeFrame([]string{subtleStyle.Render("nothing new")}, inner,
 			noticeLegend(), keyCap("esc", "close"))
@@ -441,15 +554,13 @@ func (m *Model) viewNotices() string {
 	selected := notices[m.noticeCursor]
 	rows = append(rows, noticeBorderStyle().Render(strings.Repeat("┄", inner)))
 
-	var body []string
-	for _, line := range selected.body {
-		for _, wrapped := range strings.Split(ansi.Wordwrap(line, inner, "-"), "\n") {
-			body = append(body, mutedStyle.Render(wrapped))
-		}
-	}
+	body := renderNoticeBody(selected, inner)
 	var tail []string
 	if selected.url != "" {
 		tail = append(tail, subtleStyle.Render("↗ "+truncateTail(strings.TrimPrefix(selected.url, "https://"), inner-2)))
+	}
+	if m.update.refreshing {
+		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent2).Render("↻ refreshing releases and messages…"))
 	}
 	if m.update.applying {
 		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+m.update.latest+"…"))
@@ -459,12 +570,12 @@ func (m *Model) viewNotices() string {
 	}
 	tail = append(tail, "")
 
-	rows = append(rows, fitBody(body, m.height-2-len(rows)-len(tail))...)
+	rows = append(rows, fitBody(body, m.height-2-len(rows)-len(tail), m.noticeScroll)...)
 	rows = append(rows, tail...)
 
-	hint := "↑↓ pick · ↵ open · x dismiss · esc "
+	hint := "↑↓ pick · pgup/pgdn scroll · r refresh · ↵ open · x dismiss · esc "
 	if isUpdateNotice(selected) {
-		hint = "↑↓ pick · u update · ↵ open · x dismiss · esc "
+		hint = "↑↓ pick · pgup/pgdn scroll · r refresh · u update · ↵ open · x dismiss · esc "
 	}
 	frame := noticeFrame(rows, inner,
 		noticeLegend(),
@@ -472,17 +583,114 @@ func (m *Model) viewNotices() string {
 	return m.centerOnBackdrop(frame)
 }
 
-// fitBody keeps the body inside the rows a terminal this short can hold,
-// marking the cut so a clipped message reads as clipped. Without it the
-// outer frame clamp eats the modal's own border and key hints instead.
-func fitBody(body []string, room int) []string {
-	if room >= len(body) {
-		return body
+func noticeInnerWidth(notices []notice, terminalWidth int) int {
+	inner := noticeModalInner
+	for _, n := range notices {
+		lines := append(append([]string{}, n.body...), n.after...)
+		for _, release := range n.releases {
+			lines = append(lines, release.Version)
+			for _, change := range release.Changes {
+				lines = append(lines, "• "+change)
+			}
+		}
+		for _, line := range lines {
+			if w := lipgloss.Width(line); w > inner {
+				inner = w
+			}
+		}
 	}
+	if fit := terminalWidth - 8; inner > fit {
+		inner = max(fit, 1)
+	}
+	return inner
+}
+
+func renderNoticeBody(n notice, width int) []string {
+	var body []string
+	for _, line := range n.body {
+		body = appendStyledWrap(body, line, width, mutedStyle)
+	}
+	if len(n.releases) > 0 {
+		body = append(body, "")
+	}
+	for i, release := range n.releases {
+		if i > 0 {
+			body = append(body, "")
+		}
+		count := release.TotalChanges
+		label := "change"
+		if count != 1 {
+			label = "changes"
+		}
+		heading := release.Version
+		if count > 0 {
+			heading += fmt.Sprintf(" · %d %s", count, label)
+		}
+		body = append(body, lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(heading))
+		if len(release.Changes) == 0 {
+			body = append(body, subtleStyle.Render("  No summarized changes."))
+		}
+		for _, change := range release.Changes {
+			wrapped := strings.Split(ansi.Wordwrap(change, max(width-2, 1), "-"), "\n")
+			for lineIndex, line := range wrapped {
+				prefix := "  "
+				if lineIndex == 0 {
+					prefix = "• "
+				}
+				body = append(body, mutedStyle.Render(prefix+line))
+			}
+		}
+		if omitted := release.TotalChanges - len(release.Changes); omitted > 0 {
+			body = append(body, subtleStyle.Render(fmt.Sprintf("  +%d more in the full notes", omitted)))
+		}
+	}
+	if len(n.releases) > 0 && !n.rangeComplete {
+		body = append(body, "", subtleStyle.Render("The local catalog covers part of this range; Enter opens the complete notes."))
+	}
+	if len(n.after) > 0 {
+		body = append(body, "")
+		for _, line := range n.after {
+			body = appendStyledWrap(body, line, width, mutedStyle)
+		}
+	}
+	return body
+}
+
+func appendStyledWrap(lines []string, text string, width int, style lipgloss.Style) []string {
+	if text == "" {
+		return append(lines, "")
+	}
+	for _, wrapped := range strings.Split(ansi.Wordwrap(text, width, "-"), "\n") {
+		lines = append(lines, style.Render(wrapped))
+	}
+	return lines
+}
+
+// fitBody returns a scrollable window without letting a short terminal eat
+// the modal border or hints. Continuation rows make hidden content explicit.
+func fitBody(body []string, room, offset int) []string {
 	if room < 1 {
 		room = 1
 	}
-	return append(body[:room-1:room-1], mutedStyle.Render("…"))
+	if room >= len(body) {
+		return body
+	}
+	maxOffset := max(0, len(body)-room)
+	offset = min(max(offset, 0), maxOffset)
+	window := append([]string(nil), body[offset:min(offset+room, len(body))]...)
+	above := offset > 0
+	below := offset+room < len(body)
+	if len(window) == 1 && above && below {
+		window[0] = subtleStyle.Render("↕ more…")
+		return window
+	}
+	if above {
+		window[0] = subtleStyle.Render("↑ more above…")
+	}
+	if below {
+		window[len(window)-1] = subtleStyle.Render("↓ more below…")
+	}
+	return window
 }
 
 // noticeModalInner is the modal content column's floor, sized for the

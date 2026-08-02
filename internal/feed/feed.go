@@ -46,7 +46,9 @@ var validFeedID = regexp.MustCompile(feedIDPattern)
 // render. ID carries a "feed-" prefix so remote entries can never collide
 // with the notices built into the binary.
 type Message struct {
-	ID     string
+	ID string
+	// Banner remains in the wire contract for released clients; current UI
+	// surfaces use Title as their one canonical label.
 	Banner string
 	Title  string
 	Body   []string
@@ -65,6 +67,7 @@ type rawMessage struct {
 
 type cache struct {
 	CheckedAt time.Time    `json:"checked_at"`
+	ETag      string       `json:"etag,omitempty"`
 	Messages  []rawMessage `json:"messages"`
 }
 
@@ -73,45 +76,75 @@ type cache struct {
 // stale cache when the network fails, so the TUI never blocks or loses
 // messages to a flaky connection.
 func Fetch(ctx context.Context, configDir, version string) ([]Message, error) {
+	return fetchMessages(ctx, configDir, version, false)
+}
+
+// Refresh bypasses the cache age so the messages modal can explicitly check
+// GitHub. A stale feed is still returned with the error, keeping the screen
+// stable while the caller reports that the refresh failed.
+func Refresh(ctx context.Context, configDir, version string) ([]Message, error) {
+	return fetchMessages(ctx, configDir, version, true)
+}
+
+func fetchMessages(ctx context.Context, configDir, version string, force bool) ([]Message, error) {
 	cachePath := filepath.Join(configDir, cacheFile)
 	cached, haveCache := readCache(cachePath)
-	if haveCache && time.Since(cached.CheckedAt) < checkInterval {
+	if !force && haveCache && time.Since(cached.CheckedAt) < checkInterval {
 		return sanitize(cached.Messages, version), nil
 	}
 
-	raw, err := download(ctx)
+	etag := ""
+	if haveCache {
+		etag = cached.ETag
+	}
+	raw, nextETag, notModified, err := download(ctx, etag)
 	if err != nil {
 		if haveCache {
-			return sanitize(cached.Messages, version), nil
+			messages := sanitize(cached.Messages, version)
+			if force {
+				return messages, err
+			}
+			return messages, nil
 		}
 		return nil, err
 	}
-	writeCache(cachePath, cache{CheckedAt: time.Now(), Messages: raw})
+	if notModified {
+		cached.CheckedAt = time.Now()
+		writeCache(cachePath, cached)
+		return sanitize(cached.Messages, version), nil
+	}
+	writeCache(cachePath, cache{CheckedAt: time.Now(), ETag: nextETag, Messages: raw})
 	return sanitize(raw, version), nil
 }
 
-func download(ctx context.Context) ([]rawMessage, error) {
+func download(ctx context.Context, etag string) ([]rawMessage, string, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestBudget)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", false, err
+	}
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, "", false, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotModified && etag != "" {
+		return nil, etag, true, nil
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("feed: server returned %s", resp.Status)
+		return nil, "", false, fmt.Errorf("feed: server returned %s", resp.Status)
 	}
 
 	var raw []rawMessage
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxPayload)).Decode(&raw); err != nil {
-		return nil, err
+		return nil, "", false, err
 	}
-	return raw, nil
+	return raw, resp.Header.Get("ETag"), false, nil
 }
 
 // sanitize turns the untrusted payload into renderable messages: entries
@@ -202,5 +235,25 @@ func writeCache(path string, c cache) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(path, raw, 0o644)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".message-feed-*")
+	if err != nil {
+		return
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return
+	}
+	if _, err := tmp.Write(raw); err != nil {
+		tmp.Close()
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		return
+	}
+	_ = os.Rename(tmpPath, path)
 }

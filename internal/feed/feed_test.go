@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func serve(t *testing.T, body string) *httptest.Server {
@@ -107,6 +108,51 @@ func TestFetchCachesBetweenCalls(t *testing.T) {
 	fetch(t, dir, "v0.14.2")
 	if got := hits.Load(); got != 1 {
 		t.Fatalf("second fetch should come from the cache, got %d hits", got)
+	}
+}
+
+func TestRefreshBypassesCache(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Write([]byte(`[{"id":"one","banner":"x","title":"x"}]`))
+	}))
+	t.Cleanup(server.Close)
+	old := feedURL
+	feedURL = server.URL
+	t.Cleanup(func() { feedURL = old })
+
+	dir := t.TempDir()
+	fetch(t, dir, "v0.14.2")
+	if _, err := Refresh(t.Context(), dir, "v0.14.2"); err != nil {
+		t.Fatal(err)
+	}
+	if got := hits.Load(); got != 2 {
+		t.Fatalf("manual refresh should bypass the cache, got %d hits", got)
+	}
+}
+
+func TestRefreshUsesConditionalRequest(t *testing.T) {
+	dir := t.TempDir()
+	writeCache(filepath.Join(dir, cacheFile), cache{
+		CheckedAt: time.Now().Add(-checkInterval),
+		ETag:      `"feed-1"`,
+		Messages:  []rawMessage{{ID: "one", Banner: "x", Title: "x"}},
+	})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("If-None-Match"); got != `"feed-1"` {
+			t.Errorf("If-None-Match = %q", got)
+		}
+		w.WriteHeader(http.StatusNotModified)
+	}))
+	t.Cleanup(server.Close)
+	old := feedURL
+	feedURL = server.URL
+	t.Cleanup(func() { feedURL = old })
+
+	messages, err := Refresh(t.Context(), dir, "v0.14.2")
+	if err != nil || len(messages) != 1 || messages[0].ID != "feed-one" {
+		t.Fatalf("messages=%+v err=%v", messages, err)
 	}
 }
 

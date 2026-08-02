@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,167 +28,320 @@ func TestParseVersion(t *testing.T) {
 		{"v0.8.x", [3]int{}, false},
 		{"", [3]int{}, false},
 	}
-	for _, c := range cases {
-		got, ok := parseVersion(c.in)
-		if ok != c.valid || got != c.want {
-			t.Errorf("parseVersion(%q) = %v,%v want %v,%v", c.in, got, ok, c.want, c.valid)
+	for _, test := range cases {
+		got, ok := parseVersion(test.in)
+		if ok != test.valid || got != test.want {
+			t.Errorf("parseVersion(%q) = %v,%v want %v,%v", test.in, got, ok, test.want, test.valid)
 		}
 	}
 }
 
-func TestGreater(t *testing.T) {
-	cases := []struct {
-		a, b [3]int
-		want bool
-	}{
-		{[3]int{0, 9, 0}, [3]int{0, 8, 2}, true},
-		{[3]int{1, 0, 0}, [3]int{0, 99, 99}, true},
-		{[3]int{0, 8, 3}, [3]int{0, 8, 2}, true},
-		{[3]int{0, 8, 2}, [3]int{0, 8, 2}, false},
-		{[3]int{0, 8, 1}, [3]int{0, 8, 2}, false},
+func TestVersionComparison(t *testing.T) {
+	if !Newer("v0.9.0", "v0.8.2") {
+		t.Fatal("newer patch should compare greater")
 	}
-	for _, c := range cases {
-		if got := greater(c.a, c.b); got != c.want {
-			t.Errorf("greater(%v,%v) = %v want %v", c.a, c.b, got, c.want)
-		}
+	if Newer("v0.8.2", "v0.8.2") || Newer("dev", "v0.8.2") {
+		t.Fatal("equal and unparseable versions must not compare newer")
+	}
+	if !VersionWithin("v0.8.2", "v0.8.0", "v0.9.0") {
+		t.Fatal("version should fall inside inclusive bounds")
+	}
+	if VersionWithin("v0.8.2", "v0.8.3", "") {
+		t.Fatal("version below minimum should not match")
+	}
+	if VersionWithin("dev", "v0.8.0", "") {
+		t.Fatal("dev builds should not match targeted ranges")
 	}
 }
 
-func TestNewerThan(t *testing.T) {
-	if r := newerThan([3]int{0, 8, 2}, "v0.9.0", "url"); r.Latest != "v0.9.0" {
-		t.Errorf("expected newer release, got %+v", r)
+func TestExtractChangesHumanizesGeneratedNotes(t *testing.T) {
+	body := strings.Join([]string{
+		"Project introduction",
+		"",
+		"## What's Changed",
+		"* fix(groups): make group creation immediate and reliable by @YoanWai in https://github.com/YoanWai/agent-manager/pull/191",
+		"- feat(ui): add a [message browser](https://example.com) with `scrolling`",
+		"- feat(mcp-editor): expose tool capabilities",
+		"",
+		"**Full Changelog**: https://github.com/example",
+		"* fix(hidden): do not include this",
+	}, "\n")
+
+	changes, total := extractChanges(body)
+	want := []string{
+		"Groups: Make group creation immediate and reliable",
+		"UI: Add a message browser with scrolling",
+		"MCP editor: Expose tool capabilities",
 	}
-	if r := newerThan([3]int{0, 8, 2}, "v0.8.2", "url"); r.Latest != "" {
-		t.Errorf("equal version should not badge, got %+v", r)
+	if total != len(want) || fmt.Sprint(changes) != fmt.Sprint(want) {
+		t.Fatalf("extractChanges() = %q total %d, want %q", changes, total, want)
 	}
-	if r := newerThan([3]int{0, 8, 2}, "garbage", "url"); r.Latest != "" {
-		t.Errorf("unparseable latest should not badge, got %+v", r)
+}
+
+func TestExtractChangesIsBoundedAndTerminalSafe(t *testing.T) {
+	lines := []string{"## What's Changed"}
+	for i := 0; i < maxChangesPerRelease+3; i++ {
+		lines = append(lines, fmt.Sprintf("* fix(ui): item %02d \x1b[31mred\x1b[0m", i))
+	}
+	changes, total := extractChanges(strings.Join(lines, "\n"))
+	if len(changes) != maxChangesPerRelease || total != maxChangesPerRelease+3 {
+		t.Fatalf("got %d stored / %d total", len(changes), total)
+	}
+	if strings.Contains(changes[0], "\x1b") {
+		t.Fatalf("terminal control sequence survived: %q", changes[0])
+	}
+}
+
+func TestBetweenReturnsEverySkippedReleaseOldestFirst(t *testing.T) {
+	catalog := []Release{
+		testRelease("v0.5.0", "five"),
+		testRelease("v0.4.0", "four"),
+		testRelease("v0.3.0", "three"),
+		testRelease("v0.2.0", "two"),
+	}
+	rangeResult := Between(catalog, "v0.2.0", "v0.5.0")
+	if !rangeResult.Complete {
+		t.Fatal("catalog containing both edges should be complete")
+	}
+	got := releaseVersions(rangeResult.Releases)
+	want := []string{"v0.3.0", "v0.4.0", "v0.5.0"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("Between() = %v, want %v", got, want)
+	}
+
+	incomplete := Between(catalog[:2], "v0.1.0", "v0.5.0")
+	if incomplete.Complete {
+		t.Fatal("a catalog that does not reach the starting version must say so")
+	}
+}
+
+func TestCheckFetchesStableCatalogAndFindsLatest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `[
+			{"tag_name":"v0.9.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.9.0","body":"## What's Changed\n* fix(ui): newest","draft":false,"prerelease":false},
+			{"tag_name":"v0.11.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.11.0","body":"## What's Changed\n* feat(ui): actual latest","draft":false,"prerelease":false},
+			{"tag_name":"v0.12.0-rc.1","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.12.0-rc.1","body":"","draft":false,"prerelease":true},
+			{"tag_name":"v99.0.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v99.0.0","body":"","draft":true,"prerelease":false},
+			{"tag_name":"garbage","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/garbage","body":"","draft":false,"prerelease":false}
+		]`)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	result, err := Check(context.Background(), t.TempDir(), "v0.8.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Latest != "v0.11.0" || len(result.Releases) != 2 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if got := result.Releases[0].Changes; len(got) != 1 || got[0] != "UI: Actual latest" {
+		t.Fatalf("release changes = %q", got)
 	}
 }
 
 func TestCheckDevBuildSkips(t *testing.T) {
-	if r, err := Check(context.Background(), t.TempDir(), "dev"); err != nil || r.Latest != "" {
-		t.Errorf("dev build should skip: got %+v err %v", r, err)
+	if result, err := Check(context.Background(), t.TempDir(), "dev"); err != nil || len(result.Releases) != 0 {
+		t.Fatalf("dev build should skip: %+v, %v", result, err)
 	}
 }
 
-// A fresh cache short-circuits the network entirely; seeding one lets us
-// exercise Check's decision path without hitting GitHub.
-func TestCheckUsesFreshCache(t *testing.T) {
+func TestCheckUsesFreshCatalogWithoutNetwork(t *testing.T) {
 	dir := t.TempDir()
-	seed := cache{CheckedAt: time.Now(), Latest: "v0.9.0", URL: "https://example/rel"}
-	raw, _ := json.Marshal(seed)
-	if err := os.WriteFile(filepath.Join(dir, cacheFile), raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	r, err := Check(context.Background(), dir, "v0.8.2")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if r.Latest != "v0.9.0" || r.URL != "https://example/rel" {
-		t.Errorf("expected cached newer release, got %+v", r)
+	seedCache(t, dir, cache{
+		CheckedAt: time.Now(),
+		Releases: []Release{
+			testRelease("v0.9.0", "new"),
+			testRelease("v0.8.2", "current"),
+		},
+	})
+
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	result, err := Check(context.Background(), dir, "v0.8.2")
+	if err != nil || result.Latest != "v0.9.0" || calls != 0 {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
 	}
 }
 
-// A cache older than checkInterval must go back to the network, and the
-// answer it gets must replace the stale entry on disk.
-func TestCheckStaleCacheRefetches(t *testing.T) {
+func TestUpToDateCatalogRetriesAfterTenMinutes(t *testing.T) {
 	dir := t.TempDir()
-	seed := cache{CheckedAt: time.Now().Add(-checkInterval - time.Minute), Latest: "v0.9.0", URL: "https://example/old"}
-	raw, _ := json.Marshal(seed)
-	if err := os.WriteFile(filepath.Join(dir, cacheFile), raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	seedCache(t, dir, cache{
+		CheckedAt: time.Now().Add(-checkInterval - time.Minute),
+		Releases:  []Release{testRelease("v0.8.2", "old latest")},
+	})
 
+	calls := 0
+	server := releaseServer(t, &calls, "v0.8.3")
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	result, err := Check(context.Background(), dir, "v0.8.2")
+	if err != nil || calls != 1 || result.Latest != "v0.8.3" {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
+	}
+}
+
+func TestKnownUpdateAlsoRetriesAfterTenMinutes(t *testing.T) {
+	dir := t.TempDir()
+	seedCache(t, dir, cache{
+		CheckedAt: time.Now().Add(-checkInterval - time.Minute),
+		Releases: []Release{
+			testRelease("v0.9.0", "new"),
+			testRelease("v0.8.2", "current"),
+		},
+	})
+
+	calls := 0
+	server := releaseServer(t, &calls, "v0.10.0")
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	result, err := Check(context.Background(), dir, "v0.8.2")
+	if err != nil || calls != 1 || result.Latest != "v0.10.0" {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
+	}
+}
+
+func TestRefreshBypassesFreshCatalog(t *testing.T) {
+	dir := t.TempDir()
+	seedCache(t, dir, cache{CheckedAt: time.Now(), Releases: []Release{testRelease("v0.8.2", "current")}})
+	calls := 0
+	server := releaseServer(t, &calls, "v0.9.0")
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	result, err := Refresh(context.Background(), dir, "v0.8.2")
+	if err != nil || calls != 1 || result.Latest != "v0.9.0" {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
+	}
+}
+
+func TestStaleCatalogUsesConditionalRequest(t *testing.T) {
+	dir := t.TempDir()
+	oldCheckedAt := time.Now().Add(-checkInterval - time.Minute)
+	seedCache(t, dir, cache{
+		CheckedAt: oldCheckedAt,
+		ETag:      `"catalog-1"`,
+		Releases:  []Release{testRelease("v0.8.2", "current")},
+	})
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		fmt.Fprint(w, `{"tag_name":"v0.11.1","html_url":"https://example/new"}`)
+		if got := r.Header.Get("If-None-Match"); got != `"catalog-1"` {
+			t.Errorf("If-None-Match = %q", got)
+		}
+		w.WriteHeader(http.StatusNotModified)
 	}))
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
 
-	r, err := Check(context.Background(), dir, "v0.8.2")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if calls != 1 {
-		t.Errorf("stale cache should hit the network once, got %d calls", calls)
-	}
-	if r.Latest != "v0.11.1" || r.URL != "https://example/new" {
-		t.Errorf("expected the freshly fetched release, got %+v", r)
+	result, err := Check(context.Background(), dir, "v0.8.2")
+	if err != nil || calls != 1 || len(result.Releases) != 1 {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
 	}
 	written, ok := readCache(filepath.Join(dir, cacheFile))
-	if !ok || written.Latest != "v0.11.1" {
-		t.Errorf("stale cache entry was not replaced, got %+v", written)
-	}
-	if time.Since(written.CheckedAt) > time.Minute {
-		t.Errorf("rewritten cache should carry a fresh timestamp, got %v", written.CheckedAt)
+	if !ok || !written.CheckedAt.After(oldCheckedAt) || written.ETag != `"catalog-1"` {
+		t.Fatalf("conditional refresh did not advance cache: %+v", written)
 	}
 }
 
-// A fresh cache must not reach the network at all.
-func TestCheckFreshCacheSkipsNetwork(t *testing.T) {
+func TestLegacyCacheWithoutCatalogRefetches(t *testing.T) {
 	dir := t.TempDir()
-	seed := cache{CheckedAt: time.Now(), Latest: "v0.9.0", URL: "https://example/rel"}
-	raw, _ := json.Marshal(seed)
-	if err := os.WriteFile(filepath.Join(dir, cacheFile), raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
+	seedCache(t, dir, cache{CheckedAt: time.Now(), Latest: "v0.9.0", URL: "https://github.com/old"})
 	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
-	}))
+	server := releaseServer(t, &calls, "v0.10.0")
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
 
-	if _, err := Check(context.Background(), dir, "v0.8.2"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if calls != 0 {
-		t.Errorf("fresh cache should skip the network, got %d calls", calls)
+	result, err := Check(context.Background(), dir, "v0.8.2")
+	if err != nil || calls != 1 || result.Latest != "v0.10.0" {
+		t.Fatalf("result=%+v err=%v calls=%d", result, err, calls)
 	}
 }
 
-// A failed fetch must surface the error and leave the stale cache in place
-// so the next start retries instead of trusting a half-written entry.
-func TestCheckFetchFailureKeepsCache(t *testing.T) {
+func TestFetchFailureReturnsStaleCatalogWithoutOverwritingIt(t *testing.T) {
 	dir := t.TempDir()
-	seed := cache{CheckedAt: time.Now().Add(-checkInterval - time.Minute), Latest: "v0.9.0", URL: "https://example/old"}
-	raw, _ := json.Marshal(seed)
-	if err := os.WriteFile(filepath.Join(dir, cacheFile), raw, 0o644); err != nil {
-		t.Fatal(err)
+	seed := cache{
+		CheckedAt: time.Now().Add(-checkInterval - time.Minute),
+		Releases: []Release{
+			testRelease("v0.9.0", "new"),
+			testRelease("v0.8.2", "current"),
+		},
 	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	seedCache(t, dir, seed)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "rate limited", http.StatusForbidden)
 	}))
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
 
-	if _, err := Check(context.Background(), dir, "v0.8.2"); err == nil {
-		t.Fatal("expected an error when GitHub rejects the request")
+	result, err := Check(context.Background(), dir, "v0.8.2")
+	if err == nil || result.Latest != "v0.9.0" {
+		t.Fatalf("stale result should survive: %+v, %v", result, err)
 	}
 	kept, ok := readCache(filepath.Join(dir, cacheFile))
-	if !ok || kept.Latest != "v0.9.0" {
-		t.Errorf("failed fetch must not overwrite the cache, got %+v", kept)
+	if !ok || !kept.CheckedAt.Equal(seed.CheckedAt) {
+		t.Fatalf("failed fetch overwrote stale cache: %+v", kept)
 	}
+}
+
+func TestCachedNeverTouchesNetworkOrTrustsLegacyShape(t *testing.T) {
+	dir := t.TempDir()
+	seedCache(t, dir, cache{CheckedAt: time.Now(), Latest: "v0.9.0"})
+	if result := Cached(dir, "v0.8.2"); len(result.Releases) != 0 {
+		t.Fatalf("legacy cache should be ignored: %+v", result)
+	}
+	seedCache(t, dir, cache{CheckedAt: time.Now(), Releases: []Release{testRelease("v0.9.0", "new")}})
+	if result := Cached(dir, "v0.8.2"); result.Latest != "v0.9.0" {
+		t.Fatalf("cached catalog not returned: %+v", result)
+	}
+}
+
+func testRelease(version string, changes ...string) Release {
+	return Release{
+		Version:      version,
+		URL:          "https://github.com/YoanWai/agent-manager/releases/tag/" + version,
+		Changes:      changes,
+		TotalChanges: len(changes),
+	}
+}
+
+func releaseVersions(releases []Release) []string {
+	versions := make([]string, len(releases))
+	for i, release := range releases {
+		versions[i] = release.Version
+	}
+	return versions
+}
+
+func seedCache(t *testing.T, dir string, value cache) {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, cacheFile), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func releaseServer(t *testing.T, calls *int, version string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		*calls++
+		fmt.Fprintf(w, `[{"tag_name":%q,"html_url":%q,"body":"## What's Changed\n* fix(ui): refreshed"}]`,
+			version,
+			"https://github.com/YoanWai/agent-manager/releases/tag/"+version,
+		)
+	}))
 }
 
 func swapReleasesURL(url string) func() {
 	previous := releasesURL
 	releasesURL = url
 	return func() { releasesURL = previous }
-}
-
-func TestCheckFreshCacheNoUpdate(t *testing.T) {
-	dir := t.TempDir()
-	seed := cache{CheckedAt: time.Now(), Latest: "v0.8.2", URL: "u"}
-	raw, _ := json.Marshal(seed)
-	os.WriteFile(filepath.Join(dir, cacheFile), raw, 0o644)
-	r, err := Check(context.Background(), dir, "v0.8.2")
-	if err != nil || r.Latest != "" {
-		t.Errorf("same version should not badge: got %+v err %v", r, err)
-	}
 }
