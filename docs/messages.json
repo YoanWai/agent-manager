@@ -1,5 +1,20 @@
 [
   {
+    "id": "form-keyboard-and-prompt",
+    "banner": "fixed: typing in the new-session card",
+    "title": "Long prompts, scrolling names, and arrows that stay put",
+    "body": [
+      "The prompt field in the new-session card wraps across rows, and long name",
+      "and dir values scroll instead of clipping. Arrows and tab move between",
+      "fields only; the group changes with left and right, so scrolling can no",
+      "longer switch the group or overwrite the folder you were editing.",
+      "This modal keeps its frame and hints on a short terminal too, and the",
+      "worktree toggle now says so when the target directory is not a git repo.",
+      "Thanks to @fruch for reporting the keyboard and prompt trouble."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases"
+  },
+  {
     "id": "group-worktree-defaults",
     "banner": "new: worktree defaults per group",
     "title": "Groups now carry their own worktree default",
