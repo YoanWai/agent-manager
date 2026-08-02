@@ -245,6 +245,7 @@ func (m *Model) openForm() {
 	}
 	m.errBar.text = ""
 	m.syncFormFieldWidths()
+	m.forgetWorktreeCapability()
 	m.rebuildGroupOptions(m.contextGroup())
 	m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	m.form.worktree = m.groupWorktree(m.selectedGroupPath())
@@ -340,8 +341,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.form.focus == fieldWorktree {
-			m.form.worktree = !m.form.worktree
-			m.form.worktreeAuto = false
+			m.toggleFormWorktree()
 			return m, nil
 		}
 	case "right":
@@ -350,8 +350,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.form.focus == fieldWorktree {
-			m.form.worktree = !m.form.worktree
-			m.form.worktreeAuto = false
+			m.toggleFormWorktree()
 			return m, nil
 		}
 	case "enter":
@@ -423,6 +422,33 @@ func (m *Model) cycleTool(delta int) {
 	m.form.toolIndex = (m.form.toolIndex + delta + len(m.form.toolNames)) % len(m.form.toolNames)
 }
 
+// formSpawnDir is the directory the form would launch in, resolved the
+// same way submit resolves it.
+func (m *Model) formSpawnDir() string {
+	cwd, _ := os.Getwd()
+	dir, _ := resolveExistingDir(m.form.dir.Value(), cwd)
+	return dir
+}
+
+// formWorktreeOn is the worktree state the form shows and spawns with: the
+// toggle, unless the chosen directory cannot host a worktree.
+func (m *Model) formWorktreeOn() bool {
+	return m.form.worktree && m.worktreeCapable(m.formSpawnDir())
+}
+
+// toggleFormWorktree flips the toggle, or explains why the chosen
+// directory rules a worktree out.
+func (m *Model) toggleFormWorktree() {
+	dir := m.formSpawnDir()
+	if !m.worktreeCapable(dir) {
+		m.errBar.text = "worktree sessions need a git repository: " + dir + " is not one"
+		return
+	}
+	m.errBar.text = ""
+	m.form.worktree = !m.form.worktree
+	m.form.worktreeAuto = false
+}
+
 func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	if len(m.form.toolNames) == 0 {
 		m.errBar.text = "no tools configured"
@@ -449,7 +475,7 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, m.form.worktree); err != nil {
+	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, m.formWorktreeOn()); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}

@@ -68,6 +68,11 @@ type Model struct {
 	groups         []string
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
+	// worktreeRepos memoizes which spawn directories sit inside a git
+	// repo, so gating the worktree toggle does not shell out to git on
+	// every frame. Entries expire, so a directory git-initialised while
+	// the bar is open stops reading as unavailable.
+	worktreeRepos  map[string]repoAnswer
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	proc           sysstat.ProcStat
@@ -269,6 +274,12 @@ type quickState struct {
 	// worktreeTouched marks an explicit toggle this run; until then the
 	// hint and spawn follow the target group's default.
 	worktreeTouched bool
+}
+
+// repoAnswer is one directory's git-repo verdict and when it was taken.
+type repoAnswer struct {
+	capable bool
+	at      time.Time
 }
 
 // quickAttachment is one pasted image: the id its token carries, and the

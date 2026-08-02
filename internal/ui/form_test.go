@@ -313,6 +313,84 @@ func TestFormWorktreeToggleSeedsFromSetting(t *testing.T) {
 	}
 }
 
+func TestFormWorktreeGatedInNonRepoDir(t *testing.T) {
+	m := buildModel(t)
+	plain := t.TempDir()
+	if err := m.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.openForm()
+	m.form.dir.SetValue(plain)
+	if m.formWorktreeOn() {
+		t.Fatal("a non-repo dir cannot host a worktree, even with the setting on")
+	}
+	if view := m.viewForm(); !strings.Contains(view, worktreeUnavailable) {
+		t.Fatalf("form should mark worktree unavailable, got %q", view)
+	}
+	m.form.focus = fieldWorktree
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if m.formWorktreeOn() {
+		t.Fatal("toggling must not turn worktree on for a non-repo dir")
+	}
+	if !strings.Contains(m.errBar.text, "need a git repository") {
+		t.Fatalf("refused toggle should say why, got %q", m.errBar.text)
+	}
+	m.submitForm()
+	sessions, err := m.store.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("gated form should still launch a plain session, got %d", len(sessions))
+	}
+	if sessions[0].WorktreeRepo != "" {
+		t.Fatalf("gated spawn must not record a worktree: %q", sessions[0].WorktreeRepo)
+	}
+}
+
+func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
+	m := buildModel(t)
+	dir := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if m.worktreeCapable(dir) {
+		t.Fatal("a plain directory cannot host a worktree")
+	}
+	initGitRepo(t, dir)
+	if m.worktreeCapable(dir) {
+		t.Fatal("the memo should still answer from the look taken a moment ago")
+	}
+	answer := m.worktreeRepos[dir]
+	answer.at = answer.at.Add(-worktreeLookupTTL)
+	m.worktreeRepos[dir] = answer
+	if !m.worktreeCapable(dir) {
+		t.Fatal("an expired entry should be looked up again and see the new repo")
+	}
+}
+
+func TestFormWorktreeStaysOnInRepoDir(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	if err := m.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	m.openForm()
+	m.form.dir.SetValue(repo)
+	if !m.formWorktreeOn() {
+		t.Fatal("a repo dir should keep the worktree default on")
+	}
+	m.form.focus = fieldWorktree
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if m.formWorktreeOn() {
+		t.Fatal("toggle should turn worktree off in a repo dir")
+	}
+}
+
 func TestSpawnWorktreeSessionCreatesWorktree(t *testing.T) {
 	m := buildModel(t)
 	repo := filepath.Join(t.TempDir(), "repo")

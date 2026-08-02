@@ -389,7 +389,10 @@ func (m *Model) viewFooter() string {
 	}
 	if m.quick.active {
 		worktreeHint := "off"
-		if m.quickWorktreeOn() {
+		switch {
+		case !m.worktreeCapable(m.quickTargetDir()):
+			worktreeHint = worktreeUnavailable
+		case m.quickWorktreeOn():
 			worktreeHint = "on"
 		}
 		pairs = [][2]string{
