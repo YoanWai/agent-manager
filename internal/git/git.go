@@ -730,6 +730,9 @@ func (d *Driver) MoveWorktree(root, path, branch, newName string) (string, strin
 		return path, branch, nil
 	}
 	if _, err := os.Stat(path); err != nil {
+		if !os.IsNotExist(err) {
+			return "", "", err
+		}
 		return path, branch, nil
 	}
 	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {

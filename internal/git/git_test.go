@@ -770,6 +770,30 @@ func TestMoveWorktreeLeavesUnrecognizedWorktreeAlone(t *testing.T) {
 	}
 }
 
+func TestMoveWorktreeUnreadableDirFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads through a stripped directory")
+	}
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "unreadable")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	// A worktree the manager cannot even look at is not a worktree that
+	// has been removed, so it must not pass for one.
+	parent := filepath.Dir(path)
+	if err := os.Chmod(parent, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(parent, 0o755) })
+
+	if _, _, err := driver.MoveWorktree(dir, path, branch, "renamed"); err == nil {
+		t.Fatal("a directory that cannot be read should fail the move, not pass as removed")
+	}
+}
+
 func TestMoveWorktreeEmptyNameFails(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "a.txt", "x")

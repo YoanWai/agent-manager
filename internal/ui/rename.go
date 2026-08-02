@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/git"
@@ -26,6 +27,11 @@ func renameSessionWorktree(gitDrv *git.Driver, st *store.Store, sess *store.Sess
 		return nil
 	}
 	if err := st.MoveSessionWorktree(sess.ID, path, branch); err != nil {
+		// The directory already moved, so put it back rather than leave the
+		// store pointing at one that is no longer there. The old directory
+		// is named for the session it held, which is the name that rebuilds
+		// the pair it was moved from.
+		_, _, _ = gitDrv.MoveWorktree(sess.WorktreeRepo, path, branch, filepath.Base(sess.Cwd))
 		return err
 	}
 	sess.Cwd, sess.WorktreeBranch = path, branch

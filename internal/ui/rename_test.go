@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -150,6 +151,38 @@ func TestRenameSessionRefusesAWorktreeNameAlreadyTaken(t *testing.T) {
 	}
 	if _, err := os.Stat(spawned.Cwd); err != nil {
 		t.Fatalf("worktree should stay put: %v", err)
+	}
+}
+
+func TestRenameSessionWorktreePutsItBackWhenTheStoreRefuses(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
+
+	// A store that cannot take the new location must not leave the session
+	// recorded in a directory that has already moved away.
+	m.store.Close()
+
+	sess := spawned
+	if err := renameSessionWorktree(m.gitDrv, m.store, &sess, "renamed"); err == nil {
+		t.Fatal("a store that cannot record the move should report it")
+	}
+	if sess.Cwd != spawned.Cwd || sess.WorktreeBranch != spawned.WorktreeBranch {
+		t.Fatalf("session moved anyway: %+v", sess)
+	}
+	if _, err := os.Stat(spawned.Cwd); err != nil {
+		t.Fatalf("worktree was not put back: %v", err)
+	}
+	moved := filepath.Join(filepath.Dir(spawned.Cwd), "renamed")
+	if _, err := os.Stat(moved); !os.IsNotExist(err) {
+		t.Fatalf("worktree left behind at the new path: %v", err)
+	}
+	branches, err := exec.Command("git", "-C", repo, "branch", "--format=%(refname:short)").Output()
+	if err != nil {
+		t.Fatalf("branch: %v", err)
+	}
+	if !strings.Contains(string(branches), spawned.WorktreeBranch) {
+		t.Fatalf("branch was not put back, have: %s", branches)
 	}
 }
 
