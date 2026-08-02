@@ -74,6 +74,8 @@ func maxLineWidth(lines []string) int {
 }
 
 func (m *Model) viewForm() string {
+	m.form.prompt.SetHeight(textareaRows(m.form.prompt, m.formValueWidth()-2, formPromptMaxRows))
+
 	var b strings.Builder
 	b.WriteString(formField("name", m.form.name.View(), m.form.focus == fieldName))
 
@@ -315,5 +317,11 @@ func formField(label, value string, focused bool) string {
 		marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 		style = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	}
-	return fmt.Sprintf("%s%s %s\n", marker, style.Width(9).Render(label), value)
+	lines := strings.Split(value, "\n")
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("%s%s %s\n", marker, style.Width(9).Render(label), lines[0]))
+	for _, line := range lines[1:] {
+		b.WriteString(strings.Repeat(" ", formLabelColumn) + line + "\n")
+	}
+	return b.String()
 }

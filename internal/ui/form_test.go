@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestNewSessionPreselectsContextGroup(t *testing.T) {
@@ -106,6 +107,38 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 	}
 	if got := withPrompt(tool, tool.Command, ""); got != "cat" {
 		t.Fatalf("empty prompt should leave the command untouched, got %q", got)
+	}
+}
+
+func TestFormLongDirKeepsCursorEndVisible(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.formFocus(2) // name -> tool -> dir
+	m.form.dir.SetValue("/very/long/" + strings.Repeat("a", 80) + "/tail-end")
+	m.form.dir.CursorEnd()
+	view := ansi.Strip(m.viewForm())
+	if !strings.Contains(view, "tail-end") {
+		t.Fatal("dir field should scroll so the end of a long value stays visible")
+	}
+}
+
+func TestFormLongPromptWrapsAcrossRows(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.formFocus(-2) // name -> group -> prompt
+	m.form.prompt.SetValue(strings.Repeat("word ", 25) + "finale")
+	view := ansi.Strip(m.viewForm())
+	if !strings.Contains(view, "finale") {
+		t.Fatal("long prompt should wrap onto more rows instead of being clipped")
+	}
+}
+
+func TestTextareaRowsCountsExactMultipleWrap(t *testing.T) {
+	in := promptField()
+	in.SetWidth(12) // content width 10
+	in.SetValue("1234567890\nx")
+	if rows := textareaRows(in, 10, 5); rows != 3 {
+		t.Fatalf("a line filling its row exactly adds a wrap row: want 3, got %d", rows)
 	}
 }
 

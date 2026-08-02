@@ -13,8 +13,10 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 )
 
@@ -68,7 +70,7 @@ type groupOption struct {
 type form struct {
 	name         textinput.Model
 	dir          textinput.Model
-	prompt       textinput.Model
+	prompt       textarea.Model
 	dirAuto      bool
 	toolNames    []string
 	toolIndex    int
@@ -115,6 +117,50 @@ func textField(placeholder string, limit int) textinput.Model {
 	in.Placeholder = placeholder
 	in.CharLimit = limit
 	return in
+}
+
+const (
+	// formLabelColumn is the columns before a field value: marker (2),
+	// label (9), separator space (1).
+	formLabelColumn   = 12
+	formPromptMaxRows = 4
+)
+
+func promptField() textarea.Model {
+	in := textarea.New()
+	in.CharLimit = 2000
+	in.Placeholder = "first task (optional)"
+	in.ShowLineNumbers = false
+	in.SetPromptFunc(2, func(lineIndex int) string {
+		if lineIndex == 0 {
+			return "> "
+		}
+		return "  "
+	})
+	in.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	in.SetHeight(1)
+	return in
+}
+
+// formValueWidth is the columns a field value can occupy inside the card.
+func (m *Model) formValueWidth() int {
+	return m.cardWidth() - 2*cardPaddingX - formLabelColumn
+}
+
+// syncFormFieldWidths fits the field widgets to the card so long values
+// scroll (inputs) or wrap (prompt) instead of clipping at the card edge.
+// Inputs reserve 3 columns: their "> " prompt plus the cursor cell that
+// renders past the last character.
+func (m *Model) syncFormFieldWidths() {
+	inner := m.formValueWidth()
+	m.form.name.Width = inner - 3
+	m.form.dir.Width = inner - 3
+	// textinput recomputes its scroll window only inside Update/SetValue/
+	// SetCursor, so a width change alone would render a stale window until
+	// the next keystroke.
+	m.form.name.SetCursor(m.form.name.Position())
+	m.form.dir.SetCursor(m.form.dir.Position())
+	m.form.prompt.SetWidth(inner)
 }
 
 // contextGroup is the group the cursor currently sits in: a highlighted
@@ -187,7 +233,7 @@ func (m *Model) openForm() {
 	name.Focus()
 
 	dir := textField("", 400)
-	prompt := textField("first task (optional)", 2000)
+	prompt := promptField()
 
 	m.form = form{
 		name:      name,
@@ -198,6 +244,7 @@ func (m *Model) openForm() {
 		focus:     fieldName,
 	}
 	m.errBar.text = ""
+	m.syncFormFieldWidths()
 	m.rebuildGroupOptions(m.contextGroup())
 	m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	m.form.worktree = m.groupWorktree(m.selectedGroupPath())
@@ -324,6 +371,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form.dirAuto = false
 		m.pathSugg.recompute(m.form.dir.Value())
 	case fieldPrompt:
+		// Update repositions the viewport against the height set at the
+		// last render; full cap height here keeps the first row from
+		// scrolling away when a keystroke adds a wrapped row.
+		m.form.prompt.SetHeight(formPromptMaxRows)
 		m.form.prompt, cmd = m.form.prompt.Update(msg)
 	}
 	return m, cmd
