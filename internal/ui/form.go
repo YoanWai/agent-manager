@@ -310,11 +310,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.formFocus(-1)
 		return m, nil
 	case "up":
-		if m.form.focus == fieldGroup {
-			if !m.moveGroupCursor(-1) {
-				m.formFocus(-1)
-			}
-		} else if dirSuggesting {
+		if dirSuggesting {
 			if !m.pathSugg.move(-1) {
 				m.formFocus(-1)
 			}
@@ -323,11 +319,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down":
-		if m.form.focus == fieldGroup {
-			if !m.moveGroupCursor(1) {
-				m.formFocus(1)
-			}
-		} else if dirSuggesting {
+		if dirSuggesting {
 			if !m.pathSugg.move(1) {
 				m.formFocus(1)
 			}
@@ -344,6 +336,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.toggleFormWorktree()
 			return m, nil
 		}
+		if m.form.focus == fieldGroup {
+			m.moveGroupCursor(-1)
+			return m, nil
+		}
 	case "right":
 		if m.form.focus == fieldTool {
 			m.cycleTool(1)
@@ -351,6 +347,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.form.focus == fieldWorktree {
 			m.toggleFormWorktree()
+			return m, nil
+		}
+		if m.form.focus == fieldGroup {
+			m.moveGroupCursor(1)
 			return m, nil
 		}
 	case "enter":
@@ -379,14 +379,14 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// moveGroupCursor moves within the expanded group picker without wrapping.
-// A false result lets the form move focus to the adjacent field.
-func (m *Model) moveGroupCursor(delta int) bool {
-	next := m.form.groupIndex + delta
-	if next < 0 || next >= len(m.form.groups) {
-		return false
+// moveGroupCursor moves within the expanded group picker, wrapping at the
+// ends; a delta of 0 re-resolves the dependent defaults in place.
+func (m *Model) moveGroupCursor(delta int) {
+	count := len(m.form.groups)
+	if count == 0 {
+		return
 	}
-	m.form.groupIndex = next
+	m.form.groupIndex = (m.form.groupIndex + delta + count) % count
 	if m.mode == modeForm && m.form.dirAuto {
 		m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	}
@@ -396,7 +396,6 @@ func (m *Model) moveGroupCursor(delta int) bool {
 	if m.mode == modeGroupForm && m.groupForm.pathAuto {
 		m.groupForm.path.SetValue(m.ancestorGroupDir(m.selectedGroupPath()))
 	}
-	return true
 }
 
 func (m *Model) formFocus(delta int) {
@@ -689,11 +688,7 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.groupFormFocus(-1)
 		return m, nil
 	case "up":
-		if m.groupForm.focus == gfParent {
-			if !m.moveGroupCursor(-1) {
-				m.groupFormFocus(-1)
-			}
-		} else if pathSuggesting {
+		if pathSuggesting {
 			if !m.pathSugg.move(-1) {
 				m.groupFormFocus(-1)
 			}
@@ -702,11 +697,7 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down":
-		if m.groupForm.focus == gfParent {
-			if !m.moveGroupCursor(1) {
-				m.groupFormFocus(1)
-			}
-		} else if pathSuggesting {
+		if pathSuggesting {
 			if !m.pathSugg.move(1) {
 				m.groupFormFocus(1)
 			}
@@ -720,9 +711,17 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + count - 1) % count
 			return m, nil
 		}
+		if m.groupForm.focus == gfParent {
+			m.moveGroupCursor(-1)
+			return m, nil
+		}
 	case "right":
 		if m.groupForm.focus == gfWorktree {
 			m.groupForm.worktreeIndex = (m.groupForm.worktreeIndex + 1) % len(groupWorktreeOptions)
+			return m, nil
+		}
+		if m.groupForm.focus == gfParent {
+			m.moveGroupCursor(1)
 			return m, nil
 		}
 	case "enter":
