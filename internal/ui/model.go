@@ -796,6 +796,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resizeSessions()
 		if m.mode == modeForm {
 			m.syncFormFieldWidths()
+		} else if m.mode == modeGroupForm {
+			m.syncGroupFormFieldWidths()
 		}
 		return m, nil
 

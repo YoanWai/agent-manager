@@ -765,3 +765,21 @@ func TestGroupWorktreeRoundtrip(t *testing.T) {
 		t.Fatalf("worktree choice should clear back to inherit: %+v", groups[0])
 	}
 }
+
+func TestAddGroupStoresSettingsWithoutReplacingExistingGroup(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.AddGroup("backend", "/first", "off"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := st.AddGroup("backend", "/second", "on"); !errors.Is(err, ErrGroupExists) {
+		t.Fatalf("duplicate add error = %v, want ErrGroupExists", err)
+	}
+
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Path != "/first" || groups[0].Worktree != "off" {
+		t.Fatalf("duplicate add changed group: %+v", groups)
+	}
+}

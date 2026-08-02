@@ -15,6 +15,8 @@ import (
 // listed a moment earlier can tell that race apart from a real failure.
 var ErrSessionGone = errors.New("session no longer exists")
 
+var ErrGroupExists = errors.New("group already exists")
+
 type Session struct {
 	ID           string
 	Name         string
@@ -267,6 +269,27 @@ func (s *Store) CreateGroup(name, path string) error {
 		 VALUES (?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
 		 ON CONFLICT(name) DO UPDATE SET path = excluded.path`, name, path)
 	return err
+}
+
+func (s *Store) AddGroup(name, path, worktree string) error {
+	if name == "" {
+		return errors.New("group name cannot be empty")
+	}
+	res, err := s.db.Exec(
+		`INSERT INTO groups (name, path, worktree, sort_order)
+		 VALUES (?, ?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+		 ON CONFLICT(name) DO NOTHING`, name, path, worktree)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("group %q: %w", name, ErrGroupExists)
+	}
+	return nil
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {

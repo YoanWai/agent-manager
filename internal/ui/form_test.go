@@ -73,6 +73,127 @@ func TestGroupFormCreatesUnderParent(t *testing.T) {
 	}
 }
 
+func TestGroupFormShowsNewEmptyGroupWithWorktreeOff(t *testing.T) {
+	m := buildModel(t)
+	m.hideEmptyGroups = true
+	m.search = "does-not-match"
+	m.showArchived = true
+	m.openGroupForm()
+	m.groupForm.name.SetValue("manual")
+	m.groupForm.path.SetValue(t.TempDir())
+	m.groupForm.worktreeIndex = groupWorktreeIndex("off")
+
+	_, cmd := m.submitGroupForm()
+	if m.hideEmptyGroups {
+		t.Fatal("creating a group should reveal it when empty groups were hidden")
+	}
+	if m.search != "" || m.showArchived {
+		t.Fatalf("creation left list filters active: search=%q archived=%v", m.search, m.showArchived)
+	}
+	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"manual"}) {
+		t.Fatalf("group rows before refresh = %v, want [manual]", got)
+	}
+	if row, ok := m.selectedRow(); !ok || !row.isGroup || row.group != "manual" {
+		t.Fatalf("new group is not selected: %+v", row)
+	}
+
+	m.applyCmd(t, cmd)
+	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"manual"}) {
+		t.Fatalf("group rows after refresh = %v, want [manual]", got)
+	}
+	if got := m.groupWorktrees["manual"]; got != "off" {
+		t.Fatalf("local worktree choice = %q, want off", got)
+	}
+}
+
+func TestGroupFormExpandsParentToShowNewChild(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("projects", t.TempDir()); err != nil {
+		t.Fatalf("seed group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "projects")
+	m.collapsed["projects"] = true
+	m.openGroupForm()
+	m.groupForm.name.SetValue("api")
+
+	_, _ = m.submitGroupForm()
+	if m.collapsed["projects"] {
+		t.Fatal("parent remained collapsed after creating a child")
+	}
+	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"projects", "projects/api"}) {
+		t.Fatalf("group rows = %v, want parent and child", got)
+	}
+	if row, ok := m.selectedRow(); !ok || row.group != "projects/api" {
+		t.Fatalf("new child is not selected: %+v", row)
+	}
+}
+
+func TestGroupFormRejectsDuplicateWithoutChangingIt(t *testing.T) {
+	m := buildModel(t)
+	first := t.TempDir()
+	second := t.TempDir()
+	if err := m.store.AddGroup("backend", first, "on"); err != nil {
+		t.Fatalf("seed group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.openGroupForm()
+	pickGroup(t, m, "")
+	m.groupForm.name.SetValue("backend")
+	m.groupForm.path.SetValue(second)
+	m.groupForm.worktreeIndex = groupWorktreeIndex("off")
+	_, cmd := m.submitGroupForm()
+	if cmd != nil || m.mode != modeGroupForm || !strings.Contains(m.errBar.text, "already exists") {
+		t.Fatalf("duplicate submission succeeded: mode=%v err=%q", m.mode, m.errBar.text)
+	}
+
+	groups, err := m.store.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Path != first || groups[0].Worktree != "on" {
+		t.Fatalf("duplicate submission changed group: %+v", groups)
+	}
+}
+
+func TestGroupParentPickerExcludesArchivedGroups(t *testing.T) {
+	m := buildModel(t)
+	for _, group := range []string{"active", "archived", "archived/child"} {
+		if err := m.store.CreateGroup(group, t.TempDir()); err != nil {
+			t.Fatalf("create %s: %v", group, err)
+		}
+	}
+	if err := m.store.SetGroupArchived("archived", true); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.openGroupForm()
+	var options []string
+	for _, option := range m.form.groups {
+		options = append(options, option.path)
+	}
+	if !reflect.DeepEqual(options, []string{"", "active"}) {
+		t.Fatalf("parent options = %v, want root and active", options)
+	}
+}
+
+func TestGroupFormFieldsTrackCardWidth(t *testing.T) {
+	m := buildModel(t)
+	m.openGroupForm()
+	want := m.formValueWidth() - 3
+	if m.groupForm.name.Width != want || m.groupForm.path.Width != want {
+		t.Fatalf("initial widths = name %d path %d, want %d", m.groupForm.name.Width, m.groupForm.path.Width, want)
+	}
+
+	m.Update(tea.WindowSizeMsg{Width: 72, Height: m.height})
+	want = m.formValueWidth() - 3
+	if m.groupForm.name.Width != want || m.groupForm.path.Width != want {
+		t.Fatalf("resized widths = name %d path %d, want %d", m.groupForm.name.Width, m.groupForm.path.Width, want)
+	}
+}
+
 func TestGroupDefaultPathFillsSessionDir(t *testing.T) {
 	m := buildModel(t)
 	groupDir := t.TempDir()

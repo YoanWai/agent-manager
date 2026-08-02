@@ -163,6 +163,14 @@ func (m *Model) syncFormFieldWidths() {
 	m.form.prompt.SetWidth(inner)
 }
 
+func (m *Model) syncGroupFormFieldWidths() {
+	width := m.formValueWidth() - 3
+	m.groupForm.name.Width = width
+	m.groupForm.path.Width = width
+	m.groupForm.name.SetCursor(m.groupForm.name.Position())
+	m.groupForm.path.SetCursor(m.groupForm.path.Position())
+}
+
 // contextGroup is the group the cursor currently sits in: a highlighted
 // group row itself, or the group holding a highlighted session.
 func (m *Model) contextGroup() string {
@@ -265,6 +273,11 @@ func (m *Model) selectedGroupPath() string {
 // Index 0 is always the root; selectPath moves the highlight when given.
 func (m *Model) rebuildGroupOptions(selectPath string) {
 	paths := groupClosure(m.groups, m.sessions)
+	for path := range paths {
+		if m.groupEffectivelyArchived(path) {
+			delete(paths, path)
+		}
+	}
 	children := childIndex(paths, m.groups)
 
 	options := []groupOption{{path: "", depth: 0}}
@@ -662,6 +675,7 @@ func (m *Model) openGroupForm() {
 	}
 	m.rebuildGroupOptions(m.contextGroup())
 	m.groupForm.path.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
+	m.syncGroupFormFieldWidths()
 	m.pathSugg.reset()
 	m.mode = modeGroupForm
 	m.errBar.text = ""
@@ -774,14 +788,40 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 		m.errBar.text = "default path does not exist: " + path
 		return m, nil
 	}
-	if err := m.store.CreateGroup(full, path); err != nil {
+	worktree := groupWorktreeValue(m.groupForm.worktreeIndex)
+	if err := m.store.AddGroup(full, path, worktree); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
-	if err := m.store.SetGroupWorktree(full, groupWorktreeValue(m.groupForm.worktreeIndex)); err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
+	m.materializeGroupsLocal([]string{full})
+	if m.groupPaths == nil {
+		m.groupPaths = map[string]string{}
 	}
+	m.groupPaths[full] = path
+	if m.groupWorktrees == nil {
+		m.groupWorktrees = map[string]string{}
+	}
+	if worktree == "" {
+		delete(m.groupWorktrees, full)
+	} else {
+		m.groupWorktrees[full] = worktree
+	}
+	for group := parent; group != ""; group = parentGroup(group) {
+		delete(m.collapsed, group)
+	}
+	m.persistCollapsed()
+	m.search = ""
+	m.searching = false
+	m.showArchived = false
+	m.hideEmptyGroups = false
+	m.errBar.text = ""
 	m.mode = modeList
+	m.rebuildRows()
+	for i, row := range m.rows {
+		if row.isGroup && row.group == full {
+			m.cursor = i
+			break
+		}
+	}
 	return m, m.refreshCmd()
 }
