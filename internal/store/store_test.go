@@ -705,6 +705,33 @@ func TestSessionWorktreeColumnsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMoveSessionWorktree(t *testing.T) {
+	s := newTestStore(t)
+	sess := Session{
+		ID: "wt2", Name: "claude-7a72", Tool: "claude", Cwd: "/tmp/repo-worktrees/claude-7a72",
+		WorktreeRepo: "/tmp/repo", WorktreeBranch: "am/claude-7a72",
+	}
+	if err := s.CreateSession(sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := s.MoveSessionWorktree("wt2", "/tmp/repo-worktrees/renamed", "am/renamed"); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	got, err := s.Get("wt2")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Cwd != "/tmp/repo-worktrees/renamed" || got.WorktreeBranch != "am/renamed" {
+		t.Fatalf("move did not land: %+v", got)
+	}
+	if got.WorktreeRepo != "/tmp/repo" {
+		t.Fatalf("move disturbed the repo root: %q", got.WorktreeRepo)
+	}
+	if err := s.MoveSessionWorktree("ghost", "/tmp/x", "am/x"); err == nil {
+		t.Fatal("moving an unknown session should error")
+	}
+}
+
 func TestGroupWorktreeRoundtrip(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.CreateGroup("backend", ""); err != nil {

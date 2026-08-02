@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -204,6 +205,62 @@ func createSession(t *testing.T, m *Model, name, dir, group string) {
 		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
+}
+
+// seedRepo builds a committed repo the worktree tests can branch from.
+// It sits one level inside the temp directory so the sibling
+// "<name>-worktrees" tree is cleaned up with it.
+func seedRepo(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "seed.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-b", "main"},
+		{"config", "user.email", "test@test"},
+		{"config", "user.name", "test"},
+		{"add", "."},
+		{"commit", "-m", "seed"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	return dir
+}
+
+func createWorktreeSession(t *testing.T, m *Model, name, repo string) store.Session {
+	t.Helper()
+	m.openForm()
+	m.form.name.SetValue(name)
+	m.form.dir.SetValue(repo)
+	m.form.toolIndex = 0
+	m.form.worktree = true
+	pickGroup(t, m, "")
+	_, cmd := m.submitForm()
+	if m.mode != modeList {
+		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	for _, sess := range m.sessions {
+		if sess.Name == name {
+			if sess.WorktreeBranch == "" {
+				t.Fatalf("session %q did not spawn in a worktree: %+v", name, sess)
+			}
+			return sess
+		}
+	}
+	t.Fatalf("session %q missing after spawn", name)
+	return store.Session{}
 }
 
 func windowWidth(t *testing.T, id string) int {

@@ -687,16 +687,21 @@ func (d *Driver) worktreeBase(root string) string {
 	return ""
 }
 
+// worktreePlacement is where a session of this name keeps its worktree:
+// a directory beside the repo and the am/ branch checked out in it.
+func worktreePlacement(root, name string) (string, string) {
+	return filepath.Join(filepath.Dir(root), filepath.Base(root)+"-worktrees", name), "am/" + name
+}
+
 func (d *Driver) AddWorktree(root, sessionName string) (string, string, error) {
 	name := sanitizeWorktreeName(sessionName)
 	if name == "" {
 		return "", "", fmt.Errorf("session name %q leaves nothing usable for a worktree directory", sessionName)
 	}
-	path := filepath.Join(filepath.Dir(root), filepath.Base(root)+"-worktrees", name)
+	path, branch := worktreePlacement(root, name)
 	if _, err := os.Stat(path); err == nil {
 		return "", "", fmt.Errorf("worktree path already exists: %s", path)
 	}
-	branch := "am/" + name
 	base := d.worktreeBase(root)
 	if base == "" {
 		return "", "", fmt.Errorf("no base ref for a worktree in %s: repository has no commits", root)
@@ -705,6 +710,45 @@ func (d *Driver) AddWorktree(root, sessionName string) (string, string, error) {
 		return "", "", err
 	}
 	return path, branch, nil
+}
+
+// MoveWorktree renames a session's worktree and its branch to the ones a
+// session of newName would have been given at spawn, and reports where
+// they ended up. The recorded pair is returned untouched when there is
+// nothing to do: a name that lands on the same directory, or a worktree
+// git no longer has under the recorded path and branch, which is what a
+// worktree renamed or deleted by hand looks like. A destination already
+// taken is an error, so a session's name, directory and branch never
+// drift apart.
+func (d *Driver) MoveWorktree(root, path, branch, newName string) (string, string, error) {
+	name := sanitizeWorktreeName(newName)
+	if name == "" {
+		return "", "", fmt.Errorf("session name %q leaves nothing usable for a worktree directory", newName)
+	}
+	newPath, newBranch := worktreePlacement(root, name)
+	if newPath == path && newBranch == branch {
+		return path, branch, nil
+	}
+	if _, err := os.Stat(path); err != nil {
+		return path, branch, nil
+	}
+	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
+		return path, branch, nil
+	}
+	if _, err := os.Stat(newPath); err == nil {
+		return "", "", fmt.Errorf("worktree path already exists: %s", newPath)
+	}
+	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+newBranch); err == nil {
+		return "", "", fmt.Errorf("branch already exists: %s", newBranch)
+	}
+	if _, err := d.run(root, "worktree", "move", path, newPath); err != nil {
+		return "", "", err
+	}
+	if _, err := d.run(root, "branch", "-m", branch, newBranch); err != nil {
+		_, _ = d.run(root, "worktree", "move", newPath, path)
+		return "", "", err
+	}
+	return newPath, newBranch, nil
 }
 
 // RemoveWorktreeIfClean removes a session's worktree and its am/ branch

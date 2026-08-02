@@ -3,9 +3,34 @@ package ui
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// renameSessionWorktree moves a session's worktree and branch onto its new
+// name, so a session named after the work it ended up doing is reviewed
+// under that name too. Sessions running in a shared directory have nothing
+// to move. The session's own fields are updated in place, leaving the
+// caller a session that already knows where it runs.
+func renameSessionWorktree(gitDrv *git.Driver, st *store.Store, sess *store.Session, name string) error {
+	if gitDrv == nil || sess.WorktreeRepo == "" || sess.WorktreeBranch == "" {
+		return nil
+	}
+	path, branch, err := gitDrv.MoveWorktree(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch, name)
+	if err != nil {
+		return err
+	}
+	if path == sess.Cwd && branch == sess.WorktreeBranch {
+		return nil
+	}
+	if err := st.MoveSessionWorktree(sess.ID, path, branch); err != nil {
+		return err
+	}
+	sess.Cwd, sess.WorktreeBranch = path, branch
+	return nil
+}
 
 func (m *Model) openRename() {
 	entry, ok := m.selectedRow()
@@ -212,17 +237,30 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 		m.renameGroupLocally(m.rename.path, newPath, dir, worktree)
 		m.relabelSubtree(newPath)
 	} else {
+		index := -1
+		for i := range m.sessions {
+			if m.sessions[i].ID == m.rename.sessID {
+				index = i
+				break
+			}
+		}
+		// The worktree moves before the name is stored, so a directory or
+		// branch the new name cannot have leaves the rename card open with
+		// the reason instead of splitting the two apart.
+		if index >= 0 {
+			if err := renameSessionWorktree(m.gitDrv, m.store, &m.sessions[index], name); err != nil {
+				m.errBar.text = "worktree rename: " + err.Error()
+				return m, nil
+			}
+		}
 		if err := m.store.RenameSession(m.rename.sessID, name); err != nil {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
 		tool := m.renameTool()
-		var prevTool string
-		for i := range m.sessions {
-			if m.sessions[i].ID == m.rename.sessID {
-				prevTool = m.sessions[i].Tool
-				break
-			}
+		prevTool := ""
+		if index >= 0 {
+			prevTool = m.sessions[index].Tool
 		}
 		toolChanged := tool != "" && tool != prevTool
 		if toolChanged {
@@ -231,13 +269,11 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		for i := range m.sessions {
-			if m.sessions[i].ID == m.rename.sessID {
-				m.sessions[i].Name = name
-				if toolChanged {
-					m.sessions[i].Tool = tool
-					m.sessions[i].AgentSessionID = ""
-				}
+		if index >= 0 {
+			m.sessions[index].Name = name
+			if toolChanged {
+				m.sessions[index].Tool = tool
+				m.sessions[index].AgentSessionID = ""
 			}
 		}
 		m.relabelSession(m.rename.sessID)

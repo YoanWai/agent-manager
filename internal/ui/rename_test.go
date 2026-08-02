@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -78,6 +80,96 @@ func TestRenameSession(t *testing.T) {
 	}
 	if stored.Tool != "claude" {
 		t.Fatalf("name-only rename changed tool: %q", stored.Tool)
+	}
+}
+
+func TestRenameSessionMovesItsWorktree(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
+
+	m.selectSessionRow(t, "claude-7a72")
+	m.openRename()
+	m.rename.input.SetValue("release the version")
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
+		t.Fatalf("rename reported: %s", m.errBar.text)
+	}
+
+	// The spawn path is the one git resolved, which on macOS differs from
+	// the temp path by the /private prefix.
+	wantDir := filepath.Join(filepath.Dir(spawned.Cwd), "release-the-version")
+	stored, err := m.store.Get(spawned.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Cwd != wantDir {
+		t.Fatalf("stored cwd = %q, want %q", stored.Cwd, wantDir)
+	}
+	if stored.WorktreeBranch != "am/release-the-version" {
+		t.Fatalf("stored branch = %q", stored.WorktreeBranch)
+	}
+	if stored.WorktreeRepo != spawned.WorktreeRepo {
+		t.Fatalf("repo root moved: %q want %q", stored.WorktreeRepo, spawned.WorktreeRepo)
+	}
+	if _, err := os.Stat(wantDir); err != nil {
+		t.Fatalf("worktree directory did not follow the name: %v", err)
+	}
+	if _, err := os.Stat(spawned.Cwd); !os.IsNotExist(err) {
+		t.Fatalf("old worktree directory survived: %v", err)
+	}
+	if row := m.sessionRows()[0]; row.Cwd != wantDir || row.WorktreeBranch != "am/release-the-version" {
+		t.Fatalf("row still points at the old worktree: %+v", row)
+	}
+}
+
+func TestRenameSessionRefusesAWorktreeNameAlreadyTaken(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "mover", repo)
+	createWorktreeSession(t, m, "taken", repo)
+
+	m.selectSessionRow(t, "mover")
+	m.openRename()
+	m.rename.input.SetValue("taken")
+	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if m.errBar.text == "" {
+		t.Fatal("a taken worktree name should report why")
+	}
+	if m.mode != modeRename {
+		t.Fatalf("mode = %v, want the rename card still open to fix the name", m.mode)
+	}
+	stored, err := m.store.Get(spawned.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Name != "mover" || stored.Cwd != spawned.Cwd || stored.WorktreeBranch != spawned.WorktreeBranch {
+		t.Fatalf("refused rename still moved something: %+v", stored)
+	}
+	if _, err := os.Stat(spawned.Cwd); err != nil {
+		t.Fatalf("worktree should stay put: %v", err)
+	}
+}
+
+func TestRenameSessionWithoutAWorktreeIsUnchanged(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "plain", t.TempDir(), "")
+	m.selectSessionRow(t, "plain")
+	spawned := m.sessionRows()[0]
+
+	m.openRename()
+	m.rename.input.SetValue("still-plain")
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+
+	stored, err := m.store.Get(spawned.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Name != "still-plain" || stored.Cwd != spawned.Cwd {
+		t.Fatalf("shared-directory session should rename in place: %+v", stored)
 	}
 }
 
