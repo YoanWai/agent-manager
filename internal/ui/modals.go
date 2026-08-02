@@ -23,6 +23,34 @@ func (m *Model) card(title, body, hint string) string {
 	return m.cardSized(m.cardWidth(), title, body, hint)
 }
 
+// cardFlex is card, but the panel grows with its content up to the terminal
+// width so long settings rows are not clipped.
+func (m *Model) cardFlex(title, body, hint string) string {
+	return m.cardSized(m.flexCardWidth(title, body, hint), title, body, hint)
+}
+
+// flexCardWidth picks a width that fits every content line, never under the
+// default card width and never past the terminal edge.
+func (m *Model) flexCardWidth(title, body, hint string) int {
+	head := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(title)
+	content := head + "\n\n" + body
+	if m.errBar.text != "" {
+		content += "\n" + errStyle.Render("✕ "+m.errBar.text)
+	}
+	content += "\n\n" + subtleStyle.Render(hint)
+
+	need := m.cardWidth()
+	for _, line := range strings.Split(content, "\n") {
+		if w := lipgloss.Width(line) + 2*cardPaddingX; w > need {
+			need = w
+		}
+	}
+	if m.width >= 28 && need > m.width-4 {
+		need = m.width - 4
+	}
+	return need
+}
+
 // cardSized is card at an explicit width, for the key map, whose lines are
 // too long to read inside the default column.
 func (m *Model) cardSized(width int, title, body, hint string) string {
@@ -189,6 +217,9 @@ func (m *Model) viewGroupForm() string {
 }
 
 func (m *Model) viewSettings() string {
+	if m.settings.cliPicker {
+		return m.viewCLIPicker()
+	}
 	layout := "unified"
 	if m.settings.layoutSplit {
 		layout = "split"
@@ -209,6 +240,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.worktreeDefault {
 		worktreeDefault = "on"
 	}
+	toolValue := ""
+	if len(m.settings.toolNames) > 0 {
+		toolValue = m.settings.toolNames[m.settings.toolIndex]
+	}
 	lead := func(field int, name string) string {
 		marker := "  "
 		labelStyle := valueStyle
@@ -225,7 +260,7 @@ func (m *Model) viewSettings() string {
 	actionRow := func(field int, name, action string) string {
 		return lead(field, name) + keyStyle.Render("↵") + mutedStyle.Render(" "+action)
 	}
-	body := row(settingsFieldTool, "quick spawn tool", m.settings.toolNames[m.settings.toolIndex]) + "\n" +
+	body := row(settingsFieldTool, "quick spawn tool", toolValue) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
 		row(settingsFieldDensity, "list density", density) + "\n" +
@@ -233,13 +268,58 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
+		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
 		actionRow(settingsFieldBugReport, "report a bug", "open a prefilled GitHub issue") + "\n\n" +
 		subtleStyle.Render("  version ") + valueStyle.Render(m.update.version) + m.versionStatus()
 	hint := "↑↓ field · ←→ change · ↵/esc save"
-	if m.settings.field == settingsFieldBugReport {
+	switch m.settings.field {
+	case settingsFieldBugReport:
 		hint = "↑↓ field · ↵ open issue · esc save"
+	case settingsFieldCLIs:
+		hint = "↑↓ field · ↵ manage CLIs · esc save"
 	}
-	return m.card("⚙ Settings", body, hint)
+	return m.cardFlex("⚙ Settings", body, hint)
+}
+
+func (m *Model) viewCLIPicker() string {
+	var b strings.Builder
+	for i, name := range m.settings.cliNames {
+		marker := "  "
+		labelStyle := valueStyle
+		if m.settings.cliCursor == i {
+			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
+			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+		}
+		box := "[x]"
+		if m.settings.cliHidden[name] {
+			box = "[ ]"
+		}
+		b.WriteString(marker)
+		b.WriteString(labelStyle.Render(box + " " + name))
+		b.WriteByte('\n')
+	}
+	// Request row matches other settings actions; the note below is not focusable.
+	reqFocused := m.settings.cliCursor >= len(m.settings.cliNames)
+	reqMarker := "  "
+	reqLabel := mutedStyle.Render("request CLI support")
+	if reqFocused {
+		reqMarker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
+		reqLabel = lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("request CLI support")
+	}
+	b.WriteByte('\n')
+	b.WriteString(reqMarker)
+	b.WriteString(keyStyle.Render("↵"))
+	b.WriteString(" ")
+	b.WriteString(reqLabel)
+	b.WriteString(mutedStyle.Render("  open a GitHub issue"))
+	b.WriteByte('\n')
+	b.WriteString(subtleStyle.Render("  * more will be supported soon!"))
+	hint := "↑↓ move · space/↵ toggle · esc back"
+	if reqFocused {
+		hint = "↑↓ move · ↵ open request issue · esc back"
+	}
+	// Fixed card width: short checkbox rows must not stretch a wide empty panel.
+	return m.card("⚙ CLIs", strings.TrimRight(b.String(), "\n"), hint)
 }
 
 // themeSwatch previews a palette as a run of blocks, so a theme can be
@@ -294,7 +374,7 @@ func (m *Model) viewHelp() string {
 		{"b", "in review: pick the branch from the repo's worktrees"},
 		{"B", "in review: pick the target (merge-into branch) the branch diff compares against"},
 		{"F", "fold / unfold all groups"},
-		{"s", "settings (quick spawn tool, review layout, after quick send)"},
+		{"s", "settings (CLIs, theme, quick spawn, review layout)"},
 		{"|", "resize split (←→ / drag, enter commits, esc cancels)"},
 		{"t", "toggle archived view"},
 		{"M", "messages (updates, tips, bug reporting; x dismisses)"},

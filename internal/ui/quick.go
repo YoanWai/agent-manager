@@ -89,6 +89,11 @@ func (m *Model) quickMessage() string {
 }
 
 func (m *Model) openQuickMode() {
+	names, index := m.defaultToolSelection()
+	if len(names) == 0 {
+		m.errBar.text = "no CLIs enabled: open settings (s), then CLIs, to turn some on"
+		return
+	}
 	input := textarea.New()
 	input.CharLimit = 2000
 	input.Placeholder = "type and press enter"
@@ -104,7 +109,6 @@ func (m *Model) openQuickMode() {
 	input.Focus()
 	m.errBar.text = ""
 	m.forgetWorktreeCapability()
-	names, index := m.defaultToolSelection()
 	m.quick = quickState{
 		active:         true,
 		input:          input,
@@ -115,10 +119,10 @@ func (m *Model) openQuickMode() {
 	}
 }
 
-// defaultToolSelection returns the sorted tool names with the index of
+// defaultToolSelection returns enabled tool names with the index of
 // the configured default, ready to seed a tool picker.
 func (m *Model) defaultToolSelection() ([]string, int) {
-	names := sortedToolNames(m.cfg)
+	names := m.enabledToolNames()
 	current := m.defaultTool()
 	index := 0
 	for i, name := range names {
