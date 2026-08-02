@@ -154,7 +154,7 @@ func TestTripleClickOnRealFrameTakesPaneRowOnly(t *testing.T) {
 // plainCells is a painted frame row as visible cells, escape sequences
 // removed, so a column index in the frame is a column on screen.
 func plainCells(row string) []rune {
-	return []rune(ansi.Strip(row))
+	return []rune(strings.NewReplacer("\u2066", "", "\u2069", "").Replace(ansi.Strip(row)))
 }
 
 // A capture taken by the slower poll path must not repaint over a frame
@@ -311,7 +311,7 @@ func TestCursorPaintedOnItsRow(t *testing.T) {
 	if !strings.Contains(withCursor, "\x1b[") {
 		t.Fatalf("cursor row carries no styling: %q", withCursor)
 	}
-	if ansi.Strip(withCursor) != "abc" {
+	if string(plainCells(withCursor)) != "abc" {
 		t.Fatalf("cursor changed the row text: %q", ansi.Strip(withCursor))
 	}
 	if other := m.renderPaneRow(1, "def", 20); other != previewLine("def", 20) {
@@ -355,7 +355,7 @@ func TestCursorPastEndOfLine(t *testing.T) {
 	if !strings.Contains(row, "\x1b[") {
 		t.Fatalf("no cursor drawn past end of line: %q", row)
 	}
-	if plain := strings.TrimRight(ansi.Strip(row), " "); plain != "ab" {
+	if plain := strings.TrimRight(string(plainCells(row)), " "); plain != "ab" {
 		t.Fatalf("cursor changed the line text: %q", plain)
 	}
 }

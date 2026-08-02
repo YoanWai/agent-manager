@@ -338,7 +338,8 @@ func previewLine(line string, width int) string {
 	if strings.ContainsRune(line, 0x1b) {
 		line += "\x1b[0m"
 	}
-	return line
+	// Keep a leading RTL run inside the preview instead of the terminal's full row.
+	return "\u2066" + line + "\u2069"
 }
 
 // paneExact returns up to n lines of pane text as captured, preserving
