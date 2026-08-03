@@ -80,8 +80,7 @@ func miseManaged(slashPath string) bool {
 		if parts[i] != "installs" {
 			continue
 		}
-		tool := parts[i+1]
-		if strings.HasPrefix(tool, "ubi-") && strings.HasSuffix(tool, "-agent-manager") {
+		if parts[i+1] == "ubi-yoan-wai-agent-manager" {
 			return true
 		}
 	}

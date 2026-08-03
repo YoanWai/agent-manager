@@ -97,6 +97,10 @@ func TestDetectManager(t *testing.T) {
 			wantAdvice:  true,
 		},
 		{
+			label: "another ubi tool is direct",
+			path:  "/home/user/.local/share/mise/installs/ubi-other-user-agent-manager/1.0.0/agent-manager",
+		},
+		{
 			label: "install script dir is direct",
 			path:  "/home/user/.local/bin/agent-manager",
 		},
