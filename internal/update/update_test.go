@@ -61,6 +61,8 @@ func TestExtractChangesHumanizesGeneratedNotes(t *testing.T) {
 		"",
 		"## What's Changed",
 		"* fix(groups): make group creation immediate and reliable by @YoanWai in https://github.com/YoanWai/agent-manager/pull/191",
+		"* feat(config): add Pi as a built-in tool by @steveprentice in https://github.com/YoanWai/agent-manager/pull/201",
+		"* chore(deps): bump gopsutil by @dependabot[bot] in https://github.com/YoanWai/agent-manager/pull/210",
 		"- feat(ui): add a [message browser](https://example.com) with `scrolling`",
 		"- feat(mcp-editor): expose tool capabilities",
 		"",
@@ -71,6 +73,8 @@ func TestExtractChangesHumanizesGeneratedNotes(t *testing.T) {
 	changes, total := extractChanges(body)
 	want := []string{
 		"Groups: Make group creation immediate and reliable",
+		"Config: Add Pi as a built-in tool · @steveprentice",
+		"Deps: Bump gopsutil",
 		"UI: Add a message browser with scrolling",
 		"MCP editor: Expose tool capabilities",
 	}
