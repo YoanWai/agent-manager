@@ -42,10 +42,8 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 	if opts.deferDirective && m.poller != nil {
 		m.poller.markDirectivePending(sess.ID)
 	}
-	if err := m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)); err != nil {
-		return err
-	}
+	labelErr := m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
 	m.sessions = append(m.sessions, sess)
 	m.rebuildRows()
-	return nil
+	return labelErr
 }
