@@ -275,15 +275,19 @@ func TestPiPanes(t *testing.T) {
 	}{
 		{"resting turn", "Implementation complete." + editor, Finished},
 		{"resumed session", "Resumed session" + editor, Idle},
+		{"historical resumed frame", "Resumed session" + editor + "\n\nImplementation complete." + editor, Finished},
 		{"active turn", "⠋ Working on the request" + editor, Working},
 		{"shell command", "⠙ Running command" + editor, Working},
 		{"project trust", trust, Waiting},
 		{"historical project trust", "Project trust\n\nTrust accepted.\n\nImplementation complete." + editor, Finished},
 		{"historical spinner", "⠋ Working on the request\n\nImplementation complete." + editor, Finished},
+		{"historical spinner frame", "⠋ Working on the request" + editor + "\n\nImplementation complete." + editor, Finished},
 		{"final question", "Which option do you prefer?" + editor, Waiting},
 		{"old question", "Which option do you prefer?\n\nI used option A." + editor, Finished},
+		{"historical question frame", "Which option do you prefer?" + editor + "\n\nImplementation complete." + editor, Finished},
 		{"current error", "Error: request failed" + editor, Errored},
 		{"old error", "Error: first attempt failed\n\nRetry completed." + editor, Finished},
+		{"historical error frame", "Error: request failed" + editor + "\n\nImplementation complete." + editor, Finished},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

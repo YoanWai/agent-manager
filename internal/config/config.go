@@ -362,10 +362,10 @@ default_status = "finished"
 activity_cutoff = "(?ms)\\A.*^─{8,}[ \\t]*$"
 chrome_line = "^[ \\t]*─{8,}[ \\t]*$"
 rules = [
-  { state = "idle", pattern = "(?ms)^[ \\t]*Resumed session[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*$" },
+  { state = "idle", pattern = "(?ms)^[ \\t]*Resumed session[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
   { state = "waiting", pattern = "(?ms)^[ \\t]*Project trust[ \\t]*\\n.*\\n─{8,}[ \\t]*(?:\\n[ \\t]*)*\\z" },
-  { state = "waiting", pattern = "(?ms)\\?[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*$" },
-  { state = "working", pattern = "(?ms)^[ \\t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*$" },
-  { state = "errored", pattern = "(?ms)^[ \\t]*Error:[^\\n]*(?:\\n[ \\t]+[^ \\t\\n][^\\n]*){0,8}\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*$" },
+  { state = "waiting", pattern = "(?ms)\\?[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
+  { state = "working", pattern = "(?ms)^[ \\t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
+  { state = "errored", pattern = "(?ms)^[ \\t]*Error:[^\\n]*(?:\\n[ \\t]+[^ \\t\\n][^\\n]*){0,8}\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
 ]
 `
