@@ -216,6 +216,15 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case settingsFieldCLIs:
 			m.openCLIPicker()
 			return m, nil
+		case settingsFieldUpdate:
+			if m.update.applying {
+				return m, nil
+			}
+			if m.update.latest != "" {
+				m.update.applying = true
+				m.errBar.text = ""
+				return m, m.applyUpdateCmd()
+			}
 		}
 		return m.saveAndCloseSettings()
 	case "esc":

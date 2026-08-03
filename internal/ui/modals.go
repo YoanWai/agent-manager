@@ -269,16 +269,40 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
-		actionRow(settingsFieldBugReport, "report a bug", "open a prefilled GitHub issue") + "\n\n" +
-		subtleStyle.Render("  version ") + valueStyle.Render(m.update.version) + m.versionStatus()
+		actionRow(settingsFieldBugReport, "report a bug", "open a prefilled GitHub issue") + "\n" +
+		m.settingsVersionRow(lead, actionRow)
 	hint := "↑↓ field · ←→ change · ↵/esc save"
 	switch m.settings.field {
 	case settingsFieldBugReport:
 		hint = "↑↓ field · ↵ open issue · esc save"
 	case settingsFieldCLIs:
 		hint = "↑↓ field · ↵ manage CLIs · esc save"
+	case settingsFieldUpdate:
+		if m.update.applying {
+			hint = "↑↓ field · downloading… · esc save"
+		} else if m.update.latest != "" {
+			hint = "↑↓ field · ↵ update · esc save"
+		}
 	}
 	return m.cardFlex("⚙ Settings", body, hint)
+}
+
+// settingsVersionRow is the focusable version line: when a newer release is
+// known it is an action row that starts the same in-place update as the
+// messages modal's u key.
+func (m *Model) settingsVersionRow(lead func(int, string) string, actionRow func(int, string, string) string) string {
+	if m.update.applying {
+		label := m.update.latest
+		if label == "" {
+			label = "update"
+		}
+		return lead(settingsFieldUpdate, "version") +
+			lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+label+"…")
+	}
+	if m.update.latest != "" {
+		return actionRow(settingsFieldUpdate, "version "+m.update.version, "update to "+m.update.latest)
+	}
+	return lead(settingsFieldUpdate, "version") + valueStyle.Render(m.update.version)
 }
 
 func (m *Model) viewCLIPicker() string {
@@ -330,17 +354,6 @@ func themeSwatch(t Theme) string {
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Render("█"))
 	}
 	return b.String()
-}
-
-// versionStatus reports whether a newer release is known, as a suffix for
-// the settings version line. Empty when the daily check has not found one.
-func (m *Model) versionStatus() string {
-	if m.update.latest == "" {
-		return ""
-	}
-	return subtleStyle.Render(" · ") +
-		lipgloss.NewStyle().Foreground(colorAccent).Bold(true).
-			Render("↑ "+m.update.latest+" available")
 }
 
 func (m *Model) viewMove() string {

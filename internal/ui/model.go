@@ -341,6 +341,7 @@ const (
 	settingsFieldWorktree
 	settingsFieldCLIs
 	settingsFieldBugReport
+	settingsFieldUpdate
 	settingsFieldCount
 )
 

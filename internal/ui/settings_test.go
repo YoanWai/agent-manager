@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -98,12 +101,18 @@ func TestSettingsShowsVersion(t *testing.T) {
 	if !strings.Contains(out, "version") || !strings.Contains(out, "v0.9.0") {
 		t.Errorf("settings missing version: %q", out)
 	}
-	if strings.Contains(out, "available") {
-		t.Errorf("no badge expected when up to date: %q", out)
+	if strings.Contains(out, "update to") {
+		t.Errorf("no update action expected when up to date: %q", out)
 	}
 	m.update.latest = "v0.9.1"
-	if out := m.viewSettings(); !strings.Contains(out, "v0.9.1") || !strings.Contains(out, "available") {
-		t.Errorf("settings missing update badge: %q", out)
+	out = m.viewSettings()
+	if !strings.Contains(out, "v0.9.1") || !strings.Contains(out, "update to") {
+		t.Errorf("settings missing update action: %q", out)
+	}
+	m.settings.field = settingsFieldUpdate
+	out = m.viewSettings()
+	if !strings.Contains(out, "↵ update") {
+		t.Errorf("focused update row should hint enter: %q", out)
 	}
 }
 
@@ -268,5 +277,127 @@ func TestParseFormatHiddenTools(t *testing.T) {
 	}
 	if formatHiddenTools(map[string]bool{"grok": true, "codex": true}) != "codex,grok" {
 		t.Fatalf("format should sort: %q", formatHiddenTools(map[string]bool{"grok": true, "codex": true}))
+	}
+}
+
+func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
+	m := footModel(t)
+	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.update.version = "v0.2.0"
+	m.update.latest = "v0.3.0"
+	m.openSettings()
+	m.settings.field = settingsFieldUpdate
+
+	applied := ""
+	orig := applyUpdate
+	defer func() { applyUpdate = orig }()
+	origRefresh := refreshUpdatesForApply
+	defer func() { refreshUpdatesForApply = origRefresh }()
+	refreshUpdatesForApply = func(context.Context, string, string) (update.Result, error) {
+		return update.Result{
+			Latest: "v0.6.0",
+			URL:    "https://github.com/YoanWai/agent-manager/releases/tag/v0.6.0",
+			Releases: []update.Release{
+				uiRelease("v0.6.0", "Newest release"),
+				uiRelease("v0.2.0", "Current release"),
+			},
+		}, nil
+	}
+	applyUpdate = func(_ context.Context, tag, execPath string) error {
+		applied = tag + " " + execPath
+		return nil
+	}
+
+	_, cmd := m.handleSettingsKey(key("enter"))
+	if cmd == nil {
+		t.Fatal("enter on the update row should start the update")
+	}
+	if !m.update.applying {
+		t.Fatal("applying should be marked while the download runs")
+	}
+	if m.mode != modeSettings {
+		t.Fatal("starting the update must keep settings open")
+	}
+	msg, ok := cmd().(updateAppliedMsg)
+	if !ok {
+		t.Fatalf("cmd returned %T", cmd())
+	}
+	if msg.err != nil {
+		t.Fatalf("apply: %v", msg.err)
+	}
+	if !strings.HasPrefix(applied, "v0.6.0 ") {
+		t.Fatalf("applyUpdate saw %q", applied)
+	}
+	updated, quit := m.Update(msg)
+	m = updated.(*Model)
+	if m.update.applying {
+		t.Fatal("applying should clear once the swap lands")
+	}
+	if m.RestartPath() == "" {
+		t.Fatal("a successful swap must set the restart path")
+	}
+	if quit == nil {
+		t.Fatal("a successful swap must quit so main can exec the new build")
+	}
+}
+
+func TestSettingsUpdateRowIdleWhenCurrent(t *testing.T) {
+	m := footModel(t)
+	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.update.version = "v0.3.0"
+	m.openSettings()
+	m.settings.field = settingsFieldUpdate
+
+	orig := applyUpdate
+	defer func() { applyUpdate = orig }()
+	called := false
+	applyUpdate = func(context.Context, string, string) error {
+		called = true
+		return nil
+	}
+
+	_, cmd := m.handleSettingsKey(key("enter"))
+	if called || cmd != nil || m.update.applying {
+		t.Fatal("enter on version when up to date must not start an update")
+	}
+	if m.mode != modeList {
+		t.Fatal("enter with no update should still save and close")
+	}
+}
+
+func TestSettingsUpdateRowApplyFailureSurfaces(t *testing.T) {
+	m := footModel(t)
+	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.update.version = "v0.2.0"
+	m.update.latest = "v0.3.0"
+	m.openSettings()
+	m.settings.field = settingsFieldUpdate
+
+	orig := applyUpdate
+	defer func() { applyUpdate = orig }()
+	origRefresh := refreshUpdatesForApply
+	defer func() { refreshUpdatesForApply = origRefresh }()
+	refreshUpdatesForApply = func(context.Context, string, string) (update.Result, error) {
+		return update.Result{
+			Latest:   "v0.3.0",
+			URL:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
+			Releases: []update.Release{uiRelease("v0.3.0", "Newest release"), uiRelease("v0.2.0", "Current release")},
+		}, nil
+	}
+	applyUpdate = func(context.Context, string, string) error {
+		return errors.New("permission denied")
+	}
+
+	_, cmd := m.handleSettingsKey(key("enter"))
+	updated, _ := m.Update(cmd().(updateAppliedMsg))
+	m = updated.(*Model)
+	if m.update.applying {
+		t.Fatal("applying should clear on failure")
+	}
+	if m.RestartPath() != "" {
+		t.Fatal("a failed swap must not restart")
+	}
+	if !strings.Contains(m.errBar.text, "permission denied") {
+		t.Fatalf("failure should surface, err=%q", m.errBar.text)
 	}
 }
