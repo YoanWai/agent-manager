@@ -73,8 +73,8 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["claude"].PromptFlag; got != "" {
 		t.Fatalf("claude prompt_flag = %q want empty (positional prompt)", got)
 	}
-	if got := cfg.Tools["claude"].ForkCommand; !strings.Contains(got, "{id}") || !strings.Contains(got, "{new_id}") {
-		t.Fatalf("claude fork_command = %q want source and new ids", got)
+	if got := cfg.Tools["claude"].ForkCommand; got != "claude --resume {id} --fork-session --session-id {new_id} --name {name}" {
+		t.Fatalf("claude fork_command = %q", got)
 	}
 	if got := cfg.Tools["codex"].ForkCommand; got != "codex fork {id}" {
 		t.Fatalf("codex fork_command = %q want \"codex fork {id}\"", got)
