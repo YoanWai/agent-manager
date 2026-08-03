@@ -17,6 +17,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.7
 	golang.design/x/clipboard v0.8.0
 	golang.org/x/sys v0.47.0
+	golang.org/x/text v0.37.0
 	modernc.org/sqlite v1.55.0
 )
 
@@ -58,7 +59,6 @@ require (
 	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	modernc.org/libc v1.74.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
