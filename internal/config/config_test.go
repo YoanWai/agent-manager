@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -74,6 +73,12 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["claude"].PromptFlag; got != "" {
 		t.Fatalf("claude prompt_flag = %q want empty (positional prompt)", got)
 	}
+	if got := cfg.Tools["claude"].ForkCommand; !strings.Contains(got, "{id}") || !strings.Contains(got, "{new_id}") {
+		t.Fatalf("claude fork_command = %q want source and new ids", got)
+	}
+	if got := cfg.Tools["codex"].ForkCommand; got != "codex fork {id}" {
+		t.Fatalf("codex fork_command = %q want \"codex fork {id}\"", got)
+	}
 }
 
 func TestBackfillToolDefaults(t *testing.T) {
@@ -91,24 +96,6 @@ func TestBackfillToolDefaults(t *testing.T) {
 	}
 	if _, ok := cfg.Tools["claude"]; !ok {
 		t.Fatal("expected claude tool added from built-in defaults")
-	}
-}
-
-func TestDecodeForkCommand(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	content := `[tools.pi]
-command = "pi"
-fork_command = "pi --fork {id} --session-id {new_id} --name {name}"
-`
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	var cfg Config
-	if err := decodeInto(path, &cfg); err != nil {
-		t.Fatal(err)
-	}
-	if got := cfg.Tools["pi"].ForkCommand; got != "pi --fork {id} --session-id {new_id} --name {name}" {
-		t.Fatalf("fork_command = %q", got)
 	}
 }
 
@@ -166,5 +153,8 @@ func TestBackfillFillsResumeFields(t *testing.T) {
 	}
 	if tool.ResumeByIDCommand != "claude --resume {id}" {
 		t.Fatalf("claude resume_by_id_command = %q want backfilled", tool.ResumeByIDCommand)
+	}
+	if tool.ForkCommand == "" {
+		t.Fatal("claude fork_command was not backfilled")
 	}
 }

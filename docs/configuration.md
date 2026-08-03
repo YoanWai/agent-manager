@@ -22,6 +22,14 @@ Rules match top-down against the visible pane text; first match wins, and `defau
 
 **Revive.** `resume_by_id_command` resumes one exact conversation, with `{id}` replaced by the session's captured agent id. That id comes either from launching under an id the manager mints (`session_id_flag`, e.g. `--session-id`) or from reading back an id the tool minted itself (`session_store = "codex" | "opencode"`). `revive_command` is what `v` falls back to when no id is available, e.g. `claude --continue`.
 
+**Forks.** `fork_command` creates a conversation from an existing session. Agent Manager replaces and shell-quotes these placeholders:
+
+- `{id}`: The source conversation ID. This placeholder is required.
+- `{new_id}`: A new UUID that Agent Manager records for exact revival.
+- `{name}`: The new Agent Manager session name.
+
+Claude Code and Codex include default fork commands. A custom tool can omit `{new_id}` when its `session_store` captures the generated ID.
+
 **Prompts.** `prompt_flag` controls how the new-session form's optional prompt is embedded into the launch command. Tools that take the prompt as a positional argument (Claude Code: `claude 'the prompt'`) leave it empty; tools whose positional argument means something else declare the flag (OpenCode: `prompt_flag = "--prompt"`, since its positional argument is the project path). The prompt only shapes the launch command; revive (`v`) uses the revive commands untouched.
 
 **MCP.** `mcp = "claude" | "codex" | "opencode" | "grok" | "gemini" | "none"` picks how the agent-manager MCP server is registered into the tool's sessions (see [MCP](usage.md#mcp-how-agents-discover-these-commands)). An empty value uses the tool's config key when it names a known style.

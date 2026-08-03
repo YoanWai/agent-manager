@@ -225,6 +225,7 @@ command = "claude"
 # that exact conversation regardless of what else ran in the directory
 session_id_flag = "--session-id"
 resume_by_id_command = "claude --resume {id}"
+fork_command = "claude --resume {id} --fork-session --session-id {new_id} --name {name}"
 # fallback when a session predates id tracking: resumes the last conversation there
 revive_command = "claude --continue"
 # hooks report status events directly; the pane rules below stay as fallback
@@ -277,6 +278,7 @@ command = "codex"
 # codex mints its own session id; capture it after launch and resume it
 session_store = "codex"
 resume_by_id_command = "codex resume {id}"
+fork_command = "codex fork {id}"
 # fallback: resumes the most recent session in the working directory
 revive_command = "codex resume --last"
 default_status = "idle"
