@@ -334,14 +334,24 @@ func previewLine(line string, width int) string {
 		}
 		return r
 	}, line)
-	if ansi.StringWidth(line) > width {
+	w := ansi.StringWidth(line)
+	if w > width {
 		line = ansi.Truncate(line, width, "")
+		w = ansi.StringWidth(line)
 	}
+	// Reset before padding so an open background from the agent does not
+	// paint the rest of the column.
 	if strings.ContainsRune(line, 0x1b) {
 		line += "\x1b[0m"
 	}
-	// Keep a leading RTL run inside the preview instead of the terminal's full row.
-	return "\u2066" + line + "\u2069"
+	if w < width {
+		line += strings.Repeat(" ", width-w)
+	}
+	// LRM is strong LTR (zero width). On rows where the rail is only neutrals,
+	// a leading Hebrew run is the line's first strong character; hosts that
+	// right-justify RTL paragraphs then pull the pane into the rail. Isolate
+	// plus a full-width pad keep the run inside the content column.
+	return "\u200e\u2066" + line + "\u2069"
 }
 
 // paneExact returns up to n lines of pane text as captured, preserving

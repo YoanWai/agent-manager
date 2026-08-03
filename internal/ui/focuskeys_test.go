@@ -53,7 +53,7 @@ func TestFocusKeyCommand(t *testing.T) {
 // bgRun returns, for each column, whether a background color is active,
 // by walking the row's SGR sequences the way a terminal would.
 func bgRun(row string, width int) []bool {
-	row = strings.NewReplacer("\u2066", "", "\u2069", "").Replace(row)
+	row = strings.NewReplacer("\u200e", "", "\u2066", "", "\u2069", "").Replace(row)
 	out := make([]bool, 0, width)
 	bg := false
 	i := 0
@@ -99,12 +99,17 @@ func TestPreviewLinePreservesBackgroundColumns(t *testing.T) {
 	t.Logf("raw plain=%q width=%d", ansi.Strip(raw), ansi.StringWidth(ansi.Strip(raw)))
 	t.Logf("raw bg cells=%v", rawCells)
 	t.Logf("out bg cells=%v", gotCells)
-	if len(rawCells) != len(gotCells) {
-		t.Fatalf("cell counts differ: raw %d, rendered %d", len(rawCells), len(gotCells))
+	if len(gotCells) < len(rawCells) {
+		t.Fatalf("rendered shorter than raw: raw %d, rendered %d", len(rawCells), len(gotCells))
 	}
 	for i := range rawCells {
 		if rawCells[i] != gotCells[i] {
 			t.Fatalf("column %d background differs: raw %v, rendered %v", i, rawCells[i], gotCells[i])
+		}
+	}
+	for i := len(rawCells); i < len(gotCells); i++ {
+		if gotCells[i] {
+			t.Fatalf("padding column %d invented a background", i)
 		}
 	}
 }

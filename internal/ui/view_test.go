@@ -76,27 +76,31 @@ func TestClampFrame(t *testing.T) {
 	}
 }
 
+func stripPreviewMarks(s string) string {
+	return strings.NewReplacer("\u200e", "", "\u2066", "", "\u2069", "").Replace(s)
+}
+
 func TestPreviewLine(t *testing.T) {
 	colored := "\x1b[38;5;42mgreen text\x1b[39m"
 	got := previewLine(colored, 80)
 	if !strings.Contains(got, "\x1b[38;5;42m") {
 		t.Fatalf("color escapes should survive: %q", got)
 	}
-	if !strings.HasSuffix(got, "\x1b[0m\u2069") {
-		t.Fatalf("line with ANSI must end in SGR reset: %q", got)
+	if !strings.Contains(got, "\x1b[0m") || !strings.HasSuffix(got, "\u2069") {
+		t.Fatalf("line with ANSI must reset SGR and close the isolate: %q", got)
 	}
 
 	erased := "abc\x1b[K\x1b[2Jdef"
-	if got := previewLine(erased, 80); ansi.Strip(got) != "\u2066abcdef\u2069" {
+	if got := stripPreviewMarks(ansi.Strip(previewLine(erased, 80))); strings.TrimRight(got, " ") != "abcdef" {
 		t.Fatalf("erase sequences should be stripped: %q", got)
 	}
 	scrolled := "a\x1b[1Sb\x1bMc\x1b[2Td"
-	if got := previewLine(scrolled, 80); ansi.Strip(got) != "\u2066abcd\u2069" {
+	if got := stripPreviewMarks(ansi.Strip(previewLine(scrolled, 80))); strings.TrimRight(got, " ") != "abcd" {
 		t.Fatalf("scroll sequences should be stripped: %q", got)
 	}
 
 	control := "a\rb\bc"
-	if got := previewLine(control, 80); ansi.Strip(got) != "\u2066abc\u2069" {
+	if got := stripPreviewMarks(ansi.Strip(previewLine(control, 80))); strings.TrimRight(got, " ") != "abc" {
 		t.Fatalf("control chars should be dropped: %q", got)
 	}
 
@@ -110,11 +114,25 @@ func TestPreviewLine(t *testing.T) {
 	if strings.Contains(plain, "\x1b") {
 		t.Fatalf("plain line should gain no escapes: %q", plain)
 	}
-	if !strings.HasPrefix(plain, "\u2066") || !strings.HasSuffix(plain, "\u2069") {
-		t.Fatalf("pane row should be directionally isolated: %q", plain)
+	if !strings.HasPrefix(plain, "\u200e\u2066") || !strings.HasSuffix(plain, "\u2069") {
+		t.Fatalf("pane row should open LTR and stay isolated: %q", plain)
 	}
-	if got := ansi.Strip(previewLine("קודינג\",\"slowly\":false", 80)); got != "\u2066קודינג\",\"slowly\":false\u2069" {
-		t.Fatalf("mixed-direction pane row lost its isolation: %q", got)
+	if w := ansi.StringWidth(plain); w != 80 {
+		t.Fatalf("pane row should fill its column, width %d", w)
+	}
+	mixed := stripPreviewMarks(ansi.Strip(previewLine("קודינג\",\"slowly\":false", 80)))
+	if strings.TrimRight(mixed, " ") != "קודינג\",\"slowly\":false" {
+		t.Fatalf("mixed-direction pane row lost its text: %q", mixed)
+	}
+	hebrew := previewLine("  העצמון 25 חולון", 40)
+	if !strings.HasPrefix(hebrew, "\u200e\u2066") {
+		t.Fatalf("pure RTL row needs a leading LRM so the host keeps LTR: %q", hebrew)
+	}
+	if w := ansi.StringWidth(hebrew); w != 40 {
+		t.Fatalf("pure RTL row must pad inside the isolate to column width, got %d", w)
+	}
+	if body := strings.TrimRight(stripPreviewMarks(ansi.Strip(hebrew)), " "); body != "  העצמון 25 חולון" {
+		t.Fatalf("pure RTL row text changed: %q", body)
 	}
 }
 
