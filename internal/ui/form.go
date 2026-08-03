@@ -606,7 +606,10 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		AgentSessionID: agentSessionID,
 		WorktreeRepo:   worktreeRepo,
 		WorktreeBranch: worktreeBranch,
-	}, base, deferDirective)
+	}, tool, base, launchOptions{
+		deferDirective:   deferDirective,
+		rollbackWorktree: worktreeRepo != "",
+	})
 }
 
 // withPrompt embeds an optional starting prompt into a tool's launch

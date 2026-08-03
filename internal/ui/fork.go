@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -32,16 +33,8 @@ func (m *Model) openFork() {
 		m.errBar.text = fmt.Sprintf("tool %s is no longer configured", entry.sess.Tool)
 		return
 	}
-	if tool.ForkCommand == "" {
-		m.errBar.text = fmt.Sprintf("tool %s has no fork_command", entry.sess.Tool)
-		return
-	}
-	if !strings.Contains(tool.ForkCommand, "{id}") {
-		m.errBar.text = fmt.Sprintf("tool %s fork_command must contain {id}", entry.sess.Tool)
-		return
-	}
-	if entry.sess.AgentSessionID == "" {
-		m.errBar.text = fmt.Sprintf("%s has no captured conversation id", entry.sess.Name)
+	if err := validateForkSource(entry.sess.Tool, tool, entry.sess); err != nil {
+		m.errBar.text = err.Error()
 		return
 	}
 	name := textField("fork name", 60)
@@ -83,12 +76,8 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 		m.errBar.text = fmt.Sprintf("tool %s is no longer configured", source.Tool)
 		return m, nil
 	}
-	if tool.ForkCommand == "" || !strings.Contains(tool.ForkCommand, "{id}") {
-		m.errBar.text = fmt.Sprintf("tool %s has no valid fork_command", source.Tool)
-		return m, nil
-	}
-	if source.AgentSessionID == "" {
-		m.errBar.text = fmt.Sprintf("%s has no captured conversation id", source.Name)
+	if err := validateForkSource(source.Tool, tool, source); err != nil {
+		m.errBar.text = err.Error()
 		return m, nil
 	}
 	if info, err := os.Stat(source.Cwd); err != nil || !info.IsDir() {
@@ -113,7 +102,7 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 		WorktreeRepo:   source.WorktreeRepo,
 		WorktreeBranch: source.WorktreeBranch,
 	}
-	if err := m.launchNewSession(forked, baseCommand, false); err != nil {
+	if err := m.launchNewSession(forked, tool, baseCommand, launchOptions{}); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
@@ -126,6 +115,19 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, m.refreshCmd()
+}
+
+func validateForkSource(toolName string, tool config.Tool, source store.Session) error {
+	if tool.ForkCommand == "" {
+		return fmt.Errorf("tool %s has no fork_command", toolName)
+	}
+	if !strings.Contains(tool.ForkCommand, "{id}") {
+		return fmt.Errorf("tool %s fork_command must contain {id}", toolName)
+	}
+	if source.AgentSessionID == "" {
+		return fmt.Errorf("%s has no captured conversation id", source.Name)
+	}
+	return nil
 }
 
 func expandForkCommand(template, sourceID, newID, name string) string {

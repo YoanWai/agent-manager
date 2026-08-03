@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -148,6 +149,34 @@ func TestForkCopiesManagedWorktreeReference(t *testing.T) {
 	}
 }
 
+func TestForkLaunchFailureKeepsSharedWorktree(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	if err := m.spawnSession("claude", "source", repo, "", "", false, true); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := m.store.ListSessions(true)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("sessions = %v, err %v", sessions, err)
+	}
+	source := sessions[0]
+	badConfig := t.TempDir()
+	if err := os.WriteFile(filepath.Join(badConfig, "hooks"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.hooks = hooks.NewManager(badConfig)
+
+	forked := source
+	forked.ID = "failed-fork"
+	forked.Name = "forked"
+	if err := m.launchNewSession(forked, m.cfg.Tools[forked.Tool], "cat", launchOptions{}); err == nil {
+		t.Fatal("launch failure was not reported")
+	}
+	if _, err := os.Stat(source.Cwd); err != nil {
+		t.Fatalf("source worktree was removed: %v", err)
+	}
+}
+
 func TestOpenForkRequiresConfiguredCommandAndConversationID(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "source", t.TempDir(), "")
@@ -160,9 +189,15 @@ func TestOpenForkRequiresConfiguredCommandAndConversationID(t *testing.T) {
 	}
 
 	tool := m.cfg.Tools[source.Tool]
+	tool.ForkCommand = "tool --fork latest"
+	m.cfg.Tools[source.Tool] = tool
+	m.openFork()
+	if !strings.Contains(m.errBar.text, "must contain {id}") {
+		t.Fatalf("missing placeholder error = %q", m.errBar.text)
+	}
+
 	tool.ForkCommand = "tool --fork {id}"
 	m.cfg.Tools[source.Tool] = tool
-	m.errBar.text = ""
 	m.openFork()
 	if !strings.Contains(m.errBar.text, "no captured conversation id") {
 		t.Fatalf("missing id error = %q", m.errBar.text)
