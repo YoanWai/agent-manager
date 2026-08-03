@@ -125,6 +125,15 @@ func TestClaudeMixedApprovalPane(t *testing.T) {
 	}
 }
 
+func TestClaudeEnterToConfirmOverridesWorking(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "✶ Cooking… (2m 14s · esc to interrupt)\n" +
+		"Review the selected choice\nEnter to confirm · Esc to cancel"
+	if got, matched := engine.Match("claude", pane); got != Waiting || !matched {
+		t.Fatalf("Match() = (%q, %t) want (%q, true)", got, matched, Waiting)
+	}
+}
+
 func TestClaudeNumberedInputDoesNotLookLikeDialog(t *testing.T) {
 	engine := defaultEngine(t)
 	pane := "✳ Drizzling… (6s · esc to interrupt)\n❯ 1. refactor the parser"
