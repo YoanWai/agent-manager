@@ -390,7 +390,7 @@ func (m *Model) viewFooter() string {
 		{"ctrl+r", "review"}, {"r", "rename"}, {"m", "move"},
 		{"x/X", "kill / all"}, {"v/V", "revive / all"},
 		{"a/u", "archive / restore"}, {"d", "delete"},
-		{"t", "archived"}, {"f", statusFilterAction}, {"e", emptyGroupsAction},
+		{"t", "archived"}, {"w", statusFilterAction}, {"e", emptyGroupsAction},
 		{"/", "search"}, {"|", "resize"}, {"s", "settings"},
 		{"?", "keys"}, {"q", "quit"},
 	}

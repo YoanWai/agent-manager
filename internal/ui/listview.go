@@ -228,7 +228,7 @@ func (m *Model) emptyRailLines(width, height int) []string {
 	}
 	if m.statusFilter.active() {
 		title = "nothing needs " + m.statusFilter.label()
-		hint = keyCap("f", "show all")
+		hint = keyCap("w", "show all")
 	}
 	if search := strings.TrimSpace(m.search); search != "" {
 		title = "no matches"

@@ -119,7 +119,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openQuickMode()
 	case "F", "shift+f":
 		m.toggleCollapseAll()
-	case "f":
+	case "w":
 		return m, m.cycleStatusFilter()
 	case "s":
 		m.openSettings()

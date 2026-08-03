@@ -65,7 +65,7 @@ func TestStatusFilterKeyKeepsAttentionSessions(t *testing.T) {
 	}
 	loadStoredRows(t, m)
 
-	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
 	m = updated.(*Model)
 	if cmd != nil {
 		m.applyCmd(t, cmd)
@@ -90,13 +90,13 @@ func TestStatusFilterKeyKeepsAttentionSessions(t *testing.T) {
 		t.Fatalf("footer should offer clearing the filter:\n%s", footer)
 	}
 
-	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
 	m = updated.(*Model)
 	if cmd != nil {
 		m.applyCmd(t, cmd)
 	}
 	if m.statusFilter != statusFilterAll {
-		t.Fatalf("second f should clear filter, got %v", m.statusFilter)
+		t.Fatalf("second w should clear filter, got %v", m.statusFilter)
 	}
 	if got := sessionNames(m); len(got) != 6 {
 		t.Fatalf("cleared filter should show all 6 sessions, got %v", got)

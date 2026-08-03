@@ -12,7 +12,7 @@ const (
 	statusFilterAttention
 )
 
-// statusFilterCycle is the order `f` walks. Append new modes before the
+// statusFilterCycle is the order `w` walks. Append new modes before the
 // wrap back to all happens at the end of next().
 var statusFilterCycle = []statusFilter{
 	statusFilterAll,

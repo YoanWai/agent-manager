@@ -33,7 +33,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `s` | Settings (quick-spawn tool, theme, list density, review layout, after quick send, session keys, worktree sessions) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
-| `f` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
+| `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
 | `e` | Hide / show empty groups |
 | `/` | Search |
 | `?` | Help |
@@ -159,7 +159,7 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 | `idle` | Nothing running |
 | `dead` | The tmux session is gone |
 
-`f` narrows the list to sessions that need attention (`waiting`, `finished`, `errored`). Press again to show every status. The header badge and session counts follow the filter; folds open so matches are not hidden.
+`w` narrows the list to sessions that need attention (`waiting`, `finished`, `errored`). Press again to show every status. The header badge and session counts follow the filter; folds open so matches are not hidden.
 
 ![the session tree, with a waiting agent's permission prompt in the preview](screenshot-sessions.png)
 
