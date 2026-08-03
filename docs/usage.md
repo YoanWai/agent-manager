@@ -70,7 +70,7 @@ Deleting (`d`) a session that holds a worktree removes the worktree and its bran
 
 ![ending every session under a group for the RAM, then reviving the whole subtree on its own conversations](demo-revive.gif)
 
-`v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`, `gemini --resume {id}`.
+`v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`, `gemini --resume {id}`, `pi --session {id}`.
 
 The id arrives one of two ways: tools with a `session_id_flag` launch under an id the manager mints, and tools that mint their own are read back by a `session_store` capturer (`codex`, `opencode`). Without an id, revive falls back to `revive_command` (`claude --continue`), which resumes the working directory's most recent conversation, and the manager says so in the status line, since sessions sharing a directory would otherwise land on the wrong one. On a group row `v` revives every dead session under it, and `V` revives every dead session in view; both revive what they can and name the first failure rather than stopping.
 
@@ -92,7 +92,11 @@ Agents usually work in git worktrees, one branch per worktree, and those worktre
 
 Every session the manager spawns or revives carries the agent-manager MCP server, so MCP-capable agents see `rename`, `review_repo`, `review_base` and `review_mode` (which sets the diff scope review opens on) as native tools with descriptions telling them when to call each: no prompt injection, no per-project setup. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
 
-Registration is per tool. The built-in claude, codex, opencode, grok and gemini tools register automatically: claude gets a generated `--mcp-config` file, codex gets `-c mcp_servers...` overrides, opencode gets an `OPENCODE_CONFIG` merge file, and grok and gemini each get a one-time `mcp add --scope user` entry on their first launch. A custom tool opts in with `mcp = "<style>"` in its config section, or out with `mcp = "none"`. The `rename`, `review-repo` and `review-base` CLI subcommands keep working everywhere, MCP or not.
+Registration is per tool. Claude gets a generated `--mcp-config` file. Codex gets `-c mcp_servers...` overrides. OpenCode gets an `OPENCODE_CONFIG` merge file. Grok and Gemini each get a one-time `mcp add --scope user` entry on their first launch.
+
+Pi does not include an MCP client. The `rename`, `review-repo`, and `review-base` commands still work inside Pi sessions.
+
+A custom tool opts in with `mcp = "<style>"` in its config section. Set `mcp = "none"` to disable registration.
 
 ## Diff review
 

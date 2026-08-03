@@ -29,7 +29,7 @@ type Session struct {
 	CreatedAt    time.Time
 	LastStatusAt time.Time
 	// AgentSessionID is the agent CLI's own conversation id (claude/grok/
-	// gemini session UUID, codex rollout id, opencode session id). Revive resumes
+	// gemini/pi session UUID, codex rollout id, opencode session id). Revive resumes
 	// this exact conversation instead of the cwd's most recent one.
 	AgentSessionID string
 	// WorktreeRepo and WorktreeBranch are set only for sessions running in

@@ -19,7 +19,7 @@ type Tool struct {
 	ReviveCommand string `toml:"revive_command"`
 	PromptFlag    string `toml:"prompt_flag"`
 	// SessionIDFlag makes a new session launch with an id we choose (e.g.
-	// claude/grok "--session-id <uuid>"), so revive can later resume that
+	// claude/grok/pi "--session-id <uuid>"), so revive can later resume that
 	// exact conversation deterministically.
 	SessionIDFlag string `toml:"session_id_flag"`
 	// ResumeByIDCommand resumes a specific conversation; "{id}" is replaced
@@ -347,5 +347,25 @@ rules = [
   { state = "working", pattern = "esc to cancel" },
   # error messages render with a "✕ " prefix
   { state = "errored", pattern = "(?m)^✕ " },
+]
+
+[tools.pi]
+command = "pi"
+session_id_flag = "--session-id"
+resume_by_id_command = "pi --session {id}"
+revive_command = "pi --continue"
+# Pi shows a spinner for active work. A resting pane is a finished turn until
+# the user acknowledges it; a resumed conversation is already acknowledged.
+default_status = "finished"
+# Start the activity region at the pane origin. Pane reflow then cannot look
+# like streaming output when Agent Manager attaches or detaches.
+activity_cutoff = "(?ms)\\A.*^─{8,}[ \\t]*$"
+chrome_line = "^[ \\t]*─{8,}[ \\t]*$"
+rules = [
+  { state = "idle", pattern = "(?ms)^[ \\t]*Resumed session[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*$" },
+  { state = "waiting", pattern = "(?m)^[ \\t]*Project trust[ \\t]*$" },
+  { state = "waiting", pattern = "(?ms)\\?[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*$" },
+  { state = "working", pattern = "(?m)^[ \\t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b" },
+  { state = "errored", pattern = "(?ms)^[ \\t]*Error:[^\\n]*(?:\\n[ \\t]+[^ \\t\\n][^\\n]*){0,8}\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*$" },
 ]
 `

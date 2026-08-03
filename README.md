@@ -21,7 +21,7 @@
 
 ![five prompts to five fresh agents without moving the cursor, one per CLI, then the blocked one answered and its diff opened](docs/demo.gif)
 
-Claude Code, Codex, OpenCode, Grok, and Gemini CLI run side by side, each in its own tmux session, so they keep working after you quit the manager.
+Claude Code, Codex, OpenCode, Grok, Gemini CLI, and Pi run side by side. Each tool runs in its own persistent tmux session.
 
 agent-manager is a thin layer over the CLIs you already have. Each session launches your own installed tool as-is: your login, your subscription, your config files, your MCP servers, and every feature the tool ships all carry over, exactly as they behave in a plain terminal.
 
@@ -33,7 +33,7 @@ Not here yet: cost tracking, mouse-driven navigation, and agents that can talk t
 
 ## Supported tools
 
-Status detection currently supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, and **Gemini CLI** out of the box. Any other CLI tool can run as a session; add a `[tools.<name>]` block with status rules to get live status for it (see [Configuration](docs/configuration.md)).
+Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, and **Pi** by default. Other CLI tools can run as sessions. Add a `[tools.<name>]` block to give another tool live status rules (see [Configuration](docs/configuration.md)).
 
 ## Install
 

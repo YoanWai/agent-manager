@@ -262,6 +262,35 @@ func TestGeminiPanes(t *testing.T) {
 	}
 }
 
+// Pi 0.83.0 fixtures cover its resting editor, active spinner, project-trust
+// selector, and final question or error directly above the editor.
+func TestPiPanes(t *testing.T) {
+	engine := defaultEngine(t)
+	editor := "\n\n──────────────────────────────\n\n──────────────────────────────\n~/dev/project (main)\nanthropic/claude-sonnet-4"
+	cases := []struct {
+		name string
+		pane string
+		want string
+	}{
+		{"resting turn", "Implementation complete." + editor, Finished},
+		{"resumed session", "Resumed session" + editor, Idle},
+		{"active turn", "⠋ Working on the request" + editor, Working},
+		{"shell command", "⠙ Running command" + editor, Working},
+		{"project trust", "Project trust\n\nAllow local resources?", Waiting},
+		{"final question", "Which option do you prefer?" + editor, Waiting},
+		{"old question", "Which option do you prefer?\n\nI used option A." + editor, Finished},
+		{"current error", "Error: request failed" + editor, Errored},
+		{"old error", "Error: first attempt failed\n\nRetry completed." + editor, Finished},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, _ := engine.Match("pi", tc.pane); got != tc.want {
+				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
 // Gemini closes turns without a summary line, so resting status comes from
 // TurnEndedState over the quiet region. The "? for shortcuts" hint and the
 // approval-mode banner sit above the composer; both must count as chrome
