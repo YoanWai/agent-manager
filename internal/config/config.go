@@ -202,7 +202,8 @@ func writeDefault(path string) error {
 const defaultConfig = `poll_interval = "2s"
 
 # Rules are matched top-down against the visible pane text (ANSI stripped);
-# first match wins. When no rule matches, the newest turn decides:
+# first match wins, except a matching waiting rule outranks a working match.
+# When no rule matches, the newest turn decides:
 # the content region is the text above the last activity_cutoff match
 # (the tool's input box). If the region's last content line — skipping
 # chrome_line matches (blanks, separators, input-box borders) — is a
@@ -236,13 +237,13 @@ trailing_note = "^※"
 # their wait line carries the same shape as a turn-end summary
 busy_line = "^[✻✳✶✽✢·✦✧+*] Waiting for \\d+ background agents? to finish"
 rules = [
+  # selection dialogs (trust prompt, permission asks, questions) block on the user
+  { state = "waiting", pattern = "Enter to confirm" },
+  { state = "waiting", pattern = "(?m)^[ \\x{A0}]*❯[ \\x{A0}]+\\d+\\." },
   # spinner row of an active turn, any duration format:
   # "✳ Drizzling… (6s · thinking)" / "✽ Zigzagging… (3m 18s · ↓ 1.4k tokens)"
   { state = "working", pattern = "(?m)^[✻✳✶✽✢·✦✧+*] \\S+… \\(" },
   { state = "working", pattern = "esc to interrupt" },
-  # selection dialogs (trust prompt, permission asks, questions) block on the user
-  { state = "waiting", pattern = "Enter to confirm" },
-  { state = "waiting", pattern = "(?m)^[ \\x{A0}]*❯[ \\x{A0}]+\\d+\\." },
   { state = "errored", pattern = "(?im)^\\s*error:" },
 ]
 
