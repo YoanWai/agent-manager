@@ -18,8 +18,7 @@ archives:
   - formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
-    # listing files replaces goreleaser's defaults, so LICENSE and README are
-    # named again alongside the NOTICE that Apache-2.0 section 4(d) travels with
+    # naming files replaces goreleaser's defaults, so LICENSE and README repeat here
     files:
       - LICENSE
       - NOTICE
