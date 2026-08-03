@@ -362,6 +362,47 @@ func TestGeminiPanes(t *testing.T) {
 	}
 }
 
+// Pi 0.83.0 fixtures cover its resting editor, active spinner, project-trust
+// selector, and final question or error directly above the editor.
+func TestPiPanes(t *testing.T) {
+	engine := defaultEngine(t)
+	editor := "\n\n──────────────────────────────\n\n──────────────────────────────\n~/dev/project (main)\nanthropic/claude-sonnet-4"
+	trust := "──────────────────────────────\n\nProject trust\n~/dev/project\n\nSaved decision: none\nCurrent session: untrusted\n\n→ Trust this project\n  Keep it untrusted\n\n↑↓ navigate  enter save  esc cancel\n\n──────────────────────────────"
+	cases := []struct {
+		name string
+		pane string
+		want string
+	}{
+		{"resting turn", "Implementation complete." + editor, Finished},
+		{"resumed session", "Resumed session" + editor, Idle},
+		{"resumed session with trailing blanks", "Resumed session" + editor + "\n\n", Idle},
+		{"historical resumed frame", "Resumed session" + editor + "\n\nImplementation complete." + editor, Finished},
+		{"active turn", "⠋ Working on the request" + editor, Working},
+		{"active turn with trailing blanks", "⠋ Working on the request" + editor + "\n\n", Working},
+		{"shell command", "⠙ Running command" + editor, Working},
+		{"project trust", trust, Waiting},
+		{"historical project trust", "Project trust\n\nTrust accepted.\n\nImplementation complete." + editor, Finished},
+		{"historical spinner", "⠋ Working on the request\n\nImplementation complete." + editor, Finished},
+		{"historical spinner frame", "⠋ Working on the request" + editor + "\n\nImplementation complete." + editor, Finished},
+		{"final question", "Which option do you prefer?" + editor, Waiting},
+		{"question with trailing blanks", "Which option do you prefer?" + editor + "\n\n", Waiting},
+		{"old question", "Which option do you prefer?\n\nI used option A." + editor, Finished},
+		{"historical question frame", "Which option do you prefer?" + editor + "\n\nImplementation complete." + editor, Finished},
+		{"current error", "Error: request failed" + editor, Errored},
+		{"question-mark error", "Error: request failed?" + editor, Errored},
+		{"error with trailing blanks", "Error: request failed" + editor + "\n\n", Errored},
+		{"old error", "Error: first attempt failed\n\nRetry completed." + editor, Finished},
+		{"historical error frame", "Error: request failed" + editor + "\n\nImplementation complete." + editor, Finished},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, _ := engine.Match("pi", tc.pane); got != tc.want {
+				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
 // Gemini closes turns without a summary line, so resting status comes from
 // TurnEndedState over the quiet region. The "? for shortcuts" hint and the
 // approval-mode banner sit above the composer; both must count as chrome

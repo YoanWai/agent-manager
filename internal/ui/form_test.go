@@ -470,11 +470,12 @@ func TestSortedToolNamesOrder(t *testing.T) {
 		"codex":    {Command: "codex"},
 		"claude":   {Command: "claude"},
 		"opencode": {Command: "opencode"},
+		"pi":       {Command: "pi"},
 		"zephyr":   {Command: "zephyr"},
 		"acme":     {Command: "acme"},
 	}}
 	got := sortedToolNames(cfg)
-	want := []string{"claude", "opencode", "codex", "grok", "gemini", "acme", "zephyr"}
+	want := []string{"claude", "opencode", "codex", "grok", "gemini", "pi", "acme", "zephyr"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("sortedToolNames = %v want %v", got, want)
 	}
