@@ -282,6 +282,8 @@ func (m *Model) viewSettings() string {
 			hint = "↑↓ field · downloading… · esc save"
 		} else if m.update.latest != "" {
 			hint = "↑↓ field · ↵ update · esc save"
+		} else {
+			hint = "↑↓ field · ↵/esc save"
 		}
 	}
 	return m.cardFlex("⚙ Settings", body, hint)

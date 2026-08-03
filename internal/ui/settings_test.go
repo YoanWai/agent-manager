@@ -104,6 +104,12 @@ func TestSettingsShowsVersion(t *testing.T) {
 	if strings.Contains(out, "update to") {
 		t.Errorf("no update action expected when up to date: %q", out)
 	}
+	m.settings.field = settingsFieldUpdate
+	out = m.viewSettings()
+	if !strings.Contains(out, "↵/esc save") {
+		t.Errorf("current version row should hint save, not update: %q", out)
+	}
+	m.settings.field = 0
 	m.update.latest = "v0.9.1"
 	out = m.viewSettings()
 	if !strings.Contains(out, "v0.9.1") || !strings.Contains(out, "update to") {
