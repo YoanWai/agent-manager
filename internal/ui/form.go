@@ -513,6 +513,9 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
+	// New sessions start as starting, which attention excludes; clear so
+	// the row the form just created is on screen.
+	m.statusFilter = statusFilterAll
 	m.mode = modeList
 	return m, m.refreshCmd()
 }

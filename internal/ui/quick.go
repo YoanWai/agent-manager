@@ -277,6 +277,8 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
+	// Spawned sessions start outside the attention set; clear so the new row shows.
+	m.statusFilter = statusFilterAll
 	m.clearQuickAfterSend()
 	m.errBar.text = ""
 	return m, m.refreshCmd()

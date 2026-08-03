@@ -227,7 +227,7 @@ func (m *Model) emptyRailLines(width, height int) []string {
 		hint = keyCap("t", "back to active")
 	}
 	if m.statusFilter.active() {
-		title = "nothing needs attention"
+		title = "nothing needs " + m.statusFilter.label()
 		hint = keyCap("f", "show all")
 	}
 	if search := strings.TrimSpace(m.search); search != "" {
@@ -666,7 +666,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 	if total == 0 {
 		return lines[0] + "\n" + mutedStyle.Render("(none yet — press space to spawn one)")
 	}
-	for _, sess := range m.visibleSessions() {
+	for _, sess := range m.listedSessions() {
 		if !inGroupSubtree(sess.Group, group) {
 			continue
 		}

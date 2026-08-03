@@ -143,3 +143,33 @@ func TestStatusFilterEmptyState(t *testing.T) {
 		t.Fatalf("rail missing empty attention copy:\n%s", rail)
 	}
 }
+
+func TestStatusFilterGroupRosterMatchesCount(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("fleet", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	for _, sess := range []store.Session{
+		{ID: "w", Name: "needs-you", Tool: "claude", Cwd: "/tmp", Group: "fleet", Status: status.Waiting},
+		{ID: "busy", Name: "grinding", Tool: "claude", Cwd: "/tmp", Group: "fleet", Status: status.Working},
+		{ID: "rest", Name: "quiet", Tool: "claude", Cwd: "/tmp", Group: "fleet", Status: status.Idle},
+	} {
+		if err := m.store.CreateSession(sess); err != nil {
+			t.Fatalf("create session %q: %v", sess.ID, err)
+		}
+	}
+	loadStoredRows(t, m)
+	m.statusFilter = statusFilterAttention
+	m.rebuildRows()
+
+	if got := m.groupSessionCount("fleet"); got != 1 {
+		t.Fatalf("group count under attention = %d want 1", got)
+	}
+	roster := ansi.Strip(m.viewGroupAgents("fleet", 60, 20))
+	if !strings.Contains(roster, "needs-you") {
+		t.Fatalf("roster missing waiting session:\n%s", roster)
+	}
+	if strings.Contains(roster, "grinding") || strings.Contains(roster, "quiet") {
+		t.Fatalf("roster should only list attention sessions:\n%s", roster)
+	}
+}
