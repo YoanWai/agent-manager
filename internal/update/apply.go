@@ -50,8 +50,14 @@ func homebrewManaged(source, execPath string) bool {
 			continue
 		}
 		switch parts[i] {
-		case "Cellar", "Caskroom", "opt":
+		case "Cellar", "Caskroom":
 			return true
+		case "opt":
+			// Only brew's opt tree counts: /opt/agent-manager is a
+			// conventional manual-install prefix, not Homebrew.
+			if i > 0 && (parts[i-1] == "homebrew" || parts[i-1] == ".linuxbrew") {
+				return true
+			}
 		}
 	}
 	return false
