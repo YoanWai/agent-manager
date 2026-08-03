@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -18,6 +19,15 @@ import (
 func renameSessionWorktree(gitDrv *git.Driver, st *store.Store, sess *store.Session, name string) error {
 	if gitDrv == nil || sess.WorktreeRepo == "" || sess.WorktreeBranch == "" {
 		return nil
+	}
+	sessions, err := st.ListSessions(true)
+	if err != nil {
+		return err
+	}
+	for _, other := range sessions {
+		if other.ID != sess.ID && other.Cwd == sess.Cwd {
+			return fmt.Errorf("worktree is shared with session %q", other.Name)
+		}
 	}
 	path, branch, err := gitDrv.MoveWorktree(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch, name)
 	if err != nil {

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -100,6 +102,49 @@ func TestForkSelectedSessionCreatesNamedSibling(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("fork args = %v, want %v", got, want)
 		}
+	}
+}
+
+func TestForkCopiesManagedWorktreeReference(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	source := store.Session{
+		ID:             "managed-source",
+		Name:           "source",
+		Tool:           "claude",
+		Cwd:            dir,
+		Status:         status.Idle,
+		AgentSessionID: "source-conversation",
+		WorktreeRepo:   filepath.Dir(dir),
+		WorktreeBranch: "am/source",
+	}
+	if err := m.store.CreateSession(source); err != nil {
+		t.Fatal(err)
+	}
+	loadStoredRows(t, m)
+	m.selectSessionRow(t, "source")
+	tool := m.cfg.Tools[source.Tool]
+	tool.ForkCommand = "true {id}; cat"
+	m.cfg.Tools[source.Tool] = tool
+
+	m.openFork()
+	m.fork.name.SetValue("forked")
+	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	m.applyCmd(t, cmd)
+
+	var forked store.Session
+	for _, sess := range m.sessionRows() {
+		if sess.Name == "forked" {
+			forked = sess
+			break
+		}
+	}
+	if forked.ID == "" {
+		t.Fatal("forked session not found")
+	}
+	if forked.WorktreeRepo != source.WorktreeRepo || forked.WorktreeBranch != source.WorktreeBranch {
+		t.Fatalf("forked worktree reference = %+v, source = %+v", forked, source)
 	}
 }
 

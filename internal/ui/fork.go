@@ -110,6 +110,8 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 		Group:          source.Group,
 		Status:         status.Starting,
 		AgentSessionID: agentID,
+		WorktreeRepo:   source.WorktreeRepo,
+		WorktreeBranch: source.WorktreeBranch,
 	}
 	if err := m.launchNewSession(forked, baseCommand, false); err != nil {
 		m.errBar.text = err.Error()

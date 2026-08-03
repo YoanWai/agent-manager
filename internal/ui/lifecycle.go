@@ -526,6 +526,8 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errBar.text = ""
 			m.rebuildRows()
 		case actionDelete:
+			var worktrees []store.Session
+			seenWorktrees := make(map[string]bool)
 			for _, sess := range m.confirm.sessions {
 				if err := m.tmux.Kill(sess.ID); err != nil {
 					m.errBar.text = err.Error()
@@ -556,12 +558,34 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
-				if sess.WorktreeRepo != "" && m.gitDrv != nil {
-					removed, err := m.gitDrv.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch)
-					if err != nil {
-						m.errBar.text = "worktree cleanup: " + err.Error()
-					} else if !removed {
-						m.errBar.text = "worktree kept (has work): " + sess.Cwd
+				if sess.WorktreeRepo != "" && m.gitDrv != nil && !seenWorktrees[sess.Cwd] {
+					seenWorktrees[sess.Cwd] = true
+					worktrees = append(worktrees, sess)
+				}
+			}
+			if len(worktrees) > 0 {
+				remaining, err := m.store.ListSessions(true)
+				if err != nil {
+					m.errBar.text = "worktree cleanup: " + err.Error()
+				} else {
+					for _, worktree := range worktrees {
+						used := false
+						for _, sess := range remaining {
+							if sess.Cwd == worktree.Cwd {
+								used = true
+								break
+							}
+						}
+						if used {
+							m.errBar.text = "worktree kept (used by another session): " + worktree.Cwd
+							continue
+						}
+						removed, err := m.gitDrv.RemoveWorktreeIfClean(worktree.WorktreeRepo, worktree.Cwd, worktree.WorktreeBranch)
+						if err != nil {
+							m.errBar.text = "worktree cleanup: " + err.Error()
+						} else if !removed {
+							m.errBar.text = "worktree kept (has work): " + worktree.Cwd
+						}
 					}
 				}
 			}

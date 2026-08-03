@@ -860,6 +860,49 @@ func TestDeleteRemovesCleanWorktree(t *testing.T) {
 	}
 }
 
+func TestDeleteKeepsWorktreeUntilLastSharingSession(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	if err := m.spawnSession("claude", "owner", repo, "", "", false, true); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sessions, err := m.store.ListSessions(true)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("sessions = %v, err %v", sessions, err)
+	}
+	owner := sessions[0]
+	forked := store.Session{
+		ID:             "shared-fork",
+		Name:           "forked",
+		Tool:           owner.Tool,
+		Cwd:            owner.Cwd,
+		Status:         status.Idle,
+		WorktreeRepo:   owner.WorktreeRepo,
+		WorktreeBranch: owner.WorktreeBranch,
+	}
+	if err := m.tmux.Create(forked.ID, forked.Cwd, "cat", nil, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.CreateSession(forked); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	deleteSession(t, m, "owner")
+	if _, err := os.Stat(owner.Cwd); err != nil {
+		t.Fatalf("shared worktree was removed: %v", err)
+	}
+	if !strings.Contains(m.errBar.text, "used by another session") {
+		t.Fatalf("shared worktree message = %q", m.errBar.text)
+	}
+
+	m.applyCmd(t, m.refreshCmd())
+	deleteSession(t, m, "forked")
+	if _, err := os.Stat(owner.Cwd); !os.IsNotExist(err) {
+		t.Fatalf("last sharing session left worktree behind: %v", err)
+	}
+}
+
 func TestDeleteKeepsDirtyWorktree(t *testing.T) {
 	m := buildModel(t)
 	repo := filepath.Join(t.TempDir(), "repo")
