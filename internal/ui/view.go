@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"golang.org/x/text/unicode/bidi"
 )
 
 func (m *Model) View() string {
@@ -39,7 +40,35 @@ func (m *Model) View() string {
 	default:
 		frame = m.viewListFrame()
 	}
-	return clampFrame(frame, m.height)
+	return clampFrame(pinRowsLTR(frame), m.height)
+}
+
+// pinRowsLTR prepends an LRM to any frame row whose first strong character
+// is RTL (a Hebrew session name in the rail, say). UAX#9 takes paragraph
+// direction from that first strong character, so without the mark a bidi
+// host right-justifies the whole row and pulls it out of column. The mark
+// is zero width and applied after layout, so geometry is untouched.
+func pinRowsLTR(frame string) string {
+	lines := strings.Split(frame, "\n")
+	changed := false
+	for i, line := range lines {
+	scan:
+		for _, r := range line {
+			props, _ := bidi.LookupRune(r)
+			switch props.Class() {
+			case bidi.L:
+				break scan
+			case bidi.R, bidi.AL:
+				lines[i] = "\u200e" + line
+				changed = true
+				break scan
+			}
+		}
+	}
+	if !changed {
+		return frame
+	}
+	return strings.Join(lines, "\n")
 }
 
 // clampFrame pins a rendered frame to exactly height rows so the outer

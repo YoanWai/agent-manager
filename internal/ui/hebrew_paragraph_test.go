@@ -53,3 +53,17 @@ func TestHebrewPaneRowKeepsLTRParagraph(t *testing.T) {
 		}
 	}
 }
+
+func TestHebrewRailNameStaysLTR(t *testing.T) {
+	got := pinRowsLTR("█ ◆ העצמון   waiting\nplain row\n‎⁦שלום⁩")
+	lines := strings.Split(got, "\n")
+	if !strings.HasPrefix(lines[0], "‎") {
+		t.Fatalf("row with a leading Hebrew rail name should gain an LRM: %q", lines[0])
+	}
+	if lines[1] != "plain row" {
+		t.Fatalf("LTR row should be untouched: %q", lines[1])
+	}
+	if strings.HasPrefix(lines[2], "‎‎") {
+		t.Fatalf("already pinned row should not gain a second mark: %q", lines[2])
+	}
+}
