@@ -26,6 +26,9 @@ type Tool struct {
 	// with the session's agent id. Preferred over ReviveCommand, which only
 	// resumes the working directory's most recent conversation.
 	ResumeByIDCommand string `toml:"resume_by_id_command"`
+	// ForkCommand creates a new conversation from an existing one. Templates
+	// can use {id}, {new_id}, and {name}; Agent Manager quotes each value.
+	ForkCommand string `toml:"fork_command"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex" or "opencode").
 	SessionStore string `toml:"session_store"`
@@ -139,6 +142,7 @@ func mergeTool(user, def Tool) Tool {
 	fill(&user.PromptFlag, def.PromptFlag)
 	fill(&user.SessionIDFlag, def.SessionIDFlag)
 	fill(&user.ResumeByIDCommand, def.ResumeByIDCommand)
+	fill(&user.ForkCommand, def.ForkCommand)
 	fill(&user.SessionStore, def.SessionStore)
 	fill(&user.StatusSource, def.StatusSource)
 	fill(&user.DefaultStatus, def.DefaultStatus)
@@ -222,6 +226,7 @@ command = "claude"
 # that exact conversation regardless of what else ran in the directory
 session_id_flag = "--session-id"
 resume_by_id_command = "claude --resume {id}"
+fork_command = "claude --resume {id} --fork-session --session-id {new_id} --name {name}"
 # fallback when a session predates id tracking: resumes the last conversation there
 revive_command = "claude --continue"
 # hooks report status events directly; the pane rules below stay as fallback
@@ -274,6 +279,7 @@ command = "codex"
 # codex mints its own session id; capture it after launch and resume it
 session_store = "codex"
 resume_by_id_command = "codex resume {id}"
+fork_command = "codex fork {id}"
 # fallback: resumes the most recent session in the working directory
 revive_command = "codex resume --last"
 default_status = "idle"

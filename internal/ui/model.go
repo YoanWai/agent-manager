@@ -33,6 +33,7 @@ const (
 	modeConfirmDelete
 	modeHelp
 	modeRename
+	modeFork
 	modeMove
 	modeRepoPick
 	modeGroupForm
@@ -121,6 +122,7 @@ type Model struct {
 	pathSugg  pathComplete
 	confirm   confirmTarget
 	rename    renameTarget
+	fork      forkState
 	quick     quickState
 	settings  settingsState
 	moveID    string

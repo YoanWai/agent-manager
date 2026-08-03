@@ -126,6 +126,34 @@ func TestRenameSessionMovesItsWorktree(t *testing.T) {
 	}
 }
 
+func TestRenameSessionRefusesSharedWorktree(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "owner", repo)
+	forked := spawned
+	forked.ID = "shared-fork"
+	forked.Name = "forked"
+	if err := m.store.CreateSession(forked); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.selectSessionRow(t, "owner")
+	m.openRename()
+	m.rename.input.SetValue("renamed")
+	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if !strings.Contains(m.errBar.text, "shared with session \"forked\"") {
+		t.Fatalf("shared worktree error = %q", m.errBar.text)
+	}
+	if m.mode != modeRename {
+		t.Fatalf("mode = %v, want rename card", m.mode)
+	}
+	if _, err := os.Stat(spawned.Cwd); err != nil {
+		t.Fatalf("shared worktree moved: %v", err)
+	}
+}
+
 func TestRenameSessionRefusesAWorktreeNameAlreadyTaken(t *testing.T) {
 	m := buildModel(t)
 	repo := seedRepo(t)

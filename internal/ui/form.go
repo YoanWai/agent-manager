@@ -595,16 +595,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		agentSessionID = uuid.NewString()
 		base += " " + tool.SessionIDFlag + " " + agentSessionID
 	}
-	command, env, err := m.buildLaunch(toolName, tool, base, id)
-	if err != nil {
-		m.discardWorktree(worktreeRepo, dir, worktreeBranch)
-		return err
-	}
-	if err := m.tmux.Create(id, dir, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
-		m.discardWorktree(worktreeRepo, dir, worktreeBranch)
-		return err
-	}
-	sess := store.Session{
+	return m.launchNewSession(store.Session{
 		ID:    id,
 		Name:  name,
 		Tool:  toolName,
@@ -616,24 +607,10 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		AgentSessionID: agentSessionID,
 		WorktreeRepo:   worktreeRepo,
 		WorktreeBranch: worktreeBranch,
-	}
-	if err := m.store.CreateSession(sess); err != nil {
-		_ = m.tmux.Kill(id)
-		_ = m.hooks.Remove(id)
-		m.discardWorktree(worktreeRepo, dir, worktreeBranch)
-		return err
-	}
-	if deferDirective {
-		m.poller.markDirectivePending(id)
-	}
-	if err := m.tmux.SetLabel(id, sessionLabel(group, name)); err != nil {
-		return err
-	}
-	// Show the new session at once instead of waiting for the next poll to
-	// reload it from the store.
-	m.sessions = append(m.sessions, sess)
-	m.rebuildRows()
-	return nil
+	}, tool, base, launchOptions{
+		deferDirective:   deferDirective,
+		rollbackWorktree: worktreeRepo != "",
+	})
 }
 
 // withPrompt embeds an optional starting prompt into a tool's launch

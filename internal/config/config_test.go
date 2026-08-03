@@ -82,6 +82,12 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["claude"].PromptFlag; got != "" {
 		t.Fatalf("claude prompt_flag = %q want empty (positional prompt)", got)
 	}
+	if got := cfg.Tools["claude"].ForkCommand; got != "claude --resume {id} --fork-session --session-id {new_id} --name {name}" {
+		t.Fatalf("claude fork_command = %q", got)
+	}
+	if got := cfg.Tools["codex"].ForkCommand; got != "codex fork {id}" {
+		t.Fatalf("codex fork_command = %q want \"codex fork {id}\"", got)
+	}
 }
 
 func TestDefaultWaitingRulesPrecedeWorking(t *testing.T) {
@@ -187,5 +193,8 @@ func TestBackfillFillsResumeFields(t *testing.T) {
 	}
 	if tool.ResumeByIDCommand != "claude --resume {id}" {
 		t.Fatalf("claude resume_by_id_command = %q want backfilled", tool.ResumeByIDCommand)
+	}
+	if tool.ForkCommand == "" {
+		t.Fatal("claude fork_command was not backfilled")
 	}
 }

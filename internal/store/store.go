@@ -32,9 +32,9 @@ type Session struct {
 	// gemini/pi session UUID, codex rollout id, opencode session id). Revive resumes
 	// this exact conversation instead of the cwd's most recent one.
 	AgentSessionID string
-	// WorktreeRepo and WorktreeBranch are set only for sessions running in
-	// their own git worktree: the main repo root and the am/ branch recorded
-	// at creation, so delete-time cleanup survives later renames.
+	// WorktreeRepo and WorktreeBranch are set for sessions running in a
+	// worktree Agent Manager created. Forks share these values so the last
+	// session to leave can clean up the worktree and its am/ branch.
 	WorktreeRepo   string
 	WorktreeBranch string
 }

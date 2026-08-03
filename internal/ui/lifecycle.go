@@ -557,8 +557,12 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if sess.WorktreeRepo != "" && m.gitDrv != nil {
-					removed, err := m.gitDrv.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch)
+					used, err := m.sessionUsesDir(sess.Cwd)
 					if err != nil {
+						m.errBar.text = "worktree cleanup: " + err.Error()
+					} else if used {
+						m.errBar.text = "worktree kept (used by another session): " + sess.Cwd
+					} else if removed, err := m.gitDrv.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch); err != nil {
 						m.errBar.text = "worktree cleanup: " + err.Error()
 					} else if !removed {
 						m.errBar.text = "worktree kept (has work): " + sess.Cwd
@@ -586,6 +590,19 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.confirm = confirmTarget{}
 	return m, nil
+}
+
+func (m *Model) sessionUsesDir(dir string) (bool, error) {
+	sessions, err := m.store.ListSessions(true)
+	if err != nil {
+		return false, err
+	}
+	for _, sess := range sessions {
+		if sess.Cwd == dir {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // deleteConfirmedGroups removes the group rows the confirmed delete
