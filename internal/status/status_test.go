@@ -267,6 +267,7 @@ func TestGeminiPanes(t *testing.T) {
 func TestPiPanes(t *testing.T) {
 	engine := defaultEngine(t)
 	editor := "\n\n──────────────────────────────\n\n──────────────────────────────\n~/dev/project (main)\nanthropic/claude-sonnet-4"
+	trust := "──────────────────────────────\n\nProject trust\n~/dev/project\n\nSaved decision: none\nCurrent session: untrusted\n\n→ Trust this project\n  Keep it untrusted\n\n↑↓ navigate  enter save  esc cancel\n\n──────────────────────────────"
 	cases := []struct {
 		name string
 		pane string
@@ -276,7 +277,9 @@ func TestPiPanes(t *testing.T) {
 		{"resumed session", "Resumed session" + editor, Idle},
 		{"active turn", "⠋ Working on the request" + editor, Working},
 		{"shell command", "⠙ Running command" + editor, Working},
-		{"project trust", "Project trust\n\nAllow local resources?", Waiting},
+		{"project trust", trust, Waiting},
+		{"historical project trust", "Project trust\n\nTrust accepted.\n\nImplementation complete." + editor, Finished},
+		{"historical spinner", "⠋ Working on the request\n\nImplementation complete." + editor, Finished},
 		{"final question", "Which option do you prefer?" + editor, Waiting},
 		{"old question", "Which option do you prefer?\n\nI used option A." + editor, Finished},
 		{"current error", "Error: request failed" + editor, Errored},

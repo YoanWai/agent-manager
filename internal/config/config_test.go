@@ -128,6 +128,9 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 			t.Fatalf("%s resume_by_id_command = %q want an {id} template", name, tool.ResumeByIDCommand)
 		}
 	}
+	if got := cfg.Tools["pi"].ResumeByIDCommand; got != "pi --session {id}" {
+		t.Fatalf("pi resume_by_id_command = %q want \"pi --session {id}\"", got)
+	}
 	// Tools that mint their own id declare a store to capture it from.
 	for _, name := range []string{"codex", "opencode"} {
 		tool := cfg.Tools[name]
