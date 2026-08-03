@@ -25,7 +25,10 @@ const devVersion = "dev"
 
 var version = devVersion
 
-// packagers set this via -X main.buildSource=...
+// A packager building from source can mark the binary as externally
+// managed with -X main.buildSource=Homebrew, which disables self-update.
+// No official channel sets it; released binaries rely on the install-path
+// check in internal/update instead.
 var buildSource = ""
 
 // resolveVersion falls back to the module version so `go install` builds, which

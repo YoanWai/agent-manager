@@ -407,3 +407,38 @@ func TestSettingsUpdateRowApplyFailureSurfaces(t *testing.T) {
 		t.Fatalf("failure should surface, err=%q", m.errBar.text)
 	}
 }
+
+func TestSettingsUpdateRowPersistsStagedSettings(t *testing.T) {
+	m := footModel(t)
+	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.update.version = "v0.2.0"
+	m.update.latest = "v0.3.0"
+	m.openSettings()
+	m.settings.themeIndex = (m.settings.themeIndex + 1) % len(themes)
+	staged := themes[m.settings.themeIndex].Name
+	m.settings.field = settingsFieldUpdate
+
+	orig := applyUpdate
+	defer func() { applyUpdate = orig }()
+	origRefresh := refreshUpdatesForApply
+	defer func() { refreshUpdatesForApply = origRefresh }()
+	refreshUpdatesForApply = func(context.Context, string, string) (update.Result, error) {
+		return update.Result{
+			Latest:   "v0.3.0",
+			URL:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
+			Releases: []update.Release{uiRelease("v0.3.0", "Newest release"), uiRelease("v0.2.0", "Current release")},
+		}, nil
+	}
+	applyUpdate = func(context.Context, string, string) error { return nil }
+
+	if _, cmd := m.handleSettingsKey(key("enter")); cmd == nil {
+		t.Fatal("enter on the update row should start the update")
+	}
+	got, err := m.store.Setting(themeSetting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != staged {
+		t.Fatalf("theme setting = %q, want staged %q persisted before the restart", got, staged)
+	}
+}

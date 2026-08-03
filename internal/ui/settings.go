@@ -221,6 +221,9 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.update.latest != "" {
+				// A successful swap quits to exec the new build, so
+				// everything staged this visit must land first.
+				m.persistSettings()
 				m.update.applying = true
 				m.errBar.text = ""
 				return m, m.applyUpdateCmd()
@@ -234,6 +237,12 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) saveAndCloseSettings() (tea.Model, tea.Cmd) {
+	m.persistSettings()
+	m.mode = modeList
+	return m, nil
+}
+
+func (m *Model) persistSettings() {
 	if len(m.settings.toolNames) > 0 {
 		if err := m.store.SetSetting("default_tool", m.settings.toolNames[m.settings.toolIndex]); err != nil {
 			m.errBar.text = err.Error()
@@ -279,8 +288,6 @@ func (m *Model) saveAndCloseSettings() (tea.Model, tea.Cmd) {
 	}
 	m.focusOnEnter = m.settings.enterFocuses
 	m.comfortableRows = m.settings.comfortableRows
-	m.mode = modeList
-	return m, nil
 }
 
 func (m *Model) openCLIPicker() {
