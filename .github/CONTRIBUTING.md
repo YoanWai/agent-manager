@@ -67,9 +67,9 @@ In the pull request description, say what changed and why, and how you verified 
 
 ## Licensing
 
-Contributions come in under the project's [Apache-2.0 license](../LICENSE), same as everything else here. There is nothing extra to sign: section 5 of the license already places every contribution under those terms.
+Contributions come in under the project's [Apache-2.0 license](../LICENSE), same as everything else here. There is nothing extra to sign: section 5 places any contribution you intentionally submit for inclusion under those terms unless you state otherwise.
 
-Apache-2.0 carries a patent grant and an indemnity clause, so contributing to this project also licenses your patent claims over your own contribution and keeps anyone who sells support around your work from putting that liability on you.
+Two clauses are worth knowing as a contributor. Section 3 licenses the patent claims you can license that your own contribution necessarily infringes, on its own or combined with the project, and it withdraws that grant from anyone who sues over the work. Section 9 lets a redistributor sell support or a warranty only on its own behalf, and requires it to indemnify, defend and hold contributors harmless for what it took on.
 
 ## Review
 
