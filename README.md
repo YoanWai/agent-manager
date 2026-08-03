@@ -100,6 +100,12 @@ See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the checks CI runs, and [AGEN
 
 Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for setup and the checks CI runs. Questions and setups worth sharing go in [Discussions](https://github.com/YoanWai/agent-manager/discussions). Security reports go through a [private advisory](https://github.com/YoanWai/agent-manager/security/advisories/new); see [SECURITY.md](.github/SECURITY.md).
 
+### Contributors
+
+<a href="https://github.com/YoanWai/agent-manager/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=YoanWai/agent-manager" alt="Contributors" />
+</a>
+
 ## License
 
 [Apache-2.0](LICENSE)
