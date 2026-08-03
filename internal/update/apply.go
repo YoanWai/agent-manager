@@ -21,12 +21,41 @@ import (
 // local server.
 var downloadBase = "https://github.com/YoanWai/agent-manager/releases/download"
 
+var buildSource string
+
+func SetBuildSource(source string) {
+	buildSource = source
+}
+
 const applyBudget = 2 * time.Minute
 
 // binaryLimit caps how much of the archive is read into the new binary,
 // so a corrupt or hostile archive cannot fill the disk. Real builds are
 // under 20MB.
 const binaryLimit = 200 << 20
+
+var errHomebrewManaged = errors.New("installed via Homebrew; upgrade with: brew upgrade yoanwai/tap/agent-manager")
+
+func homebrewManaged(source, execPath string) bool {
+	if source == "Homebrew" {
+		return true
+	}
+	path := execPath
+	if resolved, err := filepath.EvalSymlinks(execPath); err == nil {
+		path = resolved
+	}
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	for i := 0; i+1 < len(parts); i++ {
+		if parts[i+1] != "agent-manager" {
+			continue
+		}
+		switch parts[i] {
+		case "Cellar", "Caskroom", "opt":
+			return true
+		}
+	}
+	return false
+}
 
 // Apply downloads the release named by tag, verifies the archive for this
 // OS and architecture against the release's checksums.txt, and atomically
@@ -35,6 +64,10 @@ const binaryLimit = 200 << 20
 // build under a fresh inode, which also sidesteps macOS's per-inode
 // signature cache.
 func Apply(ctx context.Context, tag, execPath string) error {
+	if homebrewManaged(buildSource, execPath) {
+		return errHomebrewManaged
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, applyBudget)
 	defer cancel()
 

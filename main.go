@@ -17,12 +17,16 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui"
+	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 const devVersion = "dev"
 
 var version = devVersion
+
+// packagers set this via -X main.buildSource=...
+var buildSource = ""
 
 // resolveVersion falls back to the module version so `go install` builds, which
 // carry no ldflags, report the tag they came from. Pseudo-versions stay "dev":
@@ -50,6 +54,7 @@ func resolveVersion(embedded string, info *debug.BuildInfo, ok bool) string {
 func main() {
 	info, hasInfo := debug.ReadBuildInfo()
 	version = resolveVersion(version, info, hasInfo)
+	update.SetBuildSource(buildSource)
 
 	if len(os.Args) > 1 {
 		if os.Args[1] == "--version" || os.Args[1] == "-v" {
