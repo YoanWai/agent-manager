@@ -67,7 +67,9 @@ In the pull request description, say what changed and why, and how you verified 
 
 ## Licensing
 
-Contributions come in under the project's [MIT license](../LICENSE), same as everything else here. There is nothing extra to sign.
+Contributions come in under the project's [Apache-2.0 license](../LICENSE), same as everything else here. There is nothing extra to sign: section 5 of the license already places every contribution under those terms.
+
+Apache-2.0 carries a patent grant and an indemnity clause, so contributing to this project also licenses your patent claims over your own contribution and keeps anyone who sells support around your work from putting that liability on you.
 
 ## Review
 

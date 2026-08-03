@@ -18,6 +18,12 @@ archives:
   - formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    # listing files replaces goreleaser's defaults, so LICENSE and README are
+    # named again alongside the NOTICE that Apache-2.0 section 4(d) travels with
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
 
 checksum:
   name_template: checksums.txt
@@ -55,7 +61,7 @@ homebrew_casks:
       name: homebrew-tap
     homepage: https://github.com/YoanWai/agent-manager
     description: Terminal UI to manage AI coding-agent tmux sessions
-    license: MIT
+    license: Apache-2.0
     binaries:
       - agent-manager
     dependencies:
@@ -77,7 +83,7 @@ aurs:
   - name: agent-manager-bin
     homepage: https://github.com/YoanWai/agent-manager
     description: Terminal UI to manage AI coding-agent tmux sessions
-    license: MIT
+    license: Apache-2.0
     maintainers:
       - Yoan Wai <106609173+YoanWai@users.noreply.github.com>
     depends:
@@ -92,3 +98,4 @@ aurs:
     package: |-
       install -Dm755 "./agent-manager" "${pkgdir}/usr/bin/agent-manager"
       install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/agent-manager-bin/LICENSE"
+      install -Dm644 "./NOTICE" "${pkgdir}/usr/share/licenses/agent-manager-bin/NOTICE"
