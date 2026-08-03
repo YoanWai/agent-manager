@@ -24,6 +24,7 @@ func TestHebrewPaneRowKeepsLTRParagraph(t *testing.T) {
 	// is the geometry that flips paragraph direction without a leading LRM.
 	for _, width := range []int{100, 140, 180} {
 		for _, height := range []int{40, 50} {
+			foundHebrew := false
 			m := shotModel()
 			m.width, m.height = width, height
 			m.preview = he + "\n" + strings.Repeat("  העצמון 25 חולון\n", 20)
@@ -36,6 +37,7 @@ func TestHebrewPaneRowKeepsLTRParagraph(t *testing.T) {
 				if heb < 0 {
 					continue
 				}
+				foundHebrew = true
 				lrm := strings.IndexRune(plain, '\u200e')
 				if lrm < 0 || lrm > heb {
 					t.Errorf("%dx%d line %d: LRM missing or after Hebrew (lrm=%d heb=%d)\n%q",
@@ -44,6 +46,9 @@ func TestHebrewPaneRowKeepsLTRParagraph(t *testing.T) {
 				if got := ansi.StringWidth(line); got > width {
 					t.Errorf("%dx%d line %d overflows at %d", width, height, i, got)
 				}
+			}
+			if !foundHebrew {
+				t.Fatalf("%dx%d frame did not render a Hebrew preview row", width, height)
 			}
 		}
 	}
