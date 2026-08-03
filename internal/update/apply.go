@@ -44,23 +44,7 @@ func homebrewManaged(source, execPath string) bool {
 	if resolved, err := filepath.EvalSymlinks(execPath); err == nil {
 		path = resolved
 	}
-	parts := strings.Split(filepath.ToSlash(path), "/")
-	for i := 0; i+1 < len(parts); i++ {
-		if parts[i+1] != "agent-manager" {
-			continue
-		}
-		switch parts[i] {
-		case "Cellar", "Caskroom":
-			return true
-		case "opt":
-			// Only brew's opt tree counts: /opt/agent-manager is a
-			// conventional manual-install prefix, not Homebrew.
-			if i > 0 && (parts[i-1] == "homebrew" || parts[i-1] == ".linuxbrew") {
-				return true
-			}
-		}
-	}
-	return false
+	return homebrewTree(filepath.ToSlash(path)) != ""
 }
 
 // Apply downloads the release named by tag, verifies the archive for this

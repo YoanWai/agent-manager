@@ -908,3 +908,68 @@ func uiReleaseWithTotal(version string, total int, changes ...string) update.Rel
 		TotalChanges: total,
 	}
 }
+
+func TestUpdateDelegatesToPackageManager(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	m.update.latest = "v0.3.0"
+	m.openNotices("update-v0.3.0")
+
+	origDetect := detectManager
+	defer func() { detectManager = origDetect }()
+	detectManager = func(string) update.Manager {
+		return update.Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}}
+	}
+
+	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if cmd == nil {
+		t.Fatal("u on a package-manager install should start the delegated upgrade")
+	}
+	if !m.update.applying {
+		t.Fatal("applying should be marked while the manager runs")
+	}
+}
+
+func TestDelegatedUpdateResult(t *testing.T) {
+	manager := update.Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}}
+	// A base name no PATH holds, so RestartTarget deterministically falls
+	// back to execPath on any machine.
+	execPath := "/x/agent-manager-delegated-test"
+
+	msg := delegatedUpdateResult(manager, execPath, nil)
+	if msg.err != nil {
+		t.Fatalf("success reported %v", msg.err)
+	}
+	if msg.path != execPath {
+		t.Fatalf("restart path = %q, want %q", msg.path, execPath)
+	}
+
+	failed := delegatedUpdateResult(manager, execPath, errors.New("exit status 1"))
+	if failed.err == nil || !strings.Contains(failed.err.Error(), "brew upgrade --cask yoanwai/tap/agent-manager") {
+		t.Fatalf("failure should name the command, got %v", failed.err)
+	}
+	if failed.path != "" {
+		t.Fatal("a failed upgrade must not restart")
+	}
+}
+
+func TestUpdateWithoutRunnableManagerSurfacesAdvice(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	m.update.latest = "v0.3.0"
+	m.openNotices("update-v0.3.0")
+
+	origDetect := detectManager
+	defer func() { detectManager = origDetect }()
+	advice := "installed with pacman; install an AUR helper first, then: yay -S agent-manager-bin"
+	detectManager = func(string) update.Manager {
+		return update.Manager{Name: "pacman", Advice: advice}
+	}
+
+	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if cmd == nil {
+		t.Fatal("u should still answer with the advice")
+	}
+	msg, ok := cmd().(updateAppliedMsg)
+	if !ok || msg.err == nil || msg.err.Error() != advice {
+		t.Fatalf("want the advice as the error, got %#v", cmd())
+	}
+}
