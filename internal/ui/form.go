@@ -813,6 +813,7 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 	m.searching = false
 	m.showArchived = false
 	m.hideEmptyGroups = false
+	m.statusFilter = statusFilterAll
 	m.errBar.text = ""
 	m.mode = modeList
 	m.rebuildRows()

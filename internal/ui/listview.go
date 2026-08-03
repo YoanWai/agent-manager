@@ -226,6 +226,10 @@ func (m *Model) emptyRailLines(width, height int) []string {
 		title = "nothing archived"
 		hint = keyCap("t", "back to active")
 	}
+	if m.statusFilter.active() {
+		title = "nothing needs attention"
+		hint = keyCap("f", "show all")
+	}
 	if search := strings.TrimSpace(m.search); search != "" {
 		title = "no matches"
 		hint = subtleStyle.Render("for \"" + search + "\"")
@@ -753,7 +757,7 @@ func joinHeaderPieces(sep string, pieces ...string) string {
 // up; counting painted rows instead would drop everything folded inside
 // a collapsed group.
 func (m *Model) headerScope() string {
-	count := len(m.visibleSessions())
+	count := len(m.listedSessions())
 	label := " sessions"
 	if count == 1 {
 		label = " session"
@@ -761,6 +765,10 @@ func (m *Model) headerScope() string {
 	scope := subtleStyle.Render(" · active")
 	if m.showArchived {
 		scope = subtleStyle.Render(" · ") + scopeBadgeStyle.Render("ARCHIVED")
+	}
+	if m.statusFilter.active() {
+		scope += subtleStyle.Render(" · ") +
+			scopeBadgeStyle.Render(strings.ToUpper(m.statusFilter.label()))
 	}
 	return valueStyle.Render(fmt.Sprintf("%d", count)) + subtleStyle.Render(label) + scope
 }
@@ -783,7 +791,7 @@ func (m *Model) headerAgents() string {
 // per state present among the listed sessions.
 func (m *Model) viewStatusCounts(compact bool) string {
 	counts := map[string]int{}
-	for _, sess := range m.visibleSessions() {
+	for _, sess := range m.listedSessions() {
 		counts[sess.Status]++
 	}
 	var parts []string

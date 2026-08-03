@@ -378,6 +378,7 @@ func (m *Model) viewHelp() string {
 		{"s", "settings (CLIs, theme, default tool, review layout)"},
 		{"|", "resize split (←→ / drag, enter commits, esc cancels)"},
 		{"t", "toggle archived view"},
+		{"f", "filter to sessions that need attention (waiting, finished, errored)"},
 		{"M", "messages (updates, tips, bug reporting; x dismisses)"},
 		{"e", "hide / show empty groups"},
 		{"/", "search"},

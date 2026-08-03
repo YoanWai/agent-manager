@@ -432,6 +432,7 @@ func TestEmptyListKeepsItsGuidance(t *testing.T) {
 		{"no sessions", func(m *Model) {}, "no sessions yet"},
 		{"no matches", func(m *Model) { m.search = "nothing-matches-this" }, "no matches"},
 		{"nothing archived", func(m *Model) { m.showArchived = true }, "nothing archived"},
+		{"nothing needs attention", func(m *Model) { m.statusFilter = statusFilterAttention }, "nothing needs attention"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := shotModel()

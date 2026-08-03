@@ -89,6 +89,7 @@ func TestGroupFormShowsNewEmptyGroupWithWorktreeOff(t *testing.T) {
 	m.hideEmptyGroups = true
 	m.search = "does-not-match"
 	m.showArchived = true
+	m.statusFilter = statusFilterAttention
 	m.openGroupForm()
 	m.groupForm.name.SetValue("manual")
 	m.groupForm.path.SetValue(t.TempDir())
@@ -98,8 +99,9 @@ func TestGroupFormShowsNewEmptyGroupWithWorktreeOff(t *testing.T) {
 	if m.hideEmptyGroups {
 		t.Fatal("creating a group should reveal it when empty groups were hidden")
 	}
-	if m.search != "" || m.showArchived {
-		t.Fatalf("creation left list filters active: search=%q archived=%v", m.search, m.showArchived)
+	if m.search != "" || m.showArchived || m.statusFilter.active() {
+		t.Fatalf("creation left list filters active: search=%q archived=%v statusFilter=%v",
+			m.search, m.showArchived, m.statusFilter)
 	}
 	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"manual"}) {
 		t.Fatalf("group rows before refresh = %v, want [manual]", got)
