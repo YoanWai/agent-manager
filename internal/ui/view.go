@@ -196,7 +196,7 @@ func inGroupSubtree(sessGroup, group string) bool {
 
 func (m *Model) groupSessionCount(path string) int {
 	count := 0
-	for _, sess := range m.visibleSessions() {
+	for _, sess := range m.listedSessions() {
 		if inGroupSubtree(sess.Group, path) {
 			count++
 		}
@@ -322,7 +322,7 @@ func (m *Model) groupStatusBreakdown(group string) string {
 
 func (m *Model) groupStatusCounts(group string) map[string]int {
 	counts := map[string]int{}
-	for _, sess := range m.visibleSessions() {
+	for _, sess := range m.listedSessions() {
 		if inGroupSubtree(sess.Group, group) {
 			counts[sess.Status]++
 		}
@@ -419,13 +419,17 @@ func (m *Model) viewFooter() string {
 	if m.hideEmptyGroups {
 		emptyGroupsAction = "show empty"
 	}
+	statusFilterAction := "attention"
+	if m.statusFilter.active() {
+		statusFilterAction = "show all"
+	}
 	pairs := [][2]string{
 		{"↑↓/jk", "navigate"}, {"K/J", "reorder"}, {"↵", enterHint}, {"A", attachHint},
 		{"F", "fold all"}, {"n", "new"}, {"g", "group"}, {"f", "fork"}, {"space", "prompt"},
 		{"ctrl+r", "review"}, {"r", "rename"}, {"m", "move"},
 		{"x/X", "kill / all"}, {"v/V", "revive / all"},
 		{"a/u", "archive / restore"}, {"d", "delete"},
-		{"t", "archived"}, {"e", emptyGroupsAction},
+		{"t", "archived"}, {"w", statusFilterAction}, {"e", emptyGroupsAction},
 		{"/", "search"}, {"|", "resize"}, {"s", "settings"},
 		{"?", "keys"}, {"q", "quit"},
 	}

@@ -119,6 +119,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openQuickMode()
 	case "F", "shift+f":
 		m.toggleCollapseAll()
+	case "w":
+		return m, m.cycleStatusFilter()
 	case "s":
 		m.openSettings()
 	case "|":
@@ -339,6 +341,19 @@ var pasteFocused = func(driver *tmux.Driver, id, text string) error {
 	return driver.Paste(id, text)
 }
 
+// cycleStatusFilter advances the list status filter (all → attention → …).
+// Modes live in statusFilterCycle so new ones only need a const and a
+// matches case; this handler stays the same.
+func (m *Model) cycleStatusFilter() tea.Cmd {
+	previousKey := ""
+	if entry, ok := m.selectedRow(); ok {
+		previousKey = rowKey(entry)
+	}
+	m.statusFilter = m.statusFilter.next()
+	m.rebuildRows()
+	return m.afterListFilter(previousKey)
+}
+
 // toggleEmptyGroups hides or restores group rows whose subtree has no
 // sessions in the current active/archive view. It never changes the store.
 func (m *Model) toggleEmptyGroups() tea.Cmd {
@@ -348,7 +363,12 @@ func (m *Model) toggleEmptyGroups() tea.Cmd {
 	}
 	m.hideEmptyGroups = !m.hideEmptyGroups
 	m.rebuildRows()
+	return m.afterListFilter(previousKey)
+}
 
+// afterListFilter keeps the preview tied to the selection when a filter
+// change leaves the cursor on the same row, and refreshes it when not.
+func (m *Model) afterListFilter(previousKey string) tea.Cmd {
 	currentKey := ""
 	if entry, ok := m.selectedRow(); ok {
 		currentKey = rowKey(entry)

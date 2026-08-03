@@ -112,6 +112,7 @@ type Model struct {
 	mode              mode
 	showArchived      bool
 	hideEmptyGroups   bool
+	statusFilter      statusFilter
 	collapsed         map[string]bool
 	search            string
 	searching         bool
@@ -720,7 +721,8 @@ func (m *Model) refreshExistingSessionUX() tea.Msg {
 // visibleSessions filters to the sessions the current view scope shows:
 // active ones normally, archived ones in the archived view. It also
 // covers the frames between a scope toggle and the next refresh, when
-// m.sessions still carries the other scope's list.
+// m.sessions still carries the other scope's list. Status filters apply
+// later via listedSessions.
 func (m *Model) visibleSessions() []store.Session {
 	visible := make([]store.Session, 0, len(m.sessions))
 	for _, sess := range m.sessions {
@@ -729,6 +731,23 @@ func (m *Model) visibleSessions() []store.Session {
 		}
 	}
 	return visible
+}
+
+// listedSessions is the archived scope narrowed by the status filter.
+// Header counts, group rollups, and the tree all share this set so the
+// numbers always match what the list can show.
+func (m *Model) listedSessions() []store.Session {
+	visible := m.visibleSessions()
+	if !m.statusFilter.active() {
+		return visible
+	}
+	listed := make([]store.Session, 0, len(visible))
+	for _, sess := range visible {
+		if m.statusFilter.matches(sess.Status) {
+			listed = append(listed, sess)
+		}
+	}
+	return listed
 }
 
 func (m *Model) selected() (store.Session, bool) {
@@ -1266,20 +1285,21 @@ func rowKey(entry treeRow) string {
 }
 
 // rebuildRows walks the group tree depth-first and emits one row per
-// group node and per session, honoring collapse state and search.
-// The cursor follows the previously selected row's identity, so list
-// changes from the 2s poll never yank the selection around.
+// group node and per session, honoring collapse state, search, and the
+// status filter. The cursor follows the previously selected row's
+// identity, so list changes from the 2s poll never yank the selection.
 func (m *Model) rebuildRows() {
 	previousKey := ""
 	if entry, ok := m.selectedRow(); ok {
 		previousKey = rowKey(entry)
 	}
 	query := strings.ToLower(strings.TrimSpace(m.search))
+	prunedView := query != "" || m.statusFilter.active()
 
 	// m.sessions arrives ordered by the store (group, sort_order), so
 	// per-group slices inherit the user's manual order.
 	sessionsByGroup := map[string][]store.Session{}
-	for _, sess := range m.visibleSessions() {
+	for _, sess := range m.listedSessions() {
 		if query != "" && !matchesSearch(sess, query) {
 			continue
 		}
@@ -1305,7 +1325,7 @@ func (m *Model) rebuildRows() {
 				delete(paths, path)
 			}
 		}
-		if query != "" {
+		if prunedView {
 			paths = pathsWithSessions(paths, sessionsByGroup)
 		}
 	}
@@ -1317,10 +1337,10 @@ func (m *Model) rebuildRows() {
 	}
 	children := childIndex(paths, m.groups)
 
-	// Folds are a browsing convenience for the active tree; the archived
-	// and search views already prune to matching groups, so honoring folds
-	// there would hide the very sessions the user came to act on.
-	honorFolds := query == "" && !m.showArchived
+	// Folds are a browsing convenience for the active tree; the archived,
+	// search, and status-filter views already prune to matching groups, so
+	// honoring folds there would hide the very sessions the user came for.
+	honorFolds := !prunedView && !m.showArchived
 
 	// Root is a standing move and spawn target; its sessions stay flat.
 	rows := make([]treeRow, 0, len(m.sessions)+len(paths)+1)

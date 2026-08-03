@@ -115,7 +115,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 // reviveAllDead relaunches every dead session in the current view, resuming
 // each by its captured id where one exists.
 func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
-	return m.reviveMany(m.visibleSessions(), "no dead sessions to revive")
+	return m.reviveMany(m.listedSessions(), "no dead sessions to revive")
 }
 
 // reviveMany relaunches every dead session in the list. It revives what it
@@ -157,7 +157,7 @@ func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Mo
 // group, so a group action covers exactly the rows under it on screen.
 func (m *Model) sessionsInGroup(path string) []store.Session {
 	var sessions []store.Session
-	for _, sess := range m.visibleSessions() {
+	for _, sess := range m.listedSessions() {
 		if inGroupSubtree(sess.Group, path) {
 			sessions = append(sessions, sess)
 		}
@@ -267,7 +267,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 // killAllLive asks to end every live session in the current view, the
 // batch counterpart to V.
 func (m *Model) killAllLive() (tea.Model, tea.Cmd) {
-	live, err := m.liveSessions(m.visibleSessions())
+	live, err := m.liveSessions(m.listedSessions())
 	if err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
