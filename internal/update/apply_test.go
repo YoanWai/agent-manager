@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -54,6 +55,78 @@ func serveRelease(t *testing.T, tag string, archive []byte, sum string) {
 	orig := downloadBase
 	downloadBase = server.URL
 	t.Cleanup(func() { downloadBase = orig })
+}
+
+func TestHomebrewManaged(t *testing.T) {
+	cases := []struct {
+		label  string
+		source string
+		path   string
+		want   bool
+	}{
+		{"buildSource Homebrew", "Homebrew", "/usr/local/bin/agent-manager", true},
+		{"other buildSource", "binaryBuild", "/usr/local/bin/agent-manager", false},
+		{"cellar path", "", "/opt/homebrew/Cellar/agent-manager/0.18.0/bin/agent-manager", true},
+		{"caskroom path", "", "/opt/homebrew/Caskroom/agent-manager/0.18.0/agent-manager", true},
+		{"opt path", "", "/opt/homebrew/opt/agent-manager/bin/agent-manager", true},
+		{"linuxbrew cellar", "", "/home/linuxbrew/.linuxbrew/Cellar/agent-manager/0.18.0/bin/agent-manager", true},
+		{"local bin", "", "/home/user/.local/bin/agent-manager", false},
+		{"gopath bin", "", "/home/user/go/bin/agent-manager", false},
+		{"caskroom name only", "", "/Users/me/notes/Caskroom-guide/agent-manager", false},
+		{"caskroom other package", "", "/opt/homebrew/Caskroom/other-app/1.0.0/other-app", false},
+		{"empty source ordinary path", "", "/usr/local/bin/agent-manager", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			if got := homebrewManaged(tc.source, tc.path); got != tc.want {
+				t.Fatalf("homebrewManaged(%q, %q) = %v, want %v", tc.source, tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHomebrewManagedFollowsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	cellar := filepath.Join(dir, "Cellar", "agent-manager", "0.18.0", "bin")
+	if err := os.MkdirAll(cellar, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	realBinary := filepath.Join(cellar, "agent-manager")
+	if err := os.WriteFile(realBinary, []byte("brew build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "bin", "agent-manager")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realBinary, link); err != nil {
+		t.Fatal(err)
+	}
+	if !homebrewManaged("", link) {
+		t.Fatal("symlink into Cellar/agent-manager should be managed")
+	}
+}
+
+func TestApplyRejectsHomebrew(t *testing.T) {
+	orig := buildSource
+	buildSource = "Homebrew"
+	t.Cleanup(func() { buildSource = orig })
+
+	target := filepath.Join(t.TempDir(), "agent-manager")
+	if err := os.WriteFile(target, []byte("old build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := Apply(context.Background(), "v9.9.9", target)
+	if !errors.Is(err, errHomebrewManaged) {
+		t.Fatalf("want errHomebrewManaged, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "brew upgrade yoanwai/tap/agent-manager") {
+		t.Fatalf("error should name the brew upgrade command, got %v", err)
+	}
+	untouched, readErr := os.ReadFile(target)
+	if readErr != nil || string(untouched) != "old build" {
+		t.Fatalf("binary must stay untouched, got %q err %v", untouched, readErr)
+	}
 }
 
 func TestApplySwapsBinary(t *testing.T) {
