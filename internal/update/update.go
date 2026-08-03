@@ -38,7 +38,7 @@ var releasesURL = "https://api.github.com/repos/YoanWai/agent-manager/releases?p
 
 var (
 	conventionalTitle = regexp.MustCompile(`(?i)^(feat|fix|docs|refactor|perf|test|build|ci|chore|style)(?:\(([^)]+)\))?!?:\s*(.+)$`)
-	pullSuffix        = regexp.MustCompile(`\s+by\s+@[A-Za-z0-9-]+\s+in\s+https://github\.com/\S+\s*$`)
+	pullSuffix        = regexp.MustCompile(`\s+by\s+(@[A-Za-z0-9-]+(?:\[bot])?)\s+in\s+https://github\.com/\S+\s*$`)
 	markdownLink      = regexp.MustCompile(`\[([^]]+)]\([^)]+\)`)
 )
 
@@ -270,6 +270,14 @@ func extractChanges(body string) ([]string, int) {
 }
 
 func cleanChange(change string) string {
+	// Credit outside contributors on their digest lines; the maintainer's
+	// own handle and bot handles would be noise on every row.
+	author := ""
+	if match := pullSuffix.FindStringSubmatch(change); match != nil {
+		if handle := match[1]; handle != "@YoanWai" && !strings.HasSuffix(handle, "[bot]") {
+			author = handle
+		}
+	}
 	change = pullSuffix.ReplaceAllString(change, "")
 	change = markdownLink.ReplaceAllString(change, "$1")
 	change = strings.ReplaceAll(change, "`", "")
@@ -287,6 +295,9 @@ func cleanChange(change string) string {
 	runes := []rune(change)
 	if len(runes) > maxChangeLength {
 		change = strings.TrimSpace(string(runes[:maxChangeLength-1])) + "…"
+	}
+	if author != "" {
+		change += " · " + author
 	}
 	return change
 }
