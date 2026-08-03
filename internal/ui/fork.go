@@ -106,6 +106,10 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
+	// Forks start as starting, which attention excludes; clear so the row
+	// the fork just created is on screen.
+	m.statusFilter = statusFilterAll
+	m.rebuildRows()
 	m.mode = modeList
 	m.errBar.text = ""
 	for i, row := range m.rows {

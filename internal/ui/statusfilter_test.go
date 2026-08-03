@@ -33,10 +33,10 @@ func TestStatusFilterAttentionMatches(t *testing.T) {
 
 func TestStatusFilterCycleStartsAtAttention(t *testing.T) {
 	if got := statusFilterAll.next(); got != statusFilterAttention {
-		t.Fatalf("first f press = %v want attention", got)
+		t.Fatalf("first w press = %v want attention", got)
 	}
 	if got := statusFilterAttention.next(); got != statusFilterAll {
-		t.Fatalf("second f press = %v want all (only one mode for now)", got)
+		t.Fatalf("second w press = %v want all (only one mode for now)", got)
 	}
 	if statusFilterAll.active() {
 		t.Fatal("all should not report active")
@@ -171,5 +171,80 @@ func TestStatusFilterGroupRosterMatchesCount(t *testing.T) {
 	}
 	if strings.Contains(roster, "grinding") || strings.Contains(roster, "quiet") {
 		t.Fatalf("roster should only list attention sessions:\n%s", roster)
+	}
+}
+
+func TestBulkActionsRespectStatusFilter(t *testing.T) {
+	m := buildModel(t)
+	for _, sess := range []store.Session{
+		{ID: "w", Name: "needs-you", Tool: "claude", Cwd: "/tmp", Status: status.Waiting},
+		{ID: "busy", Name: "grinding", Tool: "claude", Cwd: "/tmp", Status: status.Working},
+		{ID: "gone", Name: "killed", Tool: "claude", Cwd: "/tmp", Status: status.Dead},
+	} {
+		if err := m.store.CreateSession(sess); err != nil {
+			t.Fatalf("create session %q: %v", sess.ID, err)
+		}
+	}
+	loadStoredRows(t, m)
+	for _, id := range []string{"w", "busy"} {
+		if err := m.tmux.Create(id, t.TempDir(), "cat", nil, 80, 24); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m.statusFilter = statusFilterAttention
+	m.rebuildRows()
+
+	updated, _ := m.killAllLive()
+	m = updated.(*Model)
+	if len(m.confirm.sessions) != 1 || m.confirm.sessions[0].ID != "w" {
+		t.Fatalf("filtered kill-all targets = %+v, want only the listed session", m.confirm.sessions)
+	}
+	m.mode = modeList
+
+	if got := m.sessionsInGroup(""); len(got) != 1 || got[0].ID != "w" {
+		t.Fatalf("filtered group sessions = %+v, want only the listed session", got)
+	}
+
+	updated, _ = m.reviveAllDead()
+	m = updated.(*Model)
+	if m.errBar.text != "no dead sessions to revive" {
+		t.Fatalf("filtered revive-all touched hidden sessions: %q", m.errBar.text)
+	}
+}
+
+func TestForkClearsStatusFilter(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "source", dir, "")
+	m.selectSessionRow(t, "source")
+	source := m.rows[m.cursor].sess
+	if err := m.store.SetAgentSessionID(source.ID, "source-conversation"); err != nil {
+		t.Fatal(err)
+	}
+	for i := range m.sessions {
+		if m.sessions[i].ID == source.ID {
+			m.sessions[i].AgentSessionID = "source-conversation"
+			m.sessions[i].Status = status.Waiting
+		}
+	}
+	m.statusFilter = statusFilterAttention
+	m.rebuildRows()
+	m.selectSessionRow(t, "source")
+
+	tool := m.cfg.Tools[source.Tool]
+	tool.ForkCommand = "true {id}; cat"
+	m.cfg.Tools[source.Tool] = tool
+
+	m.openFork()
+	m.fork.name.SetValue("fork-under-filter")
+	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	m.applyCmd(t, cmd)
+
+	if m.statusFilter != statusFilterAll {
+		t.Fatalf("fork should clear the filter, got %v", m.statusFilter)
+	}
+	if entry, ok := m.selectedRow(); !ok || entry.isGroup || entry.sess.Name != "fork-under-filter" {
+		t.Fatalf("cursor should land on the forked row, got %+v", entry)
 	}
 }
