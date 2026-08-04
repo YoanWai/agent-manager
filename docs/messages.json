@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "id": "v020-fork-filter-pi",
+    "banner": "new: fork, filter, Pi",
+    "title": "First outside contributors, and three things you can use today",
+    "body": [
+      "v0.20 ships the first patches from outside this repo. Press f on a",
+      "session to fork it into a named sibling with the same history.",
+      "Press w to narrow the list to sessions that need you: waiting,",
+      "finished, or errored. Pi is a built-in tool with status and revive.",
+      "Update from Settings on the version row, or brew upgrade / the",
+      "install script. Thanks @steveprentice and @snowyukitty."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.20.0"
+  }
+]
