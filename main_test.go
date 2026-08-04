@@ -52,6 +52,40 @@ func TestStartupDisablesAlternateScroll(t *testing.T) {
 	}
 }
 
+// Without mouse reporting the terminal keeps the wheel and scrolls the
+// manager out of view, which is what alternate scroll used to prevent.
+func TestStartupClaimsMouse(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse main.go: %v", err)
+	}
+	found := false
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "NewProgram" {
+			return true
+		}
+		for _, arg := range call.Args {
+			option, ok := arg.(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			name, ok := option.Fun.(*ast.SelectorExpr)
+			if ok && name.Sel.Name == "WithMouseCellMotion" {
+				found = true
+			}
+		}
+		return true
+	})
+	if !found {
+		t.Fatal("the program starts without mouse reporting")
+	}
+}
+
 func TestResolveVersion(t *testing.T) {
 	cases := []struct {
 		label         string

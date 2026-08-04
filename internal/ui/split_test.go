@@ -475,9 +475,10 @@ func TestNewLoadsPersistedSplitRatio(t *testing.T) {
 	}
 }
 
-// Wheel events must be consumed by the app (so the host terminal cannot
-// scroll the TUI away) and advance the list cursor outside resize mode.
-func TestWheelScrollMovesListCursor(t *testing.T) {
+// Wheel events must be consumed by the app so the host terminal cannot
+// scroll the TUI away, and swallowed in the list: moving the cursor there
+// retargets every keystroke that follows (#110).
+func TestWheelSwallowedInList(t *testing.T) {
 	m := &Model{
 		mode:   modeList,
 		cursor: 0,
@@ -485,19 +486,17 @@ func TestWheelScrollMovesListCursor(t *testing.T) {
 		width:  80,
 		height: 24,
 	}
-	updated, _ := m.handleMouse(tea.MouseMsg{
-		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
-	})
-	m = updated.(*Model)
-	if m.cursor != 1 {
-		t.Fatalf("wheel down cursor = %d want 1", m.cursor)
-	}
-	updated, _ = m.handleMouse(tea.MouseMsg{
-		Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress,
-	})
-	m = updated.(*Model)
-	if m.cursor != 0 {
-		t.Fatalf("wheel up cursor = %d want 0", m.cursor)
+	for _, button := range []tea.MouseButton{tea.MouseButtonWheelDown, tea.MouseButtonWheelUp} {
+		updated, cmd := m.handleMouse(tea.MouseMsg{
+			Button: button, Action: tea.MouseActionPress,
+		})
+		m = updated.(*Model)
+		if m.cursor != 0 {
+			t.Fatalf("wheel moved the list cursor to %d", m.cursor)
+		}
+		if cmd != nil {
+			t.Fatal("wheel in the list scheduled work")
+		}
 	}
 }
 

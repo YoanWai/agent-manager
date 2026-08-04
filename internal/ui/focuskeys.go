@@ -143,13 +143,14 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(tea.EnableMouseCellMotion, m.cursorBlink())
 }
 
-// leaveFocus returns to the list and gives the mouse back to the terminal,
-// restoring native selection.
+// leaveFocus returns to the list. Mouse reporting stays on: handing it back
+// to the terminal here would let a wheel notch scroll the manager out of
+// view, so the list swallows the wheel instead.
 func (m *Model) leaveFocus() tea.Cmd {
 	m.mode = modeList
 	m.sel = focusSelection{}
 	m.copied = 0
-	return tea.DisableMouse
+	return nil
 }
 
 // handleFocusKey forwards every key into the focused pane. Ctrl+Q and
