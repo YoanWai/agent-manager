@@ -22,8 +22,7 @@ import (
 )
 
 const (
-	noticeWelcome   = "welcome"
-	noticeBugReport = "bug-report"
+	noticeWelcome = "welcome"
 
 	dismissedNoticesSetting = "dismissed_notices"
 	lastSeenVersionSetting  = "last_seen_version"
@@ -142,20 +141,10 @@ func (m *Model) activeNotices() []notice {
 			body: []string{
 				"Every row on the left is a live agent session: enter attaches,",
 				"space sends a quick prompt, ? shows every key.",
+				"Found a bug? Settings (s) opens a prefilled report.",
 				"Messages like this one live here; x dismisses one for good.",
 			},
 			url: repoURL + "#readme",
-		},
-		notice{
-			id:    noticeBugReport,
-			glyph: "?",
-			tint:  colorAccent,
-			title: "Found a bug?",
-			body: []string{
-				"Enter opens a GitHub issue prefilled with your version and OS.",
-				"A pane screenshot and the steps that led there help the most.",
-			},
-			url: bugReportURL(m.update.version),
 		},
 	)
 

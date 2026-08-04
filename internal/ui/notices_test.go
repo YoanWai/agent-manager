@@ -48,9 +48,23 @@ func noticeIDs(notices []notice) []string {
 func TestActiveNoticesPinnedByDefault(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	ids := noticeIDs(m.activeNotices())
-	for _, want := range []string{noticeWelcome, noticeBugReport} {
-		if !contains(ids, want) {
-			t.Fatalf("want %s among %v", want, ids)
+	if !contains(ids, noticeWelcome) {
+		t.Fatalf("want %s among %v", noticeWelcome, ids)
+	}
+	var welcome notice
+	for _, n := range m.activeNotices() {
+		if n.id == noticeWelcome {
+			welcome = n
+		}
+	}
+	joined := strings.Join(welcome.body, " ")
+	if !strings.Contains(joined, "Settings (s)") || !strings.Contains(joined, "Found a bug?") ||
+		!strings.Contains(joined, "prefilled report") {
+		t.Fatalf("welcome should point at Settings for bug reports: %q", joined)
+	}
+	for _, n := range m.activeNotices() {
+		if n.id != noticeWelcome && n.url == bugReportURL(m.update.version) {
+			t.Fatalf("standalone bug-report notice still active: %q", n.id)
 		}
 	}
 }
@@ -66,9 +80,6 @@ func TestDismissPersistsAcrossRestart(t *testing.T) {
 	reopened := noticeModel(st, "v0.2.0")
 	if contains(noticeIDs(reopened.activeNotices()), noticeWelcome) {
 		t.Fatal("dismissal did not survive restart")
-	}
-	if !contains(noticeIDs(reopened.activeNotices()), noticeBugReport) {
-		t.Fatal("other notices must stay")
 	}
 }
 
@@ -296,7 +307,6 @@ func TestFeedUsesOneCanonicalTitleInCardAndModal(t *testing.T) {
 		Body:   []string{"details"},
 	}}
 	m.dismissNotice(noticeWelcome)
-	m.dismissNotice(noticeBugReport)
 
 	card := ansi.Strip(strings.Join(m.noticeCardLines(m.activeNotices(), 50, 5), "\n"))
 	if !strings.Contains(card, "One title everywhere") || strings.Contains(card, "legacy compact copy") {
@@ -309,19 +319,13 @@ func TestFeedUsesOneCanonicalTitleInCardAndModal(t *testing.T) {
 	}
 }
 
-func TestBugReportNoticeCarriesPrefilledURL(t *testing.T) {
-	m := noticeModel(noticeStore(t), "v0.2.0")
-	var bug notice
-	for _, n := range m.activeNotices() {
-		if n.id == noticeBugReport {
-			bug = n
-		}
+func TestBugReportURLPrefillsVersion(t *testing.T) {
+	got := bugReportURL("v0.2.0")
+	if !strings.HasPrefix(got, "https://github.com/YoanWai/agent-manager/issues/new") {
+		t.Fatalf("bug report should open the new-issue page, got %q", got)
 	}
-	if !strings.HasPrefix(bug.url, "https://github.com/YoanWai/agent-manager/issues/new") {
-		t.Fatalf("bug report should open the new-issue page, got %q", bug.url)
-	}
-	if !strings.Contains(bug.url, "v0.2.0") {
-		t.Fatalf("issue URL should carry the version, got %q", bug.url)
+	if !strings.Contains(got, "v0.2.0") {
+		t.Fatalf("issue URL should carry the version, got %q", got)
 	}
 }
 
@@ -470,7 +474,7 @@ func TestOpenNoticesFromList(t *testing.T) {
 func TestNoticesViewListsAndDetails(t *testing.T) {
 	m := modalModel(t)
 	frame := ansi.Strip(m.View())
-	for _, want := range []string{"messages", "Welcome to agent-manager", "Found a bug?", "dismiss"} {
+	for _, want := range []string{"messages", "Welcome to agent-manager", "Settings (s)", "Found a bug?", "dismiss"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("modal missing %q:\n%s", want, frame)
 		}
@@ -638,12 +642,11 @@ func TestNoticesEnterOpensURL(t *testing.T) {
 	}
 	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
 
-	m.handleNoticesKey(key("down"))
-	m.handleNoticesKey(key("enter"))
-	if opened == "" {
-		t.Fatal("enter should open the selected notice's url")
+	want := m.activeNotices()[m.noticeCursor].url
+	if want == "" {
+		t.Fatal("selected notice needs a url for this test")
 	}
-	want := m.activeNotices()[1].url
+	m.handleNoticesKey(key("enter"))
 	if opened != want {
 		t.Fatalf("opened %q, want %q", opened, want)
 	}

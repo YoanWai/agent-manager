@@ -260,6 +260,20 @@ func (m *Model) viewSettings() string {
 	actionRow := func(field int, name, action string) string {
 		return lead(field, name) + keyStyle.Render("↵") + mutedStyle.Render(" "+action)
 	}
+	// Bug report stays accent-colored even when unfocused so the action
+	// reads as a call-to-action among the picker rows above it.
+	bugLead := func() string {
+		marker := "  "
+		labelStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
+		if m.settings.field == settingsFieldBugReport {
+			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
+			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+		}
+		return marker + padRight(labelStyle.Render("report a bug"), 18)
+	}
+	bugRow := bugLead() + keyStyle.Render("↵") +
+		lipgloss.NewStyle().Foreground(colorAccent2).Render(" open a prefilled GitHub issue")
+	bugNote := subtleStyle.Render("  * found a bug? report it (prefilled)")
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
@@ -269,7 +283,8 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
-		actionRow(settingsFieldBugReport, "report a bug", "open a prefilled GitHub issue") + "\n" +
+		bugRow + "\n" +
+		bugNote + "\n" +
 		m.settingsVersionRow(lead, actionRow)
 	hint := "↑↓ field · ←→ change · ↵/esc save"
 	switch m.settings.field {
@@ -390,11 +405,11 @@ func (m *Model) viewHelp() string {
 		{"b", "in review: pick the branch from the repo's worktrees"},
 		{"B", "in review: pick the target (merge-into branch) the branch diff compares against"},
 		{"F", "fold / unfold all groups"},
-		{"s", "settings (CLIs, theme, default tool, review layout)"},
+		{"s", "settings (CLIs, theme, default tool, review layout, report a bug)"},
 		{"|", "resize split (←→ / drag, enter commits, esc cancels)"},
 		{"t", "toggle archived view"},
 		{"w", "filter to sessions that need attention (waiting, finished, errored)"},
-		{"M", "messages (updates, tips, bug reporting; x dismisses)"},
+		{"M", "messages (updates, tips; x dismisses)"},
 		{"e", "hide / show empty groups"},
 		{"/", "search"},
 		{"↑↓ / jk", "move cursor"},

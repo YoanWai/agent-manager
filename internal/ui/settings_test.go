@@ -9,6 +9,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestDefaultToolFallsBackWhenSettingStale(t *testing.T) {
@@ -149,6 +151,27 @@ func TestSettingsBugReportRowOpensIssue(t *testing.T) {
 	m.handleSettingsKey(key("esc"))
 	if m.mode != modeList {
 		t.Fatal("esc should still save and close")
+	}
+}
+
+func TestSettingsBugReportRowIsHighlighted(t *testing.T) {
+	m := footModel(t)
+	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.openSettings()
+	// Keep focus off the bug row so the accent2 unfocused styling is what paints.
+	m.settings.field = settingsFieldTool
+	card := ansi.Strip(m.viewSettings())
+	if !strings.Contains(card, "report a bug") {
+		t.Fatalf("settings should show the bug report row: %q", card)
+	}
+	if !strings.Contains(card, "found a bug? report it (prefilled)") {
+		t.Fatalf("settings should show the bug report notice: %q", card)
+	}
+	// Unfocused label uses accent2 + bold; prove that SGR lands on the label itself.
+	styled := m.viewSettings()
+	label := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true).Render("report a bug")
+	if !strings.Contains(styled, label) {
+		t.Fatalf("unfocused bug report label should use accent2 bold styling")
 	}
 }
 
