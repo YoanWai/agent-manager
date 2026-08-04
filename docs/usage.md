@@ -39,7 +39,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `?` | Help |
 | `q` | Quit (sessions keep running) |
 
-The wheel scrolls the list and the diff. Mouse tracking stays off so click-drag keeps selecting text natively in your terminal, which is why the pointer does not move the selection ([#110](https://github.com/YoanWai/agent-manager/issues/110)).
+Navigation is keyboard-driven. Mouse tracking stays off so click-drag keeps selecting text natively in your terminal, which is why the pointer does not move the selection; mouse support is tracked in [#110](https://github.com/YoanWai/agent-manager/issues/110). Inside a focused session the wheel walks that pane's scrollback.
 
 ## Quick prompt
 
