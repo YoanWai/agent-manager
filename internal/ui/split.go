@@ -84,8 +84,8 @@ func (m *Model) setSplitFromX(x int) {
 	m.split.ratio = float64(left) / float64(m.width)
 }
 
-// enterResizeMode arms divider dragging. Mouse is never enabled by the
-// app so native text selection always works in the terminal.
+// enterResizeMode arms divider dragging, which the arrow keys drive. The
+// app holds mouse reporting, so a drag here reaches handleMouse too.
 func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	if m.mode != modeList || m.searching || m.quick.active {
 		return m, nil

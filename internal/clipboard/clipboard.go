@@ -332,8 +332,8 @@ func SaveToTemp(data []byte, ext string) (string, error) {
 }
 
 // WriteText puts plain text on the OS clipboard. Used by the focused
-// preview's own selection, which the host terminal never sees because
-// mouse reporting is on while a session has focus.
+// preview's own selection, which the host terminal never sees because the
+// app holds mouse reporting.
 //
 // stdout and stderr stay unwired (os/exec points them at /dev/null): X11
 // writers like xclip fork a daemon that holds the selection, and any pipe
