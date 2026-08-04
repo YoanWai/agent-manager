@@ -144,15 +144,12 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 }
 
 // leaveFocus returns to the list and gives the mouse back to the terminal,
-// restoring native selection and wheel-as-arrows.
+// restoring native selection.
 func (m *Model) leaveFocus() tea.Cmd {
 	m.mode = modeList
 	m.sel = focusSelection{}
 	m.copied = 0
-	return tea.Sequence(tea.DisableMouse, func() tea.Msg {
-		_ = EnableAlternateScroll()
-		return nil
-	})
+	return tea.DisableMouse
 }
 
 // handleFocusKey forwards every key into the focused pane. Ctrl+Q and

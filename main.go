@@ -175,10 +175,11 @@ func run() error {
 
 	model := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
 	// Mouse reporting stays off so the terminal keeps native text selection.
-	// Alternate scroll then turns the wheel into arrow keys instead of host
-	// scrollback, so the manager cannot be scrolled out of view.
+	// Alternate scroll stays off too, so the wheel is inert in the list
+	// instead of arriving as arrow keys that walk the session cursor; a
+	// crashed earlier run can leave it set, so clear it on the way in.
 	program := tea.NewProgram(model, tea.WithAltScreen())
-	if err := ui.EnableAlternateScroll(); err != nil {
+	if err := ui.DisableAlternateScroll(); err != nil {
 		return err
 	}
 	// The terminal's own background follows the theme while the manager
@@ -189,9 +190,6 @@ func run() error {
 	model.StartPoller(program.Send)
 	final, runErr := program.Run()
 	ui.ResetTerminalBackground()
-	if err := ui.DisableAlternateScroll(); err != nil && runErr == nil {
-		runErr = err
-	}
 	if runErr == nil {
 		if finished, ok := final.(*ui.Model); ok && finished.RestartPath() != "" {
 			// A self-update swapped the binary on disk; exec replaces this
