@@ -92,6 +92,10 @@ func TestPreviewLine(t *testing.T) {
 	if closed := previewLine("\x1b[31m\u05e9\u05dc\u05d5\u05dd\x1b[0m", 80); !strings.HasSuffix(closed, "\u2069") {
 		t.Fatalf("RTL line must close the isolate: %q", closed)
 	}
+	arabic := previewLine("\u0645\u0631\u062d\u0628\u0627", 40)
+	if !strings.HasPrefix(arabic, "\u200e\u2066") || !strings.HasSuffix(arabic, "\u2069") {
+		t.Fatalf("Arabic (bidi.AL) row must be isolated: %q", arabic)
+	}
 
 	erased := "abc\x1b[K\x1b[2Jdef"
 	if got := stripPreviewMarks(ansi.Strip(previewLine(erased, 80))); strings.TrimRight(got, " ") != "abcdef" {
