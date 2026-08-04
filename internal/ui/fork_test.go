@@ -216,3 +216,71 @@ func TestOpenForkRejectsGroup(t *testing.T) {
 		t.Fatalf("group fork error = %q", m.errBar.text)
 	}
 }
+
+// Tools split into two fork shapes: those that mint their own conversation id
+// (opencode, codex) leave {new_id} out, so the fork starts without one until
+// the session store captures it; those that take an agent-chosen id (grok,
+// claude) include {new_id} and the fork launches with it already set.
+func TestForkAgentSessionIDFollowsNewIDPlaceholder(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		tool      string
+		forkCmd   string
+		wantNewID bool
+	}{
+		{"opencode_session_store", "opencode", "true {id}; cat", false},
+		{"grok_id_flag", "grok", "true {id} {new_id}; cat", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			dir := t.TempDir()
+			source := store.Session{
+				ID:             "source-" + tc.tool,
+				Name:           "source",
+				Tool:           tc.tool,
+				Cwd:            dir,
+				Status:         status.Idle,
+				AgentSessionID: "source-conversation",
+			}
+			if err := m.store.CreateSession(source); err != nil {
+				t.Fatal(err)
+			}
+			loadStoredRows(t, m)
+			m.selectSessionRow(t, "source")
+
+			tool := m.cfg.Tools[tc.tool]
+			tool.ForkCommand = tc.forkCmd
+			m.cfg.Tools[tc.tool] = tool
+
+			m.openFork()
+			if m.errBar.text != "" {
+				t.Fatalf("openFork error = %q", m.errBar.text)
+			}
+			m.fork.name.SetValue("forked")
+			updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+			m = updated.(*Model)
+			m.applyCmd(t, cmd)
+			if m.mode != modeList || m.errBar.text != "" {
+				t.Fatalf("after fork: mode=%v err=%q", m.mode, m.errBar.text)
+			}
+
+			var forked store.Session
+			for _, sess := range m.sessionRows() {
+				if sess.Name == "forked" {
+					forked = sess
+					break
+				}
+			}
+			if forked.ID == "" {
+				t.Fatal("forked session not found")
+			}
+			if tc.wantNewID {
+				if forked.AgentSessionID == "" || forked.AgentSessionID == source.AgentSessionID {
+					t.Fatalf("forked AgentSessionID = %q, want a fresh id", forked.AgentSessionID)
+				}
+			} else if forked.AgentSessionID != "" {
+				t.Fatalf("forked AgentSessionID = %q, want empty until the session store captures it", forked.AgentSessionID)
+			}
+		})
+	}
+}

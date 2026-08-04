@@ -257,6 +257,7 @@ command = "opencode"
 # opencode mints its own session id; capture it after launch and resume it
 session_store = "opencode"
 resume_by_id_command = "opencode --session {id}"
+fork_command = "opencode --session {id} --fork"
 revive_command = "opencode --continue"
 # opencode's positional argument is the project path, so the optional
 # session prompt travels behind this flag
@@ -305,6 +306,7 @@ rules = [
 command = "grok"
 session_id_flag = "--session-id"
 resume_by_id_command = "grok --resume {id}"
+fork_command = "grok --resume {id} --fork-session --session-id {new_id}"
 # fallback: resumes the most recent session for the working directory
 revive_command = "grok --continue"
 default_status = "idle"

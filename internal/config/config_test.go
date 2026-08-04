@@ -88,6 +88,12 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["codex"].ForkCommand; got != "codex fork {id}" {
 		t.Fatalf("codex fork_command = %q want \"codex fork {id}\"", got)
 	}
+	if got := cfg.Tools["opencode"].ForkCommand; got != "opencode --session {id} --fork" {
+		t.Fatalf("opencode fork_command = %q want \"opencode --session {id} --fork\"", got)
+	}
+	if got := cfg.Tools["grok"].ForkCommand; got != "grok --resume {id} --fork-session --session-id {new_id}" {
+		t.Fatalf("grok fork_command = %q want \"grok --resume {id} --fork-session --session-id {new_id}\"", got)
+	}
 }
 
 func TestDefaultWaitingRulesPrecedeWorking(t *testing.T) {
