@@ -30,10 +30,11 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
-| `s` | Settings (quick-spawn tool, theme, list density, review layout, after quick send, session keys, worktree sessions) |
+| `s` | Settings (quick-spawn tool, theme, list density, review layout, after quick send, session keys, worktree sessions, report a bug) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
 | `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
+| `M` | Messages (updates, tips; `x` dismisses one for good). First run also points at Settings for bug reports. |
 | `e` | Hide / show empty groups |
 | `/` | Search |
 | `?` | Help |

@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestDefaultToolFallsBackWhenSettingStale(t *testing.T) {
@@ -149,6 +150,22 @@ func TestSettingsBugReportRowOpensIssue(t *testing.T) {
 	m.handleSettingsKey(key("esc"))
 	if m.mode != modeList {
 		t.Fatal("esc should still save and close")
+	}
+}
+
+func TestSettingsBugReportRowIsHighlighted(t *testing.T) {
+	m := footModel(t)
+	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.openSettings()
+	card := ansi.Strip(m.viewSettings())
+	if !strings.Contains(card, "report a bug") {
+		t.Fatalf("settings should show the bug report row: %q", card)
+	}
+	if !strings.Contains(card, "found a bug? report it") {
+		t.Fatalf("settings should show the bug report notice: %q", card)
+	}
+	if !strings.Contains(m.viewSettings(), "\x1b[") {
+		t.Fatal("bug report row should use colored styling")
 	}
 }
 
