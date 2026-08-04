@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -420,9 +421,26 @@ var applyUpdate = update.Apply
 // even when several releases landed after the notice was first cached.
 var refreshUpdatesForApply = update.Refresh
 
-// applyUpdateCmd downloads the latest release off the event loop, swaps
-// the running binary, and reports the path to restart into.
+// detectManager is the install-source seam: tests swap it to steer u
+// between the in-place swap and a delegated package manager.
+var detectManager = update.DetectManager
+
+// applyUpdateCmd routes u by install source. A package-manager install
+// hands the terminal to that manager's upgrade command; a direct install
+// downloads the latest release off the event loop and swaps the running
+// binary. Both report the path to restart into.
 func (m *Model) applyUpdateCmd() tea.Cmd {
+	execPath, err := os.Executable()
+	if err != nil {
+		return func() tea.Msg { return updateAppliedMsg{err: err} }
+	}
+	manager := detectManager(execPath)
+	if manager.Advice != "" {
+		return func() tea.Msg { return updateAppliedMsg{err: errors.New(manager.Advice)} }
+	}
+	if manager.Delegated() {
+		return delegatedUpdateCmd(manager, execPath)
+	}
 	return func() tea.Msg {
 		dir, err := config.Dir()
 		if err != nil {
@@ -435,15 +453,28 @@ func (m *Model) applyUpdateCmd() tea.Cmd {
 		if result.Latest == "" {
 			return updateAppliedMsg{result: result, upToDate: true}
 		}
-		execPath, err := os.Executable()
-		if err != nil {
-			return updateAppliedMsg{result: result, err: err}
-		}
 		if err := applyUpdate(context.Background(), result.Latest, execPath); err != nil {
 			return updateAppliedMsg{result: result, err: err}
 		}
 		return updateAppliedMsg{path: execPath, result: result}
 	}
+}
+
+// delegatedUpdateCmd suspends the TUI and runs the manager's upgrade
+// command on the real terminal, so its progress output and any password
+// prompt work as in a plain shell.
+func delegatedUpdateCmd(manager update.Manager, execPath string) tea.Cmd {
+	command := exec.Command(manager.Command[0], manager.Command[1:]...)
+	return tea.ExecProcess(command, func(err error) tea.Msg {
+		return delegatedUpdateResult(manager, execPath, err)
+	})
+}
+
+func delegatedUpdateResult(manager update.Manager, execPath string, err error) updateAppliedMsg {
+	if err != nil {
+		return updateAppliedMsg{err: fmt.Errorf("%s: %w", manager.String(), err)}
+	}
+	return updateAppliedMsg{path: update.RestartTarget(execPath)}
 }
 
 func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
