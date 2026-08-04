@@ -737,14 +737,21 @@ func (m *Model) visibleSessions() []store.Session {
 // listedSessions is the archived scope narrowed by the status filter.
 // Header counts, group rollups, and the tree all share this set so the
 // numbers always match what the list can show.
+//
+// The selected session stays listed when its status leaves the filter
+// (finished → idle on enter/ack) so rebuild cannot eject the cursor mid-work.
 func (m *Model) listedSessions() []store.Session {
 	visible := m.visibleSessions()
 	if !m.statusFilter.active() {
 		return visible
 	}
+	heldID := ""
+	if sess, ok := m.selected(); ok {
+		heldID = sess.ID
+	}
 	listed := make([]store.Session, 0, len(visible))
 	for _, sess := range visible {
-		if m.statusFilter.matches(sess.Status) {
+		if m.statusFilter.matches(sess.Status) || sess.ID == heldID {
 			listed = append(listed, sess)
 		}
 	}

@@ -212,6 +212,71 @@ func TestBulkActionsRespectStatusFilter(t *testing.T) {
 	}
 }
 
+func TestAttentionFilterKeepsSelectedAfterAck(t *testing.T) {
+	m := attentionFilterAckFixture(t)
+	m.selectSessionRow(t, "just-finished")
+
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("expected a selected session")
+	}
+	if err := m.acknowledgeFinished(sess); err != nil {
+		t.Fatalf("acknowledge: %v", err)
+	}
+	loadStoredRows(t, m)
+
+	if got := sessionNames(m); !slices.Equal(got, []string{"just-finished", "still-waiting"}) {
+		t.Fatalf("attention list after ack = %v want both sessions still listed", got)
+	}
+	entry, ok := m.selectedRow()
+	if !ok || entry.isGroup || entry.sess.Name != "just-finished" {
+		t.Fatalf("cursor should stay on the acked session, got %+v", entry)
+	}
+	if entry.sess.Status != status.Idle {
+		t.Fatalf("acked row status = %q want idle", entry.sess.Status)
+	}
+}
+
+func TestAttentionFilterDropsAckedAfterMove(t *testing.T) {
+	m := attentionFilterAckFixture(t)
+	m.selectSessionRow(t, "just-finished")
+
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("expected a selected session")
+	}
+	if err := m.acknowledgeFinished(sess); err != nil {
+		t.Fatalf("acknowledge: %v", err)
+	}
+	loadStoredRows(t, m)
+	m.selectSessionRow(t, "still-waiting")
+	loadStoredRows(t, m)
+
+	if got := sessionNames(m); !slices.Equal(got, []string{"still-waiting"}) {
+		t.Fatalf("attention list after move = %v want only the still-matching session", got)
+	}
+	if entry, ok := m.selectedRow(); !ok || entry.isGroup || entry.sess.Name != "still-waiting" {
+		t.Fatalf("cursor should stay on the waiting session, got %+v", entry)
+	}
+}
+
+func attentionFilterAckFixture(t *testing.T) *Model {
+	t.Helper()
+	m := buildModel(t)
+	for _, sess := range []store.Session{
+		{ID: "done", Name: "just-finished", Tool: "claude", Cwd: "/tmp", Status: status.Finished},
+		{ID: "wait", Name: "still-waiting", Tool: "claude", Cwd: "/tmp", Status: status.Waiting},
+	} {
+		if err := m.store.CreateSession(sess); err != nil {
+			t.Fatalf("create session %q: %v", sess.ID, err)
+		}
+	}
+	loadStoredRows(t, m)
+	m.statusFilter = statusFilterAttention
+	m.rebuildRows()
+	return m
+}
+
 func TestForkClearsStatusFilter(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
