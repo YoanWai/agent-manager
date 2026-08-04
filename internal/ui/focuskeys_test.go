@@ -310,9 +310,9 @@ func TestFocusModeExitsWhenSessionDies(t *testing.T) {
 	}
 }
 
-// Leaving focus must hand the mouse back to the terminal, or native
-// selection stays broken everywhere in the app after one focus session.
-func TestFocusExitReleasesMouse(t *testing.T) {
+// Leaving focus must keep mouse reporting: handing it back would let a
+// wheel notch scroll the manager out of view from the list.
+func TestFocusExitKeepsMouse(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "mouseback", t.TempDir(), "")
 	m.selectSessionRow(t, "mouseback")
