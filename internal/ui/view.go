@@ -376,11 +376,30 @@ func previewLine(line string, width int) string {
 	if w < width {
 		line += strings.Repeat(" ", width-w)
 	}
+	if !containsRTL(line) {
+		// Terminals that give format characters a cell (Windows Terminal
+		// under conpty) would overflow the row and scroll the whole frame.
+		return line
+	}
 	// LRM is strong LTR (zero width). On rows where the rail is only neutrals,
 	// a leading Hebrew run is the line's first strong character; hosts that
 	// right-justify RTL paragraphs then pull the pane into the rail. Isolate
 	// plus a full-width pad keep the run inside the content column.
 	return "\u200e\u2066" + line + "\u2069"
+}
+
+func containsRTL(line string) bool {
+	for _, r := range line {
+		if r < 0x0590 {
+			continue
+		}
+		props, _ := bidi.LookupRune(r)
+		switch props.Class() {
+		case bidi.R, bidi.AL:
+			return true
+		}
+	}
+	return false
 }
 
 // paneExact returns up to n lines of pane text as captured, preserving

@@ -86,8 +86,15 @@ func TestPreviewLine(t *testing.T) {
 	if !strings.Contains(got, "\x1b[38;5;42m") {
 		t.Fatalf("color escapes should survive: %q", got)
 	}
-	if !strings.Contains(got, "\x1b[0m") || !strings.HasSuffix(got, "\u2069") {
-		t.Fatalf("line with ANSI must reset SGR and close the isolate: %q", got)
+	if !strings.Contains(got, "\x1b[0m") {
+		t.Fatalf("line with ANSI must reset SGR: %q", got)
+	}
+	if closed := previewLine("\x1b[31m\u05e9\u05dc\u05d5\u05dd\x1b[0m", 80); !strings.HasSuffix(closed, "\u2069") {
+		t.Fatalf("RTL line must close the isolate: %q", closed)
+	}
+	arabic := previewLine("\u0645\u0631\u062d\u0628\u0627", 40)
+	if !strings.HasPrefix(arabic, "\u200e\u2066") || !strings.HasSuffix(arabic, "\u2069") {
+		t.Fatalf("Arabic (bidi.AL) row must be isolated: %q", arabic)
 	}
 
 	erased := "abc\x1b[K\x1b[2Jdef"
@@ -114,8 +121,11 @@ func TestPreviewLine(t *testing.T) {
 	if strings.Contains(plain, "\x1b") {
 		t.Fatalf("plain line should gain no escapes: %q", plain)
 	}
-	if !strings.HasPrefix(plain, "\u200e\u2066") || !strings.HasSuffix(plain, "\u2069") {
-		t.Fatalf("pane row should open LTR and stay isolated: %q", plain)
+	// Terminals that give format characters a cell (Windows Terminal under
+	// conpty, issue 213) overflow the row and scroll the whole frame, so a
+	// line without an RTL run must carry no bidi controls at all.
+	if strings.ContainsAny(plain, "\u200e\u2066\u2069") {
+		t.Fatalf("LTR-only pane row must carry no bidi controls: %q", plain)
 	}
 	if w := ansi.StringWidth(plain); w != 80 {
 		t.Fatalf("pane row should fill its column, width %d", w)
