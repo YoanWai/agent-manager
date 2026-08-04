@@ -1,6 +1,9 @@
 package main
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +13,44 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
 )
+
+// Startup is the only place the alternate-scroll reset goes out, and it
+// cannot be exercised headlessly: run() takes over the terminal. Reading
+// the call out of the syntax tree still fails if it is dropped, which is
+// what would put wheel notches back on the session cursor (#110).
+func TestStartupDisablesAlternateScroll(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse main.go: %v", err)
+	}
+	var run *ast.FuncDecl
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == "run" && fn.Recv == nil {
+			run = fn
+		}
+	}
+	if run == nil {
+		t.Fatal("main.go has no run function")
+	}
+	found := false
+	ast.Inspect(run, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "DisableAlternateScroll" {
+			return true
+		}
+		if pkg, ok := selector.X.(*ast.Ident); ok && pkg.Name == "ui" {
+			found = true
+		}
+		return true
+	})
+	if !found {
+		t.Fatal("run() never calls ui.DisableAlternateScroll")
+	}
+}
 
 func TestResolveVersion(t *testing.T) {
 	cases := []struct {
