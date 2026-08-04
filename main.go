@@ -174,11 +174,11 @@ func run() error {
 	defer st.Close()
 
 	model := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
-	// Mouse reporting stays off so the terminal keeps native text selection.
-	// Alternate scroll stays off too, so the wheel is inert in the list
-	// instead of arriving as arrow keys that walk the session cursor; a
-	// crashed earlier run can leave it set, so clear it on the way in.
-	program := tea.NewProgram(model, tea.WithAltScreen())
+	// Mouse reporting claims the wheel for the app, so a notch neither
+	// scrolls the host's scrollback out from under the manager nor arrives
+	// as an arrow key that walks the session cursor. Alternate scroll is
+	// cleared too: a crashed earlier run can leave it set.
+	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if err := ui.DisableAlternateScroll(); err != nil {
 		return err
 	}

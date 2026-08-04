@@ -217,34 +217,22 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleMouseWheel keeps the wheel inside the app: list cursor, diff
-// scroll, or a no-op swallow so the outer terminal cannot scroll away.
+// handleMouseWheel keeps the wheel inside the app so the outer terminal
+// cannot scroll the manager away. It scrolls the diff, and is swallowed
+// everywhere else: in the list a notch would move the session cursor,
+// silently retargeting every keystroke that follows (#110).
 func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.split.resizeMode {
+	if m.split.resizeMode || m.mode != modeDiff {
 		return m, nil
 	}
-	delta := 0
+	if m.diff.annotating || m.diff.sendConfirm {
+		return m, nil
+	}
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
-		delta = -1
+		m.moveDiffCursor(-1, m.diffCodeHeight())
 	case tea.MouseButtonWheelDown:
-		delta = 1
-	default:
-		return m, nil
+		m.moveDiffCursor(1, m.diffCodeHeight())
 	}
-	switch m.mode {
-	case modeDiff:
-		if m.diff.annotating || m.diff.sendConfirm {
-			return m, nil
-		}
-		m.moveDiffCursor(delta, m.diffCodeHeight())
-		return m, nil
-	case modeList, modeRename:
-		if m.searching {
-			return m, nil
-		}
-		return m, m.moveCursor(delta)
-	default:
-		return m, nil
-	}
+	return m, nil
 }

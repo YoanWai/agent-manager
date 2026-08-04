@@ -40,7 +40,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `?` | Help |
 | `q` | Quit (sessions keep running) |
 
-Navigation is keyboard-driven. Mouse tracking stays off so click-drag keeps selecting text natively in your terminal, which is why the pointer does not move the selection; mouse support is tracked in [#110](https://github.com/YoanWai/agent-manager/issues/110). Inside a focused session the wheel walks that pane's scrollback.
+Navigation is keyboard-driven. The manager claims mouse reporting so the wheel stays inside the app and cannot scroll the TUI out of view: a notch scrolls the diff, and in a focused session it walks that pane's scrollback, where click-drag also selects pane text and copies it. In the list the wheel does nothing, since moving the selection with it retargets every key that follows. Fuller mouse support, on by default with a settings toggle, is tracked in [#110](https://github.com/YoanWai/agent-manager/issues/110).
 
 ## Quick prompt
 

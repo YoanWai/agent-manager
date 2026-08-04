@@ -329,10 +329,12 @@ func TestFocusExitReleasesMouse(t *testing.T) {
 		t.Fatalf("entering focus never enabled mouse reporting: %T", enterCmd())
 	}
 
+	// Leaving keeps mouse reporting on: handing the wheel back to the
+	// terminal here would let a notch scroll the manager out of view.
 	updated, exitCmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
 	*m = *updated.(*Model)
-	if exitCmd == nil {
-		t.Fatal("leaving focus issued no mouse command")
+	if exitCmd != nil && batchContains(exitCmd(), tea.DisableMouse()) {
+		t.Fatal("leaving focus released mouse reporting to the terminal")
 	}
 	if m.sel.active {
 		t.Fatal("selection survived leaving focus")
