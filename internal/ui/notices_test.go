@@ -58,8 +58,14 @@ func TestActiveNoticesPinnedByDefault(t *testing.T) {
 		}
 	}
 	joined := strings.Join(welcome.body, " ")
-	if !strings.Contains(joined, "Settings (s)") || !strings.Contains(joined, "Found a bug?") {
+	if !strings.Contains(joined, "Settings (s)") || !strings.Contains(joined, "Found a bug?") ||
+		!strings.Contains(joined, "prefilled report") {
 		t.Fatalf("welcome should point at Settings for bug reports: %q", joined)
+	}
+	for _, n := range m.activeNotices() {
+		if n.id != noticeWelcome && n.url == bugReportURL(m.update.version) {
+			t.Fatalf("standalone bug-report notice still active: %q", n.id)
+		}
 	}
 }
 
