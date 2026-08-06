@@ -12,7 +12,7 @@ import (
 const (
 	// legendTitleColumn keeps every tier's first binding on one column, so
 	// stacked tiers read as a table rather than as ragged prose.
-	legendTitleColumn = 10
+	legendTitleColumn = 11
 	legendGap         = 2
 	// legendMaxRows is the footer's height budget. Past it the tail is cut
 	// and marked; the full map is one ? away.
@@ -40,7 +40,11 @@ func legendBar(sections []legendSection, width int) string {
 		if len(section.pairs) == 0 || len(out) >= legendMaxRows {
 			continue
 		}
-		head := indent + padRight(legendTitleStyle.Render(section.title), legendTitleColumn)
+		title := legendBadgeStyle.Render(section.title)
+		if section.quiet {
+			title = legendTitleStyle.Render(section.title)
+		}
+		head := indent + padRight(title, legendTitleColumn)
 		line, lineWidth, started := head, ansi.StringWidth(head), false
 		cut := false
 		for _, pair := range section.pairs {

@@ -119,7 +119,7 @@ func TestSettingsShowsVersion(t *testing.T) {
 	}
 	m.settings.field = settingsFieldUpdate
 	out = m.viewSettings()
-	if !strings.Contains(out, keyChipStyle.Render("↵")+mutedStyle.Render(" update to")) {
+	if !strings.Contains(out, keyStyle.Render("↵")+mutedStyle.Render(" update to")) {
 		t.Errorf("focused update row should hint enter: %q", out)
 	}
 }

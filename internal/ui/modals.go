@@ -300,7 +300,7 @@ func (m *Model) viewSettings() string {
 	}
 	// An action row: enter runs it, so it carries no picker arrows.
 	actionRow := func(field int, name, action string) string {
-		return lead(field, name) + keyChipStyle.Render("↵") + mutedStyle.Render(" "+action)
+		return lead(field, name) + keyStyle.Render("↵") + mutedStyle.Render(" "+action)
 	}
 	// Bug report stays accent-colored even when unfocused so the action
 	// reads as a call-to-action among the picker rows above it.
@@ -313,7 +313,7 @@ func (m *Model) viewSettings() string {
 		}
 		return marker + padRight(labelStyle.Render("report a bug"), 18)
 	}
-	bugRow := bugLead() + keyChipStyle.Render("↵") + " " +
+	bugRow := bugLead() + keyStyle.Render("↵") + " " +
 		lipgloss.NewStyle().Foreground(colorAccent2).Render("open a prefilled GitHub issue")
 	bugNote := subtleStyle.Render("  * found a bug? report it (prefilled)")
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
@@ -392,7 +392,7 @@ func (m *Model) viewCLIPicker() string {
 	}
 	b.WriteByte('\n')
 	b.WriteString(reqMarker)
-	b.WriteString(keyChipStyle.Render("↵"))
+	b.WriteString(keyStyle.Render("↵"))
 	b.WriteString(" ")
 	b.WriteString(reqLabel)
 	b.WriteString(mutedStyle.Render("  open a GitHub issue"))
@@ -461,7 +461,7 @@ func (m *Model) viewHelp() string {
 	}
 	var b strings.Builder
 	for _, binding := range rows {
-		b.WriteString(padRight(keyChipStyle.Render(binding[0]), 12) + mutedStyle.Render(binding[1]) + "\n")
+		b.WriteString(keyStyle.Width(10).Render(binding[0]) + mutedStyle.Render(binding[1]) + "\n")
 	}
 	width := 92
 	if m.width >= 28 && width > m.width-4 {
