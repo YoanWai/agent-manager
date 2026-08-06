@@ -67,10 +67,7 @@ func rebuildStyles() {
 	subtleStyle = lipgloss.NewStyle().Foreground(colorSubtle)
 	valueStyle = lipgloss.NewStyle().Foreground(colorText)
 	labelStyle = lipgloss.NewStyle().Foreground(colorSubtle)
-	errStyle = lipgloss.NewStyle().
-		Foreground(colorErrored).
-		Background(lipgloss.Color(errWashHex())).
-		Bold(true)
+	errStyle = lipgloss.NewStyle().Foreground(colorErrored).Bold(true)
 	keyStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 
 	annotationStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
@@ -109,27 +106,6 @@ func renderSelectedRow(s string) string {
 // profile as well as the live theme.
 func annotationBg() string {
 	return bgSeq(mix(current.Bg, current.Accent, 0.18))
-}
-
-// errWashHex is the soft red fill under footer alerts: backdrop lifted
-// toward Errored so the red text sits on a surface that separates it from
-// the key-hint row below.
-func errWashHex() string {
-	return mix(current.Bg, current.Errored, 0.18)
-}
-
-// focusWashHex tints only the focus notice's own cells so the hint reads
-// as a surface without painting a full-width status strip.
-func focusWashHex() string {
-	return mix(current.Bg, current.Accent, 0.18)
-}
-
-// washText paints a soft fill only as wide as s. Multi-segment styles
-// emit resets that would clear an outer Background; re-applying the fill
-// after each reset keeps the wash continuous under the content.
-func washText(hex, s string) string {
-	fill := bgSeq(hex)
-	return fill + strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+fill) + "\x1b[0m"
 }
 
 func statusColor(s string) lipgloss.Color {
