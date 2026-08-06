@@ -381,6 +381,9 @@ func TestFooterInFocusMode(t *testing.T) {
 	m := buildModel(t)
 	m.mode = modeFocus
 	footer := ansi.Strip(m.viewFooter())
+	if !strings.Contains(footer, "Focused") {
+		t.Fatalf("the tier should name the mode it describes:\n%s", footer)
+	}
 	if !strings.Contains(footer, "back to manager") || !strings.Contains(footer, "goes to the agent") {
 		t.Fatalf("focus footer should carry the reserved keys:\n%s", footer)
 	}
