@@ -109,7 +109,8 @@ func errWashHex() string {
 	return mix(current.Bg, current.Errored, 0.18)
 }
 
-// focusWashHex is the soft accent fill under the focus status notice.
+// focusWashHex tints only the focus notice's own cells so the hint reads
+// as a surface without painting a full-width status strip.
 func focusWashHex() string {
 	return mix(current.Bg, current.Accent, 0.18)
 }

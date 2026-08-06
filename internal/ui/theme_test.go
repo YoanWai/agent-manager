@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 // tmux forwards a passthrough payload after undoubling ESC bytes; a
@@ -84,26 +85,41 @@ func TestThemeTextContrast(t *testing.T) {
 					theme.Name, theme.Bg, token, accent, ratio)
 			}
 		}
-		// Status washes must differ from the backdrop or the highlight
-		// would not read as a surface under the text.
+		// Status washes sit under bold large text. Softening Errored/Accent
+		// into Bg reduces contrast slightly; keep the tertiary floor (2.0)
+		// so a wash that collapses toward the ink still fails the suite.
+		const washMin = 2.0
 		applyTheme(theme)
-		if wash := errWashHex(); wash == theme.Bg {
-			t.Errorf("%s: err wash equals Bg, alerts would not highlight", theme.Name)
+		if ratio := contrastRatio(theme.Errored, errWashHex()); ratio < washMin {
+			t.Errorf("%s: Errored on err wash contrast %.2f, want >= %.1f",
+				theme.Name, ratio, washMin)
 		}
-		if wash := focusWashHex(); wash == theme.Bg {
-			t.Errorf("%s: focus wash equals Bg, focus notice would not highlight", theme.Name)
+		if ratio := contrastRatio(theme.Accent, focusWashHex()); ratio < washMin {
+			t.Errorf("%s: Accent on focus wash contrast %.2f, want >= %.1f",
+				theme.Name, ratio, washMin)
 		}
 	}
 }
 
 func TestWashTextFitsContent(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
 	applyTheme(themes[0])
 	inner := keyStyle.Render("focus ") + subtleStyle.Render("hint")
+	if !strings.Contains(inner, "\x1b[0m") {
+		t.Fatal("styled input must emit ANSI resets for reapply coverage")
+	}
 	washed := washText(focusWashHex(), inner)
 	if lipgloss.Width(washed) != lipgloss.Width(inner) {
 		t.Fatalf("wash width %d != content width %d", lipgloss.Width(washed), lipgloss.Width(inner))
 	}
-	if !strings.Contains(washed, bgSeq(focusWashHex())) {
+	fill := bgSeq(focusWashHex())
+	if !strings.Contains(washed, fill) {
 		t.Fatal("washText must emit the fill sequence")
+	}
+	if !strings.Contains(washed, "\x1b[0m"+fill) {
+		t.Fatal("washText must re-apply the fill after each ANSI reset")
 	}
 }
