@@ -331,14 +331,18 @@ func (m *Model) toggleCollapseAll() {
 }
 
 // allGroupsCollapsed reports whether the whole tree is folded, which is
-// what decides the direction F takes and the label the footer offers.
+// what decides the direction F takes and the label the footer offers. A
+// tree with no groups is not folded: there is nothing to unfold, and the
+// label must not offer it.
 func (m *Model) allGroupsCollapsed() bool {
+	any := false
 	for group := range groupClosure(m.groups, m.sessions) {
 		if !m.collapsed[group] {
 			return false
 		}
+		any = true
 	}
-	return true
+	return any
 }
 
 // pasteFocused is the seam tests swap to observe pastes into the pane.
