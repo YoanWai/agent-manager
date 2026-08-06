@@ -254,6 +254,7 @@ func TestForkAgentSessionIDFollowsNewIDPlaceholder(t *testing.T) {
 
 			tool := m.cfg.Tools[tc.tool]
 			tool.ForkCommand = tc.forkCmd
+			tool.MCP = "none"
 			m.cfg.Tools[tc.tool] = tool
 
 			m.openFork()
@@ -322,6 +323,7 @@ func TestForkGeminiResolvesSessionFile(t *testing.T) {
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
 	tool := m.cfg.Tools["gemini"]
 	tool.ForkCommand = "printf '%s\\n' {session_file} > " + tmux.ShellQuote(argsFile) + "; cat"
+	tool.MCP = "none"
 	m.cfg.Tools["gemini"] = tool
 
 	m.openFork()
