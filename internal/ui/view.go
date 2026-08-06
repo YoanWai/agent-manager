@@ -437,8 +437,8 @@ func (m *Model) viewFooter() string {
 			worktreeHint = "on"
 		}
 		return legendBar([]legendSection{{title: "Prompt", pairs: [][2]string{
-			{"↵", "send"}, {"↑↓", "switch target"}, {"⇥", "tool: " + m.quickTool()},
-			{"⇤", "worktree: " + worktreeHint}, {"esc", "close"},
+			{"↵", "send"}, {"↑↓", "switch target"}, {"tab", "tool: " + m.quickTool()},
+			{"shift+tab", "worktree: " + worktreeHint}, {"esc", "close"},
 		}}}, m.width)
 	}
 	if m.split.resizeMode {
@@ -449,9 +449,9 @@ func (m *Model) viewFooter() string {
 	if m.mode == modeRename {
 		pairs := [][2]string{{"↵", "save"}, {"esc", "cancel"}}
 		if m.rename.isGroup {
-			pairs = [][2]string{{"⇥", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}
+			pairs = [][2]string{{"tab", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}
 		} else if tool := m.renameTool(); tool != "" {
-			pairs = [][2]string{{"⇥", "tool: " + tool}, {"↵", "save"}, {"esc", "cancel"}}
+			pairs = [][2]string{{"tab", "tool: " + tool}, {"↵", "save"}, {"esc", "cancel"}}
 		}
 		return legendBar([]legendSection{{title: "Rename", pairs: pairs}}, m.width)
 	}

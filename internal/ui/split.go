@@ -132,11 +132,13 @@ func (m *Model) nudgeSplit(delta int) {
 func (m *Model) listChromeRows() int { return m.headerRows() + 1 }
 
 // listBodyHeight is the vertical budget for the sessions/sidebar panels.
-// Matches View: height - (header, blank, status, footer baseline).
+// Matches View: height - (header, seam, status when one shows, footer).
 func (m *Model) listBodyHeight() int {
-	// The frame is the chrome rows, the body, the seam above the footer,
-	// the status line, and the footer itself.
-	bodyHeight := m.height - m.listChromeRows() - 2 - lipgloss.Height(m.viewFooter())
+	statusRow := 0
+	if m.viewStatus() != "" {
+		statusRow = 1
+	}
+	bodyHeight := m.height - m.listChromeRows() - 1 - statusRow - lipgloss.Height(m.viewFooter())
 	if bodyHeight < 3 {
 		bodyHeight = 3
 	}
