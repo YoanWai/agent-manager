@@ -8,28 +8,38 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// The wordmark is the product name set in tracked-out capitals, lit by a
-// highlight that sweeps across it once on launch. One row: a header, not a
-// splash screen.
+// The wordmark is the product name set in tracked-out capitals over the
+// mark's own gradient, lit by a highlight that sweeps across it on launch
+// and again once in a while. One row: a header, not a splash screen.
 const (
 	bannerWord = "agent manager"
 	bannerRows = 1
 
-	// bannerFrames is how long the intro sweep runs. The wordmark animates
-	// on launch and then holds still: a permanently animating header would
-	// repaint the frame forever, and a repainting frame cannot be selected
-	// with the mouse.
+	// bannerFrames is how long a sweep runs. Between sweeps the wordmark
+	// holds still: a permanently animating header would repaint the frame
+	// forever, and a repainting frame cannot be selected with the mouse.
 	bannerFrames   = 22
 	bannerInterval = 110 * time.Millisecond
+	// bannerShimmerEvery re-runs the sweep on a settled wordmark.
+	bannerShimmerEvery = 30 * time.Second
+
+	// The wordmark's resting fill runs the brand teal into a soft blue,
+	// pulled a step toward the theme's text so it stays legible on any
+	// backdrop.
+	bannerGradientFrom = "#12766a"
+	bannerGradientTo   = "#6da4c8"
 )
 
-type bannerTickMsg struct{}
+type (
+	bannerTickMsg    struct{}
+	bannerShimmerMsg struct{}
+)
 
-// bannerTick drives the intro sweep, and stops scheduling itself once the
-// wordmark has settled.
+// bannerTick drives a sweep frame by frame; a settled wordmark waits out
+// the shimmer interval before the next one.
 func (m *Model) bannerTick() tea.Cmd {
 	if m.bannerPhase >= bannerFrames {
-		return nil
+		return tea.Tick(bannerShimmerEvery, func(time.Time) tea.Msg { return bannerShimmerMsg{} })
 	}
 	return tea.Tick(bannerInterval, func(time.Time) tea.Msg { return bannerTickMsg{} })
 }
@@ -76,19 +86,27 @@ func (m *Model) viewBanner() []string {
 	return []string{b.String()}
 }
 
+// bannerRest is a column's settled color: its slice of the mark's gradient.
+func bannerRest(column float64) string {
+	span := float64(bannerWidth() - 1)
+	if span < 1 {
+		span = 1
+	}
+	return mix(mix(bannerGradientFrom, bannerGradientTo, column/span), current.Text, 0.2)
+}
+
 // bannerTint colors one column of the wordmark by its distance from the
-// sweep's head: lit at the head, accent behind it, and the quieter
-// secondary accent ahead of it.
+// sweep's head: lit at the head, its gradient color behind it, dimmed
+// ahead of it so the sweep reads as light passing over the word.
 func bannerTint(column, head float64) string {
+	rest := bannerRest(column)
 	distance := head - column
 	switch {
 	case distance < 0:
-		return mix(current.Accent2, current.Subtle, 0.55)
+		return mix(rest, current.Subtle, 0.5)
 	case distance < 4:
-		return mix(current.Accent, current.Bright, 1-distance/4)
-	case distance < 12:
-		return mix(current.Accent, current.Accent2, (distance-4)/8)
+		return mix(rest, current.Bright, 1-distance/4)
 	default:
-		return current.Accent2
+		return rest
 	}
 }

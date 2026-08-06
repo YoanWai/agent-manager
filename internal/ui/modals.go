@@ -8,42 +8,56 @@ import (
 )
 
 func (m *Model) cardWidth() int {
-	width := 60
+	width := 64
 	if m.width >= 28 && width > m.width-4 {
 		width = m.width - 4
 	}
 	return width
 }
 
-const cardPaddingX = 3
+const (
+	cardPaddingX = 3
+	// cardChromeX is the two border columns a card spends on its frame.
+	cardChromeX = 2
+)
 
-// card floats a modal on the app backdrop: a lifted panel, no border, its
-// title set in accent above the body and its keys quietly at the foot.
-func (m *Model) card(title, body, hint string) string {
+// cardBorderStyle is the card's frame: the theme's border tone pulled toward
+// the accent, so a dialog reads as the app's own surface rather than as a
+// box drawn around it.
+func cardBorderStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Border, current.Accent, 0.35)))
+}
+
+// card floats a modal on the app backdrop: a framed panel with its title set
+// into the top edge and its keys on a foot below a hairline.
+func (m *Model) card(title, body string, hint [][2]string) string {
 	return m.cardSized(m.cardWidth(), title, body, hint)
 }
 
 // cardFlex is card, but the panel grows with its content up to the terminal
 // width so long settings rows are not clipped.
-func (m *Model) cardFlex(title, body, hint string) string {
+func (m *Model) cardFlex(title, body string, hint [][2]string) string {
 	return m.cardSized(m.flexCardWidth(title, body, hint), title, body, hint)
 }
 
+func cardInnerWidth(width int) int { return width - cardChromeX - 2*cardPaddingX }
+
 // flexCardWidth picks a width that fits every content line, never under the
 // default card width and never past the terminal edge.
-func (m *Model) flexCardWidth(title, body, hint string) int {
-	head := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(title)
-	content := head + "\n\n" + body
-	if m.errBar.text != "" {
-		content += "\n" + errStyle.Render("✕ "+m.errBar.text)
-	}
-	content += "\n\n" + subtleStyle.Render(hint)
-
+func (m *Model) flexCardWidth(title, body string, hint [][2]string) int {
 	need := m.cardWidth()
-	for _, line := range strings.Split(content, "\n") {
-		if w := lipgloss.Width(line) + 2*cardPaddingX; w > need {
-			need = w
+	measure := func(s string) {
+		for _, line := range strings.Split(s, "\n") {
+			if w := lipgloss.Width(line) + cardChromeX + 2*cardPaddingX; w > need {
+				need = w
+			}
 		}
+	}
+	measure(body)
+	measure(cardTitle(title))
+	measure(legendInline(hint, 1<<30))
+	if m.errBar.text != "" {
+		measure(errStyle.Render("⚠ " + m.errBar.text))
 	}
 	if m.width >= 28 && need > m.width-4 {
 		need = m.width - 4
@@ -51,25 +65,53 @@ func (m *Model) flexCardWidth(title, body, hint string) int {
 	return need
 }
 
+func cardTitle(title string) string {
+	return lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(title)
+}
+
 // cardSized is card at an explicit width, for the key map, whose lines are
 // too long to read inside the default column.
-func (m *Model) cardSized(width int, title, body, hint string) string {
-	head := lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(title)
-	content := head + "\n\n" + body
-	if m.errBar.text != "" {
-		content += "\n" + errStyle.Render("✕ "+m.errBar.text)
-	}
-	content += "\n\n" + subtleStyle.Render(hint)
-
-	inner := width - 2*cardPaddingX
+func (m *Model) cardSized(width int, title, body string, hint [][2]string) string {
+	inner := cardInnerWidth(width)
+	border := cardBorderStyle()
 	pad := strings.Repeat(" ", cardPaddingX)
-	var lines []string
-	lines = append(lines, paint("", width, blockHex()))
-	for _, line := range strings.Split(content, "\n") {
-		lines = append(lines, paint(pad+padRight(line, inner), width, blockHex()))
+	edge := border.Render("│")
+
+	row := func(line string) string {
+		return paint(edge+pad+padRight(line, inner)+pad+edge, width, blockHex())
 	}
-	lines = append(lines, paint("", width, blockHex()))
+	rule := func(left, right string) string {
+		return paint(border.Render(left+strings.Repeat("─", width-2)+right), width, blockHex())
+	}
+
+	lines := []string{cardTitleRow(width, title, border), row("")}
+	for _, line := range strings.Split(body, "\n") {
+		lines = append(lines, row(line))
+	}
+	if m.errBar.text != "" {
+		lines = append(lines, row(""), row(errStyle.Render("⚠ "+m.errBar.text)))
+	}
+	lines = append(lines, row(""))
+	if len(hint) > 0 {
+		lines = append(lines, rule("├", "┤"))
+		for _, line := range strings.Split(legendInline(hint, inner), "\n") {
+			lines = append(lines, row(line))
+		}
+	}
+	lines = append(lines, rule("╰", "╯"))
 	return m.centerOnBackdrop(lines)
+}
+
+// cardTitleRow sets the title into the top edge, so the frame names the
+// dialog instead of spending a content row on it.
+func cardTitleRow(width int, title string, border lipgloss.Style) string {
+	label := " " + cardTitle(title) + " "
+	dashes := width - 4 - lipgloss.Width(label)
+	if dashes < 0 {
+		dashes = 0
+	}
+	head := border.Render("╭──") + label + border.Render(strings.Repeat("─", dashes)+"╮")
+	return paint(head, width, blockHex())
 }
 
 // centerOnBackdrop floats a block of pre-painted lines in the middle of
@@ -132,9 +174,9 @@ func (m *Model) viewForm() string {
 		b.WriteString("\n" + m.viewGroupPicker())
 	}
 
-	hint := "tab/↑↓ move · ←→ change · ↵ create · esc cancel"
+	hint := [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	if m.form.focus == fieldGroup {
-		hint = "←→ pick group · tab/↑↓ move · ↵ create · esc cancel"
+		hint = [][2]string{{"←→", "pick group"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
 	if m.form.focus == fieldDir && m.pathSugg.active() {
 		hint = pathSuggestHint(m.pathSugg.chosen)
@@ -146,11 +188,11 @@ func groupBadge(path string) string {
 	return lipgloss.NewStyle().Foreground(colorAccent2).Render(path)
 }
 
-func pathSuggestHint(chosen bool) string {
+func pathSuggestHint(chosen bool) [][2]string {
 	if chosen {
-		return "↑↓ pick · ↵/tab complete · esc close"
+		return [][2]string{{"↑↓", "pick"}, {"↵/tab", "complete"}, {"esc", "close"}}
 	}
-	return "↑↓ pick · tab complete · ↵ create · esc close"
+	return [][2]string{{"↑↓", "pick"}, {"tab", "complete"}, {"↵", "create"}, {"esc", "close"}}
 }
 
 // viewPathSuggestions renders the directory-completion dropdown under
@@ -203,12 +245,12 @@ func (m *Model) viewGroupForm() string {
 	if m.groupForm.focus == gfParent {
 		b.WriteString("\n" + m.viewGroupPicker())
 	}
-	hint := "tab/↑↓ move · ↵ create · esc cancel"
+	hint := [][2]string{{"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	if m.groupForm.focus == gfParent {
-		hint = "←→ pick parent · tab/↑↓ move · ↵ create · esc cancel"
+		hint = [][2]string{{"←→", "pick parent"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
 	if m.groupForm.focus == gfWorktree {
-		hint = "tab/↑↓ move · ←→ change · ↵ create · esc cancel"
+		hint = [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
 	if m.groupForm.focus == gfPath && m.pathSugg.active() {
 		hint = pathSuggestHint(m.pathSugg.chosen)
@@ -271,8 +313,8 @@ func (m *Model) viewSettings() string {
 		}
 		return marker + padRight(labelStyle.Render("report a bug"), 18)
 	}
-	bugRow := bugLead() + keyStyle.Render("↵") +
-		lipgloss.NewStyle().Foreground(colorAccent2).Render(" open a prefilled GitHub issue")
+	bugRow := bugLead() + keyStyle.Render("↵") + " " +
+		lipgloss.NewStyle().Foreground(colorAccent2).Render("open a prefilled GitHub issue")
 	bugNote := subtleStyle.Render("  * found a bug? report it (prefilled)")
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
@@ -286,19 +328,20 @@ func (m *Model) viewSettings() string {
 		bugRow + "\n" +
 		bugNote + "\n" +
 		m.settingsVersionRow(lead, actionRow)
-	hint := "↑↓ field · ←→ change · ↵/esc save"
+	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save"}}
 	switch m.settings.field {
 	case settingsFieldBugReport:
-		hint = "↑↓ field · ↵ open issue · esc save"
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "open issue"}, {"esc", "save"}}
 	case settingsFieldCLIs:
-		hint = "↑↓ field · ↵ manage CLIs · esc save"
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
 	case settingsFieldUpdate:
-		if m.update.applying {
-			hint = "↑↓ field · downloading… · esc save"
-		} else if m.update.latest != "" {
-			hint = "↑↓ field · ↵ update · esc save"
-		} else {
-			hint = "↑↓ field · ↵/esc save"
+		switch {
+		case m.update.applying:
+			hint = [][2]string{{"↑↓", "field"}, {"esc", "save"}}
+		case m.update.latest != "":
+			hint = [][2]string{{"↑↓", "field"}, {"↵", "update"}, {"esc", "save"}}
+		default:
+			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save"}}
 		}
 	}
 	return m.cardFlex("⚙ Settings", body, hint)
@@ -355,9 +398,9 @@ func (m *Model) viewCLIPicker() string {
 	b.WriteString(mutedStyle.Render("  open a GitHub issue"))
 	b.WriteByte('\n')
 	b.WriteString(subtleStyle.Render("  * more will be supported soon!"))
-	hint := "↑↓ move · space/↵ toggle · esc back"
+	hint := [][2]string{{"↑↓", "move"}, {"space/↵", "toggle"}, {"esc", "back"}}
 	if reqFocused {
-		hint = "↑↓ move · ↵ open request issue · esc back"
+		hint = [][2]string{{"↑↓", "move"}, {"↵", "open request issue"}, {"esc", "back"}}
 	}
 	// Fixed card width: short checkbox rows must not stretch a wide empty panel.
 	return m.card("⚙ CLIs", strings.TrimRight(b.String(), "\n"), hint)
@@ -374,7 +417,8 @@ func themeSwatch(t Theme) string {
 }
 
 func (m *Model) viewMove() string {
-	return m.card("⇄ Move to group", m.viewGroupPicker(), "↑↓ pick · ↵ move · esc cancel")
+	return m.card("⇄ Move to group", m.viewGroupPicker(),
+		[][2]string{{"↑↓", "pick"}, {"↵", "move"}, {"esc", "cancel"}})
 }
 
 func (m *Model) viewHelp() string {
@@ -395,9 +439,9 @@ func (m *Model) viewHelp() string {
 		{"d", "delete session, or group + subtree"},
 		{"K / J", "reorder row up / down (shift+↑↓ also works)"},
 		{"space", "quick prompt: answer session / spawn agent in group"},
-		{"⇥", "in quick prompt: switch spawn tool"},
-		{"⇤", "in quick prompt: toggle worktree for the spawned agent"},
-		{"^v", "in quick prompt: paste image as a chip at the cursor"},
+		{"tab", "in quick prompt: switch spawn tool"},
+		{"shift+tab", "in quick prompt: toggle worktree for the spawned agent"},
+		{"ctrl+v", "in quick prompt: paste image as a chip at the cursor"},
 		{"⌫", "in quick prompt: next to a chip, delete the whole chip"},
 		{"ctrl+r", "review changes: whole-file diffs, comment lines, send to agent"},
 		{"s", "in review: cycle scope (uncommitted / vs target / last commit / staged)"},
@@ -423,7 +467,8 @@ func (m *Model) viewHelp() string {
 	if m.width >= 28 && width > m.width-4 {
 		width = m.width - 4
 	}
-	return m.cardSized(width, "? Keys", strings.TrimRight(b.String(), "\n"), "any key to close")
+	return m.cardSized(width, "? Keys", strings.TrimRight(b.String(), "\n"),
+		[][2]string{{"any key", "close"}})
 }
 
 func formField(label, value string, focused bool) string {

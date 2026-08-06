@@ -49,6 +49,10 @@ var (
 	chipStyle             lipgloss.Style
 	imageChipStyle        lipgloss.Style
 	imageChipPastingStyle lipgloss.Style
+
+	legendTitleStyle lipgloss.Style
+	legendBadgeStyle lipgloss.Style
+	legendLabelStyle lipgloss.Style
 )
 
 func init() { applyTheme(themes[0]) }
@@ -81,6 +85,11 @@ func rebuildStyles() {
 	imageChipPastingStyle = lipgloss.NewStyle().
 		Foreground(colorWorking).
 		Background(colorSurface)
+
+	legendTitleStyle = lipgloss.NewStyle().Foreground(colorSubtle).Bold(true)
+	legendBadgeStyle = lipgloss.NewStyle().
+		Foreground(colorBg).Background(colorAccent).Bold(true).Padding(0, 1)
+	legendLabelStyle = lipgloss.NewStyle().Foreground(colorText)
 }
 
 // renderSelectedRow wraps a pre-styled line with the selected row's
@@ -246,8 +255,16 @@ func keyPill(key, text string, fg lipgloss.Color) string {
 	return subtleStyle.Render(key+" ") + pill(text, fg)
 }
 
-// keyCap renders one footer binding: the key in accent, its action muted.
+// keyCap renders one binding: the key in accent, its action beside it. The
+// key stays plain text; the legend's badge carries the visual weight, so a
+// row of bindings reads as prose under a header rather than as buttons.
 func keyCap(key, label string) string {
+	return keyStyle.Render(key) + " " + legendLabelStyle.Render(label)
+}
+
+// keyCapQuiet is keyCap for a secondary tier: the label drops to the dim
+// tone so the tier recedes behind the one above it.
+func keyCapQuiet(key, label string) string {
 	return keyStyle.Render(key) + " " + mutedStyle.Render(label)
 }
 

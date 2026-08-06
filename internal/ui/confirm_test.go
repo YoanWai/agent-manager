@@ -1,0 +1,62 @@
+package ui
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/charmbracelet/x/ansi"
+)
+
+// A destructive answer is asked in a dialog, not on the status line, so a
+// busy frame cannot hide the question.
+func TestConfirmRendersAsADialog(t *testing.T) {
+	m := buildModel(t)
+	m.mode = modeConfirmDelete
+	m.confirm = confirmTarget{
+		action:   actionKill,
+		sessions: []store.Session{{ID: "one", Name: "builder"}},
+		label:    "kill builder? frees its RAM, v revives it.",
+	}
+
+	out := ansi.Strip(m.View())
+	for _, want := range []string{"Kill session", "kill builder?", "frees its RAM", "cancel"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("confirm dialog missing %q:\n%s", want, out)
+		}
+	}
+	if status := ansi.Strip(m.viewStatus()); strings.Contains(status, "builder") {
+		t.Fatalf("the question moved to the dialog, status should not repeat it: %q", status)
+	}
+}
+
+func TestConfirmTitleNamesTheAct(t *testing.T) {
+	m := buildModel(t)
+	cases := []struct {
+		action  string
+		isGroup bool
+		want    string
+	}{
+		{actionKill, false, "Kill session"},
+		{actionKill, true, "Kill group"},
+		{actionDelete, false, "Delete session"},
+		{actionArchive, true, "Archive group"},
+		{actionRestore, false, "Restore session"},
+	}
+	for _, tc := range cases {
+		m.confirm = confirmTarget{action: tc.action, isGroup: tc.isGroup}
+		if got := m.confirmTitle(); !strings.Contains(got, tc.want) {
+			t.Errorf("action %q group=%v titled %q, want it to name %q", tc.action, tc.isGroup, got, tc.want)
+		}
+	}
+}
+
+func TestSplitConfirmLabel(t *testing.T) {
+	question, consequence := splitConfirmLabel("kill web? frees its RAM.")
+	if question != "kill web?" || consequence != "frees its RAM." {
+		t.Fatalf("split gave %q / %q", question, consequence)
+	}
+	if question, consequence = splitConfirmLabel("delete everything"); question != "delete everything" || consequence != "" {
+		t.Fatalf("a label without a question mark stays whole, got %q / %q", question, consequence)
+	}
+}

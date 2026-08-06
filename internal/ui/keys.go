@@ -322,18 +322,27 @@ func (m *Model) toggleCollapse() {
 // when they are already collapsed, so one key flips the whole tree.
 func (m *Model) toggleCollapseAll() {
 	groups := groupClosure(m.groups, m.sessions)
-	anyOpen := false
+	collapse := !m.allGroupsCollapsed()
 	for group := range groups {
-		if !m.collapsed[group] {
-			anyOpen = true
-			break
-		}
-	}
-	for group := range groups {
-		m.collapsed[group] = anyOpen
+		m.collapsed[group] = collapse
 	}
 	m.persistCollapsed()
 	m.rebuildRows()
+}
+
+// allGroupsCollapsed reports whether the whole tree is folded, which is
+// what decides the direction F takes and the label the footer offers. A
+// tree with no groups is not folded: there is nothing to unfold, and the
+// label must not offer it.
+func (m *Model) allGroupsCollapsed() bool {
+	any := false
+	for group := range groupClosure(m.groups, m.sessions) {
+		if !m.collapsed[group] {
+			return false
+		}
+		any = true
+	}
+	return any
 }
 
 // pasteFocused is the seam tests swap to observe pastes into the pane.

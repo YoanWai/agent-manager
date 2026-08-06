@@ -72,10 +72,10 @@ func (m *Model) viewListFrame() string {
 	if m.mode == modeFocus && m.pane.box.ok {
 		bottom = m.focusBottomRule(leftWidth+1, m.width)
 	}
-	frame = append(frame,
-		bottom,
-		paint(m.viewStatus(), m.width, backdropHex()),
-	)
+	frame = append(frame, bottom)
+	if status := m.viewStatus(); status != "" {
+		frame = append(frame, paint(status, m.width, backdropHex()))
+	}
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}

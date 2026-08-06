@@ -404,7 +404,8 @@ func TestBodyYRangeMatchesListChrome(t *testing.T) {
 	if start != m.listChromeRows() {
 		t.Fatalf("start = %d want listChromeRows=%d", start, m.listChromeRows())
 	}
-	wantH := m.height - m.listChromeRows() - 2 - lipgloss.Height(m.viewFooter())
+	// No transient status is showing, so its row is not reserved.
+	wantH := m.height - m.listChromeRows() - 1 - lipgloss.Height(m.viewFooter())
 	if wantH < 3 {
 		wantH = 3
 	}

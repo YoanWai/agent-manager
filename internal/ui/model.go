@@ -145,7 +145,7 @@ type Model struct {
 	// queue a second of tmux work after the user stops.
 	previewGen uint64
 
-	// bannerPhase advances the wordmark's intro sweep and then stops, so
+	// bannerPhase advances the wordmark's current sweep and then rests, so
 	// the frame is not repainted forever.
 	bannerPhase int
 
@@ -889,6 +889,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case bannerTickMsg:
 		m.bannerPhase++
+		return m, m.bannerTick()
+
+	case bannerShimmerMsg:
+		m.bannerPhase = 0
 		return m, m.bannerTick()
 
 	case previewTickMsg:

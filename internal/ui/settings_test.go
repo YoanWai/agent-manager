@@ -108,7 +108,7 @@ func TestSettingsShowsVersion(t *testing.T) {
 	}
 	m.settings.field = settingsFieldUpdate
 	out = m.viewSettings()
-	if !strings.Contains(out, "↵/esc save") {
+	if !strings.Contains(out, keyCap("↵/esc", "save")) {
 		t.Errorf("current version row should hint save, not update: %q", out)
 	}
 	m.settings.field = 0
@@ -119,7 +119,7 @@ func TestSettingsShowsVersion(t *testing.T) {
 	}
 	m.settings.field = settingsFieldUpdate
 	out = m.viewSettings()
-	if !strings.Contains(out, "↵ update") {
+	if !strings.Contains(out, keyStyle.Render("↵")+mutedStyle.Render(" update to")) {
 		t.Errorf("focused update row should hint enter: %q", out)
 	}
 }

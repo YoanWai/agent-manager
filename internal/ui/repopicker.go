@@ -291,5 +291,5 @@ func (m *Model) viewRepoPick() string {
 	if hidden := len(rows) - (end - start); hidden > 0 {
 		body.WriteString(subtleStyle.Render(fmt.Sprintf("+%d more", hidden)) + "\n")
 	}
-	return m.card(m.repoPick.title, strings.TrimRight(body.String(), "\n"), "type to filter · ↑↓ pick · ↵ select · esc cancel")
+	return m.card(m.repoPick.title, strings.TrimRight(body.String(), "\n"), [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵", "select"}, {"esc", "cancel"}})
 }
