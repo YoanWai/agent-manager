@@ -46,6 +46,24 @@ func TestLegendBarCapsRowsAndMarksTheCut(t *testing.T) {
 	}
 }
 
+// Focused, the keyboard belongs to the agent: one tier with the keys the
+// manager keeps, and the app-wide keys — which would go to the agent, not
+// the manager — stay out.
+func TestFooterInFocusMode(t *testing.T) {
+	m := buildModel(t)
+	m.mode = modeFocus
+	footer := ansi.Strip(m.viewFooter())
+	if !strings.Contains(footer, "back to manager") || !strings.Contains(footer, "goes to the agent") {
+		t.Fatalf("focus footer should carry the reserved keys:\n%s", footer)
+	}
+	if strings.Contains(footer, "navigate") || strings.Contains(footer, "View") {
+		t.Fatalf("app-wide keys go to the agent while focused, so the tier must go:\n%s", footer)
+	}
+	if lines := strings.Split(footer, "\n"); len(lines) != 1 {
+		t.Fatalf("focus footer should be one row, got %d:\n%s", len(lines), footer)
+	}
+}
+
 // With nothing under the cursor there is nothing to act on, so the footer
 // carries only the app-wide tier.
 func TestFooterWithoutASelectedRow(t *testing.T) {

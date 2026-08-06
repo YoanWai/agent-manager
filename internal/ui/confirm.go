@@ -19,11 +19,11 @@ func (m *Model) confirmTitle() string {
 	}
 	switch m.confirm.action {
 	case actionKill:
-		return "⚠ Kill " + subject
+		return "✕ Kill " + subject
 	case actionArchive:
-		return "⌸ Archive " + subject
+		return "◇ Archive " + subject
 	case actionRestore:
-		return "⌸ Restore " + subject
+		return "◆ Restore " + subject
 	default:
 		return "⚠ Delete " + subject
 	}

@@ -166,9 +166,6 @@ func (m *Model) viewStatus() string {
 	case m.mode == modeFocus && m.copied > 0:
 		return "  " + keyStyle.Render("copied ") +
 			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", m.copied))
-	case m.mode == modeFocus:
-		return "  " + keyStyle.Render("focus ") +
-			subtleStyle.Render("typing goes to the agent · drag/double/triple click to copy · ctrl+q or ctrl+\\ back")
 	case m.split.resizeMode:
 		hint := "←→ resize · drag divider · enter set · esc cancel"
 		if m.split.dragging {
@@ -457,6 +454,15 @@ func (m *Model) viewFooter() string {
 			pairs = [][2]string{{"⇥", "tool: " + tool}, {"↵", "save"}, {"esc", "cancel"}}
 		}
 		return legendBar([]legendSection{{title: "Rename", pairs: pairs}}, m.width)
+	}
+	// Focused, the keyboard belongs to the agent: the tier carries the few
+	// keys the manager keeps, and the app-wide tier would lie, so it goes.
+	if m.mode == modeFocus {
+		return legendBar([]legendSection{{title: "Session", pairs: [][2]string{
+			{"typing", "goes to the agent"},
+			{"ctrl+q / ctrl+\\", "back to manager"},
+			{"drag / double / triple click", "copy"},
+		}}}, m.width)
 	}
 	return legendBar([]legendSection{m.rowLegend(), m.viewLegend()}, m.width)
 }
