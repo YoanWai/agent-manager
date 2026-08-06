@@ -88,6 +88,21 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["codex"].ForkCommand; got != "codex fork {id}" {
 		t.Fatalf("codex fork_command = %q want \"codex fork {id}\"", got)
 	}
+	if got := cfg.Tools["opencode"].ForkCommand; got != "opencode --session {id} --fork" {
+		t.Fatalf("opencode fork_command = %q want \"opencode --session {id} --fork\"", got)
+	}
+	if got := cfg.Tools["grok"].ForkCommand; got != "grok --resume {id} --fork-session --session-id {new_id}" {
+		t.Fatalf("grok fork_command = %q want \"grok --resume {id} --fork-session --session-id {new_id}\"", got)
+	}
+	if got := cfg.Tools["pi"].ForkCommand; got != "pi --fork {id} --session-id {new_id}" {
+		t.Fatalf("pi fork_command = %q want \"pi --fork {id} --session-id {new_id}\"", got)
+	}
+	if got := cfg.Tools["gemini"].ForkCommand; got != "gemini --session-file {session_file}" {
+		t.Fatalf("gemini fork_command = %q want \"gemini --session-file {session_file}\"", got)
+	}
+	if got := cfg.Tools["gemini"].SessionStore; got != "gemini" {
+		t.Fatalf("gemini session_store = %q want \"gemini\" (captures the fork's minted id)", got)
+	}
 }
 
 func TestDefaultWaitingRulesPrecedeWorking(t *testing.T) {

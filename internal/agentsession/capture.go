@@ -9,7 +9,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -61,6 +64,8 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 		return captureCodex(codexRoot(), cwd, launchedAt, claimed)
 	case "opencode":
 		return captureOpencode(cwd, launchedAt, claimed)
+	case "gemini":
+		return captureGemini(geminiRoot(), cwd, launchedAt, claimed)
 	default:
 		return "", false
 	}
@@ -324,4 +329,117 @@ func captureOpencode(cwd string, launchedAt time.Time, claimed map[string]bool) 
 		cands = append(cands, candidate{id: id, modTime: created})
 	}
 	return pickEarliest(cands)
+}
+
+func geminiRoot() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".gemini", "tmp")
+}
+
+// geminiProjectHash mirrors gemini's per-project key, the hex sha256 of the
+// resolved working directory. Session files record it in their header, so a
+// conversation can be matched to its directory without relying on the
+// per-project folder name, which gemini does not derive consistently.
+func geminiProjectHash(cwd string) string {
+	sum := sha256.Sum256([]byte(resolvePath(cwd)))
+	return hex.EncodeToString(sum[:])
+}
+
+// geminiSessionMeta reads the session id and project hash from a gemini
+// session file's first line.
+func geminiSessionMeta(path string) (id, projectHash string, ok bool) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", "", false
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	if !scanner.Scan() {
+		return "", "", false
+	}
+	var header struct {
+		SessionID   string `json:"sessionId"`
+		ProjectHash string `json:"projectHash"`
+	}
+	if err := json.Unmarshal(scanner.Bytes(), &header); err != nil {
+		return "", "", false
+	}
+	if header.SessionID == "" {
+		return "", "", false
+	}
+	return header.SessionID, header.ProjectHash, true
+}
+
+// captureGemini finds the conversation gemini minted for a session launched
+// in cwd. A fork via `gemini --session-file` names its own id, so the file
+// is located by matching the project hash gemini records for cwd among
+// session files written at or after launch.
+func captureGemini(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
+	if root == "" {
+		return "", false
+	}
+	cutoff := launchedAt.Add(-clockSlack)
+	wantHash := geminiProjectHash(cwd)
+	var cands []candidate
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".jsonl") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil || info.ModTime().Before(cutoff) {
+			return nil
+		}
+		id, hash, ok := geminiSessionMeta(path)
+		if !ok || hash != wantHash || claimed[id] {
+			return nil
+		}
+		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
+		return nil
+	})
+	return pickEarliest(cands)
+}
+
+// GeminiSessionFile locates the on-disk session file gemini stores for a
+// conversation id, so a fork can hand it to `gemini --session-file`.
+func GeminiSessionFile(id string) (string, error) {
+	return geminiSessionFileIn(geminiRoot(), id)
+}
+
+func geminiSessionFileIn(root, id string) (string, error) {
+	if root == "" {
+		return "", fmt.Errorf("cannot resolve the gemini home directory")
+	}
+	prefix := id
+	if len(prefix) > 8 {
+		prefix = prefix[:8]
+	}
+	var found string
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || found != "" {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".jsonl") {
+			return nil
+		}
+		if !strings.Contains(name, prefix) {
+			return nil
+		}
+		if sessionID, _, ok := geminiSessionMeta(path); ok && sessionID == id {
+			found = path
+		}
+		return nil
+	})
+	if found == "" {
+		return "", fmt.Errorf("no gemini session file found for conversation %s", id)
+	}
+	return found, nil
 }

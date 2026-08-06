@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,8 +16,8 @@ import (
 )
 
 func TestExpandForkCommandQuotesPlaceholders(t *testing.T) {
-	got := expandForkCommand("tool --fork {id} --new {new_id} --name {name}", "source", "new", "Sam's fork")
-	want := "tool --fork 'source' --new 'new' --name 'Sam'\\''s fork'"
+	got := expandForkCommand("tool --fork {id} --new {new_id} --name {name} --file {session_file}", "source", "new", "Sam's fork", "/store/session.jsonl")
+	want := "tool --fork 'source' --new 'new' --name 'Sam'\\''s fork' --file '/store/session.jsonl'"
 	if got != want {
 		t.Fatalf("fork command = %q, want %q", got, want)
 	}
@@ -183,16 +184,18 @@ func TestOpenForkRequiresConfiguredCommandAndConversationID(t *testing.T) {
 	m.selectSessionRow(t, "source")
 	source := m.rows[m.cursor].sess
 
+	tool := m.cfg.Tools[source.Tool]
+	tool.ForkCommand = ""
+	m.cfg.Tools[source.Tool] = tool
 	m.openFork()
 	if !strings.Contains(m.errBar.text, "no fork_command") {
 		t.Fatalf("missing command error = %q", m.errBar.text)
 	}
 
-	tool := m.cfg.Tools[source.Tool]
 	tool.ForkCommand = "tool --fork latest"
 	m.cfg.Tools[source.Tool] = tool
 	m.openFork()
-	if !strings.Contains(m.errBar.text, "must contain {id}") {
+	if !strings.Contains(m.errBar.text, "must reference the source via {id} or {session_file}") {
 		t.Fatalf("missing placeholder error = %q", m.errBar.text)
 	}
 
@@ -214,5 +217,197 @@ func TestOpenForkRejectsGroup(t *testing.T) {
 	m.openFork()
 	if m.errBar.text != "select a session to fork" {
 		t.Fatalf("group fork error = %q", m.errBar.text)
+	}
+}
+
+// Tools split into two fork shapes: those that mint their own conversation id
+// (opencode, codex) leave {new_id} out, so the fork starts without one until
+// the session store captures it; those that take an agent-chosen id (grok,
+// claude) include {new_id} and the fork launches with it already set.
+func TestForkAgentSessionIDFollowsNewIDPlaceholder(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		tool      string
+		forkCmd   string
+		wantNewID bool
+	}{
+		{"opencode_session_store", "opencode", "true {id}; cat", false},
+		{"grok_id_flag", "grok", "true {id} {new_id}; cat", true},
+		{"pi_id_flag", "pi", "true {id} {new_id}; cat", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			dir := t.TempDir()
+			source := store.Session{
+				ID:             "source-" + tc.tool,
+				Name:           "source",
+				Tool:           tc.tool,
+				Cwd:            dir,
+				Status:         status.Idle,
+				AgentSessionID: "source-conversation",
+			}
+			if err := m.store.CreateSession(source); err != nil {
+				t.Fatal(err)
+			}
+			loadStoredRows(t, m)
+			m.selectSessionRow(t, "source")
+
+			tool := m.cfg.Tools[tc.tool]
+			tool.ForkCommand = tc.forkCmd
+			tool.MCP = "none"
+			m.cfg.Tools[tc.tool] = tool
+
+			m.openFork()
+			if m.errBar.text != "" {
+				t.Fatalf("openFork error = %q", m.errBar.text)
+			}
+			m.fork.name.SetValue("forked")
+			updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+			m = updated.(*Model)
+			m.applyCmd(t, cmd)
+			if m.mode != modeList || m.errBar.text != "" {
+				t.Fatalf("after fork: mode=%v err=%q", m.mode, m.errBar.text)
+			}
+
+			var forked store.Session
+			for _, sess := range m.sessionRows() {
+				if sess.Name == "forked" {
+					forked = sess
+					break
+				}
+			}
+			if forked.ID == "" {
+				t.Fatal("forked session not found")
+			}
+			if tc.wantNewID {
+				if forked.AgentSessionID == "" || forked.AgentSessionID == source.AgentSessionID {
+					t.Fatalf("forked AgentSessionID = %q, want a fresh id", forked.AgentSessionID)
+				}
+			} else if forked.AgentSessionID != "" {
+				t.Fatalf("forked AgentSessionID = %q, want empty until the session store captures it", forked.AgentSessionID)
+			}
+		})
+	}
+}
+
+// gemini forks by handing `--session-file` the source's on-disk session file;
+// gemini imports it as a brand-new conversation, so the fork launches with no
+// conversation id and the resolver's path must reach the command line intact.
+func TestForkGeminiResolvesSessionFile(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	source := store.Session{
+		ID:             "gemini-source",
+		Name:           "source",
+		Tool:           "gemini",
+		Cwd:            dir,
+		Status:         status.Idle,
+		AgentSessionID: "gemini-conversation",
+	}
+	if err := m.store.CreateSession(source); err != nil {
+		t.Fatal(err)
+	}
+	loadStoredRows(t, m)
+	m.selectSessionRow(t, "source")
+
+	const sourceFile = "/store/gemini/session-source.jsonl"
+	previousResolver := forkSessionFileResolver
+	forkSessionFileResolver = func(id string) (string, error) {
+		if id != source.AgentSessionID {
+			t.Errorf("resolver id = %q, want %q", id, source.AgentSessionID)
+		}
+		return sourceFile, nil
+	}
+	t.Cleanup(func() { forkSessionFileResolver = previousResolver })
+
+	argsFile := filepath.Join(t.TempDir(), "fork-args")
+	tool := m.cfg.Tools["gemini"]
+	tool.ForkCommand = "printf '%s\\n' {session_file} > " + tmux.ShellQuote(argsFile) + "; cat"
+	tool.MCP = "none"
+	m.cfg.Tools["gemini"] = tool
+
+	m.openFork()
+	if m.errBar.text != "" {
+		t.Fatalf("openFork error = %q", m.errBar.text)
+	}
+	m.fork.name.SetValue("forked")
+	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	m.applyCmd(t, cmd)
+	if m.mode != modeList || m.errBar.text != "" {
+		t.Fatalf("after fork: mode=%v err=%q", m.mode, m.errBar.text)
+	}
+
+	var forked store.Session
+	for _, sess := range m.sessionRows() {
+		if sess.Name == "forked" {
+			forked = sess
+			break
+		}
+	}
+	if forked.ID == "" {
+		t.Fatal("forked session not found")
+	}
+	if forked.AgentSessionID != "" {
+		t.Fatalf("forked AgentSessionID = %q, want empty until the gemini store captures it", forked.AgentSessionID)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	var raw []byte
+	var err error
+	for time.Now().Before(deadline) {
+		raw, err = os.ReadFile(argsFile)
+		if err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(raw)); got != sourceFile {
+		t.Fatalf("session file passed to fork = %q, want %q", got, sourceFile)
+	}
+}
+
+// A fork whose source file cannot be resolved reports the error and does not
+// launch, leaving the session list unchanged.
+func TestForkGeminiResolverFailureReportsError(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	source := store.Session{
+		ID:             "gemini-source",
+		Name:           "source",
+		Tool:           "gemini",
+		Cwd:            dir,
+		Status:         status.Idle,
+		AgentSessionID: "gemini-conversation",
+	}
+	if err := m.store.CreateSession(source); err != nil {
+		t.Fatal(err)
+	}
+	loadStoredRows(t, m)
+	m.selectSessionRow(t, "source")
+
+	previousResolver := forkSessionFileResolver
+	forkSessionFileResolver = func(id string) (string, error) {
+		return "", fmt.Errorf("no gemini session file found for conversation %s", id)
+	}
+	t.Cleanup(func() { forkSessionFileResolver = previousResolver })
+
+	tool := m.cfg.Tools["gemini"]
+	tool.ForkCommand = "gemini --session-file {session_file}"
+	m.cfg.Tools["gemini"] = tool
+
+	before := len(m.sessionRows())
+	m.openFork()
+	m.fork.name.SetValue("forked")
+	updated, _ := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	if !strings.Contains(m.errBar.text, "no gemini session file") {
+		t.Fatalf("resolver error = %q", m.errBar.text)
+	}
+	if got := len(m.sessionRows()); got != before {
+		t.Fatalf("session rows = %d, want %d (no fork launched)", got, before)
 	}
 }

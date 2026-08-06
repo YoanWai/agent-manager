@@ -135,3 +135,64 @@ func TestCaptureUnknownStore(t *testing.T) {
 		t.Fatal("unknown store should not match")
 	}
 }
+
+// geminiSessionFixture is the header line of a gemini session file; the
+// capturer and resolver only read this first line.
+func geminiSessionFixture(sessionID, projectHash string) string {
+	return `{"sessionId":"` + sessionID + `","projectHash":"` + projectHash +
+		`","startTime":"2026-08-06T00:00:00.000Z","lastUpdated":"2026-08-06T00:00:00.000Z","kind":"main"}` + "\n"
+}
+
+func TestCaptureGeminiPicksSessionAfterLaunchInCwd(t *testing.T) {
+	root := t.TempDir()
+	launch := time.Now()
+	oursHash := geminiProjectHash("/repo")
+	otherHash := geminiProjectHash("/elsewhere")
+	// An older conversation in the same project predates the launch: not ours.
+	writeFile(t, filepath.Join(root, "proj/chats/session-1-old.jsonl"),
+		geminiSessionFixture("old-uuid", oursHash), launch.Add(-time.Hour))
+	// A conversation in a different project started after launch: not ours.
+	writeFile(t, filepath.Join(root, "proj/chats/session-2-other.jsonl"),
+		geminiSessionFixture("other-uuid", otherHash), launch.Add(time.Second))
+	// Ours: matching project hash, written just after launch.
+	writeFile(t, filepath.Join(root, "proj/chats/session-3-ours.jsonl"),
+		geminiSessionFixture("ours-uuid", oursHash), launch.Add(2*time.Second))
+
+	id, ok := captureGemini(root, "/repo", launch, map[string]bool{})
+	if !ok || id != "ours-uuid" {
+		t.Fatalf("got id=%q ok=%v, want ours-uuid true", id, ok)
+	}
+}
+
+func TestCaptureGeminiSkipsClaimed(t *testing.T) {
+	root := t.TempDir()
+	launch := time.Now()
+	hash := geminiProjectHash("/repo")
+	writeFile(t, filepath.Join(root, "p/chats/session-1.jsonl"),
+		geminiSessionFixture("first-uuid", hash), launch.Add(time.Second))
+	writeFile(t, filepath.Join(root, "p/chats/session-2.jsonl"),
+		geminiSessionFixture("second-uuid", hash), launch.Add(2*time.Second))
+
+	// first-uuid already belongs to another session, so the earliest
+	// unclaimed match wins instead.
+	id, ok := captureGemini(root, "/repo", launch, map[string]bool{"first-uuid": true})
+	if !ok || id != "second-uuid" {
+		t.Fatalf("got id=%q ok=%v, want second-uuid true", id, ok)
+	}
+}
+
+func TestGeminiSessionFileInResolvesByID(t *testing.T) {
+	root := t.TempDir()
+	id := "aaaa1111-2222-3333-4444-555566667777"
+	path := filepath.Join(root, "proj/chats/session-1786000000000-aaaa1111.jsonl")
+	writeFile(t, path, geminiSessionFixture(id, geminiProjectHash("/repo")), time.Now())
+
+	got, err := geminiSessionFileIn(root, id)
+	if err != nil || got != path {
+		t.Fatalf("got %q err=%v, want %q", got, err, path)
+	}
+
+	if _, err := geminiSessionFileIn(root, "bbbb9999-0000-0000-0000-000000000000"); err == nil {
+		t.Fatal("expected an error for an unknown conversation id")
+	}
+}
