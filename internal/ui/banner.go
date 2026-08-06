@@ -21,12 +21,13 @@ const (
 	bannerFrames   = 22
 	bannerInterval = 110 * time.Millisecond
 	// bannerShimmerEvery re-runs the sweep on a settled wordmark.
-	bannerShimmerEvery = 75 * time.Second
+	bannerShimmerEvery = 30 * time.Second
 
-	// The wordmark's resting fill is the logo mark's gradient, pulled a
-	// step toward the theme's text so it stays legible on any backdrop.
+	// The wordmark's resting fill runs the brand teal into a soft blue,
+	// pulled a step toward the theme's text so it stays legible on any
+	// backdrop.
 	bannerGradientFrom = "#12766a"
-	bannerGradientTo   = "#9fd8cb"
+	bannerGradientTo   = "#6da4c8"
 )
 
 type (
