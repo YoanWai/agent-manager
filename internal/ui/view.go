@@ -165,8 +165,9 @@ func (m *Model) viewStatus() string {
 		return "  " + keyStyle.Render("copied ") +
 			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", m.copied))
 	case m.mode == modeFocus:
-		return "  " + keyStyle.Render("focus ") +
-			subtleStyle.Render("typing goes to the agent · drag/double/triple click to copy · ctrl+q or ctrl+\\ back")
+		return "  " + washText(focusWashHex(),
+			keyStyle.Render("focus ")+
+				subtleStyle.Render("typing goes to the agent · drag/double/triple click to copy · ctrl+q or ctrl+\\ back"))
 	case m.mode == modeConfirmDelete:
 		return "  " + errStyle.Render("⚠ "+m.confirm.label) + subtleStyle.Render("  y/n")
 	case m.split.resizeMode:

@@ -2,7 +2,10 @@ package ui
 
 import (
 	"math"
+	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // tmux forwards a passthrough payload after undoubling ESC bytes; a
@@ -81,5 +84,26 @@ func TestThemeTextContrast(t *testing.T) {
 					theme.Name, theme.Bg, token, accent, ratio)
 			}
 		}
+		// Status washes must differ from the backdrop or the highlight
+		// would not read as a surface under the text.
+		applyTheme(theme)
+		if wash := errWashHex(); wash == theme.Bg {
+			t.Errorf("%s: err wash equals Bg, alerts would not highlight", theme.Name)
+		}
+		if wash := focusWashHex(); wash == theme.Bg {
+			t.Errorf("%s: focus wash equals Bg, focus notice would not highlight", theme.Name)
+		}
+	}
+}
+
+func TestWashTextFitsContent(t *testing.T) {
+	applyTheme(themes[0])
+	inner := keyStyle.Render("focus ") + subtleStyle.Render("hint")
+	washed := washText(focusWashHex(), inner)
+	if lipgloss.Width(washed) != lipgloss.Width(inner) {
+		t.Fatalf("wash width %d != content width %d", lipgloss.Width(washed), lipgloss.Width(inner))
+	}
+	if !strings.Contains(washed, bgSeq(focusWashHex())) {
+		t.Fatal("washText must emit the fill sequence")
 	}
 }
