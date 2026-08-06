@@ -484,8 +484,15 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 		if !ok {
 			continue
 		}
-		if err := ignoreDeletedSession(p.store.SetAgentSessionID(sess.ID, agentID)); err != nil {
+		bound, err := p.store.BindAgentSessionID(sess.ID, agentID, sess.AgentLaunchedAt)
+		if err != nil {
 			return captured, err
+		}
+		if !bound {
+			// The session was restarted (or bound elsewhere) while this pass
+			// was reading the tool's store, so this id answers a launch that
+			// is over. The next pass captures the one now in the pane.
+			continue
 		}
 		claimed[agentID] = true
 		captured++

@@ -14,13 +14,17 @@ import (
 	"github.com/google/uuid"
 )
 
+// deadSessionHint names both ways back from a dead row: revive resumes the
+// conversation it held, restart drops it.
+const deadSessionHint = "session is dead - press v to revive or R to restart"
+
 func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
 	if !ok {
 		return m, nil
 	}
 	if !m.tmux.Exists(sess.ID) {
-		m.errBar.text = "session is dead - press v to revive"
+		m.errBar.text = deadSessionHint
 		return m, nil
 	}
 	m.errBar.text = ""
@@ -68,7 +72,7 @@ func (m *Model) reattach(id string, diffGen int) tea.Cmd {
 	poller := m.poller
 	return func() tea.Msg {
 		if !driver.Exists(id) {
-			return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: errors.New("session is dead - press v to revive")}
+			return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: errors.New(deadSessionHint)}
 		}
 		sess, err := stor.Get(id)
 		if err != nil {

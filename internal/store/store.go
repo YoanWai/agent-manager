@@ -46,6 +46,15 @@ type Session struct {
 	WorktreeBranch string
 }
 
+// LaunchTime is when the agent now in the pane started: the last restart,
+// or the row's creation for a session that never restarted.
+func (sess Session) LaunchTime() time.Time {
+	if sess.AgentLaunchedAt.IsZero() {
+		return sess.CreatedAt
+	}
+	return sess.AgentLaunchedAt
+}
+
 type Store struct {
 	db *sql.DB
 }
@@ -391,6 +400,27 @@ func (s *Store) SetAgentSessionID(id, agentSessionID string) error {
 	return requireRow(res, id)
 }
 
+// BindAgentSessionID records a captured conversation id, but only while the
+// session is still the launch the capture ran for: unbound, and launched at
+// the moment the capturing pass read. It reports whether the write landed.
+// Capture reads a tool's store from a snapshot and can take minutes, long
+// enough for a restart to clear the id and move the launch on underneath it,
+// and that stale answer names the conversation the restart just dropped.
+func (s *Store) BindAgentSessionID(id, agentSessionID string, launchedAt time.Time) (bool, error) {
+	res, err := s.db.Exec(
+		`UPDATE sessions SET agent_session_id = ?
+		 WHERE id = ? AND agent_session_id = '' AND agent_launched_at = ?`,
+		agentSessionID, id, encodeTime(launchedAt))
+	if err != nil {
+		return false, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
 // RestartAgent rebinds a session to a fresh agent run: the conversation it
 // was resuming is retired, the new one (empty until capture for tools that
 // mint their own id) takes its place, and the launch clock moves to now.
@@ -405,15 +435,6 @@ func (s *Store) RestartAgent(id, agentSessionID string, launchedAt time.Time) er
 		return err
 	}
 	return requireRow(res, id)
-}
-
-// LaunchTime is when the agent now in the pane started: the last restart,
-// or the row's creation for a session that never restarted.
-func (sess Session) LaunchTime() time.Time {
-	if sess.AgentLaunchedAt.IsZero() {
-		return sess.CreatedAt
-	}
-	return sess.AgentLaunchedAt
 }
 
 // SetSnapshot stores the session's final pane capture, kept out of the

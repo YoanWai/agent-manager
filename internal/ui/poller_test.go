@@ -788,3 +788,50 @@ func TestCaptureAgentSessionIDsSkipsARetiredConversation(t *testing.T) {
 		t.Fatalf("captured %q, want new-id", got.AgentSessionID)
 	}
 }
+
+// Capture reads a tool's session store from a snapshot and can take minutes,
+// so a restart can land while a pass is still looking. The answer it comes
+// back with names the conversation the restart dropped, and writing it would
+// walk the row straight back into the context the user just left.
+func TestCaptureAgentSessionIDsDropsAnAnswerARestartOutran(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+	created := time.Now().Add(-time.Hour)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-old.jsonl"), "old-id", cwd, created)
+
+	if err := st.CreateSession(store.Session{ID: "sess", Name: "s", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: created}); err != nil {
+		t.Fatal(err)
+	}
+	// The pass reads the session before the restart: no id yet, so it is a
+	// capture candidate and the old rollout is the answer it will find.
+	snapshot, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RestartAgent("sess", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	captured, err := p.captureAgentSessionIDs([]store.Session{snapshot}, map[string]int{"sess": 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if captured != 0 {
+		t.Fatalf("captured %d, want the stale answer dropped", captured)
+	}
+	got, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "" {
+		t.Fatalf("restarted session bound to %q, want it left for the next pass", got.AgentSessionID)
+	}
+}
