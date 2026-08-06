@@ -912,7 +912,9 @@ func (m *Model) viewDiffStatus() string {
 
 func (m *Model) viewDiffFooter() string {
 	if m.diff.annotating {
-		return footerLine([][2]string{{"↵", "save"}, {"esc", "cancel"}}, m.width)
+		return legendBar([]legendSection{{title: "Comment", pairs: [][2]string{
+			{"↵", "save"}, {"esc", "cancel"},
+		}}}, m.width)
 	}
 	repo := "repo"
 	if len(m.diff.repoRoots) > 0 {
@@ -922,12 +924,15 @@ func (m *Model) viewDiffFooter() string {
 	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
 		send = fmt.Sprintf("send %d", count)
 	}
-	pairs := [][2]string{
-		{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"},
-		{"n/N", "change"}, {"space", "reviewed"}, {"u", "layout"},
-		{"s", "scope: " + m.diff.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
-		{"c", "comment"}, {"d", "remove"}, {"C", send},
-		{"esc/q", "close"}, {"ctrl+c", "quit"},
-	}
-	return footerLine(pairs, m.width)
+	return legendBar([]legendSection{
+		{title: "Review", pairs: [][2]string{
+			{"c", "comment"}, {"d", "remove"}, {"C", send}, {"space", "reviewed"},
+			{"s", "scope: " + m.diff.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
+		}},
+		{title: "Move", quiet: true, pairs: [][2]string{
+			{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"g/G", "top/bottom"},
+			{"tab/J K/shift+tab", "file"}, {"n/N", "change"}, {"u", "layout"},
+			{"esc/q", "close"}, {"ctrl+c", "quit"},
+		}},
+	}, m.width)
 }

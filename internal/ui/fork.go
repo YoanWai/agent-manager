@@ -146,5 +146,5 @@ func (m *Model) viewFork() string {
 	body := "  source  " + valueStyle.Render(m.fork.source.Name) + "\n" +
 		"  group   " + groupBadge(displayGroup(m.fork.source.Group)) + "\n" +
 		formField("name", m.fork.name.View(), true)
-	return m.card("⑂ Fork Session", body, "↵ create · esc cancel")
+	return m.card("⑂ Fork Session", body, [][2]string{{"↵", "create"}, {"esc", "cancel"}})
 }

@@ -23,6 +23,8 @@ func (m *Model) View() string {
 		frame = m.viewForm()
 	case modeHelp:
 		frame = m.viewHelp()
+	case modeConfirmDelete:
+		frame = m.viewConfirm()
 	case modeSettings:
 		frame = m.viewSettings()
 	case modeFork:
@@ -167,8 +169,6 @@ func (m *Model) viewStatus() string {
 	case m.mode == modeFocus:
 		return "  " + keyStyle.Render("focus ") +
 			subtleStyle.Render("typing goes to the agent · drag/double/triple click to copy · ctrl+q or ctrl+\\ back")
-	case m.mode == modeConfirmDelete:
-		return "  " + errStyle.Render("⚠ "+m.confirm.label) + subtleStyle.Render("  y/n")
 	case m.split.resizeMode:
 		hint := "←→ resize · drag divider · enter set · esc cancel"
 		if m.split.dragging {
@@ -427,31 +427,10 @@ func padToHeight(s string, height int) string {
 	return s
 }
 
-// viewFooter lists every shortcut, wrapping onto extra lines when the
-// terminal is too narrow for one.
+// viewFooter is the app's legend: a tier of keys for whatever the cursor is
+// on, then a quieter tier for the keys that always apply. A transient mode
+// (quick prompt, rename, resize) owns the legend alone while it is up.
 func (m *Model) viewFooter() string {
-	enterHint, attachHint := "focus / fold", "attach"
-	if !m.enterFocuses() {
-		enterHint, attachHint = "attach / fold", "focus"
-	}
-	emptyGroupsAction := "hide empty"
-	if m.hideEmptyGroups {
-		emptyGroupsAction = "show empty"
-	}
-	statusFilterAction := "attention"
-	if m.statusFilter.active() {
-		statusFilterAction = "show all"
-	}
-	pairs := [][2]string{
-		{"↑↓/jk", "navigate"}, {"K/J", "reorder"}, {"↵", enterHint}, {"A", attachHint},
-		{"F", "fold all"}, {"n", "new"}, {"g", "group"}, {"f", "fork"}, {"space", "prompt"},
-		{"ctrl+r", "review"}, {"r", "rename"}, {"m", "move"},
-		{"x/X", "kill / all"}, {"v/V", "revive / all"},
-		{"a/u", "archive / restore"}, {"d", "delete"},
-		{"t", "archived"}, {"w", statusFilterAction}, {"e", emptyGroupsAction},
-		{"/", "search"}, {"|", "resize"}, {"s", "settings"},
-		{"?", "keys"}, {"q", "quit"},
-	}
 	if m.quick.active {
 		worktreeHint := "off"
 		switch {
@@ -460,49 +439,71 @@ func (m *Model) viewFooter() string {
 		case m.quickWorktreeOn():
 			worktreeHint = "on"
 		}
-		pairs = [][2]string{
+		return legendBar([]legendSection{{title: "Prompt", pairs: [][2]string{
 			{"↵", "send"}, {"↑↓", "switch target"}, {"⇥", "tool: " + m.quickTool()},
 			{"⇤", "worktree: " + worktreeHint}, {"esc", "close"},
-		}
+		}}}, m.width)
 	}
 	if m.split.resizeMode {
-		pairs = [][2]string{
+		return legendBar([]legendSection{{title: "Resize", pairs: [][2]string{
 			{"←→", "nudge"}, {"drag", "divider"}, {"| / release", "commit"}, {"esc", "cancel"},
-		}
+		}}}, m.width)
 	}
 	if m.mode == modeRename {
-		pairs = [][2]string{{"↵", "save"}, {"esc", "cancel"}}
+		pairs := [][2]string{{"↵", "save"}, {"esc", "cancel"}}
 		if m.rename.isGroup {
 			pairs = [][2]string{{"⇥", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}
 		} else if tool := m.renameTool(); tool != "" {
 			pairs = [][2]string{{"⇥", "tool: " + tool}, {"↵", "save"}, {"esc", "cancel"}}
 		}
+		return legendBar([]legendSection{{title: "Rename", pairs: pairs}}, m.width)
 	}
-	return footerLine(pairs, m.width)
+	return legendBar([]legendSection{m.rowLegend(), m.viewLegend()}, m.width)
 }
 
-// footerLine wraps key hint pairs onto extra lines when the terminal is
-// too narrow for one.
-func footerLine(pairs [][2]string, width int) string {
-	sep := subtleStyle.Render(" · ")
-	sepWidth := ansi.StringWidth(sep)
-	var lines []string
-	line, lineWidth := "", 0
-	for _, p := range pairs {
-		part := keyCap(p[0], p[1])
-		partWidth := ansi.StringWidth(part)
-		switch {
-		case line == "":
-			line, lineWidth = strings.Repeat(" ", railGutter)+part, railGutter+partWidth
-		case lineWidth+sepWidth+partWidth <= width:
-			line += sep + part
-			lineWidth += sepWidth + partWidth
-		default:
-			lines = append(lines, line)
-			line, lineWidth = strings.Repeat(" ", railGutter)+part, railGutter+partWidth
-		}
+// rowLegend is the tier for the entry under the cursor: what this session or
+// this group can be told to do.
+func (m *Model) rowLegend() legendSection {
+	enterHint, attachHint := "focus / fold", "attach"
+	if !m.enterFocuses() {
+		enterHint, attachHint = "attach / fold", "focus"
 	}
-	return strings.Join(append(lines, line), "\n")
+	row, ok := m.selectedRow()
+	if ok && row.isGroup {
+		return legendSection{title: "Group", pairs: [][2]string{
+			{"↵", "fold"}, {"r", "rename"},
+			{"x/X", "kill / all"}, {"v/V", "revive / all"},
+			{"a/u", "archive / restore"}, {"d", "delete"},
+		}}
+	}
+	return legendSection{title: "Session", pairs: [][2]string{
+		{"↵", enterHint}, {"A", attachHint}, {"space", "prompt"}, {"ctrl+r", "review"},
+		{"f", "fork"}, {"r", "rename"}, {"m", "move"},
+		{"x/X", "kill / all"}, {"v/V", "revive / all"},
+		{"a/u", "archive / restore"}, {"d", "delete"},
+	}}
+}
+
+// viewLegend is the tier that never changes with the cursor: moving around
+// the list, filtering it, and leaving.
+func (m *Model) viewLegend() legendSection {
+	emptyGroupsAction := "hide empty"
+	if m.hideEmptyGroups {
+		emptyGroupsAction = "show empty"
+	}
+	statusFilterAction := "attention"
+	if m.statusFilter.active() {
+		statusFilterAction = "show all"
+	}
+	// Ordered by what a narrow terminal must keep: moving around, making
+	// something, the filters whose state only the footer reports, then the
+	// keys a user already knows to look for.
+	return legendSection{title: "View", quiet: true, pairs: [][2]string{
+		{"↑↓/jk", "navigate"}, {"n", "new"}, {"g", "group"}, {"/", "search"},
+		{"t", "archived"}, {"w", statusFilterAction}, {"e", emptyGroupsAction},
+		{"?", "keys"}, {"q", "quit"},
+		{"K/J", "reorder"}, {"F", "fold all"}, {"|", "resize"}, {"s", "settings"},
+	}}
 }
 
 func displayGroup(path string) string {

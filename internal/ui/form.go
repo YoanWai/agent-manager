@@ -144,7 +144,7 @@ func promptField() textarea.Model {
 
 // formValueWidth is the columns a field value can occupy inside the card.
 func (m *Model) formValueWidth() int {
-	return m.cardWidth() - 2*cardPaddingX - formLabelColumn
+	return cardInnerWidth(m.cardWidth()) - formLabelColumn
 }
 
 // syncFormFieldWidths fits the field widgets to the card so long values
