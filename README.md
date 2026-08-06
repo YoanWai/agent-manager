@@ -78,6 +78,7 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `enter` | Focus the session in place; keys go to the agent while the list stays |
 | `ctrl+r` | Review the session's changes as full-file diffs; `c` comments a line, `C` sends the comments to the agent |
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |
+| `R` | Restart a session on an empty context: same name, directory and tool, fresh conversation |
 | `s` | Settings (default tool, theme, list density, review layout) |
 | `?` | Help with every binding |
 

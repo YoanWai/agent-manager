@@ -32,6 +32,13 @@ type Session struct {
 	// gemini/pi session UUID, codex rollout id, opencode session id). Revive resumes
 	// this exact conversation instead of the cwd's most recent one.
 	AgentSessionID string
+	// AgentLaunchedAt is when the agent process now in the pane started, which
+	// restart moves forward while CreatedAt keeps marking the row's birth.
+	// Zero for sessions that never restarted, whose launch is CreatedAt.
+	AgentLaunchedAt time.Time
+	// RetiredAgentSessionID is the conversation a restart left behind, kept so
+	// id capture never binds the fresh run back to the context it dropped.
+	RetiredAgentSessionID string
 	// WorktreeRepo and WorktreeBranch are set for sessions running in a
 	// worktree Agent Manager created. Forks share these values so the last
 	// session to leave can clean up the worktree and its am/ branch.
@@ -118,6 +125,8 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN worktree_repo TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN worktree_branch TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE groups ADD COLUMN worktree TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN agent_launched_at INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN retired_agent_session_id TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -293,7 +302,7 @@ func (s *Store) AddGroup(name, path, worktree string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -309,16 +318,18 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 	for rows.Next() {
 		var sess Session
 		var archived, acked int
-		var created, lastStatus int64
+		var created, lastStatus, agentLaunched int64
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
-			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch); err != nil {
+			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
+			&agentLaunched, &sess.RetiredAgentSessionID); err != nil {
 			return nil, err
 		}
 		sess.Archived = archived != 0
 		sess.Acked = acked != 0
 		sess.CreatedAt = decodeTime(created)
 		sess.LastStatusAt = decodeTime(lastStatus)
+		sess.AgentLaunchedAt = decodeTime(agentLaunched)
 		sessions = append(sessions, sess)
 	}
 	return sessions, rows.Err()
@@ -327,13 +338,13 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 func (s *Store) Get(id string) (Session, error) {
 	var sess Session
 	var archived, acked int
-	var created, lastStatus int64
+	var created, lastStatus, agentLaunched int64
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
-		&sess.WorktreeRepo, &sess.WorktreeBranch)
+		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID)
 	if err != nil {
 		return Session{}, err
 	}
@@ -341,6 +352,7 @@ func (s *Store) Get(id string) (Session, error) {
 	sess.Acked = acked != 0
 	sess.CreatedAt = decodeTime(created)
 	sess.LastStatusAt = decodeTime(lastStatus)
+	sess.AgentLaunchedAt = decodeTime(agentLaunched)
 	return sess, nil
 }
 
@@ -377,6 +389,31 @@ func (s *Store) SetAgentSessionID(id, agentSessionID string) error {
 		return err
 	}
 	return requireRow(res, id)
+}
+
+// RestartAgent rebinds a session to a fresh agent run: the conversation it
+// was resuming is retired, the new one (empty until capture for tools that
+// mint their own id) takes its place, and the launch clock moves to now.
+func (s *Store) RestartAgent(id, agentSessionID string, launchedAt time.Time) error {
+	res, err := s.db.Exec(
+		`UPDATE sessions SET
+			retired_agent_session_id = CASE WHEN agent_session_id != '' THEN agent_session_id ELSE retired_agent_session_id END,
+			agent_session_id = ?,
+			agent_launched_at = ?
+		 WHERE id = ?`, agentSessionID, encodeTime(launchedAt), id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
+}
+
+// LaunchTime is when the agent now in the pane started: the last restart,
+// or the row's creation for a session that never restarted.
+func (sess Session) LaunchTime() time.Time {
+	if sess.AgentLaunchedAt.IsZero() {
+		return sess.CreatedAt
+	}
+	return sess.AgentLaunchedAt
 }
 
 // SetSnapshot stores the session's final pane capture, kept out of the

@@ -435,6 +435,7 @@ func (m *Model) viewHelp() string {
 		{"X", "kill every live session"},
 		{"v", "revive killed session, or every dead session in a group (resumes the agent)"},
 		{"V", "revive every dead session"},
+		{"R", "restart session with an empty context (same name, dir and tool)"},
 		{"a / u", "archive / restore"},
 		{"d", "delete session, or group + subtree"},
 		{"K / J", "reorder row up / down (shift+↑↓ also works)"},

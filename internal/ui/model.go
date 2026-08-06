@@ -245,6 +245,7 @@ const (
 	actionArchive = "archive"
 	actionRestore = "restore"
 	actionKill    = "kill"
+	actionRestart = "restart"
 )
 
 type confirmTarget struct {

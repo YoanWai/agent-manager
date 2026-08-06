@@ -105,6 +105,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.reviveSelected()
 	case "V", "shift+v":
 		return m.reviveAllDead()
+	case "R", "shift+r":
+		return m.restartSelected()
 	case "x":
 		return m.killSelected()
 	case "X", "shift+x":

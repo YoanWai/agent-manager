@@ -742,3 +742,49 @@ func TestCaptureAgentSessionIDsAssignsInLaunchOrder(t *testing.T) {
 		t.Fatalf("session B captured %q, want B-id", gotB.AgentSessionID)
 	}
 }
+
+// A restarted codex session still has its old rollout sitting in the same
+// directory, written moments before the restart and so inside the capture
+// window. Capture must bind the fresh conversation, not walk the session
+// straight back into the context the restart dropped.
+func TestCaptureAgentSessionIDsSkipsARetiredConversation(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	created := time.Now().Add(-time.Hour)
+	restarted := time.Now().Add(-time.Second)
+	// The retired rollout's last write lands two seconds before the restart,
+	// inside the clock slack the capture window allows.
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-old.jsonl"), "old-id", cwd, restarted.Add(-2*time.Second))
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-new.jsonl"), "new-id", cwd, restarted)
+
+	if err := st.CreateSession(store.Session{ID: "sess", Name: "s", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: created, AgentSessionID: "old-id"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RestartAgent("sess", "", restarted); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	if _, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]int{"sess": 42}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "new-id" {
+		t.Fatalf("captured %q, want new-id", got.AgentSessionID)
+	}
+}

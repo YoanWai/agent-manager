@@ -9,9 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/uuid"
 )
 
 func TestCreateArchiveRestoreDelete(t *testing.T) {
@@ -382,6 +385,178 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	}
 	if got.Acked {
 		t.Fatal("revive should clear a leftover ack")
+	}
+}
+
+// argCaptureCommand builds a launch command that records the arguments the
+// manager appended to it and then holds the pane open, so a test can prove
+// which flags a launch carried.
+func argCaptureCommand(argsFile string) string {
+	script := `printf '%s\n' "$@" > ` + tmux.ShellQuote(argsFile) + `; cat`
+	return "sh -c " + tmux.ShellQuote(script) + " sh"
+}
+
+func readWhenWritten(t *testing.T, path string) string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		raw, err := os.ReadFile(path)
+		if err == nil {
+			return string(raw)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("no launch arguments written to %s", path)
+	return ""
+}
+
+// Restart is revive's opposite number: same row, same directory, same tool,
+// but a conversation the agent has never seen. The old one is retired rather
+// than resumed, so the resume flags revive would have used stay unused.
+func TestRestartLaunchesAFreshConversation(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "phoenix", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+
+	argsFile := filepath.Join(t.TempDir(), "launch-args")
+	tool := m.cfg.Tools[sess.Tool]
+	tool.Command = argCaptureCommand(argsFile)
+	tool.SessionIDFlag = "--session-id"
+	tool.ResumeByIDCommand = "false --resume {id}"
+	tool.ReviveCommand = "false --continue"
+	m.cfg.Tools[sess.Tool] = tool
+
+	if err := m.store.SetAgentSessionID(sess.ID, "old-conversation"); err != nil {
+		t.Fatal(err)
+	}
+	m.sessions[0].AgentSessionID = "old-conversation"
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	m.selectSessionRow(t, "phoenix")
+
+	if _, _ = m.restartSelected(); m.mode != modeConfirmDelete {
+		t.Fatalf("restart should ask first, mode = %v err = %q", m.mode, m.errBar.text)
+	}
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
+		t.Fatalf("restart: %q", m.errBar.text)
+	}
+	if !m.tmux.Exists(sess.ID) {
+		t.Fatal("restart should leave the session running")
+	}
+
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID == "" || got.AgentSessionID == "old-conversation" {
+		t.Fatalf("restarted conversation id = %q, want a fresh one", got.AgentSessionID)
+	}
+	if got.RetiredAgentSessionID != "old-conversation" {
+		t.Fatalf("retired conversation = %q, want old-conversation", got.RetiredAgentSessionID)
+	}
+	if got.AgentLaunchedAt.Before(got.CreatedAt) || got.AgentLaunchedAt.IsZero() {
+		t.Fatalf("launch time = %v, created = %v", got.AgentLaunchedAt, got.CreatedAt)
+	}
+	if got.Status != status.Starting {
+		t.Fatalf("after restart, status = %q want %q", got.Status, status.Starting)
+	}
+
+	// The fresh conversation id rides the launch; the resume flags revive
+	// would have used never appear.
+	args := readWhenWritten(t, argsFile)
+	if !strings.Contains(args, "--session-id\n"+got.AgentSessionID) {
+		t.Fatalf("launch arguments = %q, want the fresh session id", args)
+	}
+	if strings.Contains(args, "--resume") || strings.Contains(args, "--continue") {
+		t.Fatalf("restart must not resume, launch arguments = %q", args)
+	}
+}
+
+// A tool that mints its own conversation id (codex, opencode) has nothing to
+// hand the launch, so restart clears the binding and leaves the id for the
+// poller to capture once the new conversation lands.
+func TestRestartClearsCapturedConversationID(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "codexish", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+
+	if err := m.store.SetAgentSessionID(sess.ID, "captured-conversation"); err != nil {
+		t.Fatal(err)
+	}
+	m.sessions[0].AgentSessionID = "captured-conversation"
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	m.selectSessionRow(t, "codexish")
+
+	m.restartSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
+		t.Fatalf("restart: %q", m.errBar.text)
+	}
+
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "" {
+		t.Fatalf("conversation id = %q, want it cleared for capture", got.AgentSessionID)
+	}
+	if got.RetiredAgentSessionID != "captured-conversation" {
+		t.Fatalf("retired conversation = %q", got.RetiredAgentSessionID)
+	}
+}
+
+// Restart also serves the session that is still running: it ends the agent
+// holding the context and brings the row back empty-handed.
+func TestRestartEndsALiveAgentFirst(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "busy", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	tool := m.cfg.Tools[sess.Tool]
+	tool.Command = argCaptureCommand(filepath.Join(t.TempDir(), "launch-args"))
+	m.cfg.Tools[sess.Tool] = tool
+	m.selectSessionRow(t, "busy")
+
+	if _, _ = m.restartSelected(); m.mode != modeConfirmDelete {
+		t.Fatalf("restart should ask first, mode = %v err = %q", m.mode, m.errBar.text)
+	}
+	if !strings.Contains(m.confirm.label, "ends the running agent") {
+		t.Fatalf("confirm label = %q", m.confirm.label)
+	}
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
+		t.Fatalf("restart: %q", m.errBar.text)
+	}
+	if !m.tmux.Exists(sess.ID) {
+		t.Fatal("restart should leave the session running")
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != status.Starting {
+		t.Fatalf("after restart, status = %q want %q", got.Status, status.Starting)
+	}
+}
+
+func TestRestartRefusesGroupRow(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("work", dir); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "member", dir, "work")
+	m.selectGroupRow(t, "work")
+
+	if _, _ = m.restartSelected(); m.mode != modeList || m.errBar.text == "" {
+		t.Fatalf("group restart should refuse, mode = %v err = %q", m.mode, m.errBar.text)
 	}
 }
 
@@ -929,5 +1104,49 @@ func TestDeleteKeepsDirtyWorktree(t *testing.T) {
 	}
 	if remaining, _ := m.store.ListSessions(true); len(remaining) != 0 {
 		t.Fatal("session record should still be deleted")
+	}
+}
+
+// Restart has to hold for every CLI the manager ships with, not just the one
+// the fake tools stand in for: it launches each tool the way a brand new
+// session does, and never reaches for a resume, continue or fork command.
+func TestRestartLaunchIsAFreshStartForEveryShippedTool(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Tools) < 6 {
+		t.Fatalf("built-in tools = %d, expected every shipped CLI", len(cfg.Tools))
+	}
+	for name, tool := range cfg.Tools {
+		command, agentSessionID := restartLaunch(tool)
+		if !strings.HasPrefix(command, tool.Command) {
+			t.Errorf("%s: restart command %q does not start from its launch command %q", name, command, tool.Command)
+		}
+		rest := strings.TrimPrefix(command, tool.Command)
+		for _, resume := range []string{"resume", "continue", "fork", "--session ", "--last"} {
+			if strings.Contains(rest, resume) {
+				t.Errorf("%s: restart command %q carries %q", name, command, resume)
+			}
+		}
+		if tool.SessionIDFlag == "" {
+			// codex and opencode mint their own id; the poller captures it.
+			if agentSessionID != "" || rest != "" {
+				t.Errorf("%s: restart handed an id to a tool that mints its own: %q", name, command)
+			}
+			if tool.SessionStore == "" {
+				t.Errorf("%s: no session_id_flag and no session_store leaves restart with no conversation id at all", name)
+			}
+			continue
+		}
+		if _, err := uuid.Parse(agentSessionID); err != nil {
+			t.Errorf("%s: restart conversation id %q is not a uuid: %v", name, agentSessionID, err)
+		}
+		if want := " " + tool.SessionIDFlag + " " + agentSessionID; rest != want {
+			t.Errorf("%s: restart command tail = %q, want %q", name, rest, want)
+		}
+		if _, second := restartLaunch(tool); second == agentSessionID {
+			t.Errorf("%s: two restarts reused conversation id %q", name, agentSessionID)
+		}
 	}
 }

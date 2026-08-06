@@ -323,7 +323,7 @@ func (p *poller) refreshOnce() tea.Msg {
 				// flashing idle before it has booted. A grace cap keeps a tool
 				// that never paints from sticking on starting forever.
 				if sess.Status == status.Starting && !paneBooted(pane) &&
-					time.Since(sess.CreatedAt) < startingGrace {
+					time.Since(sess.LaunchTime()) < startingGrace {
 					newStatus = status.Starting
 				}
 				// Any real transition re-arms the finished alert.
@@ -453,13 +453,19 @@ func (p *poller) startCaptureIfIdle(sessions []store.Session, panes map[string]i
 // bound. Sessions are processed in launch order so the earliest one claims
 // the earliest unclaimed conversation in its directory; a later session
 // started in the same directory then skips that one via claimed and captures
-// its own. CreatedAt carries nanosecond precision, so sessions launched a
+// its own. Launch times carry nanosecond precision, so sessions launched a
 // moment apart in the same directory still order deterministically.
 func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[string]int) (int, error) {
 	claimed := make(map[string]bool, len(sessions))
 	for _, sess := range sessions {
 		if sess.AgentSessionID != "" {
 			claimed[sess.AgentSessionID] = true
+		}
+		// A restart's old conversation still sits in the directory, newer
+		// than every other candidate; claiming it keeps the fresh run from
+		// binding straight back to the context the restart dropped.
+		if sess.RetiredAgentSessionID != "" {
+			claimed[sess.RetiredAgentSessionID] = true
 		}
 	}
 	pending := make([]int, 0, len(sessions))
@@ -469,12 +475,12 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 		}
 	}
 	sort.SliceStable(pending, func(a, b int) bool {
-		return sessions[pending[a]].CreatedAt.Before(sessions[pending[b]].CreatedAt)
+		return sessions[pending[a]].LaunchTime().Before(sessions[pending[b]].LaunchTime())
 	})
 	captured := 0
 	for _, i := range pending {
 		sess := sessions[i]
-		agentID, ok := agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.CreatedAt, claimed)
+		agentID, ok := agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed)
 		if !ok {
 			continue
 		}

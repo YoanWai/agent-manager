@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/uuid"
 )
 
 func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
@@ -200,6 +203,16 @@ func (m *Model) reviveSession(sess store.Session) error {
 	if sess.AgentSessionID != "" && tool.ResumeByIDCommand != "" {
 		baseCommand = strings.ReplaceAll(tool.ResumeByIDCommand, "{id}", sess.AgentSessionID)
 	}
+	return m.relaunchSession(sess, tool, baseCommand, tool.DefaultStatus, nil)
+}
+
+// relaunchSession puts a dead session's row back on a running tmux window
+// under its old id, keeping its name, group and history. Both revive and
+// restart end here; they differ only in the command they hand it and in
+// bindConversation, which records the conversation the new pane is on once
+// the launch has actually taken. A launch that fails leaves the row exactly
+// as it was, still pointing at the conversation it can be revived on.
+func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseCommand, newStatus string, bindConversation func() error) error {
 	command, env, err := m.buildLaunch(sess.Tool, tool, baseCommand, sess.ID)
 	if err != nil {
 		return err
@@ -207,10 +220,16 @@ func (m *Model) reviveSession(sess store.Session) error {
 	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
 		return err
 	}
+	if bindConversation != nil {
+		if err := bindConversation(); err != nil {
+			_ = m.tmux.Kill(sess.ID)
+			return err
+		}
+	}
 	if err := m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)); err != nil {
 		return err
 	}
-	if err := m.store.UpdateStatus(sess.ID, tool.DefaultStatus); err != nil {
+	if err := m.store.UpdateStatus(sess.ID, newStatus); err != nil {
 		return err
 	}
 	// The session is alive again; any watcher backoff from its dead spell
@@ -218,9 +237,91 @@ func (m *Model) reviveSession(sess store.Session) error {
 	if m.focus != nil {
 		m.focus.retryNow()
 	}
-	// A leftover ack from the previous life must not swallow the revived
+	// A leftover ack from the previous life must not swallow the relaunched
 	// agent's first finished alert.
 	return m.store.SetAcked(sess.ID, false)
+}
+
+// restartSelected asks to relaunch the selected session with an empty
+// context: the same row, directory and tool, running a brand new
+// conversation instead of resuming the one it held.
+func (m *Model) restartSelected() (tea.Model, tea.Cmd) {
+	entry, ok := m.selectedRow()
+	if !ok {
+		return m, nil
+	}
+	if entry.isGroup {
+		m.errBar.text = "restart applies to a session; pick one under " + displayGroup(entry.group)
+		return m, nil
+	}
+	label := fmt.Sprintf("restart %s with an empty context? its current conversation is left behind.", entry.sess.Name)
+	if m.tmux.Exists(entry.sess.ID) {
+		label = fmt.Sprintf("restart %s with an empty context? ends the running agent and leaves its conversation behind.", entry.sess.Name)
+	}
+	m.confirm = confirmTarget{
+		action:   actionRestart,
+		sessions: []store.Session{entry.sess},
+		label:    label,
+	}
+	m.mode = modeConfirmDelete
+	return m, nil
+}
+
+// restartSession relaunches a session's tool from scratch. The conversation
+// it was resuming is retired rather than resumed, so the agent comes back
+// with the same name, directory and group but no context to carry.
+func (m *Model) restartSession(sess store.Session) error {
+	tool, ok := m.cfg.Tools[sess.Tool]
+	if !ok {
+		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
+	}
+	if info, err := os.Stat(sess.Cwd); err != nil || !info.IsDir() {
+		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
+	}
+	if err := m.killSession(sess); err != nil {
+		return err
+	}
+	baseCommand, agentSessionID := restartLaunch(tool)
+	bind := func() error {
+		launchedAt := time.Now()
+		if err := m.store.RestartAgent(sess.ID, agentSessionID, launchedAt); err != nil {
+			return err
+		}
+		m.bindRestartLocally(sess.ID, agentSessionID, launchedAt)
+		return nil
+	}
+	// Starting, like a fresh spawn: the row reads as booting until the new
+	// agent paints its pane.
+	return m.relaunchSession(sess, tool, baseCommand, status.Starting, bind)
+}
+
+// restartLaunch builds what a restart runs: the tool's plain launch command,
+// exactly as a brand new session gets it, plus a fresh conversation id for
+// the tools that take one. Tools that mint their own id instead get nothing
+// to carry, and the poller captures what they wrote.
+func restartLaunch(tool config.Tool) (baseCommand, agentSessionID string) {
+	if tool.SessionIDFlag == "" {
+		return tool.Command, ""
+	}
+	agentSessionID = uuid.NewString()
+	return tool.Command + " " + tool.SessionIDFlag + " " + agentSessionID, agentSessionID
+}
+
+// bindRestartLocally mirrors the store write in the loaded rows, so the list
+// redraws on the new conversation before the next poll re-reads it.
+func (m *Model) bindRestartLocally(id, agentSessionID string, launchedAt time.Time) {
+	for i := range m.sessions {
+		if m.sessions[i].ID != id {
+			continue
+		}
+		if m.sessions[i].AgentSessionID != "" {
+			m.sessions[i].RetiredAgentSessionID = m.sessions[i].AgentSessionID
+		}
+		m.sessions[i].AgentSessionID = agentSessionID
+		m.sessions[i].AgentLaunchedAt = launchedAt
+		m.sessions[i].Status = status.Starting
+		m.sessions[i].Acked = false
+	}
 }
 
 // killSelected asks to end the selected session, or every live session
@@ -519,6 +620,15 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case actionKill:
 			for _, sess := range m.confirm.sessions {
 				if err := m.killSession(sess); err != nil {
+					m.errBar.text = err.Error()
+					return m, nil
+				}
+			}
+			m.errBar.text = ""
+			m.rebuildRows()
+		case actionRestart:
+			for _, sess := range m.confirm.sessions {
+				if err := m.restartSession(sess); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
