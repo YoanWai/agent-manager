@@ -335,6 +335,11 @@ command = "gemini"
 # that exact conversation regardless of what else ran in the directory
 session_id_flag = "--session-id"
 resume_by_id_command = "gemini --resume {id}"
+# gemini has no fork flag; --session-file imports a session file as a brand
+# new conversation (fresh id), so the fork hands it the source's file. The
+# forked id is captured back via the gemini session store.
+fork_command = "gemini --session-file {session_file}"
+session_store = "gemini"
 # fallback when a session predates id tracking: resumes the project's most
 # recent session
 revive_command = "gemini --resume latest"

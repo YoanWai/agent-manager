@@ -97,6 +97,12 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["pi"].ForkCommand; got != "pi --fork {id} --session-id {new_id}" {
 		t.Fatalf("pi fork_command = %q want \"pi --fork {id} --session-id {new_id}\"", got)
 	}
+	if got := cfg.Tools["gemini"].ForkCommand; got != "gemini --session-file {session_file}" {
+		t.Fatalf("gemini fork_command = %q want \"gemini --session-file {session_file}\"", got)
+	}
+	if got := cfg.Tools["gemini"].SessionStore; got != "gemini" {
+		t.Fatalf("gemini session_store = %q want \"gemini\" (captures the fork's minted id)", got)
+	}
 }
 
 func TestDefaultWaitingRulesPrecedeWorking(t *testing.T) {
