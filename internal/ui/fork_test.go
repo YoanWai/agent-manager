@@ -230,6 +230,7 @@ func TestForkAgentSessionIDFollowsNewIDPlaceholder(t *testing.T) {
 	}{
 		{"opencode_session_store", "opencode", "true {id}; cat", false},
 		{"grok_id_flag", "grok", "true {id} {new_id}; cat", true},
+		{"pi_id_flag", "pi", "true {id} {new_id}; cat", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := buildModel(t)

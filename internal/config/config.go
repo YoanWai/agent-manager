@@ -362,6 +362,7 @@ rules = [
 command = "pi"
 session_id_flag = "--session-id"
 resume_by_id_command = "pi --session {id}"
+fork_command = "pi --fork {id} --session-id {new_id}"
 revive_command = "pi --continue"
 # Pi shows a spinner for active work. A resting pane is a finished turn until
 # the user acknowledges it; a resumed conversation is already acknowledged.

@@ -94,6 +94,9 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["grok"].ForkCommand; got != "grok --resume {id} --fork-session --session-id {new_id}" {
 		t.Fatalf("grok fork_command = %q want \"grok --resume {id} --fork-session --session-id {new_id}\"", got)
 	}
+	if got := cfg.Tools["pi"].ForkCommand; got != "pi --fork {id} --session-id {new_id}" {
+		t.Fatalf("pi fork_command = %q want \"pi --fork {id} --session-id {new_id}\"", got)
+	}
 }
 
 func TestDefaultWaitingRulesPrecedeWorking(t *testing.T) {
