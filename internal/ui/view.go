@@ -457,12 +457,19 @@ func (m *Model) viewFooter() string {
 	}
 	// Focused, the keyboard belongs to the agent: the tier carries the few
 	// keys the manager keeps, and the app-wide tier would lie, so it goes.
+	// The wash marks the row as a notice about the mode rather than as the
+	// usual list of things to press.
 	if m.mode == modeFocus {
-		return legendBar([]legendSection{{title: "Session", pairs: [][2]string{
+		bar := legendBar([]legendSection{{title: "Session", pairs: [][2]string{
 			{"typing", "goes to the agent"},
 			{"ctrl+q / ctrl+\\", "back to manager"},
 			{"drag / double / triple click", "copy"},
 		}}}, m.width)
+		var washed []string
+		for _, line := range strings.Split(bar, "\n") {
+			washed = append(washed, washText(focusWashHex(), line))
+		}
+		return strings.Join(washed, "\n")
 	}
 	return legendBar([]legendSection{m.rowLegend(), m.viewLegend()}, m.width)
 }

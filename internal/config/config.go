@@ -257,6 +257,7 @@ command = "opencode"
 # opencode mints its own session id; capture it after launch and resume it
 session_store = "opencode"
 resume_by_id_command = "opencode --session {id}"
+fork_command = "opencode --session {id} --fork"
 revive_command = "opencode --continue"
 # opencode's positional argument is the project path, so the optional
 # session prompt travels behind this flag
@@ -305,6 +306,7 @@ rules = [
 command = "grok"
 session_id_flag = "--session-id"
 resume_by_id_command = "grok --resume {id}"
+fork_command = "grok --resume {id} --fork-session --session-id {new_id}"
 # fallback: resumes the most recent session for the working directory
 revive_command = "grok --continue"
 default_status = "idle"
@@ -333,6 +335,11 @@ command = "gemini"
 # that exact conversation regardless of what else ran in the directory
 session_id_flag = "--session-id"
 resume_by_id_command = "gemini --resume {id}"
+# gemini has no fork flag; --session-file imports a session file as a brand
+# new conversation (fresh id), so the fork hands it the source's file. The
+# forked id is captured back via the gemini session store.
+fork_command = "gemini --session-file {session_file}"
+session_store = "gemini"
 # fallback when a session predates id tracking: resumes the project's most
 # recent session
 revive_command = "gemini --resume latest"
@@ -360,6 +367,7 @@ rules = [
 command = "pi"
 session_id_flag = "--session-id"
 resume_by_id_command = "pi --session {id}"
+fork_command = "pi --fork {id} --session-id {new_id}"
 revive_command = "pi --continue"
 # Pi shows a spinner for active work. A resting pane is a finished turn until
 # the user acknowledges it; a resumed conversation is already acknowledged.

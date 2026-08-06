@@ -81,5 +81,18 @@ func TestThemeTextContrast(t *testing.T) {
 					theme.Name, theme.Bg, token, accent, ratio)
 			}
 		}
+		// Status washes sit under bold large text. Softening Errored/Accent
+		// into Bg reduces contrast slightly; keep the tertiary floor (2.0)
+		// so a wash that collapses toward the ink still fails the suite.
+		const washMin = 2.0
+		applyTheme(theme)
+		if ratio := contrastRatio(theme.Errored, errWashHex()); ratio < washMin {
+			t.Errorf("%s: Errored on err wash contrast %.2f, want >= %.1f",
+				theme.Name, ratio, washMin)
+		}
+		if ratio := contrastRatio(theme.Accent, focusWashHex()); ratio < washMin {
+			t.Errorf("%s: Accent on focus wash contrast %.2f, want >= %.1f",
+				theme.Name, ratio, washMin)
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -13,6 +14,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 )
+
+// forkSessionFileResolver resolves a source conversation's on-disk session
+// file for tools whose fork loads a file instead of an id (gemini). A
+// variable so tests substitute a fixture without touching the real store.
+var forkSessionFileResolver = agentsession.GeminiSessionFile
 
 type forkState struct {
 	source store.Session
@@ -90,7 +96,16 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 	if strings.Contains(tool.ForkCommand, "{new_id}") {
 		agentID = uuid.NewString()
 	}
-	baseCommand := expandForkCommand(tool.ForkCommand, source.AgentSessionID, agentID, name)
+	sessionFile := ""
+	if strings.Contains(tool.ForkCommand, "{session_file}") {
+		resolved, err := forkSessionFileResolver(source.AgentSessionID)
+		if err != nil {
+			m.errBar.text = err.Error()
+			return m, nil
+		}
+		sessionFile = resolved
+	}
+	baseCommand := expandForkCommand(tool.ForkCommand, source.AgentSessionID, agentID, name, sessionFile)
 	forked := store.Session{
 		ID:             managerID,
 		Name:           name,
@@ -125,8 +140,8 @@ func validateForkSource(toolName string, tool config.Tool, source store.Session)
 	if tool.ForkCommand == "" {
 		return fmt.Errorf("tool %s has no fork_command", toolName)
 	}
-	if !strings.Contains(tool.ForkCommand, "{id}") {
-		return fmt.Errorf("tool %s fork_command must contain {id}", toolName)
+	if !strings.Contains(tool.ForkCommand, "{id}") && !strings.Contains(tool.ForkCommand, "{session_file}") {
+		return fmt.Errorf("tool %s fork_command must reference the source via {id} or {session_file}", toolName)
 	}
 	if source.AgentSessionID == "" {
 		return fmt.Errorf("%s has no captured conversation id", source.Name)
@@ -134,11 +149,12 @@ func validateForkSource(toolName string, tool config.Tool, source store.Session)
 	return nil
 }
 
-func expandForkCommand(template, sourceID, newID, name string) string {
+func expandForkCommand(template, sourceID, newID, name, sessionFile string) string {
 	return strings.NewReplacer(
 		"{id}", tmux.ShellQuote(sourceID),
 		"{new_id}", tmux.ShellQuote(newID),
 		"{name}", tmux.ShellQuote(name),
+		"{session_file}", tmux.ShellQuote(sessionFile),
 	).Replace(template)
 }
 
