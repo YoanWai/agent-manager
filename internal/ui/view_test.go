@@ -435,3 +435,36 @@ func TestFooterTierFollowsTheCursor(t *testing.T) {
 		t.Fatalf("a group cannot be forked, so the key should not be offered:\n%s", footer)
 	}
 }
+
+// A toggle's label names what the key will do next, not the state it is
+// already in, so the footer reads as an instruction.
+func TestFooterTogglesNameTheNextAction(t *testing.T) {
+	m := buildModel(t)
+	// Wide enough that the row budget keeps every app-wide binding.
+	m.width = 260
+	createSession(t, m, "toggles", t.TempDir(), "")
+	m.applyCmd(t, m.refreshCmd())
+
+	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "fold all") {
+		t.Fatalf("an open tree should offer folding:\n%s", footer)
+	}
+	m.toggleCollapseAll()
+	footer := ansi.Strip(m.viewFooter())
+	if !strings.Contains(footer, "unfold all") {
+		t.Fatalf("a folded tree should offer unfolding:\n%s", footer)
+	}
+	for i, row := range m.rows {
+		if row.isGroup && !row.isRoot() {
+			m.cursor = i
+			break
+		}
+	}
+	if got := ansi.Strip(m.viewFooter()); !strings.Contains(got, "unfold") {
+		t.Fatalf("a collapsed group should offer unfolding:\n%s", got)
+	}
+
+	m.showArchived = true
+	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "back to active") {
+		t.Fatalf("the archived view should offer the way back:\n%s", footer)
+	}
+}

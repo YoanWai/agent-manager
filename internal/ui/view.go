@@ -486,8 +486,12 @@ func (m *Model) rowLegend() legendSection {
 		return legendSection{}
 	}
 	if row.isGroup {
+		foldAction := "fold"
+		if m.collapsed[row.group] {
+			foldAction = "unfold"
+		}
 		return legendSection{title: "Group", pairs: [][2]string{
-			{"↵", "fold"}, {"r", "rename"},
+			{"↵", foldAction}, {"r", "rename"},
 			{"x/X", "kill / all"}, {"v/V", "revive / all"},
 			{"a/u", "archive / restore"}, {"d", "delete"},
 		}}
@@ -511,14 +515,22 @@ func (m *Model) viewLegend() legendSection {
 	if m.statusFilter.active() {
 		statusFilterAction = "show all"
 	}
+	archivedAction := "archived"
+	if m.showArchived {
+		archivedAction = "back to active"
+	}
+	foldAllAction := "fold all"
+	if m.allGroupsCollapsed() {
+		foldAllAction = "unfold all"
+	}
 	// Ordered by what a narrow terminal must keep: moving around, making
 	// something, the filters whose state only the footer reports, then the
 	// keys a user already knows to look for.
 	return legendSection{title: "View", quiet: true, pairs: [][2]string{
 		{"↑↓/jk", "navigate"}, {"n", "new"}, {"g", "group"}, {"/", "search"},
-		{"t", "archived"}, {"w", statusFilterAction}, {"e", emptyGroupsAction},
+		{"t", archivedAction}, {"w", statusFilterAction}, {"e", emptyGroupsAction},
 		{"?", "keys"}, {"q", "quit"},
-		{"K/J", "reorder"}, {"F", "fold all"}, {"|", "resize"}, {"s", "settings"},
+		{"K/J", "reorder"}, {"F", foldAllAction}, {"|", "resize"}, {"s", "settings"},
 	}}
 }
 
