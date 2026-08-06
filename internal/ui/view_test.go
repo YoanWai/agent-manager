@@ -373,3 +373,65 @@ func TestUpdateTickReArms(t *testing.T) {
 		t.Error("update tick should re-arm the timer and re-check")
 	}
 }
+
+// Focused, the keyboard belongs to the agent: one tier with the keys the
+// manager keeps, and the app-wide keys — which would go to the agent, not
+// the manager — stay out.
+func TestFooterInFocusMode(t *testing.T) {
+	m := buildModel(t)
+	m.mode = modeFocus
+	footer := ansi.Strip(m.viewFooter())
+	if !strings.Contains(footer, "back to manager") || !strings.Contains(footer, "goes to the agent") {
+		t.Fatalf("focus footer should carry the reserved keys:\n%s", footer)
+	}
+	if strings.Contains(footer, "navigate") || strings.Contains(footer, "View") {
+		t.Fatalf("app-wide keys go to the agent while focused, so the tier must go:\n%s", footer)
+	}
+	if lines := strings.Split(footer, "\n"); len(lines) != 1 {
+		t.Fatalf("focus footer should be one row, got %d:\n%s", len(lines), footer)
+	}
+}
+
+// With nothing under the cursor there is nothing to act on, so the footer
+// carries only the app-wide tier.
+func TestFooterWithoutASelectedRow(t *testing.T) {
+	m := buildModel(t)
+	m.rows = nil
+	footer := ansi.Strip(m.viewFooter())
+	if strings.Contains(footer, "Session") || strings.Contains(footer, "Group") {
+		t.Fatalf("no row selected, no row tier:\n%s", footer)
+	}
+	if !strings.Contains(footer, "View") {
+		t.Fatalf("the app-wide tier should stay:\n%s", footer)
+	}
+}
+
+func TestFooterTierFollowsTheCursor(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "legend", t.TempDir(), "")
+	m.applyCmd(t, m.refreshCmd())
+
+	for i, row := range m.rows {
+		if !row.isGroup {
+			m.cursor = i
+			break
+		}
+	}
+	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "Session") {
+		t.Fatalf("a session under the cursor should title the tier Session:\n%s", footer)
+	}
+
+	for i, row := range m.rows {
+		if row.isGroup {
+			m.cursor = i
+			break
+		}
+	}
+	footer := ansi.Strip(m.viewFooter())
+	if !strings.Contains(footer, "Group") {
+		t.Fatalf("a group under the cursor should title the tier Group:\n%s", footer)
+	}
+	if strings.Contains(footer, "fork") {
+		t.Fatalf("a group cannot be forked, so the key should not be offered:\n%s", footer)
+	}
+}
