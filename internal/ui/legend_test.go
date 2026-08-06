@@ -39,6 +39,25 @@ func TestLegendBarCapsRowsAndMarksTheCut(t *testing.T) {
 	if !strings.Contains(ansi.Strip(out), "…") {
 		t.Fatalf("a cut legend must say so:\n%s", ansi.Strip(out))
 	}
+	for _, line := range lines {
+		if w := ansi.StringWidth(line); w > 40 {
+			t.Fatalf("wrapped legend row is %d columns wide, budget is 40: %q", w, ansi.Strip(line))
+		}
+	}
+}
+
+// With nothing under the cursor there is nothing to act on, so the footer
+// carries only the app-wide tier.
+func TestFooterWithoutASelectedRow(t *testing.T) {
+	m := buildModel(t)
+	m.rows = nil
+	footer := ansi.Strip(m.viewFooter())
+	if strings.Contains(footer, "Session") || strings.Contains(footer, "Group") {
+		t.Fatalf("no row selected, no row tier:\n%s", footer)
+	}
+	if !strings.Contains(footer, "View") {
+		t.Fatalf("the app-wide tier should stay:\n%s", footer)
+	}
 }
 
 func TestFooterTierFollowsTheCursor(t *testing.T) {

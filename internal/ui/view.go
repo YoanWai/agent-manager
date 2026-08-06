@@ -469,7 +469,10 @@ func (m *Model) rowLegend() legendSection {
 		enterHint, attachHint = "attach / fold", "focus"
 	}
 	row, ok := m.selectedRow()
-	if ok && row.isGroup {
+	if !ok {
+		return legendSection{}
+	}
+	if row.isGroup {
 		return legendSection{title: "Group", pairs: [][2]string{
 			{"↵", "fold"}, {"r", "rename"},
 			{"x/X", "kill / all"}, {"v/V", "revive / all"},

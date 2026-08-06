@@ -40,7 +40,6 @@ func (m *Model) cardFlex(title, body string, hint [][2]string) string {
 	return m.cardSized(m.flexCardWidth(title, body, hint), title, body, hint)
 }
 
-// cardInnerWidth is the columns a card's content may occupy.
 func cardInnerWidth(width int) int { return width - cardChromeX - 2*cardPaddingX }
 
 // flexCardWidth picks a width that fits every content line, never under the

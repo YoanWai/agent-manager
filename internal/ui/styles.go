@@ -234,20 +234,13 @@ func keyPill(key, text string, fg lipgloss.Color) string {
 // keyCap renders one binding: the key as a solid cap, its action beside it,
 // so a row of them reads as keys on a keyboard rather than as a sentence.
 func keyCap(key, label string) string {
-	chip := keyChipStyle.Render(key)
-	if label == "" {
-		return chip
-	}
-	return chip + " " + legendLabelStyle.Render(label)
+	return keyChipStyle.Render(key) + " " + legendLabelStyle.Render(label)
 }
 
 // keyCapQuiet is keyCap for a secondary tier: the key is set in accent text
 // rather than as a solid cap, so the tier recedes behind the one above it
 // and a long list of app-wide keys still fits one line.
 func keyCapQuiet(key, label string) string {
-	if label == "" {
-		return keyStyle.Render(key)
-	}
 	return keyStyle.Render(key) + " " + mutedStyle.Render(label)
 }
 

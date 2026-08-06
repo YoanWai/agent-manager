@@ -49,10 +49,16 @@ func legendBar(sections []legendSection, width int) string {
 				part, gap = keyCapQuiet(pair[0], pair[1]), sep
 			}
 			partWidth := ansi.StringWidth(part) + ansi.StringWidth(gap)
+			// The row that cannot wrap further keeps room for the cut
+			// marker, so the marker never lands past the terminal edge.
+			avail := width
+			if len(out) >= legendMaxRows-1 {
+				avail = width - 1 - ansi.StringWidth(more)
+			}
 			switch {
 			case !started:
 				line, lineWidth, started = line+part, lineWidth+ansi.StringWidth(part), true
-			case lineWidth+partWidth <= width:
+			case lineWidth+partWidth <= avail:
 				line += gap + part
 				lineWidth += partWidth
 			case len(out) < legendMaxRows-1:
