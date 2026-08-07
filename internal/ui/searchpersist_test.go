@@ -66,7 +66,9 @@ func TestEnterKeepsTheQueryAndEscClearsIt(t *testing.T) {
 			m.searching, m.search, len(m.rows))
 	}
 
-	m.clearSearch()
+	// Through handleKey rather than clearSearch: the binding is half of what
+	// this covers, so a test that skips it would pass with esc unbound.
+	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	if m.search != "" {
 		t.Fatalf("esc should clear the query, got %q", m.search)
 	}
