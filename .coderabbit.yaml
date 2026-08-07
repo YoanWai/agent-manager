@@ -1,0 +1,64 @@
+language: en-US
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: true
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/*.gif"
+    - "!**/*.png"
+    - "!go.sum"
+  path_instructions:
+    - path: "**/*.go"
+      instructions: |
+        Comments are rare and explain a non-obvious why, never what the code
+        does. Do not ask for doc comments, JSDoc-style blocks, or "what" comments
+        on exported identifiers.
+        Reject speculative branches: a fallback or nil-guard for a shape that
+        cannot occur is a defect, not safety. Guards on genuinely external or
+        untrusted input are correct.
+        Errors propagate or are handled explicitly; silent fallbacks that mask a
+        failure are a defect.
+        Names spell out intent: no one-letter variables outside tight loop
+        indices, no invented abbreviations.
+    - path: "**/*_test.go"
+      instructions: |
+        Tests live beside the file they cover (listview.go -> listview_test.go).
+        Every tmux invocation must name its socket explicitly with -L or -S; an
+        explicit socket is sufficient on its own. A bare tmux call resolves
+        through $TMUX to the developer's live server, so flag one that carries
+        neither an explicit socket nor env -u TMUX as critical, and likewise a
+        kill-server or kill-session that is not pinned to an isolated socket.
+    - path: "internal/tmux/**"
+      instructions: |
+        This package owns the dedicated agentmgr socket. Flag anything that can
+        resolve to the default tmux socket, and any global option or key binding
+        written to a server this process does not own.
+    - path: "internal/ui/**"
+      instructions: |
+        Bubble Tea: one Model, files grouped by feature. Update must not block;
+        flag synchronous I/O, exec, or sleeps on the update path instead of a
+        tea.Cmd.
+    - path: "internal/config/**"
+      instructions: |
+        Existing installs keep their stored config.toml, so editing a
+        defaultConfig value never reaches current users. A behavior change that
+        must reach them needs a new field, not an edited default.
+    - path: ".github/workflows/**"
+      instructions: |
+        Pin third-party actions to a commit SHA. Flag any workflow that exposes
+        secrets to pull_request_target or to a step running untrusted PR code.
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: local
