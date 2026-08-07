@@ -238,7 +238,7 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 		return m.quickSpawn(entry.group, text)
 	}
 	if !m.tmux.Exists(entry.sess.ID) {
-		m.errBar.text = "session is dead - press v to revive"
+		m.errBar.text = deadSessionHint
 		return m, nil
 	}
 	if err := m.tmux.SendText(entry.sess.ID, text); err != nil {

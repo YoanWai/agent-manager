@@ -1,0 +1,105 @@
+language: en-US
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: true
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_pause_after_reviewed_commits: 0
+  finishing_touches:
+    docstrings:
+      enabled: false
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+  path_filters:
+    - "!**/*.gif"
+    - "!**/*.png"
+  path_instructions:
+    - path: "**/*.go"
+      instructions: |
+        Comments are rare and explain a non-obvious why, never what the code
+        does. Do not ask for doc comments, JSDoc-style blocks, or "what" comments
+        on exported identifiers.
+        Reject speculative branches: a fallback or nil-guard for a shape that
+        cannot occur is a defect, not safety. Guards on genuinely external or
+        untrusted input are correct.
+        Errors propagate or are handled explicitly; silent fallbacks that mask a
+        failure are a defect.
+        Every tmux invocation names its socket, either by going through the
+        driver in internal/tmux or by passing -L or -S. A bare exec.Command
+        ("tmux", ...) resolves through $TMUX to the developer's own live server,
+        so flag one as critical, and treat a global option, kill-session or
+        set-hook on an unpinned socket as data loss.
+        Names spell out intent. One-letter method receivers and the usual short
+        Go names (i and j for indices, r and w for readers and writers, ctx, err)
+        are idiomatic here and are never worth a comment; flag only a name whose
+        meaning a reader cannot recover, or an invented abbreviation.
+    - path: "**/*_test.go"
+      instructions: |
+        Tests live beside the file they cover (listview.go -> listview_test.go).
+        The suite drives a real tmux server, so it runs as
+        env -u TMUX TMUX_TMPDIR=/tmp/<short> go test ./..., and the socket dir
+        must keep TMUX_TMPDIR/tmux-<uid>/default under 104 characters or tmux
+        falls back to the default socket. A helper that already passes -L or -S
+        pins its own socket and needs nothing further. Flag a kill-server or
+        kill-session that is not pinned to an isolated socket as critical.
+    - path: "internal/tmux/**"
+      instructions: |
+        This package owns the dedicated agentmgr socket, and Driver.args is what
+        pins it. Flag an exec path that bypasses that helper, and any global
+        option or key binding written to a server this process does not own.
+    - path: "internal/ui/**"
+      instructions: |
+        Bubble Tea: one Model, files grouped by feature. Update must not block;
+        flag synchronous I/O, exec, or sleeps on the update path instead of a
+        tea.Cmd.
+    - path: "internal/config/**"
+      instructions: |
+        Existing installs keep their stored config.toml, so editing a
+        defaultConfig value never reaches current users. A behavior change that
+        must reach them needs a new field, not an edited default.
+    - path: "internal/store/**"
+      instructions: |
+        The migrations slice is append-only. Editing or reordering an existing
+        entry is a defect: the loop swallows "duplicate column", so a changed
+        column default silently reaches fresh installs only and upgraded
+        databases keep the old one. New schema arrives as a new entry at the end,
+        written so re-running it on an already-migrated database is harmless.
+    - path: "internal/update/**"
+      instructions: |
+        This package replaces the running binary. The downloaded asset is
+        checksum-verified before anything is renamed over the executable, so
+        flag a path that skips or weakens that check, follows a redirect to
+        another host, widens the permissions of the staged file, or writes
+        outside the staging directory.
+    - path: ".github/workflows/**"
+      instructions: |
+        Actions are pinned to a release tag and bumped by dependabot, so a tag
+        pin is correct and needs no comment. Flag a mutable ref (a branch such
+        as @main, or no ref at all), and any workflow that exposes secrets to
+        pull_request_target or to a step running untrusted PR code.
+
+code_generation:
+  unit_tests:
+    path_instructions:
+      - path: "**/*_test.go"
+        instructions: |
+          Never call tmux without naming a socket: go through the driver in
+          internal/tmux, or pass -L or -S. A bare tmux call resolves through
+          $TMUX to the developer's live server and can tear down their running
+          sessions. Never emit kill-server, and place the test beside the file
+          it covers.
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: local

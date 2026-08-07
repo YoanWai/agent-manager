@@ -152,34 +152,31 @@ func (m *Model) previewPaneHeight() int {
 	return rest
 }
 
-// viewStatus is the transient message line: prompts, search, and
-// self-dismissing errors. Keeps the footer free for key hints.
-func (m *Model) viewStatus() string {
+// statusLine is the transient message: prompts, search, and self-dismissing
+// errors. It floats in a card over the frame rather than taking a row, so the
+// body keeps its height whether or not a notice is up.
+func (m *Model) statusLine() string {
 	switch {
 	// Errors outrank the focus notices: a scrolled or focused pane must
 	// not hide a failure report.
 	case m.mode == modeFocus && m.errBar.text != "":
-		return "  " + errStyle.Render("✕ "+m.errBar.text)
+		return errStyle.Render("✕ " + m.errBar.text)
 	case m.scrolledBack():
-		return "  " + keyStyle.Render("scrolled ") +
+		return keyStyle.Render("scrolled ") +
 			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", m.focusScroll))
 	case m.mode == modeFocus && m.copied > 0:
-		return "  " + keyStyle.Render("copied ") +
+		return keyStyle.Render("copied ") +
 			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", m.copied))
 	case m.split.resizeMode:
 		hint := "←→ resize · drag divider · enter set · esc cancel"
 		if m.split.dragging {
 			hint = "release to set · esc cancels"
 		}
-		return "  " + keyStyle.Render("resize ") + subtleStyle.Render(hint)
-	case m.searching:
-		cursor := lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
-		return "  " + keyStyle.Render("search ") + valueStyle.Render(m.search) + cursor +
-			subtleStyle.Render("  enter/esc to close")
+		return keyStyle.Render("resize ") + subtleStyle.Render(hint)
 	case m.errBar.text != "":
-		return "  " + errStyle.Render("✕ "+m.errBar.text)
+		return errStyle.Render("✕ " + m.errBar.text)
 	case m.diff.notice != "":
-		return "  " + lipgloss.NewStyle().Foreground(colorFinished).Render("● "+m.diff.notice)
+		return lipgloss.NewStyle().Foreground(colorFinished).Render("● " + m.diff.notice)
 	default:
 		return ""
 	}
@@ -493,7 +490,7 @@ func (m *Model) rowLegend() legendSection {
 	return legendSection{title: "Session", pairs: [][2]string{
 		{"↵", enterHint}, {"A", attachHint}, {"space", "prompt"}, {"ctrl+r", "review"},
 		{"o", "editor"}, {"f", "fork"}, {"r", "rename"}, {"m", "move"},
-		{"x/X", "kill / all"}, {"v/V", "revive / all"},
+		{"x/X", "kill / all"}, {"v/V", "revive / all"}, {"R", "restart"},
 		{"a/u", "archive / restore"}, {"d", "delete"},
 	}}
 }

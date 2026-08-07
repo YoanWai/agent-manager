@@ -27,6 +27,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `X` | Kill every live session in view |
 | `v` | Revive a dead session, or every dead session under a group |
 | `V` | Revive every dead session in view |
+| `R` | Restart the selected session on an empty context: same name, group, directory and tool |
 | `a` / `u` | Archive / restore a session, or a group and its entire subtree |
 | `d` | Delete session, or a group + its entire subtree |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
@@ -39,7 +40,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `M` | Messages (updates, tips; `x` dismisses one for good). The welcome message points at Settings for bug reports. |
 | `e` | Hide / show empty groups |
 | `/` | Search |
-| `?` | Help |
+| `?` | The key map: every binding, grouped by what it acts on. It scrolls (`↑↓`/`jk`, `pgup`/`pgdn`, `g`/`G`) and `/` searches it down to one line. |
 | `q` | Quit (sessions keep running) |
 
 Navigation is keyboard-driven. The manager claims mouse reporting so the wheel stays inside the app and cannot scroll the TUI out of view: a notch scrolls the diff, and in a focused session it walks that pane's scrollback, where click-drag also selects pane text and copies it. In the list the wheel does nothing, since moving the selection with it retargets every key that follows. Fuller mouse support, on by default with a settings toggle, is tracked in [#110](https://github.com/YoanWai/agent-manager/issues/110).
@@ -90,6 +91,12 @@ Deleting (`d`) a session that holds a worktree removes the worktree and its bran
 `v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`, `gemini --resume {id}`, `pi --session {id}`.
 
 The id arrives one of two ways: tools with a `session_id_flag` launch under an id the manager mints, and tools that mint their own are read back by a `session_store` capturer (`codex`, `opencode`). Without an id, revive falls back to `revive_command` (`claude --continue`), which resumes the working directory's most recent conversation, and the manager says so in the status line, since sessions sharing a directory would otherwise land on the wrong one. On a group row `v` revives every dead session under it, and `V` revives every dead session in view; both revive what they can and name the first failure rather than stopping.
+
+## Restarting a session on an empty context
+
+`R` keeps the row and drops the context: same name, group, tool, and working directory, a managed worktree included, launched on a conversation the agent has never seen. It is what you want when a session has piled up context you are done with, where reviving it would spend the budget re-reading history or land straight in a compact.
+
+It asks to confirm first, and it works on a live session too: the running agent ends, then the fresh one launches. The conversation it was on is retired rather than resumed: the manager mints a new id for tools that take one (`session_id_flag`) and captures the new one for tools that mint their own (`session_store`). The retired conversation is left on disk untouched, and the row stops pointing at it, so a later `v` resumes the conversation the restart started rather than the context it dropped. The row changes hands only once the new agent is up, so a launch that cannot start (a tool gone from `PATH`, a directory that moved) leaves the session on the conversation it had, still there for `v`.
 
 ## Forking sessions
 

@@ -1089,7 +1089,7 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if !m.tmux.Exists(sess.ID) {
-		m.errBar.text = "session is dead - press v to revive"
+		m.errBar.text = deadSessionHint
 		return m, nil
 	}
 	notes := m.diff.annotations[m.reviewKey()]

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -781,5 +782,131 @@ func TestAddGroupStoresSettingsWithoutReplacingExistingGroup(t *testing.T) {
 	}
 	if len(groups) != 1 || groups[0].Path != "/first" || groups[0].Worktree != "off" {
 		t.Fatalf("duplicate add changed group: %+v", groups)
+	}
+}
+
+func TestRestartAgentRetiresTheConversationItReplaces(t *testing.T) {
+	st := newTestStore(t)
+	sess := sample("a", "g1")
+	sess.AgentSessionID = "first"
+	if err := st.CreateSession(sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	created, err := st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created.LaunchTime().Equal(created.CreatedAt) {
+		t.Fatalf("launch time before any restart = %v, want the creation time %v", created.LaunchTime(), created.CreatedAt)
+	}
+
+	firstRestart := created.CreatedAt.Add(time.Minute)
+	if err := st.RestartAgent("a", "second", firstRestart); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	got, err := st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "second" || got.RetiredAgentSessionID != "first" {
+		t.Fatalf("after restart: id = %q, retired = %q", got.AgentSessionID, got.RetiredAgentSessionID)
+	}
+	if !got.LaunchTime().Equal(firstRestart) {
+		t.Fatalf("launch time = %v, want %v", got.LaunchTime(), firstRestart)
+	}
+
+	// A tool that mints its own id restarts with no id to record; the
+	// conversation it just left is still the one to keep out of capture.
+	secondRestart := firstRestart.Add(time.Minute)
+	if err := st.RestartAgent("a", "", secondRestart); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	got, err = st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "" || got.RetiredAgentSessionID != "second" {
+		t.Fatalf("after second restart: id = %q, retired = %q", got.AgentSessionID, got.RetiredAgentSessionID)
+	}
+
+	// A restart that follows without a conversation to retire keeps the
+	// last real one rather than forgetting it.
+	if err := st.RestartAgent("a", "", secondRestart.Add(time.Minute)); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	got, err = st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RetiredAgentSessionID != "second" {
+		t.Fatalf("retired = %q, want it kept", got.RetiredAgentSessionID)
+	}
+}
+
+// Capture answers a launch that may already be over by the time it lands, so
+// binding is a compare-and-set: the row must still be unbound and still carry
+// the launch the capture ran for.
+func TestBindAgentSessionIDOnlyBindsTheLaunchItAnswers(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("a", "g1")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	created, err := st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A session that never restarted stores a zero launch time, and the
+	// capture that read it carries that same zero.
+	bound, err := st.BindAgentSessionID("a", "first", created.AgentLaunchedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bound {
+		t.Fatal("a capture for the current launch should bind")
+	}
+	got, err := st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "first" {
+		t.Fatalf("conversation id = %q, want first", got.AgentSessionID)
+	}
+
+	// A second answer for the same launch arrives after the row is bound.
+	bound, err = st.BindAgentSessionID("a", "second", created.AgentLaunchedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound {
+		t.Fatal("a bound row must not take another capture")
+	}
+
+	// A restart clears the id and moves the launch on; an answer from the
+	// launch before it names the conversation the restart dropped.
+	restarted := created.CreatedAt.Add(time.Minute)
+	if err := st.RestartAgent("a", "", restarted); err != nil {
+		t.Fatal(err)
+	}
+	bound, err = st.BindAgentSessionID("a", "stale", created.AgentLaunchedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound {
+		t.Fatal("a capture from the launch before the restart must not bind")
+	}
+	bound, err = st.BindAgentSessionID("a", "fresh", restarted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bound {
+		t.Fatal("a capture for the launch now running should bind")
+	}
+	got, err = st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "fresh" {
+		t.Fatalf("conversation id = %q, want fresh", got.AgentSessionID)
 	}
 }

@@ -59,8 +59,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case modeNotices:
 		return m.handleNoticesKey(msg)
 	case modeHelp:
-		m.mode = modeList
-		return m, nil
+		return m.handleHelpKey(msg)
 	}
 
 	if m.searching {
@@ -105,6 +104,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.reviveSelected()
 	case "V", "shift+v":
 		return m.reviveAllDead()
+	case "R", "shift+r":
+		return m.restartSelected()
 	case "x":
 		return m.killSelected()
 	case "X", "shift+x":
@@ -137,6 +138,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.searching = true
 		m.errBar.text = ""
+	case "esc":
+		return m, m.clearSearch()
 	case "r":
 		m.openRename()
 	case "m":
@@ -144,7 +147,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "M", "shift+m":
 		m.openNotices("")
 	case "?":
-		m.mode = modeHelp
+		m.openHelp()
 	case "ctrl+r":
 		return m, m.openDiff()
 	}
@@ -430,8 +433,11 @@ const hiddenToolsSetting = "hidden_tools"
 
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "enter", "esc":
+	case "enter":
 		m.searching = false
+	case "esc":
+		m.searching = false
+		return m, m.clearSearch()
 	case "backspace":
 		if len(m.search) > 0 {
 			m.search = m.search[:len(m.search)-1]
@@ -444,4 +450,20 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// clearSearch drops the query and re-lists. A query that outlives its field
+// with no way back is what makes filtered-away sessions read as sessions
+// that are gone, so esc answers from the list as well as from the field.
+func (m *Model) clearSearch() tea.Cmd {
+	if m.search == "" {
+		return nil
+	}
+	previousKey := ""
+	if entry, ok := m.selectedRow(); ok {
+		previousKey = rowKey(entry)
+	}
+	m.search = ""
+	m.rebuildRows()
+	return m.afterListFilter(previousKey)
 }

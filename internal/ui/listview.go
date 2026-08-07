@@ -73,13 +73,50 @@ func (m *Model) viewListFrame() string {
 		bottom = m.focusBottomRule(leftWidth+1, m.width)
 	}
 	frame = append(frame, bottom)
-	if status := m.viewStatus(); status != "" {
-		frame = append(frame, paint(status, m.width, backdropHex()))
-	}
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
-	return strings.Join(frame, "\n")
+	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
+}
+
+// searchFieldLine is the live filter at the head of the rail: the typed
+// query with a caret, and the key that closes it when there is room. With
+// the field closed and a query still applied it drops the caret and offers
+// to clear instead, so the rail always accounts for the entries it is
+// holding back.
+func (m *Model) searchFieldLine(width int) string {
+	indent := strings.Repeat(" ", railInset)
+	glyph := keyStyle.Render("⌕ ")
+	caret := lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
+	hint := keyCapQuiet("esc", "close")
+	if !m.searching {
+		caret, hint = "", keyCapQuiet("esc", "clear")
+	}
+	chrome := railInset + ansi.StringWidth(glyph) + ansi.StringWidth(caret)
+
+	if m.search == "" {
+		field := glyph + subtleStyle.Render("type to filter") + caret
+		if gap := width - railInset - ansi.StringWidth(field) - ansi.StringWidth(hint) - 1; gap >= 2 {
+			return indent + field + strings.Repeat(" ", gap) + hint
+		}
+		return indent + field
+	}
+	// A query longer than the rail keeps its end: that is where the caret is
+	// and where the next keystroke lands.
+	room := width - chrome - ansi.StringWidth(hint) - 2
+	if room < 8 {
+		hint, room = "", width-chrome
+	}
+	query := m.search
+	if ansi.StringWidth(query) > room {
+		query = "…" + string([]rune(query)[len([]rune(query))-max(room-1, 1):])
+	}
+	field := glyph + valueStyle.Render(query) + caret
+	if hint == "" {
+		return indent + field
+	}
+	gap := width - railInset - ansi.StringWidth(field) - ansi.StringWidth(hint) - 1
+	return indent + field + strings.Repeat(" ", max(gap, 1)) + hint
 }
 
 // railLines is the sessions rail: the entry list on top, the machine
@@ -91,16 +128,33 @@ func (m *Model) railLines(width, height int) []contentLine {
 		listHeight, meters = height, nil
 	}
 	var rows []contentLine
+	// Both banners cost the list three rows each, so each one is only laid
+	// while entries still have room under it: a rail that is all banner
+	// says nothing about the fleet.
+	const railBannerRows, railListMin = 3, 3
+	room := func(cost int) bool { return listHeight-len(rows)-cost >= railListMin }
+	// Search heads the list it filters, so the query sits over the entries it
+	// is narrowing. It is also the field being typed into, so a rail too tight
+	// for the padded block keeps the bare field rather than dropping it.
+	if m.searching || m.search != "" {
+		field := contentLine{text: m.searchFieldLine(width)}
+		switch {
+		case room(railBannerRows):
+			rows = append(rows, contentLine{}, field, contentLine{})
+		case room(1):
+			rows = append(rows, field)
+		}
+	}
 	// The list starts straight under the pane's top edge; the empty state
 	// centers itself in the full list area instead.
-	if m.showArchived {
+	if m.showArchived && room(railBannerRows) {
 		rows = append(rows, contentLine{})
 		rows = append(rows,
 			contentLine{text: strings.Repeat(" ", railInset) + scopeBadgeStyle.Render("ARCHIVED") +
 				subtleStyle.Render("  ") + keyCap("t", "back to active")},
 			contentLine{})
 	}
-	rows = append(rows, m.entryLines(width, listHeight-len(rows))...)
+	rows = append(rows, m.entryLines(width, max(listHeight-len(rows), 0))...)
 	for len(rows) < listHeight {
 		rows = append(rows, contentLine{})
 	}
@@ -581,6 +635,56 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	return lines
 }
 
+// detailLabelWidth is the column every fact label in the content head is
+// padded to, so the values under it line up as one column.
+const detailLabelWidth = 7
+
+// factRow is one line of a detail head: a quiet label, its value, and a
+// reading set against the right edge. The value is rendered against the
+// columns it actually gets, and the reading is dropped rather than pushed
+// off the edge when the column is too narrow to hold both.
+func factRow(label string, value func(room int) string, right string, width int) string {
+	room := width - detailLabelWidth - ansi.StringWidth(right) - 2
+	if room < 12 {
+		right, room = "", width-detailLabelWidth
+	}
+	return rowColumns(labelStyle.Render(padRight(label, detailLabelWidth))+value(max(room, 1)), right, width)
+}
+
+// plainValue is a factRow value that is already short enough to stand as it
+// is, for facts whose text does not vary with the terminal.
+func plainValue(value string) func(int) string {
+	return func(int) string { return value }
+}
+
+// trimmedValue is a factRow value cut to the columns it gets, for readings
+// that grow with the fleet rather than with the terminal.
+func trimmedValue(value string) func(int) string {
+	return func(room int) string { return ansi.Truncate(value, room, "…") }
+}
+
+// fitColumns lays the richest pair of readings that fits: rights are tried
+// from richest to plainest, and for each, the lefts in turn. Nothing fitting
+// means the plainest left is trimmed to what the column has.
+func fitColumns(lefts, rights []string, width int) string {
+	for _, right := range rights {
+		for _, left := range lefts {
+			if ansi.StringWidth(left)+ansi.StringWidth(right)+2 <= width {
+				return rowColumns(left, right, width)
+			}
+		}
+	}
+	// Nothing fits whole, so the plainest left is trimmed to keep the richest
+	// reading that still leaves it something readable.
+	last := lefts[len(lefts)-1]
+	for _, right := range rights {
+		if room := width - ansi.StringWidth(right) - 2; room >= 8 {
+			return rowColumns(ansi.Truncate(last, room, "…"), right, width)
+		}
+	}
+	return rowColumns(ansi.Truncate(last, max(width, 1), "…"), "", width)
+}
+
 // viewDetail heads the content column: the selected session's name, its
 // state, and the facts that place it (group, directory, age, usage).
 func (m *Model) viewDetail(width int) string {
@@ -598,19 +702,32 @@ func (m *Model) viewDetail(width int) string {
 		}
 	}
 
-	title := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(sess.Name)
 	state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
 		Render(statusGlyph(sess.Status)+" "+statusLabel(sess.Status)) +
 		subtleStyle.Render(" · "+relSince(lastActivity(sess)))
-
-	facts := []string{tool, displayGroup(sess.Group), "started " + relSince(sess.CreatedAt)}
-	if m.procFor == sess.ID && m.proc.OK {
-		facts = append(facts, fmt.Sprintf("cpu %.1f%% · ram %.1f%% · %s",
-			m.proc.CPUPercent, m.proc.RamPercent, humanBytes(m.proc.RSS)))
+	// The branch a worktree session lives on is the fact that tells it apart
+	// from its siblings, so it rides beside the tool while the row has room,
+	// and the tool chip goes before the name does.
+	name := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(sess.Name)
+	withTool := name + "  " + chipStyle.Render(tool)
+	heads := []string{withTool, name}
+	if sess.WorktreeBranch != "" {
+		heads = append([]string{withTool + " " + chipStyle.Render("⑂ "+sess.WorktreeBranch)}, heads...)
 	}
-	meta := subtleStyle.Render(strings.Join(facts, " · "))
-	dir := subtleStyle.Render(truncateTail(sess.Cwd, width))
-	return rowColumns(title, state, width) + "\n" + meta + "\n" + dir
+
+	usage := ""
+	if m.procFor == sess.ID && m.proc.OK {
+		usage = labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.1f%%", m.proc.CPUPercent)) +
+			subtleStyle.Render(" · ") + labelStyle.Render("ram ") +
+			valueStyle.Render(fmt.Sprintf("%.1f%%", m.proc.RamPercent)) +
+			subtleStyle.Render(" · ") + valueStyle.Render(humanBytes(m.proc.RSS))
+	}
+	started := subtleStyle.Render("started " + relSince(sess.CreatedAt))
+	group := lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(sess.Group))
+	dir := func(room int) string { return mutedStyle.Render(truncateTail(sess.Cwd, room)) }
+	return fitColumns(heads, []string{state}, width) + "\n" +
+		factRow("group", plainValue(group), started, width) + "\n" +
+		factRow("dir", dir, usage, width)
 }
 
 // viewGroupDetail heads the content column for a group: its name, how many
@@ -622,7 +739,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		countLabel = "1 agent"
 	}
 	title := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true).Render(displayGroup(group))
-	head := rowColumns(title, subtleStyle.Render(countLabel), width)
+	head := fitColumns([]string{title + "  " + chipStyle.Render(countLabel), title}, []string{""}, width)
 
 	if m.renamingGroup(group) {
 		pathLabel := labelStyle
@@ -649,36 +766,107 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	source := ""
 	if path == "" {
 		path = m.groupDefaultDir(group)
-		source = subtleStyle.Render(" · inherited")
+		source = subtleStyle.Render("inherited")
 	}
-	lines := []string{head, subtleStyle.Render(truncateTail(path, width-len(source))) + source}
+	dir := func(room int) string { return mutedStyle.Render(truncateTail(path, room)) }
+	lines := []string{head, factRow("dir", dir, source, width)}
 	if breakdown := m.groupStatusBreakdown(group); breakdown != "" {
-		lines = append(lines, breakdown)
+		lines = append(lines, factRow("state", trimmedValue(breakdown), "", width))
 	}
 	return strings.Join(lines, "\n")
 }
 
+// rosterToolColumn is the column a roster's tool names start at, so the
+// roster reads as a table rather than as ragged pairs, and rosterNameMin
+// the width under which a name column stops being worth reading.
+const (
+	rosterToolColumn = 14
+	rosterNameMin    = 8
+)
+
 // viewGroupAgents lists a group's sessions where a session's pane preview
-// would sit, so a group reads as a roster.
+// would sit, so a group reads as a roster: one row per agent, its name, the
+// CLI running it, and what it is doing.
 func (m *Model) viewGroupAgents(group string, width, height int) string {
-	lines := []string{subtleStyle.Render("agents")}
-	shown, total := 0, m.groupSessionCount(group)
+	total := m.groupSessionCount(group)
 	if total == 0 {
-		return lines[0] + "\n" + mutedStyle.Render("(none yet — press space to spawn one)")
+		return subtleStyle.Render("agents") + "\n" +
+			mutedStyle.Render("(none yet — press space to spawn one)")
 	}
+
+	type rosterRow struct{ name, tool, state string }
+	var rows []rosterRow
+	overflow := ""
+	shown := 0
 	for _, sess := range m.listedSessions() {
 		if !inGroupSubtree(sess.Group, group) {
 			continue
 		}
 		if shown >= height-2 && total > shown+1 {
-			lines = append(lines, subtleStyle.Render(fmt.Sprintf("… %d more", total-shown)))
+			overflow = subtleStyle.Render(fmt.Sprintf("… %d more", total-shown))
 			break
 		}
-		dot := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
-		line := rowColumns(dot+" "+valueStyle.Render(sess.Name),
-			subtleStyle.Render(sess.Tool+" · "+relSince(lastActivity(sess))), width)
-		lines = append(lines, line)
+		tint := lipgloss.NewStyle().Foreground(statusColor(sess.Status))
+		rows = append(rows, rosterRow{
+			name:  tint.Render(statusGlyph(sess.Status)) + " " + valueStyle.Render(sess.Name),
+			tool:  subtleStyle.Render(sess.Tool),
+			state: tint.Render(statusLabel(sess.Status)) + subtleStyle.Render(" · "+relSince(lastActivity(sess))),
+		})
 		shown++
+	}
+
+	// The name column is as wide as the longest name allows, bounded by what
+	// the tool and state columns need, so tools land on one column and the
+	// states share a right edge. A column too narrow for all three gives up
+	// the tool first and the state second: a roster of names still answers
+	// "who is in this group".
+	nameWidth, toolWidth, stateWidth := rosterToolColumn, 0, 0
+	for _, row := range rows {
+		if w := ansi.StringWidth(row.name) + 2; w > nameWidth {
+			nameWidth = w
+		}
+		if w := ansi.StringWidth(row.tool); w > toolWidth {
+			toolWidth = w
+		}
+		if w := ansi.StringWidth(row.state); w > stateWidth {
+			stateWidth = w
+		}
+	}
+	showTool, showState := true, true
+	if width-toolWidth-stateWidth-3 < rosterNameMin {
+		showTool, toolWidth = false, 0
+	}
+	if width-stateWidth-2 < rosterNameMin {
+		showState, stateWidth = false, 0
+	}
+	if room := width - toolWidth - stateWidth - 3; nameWidth > room {
+		nameWidth = max(room, rosterNameMin)
+	}
+
+	head := padRight(subtleStyle.Render("agent"), nameWidth)
+	if showTool {
+		head += subtleStyle.Render("tool")
+	}
+	activity := ""
+	if showState {
+		activity = subtleStyle.Render("last activity")
+	}
+	lines := []string{rowColumns(head, activity, width)}
+	for _, row := range rows {
+		// A name trimmed to the column exactly would touch the tool beside
+		// it, so the trim leaves the column's last cell as the gap.
+		line := padRight(ansi.Truncate(row.name, max(nameWidth-1, 1), "…"), nameWidth)
+		if showTool {
+			line += row.tool
+		}
+		state := row.state
+		if !showState {
+			state = ""
+		}
+		lines = append(lines, rowColumns(line, state, width))
+	}
+	if overflow != "" {
+		lines = append(lines, overflow)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -697,19 +885,37 @@ func lastActivity(sess store.Session) time.Time {
 // viewQuickBar is the docked prompt: enter answers the selected session, or
 // spawns a fresh agent when a group is selected.
 func (m *Model) viewQuickBar(width int) string {
-	target := "no selection"
+	label := func(text string) string { return labelStyle.Render(padRight(text, detailLabelWidth)) }
+	target := rowColumns(label("target")+mutedStyle.Render("no selection"), "", width)
 	if entry, ok := m.selectedRow(); ok {
 		if entry.isGroup {
-			target = "new " + m.quickTool() + " agent in " + displayGroup(entry.group)
+			// Spawning: the tool and the worktree choice decide what gets
+			// created, so they sit where the eye lands before typing.
+			worktree := subtleStyle.Render("worktree off")
+			switch {
+			case !m.worktreeCapable(m.quickTargetDir()):
+				worktree = subtleStyle.Render(worktreeUnavailable)
+			case m.quickWorktreeOn():
+				worktree = lipgloss.NewStyle().Foreground(colorAccent2).Render("worktree on")
+			}
+			tool := chipStyle.Render(m.quickTool())
+			target = fitColumns(
+				[]string{label("new") + lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(entry.group))},
+				[]string{tool + " " + worktree, tool, ""}, width)
 		} else {
-			target = "answer " + entry.sess.Name
+			sess := entry.sess
+			state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
+				Render(statusGlyph(sess.Status) + " " + statusLabel(sess.Status))
+			target = fitColumns(
+				[]string{label("answer") + lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(sess.Name)},
+				[]string{state + " " + chipStyle.Render(sess.Tool), state, ""}, width)
 		}
 	}
 	m.quick.input.SetWidth(width)
 	m.quick.input.SetHeight(m.quickBarRows(width - 2))
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
-	return subtleStyle.Render(target) + "\n" + m.renderQuickChips(m.quick.input.View())
+	return target + "\n" + m.renderQuickChips(m.quick.input.View())
 }
 
 // viewHeaderRows is the full-width band over both columns: the wordmark
