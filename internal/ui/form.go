@@ -108,8 +108,12 @@ func resolveExistingDir(raw, fallback string) (string, bool) {
 	if abs, err := filepath.Abs(dir); err == nil {
 		dir = abs
 	}
-	info, err := os.Stat(dir)
-	return dir, err == nil && info.IsDir()
+	return dir, isDir(dir)
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func textField(placeholder string, limit int) textinput.Model {
@@ -187,10 +191,8 @@ func (m *Model) contextGroup() string {
 // from the group to the root; empty when no ancestor has one.
 func (m *Model) ancestorGroupDir(group string) string {
 	for g := group; g != ""; g = parentGroup(g) {
-		if p := m.groupPaths[g]; p != "" {
-			if info, err := os.Stat(p); err == nil && info.IsDir() {
-				return p
-			}
+		if p := m.groupPaths[g]; p != "" && isDir(p) {
+			return p
 		}
 	}
 	return ""

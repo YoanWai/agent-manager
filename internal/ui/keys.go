@@ -130,6 +130,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showArchived = !m.showArchived
 		m.requestRefresh()
 	case "T", "shift+t":
+		if m.terminalKeyRepeat() {
+			return m, nil
+		}
 		return m.openTerminal()
 	case "e":
 		return m, m.toggleEmptyGroups()

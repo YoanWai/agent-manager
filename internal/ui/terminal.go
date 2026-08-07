@@ -1,8 +1,7 @@
 package ui
 
 import (
-	"os"
-	"sort"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -10,22 +9,26 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// terminalKeyWindow is how long after a T keystroke another one reads as
+// autorepeat rather than a second request: comfortably longer than the
+// interval a held key repeats at, shorter than a deliberate second press.
+const terminalKeyWindow = 250 * time.Millisecond
+
 // shellTool finds the config block T spawns: the first one declaring
 // shell = true, by name so the pick is the same on every launch. Nothing
 // keys off the block being called "terminal", so a user who already has a
 // [tools.terminal] block of their own keeps it as the agent CLI they wrote.
 func (m *Model) shellTool() (string, config.Tool, bool) {
-	names := make([]string, 0, len(m.cfg.Tools))
+	chosen := ""
 	for name, tool := range m.cfg.Tools {
-		if tool.Shell {
-			names = append(names, name)
+		if tool.Shell && (chosen == "" || name < chosen) {
+			chosen = name
 		}
 	}
-	if len(names) == 0 {
+	if chosen == "" {
 		return "", config.Tool{}, false
 	}
-	sort.Strings(names)
-	return names[0], m.cfg.Tools[names[0]], true
+	return chosen, m.cfg.Tools[chosen], true
 }
 
 // isShell reports whether a session's tool opens a shell rather than an
@@ -33,6 +36,17 @@ func (m *Model) shellTool() (string, config.Tool, bool) {
 // not something we can claim runs a shell.
 func (m *Model) isShell(toolName string) bool {
 	return m.cfg.Tools[toolName].Shell
+}
+
+// terminalKeyRepeat reports whether T arrived inside the burst a held key
+// sends. Each keystroke pushes the window out, so holding T spawns one
+// shell however long it is held. The other keys that create something open
+// a form first, which absorbs a burst on its own.
+func (m *Model) terminalKeyRepeat() bool {
+	now := time.Now()
+	repeated := now.Sub(m.terminalKeyAt) < terminalKeyWindow
+	m.terminalKeyAt = now
+	return repeated
 }
 
 // openTerminal spawns a shell tab in the group under the cursor. The block
@@ -66,12 +80,7 @@ func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
 	// would be filtered off screen.
 	m.statusFilter = statusFilterAll
 	m.errBar.text = ""
-	for i, row := range m.rows {
-		if !row.isGroup && row.sess.ID == sess.ID {
-			m.cursor = i
-			break
-		}
-	}
+	m.focusSession(sess.ID)
 	return m, m.refreshCmd()
 }
 
@@ -92,9 +101,4 @@ func (m *Model) rowDir() (string, bool) {
 		return path, true
 	}
 	return entry.sess.Cwd, isDir(entry.sess.Cwd)
-}
-
-func isDir(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
 }

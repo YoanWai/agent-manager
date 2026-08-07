@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/agentsession"
@@ -86,7 +85,7 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
-	if info, err := os.Stat(source.Cwd); err != nil || !info.IsDir() {
+	if !isDir(source.Cwd) {
 		m.errBar.text = "working directory no longer exists: " + source.Cwd
 		return m, nil
 	}
@@ -127,12 +126,7 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 	m.rebuildRows()
 	m.mode = modeList
 	m.errBar.text = ""
-	for i, row := range m.rows {
-		if !row.isGroup && row.sess.ID == managerID {
-			m.cursor = i
-			break
-		}
-	}
+	m.focusSession(managerID)
 	return m, m.refreshCmd()
 }
 

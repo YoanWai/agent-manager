@@ -3,7 +3,6 @@ package ui
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -205,7 +204,7 @@ func (m *Model) reviveSession(sess store.Session) error {
 	if !ok {
 		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
 	}
-	if info, err := os.Stat(sess.Cwd); err != nil || !info.IsDir() {
+	if !isDir(sess.Cwd) {
 		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
 	baseCommand := tool.ReviveCommand
@@ -287,7 +286,7 @@ func (m *Model) restartSession(sess store.Session) error {
 	if !ok {
 		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
 	}
-	if info, err := os.Stat(sess.Cwd); err != nil || !info.IsDir() {
+	if !isDir(sess.Cwd) {
 		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
 	if err := m.killSession(sess); err != nil {
