@@ -80,7 +80,7 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |
 | `R` | Restart a session on an empty context: same name, group, directory and tool, fresh conversation |
 | `s` | Settings (default tool, theme, list density, review layout) |
-| `?` | Help with every binding |
+| `?` | The key map: every binding, grouped and scrollable, with `/` to search it |
 
 A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch `am/<name>`), toggled on the `n` form, with `alt+w` in the quick prompt, or by default in Settings.
 

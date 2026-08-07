@@ -421,57 +421,6 @@ func (m *Model) viewMove() string {
 		[][2]string{{"↑↓", "pick"}, {"↵", "move"}, {"esc", "cancel"}})
 }
 
-func (m *Model) viewHelp() string {
-	rows := [][2]string{
-		{"n", "new session"},
-		{"f", "fork selected session into a named session in the same group"},
-		{"↵", "attach session / fold group"},
-		{"ctrl+q", "inside a session: back to manager (ctrl+\\ also works)"},
-		{"ctrl+r", "inside a session: review its diff, esc returns"},
-		{"m", "move session to another group"},
-		{"g", "new group (name, parent, default path, worktree)"},
-		{"r", "rename session / edit group (name, default path, worktree)"},
-		{"x", "kill session, or every live session in a group (frees their RAM)"},
-		{"X", "kill every live session"},
-		{"v", "revive killed session, or every dead session in a group (resumes the agent)"},
-		{"V", "revive every dead session"},
-		{"R", "restart session with an empty context (same name, group, dir and tool)"},
-		{"a / u", "archive / restore"},
-		{"d", "delete session, or group + subtree"},
-		{"K / J", "reorder row up / down (shift+↑↓ also works)"},
-		{"space", "quick prompt: answer session / spawn agent in group"},
-		{"tab", "in quick prompt: switch spawn tool"},
-		{"shift+tab", "in quick prompt: toggle worktree for the spawned agent"},
-		{"ctrl+v", "in quick prompt: paste image as a chip at the cursor"},
-		{"⌫", "in quick prompt: next to a chip, delete the whole chip"},
-		{"ctrl+r", "review changes: whole-file diffs, comment lines, send to agent"},
-		{"s", "in review: cycle scope (uncommitted / vs target / last commit / staged)"},
-		{"r", "in review: pick the repo when the session dir holds several"},
-		{"b", "in review: pick the branch from the repo's worktrees"},
-		{"B", "in review: pick the target (merge-into branch) the branch diff compares against"},
-		{"F", "fold / unfold all groups"},
-		{"s", "settings (CLIs, theme, default tool, review layout, report a bug)"},
-		{"|", "resize split (←→ / drag, enter commits, esc cancels)"},
-		{"t", "toggle archived view"},
-		{"w", "filter to sessions that need attention (waiting, finished, errored)"},
-		{"M", "messages (updates, tips; x dismisses)"},
-		{"e", "hide / show empty groups"},
-		{"/", "search"},
-		{"↑↓ / jk", "move cursor"},
-		{"q", "quit (sessions keep running)"},
-	}
-	var b strings.Builder
-	for _, binding := range rows {
-		b.WriteString(keyStyle.Width(10).Render(binding[0]) + mutedStyle.Render(binding[1]) + "\n")
-	}
-	width := 92
-	if m.width >= 28 && width > m.width-4 {
-		width = m.width - 4
-	}
-	return m.cardSized(width, "? Keys", strings.TrimRight(b.String(), "\n"),
-		[][2]string{{"any key", "close"}})
-}
-
 func formField(label, value string, focused bool) string {
 	marker := "  "
 	style := labelStyle

@@ -59,8 +59,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case modeNotices:
 		return m.handleNoticesKey(msg)
 	case modeHelp:
-		m.mode = modeList
-		return m, nil
+		return m.handleHelpKey(msg)
 	}
 
 	if m.searching {
@@ -142,7 +141,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "M", "shift+m":
 		m.openNotices("")
 	case "?":
-		m.mode = modeHelp
+		m.openHelp()
 	case "ctrl+r":
 		return m, m.openDiff()
 	}
