@@ -497,12 +497,10 @@ func storedTheme(st *store.Store) string {
 	return name
 }
 
-// storedThemeAuto reads whether auto theme detection is enabled from storage.
 func storedThemeAuto(st *store.Store) bool {
 	return themeAutoEnabled(st)
 }
 
-// themeAutoEnabled reads whether auto theme detection is enabled.
 func themeAutoEnabled(st *store.Store) bool {
 	val, err := st.Setting(themeAutoSetting)
 	if err != nil {
@@ -511,9 +509,6 @@ func themeAutoEnabled(st *store.Store) bool {
 	return val == "true" || val == "1"
 }
 
-// resolveTheme determines which theme to use based on auto-detection settings.
-// If auto is enabled, it detects the system color scheme and maps it to a theme.
-// Otherwise, it uses the stored theme preference.
 func resolveTheme(st *store.Store) string {
 	if themeAutoEnabled(st) {
 		scheme := sysstat.DetectSystemColorScheme()

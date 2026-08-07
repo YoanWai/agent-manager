@@ -1,6 +1,7 @@
 package sysstat
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,34 +9,57 @@ import (
 	"strings"
 )
 
-// ColorScheme represents the system's color mode preference
 type ColorScheme string
 
 const (
-	ColorSchemeLight ColorScheme = "light"
-	ColorSchemeDark  ColorScheme = "dark"
+	ColorSchemeLight   ColorScheme = "light"
+	ColorSchemeDark    ColorScheme = "dark"
 	ColorSchemeUnknown ColorScheme = "unknown"
 )
+
+// CommandRunner is an interface for running system commands, used for testing.
+type CommandRunner interface {
+	Run(name string, args ...string) ([]byte, error)
+}
+
+// RealCommandRunner uses the actual exec.Command to run system commands.
+type RealCommandRunner struct{}
+
+// Run executes the given command and returns its output.
+func (RealCommandRunner) Run(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).Output()
+}
+
+// DefaultRunner is the default command runner that uses exec.Command.
+var DefaultRunner CommandRunner = RealCommandRunner{}
 
 // DetectSystemColorScheme returns the system's preferred color scheme (light or dark).
 // Returns ColorSchemeUnknown if detection fails or is not supported on the platform.
 func DetectSystemColorScheme() ColorScheme {
+	return DetectSystemColorSchemeWithRunner(DefaultRunner)
+}
+
+// DetectSystemColorSchemeWithRunner allows passing a custom command runner for testing.
+func DetectSystemColorSchemeWithRunner(runner CommandRunner) ColorScheme {
 	switch runtime.GOOS {
 	case "darwin":
-		return detectDarwinColorScheme()
+		return detectDarwinColorSchemeWithRunner(runner)
 	case "windows":
-		return detectWindowsColorScheme()
+		return detectWindowsColorSchemeWithRunner(runner)
 	case "linux":
-		return detectLinuxColorScheme()
+		return detectLinuxColorSchemeWithRunner(runner)
 	default:
 		return ColorSchemeUnknown
 	}
 }
 
-// detectDarwinColorScheme detects macOS system appearance
 func detectDarwinColorScheme() ColorScheme {
+	return detectDarwinColorSchemeWithRunner(DefaultRunner)
+}
+
+func detectDarwinColorSchemeWithRunner(runner CommandRunner) ColorScheme {
 	// Try AppleInterfaceStyle first (most reliable)
-	out, err := exec.Command("defaults", "read", "-g", "AppleInterfaceStyle").Output()
+	out, err := runner.Run("defaults", "read", "-g", "AppleInterfaceStyle")
 	if err == nil {
 		style := strings.TrimSpace(string(out))
 		if style == "Dark" {
@@ -44,10 +68,16 @@ func detectDarwinColorScheme() ColorScheme {
 		return ColorSchemeLight
 	}
 
+	// When defaults launches successfully but the key is missing,
+	// macOS defaults to light mode
+	var exitErr *exec.ExitError
+	if err != nil && !errors.As(err, &exitErr) {
+		return ColorSchemeUnknown
+	}
+
 	// Fallback: check NSRequiresAquaSystemAppearance
 	// If this is set to true, the app should use light mode
-	// If false or not set, it can use dark mode
-	out, err = exec.Command("defaults", "read", "-g", "NSRequiresAquaSystemAppearance").Output()
+	out, err = runner.Run("defaults", "read", "-g", "NSRequiresAquaSystemAppearance")
 	if err == nil {
 		style := strings.TrimSpace(string(out))
 		if style == "1" || strings.ToLower(style) == "true" {
@@ -56,16 +86,24 @@ func detectDarwinColorScheme() ColorScheme {
 		return ColorSchemeDark
 	}
 
-	return ColorSchemeUnknown
+	// Same logic for NSRequiresAquaSystemAppearance
+	if err != nil && !errors.As(err, &exitErr) {
+		return ColorSchemeUnknown
+	}
+
+	return ColorSchemeLight
 }
 
-// detectWindowsColorScheme detects Windows system appearance
 func detectWindowsColorScheme() ColorScheme {
+	return detectWindowsColorSchemeWithRunner(DefaultRunner)
+}
+
+func detectWindowsColorSchemeWithRunner(runner CommandRunner) ColorScheme {
 	// Check the registry for AppsUseLightTheme
 	// HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize
-	out, err := exec.Command("reg", "query", 
-		`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`, 
-		"/v", "AppsUseLightTheme").Output()
+	out, err := runner.Run("reg", "query",
+		`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`,
+		"/v", "AppsUseLightTheme")
 	if err == nil {
 		output := string(out)
 		if strings.Contains(output, "0x1") || strings.Contains(output, "1") {
@@ -76,16 +114,18 @@ func detectWindowsColorScheme() ColorScheme {
 	return ColorSchemeUnknown
 }
 
-// detectLinuxColorScheme detects Linux system appearance
-// Uses various environment variables and tools commonly available on Linux
 func detectLinuxColorScheme() ColorScheme {
+	return detectLinuxColorSchemeWithRunner(DefaultRunner)
+}
+
+func detectLinuxColorSchemeWithRunner(runner CommandRunner) ColorScheme {
 	// Try XDG desktop portal first (most modern)
-	if scheme := detectXDGPortal(); scheme != ColorSchemeUnknown {
+	if scheme := detectXDGPortalWithRunner(runner); scheme != ColorSchemeUnknown {
 		return scheme
 	}
 
 	// Try gsettings (GNOME)
-	if scheme := detectGSettings(); scheme != ColorSchemeUnknown {
+	if scheme := detectGSettingsWithRunner(runner); scheme != ColorSchemeUnknown {
 		return scheme
 	}
 
@@ -97,31 +137,43 @@ func detectLinuxColorScheme() ColorScheme {
 	return ColorSchemeUnknown
 }
 
-// detectXDGPortal uses xdg-desktop-portal to get color scheme
 func detectXDGPortal() ColorScheme {
-	out, err := exec.Command("dbus-send", 
-		"--print-reply=literal", 
+	return detectXDGPortalWithRunner(DefaultRunner)
+}
+
+func detectXDGPortalWithRunner(runner CommandRunner) ColorScheme {
+	out, err := runner.Run("dbus-send",
+		"--print-reply=literal",
 		"--dest=org.freedesktop.portal.Desktop",
 		"/org/freedesktop/portal/desktop",
 		"org.freedesktop.DBus.Properties.Get",
 		"string:org.freedesktop.portal.Settings",
-		"string:color-scheme").Output()
+		"string:color-scheme")
 	if err == nil {
 		output := string(out)
-		if strings.Contains(output, "uint32 1") || strings.Contains(output, "1") {
+		// Parse the uint32 value from the dbus-send output
+		// Expected format contains "uint32 <value>" where value is 0, 1, or 2
+		if strings.Contains(output, "uint32 1") {
 			return ColorSchemeDark
 		}
-		if strings.Contains(output, "uint32 0") || strings.Contains(output, "0") {
+		if strings.Contains(output, "uint32 2") {
 			return ColorSchemeLight
+		}
+		// 0 or any other value means unknown/unset
+		if strings.Contains(output, "uint32 0") {
+			return ColorSchemeUnknown
 		}
 	}
 	return ColorSchemeUnknown
 }
 
-// detectGSettings uses gsettings to get the GTK theme preference
 func detectGSettings() ColorScheme {
+	return detectGSettingsWithRunner(DefaultRunner)
+}
+
+func detectGSettingsWithRunner(runner CommandRunner) ColorScheme {
 	// Try the gsettings approach for GTK-based desktops
-	out, err := exec.Command("gsettings", "get", "org.gnome.desktop.interface", "color-scheme").Output()
+	out, err := runner.Run("gsettings", "get", "org.gnome.desktop.interface", "color-scheme")
 	if err == nil {
 		output := strings.TrimSpace(string(out))
 		if output == "'prefer-dark'" || output == "prefer-dark" {
@@ -132,17 +184,20 @@ func detectGSettings() ColorScheme {
 		}
 		if output == "'default'" || output == "default" {
 			// Try to detect from GTK theme name
-			return detectGTKTheme()
+			return detectGTKThemeWithRunner(runner)
 		}
 	}
 
 	// Fallback: try the gtk-theme-name setting
-	return detectGTKTheme()
+	return detectGTKThemeWithRunner(runner)
 }
 
-// detectGTKTheme checks the GTK theme name for dark variants
 func detectGTKTheme() ColorScheme {
-	out, err := exec.Command("gsettings", "get", "org.gnome.desktop.interface", "gtk-theme").Output()
+	return detectGTKThemeWithRunner(DefaultRunner)
+}
+
+func detectGTKThemeWithRunner(runner CommandRunner) ColorScheme {
+	out, err := runner.Run("gsettings", "get", "org.gnome.desktop.interface", "gtk-theme")
 	if err == nil {
 		theme := strings.TrimSpace(string(out))
 		theme = strings.Trim(theme, "'\"")
@@ -164,7 +219,6 @@ func detectGTKTheme() ColorScheme {
 	return ColorSchemeUnknown
 }
 
-// detectEnvVars checks common environment variables for color scheme
 func detectEnvVars() ColorScheme {
 	// Check common environment variables that indicate color scheme
 	// DARK_MODE is used by some applications
@@ -199,7 +253,6 @@ func detectEnvVars() ColorScheme {
 	return ColorSchemeUnknown
 }
 
-// parseHexColor parses a 2-character hex string into a 0-255 integer
 func parseHexColor(hexStr string) int {
 	var val int
 	if _, err := fmt.Sscanf(hexStr, "%02x", &val); err == nil {
@@ -208,9 +261,6 @@ func parseHexColor(hexStr string) int {
 	return 0
 }
 
-// ThemeForColorScheme returns the recommended agent-manager theme name
-// for the given color scheme. Returns the dark "classic" theme for dark mode
-// and the light "solarized light" theme for light mode.
 func ThemeForColorScheme(scheme ColorScheme) string {
 	switch scheme {
 	case ColorSchemeDark:

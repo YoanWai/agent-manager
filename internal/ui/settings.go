@@ -11,7 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// boolToString converts a boolean to "true" or "false"
 func boolToString(b bool) string {
 	if b {
 		return "true"
@@ -407,7 +406,6 @@ func (m *Model) cycleSetting(step int) {
 		SyncTerminalBackground()
 	case settingsFieldThemeAuto:
 		m.settings.themeAuto = !m.settings.themeAuto
-		// Re-apply theme based on new auto setting
 		if m.settings.themeAuto {
 			scheme := sysstat.DetectSystemColorScheme()
 			newTheme := sysstat.ThemeForColorScheme(scheme)
@@ -416,7 +414,6 @@ func (m *Model) cycleSetting(step int) {
 			applyTheme(themes[idx])
 			SyncTerminalBackground()
 		} else {
-			// When disabling auto, revert to the stored theme
 			storedName := storedTheme(m.store)
 			idx := themeIndex(storedName)
 			m.settings.themeIndex = idx
