@@ -80,13 +80,19 @@ func (m *Model) viewListFrame() string {
 }
 
 // searchFieldLine is the live filter at the head of the rail: the typed
-// query with a caret, and the key that closes it when there is room.
+// query with a caret, and the key that closes it when there is room. With
+// the field closed and a query still applied it drops the caret and offers
+// to clear instead, so the rail always accounts for the entries it is
+// holding back.
 func (m *Model) searchFieldLine(width int) string {
 	indent := strings.Repeat(" ", railInset)
 	glyph := keyStyle.Render("⌕ ")
 	caret := lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
 	hint := keyCapQuiet("esc", "close")
-	chrome := railInset + ansi.StringWidth(glyph) + 1
+	if !m.searching {
+		caret, hint = "", keyCapQuiet("esc", "clear")
+	}
+	chrome := railInset + ansi.StringWidth(glyph) + ansi.StringWidth(caret)
 
 	if m.search == "" {
 		field := glyph + subtleStyle.Render("type to filter") + caret
@@ -130,7 +136,7 @@ func (m *Model) railLines(width, height int) []contentLine {
 	// Search heads the list it filters, so the query sits over the entries it
 	// is narrowing. It is also the field being typed into, so a rail too tight
 	// for the padded block keeps the bare field rather than dropping it.
-	if m.searching {
+	if m.searching || m.search != "" {
 		field := contentLine{text: m.searchFieldLine(width)}
 		switch {
 		case room(railBannerRows):
