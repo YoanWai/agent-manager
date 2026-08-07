@@ -482,14 +482,14 @@ func (m *Model) rowLegend() legendSection {
 			foldAction = "unfold"
 		}
 		return legendSection{title: "Group", pairs: [][2]string{
-			{"↵", foldAction}, {"o", "editor"}, {"r", "rename"},
+			{"↵", foldAction}, {"r", "rename"},
 			{"x/X", "kill / all"}, {"v/V", "revive / all"},
 			{"a/u", "archive / restore"}, {"d", "delete"},
 		}}
 	}
 	return legendSection{title: "Session", pairs: [][2]string{
 		{"↵", enterHint}, {"A", attachHint}, {"space", "prompt"}, {"ctrl+r", "review"},
-		{"o", "editor"}, {"f", "fork"}, {"r", "rename"}, {"m", "move"},
+		{"f", "fork"}, {"r", "rename"}, {"m", "move"},
 		{"x/X", "kill / all"}, {"v/V", "revive / all"}, {"R", "restart"},
 		{"a/u", "archive / restore"}, {"d", "delete"},
 	}}

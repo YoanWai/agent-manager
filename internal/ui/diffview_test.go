@@ -2146,3 +2146,30 @@ func TestReviewedMarkClearsOnContentChange(t *testing.T) {
 		t.Fatal("reviewed mark should reset after content changes")
 	}
 }
+
+// Sending review comments writes into the pane the same way the quick
+// prompt does, so it refuses a shell for the same reason: the prompt is an
+// English sentence, and a shell would run it.
+func TestSendAnnotationsRefusesAShell(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	if err := m.store.CreateGroup("work", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	sess := spawnTerminal(t, m)
+	m.selectSessionRow(t, sess.Name)
+	m.drainCmds(t, m.openDiff())
+
+	m.diff.annotations[m.reviewKey()] = []annotation{{file: "main.go", line: 3, text: "use fmt.Println here"}}
+	if _, cmd := m.sendAnnotations(); cmd != nil {
+		t.Fatal("a refused send must not return a command")
+	}
+	if m.errBar.text != shellPromptHint(sess.Name) {
+		t.Fatalf("err = %q, want the shell refusal", m.errBar.text)
+	}
+	if len(m.diff.annotations[m.reviewKey()]) != 1 {
+		t.Fatal("a refused send should keep the comments")
+	}
+}

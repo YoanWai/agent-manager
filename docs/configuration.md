@@ -4,9 +4,9 @@ Config lives in your OS user config dir (`~/Library/Application Support/agent-ma
 
 The Pi defaults require Pi 0.76.0 or later because they use `--session-id`.
 
-Top-level: `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats. `editor` is the command `o` opens a directory in, arguments included (`editor = "code -n"`); left unset, Agent Manager falls back to `$AGENT_MANAGER_EDITOR`, then a GUI editor on `PATH`, then `$VISUAL` / `$EDITOR` (see [Opening the editor](usage.md#opening-the-editor)).
+Top-level: `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats.
 
-The generated file also carries a `[tools.terminal]` block. That one is the shell `T` opens, not an agent CLI: an empty `command` leaves the pane on `$SHELL`, set one to open a different shell, and the block never appears in the tool pickers (see [Terminal tabs](usage.md#terminal-tabs)).
+The generated file also carries a `[tools.terminal]` block. That one is the shell `T` opens, not an agent CLI: an empty `command` leaves the pane on `$SHELL`, and setting one opens a different shell. `shell = true` is what marks it — never the name — so the tool pickers skip it and the keys that write into a pane refuse it (see [Terminal tabs](usage.md#terminal-tabs)). Any block can carry the flag, and a `[tools.terminal]` block already in your own config keeps whatever it already means.
 
 Add any CLI tool as a `[tools.<name>]` block:
 

@@ -1,22 +1,49 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
+// shellToolName is the block buildModel ships with shell = true.
+const shellToolName = "terminal"
+
+// resolved is a path as tmux reports it back: symlinks followed, which on
+// macOS is what the /var temp directories sit behind.
+func resolved(t *testing.T, dir string) string {
+	t.Helper()
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("resolve %q: %v", dir, err)
+	}
+	return real
+}
+
 func terminalSession(t *testing.T, m *Model) store.Session {
 	t.Helper()
 	for _, sess := range m.sessions {
-		if sess.Tool == terminalTool {
+		if m.isShell(sess.Tool) {
 			return sess
 		}
 	}
-	t.Fatalf("no terminal session among %v", m.sessions)
+	t.Fatalf("no shell session among %v", m.sessions)
 	return store.Session{}
+}
+
+func spawnTerminal(t *testing.T, m *Model) store.Session {
+	t.Helper()
+	_, cmd := m.openTerminal()
+	if m.errBar.text != "" {
+		t.Fatalf("terminal spawn reported %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	return terminalSession(t, m)
 }
 
 func TestOpenTerminalSpawnsShellInSelectedGroup(t *testing.T) {
@@ -28,13 +55,7 @@ func TestOpenTerminalSpawnsShellInSelectedGroup(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "backend")
 
-	_, cmd := m.openTerminal()
-	if m.errBar.text != "" {
-		t.Fatalf("terminal spawn reported %q", m.errBar.text)
-	}
-	m.applyCmd(t, cmd)
-
-	sess := terminalSession(t, m)
+	sess := spawnTerminal(t, m)
 	if sess.Group != "backend" {
 		t.Fatalf("terminal group = %q, want backend", sess.Group)
 	}
@@ -61,10 +82,7 @@ func TestOpenTerminalOnSessionRowUsesItsDirectory(t *testing.T) {
 	createSession(t, m, "agent", sessionDir, "backend")
 	m.selectSessionRow(t, "agent")
 
-	_, cmd := m.openTerminal()
-	m.applyCmd(t, cmd)
-
-	sess := terminalSession(t, m)
+	sess := spawnTerminal(t, m)
 	if want := resolved(t, sessionDir); sess.Cwd != want {
 		t.Fatalf("terminal cwd = %q, want the session's %q", sess.Cwd, want)
 	}
@@ -73,15 +91,31 @@ func TestOpenTerminalOnSessionRowUsesItsDirectory(t *testing.T) {
 	}
 }
 
+// tmux keeps reporting a pane's path after the directory is removed under
+// it, so the row checks both the pane path and the recorded cwd rather than
+// handing back somewhere that is no longer there.
+func TestRowDirRefusesADirectoryThatIsGone(t *testing.T) {
+	m := buildModel(t)
+	gone := t.TempDir()
+	createSession(t, m, "agent", gone, "")
+	m.selectSessionRow(t, "agent")
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatalf("remove dir: %v", err)
+	}
+
+	dir, ok := m.rowDir()
+	if ok {
+		t.Fatalf("rowDir accepted a directory that is gone: %q", dir)
+	}
+}
+
 // Killing frees the shell like any other session, and revive brings it
 // back on the tool's empty command rather than erroring on a missing CLI.
 func TestTerminalSessionRevives(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.refreshCmd())
-	_, cmd := m.openTerminal()
-	m.applyCmd(t, cmd)
+	sess := spawnTerminal(t, m)
 
-	sess := terminalSession(t, m)
 	if err := m.killSession(sess); err != nil {
 		t.Fatalf("kill terminal: %v", err)
 	}
@@ -94,21 +128,52 @@ func TestTerminalSessionRevives(t *testing.T) {
 	}
 }
 
-// The terminal tab is a shell, not a CLI to spawn agents with: it stays out
-// of every picker, but a terminal session keeps it on rename so saving
-// cannot silently turn the shell into an agent.
-func TestTerminalToolStaysOutOfPickers(t *testing.T) {
+// The shell block is not a CLI to spawn agents with: it stays out of every
+// picker, but a shell session keeps it on rename so saving cannot silently
+// turn the shell into an agent.
+func TestShellToolStaysOutOfPickers(t *testing.T) {
 	m := buildModel(t)
-	if slices.Contains(m.enabledToolNames(), terminalTool) {
-		t.Fatalf("terminal should not be offered as a CLI: %v", m.enabledToolNames())
+	if slices.Contains(m.enabledToolNames(), shellToolName) {
+		t.Fatalf("a shell should not be offered as a CLI: %v", m.enabledToolNames())
 	}
 	m.applyCmd(t, m.refreshCmd())
-	_, cmd := m.openTerminal()
-	m.applyCmd(t, cmd)
+	sess := spawnTerminal(t, m)
 
-	m.selectSessionRow(t, terminalSession(t, m).Name)
+	m.selectSessionRow(t, sess.Name)
 	m.openRename()
-	if got := m.renameTool(); got != terminalTool {
-		t.Fatalf("rename tool = %q, want %q", got, terminalTool)
+	if got := m.renameTool(); got != shellToolName {
+		t.Fatalf("rename tool = %q, want %q", got, shellToolName)
+	}
+}
+
+// Nothing keys off the name: a hand-rolled [tools.terminal] block that never
+// declared itself a shell stays an agent CLI, pickers included.
+func TestABlockNamedTerminalIsOnlyAShellWhenItSaysSo(t *testing.T) {
+	m := buildModel(t)
+	m.cfg = config.Config{Tools: map[string]config.Tool{
+		"claude":   {Command: "cat"},
+		"terminal": {Command: "my-own-cli"},
+	}}
+	if !slices.Contains(m.enabledToolNames(), "terminal") {
+		t.Fatalf("a user's own terminal block must stay a CLI: %v", m.enabledToolNames())
+	}
+	if m.isShell("terminal") {
+		t.Fatal("a block without shell = true is not a shell")
+	}
+	if _, _, ok := m.shellTool(); ok {
+		t.Fatal("no block declared shell = true, so T has nothing to spawn")
+	}
+}
+
+// The shipped block is found by its flag, whatever it is called.
+func TestShellToolIsFoundByItsFlag(t *testing.T) {
+	m := buildModel(t)
+	m.cfg = config.Config{Tools: map[string]config.Tool{
+		"claude": {Command: "cat"},
+		"zsh":    {Shell: true},
+	}}
+	name, tool, ok := m.shellTool()
+	if !ok || name != "zsh" || tool.Command != "" {
+		t.Fatalf("shellTool() = %q %+v %v, want the zsh block", name, tool, ok)
 	}
 }

@@ -390,11 +390,13 @@ func (d *Driver) PaneCurrentPath(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	line := strings.TrimSpace(out)
+	// Only the line break is stripped: a trailing space is part of a
+	// directory name as much as any other character.
+	line := strings.TrimSuffix(strings.SplitN(out, "\n", 2)[0], "\r")
 	if line == "" {
 		return "", fmt.Errorf("no pane for session %s", id)
 	}
-	return strings.SplitN(line, "\n", 2)[0], nil
+	return line, nil
 }
 
 // noServer recognizes both messages tmux prints when no server is up:

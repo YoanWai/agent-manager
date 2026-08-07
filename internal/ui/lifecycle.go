@@ -18,6 +18,14 @@ import (
 // conversation it held, restart drops it.
 const deadSessionHint = "session is dead - press v to revive or R to restart"
 
+// shellPromptHint refuses to write into a shell. SendText pastes and then
+// presses Enter, so a sentence meant for an agent would run as a command
+// on the user's machine. Entering the session is how text reaches a shell,
+// where what is typed is plainly a command.
+func shellPromptHint(name string) string {
+	return name + " is a shell, not an agent - enter it to type there"
+}
+
 func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
 	if !ok {

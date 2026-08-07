@@ -15,7 +15,13 @@ type Rule struct {
 }
 
 type Tool struct {
-	Command       string `toml:"command"`
+	Command string `toml:"command"`
+	// Shell marks a block that opens a plain shell rather than an agent
+	// CLI: it is what T spawns, it stays out of the CLI pickers, and the
+	// keys that write into a pane refuse it, since a sentence typed at a
+	// shell is a command. Never inferred, so a tool block only means this
+	// when its author said so.
+	Shell         bool   `toml:"shell"`
 	ReviveCommand string `toml:"revive_command"`
 	PromptFlag    string `toml:"prompt_flag"`
 	// SessionIDFlag makes a new session launch with an id we choose (e.g.
@@ -52,12 +58,8 @@ type Tool struct {
 }
 
 type Config struct {
-	PollInterval Duration `toml:"poll_interval"`
-	// Editor is the command the o key opens a session's directory in, args
-	// included. Empty falls back to a GUI editor found on PATH, then
-	// $VISUAL / $EDITOR.
-	Editor string          `toml:"editor"`
-	Tools  map[string]Tool `toml:"tools"`
+	PollInterval Duration        `toml:"poll_interval"`
+	Tools        map[string]Tool `toml:"tools"`
 }
 
 type Duration struct {
@@ -135,6 +137,11 @@ func (c *Config) backfillToolDefaults() error {
 }
 
 // mergeTool returns user with any zero-value field filled from def.
+//
+// Shell is deliberately not among them. "terminal" is a plausible name for
+// a hand-rolled agent block, and backfilling the flag onto one would take
+// the user's own tool out of the pickers and refuse to prompt it, without
+// saying so. A block is a shell only where its author wrote that.
 func mergeTool(user, def Tool) Tool {
 	fill := func(dst *string, src string) {
 		if *dst == "" {
@@ -208,11 +215,6 @@ func writeDefault(path string) error {
 }
 
 const defaultConfig = `poll_interval = "2s"
-
-# The editor "o" opens a session's directory in. Left unset, Agent Manager
-# takes the first GUI editor on PATH (code, cursor, windsurf, zed, subl,
-# idea), then $VISUAL or $EDITOR. Arguments are allowed: "code -n".
-# editor = "code"
 
 # Rules are matched top-down against the visible pane text (ANSI stripped);
 # first match wins, except a matching waiting rule outranks a working match.
@@ -374,10 +376,12 @@ rules = [
 
 # The terminal tab "T" spawns: a shell in the group's directory, listed
 # beside the agents but with nothing running in it. An empty command leaves
-# the pane on $SHELL; set one to open a different shell instead. It is not
-# an agent, so it never appears in the CLI pickers.
+# the pane on $SHELL; set one to open a different shell instead. shell = true
+# is what marks it: the CLI pickers skip it, and the keys that write into a
+# pane refuse it, because a sentence typed at a shell is a command.
 [tools.terminal]
 command = ""
+shell = true
 default_status = "idle"
 
 [tools.pi]
