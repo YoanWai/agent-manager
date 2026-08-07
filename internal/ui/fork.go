@@ -137,6 +137,11 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 }
 
 func validateForkSource(toolName string, tool config.Tool, source store.Session) error {
+	// A shell has no fork_command either, but saying so names a config
+	// field for a row that was never going to have a conversation.
+	if tool.Shell {
+		return fmt.Errorf("%s is a shell, not an agent - there is no conversation to fork", source.Name)
+	}
 	if tool.ForkCommand == "" {
 		return fmt.Errorf("tool %s has no fork_command", toolName)
 	}

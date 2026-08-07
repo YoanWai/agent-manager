@@ -411,3 +411,25 @@ func TestForkGeminiResolverFailureReportsError(t *testing.T) {
 		t.Fatalf("session rows = %d, want %d (no fork launched)", got, before)
 	}
 }
+
+// A shell has no fork_command, but saying so names a config field for a
+// row that was never going to hold a conversation.
+func TestForkRefusesAShellInItsOwnTerms(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.refreshCmd())
+	sess := spawnTerminal(t, m)
+	m.selectSessionRow(t, sess.Name)
+
+	m.openFork()
+
+	if m.mode == modeFork {
+		t.Fatal("fork should not open on a shell row")
+	}
+	if !strings.Contains(m.errBar.text, "is a shell") ||
+		!strings.Contains(m.errBar.text, "no conversation to fork") {
+		t.Fatalf("err = %q, want it to name the row as a shell", m.errBar.text)
+	}
+	if strings.Contains(m.errBar.text, "fork_command") {
+		t.Fatalf("err = %q should not name a config field", m.errBar.text)
+	}
+}
