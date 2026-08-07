@@ -375,6 +375,30 @@ func (s *Store) UpdateStatus(id, newStatus string) error {
 	return requireRow(res, id)
 }
 
+// AcknowledgeFinished atomically marks a session idle and acked if its stored
+// status is still finished. A newer status makes the operation a no-op.
+func (s *Store) AcknowledgeFinished(id string) error {
+	res, err := s.db.Exec(
+		`UPDATE sessions SET status = ?, acked = 1, last_status_at = ? WHERE id = ? AND status = ?`,
+		"idle", encodeTime(time.Now()), id, "finished")
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	var exists int
+	err = s.db.QueryRow(`SELECT 1 FROM sessions WHERE id = ?`, id).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("session %s: %w", id, ErrSessionGone)
+	}
+	return err
+}
+
 // SetAcked marks whether the user has acknowledged the session's last
 // finished turn; an acked session renders idle even while its pane still
 // shows the finished turn.

@@ -60,10 +60,7 @@ func (m *Model) acknowledgeFinished(sess store.Session) error {
 	if sess.Status != status.Finished {
 		return nil
 	}
-	if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
-		return err
-	}
-	return m.store.SetAcked(sess.ID, true)
+	return m.store.AcknowledgeFinished(sess.ID)
 }
 
 func (m *Model) attachCmd(id string) tea.Cmd {

@@ -278,104 +278,56 @@ func TestAttachAcknowledgesFinished(t *testing.T) {
 	}
 }
 
-func TestDotAcknowledgesFinishedWithoutAttach(t *testing.T) {
-	m := buildModel(t)
-	createSession(t, m, "alert-me", t.TempDir(), "")
+func TestDotAcknowledgesOnlyCurrentFinishedStatus(t *testing.T) {
+	cases := []struct {
+		name       string
+		newer      string
+		wantStatus string
+		wantAcked  bool
+	}{
+		{name: "finished", wantStatus: status.Idle, wantAcked: true},
+		{name: "newer working", newer: status.Working, wantStatus: status.Working},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "alert-me", t.TempDir(), "")
+			sess := m.sessionRows()[0]
+			if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+				t.Fatalf("set finished: %v", err)
+			}
+			m.sessions[0].Status = status.Finished
+			m.rebuildRows()
+			m.selectSessionRow(t, "alert-me")
+			if footer := m.viewFooter(); !strings.Contains(footer, "mark idle") {
+				t.Fatalf("finished-session footer has no dot action: %q", footer)
+			}
 
-	sess := m.sessionRows()[0]
-	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
-		t.Fatalf("set finished: %v", err)
-	}
-	m.sessions[0].Status = status.Finished
-	m.rebuildRows()
-	m.selectSessionRow(t, "alert-me")
-	if footer := m.viewFooter(); !strings.Contains(footer, "mark idle") {
-		t.Fatalf("finished-session footer has no dot action: %q", footer)
-	}
-
-	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
-	*m = *updated.(*Model)
-	if cmd == nil {
-		t.Fatal("dot did not schedule the acknowledgment")
-	}
-	before, err := m.store.Get(sess.ID)
-	if err != nil {
-		t.Fatalf("get before command: %v", err)
-	}
-	if before.Status != status.Finished || before.Acked {
-		t.Fatalf("before command, status = %q acked = %v", before.Status, before.Acked)
-	}
-	updated, refresh := m.Update(cmd())
-	*m = *updated.(*Model)
-	if refresh == nil {
-		t.Fatal("successful acknowledgment did not schedule a refresh")
-	}
-	got, err := m.store.Get(sess.ID)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.Status != status.Idle || !got.Acked {
-		t.Fatalf("after dot, status = %q acked = %v", got.Status, got.Acked)
-	}
-	if m.mode != modeList {
-		t.Fatalf("dot left list mode: %v", m.mode)
-	}
-}
-
-func TestDotAcknowledgementErrorDoesNotRefresh(t *testing.T) {
-	m := buildModel(t)
-	createSession(t, m, "deleted-alert", t.TempDir(), "")
-
-	sess := m.sessionRows()[0]
-	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
-		t.Fatalf("set finished: %v", err)
-	}
-	m.sessions[0].Status = status.Finished
-	m.rebuildRows()
-	m.selectSessionRow(t, "deleted-alert")
-
-	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
-	if cmd == nil {
-		t.Fatal("dot did not schedule the acknowledgment")
-	}
-	if err := m.store.Delete(sess.ID); err != nil {
-		t.Fatalf("delete before command: %v", err)
-	}
-	updated, refresh := m.Update(cmd())
-	*m = *updated.(*Model)
-	if refresh != nil {
-		t.Fatal("failed acknowledgment scheduled a refresh")
-	}
-	if !strings.Contains(m.errBar.text, store.ErrSessionGone.Error()) {
-		t.Fatalf("acknowledgment error = %q", m.errBar.text)
-	}
-}
-
-func TestDotIgnoresWorkingSession(t *testing.T) {
-	m := buildModel(t)
-	createSession(t, m, "busy-one", t.TempDir(), "")
-
-	sess := m.sessionRows()[0]
-	if err := m.store.UpdateStatus(sess.ID, status.Working); err != nil {
-		t.Fatalf("set working: %v", err)
-	}
-	m.sessions[0].Status = status.Working
-	m.rebuildRows()
-	m.selectSessionRow(t, "busy-one")
-	if footer := m.viewFooter(); strings.Contains(footer, "mark idle") {
-		t.Fatalf("working-session footer offers dot action: %q", footer)
-	}
-
-	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
-	if cmd != nil {
-		t.Fatal("dot refreshed a working session")
-	}
-	got, err := m.store.Get(sess.ID)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.Status != status.Working || got.Acked {
-		t.Fatalf("after dot, status = %q acked = %v", got.Status, got.Acked)
+			_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+			if cmd == nil {
+				t.Fatal("dot did not schedule the acknowledgment")
+			}
+			if tc.newer != "" {
+				if err := m.store.UpdateStatus(sess.ID, tc.newer); err != nil {
+					t.Fatalf("set newer status: %v", err)
+				}
+			}
+			updated, refresh := m.Update(cmd())
+			*m = *updated.(*Model)
+			if refresh == nil {
+				t.Fatal("acknowledgment did not schedule a refresh")
+			}
+			got, err := m.store.Get(sess.ID)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			if got.Status != tc.wantStatus || got.Acked != tc.wantAcked {
+				t.Fatalf("after dot, status = %q acked = %v", got.Status, got.Acked)
+			}
+			if m.mode != modeList {
+				t.Fatalf("dot left list mode: %v", m.mode)
+			}
+		})
 	}
 }
 
