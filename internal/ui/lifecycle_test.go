@@ -296,7 +296,19 @@ func TestDotAcknowledgesFinishedWithoutAttach(t *testing.T) {
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
 	*m = *updated.(*Model)
 	if cmd == nil {
-		t.Fatal("dot did not schedule a refresh")
+		t.Fatal("dot did not schedule the acknowledgment")
+	}
+	before, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get before command: %v", err)
+	}
+	if before.Status != status.Finished || before.Acked {
+		t.Fatalf("before command, status = %q acked = %v", before.Status, before.Acked)
+	}
+	updated, refresh := m.Update(cmd())
+	*m = *updated.(*Model)
+	if refresh == nil {
+		t.Fatal("successful acknowledgment did not schedule a refresh")
 	}
 	got, err := m.store.Get(sess.ID)
 	if err != nil {
@@ -307,6 +319,35 @@ func TestDotAcknowledgesFinishedWithoutAttach(t *testing.T) {
 	}
 	if m.mode != modeList {
 		t.Fatalf("dot left list mode: %v", m.mode)
+	}
+}
+
+func TestDotAcknowledgementErrorDoesNotRefresh(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "deleted-alert", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+		t.Fatalf("set finished: %v", err)
+	}
+	m.sessions[0].Status = status.Finished
+	m.rebuildRows()
+	m.selectSessionRow(t, "deleted-alert")
+
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+	if cmd == nil {
+		t.Fatal("dot did not schedule the acknowledgment")
+	}
+	if err := m.store.Delete(sess.ID); err != nil {
+		t.Fatalf("delete before command: %v", err)
+	}
+	updated, refresh := m.Update(cmd())
+	*m = *updated.(*Model)
+	if refresh != nil {
+		t.Fatal("failed acknowledgment scheduled a refresh")
+	}
+	if !strings.Contains(m.errBar.text, store.ErrSessionGone.Error()) {
+		t.Fatalf("acknowledgment error = %q", m.errBar.text)
 	}
 }
 

@@ -42,17 +42,16 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 	return m, m.attachCmd(sess.ID)
 }
 
+type acknowledgeFinishedMsg struct{ err error }
+
 func (m *Model) acknowledgeSelected() (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
 	if !ok || sess.Status != status.Finished {
 		return m, nil
 	}
-	if err := m.acknowledgeFinished(sess); err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
+	return m, func() tea.Msg {
+		return acknowledgeFinishedMsg{err: m.acknowledgeFinished(sess)}
 	}
-	m.errBar.text = ""
-	return m, m.refreshCmd()
 }
 
 // acknowledgeFinished marks a finished session idle and acked while its pane
