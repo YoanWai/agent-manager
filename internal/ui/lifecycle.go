@@ -42,8 +42,21 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 	return m, m.attachCmd(sess.ID)
 }
 
-// acknowledgeFinished marks a finished session idle and acked so entering it
-// clears the alert while the pane still shows the acknowledged turn.
+func (m *Model) acknowledgeSelected() (tea.Model, tea.Cmd) {
+	sess, ok := m.selected()
+	if !ok || sess.Status != status.Finished {
+		return m, nil
+	}
+	if err := m.acknowledgeFinished(sess); err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
+	m.errBar.text = ""
+	return m, m.refreshCmd()
+}
+
+// acknowledgeFinished marks a finished session idle and acked while its pane
+// keeps showing the completed turn without raising another alert.
 func (m *Model) acknowledgeFinished(sess store.Session) error {
 	if sess.Status != status.Finished {
 		return nil

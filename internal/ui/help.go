@@ -74,6 +74,7 @@ func helpSections() []helpSection {
 			{"↵", "focus it: keys reach the agent, the list stays on screen"},
 			{"A", "attach it: the pane takes the whole terminal"},
 			{"", "settings swap what ↵ and A do"},
+			{".", "mark it idle when it is finished, without entering it"},
 			{"space", "quick prompt: answer the session without attaching"},
 			{"ctrl+r", "review its diff"},
 			{"f", "fork it into a new session in the same group"},

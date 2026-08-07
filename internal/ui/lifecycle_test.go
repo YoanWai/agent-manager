@@ -278,6 +278,66 @@ func TestAttachAcknowledgesFinished(t *testing.T) {
 	}
 }
 
+func TestDotAcknowledgesFinishedWithoutAttach(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alert-me", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+		t.Fatalf("set finished: %v", err)
+	}
+	m.sessions[0].Status = status.Finished
+	m.rebuildRows()
+	m.selectSessionRow(t, "alert-me")
+	if footer := m.viewFooter(); !strings.Contains(footer, "mark idle") {
+		t.Fatalf("finished-session footer has no dot action: %q", footer)
+	}
+
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+	*m = *updated.(*Model)
+	if cmd == nil {
+		t.Fatal("dot did not schedule a refresh")
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Idle || !got.Acked {
+		t.Fatalf("after dot, status = %q acked = %v", got.Status, got.Acked)
+	}
+	if m.mode != modeList {
+		t.Fatalf("dot left list mode: %v", m.mode)
+	}
+}
+
+func TestDotIgnoresWorkingSession(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "busy-one", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.store.UpdateStatus(sess.ID, status.Working); err != nil {
+		t.Fatalf("set working: %v", err)
+	}
+	m.sessions[0].Status = status.Working
+	m.rebuildRows()
+	m.selectSessionRow(t, "busy-one")
+	if footer := m.viewFooter(); strings.Contains(footer, "mark idle") {
+		t.Fatalf("working-session footer offers dot action: %q", footer)
+	}
+
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+	if cmd != nil {
+		t.Fatal("dot refreshed a working session")
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Working || got.Acked {
+		t.Fatalf("after dot, status = %q acked = %v", got.Status, got.Acked)
+	}
+}
+
 func TestAttachKeepsWorking(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "busy-one", t.TempDir(), "")
