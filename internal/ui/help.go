@@ -57,6 +57,7 @@ func helpSections() []helpSection {
 			{"↑↓ / jk", "move the cursor"},
 			{"K / J", "reorder the row up / down (shift+↑↓ too)"},
 			{"n", "new session"},
+			{"T", "new terminal tab: a shell in the group under the cursor"},
 			{"g", "new group (name, parent, default path, worktree)"},
 			{"/", "search the list by name"},
 			{"w", "filter to what needs attention (waiting, finished, errored)"},

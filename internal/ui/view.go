@@ -518,7 +518,7 @@ func (m *Model) viewLegend() legendSection {
 	// something, the filters whose state only the footer reports, then the
 	// keys a user already knows to look for.
 	return legendSection{title: "View", quiet: true, pairs: [][2]string{
-		{"↑↓/jk", "navigate"}, {"n", "new"}, {"g", "group"}, {"/", "search"},
+		{"↑↓/jk", "navigate"}, {"n", "new"}, {"T", "terminal"}, {"g", "group"}, {"/", "search"},
 		{"t", archivedAction}, {"w", statusFilterAction}, {"e", emptyGroupsAction},
 		{"?", "keys"}, {"q", "quit"},
 		{"K/J", "reorder"}, {"F", foldAllAction}, {"|", "resize"}, {"s", "settings"},

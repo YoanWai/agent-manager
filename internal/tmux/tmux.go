@@ -382,6 +382,23 @@ func (d *Driver) PanePID(id string) (int, error) {
 	return strconv.Atoi(line)
 }
 
+// PaneCurrentPath is where the session's pane sits now, which follows any
+// cd the shell or the agent made since launch, unlike the directory the
+// session was created in.
+func (d *Driver) PaneCurrentPath(id string) (string, error) {
+	out, err := d.run("list-panes", "-t", sessionName(id), "-F", "#{pane_current_path}")
+	if err != nil {
+		return "", err
+	}
+	// Only the line break is stripped: a trailing space is part of a
+	// directory name as much as any other character.
+	line := strings.TrimSuffix(strings.SplitN(out, "\n", 2)[0], "\r")
+	if line == "" {
+		return "", fmt.Errorf("no pane for session %s", id)
+	}
+	return line, nil
+}
+
 // noServer recognizes both messages tmux prints when no server is up:
 // "no server running on <socket>" and, on Linux since 3.4, "error
 // connecting to <socket> (No such file or directory)".

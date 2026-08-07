@@ -13,6 +13,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | Key | Action |
 |-----|--------|
 | `n` | New session (name, tool, directory, worktree toggle, optional starting prompt, group picker) |
+| `T` | New terminal tab: a plain shell in the selected group, with no agent in it |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
 | `g` | New group (name, parent, default path) |
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
@@ -55,6 +56,16 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 `esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](configuration.md)).
 
 ![answering a working Claude Code session from the prompt bar, without attaching](demo-space.gif)
+
+## Terminal tabs
+
+`T` opens a shell tab in the group under the cursor: a session like any other — same list, same status column, same `enter`, `x`, `v` and `R` — with your shell in the pane instead of an agent. It lands in the selected session's directory, wherever that session has moved to, or in the group's default path when a group row is selected, so the shell that runs the tests sits next to the agent that wrote them.
+
+The shell is the `[tools.terminal]` block in [config.toml](configuration.md). It ships with no command, which leaves the pane on `$SHELL`; set one to open a different shell. What marks it as a shell is `shell = true`, not its name, so a `[tools.terminal]` block you wrote yourself stays the agent CLI you meant it to be.
+
+**The keys that write into a pane refuse a shell.** `space` and the review screen's `C` both paste their text and press Enter, so on a shell a sentence meant for an agent would run as a command. Both say the row is a shell and send nothing; enter the session (`↵`) to type there, where what you type is plainly a command. `f` says the same, since a shell has no conversation to fork.
+
+A terminal tab carries no session id, so `agent-manager rename` run inside one cannot find its session. Rename it from the list with `r`.
 
 ## Worktree sessions
 

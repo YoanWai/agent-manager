@@ -15,7 +15,13 @@ type Rule struct {
 }
 
 type Tool struct {
-	Command       string `toml:"command"`
+	Command string `toml:"command"`
+	// Shell marks a block that opens a plain shell rather than an agent
+	// CLI: it is what T spawns, it stays out of the CLI pickers, and the
+	// keys that write into a pane refuse it, since a sentence typed at a
+	// shell is a command. Never inferred, so a tool block only means this
+	// when its author said so.
+	Shell         bool   `toml:"shell"`
 	ReviveCommand string `toml:"revive_command"`
 	PromptFlag    string `toml:"prompt_flag"`
 	// SessionIDFlag makes a new session launch with an id we choose (e.g.
@@ -131,6 +137,11 @@ func (c *Config) backfillToolDefaults() error {
 }
 
 // mergeTool returns user with any zero-value field filled from def.
+//
+// Shell is deliberately not among them. "terminal" is a plausible name for
+// a hand-rolled agent block, and backfilling the flag onto one would take
+// the user's own tool out of the pickers and refuse to prompt it, without
+// saying so. A block is a shell only where its author wrote that.
 func mergeTool(user, def Tool) Tool {
 	fill := func(dst *string, src string) {
 		if *dst == "" {
@@ -362,6 +373,16 @@ rules = [
   # error messages render with a "✕ " prefix
   { state = "errored", pattern = "(?m)^✕ " },
 ]
+
+# The terminal tab "T" spawns: a shell in the group's directory, listed
+# beside the agents but with nothing running in it. An empty command leaves
+# the pane on $SHELL; set one to open a different shell instead. shell = true
+# is what marks it: the CLI pickers skip it, and the keys that write into a
+# pane refuse it, because a sentence typed at a shell is a command.
+[tools.terminal]
+command = ""
+shell = true
+default_status = "idle"
 
 [tools.pi]
 command = "pi"

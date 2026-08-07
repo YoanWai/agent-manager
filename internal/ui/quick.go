@@ -237,6 +237,10 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 	if entry.isGroup {
 		return m.quickSpawn(entry.group, text)
 	}
+	if m.isShell(entry.sess.Tool) {
+		m.errBar.text = shellPromptHint(entry.sess.Name)
+		return m, nil
+	}
 	if !m.tmux.Exists(entry.sess.ID) {
 		m.errBar.text = deadSessionHint
 		return m, nil

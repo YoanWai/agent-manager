@@ -214,8 +214,17 @@ func (m *Model) groupDefaultDir(group string) string {
 // alphabetically.
 var toolDisplayOrder = []string{"claude", "opencode", "codex", "grok", "gemini", "pi"}
 
+// sortedToolNames is every configured agent CLI in picker order. A block
+// declaring shell = true is not a CLI to spawn agents with, so it is left
+// out; its own key launches it, and a rename still keeps a shell session
+// on it.
 func sortedToolNames(cfg config.Config) []string {
-	names := cfg.ToolNames()
+	names := make([]string, 0, len(cfg.Tools))
+	for _, name := range cfg.ToolNames() {
+		if !cfg.Tools[name].Shell {
+			names = append(names, name)
+		}
+	}
 	rank := make(map[string]int, len(toolDisplayOrder))
 	for i, name := range toolDisplayOrder {
 		rank[name] = i

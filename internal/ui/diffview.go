@@ -1088,6 +1088,10 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 		m.errBar.text = "session is gone"
 		return m, nil
 	}
+	if m.isShell(sess.Tool) {
+		m.errBar.text = shellPromptHint(sess.Name)
+		return m, nil
+	}
 	if !m.tmux.Exists(sess.ID) {
 		m.errBar.text = deadSessionHint
 		return m, nil

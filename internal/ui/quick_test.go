@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -699,5 +700,47 @@ func TestQuickWorktreeToggleOverridesGroupDefault(t *testing.T) {
 	m.submitQuick()
 	if m.errBar.text != "" {
 		t.Fatalf("plain spawn should succeed: %q", m.errBar.text)
+	}
+}
+
+// The quick prompt is where people type sentences at an agent. SendText
+// pastes and presses Enter, so on a shell row that sentence would run as a
+// command: the target's tool is checked before anything is delivered.
+func TestQuickPromptRefusesAShell(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.refreshCmd())
+	sess := spawnTerminal(t, m)
+	m.selectSessionRow(t, sess.Name)
+
+	m.openQuickMode()
+	m.quick.input.SetValue("summarise what you just did")
+	if _, _ = m.submitQuick(); m.errBar.text != shellPromptHint(sess.Name) {
+		t.Fatalf("err = %q, want the shell refusal", m.errBar.text)
+	}
+	if m.quick.input.Value() == "" {
+		t.Fatal("a refused prompt should stay in the bar, not vanish")
+	}
+}
+
+// The same guard from the other end: what the user typed never reaches the
+// shell, so it never runs. This is the maintainer's repro from #232.
+func TestQuickPromptNeverRunsWhatIsTypedAtAShell(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.refreshCmd())
+	sess := spawnTerminal(t, m)
+	m.selectSessionRow(t, sess.Name)
+
+	marker := filepath.Join(t.TempDir(), "executed")
+	m.openQuickMode()
+	m.quick.input.SetValue("touch " + marker)
+	m.submitQuick()
+
+	// A shell that took the line would have created the file well inside
+	// this window; a guard that holds leaves nothing to wait for.
+	for i := 0; i < 20; i++ {
+		if _, err := os.Stat(marker); err == nil {
+			t.Fatalf("the quick prompt executed %q in the shell", marker)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

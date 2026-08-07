@@ -1127,6 +1127,11 @@ func TestRestartLaunchIsAFreshStartForEveryShippedTool(t *testing.T) {
 		t.Fatalf("built-in tools = %d, expected every shipped CLI", len(cfg.Tools))
 	}
 	for name, tool := range cfg.Tools {
+		// A block carrying no command is a shell, not a CLI: the terminal
+		// tab has no conversation for a restart to start fresh.
+		if tool.Command == "" {
+			continue
+		}
 		command, agentSessionID := restartLaunch(tool)
 		if !strings.HasPrefix(command, tool.Command) {
 			t.Errorf("%s: restart command %q does not start from its launch command %q", name, command, tool.Command)
