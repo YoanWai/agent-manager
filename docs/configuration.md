@@ -4,7 +4,9 @@ Config lives in your OS user config dir (`~/Library/Application Support/agent-ma
 
 The Pi defaults require Pi 0.76.0 or later because they use `--session-id`.
 
-Top-level: `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats.
+Top-level: `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats. `editor` is the command `o` opens a directory in, arguments included (`editor = "code -n"`); left unset, Agent Manager falls back to `$AGENT_MANAGER_EDITOR`, then a GUI editor on `PATH`, then `$VISUAL` / `$EDITOR` (see [Opening the editor](usage.md#opening-the-editor)).
+
+The generated file also carries a `[tools.terminal]` block. That one is the shell `T` opens, not an agent CLI: an empty `command` leaves the pane on `$SHELL`, set one to open a different shell, and the block never appears in the tool pickers (see [Terminal tabs](usage.md#terminal-tabs)).
 
 Add any CLI tool as a `[tools.<name>]` block:
 

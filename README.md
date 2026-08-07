@@ -29,6 +29,8 @@ Instead of hunting through terminal tabs to see which agent is done and which is
 
 Press `f` on a session to continue its conversation in a separate named fork.
 
+The work around the agents lives in the same list: `T` opens a plain shell tab in the selected group for the commands you run yourself, and `o` opens the row's directory in your editor.
+
 Not here yet: cost tracking, mouse-driven navigation, and agents that can talk to each other.
 
 **Jump to:** [Install](#install) · [Usage](#usage) · [Keys](docs/usage.md#keys) · [Diff review](docs/usage.md#diff-review) · [Configuration](docs/configuration.md)

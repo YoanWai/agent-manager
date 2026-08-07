@@ -424,6 +424,8 @@ func (m *Model) viewMove() string {
 func (m *Model) viewHelp() string {
 	rows := [][2]string{
 		{"n", "new session"},
+		{"T", "new terminal tab: a shell in the selected group, no agent in it"},
+		{"o", "open the selected row's directory in your editor"},
 		{"f", "fork selected session into a named session in the same group"},
 		{"↵", "attach session / fold group"},
 		{"ctrl+q", "inside a session: back to manager (ctrl+\\ also works)"},

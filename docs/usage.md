@@ -13,6 +13,8 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | Key | Action |
 |-----|--------|
 | `n` | New session (name, tool, directory, worktree toggle, optional starting prompt, group picker) |
+| `T` | New terminal tab: a plain shell in the selected group, with no agent in it |
+| `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
 | `g` | New group (name, parent, default path) |
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
@@ -54,6 +56,18 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 `esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](configuration.md)).
 
 ![answering a working Claude Code session from the prompt bar, without attaching](demo-space.gif)
+
+## Terminal tabs
+
+`T` opens a shell tab in the group under the cursor: a session like any other — same list, same status column, same `enter`, `x` and `v` — with your shell in the pane instead of an agent. It lands in the selected session's directory, or in the group's default path when a group row is selected, so the shell that runs the tests sits next to the agent that wrote them. Reviving one reopens the shell in that directory; the conversation keys (`space`, `f`, `ctrl+r`) have no agent to talk to and say so.
+
+The shell is the `[tools.terminal]` block in [config.toml](configuration.md). It ships with no command, which leaves the pane on `$SHELL`; set one to open a different shell. It is not an agent CLI, so it never shows up in the new-session or quick-prompt tool pickers.
+
+## Opening the editor
+
+`o` opens the row under the cursor in your editor: a session's live working directory (wherever its shell or agent has moved to, not only where it started), or a group's default path.
+
+Agent Manager takes the first of these it finds: `editor` in [config.toml](configuration.md), `$AGENT_MANAGER_EDITOR`, a GUI editor on `PATH` (`code`, `cursor`, `windsurf`, `zed`, `subl`, `idea`), then `$VISUAL` or `$EDITOR`. The environment comes last because it usually names the editor you set for git commit messages rather than the one a project should open in. A terminal editor (vim, nvim, nano, emacs, helix, micro) takes the screen over the way an attach does and hands it back on exit; everything else opens in its own window and leaves the manager where it is.
 
 ## Worktree sessions
 
