@@ -493,7 +493,7 @@ func (m *Model) rowLegend() legendSection {
 	return legendSection{title: "Session", pairs: [][2]string{
 		{"↵", enterHint}, {"A", attachHint}, {"space", "prompt"}, {"ctrl+r", "review"},
 		{"f", "fork"}, {"r", "rename"}, {"m", "move"},
-		{"x/X", "kill / all"}, {"v/V", "revive / all"},
+		{"x/X", "kill / all"}, {"v/V", "revive / all"}, {"R", "restart"},
 		{"a/u", "archive / restore"}, {"d", "delete"},
 	}}
 }

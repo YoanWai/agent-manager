@@ -106,7 +106,7 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 		return m.attachSelected()
 	}
 	if !m.tmux.Exists(sess.ID) {
-		m.errBar.text = "session is dead - press v to revive"
+		m.errBar.text = deadSessionHint
 		return m, nil
 	}
 	m.errBar.text = ""

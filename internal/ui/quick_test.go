@@ -69,7 +69,7 @@ func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 
 	m.openQuickMode()
 	m.quick.input.SetValue("hello?")
-	if _, _ = m.submitQuick(); m.errBar.text != "session is dead - press v to revive" {
+	if _, _ = m.submitQuick(); m.errBar.text != "session is dead - press v to revive or R to restart" {
 		t.Fatalf("err = %q", m.errBar.text)
 	}
 	if !m.quick.active {

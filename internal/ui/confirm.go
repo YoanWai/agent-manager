@@ -24,6 +24,8 @@ func (m *Model) confirmTitle() string {
 		return "◇ Archive " + subject
 	case actionRestore:
 		return "◆ Restore " + subject
+	case actionRestart:
+		return "↻ Restart " + subject
 	default:
 		return "⚠ Delete " + subject
 	}
@@ -32,7 +34,8 @@ func (m *Model) confirmTitle() string {
 // confirmDestructive reports whether the pending answer takes something
 // away, which decides whether the dialog reads as an alarm or as a move.
 func (m *Model) confirmDestructive() bool {
-	return m.confirm.action == actionKill || m.confirm.action == actionDelete
+	return m.confirm.action == actionKill || m.confirm.action == actionDelete ||
+		m.confirm.action == actionRestart
 }
 
 func (m *Model) viewConfirm() string {
@@ -64,6 +67,8 @@ func (m *Model) viewConfirm() string {
 		answer = "archive"
 	case actionRestore:
 		answer = "restore"
+	case actionRestart:
+		answer = "restart"
 	}
 	hint := [][2]string{{"y/↵", answer}, {"n/esc", "cancel"}}
 	return m.cardSized(width, m.confirmTitle(), strings.TrimRight(body.String(), "\n"), hint)
