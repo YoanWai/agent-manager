@@ -155,6 +155,83 @@ func TestFocusWheelScrollsHistory(t *testing.T) {
 	}
 }
 
+// A capture scheduled before the preview reflows must not blank the bottom
+// of the resized viewport when its reply arrives afterwards.
+func TestFocusScrollRecapturesAfterPreviewResize(t *testing.T) {
+	m, _ := focusedWithHistory(t, "reflow")
+	cmd := m.scrollFocus(-1)
+	if cmd == nil {
+		t.Fatal("wheel up produced no capture")
+	}
+	stale := cmd()
+	if stale == nil {
+		t.Fatal("scroll capture returned nothing")
+	}
+	oldRows := m.previewPaneHeight()
+	m.height += 8
+	if m.previewPaneHeight() == oldRows {
+		t.Fatal("test setup did not change preview height")
+	}
+	m.resizeSessions()
+
+	updated, recapture := m.Update(stale)
+	m = updated.(*Model)
+	if recapture == nil {
+		t.Fatal("stale geometry capture was accepted")
+	}
+	updated, _ = m.Update(recapture())
+	m = updated.(*Model)
+	if got, want := len(paneExact(m.preview, m.previewPaneHeight())), m.previewPaneHeight(); got != want {
+		t.Fatalf("scroll frame has %d rows, want %d", got, want)
+	}
+	if !strings.Contains(m.preview, "history-line-") {
+		t.Fatalf("recaptured frame lost history:\n%s", m.preview)
+	}
+}
+
+// Deep history must keep the requested pane-sized frame intact. This covers
+// the control-pipe capture path beyond the shallow history used by the wheel
+// smoke test above.
+func TestFocusScrollKeepsDeepHistoryFrame(t *testing.T) {
+	m, sessID := focusedWithHistory(t, "deep-history")
+	command := `i=121; while [ "$i" -le 1000 ]; do printf 'history-line-%04d\n' "$i"; i=$((i+1)); done`
+	if err := m.tmux.SendText(sessID, command); err != nil {
+		t.Fatalf("send deep history: %v", err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sessID)
+		if err != nil {
+			t.Fatalf("capture deep history: %v", err)
+		}
+		if strings.Contains(pane, "history-line-1000") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pane never printed deep history: %q", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	m.pane.history = paneHistorySize(t, m, sessID)
+	if m.pane.history < 820 {
+		t.Skipf("tmux history is only %d lines", m.pane.history)
+	}
+	m.focusScroll = 807
+	cmd := m.focusRegionCmd(sessID, m.focusScroll)
+	msg := cmd()
+	if msg == nil {
+		t.Fatal("deep capture returned nothing")
+	}
+	updated, _ := m.Update(msg)
+	m = updated.(*Model)
+	if got, want := len(paneExact(m.preview, m.previewPaneHeight())), m.previewPaneHeight(); got != want {
+		t.Fatalf("deep frame has %d rows, want %d", got, want)
+	}
+	if !strings.Contains(m.preview, "history-line-") {
+		t.Fatalf("deep frame lost history:\n%s", m.preview)
+	}
+}
+
 // Typing while scrolled snaps back to the live bottom: keystrokes land
 // there, so the view must follow them.
 func TestTypingResumesLiveView(t *testing.T) {

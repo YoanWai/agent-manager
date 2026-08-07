@@ -1069,7 +1069,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case focusScrollMsg:
-		if sess, ok := m.selected(); ok && sess.ID == msg.sessID && msg.offset == m.focusScroll {
+		sess, ok := m.selected()
+		if !ok || sess.ID != msg.sessID {
+			return m, nil
+		}
+		if msg.offset != m.focusScroll || msg.rows != m.previewPaneHeight() {
+			// The wheel or a resize moved the target while this capture was
+			// in flight. Fetch just that final viewport.
+			return m, m.focusRegionCmd(sess.ID, m.focusScroll)
+		}
+		if msg.ok {
 			m.preview = msg.preview
 		}
 		return m, nil
