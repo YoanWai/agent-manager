@@ -484,6 +484,9 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 		if !ok {
 			continue
 		}
+		// The raw field, never LaunchTime(): the compare-and-set matches the
+		// stored column, which is zero for a session that never restarted,
+		// while LaunchTime() answers CreatedAt and would match nothing.
 		bound, err := p.store.BindAgentSessionID(sess.ID, agentID, sess.AgentLaunchedAt)
 		if err != nil {
 			return captured, err

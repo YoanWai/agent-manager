@@ -842,3 +842,71 @@ func TestRestartAgentRetiresTheConversationItReplaces(t *testing.T) {
 		t.Fatalf("retired = %q, want it kept", got.RetiredAgentSessionID)
 	}
 }
+
+// Capture answers a launch that may already be over by the time it lands, so
+// binding is a compare-and-set: the row must still be unbound and still carry
+// the launch the capture ran for.
+func TestBindAgentSessionIDOnlyBindsTheLaunchItAnswers(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("a", "g1")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	created, err := st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A session that never restarted stores a zero launch time, and the
+	// capture that read it carries that same zero.
+	bound, err := st.BindAgentSessionID("a", "first", created.AgentLaunchedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bound {
+		t.Fatal("a capture for the current launch should bind")
+	}
+	got, err := st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "first" {
+		t.Fatalf("conversation id = %q, want first", got.AgentSessionID)
+	}
+
+	// A second answer for the same launch arrives after the row is bound.
+	bound, err = st.BindAgentSessionID("a", "second", created.AgentLaunchedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound {
+		t.Fatal("a bound row must not take another capture")
+	}
+
+	// A restart clears the id and moves the launch on; an answer from the
+	// launch before it names the conversation the restart dropped.
+	restarted := created.CreatedAt.Add(time.Minute)
+	if err := st.RestartAgent("a", "", restarted); err != nil {
+		t.Fatal(err)
+	}
+	bound, err = st.BindAgentSessionID("a", "stale", created.AgentLaunchedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound {
+		t.Fatal("a capture from the launch before the restart must not bind")
+	}
+	bound, err = st.BindAgentSessionID("a", "fresh", restarted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bound {
+		t.Fatal("a capture for the launch now running should bind")
+	}
+	got, err = st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "fresh" {
+		t.Fatalf("conversation id = %q, want fresh", got.AgentSessionID)
+	}
+}

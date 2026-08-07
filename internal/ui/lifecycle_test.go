@@ -396,12 +396,14 @@ func argCaptureCommand(argsFile string) string {
 	return "sh -c " + tmux.ShellQuote(script) + " sh"
 }
 
+// readWhenWritten waits for content, not merely for the file: the launching
+// shell truncates it before printf runs, so a read that lands between the two
+// comes back empty and would fail the assertion it was fetched for.
 func readWhenWritten(t *testing.T, path string) string {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		raw, err := os.ReadFile(path)
-		if err == nil {
+		if raw, err := os.ReadFile(path); err == nil && len(raw) > 0 {
 			return string(raw)
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -482,6 +484,12 @@ func TestRestartClearsCapturedConversationID(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "codexish", t.TempDir(), "")
 	sess := m.sessionRows()[0]
+	// The precondition under test, spelled out rather than inherited from
+	// whatever flags the fake tools happen to carry.
+	tool := m.cfg.Tools[sess.Tool]
+	tool.SessionIDFlag = ""
+	tool.SessionStore = "codex"
+	m.cfg.Tools[sess.Tool] = tool
 
 	if err := m.store.SetAgentSessionID(sess.ID, "captured-conversation"); err != nil {
 		t.Fatal(err)

@@ -763,7 +763,7 @@ func TestCaptureAgentSessionIDsSkipsARetiredConversation(t *testing.T) {
 	// The retired rollout's last write lands two seconds before the restart,
 	// inside the clock slack the capture window allows.
 	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-old.jsonl"), "old-id", cwd, restarted.Add(-2*time.Second))
-	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-new.jsonl"), "new-id", cwd, restarted)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-new.jsonl"), "new-id", cwd, restarted.Add(time.Second))
 
 	if err := st.CreateSession(store.Session{ID: "sess", Name: "s", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: created, AgentSessionID: "old-id"}); err != nil {
 		t.Fatal(err)
