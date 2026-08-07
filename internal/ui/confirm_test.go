@@ -25,7 +25,7 @@ func TestConfirmRendersAsADialog(t *testing.T) {
 			t.Fatalf("confirm dialog missing %q:\n%s", want, out)
 		}
 	}
-	if status := ansi.Strip(m.viewStatus()); strings.Contains(status, "builder") {
+	if status := ansi.Strip(m.statusLine()); strings.Contains(status, "builder") {
 		t.Fatalf("the question moved to the dialog, status should not repeat it: %q", status)
 	}
 }
