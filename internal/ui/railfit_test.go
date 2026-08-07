@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 // The rail's banners (search, archived) cost the list rows, so a short
@@ -48,4 +50,27 @@ func railLinesText(lines []contentLine) string {
 		b.WriteString(line.text + "\n")
 	}
 	return b.String()
+}
+
+// The query is the field being typed into: a rail too tight for the padded
+// block keeps the bare field, and a query longer than the rail keeps its end,
+// where the caret is.
+func TestSearchFieldSurvivesTightRails(t *testing.T) {
+	for _, height := range []int{14, 20, 34} {
+		m := shotModel()
+		m.width, m.height = 120, height
+		m.searching, m.search = true, "add-rate-limiting-in-the-public-api-handler"
+		rail := railLinesText(m.railLines(36, m.listBodyHeight()))
+		if !strings.Contains(rail, "⌕") {
+			t.Errorf("height %d dropped the search field:\n%s", height, rail)
+		}
+		if !strings.Contains(rail, "api-handler") {
+			t.Errorf("height %d cut the end of the query away:\n%s", height, rail)
+		}
+		for _, line := range strings.Split(rail, "\n") {
+			if got := ansi.StringWidth(ansi.Strip(line)); got > 36 {
+				t.Errorf("height %d: rail line is %d wide: %q", height, got, ansi.Strip(line))
+			}
+		}
+	}
 }

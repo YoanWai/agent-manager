@@ -83,18 +83,34 @@ func (m *Model) viewListFrame() string {
 // query with a caret, and the key that closes it when there is room.
 func (m *Model) searchFieldLine(width int) string {
 	indent := strings.Repeat(" ", railInset)
-	query := valueStyle.Render(m.search)
-	if m.search == "" {
-		query = subtleStyle.Render("type to filter")
-	}
-	field := keyStyle.Render("⌕ ") + query +
-		lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
+	glyph := keyStyle.Render("⌕ ")
+	caret := lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
 	hint := keyCapQuiet("esc", "close")
-	gap := width - railInset - ansi.StringWidth(field) - ansi.StringWidth(hint) - 1
-	if gap < 2 {
+	chrome := railInset + ansi.StringWidth(glyph) + 1
+
+	if m.search == "" {
+		field := glyph + subtleStyle.Render("type to filter") + caret
+		if gap := width - railInset - ansi.StringWidth(field) - ansi.StringWidth(hint) - 1; gap >= 2 {
+			return indent + field + strings.Repeat(" ", gap) + hint
+		}
 		return indent + field
 	}
-	return indent + field + strings.Repeat(" ", gap) + hint
+	// A query longer than the rail keeps its end: that is where the caret is
+	// and where the next keystroke lands.
+	room := width - chrome - ansi.StringWidth(hint) - 2
+	if room < 8 {
+		hint, room = "", width-chrome
+	}
+	query := m.search
+	if ansi.StringWidth(query) > room {
+		query = "…" + string([]rune(query)[len([]rune(query))-max(room-1, 1):])
+	}
+	field := glyph + valueStyle.Render(query) + caret
+	if hint == "" {
+		return indent + field
+	}
+	gap := width - railInset - ansi.StringWidth(field) - ansi.StringWidth(hint) - 1
+	return indent + field + strings.Repeat(" ", max(gap, 1)) + hint
 }
 
 // railLines is the sessions rail: the entry list on top, the machine
@@ -110,15 +126,22 @@ func (m *Model) railLines(width, height int) []contentLine {
 	// while entries still have room under it: a rail that is all banner
 	// says nothing about the fleet.
 	const railBannerRows, railListMin = 3, 3
-	room := func() bool { return listHeight-len(rows)-railBannerRows >= railListMin }
-	// Search heads the list it filters, so the query sits over the entries
-	// it is narrowing rather than away from them.
-	if m.searching && room() {
-		rows = append(rows, contentLine{}, contentLine{text: m.searchFieldLine(width)}, contentLine{})
+	room := func(cost int) bool { return listHeight-len(rows)-cost >= railListMin }
+	// Search heads the list it filters, so the query sits over the entries it
+	// is narrowing. It is also the field being typed into, so a rail too tight
+	// for the padded block keeps the bare field rather than dropping it.
+	if m.searching {
+		field := contentLine{text: m.searchFieldLine(width)}
+		switch {
+		case room(railBannerRows):
+			rows = append(rows, contentLine{}, field, contentLine{})
+		case room(1):
+			rows = append(rows, field)
+		}
 	}
 	// The list starts straight under the pane's top edge; the empty state
 	// centers itself in the full list area instead.
-	if m.showArchived && room() {
+	if m.showArchived && room(railBannerRows) {
 		rows = append(rows, contentLine{})
 		rows = append(rows,
 			contentLine{text: strings.Repeat(" ", railInset) + scopeBadgeStyle.Render("ARCHIVED") +

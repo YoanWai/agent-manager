@@ -76,13 +76,16 @@ func TestGroupRosterColumnsAlign(t *testing.T) {
 		if at < 0 {
 			t.Fatalf("no tool on roster row %q", row)
 		}
+		// Byte offsets shift with every multi-byte glyph in a name, so the
+		// column is the display width of what precedes the tool.
+		cell := ansi.StringWidth(row[:at])
 		if column == -1 {
-			column = at
-		} else if at != column {
-			t.Errorf("tool column moved from %d to %d: %q", column, at, row)
+			column = cell
+		} else if cell != column {
+			t.Errorf("tool column moved from %d to %d: %q", column, cell, row)
 		}
-		if got := ansi.StringWidth(row); got != 76 && !strings.HasSuffix(row, "ago") {
-			t.Errorf("roster row does not reach the right edge: %q", row)
+		if got := ansi.StringWidth(row); got != 76 {
+			t.Errorf("roster row is %d wide, want the full 76: %q", got, row)
 		}
 	}
 }
