@@ -331,6 +331,7 @@ type settingsState struct {
 	enterFocuses    bool
 	comfortableRows bool
 	worktreeDefault bool
+	themeAuto       bool
 	// cliPicker is the sub-panel for which CLIs appear when creating sessions.
 	cliPicker bool
 	cliNames  []string
@@ -341,6 +342,7 @@ type settingsState struct {
 const (
 	settingsFieldTool = iota
 	settingsFieldTheme
+	settingsFieldThemeAuto
 	settingsFieldDensity
 	settingsFieldLayout
 	settingsFieldQuickClose
@@ -453,7 +455,8 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// A missing git binary only disables the diff view; everything else
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
-	applyTheme(themes[themeIndex(storedTheme(st))])
+	themeName := resolveTheme(st)
+	applyTheme(themes[themeIndex(themeName)])
 	model := &Model{
 		cfg:                 cfg,
 		store:               st,
@@ -492,6 +495,26 @@ func storedTheme(st *store.Store) string {
 		return ""
 	}
 	return name
+}
+
+func storedThemeAuto(st *store.Store) bool {
+	return themeAutoEnabled(st)
+}
+
+func themeAutoEnabled(st *store.Store) bool {
+	val, err := st.Setting(themeAutoSetting)
+	if err != nil {
+		return false
+	}
+	return val == "true" || val == "1"
+}
+
+func resolveTheme(st *store.Store) string {
+	if themeAutoEnabled(st) {
+		scheme := sysstat.DetectSystemColorScheme()
+		return sysstat.ThemeForColorScheme(scheme)
+	}
+	return storedTheme(st)
 }
 
 const collapsedSetting = "collapsed_groups"

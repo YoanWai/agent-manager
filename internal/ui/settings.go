@@ -7,8 +7,16 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/sysstat"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+func boolToString(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
 
 // defaultTool is the CLI quick spawn launches: the settings choice when it
 // is still enabled, else the first enabled tool. A store error still yields
@@ -183,6 +191,7 @@ func (m *Model) openSettings() {
 		toolNames:      names,
 		toolIndex:      index,
 		themeIndex:     themeIndex(current.Name),
+		themeAuto:      storedThemeAuto(m.store),
 		layoutSplit:    m.defaultSplitLayout(),
 		quickCloseSend: m.quickCloseAfterSend(),
 		enterFocuses:   m.enterFocuses(),
@@ -249,6 +258,10 @@ func (m *Model) persistSettings() {
 		}
 	}
 	if err := m.store.SetSetting(themeSetting, themes[m.settings.themeIndex].Name); err != nil {
+		m.errBar.text = err.Error()
+	}
+	// Save theme_auto setting
+	if err := m.store.SetSetting(themeAutoSetting, boolToString(m.settings.themeAuto)); err != nil {
 		m.errBar.text = err.Error()
 	}
 	layout := "split"
@@ -391,6 +404,22 @@ func (m *Model) cycleSetting(step int) {
 		m.settings.themeIndex = (m.settings.themeIndex + step + len(themes)) % len(themes)
 		applyTheme(themes[m.settings.themeIndex])
 		SyncTerminalBackground()
+	case settingsFieldThemeAuto:
+		m.settings.themeAuto = !m.settings.themeAuto
+		if m.settings.themeAuto {
+			scheme := sysstat.DetectSystemColorScheme()
+			newTheme := sysstat.ThemeForColorScheme(scheme)
+			idx := themeIndex(newTheme)
+			m.settings.themeIndex = idx
+			applyTheme(themes[idx])
+			SyncTerminalBackground()
+		} else {
+			storedName := storedTheme(m.store)
+			idx := themeIndex(storedName)
+			m.settings.themeIndex = idx
+			applyTheme(themes[idx])
+			SyncTerminalBackground()
+		}
 	case settingsFieldDensity:
 		m.settings.comfortableRows = !m.settings.comfortableRows
 	case settingsFieldLayout:

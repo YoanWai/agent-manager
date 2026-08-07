@@ -319,6 +319,7 @@ func (m *Model) viewSettings() string {
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
+		row(settingsFieldThemeAuto, "theme auto-detect", boolToString(m.settings.themeAuto)) + "\n" +
 		row(settingsFieldDensity, "list density", density) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
