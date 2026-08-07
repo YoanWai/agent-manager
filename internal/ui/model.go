@@ -126,6 +126,7 @@ type Model struct {
 	fork      forkState
 	quick     quickState
 	settings  settingsState
+	help      helpState
 	moveID    string
 	repoPick  repoPickState
 
