@@ -11,11 +11,9 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
-    base_branches:
-      - main
   path_filters:
-    - "!dist/**"
-    - "!docs/demo/**"
+    - "!**/*.gif"
+    - "!**/*.png"
     - "!go.sum"
   path_instructions:
     - path: "**/*.go"
@@ -33,10 +31,11 @@ reviews:
     - path: "**/*_test.go"
       instructions: |
         Tests live beside the file they cover (listview.go -> listview_test.go).
-        Any test that starts a tmux server must run on an isolated socket via
-        env -u TMUX TMUX_TMPDIR=/tmp/<short>; $TMUX overrides TMUX_TMPDIR, so a
-        test that omits env -u TMUX reaches the user's live tmux server. Flag
-        kill-server or kill-session against a non-isolated socket as critical.
+        Every tmux invocation must name its socket explicitly with -L or -S; an
+        explicit socket is sufficient on its own. A bare tmux call resolves
+        through $TMUX to the developer's live server, so flag one that carries
+        neither an explicit socket nor env -u TMUX as critical, and likewise a
+        kill-server or kill-session that is not pinned to an isolated socket.
     - path: "internal/tmux/**"
       instructions: |
         This package owns the dedicated agentmgr socket. Flag anything that can
