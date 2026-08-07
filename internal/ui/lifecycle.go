@@ -95,10 +95,7 @@ func (m *Model) reattach(id string, diffGen int) tea.Cmd {
 			return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
 		}
 		if sess.Status == status.Finished {
-			if err := stor.UpdateStatus(sess.ID, status.Idle); err != nil {
-				return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
-			}
-			if err := stor.SetAcked(sess.ID, true); err != nil {
+			if err := stor.AcknowledgeFinished(sess.ID); err != nil {
 				return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
 			}
 		}

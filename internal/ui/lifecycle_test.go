@@ -280,42 +280,47 @@ func TestAttachAcknowledgesFinished(t *testing.T) {
 
 func TestDotAcknowledgesOnlyCurrentFinishedStatus(t *testing.T) {
 	cases := []struct {
-		name       string
-		newer      string
-		wantStatus string
-		wantAcked  bool
+		name        string
+		selected    string
+		newer       string
+		wantStatus  string
+		wantAcked   bool
+		wantCommand bool
 	}{
-		{name: "finished", wantStatus: status.Idle, wantAcked: true},
-		{name: "newer working", newer: status.Working, wantStatus: status.Working},
+		{name: "finished", selected: status.Finished, wantStatus: status.Idle, wantAcked: true, wantCommand: true},
+		{name: "newer working", selected: status.Finished, newer: status.Working, wantStatus: status.Working, wantCommand: true},
+		{name: "working", selected: status.Working, wantStatus: status.Working},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := buildModel(t)
 			createSession(t, m, "alert-me", t.TempDir(), "")
 			sess := m.sessionRows()[0]
-			if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
-				t.Fatalf("set finished: %v", err)
+			if err := m.store.UpdateStatus(sess.ID, tc.selected); err != nil {
+				t.Fatalf("set selected status: %v", err)
 			}
-			m.sessions[0].Status = status.Finished
+			m.sessions[0].Status = tc.selected
 			m.rebuildRows()
 			m.selectSessionRow(t, "alert-me")
-			if footer := m.viewFooter(); !strings.Contains(footer, "mark idle") {
-				t.Fatalf("finished-session footer has no dot action: %q", footer)
+			if offered := strings.Contains(m.viewFooter(), "mark idle"); offered != tc.wantCommand {
+				t.Fatalf("dot footer offered = %v, want %v", offered, tc.wantCommand)
 			}
 
 			_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
-			if cmd == nil {
-				t.Fatal("dot did not schedule the acknowledgment")
+			if (cmd != nil) != tc.wantCommand {
+				t.Fatalf("dot command = %v, want command %v", cmd != nil, tc.wantCommand)
 			}
-			if tc.newer != "" {
-				if err := m.store.UpdateStatus(sess.ID, tc.newer); err != nil {
-					t.Fatalf("set newer status: %v", err)
+			if cmd != nil {
+				if tc.newer != "" {
+					if err := m.store.UpdateStatus(sess.ID, tc.newer); err != nil {
+						t.Fatalf("set newer status: %v", err)
+					}
 				}
-			}
-			updated, refresh := m.Update(cmd())
-			*m = *updated.(*Model)
-			if refresh == nil {
-				t.Fatal("acknowledgment did not schedule a refresh")
+				updated, refresh := m.Update(cmd())
+				*m = *updated.(*Model)
+				if refresh == nil {
+					t.Fatal("acknowledgment did not schedule a refresh")
+				}
 			}
 			got, err := m.store.Get(sess.ID)
 			if err != nil {
