@@ -485,14 +485,14 @@ func (m *Model) rowLegend() legendSection {
 			foldAction = "unfold"
 		}
 		return legendSection{title: "Group", pairs: [][2]string{
-			{"↵", foldAction}, {"r", "rename"},
+			{"↵", foldAction}, {"o", "editor"}, {"r", "rename"},
 			{"x/X", "kill / all"}, {"v/V", "revive / all"},
 			{"a/u", "archive / restore"}, {"d", "delete"},
 		}}
 	}
 	return legendSection{title: "Session", pairs: [][2]string{
 		{"↵", enterHint}, {"A", attachHint}, {"space", "prompt"}, {"ctrl+r", "review"},
-		{"f", "fork"}, {"r", "rename"}, {"m", "move"},
+		{"o", "editor"}, {"f", "fork"}, {"r", "rename"}, {"m", "move"},
 		{"x/X", "kill / all"}, {"v/V", "revive / all"},
 		{"a/u", "archive / restore"}, {"d", "delete"},
 	}}
@@ -521,7 +521,7 @@ func (m *Model) viewLegend() legendSection {
 	// something, the filters whose state only the footer reports, then the
 	// keys a user already knows to look for.
 	return legendSection{title: "View", quiet: true, pairs: [][2]string{
-		{"↑↓/jk", "navigate"}, {"n", "new"}, {"g", "group"}, {"/", "search"},
+		{"↑↓/jk", "navigate"}, {"n", "new"}, {"T", "terminal"}, {"g", "group"}, {"/", "search"},
 		{"t", archivedAction}, {"w", statusFilterAction}, {"e", emptyGroupsAction},
 		{"?", "keys"}, {"q", "quit"},
 		{"K/J", "reorder"}, {"F", foldAllAction}, {"|", "resize"}, {"s", "settings"},

@@ -128,6 +128,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "t":
 		m.showArchived = !m.showArchived
 		m.requestRefresh()
+	case "T", "shift+t":
+		return m.openTerminal()
+	case "o":
+		return m.openEditor()
 	case "e":
 		return m, m.toggleEmptyGroups()
 	case "/":

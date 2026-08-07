@@ -52,8 +52,12 @@ type Tool struct {
 }
 
 type Config struct {
-	PollInterval Duration        `toml:"poll_interval"`
-	Tools        map[string]Tool `toml:"tools"`
+	PollInterval Duration `toml:"poll_interval"`
+	// Editor is the command the o key opens a session's directory in, args
+	// included. Empty falls back to a GUI editor found on PATH, then
+	// $VISUAL / $EDITOR.
+	Editor string          `toml:"editor"`
+	Tools  map[string]Tool `toml:"tools"`
 }
 
 type Duration struct {
@@ -204,6 +208,11 @@ func writeDefault(path string) error {
 }
 
 const defaultConfig = `poll_interval = "2s"
+
+# The editor "o" opens a session's directory in. Left unset, Agent Manager
+# takes the first GUI editor on PATH (code, cursor, windsurf, zed, subl,
+# idea), then $VISUAL or $EDITOR. Arguments are allowed: "code -n".
+# editor = "code"
 
 # Rules are matched top-down against the visible pane text (ANSI stripped);
 # first match wins, except a matching waiting rule outranks a working match.
@@ -362,6 +371,14 @@ rules = [
   # error messages render with a "✕ " prefix
   { state = "errored", pattern = "(?m)^✕ " },
 ]
+
+# The terminal tab "T" spawns: a shell in the group's directory, listed
+# beside the agents but with nothing running in it. An empty command leaves
+# the pane on $SHELL; set one to open a different shell instead. It is not
+# an agent, so it never appears in the CLI pickers.
+[tools.terminal]
+command = ""
+default_status = "idle"
 
 [tools.pi]
 command = "pi"
