@@ -145,6 +145,10 @@ type Model struct {
 	// settle timers with an older gen are dropped so key-repeat cannot
 	// queue a second of tmux work after the user stops.
 	previewGen uint64
+	// terminalKeyAt is when T last arrived. Held down it autorepeats into a
+	// burst of keystrokes, and T is the only key that spawns on the
+	// keystroke itself rather than opening a form that would swallow them.
+	terminalKeyAt time.Time
 
 	// bannerPhase advances the wordmark's current sweep and then rests, so
 	// the frame is not repainted forever.
@@ -772,6 +776,18 @@ func (m *Model) selectedRow() (treeRow, bool) {
 		return treeRow{}, false
 	}
 	return m.rows[m.cursor], true
+}
+
+// focusSession puts the cursor on a session's row, for the keys that make
+// one and leave the user on it. A session filtered out of the current view
+// has no row, and the cursor stays where it was.
+func (m *Model) focusSession(id string) {
+	for i, row := range m.rows {
+		if !row.isGroup && row.sess.ID == id {
+			m.cursor = i
+			return
+		}
+	}
 }
 
 // schedulePreview arms a single capture after previewSettle. Call after

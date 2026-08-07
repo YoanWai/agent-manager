@@ -487,12 +487,21 @@ func (m *Model) rowLegend() legendSection {
 			{"a/u", "archive / restore"}, {"d", "delete"},
 		}}
 	}
-	return legendSection{title: "Session", pairs: [][2]string{
-		{"↵", enterHint}, {"A", attachHint}, {"space", "prompt"}, {"ctrl+r", "review"},
-		{"f", "fork"}, {"r", "rename"}, {"m", "move"},
+	title := "Session"
+	conversation := [][2]string{{"space", "prompt"}, {"ctrl+r", "review"}, {"f", "fork"}}
+	if m.isShell(row.sess.Tool) {
+		// A shell has no conversation, so the keys that would prompt,
+		// review or fork one are left off rather than offered and refused.
+		title, conversation = "Shell", nil
+	}
+	pairs := [][2]string{{"↵", enterHint}, {"A", attachHint}}
+	pairs = append(pairs, conversation...)
+	pairs = append(pairs, [][2]string{
+		{"r", "rename"}, {"m", "move"},
 		{"x/X", "kill / all"}, {"v/V", "revive / all"}, {"R", "restart"},
 		{"a/u", "archive / restore"}, {"d", "delete"},
-	}}
+	}...)
+	return legendSection{title: title, pairs: pairs}
 }
 
 // viewLegend is the tier that never changes with the cursor: moving around

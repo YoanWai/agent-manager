@@ -5,11 +5,29 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
 )
+
+func shellCount(m *Model) int {
+	count := 0
+	for _, sess := range m.sessions {
+		if m.isShell(sess.Tool) {
+			count++
+		}
+	}
+	return count
+}
+
+func pressTerminalKey(t *testing.T, m *Model) {
+	t.Helper()
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'T'}})
+	m.applyCmd(t, cmd)
+}
 
 // shellToolName is the block buildModel ships with shell = true.
 const shellToolName = "terminal"
@@ -175,5 +193,75 @@ func TestShellToolIsFoundByItsFlag(t *testing.T) {
 	name, tool, ok := m.shellTool()
 	if !ok || name != "zsh" || tool.Command != "" {
 		t.Fatalf("shellTool() = %q %+v %v, want the zsh block", name, tool, ok)
+	}
+}
+
+// Holding T autorepeats into a burst of keystrokes. T spawns on the
+// keystroke itself, so without a guard a held key fills the list with
+// shells and tmux windows nobody asked for.
+func TestTerminalKeyIgnoresAutorepeat(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.refreshCmd())
+
+	for i := 0; i < 5; i++ {
+		pressTerminalKey(t, m)
+	}
+
+	if got := shellCount(m); got != 1 {
+		t.Fatalf("a held T made %d shells, want 1", got)
+	}
+}
+
+// A press once the burst is over is a second request, not a repeat.
+func TestTerminalKeySpawnsAgainAfterTheWindow(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.refreshCmd())
+
+	pressTerminalKey(t, m)
+	m.terminalKeyAt = time.Now().Add(-2 * terminalKeyWindow)
+	pressTerminalKey(t, m)
+
+	if got := shellCount(m); got != 2 {
+		t.Fatalf("two separate presses made %d shells, want 2", got)
+	}
+}
+
+// The footer offers what the row can do: a shell has no conversation, so
+// the keys that prompt, review or fork one are left off.
+func TestShellRowLegendDropsTheConversationKeys(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.refreshCmd())
+	sess := spawnTerminal(t, m)
+	m.selectSessionRow(t, sess.Name)
+
+	legend := m.rowLegend()
+	if legend.title != "Shell" {
+		t.Fatalf("legend title = %q, want Shell", legend.title)
+	}
+	for _, pair := range legend.pairs {
+		switch pair[0] {
+		case "space", "ctrl+r", "f":
+			t.Fatalf("legend offers %q on a shell row, which refuses it", pair[0])
+		}
+	}
+	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "R" }) {
+		t.Fatal("legend should still offer the keys a shell answers, R included")
+	}
+}
+
+// An agent row keeps the full set.
+func TestAgentRowLegendKeepsTheConversationKeys(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "agent", t.TempDir(), "")
+	m.selectSessionRow(t, "agent")
+
+	legend := m.rowLegend()
+	if legend.title != "Session" {
+		t.Fatalf("legend title = %q, want Session", legend.title)
+	}
+	for _, key := range []string{"space", "ctrl+r", "f"} {
+		if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == key }) {
+			t.Fatalf("legend should offer %q on an agent row", key)
+		}
 	}
 }

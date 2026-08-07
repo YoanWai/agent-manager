@@ -723,7 +723,7 @@ func TestQuickPromptRefusesAShell(t *testing.T) {
 }
 
 // The same guard from the other end: what the user typed never reaches the
-// shell, so it never runs. This is the maintainer's repro from #232.
+// shell, so it never runs.
 func TestQuickPromptNeverRunsWhatIsTypedAtAShell(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.refreshCmd())
