@@ -60,8 +60,12 @@ type Tool struct {
 }
 
 type Config struct {
-	PollInterval Duration        `toml:"poll_interval"`
-	Tools        map[string]Tool `toml:"tools"`
+	PollInterval Duration `toml:"poll_interval"`
+	// Editor is the command the o key opens a directory in, arguments
+	// included. Empty falls back to $AGENT_MANAGER_EDITOR, then a GUI
+	// editor found on PATH, then $VISUAL / $EDITOR.
+	Editor string          `toml:"editor"`
+	Tools  map[string]Tool `toml:"tools"`
 }
 
 type Duration struct {
@@ -217,6 +221,13 @@ func writeDefault(path string) error {
 }
 
 const defaultConfig = `poll_interval = "2s"
+
+# The editor "o" opens a directory in, arguments allowed: "code -n", or
+# "open -a 'Visual Studio Code'". Quotes group an argument that carries a
+# space; the line is run directly, never through a shell. Left unset,
+# Agent Manager takes $AGENT_MANAGER_EDITOR, then the first GUI editor on
+# PATH (code, cursor, windsurf, zed, subl, idea), then $VISUAL or $EDITOR.
+# editor = "code"
 
 # Rules are matched top-down against the visible pane text (ANSI stripped);
 # first match wins, except a matching waiting rule outranks a working match.
