@@ -7,7 +7,8 @@ import (
 
 // Agent CLIs pick their colors for a dark terminal, so a light theme keeps
 // the manager chrome light and renders captured panes on a pinned dark
-// backdrop instead: the classic theme's surface. The helpers here keep that
+// backdrop instead: the classic theme's Bg, the tone a dark-theme terminal
+// itself would show behind the same capture. The helpers here keep that
 // backdrop alive across the capture's own SGR stream, where any reset would
 // otherwise let the light theme bleed through mid-line.
 
