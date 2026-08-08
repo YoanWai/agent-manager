@@ -32,7 +32,7 @@ changelog:
 
 release:
   header: |
-    Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, Grok, and Gemini CLI run side by side, each in its own tmux session, with live status, a project tree, quick prompts, and full-file diff review. Runs on macOS and Linux, and on Windows inside WSL2. [See it running](https://github.com/YoanWai/agent-manager#agent-manager).
+    Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, Grok, Gemini CLI, and Pi run side by side, each in its own tmux session, with live status, a project tree, quick prompts, and full-file diff review. Runs on macOS and Linux, and on Windows inside WSL2. [See it running](https://github.com/YoanWai/agent-manager#agent-manager).
 
   footer: |
     ## Install
