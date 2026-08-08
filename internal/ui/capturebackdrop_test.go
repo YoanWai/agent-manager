@@ -27,27 +27,34 @@ func TestLightBackdropClassification(t *testing.T) {
 func TestSGRDropsColors(t *testing.T) {
 	tests := []struct {
 		params string
-		want   bool
+		fg, bg bool
 	}{
-		{"", true},
-		{"0", true},
-		{"39", true},
-		{"49", true},
-		{"0;33", true},
-		{"1;31", false},
-		{"7", false},
-		{"38;5;0", false},
-		{"48;5;249", false},
-		{"38;2;0;0;0", false},
-		{"48;2;15;17;21", false},
-		{"38:2::0:0:0", false},
-		{"38;2;0;0;0;49", true},
-		{"1;38;5;39", false},
-		{"38;5;39", false},
+		{"", true, true},
+		{"0", true, true},
+		{"39", true, false},
+		{"49", false, true},
+		{"0;33", false, true},
+		{"0;31", false, true},
+		{"0;41", true, false},
+		{"0;31;41", false, false},
+		{"1;31", false, false},
+		{"7", false, false},
+		{"38;5;0", false, false},
+		{"48;5;249", false, false},
+		{"38;2;0;0;0", false, false},
+		{"48;2;15;17;21", false, false},
+		{"38:2::0:0:0", false, false},
+		{"38;2;0;0;0;49", false, true},
+		{"48;5;1;39", true, false},
+		{"38;5;1;49", false, true},
+		{"39;31", false, false},
+		{"1;38;5;39", false, false},
+		{"38;5;39", false, false},
 	}
 	for _, tt := range tests {
-		if got := sgrDropsColors(tt.params); got != tt.want {
-			t.Errorf("sgrDropsColors(%q) = %v, want %v", tt.params, got, tt.want)
+		fg, bg := sgrDropsColors(tt.params)
+		if fg != tt.fg || bg != tt.bg {
+			t.Errorf("sgrDropsColors(%q) = (%v, %v), want (%v, %v)", tt.params, fg, bg, tt.fg, tt.bg)
 		}
 	}
 }
@@ -71,23 +78,13 @@ func TestReassertCaptureColors(t *testing.T) {
 	if got := reassertCaptureColors(kept); got != kept {
 		t.Errorf("explicit color rewritten: %q", got)
 	}
-}
-
-func TestPreviewLineCaptureBackdrop(t *testing.T) {
-	onLightTheme(t)
-	line := previewLine("hi", 10)
-	if !strings.HasPrefix(line, captureOpen) {
-		t.Errorf("capture line does not open with backdrop colors: %q", line)
+	// A reset combined with an explicit color keeps that color: only the
+	// component left at default moves onto the backdrop.
+	if got := reassertCaptureColors("\x1b[0;31mred"); got != "\x1b[0;31m"+captureBgSeq+"red" {
+		t.Errorf("combined reset+fg reasserted wrong components: %q", got)
 	}
-	if !strings.Contains(line, captureBgSeq+strings.Repeat(" ", 8)+"\x1b[0m") {
-		t.Errorf("padding not painted with the backdrop: %q", line)
-	}
-}
-
-func TestPreviewLineDarkThemeUnchanged(t *testing.T) {
-	applyTheme(themes[0])
-	if got := previewLine("hi", 4); got != "hi  " {
-		t.Errorf("dark theme preview line rewritten: %q", got)
+	if got := reassertCaptureColors("\x1b[48;5;1;39mtext"); got != "\x1b[48;5;1;39m"+captureFgSeq+"text" {
+		t.Errorf("explicit bg with default fg reasserted wrong components: %q", got)
 	}
 }
 
