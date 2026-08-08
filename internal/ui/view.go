@@ -190,7 +190,7 @@ func inGroupSubtree(sessGroup, group string) bool {
 
 func (m *Model) groupSessionCount(path string) int {
 	count := 0
-	for _, sess := range m.listedSessions() {
+	for _, sess := range m.listedAgents() {
 		if inGroupSubtree(sess.Group, path) {
 			count++
 		}
@@ -231,8 +231,7 @@ func (m *Model) renamingRow(entry treeRow) bool {
 func (m *Model) renameRowInput(entry treeRow, width int) string {
 	lead := subtleStyle.Render("▾")
 	if !entry.isGroup {
-		lead = lipgloss.NewStyle().Foreground(statusColor(entry.sess.Status)).
-			Render(statusGlyph(entry.sess.Status))
+		lead = m.sessionGlyph(entry.sess)
 	}
 	if fieldWidth := width - 4; fieldWidth >= 5 {
 		m.rename.input.Width = fieldWidth
@@ -316,7 +315,7 @@ func (m *Model) groupStatusBreakdown(group string) string {
 
 func (m *Model) groupStatusCounts(group string) map[string]int {
 	counts := map[string]int{}
-	for _, sess := range m.listedSessions() {
+	for _, sess := range m.listedAgents() {
 		if inGroupSubtree(sess.Group, group) {
 			counts[sess.Status]++
 		}

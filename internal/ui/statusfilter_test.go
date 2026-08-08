@@ -82,8 +82,8 @@ func TestStatusFilterKeyKeepsAttentionSessions(t *testing.T) {
 	if !strings.Contains(header, "ATTENTION") {
 		t.Fatalf("header missing ATTENTION badge:\n%s", header)
 	}
-	if !strings.Contains(header, "3 session") {
-		t.Fatalf("header count should match listed sessions:\n%s", header)
+	if !strings.Contains(header, "3 agents") {
+		t.Fatalf("header count should match the listed agents:\n%s", header)
 	}
 	footer := ansi.Strip(m.viewFooter())
 	if !strings.Contains(footer, "show all") {
