@@ -692,9 +692,15 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 		lines = append(lines, contentLine{text: m.renderPaneRow(i, line, width), raw: true})
 	}
 	// Rows past the capture stay raw too: a painted tail under unpainted
-	// output would read as a box drawn around the agent's last line.
+	// output would read as a box drawn around the agent's last line. On the
+	// capture backdrop they carry its fill instead, so the dark island spans
+	// the whole panel.
 	for len(lines) < height {
-		lines = append(lines, contentLine{raw: true})
+		if captureOnDark {
+			lines = append(lines, contentLine{text: captureBlankRow(width), raw: true})
+		} else {
+			lines = append(lines, contentLine{raw: true})
+		}
 	}
 	return lines
 }

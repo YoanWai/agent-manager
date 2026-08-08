@@ -1188,6 +1188,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleQuickImageMsg(msg)
 
 	case attachDoneMsg:
+		// Undo the attach backdrop; the resume's WindowSizeMsg skips its own
+		// sync when the size is unchanged, so the detach restores it here.
+		SyncTerminalBackground()
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; shrink it back to the preview panel so
 		// the capture is not clipped on the right.
@@ -1240,6 +1243,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.errBar.text = msg.warn
+		SyncAttachBackground()
 		return m, tea.ExecProcess(m.tmux.AttachCommand(msg.sessID), func(err error) tea.Msg {
 			return attachDoneMsg{sessID: msg.sessID, err: err}
 		})
