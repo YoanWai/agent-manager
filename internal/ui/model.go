@@ -18,6 +18,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	"github.com/YoanWai/agent-manager/internal/systheme"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/update"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -340,6 +341,11 @@ type settingsState struct {
 	comfortableRows bool
 	worktreeDefault bool
 	shellsPinned    bool
+	themeAuto       bool
+	// manualTheme is the persisted choice the theme key keeps while
+	// auto-detect drives the live palette, so turning auto off returns
+	// to it.
+	manualTheme string
 	// cliPicker is the sub-panel for which CLIs appear when creating sessions.
 	cliPicker bool
 	cliNames  []string
@@ -350,6 +356,7 @@ type settingsState struct {
 const (
 	settingsFieldTool = iota
 	settingsFieldTheme
+	settingsFieldThemeAuto
 	settingsFieldDensity
 	settingsFieldLayout
 	settingsFieldQuickClose
@@ -463,7 +470,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// A missing git binary only disables the diff view; everything else
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
-	applyTheme(themes[themeIndex(storedTheme(st))])
+	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
 	model := &Model{
 		cfg:                 cfg,
 		store:               st,
@@ -503,6 +510,40 @@ func storedTheme(st *store.Store) string {
 		return ""
 	}
 	return name
+}
+
+func themeAutoEnabled(st *store.Store) bool {
+	value, err := st.Setting(themeAutoSetting)
+	return err == nil && value == "on"
+}
+
+// resolveStartupTheme picks the boot theme: the stored choice, unless
+// auto-detect is on and the environment's scheme disagrees with that
+// choice's polarity — then the default theme of the detected side takes
+// over, and an undetectable scheme changes nothing.
+func resolveStartupTheme(st *store.Store) string {
+	stored := storedTheme(st)
+	if !themeAutoEnabled(st) {
+		return stored
+	}
+	return autoThemeName(stored, systheme.Detect())
+}
+
+// autoThemeName keeps the stored theme whenever it already sits on the
+// detected side, so auto-detect corrects polarity without discarding a
+// palette the user picked.
+func autoThemeName(stored string, scheme systheme.Scheme) string {
+	if scheme == systheme.SchemeUnknown {
+		return stored
+	}
+	wantLight := scheme == systheme.SchemeLight
+	if themes[themeIndex(stored)].lightBackdrop() == wantLight {
+		return stored
+	}
+	if wantLight {
+		return "solarized light"
+	}
+	return "classic"
 }
 
 const collapsedSetting = "collapsed_groups"
