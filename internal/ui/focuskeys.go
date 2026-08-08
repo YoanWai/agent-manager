@@ -172,7 +172,7 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var resume tea.Cmd
 	if m.scrolledBack() {
 		m.focusScroll = 0
-		resume = m.focusRegionCmd(sess.ID, 0)
+		resume = m.requestFocusRegion(sess.ID)
 	}
 	if msg.Paste {
 		if err := pasteFocused(m.tmux, sess.ID, string(msg.Runes)); err != nil {

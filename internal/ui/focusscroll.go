@@ -17,7 +17,9 @@ const focusScrollStep = 3
 type focusScrollMsg struct {
 	sessID  string
 	offset  int
+	rows    int
 	preview string
+	ok      bool
 }
 
 // Mouse button codes as the reports carry them: the two wheel
@@ -144,12 +146,15 @@ func (m *Model) scrollFocus(delta int) tea.Cmd {
 		return nil
 	}
 	m.focusScroll = offset
-	if offset == 0 {
-		// Back at the bottom: the watcher's next push repaints the live
-		// pane, and one immediate fetch avoids waiting for it.
-		return m.focusRegionCmd(sess.ID, 0)
-	}
-	return m.focusRegionCmd(sess.ID, offset)
+	return m.requestFocusRegion(sess.ID)
+}
+
+// requestFocusRegion fetches the current scroll target. Every notch gets
+// its own command: callers (including tests) rely on a non-nil command
+// per notch, and stale replies are discarded by the offset guard in
+// Update, so a burst costs extra captures but never a wrong frame.
+func (m *Model) requestFocusRegion(sessID string) tea.Cmd {
+	return m.focusRegionCmd(sessID, m.focusScroll)
 }
 
 // focusRegionCmd captures the pane region that sits offset lines above the
@@ -157,22 +162,16 @@ func (m *Model) scrollFocus(delta int) tea.Cmd {
 // above it with negative lines, so a scrolled window is just a shifted
 // start and end.
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
-	rows := m.pane.box.height
-	if rows < 1 {
-		rows = 1
-	}
+	rows := m.previewPaneHeight()
 	command := fmt.Sprintf(`capture-pane -p -e -t %s -S %d -E %d`,
 		tmux.SessionName(sessID), -offset, rows-1-offset)
 	watch := m.focus
 	return func() tea.Msg {
 		if watch == nil {
-			return nil
+			return focusScrollMsg{sessID: sessID, offset: offset, rows: rows}
 		}
 		out, ok := watch.query(command)
-		if !ok {
-			return nil
-		}
-		return focusScrollMsg{sessID: sessID, offset: offset, preview: matchExecShape(out)}
+		return focusScrollMsg{sessID: sessID, offset: offset, rows: rows, preview: matchExecShape(out), ok: ok}
 	}
 }
 
