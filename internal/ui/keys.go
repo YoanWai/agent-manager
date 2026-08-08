@@ -102,6 +102,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openFork()
 	case "v":
 		return m.reviveSelected()
+	case ".":
+		return m.acknowledgeSelected()
 	case "V", "shift+v":
 		return m.reviveAllDead()
 	case "R", "shift+r":

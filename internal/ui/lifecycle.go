@@ -35,23 +35,28 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.errBar.text = ""
-	if err := m.acknowledgeFinished(sess); err != nil {
+	if err := m.store.AcknowledgeFinished(sess.ID); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
 	return m, m.attachCmd(sess.ID)
 }
 
-// acknowledgeFinished marks a finished session idle and acked so entering it
-// clears the alert while the pane still shows the acknowledged turn.
-func (m *Model) acknowledgeFinished(sess store.Session) error {
-	if sess.Status != status.Finished {
-		return nil
+// acknowledgeSelected marks the selected finished session idle and acked
+// without entering it. Archived sessions keep their preserved status: the
+// poller never re-derives it for them, so an ack would stick forever.
+func (m *Model) acknowledgeSelected() (tea.Model, tea.Cmd) {
+	sess, ok := m.selected()
+	if !ok || sess.Archived || sess.Status != status.Finished {
+		return m, nil
 	}
-	if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
-		return err
+	m.errBar.text = ""
+	if err := m.store.AcknowledgeFinished(sess.ID); err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
 	}
-	return m.store.SetAcked(sess.ID, true)
+	m.requestRefresh()
+	return m, nil
 }
 
 func (m *Model) attachCmd(id string) tea.Cmd {
@@ -86,10 +91,7 @@ func (m *Model) reattach(id string, diffGen int) tea.Cmd {
 			return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
 		}
 		if sess.Status == status.Finished {
-			if err := stor.UpdateStatus(sess.ID, status.Idle); err != nil {
-				return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
-			}
-			if err := stor.SetAcked(sess.ID, true); err != nil {
+			if err := stor.AcknowledgeFinished(sess.ID); err != nil {
 				return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
 			}
 		}
