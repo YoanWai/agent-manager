@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -504,16 +505,70 @@ func TestCopyCommandPrefersDisplayTools(t *testing.T) {
 	}
 }
 
-func TestWriteTextRejectsOversizedOSC52(t *testing.T) {
+// 56244 raw bytes encode to 74992, the largest payload under the cap;
+// one more raw byte encodes to 74996 and crosses it.
+func TestWriteTextOSC52SizeBoundary(t *testing.T) {
 	defer restore()()
 	headlessLinux()
+	var emitted bool
 	emitSeq = func(string) error {
-		t.Fatal("an oversized payload must not reach the terminal")
+		emitted = true
 		return nil
 	}
-	err := WriteText(strings.Repeat("x", osc52Limit))
+	if err := WriteText(strings.Repeat("x", 56244)); err != nil {
+		t.Fatalf("largest fitting payload: %v", err)
+	}
+	if !emitted {
+		t.Fatal("largest fitting payload should reach the terminal")
+	}
+
+	emitted = false
+	err := WriteText(strings.Repeat("x", 56245))
 	if err == nil || !strings.Contains(err.Error(), "too large") {
 		t.Fatalf("oversized copy error = %v", err)
+	}
+	if emitted {
+		t.Fatal("an oversized payload must not reach the terminal")
+	}
+}
+
+// A stale SSH DISPLAY selects xclip, which then dies with "Can't open
+// display"; the copy must still land through OSC 52.
+func TestWriteTextNativeFailureFallsBackToOSC52(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs a unix shell script as the fake writer")
+	}
+	defer restore()()
+	headlessLinux()
+	getenv = func(name string) string {
+		if name == "DISPLAY" {
+			return "localhost:10.0"
+		}
+		return ""
+	}
+	binDir := t.TempDir()
+	fake := filepath.Join(binDir, "xclip")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho 'Error: Can't open display' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+	lookPath = func(name string) (string, error) {
+		if name == "xclip" {
+			return fake, nil
+		}
+		return "", errors.New("not found")
+	}
+	var emitted string
+	emitSeq = func(seq string) error {
+		emitted = seq
+		return nil
+	}
+	if err := WriteText("hello"); err != nil {
+		t.Fatal(err)
+	}
+	want := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte("hello")) + "\x07"
+	if emitted != want {
+		t.Fatalf("emitted = %q, want %q", emitted, want)
 	}
 }
 

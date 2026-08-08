@@ -356,6 +356,12 @@ func WriteText(text string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = strings.NewReader(text)
 	if err := cmd.Run(); err != nil {
+		// A selected writer can still die at runtime: a stale SSH DISPLAY,
+		// a Wayland socket that is gone, a broken install. The terminal's
+		// clipboard is still reachable, so try it before reporting failure.
+		if osc52Err := writeTextOSC52(text); osc52Err == nil {
+			return nil
+		}
 		if ctx.Err() != nil {
 			return fmt.Errorf("%s: timed out", name)
 		}

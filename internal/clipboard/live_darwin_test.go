@@ -15,12 +15,17 @@ func TestDarwinLiveCopy(t *testing.T) {
 	if _, err := exec.LookPath("pbpaste"); err != nil {
 		t.Skip("no pbpaste on this host")
 	}
-	original, _ := exec.Command("pbpaste").Output()
-	defer func() {
+	original, err := exec.Command("pbpaste").Output()
+	if err != nil {
+		t.Skipf("cannot back up pasteboard: %v", err)
+	}
+	t.Cleanup(func() {
 		restoreCmd := exec.Command("pbcopy")
 		restoreCmd.Stdin = bytes.NewReader(original)
-		_ = restoreCmd.Run()
-	}()
+		if err := restoreCmd.Run(); err != nil {
+			t.Errorf("restore pasteboard: %v", err)
+		}
+	})
 	if err := WriteText("agent-manager-live-copy-proof"); err != nil {
 		t.Skipf("pasteboard unavailable: %v", err)
 	}
