@@ -335,6 +335,7 @@ var themes = []Theme{
 }
 
 const themeSetting = "theme"
+const themeAutoSetting = "theme_auto"
 
 // themeIndex finds a theme by name, falling back to the default when the
 // stored name is unknown (a theme removed between releases).

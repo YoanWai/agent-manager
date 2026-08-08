@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/systheme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -200,6 +201,8 @@ func (m *Model) openSettings() {
 		comfortableRows: m.comfortableRows,
 		worktreeDefault: m.defaultWorktree(),
 		shellsPinned:    m.shellsPinned,
+		themeAuto:       themeAutoEnabled(m.store),
+		manualTheme:     themes[themeIndex(storedTheme(m.store))].Name,
 	}
 	m.mode = modeSettings
 }
@@ -262,7 +265,20 @@ func (m *Model) persistSettings() {
 			m.errBar.text = err.Error()
 		}
 	}
-	if err := m.store.SetSetting(themeSetting, themes[m.settings.themeIndex].Name); err != nil {
+	// With auto-detect on, the picker shows the detected theme; the theme
+	// key keeps the manual choice so turning auto off returns to it.
+	manualTheme := themes[m.settings.themeIndex].Name
+	if m.settings.themeAuto {
+		manualTheme = m.settings.manualTheme
+	}
+	if err := m.store.SetSetting(themeSetting, manualTheme); err != nil {
+		m.errBar.text = err.Error()
+	}
+	themeAuto := "off"
+	if m.settings.themeAuto {
+		themeAuto = "on"
+	}
+	if err := m.store.SetSetting(themeAutoSetting, themeAuto); err != nil {
 		m.errBar.text = err.Error()
 	}
 	layout := "split"
@@ -410,7 +426,20 @@ func (m *Model) cycleSetting(step int) {
 		}
 		m.settings.toolIndex = (m.settings.toolIndex + step + count) % count
 	case settingsFieldTheme:
+		// Stepping the theme is a manual choice; it wins over auto-detect
+		// rather than being silently overridden on the next start.
+		m.settings.themeAuto = false
 		m.settings.themeIndex = (m.settings.themeIndex + step + len(themes)) % len(themes)
+		m.settings.manualTheme = themes[m.settings.themeIndex].Name
+		applyTheme(themes[m.settings.themeIndex])
+		SyncTerminalBackground()
+	case settingsFieldThemeAuto:
+		m.settings.themeAuto = !m.settings.themeAuto
+		name := m.settings.manualTheme
+		if m.settings.themeAuto {
+			name = autoThemeName(m.settings.manualTheme, systheme.Detect())
+		}
+		m.settings.themeIndex = themeIndex(name)
 		applyTheme(themes[m.settings.themeIndex])
 		SyncTerminalBackground()
 	case settingsFieldDensity:

@@ -282,6 +282,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.worktreeDefault {
 		worktreeDefault = "on"
 	}
+	themeAuto := "off"
+	if m.settings.themeAuto {
+		themeAuto = "on"
+	}
 	terminals := "inline"
 	if m.settings.shellsPinned {
 		terminals = "pinned"
@@ -323,6 +327,7 @@ func (m *Model) viewSettings() string {
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
+		row(settingsFieldThemeAuto, "theme follows OS", themeAuto) + "\n" +
 		row(settingsFieldDensity, "list density", density) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
