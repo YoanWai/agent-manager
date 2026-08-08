@@ -433,6 +433,56 @@ func TestWriteTextHeadlessSkipsDisplayTools(t *testing.T) {
 	}
 }
 
+// Every non-Linux platform keeps its writer exactly as before the OSC 52
+// fallback existed.
+func TestCopyCommandPlatformWriters(t *testing.T) {
+	defer restore()()
+	lookPath = func(name string) (string, error) { return "", errors.New("not found") }
+	getenv = func(string) string { return "" }
+
+	goos = "darwin"
+	wslProbe = func() bool { return false }
+	if name, _, ok := copyCommand(); !ok || name != "pbcopy" {
+		t.Fatalf("darwin writer = %q %v", name, ok)
+	}
+
+	goos = "windows"
+	if name, _, ok := copyCommand(); !ok || name != "clip" {
+		t.Fatalf("windows writer = %q %v", name, ok)
+	}
+
+	goos = "linux"
+	wslProbe = func() bool { return true }
+	if name, _, ok := copyCommand(); !ok || name != "clip.exe" {
+		t.Fatalf("WSL writer = %q %v", name, ok)
+	}
+}
+
+// A desktop Linux box with a display but no tool installed used to get the
+// "install wl-copy, xclip or xsel" error; now the terminal takes the copy.
+func TestWriteTextDisplayWithoutToolsFallsBackToOSC52(t *testing.T) {
+	defer restore()()
+	headlessLinux()
+	getenv = func(name string) string {
+		if name == "WAYLAND_DISPLAY" {
+			return "wayland-0"
+		}
+		return ""
+	}
+	lookPath = func(name string) (string, error) { return "", errors.New("not found") }
+	var emitted bool
+	emitSeq = func(string) error {
+		emitted = true
+		return nil
+	}
+	if err := WriteText("hello"); err != nil {
+		t.Fatal(err)
+	}
+	if !emitted {
+		t.Fatal("a display with no tools should fall back to OSC 52")
+	}
+}
+
 func TestCopyCommandPrefersDisplayTools(t *testing.T) {
 	defer restore()()
 	headlessLinux()
