@@ -632,6 +632,9 @@ func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
 	if hint := m.viewFooter(); !strings.Contains(hint, worktreeUnavailable) {
 		t.Fatalf("footer should mark worktree unavailable, got %q", hint)
 	}
+	if bar := m.viewQuickBar(120); !strings.Contains(bar, "worktree "+worktreeUnavailable) {
+		t.Fatalf("quick bar should name worktree as what is unavailable, got %q", bar)
+	}
 	m.quick.input.SetValue("do a thing")
 	m.submitQuick()
 	sessions, err := m.store.ListSessions(true)

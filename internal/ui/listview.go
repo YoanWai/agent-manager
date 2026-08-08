@@ -958,7 +958,7 @@ func (m *Model) viewQuickBar(width int) string {
 			worktree := subtleStyle.Render("worktree off")
 			switch {
 			case !m.worktreeCapable(m.quickTargetDir()):
-				worktree = subtleStyle.Render(worktreeUnavailable)
+				worktree = subtleStyle.Render("worktree " + worktreeUnavailable)
 			case m.quickWorktreeOn():
 				worktree = lipgloss.NewStyle().Foreground(colorAccent2).Render("worktree on")
 			}
