@@ -4,6 +4,7 @@ package clipboard
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -13,6 +14,9 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/termseq"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // ErrNoImage means the clipboard held no image when it was read.
@@ -40,6 +44,9 @@ var (
 	// wslProbe reports whether we are running under WSL (Windows clipboard
 	// bridge needed when Linux tools cannot see the host clipboard).
 	wslProbe = detectWSL
+	getenv   = os.Getenv
+	// emitSeq writes a control sequence to the terminal drawing the app.
+	emitSeq = termseq.Emit
 	// readNativeImage is set by platform files (darwin/linux) to an
 	// in-process pasteboard reader. Nil means "use the shell-tool path".
 	// Prefer native: spawning osascript/wl-paste is tens of ms each paste.
@@ -340,9 +347,9 @@ func SaveToTemp(data []byte, ext string) (string, error) {
 // it inherits keeps a capturing call waiting for EOF that never comes.
 // The timeout covers a writer that hangs before daemonizing.
 func WriteText(text string) error {
-	name, args, err := copyCommand()
-	if err != nil {
-		return err
+	name, args, ok := copyCommand()
+	if !ok {
+		return writeTextOSC52(text)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -357,26 +364,54 @@ func WriteText(text string) error {
 	return nil
 }
 
-// copyCommand picks the platform's clipboard writer.
-func copyCommand() (string, []string, error) {
+// copyCommand picks the platform's clipboard writer. The false return means
+// no local writer can reach a clipboard, which is the headless-host case
+// WriteText answers with OSC 52.
+func copyCommand() (string, []string, bool) {
 	switch goos {
 	case "darwin":
-		return "pbcopy", nil, nil
+		return "pbcopy", nil, true
 	case "windows":
-		return "clip", nil, nil
+		return "clip", nil, true
 	default:
 		if wslProbe() {
-			return "clip.exe", nil, nil
+			return "clip.exe", nil, true
+		}
+		// wl-copy, xclip and xsel all talk to a display server, so on a
+		// headless box an installed one is still a writer that fails at
+		// runtime with "Can't open display".
+		if !hasDisplay() {
+			return "", nil, false
 		}
 		if _, err := lookPath("wl-copy"); err == nil {
-			return "wl-copy", nil, nil
+			return "wl-copy", nil, true
 		}
 		if _, err := lookPath("xclip"); err == nil {
-			return "xclip", []string{"-selection", "clipboard"}, nil
+			return "xclip", []string{"-selection", "clipboard"}, true
 		}
 		if _, err := lookPath("xsel"); err == nil {
-			return "xsel", []string{"--clipboard", "--input"}, nil
+			return "xsel", []string{"--clipboard", "--input"}, true
 		}
-		return "", nil, errors.New("no clipboard tool found (install wl-copy, xclip or xsel)")
+		return "", nil, false
 	}
+}
+
+// hasDisplay reports whether a display server this process can reach exists.
+func hasDisplay() bool {
+	return getenv("WAYLAND_DISPLAY") != "" || getenv("DISPLAY") != ""
+}
+
+// osc52Limit caps the base64 payload, matching xterm's own OSC 52 ceiling.
+// Past it a terminal drops the sequence, so a copy that would be silently
+// lost is reported instead.
+const osc52Limit = 74994
+
+// writeTextOSC52 hands the text to the terminal that is drawing us, which
+// on a remote headless host is the only process with a real clipboard. The
+// app's mouse grab is no obstacle: that only bears on reading a selection.
+func writeTextOSC52(text string) error {
+	if encodedLen := base64.StdEncoding.EncodedLen(len(text)); encodedLen > osc52Limit {
+		return fmt.Errorf("selection is too large to send to the terminal clipboard (%d of %d bytes)", encodedLen, osc52Limit)
+	}
+	return emitSeq(ansi.SetSystemClipboard(text))
 }
