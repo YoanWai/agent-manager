@@ -63,6 +63,12 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 
 The shell is the `[tools.terminal]` block in [config.toml](configuration.md). It ships with no command, which leaves the pane on `$SHELL`; set one to open a different shell. What marks it as a shell is `shell = true`, not its name, so a `[tools.terminal]` block you wrote yourself stays the agent CLI you meant it to be.
 
+### Where the shells sit
+
+Shells gather under a **Terminals** rule pinned to the foot of the list, holding every shell from every group, each row naming the group it belongs to. The tree scrolls above it; the block keeps at most half the list and scrolls inside itself once you have more shells than that. Settings (`s`) has a `terminal rows` row that switches it from `pinned` to `inline`, which puts every shell back among the agents in its own group, marked with `❯` where an agent carries its status dot.
+
+A group's dots and counts describe its agents either way, so the shell you left running a build never shows up as work in progress.
+
 **The keys that write into a pane refuse a shell.** `space` and the review screen's `C` both paste their text and press Enter, so on a shell a sentence meant for an agent would run as a command. Both say the row is a shell and send nothing; enter the session (`↵`) to type there, where what you type is plainly a command. `f` says the same, since a shell has no conversation to fork.
 
 A shell left on its empty command carries no session id, so `agent-manager rename` run inside one cannot find its session. Rename it from the list with `r`. Give the block a command and the pane gets an id like any other session.

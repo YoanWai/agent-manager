@@ -23,6 +23,8 @@ const (
 	railInset = railGutter - 1
 )
 
+const shellGlyph = "❯"
+
 // viewListFrame is the sessions rail beside the session content, both
 // painted surfaces rather than drawn panels.
 func (m *Model) viewListFrame() string {
@@ -132,6 +134,10 @@ func (m *Model) railLines(width, height int) []contentLine {
 	// while entries still have room under it: a rail that is all banner
 	// says nothing about the fleet.
 	const railBannerRows, railListMin = 3, 3
+	// Half the list at most, so the tree the block sits under keeps enough
+	// rows to still read as a tree.
+	shells := m.terminalSectionLines(width, listHeight/2)
+	listHeight -= len(shells)
 	room := func(cost int) bool { return listHeight-len(rows)-cost >= railListMin }
 	// Search heads the list it filters, so the query sits over the entries it
 	// is narrowing. It is also the field being typed into, so a rail too tight
@@ -154,11 +160,12 @@ func (m *Model) railLines(width, height int) []contentLine {
 				subtleStyle.Render("  ") + keyCap("t", "back to active")},
 			contentLine{})
 	}
-	rows = append(rows, m.entryLines(width, max(listHeight-len(rows), 0))...)
+	rows = append(rows, m.entryLines(m.treeRows(), 0, width, max(listHeight-len(rows), 0))...)
 	for len(rows) < listHeight {
 		rows = append(rows, contentLine{})
 	}
 	rows = rows[:listHeight]
+	rows = append(rows, shells...)
 	if meters != nil {
 		rows = append(rows, contentLine{rule: true})
 		for _, line := range meters {
@@ -168,16 +175,18 @@ func (m *Model) railLines(width, height int) []contentLine {
 	return rows
 }
 
-// entryLines renders the visible slice of the tree. Entries are two lines
-// tall, so the window is measured in lines rather than rows. Each line
-// carries the tone its entry painted, which the edge column matches.
-func (m *Model) entryLines(width, height int) []contentLine {
+// entryLines renders the visible slice of rows, which sit at offset in
+// m.rows so the cursor and the tree guides still resolve against the whole
+// list. Entries are two lines tall, so the window is measured in lines
+// rather than rows. Each line carries the tone its entry painted, which the
+// edge column matches.
+func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentLine {
 	// Root alone is still an empty list: it says what the rail holds, not
 	// what to do about it being empty.
-	if rest := m.rowsBelowRoot(); len(rest) == 0 {
+	if rest := rowsBelowRoot(rows); len(rest) == 0 {
 		var lines []contentLine
-		for _, entry := range m.rows {
-			for _, line := range splitLines(m.renderTreeRow(entry, m.cursor == 0, width, 0, panelHex())) {
+		for i, entry := range rows {
+			for _, line := range splitLines(m.renderTreeRow(entry, m.cursor == offset+i, width, offset+i, panelHex())) {
 				lines = append(lines, contentLine{text: line})
 			}
 		}
@@ -186,21 +195,21 @@ func (m *Model) entryLines(width, height int) []contentLine {
 		}
 		return lines
 	}
-	heights := make([]int, len(m.rows))
+	heights := make([]int, len(rows))
 	for i := range heights {
-		heights[i] = m.entryHeight(m.rows[i])
+		heights[i] = m.entryHeight(rows[i])
 	}
-	start, end := lineWindow(heights, m.cursor, height)
+	start, end := lineWindow(heights, m.cursor-offset, height)
 
 	var lines []contentLine
 	for i := start; i < end; i++ {
-		selected := i == m.cursor
-		entry := m.rows[i]
+		selected := offset+i == m.cursor
+		entry := rows[i]
 		tone := panelHex()
 		if selected || m.renamingRow(entry) {
 			tone = selectedHex()
 		}
-		for _, line := range splitLines(m.renderTreeRow(entry, selected, width, i, tone)) {
+		for _, line := range splitLines(m.renderTreeRow(entry, selected, width, offset+i, tone)) {
 			lines = append(lines, contentLine{text: line, tone: tone})
 		}
 	}
@@ -212,13 +221,30 @@ func (m *Model) entryLines(width, height int) []contentLine {
 		lines = append([]contentLine{{text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↑ %d more", start))}}, lines...)
 		spare--
 	}
-	if end < len(m.rows) && spare > 0 {
-		lines = append(lines, contentLine{text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↓ %d more", len(m.rows)-end))})
+	if end < len(rows) && spare > 0 {
+		lines = append(lines, contentLine{text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↓ %d more", len(rows)-end))})
 	}
 	if len(lines) > height {
 		lines = lines[:height]
 	}
 	return lines
+}
+
+// terminalSectionLines is the pinned Terminals block: a divider and the
+// shell rows under it, windowed like the tree so a long list of shells
+// scrolls inside the block instead of pushing the tree off screen. The
+// label is the first thing dropped when the rail is short, since a shell
+// row the cursor can reach outranks the heading over it.
+func (m *Model) terminalSectionLines(width, budget int) []contentLine {
+	if m.pinnedShells == 0 || budget < 1 {
+		return nil
+	}
+	at := len(m.rows) - m.pinnedShells
+	if budget == 1 {
+		return m.entryLines(m.rows[at:], at, width, 1)
+	}
+	head := contentLine{text: strings.Repeat(" ", railInset) + divider("Terminals", width-railInset)}
+	return append([]contentLine{head}, m.entryLines(m.rows[at:], at, width, budget-1)...)
 }
 
 // entryHeight is how many lines an entry paints: one in the compact list,
@@ -273,6 +299,21 @@ func lineWindow(heights []int, cursor, budget int) (int, int) {
 	return start, end
 }
 
+// emptyTreeReason is why the tree is bare, phrased to follow "no agents".
+// Ranked like the title chain above it: the narrowest view wins.
+func (m *Model) emptyTreeReason() string {
+	switch {
+	case strings.TrimSpace(m.search) != "":
+		return "match"
+	case m.statusFilter.active():
+		return "need " + m.statusFilter.label()
+	case m.showArchived:
+		return "archived"
+	default:
+		return "yet"
+	}
+}
+
 func (m *Model) emptyRailLines(width, height int) []string {
 	title := "no sessions yet"
 	hint := keyCap("n", "starts one")
@@ -287,6 +328,12 @@ func (m *Model) emptyRailLines(width, height int) []string {
 	if search := strings.TrimSpace(m.search); search != "" {
 		title = "no matches"
 		hint = subtleStyle.Render("for \"" + search + "\"")
+	}
+	// The Terminals block below can be full while the tree is bare, so the
+	// empty state says what is missing rather than claiming the rail holds
+	// nothing.
+	if m.pinnedShells > 0 {
+		title = "no agents " + m.emptyTreeReason()
 	}
 	titleLine := centerLine(
 		lipgloss.NewStyle().Bold(true).Foreground(colorBright).Render(title),
@@ -410,9 +457,20 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 	return m.renderSessionEntry(entry, selected, width, pad, guides, trail, bg)
 }
 
+// sessionGlyph is the mark ahead of a session's name. An inline shell takes
+// a caret rather than an idle dot it would never leave, but a pane that has
+// gone still has to say so.
+func (m *Model) sessionGlyph(sess store.Session) string {
+	resting := sess.Status != status.Dead && sess.Status != status.Errored
+	if resting && m.isShell(sess.Tool) && !m.pinnedShell(sess) {
+		return subtleStyle.Render(shellGlyph)
+	}
+	return lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
+}
+
 func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
 	sess := entry.sess
-	dot := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
+	dot := m.sessionGlyph(sess)
 	nameStyle := valueStyle
 	if selected {
 		nameStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
@@ -427,10 +485,16 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	if selected {
 		metaStyle = mutedStyle
 	}
+	// A pinned shell already sits under a Terminals heading, so its tool
+	// name is dead weight where the group it left behind is not.
+	detail := sess.Tool
+	if m.pinnedShell(sess) {
+		detail = displayGroup(sess.Group)
+	}
 	// A session names its state in words as well as in its dot; a group,
 	// whose row rolls several states together, is left to its dots.
 	meta := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
-		metaStyle.Render(" · "+sess.Tool+" · "+relSince(lastActivity(sess)))
+		metaStyle.Render(" · "+detail+" · "+relSince(lastActivity(sess)))
 
 	if m.comfortableRows {
 		return stackedRow(head, metaIndent(pad, trail)+meta, width, bg)
@@ -798,7 +862,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 	var rows []rosterRow
 	overflow := ""
 	shown := 0
-	for _, sess := range m.listedSessions() {
+	for _, sess := range m.listedAgents() {
 		if !inGroupSubtree(sess.Group, group) {
 			continue
 		}
@@ -894,7 +958,7 @@ func (m *Model) viewQuickBar(width int) string {
 			worktree := subtleStyle.Render("worktree off")
 			switch {
 			case !m.worktreeCapable(m.quickTargetDir()):
-				worktree = subtleStyle.Render(worktreeUnavailable)
+				worktree = subtleStyle.Render("worktree " + worktreeUnavailable)
 			case m.quickWorktreeOn():
 				worktree = lipgloss.NewStyle().Foreground(colorAccent2).Render("worktree on")
 			}
@@ -959,14 +1023,14 @@ func joinHeaderPieces(sep string, pieces ...string) string {
 }
 
 // headerScope names what the list is showing. The count is of the same
-// sessions the rollup beside it breaks down, so the two lines always add
-// up; counting painted rows instead would drop everything folded inside
-// a collapsed group.
+// agents the rollup beside it breaks down, so the two lines always add up;
+// counting painted rows instead would drop everything folded inside a
+// collapsed group. Shells are left to their own block.
 func (m *Model) headerScope() string {
-	count := len(m.listedSessions())
-	label := " sessions"
+	count := len(m.listedAgents())
+	label := " agents"
 	if count == 1 {
-		label = " session"
+		label = " agent"
 	}
 	scope := subtleStyle.Render(" · active")
 	if m.showArchived {
@@ -994,10 +1058,10 @@ func (m *Model) headerAgents() string {
 }
 
 // viewStatusCounts is the fleet-at-a-glance strip: a tinted dot and count
-// per state present among the listed sessions.
+// per state present among the listed agents.
 func (m *Model) viewStatusCounts(compact bool) string {
 	counts := map[string]int{}
-	for _, sess := range m.listedSessions() {
+	for _, sess := range m.listedAgents() {
 		counts[sess.Status]++
 	}
 	var parts []string

@@ -82,8 +82,8 @@ func TestStatusFilterKeyKeepsAttentionSessions(t *testing.T) {
 	if !strings.Contains(header, "ATTENTION") {
 		t.Fatalf("header missing ATTENTION badge:\n%s", header)
 	}
-	if !strings.Contains(header, "3 session") {
-		t.Fatalf("header count should match listed sessions:\n%s", header)
+	if !strings.Contains(header, "3 agents") {
+		t.Fatalf("header count should match the listed agents:\n%s", header)
 	}
 	footer := ansi.Strip(m.viewFooter())
 	if !strings.Contains(footer, "show all") {
@@ -220,7 +220,7 @@ func TestAttentionFilterKeepsSelectedAfterAck(t *testing.T) {
 	if !ok {
 		t.Fatal("expected a selected session")
 	}
-	if err := m.acknowledgeFinished(sess); err != nil {
+	if err := m.store.AcknowledgeFinished(sess.ID); err != nil {
 		t.Fatalf("acknowledge: %v", err)
 	}
 	loadStoredRows(t, m)
@@ -245,7 +245,7 @@ func TestAttentionFilterDropsAckedAfterMove(t *testing.T) {
 	if !ok {
 		t.Fatal("expected a selected session")
 	}
-	if err := m.acknowledgeFinished(sess); err != nil {
+	if err := m.store.AcknowledgeFinished(sess.ID); err != nil {
 		t.Fatalf("acknowledge: %v", err)
 	}
 	loadStoredRows(t, m)

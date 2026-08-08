@@ -2,11 +2,10 @@ package ui
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/termseq"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -400,28 +399,13 @@ func ResetTerminalBackground() {
 // keeps blending its own — the exact ring the backdrop scheme exists to
 // avoid. EnableTerminalPassthrough must have opened the envelope first.
 func emitToTerminal(seq string) {
-	if os.Getenv("TMUX") != "" {
-		os.Stdout.WriteString(tmuxPassthrough(seq))
-		return
-	}
-	os.Stdout.WriteString(seq)
+	_ = termseq.Emit(seq)
 }
 
-// tmuxPassthrough wraps a sequence in DCS tmux;…ST, doubling every ESC as
-// tmux's passthrough protocol requires.
-func tmuxPassthrough(seq string) string {
-	return "\x1bPtmux;" + strings.ReplaceAll(seq, "\x1b", "\x1b\x1b") + "\x1b\\"
-}
-
-// EnableTerminalPassthrough asks the hosting tmux, when there is one, to
-// let this pane's passthrough sequences reach the outer terminal. Off by
-// default since tmux 3.3, and without it the backdrop sync above dies at
-// the multiplexer.
+// EnableTerminalPassthrough opens the tmux passthrough envelope the backdrop
+// sync and the clipboard fallback both write through.
 func EnableTerminalPassthrough() {
-	if os.Getenv("TMUX") == "" {
-		return
-	}
-	_ = exec.Command("tmux", "set-option", "-p", "allow-passthrough", "on").Run()
+	termseq.EnablePassthrough()
 }
 
 // bgSeq is the raw "set background" SGR for a hex color, for the few spots

@@ -102,6 +102,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openFork()
 	case "v":
 		return m.reviveSelected()
+	case ".":
+		return m.acknowledgeSelected()
 	case "V", "shift+v":
 		return m.reviveAllDead()
 	case "R", "shift+r":
@@ -241,7 +243,13 @@ func (m *Model) visibleReorderTarget(entry treeRow, delta int) (treeRow, bool) {
 	if delta < 0 {
 		step = -1
 	}
-	for i := m.cursor + step; i >= 0 && i < len(m.rows); i += step {
+	// The pinned block and the tree are separate orderings, so a reorder
+	// never pairs a row in one with a row in the other.
+	from, to := 0, len(m.treeRows())
+	if m.cursor >= to {
+		from, to = to, len(m.rows)
+	}
+	for i := m.cursor + step; i >= from && i < to; i += step {
 		candidate := m.rows[i]
 		if candidate.isRoot() {
 			// parentGroup("") is "" too, so root would match a top-level
@@ -427,6 +435,10 @@ const focusKeySetting = "focus_key"
 const quickCloseSetting = "quick_prompt_close"
 
 const worktreeSetting = "worktree_default"
+
+// terminalPlacementSetting is where shells sit: "pinned" gathers them in
+// their own block, "inline" leaves them among the agents in their group.
+const terminalPlacementSetting = "terminal_placement"
 
 // hiddenToolsSetting lists CLI tools omitted from new-session pickers
 // (comma-separated names). Empty means every configured tool is shown.

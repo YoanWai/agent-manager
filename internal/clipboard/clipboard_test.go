@@ -1,9 +1,11 @@
 package clipboard
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -11,9 +13,19 @@ import (
 
 func restore() func() {
 	origGOOS, origLook, origRun, origToFile, origWSL, origNative := goos, lookPath, runCmd, runCmdToFile, wslProbe, readNativeImage
+	origEnv, origEmit := getenv, emitSeq
 	return func() {
 		goos, lookPath, runCmd, runCmdToFile, wslProbe, readNativeImage = origGOOS, origLook, origRun, origToFile, origWSL, origNative
+		getenv, emitSeq = origEnv, origEmit
 	}
+}
+
+// headlessLinux is the reported bug's environment: a Linux box with no
+// display server behind a terminal that does have a clipboard.
+func headlessLinux() {
+	goos = "linux"
+	wslProbe = func() bool { return false }
+	getenv = func(string) string { return "" }
 }
 
 func TestSaveImageDarwinPrefersNative(t *testing.T) {
@@ -383,6 +395,180 @@ func TestSweepStaleWithoutDirectory(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	if err := SweepStale(7 * 24 * time.Hour); err != nil {
 		t.Fatalf("missing pastes dir is not an error: %v", err)
+	}
+}
+
+func TestWriteTextHeadlessUsesOSC52(t *testing.T) {
+	defer restore()()
+	headlessLinux()
+	var emitted string
+	emitSeq = func(seq string) error {
+		emitted = seq
+		return nil
+	}
+	if err := WriteText("hello"); err != nil {
+		t.Fatal(err)
+	}
+	want := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte("hello")) + "\x07"
+	if emitted != want {
+		t.Fatalf("emitted = %q, want %q", emitted, want)
+	}
+}
+
+// An installed xclip on a headless host is a writer that fails at runtime,
+// so the display check has to come before the lookups.
+func TestWriteTextHeadlessSkipsDisplayTools(t *testing.T) {
+	defer restore()()
+	headlessLinux()
+	lookPath = func(name string) (string, error) { return "/usr/bin/" + name, nil }
+	var emitted bool
+	emitSeq = func(string) error {
+		emitted = true
+		return nil
+	}
+	if err := WriteText("hello"); err != nil {
+		t.Fatal(err)
+	}
+	if !emitted {
+		t.Fatal("xclip on a displayless host should not win over OSC 52")
+	}
+}
+
+// Every non-Linux platform keeps its writer exactly as before the OSC 52
+// fallback existed.
+func TestCopyCommandPlatformWriters(t *testing.T) {
+	defer restore()()
+	lookPath = func(name string) (string, error) { return "", errors.New("not found") }
+	getenv = func(string) string { return "" }
+
+	goos = "darwin"
+	wslProbe = func() bool { return false }
+	if name, _, ok := copyCommand(); !ok || name != "pbcopy" {
+		t.Fatalf("darwin writer = %q %v", name, ok)
+	}
+
+	goos = "windows"
+	if name, _, ok := copyCommand(); !ok || name != "clip" {
+		t.Fatalf("windows writer = %q %v", name, ok)
+	}
+
+	goos = "linux"
+	wslProbe = func() bool { return true }
+	if name, _, ok := copyCommand(); !ok || name != "clip.exe" {
+		t.Fatalf("WSL writer = %q %v", name, ok)
+	}
+}
+
+// A desktop Linux box with a display but no tool installed used to get the
+// "install wl-copy, xclip or xsel" error; now the terminal takes the copy.
+func TestWriteTextDisplayWithoutToolsFallsBackToOSC52(t *testing.T) {
+	defer restore()()
+	headlessLinux()
+	getenv = func(name string) string {
+		if name == "WAYLAND_DISPLAY" {
+			return "wayland-0"
+		}
+		return ""
+	}
+	lookPath = func(name string) (string, error) { return "", errors.New("not found") }
+	var emitted bool
+	emitSeq = func(string) error {
+		emitted = true
+		return nil
+	}
+	if err := WriteText("hello"); err != nil {
+		t.Fatal(err)
+	}
+	if !emitted {
+		t.Fatal("a display with no tools should fall back to OSC 52")
+	}
+}
+
+func TestCopyCommandPrefersDisplayTools(t *testing.T) {
+	defer restore()()
+	headlessLinux()
+	getenv = func(name string) string {
+		if name == "DISPLAY" {
+			return ":0"
+		}
+		return ""
+	}
+	lookPath = func(name string) (string, error) {
+		if name == "xclip" {
+			return "/usr/bin/xclip", nil
+		}
+		return "", errors.New("not found")
+	}
+	name, args, ok := copyCommand()
+	if !ok || name != "xclip" || strings.Join(args, " ") != "-selection clipboard" {
+		t.Fatalf("copyCommand() = %q %v %v", name, args, ok)
+	}
+}
+
+// 56244 raw bytes encode to 74992, the largest payload under the cap;
+// one more raw byte encodes to 74996 and crosses it.
+func TestWriteTextOSC52SizeBoundary(t *testing.T) {
+	defer restore()()
+	headlessLinux()
+	var emitted bool
+	emitSeq = func(string) error {
+		emitted = true
+		return nil
+	}
+	if err := WriteText(strings.Repeat("x", 56244)); err != nil {
+		t.Fatalf("largest fitting payload: %v", err)
+	}
+	if !emitted {
+		t.Fatal("largest fitting payload should reach the terminal")
+	}
+
+	emitted = false
+	err := WriteText(strings.Repeat("x", 56245))
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("oversized copy error = %v", err)
+	}
+	if emitted {
+		t.Fatal("an oversized payload must not reach the terminal")
+	}
+}
+
+// A stale SSH DISPLAY selects xclip, which then dies with "Can't open
+// display"; the copy must still land through OSC 52.
+func TestWriteTextNativeFailureFallsBackToOSC52(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs a unix shell script as the fake writer")
+	}
+	defer restore()()
+	headlessLinux()
+	getenv = func(name string) string {
+		if name == "DISPLAY" {
+			return "localhost:10.0"
+		}
+		return ""
+	}
+	binDir := t.TempDir()
+	fake := filepath.Join(binDir, "xclip")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho 'Error: Can't open display' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+	lookPath = func(name string) (string, error) {
+		if name == "xclip" {
+			return fake, nil
+		}
+		return "", errors.New("not found")
+	}
+	var emitted string
+	emitSeq = func(seq string) error {
+		emitted = seq
+		return nil
+	}
+	if err := WriteText("hello"); err != nil {
+		t.Fatal(err)
+	}
+	want := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte("hello")) + "\x07"
+	if emitted != want {
+		t.Fatalf("emitted = %q, want %q", emitted, want)
 	}
 }
 

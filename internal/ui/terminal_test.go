@@ -54,6 +54,8 @@ func terminalSession(t *testing.T, m *Model) store.Session {
 	return store.Session{}
 }
 
+// spawnTerminal returns the shell this call made, which openTerminal leaves
+// the cursor on; terminalSession would answer with the oldest one.
 func spawnTerminal(t *testing.T, m *Model) store.Session {
 	t.Helper()
 	_, cmd := m.openTerminal()
@@ -61,7 +63,11 @@ func spawnTerminal(t *testing.T, m *Model) store.Session {
 		t.Fatalf("terminal spawn reported %q", m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
-	return terminalSession(t, m)
+	sess, ok := m.selected()
+	if !ok || !m.isShell(sess.Tool) {
+		t.Fatalf("spawn should leave the cursor on the new shell, got %+v", sess)
+	}
+	return sess
 }
 
 func TestOpenTerminalSpawnsShellInSelectedGroup(t *testing.T) {
