@@ -282,6 +282,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.worktreeDefault {
 		worktreeDefault = "on"
 	}
+	terminals := "inline"
+	if m.settings.shellsPinned {
+		terminals = "pinned"
+	}
 	toolValue := ""
 	if len(m.settings.toolNames) > 0 {
 		toolValue = m.settings.toolNames[m.settings.toolIndex]
@@ -324,6 +328,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
+		row(settingsFieldTerminals, "terminal rows", terminals) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
 		bugRow + "\n" +
 		bugNote + "\n" +

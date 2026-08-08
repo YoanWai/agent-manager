@@ -146,7 +146,7 @@ func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
 func railText(t *testing.T, m *Model) []string {
 	t.Helper()
 	var out []string
-	for _, line := range m.entryLines(60, 20) {
+	for _, line := range m.entryLines(m.treeRows(), 0, 60, 20) {
 		out = append(out, strings.TrimRight(ansi.Strip(line.text), " "))
 	}
 	return out
@@ -254,7 +254,7 @@ func TestComfortableRowSurvivesShortRail(t *testing.T) {
 	}
 	m.selectSessionRow(t, "three")
 
-	lines := m.entryLines(60, 2)
+	lines := m.entryLines(m.treeRows(), 0, 60, 2)
 	if len(lines) != 2 {
 		t.Fatalf("entry lines = %d want 2", len(lines))
 	}

@@ -338,7 +338,7 @@ func TestHeaderShowsUpdateBadgeBesideWordmark(t *testing.T) {
 	if !strings.Contains(header, "v0.9.0") || !strings.Contains(header, "available") {
 		t.Errorf("header missing update badge: %q", header)
 	}
-	if strings.Index(header, "available") > strings.Index(header, "sessions") {
+	if strings.Index(header, "available") > strings.Index(header, "agents") {
 		t.Errorf("badge should sit left, by the wordmark: %q", header)
 	}
 	m.update.latest = ""
