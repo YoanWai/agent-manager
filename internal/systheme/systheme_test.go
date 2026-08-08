@@ -45,7 +45,7 @@ func TestDarwinScheme(t *testing.T) {
 }
 
 const (
-	portalKey   = "dbus-send --session --print-reply=literal --dest=org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop org.freedesktop.portal.Settings.Read string:org.freedesktop.appearance string:color-scheme"
+	portalKey   = "dbus-send --session --type=method_call --print-reply=literal --dest=org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop org.freedesktop.portal.Settings.Read string:org.freedesktop.appearance string:color-scheme"
 	schemeKey   = "gsettings get org.gnome.desktop.interface color-scheme"
 	gtkThemeKey = "gsettings get org.gnome.desktop.interface gtk-theme"
 )

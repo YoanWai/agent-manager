@@ -88,7 +88,7 @@ func linuxScheme(run runner) Scheme {
 }
 
 func portalScheme(run runner) Scheme {
-	out, err := run("dbus-send", "--session", "--print-reply=literal",
+	out, err := run("dbus-send", "--session", "--type=method_call", "--print-reply=literal",
 		"--dest=org.freedesktop.portal.Desktop",
 		"/org/freedesktop/portal/desktop",
 		"org.freedesktop.portal.Settings.Read",
