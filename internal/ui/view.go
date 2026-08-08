@@ -495,7 +495,7 @@ func (m *Model) rowLegend() legendSection {
 		title, conversation = "Shell", nil
 	}
 	pairs := [][2]string{{"↵", enterHint}, {"A", attachHint}}
-	if row.sess.Status == status.Finished {
+	if row.sess.Status == status.Finished && !row.sess.Archived {
 		pairs = append(pairs, [2]string{".", "mark idle"})
 	}
 	pairs = append(pairs, conversation...)

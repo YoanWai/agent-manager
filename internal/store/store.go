@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/status"
 	_ "modernc.org/sqlite"
 )
 
@@ -380,23 +381,11 @@ func (s *Store) UpdateStatus(id, newStatus string) error {
 func (s *Store) AcknowledgeFinished(id string) error {
 	res, err := s.db.Exec(
 		`UPDATE sessions SET status = ?, acked = 1, last_status_at = ? WHERE id = ? AND status = ?`,
-		"idle", encodeTime(time.Now()), id, "finished")
+		status.Idle, encodeTime(time.Now()), id, status.Finished)
 	if err != nil {
 		return err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n > 0 {
-		return nil
-	}
-	var exists int
-	err = s.db.QueryRow(`SELECT 1 FROM sessions WHERE id = ?`, id).Scan(&exists)
-	if err == sql.ErrNoRows {
-		return fmt.Errorf("session %s: %w", id, ErrSessionGone)
-	}
-	return err
+	return s.requireRowOrNoop(res, id)
 }
 
 // SetAcked marks whether the user has acknowledged the session's last
@@ -639,21 +628,7 @@ func (s *Store) UpdateTool(id, tool string) error {
 	if err != nil {
 		return err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n > 0 {
-		return nil
-	}
-	// Zero rows: either the tool already matched (success no-op) or the
-	// session is gone. Distinguish so callers still see ErrSessionGone.
-	var exists int
-	err = s.db.QueryRow(`SELECT 1 FROM sessions WHERE id = ?`, id).Scan(&exists)
-	if err == sql.ErrNoRows {
-		return fmt.Errorf("session %s: %w", id, ErrSessionGone)
-	}
-	return err
+	return s.requireRowOrNoop(res, id)
 }
 
 // DeleteGroup removes a group and all its descendant groups, reporting
@@ -1060,6 +1035,25 @@ func (s *Store) persistGroupOrder(groups []Group) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// requireRowOrNoop resolves a guarded UPDATE that matched zero rows: either
+// the WHERE condition already held (success no-op) or the session is gone.
+// Distinguish so callers still see ErrSessionGone.
+func (s *Store) requireRowOrNoop(res sql.Result, id string) error {
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected > 0 {
+		return nil
+	}
+	var exists int
+	err = s.db.QueryRow(`SELECT 1 FROM sessions WHERE id = ?`, id).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("session %s: %w", id, ErrSessionGone)
+	}
+	return err
 }
 
 func requireRow(res sql.Result, id string) error {

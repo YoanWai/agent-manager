@@ -1147,14 +1147,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case diffProbeMsg:
 		return m, m.handleDiffProbe(msg)
 
-	case acknowledgeFinishedMsg:
-		if msg.err != nil {
-			m.errBar.text = msg.err.Error()
-			return m, nil
-		}
-		m.errBar.text = ""
-		return m, m.refreshCmd()
-
 	case errMsg:
 		m.errBar.text = msg.err.Error()
 		return m, nil

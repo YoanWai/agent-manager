@@ -110,7 +110,7 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.errBar.text = ""
-	if err := m.acknowledgeFinished(sess); err != nil {
+	if err := m.store.AcknowledgeFinished(sess.ID); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}

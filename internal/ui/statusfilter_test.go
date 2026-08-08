@@ -220,7 +220,7 @@ func TestAttentionFilterKeepsSelectedAfterAck(t *testing.T) {
 	if !ok {
 		t.Fatal("expected a selected session")
 	}
-	if err := m.acknowledgeFinished(sess); err != nil {
+	if err := m.store.AcknowledgeFinished(sess.ID); err != nil {
 		t.Fatalf("acknowledge: %v", err)
 	}
 	loadStoredRows(t, m)
@@ -245,7 +245,7 @@ func TestAttentionFilterDropsAckedAfterMove(t *testing.T) {
 	if !ok {
 		t.Fatal("expected a selected session")
 	}
-	if err := m.acknowledgeFinished(sess); err != nil {
+	if err := m.store.AcknowledgeFinished(sess.ID); err != nil {
 		t.Fatalf("acknowledge: %v", err)
 	}
 	loadStoredRows(t, m)

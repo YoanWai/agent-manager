@@ -280,48 +280,33 @@ func TestAttachAcknowledgesFinished(t *testing.T) {
 
 func TestDotAcknowledgesOnlyCurrentFinishedStatus(t *testing.T) {
 	cases := []struct {
-		name        string
-		selected    string
-		newer       string
-		wantStatus  string
-		wantAcked   bool
-		wantCommand bool
+		name       string
+		listed     string
+		stored     string
+		wantStatus string
+		wantAcked  bool
+		wantOffer  bool
 	}{
-		{name: "finished", selected: status.Finished, wantStatus: status.Idle, wantAcked: true, wantCommand: true},
-		{name: "newer working", selected: status.Finished, newer: status.Working, wantStatus: status.Working, wantCommand: true},
-		{name: "working", selected: status.Working, wantStatus: status.Working},
+		{name: "finished", listed: status.Finished, stored: status.Finished, wantStatus: status.Idle, wantAcked: true, wantOffer: true},
+		{name: "stale snapshot", listed: status.Finished, stored: status.Working, wantStatus: status.Working, wantOffer: true},
+		{name: "working", listed: status.Working, stored: status.Working, wantStatus: status.Working},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := buildModel(t)
 			createSession(t, m, "alert-me", t.TempDir(), "")
 			sess := m.sessionRows()[0]
-			if err := m.store.UpdateStatus(sess.ID, tc.selected); err != nil {
-				t.Fatalf("set selected status: %v", err)
+			if err := m.store.UpdateStatus(sess.ID, tc.stored); err != nil {
+				t.Fatalf("set stored status: %v", err)
 			}
-			m.sessions[0].Status = tc.selected
+			m.sessions[0].Status = tc.listed
 			m.rebuildRows()
 			m.selectSessionRow(t, "alert-me")
-			if offered := strings.Contains(m.viewFooter(), "mark idle"); offered != tc.wantCommand {
-				t.Fatalf("dot footer offered = %v, want %v", offered, tc.wantCommand)
+			if offered := strings.Contains(m.viewFooter(), "mark idle"); offered != tc.wantOffer {
+				t.Fatalf("dot footer offered = %v, want %v", offered, tc.wantOffer)
 			}
 
-			_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
-			if (cmd != nil) != tc.wantCommand {
-				t.Fatalf("dot command = %v, want command %v", cmd != nil, tc.wantCommand)
-			}
-			if cmd != nil {
-				if tc.newer != "" {
-					if err := m.store.UpdateStatus(sess.ID, tc.newer); err != nil {
-						t.Fatalf("set newer status: %v", err)
-					}
-				}
-				updated, refresh := m.Update(cmd())
-				*m = *updated.(*Model)
-				if refresh == nil {
-					t.Fatal("acknowledgment did not schedule a refresh")
-				}
-			}
+			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
 			got, err := m.store.Get(sess.ID)
 			if err != nil {
 				t.Fatalf("get: %v", err)
@@ -333,6 +318,35 @@ func TestDotAcknowledgesOnlyCurrentFinishedStatus(t *testing.T) {
 				t.Fatalf("dot left list mode: %v", m.mode)
 			}
 		})
+	}
+}
+
+func TestDotKeepsArchivedFinishedStatus(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "kept", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
+		t.Fatalf("set finished: %v", err)
+	}
+	if err := m.store.SetArchived(sess.ID, true); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	m.sessions[0].Status = status.Finished
+	m.sessions[0].Archived = true
+	m.showArchived = true
+	m.rebuildRows()
+	m.selectSessionRow(t, "kept")
+	if strings.Contains(m.viewFooter(), "mark idle") {
+		t.Fatal("dot offered on an archived session")
+	}
+
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Finished || got.Acked {
+		t.Fatalf("archived session changed: status = %q acked = %v", got.Status, got.Acked)
 	}
 }
 
