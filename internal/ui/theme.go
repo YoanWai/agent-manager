@@ -371,6 +371,7 @@ func applyTheme(t Theme) {
 	colorErrored = lipgloss.Color(t.Errored)
 	colorIdle = lipgloss.Color(t.Idle)
 
+	rebuildCaptureBackdrop(t)
 	rebuildStyles()
 }
 
@@ -391,6 +392,18 @@ func SyncTerminalBackground() {
 // when the manager exits.
 func ResetTerminalBackground() {
 	emitToTerminal("\x1b]111\x07")
+}
+
+// SyncAttachBackground repaints the terminal for a full-screen attach. On
+// a light theme the agent gets the capture backdrop's dark color — its
+// colors were picked for a dark terminal, same as in the preview panel.
+// attachDoneMsg restores the theme backdrop on detach. On a dark theme the
+// synced color already serves both, so nothing is emitted.
+func SyncAttachBackground() {
+	if !captureOnDark {
+		return
+	}
+	emitToTerminal("\x1b]11;" + themes[0].Bg + "\x07")
 }
 
 // emitToTerminal sends a control sequence to whatever is actually drawing

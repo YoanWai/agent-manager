@@ -146,6 +146,24 @@ func TestPreviewLine(t *testing.T) {
 	}
 }
 
+func TestPreviewLineCaptureBackdrop(t *testing.T) {
+	onLightTheme(t)
+	line := previewLine("hi", 10)
+	if !strings.HasPrefix(line, captureOpen) {
+		t.Errorf("capture line does not open with backdrop colors: %q", line)
+	}
+	if !strings.Contains(line, captureBgSeq+strings.Repeat(" ", 8)+"\x1b[0m") {
+		t.Errorf("padding not painted with the backdrop: %q", line)
+	}
+}
+
+func TestPreviewLineDarkThemeUnchanged(t *testing.T) {
+	applyTheme(themes[0])
+	if got := previewLine("hi", 4); got != "hi  " {
+		t.Errorf("dark theme preview line rewritten: %q", got)
+	}
+}
+
 func TestTruncateRuneSafe(t *testing.T) {
 	hebrew := "/home/dev/פרויקטים/agent-manager"
 	tail := truncateTail(hebrew, 10)
