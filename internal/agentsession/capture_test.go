@@ -196,3 +196,19 @@ func TestGeminiSessionFileInResolvesByID(t *testing.T) {
 		t.Fatal("expected an error for an unknown conversation id")
 	}
 }
+
+// Only gemini keeps a conversation in a file a fork can load. Any other
+// store must be refused rather than read through the gemini layout.
+func TestSessionFileRefusesStoresWithoutAFile(t *testing.T) {
+	for _, sessionStore := range []string{"", "codex", "opencode", "weird"} {
+		if SupportsSessionFile(sessionStore) {
+			t.Errorf("SupportsSessionFile(%q) = true", sessionStore)
+		}
+		if _, err := SessionFile(sessionStore, "some-conversation"); err == nil {
+			t.Errorf("SessionFile(%q, ...) resolved a path", sessionStore)
+		}
+	}
+	if !SupportsSessionFile("gemini") {
+		t.Error(`SupportsSessionFile("gemini") = false`)
+	}
+}

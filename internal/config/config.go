@@ -33,10 +33,12 @@ type Tool struct {
 	// resumes the working directory's most recent conversation.
 	ResumeByIDCommand string `toml:"resume_by_id_command"`
 	// ForkCommand creates a new conversation from an existing one. Templates
-	// can use {id}, {new_id}, and {name}; Agent Manager quotes each value.
+	// can use {id}, {session_file}, {new_id}, and {name}; Agent Manager quotes
+	// each value. {session_file} needs SessionStore to keep one ("gemini").
 	ForkCommand string `toml:"fork_command"`
 	// SessionStore names the built-in capturer that reads back the id a tool
-	// minted itself when it has no SessionIDFlag ("codex" or "opencode").
+	// minted itself when it has no SessionIDFlag ("codex", "opencode" or
+	// "gemini").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini" or

@@ -24,15 +24,16 @@ Rules match top-down against the visible pane text; first match wins, and `defau
 
 **Status detection.** Optional per-tool fields refine it: `activity_cutoff` (regex locating the tool's input box, everything above it is turn content), `turn_end` (a turn-summary line marking the turn as over), `busy_line` (work that outlives its turn, such as background agents), `chrome_line`, `blocked_line`, and `trailing_note`. `status_source = "claude-hooks"` switches status to Claude Code hook events (see [Status](usage.md#status)). The generated config's `claude` and `opencode` blocks show all of them in use.
 
-**Revive.** `resume_by_id_command` resumes one exact conversation, with `{id}` replaced by the session's captured agent id. That id comes either from launching under an id the manager mints (`session_id_flag`, e.g. `--session-id`) or from reading back an id the tool minted itself (`session_store = "codex" | "opencode"`). `revive_command` is what `v` falls back to when no id is available, e.g. `claude --continue`.
+**Revive.** `resume_by_id_command` resumes one exact conversation, with `{id}` replaced by the session's captured agent id. That id comes either from launching under an id the manager mints (`session_id_flag`, e.g. `--session-id`) or from reading back an id the tool minted itself (`session_store = "codex" | "opencode" | "gemini"`). `revive_command` is what `v` falls back to when no id is available, e.g. `claude --continue`.
 
 **Forks.** `fork_command` creates a conversation from an existing session. Agent Manager replaces and shell-quotes these placeholders:
 
-- `{id}`: The source conversation ID. This placeholder is required.
+- `{id}`: The source conversation ID.
+- `{session_file}`: The source conversation's file on disk, for a tool that forks by loading a file (Gemini CLI: `gemini --session-file`). Available with `session_store = "gemini"`.
 - `{new_id}`: A new UUID that Agent Manager records for exact revival.
 - `{name}`: The new Agent Manager session name.
 
-Claude Code and Codex include default fork commands. A custom tool can omit `{new_id}` when its `session_store` captures the generated ID.
+A `fork_command` references its source through `{id}` or `{session_file}`, so one of those two is required. Claude Code, Codex and Gemini CLI include default fork commands. A custom tool can omit `{new_id}` when its `session_store` captures the generated ID.
 
 **Prompts.** `prompt_flag` controls how the new-session form's optional prompt is embedded into the launch command. Tools that take the prompt as a positional argument (Claude Code: `claude 'the prompt'`) leave it empty; tools whose positional argument means something else declare the flag (OpenCode: `prompt_flag = "--prompt"`, since its positional argument is the project path). The prompt only shapes the launch command; revive (`v`) uses the revive commands untouched.
 
