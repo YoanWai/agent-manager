@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -207,6 +208,76 @@ func TestOpenForkRequiresConfiguredCommandAndConversationID(t *testing.T) {
 	}
 }
 
+// Every fork_command the manager ships has to satisfy its own validator, so
+// a placeholder can never outrun the session store that resolves it.
+func TestShippedForkCommandsValidate(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Tools) < 6 {
+		t.Fatalf("built-in tools = %d, expected every shipped CLI", len(cfg.Tools))
+	}
+	source := store.Session{Name: "source", AgentSessionID: "source-conversation"}
+	forkable := 0
+	for name, tool := range cfg.Tools {
+		if tool.Shell || tool.ForkCommand == "" {
+			continue
+		}
+		forkable++
+		if err := validateForkSource(name, tool, source); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if forkable == 0 {
+		t.Fatal("no shipped tool defines a fork_command")
+	}
+}
+
+// {session_file} only resolves for a store that keeps conversations in a
+// file. A tool without one would otherwise fork against a gemini path.
+func TestOpenForkRejectsSessionFileWithoutAFileBackedStore(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	source := store.Session{
+		ID:             "claude-source",
+		Name:           "source",
+		Tool:           "claude",
+		Cwd:            dir,
+		Status:         status.Idle,
+		AgentSessionID: "claude-conversation",
+	}
+	if err := m.store.CreateSession(source); err != nil {
+		t.Fatal(err)
+	}
+	loadStoredRows(t, m)
+	m.selectSessionRow(t, "source")
+
+	previousResolver := forkSessionFileResolver
+	forkSessionFileResolver = func(sessionStore, id string) (string, error) {
+		t.Errorf("resolver called for session store %q, id %q", sessionStore, id)
+		return "", nil
+	}
+	t.Cleanup(func() { forkSessionFileResolver = previousResolver })
+
+	tool := m.cfg.Tools["claude"]
+	if tool.SessionStore != "" {
+		t.Fatalf("claude session_store = %q, want empty", tool.SessionStore)
+	}
+	tool.ForkCommand = "claude --session-file {session_file}"
+	m.cfg.Tools["claude"] = tool
+
+	m.openFork()
+
+	if m.mode == modeFork {
+		t.Fatal("fork opened for a tool whose store keeps no session file")
+	}
+	if !strings.Contains(m.errBar.text, "{session_file}") ||
+		!strings.Contains(m.errBar.text, `session_store = "gemini"`) {
+		t.Fatalf("err = %q, want it to name the placeholder and the store it needs", m.errBar.text)
+	}
+}
+
 func TestOpenForkRejectsGroup(t *testing.T) {
 	m := buildModel(t)
 	if err := m.store.CreateGroup("work", ""); err != nil {
@@ -312,7 +383,10 @@ func TestForkGeminiResolvesSessionFile(t *testing.T) {
 
 	const sourceFile = "/store/gemini/session-source.jsonl"
 	previousResolver := forkSessionFileResolver
-	forkSessionFileResolver = func(id string) (string, error) {
+	forkSessionFileResolver = func(sessionStore, id string) (string, error) {
+		if sessionStore != "gemini" {
+			t.Errorf("resolver session store = %q, want gemini", sessionStore)
+		}
 		if id != source.AgentSessionID {
 			t.Errorf("resolver id = %q, want %q", id, source.AgentSessionID)
 		}
@@ -323,6 +397,7 @@ func TestForkGeminiResolvesSessionFile(t *testing.T) {
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
 	tool := m.cfg.Tools["gemini"]
 	tool.ForkCommand = "printf '%s\\n' {session_file} > " + tmux.ShellQuote(argsFile) + "; cat"
+	tool.SessionStore = "gemini"
 	tool.MCP = "none"
 	m.cfg.Tools["gemini"] = tool
 
@@ -390,13 +465,14 @@ func TestForkGeminiResolverFailureReportsError(t *testing.T) {
 	m.selectSessionRow(t, "source")
 
 	previousResolver := forkSessionFileResolver
-	forkSessionFileResolver = func(id string) (string, error) {
+	forkSessionFileResolver = func(_, id string) (string, error) {
 		return "", fmt.Errorf("no gemini session file found for conversation %s", id)
 	}
 	t.Cleanup(func() { forkSessionFileResolver = previousResolver })
 
 	tool := m.cfg.Tools["gemini"]
 	tool.ForkCommand = "gemini --session-file {session_file}"
+	tool.SessionStore = "gemini"
 	m.cfg.Tools["gemini"] = tool
 
 	before := len(m.sessionRows())

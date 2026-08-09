@@ -15,9 +15,10 @@ import (
 )
 
 // forkSessionFileResolver resolves a source conversation's on-disk session
-// file for tools whose fork loads a file instead of an id (gemini). A
-// variable so tests substitute a fixture without touching the real store.
-var forkSessionFileResolver = agentsession.GeminiSessionFile
+// file for tools whose fork loads a file instead of an id (gemini), keyed by
+// the tool's session_store. A variable so tests substitute a fixture without
+// touching the real store.
+var forkSessionFileResolver = agentsession.SessionFile
 
 type forkState struct {
 	source store.Session
@@ -97,7 +98,7 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 	}
 	sessionFile := ""
 	if strings.Contains(tool.ForkCommand, "{session_file}") {
-		resolved, err := forkSessionFileResolver(source.AgentSessionID)
+		resolved, err := forkSessionFileResolver(tool.SessionStore, source.AgentSessionID)
 		if err != nil {
 			m.errBar.text = err.Error()
 			return m, nil
@@ -139,8 +140,12 @@ func validateForkSource(toolName string, tool config.Tool, source store.Session)
 	if tool.ForkCommand == "" {
 		return fmt.Errorf("tool %s has no fork_command", toolName)
 	}
-	if !strings.Contains(tool.ForkCommand, "{id}") && !strings.Contains(tool.ForkCommand, "{session_file}") {
+	usesSessionFile := strings.Contains(tool.ForkCommand, "{session_file}")
+	if !strings.Contains(tool.ForkCommand, "{id}") && !usesSessionFile {
 		return fmt.Errorf("tool %s fork_command must reference the source via {id} or {session_file}", toolName)
+	}
+	if usesSessionFile && !agentsession.SupportsSessionFile(tool.SessionStore) {
+		return fmt.Errorf("tool %s fork_command uses {session_file}, which needs session_store = \"gemini\"", toolName)
 	}
 	if source.AgentSessionID == "" {
 		return fmt.Errorf("%s has no captured conversation id", source.Name)

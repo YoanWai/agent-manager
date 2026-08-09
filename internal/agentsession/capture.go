@@ -407,9 +407,21 @@ func captureGemini(root, cwd string, launchedAt time.Time, claimed map[string]bo
 	return pickEarliest(cands)
 }
 
-// GeminiSessionFile locates the on-disk session file gemini stores for a
-// conversation id, so a fork can hand it to `gemini --session-file`.
-func GeminiSessionFile(id string) (string, error) {
+// SupportsSessionFile reports whether a session store keeps conversations in
+// a file a fork can load, which is what the {session_file} placeholder needs.
+// gemini is the only store that does; codex and opencode fork by id.
+func SupportsSessionFile(sessionStore string) bool {
+	return sessionStore == "gemini"
+}
+
+// SessionFile locates the on-disk file holding a conversation, so a fork can
+// hand it to a command that loads a file instead of an id (`gemini
+// --session-file`). The tool's session_store selects the layout, so a tool
+// that stores nothing forkable is refused rather than read as gemini.
+func SessionFile(sessionStore, id string) (string, error) {
+	if !SupportsSessionFile(sessionStore) {
+		return "", fmt.Errorf("session_store %q keeps no session file to fork from", sessionStore)
+	}
 	return geminiSessionFileIn(geminiRoot(), id)
 }
 
