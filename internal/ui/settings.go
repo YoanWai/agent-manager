@@ -217,9 +217,9 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		m.settings.field = (m.settings.field + 1) % settingsFieldCount
 	case "left", "h":
-		m.cycleSetting(-1)
+		return m, m.cycleSetting(-1)
 	case "right", "l":
-		m.cycleSetting(1)
+		return m, m.cycleSetting(1)
 	case "enter":
 		switch m.settings.field {
 		case settingsFieldBugReport:
@@ -416,13 +416,15 @@ func requestCLISupportURL() string {
 }
 
 // cycleSetting steps the focused setting by one. The theme applies as it
-// is stepped so the picker doubles as a live preview of the palette.
-func (m *Model) cycleSetting(step int) {
+// is stepped so the picker doubles as a live preview of the palette. A theme
+// step pushes the pane background to tmux, which shells out, so it returns a
+// command rather than blocking the update path.
+func (m *Model) cycleSetting(step int) tea.Cmd {
 	switch m.settings.field {
 	case settingsFieldTool:
 		count := len(m.settings.toolNames)
 		if count == 0 {
-			return
+			return nil
 		}
 		m.settings.toolIndex = (m.settings.toolIndex + step + count) % count
 	case settingsFieldTheme:
@@ -433,7 +435,7 @@ func (m *Model) cycleSetting(step int) {
 		m.settings.manualTheme = themes[m.settings.themeIndex].Name
 		applyTheme(themes[m.settings.themeIndex])
 		SyncTerminalBackground()
-		m.syncPaneTheme()
+		return m.syncPaneTheme()
 	case settingsFieldThemeAuto:
 		m.settings.themeAuto = !m.settings.themeAuto
 		name := m.settings.manualTheme
@@ -443,7 +445,7 @@ func (m *Model) cycleSetting(step int) {
 		m.settings.themeIndex = themeIndex(name)
 		applyTheme(themes[m.settings.themeIndex])
 		SyncTerminalBackground()
-		m.syncPaneTheme()
+		return m.syncPaneTheme()
 	case settingsFieldDensity:
 		m.settings.comfortableRows = !m.settings.comfortableRows
 	case settingsFieldLayout:
@@ -457,4 +459,5 @@ func (m *Model) cycleSetting(step int) {
 	case settingsFieldTerminals:
 		m.settings.shellsPinned = !m.settings.shellsPinned
 	}
+	return nil
 }

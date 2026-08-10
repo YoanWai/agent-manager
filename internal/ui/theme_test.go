@@ -100,7 +100,11 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 	m.settings.field = settingsFieldTheme
 
 	m.settings.themeIndex = themeIndex("solarized light") - 1
-	m.cycleSetting(1)
+	if cmd := m.cycleSetting(1); cmd != nil {
+		if msg := cmd(); msg != nil {
+			m.Update(msg)
+		}
+	}
 	if m.errBar.text != "" {
 		t.Fatalf("pane theme push reported %q", m.errBar.text)
 	}
@@ -109,7 +113,11 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 	}
 
 	m.settings.themeIndex = themeIndex("nord") - 1
-	m.cycleSetting(1)
+	if cmd := m.cycleSetting(1); cmd != nil {
+		if msg := cmd(); msg != nil {
+			m.Update(msg)
+		}
+	}
 	if got, want := globalWindowStyle(t), "bg="+themes[themeIndex("nord")].Bg; got != want {
 		t.Errorf("dark theme pushed window-style %q, want %q", got, want)
 	}

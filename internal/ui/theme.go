@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/termseq"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -392,10 +393,16 @@ func SyncTerminalBackground() {
 // syncPaneTheme hands the tmux server the background agent panes render on,
 // so an agent that auto-detects its palette resolves to the same side the
 // manager is drawing. Sessions that are already running keep whatever they
-// resolved at startup; the theme reaches them on their next launch.
-func (m *Model) syncPaneTheme() {
-	if err := m.tmux.SetPaneTheme(agentPaneTheme()); err != nil {
-		m.errBar.text = err.Error()
+// resolved at startup; the theme reaches them on their next launch. The push
+// shells out to tmux, so it runs as a command off the update path; a failure
+// surfaces on the error bar through errMsg.
+func (m *Model) syncPaneTheme() tea.Cmd {
+	theme := agentPaneTheme()
+	return func() tea.Msg {
+		if err := m.tmux.SetPaneTheme(theme); err != nil {
+			return errMsg{err}
+		}
+		return nil
 	}
 }
 

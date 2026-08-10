@@ -497,7 +497,6 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		model.update.releases = cached.Releases
 		model.update.checked = len(cached.Releases) > 0
 	}
-	model.syncPaneTheme()
 	model.openStartupNotice()
 	model.indexReleaseRanges()
 	return model
@@ -639,7 +638,7 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.sweepPastes, m.pasteSweepTick())
+	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.sweepPastes, m.pasteSweepTick())
 }
 
 // updateMsg carries the result of a GitHub release check. A failed check may
