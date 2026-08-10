@@ -151,7 +151,12 @@ func TestPreviewLine(t *testing.T) {
 func TestPreviewLineKeepsAgentColors(t *testing.T) {
 	for _, name := range []string{"classic", "solarized light"} {
 		applyTheme(themes[themeIndex(name)])
-		if got := previewLine("hi", 4); got != "hi  " {
+		colored := "\x1b[38;5;42mhi\x1b[39m"
+		got := previewLine(colored, 4)
+		if !strings.Contains(got, "\x1b[38;5;42m") {
+			t.Errorf("%s: agent color dropped: %q", name, got)
+		}
+		if body := strings.TrimRight(ansi.Strip(got), " "); body != "hi" {
 			t.Errorf("%s: preview line rewritten: %q", name, got)
 		}
 	}

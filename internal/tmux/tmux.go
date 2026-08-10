@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -29,6 +30,7 @@ type Driver struct {
 
 	attachSizeLargest atomic.Bool
 	paneTheme         atomic.Pointer[PaneTheme]
+	paneThemePush     sync.Mutex
 }
 
 // PaneTheme is the background agent panes are rendered on. The manager
@@ -55,14 +57,30 @@ func paneThemeArgs(t PaneTheme) []string {
 	}
 }
 
-// SetPaneTheme records the pane colors and pushes them to a running server.
-// A tmux server with no sessions exits immediately, so there is nothing to
-// push to before the first session exists; Create re-applies the recorded
-// theme in the same command list as its new-session, which is also what
-// keeps the option set before the agent process can query it.
-func (d *Driver) SetPaneTheme(t PaneTheme) error {
+// PublishPaneTheme records the pane colors so Create hands them to new
+// sessions. It only stores the value; PushPaneTheme sends it to a running
+// server. Recording is synchronous so a session created right after a theme
+// change still opens on the chosen background.
+func (d *Driver) PublishPaneTheme(t PaneTheme) {
 	d.paneTheme.Store(&t)
-	out, err := exec.Command(d.bin, d.args(paneThemeArgs(t)...)...).CombinedOutput()
+}
+
+// PushPaneTheme sends the recorded pane theme to a running server. It always
+// pushes the latest published value under a lock, so concurrent pushes are
+// latest-wins: whichever runs last writes the current theme rather than an
+// older one it was spawned for. A server with no sessions exits immediately,
+// so there is nothing to push to before the first session exists; Create
+// re-applies the recorded theme in the same command list as its new-session,
+// which is also what keeps the option set before the agent process can query
+// it.
+func (d *Driver) PushPaneTheme() error {
+	d.paneThemePush.Lock()
+	defer d.paneThemePush.Unlock()
+	theme := d.paneTheme.Load()
+	if theme == nil {
+		return nil
+	}
+	out, err := exec.Command(d.bin, d.args(paneThemeArgs(*theme)...)...).CombinedOutput()
 	if err != nil {
 		if noServer(string(out)) {
 			return nil

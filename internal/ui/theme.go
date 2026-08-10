@@ -377,8 +377,6 @@ func applyTheme(t Theme) {
 	rebuildStyles()
 }
 
-// lightBackdrop reports whether the theme's backdrop is a light color, by
-// relative luminance of Bg.
 func (t Theme) lightBackdrop() bool {
 	r, g, b := hexRGB(t.Bg)
 	return 0.2126*float64(r)+0.7152*float64(g)+0.0722*float64(b) > 128
@@ -411,13 +409,14 @@ func SyncTerminalBackground() {
 // syncPaneTheme hands the tmux server the background agent panes render on,
 // so an agent that auto-detects its palette resolves to the same side the
 // manager is drawing. Sessions that are already running keep whatever they
-// resolved at startup; the theme reaches them on their next launch. The push
-// shells out to tmux, so it runs as a command off the update path; a failure
-// surfaces on the error bar through errMsg.
+// resolved at startup; the theme reaches them on their next launch. The
+// chosen theme is recorded synchronously so a session created right after
+// still opens on it; the push to a running server shells out to tmux, so it
+// runs as a command off the update path and surfaces a failure through errMsg.
 func (m *Model) syncPaneTheme() tea.Cmd {
-	theme := agentPaneTheme()
+	m.tmux.PublishPaneTheme(agentPaneTheme())
 	return func() tea.Msg {
-		if err := m.tmux.SetPaneTheme(theme); err != nil {
+		if err := m.tmux.PushPaneTheme(); err != nil {
 			return errMsg{err}
 		}
 		return nil
