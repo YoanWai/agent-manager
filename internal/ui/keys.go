@@ -89,9 +89,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.focusSelected()
 		}
 		return m.attachSelected()
-	// Right steps into a row, mirroring the left that steps back out of a
-	// focused pane: a group opens, a session is focused.
 	case "right":
+		if !m.arrowStep {
+			return m, nil
+		}
 		if entry, ok := m.selectedRow(); ok && entry.isGroup {
 			if m.collapsed[entry.group] {
 				m.toggleCollapse()
@@ -100,6 +101,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.focusSelected()
 	case "left":
+		if !m.arrowStep {
+			return m, nil
+		}
 		if entry, ok := m.selectedRow(); ok && entry.isGroup && !m.collapsed[entry.group] {
 			m.toggleCollapse()
 		}
@@ -446,6 +450,10 @@ const diffLayoutSetting = "diff_layout"
 const listDensitySetting = "list_density"
 
 const focusKeySetting = "focus_key"
+
+// arrowStepSetting is the beta ←→ pair: "off" turns it off, anything else
+// leaves it on.
+const arrowStepSetting = "arrow_step_keys"
 
 const quickCloseSetting = "quick_prompt_close"
 

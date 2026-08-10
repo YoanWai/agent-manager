@@ -8,9 +8,10 @@ import (
 
 func TestInputPrefix(t *testing.T) {
 	engine, err := NewEngine(config.Config{Tools: map[string]config.Tool{
-		"claude":   {ActivityCutoff: `(?m)^❯`},
-		"gemini":   {ActivityCutoff: `(?m)^\s*[>!*] `},
-		"unmarked": {},
+		"claude":     {ActivityCutoff: `(?m)^❯`},
+		"gemini":     {ActivityCutoff: `(?m)^\s*[>!*] `},
+		"unmarked":   {},
+		"degenerate": {ActivityCutoff: `(?m)^`},
 	}})
 	if err != nil {
 		t.Fatalf("engine: %v", err)
@@ -32,6 +33,9 @@ func TestInputPrefix(t *testing.T) {
 		{"shell mode marker", "gemini", "  ! ls", "  ! ", true},
 		{"tool without a cutoff", "unmarked", "❯", "", false},
 		{"unknown tool", "nosuch", "❯", "", false},
+		// A cutoff that matches zero width marks no prompt: it would
+		// otherwise stamp every row as one.
+		{"zero-width cutoff", "degenerate", "any row at all", "", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

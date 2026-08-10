@@ -183,6 +183,16 @@ func storedFocusOnEnter(st *store.Store) bool {
 	return chosen != "attach"
 }
 
+// storedArrowStep reads the persisted ←→ step choice. On is the default;
+// only an explicit "off" turns the pair off.
+func storedArrowStep(st *store.Store) bool {
+	chosen, err := st.Setting(arrowStepSetting)
+	if err != nil {
+		return true
+	}
+	return chosen != "off"
+}
+
 func (m *Model) openSettings() {
 	if len(m.cfg.Tools) == 0 {
 		m.errBar.text = "no tools configured"
@@ -197,6 +207,7 @@ func (m *Model) openSettings() {
 		layoutSplit:    m.defaultSplitLayout(),
 		quickCloseSend: m.quickCloseAfterSend(),
 		enterFocuses:   m.enterFocuses(),
+		arrowStep:      m.arrowStep,
 
 		comfortableRows: m.comfortableRows,
 		worktreeDefault: m.defaultWorktree(),
@@ -302,6 +313,13 @@ func (m *Model) persistSettings() {
 	if err := m.store.SetSetting(focusKeySetting, focusKey); err != nil {
 		m.errBar.text = err.Error()
 	}
+	arrowStep := "on"
+	if !m.settings.arrowStep {
+		arrowStep = "off"
+	}
+	if err := m.store.SetSetting(arrowStepSetting, arrowStep); err != nil {
+		m.errBar.text = err.Error()
+	}
 	density := "compact"
 	if m.settings.comfortableRows {
 		density = "comfortable"
@@ -324,6 +342,7 @@ func (m *Model) persistSettings() {
 		m.errBar.text = err.Error()
 	}
 	m.focusOnEnter = m.settings.enterFocuses
+	m.arrowStep = m.settings.arrowStep
 	m.comfortableRows = m.settings.comfortableRows
 	m.shellsPinned = m.settings.shellsPinned
 }
@@ -450,6 +469,8 @@ func (m *Model) cycleSetting(step int) {
 		m.settings.quickCloseSend = !m.settings.quickCloseSend
 	case settingsFieldFocusKey:
 		m.settings.enterFocuses = !m.settings.enterFocuses
+	case settingsFieldArrowStep:
+		m.settings.arrowStep = !m.settings.arrowStep
 	case settingsFieldWorktree:
 		m.settings.worktreeDefault = !m.settings.worktreeDefault
 	case settingsFieldTerminals:

@@ -167,6 +167,67 @@ func TestRightStepsIntoTheRow(t *testing.T) {
 	}
 }
 
+// The beta setting turns the whole pair off: right no longer focuses,
+// and left at the prompt head forwards to the agent instead of leaving.
+func TestArrowStepSettingDisablesThePair(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "optout", t.TempDir(), "")
+	m.selectSessionRow(t, "optout")
+
+	m.openSettings()
+	m.settings.field = settingsFieldArrowStep
+	m.cycleSetting(1)
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if chosen, err := m.store.Setting(arrowStepSetting); err != nil || chosen != "off" {
+		t.Fatalf("toggle did not persist, chosen = %q, err = %v", chosen, err)
+	}
+	if storedArrowStep(m.store) {
+		t.Fatal("storedArrowStep still reads on")
+	}
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("right focused with the pair off, mode = %v", m.mode)
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("enter should still focus, mode = %v", m.mode)
+	}
+	sess := m.rows[m.cursor].sess
+	m.rows[m.cursor].sess.Tool = "claude-hooked"
+	m.pane.forID = sess.ID
+	m.pane.cursor = paneCursor{x: 2, y: 0, ok: true}
+	m.preview = "❯ hi\n"
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("left left focus with the pair off, mode = %v", m.mode)
+	}
+}
+
+// The beta notice ships in the binary and stays listed until dismissed.
+func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
+	m := buildModel(t)
+	found := false
+	for _, n := range m.activeNotices() {
+		if n.id == noticeArrowStep {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("arrow-step beta notice missing from active notices")
+	}
+	m.dismissNotice(noticeArrowStep)
+	for _, n := range m.activeNotices() {
+		if n.id == noticeArrowStep {
+			t.Fatal("dismissed notice still listed")
+		}
+	}
+}
+
 // Alt+Left is a word jump inside the prompt, so it stays the agent's.
 func TestFocusAltLeftStaysWithTheAgent(t *testing.T) {
 	m := buildModel(t)

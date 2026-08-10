@@ -106,6 +106,9 @@ type Model struct {
 	// focusOnEnter mirrors the persisted focus-key setting; the footer
 	// reads it every frame, so it lives here instead of the store.
 	focusOnEnter bool
+	// arrowStep mirrors the persisted ←→ step-in/step-out setting, read
+	// on every keypress.
+	arrowStep bool
 	// comfortableRows mirrors the persisted list density: entries paint
 	// their meta on a second line instead of alongside the name. Every
 	// rail frame reads it, so it lives here instead of the store.
@@ -339,6 +342,7 @@ type settingsState struct {
 	layoutSplit     bool
 	quickCloseSend  bool
 	enterFocuses    bool
+	arrowStep       bool
 	comfortableRows bool
 	worktreeDefault bool
 	shellsPinned    bool
@@ -362,6 +366,7 @@ const (
 	settingsFieldLayout
 	settingsFieldQuickClose
 	settingsFieldFocusKey
+	settingsFieldArrowStep
 	settingsFieldWorktree
 	settingsFieldTerminals
 	settingsFieldCLIs
@@ -484,6 +489,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		collapsed:           loadCollapsed(st),
 		split:               splitState{ratio: loadSplitRatio(st)},
 		focusOnEnter:        storedFocusOnEnter(st),
+		arrowStep:           storedArrowStep(st),
 		comfortableRows:     storedComfortableRows(st),
 		shellsPinned:        storedShellsPinned(st),
 		mode:                modeList,
