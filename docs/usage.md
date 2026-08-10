@@ -19,6 +19,8 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
 | `A` | Attach session full screen (Settings can swap it with `enter`) |
 | `ctrl+q` | Inside a session: back to the manager |
+| `→` | Step into the row: focus the session, or open the group |
+| `←` | Step out: close the group, or — focused, with the caret at the start of the agent's prompt — back to the manager. Anywhere else in the prompt it moves the caret as usual |
 | `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings |
 | `m` | Move session to another group |
 | `r` | Rename session / edit tool; edit group name and default path |

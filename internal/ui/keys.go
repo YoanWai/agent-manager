@@ -89,6 +89,21 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.focusSelected()
 		}
 		return m.attachSelected()
+	// Right steps into a row, mirroring the left that steps back out of a
+	// focused pane: a group opens, a session is focused.
+	case "right":
+		if entry, ok := m.selectedRow(); ok && entry.isGroup {
+			if m.collapsed[entry.group] {
+				m.toggleCollapse()
+			}
+			return m, nil
+		}
+		return m.focusSelected()
+	case "left":
+		if entry, ok := m.selectedRow(); ok && entry.isGroup && !m.collapsed[entry.group] {
+			m.toggleCollapse()
+		}
+		return m, nil
 	case "A", "shift+a":
 		if m.enterFocuses() {
 			return m.attachSelected()

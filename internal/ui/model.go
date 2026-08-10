@@ -59,6 +59,7 @@ type Model struct {
 	tmux   *tmux.Driver
 	hooks  *hooks.Manager
 	gitDrv *git.Driver
+	engine *status.Engine
 
 	// setSnapshot writes a session's pane capture before archive or kill
 	// takes the window; a seam so snapshot failures can be exercised
@@ -477,6 +478,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		tmux:                driver,
 		hooks:               hookManager,
 		gitDrv:              gitDriver,
+		engine:              engine,
 		setSnapshot:         st.SetSnapshot,
 		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, cfg.PollInterval.Duration),
 		collapsed:           loadCollapsed(st),

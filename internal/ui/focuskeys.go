@@ -3,9 +3,11 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // focusNamedKeys maps bubbletea key types to tmux send-keys key names.
@@ -143,6 +145,46 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(tea.EnableMouseCellMotion, m.cursorBlink())
 }
 
+// caretAtInputStart reports whether the agent's caret sits at the head of
+// its prompt, with nothing but the prompt marker to its left. Left is a
+// no-op for the agent there, which is what frees the key to mean "back to
+// the list" without ever costing a keystroke inside the prompt: anywhere
+// else it still moves the caret.
+//
+// A wrapped prompt's continuation rows carry no marker, so a caret at the
+// head of one of them forwards Left as usual and reaches the end of the
+// row above.
+func (m *Model) caretAtInputStart(sessID, tool string) bool {
+	if m.engine == nil || !m.pane.cursor.ok || m.pane.forID != sessID || m.scrolledBack() {
+		return false
+	}
+	rows := strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n")
+	if m.pane.cursor.y < 0 || m.pane.cursor.y >= len(rows) {
+		return false
+	}
+	row := ansi.Strip(rows[m.pane.cursor.y])
+	prefix, ok := m.engine.InputPrefix(tool, row)
+	if !ok {
+		return false
+	}
+	line := []rune(row)
+	// Every cell between the marker and the caret must be blank. Claude
+	// pads its marker with a non-breaking space, so blank means any space
+	// rune, not the ASCII one alone. tmux trims a row's trailing blanks,
+	// so a row that ends before the caret is blank the rest of the way.
+	for cell := ansi.StringWidth(prefix); cell < m.pane.cursor.x; {
+		index := runeAtColumn(line, cell)
+		if index >= len(line) {
+			return true
+		}
+		if !unicode.IsSpace(line[index]) {
+			return false
+		}
+		cell += ansi.StringWidth(string(line[index]))
+	}
+	return m.pane.cursor.x >= ansi.StringWidth(prefix)
+}
+
 // leaveFocus returns to the list. Mouse reporting stays on: handing it back
 // to the terminal here would let a wheel notch scroll the manager out of
 // view, so the list swallows the wheel instead.
@@ -163,6 +205,9 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	sess, ok := m.selected()
 	if !ok {
+		return m, m.leaveFocus()
+	}
+	if msg.Type == tea.KeyLeft && !msg.Alt && m.caretAtInputStart(sess.ID, sess.Tool) {
 		return m, m.leaveFocus()
 	}
 	// Typing puts the cursor back on: a caret that blinks out mid-keystroke
