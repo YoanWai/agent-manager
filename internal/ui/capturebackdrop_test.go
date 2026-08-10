@@ -101,3 +101,22 @@ func TestCaptureBlankRow(t *testing.T) {
 		t.Error("zero width blank row not empty")
 	}
 }
+
+// The theme handed to the panes is the color the captures are painted on,
+// which is the pinned backdrop under a light theme and the theme's own
+// backdrop under a dark one — never the light chrome the manager wears.
+func TestAgentPaneTheme(t *testing.T) {
+	onLightTheme(t)
+	if got := agentPaneTheme().Background; got != themes[0].Bg {
+		t.Errorf("light theme pane background = %q, want the pinned backdrop %q", got, themes[0].Bg)
+	}
+
+	dark := themes[themeIndex("tokyo night")]
+	applyTheme(dark)
+	if got := agentPaneTheme().Background; got != dark.Bg {
+		t.Errorf("dark theme pane background = %q, want %q", got, dark.Bg)
+	}
+	if got := agentPaneTheme().ColorFgBg; got != "15;0" {
+		t.Errorf("COLORFGBG = %q, want light-on-dark %q", got, "15;0")
+	}
+}

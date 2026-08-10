@@ -389,6 +389,16 @@ func SyncTerminalBackground() {
 	emitToTerminal("\x1b]11;" + current.Bg + "\x07")
 }
 
+// syncPaneTheme hands the tmux server the background agent panes render on,
+// so an agent that auto-detects its palette resolves to the same side the
+// manager is drawing. Sessions that are already running keep whatever they
+// resolved at startup; the theme reaches them on their next launch.
+func (m *Model) syncPaneTheme() {
+	if err := m.tmux.SetPaneTheme(agentPaneTheme()); err != nil {
+		m.errBar.text = err.Error()
+	}
+}
+
 // ResetTerminalBackground restores the terminal's own background (OSC 111)
 // when the manager exits.
 func ResetTerminalBackground() {

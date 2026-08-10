@@ -497,6 +497,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		model.update.releases = cached.Releases
 		model.update.checked = len(cached.Releases) > 0
 	}
+	model.syncPaneTheme()
 	model.openStartupNotice()
 	model.indexReleaseRanges()
 	return model

@@ -28,6 +28,48 @@ type Driver struct {
 	socket string
 
 	attachSizeLargest atomic.Bool
+	paneTheme         atomic.Pointer[PaneTheme]
+}
+
+// PaneTheme is the background agent panes are rendered on. The manager
+// knows that color — it paints every capture on it and repaints the
+// terminal to it for a full-screen attach — but an agent inside a pane
+// cannot discover it: these sessions run on a server whose only client is
+// in control mode, so there is no terminal to answer an OSC 11 background
+// query, and the environment carries no COLORFGBG either. Declaring both
+// on the server hands an auto-detecting agent the answer the manager
+// already renders, instead of leaving it to guess.
+type PaneTheme struct {
+	Background string // "#rrggbb"; tmux answers pane OSC 11 queries with it
+	ColorFgBg  string // "fg;bg" color indexes for agents reading COLORFGBG
+}
+
+// paneThemeArgs is the option pair as a tmux command list. window-style and
+// the environment are both server-global: every managed session lives on
+// this socket and wants the same answer, and a global option also reaches
+// windows a user opens inside a session later.
+func paneThemeArgs(t PaneTheme) []string {
+	return []string{
+		"set-option", "-g", "window-style", "bg=" + t.Background, ";",
+		"set-environment", "-g", "COLORFGBG", t.ColorFgBg,
+	}
+}
+
+// SetPaneTheme records the pane colors and pushes them to a running server.
+// A tmux server with no sessions exits immediately, so there is nothing to
+// push to before the first session exists; Create re-applies the recorded
+// theme in the same command list as its new-session, which is also what
+// keeps the option set before the agent process can query it.
+func (d *Driver) SetPaneTheme(t PaneTheme) error {
+	d.paneTheme.Store(&t)
+	out, err := exec.Command(d.bin, d.args(paneThemeArgs(t)...)...).CombinedOutput()
+	if err != nil {
+		if noServer(string(out)) {
+			return nil
+		}
+		return fmt.Errorf("tmux set pane theme: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func New() (*Driver, error) {
@@ -72,7 +114,13 @@ func (d *Driver) run(args ...string) (string, error) {
 
 func (d *Driver) Create(id, cwd, command string, env map[string]string, width, height int) error {
 	name := sessionName(id)
-	args := []string{"new-session", "-d", "-s", name, "-c", cwd}
+	var args []string
+	// Ahead of new-session in the same command list, so the options are in
+	// place before the pane process exists and can query its background.
+	if theme := d.paneTheme.Load(); theme != nil {
+		args = append(paneThemeArgs(*theme), ";")
+	}
+	args = append(args, "new-session", "-d", "-s", name, "-c", cwd)
 	// A detached session sizes to tmux's 80x24 default and holds it until a
 	// client attaches, so its pane preview renders narrow. Booting at the
 	// preview panel's size makes the preview fit from the first frame.

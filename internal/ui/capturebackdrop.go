@@ -3,6 +3,8 @@ package ui
 import (
 	"regexp"
 	"strings"
+
+	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 // Agent CLIs pick their colors for a dark terminal, so a light theme keeps
@@ -26,6 +28,17 @@ func rebuildCaptureBackdrop(t Theme) {
 	captureFgSeq = fgSeq(themes[0].Text)
 	captureBgSeq = bgSeq(themes[0].Bg)
 	captureOpen = captureFgSeq + captureBgSeq
+}
+
+// agentPaneTheme is the background agent panes actually land on: the pinned
+// classic backdrop under a light theme, the theme's own backdrop otherwise.
+// Either way it is dark, so the COLORFGBG fallback is always light-on-dark.
+func agentPaneTheme() tmux.PaneTheme {
+	bg := current.Bg
+	if captureOnDark {
+		bg = themes[0].Bg
+	}
+	return tmux.PaneTheme{Background: bg, ColorFgBg: "15;0"}
 }
 
 // lightBackdrop reports whether the theme's backdrop is a light color, by

@@ -433,6 +433,7 @@ func (m *Model) cycleSetting(step int) {
 		m.settings.manualTheme = themes[m.settings.themeIndex].Name
 		applyTheme(themes[m.settings.themeIndex])
 		SyncTerminalBackground()
+		m.syncPaneTheme()
 	case settingsFieldThemeAuto:
 		m.settings.themeAuto = !m.settings.themeAuto
 		name := m.settings.manualTheme
@@ -442,6 +443,7 @@ func (m *Model) cycleSetting(step int) {
 		m.settings.themeIndex = themeIndex(name)
 		applyTheme(themes[m.settings.themeIndex])
 		SyncTerminalBackground()
+		m.syncPaneTheme()
 	case settingsFieldDensity:
 		m.settings.comfortableRows = !m.settings.comfortableRows
 	case settingsFieldLayout:

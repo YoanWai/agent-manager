@@ -360,6 +360,78 @@ func TestRefreshChromeKeepsLabelAndAddsReviewHint(t *testing.T) {
 	}
 }
 
+// clearPaneTheme drops the server-global colors a pane-theme test left
+// behind, so the rest of the package sees an unstyled server.
+func clearPaneTheme(t *testing.T) {
+	t.Helper()
+	tmuxCmd("set-option", "-gu", "window-style").Run()
+	tmuxCmd("set-environment", "-gu", "COLORFGBG").Run()
+}
+
+// waitForFile polls a marker file a pane writes, returning its contents.
+func waitForFile(t *testing.T, driver *Driver, id, path string) string {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
+			return string(data)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	pane, _ := driver.CapturePane(id)
+	t.Fatalf("pane never wrote %s; pane:\n%s", path, pane)
+	return ""
+}
+
+// An agent that auto-detects its palette asks the terminal for its
+// background with OSC 11. Nothing answers that on this server — the only
+// client is in control mode and has no tty — unless the pane carries an
+// explicit background of its own, which is what the pane theme sets.
+func TestCreateAnswersBackgroundQuery(t *testing.T) {
+	driver := requireTmux(t)
+	t.Cleanup(func() { clearPaneTheme(t) })
+	if err := driver.SetPaneTheme(PaneTheme{Background: "#1e1e2e", ColorFgBg: "15;0"}); err != nil {
+		t.Fatalf("SetPaneTheme: %v", err)
+	}
+
+	id := "osc" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	reply := t.TempDir() + "/reply"
+	// tmux delivers the answer on the pane's input, so the query and the
+	// read both happen inside the pane. Raw mode keeps the line discipline
+	// from holding a reply that ends in ST rather than a newline.
+	command := "stty raw; printf '\\033]11;?\\033\\\\'; cat > " + reply
+	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	got := waitForFile(t, driver, id, reply)
+	if want := "]11;rgb:1e1e/1e1e/2e2e"; !strings.Contains(got, want) {
+		t.Fatalf("OSC 11 reply = %q, want one carrying %q", got, want)
+	}
+}
+
+// COLORFGBG is the fallback for agents that read the environment instead of
+// querying, and nothing in a pane's environment carries it otherwise.
+func TestCreateExportsColorFgBg(t *testing.T) {
+	driver := requireTmux(t)
+	t.Cleanup(func() { clearPaneTheme(t) })
+	if err := driver.SetPaneTheme(PaneTheme{Background: "#1e1e2e", ColorFgBg: "15;0"}); err != nil {
+		t.Fatalf("SetPaneTheme: %v", err)
+	}
+
+	id := "fgbg" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	marker := t.TempDir() + "/env"
+	if err := driver.Create(id, "/tmp", "printenv COLORFGBG > "+marker, nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	if got := strings.TrimSpace(waitForFile(t, driver, id, marker)); got != "15;0" {
+		t.Fatalf("COLORFGBG in pane = %q, want %q", got, "15;0")
+	}
+}
+
 func TestLifecycle(t *testing.T) {
 	driver := requireTmux(t)
 	id := "test" + time.Now().Format("150405.000000")
