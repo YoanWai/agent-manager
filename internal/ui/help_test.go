@@ -38,6 +38,7 @@ func helpKeyTokens() map[string]bool {
 // the arrows and the shift pairs are one row each.
 var helpDocumentedBy = map[string]string{
 	"up": "↑↓", "down": "↑↓", "k": "↑↓", "j": "↑↓",
+	"right": "→", "left": "←",
 	"enter": "↵", " ": "space",
 	"shift+up": "K", "shift+down": "J",
 	"shift+k": "K", "shift+j": "J", "shift+a": "A", "shift+v": "V",
