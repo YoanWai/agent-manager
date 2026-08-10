@@ -78,6 +78,7 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `n` | New session (name, tool, directory, optional starting prompt, group) |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `enter` | Focus the session in place; keys go to the agent while the list stays |
+| `→` / `←` | Step in and out: `→` focuses the session or opens the group, `←` closes the group and, at the start of a focused agent's prompt, comes back to the list. In beta, and Settings can turn the pair off |
 | `ctrl+r` | Review the session's changes as full-file diffs; `c` comments a line, `C` sends the comments to the agent |
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |
 | `R` | Restart a session on an empty context: same name, group, directory and tool, fresh conversation |
