@@ -976,3 +976,23 @@ func TestUpdateWithoutRunnableManagerSurfacesAdvice(t *testing.T) {
 		t.Fatalf("want the advice as the error, got %#v", cmd())
 	}
 }
+
+// The beta notice ships in the binary and stays listed until dismissed.
+func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	found := false
+	for _, n := range m.activeNotices() {
+		if n.id == noticeArrowStep {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("arrow-step beta notice missing from active notices")
+	}
+	m.dismissNotice(noticeArrowStep)
+	for _, n := range m.activeNotices() {
+		if n.id == noticeArrowStep {
+			t.Fatal("dismissed notice still listed")
+		}
+	}
+}
