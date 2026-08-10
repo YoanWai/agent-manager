@@ -7,4 +7,4 @@
 .DS_Store
 dist/
 .playwright-mcp/
-docs/badges/
+docs/badges/clones.json

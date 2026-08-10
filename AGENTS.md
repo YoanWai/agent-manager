@@ -38,7 +38,8 @@ else's commit. Branch from `origin/main` after a fetch, not from the local
   output into agent states; `internal/config` loads `config.toml` and the
   tool rules.
 - The badges workflow publishes the clone count to the `badges` branch and
-  keeps the README's trendshift region current; neither is edited by hand.
+  keeps the README's generated regions and contributor avatars current; none
+  are edited by hand.
 
 ## Style
 

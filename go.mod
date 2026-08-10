@@ -16,6 +16,7 @@ require (
 	github.com/sergi/go-diff v1.4.0
 	github.com/shirou/gopsutil/v4 v4.26.7
 	golang.design/x/clipboard v0.8.0
+	golang.org/x/image v0.41.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.37.0
 	modernc.org/sqlite v1.55.0
@@ -55,7 +56,6 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.design/x/x11 v0.2.0 // indirect
 	golang.org/x/exp/shiny v0.0.0-20250606033433-dcc06ee1d476 // indirect
-	golang.org/x/image v0.41.0 // indirect
 	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect

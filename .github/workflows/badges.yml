@@ -29,14 +29,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BADGE_TOKEN: ${{ secrets.BADGE_TOKEN }}
         run: go run ./tools/badges
-      - name: Commit the README when the trendshift region moved
+      - name: Commit generated README regions
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ -z "$(git status --porcelain README.md)" ]; then
+          if [ -z "$(git status --porcelain README.md docs/badges/contributors)" ]; then
             echo "README unchanged"
           else
-            git add README.md
+            git add -A README.md docs/badges/contributors
             git commit -m "chore(badges): refresh the README stats [skip ci]"
             git push
           fi
