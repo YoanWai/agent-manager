@@ -27,6 +27,25 @@ func contrastRatio(a, b string) float64 {
 	return (lumA + 0.05) / (lumB + 0.05)
 }
 
+// lightThemeNames mirrors TestLightThemesPresent: the themes whose backdrop
+// is light, which the luminance split must classify exactly.
+var lightThemeNames = map[string]bool{
+	"solarized light":  true,
+	"catppuccin latte": true,
+	"tokyo night day":  true,
+	"gruvbox light":    true,
+	"rosé pine dawn":   true,
+	"paper":            true,
+}
+
+func TestLightBackdropClassification(t *testing.T) {
+	for _, theme := range themes {
+		if got, want := theme.lightBackdrop(), lightThemeNames[theme.Name]; got != want {
+			t.Errorf("%s: lightBackdrop() = %v, want %v (Bg %s)", theme.Name, got, want, theme.Bg)
+		}
+	}
+}
+
 func TestLightThemesPresent(t *testing.T) {
 	for _, name := range []string{
 		"solarized light",
@@ -83,6 +102,29 @@ func globalWindowStyle(t *testing.T) string {
 	return strings.TrimSpace(string(out))
 }
 
+// The pane carries the theme's own backdrop, on both sides of the split, so
+// an agent that follows it renders on the side the manager is drawing.
+func TestAgentPaneTheme(t *testing.T) {
+	t.Cleanup(func() { applyTheme(themes[0]) })
+	for _, tt := range []struct {
+		theme string
+		fgbg  string
+	}{
+		{"catppuccin latte", "0;15"},
+		{"tokyo night", "15;0"},
+	} {
+		want := themes[themeIndex(tt.theme)]
+		applyTheme(want)
+		got := agentPaneTheme()
+		if got.Background != want.Bg {
+			t.Errorf("%s: pane background = %q, want %q", tt.theme, got.Background, want.Bg)
+		}
+		if got.ColorFgBg != tt.fgbg {
+			t.Errorf("%s: COLORFGBG = %q, want %q", tt.theme, got.ColorFgBg, tt.fgbg)
+		}
+	}
+}
+
 // Agents resolve their own palette against the pane background, so a theme
 // switch has to reach the tmux server as well as the manager's own frame.
 func TestThemeSwitchPushesPaneBackground(t *testing.T) {
@@ -99,6 +141,7 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 	m.openSettings()
 	m.settings.field = settingsFieldTheme
 
+	light := themes[themeIndex("solarized light")]
 	m.settings.themeIndex = themeIndex("solarized light") - 1
 	if cmd := m.cycleSetting(1); cmd != nil {
 		if msg := cmd(); msg != nil {
@@ -108,8 +151,8 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 	if m.errBar.text != "" {
 		t.Fatalf("pane theme push reported %q", m.errBar.text)
 	}
-	if got, want := globalWindowStyle(t), "bg="+themes[0].Bg; got != want {
-		t.Errorf("light theme pushed window-style %q, want the pinned backdrop %q", got, want)
+	if got, want := globalWindowStyle(t), "bg="+light.Bg; got != want {
+		t.Errorf("light theme pushed window-style %q, want its own backdrop %q", got, want)
 	}
 
 	m.settings.themeIndex = themeIndex("nord") - 1

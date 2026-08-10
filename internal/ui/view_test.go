@@ -146,22 +146,16 @@ func TestPreviewLine(t *testing.T) {
 	}
 }
 
-func TestPreviewLineCaptureBackdrop(t *testing.T) {
-	onLightTheme(t)
-	line := previewLine("hi", 10)
-	if !strings.HasPrefix(line, captureOpen) {
-		t.Errorf("capture line does not open with backdrop colors: %q", line)
+// The capture keeps the agent's own colors on every theme: the pane is
+// painted the theme's backdrop, so nothing has to be recolored on the way in.
+func TestPreviewLineKeepsAgentColors(t *testing.T) {
+	for _, name := range []string{"classic", "solarized light"} {
+		applyTheme(themes[themeIndex(name)])
+		if got := previewLine("hi", 4); got != "hi  " {
+			t.Errorf("%s: preview line rewritten: %q", name, got)
+		}
 	}
-	if !strings.Contains(line, captureBgSeq+strings.Repeat(" ", 8)+"\x1b[0m") {
-		t.Errorf("padding not painted with the backdrop: %q", line)
-	}
-}
-
-func TestPreviewLineDarkThemeUnchanged(t *testing.T) {
 	applyTheme(themes[0])
-	if got := previewLine("hi", 4); got != "hi  " {
-		t.Errorf("dark theme preview line rewritten: %q", got)
-	}
 }
 
 func TestTruncateRuneSafe(t *testing.T) {

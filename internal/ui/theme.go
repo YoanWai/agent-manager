@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/termseq"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -373,8 +374,25 @@ func applyTheme(t Theme) {
 	colorErrored = lipgloss.Color(t.Errored)
 	colorIdle = lipgloss.Color(t.Idle)
 
-	rebuildCaptureBackdrop(t)
 	rebuildStyles()
+}
+
+// lightBackdrop reports whether the theme's backdrop is a light color, by
+// relative luminance of Bg.
+func (t Theme) lightBackdrop() bool {
+	r, g, b := hexRGB(t.Bg)
+	return 0.2126*float64(r)+0.7152*float64(g)+0.0722*float64(b) > 128
+}
+
+// agentPaneTheme is the backdrop an agent pane sits on: the theme's own,
+// the same color the terminal is painted and the capture is drawn over.
+// Agents that auto-detect follow it, so a light theme hosts light agents.
+func agentPaneTheme() tmux.PaneTheme {
+	fgbg := "15;0"
+	if current.lightBackdrop() {
+		fgbg = "0;15"
+	}
+	return tmux.PaneTheme{Background: current.Bg, ColorFgBg: fgbg}
 }
 
 // current is the live token set; renderers that need a raw SGR sequence
@@ -410,18 +428,6 @@ func (m *Model) syncPaneTheme() tea.Cmd {
 // when the manager exits.
 func ResetTerminalBackground() {
 	emitToTerminal("\x1b]111\x07")
-}
-
-// SyncAttachBackground repaints the terminal for a full-screen attach. On
-// a light theme the agent gets the capture backdrop's dark color — its
-// colors were picked for a dark terminal, same as in the preview panel.
-// attachDoneMsg restores the theme backdrop on detach. On a dark theme the
-// synced color already serves both, so nothing is emitted.
-func SyncAttachBackground() {
-	if !captureOnDark {
-		return
-	}
-	emitToTerminal("\x1b]11;" + themes[0].Bg + "\x07")
 }
 
 // emitToTerminal sends a control sequence to whatever is actually drawing
