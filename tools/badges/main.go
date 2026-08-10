@@ -1,7 +1,4 @@
-// Command badges publishes the one header figure GitHub will not serve
-// anonymously. Stars, release and licence are read live by shields.io each time
-// the README is viewed; clone traffic needs push access, so it travels through
-// the repository as a shields endpoint this command refreshes.
+// Command badges refreshes the clone endpoint and generated README regions.
 package main
 
 import (
@@ -32,6 +29,9 @@ func run() error {
 		return err
 	}
 	if err := writeCloneEndpoint(); err != nil {
+		return err
+	}
+	if err := refreshContributors(); err != nil {
 		return err
 	}
 	return fillTrendshift(trendshiftBadge())
@@ -133,28 +133,37 @@ func trendshiftBadge() string {
 // fillTrendshift keeps the README's trendshift region in step with whether the
 // badge exists, without touching a byte outside the markers.
 func fillTrendshift(badge string) error {
-	const (
-		open  = "<!-- trendshift:start -->"
-		close = "<!-- trendshift:end -->"
-	)
-	raw, err := os.ReadFile("README.md")
-	if err != nil {
+	changed, err := fillREADMERegion("trendshift", badge)
+	if err != nil || !changed {
 		return err
-	}
-	readme := string(raw)
-	from := strings.Index(readme, open)
-	to := strings.Index(readme, close)
-	if from < 0 || to < 0 {
-		return fmt.Errorf("README is missing the trendshift markers")
-	}
-	updated := readme[:from+len(open)] + badge + readme[to:]
-	if updated == readme {
-		return nil
 	}
 	if badge == "" {
 		fmt.Println("::notice::trendshift badge is not minted yet, leaving its region empty")
 	} else {
 		fmt.Println("::notice::trendshift badge is live, added to the README")
 	}
-	return os.WriteFile("README.md", []byte(updated), 0o644)
+	return nil
+}
+
+func fillREADMERegion(name, content string) (bool, error) {
+	open := "<!-- " + name + ":start -->"
+	close := "<!-- " + name + ":end -->"
+	raw, err := os.ReadFile("README.md")
+	if err != nil {
+		return false, err
+	}
+	readme := string(raw)
+	before, rest, found := strings.Cut(readme, open)
+	if !found {
+		return false, fmt.Errorf("README is missing the %s markers", name)
+	}
+	_, after, found := strings.Cut(rest, close)
+	if !found {
+		return false, fmt.Errorf("README is missing the %s markers", name)
+	}
+	updated := before + open + content + close + after
+	if updated == readme {
+		return false, nil
+	}
+	return true, os.WriteFile("README.md", []byte(updated), 0o644)
 }

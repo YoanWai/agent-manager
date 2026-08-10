@@ -108,9 +108,9 @@ Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md]
 
 ### Contributors
 
-<a href="https://github.com/YoanWai/agent-manager/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=YoanWai/agent-manager" alt="Contributors" />
-</a>
+<!-- contributors:start -->
+<a href="https://github.com/YoanWai"><img src="docs/badges/contributors/YoanWai.png" width="64" height="64" alt="@YoanWai"></a> <a href="https://github.com/steveprentice"><img src="docs/badges/contributors/steveprentice.png" width="64" height="64" alt="@steveprentice"></a> <a href="https://github.com/andrelago13"><img src="docs/badges/contributors/andrelago13.png" width="64" height="64" alt="@andrelago13"></a> <a href="https://github.com/redeye1011"><img src="docs/badges/contributors/redeye1011.png" width="64" height="64" alt="@redeye1011"></a> <a href="https://github.com/snowyukitty"><img src="docs/badges/contributors/snowyukitty.png" width="64" height="64" alt="@snowyukitty"></a> <a href="https://github.com/reddeye1337"><img src="docs/badges/contributors/reddeye1337.png" width="64" height="64" alt="@reddeye1337"></a> <a href="https://github.com/mikaoelitiana"><img src="docs/badges/contributors/mikaoelitiana.png" width="64" height="64" alt="@mikaoelitiana"></a>
+<!-- contributors:end -->
 
 ## License
 
