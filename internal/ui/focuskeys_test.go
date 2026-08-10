@@ -32,6 +32,7 @@ func TestFocusKeyCommand(t *testing.T) {
 		{"enter-not-ctrl-m", tea.KeyMsg{Type: tea.KeyEnter}, "send-keys -t am_x Enter", true},
 		{"shift-tab", tea.KeyMsg{Type: tea.KeyShiftTab}, "send-keys -t am_x BTab", true},
 		{"up", tea.KeyMsg{Type: tea.KeyUp}, "send-keys -t am_x Up", true},
+		{"left", tea.KeyMsg{Type: tea.KeyLeft}, "send-keys -t am_x Left", true},
 		{"alt-up", tea.KeyMsg{Type: tea.KeyUp, Alt: true}, "send-keys -t am_x M-Up", true},
 		{"pgup", tea.KeyMsg{Type: tea.KeyPgUp}, "send-keys -t am_x PPage", true},
 		{"backspace", tea.KeyMsg{Type: tea.KeyBackspace}, "send-keys -t am_x BSpace", true},

@@ -977,7 +977,6 @@ func TestUpdateWithoutRunnableManagerSurfacesAdvice(t *testing.T) {
 	}
 }
 
-// The beta notice ships in the binary and stays listed until dismissed.
 func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	found := false
