@@ -369,7 +369,6 @@ func clearPaneTheme(t *testing.T) {
 	tmuxCmd("set-environment", "-gu", "COLORFGBG").Run()
 }
 
-// waitForFile polls a marker file a pane writes, returning its contents.
 func waitForFile(t *testing.T, driver *Driver, id, path string) string {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -491,6 +490,53 @@ func TestPushPaneThemeIsLatestWins(t *testing.T) {
 	last := backgrounds[len(backgrounds)-1]
 	if got, want := globalWindowStyle(t), "bg="+last; got != want {
 		t.Fatalf("window-style = %q, want the last published theme %q", got, want)
+	}
+}
+
+// Create shares the push lock with PushPaneTheme, so a session opened while a
+// newer theme is being pushed cannot reset the server to the theme Create
+// loaded. The seam runs while Create holds the lock: it publishes a newer
+// theme and starts a push, which blocks on the lock until Create's write
+// lands, then writes the newer theme last. Without the shared lock the push
+// runs during the seam and Create's stale write clobbers it.
+func TestCreateSerializesWithPushPaneTheme(t *testing.T) {
+	driver := requireTmux(t)
+	t.Cleanup(func() { clearPaneTheme(t) })
+
+	stamp := strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	hold := "hold" + stamp
+	driver.PublishPaneTheme(PaneTheme{Background: "#101010", ColorFgBg: "15;0"})
+	if err := driver.Create(hold, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create hold session: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(hold) })
+
+	const newer = "#eff1f5"
+	var pushed sync.WaitGroup
+	afterCreateThemeLoad = func() {
+		driver.PublishPaneTheme(PaneTheme{Background: newer, ColorFgBg: "0;15"})
+		pushed.Add(1)
+		go func() {
+			defer pushed.Done()
+			if err := driver.PushPaneTheme(); err != nil {
+				t.Errorf("PushPaneTheme: %v", err)
+			}
+		}()
+		// Give the push goroutine time to reach the lock, so the serialization
+		// under test is what orders the two writes rather than this timing.
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Cleanup(func() { afterCreateThemeLoad = nil })
+
+	raced := "raced" + stamp
+	if err := driver.Create(raced, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create raced session: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(raced) })
+	pushed.Wait()
+
+	if got, want := globalWindowStyle(t), "bg="+newer; got != want {
+		t.Fatalf("window-style = %q, want the newer pushed theme %q", got, want)
 	}
 }
 

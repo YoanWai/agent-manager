@@ -130,13 +130,27 @@ func (d *Driver) run(args ...string) (string, error) {
 	return string(out), nil
 }
 
+// afterCreateThemeLoad runs between Create loading the pane theme and writing
+// it, while Create holds the push lock. Nil in production; a test sets it to
+// drive a push against the held lock and prove the write ordering.
+var afterCreateThemeLoad func()
+
 func (d *Driver) Create(id, cwd, command string, env map[string]string, width, height int) error {
 	name := sessionName(id)
 	var args []string
+	// Hold the push lock across loading the theme and the command list that
+	// writes it, so a concurrent PushPaneTheme cannot land a newer theme
+	// between the load and the write and be clobbered by this stale one.
+	d.paneThemePush.Lock()
 	// Ahead of new-session in the same command list, so the options are in
 	// place before the pane process exists and can query its background.
+	var colorFgBg string
 	if theme := d.paneTheme.Load(); theme != nil {
 		args = append(paneThemeArgs(*theme), ";")
+		colorFgBg = theme.ColorFgBg
+	}
+	if afterCreateThemeLoad != nil {
+		afterCreateThemeLoad()
 	}
 	args = append(args, "new-session", "-d", "-s", name, "-c", cwd)
 	// A detached session sizes to tmux's 80x24 default and holds it until a
@@ -152,17 +166,20 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 	var scriptPath string
 	if command != "" {
 		var err error
-		scriptPath, err = writeLaunchScript(id, envCommand(env, command))
+		scriptPath, err = writeLaunchScript(id, envCommand(env, command), colorFgBg)
 		if err != nil {
+			d.paneThemePush.Unlock()
 			return err
 		}
 		args = append(args, "sh "+ShellQuote(scriptPath))
 	}
-	if _, err := d.run(args...); err != nil {
+	_, runErr := d.run(args...)
+	d.paneThemePush.Unlock()
+	if runErr != nil {
 		if scriptPath != "" {
 			os.Remove(scriptPath)
 		}
-		return err
+		return runErr
 	}
 	if err := d.installSessionUX(name); err != nil {
 		_ = d.Kill(id)
@@ -195,13 +212,22 @@ func launchScriptPath(id string) string {
 	return filepath.Join(os.TempDir(), "am-launch-"+id+".sh")
 }
 
-func writeLaunchScript(id, line string) (string, error) {
+func writeLaunchScript(id, line, colorFgBg string) (string, error) {
 	path := launchScriptPath(id)
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	body := "#!/bin/sh\n" + line + "\nexec " + ShellQuote(shell) + "\n"
+	// Export COLORFGBG in the pane itself. The global option tmux carries in
+	// its environment does not reach this first process — it inherits the
+	// server's own environment, fixed when the server started, so a host
+	// shell that exports COLORFGBG hands the agent that stale pair instead.
+	// Exporting here lands the theme's value on the agent regardless.
+	var header string
+	if colorFgBg != "" {
+		header = "export COLORFGBG=" + ShellQuote(colorFgBg) + "\n"
+	}
+	body := "#!/bin/sh\n" + header + line + "\nexec " + ShellQuote(shell) + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
 		return "", fmt.Errorf("launch script: %w", err)
 	}
