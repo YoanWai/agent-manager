@@ -261,7 +261,7 @@ func TestGrokRealPanes(t *testing.T) {
 		{"grok old question, newer statement turn", "grok",
 			"     Which one?\n     Worked for 4s.               stop  [hooks: 2]\n     All done now.\n     Worked for 2s.               stop  [hooks: 2]\n\n  ╭────────────────────────────╮\n  │ ❯                        │\n  ╰──────────── Grok 4.5 (high) ─╯\n  Shift+Tab:mode  │  Ctrl+x:shortcuts", Finished},
 		{"grok first-run trust dialog", "grok",
-			"                  Do you trust the contents of this directory?\n                         /Users/yoan/Desktop/projects\n\n            Grok Build may run or modify contents in this directory,\n                             posing security risks.\n\n                         Yes, proceed                 y\n                         No, quit                     n", Waiting},
+			"                  Do you trust the contents of this directory?\n                         /Users/someone/projects\n\n            Grok Build may run or modify contents in this directory,\n                             posing security risks.\n\n                         Yes, proceed                 y\n                         No, quit                     n", Waiting},
 		{"grok approval dialog (input box replaced)", "grok",
 			"  ┃  Remove victim2.txt file\n  ┃  rm victim2.txt\n  ┃\n  ┃  1 (●) Yes, and don't ask again for anything (always-approve mode)\n  ┃  2 (○) Yes, proceed\n  ┃  3 (○) No, reject (type to add feedback)\n  ┃\n\n  1/3:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel", Waiting},
 		{"grok errored", "grok",

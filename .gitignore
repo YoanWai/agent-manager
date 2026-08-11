@@ -8,3 +8,10 @@
 dist/
 .playwright-mcp/
 docs/badges/clones.json
+.env
+.env.*
+*.pem
+*.key
+*.p12
+id_rsa
+id_ed25519
