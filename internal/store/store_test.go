@@ -916,10 +916,19 @@ func TestMoveGroupReparentsSubtree(t *testing.T) {
 	if err := st.CreateGroup("alpha/inner", "/srv/inner"); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
+	if err := st.CreateGroup("alpha/inner/deep", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
 	if err := st.CreateGroup("beta", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
+	if err := st.SetGroupWorktree("alpha/inner", "on"); err != nil {
+		t.Fatalf("set worktree: %v", err)
+	}
 	if err := st.CreateSession(sample("a", "alpha/inner")); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := st.CreateSession(sample("b", "alpha/inner/deep")); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	if err := st.MoveGroup("alpha/inner", "beta"); err != nil {
@@ -929,24 +938,34 @@ func TestMoveGroupReparentsSubtree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("groups: %v", err)
 	}
-	var movedPath string
+	byName := make(map[string]Group, len(groups))
 	for _, group := range groups {
-		if group.Name == "alpha/inner" {
-			t.Fatal("old group path still present")
+		if group.Name == "alpha/inner" || group.Name == "alpha/inner/deep" {
+			t.Fatalf("old group path %s still present", group.Name)
 		}
-		if group.Name == "beta/inner" {
-			movedPath = group.Path
+		byName[group.Name] = group
+	}
+	moved, ok := byName["beta/inner"]
+	if !ok {
+		t.Fatal("beta/inner missing")
+	}
+	if moved.Path != "/srv/inner" {
+		t.Fatalf("beta/inner path = %q, want /srv/inner", moved.Path)
+	}
+	if moved.Worktree != "on" {
+		t.Fatalf("beta/inner worktree = %q, want on", moved.Worktree)
+	}
+	if _, ok := byName["beta/inner/deep"]; !ok {
+		t.Fatal("beta/inner/deep missing")
+	}
+	for id, want := range map[string]string{"a": "beta/inner", "b": "beta/inner/deep"} {
+		sess, err := st.Get(id)
+		if err != nil {
+			t.Fatalf("get %s: %v", id, err)
 		}
-	}
-	if movedPath != "/srv/inner" {
-		t.Fatalf("beta/inner path = %q, want /srv/inner", movedPath)
-	}
-	sess, err := st.Get("a")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if sess.Group != "beta/inner" {
-		t.Fatalf("session group = %q, want beta/inner", sess.Group)
+		if sess.Group != want {
+			t.Fatalf("session %s group = %q, want %q", id, sess.Group, want)
+		}
 	}
 }
 

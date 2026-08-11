@@ -8,7 +8,11 @@ import (
 
 func (m *Model) openMove() {
 	row, ok := m.selectedRow()
-	if !ok || row.isRoot() {
+	if !ok {
+		return
+	}
+	if row.isRoot() {
+		m.errBar.text = "root is the top level, not a group to move"
 		return
 	}
 	if row.isGroup {
