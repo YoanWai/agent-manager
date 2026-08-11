@@ -47,6 +47,38 @@ func TestSelectionIgnoresOutsidePane(t *testing.T) {
 	}
 }
 
+// Alt is only a pass-through gesture for applications that claim the mouse;
+// a plain pane keeps its ordinary selection and copy behavior.
+func TestAltClickSelectsPlainPane(t *testing.T) {
+	m := paneAt(t, "alpha beta")
+	m.handleFocusMouse(tea.MouseMsg{
+		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true, X: 10, Y: 5,
+	})
+	if !m.sel.active {
+		t.Fatal("Alt-click on a plain pane did not start a selection")
+	}
+}
+
+func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
+	m := paneAt(t, "alpha beta")
+	m.pane.mouse = true
+	m.handleFocusMouse(tea.MouseMsg{
+		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true, X: 10, Y: 5,
+	})
+	if !m.forwardingMouse || m.sel.active {
+		t.Fatalf("Alt press did not start forwarding: forwarding=%v selection=%v", m.forwardingMouse, m.sel.active)
+	}
+
+	// The release still belongs to the forwarded click even when Alt was
+	// released first.
+	m.handleFocusMouse(tea.MouseMsg{
+		Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 10, Y: 5,
+	})
+	if m.forwardingMouse {
+		t.Fatal("mouse release did not end the forwarding lifecycle")
+	}
+}
+
 // Triple click takes exactly the pane line it landed on.
 func TestTripleClickSelectsPaneLineOnly(t *testing.T) {
 	m := paneAt(t, "first line here", "second line here")

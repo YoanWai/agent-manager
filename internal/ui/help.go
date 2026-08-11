@@ -117,6 +117,7 @@ func helpSections() []helpSection {
 			{"drag", "focused: select pane text and copy it"},
 			{"double click", "focused: copy the word"},
 			{"triple click", "focused: copy the line"},
+			{"alt+click / drag", "focused: pass to the agent UI when it tracks the mouse"},
 		}},
 		{title: "review (ctrl+r)", rows: [][2]string{
 			{"c", "comment on the line"},

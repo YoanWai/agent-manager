@@ -29,6 +29,10 @@ const (
 	wheelUpButton   = 64
 	wheelDownButton = 65
 	motionButton    = 35
+	leftButton      = 0
+	middleButton    = 1
+	rightButton     = 2
+	motionBit       = 32
 )
 
 // x10Limit is the highest cell the original encoding can name: each
@@ -71,18 +75,33 @@ func (m *Model) wheelReport(up bool, col, row int) (string, bool) {
 	if up {
 		button = wheelUpButton
 	}
+	return m.mouseReport(button, false, col, row)
+}
+
+// mouseReport encodes one press, drag, release or wheel event for the
+// focused pane. An all-motion app needs a pointer move ahead of discrete
+// events because focus mode does not pass its ordinary pointer moves on.
+func (m *Model) mouseReport(button int, release bool, col, row int) (string, bool) {
 	if m.pane.sgr {
-		report := sgrMouse(button, col, row)
-		if m.pane.motion {
+		terminator := "M"
+		if release {
+			terminator = "m"
+		}
+		report := fmt.Sprintf("\x1b[<%d;%d;%d%s", button, col+1, row+1, terminator)
+		if m.pane.motion && !release {
 			report = sgrMouse(motionButton, col, row) + report
 		}
 		return report, true
+	}
+	if release {
+		// X10 cannot name the released button: button 3 denotes all releases.
+		button = 3
 	}
 	report, ok := x10Mouse(button, col, row)
 	if !ok {
 		return "", false
 	}
-	if m.pane.motion {
+	if m.pane.motion && !release {
 		move, moveOK := x10Mouse(motionButton, col, row)
 		if !moveOK {
 			return "", false
@@ -124,6 +143,42 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 		delta = -1
 	}
 	return m.scrollFocus(delta)
+}
+
+// forwardFocusMouse sends an explicit Alt-modified click lifecycle to a
+// focused application that owns the mouse. Normal clicks remain available
+// for agent-manager's selection and clipboard behavior.
+func (m *Model) forwardFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	sess, ok := m.selected()
+	if !ok || m.focus == nil {
+		return m, nil
+	}
+	row, col, inside := m.paneCell(msg.X, msg.Y)
+	if !inside {
+		return m, nil
+	}
+	button := leftButton
+	switch msg.Button {
+	case tea.MouseButtonMiddle:
+		button = middleButton
+	case tea.MouseButtonRight:
+		button = rightButton
+	}
+	release := msg.Action == tea.MouseActionRelease
+	if msg.Action == tea.MouseActionMotion {
+		button |= motionBit
+	}
+	report, ok := m.mouseReport(button, release, col, row+m.paneRowOffset(m.pane.box.height))
+	if !ok {
+		return m, nil
+	}
+	command := "send-keys -t " + tmux.SessionName(sess.ID) + " -H " + hexBytes(report)
+	if !m.focus.attempt(command) {
+		if err := m.tmux.SendRaw(command); err != nil {
+			m.errBar.text = err.Error()
+		}
+	}
+	return m, nil
 }
 
 // scrollFocus moves the focused pane through its scrollback and fetches

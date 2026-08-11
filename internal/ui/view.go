@@ -462,11 +462,15 @@ func (m *Model) viewFooter() string {
 	// title, carries the few keys the manager keeps, and drops the app-wide
 	// tier, which would name keys the agent receives.
 	if m.mode == modeFocus {
-		return legendBar([]legendSection{{title: "Focused", pairs: [][2]string{
+		pairs := [][2]string{
 			{"typing", "goes to the agent"},
 			{"ctrl+q / ctrl+\\", "back to manager"},
 			{"drag / double / triple click", "copy"},
-		}}}, m.width)
+		}
+		if m.pane.mouse {
+			pairs = append(pairs, [2]string{"alt+click / drag", "agent UI"})
+		}
+		return legendBar([]legendSection{{title: "Focused", pairs: pairs}}, m.width)
 	}
 	return legendBar([]legendSection{m.rowLegend(), m.viewLegend()}, m.width)
 }

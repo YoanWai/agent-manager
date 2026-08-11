@@ -116,9 +116,9 @@ func (m *Model) paneTextLines() []string {
 	return out
 }
 
-// handleFocusMouse owns the mouse while a session has focus: presses,
-// drags and releases build a selection over the pane, and everything
-// outside it is swallowed so a stray click cannot retarget the keyboard.
+// handleFocusMouse owns the mouse while a session has focus. Alt-clicking a
+// pane whose application tracks the mouse forwards the click to that app;
+// every other press, drag and release builds a selection for copy.
 func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if tea.MouseEvent(msg).IsWheel() {
 		switch msg.Button {
@@ -128,6 +128,17 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, m.wheelFocus(false, msg.X, msg.Y)
 		}
 		return m, nil
+	}
+	if msg.Action == tea.MouseActionPress && msg.Alt && m.pane.mouse {
+		m.sel = focusSelection{}
+		m.forwardingMouse = true
+	}
+	if m.forwardingMouse {
+		model, cmd := m.forwardFocusMouse(msg)
+		if msg.Action == tea.MouseActionRelease {
+			m.forwardingMouse = false
+		}
+		return model, cmd
 	}
 	switch msg.Action {
 	case tea.MouseActionPress:

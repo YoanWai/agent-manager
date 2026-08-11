@@ -383,6 +383,39 @@ func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 	return m, sess
 }
 
+// Ordinary clicks still select and copy inside agent-manager. Holding Alt is
+// the deliberate handoff gesture for an agent that owns the mouse.
+func TestAltClickReachesMouseTrackingApp(t *testing.T) {
+	m, sess := focusedMouseApp(t, "mouse-tool", "clickapp")
+
+	m.handleFocusMouse(tea.MouseMsg{
+		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true,
+		X: m.pane.box.x + 2, Y: m.pane.box.y + 1,
+	})
+	if m.sel.active {
+		t.Fatal("Alt-click on a mouse-tracking pane started a selection")
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil {
+			t.Fatalf("capture: %v", err)
+		}
+		if press := strings.Index(pane, "[<0;"); press >= 0 {
+			move := strings.Index(pane, "[<35;")
+			if move < 0 || move > press {
+				t.Fatalf("all-motion pointer move did not lead the press: %q", pane)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Alt-click report never reached the pane: %q", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // An application that turns on mouse tracking owns the wheel: agent CLIs
 // run on the alternate screen, where tmux keeps no scrollback at all, and
 // scroll themselves when they receive the event.

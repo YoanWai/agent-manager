@@ -97,7 +97,10 @@ type Model struct {
 	// next selection.
 	copied int
 	sel    focusSelection
-	pane   paneMirror
+	// forwardingMouse holds an Alt-initiated click lifecycle until its
+	// release, so the focused app never misses mouse-up if Alt goes first.
+	forwardingMouse bool
+	pane            paneMirror
 	// cursorOn is the caret's blink phase while focused.
 	cursorOn bool
 	// focusScroll is how many lines the focused pane is scrolled back into
