@@ -92,6 +92,7 @@ func helpSections() []helpSection {
 			{"↵", "fold / unfold"},
 			{"space", "quick prompt: spawn a new agent in the group"},
 			{"r", "edit it: name, default path, worktree"},
+			{"m", "move it, with its whole subtree, under another group"},
 			{"x / X", "kill every live session in it / everywhere"},
 			{"v / V", "revive every dead session in it / everywhere"},
 			{"a / u", "archive / restore the subtree"},

@@ -910,3 +910,101 @@ func TestBindAgentSessionIDOnlyBindsTheLaunchItAnswers(t *testing.T) {
 		t.Fatalf("conversation id = %q, want fresh", got.AgentSessionID)
 	}
 }
+
+func TestMoveGroupReparentsSubtree(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("alpha/inner", "/srv/inner"); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.CreateGroup("beta", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.CreateSession(sample("a", "alpha/inner")); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := st.MoveGroup("alpha/inner", "beta"); err != nil {
+		t.Fatalf("MoveGroup: %v", err)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	var movedPath string
+	for _, group := range groups {
+		if group.Name == "alpha/inner" {
+			t.Fatal("old group path still present")
+		}
+		if group.Name == "beta/inner" {
+			movedPath = group.Path
+		}
+	}
+	if movedPath != "/srv/inner" {
+		t.Fatalf("beta/inner path = %q, want /srv/inner", movedPath)
+	}
+	sess, err := st.Get("a")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if sess.Group != "beta/inner" {
+		t.Fatalf("session group = %q, want beta/inner", sess.Group)
+	}
+}
+
+func TestMoveGroupToRoot(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("alpha/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.MoveGroup("alpha/inner", ""); err != nil {
+		t.Fatalf("MoveGroup: %v", err)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	found := false
+	for _, group := range groups {
+		if group.Name == "inner" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("group inner missing at root")
+	}
+}
+
+func TestMoveGroupIntoOwnSubtreeFails(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("alpha/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.MoveGroup("alpha", "alpha/inner"); err == nil {
+		t.Fatal("moving a group into its own subtree should fail")
+	}
+	if err := st.MoveGroup("alpha", "alpha"); err == nil {
+		t.Fatal("moving a group into itself should fail")
+	}
+}
+
+func TestMoveGroupNameCollisionFails(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("alpha/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.CreateGroup("beta/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.MoveGroup("alpha/inner", "beta"); err == nil {
+		t.Fatal("moving onto an existing sibling name should fail")
+	}
+}
+
+func TestMoveGroupSameParentIsNoop(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("alpha/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.MoveGroup("alpha/inner", "alpha"); err != nil {
+		t.Fatalf("MoveGroup: %v", err)
+	}
+}
