@@ -218,7 +218,7 @@ func shotModel() *Model {
 	sess := func(name, group, tool, st string, age time.Duration) store.Session {
 		return store.Session{
 			ID: name, Name: name, Group: group, Tool: tool, Status: st,
-			Cwd: "/Users/yoan/dev/spaze/api", CreatedAt: now.Add(-24 * time.Hour),
+			Cwd: "/Users/someone/dev/api", CreatedAt: now.Add(-24 * time.Hour),
 			LastStatusAt: now.Add(-age),
 		}
 	}
@@ -243,7 +243,7 @@ func shotModel() *Model {
 	m := &Model{
 		width: 120, height: 34, mode: modeList, cursor: 4,
 		sessions: sessions, rows: rows, collapsed: map[string]bool{},
-		groupPaths: map[string]string{"backend": "/Users/yoan/dev/spaze/api"},
+		groupPaths: map[string]string{"backend": "/Users/someone/dev/api"},
 		split:      splitState{ratio: defaultSplitRatio},
 		agents:     agentStats{count: 4, cpu: 12, ram: 9, rss: 1_530_000_000},
 		net:        netStats{rates: true, down: 9_400_000, up: 2_100_000},
