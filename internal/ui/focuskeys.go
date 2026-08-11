@@ -192,6 +192,7 @@ func (m *Model) leaveFocus() tea.Cmd {
 	m.mode = modeList
 	m.sel = focusSelection{}
 	m.forwardingMouse = false
+	m.forwardingButton = leftButton
 	m.copied = 0
 	return nil
 }

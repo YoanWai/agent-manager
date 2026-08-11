@@ -157,13 +157,7 @@ func (m *Model) forwardFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if !inside {
 		return m, nil
 	}
-	button := leftButton
-	switch msg.Button {
-	case tea.MouseButtonMiddle:
-		button = middleButton
-	case tea.MouseButtonRight:
-		button = rightButton
-	}
+	button := m.forwardedMouseButton(msg)
 	release := msg.Action == tea.MouseActionRelease
 	if msg.Action == tea.MouseActionMotion {
 		button |= motionBit
@@ -179,6 +173,27 @@ func (m *Model) forwardFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// forwardedMouseButton keeps an X10 release paired with the press that
+// started its Alt-forwarded lifecycle. Bubble Tea reports X10 releases as
+// MouseButtonNone, while SGR needs the button that was released.
+func (m *Model) forwardedMouseButton(msg tea.MouseMsg) int {
+	if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonNone {
+		return m.forwardingButton
+	}
+	return mouseButton(msg.Button)
+}
+
+func mouseButton(button tea.MouseButton) int {
+	switch button {
+	case tea.MouseButtonMiddle:
+		return middleButton
+	case tea.MouseButtonRight:
+		return rightButton
+	default:
+		return leftButton
+	}
 }
 
 // scrollFocus moves the focused pane through its scrollback and fetches

@@ -60,22 +60,47 @@ func TestAltClickSelectsPlainPane(t *testing.T) {
 }
 
 func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
-	m := paneAt(t, "alpha beta")
-	m.pane.mouse = true
-	m.handleFocusMouse(tea.MouseMsg{
-		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true, X: 10, Y: 5,
-	})
-	if !m.forwardingMouse || m.sel.active {
-		t.Fatalf("Alt press did not start forwarding: forwarding=%v selection=%v", m.forwardingMouse, m.sel.active)
-	}
+	for _, tc := range []struct {
+		name   string
+		button tea.MouseButton
+		want   int
+		report string
+	}{
+		{name: "left", button: tea.MouseButtonLeft, want: leftButton, report: "\x1b[<0;1;1m"},
+		{name: "middle", button: tea.MouseButtonMiddle, want: middleButton, report: "\x1b[<1;1;1m"},
+		{name: "right", button: tea.MouseButtonRight, want: rightButton, report: "\x1b[<2;1;1m"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := paneAt(t, "alpha beta")
+			m.pane.mouse = true
+			m.handleFocusMouse(tea.MouseMsg{
+				Action: tea.MouseActionPress, Button: tc.button, Alt: true, X: 10, Y: 5,
+			})
+			if !m.forwardingMouse || m.sel.active {
+				t.Fatalf("Alt press did not start forwarding: forwarding=%v selection=%v", m.forwardingMouse, m.sel.active)
+			}
+			if m.forwardingButton != tc.want {
+				t.Fatalf("forwardingButton = %d, want %d", m.forwardingButton, tc.want)
+			}
 
-	// The release still belongs to the forwarded click even when Alt was
-	// released first.
-	m.handleFocusMouse(tea.MouseMsg{
-		Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 10, Y: 5,
-	})
-	if m.forwardingMouse {
-		t.Fatal("mouse release did not end the forwarding lifecycle")
+			// The release still belongs to the forwarded click even when Alt
+			// was released first. X10 carries MouseButtonNone, so the stored
+			// pressed button must supply the SGR release code.
+			release := tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonNone, X: 10, Y: 5}
+			if got := m.forwardedMouseButton(release); got != tc.want {
+				t.Fatalf("forwarded X10 release button = %d, want %d", got, tc.want)
+			}
+			m.pane.sgr = true
+			report, ok := m.mouseReport(m.forwardedMouseButton(release), true, 0, 0)
+			if !ok || report != tc.report {
+				t.Fatalf("SGR release = %q (ok=%v), want %q", report, ok, tc.report)
+			}
+
+			m.handleFocusMouse(release)
+			if m.forwardingMouse || m.forwardingButton != leftButton {
+				t.Fatalf("release did not clear forwarding state: active=%v button=%d", m.forwardingMouse, m.forwardingButton)
+			}
+		})
 	}
 }
 

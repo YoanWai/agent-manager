@@ -132,11 +132,13 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action == tea.MouseActionPress && msg.Alt && m.pane.mouse {
 		m.sel = focusSelection{}
 		m.forwardingMouse = true
+		m.forwardingButton = mouseButton(msg.Button)
 	}
 	if m.forwardingMouse {
 		model, cmd := m.forwardFocusMouse(msg)
 		if msg.Action == tea.MouseActionRelease {
 			m.forwardingMouse = false
+			m.forwardingButton = leftButton
 		}
 		return model, cmd
 	}
