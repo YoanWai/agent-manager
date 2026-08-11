@@ -73,7 +73,6 @@ func (m *Model) attachCmd(id string) tea.Cmd {
 	if prepErr != nil {
 		m.errBar.text = prepErr.Error()
 	}
-	SyncAttachBackground()
 	return tea.ExecProcess(m.tmux.AttachCommand(id), func(err error) tea.Msg {
 		return attachDoneMsg{sessID: id, err: err}
 	})
