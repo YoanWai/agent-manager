@@ -15,7 +15,9 @@ writes per-session            am-status-notify (watcher, 2s poll;
 status files:                 systemd user service on Linux,
   waiting / working /         launchd agent on macOS)
   finished / idle                    │  on flip to waiting/finished:
-<hooks>/<session-id>.status          ▼  cmux-notify "Agent Manager" "<id> …"
+<hooks>/<session-id>.status          ▼  cmux-notify "<session name>" "<state>"
+                                     │  (name read from AM's state.db via
+                                     │  python3's sqlite3; falls back to id)
   Linux: ~/.config/agent-       cmux-notify (delivery module, per platform)
   manager/hooks/                     │
   macOS: ~/Library/Application       │  TARGETING (per event, fresh):
@@ -69,9 +71,9 @@ Explicitly **out of scope** (by design, not oversight):
 | Package file | Deployed at | Role |
 |---|---|---|
 | `linux/cmux-notify` | `~/.local/bin/cmux-notify` | **Delivery (Linux).** `cmux-notify [--workspace <id>] "title" "body"` · `--flush`. Targeting precedence: `--workspace` flag → `$CMUX_NOTIFY_WORKSPACE` env pin (empty = explicitly untargeted) → live probe of agent-manager's `CMUX_WORKSPACE_ID` in `/proc` → untargeted. Channels: cmux relay shim, then `notify-send`. 4-field TSV spool (title, body, relay route, workspace); flush replays per-event with stale-workspace fallback to untargeted. |
-| `linux/am-status-notify` | `~/.local/bin/am-status-notify` | **Watcher (Linux).** Polls `~/.config/agent-manager/hooks/*.status` every 2s; fires on flips to `waiting`/`finished`; seeds silently on first pass; flushes the spool each cycle; drops state for removed sessions. |
+| `linux/am-status-notify` | `~/.local/bin/am-status-notify` | **Watcher (Linux).** Polls `~/.config/agent-manager/hooks/*.status` every 2s; fires on flips to `waiting`/`finished`; seeds silently on first pass; flushes the spool each cycle; drops state for removed sessions. Notification **title is the session's name in Agent Manager** (read from `state.db` with python3's stdlib `sqlite3` — no `sqlite3` CLI dependency — falling back to the raw id), body is `Waiting for your input` / `Finished`. |
 | `linux/am-status-notify.service` | `~/.config/systemd/user/` | **Lifecycle (Linux).** `Restart=always`; linger enabled (`loginctl enable-linger <user>`) so it starts at boot. |
-| `macos/cmux-notify` | `~/.local/bin/cmux-notify` | **Delivery (macOS).** `cmux-notify "title" "body"` · `--flush`. Probes the agent-manager process for its TTY (`ps`) and `CMUX_WORKSPACE_ID`, writes OSC 777 (`ESC ] 777 ; notify ; title ; body BEL`) to that TTY. Spools only when the TTY write fails; flush retries a dead stored TTY once against the live-probed TTY. |
+| `macos/cmux-notify` | `~/.local/bin/cmux-notify` | **Delivery (macOS).** `cmux-notify "title" "body"` · `--flush`. Probes the agent-manager **TUI** process for its TTY (`ps`) and `CMUX_WORKSPACE_ID`, writes OSC 777 (`ESC ] 777 ; notify ; title ; body BEL`) to that TTY. `agent-manager mcp` children are excluded — their TTYs are tmux pane ptys and tmux swallows the escape. Spools when the write fails **or no TUI is running** (events then deliver when it reopens); flush retries a dead stored TTY once against the live-probed TTY. |
 | `macos/am-status-notify` | `~/.local/bin/am-status-notify` | **Watcher (macOS).** Identical logic, status dir is `~/Library/Application Support/agent-manager/hooks`. |
 | `macos/com.agentmanager.am-status-notify.plist` | `~/Library/LaunchAgents/` | **Lifecycle (macOS).** Template — `__HOME__` is substituted with the installing user's home at install time. `RunAtLoad` + `KeepAlive`, loaded with `launchctl bootstrap gui/<uid>`. |
 | `linux/install.sh` / `linux/uninstall.sh` | — | Install/remove the Linux pipeline (scripts, systemd unit, optional linger + Codex hints). |
@@ -122,6 +124,18 @@ line from `~/.codex/config.toml` if you added it.
 - **Spool discipline:** an event is only queued when every channel failed;
   replay preserves FIFO order; a stored target that died while queued gets
   one retry against the live-probed target before the event is re-queued.
+- **Notification content mirrors the native agents:** title is the session's
+  name in Agent Manager, body is the state phrase (`Waiting for your input` /
+  `Finished`) — the same shape as cmux's own Claude Code notifications
+  (`Claude Code` / `Claude is waiting for your input`), so managed and
+  native entries read identically in the panel. The name is read fresh from
+  Agent Manager's `state.db` per event via python3's stdlib `sqlite3`
+  (read-only WAL connection), so renames apply immediately and there is no
+  `sqlite3` CLI dependency; any lookup failure falls back to the raw id.
+- **macOS probe targets only the TUI:** `agent-manager mcp` child processes
+  hold tmux pane ptys, and tmux filters the escape — writing there loses the
+  event silently. When no TUI is running the event spools instead and
+  delivers when it reopens.
 - **Known upstream cmux quirks** (observed during verification, candidates
   for issues against manaflow-ai/cmux): orphaned remote-relay workspace
   binding after reconnect → focus-follows notification attribution; local

@@ -53,11 +53,16 @@ print(s[:160] + ("..." if len(s) > 160 else ""))
 ' "$1" 2>/dev/null || printf '%s\n' "$1"
 }
 
-resolve_target() { # probe the live agent-manager process for its TTY (+ ws)
+resolve_target() { # probe the live agent-manager TUI for its TTY (+ ws)
   TARGET_TTY=""
   TARGET_WS=""
   local pid tty
   for pid in $(pgrep -x agent-manager 2>/dev/null); do
+    # skip `agent-manager mcp` children: their TTYs are tmux pane ptys,
+    # and tmux swallows the escape — only the TUI sits on a real cmux pty
+    case "$(ps -o command= -p "$pid" 2>/dev/null)" in
+      *" mcp") continue ;;
+    esac
     tty=$(ps -o tty= -p "$pid" 2>/dev/null | tr -d ' ')
     case "$tty" in
       ""|"??") continue ;;

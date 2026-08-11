@@ -2,12 +2,27 @@
 # Watch Agent Manager session status files and send a notification when a
 # session flips to "waiting" or "finished". Covers every agent type Agent
 # Manager manages. Polls every 2s; first pass seeds state silently.
-# The delivery module auto-targets the cmux workspace running agent-manager
-# (live probe of the agent-manager process env) and also banners locally.
-# Each cycle also flushes the cmux-notify spool.
+# The delivery module targets the cmux workspace running agent-manager by
+# writing an OSC 777 escape to the agent-manager TTY (probed live per event).
+# Notification title is the session's name in Agent Manager (read from its
+# state.db; falls back to the raw id). Each cycle also flushes the spool.
 DIR="$HOME/Library/Application Support/agent-manager/hooks"
+DB="$HOME/Library/Application Support/agent-manager/state.db"
 STATE="$HOME/.local/state/am-status-notify"
 mkdir -p "$STATE"
+
+session_name() { # session id -> human title from the AM store (fallback: id)
+  python3 - "$DB" "$1" <<'PY' 2>/dev/null
+import sqlite3, sys
+try:
+    db = sqlite3.connect("file:%s?mode=ro" % sys.argv[1], uri=True)
+    row = db.execute("SELECT name FROM sessions WHERE id = ?", (sys.argv[2],)).fetchone()
+    print(row[0] if row and row[0] else sys.argv[2])
+except Exception:
+    print(sys.argv[2])
+PY
+}
+
 first=1
 while true; do
   for f in "$DIR"/*.status; do
@@ -19,8 +34,8 @@ while true; do
       printf %s "$cur" > "$STATE/$id"
       if [ "$first" != 1 ]; then
         case "$cur" in
-          waiting)  "$HOME/.local/bin/cmux-notify" "Agent Manager" "$id needs input" ;;
-          finished) "$HOME/.local/bin/cmux-notify" "Agent Manager" "$id finished" ;;
+          waiting)  "$HOME/.local/bin/cmux-notify" "$(session_name "$id")" "Waiting for your input" ;;
+          finished) "$HOME/.local/bin/cmux-notify" "$(session_name "$id")" "Finished" ;;
         esac
       fi
     fi
