@@ -575,6 +575,22 @@ func (s *Store) RenameGroup(oldPath, newPath string) error {
 	return tx.Commit()
 }
 
+// MoveGroup re-parents a group subtree under newParent ("" = root),
+// keeping its base name. Every descendant group and session follows.
+func (s *Store) MoveGroup(path, newParent string) error {
+	if path == "" {
+		return fmt.Errorf("group path cannot be empty")
+	}
+	if inSubtree(newParent, path) {
+		return fmt.Errorf("cannot move %s into its own subtree", path)
+	}
+	newPath := path[strings.LastIndex(path, "/")+1:]
+	if newParent != "" {
+		newPath = newParent + "/" + newPath
+	}
+	return s.RenameGroup(path, newPath)
+}
+
 // MoveSession reassigns a session to another group ("" = root), placing
 // it at the end of the destination.
 func (s *Store) MoveSession(id, group string) error {

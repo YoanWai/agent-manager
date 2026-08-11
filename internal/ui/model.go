@@ -141,6 +141,7 @@ type Model struct {
 	settings  settingsState
 	help      helpState
 	moveID    string
+	movePath  string
 	repoPick  repoPickState
 
 	// Repo a human picked by hand per session, outranking the agent's
