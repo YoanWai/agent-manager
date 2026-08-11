@@ -910,3 +910,120 @@ func TestBindAgentSessionIDOnlyBindsTheLaunchItAnswers(t *testing.T) {
 		t.Fatalf("conversation id = %q, want fresh", got.AgentSessionID)
 	}
 }
+
+func TestMoveGroupReparentsSubtree(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("alpha/inner", "/srv/inner"); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.CreateGroup("alpha/inner/deep", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.CreateGroup("beta", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.SetGroupWorktree("alpha/inner", "on"); err != nil {
+		t.Fatalf("set worktree: %v", err)
+	}
+	if err := st.CreateSession(sample("a", "alpha/inner")); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := st.CreateSession(sample("b", "alpha/inner/deep")); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := st.MoveGroup("alpha/inner", "beta"); err != nil {
+		t.Fatalf("MoveGroup: %v", err)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	byName := make(map[string]Group, len(groups))
+	for _, group := range groups {
+		if group.Name == "alpha/inner" || group.Name == "alpha/inner/deep" {
+			t.Fatalf("old group path %s still present", group.Name)
+		}
+		byName[group.Name] = group
+	}
+	moved, ok := byName["beta/inner"]
+	if !ok {
+		t.Fatal("beta/inner missing")
+	}
+	if moved.Path != "/srv/inner" {
+		t.Fatalf("beta/inner path = %q, want /srv/inner", moved.Path)
+	}
+	if moved.Worktree != "on" {
+		t.Fatalf("beta/inner worktree = %q, want on", moved.Worktree)
+	}
+	if _, ok := byName["beta/inner/deep"]; !ok {
+		t.Fatal("beta/inner/deep missing")
+	}
+	for id, want := range map[string]string{"a": "beta/inner", "b": "beta/inner/deep"} {
+		sess, err := st.Get(id)
+		if err != nil {
+			t.Fatalf("get %s: %v", id, err)
+		}
+		if sess.Group != want {
+			t.Fatalf("session %s group = %q, want %q", id, sess.Group, want)
+		}
+	}
+}
+
+func TestMoveGroupToRoot(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("alpha/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.MoveGroup("alpha/inner", ""); err != nil {
+		t.Fatalf("MoveGroup: %v", err)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("groups: %v", err)
+	}
+	found := false
+	for _, group := range groups {
+		if group.Name == "inner" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("group inner missing at root")
+	}
+}
+
+func TestMoveGroupIntoOwnSubtreeFails(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("alpha/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.MoveGroup("alpha", "alpha/inner"); err == nil {
+		t.Fatal("moving a group into its own subtree should fail")
+	}
+	if err := st.MoveGroup("alpha", "alpha"); err == nil {
+		t.Fatal("moving a group into itself should fail")
+	}
+}
+
+func TestMoveGroupNameCollisionFails(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("alpha/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.CreateGroup("beta/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.MoveGroup("alpha/inner", "beta"); err == nil {
+		t.Fatal("moving onto an existing sibling name should fail")
+	}
+}
+
+func TestMoveGroupSameParentIsNoop(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("alpha/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.MoveGroup("alpha/inner", "alpha"); err != nil {
+		t.Fatalf("MoveGroup: %v", err)
+	}
+}

@@ -55,6 +55,8 @@ func helpSections() []helpSection {
 	return []helpSection{
 		{title: "list", rows: [][2]string{
 			{"↑↓ / jk", "move the cursor"},
+			{"→", "step in: focus the session, open the group"},
+			{"←", "step out: close the group"},
 			{"K / J", "reorder the row up / down (shift+↑↓ too)"},
 			{"n", "new session"},
 			{"T", "new terminal tab: a shell in the group under the cursor"},
@@ -90,6 +92,7 @@ func helpSections() []helpSection {
 			{"↵", "fold / unfold"},
 			{"space", "quick prompt: spawn a new agent in the group"},
 			{"r", "edit it: name, default path, worktree"},
+			{"m", "move it, with its whole subtree, under another group"},
 			{"x / X", "kill every live session in it / everywhere"},
 			{"v / V", "revive every dead session in it / everywhere"},
 			{"a / u", "archive / restore the subtree"},
@@ -108,6 +111,7 @@ func helpSections() []helpSection {
 		{title: "inside a session (attached or focused)", rows: [][2]string{
 			{"typing", "goes straight to the agent, q included"},
 			{"ctrl+q", "back to the manager (ctrl+\\ too)"},
+			{"←", "focused: back to the manager, at the prompt's start"},
 			{"ctrl+r", "review the session's diff, esc returns"},
 			{"wheel", "focused: scroll the pane's history, type to catch up"},
 			{"drag", "focused: select pane text and copy it"},

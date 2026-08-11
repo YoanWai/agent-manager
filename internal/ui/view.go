@@ -481,7 +481,7 @@ func (m *Model) rowLegend() legendSection {
 			foldAction = "unfold"
 		}
 		return legendSection{title: "Group", pairs: [][2]string{
-			{"↵", foldAction}, {"r", "rename"},
+			{"↵", foldAction}, {"r", "rename"}, {"m", "move"},
 			{"x/X", "kill / all"}, {"v/V", "revive / all"},
 			{"a/u", "archive / restore"}, {"d", "delete"},
 		}}

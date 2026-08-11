@@ -282,6 +282,13 @@ func (m *Model) viewSettings() string {
 	if m.settings.worktreeDefault {
 		worktreeDefault = "on"
 	}
+	arrowStep := "off"
+	if m.settings.arrowStep {
+		arrowStep = "on"
+	}
+	// The beta tag borrows the messages card's yellow, so the row reads as
+	// the one still under test.
+	betaTag := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Render(" beta")
 	themeAuto := "off"
 	if m.settings.themeAuto {
 		themeAuto = "on"
@@ -332,6 +339,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
+		row(settingsFieldArrowStep, "←→ step in/out", arrowStep) + betaTag + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
 		row(settingsFieldTerminals, "terminal rows", terminals) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +

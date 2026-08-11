@@ -213,6 +213,23 @@ func (e *Engine) ActivityRegion(tool, pane string) (string, bool) {
 	return tr.activityRegion(pane)
 }
 
+// InputPrefix returns the prompt marker a tool draws at the start of its
+// input line, when row is that line. It reuses activity_cutoff, matched
+// against a single row and anchored at its start, so a marker quoted
+// further along the row cannot pass. A zero-width match is no marker: a
+// degenerate cutoff like ^ would otherwise stamp every row as a prompt.
+func (e *Engine) InputPrefix(tool, row string) (string, bool) {
+	tr, ok := e.tools[tool]
+	if !ok || tr.activityCutoff == nil {
+		return "", false
+	}
+	loc := tr.activityCutoff.FindStringIndex(row)
+	if loc == nil || loc[0] != 0 || loc[1] == 0 {
+		return "", false
+	}
+	return row[:loc[1]], true
+}
+
 func (tr toolRules) activityRegion(pane string) (string, bool) {
 	if tr.activityCutoff == nil {
 		return "", false

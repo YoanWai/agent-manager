@@ -19,6 +19,8 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
 | `A` | Attach session full screen (Settings can swap it with `enter`) |
 | `ctrl+q` | Inside a session: back to the manager |
+| `→` | Step into the row: focus the session, or open the group. In beta; Settings (`s`) can turn the pair off |
+| `←` | Step out: close the group, or — focused, with the caret at the start of the agent's prompt — back to the manager. This needs the tool's prompt marker (its `activity_cutoff`) on the caret's row, so a CLI without one keeps `←` entirely; anywhere else in the prompt it moves the caret as usual |
 | `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings |
 | `m` | Move session to another group |
 | `r` | Rename session / edit tool; edit group name and default path |
@@ -32,7 +34,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
-| `s` | Settings (quick-spawn tool, theme, theme follows OS, list density, review layout, after quick send, session keys, worktree sessions, report a bug) |
+| `s` | Settings (quick-spawn tool, theme, theme follows OS, list density, review layout, after quick send, session keys, ←→ step in/out, worktree sessions, report a bug) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
 | `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |

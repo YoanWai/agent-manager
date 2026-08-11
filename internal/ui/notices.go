@@ -23,6 +23,9 @@ import (
 
 const (
 	noticeWelcome = "welcome"
+	// noticeArrowStep introduces the beta ←→ pair; it ships in the binary
+	// and stays listed until dismissed, like the welcome.
+	noticeArrowStep = "arrow-step-beta"
 
 	dismissedNoticesSetting = "dismissed_notices"
 	lastSeenVersionSetting  = "last_seen_version"
@@ -152,6 +155,24 @@ func (m *Model) activeNotices() []notice {
 			},
 			url: repoURL + "#readme",
 		},
+		notice{
+			id:    noticeArrowStep,
+			glyph: "↔",
+			tint:  lipgloss.Color("#e2c044"),
+			title: "New in beta: step in and out with ← →",
+			body: []string{
+				"→ on a list row steps in: it focuses the session, or opens the group.",
+				"← steps out: it closes the group, and inside a focused session it",
+				"returns here - only while the caret sits at the start of the agent's",
+				"prompt, where ← would do nothing. Anywhere else in the prompt it",
+				"moves the caret as always.",
+				"",
+				"We are testing this. If a ← ever lands somewhere you did not expect,",
+				"Enter here opens a prefilled report, and Settings (s) has a",
+				"\"←→ step in/out\" row that turns the pair off.",
+			},
+			url: arrowStepFeedbackURL(m.update.version),
+		},
 	)
 
 	kept := notices[:0]
@@ -165,6 +186,13 @@ func (m *Model) activeNotices() []notice {
 
 func bugReportURL(version string) string {
 	body := fmt.Sprintf("**Version:** %s\n**OS:** %s/%s\n\n**What happened:**\n", version, runtime.GOOS, runtime.GOARCH)
+	return repoURL + "/issues/new?body=" + url.QueryEscape(body)
+}
+
+// arrowStepFeedbackURL prefills a report scoped to the beta ←→ pair, so
+// feedback on it arrives labeled without the reporter typing the context.
+func arrowStepFeedbackURL(version string) string {
+	body := fmt.Sprintf("**Version:** %s\n**OS:** %s/%s\n\n**Area**\n←→ step in/out (beta)\n\n**What happened:**\n", version, runtime.GOOS, runtime.GOARCH)
 	return repoURL + "/issues/new?body=" + url.QueryEscape(body)
 }
 

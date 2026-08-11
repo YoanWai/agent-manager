@@ -317,3 +317,38 @@ func TestToggleCollapseAllFlipsEveryGroup(t *testing.T) {
 		t.Fatalf("unfold-all not persisted: %v", restored)
 	}
 }
+
+// Right steps into the row under the cursor: a session is focused, and a
+// collapsed group opens without the toggle closing an open one.
+func TestRightStepsIntoTheRow(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("grouped", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "stepin", t.TempDir(), "grouped")
+	m.selectGroupRow(t, "grouped")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	*m = *updated.(*Model)
+	if !m.collapsed["grouped"] {
+		t.Fatal("left did not close the group")
+	}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	*m = *updated.(*Model)
+	if m.collapsed["grouped"] {
+		t.Fatal("right did not open the group")
+	}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	*m = *updated.(*Model)
+	if m.collapsed["grouped"] {
+		t.Fatal("a second right closed the group it had opened")
+	}
+
+	m.selectSessionRow(t, "stepin")
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("right did not focus the session, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+}

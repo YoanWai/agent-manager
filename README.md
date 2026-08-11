@@ -7,7 +7,7 @@
 
 <p align="center"><b>The fastest workflow for every AI coding agent.</b></p>
 
-<p align="center"><!-- trendshift:start --><a href="https://trendshift.io/repositories/89312?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-89312" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/89312/daily?language=Go" alt="agent-manager on Trendshift" width="250" height="55"></a><!-- trendshift:end --></p>
+<p align="center"><!-- trendshift:start --><a href="https://trendshift.io/repositories/89312?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-89312" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/89312/daily?language=Go" alt="agent-manager on Trendshift" width="250" height="55"></a><!-- trendshift:end --> <a href="https://www.producthunt.com/products/agent-manager?utm_source=badge-featured&amp;utm_medium=badge" target="_blank" rel="noopener noreferrer"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1212310&amp;theme=dark" alt="agent-manager on Product Hunt" width="250" height="54"></a></p>
 
 <p align="center">
   <a href="https://github.com/YoanWai/agent-manager/stargazers"><img src="https://img.shields.io/github/stars/YoanWai/agent-manager?style=for-the-badge&label=stars&labelColor=1f2328&color=96591f" alt="stars"></a>
@@ -78,6 +78,7 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `n` | New session (name, tool, directory, optional starting prompt, group) |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `enter` | Focus the session in place; keys go to the agent while the list stays |
+| `→` / `←` | Step in and out: `→` focuses the session or opens the group, `←` closes the group and, at the start of a focused agent's prompt, comes back to the list. In beta, and Settings can turn the pair off |
 | `ctrl+r` | Review the session's changes as full-file diffs; `c` comments a line, `C` sends the comments to the agent |
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |
 | `R` | Restart a session on an empty context: same name, group, directory and tool, fresh conversation |
@@ -107,9 +108,9 @@ Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md]
 
 ### Contributors
 
-<a href="https://github.com/YoanWai/agent-manager/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=YoanWai/agent-manager" alt="Contributors" />
-</a>
+<!-- contributors:start -->
+<a href="https://github.com/YoanWai"><img src="docs/badges/contributors/YoanWai.png" width="64" height="64" alt="@YoanWai"></a> <a href="https://github.com/steveprentice"><img src="docs/badges/contributors/steveprentice.png" width="64" height="64" alt="@steveprentice"></a> <a href="https://github.com/andrelago13"><img src="docs/badges/contributors/andrelago13.png" width="64" height="64" alt="@andrelago13"></a> <a href="https://github.com/redeye1011"><img src="docs/badges/contributors/redeye1011.png" width="64" height="64" alt="@redeye1011"></a> <a href="https://github.com/snowyukitty"><img src="docs/badges/contributors/snowyukitty.png" width="64" height="64" alt="@snowyukitty"></a> <a href="https://github.com/reddeye1337"><img src="docs/badges/contributors/reddeye1337.png" width="64" height="64" alt="@reddeye1337"></a> <a href="https://github.com/mikaoelitiana"><img src="docs/badges/contributors/mikaoelitiana.png" width="64" height="64" alt="@mikaoelitiana"></a>
+<!-- contributors:end -->
 
 ## License
 

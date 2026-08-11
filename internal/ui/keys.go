@@ -89,6 +89,25 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.focusSelected()
 		}
 		return m.attachSelected()
+	case "right":
+		if !m.arrowStep {
+			return m, nil
+		}
+		if entry, ok := m.selectedRow(); ok && entry.isGroup {
+			if m.collapsed[entry.group] {
+				m.toggleCollapse()
+			}
+			return m, nil
+		}
+		return m.focusSelected()
+	case "left":
+		if !m.arrowStep {
+			return m, nil
+		}
+		if entry, ok := m.selectedRow(); ok && entry.isGroup && !m.collapsed[entry.group] {
+			m.toggleCollapse()
+		}
+		return m, nil
 	case "A", "shift+a":
 		if m.enterFocuses() {
 			return m.attachSelected()
@@ -431,6 +450,10 @@ const diffLayoutSetting = "diff_layout"
 const listDensitySetting = "list_density"
 
 const focusKeySetting = "focus_key"
+
+// arrowStepSetting is the beta ←→ pair: "off" turns it off, anything else
+// leaves it on.
+const arrowStepSetting = "arrow_step_keys"
 
 const quickCloseSetting = "quick_prompt_close"
 
