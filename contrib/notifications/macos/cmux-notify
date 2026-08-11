@@ -1,0 +1,153 @@
+#!/bin/bash
+# cmux-notify — delivery module for agent notifications from this host (macOS).
+#
+# Interface:
+#   cmux-notify "title" "body"
+#   cmux-notify --flush
+#
+# Delivery: a Ghostty-style escape (OSC 777 notify) written to the TTY of the
+# agent-manager process. The sequence enters cmux through that surface's pty,
+# so cmux itself raises the notification (pane ring, sidebar badge, panel
+# entry, macOS banner) attributed to the workspace running agent-manager —
+# correct routing with no cmux CLI access needed (the local socket refuses
+# processes not started inside cmux). This is the single, native channel:
+# no osascript/Notification Center side channel (those banners are attributed
+# to "Script Editor", can't focus the pane, and duplicate cmux's own banner).
+#
+# The target TTY is probed live per event (pgrep agent-manager -> ps tty),
+# so pane/workspace churn cannot strand it.
+#
+# Bodies are normalized to native style: one line, capped at 160 chars;
+# a codex payload JSON body is reduced to its last-assistant-message.
+#
+# An event is spooled (TSV FIFO: title, body, tty, workspace) only when the
+# TTY write fails, and replayed in order by later calls / --flush; a spooled
+# event whose stored TTY died is retried once on the live-probed TTY.
+# Every event appends one decision line to $STATE_DIR/log.
+set -u
+
+STATE_DIR="${CMUX_NOTIFY_STATE_DIR:-$HOME/.local/state/cmux-notify}"
+SPOOL="$STATE_DIR/spool"
+LOG="$STATE_DIR/log"
+MAX_SPOOL="${CMUX_NOTIFY_MAX_SPOOL:-200}"
+TARGET_TTY=""
+TARGET_WS=""
+
+logline() { # message...
+  mkdir -p "$STATE_DIR"
+  printf '%s %s\n' "$(date +%H:%M:%S)" "$*" >> "$LOG"
+}
+
+normalize_body() { # raw body -> short single line on stdout
+  python3 -c '
+import sys, json
+s = sys.argv[1].strip()
+if s.startswith("{"):
+    try:
+        d = json.loads(s)
+        s = d.get("last-assistant-message") or d.get("message") or s
+    except Exception:
+        pass
+s = " ".join(s.split())
+print(s[:160] + ("..." if len(s) > 160 else ""))
+' "$1" 2>/dev/null || printf '%s\n' "$1"
+}
+
+resolve_target() { # probe the live agent-manager process for its TTY (+ ws)
+  TARGET_TTY=""
+  TARGET_WS=""
+  local pid tty
+  for pid in $(pgrep -x agent-manager 2>/dev/null); do
+    tty=$(ps -o tty= -p "$pid" 2>/dev/null | tr -d ' ')
+    case "$tty" in
+      ""|"??") continue ;;
+    esac
+    [ -w "/dev/$tty" ] || continue
+    TARGET_TTY="/dev/$tty"
+    TARGET_WS=$(ps eww -p "$pid" 2>/dev/null | tr ' ' '\n' | sed -n 's/^CMUX_WORKSPACE_ID=//p' | head -1)
+    return 0
+  done
+  return 1
+}
+
+clean() { # strip ESC/BEL, flatten tabs/newlines
+  printf '%s' "$1" | tr -d '\033\007' | tr '\t\n' '  '
+}
+
+tty_send() { # title body tty -> 0 if written
+  [ -n "${3:-}" ] || return 1
+  printf '\033]777;notify;%s;%s\007' "$(clean "$1")" "$(clean "$2")" > "$3" 2>/dev/null
+}
+
+spool_add() { # title body tty workspace
+  mkdir -p "$STATE_DIR"
+  printf '%s\t%s\t%s\t%s\n' \
+    "$(printf '%s' "$1" | tr '\t\n' '  ')" \
+    "$(printf '%s' "$2" | tr '\t\n' '  ')" \
+    "$(printf '%s' "$3" | tr '\t\n' '  ')" \
+    "$(printf '%s' "$4" | tr '\t\n' '  ')" >> "$SPOOL"
+  local n
+  n=$(wc -l < "$SPOOL")
+  if [ "$n" -gt "$MAX_SPOOL" ]; then
+    tail -n "$MAX_SPOOL" "$SPOOL" > "$SPOOL.cap" && mv "$SPOOL.cap" "$SPOOL"
+  fi
+}
+
+flush() {
+  [ -s "$SPOOL" ] || return 0
+  mv "$SPOOL" "$SPOOL.flushing"
+  local failed=0 t b tty ws rest
+  resolve_target 2>/dev/null
+  local live_tty="$TARGET_TTY"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    # split on tabs manually: IFS-whitespace collapsing would eat empty fields
+    t=${line%%$'\t'*}; rest=${line#*$'\t'}
+    b=${rest%%$'\t'*}; rest=${rest#*$'\t'}
+    tty=${rest%%$'\t'*}; ws=${rest#*$'\t'}
+    local eff_tty="${tty:-$live_tty}"
+    if [ "$failed" -eq 0 ] && tty_send "$t" "$b" "$eff_tty"; then
+      logline "flush delivered: $t"
+      continue
+    fi
+    # retry on the live TTY once (stored TTY may have died while spooled)
+    if [ "$failed" -eq 0 ] && [ -n "$live_tty" ] && [ "$eff_tty" != "$live_tty" ] && tty_send "$t" "$b" "$live_tty"; then
+      logline "flush delivered via live tty (stale tty $eff_tty): $t"
+      continue
+    fi
+    failed=1
+    printf '%s\t%s\t%s\t%s\n' "$t" "$b" "$tty" "$ws" >> "$SPOOL.keep"
+  done < "$SPOOL.flushing"
+  rm -f "$SPOOL.flushing"
+  if [ -f "$SPOOL.keep" ]; then
+    if [ -f "$SPOOL" ]; then
+      cat "$SPOOL.keep" "$SPOOL" > "$SPOOL.merge" && mv "$SPOOL.merge" "$SPOOL"
+    else
+      mv "$SPOOL.keep" "$SPOOL"
+    fi
+  fi
+}
+
+if [ "${1:-}" = "--flush" ]; then
+  flush
+  exit 0
+fi
+
+title="${1:-cmux}"
+body=$(normalize_body "${2:-}")
+
+flush   # drain backlog first (cheap no-op when spool empty)
+resolve_target
+if tty_send "$title" "$body" "$TARGET_TTY"; then
+  logline "tty ok [tty=${TARGET_TTY:-none} ws=${TARGET_WS:-none}] :: $title"
+  tty_ok=0
+else
+  logline "tty FAIL [tty=${TARGET_TTY:-none} ws=${TARGET_WS:-none}] :: $title"
+  tty_ok=1
+fi
+if [ "$tty_ok" -eq 0 ]; then
+  exit 0
+fi
+spool_add "$title" "$body" "$TARGET_TTY" "$TARGET_WS"
+logline "SPOOLED :: $title"
+echo "cmux-notify: tty write failed - event spooled for later delivery" >&2

@@ -1,0 +1,37 @@
+#!/bin/bash
+# Watch Agent Manager session status files and send a notification when a
+# session flips to "waiting" or "finished". Covers every agent type Agent
+# Manager manages. Polls every 2s; first pass seeds state silently.
+# The delivery module auto-targets the cmux workspace running agent-manager
+# (live probe of the agent-manager process env) and also banners locally.
+# Each cycle also flushes the cmux-notify spool.
+DIR="$HOME/Library/Application Support/agent-manager/hooks"
+STATE="$HOME/.local/state/am-status-notify"
+mkdir -p "$STATE"
+first=1
+while true; do
+  for f in "$DIR"/*.status; do
+    [ -e "$f" ] || continue
+    id=$(basename "$f" .status)
+    cur=$(cat "$f" 2>/dev/null) || continue
+    prev=$(cat "$STATE/$id" 2>/dev/null)
+    if [ "$cur" != "$prev" ]; then
+      printf %s "$cur" > "$STATE/$id"
+      if [ "$first" != 1 ]; then
+        case "$cur" in
+          waiting)  "$HOME/.local/bin/cmux-notify" "Agent Manager" "$id needs input" ;;
+          finished) "$HOME/.local/bin/cmux-notify" "Agent Manager" "$id finished" ;;
+        esac
+      fi
+    fi
+  done
+  # drop state for sessions whose status file was removed
+  for s in "$STATE"/*; do
+    [ -e "$s" ] || continue
+    id=$(basename "$s")
+    [ -e "$DIR/$id.status" ] || rm -f "$s"
+  done
+  "$HOME/.local/bin/cmux-notify" --flush
+  first=0
+  sleep 2
+done

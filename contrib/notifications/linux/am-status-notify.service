@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Manager status -> cmux notifications
+
+[Service]
+ExecStart=%h/.local/bin/am-status-notify
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

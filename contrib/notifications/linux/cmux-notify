@@ -1,0 +1,177 @@
+#!/bin/bash
+# cmux-notify — delivery module for agent notifications from this host.
+#
+# Interface:
+#   cmux-notify [--workspace <id>] "title" "body"
+#   cmux-notify --flush
+#
+# Targeting (which cmux workspace shows the notification):
+#   1. --workspace <id> flag, or $CMUX_NOTIFY_WORKSPACE when set
+#      (empty string = explicitly untargeted)
+#   2. auto: the workspace running agent-manager, read live from the
+#      agent-manager process environment (CMUX_WORKSPACE_ID) — fresh per
+#      event, so workspace-id churn across reconnects cannot strand it
+#   3. none found -> untargeted (cmux shows it on the active workspace)
+#
+# Channels (best effort, both attempted):
+#   1. cmux app via the remote relay (~/.cmux/bin/cmux shim; any live relay
+#      reaches the app — targeting is what matters, not which relay)
+#   2. local desktop via notify-send (GNOME banner on this machine)
+#
+# Bodies are normalized to native style: one line, capped at 160 chars;
+# a codex payload JSON body is reduced to its last-assistant-message.
+#
+# An event is spooled (TSV FIFO: title, body, route, workspace-override) only
+# when BOTH channels fail, and replayed in order by later calls / --flush.
+# Every event appends one decision line to $STATE_DIR/log.
+# CMUX_NOTIFY_DESKTOP=0 disables the desktop channel.
+set -u
+
+CMUX="$HOME/.cmux/bin/cmux"
+STATE_DIR="${CMUX_NOTIFY_STATE_DIR:-$HOME/.local/state/cmux-notify}"
+SPOOL="$STATE_DIR/spool"
+LOG="$STATE_DIR/log"
+MAX_SPOOL="${CMUX_NOTIFY_MAX_SPOOL:-200}"
+TARGET_WS=""
+WS_SOURCE=""
+
+if [ "${1:-}" = "--workspace" ]; then
+  TARGET_WS="${2:-}"
+  WS_SOURCE="flag"
+  shift 2
+fi
+
+logline() { # message...
+  mkdir -p "$STATE_DIR"
+  printf '%s %s\n' "$(date +%H:%M:%S)" "$*" >> "$LOG"
+}
+
+normalize_body() { # raw body -> short single line on stdout
+  python3 -c '
+import sys, json
+s = sys.argv[1].strip()
+if s.startswith("{"):
+    try:
+        d = json.loads(s)
+        s = d.get("last-assistant-message") or d.get("message") or s
+    except Exception:
+        pass
+s = " ".join(s.split())
+print(s[:160] + ("..." if len(s) > 160 else ""))
+' "$1" 2>/dev/null || printf '%s\n' "$1"
+}
+
+resolve_workspace() { # sets TARGET_WS/WS_SOURCE unless already set by flag
+  [ -n "$WS_SOURCE" ] && return 0
+  if [ "${CMUX_NOTIFY_WORKSPACE+x}" = x ]; then
+    TARGET_WS="$CMUX_NOTIFY_WORKSPACE"
+    WS_SOURCE="env-pin"
+    return 0
+  fi
+  local pid ws
+  for pid in $(pgrep -x agent-manager 2>/dev/null); do
+    ws=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | sed -n 's/^CMUX_WORKSPACE_ID=//p' | head -1)
+    if [ -n "$ws" ]; then
+      TARGET_WS="$ws"
+      WS_SOURCE="agent-manager-probe"
+      return 0
+    fi
+  done
+  WS_SOURCE="untargeted"
+  return 1
+}
+
+relay_send() { # title body workspace -> 0 if delivered; prints relay JSON
+  [ -x "$CMUX" ] || return 1
+  local out wsargs=()
+  [ -n "${3:-}" ] && wsargs=(--workspace "$3")
+  out=$(timeout 8 "$CMUX" notify "${wsargs[@]}" --title "$1" --body "$2" 2>/dev/null) || return 1
+  printf '%s' "$out" | tr '\n\t' '  '
+}
+
+desktop_send() { # title body -> 0 if delivered to local desktop
+  [ "${CMUX_NOTIFY_DESKTOP:-1}" = "0" ] && return 1
+  command -v notify-send >/dev/null 2>&1 || return 1
+  export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/$(id -u)/bus}"
+  notify-send "$1" "$2" >/dev/null 2>&1
+}
+
+spool_add() { # title body route workspace
+  mkdir -p "$STATE_DIR"
+  printf '%s\t%s\t%s\t%s\n' \
+    "$(printf '%s' "$1" | tr '\t\n' '  ')" \
+    "$(printf '%s' "$2" | tr '\t\n' '  ')" \
+    "$(printf '%s' "$3" | tr '\t\n' '  ')" \
+    "$(printf '%s' "$4" | tr '\t\n' '  ')" >> "$SPOOL"
+  local n
+  n=$(wc -l < "$SPOOL")
+  if [ "$n" -gt "$MAX_SPOOL" ]; then
+    tail -n "$MAX_SPOOL" "$SPOOL" > "$SPOOL.cap" && mv "$SPOOL.cap" "$SPOOL"
+  fi
+}
+
+flush() {
+  [ -s "$SPOOL" ] || return 0
+  mv "$SPOOL" "$SPOOL.flushing"
+  local failed=0 t b route ws
+  resolve_workspace 2>/dev/null
+  local live_ws="$TARGET_WS"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    # split on tabs manually: IFS-whitespace collapsing would eat empty fields
+    t=${line%%$'\t'*}; rest=${line#*$'\t'}
+    b=${rest%%$'\t'*}; rest=${rest#*$'\t'}
+    route=${rest%%$'\t'*}; ws=${rest#*$'\t'}
+    local eff_ws="${ws:-$live_ws}"
+    if [ "$failed" -eq 0 ] && CMUX_SOCKET_PATH="$route" relay_send "$t" "$b" "$eff_ws" >/dev/null; then
+      logline "flush delivered: $t"
+      continue
+    fi
+    # retry untargeted once (stored/pinned workspace may have died while spooled)
+    if [ "$failed" -eq 0 ] && [ -n "$eff_ws" ] && CMUX_SOCKET_PATH="$route" relay_send "$t" "$b" "" >/dev/null; then
+      logline "flush delivered untargeted (stale workspace $eff_ws): $t"
+      continue
+    fi
+    failed=1
+    printf '%s\t%s\t%s\t%s\n' "$t" "$b" "$route" "$ws" >> "$SPOOL.keep"
+  done < "$SPOOL.flushing"
+  rm -f "$SPOOL.flushing"
+  if [ -f "$SPOOL.keep" ]; then
+    if [ -f "$SPOOL" ]; then
+      cat "$SPOOL.keep" "$SPOOL" > "$SPOOL.merge" && mv "$SPOOL.merge" "$SPOOL"
+    else
+      mv "$SPOOL.keep" "$SPOOL"
+    fi
+  fi
+}
+
+if [ "${1:-}" = "--flush" ]; then
+  flush
+  exit 0
+fi
+
+title="${1:-cmux}"
+body=$(normalize_body "${2:-}")
+
+flush   # drain backlog first (cheap no-op when spool empty)
+resolve_workspace
+resp=""
+if resp=$(relay_send "$title" "$body" "$TARGET_WS"); then
+  logline "cmux ok [ws=${TARGET_WS:-none} via=$WS_SOURCE] {$resp} :: $title"
+  cmux_ok=0
+else
+  logline "cmux FAIL [ws=${TARGET_WS:-none} via=$WS_SOURCE] :: $title"
+  cmux_ok=1
+fi
+if desktop_send "$title" "$body"; then
+  logline "desktop ok :: $title"
+  desk_ok=0
+else
+  desk_ok=1
+fi
+if [ "$cmux_ok" -eq 0 ] || [ "$desk_ok" -eq 0 ]; then
+  exit 0
+fi
+spool_add "$title" "$body" "${CMUX_SOCKET_PATH:-}" "$TARGET_WS"
+logline "SPOOLED :: $title"
+echo "cmux-notify: no channel available - event spooled for later delivery" >&2
