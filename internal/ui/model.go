@@ -97,12 +97,13 @@ type Model struct {
 	// next selection.
 	copied int
 	sel    focusSelection
-	// forwardingMouse holds an Alt-initiated click lifecycle until its
-	// release, so the focused app never misses mouse-up if Alt goes first.
-	// forwardingButton retains the pane protocol's pressed button because
-	// X10 reports every release as MouseButtonNone.
+	// forwardingMouse holds an Alt-initiated in-pane click lifecycle until
+	// its release. The button and last in-pane cell keep an X10 release
+	// paired with its press when it reports MouseButtonNone outside the pane.
 	forwardingMouse  bool
 	forwardingButton int
+	forwardingRow    int
+	forwardingCol    int
 	pane             paneMirror
 	// cursorOn is the caret's blink phase while focused.
 	cursorOn bool

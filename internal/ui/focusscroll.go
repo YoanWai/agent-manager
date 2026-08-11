@@ -149,12 +149,12 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 // focused application that owns the mouse. Normal clicks remain available
 // for agent-manager's selection and clipboard behavior.
 func (m *Model) forwardFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	sess, ok := m.selected()
-	if !ok || m.focus == nil {
+	row, col, ok := m.forwardedMouseCell(msg)
+	if !ok {
 		return m, nil
 	}
-	row, col, inside := m.paneCell(msg.X, msg.Y)
-	if !inside {
+	sess, ok := m.selected()
+	if !ok || m.focus == nil {
 		return m, nil
 	}
 	button := m.forwardedMouseButton(msg)
@@ -173,6 +173,20 @@ func (m *Model) forwardFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// forwardedMouseCell uses the current cell while the pointer is in the pane.
+// A release immediately after leaving the pane belongs to the active gesture,
+// so it lands at that gesture's final in-pane cell instead.
+func (m *Model) forwardedMouseCell(msg tea.MouseMsg) (row, col int, ok bool) {
+	if row, col, inside := m.paneCell(msg.X, msg.Y); inside {
+		m.forwardingRow, m.forwardingCol = row, col
+		return row, col, true
+	}
+	if msg.Action == tea.MouseActionRelease && m.forwardingMouse {
+		return m.forwardingRow, m.forwardingCol, true
+	}
+	return 0, 0, false
 }
 
 // forwardedMouseButton keeps an X10 release paired with the press that

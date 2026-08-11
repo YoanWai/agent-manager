@@ -416,6 +416,34 @@ func TestAltClickReachesMouseTrackingApp(t *testing.T) {
 	}
 }
 
+func TestAltClickReleaseOutsidePaneReachesMouseTrackingApp(t *testing.T) {
+	m, sess := focusedMouseApp(t, "mouse-tool", "outside-release")
+	m.handleFocusMouse(tea.MouseMsg{
+		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true,
+		X: m.pane.box.x + 2, Y: m.pane.box.y + 1,
+	})
+	m.handleFocusMouse(tea.MouseMsg{
+		Action: tea.MouseActionRelease, Button: tea.MouseButtonNone,
+		X: m.pane.box.x + m.pane.box.width, Y: m.pane.box.y + 1,
+	})
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil {
+			t.Fatalf("capture: %v", err)
+		}
+		press := strings.Index(pane, "[<0;")
+		if press >= 0 && strings.Contains(pane[press+1:], "[<0;") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("outside release never reached the pane: %q", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // An application that turns on mouse tracking owns the wheel: agent CLIs
 // run on the alternate screen, where tmux keeps no scrollback at all, and
 // scroll themselves when they receive the event.

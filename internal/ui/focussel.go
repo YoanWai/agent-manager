@@ -130,15 +130,17 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.Action == tea.MouseActionPress && msg.Alt && m.pane.mouse {
-		m.sel = focusSelection{}
-		m.forwardingMouse = true
-		m.forwardingButton = mouseButton(msg.Button)
+		if row, col, inside := m.paneCell(msg.X, msg.Y); inside {
+			m.sel = focusSelection{}
+			m.forwardingMouse = true
+			m.forwardingButton = mouseButton(msg.Button)
+			m.forwardingRow, m.forwardingCol = row, col
+		}
 	}
 	if m.forwardingMouse {
 		model, cmd := m.forwardFocusMouse(msg)
 		if msg.Action == tea.MouseActionRelease {
-			m.forwardingMouse = false
-			m.forwardingButton = leftButton
+			m.clearForwardingMouse()
 		}
 		return model, cmd
 	}
@@ -174,6 +176,12 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, m.copySelectionCmd()
 	}
 	return m, nil
+}
+
+func (m *Model) clearForwardingMouse() {
+	m.forwardingMouse = false
+	m.forwardingButton = leftButton
+	m.forwardingRow, m.forwardingCol = 0, 0
 }
 
 // startSelection opens a selection, widening the granularity when this
