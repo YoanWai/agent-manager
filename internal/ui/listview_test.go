@@ -655,16 +655,32 @@ func TestFilterBadgesStackOverTheList(t *testing.T) {
 	m.showArchived, m.hideEmptyGroups = true, true
 	m.statusFilter = statusFilterAttention
 	rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
-	for _, want := range []string{
-		"ARCHIVED", "back to active",
-		"ATTENTION", "show all",
-		"HIDE EMPTY", "show empty",
-	} {
-		if !strings.Contains(rail, want) {
-			t.Errorf("rail missing %q:\n%s", want, rail)
+	var painted []string
+	for _, line := range strings.Split(rail, "\n") {
+		if strings.TrimSpace(line) != "" {
+			painted = append(painted, line)
+		}
+	}
+	// The badges are what the rail paints first, one filter per line with the
+	// key beside it, widest narrowing on top.
+	want := [][2]string{
+		{"ARCHIVED", "t back to active"},
+		{"ATTENTION", "w show all"},
+		{"HIDE EMPTY", "e show empty"},
+	}
+	if len(painted) < len(want) {
+		t.Fatalf("rail painted %d lines, want the %d badges first:\n%s", len(painted), len(want), rail)
+	}
+	for i, badge := range want {
+		line := painted[i]
+		if !strings.Contains(line, badge[0]) || !strings.Contains(line, badge[1]) {
+			t.Errorf("rail line %d = %q, want %q beside %q", i, line, badge[0], badge[1])
 		}
 	}
 	header := ansi.Strip(strings.Join(m.viewHeaderRows(), "\n"))
+	if !strings.Contains(header, "· archived") {
+		t.Errorf("header should keep the plain scope word:\n%s", header)
+	}
 	for _, unwanted := range []string{"ARCHIVED", "ATTENTION", "HIDE EMPTY"} {
 		if strings.Contains(header, unwanted) {
 			t.Errorf("header still carries the %s badge:\n%s", unwanted, header)
