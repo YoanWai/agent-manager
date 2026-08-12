@@ -661,8 +661,6 @@ func TestFilterBadgesStackOverTheList(t *testing.T) {
 			painted = append(painted, line)
 		}
 	}
-	// The badges are what the rail paints first, one filter per line with the
-	// key beside it, widest narrowing on top.
 	want := [][2]string{
 		{"ARCHIVED", "t back to active"},
 		{"ATTENTION", "w show all"},
