@@ -73,7 +73,9 @@ default_status = "idle"
 		for _, sess := range sessions {
 			_ = driver.Kill(sess.ID)
 		}
-		_ = exec.Command("tmux", "-L", driver.SocketName(), "kill-server").Run()
+		if out, err := exec.Command("tmux", "-L", driver.SocketName(), "kill-server").CombinedOutput(); err != nil && !strings.Contains(string(out), "no server running") {
+			t.Errorf("kill test tmux server: %v: %s", err, strings.TrimSpace(string(out)))
+		}
 		_ = st.Close()
 	})
 	return h
