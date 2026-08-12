@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -102,6 +103,32 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	}
 	if got := cfg.Tools["gemini"].SessionStore; got != "gemini" {
 		t.Fatalf("gemini session_store = %q want \"gemini\" (captures the fork's minted id)", got)
+	}
+}
+
+func TestLoadDirWritesDefaultInRequestedDirectory(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if _, ok := cfg.Tools["terminal"]; !ok {
+		t.Fatal("default terminal tool is missing")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "config.toml")); err != nil {
+		t.Fatalf("config file: %v", err)
+	}
+}
+
+func TestShellToolUsesFlagAndStableName(t *testing.T) {
+	cfg := Config{Tools: map[string]Tool{
+		"terminal": {Command: "agent", Shell: false},
+		"zsh":      {Command: "zsh", Shell: true},
+		"bash":     {Command: "bash", Shell: true},
+	}}
+	name, tool, ok := cfg.ShellTool()
+	if !ok || name != "bash" || tool.Command != "bash" {
+		t.Fatalf("ShellTool = %q %+v %v, want bash", name, tool, ok)
 	}
 }
 

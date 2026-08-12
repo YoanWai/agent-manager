@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,13 +10,51 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+type fakeTerminalCommands struct {
+	listed      []sessioncmd.Terminal
+	created     sessioncmd.Terminal
+	screen      sessioncmd.TerminalScreen
+	createdOpts sessioncmd.CreateTerminalOptions
+	sentID      string
+	sentCommand string
+	sentKeys    []string
+	readID      string
+	err         error
+}
+
+func (f *fakeTerminalCommands) List(string) ([]sessioncmd.Terminal, error) {
+	return f.listed, f.err
+}
+
+func (f *fakeTerminalCommands) Create(_ string, opts sessioncmd.CreateTerminalOptions) (sessioncmd.Terminal, error) {
+	f.createdOpts = opts
+	return f.created, f.err
+}
+
+func (f *fakeTerminalCommands) Send(_ string, id, command string, keys []string) error {
+	f.sentID = id
+	f.sentCommand = command
+	f.sentKeys = append([]string(nil), keys...)
+	return f.err
+}
+
+func (f *fakeTerminalCommands) Read(_ string, id string) (sessioncmd.TerminalScreen, error) {
+	f.readID = id
+	return f.screen, f.err
+}
+
 func connect(t *testing.T, configDir, sessionID string) *mcp.ClientSession {
 	t.Helper()
+	return connectServer(t, NewServer(configDir, sessionID, "test"))
+}
+
+func connectServer(t *testing.T, server *mcp.Server) *mcp.ClientSession {
+	t.Helper()
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	server := NewServer(configDir, sessionID, "test")
 	if _, err := server.Connect(context.Background(), serverTransport, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -28,12 +67,18 @@ func connect(t *testing.T, configDir, sessionID string) *mcp.ClientSession {
 	return session
 }
 
-func callText(t *testing.T, session *mcp.ClientSession, tool string, args map[string]any) (string, bool) {
+func callTool(t *testing.T, session *mcp.ClientSession, tool string, args map[string]any) *mcp.CallToolResult {
 	t.Helper()
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: tool, Arguments: args})
 	if err != nil {
 		t.Fatalf("CallTool %s: %v", tool, err)
 	}
+	return result
+}
+
+func callText(t *testing.T, session *mcp.ClientSession, tool string, args map[string]any) (string, bool) {
+	t.Helper()
+	result := callTool(t, session, tool, args)
 	var text strings.Builder
 	for _, content := range result.Content {
 		if tc, ok := content.(*mcp.TextContent); ok {
@@ -71,9 +116,159 @@ func TestListsAllTools(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names[tool.Name] = true
 	}
-	for _, want := range []string{"rename", "review_repo", "review_base", "review_mode"} {
+	for _, want := range []string{
+		"rename", "review_repo", "review_base", "review_mode",
+		"list_terminals", "create_terminal", "send_terminal", "read_terminal",
+	} {
 		if !names[want] {
 			t.Fatalf("missing tool %q in %v", want, names)
+		}
+	}
+}
+
+func TestServerTeachesProactiveTerminalWorkflow(t *testing.T) {
+	session := connect(t, t.TempDir(), "abc123")
+	instructions := session.InitializeResult().Instructions
+	for _, want := range []string{
+		"Do not wait for the user",
+		"long-running",
+		"list_terminals",
+		"create_terminal",
+		"send_terminal",
+		"read_terminal",
+		"Reuse a relevant running terminal",
+	} {
+		if !strings.Contains(instructions, want) {
+			t.Fatalf("server instructions do not teach %q:\n%s", want, instructions)
+		}
+	}
+}
+
+func TestTerminalDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
+	session := connect(t, t.TempDir(), "abc123")
+	listed, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptions := map[string]string{}
+	for _, tool := range listed.Tools {
+		descriptions[tool.Name] = tool.Description
+	}
+	for tool, wants := range map[string][]string{
+		"list_terminals":  {"Call proactively", "Reuse", "create_terminal"},
+		"create_terminal": {"without waiting for the user", "send_terminal"},
+		"send_terminal":   {"create_terminal", "read_terminal", "executes on the user's machine"},
+		"read_terminal":   {"after send_terminal", "monitor ongoing work"},
+	} {
+		for _, want := range wants {
+			if !strings.Contains(descriptions[tool], want) {
+				t.Errorf("%s description does not contain %q: %s", tool, want, descriptions[tool])
+			}
+		}
+	}
+}
+
+func TestTerminalToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
+	group := "backend"
+	fake := &fakeTerminalCommands{
+		listed: []sessioncmd.Terminal{{
+			ID: "a1b2c3d4", Name: "terminal-a1b2", Group: group,
+			Directory: "/work", Status: "idle", Running: true,
+		}},
+		created: sessioncmd.Terminal{
+			ID: "e5f6a7b8", Name: "terminal-e5f6", Group: group,
+			Directory: "/tmp", Status: "starting", Running: true,
+		},
+		screen: sessioncmd.TerminalScreen{
+			Terminal: sessioncmd.Terminal{ID: "a1b2c3d4", Name: "terminal-a1b2", Running: true},
+			Output:   "build complete",
+		},
+	}
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", fake))
+
+	listed := callTool(t, session, "list_terminals", map[string]any{})
+	if listed.IsError || listed.StructuredContent == nil {
+		t.Fatalf("list_terminals = %+v", listed)
+	}
+	if text, _ := callText(t, session, "list_terminals", map[string]any{}); !strings.Contains(text, "terminal-a1b2") {
+		t.Fatalf("list text = %q", text)
+	}
+
+	created := callTool(t, session, "create_terminal", map[string]any{"group": group, "directory": "/tmp"})
+	if created.IsError || created.StructuredContent == nil {
+		t.Fatalf("create_terminal = %+v", created)
+	}
+	if fake.createdOpts.Group == nil || *fake.createdOpts.Group != group || fake.createdOpts.Directory != "/tmp" {
+		t.Fatalf("create args = %+v", fake.createdOpts)
+	}
+
+	if text, isError := callText(t, session, "send_terminal", map[string]any{
+		"terminal_id": "a1b2c3d4", "command": "go test ./...",
+	}); isError || !strings.Contains(text, "sent command") {
+		t.Fatalf("send command = %q, isError=%v", text, isError)
+	}
+	if fake.sentID != "a1b2c3d4" || fake.sentCommand != "go test ./..." || len(fake.sentKeys) != 0 {
+		t.Fatalf("send command args = id %q command %q keys %v", fake.sentID, fake.sentCommand, fake.sentKeys)
+	}
+
+	if _, isError := callText(t, session, "send_terminal", map[string]any{
+		"terminal_id": "a1b2c3d4", "keys": []string{"C-c", "Enter"},
+	}); isError {
+		t.Fatal("send keys returned an error")
+	}
+	if fake.sentCommand != "" || strings.Join(fake.sentKeys, ",") != "C-c,Enter" {
+		t.Fatalf("send key args = command %q keys %v", fake.sentCommand, fake.sentKeys)
+	}
+
+	if text, isError := callText(t, session, "read_terminal", map[string]any{"terminal_id": "a1b2c3d4"}); isError || text != "build complete" {
+		t.Fatalf("read = %q, isError=%v", text, isError)
+	}
+	if fake.readID != "a1b2c3d4" {
+		t.Fatalf("read id = %q", fake.readID)
+	}
+}
+
+func TestTerminalToolAnnotationsDescribeLocalRisk(t *testing.T) {
+	session := connect(t, t.TempDir(), "abc123")
+	listed, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := map[string]*mcp.Tool{}
+	for _, tool := range listed.Tools {
+		tools[tool.Name] = tool
+	}
+	for _, name := range []string{"list_terminals", "read_terminal"} {
+		if annotations := tools[name].Annotations; annotations == nil || !annotations.ReadOnlyHint || annotations.OpenWorldHint == nil || *annotations.OpenWorldHint {
+			t.Fatalf("%s annotations = %+v", name, annotations)
+		}
+		if tools[name].OutputSchema == nil {
+			t.Fatalf("%s has no structured output schema", name)
+		}
+	}
+	if annotations := tools["create_terminal"].Annotations; annotations == nil || annotations.DestructiveHint == nil || *annotations.DestructiveHint {
+		t.Fatalf("create annotations = %+v", annotations)
+	}
+	if annotations := tools["send_terminal"].Annotations; annotations == nil || annotations.DestructiveHint == nil || !*annotations.DestructiveHint || annotations.OpenWorldHint == nil || !*annotations.OpenWorldHint {
+		t.Fatalf("send annotations = %+v", annotations)
+	}
+}
+
+func TestTerminalToolErrorsAreToolErrors(t *testing.T) {
+	fake := &fakeTerminalCommands{err: errors.New("terminal is not running")}
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", fake))
+	for _, call := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"list_terminals", map[string]any{}},
+		{"create_terminal", map[string]any{}},
+		{"send_terminal", map[string]any{"terminal_id": "a1", "command": "pwd"}},
+		{"read_terminal", map[string]any{"terminal_id": "a1"}},
+	} {
+		text, isError := callText(t, session, call.name, call.args)
+		if !isError || !strings.Contains(text, "not running") {
+			t.Fatalf("%s = %q, isError=%v", call.name, text, isError)
 		}
 	}
 }

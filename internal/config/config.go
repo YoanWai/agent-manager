@@ -94,10 +94,18 @@ func Path() (string, error) {
 }
 
 func Load() (Config, error) {
-	path, err := Path()
+	dir, err := Dir()
 	if err != nil {
 		return Config{}, err
 	}
+	return LoadDir(dir)
+}
+
+// LoadDir loads the configuration kept in dir. Session-scoped commands
+// already receive the manager's config directory, so they must not resolve
+// it again from a possibly different process environment.
+func LoadDir(dir string) (Config, error) {
+	path := filepath.Join(dir, "config.toml")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if err := writeDefault(path); err != nil {
 			return Config{}, err
@@ -207,6 +215,21 @@ func (c Config) ToolNames() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// ShellTool returns the first shell block by name, making the choice stable
+// when a user configures more than one.
+func (c Config) ShellTool() (string, Tool, bool) {
+	chosen := ""
+	for name, tool := range c.Tools {
+		if tool.Shell && (chosen == "" || name < chosen) {
+			chosen = name
+		}
+	}
+	if chosen == "" {
+		return "", Tool{}, false
+	}
+	return chosen, c.Tools[chosen], true
 }
 
 func writeDefault(path string) error {
