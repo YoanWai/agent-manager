@@ -81,6 +81,7 @@ func stripPreviewMarks(s string) string {
 }
 
 func TestPreviewLine(t *testing.T) {
+	pinnedHost(t)
 	colored := "\x1b[38;5;42mgreen text\x1b[39m"
 	got := previewLine(colored, 80)
 	if !strings.Contains(got, "\x1b[38;5;42m") {

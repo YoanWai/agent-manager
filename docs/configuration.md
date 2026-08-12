@@ -42,3 +42,9 @@ A `fork_command` references its source through `{id}` or `{session_file}`, so on
 **MCP.** `mcp = "claude" | "codex" | "opencode" | "grok" | "gemini" | "hermes" | "none"` picks how the agent-manager MCP server is registered into the tool's sessions (see [MCP](usage.md#mcp-how-agents-discover-these-commands)). An empty value uses the tool's config key when it names a known style. Hermes registration needs its MCP SDK, an optional part of the Hermes install: when it is missing, the spawn stops and a dialog points at `hermes setup`, which installs it.
 
 State is stored next to the config in `state.db` (SQLite).
+
+## Right-to-left text
+
+A row carrying Hebrew or Arabic can flip a terminal's paragraph direction, and the whole row is then right-justified into the sessions rail. Agent Manager pins such rows left with Unicode direction marks on the hosts that need them, iTerm2 today, detected through `TERM_PROGRAM` and `LC_TERMINAL`.
+
+Other hosts render RTL rows in column without the marks, and a host that runs its own bidi reorders a row that carries them until the frame no longer matches what was painted. Set `AGENT_MANAGER_RTL_PIN=1` to force the marks on, `AGENT_MANAGER_RTL_PIN=0` to force them off.
