@@ -153,10 +153,6 @@ func (m *Model) forwardFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	sess, ok := m.selected()
-	if !ok || m.focus == nil {
-		return m, nil
-	}
 	button := m.forwardedMouseButton(msg)
 	release := msg.Action == tea.MouseActionRelease
 	if msg.Action == tea.MouseActionMotion {
@@ -166,13 +162,23 @@ func (m *Model) forwardFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	m.sendFocusReport(report)
+	return m, nil
+}
+
+// sendFocusReport delivers encoded mouse bytes to the focused session's
+// pane, preferring the live control pipe over a forked tmux call.
+func (m *Model) sendFocusReport(report string) {
+	sess, ok := m.selected()
+	if !ok || m.focus == nil {
+		return
+	}
 	command := "send-keys -t " + tmux.SessionName(sess.ID) + " -H " + hexBytes(report)
 	if !m.focus.attempt(command) {
 		if err := m.tmux.SendRaw(command); err != nil {
 			m.errBar.text = err.Error()
 		}
 	}
-	return m, nil
 }
 
 // forwardedMouseCell uses the current cell while the pointer is in the pane.

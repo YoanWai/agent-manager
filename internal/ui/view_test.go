@@ -415,7 +415,7 @@ func TestFooterInFocusMode(t *testing.T) {
 	}
 
 	m.pane.mouse = true
-	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "alt+click / drag") || !strings.Contains(footer, "agent UI") {
+	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "click / alt+drag") || !strings.Contains(footer, "agent UI") {
 		t.Fatalf("a mouse-tracking pane should advertise pass-through:\n%s", footer)
 	}
 }

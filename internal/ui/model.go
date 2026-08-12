@@ -104,7 +104,10 @@ type Model struct {
 	forwardingButton int
 	forwardingRow    int
 	forwardingCol    int
-	pane             paneMirror
+	// pending is a press in a mouse-tracking pane awaiting its verdict:
+	// selection drag or forwarded click.
+	pending pendingClick
+	pane    paneMirror
 	// cursorOn is the caret's blink phase while focused.
 	cursorOn bool
 	// focusScroll is how many lines the focused pane is scrolled back into

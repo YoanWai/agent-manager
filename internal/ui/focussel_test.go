@@ -116,6 +116,92 @@ func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
 	}
 }
 
+// In a mouse-tracking pane a press is held back: motion proves it a
+// selection drag anchored at the press cell, and the app never sees it.
+func TestDeferredPressBecomesDragSelection(t *testing.T) {
+	m := paneAt(t, "abcdef", "ghijkl")
+	m.pane.mouse = true
+	press(m, 12, 5)
+	if m.sel.active || !m.pending.active {
+		t.Fatalf("press in a mouse pane should defer, not select: sel=%v pending=%v", m.sel.active, m.pending.active)
+	}
+	drag(m, 13, 6)
+	if m.pending.active {
+		t.Fatal("motion should resolve the pending press")
+	}
+	if got := m.selectionText(); got != "cdef\nghi" {
+		t.Fatalf("deferred drag copied %q", got)
+	}
+}
+
+// Release at the press cell proves a click; nothing selects, and with no
+// live focus session the forward is simply dropped.
+func TestDeferredPressReleaseIsAClick(t *testing.T) {
+	m := paneAt(t, "alpha beta")
+	m.pane.mouse = true
+	press(m, 12, 5)
+	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 12, Y: 5})
+	if m.pending.active || m.sel.active {
+		t.Fatalf("click left state behind: pending=%v sel=%v", m.pending.active, m.sel.active)
+	}
+}
+
+// A terminal limited to plain button reporting sends no motion between
+// press and release, so a release away from the press cell is that
+// terminal's drag: it selects instead of clicking or vanishing.
+func TestDeferredPressMotionlessDragSelects(t *testing.T) {
+	m := paneAt(t, "abcdef", "ghijkl")
+	m.pane.mouse = true
+	press(m, 12, 5)
+	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 13, Y: 6})
+	if m.pending.active {
+		t.Fatal("release should resolve the pending press")
+	}
+	if got := m.selectionText(); got != "cdef\nghi" {
+		t.Fatalf("motionless drag copied %q", got)
+	}
+}
+
+// The second press of a double click stays on the selection path even in a
+// mouse-tracking pane, so word and line copy keep working there.
+func TestDoubleClickStillSelectsInMousePane(t *testing.T) {
+	m := paneAt(t, "alpha beta gamma")
+	m.pane.mouse = true
+	press(m, 16, 5)
+	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 16, Y: 5})
+	press(m, 16, 5)
+	if got := m.selectionText(); got != "beta" {
+		t.Fatalf("double click in a mouse pane copied %q", got)
+	}
+}
+
+// A deferred click that reaches a live pane arrives as a complete
+// press-release pair.
+func TestDeferredClickForwardsPressReleasePair(t *testing.T) {
+	m, sess := focusedMouseApp(t, "mouse-tool", "deferred-click")
+	x, y := m.pane.box.x+2, m.pane.box.y+1
+	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
+	if m.sel.active {
+		t.Fatal("press in a mouse pane should not open a selection")
+	}
+	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: x, Y: y})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil {
+			t.Fatalf("capture: %v", err)
+		}
+		if sgrMouseReportRe(leftButton, false).MatchString(pane) &&
+			sgrMouseReportRe(leftButton, true).MatchString(pane) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("click pair never reached the pane: %q", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // Triple click takes exactly the pane line it landed on.
 func TestTripleClickSelectsPaneLineOnly(t *testing.T) {
 	m := paneAt(t, "first line here", "second line here")

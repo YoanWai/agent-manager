@@ -462,7 +462,7 @@ func (m *Model) viewFooter() string {
 			{"drag / double / triple click", "copy"},
 		}
 		if m.pane.mouse {
-			pairs = append(pairs, [2]string{"alt+click / drag", "agent UI"})
+			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}
 		return legendBar([]legendSection{{title: "Focused", pairs: pairs}}, m.width)
 	}
