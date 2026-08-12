@@ -119,5 +119,5 @@ Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md]
 ---
 
 <p align="center">
-  <a href="https://www.producthunt.com/products/agent-manager/reviews/new?utm_source=badge-product_review&amp;utm_medium=badge" target="_blank" rel="noopener noreferrer"><img src="https://api.producthunt.com/widgets/embed-image/v1/review.svg?post_id=1212310&amp;theme=dark" alt="Review agent-manager on Product Hunt" width="250" height="54"></a>
+  <a href="https://www.producthunt.com/products/agent-manager?utm_source=badge-review&amp;utm_medium=badge" target="_blank" rel="noopener noreferrer"><img src="https://api.producthunt.com/widgets/embed-image/v1/review.svg?post_id=1212310&amp;theme=dark" alt="Review agent-manager on Product Hunt" width="250" height="54"></a>
 </p>
