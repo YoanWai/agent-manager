@@ -5,14 +5,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/text/unicode/bidi"
 )
-
-// Right-to-left text is a self-contained concern, and this file is the only
-// place that adds Unicode direction marks to a frame. view.go reaches it
-// through pinFrameLTR, on the finished frame, and pinPaneLineLTR, on each
-// captured pane row. Dropping RTL support means deleting this file and those
-// two calls.
 
 // Written as escapes because the glyphs are invisible in an editor.
 const (
@@ -54,23 +49,32 @@ func pinFrameLTR(frame string) string {
 	lines := strings.Split(frame, "\n")
 	changed := false
 	for i, line := range lines {
-	scan:
-		for _, r := range line {
-			props, _ := bidi.LookupRune(r)
-			switch props.Class() {
-			case bidi.L:
-				break scan
-			case bidi.R, bidi.AL:
-				lines[i] = leftToRightMark + line
-				changed = true
-				break scan
-			}
+		// An escape sequence ends in a Latin letter, which is strong LTR, so
+		// classification reads the text the terminal lays out rather than the
+		// styling wrapped around it. Rows without RTL skip the strip.
+		if !containsRTL(line) || !firstStrongIsRTL(ansi.Strip(line)) {
+			continue
 		}
+		lines[i] = leftToRightMark + line
+		changed = true
 	}
 	if !changed {
 		return frame
 	}
 	return strings.Join(lines, "\n")
+}
+
+func firstStrongIsRTL(text string) bool {
+	for _, r := range text {
+		props, _ := bidi.LookupRune(r)
+		switch props.Class() {
+		case bidi.L:
+			return false
+		case bidi.R, bidi.AL:
+			return true
+		}
+	}
+	return false
 }
 
 // pinPaneLineLTR isolates a captured pane row that carries RTL text. On rows

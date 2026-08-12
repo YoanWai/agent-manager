@@ -66,16 +66,41 @@ func TestHebrewPaneRowKeepsLTRParagraph(t *testing.T) {
 
 func TestHebrewRailNameStaysLTR(t *testing.T) {
 	pinnedHost(t)
-	got := pinFrameLTR("█ ◆ העצמון   waiting\nplain row\n‎⁦שלום⁩")
+	got := pinFrameLTR("█ ◆ העצמון   waiting\nplain row\n\u200e\u2066שלום\u2069")
 	lines := strings.Split(got, "\n")
-	if !strings.HasPrefix(lines[0], "‎") {
+	if !strings.HasPrefix(lines[0], "\u200e") {
 		t.Fatalf("row with a leading Hebrew rail name should gain an LRM: %q", lines[0])
 	}
 	if lines[1] != "plain row" {
 		t.Fatalf("LTR row should be untouched: %q", lines[1])
 	}
-	if strings.HasPrefix(lines[2], "‎‎") {
+	if strings.HasPrefix(lines[2], "\u200e\u200e") {
 		t.Fatalf("already pinned row should not gain a second mark: %q", lines[2])
+	}
+}
+
+// Frame rows arrive styled, and an escape sequence ends in a Latin letter.
+// Classifying the raw row finds that letter first, calls the row LTR, and the
+// pin never fires on any row the manager actually paints.
+func TestHebrewRowPinnedThroughANSI(t *testing.T) {
+	pinnedHost(t)
+	for _, row := range []string{
+		"\x1b[31mשלום",
+		"\x1b[38;2;120;130;140m█\x1b[0m   שלום עולם",
+		"שלום",
+	} {
+		got := pinFrameLTR(row)
+		if !strings.HasPrefix(got, "\u200e") {
+			t.Errorf("row %q should have gained an LRM, got %q", row, got)
+		}
+		if !strings.HasSuffix(got, row) {
+			t.Errorf("row %q must survive the pin intact, got %q", row, got)
+		}
+	}
+	for _, row := range []string{"\x1b[31mplain latin", "\x1b[31mlatin שלום mixed"} {
+		if got := pinFrameLTR(row); got != row {
+			t.Errorf("row leading with strong LTR should be untouched: %q -> %q", row, got)
+		}
 	}
 }
 
@@ -95,7 +120,7 @@ func TestUnpinnedHostEmitsNoDirectionMarks(t *testing.T) {
 			m.mode = md
 			m.preview = body
 			frame := m.View()
-			for _, mark := range []string{"‎", "⁦", "⁩"} {
+			for _, mark := range []string{"\u200e", "\u2066", "\u2069"} {
 				if strings.Contains(frame, mark) {
 					t.Errorf("%dx%d mode %v: frame carries %q", size[0], size[1], md, mark)
 				}
