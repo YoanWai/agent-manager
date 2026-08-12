@@ -458,6 +458,7 @@ func (m *Model) viewFooter() string {
 		return legendBar([]legendSection{{title: "Focused", pairs: [][2]string{
 			{"typing", "goes to the agent"},
 			{"ctrl+q / ctrl+\\", "back to manager"},
+			{"ctrl+r", "review"},
 			{"drag / double / triple click", "copy"},
 		}}}, m.width)
 	}
