@@ -463,12 +463,8 @@ const worktreeSetting = "worktree_default"
 // their own block, "inline" leaves them among the agents in their group.
 const terminalPlacementSetting = "terminal_placement"
 
-// notificationsSetting gates desktop notifications on waiting/errored
-// transitions: only "off" silences them.
 const notificationsSetting = "notifications"
 
-// notifyFinishedSetting adds finished transitions to the notifications:
-// only "on" enables them.
 const notifyFinishedSetting = "notify_finished"
 
 // hiddenToolsSetting lists CLI tools omitted from new-session pickers

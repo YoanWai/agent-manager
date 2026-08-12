@@ -193,8 +193,6 @@ func storedArrowStep(st *store.Store) bool {
 	return chosen != "off"
 }
 
-// storedNotifications reads the persisted notification choice. On is the
-// default; only an explicit "off" silences waiting/errored pings.
 func storedNotifications(st *store.Store) bool {
 	chosen, err := st.Setting(notificationsSetting)
 	if err != nil {
@@ -203,8 +201,6 @@ func storedNotifications(st *store.Store) bool {
 	return chosen != "off"
 }
 
-// storedNotifyFinished reads whether finished transitions also notify.
-// Off is the default; only an explicit "on" adds them.
 func storedNotifyFinished(st *store.Store) bool {
 	chosen, err := st.Setting(notifyFinishedSetting)
 	if err != nil {

@@ -755,7 +755,9 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	if !p.notificationsOn() {
 		return
 	}
-	p.notifyFn(sess.Name, body)
+	// Delivery can wait on an external process (osascript, notify-send),
+	// so it must never run inside refreshOnce, which holds runMu.
+	go p.notifyFn(sess.Name, body)
 }
 
 func (p *poller) notificationsOn() bool {

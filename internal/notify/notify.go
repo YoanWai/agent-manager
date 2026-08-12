@@ -12,10 +12,12 @@
 package notify
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/termseq"
 )
@@ -26,9 +28,19 @@ var (
 	goos     = runtime.GOOS
 	getenv   = os.Getenv
 	lookPath = exec.LookPath
-	runCmd   = func(name string, args ...string) error { return exec.Command(name, args...).Run() }
+	runCmd   = runBounded
 	emitSeq  = termseq.Emit
 )
+
+// cmdTimeout bounds external notifiers: a wedged osascript or notify-send
+// must cost one delivery, not stall it forever.
+const cmdTimeout = 2 * time.Second
+
+func runBounded(name string, args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Run()
+}
 
 // Notify fires one notification with the given title and body. Delivery
 // failures fall through to the next path and finally to the bell; nothing
