@@ -73,6 +73,7 @@ default_status = "idle"
 		for _, sess := range sessions {
 			_ = driver.Kill(sess.ID)
 		}
+		_ = exec.Command("tmux", "-L", driver.SocketName(), "kill-server").Run()
 		_ = st.Close()
 	})
 	return h
@@ -141,6 +142,18 @@ func TestTerminalsCreateListSendAndReadWithRealTmux(t *testing.T) {
 		t.Fatalf("Send keys: %v", err)
 	}
 	waitForTerminalOutput(t, h.terminals, h.caller.ID, created.ID, keyMarker)
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home directory: %v", err)
+	}
+	homeTerminal, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Directory: "~"})
+	if err != nil {
+		t.Fatalf("Create in home: %v", err)
+	}
+	if !sameTerminalPath(homeTerminal.Directory, home) {
+		t.Fatalf("home terminal directory = %q, want %q", homeTerminal.Directory, home)
+	}
 }
 
 func TestCreateTerminalResolvesExplicitGroupAndDirectory(t *testing.T) {

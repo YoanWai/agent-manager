@@ -241,7 +241,11 @@ func resolveTerminalDirectory(raw string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		dir = filepath.Join(home, strings.TrimPrefix(dir, "~/"))
+		if dir == "~" {
+			dir = home
+		} else {
+			dir = filepath.Join(home, strings.TrimPrefix(dir, "~/"))
+		}
 	}
 	abs, err := filepath.Abs(dir)
 	if err != nil {
