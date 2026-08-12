@@ -610,7 +610,13 @@ func archivedGroupDelete(path string, subtree []store.Session) confirmTarget {
 }
 
 func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	defer func() { m.mode = modeList }()
+	// A relaunch the manager refused opened the hint dialog; every other
+	// answer falls back to the list.
+	defer func() {
+		if m.mode != modeLaunchHint {
+			m.mode = modeList
+		}
+	}()
 	switch msg.String() {
 	case "y", "enter":
 		switch m.confirm.action {

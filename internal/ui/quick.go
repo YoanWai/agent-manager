@@ -279,6 +279,12 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 	name := toolName + "-" + newID()[:4]
 	if err := m.spawnSession(toolName, name, dir, group, prompt, true, m.quickWorktreeOn()); err != nil {
 		m.reportLaunchError(err)
+		// A spawn the hint dialog refused leaves nothing to send, so the
+		// bar closes instead of swallowing the list keys behind the dialog.
+		if m.mode == modeLaunchHint {
+			m.quick.active = false
+			m.releaseQuickAttachments()
+		}
 		return m, nil
 	}
 	// Spawned sessions start outside the attention set; clear so the new row shows.

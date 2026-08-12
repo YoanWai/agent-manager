@@ -251,6 +251,18 @@ func TestBackfillHermesRequiresMCP(t *testing.T) {
 	}
 }
 
+func TestBackfillHermesKeepsExplicitMCPOptOut(t *testing.T) {
+	cfg := Config{Tools: map[string]Tool{
+		"hermes": {Command: "hermes --cli", MCP: "none"},
+	}}
+	if err := cfg.backfillToolDefaults(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if got := cfg.Tools["hermes"].MCP; got != "none" {
+		t.Fatalf("hermes mcp = %q want the explicit opt-out kept", got)
+	}
+}
+
 func TestApplyDefaults(t *testing.T) {
 	var cfg Config
 	cfg.applyDefaults()

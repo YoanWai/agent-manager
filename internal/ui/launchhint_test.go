@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -48,14 +49,11 @@ func TestReportLaunchErrorKeepsPlainErrorsOnStatusLine(t *testing.T) {
 	}
 }
 
-// The whole spawn path: a Hermes without its MCP SDK must not produce a
-// session, and the dialog naming the fix must be what the user sees.
-func TestSpawnHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake Hermes executable is a shell script")
-	}
-	m := buildModel(t)
-	m.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+// installSDKlessHermes puts a fake Hermes on PATH that answers mcp add the
+// way a real one without the optional SDK does: refusing to connect, saving
+// nothing, and exiting 0 after its save-anyway prompt.
+func installSDKlessHermes(t *testing.T) {
+	t.Helper()
 	bin := t.TempDir()
 	script := `#!/bin/sh
 if [ "$1" = "config" ]; then
@@ -68,6 +66,66 @@ exit 0
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// The restart confirm dialog resets to the list when it closes; the hint
+// dialog a refused relaunch opened must survive that reset.
+func TestRestartHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	m := buildModel(t)
+	m.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	installSDKlessHermes(t)
+	sess := store.Session{ID: newID(), Name: "agent", Tool: "hermes", Cwd: t.TempDir()}
+	m.confirm = confirmTarget{action: actionRestart, sessions: []store.Session{sess}}
+	m.mode = modeConfirmDelete
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m = updated.(*Model)
+
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
+	}
+}
+
+// A quick prompt whose spawn was refused has nothing left to send: the bar
+// must be gone once the hint dialog closes, not swallowing list keys.
+func TestQuickSpawnHermesWithoutMCPSupportClosesTheBar(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	m := buildModel(t)
+	m.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	installSDKlessHermes(t)
+	if err := m.store.CreateGroup("backend", t.TempDir()); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	m.quick.active = true
+	m.quick.toolNames = []string{"hermes"}
+
+	updated, _ := m.quickSpawn("backend", "fix the tests")
+	m = updated.(*Model)
+
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
+	}
+	if m.quick.active {
+		t.Fatal("a refused quick spawn must close the bar")
+	}
+}
+
+// The whole spawn path: a Hermes without its MCP SDK must not produce a
+// session, and the dialog naming the fix must be what the user sees.
+func TestSpawnHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	m := buildModel(t)
+	m.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	installSDKlessHermes(t)
 
 	m.openForm()
 	m.form.name.SetValue("agent")
