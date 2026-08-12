@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -10,6 +12,18 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// sgrMouseReportRe matches one SGR mouse report as cat echoes it back to the
+// pane: "[<button;col;row" plus a terminator, M for a press or motion and m
+// for a release. The coordinates vary with the cell, so they match as digits,
+// and the terminator is what tells a press from a release of the same button.
+func sgrMouseReportRe(button int, release bool) *regexp.Regexp {
+	term := "M"
+	if release {
+		term = "m"
+	}
+	return regexp.MustCompile(fmt.Sprintf(`\[<%d;\d+;\d+%s`, button, term))
+}
 
 // focusedWithHistory focuses a session whose pane has more output than
 // fits on screen, so scrolling has somewhere to go.
@@ -381,6 +395,69 @@ func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 		}
 	}
 	return m, sess
+}
+
+// Ordinary clicks still select and copy inside agent-manager. Holding Alt is
+// the deliberate handoff gesture for an agent that owns the mouse.
+func TestAltClickReachesMouseTrackingApp(t *testing.T) {
+	m, sess := focusedMouseApp(t, "mouse-tool", "clickapp")
+
+	m.handleFocusMouse(tea.MouseMsg{
+		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true,
+		X: m.pane.box.x + 2, Y: m.pane.box.y + 1,
+	})
+	if m.sel.active {
+		t.Fatal("Alt-click on a mouse-tracking pane started a selection")
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil {
+			t.Fatalf("capture: %v", err)
+		}
+		if press := strings.Index(pane, "[<0;"); press >= 0 {
+			move := strings.Index(pane, "[<35;")
+			if move < 0 || move > press {
+				t.Fatalf("all-motion pointer move did not lead the press: %q", pane)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Alt-click report never reached the pane: %q", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestAltClickReleaseOutsidePaneReachesMouseTrackingApp(t *testing.T) {
+	m, sess := focusedMouseApp(t, "mouse-tool", "outside-release")
+	m.handleFocusMouse(tea.MouseMsg{
+		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true,
+		X: m.pane.box.x + 2, Y: m.pane.box.y + 1,
+	})
+	m.handleFocusMouse(tea.MouseMsg{
+		Action: tea.MouseActionRelease, Button: tea.MouseButtonNone,
+		X: m.pane.box.x + m.pane.box.width, Y: m.pane.box.y + 1,
+	})
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil {
+			t.Fatalf("capture: %v", err)
+		}
+		// Distinguish the press from the release by its SGR terminator
+		// (M press, m release), not by a second generic "[<0;" fragment.
+		if sgrMouseReportRe(leftButton, false).MatchString(pane) &&
+			sgrMouseReportRe(leftButton, true).MatchString(pane) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("outside release never reached the pane: %q", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // An application that turns on mouse tracking owns the wheel: agent CLIs

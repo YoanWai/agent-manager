@@ -411,6 +411,14 @@ func TestFooterInFocusMode(t *testing.T) {
 	if lines := strings.Split(footer, "\n"); len(lines) != 1 {
 		t.Fatalf("focus footer should be one row, got %d:\n%s", len(lines), footer)
 	}
+	if strings.Contains(footer, "agent UI") {
+		t.Fatalf("a plain focused pane should not offer mouse pass-through:\n%s", footer)
+	}
+
+	m.pane.mouse = true
+	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "click / alt+drag") || !strings.Contains(footer, "agent UI") {
+		t.Fatalf("a mouse-tracking pane should advertise pass-through:\n%s", footer)
+	}
 }
 
 // With nothing under the cursor there is nothing to act on, so the footer

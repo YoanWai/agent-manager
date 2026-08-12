@@ -191,6 +191,8 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 func (m *Model) leaveFocus() tea.Cmd {
 	m.mode = modeList
 	m.sel = focusSelection{}
+	m.pending = pendingClick{}
+	m.clearForwardingMouse()
 	m.copied = 0
 	return nil
 }
