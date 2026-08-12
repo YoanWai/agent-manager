@@ -8,7 +8,6 @@ import (
 )
 
 type launchOptions struct {
-	deferDirective   bool
 	rollbackWorktree bool
 }
 
@@ -38,9 +37,6 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 		_ = m.hooks.Remove(sess.ID)
 		discardWorktree()
 		return err
-	}
-	if opts.deferDirective && m.poller != nil {
-		m.poller.markDirectivePending(sess.ID)
 	}
 	labelErr := m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
 	m.sessions = append(m.sessions, sess)

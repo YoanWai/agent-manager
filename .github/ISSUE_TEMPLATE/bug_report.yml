@@ -54,6 +54,9 @@ body:
         - Codex
         - OpenCode
         - Grok Build
+        - Gemini CLI
+        - Pi
+        - Hermes Agent
         - A custom tool from my config
         - Not tool specific
 

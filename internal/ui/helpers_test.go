@@ -49,6 +49,12 @@ func buildModel(t *testing.T) *Model {
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
 			},
+			"send-tool": {
+				Command:        `printf '❯ ' && cat`,
+				PromptMode:     "send",
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: "(?m)^❯",
+			},
 			// Stands in for the agent CLIs, which turn on mouse tracking and
 			// scroll themselves instead of leaving history for tmux.
 			"mouse-tool": {

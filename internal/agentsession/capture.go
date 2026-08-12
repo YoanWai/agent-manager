@@ -1,8 +1,8 @@
 // Package agentsession reads back the conversation id an agent CLI minted
 // for a session the manager launched, for tools that do not accept a
-// chosen id at launch (codex, opencode). Revive resumes that exact id
-// instead of the working directory's most recent conversation, which is
-// the wrong one whenever sessions share a directory.
+// chosen id at launch (codex, opencode, gemini, hermes). Revive resumes that
+// exact id instead of the working directory's most recent conversation, which
+// is the wrong one whenever sessions share a directory.
 package agentsession
 
 import (
@@ -10,16 +10,20 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 // clockSlack absorbs small differences between the manager's launch clock
@@ -42,6 +46,8 @@ const opencodeCLITimeout = 15 * time.Second
 // lets us stop before the transcript.
 const opencodeExportHeadBytes = 64 * 1024
 
+var hermesProfilePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+
 // resolvePath canonicalizes a directory so a session launched via a
 // symlinked path (macOS /tmp -> /private/tmp) still matches the store
 // entry, which records the resolved path. Unresolvable paths compare raw.
@@ -54,10 +60,10 @@ func resolvePath(p string) string {
 
 // Capture returns the conversation id a tool wrote for a session launched
 // in cwd at or after launchedAt. sessionStore selects the on-disk format
-// ("codex" or "opencode"). claimed holds ids already bound to other
-// sessions, so two sessions started in one directory do not capture the
-// same conversation. It returns ok=false when no confident match exists
-// yet; the caller retries on the next poll.
+// ("codex", "opencode", "gemini" or "hermes"). claimed holds ids already
+// bound to other sessions, so two sessions started in one directory do not
+// capture the same conversation. It returns ok=false when no confident match
+// exists yet; the caller retries on the next poll.
 func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
 	switch sessionStore {
 	case "codex":
@@ -66,9 +72,84 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 		return captureOpencode(cwd, launchedAt, claimed)
 	case "gemini":
 		return captureGemini(geminiRoot(), cwd, launchedAt, claimed)
+	case "hermes":
+		return captureHermes(hermesStateDB(), cwd, launchedAt, claimed)
 	default:
 		return "", false
 	}
+}
+
+func hermesStateDB() string {
+	root := strings.TrimSpace(os.Getenv("HERMES_HOME"))
+	if root != "" && filepath.Base(filepath.Dir(root)) == "profiles" {
+		return filepath.Join(root, "state.db")
+	}
+	if root == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		root = filepath.Join(home, ".hermes")
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "active_profile")); err == nil {
+		profile := strings.TrimSpace(string(data))
+		if profile != "default" && hermesProfilePattern.MatchString(profile) {
+			return filepath.Join(root, "profiles", profile, "state.db")
+		}
+	}
+	return filepath.Join(root, "state.db")
+}
+
+// captureHermes finds the CLI conversation Hermes created after first input.
+// Hermes records exact cwd and Unix creation time in state.db, which
+// distinguishes parallel sessions in the same project.
+func captureHermes(path, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
+	if path == "" {
+		return "", false
+	}
+	if _, err := os.Stat(path); err != nil {
+		return "", false
+	}
+	dsn := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
+	query := dsn.Query()
+	query.Set("mode", "ro")
+	dsn.RawQuery = query.Encode()
+	db, err := sql.Open("sqlite", dsn.String())
+	if err != nil {
+		return "", false
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, cwd, started_at
+		FROM sessions
+		WHERE source = 'cli' AND started_at >= ?
+		ORDER BY started_at ASC
+		LIMIT 200`, float64(launchedAt.UnixNano())/float64(time.Second))
+	if err != nil {
+		return "", false
+	}
+	defer rows.Close()
+	wantCwd := resolvePath(cwd)
+	var cands []candidate
+	for rows.Next() {
+		var id string
+		var sessionCwd sql.NullString
+		var started float64
+		if rows.Scan(&id, &sessionCwd, &started) != nil {
+			return "", false
+		}
+		if id == "" || claimed[id] || !sessionCwd.Valid || resolvePath(sessionCwd.String) != wantCwd {
+			continue
+		}
+		cands = append(cands, candidate{id: id, modTime: time.Unix(0, int64(started*float64(time.Second)))})
+	}
+	if rows.Err() != nil {
+		return "", false
+	}
+	return pickEarliest(cands)
 }
 
 func codexRoot() string {
