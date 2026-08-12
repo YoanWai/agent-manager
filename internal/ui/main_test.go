@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"testing"
@@ -18,8 +19,17 @@ const testSocket = "amuitest"
 // ("server exited unexpectedly", the recurring CI failure in
 // TestFocusWatchReportsCursor).
 func TestMain(m *testing.M) {
+	// kill-server fails whenever no server is up, which is the normal case.
 	tmuxCmd("kill-server").Run()
-	tmuxCmd("new-session", "-d", "-s", "anchor").Run()
+	// Without tmux the run still starts: each test skips through its own
+	// requireTmux. With tmux, a run that could not plant the anchor would
+	// pass or flake on luck, so it stops instead.
+	if _, err := exec.LookPath("tmux"); err == nil {
+		if out, err := tmuxCmd("new-session", "-d", "-s", "anchor").CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "anchor session: %v: %s\n", err, out)
+			os.Exit(1)
+		}
+	}
 	code := m.Run()
 	tmuxCmd("kill-server").Run()
 	os.Exit(code)
