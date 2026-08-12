@@ -301,6 +301,14 @@ func (d *Driver) SendText(id, text string) error {
 	return d.pasteAndEnter(sessionName(id), text)
 }
 
+// SendKeys delivers exact tmux key names to a session. Keeping each key as
+// its own argv entry avoids routing agent-supplied input through a shell.
+func (d *Driver) SendKeys(id string, keys ...string) error {
+	args := []string{"send-keys", "-t", sessionName(id), "--"}
+	_, err := d.run(append(args, keys...)...)
+	return err
+}
+
 // Paste delivers text into the session's pane without submitting it. The
 // focus path uses this for clipboard pastes: sending the bytes as raw
 // keystrokes would turn every newline into an Enter press and submit the
