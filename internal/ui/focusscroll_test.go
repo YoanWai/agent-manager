@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -10,6 +12,18 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// sgrMouseReportRe matches one SGR mouse report as cat echoes it back to the
+// pane: "[<button;col;row" plus a terminator, M for a press or motion and m
+// for a release. The coordinates vary with the cell, so they match as digits,
+// and the terminator is what tells a press from a release of the same button.
+func sgrMouseReportRe(button int, release bool) *regexp.Regexp {
+	term := "M"
+	if release {
+		term = "m"
+	}
+	return regexp.MustCompile(fmt.Sprintf(`\[<%d;\d+;\d+%s`, button, term))
+}
 
 // focusedWithHistory focuses a session whose pane has more output than
 // fits on screen, so scrolling has somewhere to go.
@@ -433,8 +447,10 @@ func TestAltClickReleaseOutsidePaneReachesMouseTrackingApp(t *testing.T) {
 		if err != nil {
 			t.Fatalf("capture: %v", err)
 		}
-		press := strings.Index(pane, "[<0;")
-		if press >= 0 && strings.Contains(pane[press+1:], "[<0;") {
+		// Distinguish the press from the release by its SGR terminator
+		// (M press, m release), not by a second generic "[<0;" fragment.
+		if sgrMouseReportRe(leftButton, false).MatchString(pane) &&
+			sgrMouseReportRe(leftButton, true).MatchString(pane) {
 			break
 		}
 		if time.Now().After(deadline) {

@@ -64,17 +64,20 @@ func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
 		name   string
 		button tea.MouseButton
 		want   int
-		report string
 	}{
-		{name: "left", button: tea.MouseButtonLeft, want: leftButton, report: "\x1b[<0;1;1m"},
-		{name: "middle", button: tea.MouseButtonMiddle, want: middleButton, report: "\x1b[<1;1;1m"},
-		{name: "right", button: tea.MouseButtonRight, want: rightButton, report: "\x1b[<2;1;1m"},
+		{name: "left", button: tea.MouseButtonLeft, want: leftButton},
+		{name: "middle", button: tea.MouseButtonMiddle, want: middleButton},
+		{name: "right", button: tea.MouseButtonRight, want: rightButton},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := paneAt(t, "alpha beta")
-			m.pane.mouse = true
+			// Drive the real forwarding path through a focused tmux session,
+			// so forwardFocusMouse reaches its send instead of returning
+			// early on an empty selection.
+			m, sess := focusedMouseApp(t, "mouse-tool", "release-"+tc.name)
+			x, y := m.pane.box.x+2, m.pane.box.y+1
+
 			m.handleFocusMouse(tea.MouseMsg{
-				Action: tea.MouseActionPress, Button: tc.button, Alt: true, X: 10, Y: 5,
+				Action: tea.MouseActionPress, Button: tc.button, Alt: true, X: x, Y: y,
 			})
 			if !m.forwardingMouse || m.sel.active {
 				t.Fatalf("Alt press did not start forwarding: forwarding=%v selection=%v", m.forwardingMouse, m.sel.active)
@@ -83,27 +86,31 @@ func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
 				t.Fatalf("forwardingButton = %d, want %d", m.forwardingButton, tc.want)
 			}
 
-			// The release still belongs to the forwarded click even when Alt
-			// was released first or the pointer leaves the pane. X10 carries
-			// MouseButtonNone, so the stored pressed button and cell must
-			// supply the SGR release report.
-			release := tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonNone, X: 50, Y: 5}
-			if got := m.forwardedMouseButton(release); got != tc.want {
-				t.Fatalf("forwarded X10 release button = %d, want %d", got, tc.want)
-			}
-			row, col, ok := m.forwardedMouseCell(release)
-			if !ok || row != 0 || col != 0 {
-				t.Fatalf("outside release cell = (%d,%d,%v), want (0,0,true)", row, col, ok)
-			}
-			m.pane.sgr = true
-			report, ok := m.mouseReport(m.forwardedMouseButton(release), true, col, row)
-			if !ok || report != tc.report {
-				t.Fatalf("SGR release = %q (ok=%v), want %q", report, ok, tc.report)
+			// X10 reports a release as MouseButtonNone, so the stored pressed
+			// button must supply the SGR release code that reaches the app.
+			m.handleFocusMouse(tea.MouseMsg{
+				Action: tea.MouseActionRelease, Button: tea.MouseButtonNone, X: x, Y: y,
+			})
+			if m.forwardingMouse || m.forwardingButton != leftButton {
+				t.Fatalf("release did not clear forwarding state: active=%v button=%d", m.forwardingMouse, m.forwardingButton)
 			}
 
-			m.handleFocusMouse(release)
-			if m.forwardingMouse || m.forwardingButton != leftButton || m.forwardingRow != 0 || m.forwardingCol != 0 {
-				t.Fatalf("release did not clear forwarding state: active=%v button=%d cell=(%d,%d)", m.forwardingMouse, m.forwardingButton, m.forwardingRow, m.forwardingCol)
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				pane, err := m.tmux.CapturePane(sess.ID)
+				if err != nil {
+					t.Fatalf("capture: %v", err)
+				}
+				// A press report (terminator M) and its matching release (m),
+				// both carrying the button that was pressed.
+				if sgrMouseReportRe(tc.want, false).MatchString(pane) &&
+					sgrMouseReportRe(tc.want, true).MatchString(pane) {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("release report never reached the pane: %q", pane)
+				}
+				time.Sleep(50 * time.Millisecond)
 			}
 		})
 	}
