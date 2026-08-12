@@ -2,6 +2,7 @@ package notify
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -48,8 +49,8 @@ func TestNotifyDarwinGhosttyUsesOSC777(t *testing.T) {
 		emitted = append(emitted, seq)
 		return nil
 	}
-	Notify("deploy", "Waiting for your input")
-	if len(emitted) != 1 || emitted[0] != "\x1b]777;notify;deploy;Waiting for your input\a" {
+	Notify(Event{Session: "deploy", Tool: "claude", Kind: Waiting})
+	if len(emitted) != 1 || emitted[0] != "\x1b]777;notify;agent-manager;◆ Waiting for your input — deploy · claude\a" {
 		t.Fatalf("want one OSC 777 sequence, got %q", emitted)
 	}
 	if len(rec.called) != 0 {
@@ -58,19 +59,33 @@ func TestNotifyDarwinGhosttyUsesOSC777(t *testing.T) {
 }
 
 func TestNotifyDarwinPlainTerminalUsesAppleScript(t *testing.T) {
-	defer restore()()
-	goos = "darwin"
-	getenv = func(string) string { return "" }
-	rec := &cmdRecorder{known: map[string]bool{}}
-	rec.install()
-	emitSeq = func(string) error { return nil }
-	Notify("deploy", "Finished")
-	if len(rec.called) != 1 || rec.called[0][0] != "osascript" {
-		t.Fatalf("want one osascript call, got %v", rec.called)
+	tests := []struct {
+		kind  Kind
+		body  string
+		sound string
+	}{
+		{Waiting, "◆ Waiting for your input", "Funk"},
+		{Finished, "● Finished", "Hero"},
+		{Errored, "✕ Errored", "Basso"},
 	}
-	call := rec.called[0]
-	if call[len(call)-2] != "deploy" || call[len(call)-1] != "Finished" {
-		t.Fatalf("title and body should ride argv unquoted, got %v", call)
+	for _, test := range tests {
+		t.Run(test.sound, func(t *testing.T) {
+			defer restore()()
+			goos = "darwin"
+			getenv = func(string) string { return "" }
+			rec := &cmdRecorder{known: map[string]bool{}}
+			rec.install()
+			emitSeq = func(string) error { return nil }
+			Notify(Event{Session: "deploy", Tool: "codex", Kind: test.kind})
+			if len(rec.called) != 1 || rec.called[0][0] != "osascript" {
+				t.Fatalf("want one osascript call, got %v", rec.called)
+			}
+			call := rec.called[0]
+			want := []string{"agent-manager", "deploy · codex", test.body, test.sound}
+			if len(call) < len(want) || !slices.Equal(call[len(call)-len(want):], want) {
+				t.Fatalf("notification fields should ride argv unquoted, got %v", call)
+			}
+		})
 	}
 }
 
@@ -81,13 +96,13 @@ func TestNotifyLinuxProtectsOptionLikeTitle(t *testing.T) {
 	rec := &cmdRecorder{known: map[string]bool{"notify-send": true}}
 	rec.install()
 	emitSeq = func(string) error { return nil }
-	Notify("--help", "Errored")
+	Notify(Event{Session: "--help", Tool: "claude", Kind: Errored})
 	if len(rec.called) != 1 {
 		t.Fatalf("want one notify-send call, got %v", rec.called)
 	}
 	call := rec.called[0]
 	if len(call) != 4 || call[0] != "notify-send" || call[1] != "--" ||
-		call[2] != "--help" || call[3] != "Errored" {
+		call[2] != "agent-manager" || call[3] != "✕ Errored — --help · claude" {
 		t.Fatalf("unexpected notify-send args %v", call)
 	}
 }
@@ -111,8 +126,8 @@ func TestNotifyLinuxOverSSHUsesOSC777(t *testing.T) {
 		emitted = append(emitted, seq)
 		return nil
 	}
-	Notify("remote-build", "Waiting for your input")
-	if len(emitted) != 1 || emitted[0] != "\x1b]777;notify;remote-build;Waiting for your input\a" {
+	Notify(Event{Session: "remote-build", Tool: "codex", Kind: Waiting})
+	if len(emitted) != 1 || emitted[0] != "\x1b]777;notify;agent-manager;◆ Waiting for your input — remote-build · codex\a" {
 		t.Fatalf("want one OSC 777 sequence, got %q", emitted)
 	}
 	if len(rec.called) != 0 {
@@ -132,7 +147,7 @@ func TestNotifyLinuxWithoutNotifySendRingsBell(t *testing.T) {
 		emitted = append(emitted, seq)
 		return nil
 	}
-	Notify("deploy", "Finished")
+	Notify(Event{Session: "deploy", Tool: "codex", Kind: Finished})
 	if len(rec.called) != 0 {
 		t.Fatalf("no command should run without notify-send, got %v", rec.called)
 	}
@@ -148,6 +163,23 @@ func TestSanitizeSquashesControlCharacters(t *testing.T) {
 	}
 	if got != "line one line two ]pwn tab" {
 		t.Fatalf("unexpected squash %q", got)
+	}
+}
+
+func TestNotifyIgnoresUnknownKind(t *testing.T) {
+	defer restore()()
+	goos = "darwin"
+	getenv = func(string) string { return "" }
+	rec := &cmdRecorder{known: map[string]bool{}}
+	rec.install()
+	var emitted []string
+	emitSeq = func(seq string) error {
+		emitted = append(emitted, seq)
+		return nil
+	}
+	Notify(Event{Session: "deploy"})
+	if len(rec.called) != 0 || len(emitted) != 0 {
+		t.Fatalf("unknown transition should stay quiet, commands=%v escapes=%q", rec.called, emitted)
 	}
 }
 

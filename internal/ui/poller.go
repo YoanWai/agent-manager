@@ -47,7 +47,7 @@ type poller struct {
 	captureBusy atomic.Bool
 
 	// notifyFn delivers one desktop notification; tests swap in a recorder.
-	notifyFn func(title, body string)
+	notifyFn func(notify.Event)
 
 	// guarded by runMu: refresh state shared between the polling loop
 	// and one-off refresh commands
@@ -724,17 +724,17 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	if p.notifyFn == nil {
 		return
 	}
-	var body string
+	var kind notify.Kind
 	switch newStatus {
 	case status.Waiting:
-		body = "Waiting for your input"
+		kind = notify.Waiting
 	case status.Errored:
-		body = "Errored"
+		kind = notify.Errored
 	case status.Finished:
 		if !p.notifyFinished() {
 			return
 		}
-		body = "Finished"
+		kind = notify.Finished
 	default:
 		return
 	}
@@ -743,7 +743,7 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	}
 	// Delivery can wait on an external process (osascript, notify-send),
 	// so it must never run inside refreshOnce, which holds runMu.
-	go p.notifyFn(sess.Name, body)
+	go p.notifyFn(notify.Event{Session: sess.Name, Tool: sess.Tool, Kind: kind})
 }
 
 func (p *poller) notificationsOn() bool {

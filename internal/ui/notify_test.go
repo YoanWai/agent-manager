@@ -7,32 +7,33 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 type notifyRecorder struct {
 	mu    sync.Mutex
-	calls [][2]string
+	calls []notify.Event
 }
 
-func (r *notifyRecorder) fn() func(string, string) {
-	return func(title, body string) {
+func (r *notifyRecorder) fn() func(notify.Event) {
+	return func(event notify.Event) {
 		r.mu.Lock()
-		r.calls = append(r.calls, [2]string{title, body})
+		r.calls = append(r.calls, event)
 		r.mu.Unlock()
 	}
 }
 
-func (r *notifyRecorder) all() [][2]string {
+func (r *notifyRecorder) all() []notify.Event {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([][2]string(nil), r.calls...)
+	return append([]notify.Event(nil), r.calls...)
 }
 
 // waitForCalls blocks until n notifications have landed. Delivery runs off
 // the refresh path, so assertions have to give it a moment.
-func waitForCalls(t *testing.T, rec *notifyRecorder, n int) [][2]string {
+func waitForCalls(t *testing.T, rec *notifyRecorder, n int) []notify.Event {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -66,9 +67,9 @@ func TestNotifyTransitionFiresOnWaitingAndErrored(t *testing.T) {
 	p.notifyTransition(sess, status.Waiting)
 	p.notifyTransition(sess, status.Errored)
 	calls := waitForCalls(t, rec, 2)
-	want := map[[2]string]bool{
-		{sess.Name, "Waiting for your input"}: true,
-		{sess.Name, "Errored"}:                true,
+	want := map[notify.Event]bool{
+		{Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting}: true,
+		{Session: sess.Name, Tool: sess.Tool, Kind: notify.Errored}: true,
 	}
 	for _, call := range calls {
 		delete(want, call)
@@ -103,7 +104,7 @@ func TestNotifyTransitionFinishedOptIn(t *testing.T) {
 	}
 	p.notifyTransition(sess, status.Finished)
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != [2]string{sess.Name, "Finished"} {
+	if calls[0] != (notify.Event{Session: sess.Name, Tool: sess.Tool, Kind: notify.Finished}) {
 		t.Fatalf("want one finished notification after opt-in, got %v", calls)
 	}
 }
@@ -161,7 +162,7 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 
 	m.applyCmd(t, m.refreshCmd())
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != [2]string{"needy", "Waiting for your input"} {
+	if calls[0] != (notify.Event{Session: "needy", Tool: "claude-hooked", Kind: notify.Waiting}) {
 		t.Fatalf("want one waiting notification titled with the session name, got %v", calls)
 	}
 

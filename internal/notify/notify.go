@@ -42,30 +42,73 @@ func runBounded(name string, args ...string) error {
 	return exec.CommandContext(ctx, name, args...).Run()
 }
 
-// Notify fires one notification with the given title and body. Delivery
+type Kind uint8
+
+const (
+	Waiting Kind = iota + 1
+	Finished
+	Errored
+)
+
+type Event struct {
+	Session string
+	Tool    string
+	Kind    Kind
+}
+
+type presentation struct {
+	body  string
+	sound string
+}
+
+func describe(kind Kind) (presentation, bool) {
+	switch kind {
+	case Waiting:
+		return presentation{body: "◆ Waiting for your input", sound: "Funk"}, true
+	case Finished:
+		return presentation{body: "● Finished", sound: "Hero"}, true
+	case Errored:
+		return presentation{body: "✕ Errored", sound: "Basso"}, true
+	default:
+		return presentation{}, false
+	}
+}
+
+// Notify fires one notification for an agent state transition. Delivery
 // failures fall through to the next path and finally to the bell; nothing
 // is reported, since a missed ping must never surface as an app error.
-func Notify(title, body string) {
-	title, body = sanitize(title), sanitize(body)
+func Notify(event Event) {
+	detail, ok := describe(event.Kind)
+	if !ok {
+		return
+	}
+	session := sanitize(event.Session)
+	tool := sanitize(event.Tool)
+	subtitle := session
+	if tool != "" {
+		subtitle += " · " + tool
+	}
+	body := detail.body
+	terminalBody := body + " — " + subtitle
 	// A terminal that understands OSC 777 turns it into a native
 	// notification wherever the terminal actually is — including at the
 	// far end of an SSH session, which the remote host's desktop daemon
 	// could never reach.
-	if ghostty() && emitSeq(osc777(title, body)) == nil {
+	if ghostty() && emitSeq(osc777("agent-manager", terminalBody)) == nil {
 		return
 	}
 	switch goos {
 	case "darwin":
-		// The argv form keeps title and body out of the script source, so
+		// The argv form keeps content out of the script source, so
 		// no AppleScript quoting is needed.
 		if runCmd("osascript", "-e", "on run argv",
-			"-e", `display notification (item 2 of argv) with title (item 1 of argv)`,
-			"-e", "end run", "--", title, body) == nil {
+			"-e", `display notification (item 3 of argv) with title (item 1 of argv) subtitle (item 2 of argv) sound name (item 4 of argv)`,
+			"-e", "end run", "--", "agent-manager", subtitle, body, detail.sound) == nil {
 			return
 		}
 	case "linux":
 		if _, err := lookPath("notify-send"); err == nil &&
-			runCmd("notify-send", "--", title, body) == nil {
+			runCmd("notify-send", "--", "agent-manager", terminalBody) == nil {
 			return
 		}
 	}
