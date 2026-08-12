@@ -646,3 +646,28 @@ func gitRepoWithManyFiles(t *testing.T, n int) string {
 	}
 	return dir
 }
+
+// Every filter the list is under names itself over the list, beside the key
+// that lifts it, and the header stops repeating them.
+func TestFilterBadgesStackOverTheList(t *testing.T) {
+	m := shotModel()
+	m.width, m.height = 120, 40
+	m.showArchived, m.hideEmptyGroups = true, true
+	m.statusFilter = statusFilterAttention
+	rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
+	for _, want := range []string{
+		"ARCHIVED", "back to active",
+		"ATTENTION", "show all",
+		"HIDE EMPTY", "show empty",
+	} {
+		if !strings.Contains(rail, want) {
+			t.Errorf("rail missing %q:\n%s", want, rail)
+		}
+	}
+	header := ansi.Strip(strings.Join(m.viewHeaderRows(), "\n"))
+	for _, unwanted := range []string{"ARCHIVED", "ATTENTION", "HIDE EMPTY"} {
+		if strings.Contains(header, unwanted) {
+			t.Errorf("header still carries the %s badge:\n%s", unwanted, header)
+		}
+	}
+}
