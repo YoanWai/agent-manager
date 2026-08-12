@@ -120,6 +120,54 @@ func TestLoadDirWritesDefaultInRequestedDirectory(t *testing.T) {
 	}
 }
 
+func TestLoadDirUpgradesLegacyCodexWorkingRule(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	legacy := `
+[tools.codex]
+command = "codex"
+rules = [
+  { state = "working", pattern = "(?m)esc to interrupt\\b" },
+]
+`
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	rule := cfg.Tools["codex"].Rules[0]
+	if rule.Pattern == `(?m)esc to interrupt\b` {
+		t.Fatal("legacy Codex working rule was not upgraded")
+	}
+	if !strings.Contains(rule.Pattern, `\z`) {
+		t.Fatalf("upgraded Codex working rule is not scoped to the activity-region tail: %q", rule.Pattern)
+	}
+}
+
+func TestLoadDirPreservesCustomCodexWorkingRule(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	custom := `
+[tools.codex]
+command = "codex"
+rules = [
+  { state = "working", pattern = "my private status signal" },
+]
+`
+	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if got := cfg.Tools["codex"].Rules[0].Pattern; got != "my private status signal" {
+		t.Fatalf("custom Codex working rule = %q", got)
+	}
+}
+
 func TestShellToolUsesFlagAndStableName(t *testing.T) {
 	cfg := Config{Tools: map[string]Tool{
 		"terminal": {Command: "agent", Shell: false},
