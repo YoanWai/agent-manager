@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -38,7 +39,16 @@ func TestOpenEditorLaunchesGUIEditorOnSessionDirectory(t *testing.T) {
 	createSession(t, m, "agent", dir, "")
 	m.selectSessionRow(t, "agent")
 
-	m.openEditor()
+	// The launch belongs to a command, not to Update, so the status line
+	// only names the editor once that command has run.
+	_, cmd := m.openEditor()
+	if cmd == nil {
+		t.Fatalf("openEditor returned no command, err = %q", m.errBar.text)
+	}
+	if len(*launched) != 0 {
+		t.Fatalf("the editor started on the update path: %v", *launched)
+	}
+	m.applyCmd(t, cmd)
 
 	// The live pane answers with the directory tmux resolved, which on
 	// macOS is the target of the /var symlink the temp dir sits behind.
@@ -64,7 +74,8 @@ func TestOpenEditorPrefersConfiguredCommand(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "backend")
 
-	m.openEditor()
+	_, cmd := m.openEditor()
+	m.applyCmd(t, cmd)
 
 	want := []string{"open", "-a", "Visual Studio Code", dir}
 	if !slices.Equal(*launched, want) {
@@ -151,5 +162,27 @@ func TestOpenEditorWithoutAnyEditorExplainsItself(t *testing.T) {
 	}
 	if !strings.Contains(m.errBar.text, "config.toml") {
 		t.Fatalf("status line should point at the setting, got %q", m.errBar.text)
+	}
+}
+
+// A directory removed under a session is named in the refusal, rather than
+// leaving the status line trailing off after a colon.
+func TestOpenEditorNamesADirectoryThatIsGone(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	gone := t.TempDir()
+	createSession(t, m, "agent", gone, "")
+	m.selectSessionRow(t, "agent")
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatalf("remove dir: %v", err)
+	}
+
+	m.openEditor()
+
+	if len(*launched) != 0 {
+		t.Fatalf("nothing should launch for a directory that is gone, got %v", *launched)
+	}
+	if !strings.HasSuffix(m.errBar.text, gone) {
+		t.Fatalf("status line should name the directory, got %q", m.errBar.text)
 	}
 }

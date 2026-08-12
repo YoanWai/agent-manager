@@ -43,11 +43,21 @@ var (
 	}
 )
 
+// editorOpenedMsg carries a windowed editor that is up, so the status line
+// names it once the process exists rather than before it does.
+type editorOpenedMsg struct {
+	name string
+	dir  string
+}
+
 // openEditor opens the directory under the cursor in the user's editor.
 func (m *Model) openEditor() (tea.Model, tea.Cmd) {
+	if _, ok := m.selectedRow(); !ok {
+		return m, nil
+	}
 	dir, ok := m.rowDir()
 	if !ok {
-		m.errBar.text = "no directory to open: " + dir
+		m.errBar.text = "directory no longer exists: " + dir
 		return m, nil
 	}
 	line := m.resolveEditor()
@@ -56,6 +66,7 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 		m.errBar.text = `no editor found: set editor = "code" in config.toml`
 		return m, nil
 	}
+	m.errBar.text = ""
 	if !detachedEditors[editorName(line)] {
 		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 			if err != nil {
@@ -64,12 +75,18 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 			return nil
 		})
 	}
-	if err := startEditor(cmd); err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
+	return m, startEditorCmd(cmd, editorName(line), dir)
+}
+
+// startEditorCmd launches a windowed editor off the update path: starting a
+// process is exec, and a slow one would hold the next keystroke.
+func startEditorCmd(cmd *exec.Cmd, name, dir string) tea.Cmd {
+	return func() tea.Msg {
+		if err := startEditor(cmd); err != nil {
+			return errMsg{err}
+		}
+		return editorOpenedMsg{name: name, dir: dir}
 	}
-	m.errBar.text = "opened " + dir + " in " + editorName(line)
-	return m, nil
 }
 
 // resolveEditor picks the command that opens a directory: the configured
