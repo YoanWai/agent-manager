@@ -242,6 +242,10 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 	if got := withPrompt(tool, tool.Command, ""); got != "cat" {
 		t.Fatalf("empty prompt should leave the command untouched, got %q", got)
 	}
+	sent := config.Tool{Command: "hermes --cli", PromptMode: "send"}
+	if got := withPrompt(sent, sent.Command, "do it"); got != sent.Command {
+		t.Fatalf("send-mode prompt changed launch command to %q", got)
+	}
 }
 
 func TestFormLongDirKeepsCursorEndVisible(t *testing.T) {
@@ -441,6 +445,30 @@ func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 	}
 	if !strings.Contains(pane, "agent-manager rename") {
 		t.Fatalf("pane should hold the directive, got:\n%s", pane)
+	}
+}
+
+func TestSendModeSubmitsPromptAfterPaneReady(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do the work", false, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	sess := m.sessionRows()[0]
+	deadline := time.Now().Add(5 * time.Second)
+	for m.poller.inputsPending(sess.ID) {
+		if time.Now().After(deadline) {
+			t.Fatal("startup prompt stayed queued after the input box appeared")
+		}
+		time.Sleep(100 * time.Millisecond)
+		m.applyCmd(t, m.refreshCmd())
+	}
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(pane, "do the work") || !strings.Contains(pane, "This session is already named") {
+		t.Fatalf("pane did not receive the launch prompt:\n%s", pane)
 	}
 }
 

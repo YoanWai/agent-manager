@@ -51,11 +51,11 @@ Navigation is keyboard-driven. The manager claims mouse reporting so the wheel s
 Press `space` to dock a prompt bar at the bottom of the sidebar. The target follows the cursor while the bar is open (`↑↓` still navigate):
 
 - On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar clears and stays open, ready for the next answer; Settings (`s`) can make it close instead.
-- On a **group** row, `enter` spawns a new agent in that group with the prompt embedded, using the group's default path. The spawn tool starts at the Settings default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. `alt+w` toggles whether the new agent spawns into its own git worktree, starting from the Settings default; the footer shows `worktree: on` or `worktree: off`, or `worktree: unavailable (not a git repo)` when the target directory cannot hold one. Answering an existing session ignores the toggle, since there is no new session to place in a worktree. The agent starts working on the prompt immediately.
+- On a **group** row, `enter` spawns a new agent in that group and submits the prompt at startup, using the group's default path. The spawn tool starts at the Settings default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. `alt+w` toggles whether the new agent spawns into its own git worktree, starting from the Settings default; the footer shows `worktree: on` or `worktree: off`, or `worktree: unavailable (not a git repo)` when the target directory cannot hold one. Answering an existing session ignores the toggle, since there is no new session to place in a worktree. The agent starts working on the prompt immediately.
 
 `ctrl+v` pastes an image from the system clipboard as an `[Image #1]` chip at the caret. The image is saved under `agent-manager-pastes` in your temp directory, and on send each chip is swapped back for its path, so the paths reach the agent in the order and the places you pasted them. `backspace` next to a chip removes the whole chip, and an edit that swallows one releases its image. A clipboard holding text rather than an image pastes as text. Pasted images older than seven days are cleared at startup and once a day while the manager runs, so an agent can still open one from an earlier session while temp stays tidy.
 
-`esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](configuration.md)).
+`esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag`, while a persistent CLI with no startup-prompt argument uses `prompt_mode = "send"` (see [Configuration](configuration.md)).
 
 ![answering a working Claude Code session from the prompt bar, without attaching](demo-space.gif)
 
@@ -93,9 +93,9 @@ Deleting (`d`) a session that holds a worktree removes the worktree and its bran
 
 ![ending every session under a group for the RAM, then reviving the whole subtree on its own conversations](demo-revive.gif)
 
-`v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`, `gemini --resume {id}`, `pi --session {id}`.
+`v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`, `gemini --resume {id}`, `pi --session {id}`, `hermes --cli --resume {id}`.
 
-The id arrives one of two ways: tools with a `session_id_flag` launch under an id the manager mints, and tools that mint their own are read back by a `session_store` capturer (`codex`, `opencode`). Without an id, revive falls back to `revive_command` (`claude --continue`), which resumes the working directory's most recent conversation, and the manager says so in the status line, since sessions sharing a directory would otherwise land on the wrong one. On a group row `v` revives every dead session under it, and `V` revives every dead session in view; both revive what they can and name the first failure rather than stopping.
+The id arrives one of two ways: tools with a `session_id_flag` launch under an id the manager mints, and tools that mint their own are read back by a `session_store` capturer (`codex`, `opencode`, `gemini`, `hermes`). Without an id, revive falls back to `revive_command` (`claude --continue`), which resumes the working directory's most recent conversation, and the manager says so in the status line, since sessions sharing a directory would otherwise land on the wrong one. On a group row `v` revives every dead session under it, and `V` revives every dead session in view; both revive what they can and name the first failure rather than stopping.
 
 ## Restarting a session on an empty context
 
@@ -150,7 +150,7 @@ The server's MCP initialization instructions teach agents to use this workflow w
 
 Sending a command to a terminal executes it on the user's machine. Agents should treat `send_terminal` with the same care as typing into an attached shell: inspect the target returned by `list_terminals`, avoid destructive commands unless the user asked for them, and read the result before continuing.
 
-Registration is per tool. Claude gets a generated `--mcp-config` file. Codex gets `-c mcp_servers...` overrides. OpenCode gets an `OPENCODE_CONFIG` merge file. Grok and Gemini each get a one-time `mcp add --scope user` entry on their first launch.
+Registration is per tool. Claude gets a generated `--mcp-config` file. Codex gets `-c mcp_servers...` overrides. OpenCode gets an `OPENCODE_CONFIG` merge file. Grok and Gemini each get a one-time `mcp add --scope user` entry on their first launch. Hermes can use its own one-time `mcp add` flow, but defaults to no registration because its MCP Python SDK is optional; after `hermes setup` installs that support, set `mcp = "hermes"` in its tool block.
 
 Pi does not include an MCP client. The `rename`, `review-repo`, and `review-base` commands still work inside Pi sessions.
 

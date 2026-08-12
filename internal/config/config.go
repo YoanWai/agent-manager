@@ -24,6 +24,10 @@ type Tool struct {
 	Shell         bool   `toml:"shell"`
 	ReviveCommand string `toml:"revive_command"`
 	PromptFlag    string `toml:"prompt_flag"`
+	// PromptMode controls how a new-session prompt reaches the tool. Empty
+	// embeds it in the launch command; "send" starts the interactive CLI
+	// first and submits the prompt when its input box appears.
+	PromptMode string `toml:"prompt_mode"`
 	// SessionIDFlag makes a new session launch with an id we choose (e.g.
 	// claude/grok/pi "--session-id <uuid>"), so revive can later resume that
 	// exact conversation deterministically.
@@ -37,12 +41,12 @@ type Tool struct {
 	// each value. {session_file} needs SessionStore to keep one ("gemini").
 	ForkCommand string `toml:"fork_command"`
 	// SessionStore names the built-in capturer that reads back the id a tool
-	// minted itself when it has no SessionIDFlag ("codex", "opencode" or
-	// "gemini").
+	// minted itself when it has no SessionIDFlag ("codex", "opencode",
+	// "gemini" or "hermes").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
-	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini" or
-	// "none".
+	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
+	// "hermes" or "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP            string `toml:"mcp"`
 	StatusSource   string `toml:"status_source"`
@@ -161,10 +165,12 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.Command, def.Command)
 	fill(&user.ReviveCommand, def.ReviveCommand)
 	fill(&user.PromptFlag, def.PromptFlag)
+	fill(&user.PromptMode, def.PromptMode)
 	fill(&user.SessionIDFlag, def.SessionIDFlag)
 	fill(&user.ResumeByIDCommand, def.ResumeByIDCommand)
 	fill(&user.ForkCommand, def.ForkCommand)
 	fill(&user.SessionStore, def.SessionStore)
+	fill(&user.MCP, def.MCP)
 	fill(&user.StatusSource, def.StatusSource)
 	fill(&user.DefaultStatus, def.DefaultStatus)
 	fill(&user.ActivityCutoff, def.ActivityCutoff)
@@ -410,6 +416,31 @@ rules = [
   { state = "working", pattern = "esc to cancel" },
   # error messages render with a "✕ " prefix
   { state = "errored", pattern = "(?m)^✕ " },
+]
+
+[tools.hermes]
+# The classic REPL exposes stable prompt markers for status and prompt delivery.
+command = "hermes --cli"
+# Hermes creates its session id on first input and records it in state.db.
+session_store = "hermes"
+resume_by_id_command = "hermes --cli --resume {id}"
+revive_command = "hermes --cli --continue"
+# Hermes only accepts startup text through chat -q, which is one-shot and
+# exits. Start the real REPL, then submit the prompt when its composer appears.
+prompt_mode = "send"
+# Hermes's MCP client is an optional install; enable mcp = "hermes" after
+# installing that extra if you want the agent-manager MCP tools.
+mcp = "none"
+default_status = "idle"
+activity_cutoff = "(?m)^\\s*(?:\\S+\\s+)?[❯>$#›»→]\\s"
+chrome_line = "^\\s*[─╭╮╰╯│]*\\s*$|^\\s*⚕ .*$"
+busy_line = "(?:▶|⚙|⛓) \\d+"
+rules = [
+  { state = "waiting", pattern = "↑/↓ to select, Enter to confirm" },
+  { state = "waiting", pattern = "type (?:password|secret).*ESC to skip" },
+  { state = "waiting", pattern = "type your answer (?:here )?and press Enter" },
+  { state = "waiting", pattern = "(?:Run setup now|Set up a provider now)\\? \\[Y/n\\]" },
+  { state = "working", pattern = "msg=interrupt · /queue · /bg · /steer · Ctrl\\+C cancel" },
 ]
 
 # The terminal tab "T" spawns: a shell in the group's directory, listed

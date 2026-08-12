@@ -30,8 +30,8 @@ type Session struct {
 	CreatedAt    time.Time
 	LastStatusAt time.Time
 	// AgentSessionID is the agent CLI's own conversation id (claude/grok/
-	// gemini/pi session UUID, codex rollout id, opencode session id). Revive resumes
-	// this exact conversation instead of the cwd's most recent one.
+	// gemini/pi session UUID, codex rollout id, opencode/hermes session id).
+	// Revive resumes this exact conversation instead of the cwd's most recent one.
 	AgentSessionID string
 	// AgentLaunchedAt is when the agent process now in the pane started, which
 	// restart moves forward while CreatedAt keeps marking the row's birth.

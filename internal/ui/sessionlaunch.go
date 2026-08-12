@@ -8,7 +8,7 @@ import (
 )
 
 type launchOptions struct {
-	deferDirective   bool
+	pendingInputs    []string
 	rollbackWorktree bool
 }
 
@@ -39,8 +39,8 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 		discardWorktree()
 		return err
 	}
-	if opts.deferDirective && m.poller != nil {
-		m.poller.markDirectivePending(sess.ID)
+	if len(opts.pendingInputs) > 0 && m.poller != nil {
+		m.poller.markInputsPending(sess.ID, opts.pendingInputs...)
 	}
 	labelErr := m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
 	m.sessions = append(m.sessions, sess)

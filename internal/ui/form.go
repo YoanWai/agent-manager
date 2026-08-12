@@ -600,6 +600,15 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	deferDirective := autoNamed && !directiveEmbeddable(prompt)
 	prompt = launchPrompt(prompt, autoNamed)
 	base := withPrompt(tool, tool.Command, prompt)
+	var pendingInputs []string
+	if tool.PromptMode == "send" {
+		if prompt != "" {
+			pendingInputs = append(pendingInputs, prompt)
+		}
+	}
+	if deferDirective {
+		pendingInputs = append(pendingInputs, deferredRenameDirective)
+	}
 	// Tools that accept a chosen session id launch with one, so a later
 	// revive resumes this exact conversation rather than the directory's
 	// most recent one. Tools without the flag mint their own id, captured
@@ -622,16 +631,15 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		WorktreeRepo:   worktreeRepo,
 		WorktreeBranch: worktreeBranch,
 	}, tool, base, launchOptions{
-		deferDirective:   deferDirective,
+		pendingInputs:    pendingInputs,
 		rollbackWorktree: worktreeRepo != "",
 	})
 }
 
-// withPrompt embeds an optional starting prompt into a tool's launch
-// command; tools whose positional argument is not a prompt route it
-// through their prompt_flag.
+// withPrompt embeds a starting prompt into a tool's launch command unless
+// prompt_mode routes it through the live input box instead.
 func withPrompt(tool config.Tool, command, prompt string) string {
-	if prompt == "" {
+	if prompt == "" || tool.PromptMode == "send" {
 		return command
 	}
 	if tool.PromptFlag != "" {
