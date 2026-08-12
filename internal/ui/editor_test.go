@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/config"
 )
 
 // captureEditor swaps both editor seams: PATH answers only for the names
@@ -111,6 +113,60 @@ func TestSplitEditorLineGroupsOnQuotes(t *testing.T) {
 		if got := splitEditorLine(tc.line); !slices.Equal(got, tc.want) {
 			t.Errorf("splitEditorLine(%q) = %v, want %v", tc.line, got, tc.want)
 		}
+	}
+}
+
+// A dead pane no longer answers for its directory, so the recorded one
+// is what opens.
+func TestOpenEditorFallsBackToRecordedCwd(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	dir := t.TempDir()
+	createSession(t, m, "agent", dir, "")
+	m.selectSessionRow(t, "agent")
+	entry, ok := m.selectedRow()
+	if !ok {
+		t.Fatal("no selected row")
+	}
+	if err := m.tmux.Kill(entry.sess.ID); err != nil {
+		t.Fatalf("kill session: %v", err)
+	}
+
+	_, cmd := m.openEditor()
+	m.applyCmd(t, cmd)
+
+	want := []string{"code", entry.sess.Cwd}
+	if !slices.Equal(*launched, want) {
+		t.Fatalf("launched %v, want %v", *launched, want)
+	}
+}
+
+// Each boundary of the resolution order, with both neighbours present and
+// the higher one expected.
+func TestResolveEditorPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		configured string
+		env        map[string]string
+		installed  []string
+		want       string
+	}{
+		{"config over environment", "cfg-edit", map[string]string{"AGENT_MANAGER_EDITOR": "env-edit"}, []string{"code"}, "cfg-edit"},
+		{"environment over PATH", "", map[string]string{"AGENT_MANAGER_EDITOR": "env-edit"}, []string{"code"}, "env-edit"},
+		{"first GUI editor on PATH wins", "", nil, []string{"zed", "cursor"}, "cursor"},
+		{"PATH over $VISUAL", "", map[string]string{"VISUAL": "vim"}, []string{"code"}, "code"},
+		{"$VISUAL over $EDITOR", "", map[string]string{"VISUAL": "vim", "EDITOR": "nano"}, nil, "vim"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &Model{cfg: config.Config{Editor: tc.configured}}
+			captureEditor(t, tc.installed...)
+			for key, value := range tc.env {
+				t.Setenv(key, value)
+			}
+			if got := m.resolveEditor(); got != tc.want {
+				t.Fatalf("resolveEditor() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
