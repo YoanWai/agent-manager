@@ -313,6 +313,37 @@ func TestFocusModeExitsWhenSessionDies(t *testing.T) {
 	}
 }
 
+// Ctrl+R while focused opens the review instead of reaching the pane, and
+// closing the review lands back in focus rather than the list.
+func TestFocusCtrlROpensReviewAndReturns(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	createSession(t, m, "focusrev", dir, "")
+	m.selectSessionRow(t, "focusrev")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlR})
+	*m = *updated.(*Model)
+	m.drainCmds(t, cmd)
+	if m.mode != modeDiff || !m.diff.active {
+		t.Fatalf("ctrl+r in focus should open review, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	if len(m.diff.set.Files) == 0 {
+		t.Fatalf("review opened empty, err = %q", m.diff.errText)
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("closing review should return to focus, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+}
+
 // Leaving focus must keep mouse reporting: handing it back would let a
 // wheel notch scroll the manager out of view from the list.
 func TestFocusExitKeepsMouse(t *testing.T) {

@@ -2,11 +2,15 @@ package mcpreg
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/hooks"
 )
 
 func TestStyleResolution(t *testing.T) {
@@ -18,6 +22,7 @@ func TestStyleResolution(t *testing.T) {
 		{"opencode", "", "opencode"},
 		{"grok", "", "grok"},
 		{"gemini", "", "gemini"},
+		{"hermes", "", "hermes"},
 		{"aider", "", "none"},
 		{"my-claude", "claude", "claude"},
 		{"claude", "none", "none"},
@@ -133,6 +138,138 @@ func TestApplyGeminiSkipsWhenMarkerMatches(t *testing.T) {
 	}
 	if command != "gemini" {
 		t.Fatalf("command = %q", command)
+	}
+}
+
+func TestApplyHermesSkipsWhenMarkerMatches(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mcp-hermes-registered"), []byte("/opt/bin/agent-manager"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command, err := Apply("hermes", "/opt/bin/agent-manager", dir, "hermes --cli", map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != "hermes --cli" {
+		t.Fatalf("command = %q", command)
+	}
+}
+
+func TestValidHermesMCPEntry(t *testing.T) {
+	enabled := true
+	entry := hermesMCPEntry{
+		Command: "/opt/bin/agent-manager",
+		Args:    []string{"mcp"},
+		Env:     map[string]string{"AGENT_MANAGER_SESSION_ID": "${AGENT_MANAGER_SESSION_ID}"},
+		Enabled: &enabled,
+	}
+	if !validHermesMCPEntry(entry, "/opt/bin/agent-manager") {
+		t.Fatal("valid Hermes MCP entry was rejected")
+	}
+	entry.Args = []string{"wrong"}
+	if validHermesMCPEntry(entry, "/opt/bin/agent-manager") {
+		t.Fatal("Hermes MCP entry with wrong args was accepted")
+	}
+}
+
+func TestApplyHermesRegistersAndVerifies(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+if [ "$1" = "config" ] && [ "$2" = "get" ]; then
+  if [ -n "$AGENT_MANAGER_SESSION_ID" ]; then
+    touch "$FAKE_HERMES_LEAK"
+  fi
+  if [ -f "$FAKE_HERMES_STATE" ]; then
+    printf '{"command":"%s","args":["mcp"],"env":{"AGENT_MANAGER_SESSION_ID":"${AGENT_MANAGER_SESSION_ID}"},"enabled":true}\n' "$FAKE_HERMES_EXE"
+    exit 0
+  fi
+  exit 1
+fi
+if [ "$1" = "mcp" ] && [ "$2" = "add" ]; then
+  printf '%s\n' "$@" > "$FAKE_HERMES_ARGS"
+  sed -n l > "$FAKE_HERMES_STDIN"
+  touch "$FAKE_HERMES_STATE"
+  exit 0
+fi
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(dir, "registered")
+	argsPath := filepath.Join(dir, "args")
+	stdinPath := filepath.Join(dir, "stdin")
+	leakPath := filepath.Join(dir, "leaked")
+	exe := "/opt/bin/agent-manager"
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_HERMES_STATE", state)
+	t.Setenv("FAKE_HERMES_ARGS", argsPath)
+	t.Setenv("FAKE_HERMES_STDIN", stdinPath)
+	t.Setenv("FAKE_HERMES_LEAK", leakPath)
+	t.Setenv("FAKE_HERMES_EXE", exe)
+	t.Setenv(hooks.EnvSessionID, "parent-session")
+
+	command, err := Apply("hermes", exe, dir, "hermes --cli", map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != "hermes --cli" {
+		t.Fatalf("command = %q", command)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantArgs := "mcp\nadd\nagent-manager\n--command\n/opt/bin/agent-manager\n--env\nAGENT_MANAGER_SESSION_ID=${AGENT_MANAGER_SESSION_ID}\n--args\nmcp\n"
+	if string(args) != wantArgs {
+		t.Fatalf("hermes args = %q want %q", args, wantArgs)
+	}
+	stdin, err := os.ReadFile(stdinPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(stdin) != "$\n" {
+		t.Fatalf("hermes stdin = %q want one blank answer", stdin)
+	}
+	if _, err := os.Stat(leakPath); !os.IsNotExist(err) {
+		t.Fatal("config verification expanded the parent manager's session id")
+	}
+	marker, err := os.ReadFile(filepath.Join(dir, "mcp-hermes-registered"))
+	if err != nil || string(marker) != exe {
+		t.Fatalf("marker = %q err=%v", marker, err)
+	}
+}
+
+func TestEnsureHermesRegisteredWrapsExitError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	bin := t.TempDir()
+	script := `#!/bin/sh
+if [ "$1" = "config" ]; then
+  exit 1
+fi
+printf 'registration failed\n' >&2
+exit 7
+`
+	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	err := ensureHermesRegistered("/opt/bin/agent-manager", t.TempDir())
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("error should wrap exec.ExitError, got %v", err)
+	}
+	if exitErr.ExitCode() != 7 {
+		t.Fatalf("exit code = %d, want 7", exitErr.ExitCode())
 	}
 }
 

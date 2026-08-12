@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -392,6 +393,25 @@ func TestQuietPaneAfterWorkingDerivesFinished(t *testing.T) {
 	seedRegionHash(t, m, sess, pane)
 	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
 		t.Fatalf("quiet pane after working should derive finished, got %q", got)
+	}
+}
+
+func TestQuietCodexPaneQuotingInterruptHintDerivesFinished(t *testing.T) {
+	disableQuietEndGrace(t)
+	m := buildModel(t)
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatalf("default config: %v", err)
+	}
+	m.poller.engine, err = status.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("status engine: %v", err)
+	}
+	sess := store.Session{ID: "quiet-codex", Tool: "codex", Status: status.Working}
+	pane := "Output:\n\ntool: mytool\nresult: working\npattern: esc to interrupt\ndefault: idle\n\n› Summarize recent commits\n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
+		t.Fatalf("quiet Codex pane quoting its interrupt hint should derive finished, got %q", got)
 	}
 }
 

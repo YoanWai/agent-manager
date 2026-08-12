@@ -1,8 +1,10 @@
 # Configuration
 
-Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux, with `XDG_CONFIG_HOME` honored when set) and is created on first run with defaults for Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, and Pi.
+Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux, with `XDG_CONFIG_HOME` honored when set) and is created on first run with defaults for Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Pi, and Hermes Agent.
 
 The Pi defaults require Pi 0.76.0 or later because they use `--session-id`.
+
+The Hermes defaults are tested with Hermes Agent 0.20.0 and launch its classic REPL with `--cli`. This keeps the input, approval, and activity markers stable even when your Hermes preference selects its modern TUI.
 
 Top-level: `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats. `editor` is the command `o` opens a directory in, arguments included (`editor = "code -n"`, `editor = "open -a 'Visual Studio Code'"`); it is run directly rather than through a shell, and quotes group an argument carrying a space. Left unset, Agent Manager falls back to `$AGENT_MANAGER_EDITOR`, then a GUI editor on `PATH`, then `$VISUAL` / `$EDITOR` (see [Opening the editor](usage.md#opening-the-editor)).
 
@@ -24,7 +26,7 @@ Rules match top-down against the visible pane text; first match wins, and `defau
 
 **Status detection.** Optional per-tool fields refine it: `activity_cutoff` (regex locating the tool's input box, everything above it is turn content), `turn_end` (a turn-summary line marking the turn as over), `busy_line` (work that outlives its turn, such as background agents), `chrome_line`, `blocked_line`, and `trailing_note`. `status_source = "claude-hooks"` switches status to Claude Code hook events (see [Status](usage.md#status)). The generated config's `claude` and `opencode` blocks show all of them in use.
 
-**Revive.** `resume_by_id_command` resumes one exact conversation, with `{id}` replaced by the session's captured agent id. That id comes either from launching under an id the manager mints (`session_id_flag`, e.g. `--session-id`) or from reading back an id the tool minted itself (`session_store = "codex" | "opencode" | "gemini"`). `revive_command` is what `v` falls back to when no id is available, e.g. `claude --continue`.
+**Revive.** `resume_by_id_command` resumes one exact conversation, with `{id}` replaced by the session's captured agent id. That id comes either from launching under an id the manager mints (`session_id_flag`, e.g. `--session-id`) or from reading back an id the tool minted itself (`session_store = "codex" | "opencode" | "gemini" | "hermes"`). `revive_command` is what `v` falls back to when no id is available, e.g. `claude --continue`.
 
 **Forks.** `fork_command` creates a conversation from an existing session. Agent Manager replaces and shell-quotes these placeholders:
 
@@ -35,9 +37,8 @@ Rules match top-down against the visible pane text; first match wins, and `defau
 
 A `fork_command` references its source through `{id}` or `{session_file}`, so one of those two is required. Claude Code, Codex and Gemini CLI include default fork commands. A custom tool can omit `{new_id}` when its `session_store` captures the generated ID.
 
-**Prompts.** `prompt_flag` controls how the new-session form's optional prompt is embedded into the launch command. Tools that take the prompt as a positional argument (Claude Code: `claude 'the prompt'`) leave it empty; tools whose positional argument means something else declare the flag (OpenCode: `prompt_flag = "--prompt"`, since its positional argument is the project path). The prompt only shapes the launch command; revive (`v`) uses the revive commands untouched.
+**Prompts.** `prompt_flag` controls how the new-session form's optional prompt is embedded into the launch command. Tools that take the prompt as a positional argument (Claude Code: `claude 'the prompt'`) leave it empty; tools whose positional argument means something else declare the flag (OpenCode: `prompt_flag = "--prompt"`, since its positional argument is the project path). `prompt_mode = "send"` handles a persistent CLI that accepts no startup prompt: Agent Manager waits until `activity_cutoff` finds its input box, then submits the prompt there (Hermes uses this). Set it to `"argument"` if a custom Hermes wrapper accepts a launch argument instead. The prompt setting only affects a new launch; revive (`v`) uses the revive commands untouched.
 
-**MCP.** `mcp = "claude" | "codex" | "opencode" | "grok" | "gemini" | "none"` picks how the agent-manager MCP server is registered into the tool's sessions (see [MCP](usage.md#mcp-how-agents-discover-these-commands)). An empty value uses the tool's config key when it names a known style.
+**MCP.** `mcp = "claude" | "codex" | "opencode" | "grok" | "gemini" | "hermes" | "none"` picks how the agent-manager MCP server is registered into the tool's sessions (see [MCP](usage.md#mcp-how-agents-discover-these-commands)). An empty value uses the tool's config key when it names a known style. Hermes defaults to `none` because its MCP client is an optional install; after installing that extra through `hermes setup`, set `mcp = "hermes"` to opt in.
 
 State is stored next to the config in `state.db` (SQLite).
-

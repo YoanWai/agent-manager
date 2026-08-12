@@ -549,7 +549,7 @@ func TestRestartLaunchesAFreshConversation(t *testing.T) {
 	}
 }
 
-// A tool that mints its own conversation id (codex, opencode) has nothing to
+// A tool that mints its own conversation id has nothing to
 // hand the launch, so restart clears the binding and leaves the id for the
 // poller to capture once the new conversation lands.
 func TestRestartClearsCapturedConversationID(t *testing.T) {
@@ -1214,7 +1214,7 @@ func TestRestartLaunchIsAFreshStartForEveryShippedTool(t *testing.T) {
 			}
 		}
 		if tool.SessionIDFlag == "" {
-			// codex and opencode mint their own id; the poller captures it.
+			// Some tools mint their own id; the poller captures it.
 			if agentSessionID != "" || rest != "" {
 				t.Errorf("%s: restart handed an id to a tool that mints its own: %q", name, command)
 			}

@@ -24,6 +24,7 @@ type Tool struct {
 	Shell         bool   `toml:"shell"`
 	ReviveCommand string `toml:"revive_command"`
 	PromptFlag    string `toml:"prompt_flag"`
+	PromptMode    string `toml:"prompt_mode"`
 	// SessionIDFlag makes a new session launch with an id we choose (e.g.
 	// claude/grok/pi "--session-id <uuid>"), so revive can later resume that
 	// exact conversation deterministically.
@@ -37,12 +38,12 @@ type Tool struct {
 	// each value. {session_file} needs SessionStore to keep one ("gemini").
 	ForkCommand string `toml:"fork_command"`
 	// SessionStore names the built-in capturer that reads back the id a tool
-	// minted itself when it has no SessionIDFlag ("codex", "opencode" or
-	// "gemini").
+	// minted itself when it has no SessionIDFlag ("codex", "opencode",
+	// "gemini" or "hermes").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
-	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini" or
-	// "none".
+	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
+	// "hermes" or "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP            string `toml:"mcp"`
 	StatusSource   string `toml:"status_source"`
@@ -98,10 +99,18 @@ func Path() (string, error) {
 }
 
 func Load() (Config, error) {
-	path, err := Path()
+	dir, err := Dir()
 	if err != nil {
 		return Config{}, err
 	}
+	return LoadDir(dir)
+}
+
+// LoadDir loads the configuration kept in dir. Session-scoped commands
+// already receive the manager's config directory, so they must not resolve
+// it again from a possibly different process environment.
+func LoadDir(dir string) (Config, error) {
+	path := filepath.Join(dir, "config.toml")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if err := writeDefault(path); err != nil {
 			return Config{}, err
@@ -137,7 +146,7 @@ func (c *Config) backfillToolDefaults() error {
 			c.Tools[name] = def
 			continue
 		}
-		c.Tools[name] = mergeTool(user, def)
+		c.Tools[name] = mergeTool(name, user, def)
 	}
 	return nil
 }
@@ -148,7 +157,7 @@ func (c *Config) backfillToolDefaults() error {
 // a hand-rolled agent block, and backfilling the flag onto one would take
 // the user's own tool out of the pickers and refuse to prompt it, without
 // saying so. A block is a shell only where its author wrote that.
-func mergeTool(user, def Tool) Tool {
+func mergeTool(name string, user, def Tool) Tool {
 	fill := func(dst *string, src string) {
 		if *dst == "" {
 			*dst = src
@@ -157,10 +166,12 @@ func mergeTool(user, def Tool) Tool {
 	fill(&user.Command, def.Command)
 	fill(&user.ReviveCommand, def.ReviveCommand)
 	fill(&user.PromptFlag, def.PromptFlag)
+	fill(&user.PromptMode, def.PromptMode)
 	fill(&user.SessionIDFlag, def.SessionIDFlag)
 	fill(&user.ResumeByIDCommand, def.ResumeByIDCommand)
 	fill(&user.ForkCommand, def.ForkCommand)
 	fill(&user.SessionStore, def.SessionStore)
+	fill(&user.MCP, def.MCP)
 	fill(&user.StatusSource, def.StatusSource)
 	fill(&user.DefaultStatus, def.DefaultStatus)
 	fill(&user.ActivityCutoff, def.ActivityCutoff)
@@ -171,6 +182,18 @@ func mergeTool(user, def Tool) Tool {
 	fill(&user.BusyLine, def.BusyLine)
 	if len(user.Rules) == 0 {
 		user.Rules = def.Rules
+	} else if name == "codex" {
+		for i, rule := range user.Rules {
+			if rule.State != "working" || rule.Pattern != `(?m)esc to interrupt\b` {
+				continue
+			}
+			for _, current := range def.Rules {
+				if current.State == "working" {
+					user.Rules[i] = current
+					break
+				}
+			}
+		}
 	}
 	return user
 }
@@ -211,6 +234,21 @@ func (c Config) ToolNames() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// ShellTool returns the first shell block by name, making the choice stable
+// when a user configures more than one.
+func (c Config) ShellTool() (string, Tool, bool) {
+	chosen := ""
+	for name, tool := range c.Tools {
+		if tool.Shell && (chosen == "" || name < chosen) {
+			chosen = name
+		}
+	}
+	if chosen == "" {
+		return "", Tool{}, false
+	}
+	return chosen, c.Tools[chosen], true
 }
 
 func writeDefault(path string) error {
@@ -320,8 +358,9 @@ rules = [
   { state = "waiting", pattern = "(?m)^\\s*›\\s+\\d+\\." },
   { state = "waiting", pattern = "(?m)Press enter to (confirm|continue)\\b" },
   { state = "waiting", pattern = "(?m)enter to submit answer\\b" },
-  # active turn status line: "• Working (0s • esc to interrupt)" / "Analyzing"
-  { state = "working", pattern = "(?m)esc to interrupt\\b" },
+  # active status row is the final row above the input box; anchoring its full
+  # shape keeps an answer that quotes "esc to interrupt" from looking active
+  { state = "working", pattern = "(?m)^[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)?[ \\t\\n]*\\z" },
   { state = "errored", pattern = "(?m)You've hit your usage limit" },
   { state = "errored", pattern = "(?im)^\\s*■.*\\berror\\b" },
 ]
@@ -385,6 +424,31 @@ rules = [
   { state = "working", pattern = "esc to cancel" },
   # error messages render with a "✕ " prefix
   { state = "errored", pattern = "(?m)^✕ " },
+]
+
+[tools.hermes]
+# The classic REPL exposes stable prompt markers for status and prompt delivery.
+command = "hermes --cli"
+# Hermes creates its session id on first input and records it in state.db.
+session_store = "hermes"
+resume_by_id_command = "hermes --cli --resume {id}"
+revive_command = "hermes --cli --continue"
+# Hermes only accepts startup text through chat -q, which is one-shot and
+# exits. Start the real REPL, then submit the prompt when its composer appears.
+prompt_mode = "send"
+# Hermes's MCP client is an optional install; enable mcp = "hermes" after
+# installing that extra if you want the agent-manager MCP tools.
+mcp = "none"
+default_status = "idle"
+activity_cutoff = "(?m)^\\s*(?:\\S+\\s+)?[❯>$#›»→]\\s"
+chrome_line = "^\\s*[─╭╮╰╯│]*\\s*$|^\\s*⚕ .*$"
+busy_line = "(?:▶|⚙|⛓) \\d+"
+rules = [
+  { state = "waiting", pattern = "↑/↓ to select, Enter to confirm" },
+  { state = "waiting", pattern = "type (?:password|secret).*ESC to skip" },
+  { state = "waiting", pattern = "type your answer (?:here )?and press Enter" },
+  { state = "waiting", pattern = "(?:Run setup now|Set up a provider now)\\? \\[Y/n\\]" },
+  { state = "working", pattern = "msg=interrupt · /queue · /bg · /steer · Ctrl\\+C cancel" },
 ]
 
 # The terminal tab "T" spawns: a shell in the group's directory, listed

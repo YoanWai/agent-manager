@@ -646,3 +646,42 @@ func gitRepoWithManyFiles(t *testing.T, n int) string {
 	}
 	return dir
 }
+
+// Every filter the list is under names itself over the list, beside the key
+// that lifts it, and the header stops repeating them.
+func TestFilterBadgesStackOverTheList(t *testing.T) {
+	m := shotModel()
+	m.width, m.height = 120, 40
+	m.showArchived, m.hideEmptyGroups = true, true
+	m.statusFilter = statusFilterAttention
+	rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
+	var painted []string
+	for _, line := range strings.Split(rail, "\n") {
+		if strings.TrimSpace(line) != "" {
+			painted = append(painted, line)
+		}
+	}
+	want := [][2]string{
+		{"ARCHIVED", "t back to active"},
+		{"ATTENTION", "w show all"},
+		{"HIDE EMPTY", "e show empty"},
+	}
+	if len(painted) < len(want) {
+		t.Fatalf("rail painted %d lines, want the %d badges first:\n%s", len(painted), len(want), rail)
+	}
+	for i, badge := range want {
+		line := painted[i]
+		if !strings.Contains(line, badge[0]) || !strings.Contains(line, badge[1]) {
+			t.Errorf("rail line %d = %q, want %q beside %q", i, line, badge[0], badge[1])
+		}
+	}
+	header := ansi.Strip(strings.Join(m.viewHeaderRows(), "\n"))
+	if !strings.Contains(header, "· archived") {
+		t.Errorf("header should keep the plain scope word:\n%s", header)
+	}
+	for _, unwanted := range []string{"ARCHIVED", "ATTENTION", "HIDE EMPTY"} {
+		if strings.Contains(header, unwanted) {
+			t.Errorf("header still carries the %s badge:\n%s", unwanted, header)
+		}
+	}
+}

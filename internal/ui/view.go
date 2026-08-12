@@ -356,9 +356,6 @@ func previewLine(line string, width int) string {
 		}
 		return r
 	}, line)
-	if captureOnDark {
-		line = captureOpen + reassertCaptureColors(line)
-	}
 	w := ansi.StringWidth(line)
 	if w > width {
 		line = ansi.Truncate(line, width, "")
@@ -370,11 +367,7 @@ func previewLine(line string, width int) string {
 		line += "\x1b[0m"
 	}
 	if w < width {
-		if captureOnDark {
-			line += captureBgSeq + strings.Repeat(" ", width-w) + "\x1b[0m"
-		} else {
-			line += strings.Repeat(" ", width-w)
-		}
+		line += strings.Repeat(" ", width-w)
 	}
 	if !containsRTL(line) {
 		// Terminals that give format characters a cell (Windows Terminal
@@ -465,6 +458,7 @@ func (m *Model) viewFooter() string {
 		return legendBar([]legendSection{{title: "Focused", pairs: [][2]string{
 			{"typing", "goes to the agent"},
 			{"ctrl+q / ctrl+\\", "back to manager"},
+			{"ctrl+r", "review"},
 			{"drag / double / triple click", "copy"},
 		}}}, m.width)
 	}
@@ -535,8 +529,7 @@ func (m *Model) viewLegend() legendSection {
 		foldAllAction = "unfold all"
 	}
 	// Ordered by what a narrow terminal must keep: moving around, making
-	// something, the filters whose state only the footer reports, then the
-	// keys a user already knows to look for.
+	// something, the filters, then the keys a user already knows to look for.
 	return legendSection{title: "View", quiet: true, pairs: [][2]string{
 		{"↑↓/jk", "navigate"}, {"n", "new"}, {"T", "terminal"}, {"g", "group"}, {"/", "search"},
 		{"t", archivedAction}, {"w", statusFilterAction}, {"e", emptyGroupsAction},

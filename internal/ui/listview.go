@@ -130,9 +130,9 @@ func (m *Model) railLines(width, height int) []contentLine {
 		listHeight, meters = height, nil
 	}
 	var rows []contentLine
-	// Both banners cost the list three rows each, so each one is only laid
-	// while entries still have room under it: a rail that is all banner
-	// says nothing about the fleet.
+	// A banner costs the list the rows it paints plus its padding, so each one
+	// is only laid while entries still have room under it: a rail that is all
+	// banner says nothing about the fleet.
 	const railBannerRows, railListMin = 3, 3
 	// Half the list at most, so the tree the block sits under keeps enough
 	// rows to still read as a tree.
@@ -152,13 +152,23 @@ func (m *Model) railLines(width, height int) []contentLine {
 		}
 	}
 	// The list starts straight under the pane's top edge; the empty state
-	// centers itself in the full list area instead.
-	if m.showArchived && room(railBannerRows) {
-		rows = append(rows, contentLine{})
-		rows = append(rows,
-			contentLine{text: strings.Repeat(" ", railInset) + scopeBadgeStyle.Render("ARCHIVED") +
-				subtleStyle.Render("  ") + keyCap("t", "back to active")},
-			contentLine{})
+	// centers itself in the full list area instead. Every filter the rail is
+	// under gets a badge here, since a narrowed list cannot show what it is
+	// leaving out. A rail too tight for the padded block keeps the bare
+	// badges, the way the search field does.
+	if badges := m.filterBadgeLines(); len(badges) > 0 {
+		lines := make([]contentLine, 0, len(badges))
+		for _, badge := range badges {
+			lines = append(lines, contentLine{text: badge})
+		}
+		switch {
+		case room(len(lines) + 2):
+			rows = append(rows, contentLine{})
+			rows = append(rows, lines...)
+			rows = append(rows, contentLine{})
+		case room(len(lines)):
+			rows = append(rows, lines...)
+		}
 	}
 	rows = append(rows, m.entryLines(m.treeRows(), 0, width, max(listHeight-len(rows), 0))...)
 	for len(rows) < listHeight {
@@ -173,6 +183,28 @@ func (m *Model) railLines(width, height int) []contentLine {
 		}
 	}
 	return rows
+}
+
+// filterBadgeLines is one badge per narrowing the rail is under, each next
+// to the key that lifts it. Ordered widest to narrowest: the archive is a
+// different fleet, the status filter hides sessions, hiding empty groups
+// only hides scaffolding.
+func (m *Model) filterBadgeLines() []string {
+	var lines []string
+	badge := func(label, key, action string) {
+		lines = append(lines, strings.Repeat(" ", railInset)+scopeBadgeStyle.Render(label)+
+			subtleStyle.Render("  ")+keyCap(key, action))
+	}
+	if m.showArchived {
+		badge("ARCHIVED", "t", "back to active")
+	}
+	if m.statusFilter.active() {
+		badge(strings.ToUpper(m.statusFilter.label()), "w", "show all")
+	}
+	if m.hideEmptyGroups {
+		badge("HIDE EMPTY", "e", "show empty")
+	}
+	return lines
 }
 
 // entryLines renders the visible slice of rows, which sit at offset in
@@ -656,7 +688,7 @@ func (m *Model) contentLines(width, height int) []contentLine {
 // focusTopRule is the hairline that caps the focused pane, titled so the
 // mode names itself where the eye already is.
 func focusTopRule(width int) string {
-	title := " focused · ctrl+q back "
+	title := " focused · ctrl+q back · ctrl+r review "
 	rule := annotationStyle.Render(title)
 	rest := width - lipgloss.Width(title)
 	if rest > 0 {
@@ -692,15 +724,9 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 		lines = append(lines, contentLine{text: m.renderPaneRow(i, line, width), raw: true})
 	}
 	// Rows past the capture stay raw too: a painted tail under unpainted
-	// output would read as a box drawn around the agent's last line. On the
-	// capture backdrop they carry its fill instead, so the dark island spans
-	// the whole panel.
+	// output would read as a box drawn around the agent's last line.
 	for len(lines) < height {
-		if captureOnDark {
-			lines = append(lines, contentLine{text: captureBlankRow(width), raw: true})
-		} else {
-			lines = append(lines, contentLine{raw: true})
-		}
+		lines = append(lines, contentLine{raw: true})
 	}
 	return lines
 }
@@ -1040,11 +1066,7 @@ func (m *Model) headerScope() string {
 	}
 	scope := subtleStyle.Render(" · active")
 	if m.showArchived {
-		scope = subtleStyle.Render(" · ") + scopeBadgeStyle.Render("ARCHIVED")
-	}
-	if m.statusFilter.active() {
-		scope += subtleStyle.Render(" · ") +
-			scopeBadgeStyle.Render(strings.ToUpper(m.statusFilter.label()))
+		scope = subtleStyle.Render(" · archived")
 	}
 	return valueStyle.Render(fmt.Sprintf("%d", count)) + subtleStyle.Render(label) + scope
 }

@@ -52,11 +52,11 @@ Navigation is keyboard-driven. The manager claims mouse reporting so the wheel s
 Press `space` to dock a prompt bar at the bottom of the sidebar. The target follows the cursor while the bar is open (`↑↓` still navigate):
 
 - On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar clears and stays open, ready for the next answer; Settings (`s`) can make it close instead.
-- On a **group** row, `enter` spawns a new agent in that group with the prompt embedded, using the group's default path. The spawn tool starts at the Settings default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. `alt+w` toggles whether the new agent spawns into its own git worktree, starting from the Settings default; the footer shows `worktree: on` or `worktree: off`, or `worktree: unavailable (not a git repo)` when the target directory cannot hold one. Answering an existing session ignores the toggle, since there is no new session to place in a worktree. The agent starts working on the prompt immediately.
+- On a **group** row, `enter` spawns a new agent in that group and submits the prompt at startup, using the group's default path. The spawn tool starts at the Settings default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. `alt+w` toggles whether the new agent spawns into its own git worktree, starting from the Settings default; the footer shows `worktree: on` or `worktree: off`, or `worktree: unavailable (not a git repo)` when the target directory cannot hold one. Answering an existing session ignores the toggle, since there is no new session to place in a worktree. The agent starts working on the prompt immediately.
 
 `ctrl+v` pastes an image from the system clipboard as an `[Image #1]` chip at the caret. The image is saved under `agent-manager-pastes` in your temp directory, and on send each chip is swapped back for its path, so the paths reach the agent in the order and the places you pasted them. `backspace` next to a chip removes the whole chip, and an edit that swallows one releases its image. A clipboard holding text rather than an image pastes as text. Pasted images older than seven days are cleared at startup and once a day while the manager runs, so an agent can still open one from an earlier session while temp stays tidy.
 
-`esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag` (see [Configuration](configuration.md)).
+`esc` closes the bar. The new-session form's optional `prompt` field launches an agent the same way; tools whose CLI takes the prompt behind a flag declare it with `prompt_flag`, while a persistent CLI with no startup-prompt argument uses `prompt_mode = "send"` (see [Configuration](configuration.md)).
 
 ![answering a working Claude Code session from the prompt bar, without attaching](demo-space.gif)
 
@@ -104,9 +104,9 @@ Deleting (`d`) a session that holds a worktree removes the worktree and its bran
 
 ![ending every session under a group for the RAM, then reviving the whole subtree on its own conversations](demo-revive.gif)
 
-`v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`, `gemini --resume {id}`, `pi --session {id}`.
+`v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`, `gemini --resume {id}`, `pi --session {id}`, `hermes --cli --resume {id}`.
 
-The id arrives one of two ways: tools with a `session_id_flag` launch under an id the manager mints, and tools that mint their own are read back by a `session_store` capturer (`codex`, `opencode`). Without an id, revive falls back to `revive_command` (`claude --continue`), which resumes the working directory's most recent conversation, and the manager says so in the status line, since sessions sharing a directory would otherwise land on the wrong one. On a group row `v` revives every dead session under it, and `V` revives every dead session in view; both revive what they can and name the first failure rather than stopping.
+The id arrives one of two ways: tools with a `session_id_flag` launch under an id the manager mints, and tools that mint their own are read back by a `session_store` capturer (`codex`, `opencode`, `gemini`, `hermes`). Without an id, revive falls back to `revive_command` (`claude --continue`), which resumes the working directory's most recent conversation, and the manager says so in the status line, since sessions sharing a directory would otherwise land on the wrong one. On a group row `v` revives every dead session under it, and `V` revives every dead session in view; both revive what they can and name the first failure rather than stopping.
 
 ## Restarting a session on an empty context
 
@@ -142,9 +142,26 @@ Agents usually work in git worktrees, one branch per worktree, and those worktre
 
 ## MCP: how agents discover these commands
 
-Every session the manager spawns or revives carries the agent-manager MCP server, so MCP-capable agents see `rename`, `review_repo`, `review_base` and `review_mode` (which sets the diff scope review opens on) as native tools with descriptions telling them when to call each: no prompt injection, no per-project setup. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
+Every session the manager spawns or revives carries the agent-manager MCP server, so MCP-capable agents see its session and terminal operations as native tools with descriptions telling them when to call each: no prompt injection, no per-project setup. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
 
-Registration is per tool. Claude gets a generated `--mcp-config` file. Codex gets `-c mcp_servers...` overrides. OpenCode gets an `OPENCODE_CONFIG` merge file. Grok and Gemini each get a one-time `mcp add --scope user` entry on their first launch.
+| Tool | Action |
+|------|--------|
+| `rename` | Rename the calling session |
+| `review_repo` | Declare the repo or worktree under review |
+| `review_base` | Declare or clear the review base ref |
+| `review_mode` | Select the diff scope review opens with |
+| `list_terminals` | List active managed terminals and their current directories |
+| `create_terminal` | Open a terminal beside the calling agent, or in an explicit group or directory |
+| `send_terminal` | Submit a command or send exact keys to a running terminal |
+| `read_terminal` | Read the plain-text content currently visible in a terminal |
+
+`create_terminal` defaults to the calling agent's group and live pane directory. An explicit group uses that group's nearest inherited default path; an explicit directory wins over both. `send_terminal` accepts exactly one of a command, which is pasted and submitted with Enter, or a sequence of tmux key names such as `C-c`, `Up`, and `Enter`. `read_terminal` returns the current screen rather than unlimited scrollback.
+
+The server's MCP initialization instructions teach agents to use this workflow without waiting for an explicit request: list and reuse a terminal before long-running, output-heavy or continuously monitored work; create one only when needed; send the command; then read its screen until the result is clear. The same guidance is repeated in the individual tool descriptions for clients that expose tools but not server instructions. Short one-shot commands stay in the agent's normal execution path when a separate persistent terminal adds no value.
+
+Sending a command to a terminal executes it on the user's machine. Agents should treat `send_terminal` with the same care as typing into an attached shell: inspect the target returned by `list_terminals`, avoid destructive commands unless the user asked for them, and read the result before continuing.
+
+Registration is per tool. Claude gets a generated `--mcp-config` file. Codex gets `-c mcp_servers...` overrides. OpenCode gets an `OPENCODE_CONFIG` merge file. Grok and Gemini each get a one-time `mcp add --scope user` entry on their first launch. Hermes can use its own one-time `mcp add` flow, but defaults to no registration because its MCP Python SDK is optional; after `hermes setup` installs that support, set `mcp = "hermes"` in its tool block.
 
 Pi does not include an MCP client. The `rename`, `review-repo`, and `review-base` commands still work inside Pi sessions.
 
@@ -197,7 +214,7 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 | `idle` | Nothing running |
 | `dead` | The tmux session is gone |
 
-`w` narrows the list to sessions that need attention (`waiting`, `finished`, `errored`). Press again to show every status. The header badge and session counts follow the filter; folds open so matches are not hidden.
+`w` narrows the list to sessions that need attention (`waiting`, `finished`, `errored`). Press again to show every status. An `ATTENTION` badge sits over the list with the key that clears it, and the session counts follow the filter; folds open so matches are not hidden. The archived view (`t`) and hidden empty groups (`e`) label themselves the same way. The badges take whatever room the rail has: padded away from the entries on a tall terminal, tight against them on a short one, and yielding to the entries once the list is down to its last rows.
 
 ![the session tree, with a waiting agent's permission prompt in the preview](screenshot-sessions.png)
 
@@ -228,5 +245,4 @@ The Computer block in the sessions panel shows machine gauges:
 
 Fifteen palettes ship. Nine dark: `classic`, `solarized dark`, `catppuccin mocha`, `tokyo night`, `gruvbox dark`, `nord`, `dracula`, `rosé pine`, and `monochrome`. Six light: `solarized light`, `catppuccin latte`, `tokyo night day`, `gruvbox light`, `rosé pine dawn`, and `paper`. The swatch strip beside the name previews the palette, and the theme applies as you step through it, so the picker is a live preview of the whole UI. The manager also matches the terminal's own background to the palette, so the window has no seam against it, and restores the terminal's background on exit. Your pick is saved with the rest of the state and restored on the next run.
 
-**theme follows OS** resolves the palette at startup from the environment's light/dark preference: the OS setting on macOS and Linux desktops, and the terminal's own background elsewhere, including over SSH. A theme already on the detected side stays; only a mismatch switches, to `classic` or `solarized light`. Your manual pick is kept separately, so turning the toggle off returns to it, and stepping the theme picker by hand turns the toggle off. Captured agent panes keep their dark backdrop under light themes either way, since agent CLIs pick their colors for a dark terminal.
-
+**theme follows OS** resolves the palette at startup from the environment's light/dark preference: the OS setting on macOS and Linux desktops, and the terminal's own background elsewhere, including over SSH. A theme already on the detected side stays; only a mismatch switches, to `classic` or `solarized light`. Your manual pick is kept separately, so turning the toggle off returns to it, and stepping the theme picker by hand turns the toggle off. Agent panes render on the theme's own backdrop, and the pane declares that background to the agent inside it, so an agent that auto-detects its palette resolves to the same side the manager is drawing. A session already running keeps the palette it resolved at launch until it is restarted.

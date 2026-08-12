@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -103,6 +104,93 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["gemini"].SessionStore; got != "gemini" {
 		t.Fatalf("gemini session_store = %q want \"gemini\" (captures the fork's minted id)", got)
 	}
+	hermes := cfg.Tools["hermes"]
+	if hermes.Command != "hermes --cli" {
+		t.Fatalf("hermes command = %q", hermes.Command)
+	}
+	if hermes.PromptMode != "send" {
+		t.Fatalf("hermes prompt_mode = %q want send", hermes.PromptMode)
+	}
+	if hermes.SessionStore != "hermes" || hermes.ResumeByIDCommand != "hermes --cli --resume {id}" {
+		t.Fatalf("hermes resume config = %+v", hermes)
+	}
+	if hermes.MCP != "none" {
+		t.Fatalf("hermes mcp = %q want none (the Hermes MCP SDK is optional)", hermes.MCP)
+	}
+}
+
+func TestLoadDirWritesDefaultInRequestedDirectory(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if _, ok := cfg.Tools["terminal"]; !ok {
+		t.Fatal("default terminal tool is missing")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "config.toml")); err != nil {
+		t.Fatalf("config file: %v", err)
+	}
+}
+
+func TestLoadDirUpgradesLegacyCodexWorkingRule(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	legacy := `
+[tools.codex]
+command = "codex"
+rules = [
+  { state = "working", pattern = "(?m)esc to interrupt\\b" },
+]
+`
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	rule := cfg.Tools["codex"].Rules[0]
+	if rule.Pattern == `(?m)esc to interrupt\b` {
+		t.Fatal("legacy Codex working rule was not upgraded")
+	}
+	if !strings.Contains(rule.Pattern, `\z`) {
+		t.Fatalf("upgraded Codex working rule is not scoped to the activity-region tail: %q", rule.Pattern)
+	}
+}
+
+func TestLoadDirPreservesCustomCodexWorkingRule(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	custom := `
+[tools.codex]
+command = "codex"
+rules = [
+  { state = "working", pattern = "my private status signal" },
+]
+`
+	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if got := cfg.Tools["codex"].Rules[0].Pattern; got != "my private status signal" {
+		t.Fatalf("custom Codex working rule = %q", got)
+	}
+}
+
+func TestShellToolUsesFlagAndStableName(t *testing.T) {
+	cfg := Config{Tools: map[string]Tool{
+		"terminal": {Command: "agent", Shell: false},
+		"zsh":      {Command: "zsh", Shell: true},
+		"bash":     {Command: "bash", Shell: true},
+	}}
+	name, tool, ok := cfg.ShellTool()
+	if !ok || name != "bash" || tool.Command != "bash" {
+		t.Fatalf("ShellTool = %q %+v %v, want bash", name, tool, ok)
+	}
 }
 
 func TestDefaultWaitingRulesPrecedeWorking(t *testing.T) {
@@ -151,6 +239,18 @@ func TestBackfillToolDefaults(t *testing.T) {
 	}
 }
 
+func TestBackfillHermesKeepsOptionalMCPDisabled(t *testing.T) {
+	cfg := Config{Tools: map[string]Tool{
+		"hermes": {Command: "hermes --cli"},
+	}}
+	if err := cfg.backfillToolDefaults(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if got := cfg.Tools["hermes"].MCP; got != "none" {
+		t.Fatalf("hermes mcp = %q want none", got)
+	}
+}
+
 func TestApplyDefaults(t *testing.T) {
 	var cfg Config
 	cfg.applyDefaults()
@@ -181,7 +281,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		t.Fatalf("pi resume_by_id_command = %q want \"pi --session {id}\"", got)
 	}
 	// Tools that mint their own id declare a store to capture it from.
-	for _, name := range []string{"codex", "opencode"} {
+	for _, name := range []string{"codex", "opencode", "hermes"} {
 		tool := cfg.Tools[name]
 		if tool.SessionStore != name {
 			t.Fatalf("%s session_store = %q want %q", name, tool.SessionStore, name)

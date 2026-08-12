@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -28,6 +29,65 @@ type Driver struct {
 	socket string
 
 	attachSizeLargest atomic.Bool
+	paneTheme         atomic.Pointer[PaneTheme]
+	paneThemePush     sync.Mutex
+}
+
+// PaneTheme is the background agent panes are rendered on. The manager
+// knows that color — it paints every capture on it and repaints the
+// terminal to it for a full-screen attach — but an agent inside a pane
+// cannot discover it: these sessions run on a server whose only client is
+// in control mode, so there is no terminal to answer an OSC 11 background
+// query, and the environment carries no COLORFGBG either. Declaring both
+// on the server hands an auto-detecting agent the answer the manager
+// already renders, instead of leaving it to guess.
+type PaneTheme struct {
+	Background string // "#rrggbb"; tmux answers pane OSC 11 queries with it
+	ColorFgBg  string // "fg;bg" color indexes for agents reading COLORFGBG
+}
+
+// paneThemeArgs is the option pair as a tmux command list. window-style and
+// the environment are both server-global: every managed session lives on
+// this socket and wants the same answer, and a global option also reaches
+// windows a user opens inside a session later.
+func paneThemeArgs(t PaneTheme) []string {
+	return []string{
+		"set-option", "-g", "window-style", "bg=" + t.Background, ";",
+		"set-environment", "-g", "COLORFGBG", t.ColorFgBg,
+	}
+}
+
+// PublishPaneTheme records the pane colors so Create hands them to new
+// sessions. It only stores the value; PushPaneTheme sends it to a running
+// server. Recording is synchronous so a session created right after a theme
+// change still opens on the chosen background.
+func (d *Driver) PublishPaneTheme(t PaneTheme) {
+	d.paneTheme.Store(&t)
+}
+
+// PushPaneTheme sends the recorded pane theme to a running server. It always
+// pushes the latest published value under a lock, so concurrent pushes are
+// latest-wins: whichever runs last writes the current theme rather than an
+// older one it was spawned for. A server with no sessions exits immediately,
+// so there is nothing to push to before the first session exists; Create
+// re-applies the recorded theme in the same command list as its new-session,
+// which is also what keeps the option set before the agent process can query
+// it.
+func (d *Driver) PushPaneTheme() error {
+	d.paneThemePush.Lock()
+	defer d.paneThemePush.Unlock()
+	theme := d.paneTheme.Load()
+	if theme == nil {
+		return nil
+	}
+	out, err := exec.Command(d.bin, d.args(paneThemeArgs(*theme)...)...).CombinedOutput()
+	if err != nil {
+		if noServer(string(out)) {
+			return nil
+		}
+		return fmt.Errorf("tmux set pane theme: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func New() (*Driver, error) {
@@ -70,9 +130,29 @@ func (d *Driver) run(args ...string) (string, error) {
 	return string(out), nil
 }
 
+// afterCreateThemeLoad runs between Create loading the pane theme and writing
+// it, while Create holds the push lock. Nil in production; a test sets it to
+// drive a push against the held lock and prove the write ordering.
+var afterCreateThemeLoad func()
+
 func (d *Driver) Create(id, cwd, command string, env map[string]string, width, height int) error {
 	name := sessionName(id)
-	args := []string{"new-session", "-d", "-s", name, "-c", cwd}
+	var args []string
+	// Hold the push lock across loading the theme and the command list that
+	// writes it, so a concurrent PushPaneTheme cannot land a newer theme
+	// between the load and the write and be clobbered by this stale one.
+	d.paneThemePush.Lock()
+	// Ahead of new-session in the same command list, so the options are in
+	// place before the pane process exists and can query its background.
+	var colorFgBg string
+	if theme := d.paneTheme.Load(); theme != nil {
+		args = append(paneThemeArgs(*theme), ";")
+		colorFgBg = theme.ColorFgBg
+	}
+	if afterCreateThemeLoad != nil {
+		afterCreateThemeLoad()
+	}
+	args = append(args, "new-session", "-d", "-s", name, "-c", cwd)
 	// A detached session sizes to tmux's 80x24 default and holds it until a
 	// client attaches, so its pane preview renders narrow. Booting at the
 	// preview panel's size makes the preview fit from the first frame.
@@ -86,17 +166,20 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 	var scriptPath string
 	if command != "" {
 		var err error
-		scriptPath, err = writeLaunchScript(id, envCommand(env, command))
+		scriptPath, err = writeLaunchScript(id, envCommand(env, command), colorFgBg)
 		if err != nil {
+			d.paneThemePush.Unlock()
 			return err
 		}
 		args = append(args, "sh "+ShellQuote(scriptPath))
 	}
-	if _, err := d.run(args...); err != nil {
+	_, runErr := d.run(args...)
+	d.paneThemePush.Unlock()
+	if runErr != nil {
 		if scriptPath != "" {
 			os.Remove(scriptPath)
 		}
-		return err
+		return runErr
 	}
 	if err := d.installSessionUX(name); err != nil {
 		_ = d.Kill(id)
@@ -129,13 +212,22 @@ func launchScriptPath(id string) string {
 	return filepath.Join(os.TempDir(), "am-launch-"+id+".sh")
 }
 
-func writeLaunchScript(id, line string) (string, error) {
+func writeLaunchScript(id, line, colorFgBg string) (string, error) {
 	path := launchScriptPath(id)
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	body := "#!/bin/sh\n" + line + "\nexec " + ShellQuote(shell) + "\n"
+	// Export COLORFGBG in the pane itself. The global option tmux carries in
+	// its environment does not reach this first process — it inherits the
+	// server's own environment, fixed when the server started, so a host
+	// shell that exports COLORFGBG hands the agent that stale pair instead.
+	// Exporting here lands the theme's value on the agent regardless.
+	var header string
+	if colorFgBg != "" {
+		header = "export COLORFGBG=" + ShellQuote(colorFgBg) + "\n"
+	}
+	body := "#!/bin/sh\n" + header + line + "\nexec " + ShellQuote(shell) + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
 		return "", fmt.Errorf("launch script: %w", err)
 	}
@@ -207,6 +299,14 @@ func (d *Driver) RefreshChrome(id string) error {
 // agent inside receives it as a user message.
 func (d *Driver) SendText(id, text string) error {
 	return d.pasteAndEnter(sessionName(id), text)
+}
+
+// SendKeys delivers exact tmux key names to a session. Keeping each key as
+// its own argv entry avoids routing agent-supplied input through a shell.
+func (d *Driver) SendKeys(id string, keys ...string) error {
+	args := []string{"send-keys", "-t", sessionName(id), "--"}
+	_, err := d.run(append(args, keys...)...)
+	return err
 }
 
 // Paste delivers text into the session's pane without submitting it. The

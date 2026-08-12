@@ -1,10 +1,12 @@
 package tmux
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -15,8 +17,22 @@ import (
 const testSocket = "amtmuxtest"
 
 // TestMain kills any leftover test server so each run starts and ends clean.
+// The anchor session then holds the server up for the whole run: tests kill
+// their sessions in cleanup, and a server whose last session dies begins an
+// exit-empty shutdown that takes the next test's fresh session down with it
+// ("server exited unexpectedly").
 func TestMain(m *testing.M) {
+	// kill-server fails whenever no server is up, which is the normal case.
 	tmuxCmd("kill-server").Run()
+	// Without tmux the run still starts: each test skips through its own
+	// requireTmux. With tmux, a run that could not plant the anchor would
+	// pass or flake on luck, so it stops instead.
+	if _, err := exec.LookPath("tmux"); err == nil {
+		if out, err := tmuxCmd("new-session", "-d", "-s", "anchor").CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "anchor session: %v: %s\n", err, out)
+			os.Exit(1)
+		}
+	}
 	code := m.Run()
 	tmuxCmd("kill-server").Run()
 	os.Exit(code)
@@ -357,6 +373,185 @@ func TestRefreshChromeKeepsLabelAndAddsReviewHint(t *testing.T) {
 	}
 	if !strings.Contains(string(left), "my-session") {
 		t.Fatalf("re-styling should keep the name label, got %q", left)
+	}
+}
+
+// clearPaneTheme drops the server-global colors a pane-theme test left
+// behind, so the rest of the package sees an unstyled server.
+func clearPaneTheme(t *testing.T) {
+	t.Helper()
+	tmuxCmd("set-option", "-gu", "window-style").Run()
+	tmuxCmd("set-environment", "-gu", "COLORFGBG").Run()
+}
+
+func waitForFile(t *testing.T, driver *Driver, id, path string) string {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
+			return string(data)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	pane, _ := driver.CapturePane(id)
+	t.Fatalf("pane never wrote %s; pane:\n%s", path, pane)
+	return ""
+}
+
+// An agent that auto-detects its palette asks the terminal for its
+// background with OSC 11. Nothing answers that on this server — the only
+// client is in control mode and has no tty — unless the pane carries an
+// explicit background of its own, which is what the pane theme sets.
+func TestCreateAnswersBackgroundQuery(t *testing.T) {
+	driver := requireTmux(t)
+	t.Cleanup(func() { clearPaneTheme(t) })
+	driver.PublishPaneTheme(PaneTheme{Background: "#1e1e2e", ColorFgBg: "15;0"})
+
+	id := "osc" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	reply := t.TempDir() + "/reply"
+	// tmux delivers the answer on the pane's input, so the query and the
+	// read both happen inside the pane. Raw mode keeps the line discipline
+	// from holding a reply that ends in ST rather than a newline.
+	command := "stty raw; printf '\\033]11;?\\033\\\\'; cat > " + reply
+	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	got := waitForFile(t, driver, id, reply)
+	if want := "]11;rgb:1e1e/1e1e/2e2e"; !strings.Contains(got, want) {
+		t.Fatalf("OSC 11 reply = %q, want one carrying %q", got, want)
+	}
+}
+
+// COLORFGBG is the fallback for agents that read the environment instead of
+// querying, and nothing in a pane's environment carries it otherwise.
+func TestCreateExportsColorFgBg(t *testing.T) {
+	driver := requireTmux(t)
+	t.Cleanup(func() { clearPaneTheme(t) })
+	driver.PublishPaneTheme(PaneTheme{Background: "#1e1e2e", ColorFgBg: "15;0"})
+
+	id := "fgbg" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	marker := t.TempDir() + "/env"
+	if err := driver.Create(id, "/tmp", "printenv COLORFGBG > "+marker, nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	if got := strings.TrimSpace(waitForFile(t, driver, id, marker)); got != "15;0" {
+		t.Fatalf("COLORFGBG in pane = %q, want %q", got, "15;0")
+	}
+}
+
+func globalWindowStyle(t *testing.T) string {
+	t.Helper()
+	out, err := tmuxCmd("show-options", "-gv", "window-style").CombinedOutput()
+	if err != nil {
+		t.Fatalf("show-options window-style: %v: %s", err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// A session created after a theme is published, but before any push has run,
+// still opens on that theme: Create applies the recorded value in its own
+// command list rather than relying on a separate push having landed.
+func TestCreateAppliesPublishedThemeWithoutAPush(t *testing.T) {
+	driver := requireTmux(t)
+	t.Cleanup(func() { clearPaneTheme(t) })
+	driver.PublishPaneTheme(PaneTheme{Background: "#1e1e2e", ColorFgBg: "15;0"})
+
+	id := "pub" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	if got, want := globalWindowStyle(t), "bg=#1e1e2e"; got != want {
+		t.Fatalf("window-style = %q, want %q", got, want)
+	}
+}
+
+// Concurrent pushes are latest-wins: whichever runs last writes the theme
+// published last, not an older one it was spawned for. The lock serializes
+// the writes and each push sends the current published value, so the server
+// settles on the final publish however the goroutines interleave.
+func TestPushPaneThemeIsLatestWins(t *testing.T) {
+	driver := requireTmux(t)
+	t.Cleanup(func() { clearPaneTheme(t) })
+
+	// A session with no windows exits at once, so one holds the server up
+	// for the global option to stick to.
+	id := "race" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	driver.PublishPaneTheme(PaneTheme{Background: "#101010", ColorFgBg: "15;0"})
+	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	backgrounds := []string{"#111111", "#222222", "#333333", "#444444", "#eff1f5"}
+	var wg sync.WaitGroup
+	for _, bg := range backgrounds {
+		driver.PublishPaneTheme(PaneTheme{Background: bg, ColorFgBg: "15;0"})
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := driver.PushPaneTheme(); err != nil {
+				t.Errorf("PushPaneTheme: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	last := backgrounds[len(backgrounds)-1]
+	if got, want := globalWindowStyle(t), "bg="+last; got != want {
+		t.Fatalf("window-style = %q, want the last published theme %q", got, want)
+	}
+}
+
+// Create shares the push lock with PushPaneTheme, so a session opened while a
+// newer theme is being pushed cannot reset the server to the theme Create
+// loaded. The seam runs while Create holds the lock: it publishes a newer
+// theme and starts a push, which blocks on the lock until Create's write
+// lands, then writes the newer theme last. Without the shared lock the push
+// runs during the seam and Create's stale write clobbers it.
+func TestCreateSerializesWithPushPaneTheme(t *testing.T) {
+	driver := requireTmux(t)
+	t.Cleanup(func() { clearPaneTheme(t) })
+
+	stamp := strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	hold := "hold" + stamp
+	driver.PublishPaneTheme(PaneTheme{Background: "#101010", ColorFgBg: "15;0"})
+	if err := driver.Create(hold, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create hold session: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(hold) })
+
+	const newer = "#eff1f5"
+	var pushed sync.WaitGroup
+	afterCreateThemeLoad = func() {
+		driver.PublishPaneTheme(PaneTheme{Background: newer, ColorFgBg: "0;15"})
+		pushed.Add(1)
+		go func() {
+			defer pushed.Done()
+			if err := driver.PushPaneTheme(); err != nil {
+				t.Errorf("PushPaneTheme: %v", err)
+			}
+		}()
+		// Give the push goroutine time to reach the lock, so the serialization
+		// under test is what orders the two writes rather than this timing.
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Cleanup(func() { afterCreateThemeLoad = nil })
+
+	raced := "raced" + stamp
+	if err := driver.Create(raced, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create raced session: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(raced) })
+	pushed.Wait()
+
+	if got, want := globalWindowStyle(t), "bg="+newer; got != want {
+		t.Fatalf("window-style = %q, want the newer pushed theme %q", got, want)
 	}
 }
 

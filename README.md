@@ -21,7 +21,7 @@
 
 ![five prompts to five fresh agents without moving the cursor, one per CLI, then the blocked one answered and its diff opened](docs/demo.gif)
 
-Claude Code, Codex, OpenCode, Grok, Gemini CLI, and Pi run side by side. Each tool runs in its own persistent tmux session.
+Claude Code, Codex, OpenCode, Grok, Gemini CLI, Pi, and Hermes Agent run side by side. Each tool runs in its own persistent tmux session.
 
 agent-manager is a thin layer over the CLIs you already have. Each session launches your own installed tool as-is: your login, your subscription, your config files, your MCP servers, and every feature the tool ships all carry over, exactly as they behave in a plain terminal.
 
@@ -33,11 +33,11 @@ The tools you use alongside agents live in the same list: `T` opens a plain shel
 
 Not here yet: cost tracking, mouse-driven navigation, and agents that can talk to each other.
 
-**Jump to:** [Install](#install) · [Usage](#usage) · [Keys](docs/usage.md#keys) · [Diff review](docs/usage.md#diff-review) · [Configuration](docs/configuration.md)
+**Jump to:** [Install](#install) · [Usage](#usage) · [Keys](docs/usage.md#keys) · [Diff review](docs/usage.md#diff-review) · [Configuration](docs/configuration.md) · [Docs site](https://agent-manager.dev/docs/)
 
 ## Supported tools
 
-Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, and **Pi** by default. Other CLI tools can run as sessions. Add a `[tools.<name>]` block to give another tool live status rules (see [Configuration](docs/configuration.md)).
+Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Pi**, and **Hermes Agent** by default. Other CLI tools can run as sessions. Add a `[tools.<name>]` block to give another tool live status rules (see [Configuration](docs/configuration.md)).
 
 ## Install
 
@@ -115,3 +115,9 @@ Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md]
 ## License
 
 [Apache-2.0](LICENSE)
+
+---
+
+<p align="center">
+  <a href="https://www.producthunt.com/products/agent-manager?utm_source=badge-review&amp;utm_medium=badge" target="_blank" rel="noopener noreferrer"><img src="https://api.producthunt.com/widgets/embed-image/v1/review.svg?post_id=1212310&amp;theme=dark" alt="Review agent-manager on Product Hunt" width="250" height="54"></a>
+</p>

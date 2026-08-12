@@ -19,16 +19,7 @@ const terminalKeyWindow = 250 * time.Millisecond
 // keys off the block being called "terminal", so a user who already has a
 // [tools.terminal] block of their own keeps it as the agent CLI they wrote.
 func (m *Model) shellTool() (string, config.Tool, bool) {
-	chosen := ""
-	for name, tool := range m.cfg.Tools {
-		if tool.Shell && (chosen == "" || name < chosen) {
-			chosen = name
-		}
-	}
-	if chosen == "" {
-		return "", config.Tool{}, false
-	}
-	return chosen, m.cfg.Tools[chosen], true
+	return m.cfg.ShellTool()
 }
 
 // isShell reports whether a session's tool opens a shell rather than an

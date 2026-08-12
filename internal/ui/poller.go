@@ -41,9 +41,6 @@ type poller struct {
 	// captureErr holds a background id-capture failure to surface on the
 	// next poll, since that work no longer runs inline.
 	captureErr error
-	// sessions whose rename directive could not ride the first prompt;
-	// sent as a message once the tool's input box appears
-	pendingDirective map[string]struct{}
 
 	// captureBusy guards the single in-flight id-capture goroutine.
 	captureBusy atomic.Bool
@@ -82,56 +79,17 @@ func paneBooted(pane string) bool {
 
 func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores map[string]string, interval time.Duration) *poller {
 	return &poller{
-		store:            st,
-		tmux:             driver,
-		engine:           engine,
-		hooks:            hookManager,
-		gitDrv:           gitDriver,
-		statusSources:    statusSources,
-		sessionStores:    sessionStores,
-		interval:         interval,
-		poke:             make(chan struct{}, 1),
-		paneHashes:       map[string]uint64{},
-		quietSince:       map[string]time.Time{},
-		pendingDirective: map[string]struct{}{},
-	}
-}
-
-func (p *poller) markDirectivePending(id string) {
-	p.mu.Lock()
-	p.pendingDirective[id] = struct{}{}
-	p.mu.Unlock()
-}
-
-func (p *poller) directivePending(id string) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	_, pending := p.pendingDirective[id]
-	return pending
-}
-
-func (p *poller) clearDirective(id string) {
-	p.mu.Lock()
-	delete(p.pendingDirective, id)
-	p.mu.Unlock()
-}
-
-// sweepDirectives drops pending flags for sessions that no longer exist,
-// so a session deleted before its directive fired leaves nothing behind.
-func (p *poller) sweepDirectives(sessions []store.Session) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if len(p.pendingDirective) == 0 {
-		return
-	}
-	alive := make(map[string]struct{}, len(sessions))
-	for _, sess := range sessions {
-		alive[sess.ID] = struct{}{}
-	}
-	for id := range p.pendingDirective {
-		if _, ok := alive[id]; !ok {
-			delete(p.pendingDirective, id)
-		}
+		store:         st,
+		tmux:          driver,
+		engine:        engine,
+		hooks:         hookManager,
+		gitDrv:        gitDriver,
+		statusSources: statusSources,
+		sessionStores: sessionStores,
+		interval:      interval,
+		poke:          make(chan struct{}, 1),
+		paneHashes:    map[string]uint64{},
+		quietSince:    map[string]time.Time{},
 	}
 }
 
@@ -312,7 +270,13 @@ func (p *poller) refreshOnce() tea.Msg {
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
-				p.maybeSendDirective(sess, pane, agentAlive)
+				sent, err := p.maybeSendPendingInput(sess, pane, agentAlive)
+				if err != nil {
+					return errMsg{err}
+				}
+				if sent {
+					sessions[i].PendingInputs = sessions[i].PendingInputs[1:]
+				}
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
 				if err != nil {
 					return errMsg{err}
@@ -359,7 +323,6 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	p.startCaptureIfIdle(sessions, panes)
 	p.paneHashes = paneHashes
-	p.sweepDirectives(sessions)
 
 	groups, err := p.store.Groups()
 	if err != nil {
@@ -410,14 +373,14 @@ func (p *poller) refreshOnce() tea.Msg {
 }
 
 // idMinting reports whether a live, not-yet-captured session belongs to a
-// tool that mints its own conversation id (codex, opencode).
+// tool that mints its own conversation id.
 func (p *poller) idMinting(sess store.Session, panes map[string]int) bool {
 	return !sess.Archived && panes[sess.ID] != 0 && sess.AgentSessionID == "" &&
 		p.sessionStores[sess.Tool] != ""
 }
 
 // startCaptureIfIdle runs id capture off the poll lock. Capturing an
-// opencode/codex id shells out to the tool's CLI, which can take seconds;
+// some ids shell out to the tool's CLI, which can take seconds;
 // doing it inside refreshOnce would hold runMu and stall every refresh,
 // including a freshly submitted session's first appearance. One pass runs at
 // a time, on a snapshot, and a pass that captures anything pokes a refresh so
@@ -448,9 +411,9 @@ func (p *poller) startCaptureIfIdle(sessions []store.Session, panes map[string]i
 	}()
 }
 
-// captureAgentSessionIDs binds each not-yet-captured id-minting session
-// (codex, opencode) to the conversation its CLI wrote, returning how many it
-// bound. Sessions are processed in launch order so the earliest one claims
+// captureAgentSessionIDs binds each not-yet-captured id-minting session to
+// the conversation its CLI wrote, returning how many it bound. Sessions are
+// processed in launch order so the earliest one claims
 // the earliest unclaimed conversation in its directory; a later session
 // started in the same directory then skips that one via claimed and captures
 // its own. Launch times carry nanosecond precision, so sessions launched a
@@ -503,22 +466,45 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 	return captured, nil
 }
 
-// maybeSendDirective delivers the deferred rename directive once the
-// tool's input box shows in the pane, proving the agent booted and can
-// take a message. Sent even mid-turn: tools queue typed input and
-// process it when the current turn ends. A failed send keeps the flag
-// for the next poll. Tools without an activity_cutoff never look ready,
-// so their sessions keep the placeholder name.
-func (p *poller) maybeSendDirective(sess store.Session, pane string, agentAlive bool) {
-	if !agentAlive || !p.directivePending(sess.ID) {
-		return
+// A durable claim makes automatic delivery at-most-once: after a process or
+// database failure, an ambiguous input is dropped and surfaced rather than
+// risking the same task or slash command running twice.
+func (p *poller) maybeSendPendingInput(sess store.Session, pane string, agentAlive bool) (bool, error) {
+	if len(sess.PendingInputs) == 0 {
+		return false, nil
+	}
+	input := sess.PendingInputs[0]
+	if sess.PendingInputClaimed {
+		consumed, err := p.store.ConsumeClaimedPendingInput(sess.ID, input)
+		if err != nil {
+			return false, fmt.Errorf("reconcile pending input for %s: %w", sess.Name, err)
+		}
+		if consumed {
+			return true, fmt.Errorf("skipped ambiguous pending input for %s to avoid duplicate delivery", sess.Name)
+		}
+		return false, nil
+	}
+	if !agentAlive {
+		return false, nil
 	}
 	if _, ready := p.engine.ActivityRegion(sess.Tool, ansi.Strip(pane)); !ready {
-		return
+		return false, nil
 	}
-	if err := p.tmux.SendText(sess.ID, deferredRenameDirective); err == nil {
-		p.clearDirective(sess.ID)
+	claimed, err := p.store.ClaimPendingInput(sess.ID, input)
+	if err != nil {
+		return false, fmt.Errorf("claim pending input for %s: %w", sess.Name, err)
 	}
+	if !claimed {
+		return false, nil
+	}
+	if err := p.tmux.SendText(sess.ID, input); err != nil {
+		return false, fmt.Errorf("send pending input to %s: %w", sess.Name, err)
+	}
+	consumed, err := p.store.ConsumeClaimedPendingInput(sess.ID, input)
+	if err != nil {
+		return false, fmt.Errorf("record pending input delivery for %s: %w", sess.Name, err)
+	}
+	return consumed, nil
 }
 
 // applyPendingRename picks up a name the session's agent left via the
