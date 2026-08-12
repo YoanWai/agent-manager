@@ -1,11 +1,42 @@
 package agentsession
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+type hermesRow struct {
+	id, source, cwd string
+	started         time.Time
+}
+
+func writeHermesStore(t *testing.T, rows ...hermesRow) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "state.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE sessions (
+		id TEXT PRIMARY KEY,
+		source TEXT NOT NULL,
+		cwd TEXT,
+		started_at REAL NOT NULL
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if _, err := db.Exec(`INSERT INTO sessions (id, source, cwd, started_at) VALUES (?, ?, ?, ?)`,
+			row.id, row.source, row.cwd, float64(row.started.UnixNano())/float64(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return path
+}
 
 func writeFile(t *testing.T, path, content string, modTime time.Time) {
 	t.Helper()
@@ -136,6 +167,63 @@ func TestCaptureUnknownStore(t *testing.T) {
 	}
 }
 
+func TestCaptureHermesPicksSessionAfterLaunchInCwd(t *testing.T) {
+	launch := time.Now()
+	path := writeHermesStore(t,
+		hermesRow{"old", "cli", "/repo", launch.Add(-time.Hour)},
+		hermesRow{"just-before", "cli", "/repo", launch.Add(-time.Second)},
+		hermesRow{"other", "cli", "/elsewhere", launch.Add(time.Second)},
+		hermesRow{"tui", "tui", "/repo", launch.Add(time.Second)},
+		hermesRow{"ours", "cli", "/repo", launch.Add(2 * time.Second)},
+	)
+
+	id, ok := captureHermes(path, "/repo", launch, map[string]bool{})
+	if !ok || id != "ours" {
+		t.Fatalf("got id=%q ok=%v, want ours true", id, ok)
+	}
+}
+
+func TestCaptureHermesSkipsClaimed(t *testing.T) {
+	launch := time.Now()
+	path := writeHermesStore(t,
+		hermesRow{"first", "cli", "/repo", launch.Add(time.Second)},
+		hermesRow{"second", "cli", "/repo", launch.Add(2 * time.Second)},
+	)
+
+	id, ok := captureHermes(path, "/repo", launch, map[string]bool{"first": true})
+	if !ok || id != "second" {
+		t.Fatalf("got id=%q ok=%v, want second true", id, ok)
+	}
+}
+
+func TestHermesStateDBFollowsHermesHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HERMES_HOME", home)
+	if got := hermesStateDB(); got != filepath.Join(home, "state.db") {
+		t.Fatalf("hermesStateDB() = %q", got)
+	}
+}
+
+func TestHermesStateDBFollowsStickyProfile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HERMES_HOME", home)
+	if err := os.WriteFile(filepath.Join(home, "active_profile"), []byte("coder\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, "profiles", "coder", "state.db")
+	if got := hermesStateDB(); got != want {
+		t.Fatalf("hermesStateDB() = %q want %q", got, want)
+	}
+}
+
+func TestHermesStateDBKeepsExplicitProfileHome(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "profiles", "research")
+	t.Setenv("HERMES_HOME", home)
+	if got := hermesStateDB(); got != filepath.Join(home, "state.db") {
+		t.Fatalf("hermesStateDB() = %q", got)
+	}
+}
+
 // geminiSessionFixture is the header line of a gemini session file; the
 // capturer and resolver only read this first line.
 func geminiSessionFixture(sessionID, projectHash string) string {
@@ -200,7 +288,7 @@ func TestGeminiSessionFileInResolvesByID(t *testing.T) {
 // Only gemini keeps a conversation in a file a fork can load. Any other
 // store must be refused rather than read through the gemini layout.
 func TestSessionFileRefusesStoresWithoutAFile(t *testing.T) {
-	for _, sessionStore := range []string{"", "codex", "opencode", "weird"} {
+	for _, sessionStore := range []string{"", "codex", "opencode", "hermes", "weird"} {
 		if SupportsSessionFile(sessionStore) {
 			t.Errorf("SupportsSessionFile(%q) = true", sessionStore)
 		}

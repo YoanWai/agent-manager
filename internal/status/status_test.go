@@ -294,6 +294,12 @@ func TestCodexRealPanes(t *testing.T) {
 			"• Working (0s • esc to interrupt)\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Working},
 		{"codex active turn, other status verb", "codex",
 			"• Analyzing (12s • esc to interrupt)\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Working},
+		{"codex active turn with animations disabled", "codex",
+			"Working (12s • esc to interrupt)\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Working},
+		{"codex reconnecting turn with details", "codex",
+			"• Reconnecting... 3/5 (1m 04s • esc to interrupt)\n" +
+				"  └ Stream disconnected before completion\n\n" +
+				"› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Working},
 		{"codex numbered draft is not a dialog", "codex",
 			"• Working (0s • esc to interrupt)\n\n› 1. keep this as ordinary input\n  gpt-5.6-terra medium · /home/dev", Working},
 		{"codex option-shaped draft without footer is not a dialog", "codex",
@@ -359,6 +365,49 @@ func TestGeminiPanes(t *testing.T) {
 				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
 			}
 		})
+	}
+}
+
+// Hermes fixtures follow the classic prompt_toolkit interface in Hermes Agent
+// v0.20.0. Agent Manager launches --cli explicitly so user TUI preferences do
+// not change these status surfaces underneath the detector.
+func TestHermesPanes(t *testing.T) {
+	engine := defaultEngine(t)
+	cases := []struct {
+		name string
+		pane string
+		want string
+	}{
+		{"idle at prompt",
+			"Welcome to Hermes Agent\n  ⚕ hermes-4 │ ctx -- │ ⏲ 0s\n────────────────────────\n❯ ", Idle},
+		{"profile-prefixed prompt",
+			"  ⚕ hermes-4 │ ctx -- │ ⏲ 0s\n────────────────────────\ncoder ❯ ", Idle},
+		{"active turn",
+			"  ◇ cogitating...  (  4.2s)\n  ⚕ hermes-4 │ ctx -- │ ⏱ 4s\n────────────────────────\n⚕ ❯ msg=interrupt · /queue · /bg · /steer · Ctrl+C cancel", Working},
+		{"approval dialog",
+			"╭────────────────────────╮\n│ Run rm build.tmp?      │\n│ Allow once             │\n│ Deny                   │\n╰────────────────────────╯\n  ↑/↓ to select, Enter to confirm  (299s)\n⚠ ❯ ", Waiting},
+		{"clarify free text",
+			"╭────────────────────────╮\n│ Which target?          │\n╰────────────────────────╯\n  type your answer and press Enter\n✎ ❯ ", Waiting},
+		{"first-run setup",
+			"It looks like Hermes isn't configured yet -- no API keys or providers found.\nRun setup now? [Y/n] ", Waiting},
+		{"first-run provider setup",
+			"⚕ No inference provider is configured yet — let's fix that.\n  Set up a provider now? [Y/n]: ", Waiting},
+		{"background work",
+			"Started a background delegation.\n  ⚕ hermes-4 │ ctx -- │ ⛓ 2 │ ⏲ 8s\n────────────────────────\n❯ ", Working},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, _ := engine.Match("hermes", tc.pane); got != tc.want {
+				t.Fatalf("Match() = %q want %q", got, tc.want)
+			}
+		})
+	}
+
+	if got := engine.TurnEndedState("hermes", "╭────╮\n│ All done. │\n╰────╯\n  ⚕ hermes-4 │ ctx -- │ ⏲ 4s\n────────"); got != Finished {
+		t.Fatalf("completed turn = %q want finished", got)
+	}
+	if got := engine.TurnEndedState("hermes", "╭────╮\n│ Which target? │\n╰────╯\n  ⚕ hermes-4 │ ctx -- │ ⏲ 4s\n────────"); got != Waiting {
+		t.Fatalf("question turn = %q want waiting", got)
 	}
 }
 
@@ -530,6 +579,14 @@ func TestQuotedSignalsDoNotTrigger(t *testing.T) {
 				"✻ Crunched for 1m 5s\n────\n❯ \n────", Waiting},
 		{"claude real spinner during turn still working", "claude",
 			"  old output\n✻ Crunched for 2m 2s\n  streaming new answer\n✳ Drizzling… (6s · thinking)\n────\n❯ ", Working},
+		{"codex marker-less turn quoting interrupt hint", "codex",
+			"  Output:\n\n" +
+				"  tool:       mytool\n" +
+				"  result:     working\n" +
+				"  pattern:    esc to interrupt\n" +
+				"  default:    idle\n\n" +
+				"› Summarize recent commits\n" +
+				"  gpt-5.6-sol medium · /home/dev", Idle},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

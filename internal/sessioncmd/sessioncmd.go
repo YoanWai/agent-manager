@@ -1,8 +1,7 @@
 // Package sessioncmd implements the session-scoped commands an agent uses
-// to talk to its running manager: naming the session and declaring review
-// targets. The CLI subcommands and the MCP server both call these, so
-// validation and behavior stay identical. Each command writes a mailbox
-// file the manager poller applies on its next cycle.
+// to talk to its running manager: naming the session, declaring review
+// targets, and operating managed terminals. The CLI subcommands and the MCP
+// server share this layer so validation and behavior stay identical.
 package sessioncmd
 
 import (

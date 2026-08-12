@@ -41,6 +41,9 @@ const (
 	modeSettings
 	modeDiff
 	modeNotices
+	// modeLaunchHint holds a refused spawn's fix in a dialog: the launch
+	// stays blocked, and the command that unblocks it is what the user sees.
+	modeLaunchHint
 	// modeFocus routes the keyboard into the selected session's pane while
 	// the list and live preview stay on screen.
 	modeFocus
@@ -97,7 +100,17 @@ type Model struct {
 	// next selection.
 	copied int
 	sel    focusSelection
-	pane   paneMirror
+	// forwardingMouse holds an Alt-initiated in-pane click lifecycle until
+	// its release. The button and last in-pane cell keep an X10 release
+	// paired with its press when it reports MouseButtonNone outside the pane.
+	forwardingMouse  bool
+	forwardingButton int
+	forwardingRow    int
+	forwardingCol    int
+	// pending is a press in a mouse-tracking pane awaiting its verdict:
+	// selection drag or forwarded click.
+	pending pendingClick
+	pane    paneMirror
 	// cursorOn is the caret's blink phase while focused.
 	cursorOn bool
 	// focusScroll is how many lines the focused pane is scrolled back into
@@ -130,19 +143,20 @@ type Model struct {
 	search            string
 	searching         bool
 
-	diff      diffState
-	form      form
-	groupForm groupForm
-	pathSugg  pathComplete
-	confirm   confirmTarget
-	rename    renameTarget
-	fork      forkState
-	quick     quickState
-	settings  settingsState
-	help      helpState
-	moveID    string
-	movePath  string
-	repoPick  repoPickState
+	diff       diffState
+	form       form
+	groupForm  groupForm
+	pathSugg   pathComplete
+	confirm    confirmTarget
+	launchHint string
+	rename     renameTarget
+	fork       forkState
+	quick      quickState
+	settings   settingsState
+	help       helpState
+	moveID     string
+	movePath   string
+	repoPick   repoPickState
 
 	// Repo a human picked by hand per session, outranking the agent's
 	// declaration for as long as this manager runs.
@@ -1287,6 +1301,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		m.requestRefresh()
+		return m, nil
+
+	case editorOpenedMsg:
+		m.errBar.text = "opened " + msg.dir + " in " + msg.name
 		return m, nil
 
 	case reattachPreparedMsg:

@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"golang.org/x/text/unicode/bidi"
 )
 
 func (m *Model) View() string {
@@ -25,6 +24,8 @@ func (m *Model) View() string {
 		frame = m.viewHelp()
 	case modeConfirmDelete:
 		frame = m.viewConfirm()
+	case modeLaunchHint:
+		frame = m.viewLaunchHint()
 	case modeSettings:
 		frame = m.viewSettings()
 	case modeFork:
@@ -42,35 +43,7 @@ func (m *Model) View() string {
 	default:
 		frame = m.viewListFrame()
 	}
-	return clampFrame(pinRowsLTR(frame), m.height)
-}
-
-// pinRowsLTR prepends an LRM to any frame row whose first strong character
-// is RTL (a Hebrew session name in the rail, say). UAX#9 takes paragraph
-// direction from that first strong character, so without the mark a bidi
-// host right-justifies the whole row and pulls it out of column. The mark
-// is zero width and applied after layout, so geometry is untouched.
-func pinRowsLTR(frame string) string {
-	lines := strings.Split(frame, "\n")
-	changed := false
-	for i, line := range lines {
-	scan:
-		for _, r := range line {
-			props, _ := bidi.LookupRune(r)
-			switch props.Class() {
-			case bidi.L:
-				break scan
-			case bidi.R, bidi.AL:
-				lines[i] = "\u200e" + line
-				changed = true
-				break scan
-			}
-		}
-	}
-	if !changed {
-		return frame
-	}
-	return strings.Join(lines, "\n")
+	return clampFrame(pinFrameLTR(frame), m.height)
 }
 
 // clampFrame pins a rendered frame to exactly height rows so the outer
@@ -369,30 +342,7 @@ func previewLine(line string, width int) string {
 	if w < width {
 		line += strings.Repeat(" ", width-w)
 	}
-	if !containsRTL(line) {
-		// Terminals that give format characters a cell (Windows Terminal
-		// under conpty) would overflow the row and scroll the whole frame.
-		return line
-	}
-	// LRM is strong LTR (zero width). On rows where the rail is only neutrals,
-	// a leading Hebrew run is the line's first strong character; hosts that
-	// right-justify RTL paragraphs then pull the pane into the rail. Isolate
-	// plus a full-width pad keep the run inside the content column.
-	return "\u200e\u2066" + line + "\u2069"
-}
-
-func containsRTL(line string) bool {
-	for _, r := range line {
-		if r < 0x0590 {
-			continue
-		}
-		props, _ := bidi.LookupRune(r)
-		switch props.Class() {
-		case bidi.R, bidi.AL:
-			return true
-		}
-	}
-	return false
+	return pinPaneLineLTR(line)
 }
 
 // paneExact returns up to n lines of pane text as captured, preserving
@@ -455,11 +405,16 @@ func (m *Model) viewFooter() string {
 	// title, carries the few keys the manager keeps, and drops the app-wide
 	// tier, which would name keys the agent receives.
 	if m.mode == modeFocus {
-		return legendBar([]legendSection{{title: "Focused", pairs: [][2]string{
+		pairs := [][2]string{
 			{"typing", "goes to the agent"},
 			{"ctrl+q / ctrl+\\", "back to manager"},
+			{"ctrl+r", "review"},
 			{"drag / double / triple click", "copy"},
-		}}}, m.width)
+		}
+		if m.pane.mouse {
+			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
+		}
+		return legendBar([]legendSection{{title: "Focused", pairs: pairs}}, m.width)
 	}
 	return legendBar([]legendSection{m.rowLegend(), m.viewLegend()}, m.width)
 }
@@ -481,7 +436,7 @@ func (m *Model) rowLegend() legendSection {
 			foldAction = "unfold"
 		}
 		return legendSection{title: "Group", pairs: [][2]string{
-			{"↵", foldAction}, {"r", "rename"}, {"m", "move"},
+			{"↵", foldAction}, {"o", "editor"}, {"r", "rename"}, {"m", "move"},
 			{"x/X", "kill / all"}, {"v/V", "revive / all"},
 			{"a/u", "archive / restore"}, {"d", "delete"},
 		}}
@@ -498,8 +453,10 @@ func (m *Model) rowLegend() legendSection {
 		pairs = append(pairs, [2]string{".", "mark idle"})
 	}
 	pairs = append(pairs, conversation...)
+	// o sits outside the conversation keys: a shell's directory is worth
+	// opening as much as an agent's.
 	pairs = append(pairs, [][2]string{
-		{"r", "rename"}, {"m", "move"},
+		{"o", "editor"}, {"r", "rename"}, {"m", "move"},
 		{"x/X", "kill / all"}, {"v/V", "revive / all"}, {"R", "restart"},
 		{"a/u", "archive / restore"}, {"d", "delete"},
 	}...)
@@ -526,8 +483,7 @@ func (m *Model) viewLegend() legendSection {
 		foldAllAction = "unfold all"
 	}
 	// Ordered by what a narrow terminal must keep: moving around, making
-	// something, the filters whose state only the footer reports, then the
-	// keys a user already knows to look for.
+	// something, the filters, then the keys a user already knows to look for.
 	return legendSection{title: "View", quiet: true, pairs: [][2]string{
 		{"↑↓/jk", "navigate"}, {"n", "new"}, {"T", "terminal"}, {"g", "group"}, {"/", "search"},
 		{"t", archivedAction}, {"w", statusFilterAction}, {"e", emptyGroupsAction},

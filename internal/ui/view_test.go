@@ -81,6 +81,7 @@ func stripPreviewMarks(s string) string {
 }
 
 func TestPreviewLine(t *testing.T) {
+	pinnedHost(t)
 	colored := "\x1b[38;5;42mgreen text\x1b[39m"
 	got := previewLine(colored, 80)
 	if !strings.Contains(got, "\x1b[38;5;42m") {
@@ -409,6 +410,14 @@ func TestFooterInFocusMode(t *testing.T) {
 	}
 	if lines := strings.Split(footer, "\n"); len(lines) != 1 {
 		t.Fatalf("focus footer should be one row, got %d:\n%s", len(lines), footer)
+	}
+	if strings.Contains(footer, "agent UI") {
+		t.Fatalf("a plain focused pane should not offer mouse pass-through:\n%s", footer)
+	}
+
+	m.pane.mouse = true
+	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "click / alt+drag") || !strings.Contains(footer, "agent UI") {
+		t.Fatalf("a mouse-tracking pane should advertise pass-through:\n%s", footer)
 	}
 }
 

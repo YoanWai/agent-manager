@@ -7,7 +7,7 @@
 
 <p align="center"><b>The fastest workflow for every AI coding agent.</b></p>
 
-<p align="center"><!-- trendshift:start --><a href="https://trendshift.io/repositories/89312?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-89312" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/89312/daily?language=Go" alt="agent-manager on Trendshift" width="250" height="55"></a><!-- trendshift:end --> <a href="https://www.producthunt.com/products/agent-manager?utm_source=badge-featured&amp;utm_medium=badge" target="_blank" rel="noopener noreferrer"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1212310&amp;theme=dark" alt="agent-manager on Product Hunt" width="250" height="54"></a></p>
+<p align="center"><!-- trendshift:start --><a href="https://trendshift.io/repositories/89312?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-89312" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/89312/daily?language=Go" alt="agent-manager on Trendshift" width="250" height="55"></a><!-- trendshift:end --></p>
 
 <p align="center">
   <a href="https://github.com/YoanWai/agent-manager/stargazers"><img src="https://img.shields.io/github/stars/YoanWai/agent-manager?style=for-the-badge&label=stars&labelColor=1f2328&color=96591f" alt="stars"></a>
@@ -21,7 +21,7 @@
 
 ![five prompts to five fresh agents without moving the cursor, one per CLI, then the blocked one answered and its diff opened](docs/demo.gif)
 
-Claude Code, Codex, OpenCode, Grok, Gemini CLI, and Pi run side by side. Each tool runs in its own persistent tmux session.
+Claude Code, Codex, OpenCode, Grok, Gemini CLI, Pi, and Hermes Agent run side by side. Each tool runs in its own persistent tmux session.
 
 agent-manager is a thin layer over the CLIs you already have. Each session launches your own installed tool as-is: your login, your subscription, your config files, your MCP servers, and every feature the tool ships all carry over, exactly as they behave in a plain terminal.
 
@@ -33,11 +33,11 @@ The tools you use alongside agents live in the same list: `T` opens a plain shel
 
 Not here yet: cost tracking, mouse-driven navigation, and agents that can talk to each other.
 
-**Jump to:** [Install](#install) · [Usage](#usage) · [Keys](docs/usage.md#keys) · [Diff review](docs/usage.md#diff-review) · [Configuration](docs/configuration.md)
+**Jump to:** [Install](#install) · [Usage](#usage) · [Keys](docs/usage.md#keys) · [Diff review](docs/usage.md#diff-review) · [Configuration](docs/configuration.md) · [Docs site](https://agent-manager.dev/docs/)
 
 ## Supported tools
 
-Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, and **Pi** by default. Other CLI tools can run as sessions. Add a `[tools.<name>]` block to give another tool live status rules (see [Configuration](docs/configuration.md)).
+Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Pi**, and **Hermes Agent** by default. Other CLI tools can run as sessions. Add a `[tools.<name>]` block to give another tool live status rules (see [Configuration](docs/configuration.md)).
 
 ## Install
 
@@ -109,9 +109,15 @@ Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md]
 ### Contributors
 
 <!-- contributors:start -->
-<a href="https://github.com/YoanWai"><img src="docs/badges/contributors/YoanWai.png" width="64" height="64" alt="@YoanWai"></a> <a href="https://github.com/steveprentice"><img src="docs/badges/contributors/steveprentice.png" width="64" height="64" alt="@steveprentice"></a> <a href="https://github.com/andrelago13"><img src="docs/badges/contributors/andrelago13.png" width="64" height="64" alt="@andrelago13"></a> <a href="https://github.com/redeye1011"><img src="docs/badges/contributors/redeye1011.png" width="64" height="64" alt="@redeye1011"></a> <a href="https://github.com/snowyukitty"><img src="docs/badges/contributors/snowyukitty.png" width="64" height="64" alt="@snowyukitty"></a> <a href="https://github.com/reddeye1337"><img src="docs/badges/contributors/reddeye1337.png" width="64" height="64" alt="@reddeye1337"></a> <a href="https://github.com/mikaoelitiana"><img src="docs/badges/contributors/mikaoelitiana.png" width="64" height="64" alt="@mikaoelitiana"></a>
+<a href="https://github.com/YoanWai"><img src="docs/badges/contributors/YoanWai.png" width="64" height="64" alt="@YoanWai"></a> <a href="https://github.com/steveprentice"><img src="docs/badges/contributors/steveprentice.png" width="64" height="64" alt="@steveprentice"></a> <a href="https://github.com/andrelago13"><img src="docs/badges/contributors/andrelago13.png" width="64" height="64" alt="@andrelago13"></a> <a href="https://github.com/redeye1011"><img src="docs/badges/contributors/redeye1011.png" width="64" height="64" alt="@redeye1011"></a> <a href="https://github.com/snowyukitty"><img src="docs/badges/contributors/snowyukitty.png" width="64" height="64" alt="@snowyukitty"></a> <a href="https://github.com/reddeye1337"><img src="docs/badges/contributors/reddeye1337.png" width="64" height="64" alt="@reddeye1337"></a> <a href="https://github.com/mikaoelitiana"><img src="docs/badges/contributors/mikaoelitiana.png" width="64" height="64" alt="@mikaoelitiana"></a> <a href="https://github.com/Chiyo-no-sake"><img src="docs/badges/contributors/Chiyo-no-sake.png" width="64" height="64" alt="@Chiyo-no-sake"></a>
 <!-- contributors:end -->
 
 ## License
 
 [Apache-2.0](LICENSE)
+
+---
+
+<p align="center">
+  <a href="https://www.producthunt.com/products/agent-manager?utm_source=badge-review&amp;utm_medium=badge" target="_blank" rel="noopener noreferrer"><img src="https://api.producthunt.com/widgets/embed-image/v1/review.svg?post_id=1212310&amp;theme=dark" alt="Review agent-manager on Product Hunt" width="250" height="54"></a>
+</p>

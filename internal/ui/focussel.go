@@ -116,9 +116,19 @@ func (m *Model) paneTextLines() []string {
 	return out
 }
 
-// handleFocusMouse owns the mouse while a session has focus: presses,
-// drags and releases build a selection over the pane, and everything
-// outside it is swallowed so a stray click cannot retarget the keyboard.
+// pendingClick holds a press in a mouse-tracking pane until the gesture
+// declares itself: motion turns it into a selection drag, release on the
+// same cell proves it a click and forwards it to the pane's application.
+type pendingClick struct {
+	active   bool
+	button   int
+	row, col int
+}
+
+// handleFocusMouse owns the mouse while a session has focus. In a pane
+// whose application tracks the mouse, a click passes through to that app
+// while a drag still selects for copy; the press is held back until one of
+// the two is proven. Alt forces a whole gesture through, drags included.
 func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if tea.MouseEvent(msg).IsWheel() {
 		switch msg.Button {
@@ -128,6 +138,22 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, m.wheelFocus(false, msg.X, msg.Y)
 		}
 		return m, nil
+	}
+	if msg.Action == tea.MouseActionPress && msg.Alt && m.pane.mouse {
+		if row, col, inside := m.paneCell(msg.X, msg.Y); inside {
+			m.sel = focusSelection{}
+			m.pending = pendingClick{}
+			m.forwardingMouse = true
+			m.forwardingButton = mouseButton(msg.Button)
+			m.forwardingRow, m.forwardingCol = row, col
+		}
+	}
+	if m.forwardingMouse {
+		model, cmd := m.forwardFocusMouse(msg)
+		if msg.Action == tea.MouseActionRelease {
+			m.clearForwardingMouse()
+		}
+		return model, cmd
 	}
 	switch msg.Action {
 	case tea.MouseActionPress:
@@ -139,10 +165,24 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.sel = focusSelection{}
 			return m, nil
 		}
+		// A repeated press at the same cell is the user asking for a word or
+		// line: keep the click run on the selection path. The first press of
+		// the run has already reached the app; a lone click is harmless there.
+		if m.pane.mouse && !m.clickRunContinues(row, col) {
+			m.deferClick(mouseButton(msg.Button), row, col)
+			return m, nil
+		}
 		m.startSelection(row, col)
 		return m, nil
 
 	case tea.MouseActionMotion:
+		if m.pending.active {
+			if row, col, ok := m.paneCell(msg.X, msg.Y); ok && row == m.pending.row && col == m.pending.col {
+				return m, nil
+			}
+			m.beginSelection(m.pending.row, m.pending.col)
+			m.pending = pendingClick{}
+		}
 		if !m.sel.dragging {
 			return m, nil
 		}
@@ -154,6 +194,23 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseActionRelease:
+		if m.pending.active {
+			pending := m.pending
+			m.pending = pendingClick{}
+			row, col, ok := m.paneCell(msg.X, msg.Y)
+			if ok && row == pending.row && col == pending.col {
+				m.forwardClick(pending.button, pending.row, pending.col)
+				return m, nil
+			}
+			// A release away from the press with no motion between them is
+			// a drag from a terminal that reports no motion: select it.
+			m.beginSelection(pending.row, pending.col)
+			m.sel.dragging = false
+			if ok {
+				m.sel.headRow, m.sel.headCol = row, col
+			}
+			return m, m.copySelectionCmd()
+		}
 		if !m.sel.dragging {
 			return m, nil
 		}
@@ -163,18 +220,59 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// deferClick parks a press until motion or release resolves the gesture,
+// recording it as the start of a possible double or triple click run.
+func (m *Model) deferClick(button, row, col int) {
+	m.pending = pendingClick{active: true, button: button, row: row, col: col}
+	m.sel.lastClick, m.sel.lastRow, m.sel.lastCol = time.Now(), row, col
+	m.sel.clickCount = 1
+}
+
+// clickRunContinues reports whether a press at this cell extends the click
+// run the previous press opened.
+func (m *Model) clickRunContinues(row, col int) bool {
+	return row == m.sel.lastRow && col == m.sel.lastCol &&
+		time.Since(m.sel.lastClick) < multiClickWindow
+}
+
+// forwardClick sends a full press-release pair to the focused pane's
+// application: the press was held back until release proved the gesture a
+// click rather than a selection drag.
+func (m *Model) forwardClick(button, row, col int) {
+	paneRow := row + m.paneRowOffset(m.pane.box.height)
+	press, ok := m.mouseReport(button, false, col, paneRow)
+	if !ok {
+		return
+	}
+	release, ok := m.mouseReport(button, true, col, paneRow)
+	if !ok {
+		return
+	}
+	m.sendFocusReport(press + release)
+}
+
+func (m *Model) clearForwardingMouse() {
+	m.forwardingMouse = false
+	m.forwardingButton = leftButton
+	m.forwardingRow, m.forwardingCol = 0, 0
+}
+
 // startSelection opens a selection, widening the granularity when this
 // press continues a click run at the same cell.
 func (m *Model) startSelection(row, col int) {
-	now := time.Now()
-	sameSpot := row == m.sel.lastRow && col == m.sel.lastCol
-	if sameSpot && now.Sub(m.sel.lastClick) < multiClickWindow {
+	if m.clickRunContinues(row, col) {
 		m.sel.clickCount++
 	} else {
 		m.sel.clickCount = 1
 	}
-	m.sel.lastClick, m.sel.lastRow, m.sel.lastCol = now, row, col
+	m.sel.lastClick, m.sel.lastRow, m.sel.lastCol = time.Now(), row, col
+	m.beginSelection(row, col)
+}
 
+// beginSelection anchors a selection at the cell using the current click
+// count, without treating the call as a fresh press: a deferred press that
+// motion turned into a drag anchors here without widening the run.
+func (m *Model) beginSelection(row, col int) {
 	m.copied = 0
 	m.sel.active = true
 	m.sel.dragging = true

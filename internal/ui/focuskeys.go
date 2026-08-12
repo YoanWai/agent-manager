@@ -191,14 +191,16 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 func (m *Model) leaveFocus() tea.Cmd {
 	m.mode = modeList
 	m.sel = focusSelection{}
+	m.pending = pendingClick{}
+	m.clearForwardingMouse()
 	m.copied = 0
 	return nil
 }
 
 // handleFocusKey forwards every key into the focused pane. Ctrl+Q and
-// ctrl+\ are the reserved keys: they return to the list, mirroring detach
-// from a real attach, and every plain character - q included - reaches
-// the agent.
+// ctrl+\ return to the list and Ctrl+R opens the review, mirroring the
+// bindings a real attach gets, and every plain character - q included -
+// reaches the agent.
 func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+q" || msg.String() == `ctrl+\` {
 		return m, m.leaveFocus()
@@ -206,6 +208,17 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
 	if !ok {
 		return m, m.leaveFocus()
+	}
+	// Ctrl+R opens the review, matching the binding a real attach gets;
+	// closing it focuses the session again rather than landing in the list.
+	if msg.String() == "ctrl+r" {
+		m.sel = focusSelection{}
+		m.copied = 0
+		cmd := m.openDiff()
+		if m.mode == modeDiff {
+			m.diff.refocus = true
+		}
+		return m, cmd
 	}
 	if msg.Type == tea.KeyLeft && !msg.Alt && m.arrowStep && m.caretAtInputStart(sess.ID, sess.Tool) {
 		return m, m.leaveFocus()

@@ -8,10 +8,12 @@ package mcpreg
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -19,12 +21,17 @@ import (
 
 const serverName = "agent-manager"
 
+// ErrHermesMCPUnavailable reports a Hermes whose optional MCP SDK is not
+// installed, so no registration can succeed until `hermes setup` adds it.
+var ErrHermesMCPUnavailable = errors.New("hermes is missing MCP support: run hermes setup, then spawn again")
+
 var knownStyles = map[string]bool{
 	"claude":   true,
 	"codex":    true,
 	"opencode": true,
 	"grok":     true,
 	"gemini":   true,
+	"hermes":   true,
 	"none":     true,
 }
 
@@ -80,6 +87,11 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 		return command, nil
 	case "gemini":
 		if err := ensureGeminiRegistered(exe, hooksDir); err != nil {
+			return "", err
+		}
+		return command, nil
+	case "hermes":
+		if err := ensureHermesRegistered(exe, hooksDir); err != nil {
 			return "", err
 		}
 		return command, nil
@@ -158,6 +170,73 @@ func ensureGeminiRegistered(exe, hooksDir string) error {
 		"-e", hooks.EnvSessionID+"=${"+hooks.EnvSessionID+"}",
 		serverName, exe, "mcp")
 	return ensureRegisteredOnce("gemini", exe, hooksDir, cmd)
+}
+
+type hermesMCPEntry struct {
+	Command string            `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env"`
+	Enabled *bool             `json:"enabled"`
+}
+
+func readHermesMCPEntry() (hermesMCPEntry, bool) {
+	cmd := exec.Command("hermes", "config", "get", "mcp_servers."+serverName, "--json")
+	for _, item := range os.Environ() {
+		if !strings.HasPrefix(item, hooks.EnvSessionID+"=") {
+			cmd.Env = append(cmd.Env, item)
+		}
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return hermesMCPEntry{}, false
+	}
+	var entry hermesMCPEntry
+	if json.Unmarshal(out, &entry) != nil {
+		return hermesMCPEntry{}, false
+	}
+	return entry, true
+}
+
+func validHermesMCPEntry(entry hermesMCPEntry, exe string) bool {
+	return entry.Command == exe && len(entry.Args) == 1 && entry.Args[0] == "mcp" &&
+		entry.Env[hooks.EnvSessionID] == "${"+hooks.EnvSessionID+"}" &&
+		(entry.Enabled == nil || *entry.Enabled)
+}
+
+// ensureHermesRegistered accepts the mcp-add defaults after Hermes verifies
+// the server. A stale entry adds an overwrite confirmation first.
+func ensureHermesRegistered(exe, hooksDir string) error {
+	marker := filepath.Join(hooksDir, "mcp-hermes-registered")
+	if content, err := os.ReadFile(marker); err == nil && string(content) == exe {
+		return nil
+	}
+	_, existed := readHermesMCPEntry()
+	cmd := exec.Command("hermes", "mcp", "add", serverName,
+		"--command", exe,
+		"--env", hooks.EnvSessionID+"=${"+hooks.EnvSessionID+"}",
+		"--args", "mcp")
+	if existed {
+		cmd.Stdin = strings.NewReader("y\n\n")
+	} else {
+		cmd.Stdin = strings.NewReader("\n")
+	}
+	out, err := cmd.CombinedOutput()
+	// Hermes without its optional SDK refuses to connect but still exits 0
+	// after the save-anyway prompt, so the message is the only signal.
+	if strings.Contains(string(out), "requires the 'mcp' Python SDK") {
+		return ErrHermesMCPUnavailable
+	}
+	if err != nil {
+		return fmt.Errorf("hermes mcp add: %w: %s", err, out)
+	}
+	entry, ok := readHermesMCPEntry()
+	if !ok || !validHermesMCPEntry(entry, exe) {
+		return fmt.Errorf("hermes mcp add did not save an enabled agent-manager server: %s", out)
+	}
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(marker, []byte(exe), 0o644)
 }
 
 // ensureRegisteredOnce runs a tool's own mcp-add command once per binary

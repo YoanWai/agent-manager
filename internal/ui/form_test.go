@@ -242,6 +242,10 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 	if got := withPrompt(tool, tool.Command, ""); got != "cat" {
 		t.Fatalf("empty prompt should leave the command untouched, got %q", got)
 	}
+	sent := config.Tool{Command: "hermes --cli", PromptMode: "send"}
+	if got := withPrompt(sent, sent.Command, "do it"); got != sent.Command {
+		t.Fatalf("send-mode prompt changed launch command to %q", got)
+	}
 }
 
 func TestFormLongDirKeepsCursorEndVisible(t *testing.T) {
@@ -394,7 +398,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	slashID := m.sessionRows()[0].ID
-	if !m.poller.directivePending(slashID) {
+	if !sessionHasPendingInput(t, m, slashID, deferredRenameDirective) {
 		t.Fatal("slash-prompt spawn should defer the directive")
 	}
 
@@ -409,7 +413,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 		if sess.ID == slashID {
 			continue
 		}
-		if m.poller.directivePending(sess.ID) {
+		if sessionHasPendingInput(t, m, sess.ID, deferredRenameDirective) {
 			t.Fatalf("session %q should not defer a directive", sess.Name)
 		}
 	}
@@ -427,7 +431,7 @@ func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 	// already present in the pane is success; a missing mark before any
 	// send is not possible after spawnSession.
 	deadline := time.Now().Add(5 * time.Second)
-	for m.poller.directivePending(sess.ID) {
+	for sessionHasPendingInput(t, m, sess.ID, deferredRenameDirective) {
 		if time.Now().After(deadline) {
 			pane, _ := m.tmux.CapturePane(sess.ID)
 			t.Fatalf("directive never sent; pane:\n%s", pane)
@@ -442,6 +446,118 @@ func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 	if !strings.Contains(pane, "agent-manager rename") {
 		t.Fatalf("pane should hold the directive, got:\n%s", pane)
 	}
+}
+
+func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do the work", false, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess := m.sessionRows()[0]
+	if !sessionHasPendingInput(t, m, sess.ID, "do the work") {
+		t.Fatal("launch prompt was not persisted before delivery")
+	}
+	old := m.poller
+	m.poller = newPoller(m.store, m.tmux, m.engine, m.hooks, m.gitDrv,
+		old.statusSources, old.sessionStores, old.interval)
+	m.applyCmd(t, m.refreshCmd())
+	deadline := time.Now().Add(5 * time.Second)
+	for len(sessionPendingInputs(t, m, sess.ID)) > 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("startup prompt stayed queued after a poller restart and the input box appeared")
+		}
+		time.Sleep(100 * time.Millisecond)
+		m.applyCmd(t, m.refreshCmd())
+	}
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(pane, "do the work") || !strings.Contains(pane, "This session is already named") {
+		t.Fatalf("pane did not receive the launch prompt:\n%s", pane)
+	}
+}
+
+func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do not resend", false, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess := m.sessionRows()[0]
+	input := sessionPendingInputs(t, m, sess.ID)[0]
+	claimed, err := m.store.ClaimPendingInput(sess.ID, input)
+	if err != nil || !claimed {
+		t.Fatalf("claim pending input = %v, %v", claimed, err)
+	}
+	old := m.poller
+	m.poller = newPoller(m.store, m.tmux, m.engine, m.hooks, m.gitDrv,
+		old.statusSources, old.sessionStores, old.interval)
+	msg := m.poller.refreshOnce()
+	gotErr, ok := msg.(errMsg)
+	if !ok || !strings.Contains(gotErr.err.Error(), "ambiguous pending input") {
+		t.Fatalf("refresh result = %#v, want ambiguous-delivery error", msg)
+	}
+	if inputs := sessionPendingInputs(t, m, sess.ID); len(inputs) != 0 {
+		t.Fatalf("ambiguous input was not reconciled: %q", inputs)
+	}
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(pane, "do not resend") {
+		t.Fatalf("ambiguous input was resent:\n%s", pane)
+	}
+}
+
+func TestSendModeSurfacesSendFailureAndDoesNotRetry(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "cannot deliver", false, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess, err := m.store.Get(m.sessionRows()[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := m.poller.maybeSendPendingInput(sess, "❯ ", true)
+	if err == nil || !strings.Contains(err.Error(), "send pending input") || sent {
+		t.Fatalf("send result = %v, %v", sent, err)
+	}
+	claimed, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !claimed.PendingInputClaimed {
+		t.Fatal("failed delivery was not left in an ambiguous durable state")
+	}
+	sent, err = m.poller.maybeSendPendingInput(claimed, "", false)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous pending input") || !sent {
+		t.Fatalf("reconcile result = %v, %v", sent, err)
+	}
+	if inputs := sessionPendingInputs(t, m, sess.ID); len(inputs) != 0 {
+		t.Fatalf("ambiguous failed delivery was retried: %q", inputs)
+	}
+}
+
+func sessionPendingInputs(t *testing.T, m *Model, id string) []string {
+	t.Helper()
+	sess, err := m.store.Get(id)
+	if err != nil {
+		t.Fatalf("get session %s: %v", id, err)
+	}
+	return sess.PendingInputs
+}
+
+func sessionHasPendingInput(t *testing.T, m *Model, id, want string) bool {
+	t.Helper()
+	for _, input := range sessionPendingInputs(t, m, id) {
+		if input == want || strings.Contains(input, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestBuildLaunchCarriesSessionID(t *testing.T) {

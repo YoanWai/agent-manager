@@ -120,7 +120,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		return m.reviveMany(m.sessionsInGroup(entry.group), "no dead sessions to revive in "+entry.group)
 	}
 	if err := m.reviveSession(entry.sess); err != nil {
-		m.errBar.text = err.Error()
+		m.reportLaunchError(err)
 		return m, nil
 	}
 	m.errBar.text = m.degradedResumeNotice(entry.sess)
@@ -610,7 +610,13 @@ func archivedGroupDelete(path string, subtree []store.Session) confirmTarget {
 }
 
 func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	defer func() { m.mode = modeList }()
+	// A relaunch the manager refused opened the hint dialog; every other
+	// answer falls back to the list.
+	defer func() {
+		if m.mode != modeLaunchHint {
+			m.mode = modeList
+		}
+	}()
 	switch msg.String() {
 	case "y", "enter":
 		switch m.confirm.action {
@@ -642,7 +648,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case actionRestart:
 			for _, sess := range m.confirm.sessions {
 				if err := m.restartSession(sess); err != nil {
-					m.errBar.text = err.Error()
+					m.reportLaunchError(err)
 					return m, nil
 				}
 			}

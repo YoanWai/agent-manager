@@ -70,6 +70,9 @@ type diffState struct {
 
 	// Set when review opened from inside a session; leaving re-attaches it.
 	reattachID string
+
+	// Set when review opened from focus mode; leaving focuses again.
+	refocus bool
 }
 
 type diffLoadedMsg struct {
@@ -815,6 +818,8 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) closeDiff() tea.Cmd {
 	reattachID := m.diff.reattachID
+	refocus := m.diff.refocus
+	m.diff.refocus = false
 	m.mode = modeList
 	m.diff.active = false
 	m.diff.gen++
@@ -838,6 +843,10 @@ func (m *Model) closeDiff() tea.Cmd {
 	m.diff.reattachID = ""
 	if reattachID != "" {
 		return m.reattach(reattachID, m.diff.gen)
+	}
+	if refocus {
+		_, cmd := m.focusSelected()
+		return cmd
 	}
 	return nil
 }
