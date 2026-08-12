@@ -1285,6 +1285,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.requestRefresh()
 		return m, nil
 
+	case editorOpenedMsg:
+		m.errBar.text = "opened " + msg.dir + " in " + msg.name
+		return m, nil
+
 	case reattachPreparedMsg:
 		if msg.diffGen != m.diff.gen || m.diff.active {
 			return m, nil

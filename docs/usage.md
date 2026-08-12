@@ -14,6 +14,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 |-----|--------|
 | `n` | New session (name, tool, directory, worktree toggle, optional starting prompt, group picker) |
 | `T` | New terminal tab: a plain shell in the selected group, with no agent in it |
+| `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
 | `g` | New group (name, parent, default path) |
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
@@ -74,6 +75,16 @@ A group's dots and counts describe its agents either way, so the shell you left 
 **The keys that write into a pane refuse a shell.** `space` and the review screen's `C` both paste their text and press Enter, so on a shell a sentence meant for an agent would run as a command. Both say the row is a shell and send nothing; enter the session (`↵`) to type there, where what you type is plainly a command. `f` says the same, since a shell has no conversation to fork.
 
 A shell left on its empty command carries no session id, so `agent-manager rename` run inside one cannot find its session. Rename it from the list with `r`. Give the block a command and the pane gets an id like any other session.
+
+## Opening the editor
+
+`o` opens the row under the cursor in your editor: a session's live working directory (wherever its shell or agent has moved to, not only where it started), the directory it was created in when the live one cannot be read, or a group's default path. It works on a [terminal tab](#terminal-tabs) too — the shell you ran the build in is usually sitting in the directory you want open.
+
+Agent Manager takes the first of these it finds: `editor` in [config.toml](configuration.md), `$AGENT_MANAGER_EDITOR`, a GUI editor on `PATH` (`code`, `cursor`, `windsurf`, `zed`, `subl`, `idea`), then `$VISUAL` or `$EDITOR`. The environment comes last because it usually names the editor you set for git commit messages rather than the one a project should open in.
+
+The line is run directly, never through a shell, so nothing in it is expanded and an `.envrc` that sets `EDITOR` cannot smuggle a command in behind it. Arguments are allowed, and quotes group one that carries a space: `editor = "code -n"`, `editor = "open -a 'Visual Studio Code'"`.
+
+A known windowed editor (the six above, plus `open` and `xdg-open`) starts detached and the manager stays on screen, with the status line naming what opened. Everything else takes the terminal over the way an attach does and hands it back on exit — that way round because a terminal editor started detached would have nowhere to draw, while a windowed one launched this way only costs a repaint.
 
 ## Worktree sessions
 

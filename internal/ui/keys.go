@@ -155,6 +155,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.openTerminal()
+	case "o":
+		return m.openEditor()
 	case "e":
 		return m, m.toggleEmptyGroups()
 	case "/":
