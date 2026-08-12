@@ -141,7 +141,7 @@ func (c *Config) backfillToolDefaults() error {
 			c.Tools[name] = def
 			continue
 		}
-		c.Tools[name] = mergeTool(user, def)
+		c.Tools[name] = mergeTool(name, user, def)
 	}
 	return nil
 }
@@ -152,7 +152,7 @@ func (c *Config) backfillToolDefaults() error {
 // a hand-rolled agent block, and backfilling the flag onto one would take
 // the user's own tool out of the pickers and refuse to prompt it, without
 // saying so. A block is a shell only where its author wrote that.
-func mergeTool(user, def Tool) Tool {
+func mergeTool(name string, user, def Tool) Tool {
 	fill := func(dst *string, src string) {
 		if *dst == "" {
 			*dst = src
@@ -175,6 +175,18 @@ func mergeTool(user, def Tool) Tool {
 	fill(&user.BusyLine, def.BusyLine)
 	if len(user.Rules) == 0 {
 		user.Rules = def.Rules
+	} else if name == "codex" {
+		for i, rule := range user.Rules {
+			if rule.State != "working" || rule.Pattern != `(?m)esc to interrupt\b` {
+				continue
+			}
+			for _, current := range def.Rules {
+				if current.State == "working" {
+					user.Rules[i] = current
+					break
+				}
+			}
+		}
 	}
 	return user
 }
@@ -332,8 +344,9 @@ rules = [
   { state = "waiting", pattern = "(?m)^\\s*›\\s+\\d+\\." },
   { state = "waiting", pattern = "(?m)Press enter to (confirm|continue)\\b" },
   { state = "waiting", pattern = "(?m)enter to submit answer\\b" },
-  # active turn status line: "• Working (0s • esc to interrupt)" / "Analyzing"
-  { state = "working", pattern = "(?m)esc to interrupt\\b" },
+  # active status row is the final row above the input box; anchoring its full
+  # shape keeps an answer that quotes "esc to interrupt" from looking active
+  { state = "working", pattern = "(?m)^[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)?[ \\t\\n]*\\z" },
   { state = "errored", pattern = "(?m)You've hit your usage limit" },
   { state = "errored", pattern = "(?im)^\\s*■.*\\berror\\b" },
 ]

@@ -294,6 +294,12 @@ func TestCodexRealPanes(t *testing.T) {
 			"• Working (0s • esc to interrupt)\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Working},
 		{"codex active turn, other status verb", "codex",
 			"• Analyzing (12s • esc to interrupt)\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Working},
+		{"codex active turn with animations disabled", "codex",
+			"Working (12s • esc to interrupt)\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Working},
+		{"codex reconnecting turn with details", "codex",
+			"• Reconnecting... 3/5 (1m 04s • esc to interrupt)\n" +
+				"  └ Stream disconnected before completion\n\n" +
+				"› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Working},
 		{"codex numbered draft is not a dialog", "codex",
 			"• Working (0s • esc to interrupt)\n\n› 1. keep this as ordinary input\n  gpt-5.6-terra medium · /home/dev", Working},
 		{"codex option-shaped draft without footer is not a dialog", "codex",
@@ -530,6 +536,14 @@ func TestQuotedSignalsDoNotTrigger(t *testing.T) {
 				"✻ Crunched for 1m 5s\n────\n❯ \n────", Waiting},
 		{"claude real spinner during turn still working", "claude",
 			"  old output\n✻ Crunched for 2m 2s\n  streaming new answer\n✳ Drizzling… (6s · thinking)\n────\n❯ ", Working},
+		{"codex marker-less turn quoting interrupt hint", "codex",
+			"  Output:\n\n" +
+				"  tool:       mytool\n" +
+				"  result:     working\n" +
+				"  pattern:    esc to interrupt\n" +
+				"  default:    idle\n\n" +
+				"› Summarize recent commits\n" +
+				"  gpt-5.6-sol medium · /home/dev", Idle},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
