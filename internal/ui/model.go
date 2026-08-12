@@ -347,6 +347,8 @@ type settingsState struct {
 	comfortableRows bool
 	worktreeDefault bool
 	shellsPinned    bool
+	notifications   bool
+	notifyFinished  bool
 	themeAuto       bool
 	// manualTheme is the persisted choice the theme key keeps while
 	// auto-detect drives the live palette, so turning auto off returns
@@ -370,6 +372,8 @@ const (
 	settingsFieldArrowStep
 	settingsFieldWorktree
 	settingsFieldTerminals
+	settingsFieldNotify
+	settingsFieldNotifyFinish
 	settingsFieldCLIs
 	settingsFieldBugReport
 	settingsFieldUpdate

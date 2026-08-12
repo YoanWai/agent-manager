@@ -94,6 +94,30 @@ func TestSettingsWorktreeDefaultPersists(t *testing.T) {
 	}
 }
 
+func TestSettingsNotificationsPersist(t *testing.T) {
+	m := buildModel(t)
+	m.openSettings()
+	if !m.settings.notifications {
+		t.Fatal("notifications should open on by default")
+	}
+	if m.settings.notifyFinished {
+		t.Fatal("notify on finish should open off by default")
+	}
+	for m.settings.field != settingsFieldNotify {
+		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if chosen, err := m.store.Setting(notificationsSetting); err != nil || chosen != "off" {
+		t.Fatalf("want stored off, got %q err %v", chosen, err)
+	}
+	if chosen, err := m.store.Setting(notifyFinishedSetting); err != nil || chosen != "on" {
+		t.Fatalf("want stored on, got %q err %v", chosen, err)
+	}
+}
+
 func TestSettingsShowsVersion(t *testing.T) {
 	m := &Model{
 		update:   updateInfo{version: "v0.9.0"},
