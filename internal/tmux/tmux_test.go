@@ -16,8 +16,13 @@ import (
 const testSocket = "amtmuxtest"
 
 // TestMain kills any leftover test server so each run starts and ends clean.
+// The anchor session then holds the server up for the whole run: tests kill
+// their sessions in cleanup, and a server whose last session dies begins an
+// exit-empty shutdown that takes the next test's fresh session down with it
+// ("server exited unexpectedly").
 func TestMain(m *testing.M) {
 	tmuxCmd("kill-server").Run()
+	tmuxCmd("new-session", "-d", "-s", "anchor").Run()
 	code := m.Run()
 	tmuxCmd("kill-server").Run()
 	os.Exit(code)
