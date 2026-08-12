@@ -398,7 +398,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	slashID := m.sessionRows()[0].ID
-	if !m.poller.directivePending(slashID) {
+	if !sessionHasPendingInput(t, m, slashID, deferredRenameDirective) {
 		t.Fatal("slash-prompt spawn should defer the directive")
 	}
 
@@ -413,7 +413,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 		if sess.ID == slashID {
 			continue
 		}
-		if m.poller.directivePending(sess.ID) {
+		if sessionHasPendingInput(t, m, sess.ID, deferredRenameDirective) {
 			t.Fatalf("session %q should not defer a directive", sess.Name)
 		}
 	}
@@ -431,7 +431,7 @@ func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 	// already present in the pane is success; a missing mark before any
 	// send is not possible after spawnSession.
 	deadline := time.Now().Add(5 * time.Second)
-	for m.poller.directivePending(sess.ID) {
+	for sessionHasPendingInput(t, m, sess.ID, deferredRenameDirective) {
 		if time.Now().After(deadline) {
 			pane, _ := m.tmux.CapturePane(sess.ID)
 			t.Fatalf("directive never sent; pane:\n%s", pane)
@@ -448,17 +448,23 @@ func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 	}
 }
 
-func TestSendModeSubmitsPromptAfterPaneReady(t *testing.T) {
+func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
 	m := buildModel(t)
 	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do the work", false, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	m.applyCmd(t, m.refreshCmd())
 	sess := m.sessionRows()[0]
+	if !sessionHasPendingInput(t, m, sess.ID, "do the work") {
+		t.Fatal("launch prompt was not persisted before delivery")
+	}
+	old := m.poller
+	m.poller = newPoller(m.store, m.tmux, m.engine, m.hooks, m.gitDrv,
+		old.statusSources, old.sessionStores, old.interval)
+	m.applyCmd(t, m.refreshCmd())
 	deadline := time.Now().Add(5 * time.Second)
-	for m.poller.inputsPending(sess.ID) {
+	for len(sessionPendingInputs(t, m, sess.ID)) > 0 {
 		if time.Now().After(deadline) {
-			t.Fatal("startup prompt stayed queued after the input box appeared")
+			t.Fatal("startup prompt stayed queued after a poller restart and the input box appeared")
 		}
 		time.Sleep(100 * time.Millisecond)
 		m.applyCmd(t, m.refreshCmd())
@@ -470,6 +476,25 @@ func TestSendModeSubmitsPromptAfterPaneReady(t *testing.T) {
 	if !strings.Contains(pane, "do the work") || !strings.Contains(pane, "This session is already named") {
 		t.Fatalf("pane did not receive the launch prompt:\n%s", pane)
 	}
+}
+
+func sessionPendingInputs(t *testing.T, m *Model, id string) []string {
+	t.Helper()
+	sess, err := m.store.Get(id)
+	if err != nil {
+		t.Fatalf("get session %s: %v", id, err)
+	}
+	return sess.PendingInputs
+}
+
+func sessionHasPendingInput(t *testing.T, m *Model, id, want string) bool {
+	t.Helper()
+	for _, input := range sessionPendingInputs(t, m, id) {
+		if input == want || strings.Contains(input, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestBuildLaunchCarriesSessionID(t *testing.T) {

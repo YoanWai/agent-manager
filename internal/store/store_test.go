@@ -49,6 +49,50 @@ func TestCreateAndList(t *testing.T) {
 	}
 }
 
+func TestPendingInputsPersistAndConsumeInOrder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	sess := sample("a", "g1")
+	sess.PendingInputs = []string{"first", "second"}
+	if err := st.CreateSession(sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	st, err = Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer st.Close()
+	got, err := st.Get("a")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !slices.Equal(got.PendingInputs, []string{"first", "second"}) {
+		t.Fatalf("pending inputs = %q", got.PendingInputs)
+	}
+	consumed, err := st.ConsumePendingInput("a", "second")
+	if err != nil || consumed {
+		t.Fatalf("consume out of order = %v, %v", consumed, err)
+	}
+	consumed, err = st.ConsumePendingInput("a", "first")
+	if err != nil || !consumed {
+		t.Fatalf("consume first = %v, %v", consumed, err)
+	}
+	got, err = st.Get("a")
+	if err != nil {
+		t.Fatalf("get after consume: %v", err)
+	}
+	if !slices.Equal(got.PendingInputs, []string{"second"}) {
+		t.Fatalf("remaining inputs = %q", got.PendingInputs)
+	}
+}
+
 func TestArchiveHidesFromActiveList(t *testing.T) {
 	st := newTestStore(t)
 	st.CreateSession(sample("a", "g1"))

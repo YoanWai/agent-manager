@@ -217,7 +217,7 @@ func ensureHermesRegistered(exe, hooksDir string) error {
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("hermes mcp add: %v: %s", err, out)
+		return fmt.Errorf("hermes mcp add: %w: %s", err, out)
 	}
 	entry, ok := readHermesMCPEntry()
 	if !ok || !validHermesMCPEntry(entry, exe) {

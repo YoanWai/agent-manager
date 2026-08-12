@@ -41,10 +41,6 @@ type poller struct {
 	// captureErr holds a background id-capture failure to surface on the
 	// next poll, since that work no longer runs inline.
 	captureErr error
-	// Input queued until a freshly launched interactive CLI draws its input
-	// box. This carries rename directives that could not ride a launch prompt
-	// and prompts for tools that do not accept one in their command line.
-	pendingInputs map[string][]string
 
 	// captureBusy guards the single in-flight id-capture goroutine.
 	captureBusy atomic.Bool
@@ -94,69 +90,6 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		poke:          make(chan struct{}, 1),
 		paneHashes:    map[string]uint64{},
 		quietSince:    map[string]time.Time{},
-		pendingInputs: map[string][]string{},
-	}
-}
-
-func (p *poller) markInputsPending(id string, inputs ...string) {
-	p.mu.Lock()
-	p.pendingInputs[id] = append(p.pendingInputs[id], inputs...)
-	p.mu.Unlock()
-}
-
-func (p *poller) directivePending(id string) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	for _, input := range p.pendingInputs[id] {
-		if input == deferredRenameDirective {
-			return true
-		}
-	}
-	return false
-}
-
-func (p *poller) inputsPending(id string) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return len(p.pendingInputs[id]) > 0
-}
-
-func (p *poller) nextPendingInput(id string) string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if len(p.pendingInputs[id]) == 0 {
-		return ""
-	}
-	return p.pendingInputs[id][0]
-}
-
-func (p *poller) clearPendingInput(id string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	inputs := p.pendingInputs[id]
-	if len(inputs) <= 1 {
-		delete(p.pendingInputs, id)
-		return
-	}
-	p.pendingInputs[id] = inputs[1:]
-}
-
-// sweepPendingInputs drops queued input for sessions that no longer exist,
-// so a session deleted before its first input fires leaves nothing behind.
-func (p *poller) sweepPendingInputs(sessions []store.Session) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if len(p.pendingInputs) == 0 {
-		return
-	}
-	alive := make(map[string]struct{}, len(sessions))
-	for _, sess := range sessions {
-		alive[sess.ID] = struct{}{}
-	}
-	for id := range p.pendingInputs {
-		if _, ok := alive[id]; !ok {
-			delete(p.pendingInputs, id)
-		}
 	}
 }
 
@@ -337,7 +270,13 @@ func (p *poller) refreshOnce() tea.Msg {
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
-				p.maybeSendPendingInput(sess, pane, agentAlive)
+				sent, err := p.maybeSendPendingInput(sess, pane, agentAlive)
+				if err != nil {
+					return errMsg{err}
+				}
+				if sent {
+					sessions[i].PendingInputs = sessions[i].PendingInputs[1:]
+				}
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
 				if err != nil {
 					return errMsg{err}
@@ -384,7 +323,6 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	p.startCaptureIfIdle(sessions, panes)
 	p.paneHashes = paneHashes
-	p.sweepPendingInputs(sessions)
 
 	groups, err := p.store.Groups()
 	if err != nil {
@@ -533,16 +471,18 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 // second message can safely follow a slash command on a later poll. A failed
 // send stays queued for retry. Tools without an activity_cutoff never look
 // ready and keep the input untouched.
-func (p *poller) maybeSendPendingInput(sess store.Session, pane string, agentAlive bool) {
-	if !agentAlive || !p.inputsPending(sess.ID) {
-		return
+func (p *poller) maybeSendPendingInput(sess store.Session, pane string, agentAlive bool) (bool, error) {
+	if !agentAlive || len(sess.PendingInputs) == 0 {
+		return false, nil
 	}
 	if _, ready := p.engine.ActivityRegion(sess.Tool, ansi.Strip(pane)); !ready {
-		return
+		return false, nil
 	}
-	if err := p.tmux.SendText(sess.ID, p.nextPendingInput(sess.ID)); err == nil {
-		p.clearPendingInput(sess.ID)
+	input := sess.PendingInputs[0]
+	if err := p.tmux.SendText(sess.ID, input); err != nil {
+		return false, nil
 	}
+	return p.store.ConsumePendingInput(sess.ID, input)
 }
 
 // applyPendingRename picks up a name the session's agent left via the

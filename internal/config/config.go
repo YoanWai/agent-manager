@@ -24,10 +24,7 @@ type Tool struct {
 	Shell         bool   `toml:"shell"`
 	ReviveCommand string `toml:"revive_command"`
 	PromptFlag    string `toml:"prompt_flag"`
-	// PromptMode controls how a new-session prompt reaches the tool. Empty
-	// embeds it in the launch command; "send" starts the interactive CLI
-	// first and submits the prompt when its input box appears.
-	PromptMode string `toml:"prompt_mode"`
+	PromptMode    string `toml:"prompt_mode"`
 	// SessionIDFlag makes a new session launch with an id we choose (e.g.
 	// claude/grok/pi "--session-id <uuid>"), so revive can later resume that
 	// exact conversation deterministically.

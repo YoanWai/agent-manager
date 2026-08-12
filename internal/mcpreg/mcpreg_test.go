@@ -2,6 +2,7 @@ package mcpreg
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -243,6 +244,32 @@ exit 1
 	marker, err := os.ReadFile(filepath.Join(dir, "mcp-hermes-registered"))
 	if err != nil || string(marker) != exe {
 		t.Fatalf("marker = %q err=%v", marker, err)
+	}
+}
+
+func TestEnsureHermesRegisteredWrapsExitError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	bin := t.TempDir()
+	script := `#!/bin/sh
+if [ "$1" = "config" ]; then
+  exit 1
+fi
+printf 'registration failed\n' >&2
+exit 7
+`
+	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	err := ensureHermesRegistered("/opt/bin/agent-manager", t.TempDir())
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("error should wrap exec.ExitError, got %v", err)
+	}
+	if exitErr.ExitCode() != 7 {
+		t.Fatalf("exit code = %d, want 7", exitErr.ExitCode())
 	}
 }
 

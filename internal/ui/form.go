@@ -630,14 +630,12 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		AgentSessionID: agentSessionID,
 		WorktreeRepo:   worktreeRepo,
 		WorktreeBranch: worktreeBranch,
+		PendingInputs:  pendingInputs,
 	}, tool, base, launchOptions{
-		pendingInputs:    pendingInputs,
 		rollbackWorktree: worktreeRepo != "",
 	})
 }
 
-// withPrompt embeds a starting prompt into a tool's launch command unless
-// prompt_mode routes it through the live input box instead.
 func withPrompt(tool config.Tool, command, prompt string) string {
 	if prompt == "" || tool.PromptMode == "send" {
 		return command

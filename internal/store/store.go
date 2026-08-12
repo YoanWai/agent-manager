@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -45,6 +46,7 @@ type Session struct {
 	// session to leave can clean up the worktree and its am/ branch.
 	WorktreeRepo   string
 	WorktreeBranch string
+	PendingInputs  []string
 }
 
 // LaunchTime is when the agent now in the pane started: the last restart,
@@ -94,7 +96,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	archived       INTEGER NOT NULL DEFAULT 0,
 	created_at     INTEGER NOT NULL,
 	last_status_at INTEGER NOT NULL,
-	agent_session_id TEXT NOT NULL DEFAULT ''
+	agent_session_id TEXT NOT NULL DEFAULT '',
+	pending_inputs TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS groups (
 	name       TEXT PRIMARY KEY,
@@ -137,6 +140,7 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE groups ADD COLUMN worktree TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN agent_launched_at INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN retired_agent_session_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN pending_inputs TEXT NOT NULL DEFAULT '[]'`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -250,13 +254,17 @@ func (s *Store) CreateSession(sess Session) error {
 	if sess.LastStatusAt.IsZero() {
 		sess.LastStatusAt = sess.CreatedAt
 	}
-	_, err := s.db.Exec(
-		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+	pendingInputs, err := json.Marshal(sess.PendingInputs)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
 		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID,
-		sess.WorktreeRepo, sess.WorktreeBranch, sess.Group,
+		sess.WorktreeRepo, sess.WorktreeBranch, string(pendingInputs), sess.Group,
 	)
 	if err != nil {
 		return err
@@ -312,7 +320,7 @@ func (s *Store) AddGroup(name, path, worktree string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -329,11 +337,15 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		var sess Session
 		var archived, acked int
 		var created, lastStatus, agentLaunched int64
+		var pendingInputs string
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
-			&agentLaunched, &sess.RetiredAgentSessionID); err != nil {
+			&agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs); err != nil {
 			return nil, err
+		}
+		if err := json.Unmarshal([]byte(pendingInputs), &sess.PendingInputs); err != nil {
+			return nil, fmt.Errorf("decode pending inputs for session %s: %w", sess.ID, err)
 		}
 		sess.Archived = archived != 0
 		sess.Acked = acked != 0
@@ -349,14 +361,18 @@ func (s *Store) Get(id string) (Session, error) {
 	var sess Session
 	var archived, acked int
 	var created, lastStatus, agentLaunched int64
+	var pendingInputs string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
-		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID)
+		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs)
 	if err != nil {
 		return Session{}, err
+	}
+	if err := json.Unmarshal([]byte(pendingInputs), &sess.PendingInputs); err != nil {
+		return Session{}, fmt.Errorf("decode pending inputs for session %s: %w", sess.ID, err)
 	}
 	sess.Archived = archived != 0
 	sess.Acked = acked != 0
@@ -364,6 +380,41 @@ func (s *Store) Get(id string) (Session, error) {
 	sess.LastStatusAt = decodeTime(lastStatus)
 	sess.AgentLaunchedAt = decodeTime(agentLaunched)
 	return sess, nil
+}
+
+func (s *Store) ConsumePendingInput(id, expected string) (bool, error) {
+	var encoded string
+	if err := s.db.QueryRow(`SELECT pending_inputs FROM sessions WHERE id = ?`, id).Scan(&encoded); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, fmt.Errorf("session %s: %w", id, ErrSessionGone)
+		}
+		return false, err
+	}
+	var inputs []string
+	if err := json.Unmarshal([]byte(encoded), &inputs); err != nil {
+		return false, fmt.Errorf("decode pending inputs for session %s: %w", id, err)
+	}
+	if len(inputs) == 0 || inputs[0] != expected {
+		return false, nil
+	}
+	remaining, err := json.Marshal(inputs[1:])
+	if err != nil {
+		return false, err
+	}
+	res, err := s.db.Exec(
+		`UPDATE sessions SET pending_inputs = ? WHERE id = ? AND pending_inputs = ?`,
+		string(remaining), id, encoded)
+	if err != nil {
+		return false, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if affected == 0 {
+		return false, s.requireRowOrNoop(res, id)
+	}
+	return true, nil
 }
 
 func (s *Store) UpdateStatus(id, newStatus string) error {
