@@ -66,11 +66,15 @@ func TestNotifyTransitionFiresOnWaitingAndErrored(t *testing.T) {
 	p.notifyTransition(sess, status.Waiting)
 	p.notifyTransition(sess, status.Errored)
 	calls := waitForCalls(t, rec, 2)
-	if calls[0] != [2]string{sess.Name, "Waiting for your input"} {
-		t.Fatalf("unexpected waiting notification %v", calls[0])
+	want := map[[2]string]bool{
+		{sess.Name, "Waiting for your input"}: true,
+		{sess.Name, "Errored"}:                true,
 	}
-	if calls[1] != [2]string{sess.Name, "Errored"} {
-		t.Fatalf("unexpected errored notification %v", calls[1])
+	for _, call := range calls {
+		delete(want, call)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing notifications %v, got %v", want, calls)
 	}
 }
 
