@@ -44,6 +44,20 @@ func TestRailBannersLeaveRoomForEntries(t *testing.T) {
 	}
 }
 
+// A rail too short for the padded block keeps the badges themselves; only a
+// rail with no room for entries under them drops them altogether.
+func TestFilterBadgesSurviveShortRails(t *testing.T) {
+	for _, height := range []int{10, 14, 20} {
+		m := shotModel()
+		m.width, m.height = 120, height
+		m.showArchived = true
+		rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
+		if !strings.Contains(rail, "ARCHIVED") {
+			t.Errorf("height %d dropped the archived badge:\n%s", height, rail)
+		}
+	}
+}
+
 func railLinesText(lines []contentLine) string {
 	var b strings.Builder
 	for _, line := range lines {

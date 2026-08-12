@@ -78,9 +78,17 @@ func TestStatusFilterKeyKeepsAttentionSessions(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("attention list = %v want %v", got, want)
 	}
+	m.width, m.height = 120, 34
+	rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
+	if !strings.Contains(rail, "ATTENTION") {
+		t.Fatalf("rail missing ATTENTION badge:\n%s", rail)
+	}
+	if !strings.Contains(rail, "show all") {
+		t.Fatalf("rail badge should offer clearing the filter:\n%s", rail)
+	}
 	header := ansi.Strip(strings.Join(m.viewHeaderRows(), "\n"))
-	if !strings.Contains(header, "ATTENTION") {
-		t.Fatalf("header missing ATTENTION badge:\n%s", header)
+	if strings.Contains(header, "ATTENTION") {
+		t.Fatalf("filter badges belong over the list, not in the header:\n%s", header)
 	}
 	if !strings.Contains(header, "3 agents") {
 		t.Fatalf("header count should match the listed agents:\n%s", header)

@@ -527,8 +527,7 @@ func (m *Model) viewLegend() legendSection {
 		foldAllAction = "unfold all"
 	}
 	// Ordered by what a narrow terminal must keep: moving around, making
-	// something, the filters whose state only the footer reports, then the
-	// keys a user already knows to look for.
+	// something, the filters, then the keys a user already knows to look for.
 	return legendSection{title: "View", quiet: true, pairs: [][2]string{
 		{"↑↓/jk", "navigate"}, {"n", "new"}, {"T", "terminal"}, {"g", "group"}, {"/", "search"},
 		{"t", archivedAction}, {"w", statusFilterAction}, {"e", emptyGroupsAction},

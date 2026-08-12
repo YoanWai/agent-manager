@@ -186,7 +186,7 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 | `idle` | Nothing running |
 | `dead` | The tmux session is gone |
 
-`w` narrows the list to sessions that need attention (`waiting`, `finished`, `errored`). Press again to show every status. The header badge and session counts follow the filter; folds open so matches are not hidden.
+`w` narrows the list to sessions that need attention (`waiting`, `finished`, `errored`). Press again to show every status. An `ATTENTION` badge sits over the list with the key that clears it, and the session counts follow the filter; folds open so matches are not hidden. The archived view (`t`) and hidden empty groups (`e`) label themselves the same way. The badges take whatever room the rail has: padded away from the entries on a tall terminal, tight against them on a short one, and yielding to the entries once the list is down to its last rows.
 
 ![the session tree, with a waiting agent's permission prompt in the preview](screenshot-sessions.png)
 
