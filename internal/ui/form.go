@@ -521,7 +521,7 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	}
 
 	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, m.formWorktreeOn()); err != nil {
-		m.errBar.text = err.Error()
+		m.reportLaunchError(err)
 		return m, nil
 	}
 	// New sessions start as starting, which attention excludes; clear so

@@ -436,9 +436,10 @@ revive_command = "hermes --cli --continue"
 # Hermes only accepts startup text through chat -q, which is one-shot and
 # exits. Start the real REPL, then submit the prompt when its composer appears.
 prompt_mode = "send"
-# Hermes's MCP client is an optional install; enable mcp = "hermes" after
-# installing that extra if you want the agent-manager MCP tools.
-mcp = "none"
+# Hermes sessions carry the agent-manager MCP tools. Registration needs
+# Hermes's MCP SDK; when it is missing, the spawn stops and the manager
+# points at "hermes setup", which installs it.
+mcp = "hermes"
 default_status = "idle"
 activity_cutoff = "(?m)^\\s*(?:\\S+\\s+)?[❯>$#›»→]\\s"
 chrome_line = "^\\s*[─╭╮╰╯│]*\\s*$|^\\s*⚕ .*$"

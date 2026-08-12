@@ -8,6 +8,7 @@ package mcpreg
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,6 +20,10 @@ import (
 )
 
 const serverName = "agent-manager"
+
+// ErrHermesMCPUnavailable reports a Hermes whose optional MCP SDK is not
+// installed, so no registration can succeed until `hermes setup` adds it.
+var ErrHermesMCPUnavailable = errors.New("hermes is missing MCP support: run hermes setup, then spawn again")
 
 var knownStyles = map[string]bool{
 	"claude":   true,
@@ -216,6 +221,11 @@ func ensureHermesRegistered(exe, hooksDir string) error {
 		cmd.Stdin = strings.NewReader("\n")
 	}
 	out, err := cmd.CombinedOutput()
+	// Hermes without its optional SDK refuses to connect but still exits 0
+	// after the save-anyway prompt, so the message is the only signal.
+	if strings.Contains(string(out), "requires the 'mcp' Python SDK") {
+		return ErrHermesMCPUnavailable
+	}
 	if err != nil {
 		return fmt.Errorf("hermes mcp add: %w: %s", err, out)
 	}

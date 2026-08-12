@@ -114,8 +114,8 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if hermes.SessionStore != "hermes" || hermes.ResumeByIDCommand != "hermes --cli --resume {id}" {
 		t.Fatalf("hermes resume config = %+v", hermes)
 	}
-	if hermes.MCP != "none" {
-		t.Fatalf("hermes mcp = %q want none (the Hermes MCP SDK is optional)", hermes.MCP)
+	if hermes.MCP != "hermes" {
+		t.Fatalf("hermes mcp = %q want hermes (sessions must carry the MCP tools)", hermes.MCP)
 	}
 }
 
@@ -239,15 +239,27 @@ func TestBackfillToolDefaults(t *testing.T) {
 	}
 }
 
-func TestBackfillHermesKeepsOptionalMCPDisabled(t *testing.T) {
+func TestBackfillHermesRequiresMCP(t *testing.T) {
 	cfg := Config{Tools: map[string]Tool{
 		"hermes": {Command: "hermes --cli"},
 	}}
 	if err := cfg.backfillToolDefaults(); err != nil {
 		t.Fatalf("backfill: %v", err)
 	}
+	if got := cfg.Tools["hermes"].MCP; got != "hermes" {
+		t.Fatalf("hermes mcp = %q want hermes", got)
+	}
+}
+
+func TestBackfillHermesKeepsExplicitMCPOptOut(t *testing.T) {
+	cfg := Config{Tools: map[string]Tool{
+		"hermes": {Command: "hermes --cli", MCP: "none"},
+	}}
+	if err := cfg.backfillToolDefaults(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
 	if got := cfg.Tools["hermes"].MCP; got != "none" {
-		t.Fatalf("hermes mcp = %q want none", got)
+		t.Fatalf("hermes mcp = %q want the explicit opt-out kept", got)
 	}
 }
 
