@@ -33,7 +33,7 @@ The tools you use alongside agents live in the same list: `T` opens a plain shel
 
 Not here yet: cost tracking, mouse-driven navigation, and agents that can talk to each other.
 
-**Jump to:** [Install](#install) · [Usage](#usage) · [Keys](docs/usage.md#keys) · [Diff review](docs/usage.md#diff-review) · [Configuration](docs/configuration.md)
+**Jump to:** [Install](#install) · [Usage](#usage) · [Keys](docs/usage.md#keys) · [Diff review](docs/usage.md#diff-review) · [Configuration](docs/configuration.md) · [Docs site](https://agent-manager.dev/docs/)
 
 ## Supported tools
 
