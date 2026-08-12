@@ -33,7 +33,7 @@ The tools you use alongside agents live in the same list: `T` opens a plain shel
 
 Not here yet: cost tracking, mouse-driven navigation, and agents that can talk to each other.
 
-**Jump to:** [Install](#install) · [Usage](#usage) · [Keys](docs/usage.md#keys) · [Diff review](docs/usage.md#diff-review) · [Configuration](docs/configuration.md)
+**Jump to:** [Install](#install) · [Usage](#usage) · [Keys](docs/usage.md#keys) · [Diff review](docs/usage.md#diff-review) · [Configuration](docs/configuration.md) · [Docs site](https://agent-manager.dev/docs/)
 
 ## Supported tools
 
@@ -115,3 +115,9 @@ Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md]
 ## License
 
 [Apache-2.0](LICENSE)
+
+---
+
+<p align="center">
+  <a href="https://www.producthunt.com/products/agent-manager?utm_source=badge-review&amp;utm_medium=badge" target="_blank" rel="noopener noreferrer"><img src="https://api.producthunt.com/widgets/embed-image/v1/review.svg?post_id=1212310&amp;theme=dark" alt="Review agent-manager on Product Hunt" width="250" height="54"></a>
+</p>

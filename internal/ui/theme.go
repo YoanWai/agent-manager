@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/termseq"
+	"github.com/YoanWai/agent-manager/internal/tmux"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -372,8 +374,23 @@ func applyTheme(t Theme) {
 	colorErrored = lipgloss.Color(t.Errored)
 	colorIdle = lipgloss.Color(t.Idle)
 
-	rebuildCaptureBackdrop(t)
 	rebuildStyles()
+}
+
+func (t Theme) lightBackdrop() bool {
+	r, g, b := hexRGB(t.Bg)
+	return 0.2126*float64(r)+0.7152*float64(g)+0.0722*float64(b) > 128
+}
+
+// agentPaneTheme is the backdrop an agent pane sits on: the theme's own,
+// the same color the terminal is painted and the capture is drawn over.
+// Agents that auto-detect follow it, so a light theme hosts light agents.
+func agentPaneTheme() tmux.PaneTheme {
+	fgbg := "15;0"
+	if current.lightBackdrop() {
+		fgbg = "0;15"
+	}
+	return tmux.PaneTheme{Background: current.Bg, ColorFgBg: fgbg}
 }
 
 // current is the live token set; renderers that need a raw SGR sequence
@@ -389,22 +406,27 @@ func SyncTerminalBackground() {
 	emitToTerminal("\x1b]11;" + current.Bg + "\x07")
 }
 
+// syncPaneTheme hands the tmux server the background agent panes render on,
+// so an agent that auto-detects its palette resolves to the same side the
+// manager is drawing. Sessions that are already running keep whatever they
+// resolved at startup; the theme reaches them on their next launch. The
+// chosen theme is recorded synchronously so a session created right after
+// still opens on it; the push to a running server shells out to tmux, so it
+// runs as a command off the update path and surfaces a failure through errMsg.
+func (m *Model) syncPaneTheme() tea.Cmd {
+	m.tmux.PublishPaneTheme(agentPaneTheme())
+	return func() tea.Msg {
+		if err := m.tmux.PushPaneTheme(); err != nil {
+			return errMsg{err}
+		}
+		return nil
+	}
+}
+
 // ResetTerminalBackground restores the terminal's own background (OSC 111)
 // when the manager exits.
 func ResetTerminalBackground() {
 	emitToTerminal("\x1b]111\x07")
-}
-
-// SyncAttachBackground repaints the terminal for a full-screen attach. On
-// a light theme the agent gets the capture backdrop's dark color — its
-// colors were picked for a dark terminal, same as in the preview panel.
-// attachDoneMsg restores the theme backdrop on detach. On a dark theme the
-// synced color already serves both, so nothing is emitted.
-func SyncAttachBackground() {
-	if !captureOnDark {
-		return
-	}
-	emitToTerminal("\x1b]11;" + themes[0].Bg + "\x07")
 }
 
 // emitToTerminal sends a control sequence to whatever is actually drawing

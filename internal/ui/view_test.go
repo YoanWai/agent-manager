@@ -146,22 +146,21 @@ func TestPreviewLine(t *testing.T) {
 	}
 }
 
-func TestPreviewLineCaptureBackdrop(t *testing.T) {
-	onLightTheme(t)
-	line := previewLine("hi", 10)
-	if !strings.HasPrefix(line, captureOpen) {
-		t.Errorf("capture line does not open with backdrop colors: %q", line)
+// The capture keeps the agent's own colors on every theme: the pane is
+// painted the theme's backdrop, so nothing has to be recolored on the way in.
+func TestPreviewLineKeepsAgentColors(t *testing.T) {
+	for _, name := range []string{"classic", "solarized light"} {
+		applyTheme(themes[themeIndex(name)])
+		colored := "\x1b[38;5;42mhi\x1b[39m"
+		got := previewLine(colored, 4)
+		if !strings.Contains(got, "\x1b[38;5;42m") {
+			t.Errorf("%s: agent color dropped: %q", name, got)
+		}
+		if body := strings.TrimRight(ansi.Strip(got), " "); body != "hi" {
+			t.Errorf("%s: preview line rewritten: %q", name, got)
+		}
 	}
-	if !strings.Contains(line, captureBgSeq+strings.Repeat(" ", 8)+"\x1b[0m") {
-		t.Errorf("padding not painted with the backdrop: %q", line)
-	}
-}
-
-func TestPreviewLineDarkThemeUnchanged(t *testing.T) {
 	applyTheme(themes[0])
-	if got := previewLine("hi", 4); got != "hi  " {
-		t.Errorf("dark theme preview line rewritten: %q", got)
-	}
 }
 
 func TestTruncateRuneSafe(t *testing.T) {
@@ -219,7 +218,7 @@ func shotModel() *Model {
 	sess := func(name, group, tool, st string, age time.Duration) store.Session {
 		return store.Session{
 			ID: name, Name: name, Group: group, Tool: tool, Status: st,
-			Cwd: "/Users/yoan/dev/spaze/api", CreatedAt: now.Add(-24 * time.Hour),
+			Cwd: "/Users/someone/dev/api", CreatedAt: now.Add(-24 * time.Hour),
 			LastStatusAt: now.Add(-age),
 		}
 	}
@@ -244,7 +243,7 @@ func shotModel() *Model {
 	m := &Model{
 		width: 120, height: 34, mode: modeList, cursor: 4,
 		sessions: sessions, rows: rows, collapsed: map[string]bool{},
-		groupPaths: map[string]string{"backend": "/Users/yoan/dev/spaze/api"},
+		groupPaths: map[string]string{"backend": "/Users/someone/dev/api"},
 		split:      splitState{ratio: defaultSplitRatio},
 		agents:     agentStats{count: 4, cpu: 12, ram: 9, rss: 1_530_000_000},
 		net:        netStats{rates: true, down: 9_400_000, up: 2_100_000},

@@ -656,7 +656,7 @@ func (m *Model) contentLines(width, height int) []contentLine {
 // focusTopRule is the hairline that caps the focused pane, titled so the
 // mode names itself where the eye already is.
 func focusTopRule(width int) string {
-	title := " focused · ctrl+q back "
+	title := " focused · ctrl+q back · ctrl+r review "
 	rule := annotationStyle.Render(title)
 	rest := width - lipgloss.Width(title)
 	if rest > 0 {
@@ -692,15 +692,9 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 		lines = append(lines, contentLine{text: m.renderPaneRow(i, line, width), raw: true})
 	}
 	// Rows past the capture stay raw too: a painted tail under unpainted
-	// output would read as a box drawn around the agent's last line. On the
-	// capture backdrop they carry its fill instead, so the dark island spans
-	// the whole panel.
+	// output would read as a box drawn around the agent's last line.
 	for len(lines) < height {
-		if captureOnDark {
-			lines = append(lines, contentLine{text: captureBlankRow(width), raw: true})
-		} else {
-			lines = append(lines, contentLine{raw: true})
-		}
+		lines = append(lines, contentLine{raw: true})
 	}
 	return lines
 }

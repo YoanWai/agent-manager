@@ -18,7 +18,7 @@ func TestRailBannersSurviveShortTerminals(t *testing.T) {
 					m := shotModel()
 					m.width, m.height = width, height
 					m.searching, m.showArchived = searching, archived
-					m.errBar.text = "worktree kept (has work): /Users/yoan/dev/spaze/api"
+					m.errBar.text = "worktree kept (has work): /Users/someone/dev/api"
 					rows := strings.Split(m.View(), "\n")
 					if len(rows) != height {
 						t.Errorf("%dx%d search=%v archived=%v: frame is %d rows",
