@@ -278,7 +278,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 	}
 	name := toolName + "-" + newID()[:4]
 	if err := m.spawnSession(toolName, name, dir, group, prompt, true, m.quickWorktreeOn()); err != nil {
-		m.errBar.text = err.Error()
+		m.reportLaunchError(err)
 		return m, nil
 	}
 	// Spawned sessions start outside the attention set; clear so the new row shows.

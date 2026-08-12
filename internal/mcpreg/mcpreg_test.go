@@ -247,6 +247,31 @@ exit 1
 	}
 }
 
+func TestApplyHermesReportsMissingMCPSupport(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	bin := t.TempDir()
+	// A Homebrew Hermes without the optional SDK: add refuses to connect,
+	// saves nothing, and still exits 0 after its save-anyway prompt.
+	script := `#!/bin/sh
+if [ "$1" = "config" ]; then
+  exit 1
+fi
+printf "Failed to connect: MCP server 'agent-manager' requires the 'mcp' Python SDK, but it is not installed. Run 'hermes setup' to install MCP support, then retry.\n"
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, err := Apply("hermes", "/opt/bin/agent-manager", t.TempDir(), "hermes --cli", map[string]string{})
+	if !errors.Is(err, ErrHermesMCPUnavailable) {
+		t.Fatalf("err = %v, want ErrHermesMCPUnavailable", err)
+	}
+}
+
 func TestEnsureHermesRegisteredWrapsExitError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake Hermes executable is a shell script")

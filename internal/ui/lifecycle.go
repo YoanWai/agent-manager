@@ -120,7 +120,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		return m.reviveMany(m.sessionsInGroup(entry.group), "no dead sessions to revive in "+entry.group)
 	}
 	if err := m.reviveSession(entry.sess); err != nil {
-		m.errBar.text = err.Error()
+		m.reportLaunchError(err)
 		return m, nil
 	}
 	m.errBar.text = m.degradedResumeNotice(entry.sess)
@@ -642,7 +642,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case actionRestart:
 			for _, sess := range m.confirm.sessions {
 				if err := m.restartSession(sess); err != nil {
-					m.errBar.text = err.Error()
+					m.reportLaunchError(err)
 					return m, nil
 				}
 			}

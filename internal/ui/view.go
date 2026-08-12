@@ -25,6 +25,8 @@ func (m *Model) View() string {
 		frame = m.viewHelp()
 	case modeConfirmDelete:
 		frame = m.viewConfirm()
+	case modeLaunchHint:
+		frame = m.viewLaunchHint()
 	case modeSettings:
 		frame = m.viewSettings()
 	case modeFork:
