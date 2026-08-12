@@ -65,7 +65,7 @@ func Notify(title, body string) {
 		}
 	case "linux":
 		if _, err := lookPath("notify-send"); err == nil &&
-			runCmd("notify-send", title, body) == nil {
+			runCmd("notify-send", "--", title, body) == nil {
 			return
 		}
 	}

@@ -74,19 +74,20 @@ func TestNotifyDarwinPlainTerminalUsesAppleScript(t *testing.T) {
 	}
 }
 
-func TestNotifyLinuxUsesNotifySend(t *testing.T) {
+func TestNotifyLinuxProtectsOptionLikeTitle(t *testing.T) {
 	defer restore()()
 	goos = "linux"
 	getenv = func(string) string { return "" }
 	rec := &cmdRecorder{known: map[string]bool{"notify-send": true}}
 	rec.install()
 	emitSeq = func(string) error { return nil }
-	Notify("deploy", "Errored")
+	Notify("--help", "Errored")
 	if len(rec.called) != 1 {
 		t.Fatalf("want one notify-send call, got %v", rec.called)
 	}
 	call := rec.called[0]
-	if call[0] != "notify-send" || call[1] != "deploy" || call[2] != "Errored" {
+	if len(call) != 4 || call[0] != "notify-send" || call[1] != "--" ||
+		call[2] != "--help" || call[3] != "Errored" {
 		t.Fatalf("unexpected notify-send args %v", call)
 	}
 }
