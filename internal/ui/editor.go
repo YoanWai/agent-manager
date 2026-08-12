@@ -43,14 +43,13 @@ var (
 	}
 )
 
-// editorOpenedMsg carries a windowed editor that is up, so the status line
-// names it once the process exists rather than before it does.
+// The status line waits on this rather than announcing the editor from
+// openEditor, so a launch that fails is never reported as one that opened.
 type editorOpenedMsg struct {
 	name string
 	dir  string
 }
 
-// openEditor opens the directory under the cursor in the user's editor.
 func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 	if _, ok := m.selectedRow(); !ok {
 		return m, nil
@@ -78,8 +77,8 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 	return m, startEditorCmd(cmd, editorName(line), dir)
 }
 
-// startEditorCmd launches a windowed editor off the update path: starting a
-// process is exec, and a slow one would hold the next keystroke.
+// Starting a process is exec, which Update must not do: a slow launch
+// would hold the next keystroke.
 func startEditorCmd(cmd *exec.Cmd, name, dir string) tea.Cmd {
 	return func() tea.Msg {
 		if err := startEditor(cmd); err != nil {
