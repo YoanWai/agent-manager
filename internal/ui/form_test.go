@@ -478,6 +478,69 @@ func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
 	}
 }
 
+func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do not resend", false, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess := m.sessionRows()[0]
+	input := sessionPendingInputs(t, m, sess.ID)[0]
+	claimed, err := m.store.ClaimPendingInput(sess.ID, input)
+	if err != nil || !claimed {
+		t.Fatalf("claim pending input = %v, %v", claimed, err)
+	}
+	old := m.poller
+	m.poller = newPoller(m.store, m.tmux, m.engine, m.hooks, m.gitDrv,
+		old.statusSources, old.sessionStores, old.interval)
+	msg := m.poller.refreshOnce()
+	gotErr, ok := msg.(errMsg)
+	if !ok || !strings.Contains(gotErr.err.Error(), "ambiguous pending input") {
+		t.Fatalf("refresh result = %#v, want ambiguous-delivery error", msg)
+	}
+	if inputs := sessionPendingInputs(t, m, sess.ID); len(inputs) != 0 {
+		t.Fatalf("ambiguous input was not reconciled: %q", inputs)
+	}
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(pane, "do not resend") {
+		t.Fatalf("ambiguous input was resent:\n%s", pane)
+	}
+}
+
+func TestSendModeSurfacesSendFailureAndDoesNotRetry(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "cannot deliver", false, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess, err := m.store.Get(m.sessionRows()[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := m.poller.maybeSendPendingInput(sess, "❯ ", true)
+	if err == nil || !strings.Contains(err.Error(), "send pending input") || sent {
+		t.Fatalf("send result = %v, %v", sent, err)
+	}
+	claimed, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !claimed.PendingInputClaimed {
+		t.Fatal("failed delivery was not left in an ambiguous durable state")
+	}
+	sent, err = m.poller.maybeSendPendingInput(claimed, "", false)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous pending input") || !sent {
+		t.Fatalf("reconcile result = %v, %v", sent, err)
+	}
+	if inputs := sessionPendingInputs(t, m, sess.ID); len(inputs) != 0 {
+		t.Fatalf("ambiguous failed delivery was retried: %q", inputs)
+	}
+}
+
 func sessionPendingInputs(t *testing.T, m *Model, id string) []string {
 	t.Helper()
 	sess, err := m.store.Get(id)

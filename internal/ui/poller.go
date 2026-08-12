@@ -466,23 +466,45 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 	return captured, nil
 }
 
-// maybeSendPendingInput submits the next launch-time message once the tool's
-// input box proves it is ready. Tools queue input received mid-turn, so a
-// second message can safely follow a slash command on a later poll. A failed
-// send stays queued for retry. Tools without an activity_cutoff never look
-// ready and keep the input untouched.
+// A durable claim makes automatic delivery at-most-once: after a process or
+// database failure, an ambiguous input is dropped and surfaced rather than
+// risking the same task or slash command running twice.
 func (p *poller) maybeSendPendingInput(sess store.Session, pane string, agentAlive bool) (bool, error) {
-	if !agentAlive || len(sess.PendingInputs) == 0 {
+	if len(sess.PendingInputs) == 0 {
+		return false, nil
+	}
+	input := sess.PendingInputs[0]
+	if sess.PendingInputClaimed {
+		consumed, err := p.store.ConsumeClaimedPendingInput(sess.ID, input)
+		if err != nil {
+			return false, fmt.Errorf("reconcile pending input for %s: %w", sess.Name, err)
+		}
+		if consumed {
+			return true, fmt.Errorf("skipped ambiguous pending input for %s to avoid duplicate delivery", sess.Name)
+		}
+		return false, nil
+	}
+	if !agentAlive {
 		return false, nil
 	}
 	if _, ready := p.engine.ActivityRegion(sess.Tool, ansi.Strip(pane)); !ready {
 		return false, nil
 	}
-	input := sess.PendingInputs[0]
-	if err := p.tmux.SendText(sess.ID, input); err != nil {
+	claimed, err := p.store.ClaimPendingInput(sess.ID, input)
+	if err != nil {
+		return false, fmt.Errorf("claim pending input for %s: %w", sess.Name, err)
+	}
+	if !claimed {
 		return false, nil
 	}
-	return p.store.ConsumePendingInput(sess.ID, input)
+	if err := p.tmux.SendText(sess.ID, input); err != nil {
+		return false, fmt.Errorf("send pending input to %s: %w", sess.Name, err)
+	}
+	consumed, err := p.store.ConsumeClaimedPendingInput(sess.ID, input)
+	if err != nil {
+		return false, fmt.Errorf("record pending input delivery for %s: %w", sess.Name, err)
+	}
+	return consumed, nil
 }
 
 // applyPendingRename picks up a name the session's agent left via the
