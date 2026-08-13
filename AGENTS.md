@@ -60,10 +60,13 @@ The notes carry more than the generated list of pull requests:
 A range with nobody outside the maintainer in it carries no thanks line;
 write the summary and leave it at that rather than manufacturing one.
 
-Write them into a file and publish with
-`goreleaser release --clean --release-notes=notes.md`, or edit the release
-afterwards with `gh release edit <tag> --notes-file`. Both keep the header
-and footer from `.goreleaser.yaml`.
+`--release-notes=notes.md` replaces the generated list of pull requests
+rather than sitting above it, so a file passed that way has to carry the
+list itself. Publishing first and then editing is the simpler order: take
+what goreleaser published with `gh release view <tag> --json body -q .body`,
+put the summary and thanks above its `## What's Changed`, and send it back
+with `gh release edit <tag> --notes-file`. The header and footer from
+`.goreleaser.yaml` come along either way.
 
 ## Layout
 
