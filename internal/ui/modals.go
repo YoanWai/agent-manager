@@ -57,7 +57,7 @@ func (m *Model) flexCardWidth(title, body string, hint [][2]string) int {
 	measure(cardTitle(title))
 	measure(legendInline(hint, 1<<30))
 	if m.errBar.text != "" {
-		measure(errStyle.Render("⚠ " + m.errBar.text))
+		measure(m.statusMessage("⚠", "●"))
 	}
 	if m.width >= 28 && need > m.width-4 {
 		need = m.width - 4
@@ -89,7 +89,7 @@ func (m *Model) cardSized(width int, title, body string, hint [][2]string) strin
 		lines = append(lines, row(line))
 	}
 	if m.errBar.text != "" {
-		lines = append(lines, row(""), row(errStyle.Render("⚠ "+m.errBar.text)))
+		lines = append(lines, row(""), row(m.statusMessage("⚠", "●")))
 	}
 	lines = append(lines, row(""))
 	if len(hint) > 0 {

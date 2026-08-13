@@ -61,6 +61,76 @@ func TestStatusToastSitsTopRight(t *testing.T) {
 	}
 }
 
+// An editor that opened is an outcome, not a failure, all the way from the
+// key to the card the toast draws.
+func TestOpenedEditorReadsAsAnOutcome(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	dir := t.TempDir()
+	createSession(t, m, "agent", dir, "")
+	m.selectSessionRow(t, "agent")
+
+	_, cmd := m.openEditor()
+	m.applyCmd(t, cmd)
+	if len(*launched) == 0 {
+		t.Fatalf("the editor never launched, status = %q", m.errBar.text)
+	}
+	if want := doneStyle.Render("● " + m.errBar.text); m.statusLine() != want {
+		t.Fatalf("status line is %q, want the outcome styling %q", m.statusLine(), want)
+	}
+}
+
+// The same for an update check that found the current version installed:
+// the check ran, so the toast reports it rather than crossing it out.
+func TestUpToDateReadsAsAnOutcome(t *testing.T) {
+	m := shotModel()
+	updated, _ := m.Update(updateAppliedMsg{upToDate: true})
+	m = updated.(*Model)
+	if m.errBar.text != "already up to date" {
+		t.Fatalf("status text is %q", m.errBar.text)
+	}
+	if want := doneStyle.Render("● already up to date"); m.statusLine() != want {
+		t.Fatalf("status line is %q, want %q", m.statusLine(), want)
+	}
+}
+
+// Only the message that says it worked gets the outcome styling: a failure
+// written straight to the bar afterwards reads as one, whatever the bar
+// carried before.
+func TestFailureAfterAnOutcomeReadsAsAFailure(t *testing.T) {
+	m := shotModel()
+	m.reportDone("opened /tmp/project in code")
+	m.errBar.text = "git not found in PATH"
+	if want := errStyle.Render("✕ git not found in PATH"); m.statusLine() != want {
+		t.Fatalf("status line is %q, want %q", m.statusLine(), want)
+	}
+
+	// Dismissal takes the outcome with it, so the next message starts clean
+	// even when it repeats the words of the last one that worked.
+	m.reportDone("opened /tmp/project in code")
+	for range 3 {
+		m.ageError()
+	}
+	m.errBar.text = "opened /tmp/project in code"
+	if want := errStyle.Render("✕ opened /tmp/project in code"); m.statusLine() != want {
+		t.Fatalf("status line is %q, want %q", m.statusLine(), want)
+	}
+}
+
+// The review footer marks the same two states in its own glyphs.
+func TestReviewFooterMarksAnOutcome(t *testing.T) {
+	m := shotModel()
+	m.width = 80
+	m.reportDone("opened /tmp/project in code")
+	if got := ansi.Strip(m.viewDiffStatus()); !strings.HasPrefix(got, " ✔ ") {
+		t.Fatalf("review footer reads %q, want the outcome glyph", got)
+	}
+	m.errBar.text = "git not found in PATH"
+	if got := ansi.Strip(m.viewDiffStatus()); !strings.HasPrefix(got, " ✖ ") {
+		t.Fatalf("review footer reads %q, want the failure glyph", got)
+	}
+}
+
 // Splicing a card into a styled row must not shift the cells around it.
 func TestSpliceAtColumnKeepsWidth(t *testing.T) {
 	row := paint(keyStyle.Render("session ")+subtleStyle.Render("running"), 40, panelHex())
