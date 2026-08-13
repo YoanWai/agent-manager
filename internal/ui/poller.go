@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -44,6 +45,9 @@ type poller struct {
 
 	// captureBusy guards the single in-flight id-capture goroutine.
 	captureBusy atomic.Bool
+
+	// notifyFn delivers one desktop notification; tests swap in a recorder.
+	notifyFn func(notify.Event)
 
 	// guarded by runMu: refresh state shared between the polling loop
 	// and one-off refresh commands
@@ -90,6 +94,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		poke:          make(chan struct{}, 1),
 		paneHashes:    map[string]uint64{},
 		quietSince:    map[string]time.Time{},
+		notifyFn:      notify.Notify,
 	}
 }
 
@@ -307,6 +312,7 @@ func (p *poller) refreshOnce() tea.Msg {
 				return errMsg{err}
 			}
 			sessions[i].Status = newStatus
+			p.notifyTransition(sess, newStatus)
 		}
 	}
 	if preview == "" && selectedID != "" {
@@ -704,4 +710,48 @@ func (p *poller) applyHookStatus(sess store.Session, text, hookStatus string) st
 		}
 	}
 	return hookStatus
+}
+
+// notifyTransition fires a desktop notification when a session's status
+// flips into one the user has asked to hear about. It runs only from the
+// transition branch of refreshOnce, so a status that persists across polls
+// never re-fires. Waiting and errored notify unless silenced in Settings;
+// finished stays quiet unless opted in, since most turn ends are routine.
+// There is no focus gate: the poll cannot tell whether the user is looking
+// at the manager, and the session they are watching is precisely the one
+// whose ping they must not miss.
+func (p *poller) notifyTransition(sess store.Session, newStatus string) {
+	if p.notifyFn == nil {
+		return
+	}
+	var kind notify.Kind
+	switch newStatus {
+	case status.Waiting:
+		kind = notify.Waiting
+	case status.Errored:
+		kind = notify.Errored
+	case status.Finished:
+		if !p.notifyFinished() {
+			return
+		}
+		kind = notify.Finished
+	default:
+		return
+	}
+	if !p.notificationsOn() {
+		return
+	}
+	// Delivery can wait on an external process (osascript, notify-send),
+	// so it must never run inside refreshOnce, which holds runMu.
+	go p.notifyFn(notify.Event{Session: sess.Name, Tool: sess.Tool, Kind: kind})
+}
+
+func (p *poller) notificationsOn() bool {
+	chosen, err := p.store.Setting(notificationsSetting)
+	return err != nil || chosen != "off"
+}
+
+func (p *poller) notifyFinished() bool {
+	chosen, err := p.store.Setting(notifyFinishedSetting)
+	return err == nil && chosen == "on"
 }

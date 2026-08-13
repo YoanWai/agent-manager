@@ -82,7 +82,7 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `ctrl+r` | Review the session's changes as full-file diffs; `c` comments a line, `C` sends the comments to the agent |
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |
 | `R` | Restart a session on an empty context: same name, group, directory and tool, fresh conversation |
-| `s` | Settings (default tool, theme or follow the OS light/dark mode, list density, review layout) |
+| `s` | Settings (default tool, theme or follow the OS light/dark mode, list density, review layout, desktop notifications) |
 | `?` | The key map: every binding, grouped and scrollable, with `/` to search it |
 
 A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch `am/<name>`), toggled on the `n` form, with `alt+w` in the quick prompt, or by default in Settings.

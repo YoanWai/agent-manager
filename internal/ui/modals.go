@@ -297,6 +297,14 @@ func (m *Model) viewSettings() string {
 	if m.settings.shellsPinned {
 		terminals = "pinned"
 	}
+	notifications := "off"
+	if m.settings.notifications {
+		notifications = "on"
+	}
+	notifyFinished := "off"
+	if m.settings.notifyFinished {
+		notifyFinished = "on"
+	}
 	toolValue := ""
 	if len(m.settings.toolNames) > 0 {
 		toolValue = m.settings.toolNames[m.settings.toolIndex]
@@ -342,6 +350,8 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldArrowStep, "←→ step in/out", arrowStep) + betaTag + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
 		row(settingsFieldTerminals, "terminal rows", terminals) + "\n" +
+		row(settingsFieldNotify, "notifications", notifications) + "\n" +
+		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
 		bugRow + "\n" +
 		bugNote + "\n" +

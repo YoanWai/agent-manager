@@ -193,6 +193,22 @@ func storedArrowStep(st *store.Store) bool {
 	return chosen != "off"
 }
 
+func storedNotifications(st *store.Store) bool {
+	chosen, err := st.Setting(notificationsSetting)
+	if err != nil {
+		return true
+	}
+	return chosen != "off"
+}
+
+func storedNotifyFinished(st *store.Store) bool {
+	chosen, err := st.Setting(notifyFinishedSetting)
+	if err != nil {
+		return false
+	}
+	return chosen == "on"
+}
+
 func (m *Model) openSettings() {
 	if len(m.cfg.Tools) == 0 {
 		m.errBar.text = "no tools configured"
@@ -212,6 +228,8 @@ func (m *Model) openSettings() {
 		comfortableRows: m.comfortableRows,
 		worktreeDefault: m.defaultWorktree(),
 		shellsPinned:    m.shellsPinned,
+		notifications:   storedNotifications(m.store),
+		notifyFinished:  storedNotifyFinished(m.store),
 		themeAuto:       themeAutoEnabled(m.store),
 		manualTheme:     themes[themeIndex(storedTheme(m.store))].Name,
 	}
@@ -339,6 +357,20 @@ func (m *Model) persistSettings() {
 		placement = "inline"
 	}
 	if err := m.store.SetSetting(terminalPlacementSetting, placement); err != nil {
+		m.errBar.text = err.Error()
+	}
+	notifications := "off"
+	if m.settings.notifications {
+		notifications = "on"
+	}
+	if err := m.store.SetSetting(notificationsSetting, notifications); err != nil {
+		m.errBar.text = err.Error()
+	}
+	notifyFinished := "off"
+	if m.settings.notifyFinished {
+		notifyFinished = "on"
+	}
+	if err := m.store.SetSetting(notifyFinishedSetting, notifyFinished); err != nil {
 		m.errBar.text = err.Error()
 	}
 	m.focusOnEnter = m.settings.enterFocuses
@@ -479,6 +511,10 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.worktreeDefault = !m.settings.worktreeDefault
 	case settingsFieldTerminals:
 		m.settings.shellsPinned = !m.settings.shellsPinned
+	case settingsFieldNotify:
+		m.settings.notifications = !m.settings.notifications
+	case settingsFieldNotifyFinish:
+		m.settings.notifyFinished = !m.settings.notifyFinished
 	}
 	return nil
 }
