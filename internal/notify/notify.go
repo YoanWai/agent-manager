@@ -57,18 +57,43 @@ type Event struct {
 }
 
 type presentation struct {
-	body  string
-	sound string
+	body          string
+	macSound      string
+	linuxSound    string
+	linuxUrgency  string
+	linuxIcon     string
+	linuxCategory string
 }
 
 func describe(kind Kind) (presentation, bool) {
 	switch kind {
 	case Waiting:
-		return presentation{body: "◆ Waiting for your input", sound: "Funk"}, true
+		return presentation{
+			body:          "◆ Waiting for your input",
+			macSound:      "Funk",
+			linuxSound:    "dialog-question",
+			linuxUrgency:  "normal",
+			linuxIcon:     "dialog-question",
+			linuxCategory: "x-agent-manager.session.waiting",
+		}, true
 	case Finished:
-		return presentation{body: "● Finished", sound: "Hero"}, true
+		return presentation{
+			body:          "● Finished",
+			macSound:      "Hero",
+			linuxSound:    "complete-download",
+			linuxUrgency:  "low",
+			linuxIcon:     "emblem-default",
+			linuxCategory: "x-agent-manager.session.finished",
+		}, true
 	case Errored:
-		return presentation{body: "✕ Errored", sound: "Basso"}, true
+		return presentation{
+			body:          "✕ Errored",
+			macSound:      "Basso",
+			linuxSound:    "dialog-error",
+			linuxUrgency:  "critical",
+			linuxIcon:     "dialog-error",
+			linuxCategory: "x-agent-manager.session.errored",
+		}, true
 	default:
 		return presentation{}, false
 	}
@@ -103,12 +128,18 @@ func Notify(event Event) {
 		// no AppleScript quoting is needed.
 		if runCmd("osascript", "-e", "on run argv",
 			"-e", `display notification (item 3 of argv) with title (item 1 of argv) subtitle (item 2 of argv) sound name (item 4 of argv)`,
-			"-e", "end run", "--", "agent-manager", subtitle, body, detail.sound) == nil {
+			"-e", "end run", "--", "agent-manager", subtitle, body, detail.macSound) == nil {
 			return
 		}
 	case "linux":
 		if _, err := lookPath("notify-send"); err == nil &&
-			runCmd("notify-send", "--", "agent-manager", terminalBody) == nil {
+			runCmd("notify-send",
+				"--app-name=agent-manager",
+				"--urgency="+detail.linuxUrgency,
+				"--category="+detail.linuxCategory,
+				"--icon="+detail.linuxIcon,
+				"--hint=string:sound-name:"+detail.linuxSound,
+				"--", "agent-manager", terminalBody) == nil {
 			return
 		}
 	}

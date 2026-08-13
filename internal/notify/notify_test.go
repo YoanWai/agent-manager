@@ -18,6 +18,7 @@ func restore() func() {
 type cmdRecorder struct {
 	known  map[string]bool
 	called [][]string
+	runErr error
 }
 
 func (r *cmdRecorder) install() {
@@ -29,7 +30,7 @@ func (r *cmdRecorder) install() {
 	}
 	runCmd = func(name string, args ...string) error {
 		r.called = append(r.called, append([]string{name}, args...))
-		return nil
+		return r.runErr
 	}
 }
 
@@ -55,6 +56,24 @@ func TestNotifyDarwinGhosttyUsesOSC777(t *testing.T) {
 	}
 	if len(rec.called) != 0 {
 		t.Fatalf("osascript should not run inside Ghostty, got %v", rec.called)
+	}
+}
+
+func TestNotifyGhosttyFailureFallsBackToNative(t *testing.T) {
+	defer restore()()
+	goos = "darwin"
+	getenv = func(key string) string {
+		if key == "TERM_PROGRAM" {
+			return "ghostty"
+		}
+		return ""
+	}
+	rec := &cmdRecorder{known: map[string]bool{}}
+	rec.install()
+	emitSeq = func(string) error { return errors.New("closed terminal") }
+	Notify(Event{Session: "deploy", Tool: "claude", Kind: Waiting})
+	if len(rec.called) != 1 || rec.called[0][0] != "osascript" {
+		t.Fatalf("failed terminal delivery should fall back to the OS, got %v", rec.called)
 	}
 }
 
@@ -89,21 +108,44 @@ func TestNotifyDarwinPlainTerminalUsesAppleScript(t *testing.T) {
 	}
 }
 
-func TestNotifyLinuxProtectsOptionLikeTitle(t *testing.T) {
-	defer restore()()
-	goos = "linux"
-	getenv = func(string) string { return "" }
-	rec := &cmdRecorder{known: map[string]bool{"notify-send": true}}
-	rec.install()
-	emitSeq = func(string) error { return nil }
-	Notify(Event{Session: "--help", Tool: "claude", Kind: Errored})
-	if len(rec.called) != 1 {
-		t.Fatalf("want one notify-send call, got %v", rec.called)
+func TestNotifyLinuxUsesPortableStatusHints(t *testing.T) {
+	tests := []struct {
+		kind     Kind
+		body     string
+		sound    string
+		urgency  string
+		icon     string
+		category string
+	}{
+		{Waiting, "◆ Waiting for your input", "dialog-question", "normal", "dialog-question", "x-agent-manager.session.waiting"},
+		{Finished, "● Finished", "complete-download", "low", "emblem-default", "x-agent-manager.session.finished"},
+		{Errored, "✕ Errored", "dialog-error", "critical", "dialog-error", "x-agent-manager.session.errored"},
 	}
-	call := rec.called[0]
-	if len(call) != 4 || call[0] != "notify-send" || call[1] != "--" ||
-		call[2] != "agent-manager" || call[3] != "✕ Errored — --help · claude" {
-		t.Fatalf("unexpected notify-send args %v", call)
+	for _, test := range tests {
+		t.Run(test.urgency, func(t *testing.T) {
+			defer restore()()
+			goos = "linux"
+			getenv = func(string) string { return "" }
+			rec := &cmdRecorder{known: map[string]bool{"notify-send": true}}
+			rec.install()
+			emitSeq = func(string) error { return nil }
+			Notify(Event{Session: "--help", Tool: "claude", Kind: test.kind})
+			if len(rec.called) != 1 {
+				t.Fatalf("want one notify-send call, got %v", rec.called)
+			}
+			want := []string{
+				"notify-send",
+				"--app-name=agent-manager",
+				"--urgency=" + test.urgency,
+				"--category=" + test.category,
+				"--icon=" + test.icon,
+				"--hint=string:sound-name:" + test.sound,
+				"--", "agent-manager", test.body + " — --help · claude",
+			}
+			if !slices.Equal(rec.called[0], want) {
+				t.Fatalf("unexpected notify-send args %v", rec.called[0])
+			}
+		})
 	}
 }
 
@@ -137,22 +179,64 @@ func TestNotifyLinuxOverSSHUsesOSC777(t *testing.T) {
 
 // Headless Linux and WSL have no notify-send; the bell is the floor.
 func TestNotifyLinuxWithoutNotifySendRingsBell(t *testing.T) {
-	defer restore()()
-	goos = "linux"
-	getenv = func(string) string { return "" }
-	rec := &cmdRecorder{known: map[string]bool{}}
-	rec.install()
-	var emitted []string
-	emitSeq = func(seq string) error {
-		emitted = append(emitted, seq)
-		return nil
+	for _, test := range []struct {
+		name string
+		kind Kind
+	}{
+		{"waiting", Waiting},
+		{"finished", Finished},
+		{"errored", Errored},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			defer restore()()
+			goos = "linux"
+			getenv = func(string) string { return "" }
+			rec := &cmdRecorder{known: map[string]bool{}}
+			rec.install()
+			var emitted []string
+			emitSeq = func(seq string) error {
+				emitted = append(emitted, seq)
+				return nil
+			}
+			Notify(Event{Session: "deploy", Tool: "custom-cli", Kind: test.kind})
+			if len(rec.called) != 0 {
+				t.Fatalf("no command should run without notify-send, got %v", rec.called)
+			}
+			if len(emitted) != 1 || emitted[0] != "\a" {
+				t.Fatalf("want one bell, got %q", emitted)
+			}
+		})
 	}
-	Notify(Event{Session: "deploy", Tool: "codex", Kind: Finished})
-	if len(rec.called) != 0 {
-		t.Fatalf("no command should run without notify-send, got %v", rec.called)
-	}
-	if len(emitted) != 1 || emitted[0] != "\a" {
-		t.Fatalf("want one bell, got %q", emitted)
+}
+
+func TestNotifyNativeFailureRingsBell(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		goos  string
+		known map[string]bool
+	}{
+		{"macOS", "darwin", map[string]bool{}},
+		{"Linux", "linux", map[string]bool{"notify-send": true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			defer restore()()
+			goos = test.goos
+			getenv = func(string) string { return "" }
+			rec := &cmdRecorder{known: test.known, runErr: errors.New("desktop unavailable")}
+			rec.install()
+			var emitted []string
+			emitSeq = func(seq string) error {
+				emitted = append(emitted, seq)
+				return nil
+			}
+			Notify(Event{Session: "deploy", Tool: "custom-cli", Kind: Errored})
+			if len(rec.called) != 1 {
+				t.Fatalf("want one native attempt, got %v", rec.called)
+			}
+			if !slices.Equal(emitted, []string{"\a"}) {
+				t.Fatalf("failed native delivery should ring once, got %q", emitted)
+			}
+		})
 	}
 }
 

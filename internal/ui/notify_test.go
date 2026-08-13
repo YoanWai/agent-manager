@@ -79,6 +79,16 @@ func TestNotifyTransitionFiresOnWaitingAndErrored(t *testing.T) {
 	}
 }
 
+func TestNotifyTransitionCarriesCustomToolName(t *testing.T) {
+	p, sess, rec := newNotifyTestPoller(t)
+	sess.Tool = "my-custom-agent"
+	p.notifyTransition(sess, status.Waiting)
+	calls := waitForCalls(t, rec, 1)
+	if calls[0] != (notify.Event{Session: sess.Name, Tool: "my-custom-agent", Kind: notify.Waiting}) {
+		t.Fatalf("configured tool identity should reach the backend, got %v", calls)
+	}
+}
+
 func TestNotifyTransitionSkipsUnattentionStatuses(t *testing.T) {
 	p, sess, rec := newNotifyTestPoller(t)
 	for _, st := range []string{status.Working, status.Idle, status.Dead, status.Starting} {
