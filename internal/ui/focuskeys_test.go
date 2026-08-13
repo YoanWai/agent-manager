@@ -491,7 +491,7 @@ func TestFocusPasteKeepsPromptInComposer(t *testing.T) {
 // This test verifies the handler returns no mouse-enable command.
 func TestDetachNoMouseReArm(t *testing.T) {
 	m := buildModel(t)
-	t.Cleanup(func() { m.tmux.ClearRequest() })
+	clearRequestOnCleanup(t, m)
 
 	_, cmd := m.Update(attachDoneMsg{})
 	if cmd != nil {
