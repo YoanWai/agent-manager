@@ -8,16 +8,13 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/hooks"
-	"github.com/YoanWai/agent-manager/internal/mcpreg"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/google/uuid"
 )
 
 const (
@@ -531,40 +528,6 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	return m, m.refreshCmd()
 }
 
-// renameDirective asks the agent, as the first line of its first prompt,
-// to name its own session via the rename subcommand. Injected only for
-// auto-named sessions that launch with a prompt, so it fires exactly once.
-const renameDirective = `First, run this exact shell command once, replacing <name> with a short 2-4 word kebab-case name for the broad feature or theme of this whole session (not one subtask of a larger feature): agent-manager rename "<name>". Run rename only this once. Do not rename again later in the conversation unless the user explicitly asks you to rename; if they do, pick a broad name from context, not a narrow step. Then do the task:`
-
-// deferredRenameDirective is the standalone message sent into sessions
-// whose first prompt could not carry the directive: slash-command
-// prompts (the command must open the message) and promptless launches.
-const deferredRenameDirective = `Run this exact shell command once, replacing <name> with a short 2-4 word kebab-case name for the broad feature or theme of this whole session (not one subtask of a larger feature): agent-manager rename "<name>". Run rename only this once. Do not rename again later in the conversation unless the user explicitly asks you to rename; if they do, pick a broad name from context, not a narrow step. Then continue.`
-
-// renameAvailableNote tells a custom-named session that rename exists for
-// later use without asking it to rename now.
-const renameAvailableNote = `This session is already named. You can rename it later with agent-manager rename "<name>" only if the user asks. Do not rename it now. Then do the task:`
-
-// directiveEmbeddable reports whether a launch note can ride the
-// session's first prompt; otherwise auto-named sessions get the rename
-// directive later as its own message.
-func directiveEmbeddable(prompt string) bool {
-	return prompt != "" && !strings.HasPrefix(prompt, "/")
-}
-
-// launchPrompt prepends a short agent note when the first prompt can
-// carry one: auto-named sessions must rename once; custom-named sessions
-// only learn that rename is available later.
-func launchPrompt(prompt string, autoNamed bool) string {
-	if !directiveEmbeddable(prompt) {
-		return prompt
-	}
-	if autoNamed {
-		return renameDirective + "\n\n" + prompt
-	}
-	return renameAvailableNote + "\n\n" + prompt
-}
-
 // spawnSession creates the tmux session and its store record for both
 // the New Session form and quick spawn. autoNamed marks sessions whose
 // name is a generated placeholder; those are asked to rename once.
@@ -597,27 +560,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		dir = path
 		worktreeRepo, worktreeBranch = root, branch
 	}
-	deferDirective := autoNamed && !directiveEmbeddable(prompt)
-	prompt = launchPrompt(prompt, autoNamed)
-	base := withPrompt(tool, tool.Command, prompt)
-	var pendingInputs []string
-	if tool.PromptMode == "send" {
-		if prompt != "" {
-			pendingInputs = append(pendingInputs, prompt)
-		}
-	}
-	if deferDirective {
-		pendingInputs = append(pendingInputs, deferredRenameDirective)
-	}
-	// Tools that accept a chosen session id launch with one, so a later
-	// revive resumes this exact conversation rather than the directory's
-	// most recent one. Tools without the flag mint their own id, captured
-	// after launch by the poller.
-	agentSessionID := ""
-	if tool.SessionIDFlag != "" {
-		agentSessionID = uuid.NewString()
-		base += " " + tool.SessionIDFlag + " " + agentSessionID
-	}
+	plan := launch.Assemble(tool, prompt, autoNamed)
 	if err := m.launchNewSession(store.Session{
 		ID:    id,
 		Name:  name,
@@ -627,11 +570,11 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		// Starting until the agent first draws to its pane, so the row shows
 		// a launch state immediately; the poller flips it to the real status.
 		Status:         status.Starting,
-		AgentSessionID: agentSessionID,
+		AgentSessionID: plan.AgentSessionID,
 		WorktreeRepo:   worktreeRepo,
 		WorktreeBranch: worktreeBranch,
-		PendingInputs:  pendingInputs,
-	}, tool, base, launchOptions{
+		PendingInputs:  plan.PendingInputs,
+	}, tool, plan.Command, launchOptions{
 		rollbackWorktree: worktreeRepo != "",
 	}); err != nil {
 		return err
@@ -647,51 +590,8 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	return nil
 }
 
-func withPrompt(tool config.Tool, command, prompt string) string {
-	if prompt == "" || tool.PromptMode == "send" {
-		return command
-	}
-	if tool.PromptFlag != "" {
-		return command + " " + tool.PromptFlag + " " + tmux.ShellQuote(prompt)
-	}
-	return command + " " + tmux.ShellQuote(prompt)
-}
-
-// buildLaunch resolves the shell command and environment a session
-// launches with. Every session carries its id so the rename subcommand
-// can find it; tools backed by hooks additionally get the generated
-// settings file and their status-file path, plus a clean slate from any
-// earlier files under the same id.
 func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id string) (string, map[string]string, error) {
-	if err := m.hooks.RemoveName(id); err != nil {
-		return "", nil, err
-	}
-	env := map[string]string{hooks.EnvSessionID: id}
-	command, err := mcpreg.Apply(mcpreg.Style(toolName, tool.MCP), mcpExecutable(), m.hooks.Dir(), baseCommand, env)
-	if err != nil {
-		return "", nil, err
-	}
-	if tool.StatusSource != hooks.StatusSourceClaude {
-		return command, env, nil
-	}
-	settingsPath, err := m.hooks.EnsureSettings()
-	if err != nil {
-		return "", nil, err
-	}
-	if err := m.hooks.Remove(id); err != nil {
-		return "", nil, err
-	}
-	env[hooks.EnvStatusFile] = m.hooks.StatusFile(id)
-	return command + " --settings " + tmux.ShellQuote(settingsPath), env, nil
-}
-
-// mcpExecutable names the binary generated MCP configs point at: the
-// running manager itself, falling back to the PATH-resolved name.
-func mcpExecutable() string {
-	if exe, err := os.Executable(); err == nil {
-		return exe
-	}
-	return "agent-manager"
+	return launch.Environment(m.hooks, toolName, tool, baseCommand, id)
 }
 
 func (m *Model) openGroupForm() {

@@ -38,8 +38,7 @@ type CreateTerminalOptions struct {
 }
 
 type Terminals struct {
-	configDir string
-	newDriver func() (*tmux.Driver, error)
+	commands
 }
 
 func NewTerminals(configDir string) *Terminals {
@@ -47,32 +46,39 @@ func NewTerminals(configDir string) *Terminals {
 }
 
 func newTerminals(configDir string, newDriver func() (*tmux.Driver, error)) *Terminals {
-	return &Terminals{configDir: configDir, newDriver: newDriver}
+	return &Terminals{commands: commands{configDir: configDir, newDriver: newDriver}}
 }
 
-type terminalRuntime struct {
+// commands is the shared plumbing of every managed-pane command: the
+// manager's config directory and the tmux driver behind its socket.
+type commands struct {
+	configDir string
+	newDriver func() (*tmux.Driver, error)
+}
+
+type runtime struct {
 	cfg    config.Config
 	store  *store.Store
 	driver *tmux.Driver
 }
 
-func (t *Terminals) open() (*terminalRuntime, error) {
-	cfg, err := config.LoadDir(t.configDir)
+func (c *commands) open() (*runtime, error) {
+	cfg, err := config.LoadDir(c.configDir)
 	if err != nil {
 		return nil, err
 	}
-	driver, err := t.newDriver()
+	driver, err := c.newDriver()
 	if err != nil {
 		return nil, err
 	}
-	st, err := store.Open(filepath.Join(t.configDir, "state.db"))
+	st, err := store.Open(filepath.Join(c.configDir, "state.db"))
 	if err != nil {
 		return nil, err
 	}
-	return &terminalRuntime{cfg: cfg, store: st, driver: driver}, nil
+	return &runtime{cfg: cfg, store: st, driver: driver}, nil
 }
 
-func (r *terminalRuntime) caller(sessionID string) (store.Session, error) {
+func (r *runtime) caller(sessionID string) (store.Session, error) {
 	if err := validSession(sessionID); err != nil {
 		return store.Session{}, err
 	}
@@ -83,7 +89,7 @@ func (r *terminalRuntime) caller(sessionID string) (store.Session, error) {
 	return sess, err
 }
 
-func (r *terminalRuntime) terminal(id string) (store.Session, error) {
+func (r *runtime) terminal(id string) (store.Session, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return store.Session{}, errors.New("terminal_id is empty; call list_terminals to get one")
@@ -104,7 +110,7 @@ func (r *terminalRuntime) terminal(id string) (store.Session, error) {
 	return sess, nil
 }
 
-func (r *terminalRuntime) info(sess store.Session, running bool) Terminal {
+func (r *runtime) info(sess store.Session, running bool) Terminal {
 	dir := sess.Cwd
 	if running {
 		if current, err := r.driver.PaneCurrentPath(sess.ID); err == nil {
@@ -163,7 +169,7 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if !ok {
 		return Terminal{}, errors.New("no shell configured; add a tool block with shell = true to config.toml")
 	}
-	group, dir, err := runtime.createTarget(caller, opts)
+	group, dir, err := runtime.createTarget(caller, opts.Group, opts.Directory)
 	if err != nil {
 		return Terminal{}, err
 	}
@@ -187,7 +193,11 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	return runtime.info(sess, true), nil
 }
 
-func (r *terminalRuntime) createTarget(caller store.Session, opts CreateTerminalOptions) (string, string, error) {
+// createTarget resolves the group and directory a new pane opens in.
+// A nil requested group inherits the caller's; an explicit one must
+// already exist. An explicit directory wins over the group's inherited
+// default path, which in turn wins over the caller's own directory.
+func (r *runtime) createTarget(caller store.Session, requestedGroup *string, directory string) (string, string, error) {
 	group := caller.Group
 	groups, err := r.store.Groups()
 	if err != nil {
@@ -199,22 +209,22 @@ func (r *terminalRuntime) createTarget(caller store.Session, opts CreateTerminal
 		byName[candidate.Name] = candidate
 		archived[candidate.Name] = candidate.Archived
 	}
-	if opts.Group != nil {
-		group = strings.TrimSpace(*opts.Group)
+	if requestedGroup != nil {
+		group = strings.TrimSpace(*requestedGroup)
 		if group != "" {
 			if _, ok := byName[group]; !ok {
-				return "", "", fmt.Errorf("group %q does not exist", group)
+				return "", "", fmt.Errorf("group %q does not exist; call list_groups for the existing ones or create_group to add it", group)
 			}
 		}
 	}
 	if group != "" && store.EffectivelyArchived(archived, group) {
 		return "", "", fmt.Errorf("group %q is archived; restore it in Agent Manager first", group)
 	}
-	if strings.TrimSpace(opts.Directory) != "" {
-		dir, err := resolveTerminalDirectory(opts.Directory)
+	if strings.TrimSpace(directory) != "" {
+		dir, err := resolveTerminalDirectory(directory)
 		return group, dir, err
 	}
-	if opts.Group != nil {
+	if requestedGroup != nil {
 		for current := group; current != ""; current = parentGroup(current) {
 			if candidate := byName[current].Path; candidate != "" {
 				if dir, err := resolveTerminalDirectory(candidate); err == nil {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -227,7 +228,7 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 	m := buildModel(t)
 	tool := m.cfg.Tools["claude-hooked"]
 
-	command, _, err := m.buildLaunch("claude", tool, withPrompt(tool, tool.Command, "fix the bug"), "prompt01")
+	command, _, err := m.buildLaunch("claude", tool, launch.WithPrompt(tool, tool.Command, "fix the bug"), "prompt01")
 	if err != nil {
 		t.Fatalf("buildLaunch: %v", err)
 	}
@@ -236,14 +237,14 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 	}
 
 	flagged := config.Tool{Command: "opencode", PromptFlag: "--prompt"}
-	if got := withPrompt(flagged, flagged.Command, "do it"); got != "opencode --prompt 'do it'" {
+	if got := launch.WithPrompt(flagged, flagged.Command, "do it"); got != "opencode --prompt 'do it'" {
 		t.Fatalf("flagged compose = %q", got)
 	}
-	if got := withPrompt(tool, tool.Command, ""); got != "cat" {
+	if got := launch.WithPrompt(tool, tool.Command, ""); got != "cat" {
 		t.Fatalf("empty prompt should leave the command untouched, got %q", got)
 	}
 	sent := config.Tool{Command: "hermes --cli", PromptMode: "send"}
-	if got := withPrompt(sent, sent.Command, "do it"); got != sent.Command {
+	if got := launch.WithPrompt(sent, sent.Command, "do it"); got != sent.Command {
 		t.Fatalf("send-mode prompt changed launch command to %q", got)
 	}
 }
@@ -366,29 +367,6 @@ func TestFormRejectsDashLeadingPrompt(t *testing.T) {
 	}
 }
 
-func TestLaunchPromptInjectsDirectiveOnlyForAutoNamedWithPrompt(t *testing.T) {
-	withDirective := launchPrompt("build the api", true)
-	if !strings.HasPrefix(withDirective, renameDirective+"\n\n") || !strings.HasSuffix(withDirective, "build the api") {
-		t.Fatalf("auto-named prompt should carry the directive, got %q", withDirective)
-	}
-	named := launchPrompt("build the api", false)
-	if !strings.HasPrefix(named, renameAvailableNote+"\n\n") || !strings.HasSuffix(named, "build the api") {
-		t.Fatalf("custom-named prompt should note rename is optional later, got %q", named)
-	}
-	if strings.Contains(named, "Run rename only this once") || strings.HasPrefix(named, renameDirective) {
-		t.Fatalf("custom-named prompt must not force a rename, got %q", named)
-	}
-	if got := launchPrompt("", true); got != "" {
-		t.Fatalf("promptless session should stay clean, got %q", got)
-	}
-	if got := launchPrompt("/compact keep the api notes", true); got != "/compact keep the api notes" {
-		t.Fatalf("slash-command prompt should stay clean, got %q", got)
-	}
-	if got := launchPrompt("/compact keep the api notes", false); got != "/compact keep the api notes" {
-		t.Fatalf("named slash-command prompt should stay clean, got %q", got)
-	}
-}
-
 // Only a spawn that hands over the rename directive has a name to wait for;
 // one the user named itself is already at its final name.
 func TestSpawnAwaitsARenameOnlyWhenItAsksForOne(t *testing.T) {
@@ -421,7 +399,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	slashID := m.sessionRows()[0].ID
-	if !sessionHasPendingInput(t, m, slashID, deferredRenameDirective) {
+	if !sessionHasPendingInput(t, m, slashID, launch.DeferredRenameDirective) {
 		t.Fatal("slash-prompt spawn should defer the directive")
 	}
 
@@ -436,7 +414,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 		if sess.ID == slashID {
 			continue
 		}
-		if sessionHasPendingInput(t, m, sess.ID, deferredRenameDirective) {
+		if sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
 			t.Fatalf("session %q should not defer a directive", sess.Name)
 		}
 	}
@@ -454,7 +432,7 @@ func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 	// already present in the pane is success; a missing mark before any
 	// send is not possible after spawnSession.
 	deadline := time.Now().Add(5 * time.Second)
-	for sessionHasPendingInput(t, m, sess.ID, deferredRenameDirective) {
+	for sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
 		if time.Now().After(deadline) {
 			pane, _ := m.tmux.CapturePane(sess.ID)
 			t.Fatalf("directive never sent; pane:\n%s", pane)

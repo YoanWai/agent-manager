@@ -148,7 +148,7 @@ Agents usually work in git worktrees, one branch per worktree, and those worktre
 
 ## MCP: how agents discover these commands
 
-Every session of an MCP-capable tool carries the agent-manager MCP server on spawn and revive, so its agent sees the session and terminal operations as native tools with descriptions telling it when to call each: no prompt injection, no per-project setup. Pi is the one tool without an MCP client, so its sessions rely on the subcommands alone. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
+Every session of an MCP-capable tool carries the agent-manager MCP server on spawn and revive, so its agent sees the whole workspace as native tools with descriptions telling it when to call each: its own session, the other agent sessions running beside it, the groups they are filed under, and the managed terminals. No prompt injection, no per-project setup. Pi is the one tool without an MCP client, so its sessions rely on the subcommands alone. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
 
 | Tool | Action |
 |------|--------|
@@ -156,16 +156,35 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `review_repo` | Declare the repo or worktree under review |
 | `review_base` | Declare or clear the review base ref |
 | `review_mode` | Select the diff scope review opens with |
+| `list_sessions` | List every agent session with its id, CLI, group, directory, worktree branch and status |
+| `create_session` | Start another agent CLI on a named task, optionally in its own git worktree |
+| `read_session` | Read what another agent's screen currently shows |
+| `send_session` | Type a message into another agent's prompt as its next turn |
+| `revive_session` | Bring a dead session back, resuming the conversation it held |
+| `kill_session` | Stop a running agent, keeping its row and last screen |
+| `archive_session` | File a finished session out of the active list, or restore it |
+| `list_groups` | List groups with their default directories, worktree defaults and session counts |
+| `create_group` | Add a group, nested with a slash path, to file a fleet under |
 | `list_terminals` | List active managed terminals and their current directories |
 | `create_terminal` | Open a terminal beside the calling agent, or in an explicit group or directory |
 | `send_terminal` | Submit a command or send exact keys to a running terminal |
 | `read_terminal` | Read the plain-text content currently visible in a terminal |
 
+### Spawning and steering other agents
+
+`create_session` gives an agent the same spawn the `n` form gives a human: a name, a CLI, a group, a working directory, a first prompt and a worktree choice. A session created this way is a normal row in the list, and the manager picks it up on its next poll, so it attaches, revives, forks and reviews like any other.
+
+Each field falls back the way the form does. The CLI defaults to the one the calling agent runs, the group and directory default to the caller's, an explicit group uses that group's nearest inherited default path, and an explicit directory wins over both. A name is the agent's to choose and should describe the work; leaving it empty generates a placeholder and asks the new session to rename itself, exactly as a promptless spawn from the form does. Passing `worktree: true` adds a git worktree and branch off the directory's repo, which is what keeps several agents working in one project from editing the same checkout; omitting it inherits the group's default, then the global setting.
+
+`read_session` returns the target's current screen, and its last captured screen once the session has stopped. `send_session` types a message into a live agent's prompt, the same delivery the quick prompt bar uses, so the other agent reads it as its next turn; it refuses terminal ids, which take `send_terminal` instead. `kill_session` ends the process and leaves the row dead with its last screen, `revive_session` brings it back on the conversation it held, and `archive_session` files a finished row away or restores it.
+
+### Terminals
+
 `create_terminal` defaults to the calling agent's group and live pane directory. An explicit group uses that group's nearest inherited default path; an explicit directory wins over both. `send_terminal` accepts exactly one of a command, which is pasted and submitted with Enter, or a sequence of tmux key names such as `C-c`, `Up`, and `Enter`. `read_terminal` returns the current screen rather than unlimited scrollback.
 
-The server's MCP initialization instructions teach agents to use this workflow without waiting for an explicit request: list and reuse a terminal before long-running, output-heavy or continuously monitored work; create one only when needed; send the command; then read its screen until the result is clear. The same guidance is repeated in the individual tool descriptions for clients that expose tools but not server instructions. Short one-shot commands stay in the agent's normal execution path when a separate persistent terminal adds no value.
+The server's MCP initialization instructions teach agents to use these workflows without waiting for an explicit request: list sessions and delegate a parallel workstream to a named `create_session` before running it in series; list and reuse a terminal before long-running, output-heavy or continuously monitored work; create one only when needed; send the command; then read its screen until the result is clear. The same guidance is repeated in the individual tool descriptions for clients that expose tools but not server instructions. Short one-shot commands stay in the agent's normal execution path when a separate persistent terminal adds no value.
 
-Sending a command to a terminal executes it on the user's machine. Agents should treat `send_terminal` with the same care as typing into an attached shell: inspect the target returned by `list_terminals`, avoid destructive commands unless the user asked for them, and read the result before continuing.
+Every one of these tools acts on the user's machine. Agents should treat `send_terminal` with the same care as typing into an attached shell, and treat `create_session` and `kill_session` as what they are: starting a real agent process that spends tokens, and interrupting one that may be mid-task. Inspect the target returned by `list_sessions` or `list_terminals` first, and read the result before continuing.
 
 Registration is per tool. Claude gets a generated `--mcp-config` file. Codex gets `-c mcp_servers...` overrides. OpenCode gets an `OPENCODE_CONFIG` merge file. Grok and Gemini each get a one-time `mcp add --scope user` entry on their first launch. Hermes gets its own one-time `mcp add` flow, which needs the MCP SDK its installer treats as optional: a Hermes still missing it refuses the spawn with a dialog pointing at `hermes setup`, so a Hermes session always carries these tools.
 

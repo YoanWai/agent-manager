@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -209,14 +210,7 @@ func (m *Model) reviveSession(sess store.Session) error {
 	if !isDir(sess.Cwd) {
 		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
-	baseCommand := tool.ReviveCommand
-	if baseCommand == "" {
-		baseCommand = tool.Command
-	}
-	if sess.AgentSessionID != "" && tool.ResumeByIDCommand != "" {
-		baseCommand = strings.ReplaceAll(tool.ResumeByIDCommand, "{id}", sess.AgentSessionID)
-	}
-	return m.relaunchSession(sess, tool, baseCommand, tool.DefaultStatus, nil)
+	return m.relaunchSession(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), tool.DefaultStatus, nil)
 }
 
 // relaunchSession puts a dead session's row back on a running tmux window
