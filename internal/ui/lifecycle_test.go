@@ -216,9 +216,9 @@ func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
 	}
 	createSession(t, m, "reviewme", t.TempDir(), "")
 	m.selectSessionRow(t, "reviewme")
-	t.Cleanup(func() { m.tmux.ClearReviewRequest() })
+	t.Cleanup(func() { m.tmux.ClearRequest() })
 
-	if _, err := tmuxCmd("set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
+	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, _ := m.Update(attachDoneMsg{})
@@ -227,12 +227,12 @@ func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
 		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 
-	requested, err := m.tmux.ReviewRequested()
+	request, err := m.tmux.PendingRequest()
 	if err != nil {
-		t.Fatalf("ReviewRequested: %v", err)
+		t.Fatalf("PendingRequest: %v", err)
 	}
-	if requested {
-		t.Fatal("opening review should consume the marker")
+	if request != "" {
+		t.Fatalf("opening review should consume the marker, got %q", request)
 	}
 }
 
@@ -240,7 +240,7 @@ func TestAttachDoneStaysInListWithoutMarker(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "plainexit", t.TempDir(), "")
 	m.selectSessionRow(t, "plainexit")
-	if err := m.tmux.ClearReviewRequest(); err != nil {
+	if err := m.tmux.ClearRequest(); err != nil {
 		t.Fatalf("clear marker: %v", err)
 	}
 
