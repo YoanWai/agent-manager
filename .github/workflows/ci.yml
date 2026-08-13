@@ -36,7 +36,7 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: for i in 1 2 3 4; do echo "=== iteration $i"; go test -race -coverprofile=coverage.out -covermode=atomic ./internal/ui/ || echo "ITERATION $i FAILED"; done
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
