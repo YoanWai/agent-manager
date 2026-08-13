@@ -71,3 +71,4 @@ the release catalog and editorial feed from GitHub. Normal background checks do
 no network or parsing work on the render path. The release catalog checks every
 10 minutes with an HTTP ETag, while the editorial feed's cache lasts 6 hours;
 both schedules are independent of the installed version.
+
