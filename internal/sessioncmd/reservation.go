@@ -128,13 +128,24 @@ func (s *Sessions) ReleaseFiles(sessionID string, patterns []string) (int, error
 	if err != nil {
 		return 0, err
 	}
-	if len(patterns) == 0 {
+	cleaned := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		if pattern = strings.TrimSpace(pattern); pattern != "" {
+			cleaned = append(cleaned, pattern)
+		}
+	}
+	// Releasing everything is what an omitted list means, never what a list
+	// that turned out to hold only blanks means.
+	if len(patterns) > 0 && len(cleaned) == 0 {
+		return 0, errors.New("no usable paths given; omit paths entirely to release every lease this session holds")
+	}
+	if len(cleaned) == 0 {
 		released, err := runtime.store.Release(caller.ID, "")
 		return int(released), err
 	}
 	total := int64(0)
-	for _, pattern := range patterns {
-		released, err := runtime.store.Release(caller.ID, strings.TrimSpace(pattern))
+	for _, pattern := range cleaned {
+		released, err := runtime.store.Release(caller.ID, pattern)
 		if err != nil {
 			return int(total), err
 		}

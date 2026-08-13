@@ -1,6 +1,7 @@
 package sessioncmd
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +30,17 @@ type sessionHarness struct {
 const sessionConfig = `[tools.claude]
 command = "echo"
 revive_command = "echo resumed"
+default_status = "idle"
+activity_cutoff = "(?m)^\u276f"
+
+[tools.flagged]
+command = "echo"
+prompt_flag = "-n"
+default_status = "idle"
+activity_cutoff = "(?m)^\u276f"
+
+[tools.blind]
+command = "echo"
 default_status = "idle"
 
 [tools.terminal]
@@ -161,6 +173,11 @@ func TestSessionsCreateRejectsShellsUnknownToolsAndFlagPrompts(t *testing.T) {
 	if _, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Prompt: "--help"}); err == nil ||
 		!strings.Contains(err.Error(), "read it as a flag") {
 		t.Fatalf("flag-like prompt error = %v", err)
+	}
+	// A tool that takes its prompt behind a flag can carry one safely, and a
+	// bullet list is an ordinary way to write a task.
+	if _, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "flagged", Prompt: "- do the thing"}); err != nil {
+		t.Fatalf("a flagged tool should accept a prompt starting with a dash: %v", err)
 	}
 	missing := "missing-group"
 	if _, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Group: &missing}); err == nil ||
@@ -397,5 +414,38 @@ func TestSessionsCreateOpensItsOwnWorktreeWhenAsked(t *testing.T) {
 	}
 	if stored.WorktreeRepo == "" || stored.WorktreeBranch != created.Branch {
 		t.Fatalf("stored worktree = %+v", stored)
+	}
+}
+
+func TestSendAndWaitRefuseATargetTheManagerNoLongerPolls(t *testing.T) {
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := h.sessions.Archive(h.caller.ID, created.ID, true); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	// The pane is still alive, so nothing else would catch this: an archived
+	// row is skipped by the poller, and the message would queue forever.
+	if _, err := h.sessions.Send(h.caller.ID, created.ID, "rebase on main"); err == nil ||
+		!strings.Contains(err.Error(), "archived") {
+		t.Fatalf("send to an archived session = %v", err)
+	}
+	if _, err := h.sessions.Wait(context.Background(), h.caller.ID, created.ID, nil, time.Second); err == nil ||
+		!strings.Contains(err.Error(), "archived") {
+		t.Fatalf("wait on an archived session = %v", err)
+	}
+}
+
+func TestSendRefusesAToolTheManagerCannotReadReadinessFrom(t *testing.T) {
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "blind", Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := h.sessions.Send(h.caller.ID, created.ID, "rebase on main"); err == nil ||
+		!strings.Contains(err.Error(), "activity_cutoff") {
+		t.Fatalf("send to a tool with no readiness marker = %v", err)
 	}
 }

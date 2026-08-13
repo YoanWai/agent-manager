@@ -22,6 +22,10 @@ const (
 	// gets it only where its own client allows it.
 	MaxWaitTimeout = 5 * time.Minute
 	minWaitPoll    = 500 * time.Millisecond
+
+	WaitReached  = "reached"
+	WaitTimedOut = "timed_out"
+	WaitDied     = "died"
 	// existsEvery keeps the liveness check off most ticks, since it forks a
 	// tmux process, while the status read is a cheap indexed lookup.
 	existsEvery = 4
@@ -35,7 +39,8 @@ var restingStates = []string{status.Finished, status.Waiting, status.Idle, statu
 
 type WaitResult struct {
 	Session      Session `json:"session"`
-	Reached      bool    `json:"reached" jsonschema:"true when the session reached one of the awaited states, false when the wait timed out"`
+	Reached      bool    `json:"reached" jsonschema:"true when the session reached one of the awaited states"`
+	Outcome      string  `json:"outcome" jsonschema:"reached (it arrived at an awaited state), died (its pane is gone and dead was not among them), or timed_out"`
 	Waited       string  `json:"waited" jsonschema:"how long the wait lasted"`
 	ManagerAwake bool    `json:"manager_awake" jsonschema:"whether Agent Manager is running; session status only advances while it is, so a wait against a closed manager can only ever observe dead"`
 }
@@ -98,6 +103,9 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 	if target.ID == caller.ID {
 		return WaitResult{}, errors.New("a session cannot wait on itself; it is the one making this call")
 	}
+	if target.Archived {
+		return WaitResult{}, fmt.Errorf("session %s is archived, so its status no longer advances; restore it with archive_session archived false first", target.ID)
+	}
 
 	wanted := map[string]bool{}
 	for _, state := range states {
@@ -128,13 +136,21 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 			state = status.Dead
 		}
 		if reached := wanted[state]; reached || !time.Now().Before(deadline) {
+			timedOut := !reached
 			// The cheap ticks trust the stored status; the answer we hand
 			// back is worth one more fork to get right.
 			running = runtime.driver.Exists(current.ID)
 			if !running {
 				state = status.Dead
 			}
-			return runtime.waitResult(current, running, state, started, wanted[state])
+			outcome := WaitTimedOut
+			switch {
+			case wanted[state]:
+				outcome = WaitReached
+			case !running && !timedOut:
+				outcome = WaitDied
+			}
+			return runtime.waitResult(current, running, state, started, outcome)
 		}
 		select {
 		case <-ctx.Done():
@@ -144,7 +160,7 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 	}
 }
 
-func (r *runtime) waitResult(sess store.Session, running bool, state string, started time.Time, reached bool) (WaitResult, error) {
+func (r *runtime) waitResult(sess store.Session, running bool, state string, started time.Time, outcome string) (WaitResult, error) {
 	awake, err := r.managerAwake(time.Now())
 	if err != nil {
 		return WaitResult{}, err
@@ -153,7 +169,8 @@ func (r *runtime) waitResult(sess store.Session, running bool, state string, sta
 	info.Status = state
 	return WaitResult{
 		Session:      info,
-		Reached:      reached,
+		Reached:      outcome == WaitReached,
+		Outcome:      outcome,
 		Waited:       time.Since(started).Round(time.Second).String(),
 		ManagerAwake: awake,
 	}, nil

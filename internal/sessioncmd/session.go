@@ -99,6 +99,23 @@ func (r *runtime) agent(id string) (store.Session, error) {
 	return sess, nil
 }
 
+// deliverable refuses a target the manager would never type into. An
+// archived session keeps its pane, so it looks reachable, but the poller
+// skips archived rows and a message queued for one would sit unread until
+// the queue filled up.
+func (r *runtime) deliverable(target store.Session) error {
+	if !r.driver.Exists(target.ID) {
+		return fmt.Errorf("session %s is not running; revive it with revive_session first", target.ID)
+	}
+	if target.Archived {
+		return fmt.Errorf("session %s is archived, so Agent Manager no longer polls it; restore it with archive_session archived false first", target.ID)
+	}
+	if r.cfg.Tools[target.Tool].ActivityCutoff == "" {
+		return fmt.Errorf("tool %q declares no activity_cutoff, so Agent Manager cannot tell when %s is ready to read a message; add one to config.toml", target.Tool, target.ID)
+	}
+	return nil
+}
+
 func (r *runtime) sessionInfo(sess store.Session, running, self bool) Session {
 	dir := sess.Cwd
 	if running {
@@ -261,8 +278,8 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		return Session{}, err
 	}
 	prompt := strings.TrimSpace(opts.Prompt)
-	if strings.HasPrefix(prompt, "-") {
-		return Session{}, errors.New(`prompt cannot start with "-": the tool would read it as a flag`)
+	if strings.HasPrefix(prompt, "-") && tool.PromptFlag == "" {
+		return Session{}, fmt.Errorf(`prompt cannot start with "-" for %s, which takes its prompt as a bare argument and would read it as a flag`, toolName)
 	}
 	name := strings.TrimSpace(opts.Name)
 	autoNamed := name == ""
@@ -399,7 +416,7 @@ func agentToolNames(r *runtime) []string {
 
 type SendResult struct {
 	MessageID     int64 `json:"message_id" jsonschema:"pass to message_status to see whether it arrived"`
-	QueuePosition int   `json:"queue_position" jsonschema:"how many messages are ahead of this one in the recipient's queue"`
+	QueuePosition int   `json:"queue_position" jsonschema:"this message's place in the recipient's queue; 1 means it is next"`
 	ManagerAwake  bool  `json:"manager_awake" jsonschema:"whether Agent Manager is running to deliver it; a message queued while it is closed waits until it opens again"`
 }
 
@@ -428,8 +445,8 @@ func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error)
 	if target.ID == caller.ID {
 		return SendResult{}, errors.New("a session cannot message itself")
 	}
-	if !runtime.driver.Exists(target.ID) {
-		return SendResult{}, fmt.Errorf("session %s is not running; revive it with revive_session first", target.ID)
+	if err := runtime.deliverable(target); err != nil {
+		return SendResult{}, err
 	}
 	now := time.Now()
 	id, err := runtime.store.Enqueue(store.InboxMessage{

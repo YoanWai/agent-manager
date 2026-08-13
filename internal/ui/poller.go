@@ -300,7 +300,11 @@ func (p *poller) refreshOnce() tea.Msg {
 				newStatus = derived
 				// Launch inputs open the conversation, so they go first; a
 				// message from another agent waits its turn behind them.
-				if len(sessions[i].PendingInputs) == 0 {
+				// A launch input sent this tick leaves pane and derived
+				// describing the moment before it was typed, so the message
+				// waits for the next capture rather than landing on a pane
+				// that is already starting a turn.
+				if !sent && len(sessions[i].PendingInputs) == 0 {
 					if err := p.maybeDeliverInbox(sess, pane, derived, agentAlive); err != nil {
 						return errMsg{err}
 					}
@@ -558,7 +562,12 @@ func (p *poller) maybeDeliverInbox(sess store.Session, pane, derived string, age
 	if _, ready := p.engine.ActivityRegion(sess.Tool, clean); !ready {
 		return nil
 	}
-	if state, matched := p.engine.RuleMatch(sess.Tool, clean); matched && state != status.Finished {
+	// Only the rule states that mean the pane is mid-turn or holding a
+	// dialog block delivery. A tool whose rules also classify resting
+	// frames (pi marks a resumed session idle) would otherwise pin the
+	// gate shut for the life of the session.
+	if state, matched := p.engine.RuleMatch(sess.Tool, clean); matched &&
+		(state == status.Working || state == status.Waiting) {
 		return nil
 	}
 	msg, queued, err := p.store.HeadMessage(sess.ID)

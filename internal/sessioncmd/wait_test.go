@@ -112,3 +112,25 @@ func TestWaitHonoursCancellation(t *testing.T) {
 		t.Fatalf("cancellation was not honoured promptly: %s", elapsed)
 	}
 }
+
+func TestWaitSeparatesADeathFromATimeout(t *testing.T) {
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := h.store.UpdateStatus(created.ID, status.Finished); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.driver.Kill(created.ID); err != nil {
+		t.Fatal(err)
+	}
+	// The stored status says finished, which is awaited, but the pane is gone.
+	result, err := h.sessions.Wait(context.Background(), h.caller.ID, created.ID, []string{"finished"}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if result.Reached || result.Outcome != WaitDied {
+		t.Fatalf("a session that died before the awaited state = %+v", result)
+	}
+}

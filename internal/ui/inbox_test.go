@@ -158,3 +158,64 @@ func TestInboxRetiresAMessageItCannotProveWasDelivered(t *testing.T) {
 		t.Fatalf("unconfirmed message was resent:\n%s", pane)
 	}
 }
+
+// The pane and the derived status are captured once per poll. A launch
+// input typed during that poll leaves both describing the moment before
+// it was sent, so a message delivered on the same tick would land on an
+// agent that is already starting a turn.
+func TestInboxWaitsAPollAfterALaunchInputIsTyped(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("send-tool", "", t.TempDir(), "", "", true, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess, err := m.store.Get(m.sessionRows()[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sess.PendingInputs) == 0 {
+		t.Fatal("fixture no longer reproduces the hazard: the spawn must queue a launch input")
+	}
+	queueMessage(t, m, sess.ID, "rebase on main")
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		m.applyCmd(t, m.refreshCmd())
+		current, err := m.store.Get(sess.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(current.PendingInputs) > 0 {
+			continue
+		}
+		// The launch input has gone out. On that same poll the message must
+		// still be queued; it may only leave on a later one.
+		queued, err := m.store.QueuedCount(sess.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if queued == 0 {
+			t.Fatal("message was delivered on the same poll that typed the launch input")
+		}
+		return
+	}
+	t.Fatal("the launch input was never delivered")
+}
+
+// A rule that classifies a resting frame must not pin the gate shut: pi
+// marks a resumed session idle, and every message to it would wait forever.
+func TestInboxDeliversWhenARuleReportsARestingState(t *testing.T) {
+	m := buildModel(t)
+	sess := spawnedSession(t, m, "claude-hooked")
+	queueMessage(t, m, sess.ID, "rebase on main")
+
+	resting := "error: something went wrong earlier\n❯ "
+	if state, matched := m.poller.engine.RuleMatch(sess.Tool, resting); !matched || state == status.Working || state == status.Waiting {
+		t.Fatalf("fixture no longer reproduces the case: rule match = %q, %v", state, matched)
+	}
+	if err := m.poller.maybeDeliverInbox(sess, resting, status.Idle, true); err != nil {
+		t.Fatalf("maybeDeliverInbox: %v", err)
+	}
+	if queued, _ := m.store.QueuedCount(sess.ID); queued != 0 {
+		t.Fatal("a resting rule state blocked delivery for good")
+	}
+}

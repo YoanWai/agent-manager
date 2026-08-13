@@ -306,14 +306,17 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			"The other agent has no view of this conversation, so send a self-contained instruction. " +
 			"The message is not typed in the instant you send it: Agent Manager holds it until that agent is at rest, so it can never land on an approval prompt and answer it. " +
 			"It arrives labelled as coming from another agent rather than from the user, and cannot approve permissions or change that agent's configuration. " +
-			"Returns a message id for message_status; call read_session to see what the agent did with it.",
+			"Returns a message id for message_status; call read_session to see what the agent did with it. " +
+			"Guard rails a loop would otherwise hit: identical text to the same session inside ten minutes is refused as a duplicate, " +
+			"a sender is held to five messages a minute per recipient, and a recipient holds at most twenty undelivered messages. " +
+			"When one of those refuses a send, call message_status on the earlier message rather than sending again.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendSessionArgs) (*mcp.CallToolResult, sessioncmd.SendResult, error) {
 		result, err := sessions.Send(sessionID, args.SessionID, args.Message)
 		if err != nil {
 			return nil, sessioncmd.SendResult{}, err
 		}
-		text := fmt.Sprintf("queued message %d for session %s, %d ahead of it", result.MessageID, args.SessionID, result.QueuePosition-1)
+		text := fmt.Sprintf("queued message %d for session %s at position %d", result.MessageID, args.SessionID, result.QueuePosition)
 		if !result.ManagerAwake {
 			text += "; Agent Manager is not running, so it waits until the user opens it"
 		}
@@ -343,6 +346,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			"Call it after handing an agent a task when your next step depends on its result: one parked call costs a fraction of repeated screen reads. " +
 			"By default it returns as soon as the session reaches any state that means it stopped (finished, waiting, idle, errored or dead); pass until to wait for particular states. " +
 			"A timeout is a normal answer, not a failure: the result carries reached false and the state the session is actually in, so check reached before assuming the work is done. " +
+			"outcome says which of the three endings it was: reached, timed_out, or died when the session's pane went away and dead was not among the states you asked for. " +
 			"Follow it with read_session to see what the agent produced.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args waitSessionArgs) (*mcp.CallToolResult, sessioncmd.WaitResult, error) {
@@ -351,8 +355,11 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			return nil, sessioncmd.WaitResult{}, err
 		}
 		text := fmt.Sprintf("%s is %s after %s", formatSession(result.Session), result.Session.Status, result.Waited)
-		if !result.Reached {
+		switch result.Outcome {
+		case sessioncmd.WaitTimedOut:
 			text = "timed out: " + text
+		case sessioncmd.WaitDied:
+			text = "the session died before reaching any awaited state: " + text
 		}
 		if !result.ManagerAwake {
 			text += "; Agent Manager is not running, so this status is the last one it recorded"

@@ -195,11 +195,11 @@ Each field falls back the way the form does. The CLI defaults to the one the cal
 
 The message arrives labelled as coming from another session rather than from the user, with the sender's name and the id to answer on. A receiving agent treats it as it would any untrusted input: it cannot approve a permission prompt, and it cannot change that session's configuration. Queue caps, a per-sender rate limit and a whitespace-insensitive fingerprint keep two agents from talking each other into a loop. `message_status` reports whether a message is still queued, has been delivered, or has been answered; answering a session acknowledges everything it sent.
 
-Delivery needs the manager running, since its poller is what types the message in. A message queued while Agent Manager is closed waits until it opens again, and `send_session` says so in its result rather than implying the message landed.
+Delivery needs the manager running, since its poller is what types the message in. A message queued while Agent Manager is closed waits until it opens again, and `send_session` says so in its result rather than implying the message landed. A target that could never be reached is refused outright rather than queued: an archived session, which the poller skips, and a tool declaring no `activity_cutoff`, which leaves nothing to read readiness from.
 
 ### Waiting and the shared task list
 
-`wait_for_session` parks a single tool call until a session reaches one of the states that mean it stopped working, so an agent that spawned work does not read screens in a loop while it waits. A timeout returns the session's current state with `reached` false, because a timeout is an answer rather than a failure. It is an ordinary tool call, which is what makes it work with every MCP client.
+`wait_for_session` parks a single tool call until a session reaches one of the states that mean it stopped working, so an agent that spawned work does not read screens in a loop while it waits. A timeout returns the session's current state with `reached` false, because a timeout is an answer rather than a failure; `outcome` separates that from the session dying before it ever reached one of the awaited states. It is an ordinary tool call, which is what makes it work with every MCP client.
 
 The task list is the manager's shared to-do list, visible to every session. `create_task` puts work on it, `claim_task` takes a piece (by id, or the oldest one nothing is blocking), and `finish_task` marks it done, which unblocks every task that depended on it. A claim is a single atomic write, so two agents racing for the same task cannot both win: the loser is told who holds it. A session that is deleted hands its claims back to the list rather than parking them forever.
 

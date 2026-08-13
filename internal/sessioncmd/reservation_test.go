@@ -121,3 +121,21 @@ func TestALapsedLeaseStopsBlockingAndReleaseClearsTheRest(t *testing.T) {
 		t.Fatalf("leases survived a full release: %+v", listed)
 	}
 }
+
+func TestReleasingBlankPathsDoesNotDropEveryLease(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := h.sessions.Reserve(h.caller.ID, []string{"a.go", "b.go"}, "", "", 0); err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+	if _, err := h.sessions.ReleaseFiles(h.caller.ID, []string{"  "}); err == nil ||
+		!strings.Contains(err.Error(), "omit paths entirely") {
+		t.Fatalf("blank release error = %v", err)
+	}
+	listed, err := h.sessions.Reservations(h.caller.ID)
+	if err != nil {
+		t.Fatalf("Reservations: %v", err)
+	}
+	if len(listed) != 2 {
+		t.Fatalf("a blank path released real leases: %+v", listed)
+	}
+}
