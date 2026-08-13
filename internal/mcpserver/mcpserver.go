@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -98,6 +99,12 @@ type listGroupsOutput struct {
 	Groups []sessioncmd.Group `json:"groups"`
 }
 
+type waitSessionArgs struct {
+	SessionID string   `json:"session_id" jsonschema:"session id returned by list_sessions or create_session"`
+	Until     []string `json:"until,omitempty" jsonschema:"states that end the wait; defaults to every state that means the session stopped working (finished, waiting, idle, errored, dead). Valid values: starting, working, waiting, finished, idle, errored, dead"`
+	TimeoutS  int      `json:"timeout_s,omitempty" jsonschema:"seconds to wait before giving up, default 50, maximum 300; your own client may cut the call short before this"`
+}
+
 type messageStatusArgs struct {
 	MessageID int64 `json:"message_id" jsonschema:"message id returned by send_session"`
 }
@@ -113,6 +120,7 @@ type sessionCommands interface {
 	List(sessionID string) ([]sessioncmd.Session, error)
 	Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error)
 	Send(sessionID, targetID, message string) (sessioncmd.SendResult, error)
+	Wait(ctx context.Context, sessionID, targetID string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error)
 	MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error)
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
@@ -124,7 +132,7 @@ type sessionCommands interface {
 
 const serverInstructions = `Agent Manager runs this conversation in a managed tmux session, beside the user's other agent sessions and terminals. These tools operate that workspace. Use them proactively whenever the conditions below apply. Do not wait for the user to ask.
 
-Delegating to other agents. When a task splits into parts that can run at the same time, or the user asks for parallel work, a second opinion, or another agent, call list_sessions first to see what already runs. Reuse a relevant idle session; otherwise call create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. A session working in a git repo takes worktree: true so parallel agents never edit the same checkout. Follow the work with read_session, and send_session to answer a question or redirect an agent. Group related spawns with create_group, and archive_session once their work is done. Sessions are long-lived and spend the user's tokens, so create one per real workstream, never one per trivial step.
+Delegating to other agents. When a task splits into parts that can run at the same time, or the user asks for parallel work, a second opinion, or another agent, call list_sessions first to see what already runs. Reuse a relevant idle session; otherwise call create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. A session working in a git repo takes worktree: true so parallel agents never edit the same checkout. Follow the work with read_session, and send_session to answer a question or redirect an agent; a message is queued and typed in once that agent is at rest, so it can never land on an approval prompt. When your next step depends on an agent finishing, call wait_for_session rather than reading its screen in a loop. Group related spawns with create_group, and archive_session once their work is done. Sessions are long-lived and spend the user's tokens, so create one per real workstream, never one per trivial step.
 
 Shell work that stays visible. Before a long-running, output-heavy or continuously monitored command such as a test suite, build, development server or log tail, call list_terminals. Reuse a relevant running terminal when possible; otherwise call create_terminal in the current group and directory. Send the command with send_terminal, then read_terminal to inspect its screen, again as needed while it runs, and send keys for interactive input or interruption. Short one-shot commands stay in your normal execution path.
 
@@ -281,6 +289,29 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			text += " (delivered " + state.DeliveredAt + ")"
 		}
 		return textContent(text), state, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "wait_for_session",
+		Description: "Park until another session stops working, instead of calling read_session in a loop. " +
+			"Call it after handing an agent a task when your next step depends on its result: one parked call costs a fraction of repeated screen reads. " +
+			"By default it returns as soon as the session reaches any state that means it stopped (finished, waiting, idle, errored or dead); pass until to wait for particular states. " +
+			"A timeout is a normal answer, not a failure: the result carries reached false and the state the session is actually in, so check reached before assuming the work is done. " +
+			"Follow it with read_session to see what the agent produced.",
+		Annotations: toolAnnotations(true, false, false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args waitSessionArgs) (*mcp.CallToolResult, sessioncmd.WaitResult, error) {
+		result, err := sessions.Wait(ctx, sessionID, args.SessionID, args.Until, time.Duration(args.TimeoutS)*time.Second)
+		if err != nil {
+			return nil, sessioncmd.WaitResult{}, err
+		}
+		text := fmt.Sprintf("%s is %s after %s", formatSession(result.Session), result.Session.Status, result.Waited)
+		if !result.Reached {
+			text = "timed out: " + text
+		}
+		if !result.ManagerAwake {
+			text += "; Agent Manager is not running, so this status is the last one it recorded"
+		}
+		return textContent(text), result, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{

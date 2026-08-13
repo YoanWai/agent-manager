@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -48,22 +49,25 @@ func (f *fakeTerminalCommands) Read(_ string, id string) (sessioncmd.TerminalScr
 }
 
 type fakeSessionCommands struct {
-	listed      []sessioncmd.Session
-	created     sessioncmd.Session
-	screen      sessioncmd.SessionScreen
-	groups      []sessioncmd.Group
-	createdOpts sessioncmd.CreateSessionOptions
-	sentID      string
-	sentMessage string
-	readID      string
-	statusID    int64
-	revivedID   string
-	killedID    string
-	archivedID  string
-	archived    bool
-	groupPath   string
-	groupDir    string
-	err         error
+	listed        []sessioncmd.Session
+	created       sessioncmd.Session
+	screen        sessioncmd.SessionScreen
+	groups        []sessioncmd.Group
+	createdOpts   sessioncmd.CreateSessionOptions
+	sentID        string
+	sentMessage   string
+	readID        string
+	statusID      int64
+	waitedID      string
+	waitedUntil   []string
+	waitedTimeout time.Duration
+	revivedID     string
+	killedID      string
+	archivedID    string
+	archived      bool
+	groupPath     string
+	groupDir      string
+	err           error
 }
 
 func (f *fakeSessionCommands) List(string) ([]sessioncmd.Session, error) {
@@ -79,6 +83,17 @@ func (f *fakeSessionCommands) Send(_ string, id, message string) (sessioncmd.Sen
 	f.sentID = id
 	f.sentMessage = message
 	return sessioncmd.SendResult{MessageID: 7, QueuePosition: 1, ManagerAwake: true}, f.err
+}
+
+func (f *fakeSessionCommands) Wait(_ context.Context, _, id string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error) {
+	f.waitedID = id
+	f.waitedUntil = until
+	f.waitedTimeout = timeout
+	return sessioncmd.WaitResult{
+		Session: sessioncmd.Session{ID: id, Name: "payments-retry", Tool: "claude", Status: "finished"},
+		Reached: true,
+		Waited:  "3s",
+	}, f.err
 }
 
 func (f *fakeSessionCommands) MessageStatus(_ string, messageID int64) (sessioncmd.MessageState, error) {
@@ -455,7 +470,7 @@ func TestListsFleetTools(t *testing.T) {
 	for _, want := range []string{
 		"list_sessions", "create_session", "read_session", "send_session",
 		"revive_session", "kill_session", "archive_session",
-		"list_groups", "create_group", "message_status",
+		"list_groups", "create_group", "message_status", "wait_for_session",
 	} {
 		if !names[want] {
 			t.Fatalf("missing tool %q in %v", want, names)
@@ -491,15 +506,16 @@ func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		descriptions[tool.Name] = tool.Description
 	}
 	for tool, wants := range map[string][]string{
-		"list_sessions":   {"Call first", "create_session"},
-		"create_session":  {"without waiting for the user", "worktree", "cannot see this conversation", "read_session"},
-		"read_session":    {"after create_session", "current screen"},
-		"send_session":    {"self-contained instruction", "read_session", "at rest", "another agent rather than from the user"},
-		"message_status":  {"delivered", "queued"},
-		"revive_session":  {"dead session"},
-		"kill_session":    {"revive_session", "ask first"},
-		"archive_session": {"archived false"},
-		"create_group":    {"list_groups", "parent"},
+		"list_sessions":    {"Call first", "create_session"},
+		"create_session":   {"without waiting for the user", "worktree", "cannot see this conversation", "read_session"},
+		"read_session":     {"after create_session", "current screen"},
+		"send_session":     {"self-contained instruction", "read_session", "at rest", "another agent rather than from the user"},
+		"message_status":   {"delivered", "queued"},
+		"wait_for_session": {"instead of calling read_session in a loop", "timeout is a normal answer", "reached false"},
+		"revive_session":   {"dead session"},
+		"kill_session":     {"revive_session", "ask first"},
+		"archive_session":  {"archived false"},
+		"create_group":     {"list_groups", "parent"},
 	} {
 		for _, want := range wants {
 			if !strings.Contains(descriptions[tool], want) {
@@ -566,6 +582,15 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 
 	if text, isError := callText(t, session, "read_session", map[string]any{"session_id": "a1b2c3d4"}); isError || text != "tests passing" {
 		t.Fatalf("read_session = %q, isError=%v", text, isError)
+	}
+
+	if text, isError := callText(t, session, "wait_for_session", map[string]any{
+		"session_id": "a1b2c3d4", "until": []string{"finished"}, "timeout_s": 30,
+	}); isError || !strings.Contains(text, "finished") {
+		t.Fatalf("wait_for_session = %q, isError=%v", text, isError)
+	}
+	if fake.waitedID != "a1b2c3d4" || strings.Join(fake.waitedUntil, ",") != "finished" || fake.waitedTimeout != 30*time.Second {
+		t.Fatalf("wait args = id %q until %v timeout %v", fake.waitedID, fake.waitedUntil, fake.waitedTimeout)
 	}
 
 	if _, isError := callText(t, session, "revive_session", map[string]any{"session_id": "a1b2c3d4"}); isError {
@@ -647,6 +672,7 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 		{"read_session", map[string]any{"session_id": "a1"}},
 		{"send_session", map[string]any{"session_id": "a1", "message": "hi"}},
 		{"message_status", map[string]any{"message_id": 7}},
+		{"wait_for_session", map[string]any{"session_id": "a1"}},
 		{"revive_session", map[string]any{"session_id": "a1"}},
 		{"kill_session", map[string]any{"session_id": "a1"}},
 		{"archive_session", map[string]any{"session_id": "a1"}},
