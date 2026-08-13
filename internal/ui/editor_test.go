@@ -257,7 +257,7 @@ func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {
 	if !ok {
 		t.Fatal("no session selected")
 	}
-	t.Cleanup(func() { m.tmux.ClearRequest() })
+	clearRequestOnCleanup(t, m)
 
 	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestEditor).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
@@ -307,7 +307,7 @@ func TestAttachDoneRefusedEditorArmsNoReturn(t *testing.T) {
 	captureEditor(t)
 	createSession(t, m, "editme", t.TempDir(), "")
 	m.selectSessionRow(t, "editme")
-	t.Cleanup(func() { m.tmux.ClearRequest() })
+	clearRequestOnCleanup(t, m)
 
 	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestEditor).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
@@ -337,7 +337,7 @@ func TestAttachDoneTerminalEditorArmsTheReturn(t *testing.T) {
 	if !ok {
 		t.Fatal("no session selected")
 	}
-	t.Cleanup(func() { m.tmux.ClearRequest() })
+	clearRequestOnCleanup(t, m)
 
 	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestEditor).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)

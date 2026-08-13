@@ -302,7 +302,11 @@ func TestDetachRequestRoundTrip(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
-	t.Cleanup(func() { driver.ClearRequest() })
+	t.Cleanup(func() {
+		if err := driver.ClearRequest(); err != nil {
+			t.Errorf("ClearRequest: %v", err)
+		}
+	})
 
 	if err := driver.ClearRequest(); err != nil {
 		t.Fatalf("ClearRequest: %v", err)

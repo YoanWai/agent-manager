@@ -216,7 +216,7 @@ func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
 	}
 	createSession(t, m, "reviewme", t.TempDir(), "")
 	m.selectSessionRow(t, "reviewme")
-	t.Cleanup(func() { m.tmux.ClearRequest() })
+	clearRequestOnCleanup(t, m)
 
 	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)

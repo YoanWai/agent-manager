@@ -462,7 +462,7 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	if !ok {
 		t.Fatal("no session selected")
 	}
-	t.Cleanup(func() { m.tmux.ClearRequest() })
+	clearRequestOnCleanup(t, m)
 
 	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
@@ -532,7 +532,7 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 	if !ok {
 		t.Fatal("no session selected")
 	}
-	t.Cleanup(func() { m.tmux.ClearRequest() })
+	clearRequestOnCleanup(t, m)
 
 	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
 		t.Fatalf("set finished: %v", err)

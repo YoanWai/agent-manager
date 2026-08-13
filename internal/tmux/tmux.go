@@ -25,7 +25,6 @@ const defaultSocket = "agentmgr"
 // just detached from.
 const requestOption = "@am_request"
 
-// The requests those bindings leave behind.
 const (
 	RequestReview = "review"
 	RequestEditor = "editor"
@@ -403,8 +402,8 @@ func sanitizeFormat(s string) string {
 	return strings.ReplaceAll(s, "#", "##")
 }
 
-// PendingRequest names what an in-session binding asked for before
-// detaching, empty when none did. A missing tmux server means no request.
+// A missing tmux server means no request rather than an error: the
+// manager outlives the sessions it opens.
 func (d *Driver) PendingRequest() (string, error) {
 	out, err := exec.Command(d.bin, d.args("show-option", "-gqv", requestOption)...).CombinedOutput()
 	if err != nil {
