@@ -119,7 +119,12 @@ func check(ctx context.Context, configDir, current string, force bool) (Result, 
 	cachePath := filepath.Join(configDir, cacheFile)
 	cached, haveCache := readCache(cachePath)
 	haveCatalog := haveCache && len(cached.Releases) > 0
-	if !force && haveCatalog && cacheFresh(cached, time.Now()) {
+	newest, _ := latestRelease(cached.Releases)
+	// A catalog that stops short of the running build was fetched before the
+	// release that is now installed, so however recently that was, it cannot
+	// name what the update brought. Updating within the interval lands in
+	// exactly that state, which is when the notes are read.
+	if !force && haveCatalog && cacheFresh(cached, time.Now()) && !Newer(current, newest) {
 		return resultFor(currentParts, cached.Releases), nil
 	}
 

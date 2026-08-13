@@ -172,6 +172,33 @@ func TestCheckUsesFreshCatalogWithoutNetwork(t *testing.T) {
 	}
 }
 
+// Updating inside the check interval leaves a catalog fetched before the
+// release now running, and the what's-new notice reads that catalog for the
+// changes the update brought. Freshness alone must not serve it.
+func TestCatalogBehindTheRunningBuildRefetches(t *testing.T) {
+	dir := t.TempDir()
+	seedCache(t, dir, cache{
+		CheckedAt: time.Now(),
+		Releases:  []Release{testRelease("v0.28.0", "the release before the one running")},
+	})
+
+	var calls atomic.Int32
+	server := releaseServer(t, &calls, "v0.29.0")
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	result, err := Check(context.Background(), dir, "v0.29.0")
+	if err != nil || calls.Load() != 1 {
+		t.Fatalf("err=%v calls=%d, want one fetch", err, calls.Load())
+	}
+	if got := releaseVersions(result.Releases); len(got) == 0 || got[0] != "v0.29.0" {
+		t.Fatalf("catalog is %v, want it to reach the running build", got)
+	}
+	if result.Latest != "" {
+		t.Fatalf("nothing is newer than the running build, got %q", result.Latest)
+	}
+}
+
 func TestUpToDateCatalogRetriesAfterTenMinutes(t *testing.T) {
 	dir := t.TempDir()
 	seedCache(t, dir, cache{
