@@ -624,7 +624,7 @@ func (m *Model) viewNotices() string {
 		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+m.update.latest+"…"))
 	}
 	if m.errBar.text != "" {
-		tail = append(tail, errStyle.Render("✕ "+m.errBar.text))
+		tail = append(tail, m.statusMessage("✕", "●"))
 	}
 	tail = append(tail, "")
 

@@ -133,7 +133,7 @@ func (m *Model) statusLine() string {
 	// Errors outrank the focus notices: a scrolled or focused pane must
 	// not hide a failure report.
 	case m.mode == modeFocus && m.errBar.text != "":
-		return errStyle.Render("✕ " + m.errBar.text)
+		return m.statusMessage("✕", "●")
 	case m.scrolledBack():
 		return keyStyle.Render("scrolled ") +
 			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", m.focusScroll))
@@ -147,12 +147,22 @@ func (m *Model) statusLine() string {
 		}
 		return keyStyle.Render("resize ") + subtleStyle.Render(hint)
 	case m.errBar.text != "":
-		return errStyle.Render("✕ " + m.errBar.text)
+		return m.statusMessage("✕", "●")
 	case m.diff.notice != "":
-		return lipgloss.NewStyle().Foreground(colorFinished).Render("● " + m.diff.notice)
+		return doneStyle.Render("● " + m.diff.notice)
 	default:
 		return ""
 	}
+}
+
+// statusMessage styles whatever sits on the status bar: an action that went
+// through reads as an outcome, everything else as a failure, in the glyphs
+// the calling surface marks the two with.
+func (m *Model) statusMessage(fail, done string) string {
+	if m.errBar.worked() {
+		return doneStyle.Render(done + " " + m.errBar.text)
+	}
+	return errStyle.Render(fail + " " + m.errBar.text)
 }
 
 // inGroupSubtree reports whether a session's group sits at or below the

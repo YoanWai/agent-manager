@@ -231,8 +231,20 @@ type paneMirror struct {
 
 type errBar struct {
 	text  string
+	done  string
 	shown string
 	age   int
+}
+
+// worked reports whether the message on the bar is an action that went
+// through, so it can be styled as an outcome rather than a failure. Only
+// reportDone fills done, and any later write to text alone leaves it
+// behind, so a message says it worked or reads as a failure.
+func (e errBar) worked() bool { return e.text != "" && e.text == e.done }
+
+// reportDone puts an action that went through on the status bar.
+func (m *Model) reportDone(text string) {
+	m.errBar.text, m.errBar.done = text, text
 }
 
 // splitState is the horizontal sessions/sidebar split. ratio is the left
@@ -1121,7 +1133,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.indexReleaseRanges()
 			})
-			m.errBar.text = "already up to date"
+			m.reportDone("already up to date")
 			return m, nil
 		}
 		m.update.restartPath = msg.path
@@ -1304,7 +1316,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case editorOpenedMsg:
-		m.errBar.text = "opened " + msg.dir + " in " + msg.name
+		m.reportDone("opened " + msg.dir + " in " + msg.name)
 		return m, nil
 
 	case reattachPreparedMsg:
@@ -1382,7 +1394,7 @@ func (m *Model) updateNetRates(snap sysstat.Snapshot) {
 // ticks, so transient errors self-dismiss without any per-callsite timers.
 func (m *Model) ageError() {
 	if m.errBar.text == "" {
-		m.errBar.shown, m.errBar.age = "", 0
+		m.errBar = errBar{}
 		return
 	}
 	if m.errBar.text != m.errBar.shown {
@@ -1391,7 +1403,7 @@ func (m *Model) ageError() {
 	}
 	m.errBar.age++
 	if m.errBar.age >= 2 {
-		m.errBar.text, m.errBar.shown, m.errBar.age = "", "", 0
+		m.errBar = errBar{}
 	}
 }
 

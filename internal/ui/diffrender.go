@@ -897,10 +897,10 @@ func (m *Model) renderSideCell(fd *diff.FileDiff, hl *fileHL, index, width int, 
 
 func (m *Model) viewDiffStatus() string {
 	if m.errBar.text != "" {
-		return padRight(errStyle.Render(" ✖ "+m.errBar.text), m.width)
+		return padRight(m.statusMessage(" ✖", " ✔"), m.width)
 	}
 	if m.diff.notice != "" {
-		return padRight(lipgloss.NewStyle().Foreground(colorFinished).Render(" ✔ "+m.diff.notice), m.width)
+		return padRight(doneStyle.Render(" ✔ "+m.diff.notice), m.width)
 	}
 	if m.diff.sendConfirm {
 		count := len(m.diff.annotations[m.reviewKey()])
