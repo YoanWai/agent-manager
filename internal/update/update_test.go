@@ -194,6 +194,11 @@ func TestCatalogBehindTheRunningBuildRefetches(t *testing.T) {
 	if got := releaseVersions(result.Releases); len(got) == 0 || got[0] != "v0.29.0" {
 		t.Fatalf("catalog is %v, want it to reach the running build", got)
 	}
+	// The notice is built from these lines, so reaching the release is only
+	// half of it: an entry with no changes leaves it as empty as before.
+	if got := result.Releases[0].Changes; len(got) != 1 || got[0] != "UI: Refreshed" {
+		t.Fatalf("changes are %q, want the fetched release's own", got)
+	}
 	if result.Latest != "" {
 		t.Fatalf("nothing is newer than the running build, got %q", result.Latest)
 	}

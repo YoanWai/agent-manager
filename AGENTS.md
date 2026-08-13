@@ -33,8 +33,9 @@ Cut from a clean worktree at the tag, with goreleaser run locally; there is
 no release workflow in CI.
 
 ```bash
-git tag v0.29.0 && git push origin v0.29.0
-git worktree add /tmp/amrel v0.29.0
+tag=v0.30.0                       # the release being cut
+git tag "$tag" && git push origin "$tag"
+git worktree add /tmp/amrel "$tag"
 cd /tmp/amrel && GITHUB_TOKEN="$(gh auth token)" AUR_KEY="$HOME/.ssh/aur_agent_manager" \
   goreleaser release --clean
 ```
