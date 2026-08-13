@@ -27,6 +27,44 @@ git worktree (`git worktree add`), or your edits get swept into someone
 else's commit. Branch from `origin/main` after a fetch, not from the local
 `main` ref.
 
+## Releases
+
+Cut from a clean worktree at the tag, with goreleaser run locally; there is
+no release workflow in CI.
+
+```bash
+tag=v0.30.0                       # the release being cut
+git tag "$tag" && git push origin "$tag"
+git worktree add /tmp/amrel "$tag"
+cd /tmp/amrel && GITHUB_TOKEN="$(gh auth token)" AUR_KEY="$HOME/.ssh/aur_agent_manager" \
+  goreleaser release --clean
+```
+
+`AUR_KEY` is what publishes the Arch package: without it `git_url` templates
+to empty, goreleaser skips that step, and the release still reports success
+while the AUR package goes stale.
+
+The notes carry more than the generated list of pull requests:
+
+- **A summary in your own words**, at the top, saying what the release gives
+  someone who installs it. Two or three sentences, the change first and the
+  mechanism second. The generated list says which pull requests landed; it
+  does not say what is different now.
+- **Thanks to every contributor in the range, by handle.** Read the merged
+  pull requests, not only the generated list, and name what each one did.
+- **Thanks to whoever reported what got fixed, by handle.** A bug someone
+  took the time to write up is why the fix exists, and the reporter is
+  usually not the author. Credit the release a feature builds on, too, when
+  it extends someone else's work.
+
+A range with nobody outside the maintainer in it carries no thanks line;
+write the summary and leave it at that rather than manufacturing one.
+
+Write them into a file and publish with
+`goreleaser release --clean --release-notes=notes.md`, or edit the release
+afterwards with `gh release edit <tag> --notes-file`. Both keep the header
+and footer from `.goreleaser.yaml`.
+
 ## Layout
 
 - `main.go` dispatches subcommands (`rename`, `review-repo`, `review-base`,
