@@ -171,6 +171,9 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `finish_task` | Mark a claim done, unblocking whatever waited on it |
 | `release_task` | Hand a claim back to the list |
 | `delete_task` | Drop a task that turned out not to be needed |
+| `reserve_files` | Declare the files this session is editing, and see who else claims them |
+| `release_files` | Give those claims back |
+| `list_reservations` | See what every session is editing right now |
 | `list_groups` | List groups with their default directories, worktree defaults and session counts |
 | `create_group` | Add a group, nested with a slash path, to file a fleet under |
 | `list_terminals` | List active managed terminals and their current directories |
@@ -199,6 +202,12 @@ Delivery needs the manager running, since its poller is what types the message i
 `wait_for_session` parks a single tool call until a session reaches one of the states that mean it stopped working, so an agent that spawned work does not read screens in a loop while it waits. A timeout returns the session's current state with `reached` false, because a timeout is an answer rather than a failure. It is an ordinary tool call, which is what makes it work with every MCP client.
 
 The task list is the manager's shared to-do list, visible to every session. `create_task` puts work on it, `claim_task` takes a piece (by id, or the oldest one nothing is blocking), and `finish_task` marks it done, which unblocks every task that depended on it. A claim is a single atomic write, so two agents racing for the same task cannot both win: the loser is told who holds it. A session that is deleted hands its claims back to the list rather than parking them forever.
+
+### File reservations
+
+A worktree per session stops two agents overwriting one checkout, and that is the right answer whenever the work divides cleanly. It does not help when sessions deliberately share a checkout, and it defers the other kind of collision to merge time: two agents making incompatible decisions about the same interface find out only when the branches meet.
+
+`reserve_files` declares the paths a session is about to edit. Overlap with a lease another session holds comes back as conflicts, naming the holder and what they said they were doing, so the two can settle it through `send_session` before either commits. The lease is advisory throughout: nothing is blocked, and an agent may edit anyway. It expires on its own, so a session that dies holding one never keeps the repo to itself, and `release_files` hands it back as soon as the edits land. An exclusive lease conflicts with any other lease on the same paths; two shared leases sit side by side. Matching compares a pattern against a literal path in both directions, so two patterns that each contain wildcards are only compared exactly, which is another reason these are a conversation starter rather than a lock.
 
 ### Terminals
 

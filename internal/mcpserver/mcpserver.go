@@ -91,6 +91,19 @@ type taskTargetArgs struct {
 	TaskID string `json:"task_id" jsonschema:"task id returned by list_tasks or claim_task"`
 }
 
+type reserveFilesArgs struct {
+	Paths []string `json:"paths" jsonschema:"files or globs you are about to edit, such as internal/store/*.go"`
+	Mode  string   `json:"mode,omitempty" jsonschema:"exclusive (default) means nobody else should edit these paths; shared means others may edit them too"`
+	Note  string   `json:"note,omitempty" jsonschema:"what you are doing there, so a conflicting agent knows what it is up against"`
+	TTLM  int      `json:"ttl_minutes,omitempty" jsonschema:"minutes before the lease lapses on its own, default 30, maximum 240"`
+}
+
+type releaseFilesArgs struct {
+	Paths []string `json:"paths,omitempty" jsonschema:"patterns to release; omit to release every lease this session holds"`
+}
+
+type listReservationsArgs struct{}
+
 type listGroupsArgs struct{}
 
 type createGroupArgs struct {
@@ -113,6 +126,10 @@ type listSessionsOutput struct {
 
 type listTasksOutput struct {
 	Tasks []sessioncmd.Task `json:"tasks"`
+}
+
+type listReservationsOutput struct {
+	Reservations []sessioncmd.Reservation `json:"reservations"`
 }
 
 type listGroupsOutput struct {
@@ -152,13 +169,16 @@ type sessionCommands interface {
 	FinishTask(sessionID, taskID string) (sessioncmd.Task, error)
 	ReleaseTask(sessionID, taskID string) (sessioncmd.Task, error)
 	DeleteTask(sessionID, taskID string) error
+	Reserve(sessionID string, patterns []string, mode, note string, ttl time.Duration) (sessioncmd.ReserveResult, error)
+	ReleaseFiles(sessionID string, patterns []string) (int, error)
+	Reservations(sessionID string) ([]sessioncmd.Reservation, error)
 	Groups(sessionID string) ([]sessioncmd.Group, error)
 	CreateGroup(sessionID, path, directory string) (sessioncmd.Group, error)
 }
 
 const serverInstructions = `Agent Manager runs this conversation in a managed tmux session, beside the user's other agent sessions and terminals. These tools operate that workspace. Use them proactively whenever the conditions below apply. Do not wait for the user to ask.
 
-Delegating to other agents. When a task splits into parts that can run at the same time, or the user asks for parallel work, a second opinion, or another agent, call list_sessions first to see what already runs. Reuse a relevant idle session; otherwise call create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. A session working in a git repo takes worktree: true so parallel agents never edit the same checkout. Follow the work with read_session, and send_session to answer a question or redirect an agent; a message is queued and typed in once that agent is at rest, so it can never land on an approval prompt. When your next step depends on an agent finishing, call wait_for_session rather than reading its screen in a loop. Put the plan on the shared task list with create_task rather than keeping it in this conversation: spawned agents then claim_task their own next piece and finish_task it, which unblocks whatever depended on it, with no handoff through you. Group related spawns with create_group, and archive_session once their work is done. Sessions are long-lived and spend the user's tokens, so create one per real workstream, never one per trivial step.
+Delegating to other agents. When a task splits into parts that can run at the same time, or the user asks for parallel work, a second opinion, or another agent, call list_sessions first to see what already runs. Reuse a relevant idle session; otherwise call create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. A session working in a git repo takes worktree: true so parallel agents never edit the same checkout; where several sessions do share one checkout, call reserve_files before editing so an overlap surfaces while it can still be talked about. Follow the work with read_session, and send_session to answer a question or redirect an agent; a message is queued and typed in once that agent is at rest, so it can never land on an approval prompt. When your next step depends on an agent finishing, call wait_for_session rather than reading its screen in a loop. Put the plan on the shared task list with create_task rather than keeping it in this conversation: spawned agents then claim_task their own next piece and finish_task it, which unblocks whatever depended on it, with no handoff through you. Group related spawns with create_group, and archive_session once their work is done. Sessions are long-lived and spend the user's tokens, so create one per real workstream, never one per trivial step.
 
 Shell work that stays visible. Before a long-running, output-heavy or continuously monitored command such as a test suite, build, development server or log tail, call list_terminals. Reuse a relevant running terminal when possible; otherwise call create_terminal in the current group and directory. Send the command with send_terminal, then read_terminal to inspect its screen, again as needed while it runs, and send keys for interactive input or interruption. Short one-shot commands stay in your normal execution path.
 
@@ -468,6 +488,47 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name: "reserve_files",
+		Description: "Declare the files you are about to edit, so another agent working the same repo finds out before both of you change them. " +
+			"Call it when several sessions share one checkout and you are starting on a set of files; a session in its own worktree does not need it. " +
+			"The lease is advisory: nothing is blocked, and any overlap with a lease another session holds comes back in conflicts, with the holder to message. " +
+			"It lapses on its own, so an agent that dies never holds the repo. Call release_files when you are done.",
+		Annotations: toolAnnotations(false, false, false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args reserveFilesArgs) (*mcp.CallToolResult, sessioncmd.ReserveResult, error) {
+		result, err := sessions.Reserve(sessionID, args.Paths, args.Mode, args.Note, time.Duration(args.TTLM)*time.Minute)
+		if err != nil {
+			return nil, sessioncmd.ReserveResult{}, err
+		}
+		return textContent(formatReserveResult(result)), result, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "release_files",
+		Description: "Give back the leases you took with reserve_files once the edits are made, so another agent can take those paths. " +
+			"Omit paths to release everything this session holds.",
+		Annotations: toolAnnotations(false, false, false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args releaseFilesArgs) (*mcp.CallToolResult, any, error) {
+		released, err := sessions.ReleaseFiles(sessionID, args.Paths)
+		if err != nil {
+			return nil, nil, err
+		}
+		return textContent(fmt.Sprintf("released %d reservation(s)", released)), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "list_reservations",
+		Description: "See which files the other sessions are working on right now. " +
+			"Call it before editing shared code, or when planning who takes which part of a change.",
+		Annotations: toolAnnotations(true, false, false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args listReservationsArgs) (*mcp.CallToolResult, listReservationsOutput, error) {
+		listed, err := sessions.Reservations(sessionID)
+		if err != nil {
+			return nil, listReservationsOutput{}, err
+		}
+		return textContent(formatReservations(listed)), listReservationsOutput{Reservations: listed}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name: "list_groups",
 		Description: "List the groups sessions and terminals are filed under, with each group's default directory, worktree default and session count. " +
 			"Call before passing a group to create_session or create_terminal, since a group must already exist.",
@@ -643,6 +704,43 @@ func formatTaskList(tasks []sessioncmd.Task) string {
 			line += "; yours"
 		}
 		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatReservation(reservation sessioncmd.Reservation) string {
+	line := fmt.Sprintf("%s (%s) held by %s for %s", reservation.Pattern, reservation.Mode, reservation.Holder, reservation.ExpiresIn)
+	if reservation.Note != "" {
+		line += ": " + reservation.Note
+	}
+	return line
+}
+
+func formatReservations(reservations []sessioncmd.Reservation) string {
+	if len(reservations) == 0 {
+		return "no files are reserved"
+	}
+	lines := make([]string, 0, len(reservations))
+	for _, reservation := range reservations {
+		line := "- " + formatReservation(reservation)
+		if reservation.Mine {
+			line += "; yours"
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatReserveResult(result sessioncmd.ReserveResult) string {
+	lines := make([]string, 0, len(result.Reserved)+len(result.Conflicts)+1)
+	for _, reservation := range result.Reserved {
+		lines = append(lines, "reserved "+reservation.Pattern)
+	}
+	if len(result.Conflicts) > 0 {
+		lines = append(lines, "conflicts with leases already held; message the holder before editing:")
+		for _, conflict := range result.Conflicts {
+			lines = append(lines, "- "+formatReservation(conflict))
+		}
 	}
 	return strings.Join(lines, "\n")
 }

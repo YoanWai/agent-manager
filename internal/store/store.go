@@ -182,6 +182,17 @@ CREATE TABLE IF NOT EXISTS settings (
 			PRIMARY KEY (task_id, depends_on_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS task_deps_reverse ON task_deps (depends_on_id)`,
+		`CREATE TABLE IF NOT EXISTS file_reservations (
+			id          TEXT    PRIMARY KEY,
+			session_id  TEXT    NOT NULL,
+			pattern     TEXT    NOT NULL,
+			mode        TEXT    NOT NULL DEFAULT 'exclusive',
+			note        TEXT    NOT NULL DEFAULT '',
+			acquired_at INTEGER NOT NULL DEFAULT 0,
+			expires_at  INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS file_reservations_holder ON file_reservations (session_id, pattern)`,
+		`CREATE INDEX IF NOT EXISTS file_reservations_live ON file_reservations (expires_at)`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -658,6 +669,9 @@ func (s *Store) Delete(id string) error {
 	// A claim outlives its holder as pending work rather than as a task
 	// parked forever against a session that no longer exists.
 	if err := s.ReleaseTasksOwnedBy(id, time.Now()); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`DELETE FROM file_reservations WHERE session_id = ?`, id); err != nil {
 		return err
 	}
 	res, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id)

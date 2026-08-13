@@ -67,6 +67,11 @@ type fakeSessionCommands struct {
 	taskDeps      []string
 	claimedTaskID string
 	settledTaskID string
+	reservedPaths []string
+	reservedMode  string
+	reservedTTL   time.Duration
+	releasedPaths []string
+	reservations  []sessioncmd.Reservation
 	revivedID     string
 	killedID      string
 	archivedID    string
@@ -157,6 +162,25 @@ func (f *fakeSessionCommands) ReleaseTask(_ string, taskID string) (sessioncmd.T
 func (f *fakeSessionCommands) DeleteTask(_ string, taskID string) error {
 	f.settledTaskID = taskID
 	return f.err
+}
+
+func (f *fakeSessionCommands) Reserve(_ string, patterns []string, mode, note string, ttl time.Duration) (sessioncmd.ReserveResult, error) {
+	f.reservedPaths = patterns
+	f.reservedMode = mode
+	f.reservedTTL = ttl
+	return sessioncmd.ReserveResult{
+		Reserved:  []sessioncmd.Reservation{{Pattern: patterns[0], Mode: "exclusive", Holder: "lead", ExpiresIn: "30m0s", Mine: true}},
+		Conflicts: []sessioncmd.Reservation{{Pattern: "internal/store/store.go", Mode: "exclusive", Holder: "worker", ExpiresIn: "12m0s", Note: "adding a table"}},
+	}, f.err
+}
+
+func (f *fakeSessionCommands) ReleaseFiles(_ string, patterns []string) (int, error) {
+	f.releasedPaths = patterns
+	return len(patterns), f.err
+}
+
+func (f *fakeSessionCommands) Reservations(string) ([]sessioncmd.Reservation, error) {
+	return f.reservations, f.err
 }
 
 func (f *fakeSessionCommands) Groups(string) ([]sessioncmd.Group, error) {
@@ -509,6 +533,7 @@ func TestListsFleetTools(t *testing.T) {
 		"revive_session", "kill_session", "archive_session",
 		"list_groups", "create_group", "message_status", "wait_for_session",
 		"list_tasks", "create_task", "claim_task", "finish_task", "release_task", "delete_task",
+		"reserve_files", "release_files", "list_reservations",
 	} {
 		if !names[want] {
 			t.Fatalf("missing tool %q in %v", want, names)
@@ -717,6 +742,9 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 		{"finish_task", map[string]any{"task_id": "t1"}},
 		{"release_task", map[string]any{"task_id": "t1"}},
 		{"delete_task", map[string]any{"task_id": "t1"}},
+		{"reserve_files", map[string]any{"paths": []string{"a.go"}}},
+		{"release_files", map[string]any{}},
+		{"list_reservations", map[string]any{}},
 		{"revive_session", map[string]any{"session_id": "a1"}},
 		{"kill_session", map[string]any{"session_id": "a1"}},
 		{"archive_session", map[string]any{"session_id": "a1"}},
@@ -784,5 +812,39 @@ func TestTaskToolsForwardArgumentsAndRenderTheList(t *testing.T) {
 		if fake.settledTaskID != "t3" {
 			t.Fatalf("%s id = %q", tool, fake.settledTaskID)
 		}
+	}
+}
+
+func TestReservationToolsReportConflictsWithoutRefusingTheLease(t *testing.T) {
+	fake := &fakeSessionCommands{
+		reservations: []sessioncmd.Reservation{
+			{Pattern: "internal/ui/*.go", Mode: "exclusive", Holder: "worker", ExpiresIn: "20m0s", Note: "focus mode"},
+		},
+	}
+	session := connectServer(t, connectFakes(t, fake))
+
+	text, isError := callText(t, session, "reserve_files", map[string]any{
+		"paths": []string{"internal/store/*.go"}, "mode": "exclusive", "note": "inbox table", "ttl_minutes": 45,
+	})
+	if isError {
+		t.Fatalf("reserve_files errored: %q", text)
+	}
+	for _, want := range []string{"reserved internal/store/*.go", "conflicts with leases already held", "held by worker", "adding a table"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("reserve text missing %q: %s", want, text)
+		}
+	}
+	if strings.Join(fake.reservedPaths, ",") != "internal/store/*.go" || fake.reservedMode != "exclusive" || fake.reservedTTL != 45*time.Minute {
+		t.Fatalf("reserve args = %v %q %v", fake.reservedPaths, fake.reservedMode, fake.reservedTTL)
+	}
+
+	if text, _ := callText(t, session, "list_reservations", map[string]any{}); !strings.Contains(text, "focus mode") {
+		t.Fatalf("list_reservations text = %q", text)
+	}
+	if _, isError := callText(t, session, "release_files", map[string]any{"paths": []string{"internal/store/*.go"}}); isError {
+		t.Fatal("release_files errored")
+	}
+	if strings.Join(fake.releasedPaths, ",") != "internal/store/*.go" {
+		t.Fatalf("release args = %v", fake.releasedPaths)
 	}
 }
