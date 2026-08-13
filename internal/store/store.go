@@ -166,6 +166,22 @@ CREATE TABLE IF NOT EXISTS settings (
 		)`,
 		`CREATE INDEX IF NOT EXISTS session_inbox_queue ON session_inbox (session_id, delivered_at, id)`,
 		`CREATE INDEX IF NOT EXISTS session_inbox_sender ON session_inbox (session_id, sender_id, sent_at)`,
+		`CREATE TABLE IF NOT EXISTS tasks (
+			id               TEXT PRIMARY KEY,
+			title            TEXT NOT NULL,
+			body             TEXT NOT NULL DEFAULT '',
+			owner_session_id TEXT NOT NULL DEFAULT '',
+			state            TEXT NOT NULL DEFAULT 'pending',
+			created_at       INTEGER NOT NULL DEFAULT 0,
+			updated_at       INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS tasks_claimable ON tasks (state, created_at)`,
+		`CREATE TABLE IF NOT EXISTS task_deps (
+			task_id       TEXT NOT NULL,
+			depends_on_id TEXT NOT NULL,
+			PRIMARY KEY (task_id, depends_on_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS task_deps_reverse ON task_deps (depends_on_id)`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -637,6 +653,11 @@ func (s *Store) Delete(id string) error {
 	// Session ids are recycled from a fresh UUID prefix, so a message left
 	// pointing at a deleted id could be re-attached to a future session.
 	if _, err := s.db.Exec(`DELETE FROM session_inbox WHERE session_id = ? OR sender_id = ?`, id, id); err != nil {
+		return err
+	}
+	// A claim outlives its holder as pending work rather than as a task
+	// parked forever against a session that no longer exists.
+	if err := s.ReleaseTasksOwnedBy(id, time.Now()); err != nil {
 		return err
 	}
 	res, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id)

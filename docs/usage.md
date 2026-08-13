@@ -159,10 +159,18 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `list_sessions` | List every agent session with its id, CLI, group, directory, worktree branch and status |
 | `create_session` | Start another agent CLI on a named task, optionally in its own git worktree |
 | `read_session` | Read what another agent's screen currently shows |
-| `send_session` | Type a message into another agent's prompt as its next turn |
+| `send_session` | Queue a message for another agent, delivered once it is at rest |
+| `message_status` | Check whether a queued message was delivered or answered |
+| `wait_for_session` | Park until another session stops working, instead of polling it |
 | `revive_session` | Bring a dead session back, resuming the conversation it held |
 | `kill_session` | Stop a running agent, keeping its row and last screen |
 | `archive_session` | File a finished session out of the active list, or restore it |
+| `list_tasks` | Read the shared work list: pending, claimed, done and blocked |
+| `create_task` | Add work to the shared list, optionally behind dependencies |
+| `claim_task` | Take a task, by id or the oldest one nothing is blocking |
+| `finish_task` | Mark a claim done, unblocking whatever waited on it |
+| `release_task` | Hand a claim back to the list |
+| `delete_task` | Drop a task that turned out not to be needed |
 | `list_groups` | List groups with their default directories, worktree defaults and session counts |
 | `create_group` | Add a group, nested with a slash path, to file a fleet under |
 | `list_terminals` | List active managed terminals and their current directories |
@@ -176,7 +184,21 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 
 Each field falls back the way the form does. The CLI defaults to the one the calling agent runs, the group and directory default to the caller's, an explicit group uses that group's nearest inherited default path, and an explicit directory wins over both. A name is the agent's to choose and should describe the work; leaving it empty generates a placeholder and asks the new session to rename itself, exactly as a promptless spawn from the form does. Passing `worktree: true` adds a git worktree and branch off the directory's repo, which is what keeps several agents working in one project from editing the same checkout; omitting it inherits the group's default, then the global setting.
 
-`read_session` returns the target's current screen, and its last captured screen once the session has stopped. `send_session` types a message into a live agent's prompt, the same delivery the quick prompt bar uses, so the other agent reads it as its next turn; it refuses terminal ids, which take `send_terminal` instead. `kill_session` ends the process and leaves the row dead with its last screen, `revive_session` brings it back on the conversation it held, and `archive_session` files a finished row away or restores it.
+`read_session` returns the target's current screen, and its last captured screen once the session has stopped. `kill_session` ends the process and leaves the row dead with its last screen, `revive_session` brings it back on the conversation it held, and `archive_session` files a finished row away or restores it.
+
+### Messages between agents
+
+`send_session` queues a message rather than typing it immediately. Several agent CLIs keep their input line drawn underneath an approval dialog, so a message written at that moment would answer the dialog instead of being read. The manager holds it and types it in on the first poll where the target is at rest: its input region is drawn, its status is not mid-turn, and its own rules report no dialog on screen. Delivery is at most once, and a message the manager cannot prove reached the pane is retired rather than repeated.
+
+The message arrives labelled as coming from another session rather than from the user, with the sender's name and the id to answer on. A receiving agent treats it as it would any untrusted input: it cannot approve a permission prompt, and it cannot change that session's configuration. Queue caps, a per-sender rate limit and a whitespace-insensitive fingerprint keep two agents from talking each other into a loop. `message_status` reports whether a message is still queued, has been delivered, or has been answered; answering a session acknowledges everything it sent.
+
+Delivery needs the manager running, since its poller is what types the message in. A message queued while Agent Manager is closed waits until it opens again, and `send_session` says so in its result rather than implying the message landed.
+
+### Waiting and the shared task list
+
+`wait_for_session` parks a single tool call until a session reaches one of the states that mean it stopped working, so an agent that spawned work does not read screens in a loop while it waits. A timeout returns the session's current state with `reached` false, because a timeout is an answer rather than a failure. It is an ordinary tool call, which is what makes it work with every MCP client.
+
+The task list is the manager's shared to-do list, visible to every session. `create_task` puts work on it, `claim_task` takes a piece (by id, or the oldest one nothing is blocking), and `finish_task` marks it done, which unblocks every task that depended on it. A claim is a single atomic write, so two agents racing for the same task cannot both win: the loser is told who holds it. A session that is deleted hands its claims back to the list rather than parking them forever.
 
 ### Terminals
 

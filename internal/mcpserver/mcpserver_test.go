@@ -61,6 +61,12 @@ type fakeSessionCommands struct {
 	waitedID      string
 	waitedUntil   []string
 	waitedTimeout time.Duration
+	tasks         []sessioncmd.Task
+	taskTitle     string
+	taskBody      string
+	taskDeps      []string
+	claimedTaskID string
+	settledTaskID string
 	revivedID     string
 	killedID      string
 	archivedID    string
@@ -120,6 +126,37 @@ func (f *fakeSessionCommands) Archive(_ string, id string, archived bool) (sessi
 	f.archivedID = id
 	f.archived = archived
 	return f.created, f.err
+}
+
+func (f *fakeSessionCommands) Tasks(string) ([]sessioncmd.Task, error) {
+	return f.tasks, f.err
+}
+
+func (f *fakeSessionCommands) CreateTask(_ string, title, body string, dependsOn []string) (sessioncmd.Task, error) {
+	f.taskTitle = title
+	f.taskBody = body
+	f.taskDeps = dependsOn
+	return sessioncmd.Task{ID: "t1", Title: title, State: "pending"}, f.err
+}
+
+func (f *fakeSessionCommands) ClaimTask(_ string, taskID string) (sessioncmd.Task, error) {
+	f.claimedTaskID = taskID
+	return sessioncmd.Task{ID: "t1", Title: "fix retries", State: "in_progress", Mine: true}, f.err
+}
+
+func (f *fakeSessionCommands) FinishTask(_ string, taskID string) (sessioncmd.Task, error) {
+	f.settledTaskID = taskID
+	return sessioncmd.Task{ID: taskID, Title: "fix retries", State: "done"}, f.err
+}
+
+func (f *fakeSessionCommands) ReleaseTask(_ string, taskID string) (sessioncmd.Task, error) {
+	f.settledTaskID = taskID
+	return sessioncmd.Task{ID: taskID, Title: "fix retries", State: "pending"}, f.err
+}
+
+func (f *fakeSessionCommands) DeleteTask(_ string, taskID string) error {
+	f.settledTaskID = taskID
+	return f.err
 }
 
 func (f *fakeSessionCommands) Groups(string) ([]sessioncmd.Group, error) {
@@ -471,6 +508,7 @@ func TestListsFleetTools(t *testing.T) {
 		"list_sessions", "create_session", "read_session", "send_session",
 		"revive_session", "kill_session", "archive_session",
 		"list_groups", "create_group", "message_status", "wait_for_session",
+		"list_tasks", "create_task", "claim_task", "finish_task", "release_task", "delete_task",
 	} {
 		if !names[want] {
 			t.Fatalf("missing tool %q in %v", want, names)
@@ -673,6 +711,12 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 		{"send_session", map[string]any{"session_id": "a1", "message": "hi"}},
 		{"message_status", map[string]any{"message_id": 7}},
 		{"wait_for_session", map[string]any{"session_id": "a1"}},
+		{"list_tasks", map[string]any{}},
+		{"create_task", map[string]any{"title": "x"}},
+		{"claim_task", map[string]any{}},
+		{"finish_task", map[string]any{"task_id": "t1"}},
+		{"release_task", map[string]any{"task_id": "t1"}},
+		{"delete_task", map[string]any{"task_id": "t1"}},
 		{"revive_session", map[string]any{"session_id": "a1"}},
 		{"kill_session", map[string]any{"session_id": "a1"}},
 		{"archive_session", map[string]any{"session_id": "a1"}},
@@ -689,4 +733,56 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 func connectFakes(t *testing.T, sessions sessionCommands) *mcp.Server {
 	t.Helper()
 	return newServer(t.TempDir(), "abc123", "test", &fakeTerminalCommands{}, sessions)
+}
+
+func TestTaskToolsForwardArgumentsAndRenderTheList(t *testing.T) {
+	fake := &fakeSessionCommands{
+		tasks: []sessioncmd.Task{
+			{ID: "t1", Title: "add the column", State: "done"},
+			{ID: "t2", Title: "backfill it", State: "pending", DependsOn: []string{"t1"}, Blocked: true},
+			{ID: "t3", Title: "verify", State: "in_progress", OwnerName: "worker", Mine: true},
+		},
+	}
+	session := connectServer(t, connectFakes(t, fake))
+
+	text, isError := callText(t, session, "list_tasks", map[string]any{})
+	if isError {
+		t.Fatalf("list_tasks errored: %q", text)
+	}
+	for _, want := range []string{"add the column", "blocked on t1", "held by worker", "yours"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("list_tasks text missing %q: %s", want, text)
+		}
+	}
+
+	if _, isError := callText(t, session, "create_task", map[string]any{
+		"title": "fix retries", "body": "see internal/retry", "depends_on": []string{"t1"},
+	}); isError {
+		t.Fatal("create_task errored")
+	}
+	if fake.taskTitle != "fix retries" || fake.taskBody != "see internal/retry" || strings.Join(fake.taskDeps, ",") != "t1" {
+		t.Fatalf("create_task args = %q %q %v", fake.taskTitle, fake.taskBody, fake.taskDeps)
+	}
+
+	if _, isError := callText(t, session, "claim_task", map[string]any{}); isError {
+		t.Fatal("claim_task with no id errored")
+	}
+	if fake.claimedTaskID != "" {
+		t.Fatalf("claim-next should forward an empty id, got %q", fake.claimedTaskID)
+	}
+	if _, isError := callText(t, session, "claim_task", map[string]any{"task_id": "t2"}); isError {
+		t.Fatal("claim_task errored")
+	}
+	if fake.claimedTaskID != "t2" {
+		t.Fatalf("claim id = %q", fake.claimedTaskID)
+	}
+	for _, tool := range []string{"finish_task", "release_task", "delete_task"} {
+		fake.settledTaskID = ""
+		if _, isError := callText(t, session, tool, map[string]any{"task_id": "t3"}); isError {
+			t.Fatalf("%s errored", tool)
+		}
+		if fake.settledTaskID != "t3" {
+			t.Fatalf("%s id = %q", tool, fake.settledTaskID)
+		}
+	}
 }
