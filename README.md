@@ -67,7 +67,7 @@ Arch Linux, mise, `go install`, prebuilt binaries, Windows (WSL2), and updating:
 agent-manager
 ```
 
-Sessions run inside tmux (`am_*` namespace), so they survive the manager quitting. Inside a session, **Ctrl+Q** detaches back to the manager and **Ctrl+R** opens its diff review. `agent-manager --version` prints the version.
+Sessions run inside tmux (`am_*` namespace), so they survive the manager quitting. Inside a session, **Ctrl+Q** detaches back to the manager, **Ctrl+R** opens its diff review and **Ctrl+O** opens its directory in your editor. `agent-manager --version` prints the version.
 
 Agent sessions live on a private tmux server named `agentmgr`, so they never mix with the tmux you run yourself and a `kill-server` on your own socket leaves them alone. To reach one from a plain shell, name that server: `tmux -L agentmgr ls`, then `tmux -L agentmgr attach -t am_<id>`.
 

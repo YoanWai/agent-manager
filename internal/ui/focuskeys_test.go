@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -344,6 +345,66 @@ func TestFocusCtrlROpensReviewAndReturns(t *testing.T) {
 	}
 }
 
+// Ctrl+O opens the focused session's directory the way the list's o does,
+// and a windowed editor leaves the focus where it was.
+func TestFocusCtrlOOpensEditor(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	dir := t.TempDir()
+	createSession(t, m, "focusedit", dir, "")
+	m.selectSessionRow(t, "focusedit")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlO})
+	*m = *updated.(*Model)
+	if cmd == nil {
+		t.Fatalf("ctrl+o in focus returned no launch, err = %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+
+	if want := []string{"code", resolved(t, dir)}; !slices.Equal(*launched, want) {
+		t.Fatalf("launched %v, want %v", *launched, want)
+	}
+	if m.mode != modeFocus {
+		t.Fatalf("a windowed editor should leave the focus alone, mode = %v", m.mode)
+	}
+	if !strings.Contains(m.errBar.text, "code") {
+		t.Fatalf("status line should name the editor, got %q", m.errBar.text)
+	}
+}
+
+// An editor that took the terminal hands it back without the mouse
+// reporting focus mode armed, so the pane's wheel and drag would be dead
+// on return.
+func TestFocusEditorThatTookTheScreenRearmsMouse(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "screenedit", t.TempDir(), "")
+	m.selectSessionRow(t, "screenedit")
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+
+	updated, cmd := m.Update(editorDoneMsg{tookScreen: true})
+	*m = *updated.(*Model)
+	if cmd == nil {
+		t.Fatal("returning from a terminal editor issued no mouse command")
+	}
+	if !batchContains(cmd(), tea.EnableMouseCellMotion()) {
+		t.Fatalf("mouse reporting was not re-armed: %T", cmd())
+	}
+
+	// A windowed editor never took the terminal, so it has nothing to undo.
+	updated, cmd = m.Update(editorDoneMsg{name: "code", dir: "/tmp"})
+	*m = *updated.(*Model)
+	if cmd != nil {
+		t.Fatalf("a windowed editor should leave the terminal alone, got %T", cmd())
+	}
+}
+
 // Leaving focus must keep mouse reporting: handing it back would let a
 // wheel notch scroll the manager out of view from the list.
 func TestFocusExitKeepsMouse(t *testing.T) {
@@ -457,7 +518,7 @@ func TestFocusPasteKeepsPromptInComposer(t *testing.T) {
 // This test verifies the handler returns no mouse-enable command.
 func TestDetachNoMouseReArm(t *testing.T) {
 	m := buildModel(t)
-	t.Cleanup(func() { m.tmux.ClearReviewRequest() })
+	clearRequestOnCleanup(t, m)
 
 	_, cmd := m.Update(attachDoneMsg{})
 	if cmd != nil {

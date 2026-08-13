@@ -20,9 +20,15 @@ const prefix = "am_"
 // otherwise share a server with the live agents and take them all down at once.
 const defaultSocket = "agentmgr"
 
-// reviewOption is the global tmux user option the in-session Ctrl+R binding
-// sets to signal the manager to open review for the session it just detached.
-const reviewOption = "@am_review"
+// requestOption is the global tmux user option the in-session bindings set
+// on their way out, naming what the manager should do with the session they
+// just detached from.
+const requestOption = "@am_request"
+
+const (
+	RequestReview = "review"
+	RequestEditor = "editor"
+)
 
 type Driver struct {
 	bin    string
@@ -253,7 +259,7 @@ func (d *Driver) styleStatusBar(name string) error {
 		// The default status-right-length of 40 truncates the hint before the
 		// Ctrl+R part, so widen it to fit the whole footer.
 		{"set-option", "-t", name, "status-right-length", "80"},
-		{"set-option", "-t", name, "status-right", " agent-manager · Ctrl+q = back · Ctrl+r = review "},
+		{"set-option", "-t", name, "status-right", " agent-manager · Ctrl+q = back · Ctrl+r = review · Ctrl+o = editor "},
 		{"set-option", "-t", name, "status-style", "bg=colour236,fg=colour249"},
 		// hide the "0:windowname*" window list; it reads as noise here
 		{"set-option", "-t", name, "window-status-format", ""},
@@ -270,15 +276,20 @@ func (d *Driver) styleStatusBar(name string) error {
 	return nil
 }
 
-// EnsureBindings installs the server-global Ctrl+Q / Ctrl+\ detach and
-// Ctrl+R review bindings. All only act inside am_* sessions; elsewhere the
-// key passes through to the pane. Idempotent, so it is safe to re-run for
-// sessions that predate a binding.
+// EnsureBindings installs the server-global Ctrl+Q / Ctrl+\ detach, Ctrl+R
+// review and Ctrl+O editor bindings. All only act inside am_* sessions;
+// elsewhere the key passes through to the pane. Idempotent, so it is safe to
+// re-run for sessions that predate a binding.
 func (d *Driver) EnsureBindings() error {
+	inSession := "#{m:" + prefix + "*,#{session_name}}"
+	request := func(name string) string {
+		return "set-option -g " + requestOption + " " + name + " ; detach-client"
+	}
 	binds := [][]string{
-		{"bind-key", "-n", "C-q", "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "detach-client", "send-keys C-q"},
-		{"bind-key", "-n", `C-\`, "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "detach-client", `send-keys C-\\`},
-		{"bind-key", "-n", "C-r", "if-shell", "-F", "#{m:" + prefix + "*,#{session_name}}", "set-option -g " + reviewOption + " 1 ; detach-client", "send-keys C-r"},
+		{"bind-key", "-n", "C-q", "if-shell", "-F", inSession, "detach-client", "send-keys C-q"},
+		{"bind-key", "-n", `C-\`, "if-shell", "-F", inSession, "detach-client", `send-keys C-\\`},
+		{"bind-key", "-n", "C-r", "if-shell", "-F", inSession, request(RequestReview), "send-keys C-r"},
+		{"bind-key", "-n", "C-o", "if-shell", "-F", inSession, request(RequestEditor), "send-keys C-o"},
 	}
 	for _, args := range binds {
 		if _, err := d.run(args...); err != nil {
@@ -391,22 +402,22 @@ func sanitizeFormat(s string) string {
 	return strings.ReplaceAll(s, "#", "##")
 }
 
-// ReviewRequested reports whether the in-session Ctrl+R binding set the
-// review marker before detaching. A missing tmux server means no request.
-func (d *Driver) ReviewRequested() (bool, error) {
-	out, err := exec.Command(d.bin, d.args("show-option", "-gqv", reviewOption)...).CombinedOutput()
+// A missing tmux server means no request rather than an error: the
+// manager outlives the sessions it opens.
+func (d *Driver) PendingRequest() (string, error) {
+	out, err := exec.Command(d.bin, d.args("show-option", "-gqv", requestOption)...).CombinedOutput()
 	if err != nil {
 		if noServer(string(out)) {
-			return false, nil
+			return "", nil
 		}
-		return false, fmt.Errorf("tmux show-option %s: %w: %s", reviewOption, err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("tmux show-option %s: %w: %s", requestOption, err, strings.TrimSpace(string(out)))
 	}
-	return strings.TrimSpace(string(out)) == "1", nil
+	return strings.TrimSpace(string(out)), nil
 }
 
-// ClearReviewRequest unsets the review marker so it fires once per request.
-func (d *Driver) ClearReviewRequest() error {
-	_, err := d.run("set-option", "-gu", reviewOption)
+// ClearRequest unsets the marker so a request is carried out once.
+func (d *Driver) ClearRequest() error {
+	_, err := d.run("set-option", "-gu", requestOption)
 	return err
 }
 

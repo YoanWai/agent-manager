@@ -419,7 +419,10 @@ func (m *Model) viewFooter() string {
 			{"typing", "goes to the agent"},
 			{"ctrl+q / ctrl+\\", "back to manager"},
 			{"ctrl+r", "review"},
-			{"drag / double / triple click", "copy"},
+			{"ctrl+o", "editor"},
+			// The footer holds one row: the word and line gestures are in
+			// the key map, where there is room to name all three.
+			{"drag / click", "copy"},
 		}
 		if m.pane.mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})

@@ -111,6 +111,17 @@ func (m *Model) applyCmd(t *testing.T, cmd tea.Cmd) {
 	*m = *updated.(*Model)
 }
 
+// clearRequestOnCleanup drops the server-global detach marker when the test
+// ends: one left behind reaches every later test that reads it.
+func clearRequestOnCleanup(t *testing.T, m *Model) {
+	t.Helper()
+	t.Cleanup(func() {
+		if err := m.tmux.ClearRequest(); err != nil {
+			t.Errorf("ClearRequest: %v", err)
+		}
+	})
+}
+
 func (m *Model) sessionRows() []store.Session {
 	var sessions []store.Session
 	for _, r := range m.rows {
