@@ -159,6 +159,9 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if got, err := m.store.Get(sess.ID); err == nil {
+		t.Logf("DIAG after pin: status=%q acked=%v", got.Status, got.Acked)
+	}
 	rec := &notifyRecorder{}
 	m.poller.notifyFn = rec.fn()
 
@@ -170,7 +173,13 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if got, err := m.store.Get(sess.ID); err == nil {
+		t.Logf("DIAG before refresh: status=%q", got.Status)
+	}
 	m.applyCmd(t, m.refreshCmd())
+	if got, err := m.store.Get(sess.ID); err == nil {
+		t.Logf("DIAG after refresh: status=%q calls=%v", got.Status, rec.all())
+	}
 	calls := waitForCalls(t, rec, 1)
 	if calls[0] != (notify.Event{Session: "needy", Tool: "claude-hooked", Kind: notify.Waiting}) {
 		t.Fatalf("want one waiting notification titled with the session name, got %v", calls)

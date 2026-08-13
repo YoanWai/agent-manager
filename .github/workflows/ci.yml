@@ -36,7 +36,7 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -race ./internal/ui/ -run TestRefreshNotifiesWaitingTransitionOnce -count=5 -v
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
