@@ -1,10 +1,14 @@
 package sessioncmd
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -26,7 +30,7 @@ type Session struct {
 	Tool      string `json:"tool" jsonschema:"agent CLI the session runs"`
 	Group     string `json:"group" jsonschema:"group path holding the session; empty is the root"`
 	Directory string `json:"directory" jsonschema:"session's current working directory, or its launch directory when stopped"`
-	Status    string `json:"status" jsonschema:"Agent Manager status: starting, working, waiting, finished, idle or dead"`
+	Status    string `json:"status" jsonschema:"Agent Manager status: starting, working, waiting, finished, idle, errored or dead"`
 	Running   bool   `json:"running" jsonschema:"whether the session currently has a live tmux pane"`
 	Archived  bool   `json:"archived" jsonschema:"whether the session is archived out of the active list"`
 	Branch    string `json:"branch,omitempty" jsonschema:"branch of the worktree Agent Manager created for this session, when it has one"`
@@ -43,7 +47,7 @@ type Group struct {
 	Directory string `json:"directory,omitempty" jsonschema:"group's default working directory, inherited by sessions created in it"`
 	Worktree  string `json:"worktree,omitempty" jsonschema:"group's spawn-in-worktree choice: on, off, or empty to inherit"`
 	Archived  bool   `json:"archived" jsonschema:"whether the group is archived"`
-	Sessions  int    `json:"sessions" jsonschema:"number of sessions directly in this group"`
+	Sessions  int    `json:"sessions" jsonschema:"number of active agent sessions directly in this group"`
 }
 
 type CreateSessionOptions struct {
@@ -163,6 +167,9 @@ func (s *Sessions) Groups(sessionID string) ([]Group, error) {
 	}
 	counts := make(map[string]int, len(stored))
 	for _, sess := range sessions {
+		if runtime.cfg.Tools[sess.Tool].Shell || sess.Archived {
+			continue
+		}
 		counts[sess.Group]++
 	}
 	groups := make([]Group, 0, len(stored))
@@ -268,27 +275,27 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	if err != nil {
 		return Session{}, err
 	}
-	worktreeRepo, worktreeBranch := "", ""
-	if wantWorktree {
-		driver, err := s.newGit()
-		if err != nil {
-			return Session{}, fmt.Errorf("worktree sessions need git installed: %w", err)
+	dir, worktree, err := s.prepareWorktree(dir, name, wantWorktree, opts.Worktree != nil)
+	if err != nil {
+		return Session{}, err
+	}
+	// Every failure from here on has to hand back the worktree it just
+	// made: AddWorktree refuses a path that already exists, so a leaked
+	// one turns the caller's retry into a name collision it cannot explain.
+	discard := func() {
+		if worktree.repo == "" {
+			return
 		}
-		root, err := driver.RepoRoot(dir)
-		if err != nil {
-			return Session{}, fmt.Errorf("%s cannot host a worktree: %w", dir, err)
+		if driver, err := s.newGit(); err == nil {
+			_, _ = driver.RemoveWorktreeIfClean(worktree.repo, dir, worktree.branch)
 		}
-		path, branch, err := driver.AddWorktree(root, name)
-		if err != nil {
-			return Session{}, err
-		}
-		dir, worktreeRepo, worktreeBranch = path, root, branch
 	}
 
 	plan := launch.Assemble(tool, prompt, autoNamed)
 	manager := hooks.NewManager(s.configDir)
 	command, env, err := launch.Environment(manager, toolName, tool, plan.Command, id)
 	if err != nil {
+		discard()
 		return Session{}, err
 	}
 	sess := store.Session{
@@ -299,19 +306,55 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		Group:          group,
 		Status:         status.Starting,
 		AgentSessionID: plan.AgentSessionID,
-		WorktreeRepo:   worktreeRepo,
-		WorktreeBranch: worktreeBranch,
+		WorktreeRepo:   worktree.repo,
+		WorktreeBranch: worktree.branch,
 		PendingInputs:  plan.PendingInputs,
 	}
 	if err := runtime.driver.Create(sess.ID, sess.Cwd, command, env, 0, 0); err != nil {
+		discard()
 		return Session{}, err
 	}
 	if err := runtime.store.CreateSession(sess); err != nil {
 		_ = runtime.driver.Kill(sess.ID)
+		discard()
 		return Session{}, err
 	}
 	_ = runtime.driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
 	return runtime.sessionInfo(sess, true, false), nil
+}
+
+type worktreeTarget struct {
+	repo   string
+	branch string
+}
+
+// prepareWorktree opens the session's own checkout when one is wanted.
+// A directory that cannot host one is only an error when the caller asked
+// for a worktree by name; an inherited default degrades to a plain spawn,
+// which is what the New Session form does rather than refusing to launch.
+func (s *Sessions) prepareWorktree(dir, name string, wanted, explicit bool) (string, worktreeTarget, error) {
+	if !wanted {
+		return dir, worktreeTarget{}, nil
+	}
+	driver, err := s.newGit()
+	if err != nil {
+		if explicit {
+			return "", worktreeTarget{}, fmt.Errorf("worktree sessions need git installed: %w", err)
+		}
+		return dir, worktreeTarget{}, nil
+	}
+	root, err := driver.RepoRoot(dir)
+	if err != nil {
+		if explicit {
+			return "", worktreeTarget{}, fmt.Errorf("%s cannot host a worktree: %w; pass worktree false to spawn there anyway", dir, err)
+		}
+		return dir, worktreeTarget{}, nil
+	}
+	path, branch, err := driver.AddWorktree(root, name)
+	if err != nil {
+		return "", worktreeTarget{}, err
+	}
+	return path, worktreeTarget{repo: root, branch: branch}, nil
 }
 
 // worktreeWanted resolves whether a spawn opens its own worktree: an
@@ -354,28 +397,129 @@ func agentToolNames(r *runtime) []string {
 	return names
 }
 
-// Send types a message into another agent's pane, the same way the quick
-// prompt bar does, so the agent reads it as its next turn.
-func (s *Sessions) Send(sessionID, targetID, message string) error {
-	if strings.TrimSpace(message) == "" {
-		return errors.New("message is empty")
+type SendResult struct {
+	MessageID     int64 `json:"message_id" jsonschema:"pass to message_status to see whether it arrived"`
+	QueuePosition int   `json:"queue_position" jsonschema:"how many messages are ahead of this one in the recipient's queue"`
+	ManagerAwake  bool  `json:"manager_awake" jsonschema:"whether Agent Manager is running to deliver it; a message queued while it is closed waits until it opens again"`
+}
+
+// Send queues a message for another agent. It is deliberately not typed
+// into the pane here: several tools keep their input line drawn under an
+// approval dialog, so a message sent the moment it is written would answer
+// that dialog. The manager's poller types it in once the target is at rest.
+func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return SendResult{}, errors.New("message is empty")
 	}
 	runtime, err := s.open()
 	if err != nil {
-		return err
+		return SendResult{}, err
 	}
 	defer runtime.store.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
-		return err
+	caller, err := runtime.caller(sessionID)
+	if err != nil {
+		return SendResult{}, err
 	}
 	target, err := runtime.agent(targetID)
 	if err != nil {
-		return err
+		return SendResult{}, err
+	}
+	if target.ID == caller.ID {
+		return SendResult{}, errors.New("a session cannot message itself")
 	}
 	if !runtime.driver.Exists(target.ID) {
-		return fmt.Errorf("session %s is not running; revive it with revive_session first", target.ID)
+		return SendResult{}, fmt.Errorf("session %s is not running; revive it with revive_session first", target.ID)
 	}
-	return runtime.driver.SendText(target.ID, message)
+	now := time.Now()
+	id, err := runtime.store.Enqueue(store.InboxMessage{
+		SessionID:   target.ID,
+		SenderID:    caller.ID,
+		SenderName:  caller.Name,
+		Body:        message,
+		Fingerprint: fingerprint(message),
+		SentAt:      now,
+	}, store.DefaultInboxLimits)
+	if err != nil {
+		return SendResult{}, err
+	}
+	// Answering is the acknowledgement: whatever this session was sent by
+	// the agent it is now writing to has plainly been read.
+	if err := runtime.store.MarkRead(caller.ID, target.ID, now); err != nil {
+		return SendResult{}, err
+	}
+	queued, err := runtime.store.QueuedCount(target.ID)
+	if err != nil {
+		return SendResult{}, err
+	}
+	awake, err := runtime.managerAwake(now)
+	if err != nil {
+		return SendResult{}, err
+	}
+	return SendResult{MessageID: id, QueuePosition: queued, ManagerAwake: awake}, nil
+}
+
+// MessageStatus reports what happened to a message this session sent.
+func (s *Sessions) MessageStatus(sessionID string, messageID int64) (MessageState, error) {
+	runtime, err := s.open()
+	if err != nil {
+		return MessageState{}, err
+	}
+	defer runtime.store.Close()
+	caller, err := runtime.caller(sessionID)
+	if err != nil {
+		return MessageState{}, err
+	}
+	msg, err := runtime.store.Message(messageID, caller.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MessageState{}, fmt.Errorf("message %d was not sent by this session, or has aged out of the log", messageID)
+	}
+	if err != nil {
+		return MessageState{}, err
+	}
+	state := MessageState{
+		MessageID: msg.ID,
+		SessionID: msg.SessionID,
+		Body:      msg.Body,
+		State:     "queued",
+	}
+	if !msg.DeliveredAt.IsZero() {
+		state.State = "delivered"
+		state.DeliveredAt = msg.DeliveredAt.Format(time.RFC3339)
+	}
+	if !msg.ReadAt.IsZero() {
+		state.State = "answered"
+	}
+	return state, nil
+}
+
+type MessageState struct {
+	MessageID   int64  `json:"message_id"`
+	SessionID   string `json:"session_id" jsonschema:"session the message was addressed to"`
+	Body        string `json:"body"`
+	State       string `json:"state" jsonschema:"queued (still waiting for the agent to be at rest), delivered (typed into its prompt), or answered (it has since messaged back)"`
+	DeliveredAt string `json:"delivered_at,omitempty" jsonschema:"RFC3339 time the message reached the prompt"`
+}
+
+// managerAwake reports whether a manager has polled recently enough to
+// still be delivering. Queued messages only move while it runs.
+func (r *runtime) managerAwake(now time.Time) (bool, error) {
+	raw, err := r.store.Setting(store.PollerHeartbeatKey)
+	if err != nil || raw == "" {
+		return false, err
+	}
+	stamp, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return false, nil
+	}
+	return now.Sub(time.Unix(0, stamp)) < 3*r.cfg.PollInterval.Duration, nil
+}
+
+// fingerprint collapses whitespace before hashing so a retry that only
+// re-wraps its text is still recognised as the same message.
+func fingerprint(message string) string {
+	sum := sha256.Sum256([]byte(strings.Join(strings.Fields(message), " ")))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *Sessions) Read(sessionID, targetID string) (SessionScreen, error) {

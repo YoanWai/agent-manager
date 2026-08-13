@@ -56,6 +56,7 @@ type fakeSessionCommands struct {
 	sentID      string
 	sentMessage string
 	readID      string
+	statusID    int64
 	revivedID   string
 	killedID    string
 	archivedID  string
@@ -74,10 +75,15 @@ func (f *fakeSessionCommands) Create(_ string, opts sessioncmd.CreateSessionOpti
 	return f.created, f.err
 }
 
-func (f *fakeSessionCommands) Send(_ string, id, message string) error {
+func (f *fakeSessionCommands) Send(_ string, id, message string) (sessioncmd.SendResult, error) {
 	f.sentID = id
 	f.sentMessage = message
-	return f.err
+	return sessioncmd.SendResult{MessageID: 7, QueuePosition: 1, ManagerAwake: true}, f.err
+}
+
+func (f *fakeSessionCommands) MessageStatus(_ string, messageID int64) (sessioncmd.MessageState, error) {
+	f.statusID = messageID
+	return sessioncmd.MessageState{MessageID: messageID, SessionID: "a1b2c3d4", State: "delivered"}, f.err
 }
 
 func (f *fakeSessionCommands) Read(_ string, id string) (sessioncmd.SessionScreen, error) {
@@ -449,7 +455,7 @@ func TestListsFleetTools(t *testing.T) {
 	for _, want := range []string{
 		"list_sessions", "create_session", "read_session", "send_session",
 		"revive_session", "kill_session", "archive_session",
-		"list_groups", "create_group",
+		"list_groups", "create_group", "message_status",
 	} {
 		if !names[want] {
 			t.Fatalf("missing tool %q in %v", want, names)
@@ -488,7 +494,8 @@ func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		"list_sessions":   {"Call first", "create_session"},
 		"create_session":  {"without waiting for the user", "worktree", "cannot see this conversation", "read_session"},
 		"read_session":    {"after create_session", "current screen"},
-		"send_session":    {"self-contained instruction", "read_session"},
+		"send_session":    {"self-contained instruction", "read_session", "at rest", "another agent rather than from the user"},
+		"message_status":  {"delivered", "queued"},
 		"revive_session":  {"dead session"},
 		"kill_session":    {"revive_session", "ask first"},
 		"archive_session": {"archived false"},
@@ -550,7 +557,7 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 
 	if text, isError := callText(t, session, "send_session", map[string]any{
 		"session_id": "a1b2c3d4", "message": "rebase on main",
-	}); isError || !strings.Contains(text, "a1b2c3d4") {
+	}); isError || !strings.Contains(text, "queued message 7") {
 		t.Fatalf("send_session = %q, isError=%v", text, isError)
 	}
 	if fake.sentID != "a1b2c3d4" || fake.sentMessage != "rebase on main" {
@@ -639,6 +646,7 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 		{"create_session", map[string]any{"name": "x"}},
 		{"read_session", map[string]any{"session_id": "a1"}},
 		{"send_session", map[string]any{"session_id": "a1", "message": "hi"}},
+		{"message_status", map[string]any{"message_id": 7}},
 		{"revive_session", map[string]any{"session_id": "a1"}},
 		{"kill_session", map[string]any{"session_id": "a1"}},
 		{"archive_session", map[string]any{"session_id": "a1"}},

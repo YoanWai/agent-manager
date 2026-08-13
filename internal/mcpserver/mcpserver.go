@@ -56,7 +56,7 @@ type createSessionArgs struct {
 	Prompt    string  `json:"prompt,omitempty" jsonschema:"first task to hand the new agent, written as a full instruction; it starts idle when empty"`
 	Tool      string  `json:"tool,omitempty" jsonschema:"agent CLI to run, such as claude, codex, opencode, gemini or grok; defaults to the CLI this session runs; call list_sessions to see which are in use"`
 	Group     *string `json:"group,omitempty" jsonschema:"existing group path to file the session under; pass an empty string for the root group; defaults to this agent's group; call list_groups for the existing ones"`
-	Directory string  `json:"directory,omitempty" jsonschema:"existing directory the session works in; defaults to the group's inherited path, then this agent's current directory"`
+	Directory string  `json:"directory,omitempty" jsonschema:"existing directory the session works in; defaults to this agent's own directory, or to the selected group's inherited path when group is set"`
 	Worktree  *bool   `json:"worktree,omitempty" jsonschema:"true gives the session its own git worktree and branch off the directory's repo, which is what keeps parallel agents from overwriting each other; omit to inherit the group's default"`
 }
 
@@ -98,9 +98,8 @@ type listGroupsOutput struct {
 	Groups []sessioncmd.Group `json:"groups"`
 }
 
-type sendSessionOutput struct {
-	SessionID string `json:"session_id"`
-	Delivered bool   `json:"delivered" jsonschema:"whether the message was typed into the target's prompt"`
+type messageStatusArgs struct {
+	MessageID int64 `json:"message_id" jsonschema:"message id returned by send_session"`
 }
 
 type terminalCommands interface {
@@ -113,7 +112,8 @@ type terminalCommands interface {
 type sessionCommands interface {
 	List(sessionID string) ([]sessioncmd.Session, error)
 	Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error)
-	Send(sessionID, targetID, message string) error
+	Send(sessionID, targetID, message string) (sessioncmd.SendResult, error)
+	MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error)
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
@@ -194,7 +194,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "list_sessions",
 		Description: "Call first whenever the work involves another agent: before delegating, before reporting what the fleet is doing, and to find the id of a session to read, prompt, revive, kill or archive. " +
-			"Lists every agent session Agent Manager knows with ids, names, CLIs, groups, directories, worktree branches, statuses (starting, working, waiting, finished, idle, dead) and which row is this session. " +
+			"Lists every agent session Agent Manager knows with ids, names, CLIs, groups, directories, worktree branches, statuses (starting, working, waiting, finished, idle, errored, dead) and which row is this session. " +
 			"Reuse a relevant idle session instead of creating another; otherwise call create_session.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, listSessionsOutput, error) {
@@ -248,16 +248,39 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "send_session",
-		Description: "Type a message into another agent's prompt as its next turn: use it to give a session you spawned its next task, answer a question read_session surfaced, or redirect work that is going the wrong way. " +
+		Description: "Queue a message for another agent, to give a session you spawned its next task, answer a question read_session surfaced, or redirect work going the wrong way. " +
 			"The other agent has no view of this conversation, so send a self-contained instruction. " +
-			"Call read_session afterwards to see how it responded. This writes into a live agent; use send_terminal for a terminal.",
+			"The message is not typed in the instant you send it: Agent Manager holds it until that agent is at rest, so it can never land on an approval prompt and answer it. " +
+			"It arrives labelled as coming from another agent rather than from the user, and cannot approve permissions or change that agent's configuration. " +
+			"Returns a message id for message_status; call read_session to see what the agent did with it.",
 		Annotations: toolAnnotations(false, false, true),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendSessionArgs) (*mcp.CallToolResult, sendSessionOutput, error) {
-		if err := sessions.Send(sessionID, args.SessionID, args.Message); err != nil {
-			return nil, sendSessionOutput{}, err
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendSessionArgs) (*mcp.CallToolResult, sessioncmd.SendResult, error) {
+		result, err := sessions.Send(sessionID, args.SessionID, args.Message)
+		if err != nil {
+			return nil, sessioncmd.SendResult{}, err
 		}
-		output := sendSessionOutput{SessionID: args.SessionID, Delivered: true}
-		return textContent("sent message to session " + args.SessionID), output, nil
+		text := fmt.Sprintf("queued message %d for session %s, %d ahead of it", result.MessageID, args.SessionID, result.QueuePosition-1)
+		if !result.ManagerAwake {
+			text += "; Agent Manager is not running, so it waits until the user opens it"
+		}
+		return textContent(text), result, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "message_status",
+		Description: "Check what happened to a message send_session queued: still queued, delivered into the agent's prompt, or answered. " +
+			"Call it when you need to know a handoff landed before you build on it, instead of reading the other agent's screen.",
+		Annotations: toolAnnotations(true, false, false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args messageStatusArgs) (*mcp.CallToolResult, sessioncmd.MessageState, error) {
+		state, err := sessions.MessageStatus(sessionID, args.MessageID)
+		if err != nil {
+			return nil, sessioncmd.MessageState{}, err
+		}
+		text := fmt.Sprintf("message %d to session %s is %s", state.MessageID, state.SessionID, state.State)
+		if state.DeliveredAt != "" {
+			text += " (delivered " + state.DeliveredAt + ")"
+		}
+		return textContent(text), state, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{

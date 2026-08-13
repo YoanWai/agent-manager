@@ -203,19 +203,44 @@ func TestSessionsSendAndReadReachTheTargetPane(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := h.sessions.Send(h.caller.ID, created.ID, "rebase on main"); err != nil {
+	sent, err := h.sessions.Send(h.caller.ID, created.ID, "rebase on main")
+	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
-	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "rebase on main")
+	if sent.MessageID == 0 || sent.QueuePosition != 1 {
+		t.Fatalf("send result = %+v", sent)
+	}
+	// The message is queued, not typed: nothing reaches the pane until a
+	// running manager decides the target is at rest.
+	screen, err := h.sessions.Read(h.caller.ID, created.ID)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if strings.Contains(screen.Output, "rebase on main") {
+		t.Fatalf("send must not type into the pane itself, got %q", screen.Output)
+	}
+	state, err := h.sessions.MessageStatus(h.caller.ID, sent.MessageID)
+	if err != nil {
+		t.Fatalf("MessageStatus: %v", err)
+	}
+	if state.State != "queued" {
+		t.Fatalf("message state = %+v", state)
+	}
+	if _, err := h.sessions.Send(h.caller.ID, created.ID, "rebase on main"); err == nil {
+		t.Fatal("an identical message should be refused as a duplicate")
+	}
+	if _, err := h.sessions.Send(h.caller.ID, h.caller.ID, "talking to myself"); err == nil {
+		t.Fatal("a session should not message itself")
+	}
 
-	if err := h.sessions.Send(h.caller.ID, created.ID, "   "); err == nil {
+	if _, err := h.sessions.Send(h.caller.ID, created.ID, "   "); err == nil {
 		t.Fatal("an empty message should be refused")
 	}
 	terminal, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
 	if err != nil {
 		t.Fatalf("create terminal: %v", err)
 	}
-	if err := h.sessions.Send(h.caller.ID, terminal.ID, "ls"); err == nil ||
+	if _, err := h.sessions.Send(h.caller.ID, terminal.ID, "ls"); err == nil ||
 		!strings.Contains(err.Error(), "terminal, not an agent") {
 		t.Fatalf("sending to a terminal error = %v", err)
 	}

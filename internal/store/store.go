@@ -63,8 +63,16 @@ type Store struct {
 	db *sql.DB
 }
 
+// busyTimeout is how long a writer waits for the lock before giving up.
+// The manager and every `agent-manager mcp` process share this database,
+// so without it a collision between the poller's write and a session
+// tool's write fails instantly with SQLITE_BUSY instead of waiting.
+// _txlock=immediate takes the write lock at BEGIN, so a multi-statement
+// transaction cannot fail halfway through trying to upgrade.
+const busyTimeout = "?_pragma=busy_timeout(5000)&_txlock=immediate"
+
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", path+busyTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -144,6 +152,20 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN retired_agent_session_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN pending_inputs TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE sessions ADD COLUMN pending_claimed INTEGER NOT NULL DEFAULT 0`,
+		`CREATE TABLE IF NOT EXISTS session_inbox (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id   TEXT    NOT NULL,
+			sender_id    TEXT    NOT NULL,
+			sender_name  TEXT    NOT NULL,
+			body         TEXT    NOT NULL,
+			fingerprint  TEXT    NOT NULL,
+			sent_at      INTEGER NOT NULL,
+			claimed_at   INTEGER NOT NULL DEFAULT 0,
+			delivered_at INTEGER NOT NULL DEFAULT 0,
+			read_at      INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS session_inbox_queue ON session_inbox (session_id, delivered_at, id)`,
+		`CREATE INDEX IF NOT EXISTS session_inbox_sender ON session_inbox (session_id, sender_id, sent_at)`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -610,6 +632,11 @@ func (s *Store) Delete(id string) error {
 		return err
 	}
 	if _, err := s.db.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	// Session ids are recycled from a fresh UUID prefix, so a message left
+	// pointing at a deleted id could be re-attached to a future session.
+	if _, err := s.db.Exec(`DELETE FROM session_inbox WHERE session_id = ? OR sender_id = ?`, id, id); err != nil {
 		return err
 	}
 	res, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id)

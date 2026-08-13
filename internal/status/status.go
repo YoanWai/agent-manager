@@ -98,10 +98,22 @@ func (e *Engine) Match(tool, pane string) (string, bool) {
 	if !ok {
 		return Idle, false
 	}
-	scope := tr.matchScope(pane)
 	if tr.isLimit(pane) {
 		return Errored, true
 	}
+	if state, ok := tr.matchRules(tr.matchScope(pane)); ok {
+		return state, true
+	}
+	if tr.isBusy(pane) {
+		return Working, true
+	}
+	if state, ok := tr.turnState(pane); ok {
+		return state, true
+	}
+	return tr.defaultStatus, false
+}
+
+func (tr toolRules) matchRules(scope string) (string, bool) {
 	for i, r := range tr.rules {
 		if !r.re.MatchString(scope) {
 			continue
@@ -115,13 +127,20 @@ func (e *Engine) Match(tool, pane string) (string, bool) {
 		}
 		return r.state, true
 	}
-	if tr.isBusy(pane) {
-		return Working, true
+	return "", false
+}
+
+// RuleMatch reports what the tool's configured rules see, without the
+// limit, busy and turn-end fallbacks Match layers on top. A modal dialog always
+// trips a rule, while a question left on screen at a resting prompt does
+// not, which is how a caller tells "do not type here" from "waiting for
+// an answer".
+func (e *Engine) RuleMatch(tool, pane string) (string, bool) {
+	tr, ok := e.tools[tool]
+	if !ok {
+		return "", false
 	}
-	if state, ok := tr.turnState(pane); ok {
-		return state, true
-	}
-	return tr.defaultStatus, false
+	return tr.matchRules(tr.matchScope(pane))
 }
 
 // isLimit reports whether the newest turn is sitting on a usage or rate
