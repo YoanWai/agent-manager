@@ -294,7 +294,7 @@ func TestCreateDeliversLongCommand(t *testing.T) {
 	t.Fatalf("long launch command truncated or failed; wrote %d bytes, want %d; pane:\n%s", len(got), len(payload), pane)
 }
 
-func TestReviewRequestRoundTrip(t *testing.T) {
+func TestDetachRequestRoundTrip(t *testing.T) {
 	driver := requireTmux(t)
 	// A live server is needed for global options to stick.
 	id := "rev" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
@@ -302,39 +302,41 @@ func TestReviewRequestRoundTrip(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
-	t.Cleanup(func() { driver.ClearReviewRequest() })
+	t.Cleanup(func() { driver.ClearRequest() })
 
-	if err := driver.ClearReviewRequest(); err != nil {
-		t.Fatalf("ClearReviewRequest: %v", err)
+	if err := driver.ClearRequest(); err != nil {
+		t.Fatalf("ClearRequest: %v", err)
 	}
-	requested, err := driver.ReviewRequested()
+	request, err := driver.PendingRequest()
 	if err != nil {
-		t.Fatalf("ReviewRequested: %v", err)
+		t.Fatalf("PendingRequest: %v", err)
 	}
-	if requested {
-		t.Fatal("no request expected on a clean marker")
-	}
-
-	if _, err := tmuxCmd("set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
-		t.Fatalf("set marker: %v", err)
-	}
-	requested, err = driver.ReviewRequested()
-	if err != nil {
-		t.Fatalf("ReviewRequested: %v", err)
-	}
-	if !requested {
-		t.Fatal("marker set to 1 should read as requested")
+	if request != "" {
+		t.Fatalf("no request expected on a clean marker, got %q", request)
 	}
 
-	if err := driver.ClearReviewRequest(); err != nil {
-		t.Fatalf("ClearReviewRequest: %v", err)
-	}
-	requested, err = driver.ReviewRequested()
-	if err != nil {
-		t.Fatalf("ReviewRequested: %v", err)
-	}
-	if requested {
-		t.Fatal("clear should drop the marker")
+	for _, want := range []string{RequestReview, RequestEditor} {
+		if _, err := tmuxCmd("set-option", "-g", requestOption, want).CombinedOutput(); err != nil {
+			t.Fatalf("set marker: %v", err)
+		}
+		request, err = driver.PendingRequest()
+		if err != nil {
+			t.Fatalf("PendingRequest: %v", err)
+		}
+		if request != want {
+			t.Fatalf("marker reads as %q, want %q", request, want)
+		}
+
+		if err := driver.ClearRequest(); err != nil {
+			t.Fatalf("ClearRequest: %v", err)
+		}
+		request, err = driver.PendingRequest()
+		if err != nil {
+			t.Fatalf("PendingRequest: %v", err)
+		}
+		if request != "" {
+			t.Fatalf("clear should drop the marker, got %q", request)
+		}
 	}
 }
 

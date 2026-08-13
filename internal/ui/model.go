@@ -157,6 +157,9 @@ type Model struct {
 	moveID     string
 	movePath   string
 	repoPick   repoPickState
+	// editorReturnID is the session an editor request detached from, so the
+	// attach it cost can be resumed once the editor is up.
+	editorReturnID string
 
 	// Repo a human picked by hand per session, outranking the agent's
 	// declaration for as long as this manager runs.
@@ -1291,32 +1294,60 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.requestRefresh()
 			return m, nil
 		}
-		// Ctrl+R inside the session sets a marker before detaching; consume
-		// it here and jump straight to review for the session just attached.
-		requested, err := m.tmux.ReviewRequested()
+		// Ctrl+R and Ctrl+O inside the session leave a marker before
+		// detaching; consume it here and carry it out for the session just
+		// attached.
+		request, err := m.tmux.PendingRequest()
 		if err != nil {
 			m.errBar.text = err.Error()
-		} else if requested {
-			// A failed clear leaves the marker set, which would reopen review
-			// on every later detach, so surface it and stay in the list rather
-			// than letting openDiff reset m.errBar.text and hide it.
-			if clearErr := m.tmux.ClearReviewRequest(); clearErr != nil {
+		} else if request != "" {
+			// A failed clear leaves the marker set, which would replay the
+			// request on every later detach, so surface it and stay in the
+			// list rather than letting the request reset m.errBar.text and
+			// hide it.
+			if clearErr := m.tmux.ClearRequest(); clearErr != nil {
 				m.errBar.text = clearErr.Error()
 				m.requestRefresh()
 				return m, nil
 			}
 			sess, ok := m.selected()
-			cmd := m.openDiff()
-			if ok && m.mode == modeDiff {
-				m.diff.reattachID = sess.ID
+			switch request {
+			case tmux.RequestReview:
+				cmd := m.openDiff()
+				if ok && m.mode == modeDiff {
+					m.diff.reattachID = sess.ID
+				}
+				return m, cmd
+			case tmux.RequestEditor:
+				_, cmd := m.openEditor()
+				// The request cost the session its client, so the manager
+				// goes back into it once the editor is up, or once a
+				// terminal editor closes. A refused launch returns no
+				// command and stays in the list with its reason.
+				if ok && cmd != nil {
+					m.editorReturnID = sess.ID
+				}
+				return m, cmd
 			}
-			return m, cmd
 		}
 		m.requestRefresh()
 		return m, nil
 
-	case editorOpenedMsg:
-		m.reportDone("opened " + msg.dir + " in " + msg.name)
+	case editorDoneMsg:
+		if msg.err != nil {
+			// Going back into the session would hide the only account of
+			// what went wrong, so a failed editor keeps the list.
+			m.errBar.text = msg.err.Error()
+			m.editorReturnID = ""
+			return m, nil
+		}
+		if msg.name != "" {
+			m.reportDone("opened " + msg.dir + " in " + msg.name)
+		}
+		if id := m.editorReturnID; id != "" {
+			m.editorReturnID = ""
+			return m, m.reattach(id, m.diff.gen)
+		}
 		return m, nil
 
 	case reattachPreparedMsg:

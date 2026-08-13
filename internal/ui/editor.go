@@ -43,11 +43,15 @@ var (
 	}
 )
 
-// The status line waits on this rather than announcing the editor from
-// openEditor, so a launch that fails is never reported as one that opened.
-type editorOpenedMsg struct {
+// editorDoneMsg ends an editor request. The status line waits on it rather
+// than announcing the editor from openEditor, so a launch that fails is
+// never reported as one that opened: name and dir are filled once a
+// windowed editor is running, and err carries a launch that failed or a
+// terminal editor that exited badly.
+type editorDoneMsg struct {
 	name string
 	dir  string
+	err  error
 }
 
 func (m *Model) openEditor() (tea.Model, tea.Cmd) {
@@ -68,10 +72,7 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 	m.errBar.text = ""
 	if !detachedEditors[editorName(line)] {
 		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-			if err != nil {
-				return errMsg{err}
-			}
-			return nil
+			return editorDoneMsg{err: err}
 		})
 	}
 	return m, startEditorCmd(cmd, editorName(line), dir)
@@ -82,9 +83,9 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 func startEditorCmd(cmd *exec.Cmd, name, dir string) tea.Cmd {
 	return func() tea.Msg {
 		if err := startEditor(cmd); err != nil {
-			return errMsg{err}
+			return editorDoneMsg{err: err}
 		}
-		return editorOpenedMsg{name: name, dir: dir}
+		return editorDoneMsg{name: name, dir: dir}
 	}
 }
 

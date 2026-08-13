@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 // captureEditor swaps both editor seams: PATH answers only for the names
@@ -240,5 +241,138 @@ func TestOpenEditorNamesADirectoryThatIsGone(t *testing.T) {
 	}
 	if !strings.HasSuffix(m.errBar.text, gone) {
 		t.Fatalf("status line should name the directory, got %q", m.errBar.text)
+	}
+}
+
+// Ctrl+O inside an attach leaves a request behind and detaches: the manager
+// opens the editor for the session it was in, then hands that session its
+// client back.
+func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	dir := t.TempDir()
+	createSession(t, m, "editme", dir, "")
+	m.selectSessionRow(t, "editme")
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("no session selected")
+	}
+	t.Cleanup(func() { m.tmux.ClearRequest() })
+
+	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestEditor).CombinedOutput(); err != nil {
+		t.Fatalf("set marker: %v", err)
+	}
+	updated, cmd := m.Update(attachDoneMsg{sessID: sess.ID})
+	*m = *updated.(*Model)
+	if cmd == nil {
+		t.Fatalf("the request produced no launch, err = %q", m.errBar.text)
+	}
+	if m.editorReturnID != sess.ID {
+		t.Fatalf("return armed for %q, want %q", m.editorReturnID, sess.ID)
+	}
+	request, err := m.tmux.PendingRequest()
+	if err != nil {
+		t.Fatalf("PendingRequest: %v", err)
+	}
+	if request != "" {
+		t.Fatalf("carrying the request out should consume it, got %q", request)
+	}
+
+	done, isDone := cmd().(editorDoneMsg)
+	if !isDone || done.err != nil {
+		t.Fatalf("editor launch reported %#v", done)
+	}
+	if want := []string{"code", resolved(t, dir)}; !slices.Equal(*launched, want) {
+		t.Fatalf("launched %v, want %v", *launched, want)
+	}
+
+	updated, cmd = m.Update(done)
+	*m = *updated.(*Model)
+	if m.editorReturnID != "" {
+		t.Fatalf("the return should be consumed, still holds %q", m.editorReturnID)
+	}
+	if cmd == nil {
+		t.Fatal("the session should get its client back")
+	}
+	prepared, isPrepared := cmd().(reattachPreparedMsg)
+	if !isPrepared || prepared.sessID != sess.ID {
+		t.Fatalf("want a reattach for %q, got %#v", sess.ID, prepared)
+	}
+}
+
+// A request the manager cannot carry out leaves nothing armed: the next
+// editor opened from the list must not drag the session back on screen.
+func TestAttachDoneRefusedEditorArmsNoReturn(t *testing.T) {
+	m := buildModel(t)
+	captureEditor(t)
+	createSession(t, m, "editme", t.TempDir(), "")
+	m.selectSessionRow(t, "editme")
+	t.Cleanup(func() { m.tmux.ClearRequest() })
+
+	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestEditor).CombinedOutput(); err != nil {
+		t.Fatalf("set marker: %v", err)
+	}
+	updated, cmd := m.Update(attachDoneMsg{})
+	*m = *updated.(*Model)
+	if cmd != nil {
+		t.Fatal("a refused request should return no command")
+	}
+	if m.editorReturnID != "" {
+		t.Fatalf("nothing launched, so nothing to return from, got %q", m.editorReturnID)
+	}
+	if !strings.Contains(m.errBar.text, "no editor found") {
+		t.Fatalf("status line should say why, got %q", m.errBar.text)
+	}
+}
+
+// An editor that draws in the terminal takes the screen and hands it back
+// on exit, so the request arms the return the same way a windowed one does.
+func TestAttachDoneTerminalEditorArmsTheReturn(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t)
+	m.cfg.Editor = "my-own-edit-wrapper"
+	createSession(t, m, "editme", t.TempDir(), "")
+	m.selectSessionRow(t, "editme")
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("no session selected")
+	}
+	t.Cleanup(func() { m.tmux.ClearRequest() })
+
+	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestEditor).CombinedOutput(); err != nil {
+		t.Fatalf("set marker: %v", err)
+	}
+	updated, cmd := m.Update(attachDoneMsg{sessID: sess.ID})
+	*m = *updated.(*Model)
+	if cmd == nil {
+		t.Fatalf("the request produced no launch, err = %q", m.errBar.text)
+	}
+	if len(*launched) != 0 {
+		t.Fatalf("a terminal editor must not start detached, got %v", *launched)
+	}
+	if m.editorReturnID != sess.ID {
+		t.Fatalf("return armed for %q, want %q", m.editorReturnID, sess.ID)
+	}
+}
+
+// An editor that failed to start keeps the list: going back into the
+// session would hide the only account of what went wrong.
+func TestEditorFailureKeepsTheListAndItsReason(t *testing.T) {
+	m := buildModel(t)
+	captureEditor(t, "code")
+	createSession(t, m, "editme", t.TempDir(), "")
+	m.selectSessionRow(t, "editme")
+	m.editorReturnID = m.sessionRows()[0].ID
+
+	updated, cmd := m.Update(editorDoneMsg{err: errors.New("exec: \"code\": file does not exist")})
+	*m = *updated.(*Model)
+	if cmd != nil {
+		t.Fatal("a failed editor should not hand the session back its client")
+	}
+	if m.editorReturnID != "" {
+		t.Fatalf("the return should be dropped, still holds %q", m.editorReturnID)
+	}
+	if !strings.Contains(m.errBar.text, "does not exist") {
+		t.Fatalf("status line should carry the failure, got %q", m.errBar.text)
 	}
 }

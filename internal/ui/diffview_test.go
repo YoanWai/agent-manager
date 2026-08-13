@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -461,9 +462,9 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	if !ok {
 		t.Fatal("no session selected")
 	}
-	t.Cleanup(func() { m.tmux.ClearReviewRequest() })
+	t.Cleanup(func() { m.tmux.ClearRequest() })
 
-	if _, err := tmuxCmd("set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
+	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, _ := m.Update(attachDoneMsg{})
@@ -531,12 +532,12 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 	if !ok {
 		t.Fatal("no session selected")
 	}
-	t.Cleanup(func() { m.tmux.ClearReviewRequest() })
+	t.Cleanup(func() { m.tmux.ClearRequest() })
 
 	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
 		t.Fatalf("set finished: %v", err)
 	}
-	if _, err := tmuxCmd("set-option", "-g", "@am_review", "1").CombinedOutput(); err != nil {
+	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestReview).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
 	}
 	updated, _ := m.Update(attachDoneMsg{})
