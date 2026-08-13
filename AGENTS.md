@@ -53,7 +53,11 @@ The notes carry more than the generated list of pull requests:
   pull requests, not only the generated list, and name what each one did.
 - **Thanks to whoever reported what got fixed, by handle.** A bug someone
   took the time to write up is why the fix exists, and the reporter is
-  usually not the author.
+  usually not the author. Credit the release a feature builds on, too, when
+  it extends someone else's work.
+
+A range with nobody outside the maintainer in it carries no thanks line;
+write the summary and leave it at that rather than manufacturing one.
 
 Write them into a file and publish with
 `goreleaser release --clean --release-notes=notes.md`, or edit the release
