@@ -378,6 +378,33 @@ func TestFocusCtrlOOpensEditor(t *testing.T) {
 	}
 }
 
+// An editor that took the terminal hands it back without the mouse
+// reporting focus mode armed, so the pane's wheel and drag would be dead
+// on return.
+func TestFocusEditorThatTookTheScreenRearmsMouse(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "screenedit", t.TempDir(), "")
+	m.selectSessionRow(t, "screenedit")
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+
+	updated, cmd := m.Update(editorDoneMsg{tookScreen: true})
+	*m = *updated.(*Model)
+	if cmd == nil {
+		t.Fatal("returning from a terminal editor issued no mouse command")
+	}
+	if !batchContains(cmd(), tea.EnableMouseCellMotion()) {
+		t.Fatalf("mouse reporting was not re-armed: %T", cmd())
+	}
+
+	// A windowed editor never took the terminal, so it has nothing to undo.
+	updated, cmd = m.Update(editorDoneMsg{name: "code", dir: "/tmp"})
+	*m = *updated.(*Model)
+	if cmd != nil {
+		t.Fatalf("a windowed editor should leave the terminal alone, got %T", cmd())
+	}
+}
+
 // Leaving focus must keep mouse reporting: handing it back would let a
 // wheel notch scroll the manager out of view from the list.
 func TestFocusExitKeepsMouse(t *testing.T) {

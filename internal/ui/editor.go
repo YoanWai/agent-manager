@@ -47,11 +47,14 @@ var (
 // than announcing the editor from openEditor, so a launch that fails is
 // never reported as one that opened: name and dir are filled once a
 // windowed editor is running, and err carries a launch that failed or a
-// terminal editor that exited badly.
+// terminal editor that exited badly. tookScreen marks the editor the
+// manager handed the terminal to, which comes back without the mouse
+// reporting and background the manager had set on it.
 type editorDoneMsg struct {
-	name string
-	dir  string
-	err  error
+	name       string
+	dir        string
+	err        error
+	tookScreen bool
 }
 
 func (m *Model) openEditor() (tea.Model, tea.Cmd) {
@@ -72,7 +75,7 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 	m.errBar.text = ""
 	if !detachedEditors[editorName(line)] {
 		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-			return editorDoneMsg{err: err}
+			return editorDoneMsg{err: err, tookScreen: true}
 		})
 	}
 	return m, startEditorCmd(cmd, editorName(line), dir)

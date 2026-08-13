@@ -1334,21 +1334,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case editorDoneMsg:
+		var resume tea.Cmd
+		if msg.tookScreen {
+			// The terminal comes back from an editor the way it comes back
+			// from an attach: painted in the editor's background, and
+			// without the mouse reporting focus mode armed on the way in.
+			SyncTerminalBackground()
+			if m.mode == modeFocus {
+				resume = tea.EnableMouseCellMotion
+			}
+		}
 		if msg.err != nil {
 			// Going back into the session would hide the only account of
 			// what went wrong, so a failed editor keeps the list.
 			m.errBar.text = msg.err.Error()
 			m.editorReturnID = ""
-			return m, nil
+			return m, resume
 		}
 		if msg.name != "" {
 			m.reportDone("opened " + msg.dir + " in " + msg.name)
 		}
 		if id := m.editorReturnID; id != "" {
 			m.editorReturnID = ""
-			return m, m.reattach(id, m.diff.gen)
+			return m, tea.Batch(resume, m.reattach(id, m.diff.gen))
 		}
-		return m, nil
+		return m, resume
 
 	case reattachPreparedMsg:
 		if msg.diffGen != m.diff.gen || m.diff.active {
