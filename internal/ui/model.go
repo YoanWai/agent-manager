@@ -1310,11 +1310,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.requestRefresh()
 				return m, nil
 			}
+			// Both requests act on the row under the cursor, and the cursor
+			// is not where the request came from: a poll handled ahead of
+			// this message rebuilds the rows, and a filter can drop the
+			// session that detached out of the list entirely.
+			m.focusSession(msg.sessID)
 			sess, ok := m.selected()
+			if !ok || sess.ID != msg.sessID {
+				m.errBar.text = "the session that asked for it has left the list"
+				m.requestRefresh()
+				return m, nil
+			}
 			switch request {
 			case tmux.RequestReview:
 				cmd := m.openDiff()
-				if ok && m.mode == modeDiff {
+				if m.mode == modeDiff {
 					m.diff.reattachID = sess.ID
 				}
 				return m, cmd
@@ -1324,7 +1334,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// goes back into it once the editor is up, or once a
 				// terminal editor closes. A refused launch returns no
 				// command and stays in the list with its reason.
-				if ok && cmd != nil {
+				if cmd != nil {
 					m.editorReturnID = sess.ID
 				}
 				return m, cmd

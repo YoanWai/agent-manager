@@ -307,12 +307,13 @@ func TestAttachDoneRefusedEditorArmsNoReturn(t *testing.T) {
 	captureEditor(t)
 	createSession(t, m, "editme", t.TempDir(), "")
 	m.selectSessionRow(t, "editme")
+	sess := m.sessionRows()[0]
 	clearRequestOnCleanup(t, m)
 
 	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestEditor).CombinedOutput(); err != nil {
 		t.Fatalf("set marker: %v", err)
 	}
-	updated, cmd := m.Update(attachDoneMsg{})
+	updated, cmd := m.Update(attachDoneMsg{sessID: sess.ID})
 	*m = *updated.(*Model)
 	if cmd != nil {
 		t.Fatal("a refused request should return no command")
@@ -374,5 +375,47 @@ func TestEditorFailureKeepsTheListAndItsReason(t *testing.T) {
 	}
 	if !strings.Contains(m.errBar.text, "does not exist") {
 		t.Fatalf("status line should carry the failure, got %q", m.errBar.text)
+	}
+}
+
+// The cursor is not where the request came from: a poll handled ahead of
+// the attach's own message can move it. The request follows the session
+// that detached, and refuses rather than acting on another one.
+func TestAttachDoneEditorFollowsTheSessionThatDetached(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	attachedDir := t.TempDir()
+	createSession(t, m, "attached", attachedDir, "")
+	createSession(t, m, "elsewhere", t.TempDir(), "")
+	attached := m.sessionRows()[0]
+	if attached.Name != "attached" {
+		t.Fatalf("first row is %q", attached.Name)
+	}
+	m.selectSessionRow(t, "elsewhere")
+	clearRequestOnCleanup(t, m)
+
+	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestEditor).CombinedOutput(); err != nil {
+		t.Fatalf("set marker: %v", err)
+	}
+	updated, cmd := m.Update(attachDoneMsg{sessID: attached.ID})
+	*m = *updated.(*Model)
+	m.applyCmd(t, cmd)
+
+	if want := []string{"code", resolved(t, attachedDir)}; !slices.Equal(*launched, want) {
+		t.Fatalf("launched %v, want the attached session's directory %v", *launched, want)
+	}
+
+	// A session that left the list takes its request with it.
+	if _, err := tmuxCmd("set-option", "-g", "@am_request", tmux.RequestEditor).CombinedOutput(); err != nil {
+		t.Fatalf("set marker: %v", err)
+	}
+	*launched = nil
+	updated, cmd = m.Update(attachDoneMsg{sessID: "gone"})
+	*m = *updated.(*Model)
+	if cmd != nil || len(*launched) != 0 {
+		t.Fatalf("a session that is gone should launch nothing, got %v", *launched)
+	}
+	if !strings.Contains(m.errBar.text, "left the list") {
+		t.Fatalf("status line should say why, got %q", m.errBar.text)
 	}
 }
