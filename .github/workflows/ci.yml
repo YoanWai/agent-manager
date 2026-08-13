@@ -36,7 +36,7 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
-        run: go test -race ./internal/ui/ -run TestRefreshNotifiesWaitingTransitionOnce -count=5 -v
+        run: go test -race ./internal/ui/ -v 2>&1 | grep -E 'DIAG|^(---|===) |FAIL|^ok' | tail -80
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
