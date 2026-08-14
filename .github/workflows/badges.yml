@@ -21,7 +21,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: main
-          token: ${{ secrets.BADGE_TOKEN }}
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -30,30 +29,30 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BADGE_TOKEN: ${{ secrets.BADGE_TOKEN }}
         run: go run ./tools/badges
-      - name: Commit generated README regions
+      - name: Publish generated assets to the badges branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ -z "$(git status --porcelain README.md docs/badges/contributors)" ]; then
-            echo "README unchanged"
-          else
-            git add -A README.md docs/badges/contributors
-            git commit -m "chore(badges): refresh the README stats [skip ci]"
-            git push
-          fi
-      - name: Publish the clone count to the badges branch
-        run: |
           if [ ! -f docs/badges/clones.json ]; then
             echo "no fresh clone count, leaving the badges branch as published"
-            exit 0
           fi
           git fetch origin refs/heads/badges:refs/remotes/origin/badges
           git checkout -B badges origin/badges
-          cp docs/badges/clones.json clones.json
-          if [ -z "$(git status --porcelain clones.json)" ]; then
-            echo "clone count unchanged"
+          if [ -f docs/badges/clones.json ]; then
+            cp docs/badges/clones.json clones.json
+          fi
+          if [ -f docs/badges/contributors.png ]; then
+            cp docs/badges/contributors.png contributors.png
+          else
+            echo "no fresh contributor image, leaving the badges branch as published"
+          fi
+          if [ -z "$(git status --porcelain clones.json contributors.png)" ]; then
+            echo "generated assets unchanged"
             exit 0
           fi
           git add clones.json
-          git commit -m "chore(badges): refresh the clone count"
+          if [ -f contributors.png ]; then
+            git add contributors.png
+          fi
+          git commit -m "chore(badges): refresh generated assets"
           git push origin badges
