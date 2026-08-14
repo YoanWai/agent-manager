@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/update"
@@ -364,14 +365,83 @@ func noticeFrame(rows []string, inner int, topLegend, bottomLegend string) []str
 	return append(lines, legend("╰", bottomLegend, "╯"))
 }
 
-// openBrowser is a var so tests can capture the URL instead of opening one.
-var openBrowser = defaultOpenBrowser
+var (
+	// Seams keep link tests from mutating the desktop and clipboard.
+	openBrowser    = defaultOpenBrowser
+	copyBrowserURL = clipboard.WriteText
+)
 
 func defaultOpenBrowser(target string) error {
-	if runtime.GOOS == "darwin" {
-		return exec.Command("open", target).Start()
+	return openBrowserWith(runtime.GOOS, os.Getenv("BROWSER"), target, func(cmd *exec.Cmd) error {
+		return cmd.Run()
+	})
+}
+
+func openBrowserWith(goos, browser, target string, run func(*exec.Cmd) error) error {
+	commands := browserCommands(goos, browser, target)
+	var failures []error
+	for _, cmd := range commands {
+		err := run(cmd)
+		if err == nil {
+			return nil
+		}
+		failures = append(failures, fmt.Errorf("%s: %w", cmd.Args[0], err))
 	}
-	return exec.Command("xdg-open", target).Start()
+	return errors.Join(failures...)
+}
+
+func browserCommands(goos, browser, target string) []*exec.Cmd {
+	if goos == "darwin" {
+		return []*exec.Cmd{exec.Command("open", target)}
+	}
+
+	var commands []*exec.Cmd
+	// Keep candidates as argv so shell syntax in a URL remains inert text.
+	for _, line := range strings.Split(browser, ":") {
+		argv := splitEditorLine(line)
+		if len(argv) == 0 {
+			continue
+		}
+		placed := false
+		for i := range argv {
+			if strings.Contains(argv[i], "%s") {
+				argv[i] = strings.ReplaceAll(argv[i], "%s", target)
+				placed = true
+			}
+		}
+		if !placed {
+			argv = append(argv, target)
+		}
+		commands = append(commands, exec.Command(argv[0], argv[1:]...))
+	}
+	return append(commands, exec.Command("xdg-open", target))
+}
+
+type browserOpenMsg struct {
+	target  string
+	err     error
+	copyErr error
+}
+
+func openLink(target string) tea.Cmd {
+	return func() tea.Msg {
+		err := openBrowser(target)
+		if err == nil {
+			return browserOpenMsg{target: target}
+		}
+		return browserOpenMsg{target: target, err: err, copyErr: copyBrowserURL(target)}
+	}
+}
+
+func (m *Model) handleBrowserOpen(msg browserOpenMsg) {
+	if msg.err == nil {
+		return
+	}
+	if msg.copyErr == nil {
+		m.errBar.text = fmt.Sprintf("could not open link; URL copied to clipboard: %v", msg.err)
+		return
+	}
+	m.errBar.text = fmt.Sprintf("could not open %s: %v; copying URL: %v", msg.target, msg.err, msg.copyErr)
 }
 
 func (m *Model) openNotices(selectID string) {
@@ -536,9 +606,7 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.noticeScroll = min(m.noticeScroll+max(4, m.height/3), m.noticeScrollLimit(notices))
 	case "enter":
 		if m.noticeCursor < len(notices) && notices[m.noticeCursor].url != "" {
-			if err := openBrowser(notices[m.noticeCursor].url); err != nil {
-				m.errBar.text = err.Error()
-			}
+			return m, openLink(notices[m.noticeCursor].url)
 		}
 	case "x", "d":
 		if m.noticeCursor < len(notices) {

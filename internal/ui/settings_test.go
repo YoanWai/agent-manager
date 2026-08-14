@@ -164,7 +164,11 @@ func TestSettingsBugReportRowOpensIssue(t *testing.T) {
 	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
 
 	m.settings.field = settingsFieldBugReport
-	m.handleSettingsKey(key("enter"))
+	_, cmd := m.handleSettingsKey(key("enter"))
+	if opened != "" {
+		t.Fatal("browser started during Update")
+	}
+	m.applyCmd(t, cmd)
 	if !strings.Contains(opened, "issues/new") {
 		t.Fatalf("enter should open the issue page, got %q", opened)
 	}
@@ -291,7 +295,11 @@ func TestSettingsCLIRequestSupportOpensIssue(t *testing.T) {
 	m.openSettings()
 	m.openCLIPicker()
 	m.settings.cliCursor = len(m.settings.cliNames)
-	m.handleSettingsKey(key("enter"))
+	_, cmd := m.handleSettingsKey(key("enter"))
+	if opened != "" {
+		t.Fatal("browser started during Update")
+	}
+	m.applyCmd(t, cmd)
 	if !strings.Contains(opened, "issues/new") || !strings.Contains(opened, "enhancement") {
 		t.Fatalf("request row should open a feature-request issue, got %q", opened)
 	}

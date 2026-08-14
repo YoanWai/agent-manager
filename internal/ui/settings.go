@@ -252,10 +252,7 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		switch m.settings.field {
 		case settingsFieldBugReport:
-			if err := openBrowser(bugReportURL(m.update.version)); err != nil {
-				m.errBar.text = err.Error()
-			}
-			return m, nil
+			return m, openLink(bugReportURL(m.update.version))
 		case settingsFieldCLIs:
 			m.openCLIPicker()
 			return m, nil
@@ -412,10 +409,7 @@ func (m *Model) handleCLIPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		if m.settings.cliCursor >= len(m.settings.cliNames) {
-			if err := openBrowser(requestCLISupportURL()); err != nil {
-				m.errBar.text = err.Error()
-			}
-			return m, nil
+			return m, openLink(requestCLISupportURL())
 		}
 		m.toggleCLIHidden(m.settings.cliNames[m.settings.cliCursor])
 	case "esc":

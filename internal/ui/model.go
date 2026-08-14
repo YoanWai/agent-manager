@@ -1020,6 +1020,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.bannerPhase = 0
 		return m, m.bannerTick()
 
+	case browserOpenMsg:
+		m.handleBrowserOpen(msg)
+		return m, nil
+
 	case previewTickMsg:
 		// Only the list keeps a live pane on screen; review and the modal
 		// screens have no preview to feed, so they skip the capture and
