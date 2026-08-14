@@ -59,8 +59,8 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 	if len(m.sessionRows()) != 1 {
 		t.Fatalf("after restore, active sessions = %d want 1", len(m.sessionRows()))
 	}
-	if m.tmux.Exists(sess.ID) {
-		t.Fatal("restore should not revive the tmux session")
+	if !m.tmux.Exists(sess.ID) {
+		t.Fatal("restore should revive the tmux session")
 	}
 
 	m.selectSessionRow(t, "alpha")
@@ -835,8 +835,8 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 		t.Fatalf("after restore, active sessions = %v want 2", names)
 	}
 	for _, sess := range m.sessionRows() {
-		if m.tmux.Exists(sess.ID) {
-			t.Fatalf("restore should not revive %s", sess.Name)
+		if !m.tmux.Exists(sess.ID) {
+			t.Fatalf("restore should revive %s", sess.Name)
 		}
 	}
 }

@@ -500,13 +500,13 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 			path:     entry.group,
 			action:   actionRestore,
 			sessions: subtree,
-			label:    fmt.Sprintf("restore group %s (%d sessions)?", entry.group, len(subtree)),
+			label:    fmt.Sprintf("restore group %s (%d sessions)? resumes their agents.", entry.group, len(subtree)),
 		}
 	} else {
 		m.confirm = confirmTarget{
 			action:   actionRestore,
 			sessions: []store.Session{entry.sess},
-			label:    fmt.Sprintf("restore %s?", entry.sess.Name),
+			label:    fmt.Sprintf("restore %s? resumes its agent.", entry.sess.Name),
 		}
 	}
 	m.mode = modeConfirmDelete
@@ -642,6 +642,15 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if err := m.applyConfirmedArchived(false); err != nil {
 				m.errBar.text = err.Error()
 				return m, nil
+			}
+			for _, sess := range m.confirm.sessions {
+				if m.tmux.Exists(sess.ID) {
+					continue
+				}
+				if err := m.reviveSession(sess); err != nil {
+					m.reportLaunchError(err)
+					return m, nil
+				}
 			}
 			m.errBar.text = ""
 		case actionKill:
