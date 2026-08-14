@@ -137,6 +137,9 @@ func TestNotifyTransitionSilencedBySetting(t *testing.T) {
 // that stays waiting across polls never re-fires.
 func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 	m := buildModel(t)
+	hooked := m.cfg.Tools["claude-hooked"]
+	hooked.Command = `sh -c 'exec cat' --`
+	m.cfg.Tools["claude-hooked"] = hooked
 	m.openForm()
 	m.form.name.SetValue("needy")
 	m.form.dir.SetValue(t.TempDir())

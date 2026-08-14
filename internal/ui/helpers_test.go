@@ -25,7 +25,7 @@ func buildModel(t *testing.T) *Model {
 		Tools: map[string]config.Tool{
 			"claude": {Command: "cat", DefaultStatus: status.Idle},
 			"claude-hooked": {
-				Command:        `sh -c 'exec cat' --`,
+				Command:        "cat",
 				StatusSource:   "claude-hooks",
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
