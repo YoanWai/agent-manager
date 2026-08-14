@@ -1,16 +1,20 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 language: en-US
 early_access: false
 
 reviews:
-  profile: assertive
+  profile: chill
   request_changes_workflow: true
   high_level_summary: true
+  review_details: true
   poem: true
   review_status: true
   collapse_walkthrough: true
+  assess_linked_issues: true
   auto_review:
     enabled: true
     drafts: false
+    auto_incremental_review: true
     auto_pause_after_reviewed_commits: 0
   finishing_touches:
     docstrings:
@@ -18,6 +22,65 @@ reviews:
   pre_merge_checks:
     docstrings:
       mode: "off"
+    title:
+      mode: warning
+      requirements: |
+        Follow Conventional Commits matching this repo: feat(scope): ...,
+        fix(scope): ..., docs: ..., chore: ..., etc. Scope is a package or
+        area (ui, tmux, status, store, update). The title is what readers
+        should see in the generated changelog.
+    description:
+      mode: warning
+    issue_assessment:
+      mode: warning
+    custom_checks:
+      - name: "Tmux socket isolation"
+        mode: warning
+        instructions: >-
+          Fail if changed Go code introduces a tmux invocation that does not
+          name a socket. A call is isolated when it goes through the driver
+          in internal/tmux (Driver.args pins -L) or when the command line
+          includes -L or -S. A bare exec.Command("tmux", ...) or equivalent
+          resolves through $TMUX to the developer's live server. Also fail
+          if a kill-server, kill-session, global option, or set-hook targets
+          a socket this process does not own. Helpers that already pass -L
+          or -S need nothing further. Pass when every new or modified tmux
+          path is pinned.
+      - name: "Sensitive Output Leak Prevention"
+        mode: warning
+        instructions: >-
+          Review new or modified log and output statements (log.*, fmt.Print
+          variants, slog). Fail if a message includes passwords, secrets,
+          API keys, tokens, or personal data in plaintext. Do not fail
+          structured logging or fmt.Sprintf used for non-sensitive values.
+          Test fixtures and example files are exempt. Pass when no new
+          output can leak credentials or personal data.
+      - name: "New Logic Test Adequacy"
+        mode: warning
+        instructions: >-
+          Flag new functions, methods, and bug fixes that lack proportionate
+          tests next to the file they cover (listview.go -> listview_test.go).
+          Skip trivial changes, generated files, docs, and refactors already
+          covered by existing tests. Pass when new behavior has tests for the
+          happy path and the error path it introduces.
+      - name: "Breaking change disclosure"
+        mode: warning
+        instructions: >-
+          Detect breaking changes to the public CLI (flags, subcommands),
+          config.toml keys, documented environment variables, or exported
+          package APIs. Fail if a breaking change is present and the PR
+          description has no Breaking Changes section that names each
+          change. Pass when there is no breaking change, or each one is
+          documented.
+      - name: "No speculative fallbacks"
+        mode: warning
+        instructions: >-
+          Fail if changed code adds a fallback, nil-guard, or dual-path for
+          a shape that cannot occur in this repository (an imagined field,
+          format, or error). Guards on genuinely external or untrusted input
+          are correct. Silent fallbacks that mask a real failure are a
+          defect. Pass when every new branch is justified by a reachable
+          case.
   path_filters:
     - "!**/*.gif"
     - "!**/*.png"
@@ -41,6 +104,8 @@ reviews:
         Go names (i and j for indices, r and w for readers and writers, ctx, err)
         are idiomatic here and are never worth a comment; flag only a name whose
         meaning a reader cannot recover, or an invented abbreviation.
+        Do not comment on formatting, import order, or style that gofmt already
+        owns.
     - path: "**/*_test.go"
       instructions: |
         Tests live beside the file they cover (listview.go -> listview_test.go).
@@ -103,3 +168,13 @@ chat:
 knowledge_base:
   learnings:
     scope: local
+  issues:
+    scope: local
+  pull_requests:
+    scope: local
+  automatic_repository_linking: true
+  linked_repositories:
+    - repository: "YoanWai/agent-manager-tools"
+      instructions: "Community TOML profiles for CLI tools beyond the built-ins"
+  code_guidelines:
+    enabled: true
