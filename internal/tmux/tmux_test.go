@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -717,4 +718,71 @@ func TestLifecycle(t *testing.T) {
 	if err := driver.Kill(id); err != nil {
 		t.Fatalf("Kill on missing session should be a no-op, got %v", err)
 	}
+}
+
+func TestCommandListSeparatesCommands(t *testing.T) {
+	if got := commandList(); got != nil {
+		t.Fatalf("no commands = %q, want nil", got)
+	}
+	if got := commandList([]string{"set-option", "@one", "alpha"}); !slices.Equal(got, []string{"set-option", "@one", "alpha"}) {
+		t.Fatalf("one command should reach tmux unchanged, got %q", got)
+	}
+	got := commandList(
+		[]string{"set-option", "@one", "alpha"},
+		[]string{"set-option", "@two", "beta"},
+		[]string{"set-option", "@three", "gamma"},
+	)
+	want := []string{
+		"set-option", "@one", "alpha", ";",
+		"set-option", "@two", "beta", ";",
+		"set-option", "@three", "gamma",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("commands should be separated by a lone %q, got %q", ";", got)
+	}
+}
+
+// The separator is what tmux itself reads, so the encoding has to hold against
+// a real server: a value carrying its own semicolon keeps it, and a command
+// that fails takes the rest of the list down with it.
+func TestCommandListRunsAgainstTmux(t *testing.T) {
+	driver := requireTmux(t)
+	id := "cmdlist" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	name := "am_" + id
+
+	if _, err := driver.run(commandList(
+		[]string{"set-option", "-t", name, "@first", `alpha\;`},
+		[]string{"set-option", "-t", name, "@second", "beta"},
+	)...); err != nil {
+		t.Fatalf("run command list: %v", err)
+	}
+	if got := sessionOption(t, name, "@first"); got != "alpha;" {
+		t.Fatalf("@first = %q, want the escaped semicolon kept", got)
+	}
+	if got := sessionOption(t, name, "@second"); got != "beta" {
+		t.Fatalf("@second = %q, want the command after the separator to run", got)
+	}
+
+	if _, err := driver.run(commandList(
+		[]string{"set-option", "-t", "am_no_such_session", "@third", "gamma"},
+		[]string{"set-option", "-t", name, "@fourth", "delta"},
+	)...); err == nil {
+		t.Fatal("a list whose first command fails should report the failure")
+	}
+	if got := sessionOption(t, name, "@fourth"); got != "" {
+		t.Fatalf("@fourth = %q, want the command after a failure skipped", got)
+	}
+}
+
+func sessionOption(t *testing.T, name, option string) string {
+	t.Helper()
+	out, err := tmuxCmd("show-options", "-v", "-t", name, option).CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
