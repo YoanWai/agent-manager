@@ -54,8 +54,8 @@ type Tool struct {
 	BlockedLine    string `toml:"blocked_line"`
 	TrailingNote   string `toml:"trailing_note"`
 	// BusyLine marks work that outlives the turn which started it, such as
-	// background agents. Matching it in the newest turn keeps a turn-end
-	// summary from resolving to finished while that work runs.
+	// background agents and shells. Matching it in the newest turn keeps a
+	// turn-end summary from resolving to finished while that work runs.
 	BusyLine string `toml:"busy_line"`
 	Rules    []Rule `toml:"rules"`
 }
@@ -151,6 +151,12 @@ func (c *Config) backfillToolDefaults() error {
 	return nil
 }
 
+// busyLineAgentsOnly is the busy_line claude shipped with before Claude
+// Code started reporting background shells the same way. A config carrying
+// it verbatim was written by an older release and takes the current
+// pattern; one edited by hand keeps what its author wrote.
+const busyLineAgentsOnly = `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ background agents? to finish`
+
 // mergeTool returns user with any zero-value field filled from def.
 //
 // Shell is deliberately not among them. "terminal" is a plausible name for
@@ -180,6 +186,9 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.BlockedLine, def.BlockedLine)
 	fill(&user.TrailingNote, def.TrailingNote)
 	fill(&user.BusyLine, def.BusyLine)
+	if name == "claude" && user.BusyLine == busyLineAgentsOnly {
+		user.BusyLine = def.BusyLine
+	}
 	if len(user.Rules) == 0 {
 		user.Rules = def.Rules
 	} else if name == "codex" {
@@ -300,9 +309,11 @@ chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$"
 blocked_line = "Interrupted ·"
 # recap blocks ("※ recap: …") render below the turn-end summary
 trailing_note = "^※"
-# background agents keep running after the turn that spawned them ends, and
-# their wait line carries the same shape as a turn-end summary
-busy_line = "^[✻✳✶✽✢·✦✧+*] Waiting for \\d+ background agents? to finish"
+# background agents and shells keep running after the turn that spawned them
+# ends, and the line saying so carries the same shape as a turn-end summary:
+# "✻ Waiting for 2 background agents to finish" / "✻ Cooked for 4s · 2 shells
+# still running"
+busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for \\d+ background agents? to finish|.*· \\d+ shells? still running)"
 rules = [
   # selection dialogs (trust prompt, permission asks, questions) block on the user
   { state = "waiting", pattern = "Enter to confirm" },

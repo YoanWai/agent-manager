@@ -199,6 +199,19 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 			"✻ Waiting for 2 background agents to finish\n※ recap: goal was X; next is Y.\n────\n❯ \n────", Working},
 		{"claude background wait superseded by a newer turn", "claude",
 			"✻ Waiting for 2 background agents to finish\n⏺ all agents reported\n✻ Worked for 5s\n────\n❯ \n────", Finished},
+		// 2026-08-14 real capture: a turn that leaves background shells
+		// running says so in its own summary line, the same way the agent
+		// wait line does.
+		{"claude turn end with one background shell (real capture)", "claude",
+			"⏺ ok\n✻ Worked for 3s · 1 shell still running\n────\n❯ \n────\n  ⏵⏵ bypass permissions on · 1 shell", Working},
+		{"claude turn end with two background shells (real capture)", "claude",
+			"  Ran 2 shell commands\n⏺ ok\n✻ Cooked for 4s · 2 shells still running\n────\n❯ \n────\n  ⏵⏵ bypass permissions on · 2 shells", Working},
+		{"claude background shells drained by a newer turn", "claude",
+			"⏺ ok\n✻ Worked for 3s · 1 shell still running\n⏺ done\n✻ Cooked for 1s\n────\n❯ \n────", Finished},
+		// 2026-08-14 real capture: transient banners render under the busy
+		// line and say nothing about whether the work drained.
+		{"claude background wait under a plugin banner (real capture)", "claude",
+			"⏺ ok\n✻ Waiting for 1 background agent to finish · 1 message hidden (/focus to show)\n  Plugins updated: 7 plugins · Run /reload-plugins to apply\n────\n❯ \n────", Working},
 		{"claude streaming without spinner (real capture)", "claude",
 			"  183\n  184\n────\n❯ \n────\n  ▎ ● Fable 5 ✦ medium", Idle},
 		{"claude fresh start, typed unsubmitted", "claude",

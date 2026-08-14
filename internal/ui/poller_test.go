@@ -342,6 +342,20 @@ func TestHookFinishedUpgradesToWorkingWhileBackgroundAgentsRun(t *testing.T) {
 	}
 }
 
+// A background shell outlives its turn the same way, and Stop fires the
+// moment the main agent stops responding, so the hook reports finished
+// while the shell runs and the notification for it would fire early.
+func TestHookFinishedUpgradesToWorkingWhileBackgroundShellsRun(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked10", Tool: "claude-hooked"}
+	writeHookStatus(t, m, sess.ID, status.Finished)
+
+	pane := "⏺ ok\n✻ Worked for 3s · 1 shell still running\n❯ \n"
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Working {
+		t.Fatalf("a running background shell should upgrade hook finished to working, got %q", got)
+	}
+}
+
 // The wait line disappears once the agents drain, and the completed turn
 // below it must settle back to the hook's own verdict.
 func TestHookFinishedStaysFinishedOnceBackgroundAgentsDrain(t *testing.T) {
