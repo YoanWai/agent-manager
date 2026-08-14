@@ -244,14 +244,16 @@ func TestThePollerResolvesTheReplyFrontPerTool(t *testing.T) {
 	}
 }
 
-// A claim with no delivery is a manager that died mid-send. Whether the
-// text reached the pane is unknowable, so it is retired rather than risk
-// running the same instruction twice.
+// A claim left undelivered long after any paste could still be running is
+// a manager that died mid-send. Whether the text reached the pane is
+// unknowable, so it is retired rather than risk running the same
+// instruction twice.
 func TestInboxRetiresAMessageItCannotProveWasDelivered(t *testing.T) {
 	m := buildModel(t)
 	sess := spawnedSession(t, m, "claude-hooked")
 	id := queueMessage(t, m, sess.ID, "rebase on main")
-	if claimed, err := m.store.ClaimMessage(id, time.Now()); err != nil || !claimed {
+	abandoned := time.Now().Add(-inboxClaimGrace - time.Second)
+	if claimed, err := m.store.ClaimMessage(id, abandoned); err != nil || !claimed {
 		t.Fatalf("claim: %v, claimed=%v", err, claimed)
 	}
 
@@ -276,6 +278,68 @@ func TestInboxRetiresAMessageItCannotProveWasDelivered(t *testing.T) {
 	if strings.Contains(pane, "rebase on main") {
 		t.Fatalf("unconfirmed message was resent:\n%s", pane)
 	}
+}
+
+// Two managers on one store is a configuration the user runs (a release
+// build beside a dev build), and claiming a message and pasting it are not
+// one atomic step. The second manager ticks inside those milliseconds and
+// must leave the row alone: retiring it would tell the sender its message
+// never arrived while it was landing in the pane, and the work would be
+// asked for twice.
+func TestInboxLeavesAClaimAnotherManagerIsStillPasting(t *testing.T) {
+	m := buildModel(t)
+	sess := spawnedSession(t, m, "claude-hooked")
+	id := queueMessage(t, m, sess.ID, "rebase on main")
+	if claimed, err := m.store.ClaimMessage(id, time.Now()); err != nil || !claimed {
+		t.Fatalf("claim: %v, claimed=%v", err, claimed)
+	}
+
+	if err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true); err != nil {
+		t.Fatalf("a claim being pasted right now was reported as a problem: %v", err)
+	}
+	state, err := m.store.Message(id, "sender01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.DroppedAt.IsZero() || !state.DeliveredAt.IsZero() {
+		t.Fatalf("a paste in flight was retired: %+v", state)
+	}
+	if queued, _ := m.store.QueuedCount(sess.ID); queued != 1 {
+		t.Fatal("the row left the queue while its own manager was still typing it")
+	}
+}
+
+// Typed input sits outside the rule match scope on purpose, so a line
+// someone is part way through writing trips no gate. Delivery ends in
+// Enter, which would submit their text mixed with the sender's.
+func TestInboxHoldsAMessageWhileSomeoneIsTypingAtThePrompt(t *testing.T) {
+	m := buildModel(t)
+	sess := spawnedSession(t, m, "ready-tool")
+	queueMessage(t, m, sess.ID, "rebase on main")
+	if err := m.tmux.Paste(sess.ID, "USERTEXT-in-progress"); err != nil {
+		t.Fatalf("paste: %v", err)
+	}
+	pane := settledPane(t, m, sess.ID, "USERTEXT-in-progress")
+
+	if err := m.poller.maybeDeliverInbox(sess, pane, status.Idle, true); err != nil {
+		t.Fatalf("maybeDeliverInbox: %v", err)
+	}
+	if queued, _ := m.store.QueuedCount(sess.ID); queued != 1 {
+		t.Fatal("a message was typed on top of a half-written line")
+	}
+	after, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ReplaceAll(after, "\n", ""), "rebase on main") {
+		t.Fatalf("the message reached a pane someone was typing in:\n%s", after)
+	}
+	// The hold is the typed line, not the session: once it is gone the same
+	// message goes in on a later poll.
+	if err := m.tmux.SendKeys(sess.ID, "C-u"); err != nil {
+		t.Fatalf("clear the line: %v", err)
+	}
+	pollUntilQueued(t, m, sess.ID, 0)
 }
 
 // A send that fails leaves a claimed row nothing may retype, so the queue

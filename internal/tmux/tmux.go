@@ -509,6 +509,29 @@ func (d *Driver) PrepareAttach(id string) error {
 	return err
 }
 
+// Cursor reports where the session's caret sits in its visible pane, in
+// cells from the top left. A capture carries no cursor, so a caller that
+// has to tell an empty prompt from a half-written line asks tmux for it.
+func (d *Driver) Cursor(id string) (int, int, error) {
+	out, err := d.run("display-message", "-p", "-t", sessionName(id), "#{cursor_x},#{cursor_y}")
+	if err != nil {
+		return 0, 0, err
+	}
+	column, row, ok := strings.Cut(strings.TrimSpace(out), ",")
+	if !ok {
+		return 0, 0, fmt.Errorf("tmux reported no cursor for session %s: %q", id, out)
+	}
+	x, err := strconv.Atoi(column)
+	if err != nil {
+		return 0, 0, fmt.Errorf("tmux cursor column %q for session %s: %w", column, id, err)
+	}
+	y, err := strconv.Atoi(row)
+	if err != nil {
+		return 0, 0, fmt.Errorf("tmux cursor row %q for session %s: %w", row, id, err)
+	}
+	return x, y, nil
+}
+
 func (d *Driver) PanePID(id string) (int, error) {
 	out, err := d.run("list-panes", "-t", sessionName(id), "-F", "#{pane_pid}")
 	if err != nil {

@@ -312,13 +312,13 @@ func TestServerTeachesProactiveTerminalWorkflow(t *testing.T) {
 	session := connect(t, t.TempDir(), "abc123")
 	instructions := session.InitializeResult().Instructions
 	for _, want := range []string{
-		"Do not wait for the user",
+		"without waiting to be asked",
 		"long-running",
 		"list_terminals",
 		"create_terminal",
 		"send_terminal",
 		"read_terminal",
-		"Reuse a relevant running terminal",
+		"reuse a running terminal",
 	} {
 		if !strings.Contains(instructions, want) {
 			t.Fatalf("server instructions do not teach %q:\n%s", want, instructions)
@@ -585,12 +585,33 @@ func TestServerTeachesDelegationWorkflow(t *testing.T) {
 		"create_session",
 		"read_session",
 		"send_session",
+		"wait_for_session",
+		"create_task",
+		"reserve_files",
 		"worktree",
-		"Do not wait for the user to ask",
+		"without waiting to be asked",
 	} {
 		if !strings.Contains(instructions, want) {
 			t.Fatalf("server instructions do not teach %q:\n%s", want, instructions)
 		}
+	}
+}
+
+// The instruction block is the whole discovery mechanism: with it emptied,
+// a model offered these same tools reaches for its own subagents instead.
+// Claude Code truncates it at 2048 characters, and a block that overruns
+// loses its tail there silently, so the length is part of the contract.
+func TestServerInstructionsSurviveTheClientLimit(t *testing.T) {
+	const claudeCodeLimit = 2048
+	session := connect(t, t.TempDir(), "abc123")
+	instructions := session.InitializeResult().Instructions
+	if len(instructions) >= claudeCodeLimit {
+		t.Fatalf("server instructions are %d characters; Claude Code truncates at %d, dropping the tail", len(instructions), claudeCodeLimit)
+	}
+	// The safety paragraph is the tail, and the one thing no tool
+	// description repeats.
+	if !strings.Contains(instructions, "acts on the user's machine") {
+		t.Fatalf("the instructions no longer say these tools act on the user's machine:\n%s", instructions)
 	}
 }
 

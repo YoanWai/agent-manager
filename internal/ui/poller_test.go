@@ -903,3 +903,39 @@ func TestCaptureAgentSessionIDsDropsAnAnswerARestartOutran(t *testing.T) {
 		t.Fatalf("restarted session bound to %q, want it left for the next pass", got.AgentSessionID)
 	}
 }
+
+// The heartbeat is what tells a sender whether a manager is home, and it
+// rides every poll pass. Stamping it on each one is a write transaction
+// every couple of seconds for as long as the manager stays open, so it is
+// allowed to age instead: its reader treats a stamp as fresh for far longer
+// than one poll.
+func TestThePollLeavesTheHeartbeatAloneBetweenStamps(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.refreshCmd())
+	first, err := m.store.Setting(store.PollerHeartbeatKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == "" {
+		t.Fatal("the first poll left no heartbeat, so no sender can tell a manager is running")
+	}
+
+	m.applyCmd(t, m.refreshCmd())
+	second, err := m.store.Setting(store.PollerHeartbeatKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != first {
+		t.Fatalf("the poll behind it rewrote the heartbeat: %q then %q", first, second)
+	}
+
+	m.poller.heartbeatAt = time.Now().Add(-store.PollerHeartbeatPeriod - time.Second)
+	m.applyCmd(t, m.refreshCmd())
+	third, err := m.store.Setting(store.PollerHeartbeatKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third == first {
+		t.Fatal("an aged heartbeat was never restamped, so a running manager reads as closed")
+	}
+}

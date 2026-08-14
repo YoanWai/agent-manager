@@ -53,7 +53,7 @@ func sessionSection() section {
 			{name: "send", usage: usageSend, about: "queue a message for another agent; it is typed in once that agent is at rest, so it never lands on an approval prompt", run: bind(newSessions, runSend)},
 			{name: "read", usage: usageRead, about: "read what another agent's screen currently shows", run: bind(newSessions, runRead)},
 			{name: "wait", usage: usageWait, about: "park until another session stops working, instead of reading its screen in a loop; exits non-zero when it timed out", run: bind(newSessions, runWait)},
-			{name: "message-status", usage: usageMessageStatus, about: "check whether a message you sent is still queued, delivered or answered", run: bind(newSessions, runMessageStatus)},
+			{name: "message-status", usage: usageMessageStatus, about: "check whether a message you sent is queued, held, delivered, dropped or answered", run: bind(newSessions, runMessageStatus)},
 			{name: "kill", usage: usageKill, about: "stop another agent's process, ending whatever it is doing; its row keeps the last screen", run: bind(newSessions, runKill)},
 			{name: "revive", usage: usageRevive, about: "bring a dead session back on its old row, resuming the conversation it held", run: bind(newSessions, runRevive)},
 			{name: "archive", usage: usageArchive, about: "file a finished session out of the active list, or restore it with --restore", run: bind(newSessions, runArchive)},

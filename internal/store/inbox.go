@@ -40,10 +40,18 @@ var DefaultInboxLimits = InboxLimits{
 	DedupeWindow: 10 * time.Minute,
 }
 
-// PollerHeartbeatKey is stamped by the manager on every poll. A session
-// tool compares it against the poll interval to tell whether a manager is
-// running to deliver what it queues.
+// PollerHeartbeatKey is stamped by the manager while it polls. A session
+// tool reads it to tell a sender whether a manager is running to deliver
+// what it queues.
 const PollerHeartbeatKey = "poller_heartbeat"
+
+const (
+	// PollerHeartbeatPeriod is how often the manager restamps that row.
+	PollerHeartbeatPeriod = 10 * time.Second
+	// PollerHeartbeatStale is when a stamp stops meaning a manager is home:
+	// one period, plus room for a poll that ran long.
+	PollerHeartbeatStale = 30 * time.Second
+)
 
 var (
 	ErrInboxFull        = errors.New("the recipient's queue is full; wait for it to read what is already queued")

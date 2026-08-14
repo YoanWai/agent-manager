@@ -174,13 +174,17 @@ type sessionCommands interface {
 	CreateGroup(sessionID, path, directory string) (sessioncmd.Group, error)
 }
 
-const serverInstructions = `Agent Manager runs this conversation in a managed tmux session, beside the user's other agent sessions and terminals. These tools operate that workspace. Use them proactively whenever the conditions below apply. Do not wait for the user to ask.
+// serverInstructions is the block a client shows its model before any tool
+// is called, and it is what makes an agent reach for these tools at all:
+// with it emptied, a model offered the same tools delegates to its own
+// subagents instead. Claude Code truncates the block at 2048 characters, so
+// it stays under that; what individual tool descriptions already carry (the
+// review targets, the queueing rules) is left to them.
+const serverInstructions = `Agent Manager runs this conversation in a managed tmux session, beside the user's other agent sessions and terminals. These tools operate that workspace. Use them proactively whenever the conditions below apply, without waiting to be asked.
 
-Delegating to other agents. When a task splits into parts that can run at the same time, or the user asks for parallel work, a second opinion, or another agent, call list_sessions first to see what already runs. Reuse a relevant idle session; otherwise call create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. A session working in a git repo takes worktree: true so parallel agents never edit the same checkout; where several sessions do share one checkout, call reserve_files before editing so an overlap surfaces while it can still be talked about. Follow the work with read_session, and send_session to answer a question or redirect an agent; a message is queued and typed in once that agent is at rest, so it can never land on an approval prompt. When your next step depends on an agent finishing, call wait_for_session rather than reading its screen in a loop. Put the plan on the shared task list with create_task rather than keeping it in this conversation: spawned agents then claim_task their own next piece and finish_task it, which unblocks whatever depended on it, with no handoff through you. Group related spawns with create_group, and archive_session once their work is done. Sessions are long-lived and spend the user's tokens, so create one per real workstream, never one per trivial step.
+Delegating to other agents. When the work holds two or more deliverables that could be built at the same time, or the user asks for parallel work, a second opinion, or another agent: call list_sessions, reuse a relevant idle session, and otherwise create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. Repo work takes worktree: true so parallel agents never edit one checkout; where they do share one, reserve_files before editing so an overlap surfaces early. Follow the work with read_session, send_session to answer or redirect an agent, and wait_for_session when your next step depends on one finishing. Put the plan on the shared task list with create_task rather than in this conversation: spawned agents claim_task their next piece and finish_task it, unblocking what waited on it with no handoff through you. Group related spawns with create_group, and archive_session once their work is done. Sessions are long-lived and spend the user's tokens, so create one per real workstream, never one per trivial step.
 
-Shell work that stays visible. Before a long-running, output-heavy or continuously monitored command such as a test suite, build, development server or log tail, call list_terminals. Reuse a relevant running terminal when possible; otherwise call create_terminal in the current group and directory. Send the command with send_terminal, then read_terminal to inspect its screen, again as needed while it runs, and send keys for interactive input or interruption. Short one-shot commands stay in your normal execution path.
-
-Your own session. Call rename once while the session still carries a placeholder name. Call review_repo when you start in a repo or worktree, review_base when you know the branch the work merges into, and review_mode to point the user's review screen at the diff scope you want them to see.
+Shell work that stays visible. Before a long-running, output-heavy or monitored command (test suite, build, development server, log tail), call list_terminals, reuse a running terminal or create_terminal one, send the command with send_terminal, and read_terminal to watch it. Short one-shot commands stay in your normal execution path.
 
 Everything here acts on the user's machine: create_session and create_terminal start real processes, send_terminal executes commands, and kill_session ends a running agent. Treat them with the same care and approval expectations as normal shell execution.`
 
@@ -303,7 +307,8 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			"It arrives labelled as coming from another agent rather than from the user, and cannot approve permissions or change that agent's configuration. " +
 			"Returns a message id for message_status; call read_session to see what the agent did with it. " +
 			"Guard rails a loop would otherwise hit: identical text to the same session inside ten minutes is refused as a duplicate, " +
-			"a sender is held to five messages a minute per recipient, and a recipient holds at most twenty undelivered messages. " +
+			"a sender is held to five messages a minute per recipient, a recipient holds at most twenty undelivered messages, " +
+			"and one message is capped at 8000 bytes, so point the agent at a file or a task for anything longer. " +
 			"When one of those refuses a send, call message_status on the earlier message rather than sending again.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendSessionArgs) (*mcp.CallToolResult, sessioncmd.SendResult, error) {
@@ -318,7 +323,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		Name: "message_status",
 		Description: "Check what happened to a message send_session queued: still queued, held, delivered into the agent's prompt, dropped, or answered. " +
 			"Call it when you need to know a handoff landed before you build on it, instead of reading the other agent's screen. " +
-			"Held means the recipient is sitting on a question or a dialog, where nothing may be typed until it moves, and reason says so: read that session's screen and answer it. " +
+			"Held means nothing will type it in as things stand: the recipient's screen is showing a dialog that has to be answered first, or its session is archived or no longer running, and reason says which. " +
 			"Dropped means it never reached the prompt and will not be retried, so send it again.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args messageStatusArgs) (*mcp.CallToolResult, sessioncmd.MessageState, error) {

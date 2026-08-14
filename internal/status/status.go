@@ -173,6 +173,24 @@ func (tr toolRules) isLimit(pane string) bool {
 	return false
 }
 
+// TypingHold reports why text typed into this pane now would land somewhere
+// it is not read as a message: Working while the tool is mid-turn or has not
+// drawn its input line, and Waiting while its own rules see a dialog, which
+// typed text would answer rather than be read by. An empty string means the
+// pane rests at a prompt that reads what it is handed, which includes a
+// question the agent left on screen: that trips no rule. Only those two rule
+// states hold, since a tool whose rules also classify resting frames (pi
+// marks a resumed session idle) would otherwise never take anything again.
+func (e *Engine) TypingHold(tool, pane string) string {
+	if _, ready := e.ActivityRegion(tool, pane); !ready {
+		return Working
+	}
+	if state, matched := e.RuleMatch(tool, pane); matched && (state == Working || state == Waiting) {
+		return state
+	}
+	return ""
+}
+
 // isBusy reports whether the newest turn is still running work that
 // outlives it. Background agents and background shells keep going after
 // the turn that spawned them ends, and the line saying so carries the same

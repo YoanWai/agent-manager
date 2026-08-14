@@ -420,6 +420,11 @@ type SendResult struct {
 	ManagerAwake  bool  `json:"manager_awake" jsonschema:"whether Agent Manager is running to deliver it; a message queued while it is closed waits until it opens again"`
 }
 
+// maxMessageBytes bounds one message. An instruction to another agent is
+// prose; the queue and rate caps count messages, and this is what keeps one
+// of them from being a file paste that fills the recipient's prompt.
+const maxMessageBytes = 8000
+
 // Send queues a message for another agent. It is deliberately not typed
 // into the pane here: several tools keep their input line drawn under an
 // approval dialog, so a message sent the moment it is written would answer
@@ -428,6 +433,9 @@ func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error)
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return SendResult{}, errors.New("message is empty")
+	}
+	if len(message) > maxMessageBytes {
+		return SendResult{}, fmt.Errorf("message is %d bytes, over the %d byte limit; shorten it to the instruction and point the agent at a file or a task for the detail", len(message), maxMessageBytes)
 	}
 	runtime, err := s.open()
 	if err != nil {
@@ -526,25 +534,40 @@ func (s *Sessions) MessageStatus(sessionID string, messageID int64) (MessageStat
 }
 
 // heldReason names why a queued message is not moving when the recipient is
-// what stops it. Delivery refuses a pane the tool's own rules call waiting,
-// which is an approval dialog and an ordinary question alike, and a question
-// nobody answers holds the queue for as long as it stays on screen.
+// what stops it: a session the manager no longer visits, or a screen the
+// delivery gate refuses. The gate is the poller's own, run here against the
+// recipient's current pane, so a sender is never promised a hold the manager
+// does not keep. A recipient merely mid-turn is not held: that clears itself.
 func (r *runtime) heldReason(sessionID string) (string, error) {
 	target, err := r.store.Get(sessionID)
 	if err != nil {
 		return "", err
 	}
-	if target.Status != status.Waiting {
+	if target.Archived {
+		return fmt.Sprintf("session %s is archived, so Agent Manager no longer polls it and nothing will type this in; restore it with %s", sessionID, r.words.Restore), nil
+	}
+	if !r.driver.Exists(target.ID) {
+		return fmt.Sprintf("session %s is not running, so nothing will type this in; revive it with %s", sessionID, r.words.Revive), nil
+	}
+	pane, err := r.driver.CapturePane(target.ID)
+	if err != nil {
+		return "", err
+	}
+	engine, err := status.NewEngine(r.cfg)
+	if err != nil {
+		return "", err
+	}
+	if engine.TypingHold(target.Tool, ansi.Strip(pane)) != status.Waiting {
 		return "", nil
 	}
-	return fmt.Sprintf("session %s is waiting on a question or a dialog, and nothing is typed into a session in that state; read its screen and answer it", sessionID), nil
+	return fmt.Sprintf("session %s is sitting on a dialog, and nothing is typed into a session while one is on its screen; read that screen and answer it", sessionID), nil
 }
 
 type MessageState struct {
 	MessageID   int64  `json:"message_id"`
 	SessionID   string `json:"session_id" jsonschema:"session the message was addressed to"`
 	Body        string `json:"body"`
-	State       string `json:"state" jsonschema:"queued (waiting for the agent to be at rest), held (the agent is sitting on a question or a dialog, so nothing is typed until it moves), delivered (typed into its prompt), dropped (it never reached the prompt and is not retried), or answered (it has since messaged back)"`
+	State       string `json:"state" jsonschema:"queued (waiting for the agent to be at rest), held (nothing will type it in as things stand: the recipient is sitting on a dialog, archived or not running, and reason says which), delivered (typed into its prompt), dropped (it never reached the prompt and is not retried), or answered (it has since messaged back)"`
 	DeliveredAt string `json:"delivered_at,omitempty" jsonschema:"RFC3339 time the message reached the prompt"`
 	Reason      string `json:"reason,omitempty" jsonschema:"why the message is in that state, and what to do about it"`
 }
@@ -560,7 +583,7 @@ func (r *runtime) managerAwake(now time.Time) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("poller heartbeat %q is not a timestamp: %w", raw, err)
 	}
-	return now.Sub(time.Unix(0, stamp)) < 3*r.cfg.PollInterval.Duration, nil
+	return now.Sub(time.Unix(0, stamp)) < max(3*r.cfg.PollInterval.Duration, store.PollerHeartbeatStale), nil
 }
 
 // fingerprint collapses whitespace before hashing so a retry that only

@@ -61,7 +61,9 @@ type poller struct {
 	// quietSince is when each session's activity region last stopped
 	// changing while unmatched; used to debounce marker-less turn ends.
 	quietSince map[string]time.Time
-	tick       int
+	// heartbeatAt is when this manager last stamped its liveness row.
+	heartbeatAt time.Time
+	tick        int
 	// prevTreeCPU / prevTreeAt drive interval agent CPU: cumulative
 	// CPU-seconds per pane root from the last poll, so host share uses
 	// the same "over this window" idea as the computer gauge.
@@ -204,8 +206,15 @@ func (p *poller) refreshOnce() tea.Msg {
 	sampleStats := p.tick%2 == 0
 	// Delivering a queued message needs this process, so stamp a heartbeat
 	// the session tools can read to tell a sender whether anyone is home.
-	if err := p.store.SetSetting(store.PollerHeartbeatKey, strconv.FormatInt(time.Now().UnixNano(), 10)); err != nil {
-		return errMsg{err}
+	// Stamping every poll would be a write transaction every couple of
+	// seconds for as long as the manager is open; its readers allow the
+	// stamp to age instead.
+	if time.Since(p.heartbeatAt) >= store.PollerHeartbeatPeriod {
+		stamped := time.Now()
+		if err := p.store.SetSetting(store.PollerHeartbeatKey, strconv.FormatInt(stamped.UnixNano(), 10)); err != nil {
+			return errMsg{err}
+		}
+		p.heartbeatAt = stamped
 	}
 	if p.tick%inboxPruneEvery == 0 {
 		if err := p.store.PruneInbox(time.Now().Add(-inboxRetention)); err != nil {
@@ -552,6 +561,12 @@ const (
 	// at the default 2s interval this is roughly every ten minutes.
 	inboxPruneEvery = 300
 	inboxRetention  = 24 * time.Hour
+	// inboxClaimGrace is how long a claim may sit undelivered before the
+	// message counts as abandoned. Claiming and pasting are two steps, and
+	// nothing stops a second manager polling the same store, so a claim
+	// that is milliseconds old belongs to a paste in flight; only one this
+	// old belongs to a manager that died between the two.
+	inboxClaimGrace = 30 * time.Second
 )
 
 // inboxDeliverable is the set of derived statuses a message may land on.
@@ -565,35 +580,36 @@ func inboxDeliverable(derived string) bool {
 // keep their input line drawn underneath an approval dialog, so a message
 // sent then would answer the dialog instead of being read. A dialog always
 // trips a configured rule, while a question left on screen at a resting
-// prompt does not, which is the difference this checks.
+// prompt does not, which is the difference TypingHold checks. What the
+// rules cannot see is a person: the paste ends in Enter, so a line someone
+// is part way through writing holds the queue for another poll.
 func (p *poller) maybeDeliverInbox(sess store.Session, pane, derived string, agentAlive bool) error {
 	if !agentAlive || !inboxDeliverable(derived) {
 		return nil
 	}
 	clean := ansi.Strip(pane)
-	if _, ready := p.engine.ActivityRegion(sess.Tool, clean); !ready {
-		return nil
-	}
-	// Only the rule states that mean the pane is mid-turn or holding a
-	// dialog block delivery. A tool whose rules also classify resting
-	// frames (pi marks a resumed session idle) would otherwise pin the
-	// gate shut for the life of the session.
-	if state, matched := p.engine.RuleMatch(sess.Tool, clean); matched &&
-		(state == status.Working || state == status.Waiting) {
+	if p.engine.TypingHold(sess.Tool, clean) != "" {
 		return nil
 	}
 	msg, queued, err := p.store.HeadMessage(sess.ID)
 	if err != nil || !queued {
 		return err
 	}
-	// A claimed but undelivered message means the manager died between the
+	// A claim this old with no delivery means the manager died between the
 	// claim and the send. Whether it reached the pane is unknowable, so it
 	// is retired rather than risking the same instruction twice.
 	if !msg.ClaimedAt.IsZero() {
+		if time.Since(msg.ClaimedAt) < inboxClaimGrace {
+			return nil
+		}
 		if err := p.store.MarkDropped(msg.ID, time.Now()); err != nil {
 			return err
 		}
 		return fmt.Errorf("dropped an unconfirmed message to %s from %s to avoid delivering it twice", sess.Name, msg.SenderName)
+	}
+	typing, err := p.promptCarriesTypedText(sess, clean)
+	if err != nil || typing {
+		return err
 	}
 	claimed, err := p.store.ClaimMessage(msg.ID, time.Now())
 	if err != nil || !claimed {
@@ -608,6 +624,30 @@ func (p *poller) maybeDeliverInbox(sess store.Session, pane, derived string, age
 			p.store.MarkDropped(msg.ID, time.Now()))
 	}
 	return p.store.MarkDelivered(msg.ID, time.Now())
+}
+
+// promptCarriesTypedText reports whether someone has a line part way
+// written at the session's prompt, in a pane they attached to or one they
+// are driving from the manager's own focus view. Delivery presses Enter, so
+// a message pasted onto that line would submit their text mixed with the
+// sender's. The caret is what tells a written line from an empty prompt a
+// tool has drawn placeholder text into.
+func (p *poller) promptCarriesTypedText(sess store.Session, clean string) (bool, error) {
+	caretX, caretY, err := p.tmux.Cursor(sess.ID)
+	if err != nil {
+		if !p.tmux.Exists(sess.ID) {
+			// The session died between the capture and now. There is no line
+			// left to protect, and the send that follows is what reports it
+			// and records the drop its sender needs to see.
+			return false, nil
+		}
+		return false, fmt.Errorf("read the caret in %s: %w", sess.Name, err)
+	}
+	rows := strings.Split(clean, "\n")
+	if caretY < 0 || caretY >= len(rows) {
+		return false, nil
+	}
+	return textBeforeCaret(p.engine, sess.Tool, rows[caretY], caretX), nil
 }
 
 // inboxEnvelope wraps the body so the receiving agent knows the text came

@@ -43,6 +43,19 @@ activity_cutoff = "(?m)^\u276f"
 command = "echo"
 default_status = "idle"
 
+# Stands in for a CLI sitting on an approval dialog: the input line is drawn
+# under it, and only the rule tells that apart from a resting prompt.
+[tools.dialog]
+command = "printf 'Do you want to proceed?\\n  1. Yes\\n  2. No\\nEnter to confirm\\n❯ ' && cat"
+default_status = "idle"
+activity_cutoff = "(?m)^❯"
+rules = [{ state = "waiting", pattern = "Enter to confirm" }]
+
+[tools.resting]
+command = "printf '❯ ' && cat"
+default_status = "idle"
+activity_cutoff = "(?m)^❯"
+
 [tools.terminal]
 command = ""
 shell = true
@@ -571,13 +584,13 @@ func TestASenderIsToldWhenItsMessageWasDropped(t *testing.T) {
 	}
 }
 
-// The delivery gate refuses a pane the tool's own rules call waiting, which
-// covers an ordinary question as well as an approval dialog. Nothing types
-// into that session until it moves, so a sender told "queued" would sit on
-// a handoff that is going nowhere.
-func TestASenderSeesAMessageHeldByASessionOnAQuestion(t *testing.T) {
+// A sender is told a hold only where the manager keeps one. The gate is the
+// recipient tool's own rules, read off its current screen: a dialog holds
+// the queue, because text typed onto one picks an option, and a prompt at
+// rest does not, whatever the stored status says about it.
+func TestASenderSeesAMessageHeldByARecipientOnADialog(t *testing.T) {
 	h := newSessionHarness(t)
-	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "dialog", Name: "worker"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -585,30 +598,100 @@ func TestASenderSeesAMessageHeldByASessionOnAQuestion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
-	if err := h.store.UpdateStatus(worker.ID, status.Waiting); err != nil {
-		t.Fatalf("UpdateStatus: %v", err)
-	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, worker.ID, "Enter to confirm")
 
 	state, err := h.sessions.MessageStatus(h.caller.ID, sent.MessageID)
 	if err != nil {
 		t.Fatalf("MessageStatus: %v", err)
 	}
 	if state.State != "held" {
-		t.Fatalf("a message behind a question reads as %+v", state)
+		t.Fatalf("a message behind a dialog reads as %+v", state)
 	}
-	if !strings.Contains(state.Reason, worker.ID) || !strings.Contains(state.Reason, "question") {
+	if !strings.Contains(state.Reason, worker.ID) || !strings.Contains(state.Reason, "dialog") {
 		t.Fatalf("the hold does not say why: %+v", state)
 	}
-	// The hold is the recipient's state, not the message's: once it moves on,
-	// the same message is an ordinary queued one again.
-	if err := h.store.UpdateStatus(worker.ID, status.Working); err != nil {
+
+	// A session whose screen shows no dialog is delivered to, so its sender
+	// hears the truth: ordinary queued, whatever waiting the row carries.
+	resting, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "resting-worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	restingSend, err := h.sessions.Send(h.caller.ID, resting.ID, "rebase on main")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, resting.ID, "❯")
+	if err := h.store.UpdateStatus(resting.ID, status.Waiting); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
+	}
+	state, err = h.sessions.MessageStatus(h.caller.ID, restingSend.MessageID)
+	if err != nil {
+		t.Fatalf("MessageStatus: %v", err)
+	}
+	if state.State != "queued" || state.Reason != "" {
+		t.Fatalf("a recipient the manager will type into was reported as holding its queue: %+v", state)
+	}
+}
+
+// A recipient can leave the manager's reach after the send: archived rows
+// are skipped by the poll, and a dead session has no pane to type into. The
+// queue then never moves, and the sender is the one who has to be told.
+func TestASenderIsToldWhenItsRecipientLeftTheManagersReach(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if _, err := h.sessions.Archive(h.caller.ID, worker.ID, true); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+
+	state, err := h.sessions.MessageStatus(h.caller.ID, sent.MessageID)
+	if err != nil {
+		t.Fatalf("MessageStatus: %v", err)
+	}
+	if state.State != "held" || !strings.Contains(state.Reason, "archived") ||
+		!strings.Contains(state.Reason, h.sessions.words.Restore) {
+		t.Fatalf("a message to an archived session reads as %+v", state)
+	}
+
+	if _, err := h.sessions.Archive(h.caller.ID, worker.ID, false); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if _, err := h.sessions.Kill(h.caller.ID, worker.ID); err != nil {
+		t.Fatalf("Kill: %v", err)
 	}
 	state, err = h.sessions.MessageStatus(h.caller.ID, sent.MessageID)
 	if err != nil {
-		t.Fatalf("MessageStatus after the session moved: %v", err)
+		t.Fatalf("MessageStatus: %v", err)
 	}
-	if state.State != "queued" || state.Reason != "" {
-		t.Fatalf("a working recipient still holds its queue: %+v", state)
+	if state.State != "held" || !strings.Contains(state.Reason, "not running") ||
+		!strings.Contains(state.Reason, h.sessions.words.Revive) {
+		t.Fatalf("a message to a dead session reads as %+v", state)
+	}
+}
+
+// The queue and rate caps count messages, so without a size cap one message
+// is an unbounded paste into another agent's prompt.
+func TestSendRefusesAMessageTooLargeToPasteIntoAPrompt(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := h.sessions.Send(h.caller.ID, worker.ID, strings.Repeat("x", maxMessageBytes+1)); err == nil ||
+		!strings.Contains(err.Error(), "byte limit") {
+		t.Fatalf("an oversized message was answered with %v", err)
+	}
+	if queued, err := h.store.QueuedCount(worker.ID); err != nil || queued != 0 {
+		t.Fatalf("queued = %d, %v: the refusal still cost the recipient a slot", queued, err)
+	}
+	if _, err := h.sessions.Send(h.caller.ID, worker.ID, strings.Repeat("x", maxMessageBytes)); err != nil {
+		t.Fatalf("a message at the limit was refused: %v", err)
 	}
 }
