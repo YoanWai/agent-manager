@@ -648,7 +648,11 @@ func TestNoticesEnterOpensURL(t *testing.T) {
 	if want == "" {
 		t.Fatal("selected notice needs a url for this test")
 	}
-	m.handleNoticesKey(key("enter"))
+	_, cmd := m.handleNoticesKey(key("enter"))
+	if opened != "" {
+		t.Fatal("browser started during Update")
+	}
+	m.applyCmd(t, cmd)
 	if opened != want {
 		t.Fatalf("opened %q, want %q", opened, want)
 	}
@@ -713,7 +717,7 @@ func TestOpenBrowserFailureNamesURL(t *testing.T) {
 	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
 
 	target := "https://example.com/manual"
-	m.openLink(target)
+	m.applyCmd(t, openLink(target))
 	if !strings.Contains(m.errBar.text, target) || !strings.Contains(m.errBar.text, "no browser available") {
 		t.Fatalf("failure = %q, want URL and cause", m.errBar.text)
 	}

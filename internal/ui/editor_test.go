@@ -7,10 +7,44 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
+
+func TestStartAndReapWaitsAfterSuccessfulStart(t *testing.T) {
+	waited := make(chan struct{})
+	err := startAndReap(func() error { return nil }, func() error {
+		close(waited)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("startAndReap() error = %v", err)
+	}
+	select {
+	case <-waited:
+	case <-time.After(time.Second):
+		t.Fatal("successful start was not reaped")
+	}
+}
+
+func TestStartAndReapReturnsStartFailure(t *testing.T) {
+	want := errors.New("start failed")
+	waited := make(chan struct{})
+	err := startAndReap(func() error { return want }, func() error {
+		close(waited)
+		return nil
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("startAndReap() error = %v, want %v", err, want)
+	}
+	select {
+	case <-waited:
+		t.Fatal("failed start must not be waited")
+	default:
+	}
+}
 
 // captureEditor swaps both editor seams: PATH answers only for the names
 // given, and the launch is recorded instead of run.

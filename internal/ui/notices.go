@@ -368,9 +368,7 @@ func noticeFrame(rows []string, inner int, topLegend, bottomLegend string) []str
 var openBrowser = defaultOpenBrowser
 
 func defaultOpenBrowser(target string) error {
-	return openBrowserWith(runtime.GOOS, os.Getenv("BROWSER"), target, func(cmd *exec.Cmd) error {
-		return cmd.Start()
-	})
+	return openBrowserWith(runtime.GOOS, os.Getenv("BROWSER"), target, startDetached)
 }
 
 func openBrowserWith(goos, browser, target string, start func(*exec.Cmd) error) error {
@@ -413,9 +411,20 @@ func browserCommands(goos, browser, target string) []*exec.Cmd {
 	return append(commands, exec.Command("xdg-open", target))
 }
 
-func (m *Model) openLink(target string) {
-	if err := openBrowser(target); err != nil {
-		m.errBar.text = fmt.Sprintf("could not open %s: %v", target, err)
+type browserOpenMsg struct {
+	target string
+	err    error
+}
+
+func openLink(target string) tea.Cmd {
+	return func() tea.Msg {
+		return browserOpenMsg{target: target, err: openBrowser(target)}
+	}
+}
+
+func (m *Model) handleBrowserOpen(msg browserOpenMsg) {
+	if msg.err != nil {
+		m.errBar.text = fmt.Sprintf("could not open %s: %v", msg.target, msg.err)
 	}
 }
 
@@ -581,7 +590,7 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.noticeScroll = min(m.noticeScroll+max(4, m.height/3), m.noticeScrollLimit(notices))
 	case "enter":
 		if m.noticeCursor < len(notices) && notices[m.noticeCursor].url != "" {
-			m.openLink(notices[m.noticeCursor].url)
+			return m, openLink(notices[m.noticeCursor].url)
 		}
 	case "x", "d":
 		if m.noticeCursor < len(notices) {
