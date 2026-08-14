@@ -2,6 +2,7 @@ package ui
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -215,5 +216,32 @@ func TestReviewHeaderTargetLabelCleanAndKeyed(t *testing.T) {
 	}
 	if !strings.Contains(header, "feature → feature") {
 		t.Fatalf("header should show the cleaned target → branch, got %q", header)
+	}
+}
+
+// The header carries the filter state the way it carries the scope and the
+// layout, and its file count follows what the list actually shows.
+func TestReviewHeaderShowsCodeOnlyFilter(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "hdr", gitRepoWithBinaryBetweenTextFiles(t))
+
+	header := ansi.Strip(m.viewDiffHeader("hdr"))
+	if !strings.Contains(header, "3 files") {
+		t.Fatalf("header should count every changed file, got %q", header)
+	}
+	if strings.Contains(header, "code only") {
+		t.Fatalf("header should not claim a filter that is off, got %q", header)
+	}
+
+	m.drainCmds(t, m.toggleCodeOnly())
+	header = ansi.Strip(m.viewDiffHeader("hdr"))
+	if !regexp.MustCompile(`f\s+code only`).MatchString(header) {
+		t.Fatalf("header should show the filter and its key, got %q", header)
+	}
+	if !strings.Contains(header, "2 files") {
+		t.Fatalf("header should count only the files on show, got %q", header)
 	}
 }

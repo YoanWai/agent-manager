@@ -128,6 +128,7 @@ func helpSections() []helpSection {
 			{"d", "remove the comment"},
 			{"C", "send every comment to the agent"},
 			{"space", "mark the file reviewed"},
+			{"f", "code files only (hides images, assets, lock files)"},
 			{"s", "cycle the scope (uncommitted / branch / last commit / staged)"},
 			{"r", "pick the repo when the session dir holds several"},
 			{"b", "pick the branch from the repo's worktrees"},

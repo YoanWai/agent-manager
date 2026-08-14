@@ -918,6 +918,13 @@ func (m *Model) pressDiffKey(t *testing.T, key rune) {
 	m.drainCmds(t, cmd)
 }
 
+func (m *Model) pressFilterKey(t *testing.T) {
+	t.Helper()
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	*m = *updated.(*Model)
+	m.drainCmds(t, cmd)
+}
+
 // pickRepo drives the repo picker the way a human would: r, type the repo
 // name, enter.
 func (m *Model) pickRepo(t *testing.T, name string) {
@@ -1404,6 +1411,307 @@ func TestTrackedBinaryPastEagerCapShowsBinary(t *testing.T) {
 	}
 	if strings.Contains(row, "+0") || strings.Contains(row, "−0") {
 		t.Errorf("zz.bin row still shows zero counts: %q", row)
+	}
+}
+
+// writeGitRepo commits a first version of every file, then lays down the
+// second one, leaving a working tree whose changes a review can open.
+func writeGitRepo(t *testing.T, committed, working map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v: %s", args, err, out)
+		}
+	}
+	run("git", "init", "-b", "main")
+	for name, content := range committed {
+		writeRepoFile(t, dir, name, content)
+	}
+	run("git", "add", ".")
+	run("git", "commit", "-m", "init")
+	for name, content := range working {
+		writeRepoFile(t, dir, name, content)
+	}
+	return dir
+}
+
+func writeRepoFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// gitRepoWithBinaryBetweenTextFiles changes a tracked binary file sitting
+// between two text files. Its name says nothing, so git's numstat verdict is
+// the only thing that can call it binary.
+func gitRepoWithBinaryBetweenTextFiles(t *testing.T) string {
+	t.Helper()
+	return writeGitRepo(t,
+		map[string]string{
+			"a.go":  "package a\n\nfunc A() int { return 1 }\n",
+			"b.dat": "\x00\x01\x02one",
+			"c.go":  "package a\n\nfunc C() int { return 3 }\n",
+		},
+		map[string]string{
+			"a.go":  "package a\n\nfunc A() int { return 10 }\n",
+			"b.dat": "\x00\x01\x02two",
+			"c.go":  "package a\n\nfunc C() int { return 30 }\n",
+		})
+}
+
+// f drops the files git calls binary out of the review, and neither the
+// selection nor a file switch is left on one of them.
+func TestReviewCodeOnlyHidesBinaryFiles(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "filter", gitRepoWithBinaryBetweenTextFiles(t))
+
+	binary := -1
+	for i := range m.diff.set.Files {
+		if m.diff.set.Files[i].File.Path == "b.dat" {
+			binary = i
+		}
+	}
+	if binary < 0 {
+		t.Fatalf("b.dat missing from the diff set: %+v", m.diff.set.Files)
+	}
+	if !m.diff.set.Files[binary].Stat.Binary {
+		t.Fatal("numstat should mark b.dat binary before its content is read")
+	}
+	m.diff.fileIdx = binary
+
+	m.pressFilterKey(t)
+	if !m.diff.codeOnly {
+		t.Fatal("f should turn the code-only filter on")
+	}
+	if m.diff.fileIdx == binary {
+		t.Fatal("the selection should leave a file the filter hides")
+	}
+	list := ansi.Strip(m.viewDiffFileList(60, 20))
+	if strings.Contains(list, "b.dat") {
+		t.Fatalf("b.dat should be filtered out of the file list:\n%s", list)
+	}
+	if !strings.Contains(list, "a.go") || !strings.Contains(list, "c.go") {
+		t.Fatalf("the code files should stay listed:\n%s", list)
+	}
+
+	for i := range m.diff.set.Files {
+		if m.diff.set.Files[i].File.Path == "a.go" {
+			m.diff.fileIdx = i
+		}
+	}
+	m.drainCmds(t, m.switchDiffFile(1))
+	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "c.go" {
+		t.Fatalf("the file after a.go = %q, want c.go", got)
+	}
+	m.drainCmds(t, m.switchDiffFile(-1))
+	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "a.go" {
+		t.Fatalf("the file before c.go = %q, want a.go", got)
+	}
+
+	m.pressFilterKey(t)
+	if m.diff.codeOnly {
+		t.Fatal("f again should show the binary files")
+	}
+	if list := ansi.Strip(m.viewDiffFileList(60, 20)); !strings.Contains(list, "b.dat") {
+		t.Fatalf("b.dat should be back in the file list:\n%s", list)
+	}
+}
+
+// A newly written image and a regenerated lock file are the common case, and
+// neither has a git verdict to go on: the filter has to settle them by name so
+// they go the moment the key is pressed and stay gone across a silent reload.
+func TestReviewCodeOnlyHidesUntrackedAndLockFiles(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	dir := writeGitRepo(t,
+		map[string]string{
+			"a.go":   "package a\n\nfunc A() int { return 1 }\n",
+			"go.sum": "mod v1.0.0 h1:aaa=\n",
+			"src.go": "package a\n\nfunc S() int { return 2 }\n",
+		},
+		map[string]string{
+			"a.go":   "package a\n\nfunc A() int { return 10 }\n",
+			"go.sum": "mod v1.0.1 h1:bbb=\n",
+			"src.go": "package a\n\nfunc S() int { return 20 }\n",
+			"z.png":  "\x89PNG\r\n\x1a\n\x00\x00\x00\x00new",
+		})
+	openReviewOn(t, m, "blobs", dir)
+
+	untracked := m.fileDiffByPath("z.png")
+	if untracked == nil {
+		t.Fatalf("z.png missing from the diff set: %+v", m.diff.set.Files)
+	}
+	if untracked.Loaded() || untracked.Stat.Binary {
+		t.Fatal("an untracked file the cursor never reached should carry no binary verdict")
+	}
+
+	m.pressFilterKey(t)
+	list := ansi.Strip(m.viewDiffFileList(60, 20))
+	if strings.Contains(list, "z.png") || strings.Contains(list, "go.sum") {
+		t.Fatalf("the image and the lock file should be off the list:\n%s", list)
+	}
+	if !strings.Contains(list, "a.go") || !strings.Contains(list, "src.go") {
+		t.Fatalf("the code files should stay listed:\n%s", list)
+	}
+
+	// Reverting the file under the cursor drops it from the reloaded set, so the
+	// selection falls on go.sum unless the reload settles it on the spot. The
+	// load it schedules is drained afterwards: the list is rendered between the
+	// two, and a cursor parked on a hidden row draws no cursor at all.
+	writeRepoFile(t, dir, "a.go", "package a\n\nfunc A() int { return 1 }\n")
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("no diff session")
+	}
+	m.diff.gen++
+	updated, cmd := m.Update(m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, true)())
+	*m = *updated.(*Model)
+	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "src.go" {
+		t.Fatalf("the reload should settle the selection itself, landed on %q", got)
+	}
+	m.drainCmds(t, cmd)
+	if list := ansi.Strip(m.viewDiffFileList(60, 20)); strings.Contains(list, "z.png") {
+		t.Fatalf("the filter should survive a silent reload:\n%s", list)
+	}
+}
+
+// A blob whose name gives nothing away is only outed when its load sniffs a
+// NUL, so the cursor has to be carried off it the way every other file switch
+// moves: with the file it lands on scrolled back where the user left it.
+func TestReviewCodeOnlyCarriesCursorOffASniffedBlob(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	var long, edited strings.Builder
+	for i := 1; i <= 200; i++ {
+		fmt.Fprintf(&long, "line %d\n", i)
+		fmt.Fprintf(&edited, "line %d\n", i)
+	}
+	edited.WriteString("tail\n")
+	dir := writeGitRepo(t,
+		map[string]string{
+			"a.txt": long.String(),
+			"c.go":  "package a\n\nfunc C() int { return 3 }\n",
+		},
+		map[string]string{
+			"a.txt":    edited.String(),
+			"c.go":     "package a\n\nfunc C() int { return 30 }\n",
+			"blob.dat": "\x00\x01\x02new",
+		})
+	openReviewOn(t, m, "sniff", dir)
+	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "a.txt" {
+		t.Fatalf("review should open on a.txt, got %q", got)
+	}
+
+	m.pressFilterKey(t)
+	m.diff.scroll = 150
+	m.diff.cursorLine = 150
+	m.drainCmds(t, m.switchDiffFile(1))
+	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "c.go" {
+		t.Fatalf("the file after a.txt = %q, want c.go", got)
+	}
+
+	m.pressDiffKey(t, 'J')
+	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "a.txt" {
+		t.Fatalf("the load should carry the cursor off blob.dat, landed on %q", got)
+	}
+	if m.diff.scroll != 150 {
+		t.Fatalf("a.txt scroll = %d, want the 150 it was left at", m.diff.scroll)
+	}
+}
+
+// space walks to the next file still to review, and a file the filter hides is
+// not one the user can review.
+func TestReviewCodeOnlySpaceSkipsHiddenFile(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "queue", writeGitRepo(t,
+		map[string]string{
+			"a.go":  "package a\n\nfunc A() int { return 1 }\n",
+			"b.png": "\x89PNG\r\n\x1a\n\x00\x00\x00\x00one",
+			"c.go":  "package a\n\nfunc C() int { return 3 }\n",
+			"d.go":  "package a\n\nfunc D() int { return 4 }\n",
+		},
+		map[string]string{
+			"a.go":  "package a\n\nfunc A() int { return 10 }\n",
+			"b.png": "\x89PNG\r\n\x1a\n\x00\x00\x00\x00two",
+			"c.go":  "package a\n\nfunc C() int { return 30 }\n",
+			"d.go":  "package a\n\nfunc D() int { return 40 }\n",
+		}))
+	paths := make([]string, len(m.diff.set.Files))
+	for i := range m.diff.set.Files {
+		paths[i] = m.diff.set.Files[i].File.Path
+	}
+	want := []string{"a.go", "b.png", "c.go", "d.go"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Fatalf("file order = %v, want %v", paths, want)
+	}
+
+	m.pressFilterKey(t)
+	m.drainCmds(t, m.switchDiffFile(2))
+	m.pressDiffKey(t, ' ')
+	if !m.fileReviewed("c.go") {
+		t.Fatal("space should mark c.go reviewed")
+	}
+	m.drainCmds(t, m.switchDiffFile(-3))
+	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "a.go" {
+		t.Fatalf("the cursor should be back on a.go, got %q", got)
+	}
+
+	m.pressDiffKey(t, ' ')
+	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "d.go" {
+		t.Fatalf("space should walk past the hidden b.png and the reviewed c.go to d.go, landed on %q", got)
+	}
+}
+
+// Filtering a review whose every change is a blob leaves both panes with
+// nothing to show, which has to read as a state rather than as a broken pane,
+// and leaves tab with nowhere to go.
+func TestReviewCodeOnlyWithNoCodeFiles(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "onlybin", writeGitRepo(t,
+		map[string]string{
+			"b.dat":    "\x00\x01\x02one",
+			"logo.png": "\x89PNG\r\n\x1a\n\x00\x00\x00\x00one",
+		},
+		map[string]string{
+			"b.dat":    "\x00\x01\x02two",
+			"logo.png": "\x89PNG\r\n\x1a\n\x00\x00\x00\x00two",
+		}))
+
+	m.pressFilterKey(t)
+	if list := ansi.Strip(m.viewDiffFileList(30, 20)); !strings.Contains(list, "no code files") {
+		t.Fatalf("the file list should say why it is empty:\n%s", list)
+	}
+	code := ansi.Strip(m.viewDiffCode(60, 20))
+	if strings.Contains(code, "b.dat") {
+		t.Fatalf("the code pane should not render a hidden file:\n%s", code)
+	}
+	if !strings.Contains(code, "no code files") {
+		t.Fatalf("the code pane should say why it is empty:\n%s", code)
+	}
+
+	m.pressDiffKey(t, 'J')
+	if m.diff.fileIdx != 0 {
+		t.Fatalf("tab should not walk the selection through hidden files, fileIdx = %d", m.diff.fileIdx)
 	}
 }
 
