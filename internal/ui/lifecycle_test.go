@@ -59,8 +59,8 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 	if len(m.sessionRows()) != 1 {
 		t.Fatalf("after restore, active sessions = %d want 1", len(m.sessionRows()))
 	}
-	if m.tmux.Exists(sess.ID) {
-		t.Fatal("restore should not revive the tmux session")
+	if !m.tmux.Exists(sess.ID) {
+		t.Fatal("restore should revive the tmux session")
 	}
 
 	m.selectSessionRow(t, "alpha")
@@ -751,6 +751,41 @@ func TestArchiveRestoreClearStaleError(t *testing.T) {
 	}
 }
 
+func TestRestoreKeepsArchiveWhenReviveFails(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "homeless", dir, "")
+	sess := m.sessionRows()[0]
+
+	m.selectSessionRow(t, "homeless")
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("remove dir: %v", err)
+	}
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "homeless")
+	m.restoreSelected()
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	if m.errBar.text == "" {
+		t.Fatal("restore without a working directory should error")
+	}
+	if m.tmux.Exists(sess.ID) {
+		t.Fatal("failed restore must not leave a tmux session")
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !got.Archived {
+		t.Fatal("failed restore must leave the session archived")
+	}
+}
+
 func TestArchiveAbortsWhenSnapshotFails(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
@@ -835,8 +870,8 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 		t.Fatalf("after restore, active sessions = %v want 2", names)
 	}
 	for _, sess := range m.sessionRows() {
-		if m.tmux.Exists(sess.ID) {
-			t.Fatalf("restore should not revive %s", sess.Name)
+		if !m.tmux.Exists(sess.ID) {
+			t.Fatalf("restore should revive %s", sess.Name)
 		}
 	}
 }

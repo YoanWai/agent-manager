@@ -32,7 +32,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `v` | Revive a dead session, or every dead session under a group |
 | `V` | Revive every dead session in view |
 | `R` | Restart the selected session on an empty context: same name, group, directory and tool |
-| `a` / `u` | Archive / restore a session or group. Archive kills the process and keeps the last preview; restore unhides the dead row, `v` revives it |
+| `a` / `u` | Archive / restore a session or group. Archive kills the process and keeps the last preview; restore resumes it |
 | `d` | Delete session, or a group + its entire subtree |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |

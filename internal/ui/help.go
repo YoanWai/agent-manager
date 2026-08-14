@@ -86,7 +86,7 @@ func helpSections() []helpSection {
 			{"R", "restart it on an empty context (same name, group, dir, tool)"},
 			{"x / X", "kill it / kill every live session (frees their RAM)"},
 			{"v / V", "revive it / revive every dead session (resumes the agent)"},
-			{"a / u", "archive / restore (archive kills; u unhides; v revives)"},
+			{"a / u", "archive / restore (archive kills, restore revives)"},
 			{"d", "delete it"},
 		}},
 		{title: "group under the cursor", rows: [][2]string{
@@ -97,7 +97,7 @@ func helpSections() []helpSection {
 			{"o", "open its default path in your editor"},
 			{"x / X", "kill every live session in it / everywhere"},
 			{"v / V", "revive every dead session in it / everywhere"},
-			{"a / u", "archive / restore the subtree (archive kills; u unhides; v revives)"},
+			{"a / u", "archive / restore the subtree (archive kills, restore revives)"},
 			{"d", "delete the group and its subtree"},
 		}},
 		{title: "quick prompt (space)", rows: [][2]string{
