@@ -254,12 +254,20 @@ func (d *Driver) installSessionUX(name string) error {
 // styleStatusBar sets a session's status bar chrome, leaving status-left (the
 // name label) untouched so re-styling a live session keeps its label.
 func (d *Driver) styleStatusBar(name string) error {
+	primary, err := d.run("show-options", "-t", name, "-v", "prefix")
+	if err != nil {
+		return err
+	}
+	secondary, err := d.run("show-options", "-t", name, "-v", "prefix2")
+	if err != nil {
+		return err
+	}
 	options := [][]string{
 		{"set-option", "-t", name, "status", "on"},
-		// The default status-right-length of 40 truncates the hint before the
-		// Ctrl+R part, so widen it to fit the whole footer.
-		{"set-option", "-t", name, "status-right-length", "80"},
-		{"set-option", "-t", name, "status-right", " agent-manager · Ctrl+q = back · Ctrl+r = review · Ctrl+o = editor "},
+		// The default status-right-length of 40 truncates the hints, so widen it
+		// to fit the whole footer, including the configured-prefix fallback.
+		{"set-option", "-t", name, "status-right-length", "100"},
+		{"set-option", "-t", name, "status-right", attachStatusRight(strings.TrimSpace(primary), strings.TrimSpace(secondary))},
 		{"set-option", "-t", name, "status-style", "bg=colour236,fg=colour249"},
 		// hide the "0:windowname*" window list; it reads as noise here
 		{"set-option", "-t", name, "window-status-format", ""},
@@ -276,10 +284,20 @@ func (d *Driver) styleStatusBar(name string) error {
 	return nil
 }
 
-// EnsureBindings installs the server-global Ctrl+Q / Ctrl+\ detach, Ctrl+R
-// review and Ctrl+O editor bindings. All only act inside am_* sessions;
-// elsewhere the key passes through to the pane. Idempotent, so it is safe to
-// re-run for sessions that predate a binding.
+func attachStatusRight(primary, secondary string) string {
+	exits := make([]string, 0, 2)
+	if primary != "C-q" && secondary != "C-q" {
+		exits = append(exits, "Ctrl+q")
+	}
+	for _, candidate := range []string{primary, secondary} {
+		if candidate != "" && candidate != "None" {
+			exits = append(exits, candidate+" d")
+			break
+		}
+	}
+	return " agent-manager · Ctrl+r = review · Ctrl+o = editor · " + strings.Join(exits, " / ") + " = back "
+}
+
 func (d *Driver) EnsureBindings() error {
 	inSession := "#{m:" + prefix + "*,#{session_name}}"
 	request := func(name string) string {
@@ -290,6 +308,8 @@ func (d *Driver) EnsureBindings() error {
 		{"bind-key", "-n", `C-\`, "if-shell", "-F", inSession, "detach-client", `send-keys C-\\`},
 		{"bind-key", "-n", "C-r", "if-shell", "-F", inSession, request(RequestReview), "send-keys C-r"},
 		{"bind-key", "-n", "C-o", "if-shell", "-F", inSession, request(RequestEditor), "send-keys C-o"},
+		// Restore the standard fallback when the prefix shadows a direct binding.
+		{"bind-key", "-T", "prefix", "d", "detach-client"},
 	}
 	for _, args := range binds {
 		if _, err := d.run(args...); err != nil {
