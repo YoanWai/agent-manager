@@ -471,13 +471,13 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 			path:     entry.group,
 			action:   actionArchive,
 			sessions: subtree,
-			label:    fmt.Sprintf("archive group %s (%d sessions)?", entry.group, len(subtree)),
+			label:    fmt.Sprintf("archive group %s (%d sessions)? frees their RAM, t to find them.", entry.group, len(subtree)),
 		}
 	} else {
 		m.confirm = confirmTarget{
 			action:   actionArchive,
 			sessions: []store.Session{entry.sess},
-			label:    fmt.Sprintf("archive %s?", entry.sess.Name),
+			label:    fmt.Sprintf("archive %s? frees its RAM, t to find it.", entry.sess.Name),
 		}
 	}
 	m.mode = modeConfirmDelete
@@ -513,16 +513,18 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// archivalSnapshot captures pane content for every still-live session
-// in the confirm target, so the snapshot survives when the tmux window
-// is later killed or the session window is reused for a new agent.
-func (m *Model) archivalSnapshot() error {
-	for _, sess := range m.confirm.sessions {
+// snapshotLive stores the last pane of every still-live session. Archive
+// calls it before any kill so a capture failure cannot drop a frame.
+func (m *Model) snapshotLive(sessions []store.Session) error {
+	for _, sess := range sessions {
 		if !m.tmux.Exists(sess.ID) {
 			continue
 		}
 		pane, err := m.tmux.CapturePane(sess.ID)
-		if err != nil || pane == "" {
+		if err != nil {
+			return err
+		}
+		if pane == "" {
 			continue
 		}
 		if err := m.setSnapshot(sess.ID, pane); err != nil {
@@ -621,9 +623,15 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "enter":
 		switch m.confirm.action {
 		case actionArchive:
-			if err := m.archivalSnapshot(); err != nil {
+			if err := m.snapshotLive(m.confirm.sessions); err != nil {
 				m.errBar.text = err.Error()
 				return m, nil
+			}
+			for _, sess := range m.confirm.sessions {
+				if err := m.killSession(sess); err != nil {
+					m.errBar.text = err.Error()
+					return m, nil
+				}
 			}
 			if err := m.applyConfirmedArchived(true); err != nil {
 				m.errBar.text = err.Error()
