@@ -264,6 +264,22 @@ func TestDragSelectionKeepsCompleteGraphemes(t *testing.T) {
 	}
 }
 
+func TestWordSelectionKeepsWideGraphemeWhole(t *testing.T) {
+	m := paneAt(t, "甲乙")
+	m.sel = focusSelection{
+		active: true, granule: selectWord,
+		anchorRow: 0, anchorCol: 1,
+		headRow: 0, headCol: 1,
+	}
+	m.expandSelection()
+	if m.sel.anchorCol != 0 || m.sel.headCol != 4 {
+		t.Fatalf("word bounds = [%d,%d), want [0,4)", m.sel.anchorCol, m.sel.headCol)
+	}
+	if got := m.selectionText(); got != "甲乙" {
+		t.Fatalf("word selection copied %q, want %q", got, "甲乙")
+	}
+}
+
 // Selection indices are taken from the plain text of a colored capture, so
 // escape sequences never shift what gets copied.
 func TestSelectionIgnoresANSI(t *testing.T) {
