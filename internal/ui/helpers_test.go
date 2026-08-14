@@ -30,7 +30,7 @@ func buildModel(t *testing.T) *Model {
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
 				TurnEnd:        `^[✻✳✶✽✢·✦✧+*] \S+ for \d.*$`,
-				BusyLine:       `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ background agents? to finish`,
+				BusyLine:       `^[✻✳✶✽✢·✦✧+*] (?:Waiting for \d+ background agents? to finish|.*· \d+ shells? still running)`,
 				Rules: []config.Rule{
 					{State: status.Waiting, Pattern: "Enter to confirm"},
 					{State: status.Errored, Pattern: `(?im)^\s*error:`},

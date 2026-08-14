@@ -118,12 +118,13 @@ func (e *Engine) Match(tool, pane string) (string, bool) {
 }
 
 // isBusy reports whether the newest turn is still running work that
-// outlives it. Background agents keep going after the turn that spawned
-// them ends, and their wait line carries the same shape as a turn-end
-// summary, so turnState would otherwise read the turn as over while the
-// session is still busy. Anchoring on the newest busy line and requiring
-// only chrome and trailing notes below it means a wait line from an older
-// turn, with real output under it, cannot retrigger.
+// outlives it. Background agents and background shells keep going after
+// the turn that spawned them ends, and the line saying so carries the same
+// shape as a turn-end summary, so turnState would otherwise read the turn
+// as over while the session is still busy. Only a turn that ended below the
+// busy line proves that work drained; transient banners under it say nothing
+// either way. Without turn_end there is no later turn to read, so the line
+// stands until the tool stops drawing it.
 func (tr toolRules) isBusy(pane string) bool {
 	if tr.busyLine == nil {
 		return false
@@ -134,9 +135,10 @@ func (tr toolRules) isBusy(pane string) bool {
 	}
 	lines := strings.Split(region, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
-		if tr.busyLine.MatchString(strings.TrimRight(lines[i], " \t")) {
-			return tr.turnIsNewest(lines[i+1:])
+		if !tr.busyLine.MatchString(strings.TrimRight(lines[i], " \t")) {
+			continue
 		}
+		return tr.turnEnd == nil || tr.lastTurnEndIndex(lines) <= i
 	}
 	return false
 }
