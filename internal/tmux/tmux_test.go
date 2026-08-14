@@ -344,7 +344,38 @@ func TestDetachRequestRoundTrip(t *testing.T) {
 	}
 }
 
-func TestRefreshChromeKeepsLabelAndAddsReviewHint(t *testing.T) {
+func TestEnsureBindingsRestoresPrefixDetach(t *testing.T) {
+	driver := requireTmux(t)
+	t.Cleanup(func() {
+		if out, err := tmuxCmd("bind-key", "-T", "prefix", "d", "detach-client").CombinedOutput(); err != nil {
+			t.Errorf("restore prefix d: %v: %s", err, out)
+		}
+	})
+	if out, err := tmuxCmd("unbind-key", "-T", "prefix", "d").CombinedOutput(); err != nil {
+		t.Fatalf("unbind prefix d: %v: %s", err, out)
+	}
+
+	if err := driver.EnsureBindings(); err != nil {
+		t.Fatalf("EnsureBindings: %v", err)
+	}
+	bound, err := tmuxCmd("list-keys", "-T", "prefix").CombinedOutput()
+	if err != nil {
+		t.Fatalf("list prefix d: %v: %s", err, bound)
+	}
+	found := false
+	for _, line := range strings.Split(string(bound), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 5 && fields[0] == "bind-key" && fields[1] == "-T" && fields[2] == "prefix" && fields[3] == "d" && fields[4] == "detach-client" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("prefix d should detach, got %q", bound)
+	}
+}
+
+func TestRefreshChromeKeepsLabelAndAddsSessionHints(t *testing.T) {
 	driver := requireTmux(t)
 	id := "chr" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
@@ -354,6 +385,9 @@ func TestRefreshChromeKeepsLabelAndAddsReviewHint(t *testing.T) {
 
 	if err := driver.SetLabel(id, "my-session"); err != nil {
 		t.Fatalf("SetLabel: %v", err)
+	}
+	if out, err := tmuxCmd("set-option", "-t", "am_"+id, "prefix", `C-\`).CombinedOutput(); err != nil {
+		t.Fatalf("set prefix: %v: %s", err, out)
 	}
 	if err := driver.RefreshChrome(id); err != nil {
 		t.Fatalf("RefreshChrome: %v", err)
@@ -366,11 +400,81 @@ func TestRefreshChromeKeepsLabelAndAddsReviewHint(t *testing.T) {
 	if !strings.Contains(string(right), "Ctrl+r = review") {
 		t.Fatalf("footer should advertise review, got %q", right)
 	}
+	if !strings.Contains(string(right), `C-\ d = back`) {
+		t.Fatalf("footer should advertise the configured-prefix escape, got %q", right)
+	}
+	if !strings.Contains(string(right), `Ctrl+q / C-\ d = back`) {
+		t.Fatalf("footer should advertise the available direct escape, got %q", right)
+	}
+	if out, err := tmuxCmd("set-option", "-t", "am_"+id, "prefix", "C-q").CombinedOutput(); err != nil {
+		t.Fatalf("set conflicting prefix: %v: %s", err, out)
+	}
+	if err := driver.RefreshChrome(id); err != nil {
+		t.Fatalf("RefreshChrome with conflicting prefix: %v", err)
+	}
+	right, err = tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("conflicting status-right: %v", err)
+	}
+	if strings.Contains(string(right), "Ctrl+q /") {
+		t.Fatalf("footer should hide a direct shortcut claimed by the prefix, got %q", right)
+	}
+	if !strings.Contains(string(right), "C-q d = back") {
+		t.Fatalf("footer should retain the prefix escape, got %q", right)
+	}
+	if out, err := tmuxCmd("set-option", "-t", "am_"+id, "prefix", `C-\`).CombinedOutput(); err != nil {
+		t.Fatalf("restore primary prefix: %v: %s", err, out)
+	}
+	if out, err := tmuxCmd("set-option", "-t", "am_"+id, "prefix2", "C-q").CombinedOutput(); err != nil {
+		t.Fatalf("set conflicting secondary prefix: %v: %s", err, out)
+	}
+	if err := driver.RefreshChrome(id); err != nil {
+		t.Fatalf("RefreshChrome with conflicting secondary prefix: %v", err)
+	}
+	right, err = tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("secondary-prefix status-right: %v", err)
+	}
+	if strings.Contains(string(right), "Ctrl+q /") {
+		t.Fatalf("footer should hide a direct shortcut claimed by prefix2, got %q", right)
+	}
+	if !strings.Contains(string(right), `C-\ d = back`) {
+		t.Fatalf("footer should retain the primary-prefix escape, got %q", right)
+	}
+	if out, err := tmuxCmd("set-option", "-t", "am_"+id, "prefix", "None").CombinedOutput(); err != nil {
+		t.Fatalf("disable prefix: %v: %s", err, out)
+	}
+	if err := driver.RefreshChrome(id); err != nil {
+		t.Fatalf("RefreshChrome without prefix: %v", err)
+	}
+	right, err = tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("prefix-free status-right: %v", err)
+	}
+	if strings.Contains(string(right), "Ctrl+q") {
+		t.Fatalf("footer should hide a direct shortcut claimed by prefix2, got %q", right)
+	}
+	if !strings.Contains(string(right), "C-q d = back") {
+		t.Fatalf("footer should show prefix2 when the primary prefix is disabled, got %q", right)
+	}
+	if out, err := tmuxCmd("set-option", "-t", "am_"+id, "prefix2", "None").CombinedOutput(); err != nil {
+		t.Fatalf("disable secondary prefix: %v: %s", err, out)
+	}
+	if err := driver.RefreshChrome(id); err != nil {
+		t.Fatalf("RefreshChrome without either prefix: %v", err)
+	}
+	right, err = tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("prefix-free status-right: %v", err)
+	}
+	if strings.Contains(string(right), "None d") || !strings.Contains(string(right), "Ctrl+q = back") {
+		t.Fatalf("footer should retain only the direct escape without prefixes, got %q", right)
+	}
 	length, err := tmuxCmd("show-option", "-t", "am_"+id, "-v", "status-right-length").CombinedOutput()
 	if err != nil {
 		t.Fatalf("status-right-length: %v", err)
 	}
-	if strings.TrimSpace(string(length)) != "80" {
+	if strings.TrimSpace(string(length)) != "100" {
 		t.Fatalf("status-right-length should fit the footer, got %q", length)
 	}
 	left, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-left}").CombinedOutput()
