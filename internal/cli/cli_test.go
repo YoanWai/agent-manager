@@ -327,6 +327,57 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 	}
 }
 
+// A shell caller reads the exit status and the error line, so a handler
+// that printed its sentence anyway would tell an agent the work happened.
+// The MCP front pins the same contract for its tools.
+func TestALayerFailureReachesTheCaller(t *testing.T) {
+	failure := errors.New("session is not running")
+	sessions := &fakeSessions{session: sampleSession(), failWith: failure}
+	terminals := &fakeTerminals{failWith: failure}
+	cases := []struct {
+		name string
+		args []string
+		run  func(io.Writer, []string) error
+	}{
+		{"sessions", nil, func(out io.Writer, args []string) error { return runSessions(out, sessions, args, "cafe0001") }},
+		{"spawn", nil, func(out io.Writer, args []string) error { return runSpawn(out, sessions, args, "cafe0001") }},
+		{"send", []string{"beef1234", "ship it"}, func(out io.Writer, args []string) error { return runSend(out, sessions, args, "cafe0001") }},
+		{"read", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRead(out, sessions, args, "cafe0001") }},
+		{"wait", []string{"beef1234"}, func(out io.Writer, args []string) error { return runWait(out, sessions, args, "cafe0001") }},
+		{"message-status", []string{"7"}, func(out io.Writer, args []string) error { return runMessageStatus(out, sessions, args, "cafe0001") }},
+		{"kill", []string{"beef1234"}, func(out io.Writer, args []string) error { return runKill(out, sessions, args, "cafe0001") }},
+		{"revive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRevive(out, sessions, args, "cafe0001") }},
+		{"archive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runArchive(out, sessions, args, "cafe0001") }},
+		{"groups", nil, func(out io.Writer, args []string) error { return runGroups(out, sessions, args, "cafe0001") }},
+		{"create-group", []string{"api/web"}, func(out io.Writer, args []string) error { return runCreateGroup(out, sessions, args, "cafe0001") }},
+		{"task list", nil, func(out io.Writer, args []string) error { return runTaskList(out, sessions, args, "cafe0001") }},
+		{"task create", []string{"ship the api"}, func(out io.Writer, args []string) error { return runTaskCreate(out, sessions, args, "cafe0001") }},
+		{"task claim", nil, func(out io.Writer, args []string) error { return runTaskClaim(out, sessions, args, "cafe0001") }},
+		{"task finish", []string{"t1"}, func(out io.Writer, args []string) error { return runTaskFinish(out, sessions, args, "cafe0001") }},
+		{"task release", []string{"t1"}, func(out io.Writer, args []string) error { return runTaskRelease(out, sessions, args, "cafe0001") }},
+		{"task delete", []string{"t1"}, func(out io.Writer, args []string) error { return runTaskDelete(out, sessions, args, "cafe0001") }},
+		{"reserve", []string{"internal/cli"}, func(out io.Writer, args []string) error { return runReserve(out, sessions, args, "cafe0001") }},
+		{"release-files", nil, func(out io.Writer, args []string) error { return runReleaseFiles(out, sessions, args, "cafe0001") }},
+		{"reservations", nil, func(out io.Writer, args []string) error { return runReservations(out, sessions, args, "cafe0001") }},
+		{"terminal list", nil, func(out io.Writer, args []string) error { return runTerminalList(out, terminals, args, "cafe0001") }},
+		{"terminal create", nil, func(out io.Writer, args []string) error { return runTerminalCreate(out, terminals, args, "cafe0001") }},
+		{"terminal send", []string{"t1"}, func(out io.Writer, args []string) error { return runTerminalSend(out, terminals, args, "cafe0001") }},
+		{"terminal read", []string{"t1"}, func(out io.Writer, args []string) error { return runTerminalRead(out, terminals, args, "cafe0001") }},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			out := &bytes.Buffer{}
+			err := testCase.run(out, testCase.args)
+			if !errors.Is(err, failure) {
+				t.Fatalf("error = %v, want the layer's own", err)
+			}
+			if out.Len() != 0 {
+				t.Fatalf("a failed call printed a result anyway: %q", out.String())
+			}
+		})
+	}
+}
+
 // Only a flag the caller typed may reach the layer: a zero value passed
 // anyway would silently override the group and worktree a spawn inherits.
 func TestSpawnPassesOnlyTheFlagsGiven(t *testing.T) {
@@ -574,6 +625,18 @@ func TestReserveParsesPathsAndFlags(t *testing.T) {
 
 	if err := runReserve(&bytes.Buffer{}, fake, []string{"--", "-notaflag"}, "cafe0001"); err == nil {
 		t.Fatal("a path that reads as a flag should be refused")
+	}
+
+	// The flags parse wherever they sit, so a leading dash is the whole
+	// reason a mistyped one cannot be leased, and the refusal has to say so
+	// rather than send the agent to reorder what it typed.
+	mistyped := runReserve(&bytes.Buffer{}, fake, []string{"internal/cli", "--mod", "shared"}, "cafe0001")
+	if mistyped == nil {
+		t.Fatal("a mistyped flag should not be leased as a pattern")
+	}
+	if !strings.Contains(mistyped.Error(), `"--mod" starts with a dash`) ||
+		!strings.Contains(mistyped.Error(), "usage: agent-manager reserve") {
+		t.Fatalf("the refusal does not name the cause and the usage: %q", mistyped)
 	}
 	if err := runReserve(&bytes.Buffer{}, fake, nil, "cafe0001"); err == nil {
 		t.Fatal("reserve needs at least one path")

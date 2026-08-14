@@ -138,16 +138,31 @@ func (s *Store) settleTask(id, sessionID, state, owner string, at time.Time) (bo
 	return affected > 0, err
 }
 
+// DeleteTask drops a task and the dependency edges naming it. One
+// transaction, because CreateTask is the only writer of task_deps: edges
+// committed without the row they belong to are gone for good. The row goes
+// first so an id naming no task leaves every edge where it is.
 func (s *Store) DeleteTask(id string) (bool, error) {
-	if _, err := s.db.Exec(`DELETE FROM task_deps WHERE task_id = ? OR depends_on_id = ?`, id, id); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
 		return false, err
 	}
-	res, err := s.db.Exec(`DELETE FROM tasks WHERE id = ?`, id)
+	defer tx.Rollback()
+	res, err := tx.Exec(`DELETE FROM tasks WHERE id = ?`, id)
 	if err != nil {
 		return false, err
 	}
 	affected, err := res.RowsAffected()
-	return affected > 0, err
+	if err != nil {
+		return false, err
+	}
+	if affected == 0 {
+		return false, nil
+	}
+	if _, err := tx.Exec(`DELETE FROM task_deps WHERE task_id = ? OR depends_on_id = ?`, id, id); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
 }
 
 func (s *Store) Tasks() ([]Task, error) {

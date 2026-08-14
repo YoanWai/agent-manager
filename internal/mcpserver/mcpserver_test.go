@@ -884,10 +884,16 @@ func TestReservationToolsReportConflictsWithoutRefusingTheLease(t *testing.T) {
 	if text, _ := callText(t, session, "list_reservations", map[string]any{}); !strings.Contains(text, "focus mode") {
 		t.Fatalf("list_reservations text = %q", text)
 	}
-	if _, isError := callText(t, session, "release_files", map[string]any{"paths": []string{"internal/store/*.go"}}); isError {
-		t.Fatal("release_files errored")
+	released := callTool(t, session, "release_files", map[string]any{"paths": []string{"internal/store/*.go", "internal/ui/*.go"}})
+	if released.IsError {
+		t.Fatalf("release_files = %+v", released)
 	}
-	if strings.Join(fake.releasedPaths, ",") != "internal/store/*.go" {
+	// The count is what tells a caller how much of what it asked for it
+	// actually held, and the shell front already hands it back as a number.
+	if structured, ok := released.StructuredContent.(map[string]any); !ok || structured["released"] != float64(2) {
+		t.Fatalf("release_files structured = %#v", released.StructuredContent)
+	}
+	if strings.Join(fake.releasedPaths, ",") != "internal/store/*.go,internal/ui/*.go" {
 		t.Fatalf("release args = %v", fake.releasedPaths)
 	}
 }

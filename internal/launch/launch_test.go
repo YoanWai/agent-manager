@@ -95,6 +95,15 @@ func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
 		t.Fatalf("a tool whose MCP tool descriptions say this already must not repeat it, got %q", plan.Command)
 	}
 
+	// A slash command carries neither, so both queue, and the order is what
+	// the agent reads: the directive ends on "Then continue.", and the note
+	// is what it continues into.
+	deferred := Assemble("pi", noClient, "/compact the notes", true)
+	if len(deferred.PendingInputs) != 2 ||
+		deferred.PendingInputs[0] != DeferredRenameDirective || deferred.PendingInputs[1] != CoordinationNote {
+		t.Fatalf("a launch needing both should queue them in reading order, got %v", deferred.PendingInputs)
+	}
+
 	promptless := Assemble("pi", noClient, "", false)
 	if promptless.Command != noClient.Command {
 		t.Fatalf("a promptless launch command should stay clean, got %q", promptless.Command)

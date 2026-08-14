@@ -643,3 +643,41 @@ func TestQuotedSignalsDoNotTrigger(t *testing.T) {
 		})
 	}
 }
+
+// The inbox gate asks RuleMatch rather than Match so it can tell a dialog
+// drawn over the input line from a session resting on a question. Both of
+// the fallbacks Match layers on top would pin that gate shut: a question
+// left on screen reads as waiting, and a background wait as working, so a
+// resting session would never be handed the message queued for it.
+func TestRuleMatchLeavesTheFallbacksToMatch(t *testing.T) {
+	engine := defaultEngine(t)
+	cases := []struct {
+		name  string
+		tool  string
+		pane  string
+		match string
+		rule  string
+	}{
+		{"a question left at a resting prompt", "claude",
+			"⏺ What color now, what color want?\n✻ Crunched for 9s\n────\n❯ \n────\n  ▎ ✧ /plan  enter plan mode",
+			Waiting, ""},
+		{"a background wait outliving its turn", "claude",
+			"⏺ Security agent done. 2 left (logic, backend/API).\n✻ Waiting for 2 background agents to finish\n────\n❯ \n────\n  ⏵⏵ bypass permissions on",
+			Working, ""},
+		{"a tool nobody configured", "ghost", "anything", Idle, ""},
+		{"an approval dialog, which is what a rule is for", "claude",
+			"Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently",
+			Waiting, Waiting},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, _ := engine.Match(tc.tool, tc.pane); got != tc.match {
+				t.Fatalf("Match = %q, want %q", got, tc.match)
+			}
+			got, matched := engine.RuleMatch(tc.tool, tc.pane)
+			if got != tc.rule || matched != (tc.rule != "") {
+				t.Fatalf("RuleMatch = (%q, %t), want (%q, %t)", got, matched, tc.rule, tc.rule != "")
+			}
+		})
+	}
+}

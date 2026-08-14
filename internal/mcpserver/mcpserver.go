@@ -130,6 +130,10 @@ type listGroupsOutput struct {
 	Groups []sessioncmd.Group `json:"groups"`
 }
 
+type releaseFilesOutput struct {
+	Released int `json:"released"`
+}
+
 type waitSessionArgs struct {
 	SessionID string   `json:"session_id" jsonschema:"session id returned by list_sessions or create_session"`
 	Until     []string `json:"until,omitempty" jsonschema:"states that end the wait; defaults to every state that means the session stopped working (finished, waiting, idle, errored, dead). Valid values: starting, working, waiting, finished, idle, errored, dead"`
@@ -485,12 +489,12 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		Description: "Give back the leases you took with reserve_files once the edits are made, so another agent can take those paths. " +
 			"Omit paths to release everything this session holds.",
 		Annotations: toolAnnotations(false, false, false),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args releaseFilesArgs) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args releaseFilesArgs) (*mcp.CallToolResult, releaseFilesOutput, error) {
 		released, err := sessions.ReleaseFiles(sessionID, args.Paths)
 		if err != nil {
-			return nil, nil, err
+			return nil, releaseFilesOutput{}, err
 		}
-		return textContent(sessioncmd.FormatReleased(released)), nil, nil
+		return textContent(sessioncmd.FormatReleased(released)), releaseFilesOutput{Released: released}, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{

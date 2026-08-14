@@ -60,8 +60,6 @@ func newParityWorkspace(t *testing.T) *parityWorkspace {
 	return workspace
 }
 
-// mcpText calls a tool the way an MCP client does and returns the sentence
-// it printed, plus whether the call came back as a tool error.
 func (w *parityWorkspace) mcpText(t *testing.T, sessionID, tool string, args map[string]any) (string, bool) {
 	t.Helper()
 	result := w.mcpCall(t, sessionID, tool, args)
@@ -231,9 +229,16 @@ func TestTheTwoFrontsRefuseTheSameOutOfRangeTTL(t *testing.T) {
 			}
 		})
 	}
-	// The bound refuses what is outside it and nothing else.
+	// The bound refuses what is outside it and nothing else, on both fronts:
+	// an extra check grown on one of them is the drift this file is here for.
 	if err := runReserve(&bytes.Buffer{}, w.files, []string{"--ttl", "45m", "internal/store/store.go"}, w.lead.ID); err != nil {
 		t.Fatalf("a ttl inside the bound was refused: %v", err)
+	}
+	granted, isError := w.mcpText(t, w.lead.ID, "reserve_files", map[string]any{
+		"paths": []string{"internal/store/tasks.go"}, "ttl_minutes": 45,
+	})
+	if isError {
+		t.Fatalf("the MCP front refused a ttl inside the bound: %q", granted)
 	}
 }
 

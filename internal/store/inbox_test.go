@@ -3,20 +3,9 @@ package store
 import (
 	"database/sql"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 )
-
-func inboxStore(t *testing.T) *Store {
-	t.Helper()
-	st, err := Open(filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { st.Close() })
-	return st
-}
 
 func message(body string, at time.Time) InboxMessage {
 	return InboxMessage{
@@ -30,7 +19,7 @@ func message(body string, at time.Time) InboxMessage {
 }
 
 func TestEnqueueDeliverAndAck(t *testing.T) {
-	st := inboxStore(t)
+	st := newTestStore(t)
 	now := time.Now()
 
 	id, err := st.Enqueue(message("rebase on main", now), DefaultInboxLimits)
@@ -89,7 +78,7 @@ func TestEnqueueDeliverAndAck(t *testing.T) {
 }
 
 func TestEnqueueGuardsAgainstLoops(t *testing.T) {
-	st := inboxStore(t)
+	st := newTestStore(t)
 	now := time.Now()
 	limits := InboxLimits{QueueCap: 3, RateCap: 2, RateWindow: time.Minute, DedupeWindow: time.Minute}
 
@@ -116,7 +105,7 @@ func TestEnqueueGuardsAgainstLoops(t *testing.T) {
 }
 
 func TestInboxIsScopedPerRecipientAndSweptWhenDelivered(t *testing.T) {
-	st := inboxStore(t)
+	st := newTestStore(t)
 	now := time.Now()
 	limits := DefaultInboxLimits
 
@@ -161,7 +150,7 @@ func TestInboxIsScopedPerRecipientAndSweptWhenDelivered(t *testing.T) {
 // wait days behind an agent parked on a dialog and still be brand new to
 // its sender when it finally lands.
 func TestPruneMeasuresRetentionFromDeliveryRatherThanFromSending(t *testing.T) {
-	st := inboxStore(t)
+	st := newTestStore(t)
 	now := time.Now()
 	id, err := st.Enqueue(message("rebase on main", now.Add(-30*time.Hour)), DefaultInboxLimits)
 	if err != nil {
@@ -186,7 +175,7 @@ func TestPruneMeasuresRetentionFromDeliveryRatherThanFromSending(t *testing.T) {
 }
 
 func TestDeletingASessionTakesItsMessagesBothWays(t *testing.T) {
-	st := inboxStore(t)
+	st := newTestStore(t)
 	now := time.Now()
 	for _, sess := range []Session{
 		{ID: "target01", Name: "target", Tool: "claude", Cwd: "/tmp", Status: "idle"},

@@ -50,7 +50,7 @@ func runReserve(out io.Writer, files fileCommands, args []string, sessionID stri
 	if err != nil {
 		return err
 	}
-	if err := checkPaths(operands); err != nil {
+	if err := checkPaths(usageReserve, operands); err != nil {
 		return err
 	}
 	result, err := files.Reserve(sessionID, operands, *mode, *note, *ttl)
@@ -67,7 +67,7 @@ func runReleaseFiles(out io.Writer, files fileCommands, args []string, sessionID
 	if err != nil {
 		return err
 	}
-	if err := checkPaths(operands); err != nil {
+	if err := checkPaths(usageReleaseFiles, operands); err != nil {
 		return err
 	}
 	released, err := files.ReleaseFiles(sessionID, operands)
@@ -90,12 +90,13 @@ func runReservations(out io.Writer, files fileCommands, args []string, sessionID
 	return emit(out, *asJSON, listed, sessioncmd.FormatReservations(listed))
 }
 
-// A lease is taken on whatever string it is handed, so a flag written after
-// the paths would otherwise be recorded as a pattern and never conflict.
-func checkPaths(paths []string) error {
+// A lease is taken on whatever string it is handed, so a mistyped flag the
+// set does not know would otherwise be recorded as a pattern that can never
+// conflict.
+func checkPaths(usage string, paths []string) error {
 	for _, path := range paths {
 		if strings.HasPrefix(path, "-") {
-			return fmt.Errorf("%q is not a path; the flags go before the paths", path)
+			return fmt.Errorf("%q starts with a dash, so it reads as a flag rather than a path; usage: agent-manager %s", path, usage)
 		}
 	}
 	return nil

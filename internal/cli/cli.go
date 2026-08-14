@@ -15,23 +15,19 @@ import (
 	"strings"
 )
 
-// Command is one subcommand, taking the caller's session id and the
-// manager's config directory the way main.go resolves them.
 type Command func(args []string, sessionID, configDir string) error
 
 // ErrUsageShown reports that -h already printed the usage, so the caller
 // exits without an error line.
 var ErrUsageShown = errors.New("usage shown")
 
-// anyNumber lifts the ceiling on how many operands a command takes.
 const anyNumber = -1
 
 type command struct {
 	name  string
 	usage string
 	about string
-	// verbs are the second level of a grouped command such as `task claim`.
-	// They are reached through run, never registered at the top level.
+	// Verbs are reached through run, never registered at the top level.
 	verbs []command
 	run   Command
 }
@@ -172,8 +168,7 @@ func parseCommand(out io.Writer, set *flag.FlagSet, args []string, min, max int)
 // parseInterspersed reads flags wherever they sit, since these commands lead
 // with their operands and flag.Parse stops at the first one. Anything the
 // set has no flag for is an operand, so a message or a title may start with
-// a dash the way agent prose often does. Everything after a "--" separator
-// is an operand too.
+// a dash the way agent prose often does.
 func parseInterspersed(set *flag.FlagSet, args []string) ([]string, error) {
 	var literal []string
 	if separator := slices.Index(args, "--"); separator >= 0 {
@@ -195,9 +190,8 @@ func parseInterspersed(set *flag.FlagSet, args []string) ([]string, error) {
 	return append(operands, literal...), nil
 }
 
-// namesFlag reports whether a token is one of this command's flags. -h is
-// one wherever it appears: the flag package answers it itself rather than
-// declaring it.
+// -h counts wherever it appears: the flag package answers it itself rather
+// than declaring it.
 func namesFlag(set *flag.FlagSet, token string) bool {
 	if token == "-h" || token == "--help" {
 		return true
@@ -211,8 +205,6 @@ func namesFlag(set *flag.FlagSet, token string) bool {
 	return set.Lookup(name) != nil
 }
 
-// stringList collects a flag given several times, or once with a
-// comma-separated value.
 type stringList []string
 
 func (list *stringList) String() string {
