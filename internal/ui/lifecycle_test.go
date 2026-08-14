@@ -40,6 +40,9 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 	if len(m.sessionRows()) != 0 {
 		t.Fatalf("after archive, active sessions = %d want 0", len(m.sessionRows()))
 	}
+	if m.tmux.Exists(sess.ID) {
+		t.Fatal("archive should kill the tmux session")
+	}
 
 	m.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
@@ -764,6 +767,9 @@ func TestArchiveAbortsWhenSnapshotFails(t *testing.T) {
 	if len(m.sessionRows()) != 1 {
 		t.Fatalf("failed snapshot must not archive, active sessions = %d want 1", len(m.sessionRows()))
 	}
+	if !m.tmux.Exists(m.sessionRows()[0].ID) {
+		t.Fatal("failed snapshot must not kill the tmux session")
+	}
 	active, err := m.store.ListSessions(false)
 	if err != nil {
 		t.Fatalf("list sessions: %v", err)
@@ -806,6 +812,11 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 	}
 	if names := sessionNames(m); len(names) != 2 {
 		t.Fatalf("archived view sessions = %v want 2", names)
+	}
+	for _, sess := range m.sessionRows() {
+		if m.tmux.Exists(sess.ID) {
+			t.Fatalf("archived session %s should be killed", sess.Name)
+		}
 	}
 
 	m.selectGroupRow(t, "proj")
@@ -878,6 +889,9 @@ func TestArchivedSessionKeepsPaneSnapshot(t *testing.T) {
 	}
 	if !strings.Contains(snapshot, "snapshot-marker") {
 		t.Fatalf("archive should persist the pane, snapshot = %q", snapshot)
+	}
+	if m.tmux.Exists(sess.ID) {
+		t.Fatal("archive should kill the tmux session")
 	}
 
 	m.showArchived = true

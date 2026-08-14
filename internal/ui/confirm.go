@@ -35,7 +35,7 @@ func (m *Model) confirmTitle() string {
 // away, which decides whether the dialog reads as an alarm or as a move.
 func (m *Model) confirmDestructive() bool {
 	return m.confirm.action == actionKill || m.confirm.action == actionDelete ||
-		m.confirm.action == actionRestart
+		m.confirm.action == actionRestart || m.confirm.action == actionArchive
 }
 
 func (m *Model) viewConfirm() string {
