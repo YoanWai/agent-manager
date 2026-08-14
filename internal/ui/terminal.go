@@ -9,9 +9,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// terminalKeyWindow is how long after a T keystroke another one reads as
-// autorepeat rather than a second request: comfortably longer than the
-// interval a held key repeats at, shorter than a deliberate second press.
+// terminalKeyWindow is how long after handling a T another one reads as
+// autorepeat rather than a second request: longer than the pause before a
+// held key starts repeating and than the interval it repeats at. It runs
+// from the end of the spawn, so the quiet gap between two deliberate
+// shells is this window plus the spawn.
 const terminalKeyWindow = 250 * time.Millisecond
 
 // shellTool finds the config block T spawns: the first one declaring
@@ -29,15 +31,22 @@ func (m *Model) isShell(toolName string) bool {
 	return m.cfg.Tools[toolName].Shell
 }
 
-// terminalKeyRepeat reports whether T arrived inside the burst a held key
-// sends. Each keystroke pushes the window out, so holding T spawns one
-// shell however long it is held. The other keys that create something open
-// a form first, which absorbs a burst on its own.
-func (m *Model) terminalKeyRepeat() bool {
-	now := time.Now()
-	repeated := now.Sub(m.terminalKeyAt) < terminalKeyWindow
-	m.terminalKeyAt = now
-	return repeated
+// terminalKey spawns a shell unless T arrived inside the burst a held key
+// sends. The window is measured from the end of the previous T's work, not
+// from its arrival: the spawn runs on the update path, so the keystroke a
+// burst queued behind it is only read once it finishes, and an interval
+// measured from arrival would be the spawn's own duration rather than the
+// gap the keyboard produced. Each keystroke pushes the window out, so
+// holding T spawns one shell however long it is held. The other keys that
+// create something open a form first, which absorbs a burst on its own.
+func (m *Model) terminalKey() (tea.Model, tea.Cmd) {
+	if time.Since(m.terminalKeyAt) < terminalKeyWindow {
+		m.terminalKeyAt = time.Now()
+		return m, nil
+	}
+	model, cmd := m.openTerminal()
+	m.terminalKeyAt = time.Now()
+	return model, cmd
 }
 
 // openTerminal spawns a shell tab in the group under the cursor. The block

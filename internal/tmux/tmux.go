@@ -136,6 +136,23 @@ func (d *Driver) run(args ...string) (string, error) {
 	return string(out), nil
 }
 
+// commandList joins commands into the single invocation tmux takes for a
+// whole list, where any argument ending in ";" ends one command and starts
+// the next, losing that character: a value that has to keep a trailing
+// semicolon writes it as \;. tmux stops at the first command that fails and
+// exits non-zero, so the list reports a failure the way a run per command
+// did.
+func commandList(commands ...[]string) []string {
+	var args []string
+	for _, command := range commands {
+		if len(args) > 0 {
+			args = append(args, ";")
+		}
+		args = append(args, command...)
+	}
+	return args
+}
+
 // afterCreateThemeLoad runs between Create loading the pane theme and writing
 // it, while Create holds the push lock. Nil in production; a test sets it to
 // drive a push against the held lock and prove the write ordering.
@@ -276,12 +293,8 @@ func (d *Driver) styleStatusBar(name string) error {
 		// terminal emulator, whose buffer carries content from prior attaches.
 		{"set-option", "-t", name, "mouse", "on"},
 	}
-	for _, args := range options {
-		if _, err := d.run(args...); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err = d.run(commandList(options...)...)
+	return err
 }
 
 func attachStatusRight(primary, secondary string) string {
@@ -311,12 +324,8 @@ func (d *Driver) EnsureBindings() error {
 		// Restore the standard fallback when the prefix shadows a direct binding.
 		{"bind-key", "-T", "prefix", "d", "detach-client"},
 	}
-	for _, args := range binds {
-		if _, err := d.run(args...); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := d.run(commandList(binds...)...)
+	return err
 }
 
 // RefreshChrome re-applies the status bar chrome to a live session so a

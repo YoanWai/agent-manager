@@ -176,9 +176,10 @@ type Model struct {
 	// settle timers with an older gen are dropped so key-repeat cannot
 	// queue a second of tmux work after the user stops.
 	previewGen uint64
-	// terminalKeyAt is when T last arrived. Held down it autorepeats into a
-	// burst of keystrokes, and T is the only key that spawns on the
-	// keystroke itself rather than opening a form that would swallow them.
+	// terminalKeyAt is when the last T finished being handled. Held down it
+	// autorepeats into a burst of keystrokes, and T is the only key that
+	// spawns on the keystroke itself rather than opening a form that would
+	// swallow them.
 	terminalKeyAt time.Time
 
 	// bannerPhase advances the wordmark's current sweep and then rests, so
