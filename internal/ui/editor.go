@@ -32,21 +32,16 @@ var detachedEditors = map[string]bool{
 // editors this machine has and to observe the launch instead of running it.
 var (
 	lookPath    = exec.LookPath
-	startEditor = startDetached
-)
-
-func startDetached(cmd *exec.Cmd) error {
-	return startAndReap(cmd.Start, cmd.Wait)
-}
-
-func startAndReap(start, wait func() error) error {
-	if err := start(); err != nil {
-		return err
+	startEditor = func(cmd *exec.Cmd) error {
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		// The manager runs for days at a time; without this every o would
+		// leave the finished editor process behind holding its pipes.
+		go func() { _ = cmd.Wait() }()
+		return nil
 	}
-	// The manager runs for days at a time; every detached child must be reaped.
-	go func() { _ = wait() }()
-	return nil
-}
+)
 
 // editorDoneMsg ends an editor request. The status line waits on it rather
 // than announcing the editor from openEditor, so a launch that fails is

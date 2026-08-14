@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/update"
@@ -364,18 +365,23 @@ func noticeFrame(rows []string, inner int, topLegend, bottomLegend string) []str
 	return append(lines, legend("╰", bottomLegend, "╯"))
 }
 
-// openBrowser is a var so tests can capture the URL instead of opening one.
-var openBrowser = defaultOpenBrowser
+var (
+	// Seams keep link tests from mutating the desktop and clipboard.
+	openBrowser    = defaultOpenBrowser
+	copyBrowserURL = clipboard.WriteText
+)
 
 func defaultOpenBrowser(target string) error {
-	return openBrowserWith(runtime.GOOS, os.Getenv("BROWSER"), target, startDetached)
+	return openBrowserWith(runtime.GOOS, os.Getenv("BROWSER"), target, func(cmd *exec.Cmd) error {
+		return cmd.Run()
+	})
 }
 
-func openBrowserWith(goos, browser, target string, start func(*exec.Cmd) error) error {
+func openBrowserWith(goos, browser, target string, run func(*exec.Cmd) error) error {
 	commands := browserCommands(goos, browser, target)
 	var failures []error
 	for _, cmd := range commands {
-		err := start(cmd)
+		err := run(cmd)
 		if err == nil {
 			return nil
 		}
@@ -412,20 +418,30 @@ func browserCommands(goos, browser, target string) []*exec.Cmd {
 }
 
 type browserOpenMsg struct {
-	target string
-	err    error
+	target  string
+	err     error
+	copyErr error
 }
 
 func openLink(target string) tea.Cmd {
 	return func() tea.Msg {
-		return browserOpenMsg{target: target, err: openBrowser(target)}
+		err := openBrowser(target)
+		if err == nil {
+			return browserOpenMsg{target: target}
+		}
+		return browserOpenMsg{target: target, err: err, copyErr: copyBrowserURL(target)}
 	}
 }
 
 func (m *Model) handleBrowserOpen(msg browserOpenMsg) {
-	if msg.err != nil {
-		m.errBar.text = fmt.Sprintf("could not open %s: %v", msg.target, msg.err)
+	if msg.err == nil {
+		return
 	}
+	if msg.copyErr == nil {
+		m.errBar.text = fmt.Sprintf("could not open link; URL copied to clipboard: %v", msg.err)
+		return
+	}
+	m.errBar.text = fmt.Sprintf("could not open %s: %v; copying URL: %v", msg.target, msg.err, msg.copyErr)
 }
 
 func (m *Model) openNotices(selectID string) {

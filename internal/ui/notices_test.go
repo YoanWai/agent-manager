@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -711,15 +713,59 @@ func TestOpenBrowserFallsBackToXDGOpen(t *testing.T) {
 	}
 }
 
-func TestOpenBrowserFailureNamesURL(t *testing.T) {
+func TestOpenBrowserContinuesAfterRuntimeFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses Unix true and false commands")
+	}
+	var attempted []string
+	err := openBrowserWith("linux", "false:true", "https://example.com", func(cmd *exec.Cmd) error {
+		attempted = append(attempted, cmd.Args[0])
+		return cmd.Run()
+	})
+	if err != nil {
+		t.Fatalf("openBrowserWith() error = %v", err)
+	}
+	if want := []string{"false", "true"}; !slices.Equal(attempted, want) {
+		t.Fatalf("attempted %q, want %q", attempted, want)
+	}
+}
+
+func TestOpenBrowserFailureCopiesURL(t *testing.T) {
 	m := modalModel(t)
 	openBrowser = func(string) error { return errors.New("no browser available") }
-	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+	var copied string
+	copyBrowserURL = func(target string) error {
+		copied = target
+		return nil
+	}
+	t.Cleanup(func() {
+		openBrowser = defaultOpenBrowser
+		copyBrowserURL = clipboard.WriteText
+	})
 
 	target := "https://example.com/manual"
 	m.applyCmd(t, openLink(target))
-	if !strings.Contains(m.errBar.text, target) || !strings.Contains(m.errBar.text, "no browser available") {
-		t.Fatalf("failure = %q, want URL and cause", m.errBar.text)
+	if copied != target {
+		t.Fatalf("copied %q, want %q", copied, target)
+	}
+	if !strings.Contains(m.errBar.text, "URL copied") || !strings.Contains(m.errBar.text, "no browser available") {
+		t.Fatalf("failure = %q, want copy outcome and cause", m.errBar.text)
+	}
+}
+
+func TestOpenBrowserAndCopyFailureNamesURL(t *testing.T) {
+	m := modalModel(t)
+	openBrowser = func(string) error { return errors.New("no browser available") }
+	copyBrowserURL = func(string) error { return errors.New("no clipboard available") }
+	t.Cleanup(func() {
+		openBrowser = defaultOpenBrowser
+		copyBrowserURL = clipboard.WriteText
+	})
+
+	target := "https://example.com/manual"
+	m.applyCmd(t, openLink(target))
+	if !strings.Contains(m.errBar.text, target) || !strings.Contains(m.errBar.text, "no clipboard available") {
+		t.Fatalf("failure = %q, want URL and copy cause", m.errBar.text)
 	}
 }
 
