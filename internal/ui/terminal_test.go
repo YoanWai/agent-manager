@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -202,10 +204,30 @@ func TestShellToolIsFoundByItsFlag(t *testing.T) {
 	}
 }
 
+// slowSpawn puts a tmux ahead of the real one on PATH that stalls
+// new-session, so a model built after it spawns as slowly as a loaded
+// machine does.
+func slowSpawn(t *testing.T, delay time.Duration) {
+	t.Helper()
+	realTmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux not installed")
+	}
+	dir := t.TempDir()
+	script := fmt.Sprintf("#!/bin/sh\ncase \" $* \" in *' new-session '*) sleep %.3f ;; esac\nexec %s \"$@\"\n", delay.Seconds(), realTmux)
+	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write slow tmux: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 // Holding T autorepeats into a burst of keystrokes. T spawns on the
 // keystroke itself, so without a guard a held key fills the list with
-// shells and tmux windows nobody asked for.
+// shells and tmux windows nobody asked for. The spawn here takes longer
+// than the window, the way it does on a loaded machine, and the burst
+// queued behind it still has to collapse into one shell.
 func TestTerminalKeyIgnoresAutorepeat(t *testing.T) {
+	slowSpawn(t, terminalKeyWindow+50*time.Millisecond)
 	m := buildModel(t)
 	m.applyCmd(t, m.refreshCmd())
 
