@@ -8,6 +8,7 @@
 dist/
 .playwright-mcp/
 docs/badges/clones.json
+docs/badges/contributors.png
 .env
 .env.*
 *.pem

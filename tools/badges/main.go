@@ -1,4 +1,4 @@
-// Command badges refreshes the clone endpoint and generated README regions.
+// Command badges refreshes the repository's generated badge assets.
 package main
 
 import (
@@ -31,10 +31,7 @@ func run() error {
 	if err := writeCloneEndpoint(); err != nil {
 		return err
 	}
-	if err := refreshContributors(); err != nil {
-		return err
-	}
-	return fillTrendshift(trendshiftBadge())
+	return refreshContributors()
 }
 
 // writeCloneEndpoint writes nothing when the traffic call fails, so the
@@ -109,61 +106,4 @@ func get(url string, into any) error {
 		return fmt.Errorf("GET %s: %s", url, resp.Status)
 	}
 	return json.NewDecoder(resp.Body).Decode(into)
-}
-
-// trendshiftBadge is the banner Trendshift mints once a repository reaches
-// GitHub Trending.
-func trendshiftBadge() string {
-	const id = "89312"
-	const badgeURL = "https://trendshift.io/api/badge/trendshift/repositories/" + id + "/daily?language=Go"
-	resp, err := http.Get(badgeURL)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "badges: trendshift unreachable:", err)
-		return ""
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return ""
-	}
-	return fmt.Sprintf(
-		`<a href="https://trendshift.io/repositories/%s?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-%s" target="_blank" rel="noopener noreferrer"><img src="%s" alt="agent-manager on Trendshift" width="250" height="55"></a>`,
-		id, id, badgeURL)
-}
-
-// fillTrendshift keeps the README's trendshift region in step with whether the
-// badge exists, without touching a byte outside the markers.
-func fillTrendshift(badge string) error {
-	changed, err := fillREADMERegion("trendshift", badge)
-	if err != nil || !changed {
-		return err
-	}
-	if badge == "" {
-		fmt.Println("::notice::trendshift badge is not minted yet, leaving its region empty")
-	} else {
-		fmt.Println("::notice::trendshift badge is live, added to the README")
-	}
-	return nil
-}
-
-func fillREADMERegion(name, content string) (bool, error) {
-	open := "<!-- " + name + ":start -->"
-	close := "<!-- " + name + ":end -->"
-	raw, err := os.ReadFile("README.md")
-	if err != nil {
-		return false, err
-	}
-	readme := string(raw)
-	before, rest, found := strings.Cut(readme, open)
-	if !found {
-		return false, fmt.Errorf("README is missing the %s markers", name)
-	}
-	_, after, found := strings.Cut(rest, close)
-	if !found {
-		return false, fmt.Errorf("README is missing the %s markers", name)
-	}
-	updated := before + open + content + close + after
-	if updated == readme {
-		return false, nil
-	}
-	return true, os.WriteFile("README.md", []byte(updated), 0o644)
 }

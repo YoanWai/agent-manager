@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"html"
 	"image"
 	"image/draw"
 	_ "image/jpeg"
@@ -12,18 +11,20 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	xdraw "golang.org/x/image/draw"
 )
 
-const avatarSize = 64
+const (
+	avatarSize            = 64
+	avatarGap             = 8
+	maxContributorColumns = 12
+)
 
 type contributor struct {
 	Login     string `json:"login"`
 	AvatarURL string `json:"avatar_url"`
-	HTMLURL   string `json:"html_url"`
 	Type      string `json:"type"`
 }
 
@@ -32,13 +33,11 @@ var additionalContributors = []contributor{
 	{
 		Login:     "reddeye1337",
 		AvatarURL: "https://avatars.githubusercontent.com/u/261536237?v=4",
-		HTMLURL:   "https://github.com/reddeye1337",
 		Type:      "User",
 	},
 	{
 		Login:     "mikaoelitiana",
 		AvatarURL: "https://avatars.githubusercontent.com/u/674667?v=4",
-		HTMLURL:   "https://github.com/mikaoelitiana",
 		Type:      "User",
 	},
 }
@@ -46,23 +45,20 @@ var additionalContributors = []contributor{
 func refreshContributors() error {
 	var contributors []contributor
 	if err := get("https://api.github.com/repos/"+repo+"/contributors?per_page=100", &contributors); err != nil {
-		fmt.Printf("::warning::contributors were unavailable, so the README list was left alone: %v\n", err)
+		fmt.Printf("::warning::contributors were unavailable, so the published image was left alone: %v\n", err)
 		return nil
 	}
 	contributors = addContributors(humanContributors(contributors), additionalContributors)
-	avatars := make([][]byte, len(contributors))
+	avatars := make([]*image.NRGBA, len(contributors))
 	for i, contributor := range contributors {
 		avatar, err := circularAvatar(contributor.AvatarURL)
 		if err != nil {
-			fmt.Printf("::warning::the avatar for %s was unavailable, so the README list was left alone: %v\n", contributor.Login, err)
+			fmt.Printf("::warning::the avatar for %s was unavailable, so the published image was left alone: %v\n", contributor.Login, err)
 			return nil
 		}
 		avatars[i] = avatar
 	}
-	if err := writeContributorAvatars(contributors, avatars); err != nil {
-		return err
-	}
-	return fillContributors(contributors)
+	return writeContributorImage(avatars)
 }
 
 func humanContributors(contributors []contributor) []contributor {
@@ -89,7 +85,7 @@ func addContributors(contributors, additional []contributor) []contributor {
 	return result
 }
 
-func circularAvatar(avatarURL string) ([]byte, error) {
+func circularAvatar(avatarURL string) (*image.NRGBA, error) {
 	client := &http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Get(fmt.Sprintf("%s&s=%d", avatarURL, avatarSize))
 	if err != nil {
@@ -104,11 +100,7 @@ func circularAvatar(avatarURL string) ([]byte, error) {
 		return nil, err
 	}
 
-	var output bytes.Buffer
-	if err := png.Encode(&output, roundAvatar(source)); err != nil {
-		return nil, err
-	}
-	return output.Bytes(), nil
+	return roundAvatar(source), nil
 }
 
 func roundAvatar(source image.Image) *image.NRGBA {
@@ -126,49 +118,23 @@ func roundAvatar(source image.Image) *image.NRGBA {
 	return avatar
 }
 
-func writeContributorAvatars(contributors []contributor, avatars [][]byte) error {
-	dir := filepath.Join(outDir, "contributors")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+func writeContributorImage(avatars []*image.NRGBA) error {
+	if len(avatars) == 0 {
+		return fmt.Errorf("no contributor avatars to render")
+	}
+	columns := min(len(avatars), maxContributorColumns)
+	rows := (len(avatars) + columns - 1) / columns
+	width := columns*avatarSize + (columns-1)*avatarGap
+	height := rows*avatarSize + (rows-1)*avatarGap
+	output := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for i, avatar := range avatars {
+		x := (i % columns) * (avatarSize + avatarGap)
+		y := (i / columns) * (avatarSize + avatarGap)
+		draw.Draw(output, image.Rect(x, y, x+avatarSize, y+avatarSize), avatar, image.Point{}, draw.Over)
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, output); err != nil {
 		return err
 	}
-	wanted := make(map[string]bool, len(contributors))
-	for i, contributor := range contributors {
-		name := contributor.Login + ".png"
-		wanted[name] = true
-		if err := os.WriteFile(filepath.Join(dir, name), avatars[i], 0o644); err != nil {
-			return err
-		}
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".png") && !wanted[entry.Name()] {
-			if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func fillContributors(contributors []contributor) error {
-	var body strings.Builder
-	body.WriteByte('\n')
-	for i, contributor := range contributors {
-		if i > 0 {
-			body.WriteByte(' ')
-		}
-		fmt.Fprintf(
-			&body,
-			"<a href=\"%s\"><img src=\"docs/badges/contributors/%s.png\" width=\"64\" height=\"64\" alt=\"@%s\"></a>",
-			html.EscapeString(contributor.HTMLURL),
-			html.EscapeString(contributor.Login),
-			html.EscapeString(contributor.Login),
-		)
-	}
-	body.WriteByte('\n')
-	_, err := fillREADMERegion("contributors", body.String())
-	return err
+	return os.WriteFile(filepath.Join(outDir, "contributors.png"), encoded.Bytes(), 0o644)
 }

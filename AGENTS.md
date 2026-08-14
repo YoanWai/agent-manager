@@ -78,9 +78,8 @@ with `gh release edit <tag> --notes-file`. The header and footer from
   `internal/store` is the SQLite state; `internal/status` classifies pane
   output into agent states; `internal/config` loads `config.toml` and the
   tool rules.
-- The badges workflow publishes the clone count to the `badges` branch and
-  keeps the README's generated regions and contributor avatars current; none
-  are edited by hand.
+- The badges workflow publishes the clone count and contributor image to the
+  `badges` branch; neither generated asset is edited by hand.
 
 ## Style
 

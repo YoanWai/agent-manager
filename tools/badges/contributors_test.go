@@ -4,59 +4,9 @@ import (
 	"image"
 	"image/color"
 	"os"
+	"path/filepath"
 	"testing"
 )
-
-func TestFillContributors(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	original := "# Title\n\n<!-- contributors:start -->old<!-- contributors:end -->\n\nbody stays put\n"
-	if err := os.WriteFile("README.md", []byte(original), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	contributors := humanContributors([]contributor{
-		{Login: "one", HTMLURL: "https://github.com/one", Type: "User"},
-		{Login: "robot", HTMLURL: "https://github.com/robot", Type: "Bot"},
-		{Login: "two", HTMLURL: "https://github.com/two", Type: "User"},
-	})
-	if err := fillContributors(contributors); err != nil {
-		t.Fatal(err)
-	}
-
-	want := "# Title\n\n<!-- contributors:start -->\n" +
-		`<a href="https://github.com/one"><img src="docs/badges/contributors/one.png" width="64" height="64" alt="@one"></a>` + " " +
-		`<a href="https://github.com/two"><img src="docs/badges/contributors/two.png" width="64" height="64" alt="@two"></a>` + "\n" +
-		"<!-- contributors:end -->\n\nbody stays put\n"
-	got, err := os.ReadFile("README.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != want {
-		t.Fatalf("unexpected README:\n%s", got)
-	}
-	if err := fillContributors(contributors); err != nil {
-		t.Fatal(err)
-	}
-	again, err := os.ReadFile("README.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(again) != want {
-		t.Fatalf("a second fill changed the README:\n%s", again)
-	}
-}
-
-func TestFillContributorsNeedsMarkers(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	if err := os.WriteFile("README.md", []byte("no markers here"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := fillContributors(nil); err == nil {
-		t.Fatal("a README without markers should be an error, not a silent no-op")
-	}
-}
 
 func TestAddContributorsDeduplicates(t *testing.T) {
 	one := contributor{Login: "one"}
@@ -67,32 +17,43 @@ func TestAddContributorsDeduplicates(t *testing.T) {
 	}
 }
 
-func TestWriteContributorAvatars(t *testing.T) {
+func TestWriteContributorImage(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	avatarDir := "docs/badges/contributors"
-	if err := os.MkdirAll(avatarDir, 0o755); err != nil {
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(avatarDir+"/stale.png", []byte("old"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	contributors := []contributor{{Login: "one"}, {Login: "two"}}
-	if err := writeContributorAvatars(contributors, [][]byte{[]byte("first"), []byte("second")}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(avatarDir + "/stale.png"); !os.IsNotExist(err) {
-		t.Fatalf("stale avatar still exists: %v", err)
-	}
-	for name, want := range map[string]string{"one.png": "first", "two.png": "second"} {
-		got, err := os.ReadFile(avatarDir + "/" + name)
-		if err != nil {
-			t.Fatal(err)
+	red := image.NewNRGBA(image.Rect(0, 0, avatarSize, avatarSize))
+	blue := image.NewNRGBA(image.Rect(0, 0, avatarSize, avatarSize))
+	for y := range avatarSize {
+		for x := range avatarSize {
+			red.SetNRGBA(x, y, color.NRGBA{R: 255, A: 255})
+			blue.SetNRGBA(x, y, color.NRGBA{B: 255, A: 255})
 		}
-		if string(got) != want {
-			t.Fatalf("%s = %q, want %q", name, got, want)
-		}
+	}
+	if err := writeContributorImage([]*image.NRGBA{red, blue}); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(filepath.Join(outDir, "contributors.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	got, _, err := image.Decode(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Bounds() != image.Rect(0, 0, avatarSize*2+avatarGap, avatarSize) {
+		t.Fatalf("image bounds = %v", got.Bounds())
+	}
+	if pixel := color.NRGBAModel.Convert(got.At(avatarSize/2, avatarSize/2)).(color.NRGBA); pixel.R != 255 || pixel.A != 255 {
+		t.Fatalf("first avatar pixel = %#v", pixel)
+	}
+	if pixel := color.NRGBAModel.Convert(got.At(avatarSize+avatarGap+avatarSize/2, avatarSize/2)).(color.NRGBA); pixel.B != 255 || pixel.A != 255 {
+		t.Fatalf("second avatar pixel = %#v", pixel)
+	}
+	if pixel := color.NRGBAModel.Convert(got.At(avatarSize, avatarSize/2)).(color.NRGBA); pixel.A != 0 {
+		t.Fatalf("gap pixel = %#v", pixel)
 	}
 }
 
