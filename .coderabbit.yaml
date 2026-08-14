@@ -26,9 +26,11 @@ reviews:
       mode: warning
       requirements: |
         Follow Conventional Commits matching this repo: feat(scope): ...,
-        fix(scope): ..., docs: ..., chore: ..., etc. Scope is a package or
-        area (ui, tmux, status, store, update). The title is what readers
-        should see in the generated changelog.
+        fix(scope): ..., docs: ..., chore: ..., etc. Scope is optional.
+        When present it names a package, workflow, or area (ui, tmux, ci,
+        mcp, review, and so on). Bare docs:, chore:, test:, and ci: are
+        valid. The title is what readers should see in the generated
+        changelog.
     description:
       mode: warning
     issue_assessment:
@@ -67,8 +69,9 @@ reviews:
         mode: warning
         instructions: >-
           Detect breaking changes to the public CLI (flags, subcommands),
-          config.toml keys, documented environment variables, or exported
-          package APIs. Fail if a breaking change is present and the PR
+          config.toml keys, documented environment variables, or MCP tool
+          names and schemas. Exported identifiers under internal/ are not
+          a public API. Fail if a breaking change is present and the PR
           description has no Breaking Changes section that names each
           change. Pass when there is no breaking change, or each one is
           documented.
