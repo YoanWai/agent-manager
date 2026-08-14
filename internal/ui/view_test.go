@@ -44,11 +44,11 @@ func TestScrollWindow(t *testing.T) {
 
 func TestPaneExactPreservesBlanks(t *testing.T) {
 	pane := "one\n\n\ntwo\n"
-	got := paneExact(pane, 10)
+	got := paneExact(pane, 10, 80)
 	if len(got) != 4 || got[1] != "" || got[2] != "" {
 		t.Fatalf("paneExact should keep blank rows: %q", got)
 	}
-	got = paneExact("a\nb\nc\nd", 2)
+	got = paneExact("a\nb\nc\nd", 2, 80)
 	if len(got) != 2 || got[0] != "c" || got[1] != "d" {
 		t.Fatalf("paneExact oversize should take bottom lines: %q", got)
 	}
@@ -144,6 +144,39 @@ func TestPreviewLine(t *testing.T) {
 	}
 	if body := strings.TrimRight(stripPreviewMarks(ansi.Strip(hebrew)), " "); body != "  העצמון 25 חולון" {
 		t.Fatalf("pure RTL row text changed: %q", body)
+	}
+}
+
+// A row `go test` wrote carries literal tabs, which the frame measures as
+// nothing and the host paints out to its own stops, pushing the preview,
+// footer and stat rows off their positions.
+func TestPaneExactExpandsTabs(t *testing.T) {
+	const width = 60
+	rows := paneExact("ok  \tgithub.com/YoanWai/agent-manager/internal/ui\t73.163s\n", 4, width)
+	if len(rows) != 1 || strings.ContainsRune(rows[0], '\t') {
+		t.Fatalf("tab reached the frame: %q", rows)
+	}
+	if !strings.HasPrefix(rows[0], "ok      github.com/") {
+		t.Fatalf("tab should reach the pane's next eight-column stop: %q", rows[0])
+	}
+	if w := ansi.StringWidth(previewLine(rows[0], width)); w != width {
+		t.Fatalf("tabbed row paints %d cells, want %d", w, width)
+	}
+
+	// A tab close to the right edge stops on the row's last cell, where
+	// tmux leaves it, so the cell painted after it stays in the preview.
+	// Measured on tmux 3.7b: in a 62-column pane, 58 columns then a tab
+	// leaves the cursor at column 61.
+	edge := paneExact(strings.Repeat("a", 58)+"\tX", 1, 62)
+	if want := strings.Repeat("a", 58) + "   X"; edge[0] != want {
+		t.Fatalf("tab at the edge expanded to %q, want %q", edge[0], want)
+	}
+
+	// A capture taken before a resize is wider than the box it lands in,
+	// and a tab past the right edge covers no cells at all.
+	stale := paneExact(strings.Repeat("a", 40)+"\tX", 1, 20)
+	if want := strings.Repeat("a", 40) + "X"; stale[0] != want {
+		t.Fatalf("tab past the edge expanded to %q, want %q", stale[0], want)
 	}
 }
 

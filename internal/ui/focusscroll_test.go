@@ -195,7 +195,7 @@ func TestFocusScrollRecapturesAfterPreviewResize(t *testing.T) {
 	}
 	updated, _ = m.Update(recapture())
 	m = updated.(*Model)
-	if got, want := len(paneExact(m.preview, m.previewPaneHeight())), m.previewPaneHeight(); got != want {
+	if got, want := len(paneExact(m.preview, m.previewPaneHeight(), m.previewPaneWidth())), m.previewPaneHeight(); got != want {
 		t.Fatalf("scroll frame has %d rows, want %d", got, want)
 	}
 	if !strings.Contains(m.preview, "history-line-") {
@@ -238,7 +238,7 @@ func TestFocusScrollKeepsDeepHistoryFrame(t *testing.T) {
 	}
 	updated, _ := m.Update(msg)
 	m = updated.(*Model)
-	if got, want := len(paneExact(m.preview, m.previewPaneHeight())), m.previewPaneHeight(); got != want {
+	if got, want := len(paneExact(m.preview, m.previewPaneHeight(), m.previewPaneWidth())), m.previewPaneHeight(); got != want {
 		t.Fatalf("deep frame has %d rows, want %d", got, want)
 	}
 	if !strings.Contains(m.preview, "history-line-") {

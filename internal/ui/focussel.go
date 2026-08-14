@@ -108,7 +108,7 @@ func (m *Model) paneCell(x, y int) (row, col int, ok bool) {
 // same slice the renderer paints, so selection indices line up with what
 // is on screen.
 func (m *Model) paneTextLines() []string {
-	rows := paneExact(m.preview, m.pane.box.height)
+	rows := paneExact(m.preview, m.pane.box.height, m.pane.box.width)
 	out := make([]string, len(rows))
 	for i, row := range rows {
 		out[i] = ansi.Strip(previewDangerSeqs.ReplaceAllString(row, ""))
