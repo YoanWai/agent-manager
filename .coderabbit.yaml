@@ -3,7 +3,7 @@ language: en-US
 early_access: false
 
 reviews:
-  profile: chill
+  profile: assertive
   request_changes_workflow: true
   high_level_summary: true
   review_details: true
