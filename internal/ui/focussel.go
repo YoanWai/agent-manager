@@ -295,37 +295,80 @@ func (m *Model) expandSelection() {
 	if m.sel.anchorRow >= len(lines) {
 		return
 	}
-	line := []rune(lines[m.sel.anchorRow])
+	line := lines[m.sel.anchorRow]
 	switch m.sel.granule {
 	case selectLine:
 		m.sel.anchorCol = 0
-		m.sel.headCol = ansi.StringWidth(string(line))
+		m.sel.headCol = ansi.StringWidth(line)
 	case selectWord:
 		start, end := wordBounds(line, m.sel.anchorCol)
 		m.sel.anchorCol, m.sel.headCol = start, end
 	}
 }
 
-// wordBounds is the run of word characters around col, or the single cell
-// when it sits on a separator. The caller's coordinates are terminal cells,
-// while Go slices use rune offsets, so translate at the boundary only.
-func wordBounds(line []rune, col int) (int, int) {
-	index := runeAtColumn(line, col)
-	if index >= len(line) {
+// graphemeSpan maps one displayed grapheme to its string bytes and cells.
+// Mouse coordinates are cells, but strings must be sliced at grapheme edges.
+type graphemeSpan struct {
+	start, end         int
+	startCell, endCell int
+	text               string
+}
+
+func graphemeSpans(line string) []graphemeSpan {
+	var spans []graphemeSpan
+	for offset, cell, state := 0, 0, byte(0); offset < len(line); {
+		text, width, size, nextState := ansi.GraphemeWidth.DecodeSequenceInString(line[offset:], state, nil)
+		if size <= 0 {
+			break
+		}
+		spans = append(spans, graphemeSpan{
+			start: offset, end: offset + size, startCell: cell, endCell: cell + width, text: text,
+		})
+		offset += size
+		cell += width
+		state = nextState
+	}
+	return spans
+}
+
+func graphemeAtColumn(spans []graphemeSpan, col int) int {
+	for i, span := range spans {
+		if col < span.endCell {
+			return i
+		}
+	}
+	return len(spans)
+}
+
+// wordBounds is the run of word graphemes around col, or the clicked
+// grapheme when it sits on a separator.
+func wordBounds(line string, col int) (int, int) {
+	spans := graphemeSpans(line)
+	index := graphemeAtColumn(spans, col)
+	if index >= len(spans) {
 		return col, col
 	}
-	if !isWordRune(line[index]) {
-		return col, col + 1
+	if !isWordGrapheme(spans[index].text) {
+		return spans[index].startCell, spans[index].endCell
 	}
 	start := index
-	for start > 0 && isWordRune(line[start-1]) {
+	for start > 0 && isWordGrapheme(spans[start-1].text) {
 		start--
 	}
 	end := index
-	for end < len(line) && isWordRune(line[end]) {
+	for end < len(spans) && isWordGrapheme(spans[end].text) {
 		end++
 	}
-	return ansi.StringWidth(string(line[:start])), ansi.StringWidth(string(line[:end]))
+	return spans[start].startCell, spans[end-1].endCell
+}
+
+func isWordGrapheme(text string) bool {
+	for _, r := range text {
+		if !isWordRune(r) {
+			return false
+		}
+	}
+	return text != ""
 }
 
 // isWordRune keeps paths, flags and identifiers together on a double
@@ -378,11 +421,20 @@ func (m *Model) selectionSpan(row, lineWidth int) (start, end int, ok bool) {
 	return start, end, true
 }
 
-// runeRangeAtColumns translates a terminal-cell span to the rune range that
-// backs it. Mouse events are expressed in display cells, which differ from
-// rune offsets for CJK and other wide characters.
-func runeRangeAtColumns(line []rune, start, end int) (int, int) {
-	return runeAtColumn(line, start), runeAtColumn(line, end)
+// graphemeRangeAtColumns translates a terminal-cell span to byte offsets
+// without splitting wide or multi-rune graphemes. A drag endpoint inside a
+// wide glyph expands to that glyph's far edge, matching terminal selection.
+func graphemeRangeAtColumns(line string, start, end int) (int, int) {
+	startByte, endByte := len(line), len(line)
+	for _, span := range graphemeSpans(line) {
+		if startByte == len(line) && start < span.endCell {
+			startByte = span.start
+		}
+		if endByte == len(line) && end <= span.endCell {
+			endByte = span.end
+		}
+	}
+	return startByte, endByte
 }
 
 // selectionText is the selected pane text, newline-joined, with each row's
@@ -395,14 +447,14 @@ func (m *Model) selectionText() string {
 	startRow, _, endRow, _ := m.sel.selectionRange()
 	var out []string
 	for row := startRow; row <= endRow && row < len(lines); row++ {
-		line := []rune(lines[row])
-		start, end, ok := m.selectionSpan(row, ansi.StringWidth(string(line)))
+		line := lines[row]
+		start, end, ok := m.selectionSpan(row, ansi.StringWidth(line))
 		if !ok {
 			out = append(out, "")
 			continue
 		}
-		startIndex, endIndex := runeRangeAtColumns(line, start, end)
-		out = append(out, strings.TrimRight(string(line[startIndex:endIndex]), " "))
+		startByte, endByte := graphemeRangeAtColumns(line, start, end)
+		out = append(out, strings.TrimRight(line[startByte:endByte], " "))
 	}
 	return strings.Join(out, "\n")
 }
@@ -431,15 +483,18 @@ type focusCopiedMsg struct{ chars int }
 // agent's own colors would fight the highlight, and the selection is
 // transient.
 func (m *Model) renderPaneRow(row int, raw string, width int) string {
-	line := []rune(ansi.Strip(previewDangerSeqs.ReplaceAllString(raw, "")))
-	start, end, ok := m.selectionSpan(row, ansi.StringWidth(string(line)))
-	if !ok {
-		return m.withCursor(row, raw, line, width)
+	line := ansi.Strip(previewDangerSeqs.ReplaceAllString(raw, ""))
+	if !m.sel.active {
+		return m.withCursor(row, raw, []rune(line), width)
 	}
-	startIndex, endIndex := runeRangeAtColumns(line, start, end)
-	before := string(line[:startIndex])
-	selected := string(line[startIndex:endIndex])
-	after := string(line[endIndex:])
+	start, end, ok := m.selectionSpan(row, ansi.StringWidth(line))
+	if !ok {
+		return m.withCursor(row, raw, []rune(line), width)
+	}
+	startByte, endByte := graphemeRangeAtColumns(line, start, end)
+	before := line[:startByte]
+	selected := line[startByte:endByte]
+	after := line[endByte:]
 	painted := before + selectionStyle().Render(selected) + after
 	return previewLine(painted, width)
 }

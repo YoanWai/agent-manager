@@ -243,6 +243,27 @@ func TestDragSelectsWideRunesAtDisplayColumns(t *testing.T) {
 	}
 }
 
+func TestDragSelectionKeepsCompleteGraphemes(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		line       string
+		start, end int
+		want       string
+	}{
+		{name: "wide rune end inside glyph", line: "甲乙丙丁", start: 2, end: 5, want: "乙丙"},
+		{name: "emoji sequence", line: "x👩‍💻y", start: 1, end: 2, want: "👩‍💻"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := paneAt(t, tc.line)
+			press(m, m.pane.box.x+tc.start, m.pane.box.y)
+			drag(m, m.pane.box.x+tc.end, m.pane.box.y)
+			if got := m.selectionText(); got != tc.want {
+				t.Fatalf("drag copied %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // Selection indices are taken from the plain text of a colored capture, so
 // escape sequences never shift what gets copied.
 func TestSelectionIgnoresANSI(t *testing.T) {

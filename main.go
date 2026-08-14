@@ -62,7 +62,10 @@ func main() {
 
 	if len(os.Args) > 1 {
 		if os.Args[1] == "--help" || os.Args[1] == "-h" {
-			printHelp(os.Stdout)
+			if err := printHelp(os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, "agent-manager:", err)
+				os.Exit(1)
+			}
 			return
 		}
 		if os.Args[1] == "--version" || os.Args[1] == "-v" {
@@ -83,8 +86,8 @@ func main() {
 	}
 }
 
-func printHelp(w io.Writer) {
-	fmt.Fprint(w, `Usage: agent-manager [command]
+func printHelp(w io.Writer) error {
+	_, err := fmt.Fprint(w, `Usage: agent-manager [command]
 
 Run the interactive manager when no command is given.
 
@@ -98,6 +101,7 @@ Options:
   -h, --help     Show this help text
   -v, --version  Print the installed version
 `)
+	return err
 }
 
 func subcommands() map[string]func(args []string) error {
