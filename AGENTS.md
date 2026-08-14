@@ -83,7 +83,7 @@ with `gh release edit <tag> --notes-file`. The header and footer from
 
 ## Skills
 
-`land-pr` waits out CodeRabbit's OSS hourly limit, runs a full review, verifies each finding, then squash-merges.
+`land-pr` opens a PR for this checkout's branch if none exists, waits out CodeRabbit's OSS hourly limit, runs a full review, verifies each finding, then squash-merges. It never lands a PR whose head is not the current branch.
 
 ## Style
 

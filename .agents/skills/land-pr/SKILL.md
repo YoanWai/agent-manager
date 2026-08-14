@@ -1,13 +1,44 @@
 ---
 name: land-pr
-description: Use when landing an agent-manager pull request end to end: wait out CodeRabbit's OSS hourly limit, run a full review, verify each finding, and squash-merge. Also use when the user says land the PR, merge after review, poll CodeRabbit, full review, handle CodeRabbit findings, or /land-pr.
+description: Use when landing this session's agent-manager branch end to end: open a PR if none exists, wait out CodeRabbit's OSS hourly limit, run a full review, verify each finding, and squash-merge. Also use when the user says land the PR, create the PR and merge, merge after review, poll CodeRabbit, full review, handle CodeRabbit findings, or /land-pr.
 ---
 
 # Land PR
 
-Wait out the OSS hourly limit, run a full review, verify every finding, then squash-merge. Repo is `YoanWai/agent-manager`. PR is the argument, or the open PR for the current branch.
+Land **this checkout's branch only**. Wait out the OSS hourly limit, run a full review, verify every finding, then squash-merge. Repo is `YoanWai/agent-manager`.
 
 macOS `sleep` takes seconds only.
+
+## Pin
+
+```bash
+BRANCH=$(git branch --show-current)
+```
+
+Stop if `BRANCH` is empty or `main`. Stop if the working tree is dirty.
+
+A `$PR` argument is allowed only as a check: it must already be an open PR whose `headRefName` equals `BRANCH`. If it does not match, stop. Do not land it.
+
+If `$PR` is omitted:
+
+```bash
+gh pr view --json number,headRefName,state
+```
+
+Use that number only when `headRefName` equals `BRANCH` and `state` is `OPEN`.
+
+No open PR for `BRANCH`: this session's work. Push this branch and open one. Do not search the repo for another PR.
+
+```bash
+git fetch origin main
+git rev-list --count origin/main..HEAD   # must be > 0
+git push -u origin HEAD
+gh pr create --base main --head "$BRANCH" --title "$(git log -1 --format=%s)" --body "$(cat .github/pull_request_template.md)"
+```
+
+Fill What / Why / Verified from **this branch's commits**. Title stays Conventional Commits (it is the changelog line).
+
+Never run `gh pr list` and pick one. Never land a PR whose head is not `BRANCH`. Re-check `headRefName` immediately before merge.
 
 ## Wait
 
@@ -52,6 +83,7 @@ Never apply a finding because the bot said so. Never reply "ack" or "will fix".
 
 Merge only when all of these hold:
 
+- `gh pr view "$PR" --json headRefName` is still `BRANCH`
 - every CodeRabbit thread is fixed or answered
 - CI is green
 - the PR is not a draft (run `gh pr ready` first if it is)
