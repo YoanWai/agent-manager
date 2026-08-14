@@ -639,10 +639,6 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.errBar.text = ""
 		case actionRestore:
-			if err := m.applyConfirmedArchived(false); err != nil {
-				m.errBar.text = err.Error()
-				return m, nil
-			}
 			for _, sess := range m.confirm.sessions {
 				if m.tmux.Exists(sess.ID) {
 					continue
@@ -651,6 +647,10 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.reportLaunchError(err)
 					return m, nil
 				}
+			}
+			if err := m.applyConfirmedArchived(false); err != nil {
+				m.errBar.text = err.Error()
+				return m, nil
 			}
 			m.errBar.text = ""
 		case actionKill:
