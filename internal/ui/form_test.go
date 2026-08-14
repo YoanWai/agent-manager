@@ -389,6 +389,29 @@ func TestLaunchPromptInjectsDirectiveOnlyForAutoNamedWithPrompt(t *testing.T) {
 	}
 }
 
+// Only a spawn that hands over the rename directive has a name to wait for;
+// one the user named itself is already at its final name.
+func TestSpawnAwaitsARenameOnlyWhenItAsksForOne(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+
+	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "do things", true, false); err != nil {
+		t.Fatalf("auto-named spawn: %v", err)
+	}
+	if err := m.spawnSession("claude", "custom", dir, "", "do things", false, false); err != nil {
+		t.Fatalf("custom spawn: %v", err)
+	}
+	for _, sess := range m.sessions {
+		awaiting := m.awaitingRename(sess)
+		if sess.Name == "claude-aaaa" && !awaiting {
+			t.Fatal("an auto-named spawn should wait for the name its agent picks")
+		}
+		if sess.Name == "custom" && awaiting {
+			t.Fatal("a custom-named spawn was never asked to rename")
+		}
+	}
+}
+
 func TestSpawnMarksDeferredDirective(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

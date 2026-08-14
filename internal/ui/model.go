@@ -165,6 +165,13 @@ type Model struct {
 	// declaration for as long as this manager runs.
 	pickedRepos map[string]string
 
+	// awaitedRenames holds the generated name a spawned session launched
+	// under, for as long as the agent it carries the rename directive to is
+	// still expected to answer. A rename that has not landed by the time
+	// this manager run ends is one that is never arriving, so the set is
+	// deliberately not persisted.
+	awaitedRenames map[string]string
+
 	width  int
 	height int
 	// sessionsSized flips after the first refresh shrinks sessions left

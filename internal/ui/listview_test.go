@@ -532,6 +532,106 @@ func TestSelectedRowMetaUsesBrightNotSubtle(t *testing.T) {
 	}
 }
 
+// A spawn hands its agent the rename directive, so the row stands in for
+// the generated name until the agent answers, and settles on the generated
+// one as soon as that answer can no longer come.
+func TestSessionRowStandsInForAnAwaitedName(t *testing.T) {
+	const generated = "claude-ab12"
+	now := time.Now()
+	for _, tc := range []struct {
+		name    string
+		sess    store.Session
+		awaited bool
+		want    string
+	}{
+		{
+			name:    "waiting on the agent",
+			sess:    store.Session{ID: "s1", Name: generated, Tool: "claude", Status: status.Starting, CreatedAt: now},
+			awaited: true,
+			want:    namePlaceholder,
+		},
+		{
+			name:    "rename landed",
+			sess:    store.Session{ID: "s1", Name: "row-placeholder", Tool: "claude", Status: status.Working, CreatedAt: now},
+			awaited: true,
+			want:    "row-placeholder",
+		},
+		{
+			name:    "pane died before renaming",
+			sess:    store.Session{ID: "s1", Name: generated, Tool: "claude", Status: status.Dead, CreatedAt: now},
+			awaited: true,
+			want:    generated,
+		},
+		{
+			name:    "grace ran out",
+			sess:    store.Session{ID: "s1", Name: generated, Tool: "claude", Status: status.Working, CreatedAt: now.Add(-renameGrace - time.Second)},
+			awaited: true,
+			want:    generated,
+		},
+		{
+			name: "no directive was sent",
+			sess: store.Session{ID: "s1", Name: generated, Tool: "claude", Status: status.Starting, CreatedAt: now},
+			want: generated,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &Model{}
+			if tc.awaited {
+				m.awaitedRenames = map[string]string{tc.sess.ID: generated}
+			}
+			row := ansi.Strip(m.renderTreeRow(treeRow{sess: tc.sess}, false, 80, 0, panelHex()))
+			if !strings.Contains(row, tc.want) {
+				t.Fatalf("row is missing %q:\n%s", tc.want, row)
+			}
+			if tc.want != generated && strings.Contains(row, generated) {
+				t.Fatalf("row still shows the generated name:\n%s", row)
+			}
+			if tc.want == namePlaceholder {
+				return
+			}
+			if strings.Contains(row, namePlaceholder) {
+				t.Fatalf("row still stands in for a name it has:\n%s", row)
+			}
+			if _, still := m.awaitedRenames[tc.sess.ID]; still {
+				t.Fatal("a wait that is over should drop what it was holding")
+			}
+		})
+	}
+}
+
+// The rail row is not the only place a name is printed, and the roster sits
+// beside it in the same frame, so every reading of a session stands in for
+// the awaited name together.
+func TestEveryReadingOfASessionStandsInForAnAwaitedName(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	const generated = "claude-ab12"
+	if err := m.spawnSession("claude", generated, dir, "backend", "do things", true, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+
+	type reading struct{ where, text string }
+	m.selectGroupRow(t, "backend")
+	readings := []reading{{"roster", ansi.Strip(m.viewGroupAgents("backend", 112, 10))}}
+	m.selectSessionRow(t, generated)
+	readings = append(readings, reading{"detail", strings.Split(ansi.Strip(m.viewDetail(112)), "\n")[0]})
+	m.openQuickMode()
+	readings = append(readings, reading{"quick bar", ansi.Strip(m.viewQuickBar(112))})
+
+	for _, shown := range readings {
+		if strings.Contains(shown.text, generated) {
+			t.Errorf("%s shows the generated name:\n%s", shown.where, shown.text)
+		}
+		if !strings.Contains(shown.text, namePlaceholder) {
+			t.Errorf("%s does not stand in for the awaited name:\n%s", shown.where, shown.text)
+		}
+	}
+}
+
 // A content separator stops at the pane's edge instead of crossing the seam.
 func TestContentRuleStopsAtSeam(t *testing.T) {
 	m := shotModel()

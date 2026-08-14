@@ -618,7 +618,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		agentSessionID = uuid.NewString()
 		base += " " + tool.SessionIDFlag + " " + agentSessionID
 	}
-	return m.launchNewSession(store.Session{
+	if err := m.launchNewSession(store.Session{
 		ID:    id,
 		Name:  name,
 		Tool:  toolName,
@@ -633,7 +633,18 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		PendingInputs:  pendingInputs,
 	}, tool, base, launchOptions{
 		rollbackWorktree: worktreeRepo != "",
-	})
+	}); err != nil {
+		return err
+	}
+	// The directive went out with the launch, so the row waits for the name
+	// the agent picks instead of showing the one generated for it.
+	if autoNamed {
+		if m.awaitedRenames == nil {
+			m.awaitedRenames = map[string]string{}
+		}
+		m.awaitedRenames[id] = name
+	}
+	return nil
 }
 
 func withPrompt(tool config.Tool, command, prompt string) string {
