@@ -713,6 +713,25 @@ func TestOpenBrowserFallsBackToXDGOpen(t *testing.T) {
 	}
 }
 
+func TestOpenBrowserReportsAllFailures(t *testing.T) {
+	missingErr := errors.New("missing")
+	xdgErr := errors.New("xdg failed")
+	var attempted []string
+	err := openBrowserWith("linux", "missing", "https://example.com", func(cmd *exec.Cmd) error {
+		attempted = append(attempted, cmd.Args[0])
+		if cmd.Args[0] == "xdg-open" {
+			return xdgErr
+		}
+		return missingErr
+	})
+	if !errors.Is(err, missingErr) || !errors.Is(err, xdgErr) {
+		t.Fatalf("openBrowserWith() error = %v, want both failures", err)
+	}
+	if want := []string{"missing", "xdg-open"}; !slices.Equal(attempted, want) {
+		t.Fatalf("attempted %q, want %q", attempted, want)
+	}
+}
+
 func TestOpenBrowserContinuesAfterRuntimeFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses Unix true and false commands")
