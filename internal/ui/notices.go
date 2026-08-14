@@ -368,10 +368,55 @@ func noticeFrame(rows []string, inner int, topLegend, bottomLegend string) []str
 var openBrowser = defaultOpenBrowser
 
 func defaultOpenBrowser(target string) error {
-	if runtime.GOOS == "darwin" {
-		return exec.Command("open", target).Start()
+	return openBrowserWith(runtime.GOOS, os.Getenv("BROWSER"), target, func(cmd *exec.Cmd) error {
+		return cmd.Start()
+	})
+}
+
+func openBrowserWith(goos, browser, target string, start func(*exec.Cmd) error) error {
+	commands := browserCommands(goos, browser, target)
+	var failures []error
+	for _, cmd := range commands {
+		err := start(cmd)
+		if err == nil {
+			return nil
+		}
+		failures = append(failures, fmt.Errorf("%s: %w", cmd.Args[0], err))
 	}
-	return exec.Command("xdg-open", target).Start()
+	return errors.Join(failures...)
+}
+
+func browserCommands(goos, browser, target string) []*exec.Cmd {
+	if goos == "darwin" {
+		return []*exec.Cmd{exec.Command("open", target)}
+	}
+
+	var commands []*exec.Cmd
+	// Keep candidates as argv so shell syntax in a URL remains inert text.
+	for _, line := range strings.Split(browser, ":") {
+		argv := splitEditorLine(line)
+		if len(argv) == 0 {
+			continue
+		}
+		placed := false
+		for i := range argv {
+			if strings.Contains(argv[i], "%s") {
+				argv[i] = strings.ReplaceAll(argv[i], "%s", target)
+				placed = true
+			}
+		}
+		if !placed {
+			argv = append(argv, target)
+		}
+		commands = append(commands, exec.Command(argv[0], argv[1:]...))
+	}
+	return append(commands, exec.Command("xdg-open", target))
+}
+
+func (m *Model) openLink(target string) {
+	if err := openBrowser(target); err != nil {
+		m.errBar.text = fmt.Sprintf("could not open %s: %v", target, err)
+	}
 }
 
 func (m *Model) openNotices(selectID string) {
@@ -536,9 +581,7 @@ func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.noticeScroll = min(m.noticeScroll+max(4, m.height/3), m.noticeScrollLimit(notices))
 	case "enter":
 		if m.noticeCursor < len(notices) && notices[m.noticeCursor].url != "" {
-			if err := openBrowser(notices[m.noticeCursor].url); err != nil {
-				m.errBar.text = err.Error()
-			}
+			m.openLink(notices[m.noticeCursor].url)
 		}
 	case "x", "d":
 		if m.noticeCursor < len(notices) {

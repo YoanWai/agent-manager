@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -649,6 +651,71 @@ func TestNoticesEnterOpensURL(t *testing.T) {
 	m.handleNoticesKey(key("enter"))
 	if opened != want {
 		t.Fatalf("opened %q, want %q", opened, want)
+	}
+}
+
+func TestBrowserCommandsHonorBrowserCandidates(t *testing.T) {
+	target := "https://example.com/search?q=a b;still-an-argument"
+	commands := browserCommands("linux", `missing:'/opt/Remote Browser/bin/open' --new-tab=%s:remote`, target)
+	want := [][]string{
+		{"missing", target},
+		{"/opt/Remote Browser/bin/open", "--new-tab=" + target},
+		{"remote", target},
+		{"xdg-open", target},
+	}
+	if len(commands) != len(want) {
+		t.Fatalf("commands = %d, want %d", len(commands), len(want))
+	}
+	for i := range commands {
+		if !slices.Equal(commands[i].Args, want[i]) {
+			t.Errorf("command %d = %q, want %q", i, commands[i].Args, want[i])
+		}
+	}
+}
+
+func TestOpenBrowserTriesCandidatesBeforeXDGOpen(t *testing.T) {
+	var attempted []string
+	err := openBrowserWith("linux", "missing:remote", "https://example.com", func(cmd *exec.Cmd) error {
+		attempted = append(attempted, cmd.Args[0])
+		if cmd.Args[0] == "remote" {
+			return nil
+		}
+		return errors.New("not found")
+	})
+	if err != nil {
+		t.Fatalf("openBrowserWith() error = %v", err)
+	}
+	if want := []string{"missing", "remote"}; !slices.Equal(attempted, want) {
+		t.Fatalf("attempted %q, want %q", attempted, want)
+	}
+}
+
+func TestOpenBrowserFallsBackToXDGOpen(t *testing.T) {
+	var attempted []string
+	err := openBrowserWith("linux", "missing", "https://example.com", func(cmd *exec.Cmd) error {
+		attempted = append(attempted, cmd.Args[0])
+		if cmd.Args[0] == "xdg-open" {
+			return nil
+		}
+		return errors.New("not found")
+	})
+	if err != nil {
+		t.Fatalf("openBrowserWith() error = %v", err)
+	}
+	if want := []string{"missing", "xdg-open"}; !slices.Equal(attempted, want) {
+		t.Fatalf("attempted %q, want %q", attempted, want)
+	}
+}
+
+func TestOpenBrowserFailureNamesURL(t *testing.T) {
+	m := modalModel(t)
+	openBrowser = func(string) error { return errors.New("no browser available") }
+	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+
+	target := "https://example.com/manual"
+	m.openLink(target)
+	if !strings.Contains(m.errBar.text, target) || !strings.Contains(m.errBar.text, "no browser available") {
+		t.Fatalf("failure = %q, want URL and cause", m.errBar.text)
 	}
 }
 
