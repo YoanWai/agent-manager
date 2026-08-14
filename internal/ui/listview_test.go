@@ -685,3 +685,140 @@ func TestFilterBadgesStackOverTheList(t *testing.T) {
 		}
 	}
 }
+
+// blankCapture is what tmux hands back for a session whose agent has not
+// painted yet: one empty row per pane line, not an empty capture.
+const blankCapture = "\n\n\n\n\n\n\n\n\n\n"
+
+func previewModel(sessionStatus, preview string) *Model {
+	return &Model{
+		width: 120, height: 40, mode: modeList, preview: preview,
+		rows: []treeRow{{sess: store.Session{ID: "boot", Name: "boot", Status: sessionStatus}}},
+	}
+}
+
+func previewText(m *Model) string {
+	var out []string
+	for _, line := range m.previewLines(80, 12, "  ") {
+		out = append(out, ansi.Strip(line.text))
+	}
+	return strings.Join(out, "\n")
+}
+
+// A launching agent paints nothing for a while, and the blank block that
+// leaves reads as a broken session; the preview says it is coming up. The
+// blank rows are still the session's pane, so they stay hit-testable.
+func TestPreviewShowsLoaderWhileSessionStarts(t *testing.T) {
+	m := previewModel(status.Starting, blankCapture)
+	if got := previewText(m); !strings.Contains(got, "starting up") {
+		t.Fatalf("preview should carry the launch loader, got %q", got)
+	}
+	if !m.pane.box.ok || m.pane.box.height != len(paneExact(blankCapture, 12, 80)) {
+		t.Fatalf("the loader must not cost the pane its geometry, box = %+v", m.pane.box)
+	}
+}
+
+// With no capture at all there are no pane rows to ride, so the loader
+// stands in for the empty-preview line.
+func TestPreviewShowsLoaderBeforeTheFirstCapture(t *testing.T) {
+	m := previewModel(status.Starting, "")
+	got := previewText(m)
+	if !strings.Contains(got, "starting up") {
+		t.Fatalf("preview should carry the launch loader, got %q", got)
+	}
+	if strings.Contains(got, "(no output yet)") {
+		t.Fatalf("a starting session should not read as empty, got %q", got)
+	}
+	if m.pane.box.ok {
+		t.Fatalf("no pane rows painted means nothing to hit-test, box = %+v", m.pane.box)
+	}
+}
+
+func TestPreviewLoaderClearsOnFirstFrame(t *testing.T) {
+	m := previewModel(status.Starting, "❯ hello\n")
+	got := previewText(m)
+	if strings.Contains(got, "starting up") {
+		t.Fatalf("a captured frame should replace the loader, got %q", got)
+	}
+	if !strings.Contains(got, "hello") {
+		t.Fatalf("preview should paint the captured frame, got %q", got)
+	}
+	if !m.pane.box.ok {
+		t.Fatalf("captured rows must stay hit-testable, box = %+v", m.pane.box)
+	}
+}
+
+// Only the launch state spins: a session that is up with a cleared pane, and
+// one that never came up at all, both keep the plain preview.
+func TestPreviewSkipsLoaderForSettledSessions(t *testing.T) {
+	live := previewModel(status.Idle, blankCapture)
+	if got := previewText(live); strings.Contains(got, "starting up") {
+		t.Fatalf("an idle session must not spin, got %q", got)
+	}
+	if !live.pane.box.ok {
+		t.Fatalf("an idle session keeps its pane rows, box = %+v", live.pane.box)
+	}
+	gone := previewModel(status.Dead, "")
+	if got := previewText(gone); !strings.Contains(got, "(no output yet)") {
+		t.Fatalf("a session that failed to start should read as empty, got %q", got)
+	}
+}
+
+// The loader animates on the preview tick the starting session already
+// earns, and cycles rather than running off the end of its frames.
+func TestPreviewLoaderTurnsOnThePreviewTick(t *testing.T) {
+	m := previewModel(status.Starting, blankCapture)
+	glyph := func() string {
+		line := strings.TrimSpace(previewText(m))
+		if line == "" {
+			t.Fatalf("preview painted nothing")
+		}
+		return string([]rune(line)[0])
+	}
+	seen := map[string]bool{}
+	first := glyph()
+	for i := 0; i < len(startupFrames); i++ {
+		seen[glyph()] = true
+		m.Update(previewTickMsg{})
+	}
+	if len(seen) != len(startupFrames) {
+		t.Fatalf("loader showed %d of %d frames over a full turn: %v", len(seen), len(startupFrames), seen)
+	}
+	if got := glyph(); got != first {
+		t.Fatalf("after a full turn the loader shows %q, want %q", got, first)
+	}
+}
+
+// The loader borrows no mark that already names a state: a frame caught
+// mid-turn would otherwise read as that state, and the detail head above
+// the preview is painting the real one.
+func TestPreviewLoaderFramesAreNotStatusMarks(t *testing.T) {
+	states := []string{status.Working, status.Starting, status.Waiting, status.Finished, status.Errored, status.Dead, status.Idle}
+	for _, frame := range startupFrames {
+		for _, state := range states {
+			if frame == statusGlyph(state) {
+				t.Fatalf("loader frame %q is the %s mark", frame, state)
+			}
+		}
+	}
+}
+
+// A focused pane is the screen the user types on, so it keeps its own first
+// row and the caret drawn there rather than the loader.
+func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	m := previewModel(status.Starting, blankCapture)
+	m.mode = modeFocus
+	m.cursorOn = true
+	m.pane.cursor = paneCursor{ok: true}
+	first := m.previewLines(80, 12, "  ")[0].text
+	if strings.Contains(ansi.Strip(first), "starting up") {
+		t.Fatalf("the loader took the focused pane's first row: %q", first)
+	}
+	if !strings.Contains(first, "\x1b[") {
+		t.Fatalf("focused row 0 lost its caret: %q", first)
+	}
+}

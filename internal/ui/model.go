@@ -186,6 +186,11 @@ type Model struct {
 	// the frame is not repainted forever.
 	bannerPhase int
 
+	// startupPhase advances the preview's launch loader. It rides the
+	// preview tick, which already runs at its fast cadence while a session
+	// is starting, rather than adding a timer of its own.
+	startupPhase int
+
 	update updateInfo
 
 	// dismissed holds the notice ids the user closed for good; the set
@@ -1026,6 +1031,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case previewTickMsg:
+		m.startupPhase++
 		// Only the list keeps a live pane on screen; review and the modal
 		// screens have no preview to feed, so they skip the capture and
 		// just keep the timer alive.
