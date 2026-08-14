@@ -81,6 +81,10 @@ with `gh release edit <tag> --notes-file`. The header and footer from
 - The badges workflow publishes the clone count and contributor image to the
   `badges` branch; neither generated asset is edited by hand.
 
+## Skills
+
+`coderabbit-merge` waits out CodeRabbit's OSS hourly limit, runs a full review, verifies each finding, then squash-merges.
+
 ## Style
 
 - Comments are rare and explain a non-obvious why, never what the code does.
