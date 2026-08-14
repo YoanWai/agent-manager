@@ -513,6 +513,27 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// snapshotLive stores the last pane of every still-live session. Archive
+// calls it before any kill so a capture failure cannot drop a frame.
+func (m *Model) snapshotLive(sessions []store.Session) error {
+	for _, sess := range sessions {
+		if !m.tmux.Exists(sess.ID) {
+			continue
+		}
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil {
+			return err
+		}
+		if pane == "" {
+			continue
+		}
+		if err := m.setSnapshot(sess.ID, pane); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *Model) applyConfirmedArchived(archived bool) error {
 	if m.confirm.isGroup {
 		return m.store.SetGroupArchived(m.confirm.path, archived)
@@ -602,6 +623,10 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "enter":
 		switch m.confirm.action {
 		case actionArchive:
+			if err := m.snapshotLive(m.confirm.sessions); err != nil {
+				m.errBar.text = err.Error()
+				return m, nil
+			}
 			for _, sess := range m.confirm.sessions {
 				if err := m.killSession(sess); err != nil {
 					m.errBar.text = err.Error()
