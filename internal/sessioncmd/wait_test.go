@@ -74,6 +74,42 @@ func TestWaitSeesAKilledSessionAsDeadWithoutTheManager(t *testing.T) {
 	}
 }
 
+// A worker that crashes mid-turn is dead from the first tick, and its
+// stored status will never move again. Parking the whole timeout to say
+// "timed out" hides a death the wait had already seen.
+func TestWaitReportsAnObservedDeathWithoutWaitingOut(t *testing.T) {
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := h.store.UpdateStatus(created.ID, status.Working); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.driver.Kill(created.ID); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	result, err := h.sessions.Wait(context.Background(), h.caller.ID, created.ID, []string{"finished"}, 10*time.Second)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if result.Outcome != WaitDied || result.Reached {
+		t.Fatalf("a session that died while working = %+v", result)
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("the wait sat on a death it could already see for %s", elapsed)
+	}
+	// Waiting for the death itself is still an ordinary arrival.
+	awaited, err := h.sessions.Wait(context.Background(), h.caller.ID, created.ID, []string{"dead"}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("Wait for dead: %v", err)
+	}
+	if awaited.Outcome != WaitReached || !awaited.Reached {
+		t.Fatalf("awaiting dead = %+v", awaited)
+	}
+}
+
 func TestWaitRefusesSelfAndUnknownStates(t *testing.T) {
 	h := newSessionHarness(t)
 	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})

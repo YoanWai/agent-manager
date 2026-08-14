@@ -30,6 +30,18 @@ const DeferredRenameDirective = `Run this exact shell command once, replacing <n
 // later use without asking it to rename now.
 const RenameAvailableNote = `This session is already named. You can rename it later with agent-manager rename "<name>" only if the user asks. Do not rename it now. Then do the task:`
 
+// CoordinationNote points a session at the subcommands. Only tools whose
+// agent has no MCP client get it; the rest are told the same thing by the
+// tool descriptions the MCP server registers.
+const CoordinationNote = `Other agent sessions may be running beside you in Agent Manager: run "agent-manager help" in your shell for the subcommands that list them, message them, share a task list and reserve the files you are about to edit.`
+
+func coordinationNote(toolName string, tool config.Tool) string {
+	if mcpreg.Style(toolName, tool.MCP) != "none" {
+		return ""
+	}
+	return CoordinationNote
+}
+
 // DirectiveEmbeddable reports whether a launch note can ride the
 // session's first prompt; otherwise auto-named sessions get the rename
 // directive later as its own message.
@@ -37,17 +49,23 @@ func DirectiveEmbeddable(prompt string) bool {
 	return prompt != "" && !strings.HasPrefix(prompt, "/")
 }
 
-// Prompt prepends a short agent note when the first prompt can carry one:
-// auto-named sessions must rename once; custom-named sessions only learn
-// that rename is available later.
-func Prompt(prompt string, autoNamed bool) string {
+// Prompt prepends the short agent notes a first prompt can carry: auto-named
+// sessions must rename once, custom-named sessions only learn that rename is
+// available later, and a session without MCP tools learns where the rest of
+// the workspace is. The coordination note leads because both rename notes
+// end by handing over to the task.
+func Prompt(note, prompt string, autoNamed bool) string {
 	if !DirectiveEmbeddable(prompt) {
 		return prompt
 	}
+	directive := RenameAvailableNote
 	if autoNamed {
-		return RenameDirective + "\n\n" + prompt
+		directive = RenameDirective
 	}
-	return RenameAvailableNote + "\n\n" + prompt
+	if note != "" {
+		return note + "\n\n" + directive + "\n\n" + prompt
+	}
+	return directive + "\n\n" + prompt
 }
 
 // WithPrompt appends the first prompt to a tool's command, using the
@@ -78,15 +96,19 @@ type Plan struct {
 // session id launch with one, so a later revive resumes this exact
 // conversation rather than the directory's most recent one; tools without
 // the flag mint their own id, captured after launch by the poller.
-func Assemble(tool config.Tool, rawPrompt string, autoNamed bool) Plan {
-	deferDirective := autoNamed && !DirectiveEmbeddable(rawPrompt)
-	prompt := Prompt(rawPrompt, autoNamed)
+func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed bool) Plan {
+	note := coordinationNote(toolName, tool)
+	carried := DirectiveEmbeddable(rawPrompt)
+	prompt := Prompt(note, rawPrompt, autoNamed)
 	plan := Plan{Command: WithPrompt(tool, tool.Command, prompt)}
 	if tool.PromptMode == "send" && prompt != "" {
 		plan.PendingInputs = append(plan.PendingInputs, prompt)
 	}
-	if deferDirective {
+	if autoNamed && !carried {
 		plan.PendingInputs = append(plan.PendingInputs, DeferredRenameDirective)
+	}
+	if note != "" && !carried {
+		plan.PendingInputs = append(plan.PendingInputs, note)
 	}
 	if tool.SessionIDFlag != "" {
 		plan.AgentSessionID = uuid.NewString()

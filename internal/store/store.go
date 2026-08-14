@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS settings (
 			delivered_at INTEGER NOT NULL DEFAULT 0,
 			read_at      INTEGER NOT NULL DEFAULT 0
 		)`,
+		`ALTER TABLE session_inbox ADD COLUMN dropped_at INTEGER NOT NULL DEFAULT 0`,
 		`CREATE INDEX IF NOT EXISTS session_inbox_queue ON session_inbox (session_id, delivered_at, id)`,
 		`CREATE INDEX IF NOT EXISTS session_inbox_sender ON session_inbox (session_id, sender_id, sent_at)`,
 		`CREATE TABLE IF NOT EXISTS tasks (

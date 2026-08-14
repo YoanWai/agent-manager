@@ -356,6 +356,12 @@ func (p *poller) refreshOnce() tea.Msg {
 	if err != nil {
 		return errMsg{err}
 	}
+	// Counted after the delivery loop, so a message typed into a pane on
+	// this pass has already dropped out of the badge.
+	queued, err := p.store.QueuedCounts()
+	if err != nil {
+		return errMsg{err}
+	}
 	names := make([]string, len(groups))
 	paths := make(map[string]string, len(groups))
 	worktrees := make(map[string]string, len(groups))
@@ -392,6 +398,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		procFor:        selectedID,
 		preview:        preview,
 		agents:         agents,
+		queuedMessages: queued,
 	}
 	if sampleStats {
 		msg.snap = sysstat.Sample("/")
@@ -578,7 +585,7 @@ func (p *poller) maybeDeliverInbox(sess store.Session, pane, derived string, age
 	// claim and the send. Whether it reached the pane is unknowable, so it
 	// is retired rather than risking the same instruction twice.
 	if !msg.ClaimedAt.IsZero() {
-		if err := p.store.MarkDelivered(msg.ID, time.Now()); err != nil {
+		if err := p.store.MarkDropped(msg.ID, time.Now()); err != nil {
 			return err
 		}
 		return fmt.Errorf("dropped an unconfirmed message to %s from %s to avoid delivering it twice", sess.Name, msg.SenderName)
@@ -587,8 +594,13 @@ func (p *poller) maybeDeliverInbox(sess store.Session, pane, derived string, age
 	if err != nil || !claimed {
 		return err
 	}
+	// The claim already keeps this message from being typed again, so
+	// recording the drop is the only thing that stops its sender being told
+	// it arrived.
 	if err := p.tmux.SendText(sess.ID, inboxEnvelope(msg)); err != nil {
-		return fmt.Errorf("deliver message to %s: %w", sess.Name, err)
+		return errors.Join(
+			fmt.Errorf("dropped a message to %s from %s: %w", sess.Name, msg.SenderName, err),
+			p.store.MarkDropped(msg.ID, time.Now()))
 	}
 	return p.store.MarkDelivered(msg.ID, time.Now())
 }

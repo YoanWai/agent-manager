@@ -68,13 +68,13 @@ type Sessions struct {
 	newGit func() (*git.Driver, error)
 }
 
-func NewSessions(configDir string) *Sessions {
-	return newSessions(configDir, tmux.New, git.New)
+func NewSessions(configDir string, words Vocabulary) *Sessions {
+	return newSessions(configDir, words, tmux.New, git.New)
 }
 
-func newSessions(configDir string, newDriver func() (*tmux.Driver, error), newGit func() (*git.Driver, error)) *Sessions {
+func newSessions(configDir string, words Vocabulary, newDriver func() (*tmux.Driver, error), newGit func() (*git.Driver, error)) *Sessions {
 	return &Sessions{
-		commands: commands{configDir: configDir, newDriver: newDriver},
+		commands: commands{configDir: configDir, words: words, newDriver: newDriver},
 		newGit:   newGit,
 	}
 }
@@ -84,11 +84,11 @@ func newSessions(configDir string, newDriver func() (*tmux.Driver, error), newGi
 func (r *runtime) agent(id string) (store.Session, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return store.Session{}, errors.New("session_id is empty; call list_sessions to get one")
+		return store.Session{}, fmt.Errorf("session_id is empty; call %s to get one", r.words.ListSessions)
 	}
 	sess, err := r.store.Get(id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return store.Session{}, fmt.Errorf("session %s does not exist; call list_sessions for current ids", id)
+		return store.Session{}, fmt.Errorf("session %s does not exist; call %s for current ids", id, r.words.ListSessions)
 	}
 	if err != nil {
 		return store.Session{}, err
@@ -105,10 +105,10 @@ func (r *runtime) agent(id string) (store.Session, error) {
 // the queue filled up.
 func (r *runtime) deliverable(target store.Session) error {
 	if !r.driver.Exists(target.ID) {
-		return fmt.Errorf("session %s is not running; revive it with revive_session first", target.ID)
+		return fmt.Errorf("session %s is not running; revive it with %s first", target.ID, r.words.Revive)
 	}
 	if target.Archived {
-		return fmt.Errorf("session %s is archived, so Agent Manager no longer polls it; restore it with archive_session archived false first", target.ID)
+		return fmt.Errorf("session %s is archived, so Agent Manager no longer polls it; restore it with %s first", target.ID, r.words.Restore)
 	}
 	if r.cfg.Tools[target.Tool].ActivityCutoff == "" {
 		return fmt.Errorf("tool %q declares no activity_cutoff, so Agent Manager cannot tell when %s is ready to read a message; add one to config.toml", target.Tool, target.ID)
@@ -271,7 +271,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		return Session{}, fmt.Errorf("tool %q is not configured; configured tools are %s", toolName, strings.Join(agentToolNames(runtime), ", "))
 	}
 	if tool.Shell {
-		return Session{}, fmt.Errorf("tool %q opens a shell, not an agent; use create_terminal for that", toolName)
+		return Session{}, fmt.Errorf("tool %q opens a shell, not an agent; use %s for that", toolName, runtime.words.CreateTerminal)
 	}
 	group, dir, err := runtime.createTarget(caller, opts.Group, opts.Directory)
 	if err != nil {
@@ -308,7 +308,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		}
 	}
 
-	plan := launch.Assemble(tool, prompt, autoNamed)
+	plan := launch.Assemble(toolName, tool, prompt, autoNamed)
 	manager := hooks.NewManager(s.configDir)
 	command, env, err := launch.Environment(manager, toolName, tool, plan.Command, id)
 	if err != nil {
@@ -498,24 +498,55 @@ func (s *Sessions) MessageStatus(sessionID string, messageID int64) (MessageStat
 		MessageID: msg.ID,
 		SessionID: msg.SessionID,
 		Body:      msg.Body,
-		State:     "queued",
 	}
-	if !msg.DeliveredAt.IsZero() {
+	switch {
+	// A drop stamps the delivery column as well, so that a message nothing
+	// will ever type leaves the queue, and is read first for that reason.
+	case !msg.DroppedAt.IsZero():
+		state.State = "dropped"
+		state.Reason = "Agent Manager could not type it into the pane, and never retries a message; send it again"
+	case !msg.ReadAt.IsZero():
+		state.State = "answered"
+		state.DeliveredAt = msg.DeliveredAt.Format(time.RFC3339)
+	case !msg.DeliveredAt.IsZero():
 		state.State = "delivered"
 		state.DeliveredAt = msg.DeliveredAt.Format(time.RFC3339)
-	}
-	if !msg.ReadAt.IsZero() {
-		state.State = "answered"
+	default:
+		state.State = "queued"
+		held, err := runtime.heldReason(msg.SessionID)
+		if err != nil {
+			return MessageState{}, err
+		}
+		if held != "" {
+			state.State = "held"
+			state.Reason = held
+		}
 	}
 	return state, nil
+}
+
+// heldReason names why a queued message is not moving when the recipient is
+// what stops it. Delivery refuses a pane the tool's own rules call waiting,
+// which is an approval dialog and an ordinary question alike, and a question
+// nobody answers holds the queue for as long as it stays on screen.
+func (r *runtime) heldReason(sessionID string) (string, error) {
+	target, err := r.store.Get(sessionID)
+	if err != nil {
+		return "", err
+	}
+	if target.Status != status.Waiting {
+		return "", nil
+	}
+	return fmt.Sprintf("session %s is waiting on a question or a dialog, and nothing is typed into a session in that state; read its screen and answer it", sessionID), nil
 }
 
 type MessageState struct {
 	MessageID   int64  `json:"message_id"`
 	SessionID   string `json:"session_id" jsonschema:"session the message was addressed to"`
 	Body        string `json:"body"`
-	State       string `json:"state" jsonschema:"queued (still waiting for the agent to be at rest), delivered (typed into its prompt), or answered (it has since messaged back)"`
+	State       string `json:"state" jsonschema:"queued (waiting for the agent to be at rest), held (the agent is sitting on a question or a dialog, so nothing is typed until it moves), delivered (typed into its prompt), dropped (it never reached the prompt and is not retried), or answered (it has since messaged back)"`
 	DeliveredAt string `json:"delivered_at,omitempty" jsonschema:"RFC3339 time the message reached the prompt"`
+	Reason      string `json:"reason,omitempty" jsonschema:"why the message is in that state, and what to do about it"`
 }
 
 // managerAwake reports whether a manager has polled recently enough to

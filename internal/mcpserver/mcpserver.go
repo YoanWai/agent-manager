@@ -7,7 +7,6 @@ package mcpserver
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -115,11 +114,6 @@ type listTerminalsOutput struct {
 	Terminals []sessioncmd.Terminal `json:"terminals"`
 }
 
-type sendTerminalOutput struct {
-	TerminalID string `json:"terminal_id"`
-	Sent       string `json:"sent" jsonschema:"input kind sent: command or keys"`
-}
-
 type listSessionsOutput struct {
 	Sessions []sessioncmd.Session `json:"sessions"`
 }
@@ -149,7 +143,7 @@ type messageStatusArgs struct {
 type terminalCommands interface {
 	List(sessionID string) ([]sessioncmd.Terminal, error)
 	Create(sessionID string, opts sessioncmd.CreateTerminalOptions) (sessioncmd.Terminal, error)
-	Send(sessionID, terminalID, command string, keys []string) error
+	Send(sessionID, terminalID, command string, keys []string) (sessioncmd.TerminalInput, error)
 	Read(sessionID, terminalID string) (sessioncmd.TerminalScreen, error)
 }
 
@@ -189,7 +183,8 @@ Everything here acts on the user's machine: create_session and create_terminal s
 // NewServer builds the MCP server with every session tool registered.
 // Split from Run so tests can connect an in-process client.
 func NewServer(configDir, sessionID, version string) *mcp.Server {
-	return newServer(configDir, sessionID, version, sessioncmd.NewTerminals(configDir), sessioncmd.NewSessions(configDir))
+	words := sessioncmd.MCPVocabulary()
+	return newServer(configDir, sessionID, version, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessions(configDir, words))
 }
 
 func newServer(configDir, sessionID, version string, terminals terminalCommands, sessions sessionCommands) *mcp.Server {
@@ -256,7 +251,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, listSessionsOutput{}, err
 		}
-		return textContent(formatSessionList(listed)), listSessionsOutput{Sessions: listed}, nil
+		return textContent(sessioncmd.FormatSessionList(listed)), listSessionsOutput{Sessions: listed}, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -279,7 +274,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.Session{}, err
 		}
-		return textContent("created " + formatSession(created)), created, nil
+		return textContent("created " + sessioncmd.FormatSession(created)), created, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -293,11 +288,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.SessionScreen{}, err
 		}
-		text := screen.Output
-		if text == "" {
-			text = "session screen is empty"
-		}
-		return textContent(text), screen, nil
+		return textContent(sessioncmd.FormatSessionScreen(screen)), screen, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -316,28 +307,22 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.SendResult{}, err
 		}
-		text := fmt.Sprintf("queued message %d for session %s at position %d", result.MessageID, args.SessionID, result.QueuePosition)
-		if !result.ManagerAwake {
-			text += "; Agent Manager is not running, so it waits until the user opens it"
-		}
-		return textContent(text), result, nil
+		return textContent(sessioncmd.FormatSendResult(result, args.SessionID)), result, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "message_status",
-		Description: "Check what happened to a message send_session queued: still queued, delivered into the agent's prompt, or answered. " +
-			"Call it when you need to know a handoff landed before you build on it, instead of reading the other agent's screen.",
+		Description: "Check what happened to a message send_session queued: still queued, held, delivered into the agent's prompt, dropped, or answered. " +
+			"Call it when you need to know a handoff landed before you build on it, instead of reading the other agent's screen. " +
+			"Held means the recipient is sitting on a question or a dialog, where nothing may be typed until it moves, and reason says so: read that session's screen and answer it. " +
+			"Dropped means it never reached the prompt and will not be retried, so send it again.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args messageStatusArgs) (*mcp.CallToolResult, sessioncmd.MessageState, error) {
 		state, err := sessions.MessageStatus(sessionID, args.MessageID)
 		if err != nil {
 			return nil, sessioncmd.MessageState{}, err
 		}
-		text := fmt.Sprintf("message %d to session %s is %s", state.MessageID, state.SessionID, state.State)
-		if state.DeliveredAt != "" {
-			text += " (delivered " + state.DeliveredAt + ")"
-		}
-		return textContent(text), state, nil
+		return textContent(sessioncmd.FormatMessageState(state)), state, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -354,17 +339,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.WaitResult{}, err
 		}
-		text := fmt.Sprintf("%s is %s after %s", formatSession(result.Session), result.Session.Status, result.Waited)
-		switch result.Outcome {
-		case sessioncmd.WaitTimedOut:
-			text = "timed out: " + text
-		case sessioncmd.WaitDied:
-			text = "the session died before reaching any awaited state: " + text
-		}
-		if !result.ManagerAwake {
-			text += "; Agent Manager is not running, so this status is the last one it recorded"
-		}
-		return textContent(text), result, nil
+		return textContent(sessioncmd.FormatWaitResult(result)), result, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -377,7 +352,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.Session{}, err
 		}
-		return textContent("revived " + formatSession(revived)), revived, nil
+		return textContent("revived " + sessioncmd.FormatSession(revived)), revived, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -391,7 +366,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.Session{}, err
 		}
-		return textContent("killed " + formatSession(killed)), killed, nil
+		return textContent("killed " + sessioncmd.FormatSession(killed)), killed, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -408,11 +383,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.Session{}, err
 		}
-		verb := "archived "
-		if !archived {
-			verb = "restored "
-		}
-		return textContent(verb + formatSession(updated)), updated, nil
+		return textContent(sessioncmd.FormatArchiveState(updated)), updated, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -425,7 +396,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, listTasksOutput{}, err
 		}
-		return textContent(formatTaskList(listed)), listTasksOutput{Tasks: listed}, nil
+		return textContent(sessioncmd.FormatTaskList(listed)), listTasksOutput{Tasks: listed}, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -439,7 +410,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.Task{}, err
 		}
-		return textContent("created " + formatTask(created)), created, nil
+		return textContent("created " + sessioncmd.FormatTask(created)), created, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -453,7 +424,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.Task{}, err
 		}
-		return textContent("claimed " + formatTask(claimed)), claimed, nil
+		return textContent("claimed " + sessioncmd.FormatTask(claimed)), claimed, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -466,7 +437,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.Task{}, err
 		}
-		return textContent("finished " + formatTask(finished)), finished, nil
+		return textContent("finished " + sessioncmd.FormatTask(finished)), finished, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -479,7 +450,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.Task{}, err
 		}
-		return textContent("released " + formatTask(released)), released, nil
+		return textContent("released " + sessioncmd.FormatTask(released)), released, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -506,7 +477,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.ReserveResult{}, err
 		}
-		return textContent(formatReserveResult(result)), result, nil
+		return textContent(sessioncmd.FormatReserveResult(result)), result, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -519,7 +490,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, nil, err
 		}
-		return textContent(fmt.Sprintf("released %d reservation(s)", released)), nil, nil
+		return textContent(sessioncmd.FormatReleased(released)), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -532,7 +503,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, listReservationsOutput{}, err
 		}
-		return textContent(formatReservations(listed)), listReservationsOutput{Reservations: listed}, nil
+		return textContent(sessioncmd.FormatReservations(listed)), listReservationsOutput{Reservations: listed}, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -545,7 +516,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, listGroupsOutput{}, err
 		}
-		return textContent(formatGroupList(listed)), listGroupsOutput{Groups: listed}, nil
+		return textContent(sessioncmd.FormatGroupList(listed)), listGroupsOutput{Groups: listed}, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -574,7 +545,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			return nil, listTerminalsOutput{}, err
 		}
 		output := listTerminalsOutput{Terminals: listed}
-		return textContent(formatTerminalList(listed)), output, nil
+		return textContent(sessioncmd.FormatTerminalList(listed)), output, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -591,7 +562,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.Terminal{}, err
 		}
-		return textContent("created " + formatTerminal(created)), created, nil
+		return textContent("created " + sessioncmd.FormatTerminal(created)), created, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -600,16 +571,12 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			"A command is pasted and submitted with Enter, so it executes on the user's machine. " +
 			"Keys sends exact tmux key names for interactive control, such as [\"C-c\"] or [\"Up\", \"Enter\"]. Call read_terminal after sending to inspect the result.",
 		Annotations: toolAnnotations(false, true, true),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendTerminalArgs) (*mcp.CallToolResult, sendTerminalOutput, error) {
-		if err := terminals.Send(sessionID, args.TerminalID, args.Command, args.Keys); err != nil {
-			return nil, sendTerminalOutput{}, err
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendTerminalArgs) (*mcp.CallToolResult, sessioncmd.TerminalInput, error) {
+		sent, err := terminals.Send(sessionID, args.TerminalID, args.Command, args.Keys)
+		if err != nil {
+			return nil, sessioncmd.TerminalInput{}, err
 		}
-		sent := "keys"
-		if strings.TrimSpace(args.Command) != "" {
-			sent = "command"
-		}
-		output := sendTerminalOutput{TerminalID: args.TerminalID, Sent: sent}
-		return textContent(fmt.Sprintf("sent %s to terminal %s", sent, args.TerminalID)), output, nil
+		return textContent(sessioncmd.FormatTerminalInput(sent)), sent, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -622,11 +589,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.TerminalScreen{}, err
 		}
-		text := screen.Output
-		if text == "" {
-			text = "terminal screen is empty"
-		}
-		return textContent(text), screen, nil
+		return textContent(sessioncmd.FormatTerminalScreen(screen)), screen, nil
 	})
 
 	return server
@@ -639,138 +602,6 @@ func toolAnnotations(readOnly, destructive, openWorld bool) *mcp.ToolAnnotations
 		IdempotentHint:  readOnly,
 		OpenWorldHint:   &openWorld,
 	}
-}
-
-func groupLabel(group string) string {
-	if group == "" {
-		return "root"
-	}
-	return group
-}
-
-func formatTerminal(terminal sessioncmd.Terminal) string {
-	return fmt.Sprintf("%s (%s) in %s at %s", terminal.Name, terminal.ID, groupLabel(terminal.Group), terminal.Directory)
-}
-
-func formatTerminalList(terminals []sessioncmd.Terminal) string {
-	if len(terminals) == 0 {
-		return "no managed terminals"
-	}
-	lines := make([]string, 0, len(terminals))
-	for _, terminal := range terminals {
-		lines = append(lines, fmt.Sprintf("- %s; status=%s; running=%t", formatTerminal(terminal), terminal.Status, terminal.Running))
-	}
-	return strings.Join(lines, "\n")
-}
-
-func formatSession(session sessioncmd.Session) string {
-	line := fmt.Sprintf("%s (%s) running %s in %s at %s", session.Name, session.ID, session.Tool, groupLabel(session.Group), session.Directory)
-	if session.Branch != "" {
-		line += " on branch " + session.Branch
-	}
-	return line
-}
-
-func formatSessionList(sessions []sessioncmd.Session) string {
-	if len(sessions) == 0 {
-		return "no agent sessions"
-	}
-	lines := make([]string, 0, len(sessions))
-	for _, session := range sessions {
-		line := fmt.Sprintf("- %s; status=%s; running=%t", formatSession(session), session.Status, session.Running)
-		if session.Archived {
-			line += "; archived"
-		}
-		if session.Self {
-			line += "; this session"
-		}
-		lines = append(lines, line)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func formatTask(task sessioncmd.Task) string {
-	line := fmt.Sprintf("%s (%s) [%s]", task.Title, task.ID, task.State)
-	if task.OwnerName != "" {
-		line += " held by " + task.OwnerName
-	}
-	if task.Blocked {
-		line += " blocked on " + strings.Join(task.DependsOn, ", ")
-	}
-	return line
-}
-
-func formatTaskList(tasks []sessioncmd.Task) string {
-	if len(tasks) == 0 {
-		return "no tasks on the shared list"
-	}
-	lines := make([]string, 0, len(tasks))
-	for _, task := range tasks {
-		line := "- " + formatTask(task)
-		if task.Mine {
-			line += "; yours"
-		}
-		lines = append(lines, line)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func formatReservation(reservation sessioncmd.Reservation) string {
-	line := fmt.Sprintf("%s (%s) held by %s for %s", reservation.Pattern, reservation.Mode, reservation.Holder, reservation.ExpiresIn)
-	if reservation.Note != "" {
-		line += ": " + reservation.Note
-	}
-	return line
-}
-
-func formatReservations(reservations []sessioncmd.Reservation) string {
-	if len(reservations) == 0 {
-		return "no files are reserved"
-	}
-	lines := make([]string, 0, len(reservations))
-	for _, reservation := range reservations {
-		line := "- " + formatReservation(reservation)
-		if reservation.Mine {
-			line += "; yours"
-		}
-		lines = append(lines, line)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func formatReserveResult(result sessioncmd.ReserveResult) string {
-	lines := make([]string, 0, len(result.Reserved)+len(result.Conflicts)+1)
-	for _, reservation := range result.Reserved {
-		lines = append(lines, "reserved "+reservation.Pattern)
-	}
-	if len(result.Conflicts) > 0 {
-		lines = append(lines, "conflicts with leases already held; message the holder before editing:")
-		for _, conflict := range result.Conflicts {
-			lines = append(lines, "- "+formatReservation(conflict))
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-func formatGroupList(groups []sessioncmd.Group) string {
-	if len(groups) == 0 {
-		return "no groups; sessions live in the root"
-	}
-	lines := make([]string, 0, len(groups))
-	for _, group := range groups {
-		line := fmt.Sprintf("- %s; sessions=%d", group.Path, group.Sessions)
-		if group.Directory != "" {
-			line += "; directory=" + group.Directory
-		}
-		if group.Worktree != "" {
-			line += "; worktree=" + group.Worktree
-		}
-		if group.Archived {
-			line += "; archived"
-		}
-		lines = append(lines, line)
-	}
-	return strings.Join(lines, "\n")
 }
 
 func textContent(message string) *mcp.CallToolResult {

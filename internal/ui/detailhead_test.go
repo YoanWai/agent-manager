@@ -14,6 +14,7 @@ func TestDetailHeadsFitTheirColumn(t *testing.T) {
 		session := shotModel()
 		session.sessions[3].WorktreeBranch = "am/add-rate-limiting"
 		session.rows[4].sess.WorktreeBranch = "am/add-rate-limiting"
+		session.queuedMessages = map[string]int{"add-rate-limiting": 2}
 
 		group := shotModel()
 		for i, row := range group.rows {
@@ -32,6 +33,16 @@ func TestDetailHeadsFitTheirColumn(t *testing.T) {
 					t.Errorf("%s head at %d: line %d is %d wide: %q", name, width, i, got, ansi.Strip(line))
 				}
 			}
+		}
+
+		// The head's height feeds previewPaneHeight, so a fourth line would
+		// tmux-resize every live pane the moment a message arrived.
+		lines := strings.Split(heads["session"], "\n")
+		if len(lines) != 3 {
+			t.Errorf("badged head at %d is %d lines: %q", width, len(lines), ansi.Strip(heads["session"]))
+		}
+		if !strings.Contains(ansi.Strip(lines[0]), "✉2") {
+			t.Errorf("head at %d dropped the badge: %q", width, ansi.Strip(lines[0]))
 		}
 	}
 }

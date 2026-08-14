@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,11 +37,17 @@ func (f *fakeTerminalCommands) Create(_ string, opts sessioncmd.CreateTerminalOp
 	return f.created, f.err
 }
 
-func (f *fakeTerminalCommands) Send(_ string, id, command string, keys []string) error {
+// The fake decides the input kind the way the real layer does, since the
+// front is only allowed to report what it was handed.
+func (f *fakeTerminalCommands) Send(_ string, id, command string, keys []string) (sessioncmd.TerminalInput, error) {
 	f.sentID = id
 	f.sentCommand = command
 	f.sentKeys = append([]string(nil), keys...)
-	return f.err
+	sent := "keys"
+	if strings.TrimSpace(command) != "" {
+		sent = "command"
+	}
+	return sessioncmd.TerminalInput{TerminalID: id, Sent: sent}, f.err
 }
 
 func (f *fakeTerminalCommands) Read(_ string, id string) (sessioncmd.TerminalScreen, error) {
@@ -127,10 +134,14 @@ func (f *fakeSessionCommands) Kill(_ string, id string) (sessioncmd.Session, err
 	return f.created, f.err
 }
 
+// The row an archive returns carries the state it landed in, which is what
+// the front reads its verb off.
 func (f *fakeSessionCommands) Archive(_ string, id string, archived bool) (sessioncmd.Session, error) {
 	f.archivedID = id
 	f.archived = archived
-	return f.created, f.err
+	updated := f.created
+	updated.Archived = archived
+	return updated, f.err
 }
 
 func (f *fakeSessionCommands) Tasks(string) ([]sessioncmd.Task, error) {
@@ -268,6 +279,31 @@ func TestListsAllTools(t *testing.T) {
 	} {
 		if !names[want] {
 			t.Fatalf("missing tool %q in %v", want, names)
+		}
+	}
+}
+
+// The errors this server returns tell an agent what to call next, and it
+// can only call the tools this server registered.
+func TestTheMCPVocabularyNamesRealTools(t *testing.T) {
+	session := connect(t, t.TempDir(), "abc123")
+	tools, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered := map[string]bool{}
+	for _, tool := range tools.Tools {
+		registered[tool.Name] = true
+	}
+	words := reflect.ValueOf(sessioncmd.MCPVocabulary())
+	for index := range words.NumField() {
+		phrase := words.Field(index).String()
+		field := words.Type().Field(index).Name
+		// A phrase may carry an argument, as archive_session does; the tool
+		// is the first word of it.
+		tool, _, _ := strings.Cut(phrase, " ")
+		if !registered[tool] {
+			t.Fatalf("%s names %q, which this server does not serve: %v", field, tool, registered)
 		}
 	}
 }
@@ -767,7 +803,7 @@ func TestTaskToolsForwardArgumentsAndRenderTheList(t *testing.T) {
 	fake := &fakeSessionCommands{
 		tasks: []sessioncmd.Task{
 			{ID: "t1", Title: "add the column", State: "done"},
-			{ID: "t2", Title: "backfill it", State: "pending", DependsOn: []string{"t1"}, Blocked: true},
+			{ID: "t2", Title: "backfill it", State: "pending", DependsOn: []string{"t1"}, BlockedBy: []string{"t1"}, Blocked: true},
 			{ID: "t3", Title: "verify", State: "in_progress", OwnerName: "worker", Mine: true},
 		},
 	}

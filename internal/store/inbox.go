@@ -21,6 +21,7 @@ type InboxMessage struct {
 	SentAt      time.Time
 	ClaimedAt   time.Time
 	DeliveredAt time.Time
+	DroppedAt   time.Time
 	ReadAt      time.Time
 }
 
@@ -155,12 +156,25 @@ func (s *Store) MarkDelivered(id int64, at time.Time) error {
 	return err
 }
 
+// MarkDropped retires a message that never reached the pane. It leaves the
+// queue exactly as a delivered one does, since delivery is at most once and
+// nothing may retype it, and dropped_at is what tells its sender the
+// difference.
+func (s *Store) MarkDropped(id int64, at time.Time) error {
+	stamp := encodeTime(at)
+	_, err := s.db.Exec(
+		`UPDATE session_inbox SET delivered_at = ?, dropped_at = ? WHERE id = ? AND delivered_at = 0`,
+		stamp, stamp, id)
+	return err
+}
+
 // MarkRead acks every message a session received from one sender. A reply
-// is the ack: the recipient answering proves it read them.
+// is the ack: the recipient answering proves it read them. A dropped
+// message was never in front of it to read.
 func (s *Store) MarkRead(sessionID, senderID string, at time.Time) error {
 	_, err := s.db.Exec(`
 UPDATE session_inbox SET read_at = ?
- WHERE session_id = ? AND sender_id = ? AND delivered_at != 0 AND read_at = 0`,
+ WHERE session_id = ? AND sender_id = ? AND delivered_at != 0 AND dropped_at = 0 AND read_at = 0`,
 		encodeTime(at), sessionID, senderID)
 	return err
 }
@@ -169,17 +183,18 @@ UPDATE session_inbox SET read_at = ?
 // confirm delivery without reading the recipient's screen.
 func (s *Store) Message(id int64, senderID string) (InboxMessage, error) {
 	msg := InboxMessage{ID: id, SenderID: senderID}
-	var sentAt, claimedAt, deliveredAt, readAt int64
+	var sentAt, claimedAt, deliveredAt, droppedAt, readAt int64
 	err := s.db.QueryRow(`
-SELECT session_id, sender_name, body, fingerprint, sent_at, claimed_at, delivered_at, read_at
+SELECT session_id, sender_name, body, fingerprint, sent_at, claimed_at, delivered_at, dropped_at, read_at
   FROM session_inbox WHERE id = ? AND sender_id = ?`, id, senderID).
-		Scan(&msg.SessionID, &msg.SenderName, &msg.Body, &msg.Fingerprint, &sentAt, &claimedAt, &deliveredAt, &readAt)
+		Scan(&msg.SessionID, &msg.SenderName, &msg.Body, &msg.Fingerprint, &sentAt, &claimedAt, &deliveredAt, &droppedAt, &readAt)
 	if err != nil {
 		return InboxMessage{}, err
 	}
 	msg.SentAt = decodeTime(sentAt)
 	msg.ClaimedAt = decodeTime(claimedAt)
 	msg.DeliveredAt = decodeTime(deliveredAt)
+	msg.DroppedAt = decodeTime(droppedAt)
 	msg.ReadAt = decodeTime(readAt)
 	return msg, nil
 }

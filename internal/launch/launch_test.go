@@ -9,24 +9,24 @@ import (
 )
 
 func TestPromptInjectsDirectiveOnlyForAutoNamedWithPrompt(t *testing.T) {
-	withDirective := Prompt("build the api", true)
+	withDirective := Prompt("", "build the api", true)
 	if !strings.HasPrefix(withDirective, RenameDirective+"\n\n") || !strings.HasSuffix(withDirective, "build the api") {
 		t.Fatalf("auto-named prompt should carry the directive, got %q", withDirective)
 	}
-	named := Prompt("build the api", false)
+	named := Prompt("", "build the api", false)
 	if !strings.HasPrefix(named, RenameAvailableNote+"\n\n") || !strings.HasSuffix(named, "build the api") {
 		t.Fatalf("custom-named prompt should note rename is optional later, got %q", named)
 	}
 	if strings.Contains(named, "Run rename only this once") || strings.HasPrefix(named, RenameDirective) {
 		t.Fatalf("custom-named prompt must not force a rename, got %q", named)
 	}
-	if got := Prompt("", true); got != "" {
+	if got := Prompt("", "", true); got != "" {
 		t.Fatalf("promptless session should stay clean, got %q", got)
 	}
-	if got := Prompt("/compact keep the api notes", true); got != "/compact keep the api notes" {
+	if got := Prompt("", "/compact keep the api notes", true); got != "/compact keep the api notes" {
 		t.Fatalf("slash-command prompt should stay clean, got %q", got)
 	}
-	if got := Prompt("/compact keep the api notes", false); got != "/compact keep the api notes" {
+	if got := Prompt("", "/compact keep the api notes", false); got != "/compact keep the api notes" {
 		t.Fatalf("named slash-command prompt should stay clean, got %q", got)
 	}
 }
@@ -51,7 +51,7 @@ func TestWithPromptComposesPerToolStyle(t *testing.T) {
 
 func TestAssembleRoutesPromptAndDirective(t *testing.T) {
 	flagged := config.Tool{Command: "claude", PromptFlag: "-p", SessionIDFlag: "--session-id"}
-	plan := Assemble(flagged, "build the api", true)
+	plan := Assemble("claude", flagged, "build the api", true)
 	if !strings.HasPrefix(plan.Command, "claude -p '"+RenameDirective) {
 		t.Fatalf("auto-named flagged command = %q", plan.Command)
 	}
@@ -62,13 +62,13 @@ func TestAssembleRoutesPromptAndDirective(t *testing.T) {
 		t.Fatalf("an embeddable directive needs no pending input, got %v", plan.PendingInputs)
 	}
 
-	deferred := Assemble(flagged, "/compact the notes", true)
+	deferred := Assemble("claude", flagged, "/compact the notes", true)
 	if len(deferred.PendingInputs) != 1 || deferred.PendingInputs[0] != DeferredRenameDirective {
 		t.Fatalf("slash-command launch should defer the directive, got %v", deferred.PendingInputs)
 	}
 
 	sent := config.Tool{Command: "hermes", PromptMode: "send"}
-	typed := Assemble(sent, "build the api", false)
+	typed := Assemble("hermes", sent, "build the api", false)
 	if typed.Command != "hermes" {
 		t.Fatalf("send-mode command = %q", typed.Command)
 	}
@@ -77,6 +77,30 @@ func TestAssembleRoutesPromptAndDirective(t *testing.T) {
 	}
 	if typed.AgentSessionID != "" {
 		t.Fatalf("a tool without a session-id flag must not get one, got %q", typed.AgentSessionID)
+	}
+}
+
+func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
+	noClient := config.Tool{Command: "pi", PromptFlag: "-p"}
+	carried := Assemble("pi", noClient, "build the api", false)
+	if !strings.Contains(carried.Command, CoordinationNote) {
+		t.Fatalf("a tool with no MCP client should be pointed at the subcommands, got %q", carried.Command)
+	}
+	if len(carried.PendingInputs) != 0 {
+		t.Fatalf("a note the prompt carried needs no pending input, got %v", carried.PendingInputs)
+	}
+
+	withClient := config.Tool{Command: "claude", PromptFlag: "-p"}
+	if plan := Assemble("claude", withClient, "build the api", false); strings.Contains(plan.Command, CoordinationNote) {
+		t.Fatalf("a tool whose MCP tool descriptions say this already must not repeat it, got %q", plan.Command)
+	}
+
+	promptless := Assemble("pi", noClient, "", false)
+	if promptless.Command != noClient.Command {
+		t.Fatalf("a promptless launch command should stay clean, got %q", promptless.Command)
+	}
+	if len(promptless.PendingInputs) != 1 || promptless.PendingInputs[0] != CoordinationNote {
+		t.Fatalf("a prompt that cannot carry the note should queue it, got %v", promptless.PendingInputs)
 	}
 }
 

@@ -26,15 +26,17 @@ type Task struct {
 	UpdatedAt time.Time
 }
 
-// Blocked reports whether a task is waiting on work that is not done.
-// It is only meaningful alongside the states of the tasks it names.
-func (t Task) Blocked(byID map[string]Task) bool {
+// Blocking lists the dependencies that are not done, which is the part of
+// depends_on worth telling anyone about: a finished dependency is in
+// nobody's way. It is only meaningful alongside the tasks it names.
+func (t Task) Blocking(byID map[string]Task) []string {
+	blocking := make([]string, 0, len(t.DependsOn))
 	for _, id := range t.DependsOn {
 		if dep, ok := byID[id]; !ok || dep.State != TaskDone {
-			return true
+			blocking = append(blocking, id)
 		}
 	}
-	return false
+	return blocking
 }
 
 func (s *Store) CreateTask(task Task) error {

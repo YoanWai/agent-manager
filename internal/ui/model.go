@@ -89,6 +89,9 @@ type Model struct {
 	procFor        string
 	preview        string
 	agents         agentStats
+	// queuedMessages is replaced whole on every refresh rather than merged,
+	// so a delivered message's badge clears itself.
+	queuedMessages map[string]int
 
 	net netStats
 
@@ -444,6 +447,7 @@ type refreshMsg struct {
 	procFor        string
 	preview        string
 	agents         agentStats
+	queuedMessages map[string]int
 }
 
 type previewMsg struct {
@@ -1070,6 +1074,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.groupWorktrees = msg.groupWorktrees
 		m.archivedGroups = msg.archivedGroups
 		m.agents = msg.agents
+		m.queuedMessages = msg.queuedMessages
 		if msg.snapOK {
 			m.snap = msg.snap
 			m.updateNetRates(msg.snap)

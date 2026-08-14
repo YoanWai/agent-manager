@@ -104,7 +104,7 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 		return WaitResult{}, errors.New("a session cannot wait on itself; it is the one making this call")
 	}
 	if target.Archived {
-		return WaitResult{}, fmt.Errorf("session %s is archived, so its status no longer advances; restore it with archive_session archived false first", target.ID)
+		return WaitResult{}, fmt.Errorf("session %s is archived, so its status no longer advances; restore it with %s first", target.ID, runtime.words.Restore)
 	}
 
 	wanted := map[string]bool{}
@@ -135,8 +135,9 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 		if !running {
 			state = status.Dead
 		}
-		if reached := wanted[state]; reached || !time.Now().Before(deadline) {
-			timedOut := !reached
+		// A death ends the wait as surely as an awaited state does: the
+		// status of a session with no pane will never move again.
+		if wanted[state] || !running || !time.Now().Before(deadline) {
 			// The cheap ticks trust the stored status; the answer we hand
 			// back is worth one more fork to get right.
 			running = runtime.driver.Exists(current.ID)
@@ -147,7 +148,7 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 			switch {
 			case wanted[state]:
 				outcome = WaitReached
-			case !running && !timedOut:
+			case !running:
 				outcome = WaitDied
 			}
 			return runtime.waitResult(current, running, state, started, outcome)

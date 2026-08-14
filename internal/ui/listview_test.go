@@ -145,8 +145,13 @@ func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
 
 func railText(t *testing.T, m *Model) []string {
 	t.Helper()
+	return railTextAt(m, 60)
+}
+
+// railTextAt renders the tree at one rail width, as plain text per line.
+func railTextAt(m *Model, width int) []string {
 	var out []string
-	for _, line := range m.entryLines(m.treeRows(), 0, 60, 20) {
+	for _, line := range m.entryLines(m.treeRows(), 0, width, 20) {
 		out = append(out, strings.TrimRight(ansi.Strip(line.text), " "))
 	}
 	return out
@@ -308,6 +313,81 @@ func TestComfortableMetaLineKeepsTreeGuides(t *testing.T) {
 	}
 	if len(metaRunes) <= guideAt || metaRunes[guideAt] != '│' {
 		t.Fatalf("meta line breaks the guide column at %d:\n%q\n%q", guideAt, name, meta)
+	}
+}
+
+// A message waiting for a session is marked on its row in either density,
+// and on no row that has nothing waiting.
+func TestInboxBadgeRidesTheRowWithMessages(t *testing.T) {
+	for _, comfortable := range []bool{false, true} {
+		m := shotModel()
+		m.comfortableRows = comfortable
+		m.queuedMessages = map[string]int{"add-rate-limiting": 2}
+
+		rows := railText(t, m)
+		badged := lineWith(t, rows, "add-rate-limiting")
+		if !strings.Contains(rows[badged], "✉2") {
+			t.Fatalf("comfortable=%v: row lost its badge: %q", comfortable, rows[badged])
+		}
+		for i, row := range rows {
+			if i != badged && strings.Contains(row, "✉") {
+				t.Errorf("comfortable=%v: line %d wears a badge it has no messages for: %q",
+					comfortable, i, row)
+			}
+		}
+	}
+}
+
+// A session nobody has written to renders exactly as it did before the
+// badge existed: no glyph, and not one cell of padding.
+func TestRowsWithoutMessagesRenderUnchanged(t *testing.T) {
+	bare := railText(t, shotModel())
+	badged := shotModel()
+	badged.queuedMessages = map[string]int{"add-rate-limiting": 2}
+	marked := railText(t, badged)
+
+	if len(bare) != len(marked) {
+		t.Fatalf("badge changed the row count: %d then %d", len(bare), len(marked))
+	}
+	at := lineWith(t, marked, "✉2")
+	for i := range bare {
+		if i != at && bare[i] != marked[i] {
+			t.Errorf("line %d moved for a badge it does not carry:\n%q\n%q", i, bare[i], marked[i])
+		}
+	}
+	for _, row := range bare {
+		if strings.Contains(row, "✉") {
+			t.Errorf("a rail with no queued messages drew a badge: %q", row)
+		}
+	}
+}
+
+// A rail too narrow for the whole row gives up the tool and the age before
+// the badge: those readings are on the row beside it, a waiting message is
+// nowhere else.
+func TestInboxBadgeOutlivesTheRowMeta(t *testing.T) {
+	for _, width := range []int{28, 30, 36, 44, 60} {
+		m := shotModel()
+		m.queuedMessages = map[string]int{"add-rate-limiting": 2}
+
+		for _, line := range m.entryLines(m.treeRows(), 0, width, 20) {
+			if got := ansi.StringWidth(line.text); got > width {
+				t.Errorf("width %d: rail line is %d wide: %q", width, got, ansi.Strip(line.text))
+			}
+		}
+		rows := railTextAt(m, width)
+		row := rows[lineWith(t, rows, "✉2")]
+		if !strings.Contains(row, "add-rate-limiting") {
+			t.Errorf("width %d: the badge cost the name: %q", width, row)
+		}
+	}
+
+	m := shotModel()
+	m.queuedMessages = map[string]int{"add-rate-limiting": 2}
+	rows := railTextAt(m, 30)
+	row := rows[lineWith(t, rows, "✉2")]
+	if strings.Contains(row, "ago") {
+		t.Fatalf("30 columns still fit the age, so the row shed nothing: %q", row)
 	}
 }
 

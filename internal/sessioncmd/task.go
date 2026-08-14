@@ -19,6 +19,7 @@ type Task struct {
 	Owner     string   `json:"owner,omitempty" jsonschema:"session id holding the claim"`
 	OwnerName string   `json:"owner_name,omitempty" jsonschema:"name of the session holding the claim"`
 	DependsOn []string `json:"depends_on,omitempty" jsonschema:"task ids that must be done before this one can be claimed"`
+	BlockedBy []string `json:"blocked_by,omitempty" jsonschema:"the dependencies that are not done yet; the rest of depends_on are finished and in nobody's way"`
 	Blocked   bool     `json:"blocked" jsonschema:"whether unfinished dependencies currently stop this task being claimed"`
 	Mine      bool     `json:"mine" jsonschema:"whether the calling session holds the claim"`
 }
@@ -52,6 +53,7 @@ func (r *runtime) taskList(sessionID string) ([]Task, error) {
 	}
 	tasks := make([]Task, 0, len(stored))
 	for _, task := range stored {
+		blocking := task.Blocking(byID)
 		tasks = append(tasks, Task{
 			ID:        task.ID,
 			Title:     task.Title,
@@ -60,7 +62,8 @@ func (r *runtime) taskList(sessionID string) ([]Task, error) {
 			Owner:     task.Owner,
 			OwnerName: names[task.Owner],
 			DependsOn: task.DependsOn,
-			Blocked:   task.State == store.TaskPending && task.Blocked(byID),
+			BlockedBy: blocking,
+			Blocked:   task.State == store.TaskPending && len(blocking) > 0,
 			Mine:      task.Owner == sessionID,
 		})
 	}
@@ -89,7 +92,7 @@ func (r *runtime) task(sessionID, id string) (Task, error) {
 			return task, nil
 		}
 	}
-	return Task{}, fmt.Errorf("task %s does not exist; call list_tasks for current ids", id)
+	return Task{}, fmt.Errorf("task %s does not exist; call %s for current ids", id, r.words.ListTasks)
 }
 
 func (s *Sessions) CreateTask(sessionID, title, body string, dependsOn []string) (Task, error) {
@@ -108,7 +111,7 @@ func (s *Sessions) CreateTask(sessionID, title, body string, dependsOn []string)
 	for _, dep := range dependsOn {
 		if _, err := runtime.store.Task(dep); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return Task{}, fmt.Errorf("dependency %s does not exist; create it first, or call list_tasks for current ids", dep)
+				return Task{}, fmt.Errorf("dependency %s does not exist; create it first, or call %s for current ids", dep, runtime.words.ListTasks)
 			}
 			return Task{}, err
 		}
@@ -182,7 +185,7 @@ func (r *runtime) refusedClaim(sessionID, taskID string) error {
 	case task.State == store.TaskDone:
 		return fmt.Errorf("task %s is already done", taskID)
 	case task.Blocked:
-		return fmt.Errorf("task %s is blocked on %s", taskID, strings.Join(task.DependsOn, ", "))
+		return fmt.Errorf("task %s is blocked on %s", taskID, strings.Join(task.BlockedBy, ", "))
 	}
 	return fmt.Errorf("task %s could not be claimed", taskID)
 }
@@ -198,7 +201,7 @@ func (s *Sessions) ReleaseTask(sessionID, taskID string) (Task, error) {
 func (s *Sessions) settleTask(sessionID, taskID string, done bool) (Task, error) {
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
-		return Task{}, errors.New("task_id is empty; call list_tasks to get one")
+		return Task{}, fmt.Errorf("task_id is empty; call %s to get one", s.words.ListTasks)
 	}
 	runtime, err := s.open()
 	if err != nil {
@@ -234,7 +237,7 @@ func (s *Sessions) settleTask(sessionID, taskID string, done bool) (Task, error)
 func (s *Sessions) DeleteTask(sessionID, taskID string) error {
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
-		return errors.New("task_id is empty; call list_tasks to get one")
+		return fmt.Errorf("task_id is empty; call %s to get one", s.words.ListTasks)
 	}
 	runtime, err := s.open()
 	if err != nil {
@@ -249,7 +252,7 @@ func (s *Sessions) DeleteTask(sessionID, taskID string) error {
 		return err
 	}
 	if !deleted {
-		return fmt.Errorf("task %s does not exist; call list_tasks for current ids", taskID)
+		return fmt.Errorf("task %s does not exist; call %s for current ids", taskID, runtime.words.ListTasks)
 	}
 	return nil
 }

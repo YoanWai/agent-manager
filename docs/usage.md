@@ -160,7 +160,7 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `create_session` | Start another agent CLI on a named task, optionally in its own git worktree |
 | `read_session` | Read what another agent's screen currently shows |
 | `send_session` | Queue a message for another agent, delivered once it is at rest |
-| `message_status` | Check whether a queued message was delivered or answered |
+| `message_status` | Check whether a message is queued, held, delivered, dropped or answered |
 | `wait_for_session` | Park until another session stops working, instead of polling it |
 | `revive_session` | Bring a dead session back, resuming the conversation it held |
 | `kill_session` | Stop a running agent, keeping its row and last screen |
@@ -191,9 +191,11 @@ Each field falls back the way the form does. The CLI defaults to the one the cal
 
 ### Messages between agents
 
-`send_session` queues a message rather than typing it immediately. Several agent CLIs keep their input line drawn underneath an approval dialog, so a message written at that moment would answer the dialog instead of being read. The manager holds it and types it in on the first poll where the target is at rest: its input region is drawn, its status is not mid-turn, and its own rules report no dialog on screen. Delivery is at most once, and a message the manager cannot prove reached the pane is retired rather than repeated.
+`send_session` queues a message rather than typing it immediately. Several agent CLIs keep their input line drawn underneath an approval dialog, so a message written at that moment would answer the dialog instead of being read. The manager holds it and types it in on the first poll where the target is at rest: its input region is drawn, its status is not mid-turn, and its own rules report no dialog on screen. Delivery is at most once, and a message the manager cannot prove reached the pane is retired as `dropped` rather than repeated, so its sender knows to send it again.
 
-The message arrives labelled as coming from another session rather than from the user, with the sender's name and the id to answer on. A receiving agent treats it as it would any untrusted input: it cannot approve a permission prompt, and it cannot change that session's configuration. Queue caps, a per-sender rate limit and a whitespace-insensitive fingerprint keep two agents from talking each other into a loop. `message_status` reports whether a message is still queued, has been delivered, or has been answered; answering a session acknowledges everything it sent.
+A session that stops on a question of its own reads to that gate exactly as a dialog does, since the rules that catch one catch the other, and the difference matters too much to guess at: text typed onto a dialog picks an option. So a session waiting on a question holds everything queued for it until it moves on, and `message_status` reports those messages as `held`, naming the session to go and answer.
+
+The message arrives labelled as coming from another session rather than from the user, with the sender's name and the id to answer on. A receiving agent treats it as it would any untrusted input: it cannot approve a permission prompt, and it cannot change that session's configuration. Queue caps, a per-sender rate limit and a whitespace-insensitive fingerprint keep two agents from talking each other into a loop. `message_status` reports whether a message is queued, held, delivered, dropped or answered; answering a session acknowledges everything it sent.
 
 Delivery needs the manager running, since its poller is what types the message in. A message queued while Agent Manager is closed waits until it opens again, and `send_session` says so in its result rather than implying the message landed. A target that could never be reached is refused outright rather than queued: an archived session, which the poller skips, and a tool declaring no `activity_cutoff`, which leaves nothing to read readiness from.
 
