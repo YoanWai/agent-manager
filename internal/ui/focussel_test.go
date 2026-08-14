@@ -231,6 +231,18 @@ func TestDragSelectsAcrossRows(t *testing.T) {
 	}
 }
 
+// Mouse coordinates are terminal cells, not rune offsets. A CJK glyph uses
+// two cells, so treating the cell as a rune index selected text to the right
+// of the pointer.
+func TestDragSelectsWideRunesAtDisplayColumns(t *testing.T) {
+	m := paneAt(t, "甲乙丙丁")
+	press(m, 12, 5) // display column 2: 乙
+	drag(m, 16, 5)  // display column 6: before 丁
+	if got := m.selectionText(); got != "乙丙" {
+		t.Fatalf("drag copied %q, want %q", got, "乙丙")
+	}
+}
+
 // Selection indices are taken from the plain text of a colored capture, so
 // escape sequences never shift what gets copied.
 func TestSelectionIgnoresANSI(t *testing.T) {

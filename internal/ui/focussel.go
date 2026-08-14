@@ -299,7 +299,7 @@ func (m *Model) expandSelection() {
 	switch m.sel.granule {
 	case selectLine:
 		m.sel.anchorCol = 0
-		m.sel.headCol = len(line)
+		m.sel.headCol = ansi.StringWidth(string(line))
 	case selectWord:
 		start, end := wordBounds(line, m.sel.anchorCol)
 		m.sel.anchorCol, m.sel.headCol = start, end
@@ -307,23 +307,25 @@ func (m *Model) expandSelection() {
 }
 
 // wordBounds is the run of word characters around col, or the single cell
-// when it sits on a separator.
+// when it sits on a separator. The caller's coordinates are terminal cells,
+// while Go slices use rune offsets, so translate at the boundary only.
 func wordBounds(line []rune, col int) (int, int) {
-	if col >= len(line) {
+	index := runeAtColumn(line, col)
+	if index >= len(line) {
 		return col, col
 	}
-	if !isWordRune(line[col]) {
+	if !isWordRune(line[index]) {
 		return col, col + 1
 	}
-	start := col
+	start := index
 	for start > 0 && isWordRune(line[start-1]) {
 		start--
 	}
-	end := col
+	end := index
 	for end < len(line) && isWordRune(line[end]) {
 		end++
 	}
-	return start, end
+	return ansi.StringWidth(string(line[:start])), ansi.StringWidth(string(line[:end]))
 }
 
 // isWordRune keeps paths, flags and identifiers together on a double
@@ -349,7 +351,7 @@ func (s focusSelection) selectionRange() (startRow, startCol, endRow, endCol int
 
 // selectionSpan is the selected column range on one pane row, or ok=false
 // when the row carries no selection.
-func (m *Model) selectionSpan(row, lineLen int) (start, end int, ok bool) {
+func (m *Model) selectionSpan(row, lineWidth int) (start, end int, ok bool) {
 	if !m.sel.active {
 		return 0, 0, false
 	}
@@ -357,23 +359,30 @@ func (m *Model) selectionSpan(row, lineLen int) (start, end int, ok bool) {
 	if row < startRow || row > endRow {
 		return 0, 0, false
 	}
-	start, end = 0, lineLen
+	start, end = 0, lineWidth
 	if row == startRow {
 		start = startCol
 	}
 	if row == endRow {
 		end = endCol
 	}
-	if start > lineLen {
-		start = lineLen
+	if start > lineWidth {
+		start = lineWidth
 	}
-	if end > lineLen {
-		end = lineLen
+	if end > lineWidth {
+		end = lineWidth
 	}
 	if end <= start {
 		return 0, 0, false
 	}
 	return start, end, true
+}
+
+// runeRangeAtColumns translates a terminal-cell span to the rune range that
+// backs it. Mouse events are expressed in display cells, which differ from
+// rune offsets for CJK and other wide characters.
+func runeRangeAtColumns(line []rune, start, end int) (int, int) {
+	return runeAtColumn(line, start), runeAtColumn(line, end)
 }
 
 // selectionText is the selected pane text, newline-joined, with each row's
@@ -387,12 +396,13 @@ func (m *Model) selectionText() string {
 	var out []string
 	for row := startRow; row <= endRow && row < len(lines); row++ {
 		line := []rune(lines[row])
-		start, end, ok := m.selectionSpan(row, len(line))
+		start, end, ok := m.selectionSpan(row, ansi.StringWidth(string(line)))
 		if !ok {
 			out = append(out, "")
 			continue
 		}
-		out = append(out, strings.TrimRight(string(line[start:end]), " "))
+		startIndex, endIndex := runeRangeAtColumns(line, start, end)
+		out = append(out, strings.TrimRight(string(line[startIndex:endIndex]), " "))
 	}
 	return strings.Join(out, "\n")
 }
@@ -422,13 +432,14 @@ type focusCopiedMsg struct{ chars int }
 // transient.
 func (m *Model) renderPaneRow(row int, raw string, width int) string {
 	line := []rune(ansi.Strip(previewDangerSeqs.ReplaceAllString(raw, "")))
-	start, end, ok := m.selectionSpan(row, len(line))
+	start, end, ok := m.selectionSpan(row, ansi.StringWidth(string(line)))
 	if !ok {
 		return m.withCursor(row, raw, line, width)
 	}
-	before := string(line[:start])
-	selected := string(line[start:end])
-	after := string(line[end:])
+	startIndex, endIndex := runeRangeAtColumns(line, start, end)
+	before := string(line[:startIndex])
+	selected := string(line[startIndex:endIndex])
+	after := string(line[endIndex:])
 	painted := before + selectionStyle().Render(selected) + after
 	return previewLine(painted, width)
 }
