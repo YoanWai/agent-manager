@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -60,6 +61,10 @@ func main() {
 	update.SetBuildSource(buildSource)
 
 	if len(os.Args) > 1 {
+		if os.Args[1] == "--help" || os.Args[1] == "-h" {
+			printHelp(os.Stdout)
+			return
+		}
 		if os.Args[1] == "--version" || os.Args[1] == "-v" {
 			fmt.Println("agent-manager", version)
 			return
@@ -76,6 +81,23 @@ func main() {
 		fmt.Fprintln(os.Stderr, "agent-manager:", err)
 		os.Exit(1)
 	}
+}
+
+func printHelp(w io.Writer) {
+	fmt.Fprint(w, `Usage: agent-manager [command]
+
+Run the interactive manager when no command is given.
+
+Commands:
+  mcp          Run the Model Context Protocol server for an agent session
+  rename       Rename the current agent session
+  review-repo  Record the repository for the current agent session
+  review-base  Record the base ref for the current agent session
+
+Options:
+  -h, --help     Show this help text
+  -v, --version  Print the installed version
+`)
 }
 
 func subcommands() map[string]func(args []string) error {

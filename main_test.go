@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -13,6 +14,21 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
 )
+
+func TestPrintHelpDoesNotRequireATerminal(t *testing.T) {
+	var out bytes.Buffer
+	printHelp(&out)
+	for _, want := range []string{
+		"Usage: agent-manager [command]",
+		"Run the interactive manager when no command is given.",
+		"-h, --help",
+		"-v, --version",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("help text does not contain %q:\n%s", want, out.String())
+		}
+	}
+}
 
 // Startup is the only place the alternate-scroll reset goes out, and it
 // cannot be exercised headlessly: run() takes over the terminal. Reading
