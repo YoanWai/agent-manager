@@ -28,6 +28,7 @@ import (
 type parityWorkspace struct {
 	configDir string
 	tasks     taskCommands
+	files     fileCommands
 	lead      store.Session
 	worker    store.Session
 }
@@ -43,9 +44,11 @@ func newParityWorkspace(t *testing.T) *parityWorkspace {
 		t.Fatalf("store open: %v", err)
 	}
 	defer st.Close()
+	commands := sessioncmd.NewSessions(configDir, sessioncmd.CLIVocabulary())
 	workspace := &parityWorkspace{
 		configDir: configDir,
-		tasks:     sessioncmd.NewSessions(configDir, sessioncmd.CLIVocabulary()),
+		tasks:     commands,
+		files:     commands,
 		lead:      store.Session{ID: uuid.NewString()[:8], Name: "lead-agent", Tool: "claude", Cwd: configDir, Status: status.Idle},
 		worker:    store.Session{ID: uuid.NewString()[:8], Name: "worker-agent", Tool: "claude", Cwd: configDir, Status: status.Idle},
 	}
@@ -193,6 +196,44 @@ func TestTheTwoFrontsAnswerOneOperationIdentically(t *testing.T) {
 	}
 	if cliRefusal.Error() != mcpRefusal {
 		t.Fatalf("the fronts refuse differently:\ncli: %q\nmcp: %q", cliRefusal, mcpRefusal)
+	}
+}
+
+// A bound enforced on one front is a bound the other front does not have.
+// Both take the lease duration in their own units, and an out-of-range one
+// has to come back refused in the same words whichever front asked.
+func TestTheTwoFrontsRefuseTheSameOutOfRangeTTL(t *testing.T) {
+	w := newParityWorkspace(t)
+	for _, out := range []struct {
+		name    string
+		ttl     string
+		minutes int
+	}{
+		{"beyond the maximum", "9h", 540},
+		{"negative", "-5m", -5},
+	} {
+		t.Run(out.name, func(t *testing.T) {
+			fromCLI := runReserve(&bytes.Buffer{}, w.files, []string{"--ttl", out.ttl, "internal/store/store.go"}, w.lead.ID)
+			if fromCLI == nil {
+				t.Fatal("the shell front granted a lease outside the bound")
+			}
+			fromMCP, isError := w.mcpText(t, w.lead.ID, "reserve_files", map[string]any{
+				"paths": []string{"internal/store/store.go"}, "ttl_minutes": out.minutes,
+			})
+			if !isError {
+				t.Fatalf("the MCP front granted a lease outside the bound: %q", fromMCP)
+			}
+			if fromCLI.Error() != fromMCP {
+				t.Fatalf("the fronts refuse differently:\ncli: %q\nmcp: %q", fromCLI, fromMCP)
+			}
+			if !strings.Contains(fromMCP, "outside 0 to "+sessioncmd.MaxReservationTTL.String()) {
+				t.Fatalf("the refusal does not name the bound: %q", fromMCP)
+			}
+		})
+	}
+	// The bound refuses what is outside it and nothing else.
+	if err := runReserve(&bytes.Buffer{}, w.files, []string{"--ttl", "45m", "internal/store/store.go"}, w.lead.ID); err != nil {
+		t.Fatalf("a ttl inside the bound was refused: %v", err)
 	}
 }
 

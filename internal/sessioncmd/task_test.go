@@ -59,8 +59,10 @@ func TestTasksAreClaimedByExactlyOneSession(t *testing.T) {
 		!strings.Contains(err.Error(), "already claimed by calling-agent") {
 		t.Fatalf("rival claim error = %v", err)
 	}
+	// Naming the holder is what makes the refusal actionable: the reader's
+	// next move is to message that session.
 	if _, err := h.sessions.FinishTask(rival.ID, created.ID); err == nil ||
-		!strings.Contains(err.Error(), "not yours") {
+		!strings.Contains(err.Error(), "not yours to settle; calling-agent holds it") {
 		t.Fatalf("rival finish error = %v", err)
 	}
 
@@ -70,6 +72,24 @@ func TestTasksAreClaimedByExactlyOneSession(t *testing.T) {
 	}
 	if finished.State != "done" {
 		t.Fatalf("finished task = %+v", finished)
+	}
+
+	// A task nobody is holding has no holder to name, however it got there.
+	pending, err := h.sessions.CreateTask(h.caller.ID, "backfill the column", "", nil)
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	for _, settled := range []struct {
+		id   string
+		want string
+	}{
+		{created.ID, "is done, not in progress"},
+		{pending.ID, "is pending, not in progress"},
+	} {
+		if _, err := h.sessions.FinishTask(rival.ID, settled.id); err == nil ||
+			!strings.Contains(err.Error(), settled.want) {
+			t.Fatalf("settling %s = %v, want %q", settled.id, err, settled.want)
+		}
 	}
 }
 

@@ -82,10 +82,10 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 		return WaitResult{}, err
 	}
 	switch {
-	case timeout <= 0:
+	case timeout < 0 || timeout > MaxWaitTimeout:
+		return WaitResult{}, fmt.Errorf("timeout %s is outside 0 to %s; wait again when this one returns", timeout, MaxWaitTimeout)
+	case timeout == 0:
 		timeout = DefaultWaitTimeout
-	case timeout > MaxWaitTimeout:
-		timeout = MaxWaitTimeout
 	}
 	runtime, err := s.open()
 	if err != nil {
@@ -119,6 +119,10 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 	deadline := started.Add(timeout)
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
+	// Waking only on the poll would overshoot a timeout shorter than the
+	// interval, which is the one thing a caller asked this call to bound.
+	expiry := time.NewTimer(time.Until(deadline))
+	defer expiry.Stop()
 
 	for tick := 0; ; tick++ {
 		current, err := runtime.agent(target.ID)
@@ -157,6 +161,7 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 		case <-ctx.Done():
 			return WaitResult{}, ctx.Err()
 		case <-ticker.C:
+		case <-expiry.C:
 		}
 	}
 }

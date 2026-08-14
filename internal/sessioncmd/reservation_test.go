@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 func TestReservationsSurfaceOverlapWithoutBlockingIt(t *testing.T) {
@@ -78,6 +80,12 @@ func TestSharedLeasesOnlyClashWithExclusiveOnes(t *testing.T) {
 	if _, err := h.sessions.Reserve(h.caller.ID, nil, "", "", 0); err == nil {
 		t.Fatal("reserving nothing should be refused")
 	}
+	for _, ttl := range []time.Duration{-time.Minute, MaxReservationTTL + time.Minute} {
+		if _, err := h.sessions.Reserve(h.caller.ID, []string{"docs/usage.md"}, "", "", ttl); err == nil ||
+			!strings.Contains(err.Error(), "outside 0 to "+MaxReservationTTL.String()) {
+			t.Fatalf("a %s lease = %v, want a refusal naming the bound", ttl, err)
+		}
+	}
 }
 
 func TestALapsedLeaseStopsBlockingAndReleaseClearsTheRest(t *testing.T) {
@@ -86,20 +94,25 @@ func TestALapsedLeaseStopsBlockingAndReleaseClearsTheRest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	// A lease shorter than a poll stands in for an agent that died holding one.
-	if _, err := h.sessions.Reserve(rival.ID, []string{"internal/ui/*.go"}, "", "", -time.Minute); err != nil {
-		t.Fatalf("Reserve: %v", err)
-	}
-	// Negative TTLs clamp to the default, so age it by hand instead.
-	if _, err := h.store.Release(rival.ID, ""); err != nil {
-		t.Fatalf("Release: %v", err)
+	// A lease whose expiry is already behind us stands in for an agent that
+	// died holding one, which is the case the whole advisory design rests on.
+	lapsed := time.Now().Add(-time.Minute)
+	if err := h.store.Reserve(store.Reservation{
+		ID:         "lapsed01",
+		SessionID:  rival.ID,
+		Pattern:    "internal/ui/*.go",
+		Mode:       store.ReservationExclusive,
+		AcquiredAt: lapsed.Add(-time.Hour),
+		ExpiresAt:  lapsed,
+	}); err != nil {
+		t.Fatalf("write a lapsed lease: %v", err)
 	}
 	fresh, err := h.sessions.Reserve(h.caller.ID, []string{"internal/ui/model.go"}, "", "", 0)
 	if err != nil {
 		t.Fatalf("Reserve after lapse: %v", err)
 	}
 	if len(fresh.Conflicts) != 0 {
-		t.Fatalf("a lease that is gone still blocks: %+v", fresh.Conflicts)
+		t.Fatalf("a lapsed lease still blocks: %+v", fresh.Conflicts)
 	}
 
 	if _, err := h.sessions.Reserve(h.caller.ID, []string{"a.go", "b.go"}, "", "", 0); err != nil {

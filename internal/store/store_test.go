@@ -208,6 +208,67 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+// Delete strips a session's inbox, task claims and reservations before the
+// row itself, so a delete that gets partway through would leave a session
+// alive with the state its senders and the shared list depend on already
+// gone. It is one transaction, and a refused delete changes nothing.
+func TestARefusedDeleteLeavesTheCoordinationStateIntact(t *testing.T) {
+	st := newTestStore(t)
+	now := time.Now()
+	if err := st.CreateSession(sample("a", "g1")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := st.Enqueue(InboxMessage{
+		SessionID: "a", SenderID: "b", SenderName: "rival",
+		Body: "rebase on main", Fingerprint: "rebase on main", SentAt: now,
+	}, DefaultInboxLimits); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if err := st.CreateTask(Task{ID: "t1", Title: "wire it", State: TaskPending, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if claimed, err := st.ClaimTask("t1", "a", now); err != nil || !claimed {
+		t.Fatalf("ClaimTask = %v, %v", claimed, err)
+	}
+	if err := st.Reserve(Reservation{
+		ID: "r1", SessionID: "a", Pattern: "internal/store/*.go", Mode: ReservationExclusive,
+		AcquiredAt: now, ExpiresAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+
+	// The row alone going first is what the last statement refusing looks
+	// like from inside Delete.
+	if _, err := st.db.Exec(`DELETE FROM sessions WHERE id = ?`, "a"); err != nil {
+		t.Fatalf("drop the session row: %v", err)
+	}
+	if err := st.Delete("a"); !errors.Is(err, ErrSessionGone) {
+		t.Fatalf("deleting a vanished session = %v", err)
+	}
+
+	queued, err := st.QueuedCount("a")
+	if err != nil {
+		t.Fatalf("QueuedCount: %v", err)
+	}
+	if queued != 1 {
+		t.Fatalf("a refused delete took the inbox with it: %d queued", queued)
+	}
+	task, err := st.Task("t1")
+	if err != nil {
+		t.Fatalf("Task: %v", err)
+	}
+	if task.State != TaskInProgress || task.Owner != "a" {
+		t.Fatalf("a refused delete released the claim: %+v", task)
+	}
+	held, err := st.Reservations(now)
+	if err != nil {
+		t.Fatalf("Reservations: %v", err)
+	}
+	if len(held) != 1 {
+		t.Fatalf("a refused delete dropped the leases: %+v", held)
+	}
+}
+
 func TestMissingRowErrors(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.UpdateStatus("nope", "x"); err == nil {

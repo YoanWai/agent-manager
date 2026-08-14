@@ -36,7 +36,7 @@ const RenameAvailableNote = `This session is already named. You can rename it la
 const CoordinationNote = `Other agent sessions may be running beside you in Agent Manager: run "agent-manager help" in your shell for the subcommands that list them, message them, share a task list and reserve the files you are about to edit.`
 
 func coordinationNote(toolName string, tool config.Tool) string {
-	if mcpreg.Style(toolName, tool.MCP) != "none" {
+	if mcpreg.Style(toolName, tool.MCP) != mcpreg.StyleNone {
 		return ""
 	}
 	return CoordinationNote

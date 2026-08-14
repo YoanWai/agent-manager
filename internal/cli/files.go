@@ -53,9 +53,6 @@ func runReserve(out io.Writer, files fileCommands, args []string, sessionID stri
 	if err := checkPaths(operands); err != nil {
 		return err
 	}
-	if *ttl < 0 || *ttl > sessioncmd.MaxReservationTTL {
-		return fmt.Errorf("--ttl %s is outside 0 to %s; reserve again when the lease lapses", *ttl, sessioncmd.MaxReservationTTL)
-	}
 	result, err := files.Reserve(sessionID, operands, *mode, *note, *ttl)
 	if err != nil {
 		return err

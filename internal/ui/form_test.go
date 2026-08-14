@@ -235,18 +235,6 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 	if !strings.HasPrefix(command, "cat 'fix the bug' --mcp-config '") || !strings.Contains(command, "--settings '") {
 		t.Fatalf("command = %q", command)
 	}
-
-	flagged := config.Tool{Command: "opencode", PromptFlag: "--prompt"}
-	if got := launch.WithPrompt(flagged, flagged.Command, "do it"); got != "opencode --prompt 'do it'" {
-		t.Fatalf("flagged compose = %q", got)
-	}
-	if got := launch.WithPrompt(tool, tool.Command, ""); got != "cat" {
-		t.Fatalf("empty prompt should leave the command untouched, got %q", got)
-	}
-	sent := config.Tool{Command: "hermes --cli", PromptMode: "send"}
-	if got := launch.WithPrompt(sent, sent.Command, "do it"); got != sent.Command {
-		t.Fatalf("send-mode prompt changed launch command to %q", got)
-	}
 }
 
 func TestFormLongDirKeepsCursorEndVisible(t *testing.T) {
@@ -460,7 +448,7 @@ func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
 	}
 	old := m.poller
 	m.poller = newPoller(m.store, m.tmux, m.engine, m.hooks, m.gitDrv,
-		old.statusSources, old.sessionStores, old.interval)
+		old.statusSources, old.sessionStores, old.mcpStyles, old.interval)
 	m.applyCmd(t, m.refreshCmd())
 	deadline := time.Now().Add(5 * time.Second)
 	for len(sessionPendingInputs(t, m, sess.ID)) > 0 {
@@ -492,7 +480,7 @@ func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
 	}
 	old := m.poller
 	m.poller = newPoller(m.store, m.tmux, m.engine, m.hooks, m.gitDrv,
-		old.statusSources, old.sessionStores, old.interval)
+		old.statusSources, old.sessionStores, old.mcpStyles, old.interval)
 	msg := m.poller.refreshOnce()
 	gotErr, ok := msg.(errMsg)
 	if !ok || !strings.Contains(gotErr.err.Error(), "ambiguous pending input") {

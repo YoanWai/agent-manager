@@ -152,9 +152,6 @@ func runWait(out io.Writer, sessions sessionCommands, args []string, sessionID s
 	if err != nil {
 		return err
 	}
-	if *timeout < 0 || *timeout > sessioncmd.MaxWaitTimeout {
-		return fmt.Errorf("--timeout %s is outside 0 to %s; wait again when this one returns", *timeout, sessioncmd.MaxWaitTimeout)
-	}
 	result, err := sessions.Wait(context.Background(), sessionID, operands[0], until, *timeout)
 	if err != nil {
 		return err

@@ -12,6 +12,12 @@ const (
 	TaskDone       = "done"
 )
 
+// executor is the write half of database/sql, satisfied by both *sql.DB
+// and *sql.Tx, so one statement can run inside a transaction or without.
+type executor interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
 // Task is one unit of shared work agents claim for themselves. The list
 // is what lets a fleet coordinate without a lead agent brokering every
 // handoff.
@@ -208,7 +214,14 @@ func (s *Store) Task(id string) (Task, error) {
 // ReleaseTasksOwnedBy hands back every claim a session held, so work does
 // not sit in progress forever behind an agent that is gone.
 func (s *Store) ReleaseTasksOwnedBy(sessionID string, at time.Time) error {
-	_, err := s.db.Exec(
+	return releaseTasksOwnedBy(s.db, sessionID, at)
+}
+
+// releaseTasksOwnedBy takes the executor because the deletion path runs it
+// inside a transaction, and the store holds a single connection: a plain
+// s.db.Exec issued while a Tx holds it waits forever.
+func releaseTasksOwnedBy(exec executor, sessionID string, at time.Time) error {
+	_, err := exec.Exec(
 		`UPDATE tasks SET state = ?, owner_session_id = '', updated_at = ?
 		  WHERE owner_session_id = ? AND state = ?`,
 		TaskPending, encodeTime(at), sessionID, TaskInProgress)

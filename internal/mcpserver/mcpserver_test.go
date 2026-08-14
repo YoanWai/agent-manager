@@ -740,6 +740,13 @@ func TestSessionToolAnnotationsDescribeLocalRisk(t *testing.T) {
 	for _, tool := range listed.Tools {
 		tools[tool.Name] = tool
 	}
+	// A rename is the change this test exists to catch, and reading the
+	// annotations off a tool that is no longer there panics the package.
+	for _, name := range []string{"list_sessions", "read_session", "list_groups", "kill_session", "create_session", "send_session"} {
+		if tools[name] == nil {
+			t.Fatalf("%s is not registered", name)
+		}
+	}
 	for _, name := range []string{"list_sessions", "read_session", "list_groups"} {
 		if annotations := tools[name].Annotations; annotations == nil || !annotations.ReadOnlyHint {
 			t.Fatalf("%s annotations = %+v", name, annotations)
@@ -761,7 +768,7 @@ func TestSessionToolAnnotationsDescribeLocalRisk(t *testing.T) {
 
 func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 	fake := &fakeSessionCommands{err: errors.New("session is not running")}
-	session := connectServer(t, connectFakes(t, fake))
+	session := connectServer(t, serverWithFakes(t, fake))
 	for _, call := range []struct {
 		name string
 		args map[string]any
@@ -794,7 +801,7 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 	}
 }
 
-func connectFakes(t *testing.T, sessions sessionCommands) *mcp.Server {
+func serverWithFakes(t *testing.T, sessions sessionCommands) *mcp.Server {
 	t.Helper()
 	return newServer(t.TempDir(), "abc123", "test", &fakeTerminalCommands{}, sessions)
 }
@@ -807,7 +814,7 @@ func TestTaskToolsForwardArgumentsAndRenderTheList(t *testing.T) {
 			{ID: "t3", Title: "verify", State: "in_progress", OwnerName: "worker", Mine: true},
 		},
 	}
-	session := connectServer(t, connectFakes(t, fake))
+	session := connectServer(t, serverWithFakes(t, fake))
 
 	text, isError := callText(t, session, "list_tasks", map[string]any{})
 	if isError {
@@ -857,7 +864,7 @@ func TestReservationToolsReportConflictsWithoutRefusingTheLease(t *testing.T) {
 			{Pattern: "internal/ui/*.go", Mode: "exclusive", Holder: "worker", ExpiresIn: "20m0s", Note: "focus mode"},
 		},
 	}
-	session := connectServer(t, connectFakes(t, fake))
+	session := connectServer(t, serverWithFakes(t, fake))
 
 	text, isError := callText(t, session, "reserve_files", map[string]any{
 		"paths": []string{"internal/store/*.go"}, "mode": "exclusive", "note": "inbox table", "ttl_minutes": 45,

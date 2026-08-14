@@ -450,6 +450,25 @@ func TestSendRefusesAToolTheManagerCannotReadReadinessFrom(t *testing.T) {
 	}
 }
 
+// Whether a manager is awake is read off a heartbeat only the poller
+// writes. A value that is not a timestamp means something else wrote that
+// row, and reporting it as "no manager" would send the caller after the
+// wrong problem.
+func TestAnUnreadableHeartbeatIsReportedRatherThanReadAsAClosedManager(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := h.store.SetSetting(store.PollerHeartbeatKey, "just now"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	if _, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main"); err == nil ||
+		!strings.Contains(err.Error(), "poller heartbeat") {
+		t.Fatalf("Send with a corrupt heartbeat = %v", err)
+	}
+}
+
 // A sender follows its own message instead of reading the recipient's
 // screen, and the recipient answering is the acknowledgement. Both
 // transitions belong to this front; the store tests cover the rows they

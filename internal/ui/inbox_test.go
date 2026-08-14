@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
@@ -119,7 +120,9 @@ func TestInboxDeliversToARestingAgentWithItsSenderNamed(t *testing.T) {
 			// The envelope wraps at the pane width, and tmux wraps without
 			// inserting anything, so the unwrapped text is the joined rows.
 			flat := strings.ReplaceAll(pane, "\n", "")
-			for _, want := range []string{"not from the user", "payments-fix", "send_session"} {
+			// claude-hooked registers no MCP server, so the reply it is sent
+			// after is the subcommand.
+			for _, want := range []string{"not from the user", "payments-fix", "agent-manager send sender01"} {
 				if !strings.Contains(flat, want) {
 					t.Fatalf("envelope is missing %q:\n%s", want, pane)
 				}
@@ -130,6 +133,48 @@ func TestInboxDeliversToARestingAgentWithItsSenderNamed(t *testing.T) {
 	}
 	pane, _ := m.tmux.CapturePane(sess.ID)
 	t.Fatalf("message never reached the pane:\n%s", pane)
+}
+
+// An agent holds one front or the other, so the envelope has to send the
+// reader after a reply it can actually make: a session whose CLI carries
+// no MCP client cannot call a tool.
+func TestTheEnvelopeSpellsTheReplyInTheRecipientsOwnFront(t *testing.T) {
+	msg := store.InboxMessage{
+		SenderID:   "sender01",
+		SenderName: "payments-fix",
+		Body:       "rebase on main",
+		SentAt:     time.Date(2026, 8, 13, 9, 30, 0, 0, time.Local),
+	}
+	withTools := inboxEnvelope(msg, "claude")
+	if !strings.Contains(withTools, `Reply with the send_session tool, session_id "sender01"`) {
+		t.Fatalf("an MCP recipient was not pointed at the tool: %q", withTools)
+	}
+	shellOnly := inboxEnvelope(msg, mcpreg.StyleNone)
+	if !strings.Contains(shellOnly, `Reply by running: agent-manager send sender01 "<your reply>"`) {
+		t.Fatalf("a shell-only recipient was not pointed at the subcommand: %q", shellOnly)
+	}
+	if strings.Contains(shellOnly, "send_session") {
+		t.Fatalf("a shell-only recipient was named a tool it cannot call: %q", shellOnly)
+	}
+	// Delivery waits for a resting pane, so a message can cross midnight or
+	// sit for days: an hour on its own does not place it.
+	for _, envelope := range []string{withTools, shellOnly} {
+		if !strings.Contains(envelope, "2026-08-13 09:30") {
+			t.Fatalf("the stamp does not carry the date: %q", envelope)
+		}
+	}
+}
+
+// Which of the two the recipient gets is decided by its tool, resolved the
+// way the launch that registered the server resolved it.
+func TestThePollerResolvesTheReplyFrontPerTool(t *testing.T) {
+	m := buildModel(t)
+	if got := m.poller.mcpStyles["claude"]; got != "claude" {
+		t.Fatalf("claude registers the server, resolved style = %q", got)
+	}
+	if got := m.poller.mcpStyles["ready-tool"]; got != mcpreg.StyleNone {
+		t.Fatalf("ready-tool registers nothing, resolved style = %q", got)
+	}
 }
 
 // A claim with no delivery is a manager that died mid-send. Whether the

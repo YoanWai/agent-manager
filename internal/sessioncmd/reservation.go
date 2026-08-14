@@ -72,10 +72,10 @@ func (s *Sessions) Reserve(sessionID string, patterns []string, mode, note strin
 		return ReserveResult{}, errors.New("no paths given; pass the files or globs you are about to edit")
 	}
 	switch {
-	case ttl <= 0:
+	case ttl < 0 || ttl > MaxReservationTTL:
+		return ReserveResult{}, fmt.Errorf("ttl %s is outside 0 to %s; reserve again when the lease lapses", ttl, MaxReservationTTL)
+	case ttl == 0:
 		ttl = DefaultReservationTTL
-	case ttl > MaxReservationTTL:
-		ttl = MaxReservationTTL
 	}
 	runtime, err := s.open()
 	if err != nil {

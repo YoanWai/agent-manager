@@ -558,7 +558,7 @@ func (r *runtime) managerAwake(now time.Time) (bool, error) {
 	}
 	stamp, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
-		return false, nil
+		return false, fmt.Errorf("poller heartbeat %q is not a timestamp: %w", raw, err)
 	}
 	return now.Sub(time.Unix(0, stamp)) < 3*r.cfg.PollInterval.Duration, nil
 }

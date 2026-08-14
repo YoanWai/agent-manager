@@ -234,7 +234,7 @@ func (s *Store) QueuedCounts() (map[string]int, error) {
 // undelivered ones are the queue and are never swept.
 func (s *Store) PruneInbox(before time.Time) error {
 	_, err := s.db.Exec(
-		`DELETE FROM session_inbox WHERE delivered_at != 0 AND sent_at < ?`,
+		`DELETE FROM session_inbox WHERE delivered_at != 0 AND delivered_at < ?`,
 		encodeTime(before))
 	return err
 }

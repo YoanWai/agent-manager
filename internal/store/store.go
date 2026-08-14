@@ -652,34 +652,45 @@ func (s *Store) unarchiveAncestorGroups(path string) error {
 	return err
 }
 
+// Delete removes a session and the coordination state that only makes
+// sense while it exists. One transaction, because a session row that
+// outlives its own inbox strands every sender waiting on a receipt.
 func (s *Store) Delete(id string) error {
-	if _, err := s.db.Exec(`DELETE FROM review_targets WHERE session_id = ?`, id); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`DELETE FROM review_bases WHERE session_id = ?`, id); err != nil {
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM review_targets WHERE session_id = ?`, id); err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM review_bases WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, id); err != nil {
 		return err
 	}
 	// Session ids are recycled from a fresh UUID prefix, so a message left
 	// pointing at a deleted id could be re-attached to a future session.
-	if _, err := s.db.Exec(`DELETE FROM session_inbox WHERE session_id = ? OR sender_id = ?`, id, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM session_inbox WHERE session_id = ? OR sender_id = ?`, id, id); err != nil {
 		return err
 	}
 	// A claim outlives its holder as pending work rather than as a task
 	// parked forever against a session that no longer exists.
-	if err := s.ReleaseTasksOwnedBy(id, time.Now()); err != nil {
+	if err := releaseTasksOwnedBy(tx, id, time.Now()); err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`DELETE FROM file_reservations WHERE session_id = ?`, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM file_reservations WHERE session_id = ?`, id); err != nil {
 		return err
 	}
-	res, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id)
+	res, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
-	return requireRow(res, id)
+	if err := requireRow(res, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SessionsInSubtree returns every session (archived included) whose group

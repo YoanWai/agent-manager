@@ -44,12 +44,25 @@ func TestWaitTimesOutWithTheCurrentStateRatherThanAnError(t *testing.T) {
 	if err := h.store.UpdateStatus(created.ID, status.Working); err != nil {
 		t.Fatal(err)
 	}
-	result, err := h.sessions.Wait(context.Background(), h.caller.ID, created.ID, nil, time.Second)
+	// Shorter than the poll interval, so a wait that only wakes on the tick
+	// overruns the timeout its caller asked for.
+	asked := 300 * time.Millisecond
+	started := time.Now()
+	result, err := h.sessions.Wait(context.Background(), h.caller.ID, created.ID, nil, asked)
 	if err != nil {
 		t.Fatalf("a timeout must not be an error: %v", err)
 	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("a %s wait took %s", asked, elapsed)
+	}
 	if result.Reached || result.Session.Status != status.Working {
 		t.Fatalf("timeout result = %+v", result)
+	}
+	for _, timeout := range []time.Duration{-time.Second, MaxWaitTimeout + time.Second} {
+		if _, err := h.sessions.Wait(context.Background(), h.caller.ID, created.ID, nil, timeout); err == nil ||
+			!strings.Contains(err.Error(), "outside 0 to "+MaxWaitTimeout.String()) {
+			t.Fatalf("a %s wait = %v, want a refusal naming the bound", timeout, err)
+		}
 	}
 }
 

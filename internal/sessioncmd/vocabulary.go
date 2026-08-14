@@ -13,6 +13,7 @@ type Vocabulary struct {
 	CreateTerminal string
 	Revive         string
 	Restore        string
+	Send           string
 }
 
 // MCPVocabulary spells the actions as the tools an MCP client sees.
@@ -26,6 +27,7 @@ func MCPVocabulary() Vocabulary {
 		CreateTerminal: "create_terminal",
 		Revive:         "revive_session",
 		Restore:        "archive_session archived false",
+		Send:           "send_session",
 	}
 }
 
@@ -40,5 +42,6 @@ func CLIVocabulary() Vocabulary {
 		CreateTerminal: "agent-manager terminal create",
 		Revive:         "agent-manager revive",
 		Restore:        "agent-manager archive --restore",
+		Send:           "agent-manager send",
 	}
 }

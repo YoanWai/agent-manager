@@ -383,10 +383,6 @@ func TestWaitCollectsStatesAndFailsOnTimeout(t *testing.T) {
 	if err == nil || !strings.HasPrefix(err.Error(), "timed out:") {
 		t.Fatalf("a timeout should fail the command, got %v", err)
 	}
-
-	if err := runWait(&bytes.Buffer{}, reached, []string{"beef1234", "--timeout", "9h"}, "cafe0001"); err == nil {
-		t.Fatal("a timeout beyond the maximum should be refused")
-	}
 }
 
 func TestJSONFlagPrintsTheRecord(t *testing.T) {
@@ -576,9 +572,6 @@ func TestReserveParsesPathsAndFlags(t *testing.T) {
 		t.Fatalf("reserve output = %q", out.String())
 	}
 
-	if err := runReserve(&bytes.Buffer{}, fake, []string{"internal/cli", "--ttl", "9h"}, "cafe0001"); err == nil {
-		t.Fatal("a ttl beyond the maximum should be refused")
-	}
 	if err := runReserve(&bytes.Buffer{}, fake, []string{"--", "-notaflag"}, "cafe0001"); err == nil {
 		t.Fatal("a path that reads as a flag should be refused")
 	}

@@ -167,6 +167,13 @@ func (s *Sessions) ClaimTask(sessionID, taskID string) (Task, error) {
 	return runtime.task(caller.ID, taskID)
 }
 
+func holderOf(task Task) string {
+	if task.OwnerName != "" {
+		return task.OwnerName
+	}
+	return task.Owner
+}
+
 // refusedClaim reads the task back to say why the claim did not take,
 // since "someone else got there first" and "its dependencies are not
 // done" call for different next moves.
@@ -177,11 +184,7 @@ func (r *runtime) refusedClaim(sessionID, taskID string) error {
 	}
 	switch {
 	case task.State == store.TaskInProgress:
-		holder := task.OwnerName
-		if holder == "" {
-			holder = task.Owner
-		}
-		return fmt.Errorf("task %s is already claimed by %s", taskID, holder)
+		return fmt.Errorf("task %s is already claimed by %s", taskID, holderOf(task))
 	case task.State == store.TaskDone:
 		return fmt.Errorf("task %s is already done", taskID)
 	case task.Blocked:
@@ -226,8 +229,8 @@ func (s *Sessions) settleTask(sessionID, taskID string, done bool) (Task, error)
 		if err != nil {
 			return Task{}, err
 		}
-		if task.Owner != caller.ID {
-			return Task{}, fmt.Errorf("task %s is not yours to settle; it is %s", taskID, task.State)
+		if task.State == store.TaskInProgress && task.Owner != caller.ID {
+			return Task{}, fmt.Errorf("task %s is not yours to settle; %s holds it", taskID, holderOf(task))
 		}
 		return Task{}, fmt.Errorf("task %s is %s, not in progress", taskID, task.State)
 	}

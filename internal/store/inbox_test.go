@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -152,6 +153,35 @@ func TestInboxIsScopedPerRecipientAndSweptWhenDelivered(t *testing.T) {
 	// An undelivered message is the queue itself and must never be swept.
 	if counts["target02"] != 1 {
 		t.Fatalf("prune took a queued message: %v", counts)
+	}
+}
+
+// The retention window is the sender's window to read a receipt, and it
+// runs from delivery: an undelivered message is never swept, so one can
+// wait days behind an agent parked on a dialog and still be brand new to
+// its sender when it finally lands.
+func TestPruneMeasuresRetentionFromDeliveryRatherThanFromSending(t *testing.T) {
+	st := inboxStore(t)
+	now := time.Now()
+	id, err := st.Enqueue(message("rebase on main", now.Add(-30*time.Hour)), DefaultInboxLimits)
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if err := st.MarkDelivered(id, now); err != nil {
+		t.Fatalf("MarkDelivered: %v", err)
+	}
+	if err := st.PruneInbox(now.Add(-24 * time.Hour)); err != nil {
+		t.Fatalf("PruneInbox: %v", err)
+	}
+	if _, err := st.Message(id, "sender01"); err != nil {
+		t.Fatalf("a message delivered a moment ago was swept: %v", err)
+	}
+	// Its own window passing is what retires it.
+	if err := st.PruneInbox(now.Add(time.Hour)); err != nil {
+		t.Fatalf("PruneInbox: %v", err)
+	}
+	if _, err := st.Message(id, "sender01"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("a message past its own window survived: %v", err)
 	}
 }
 

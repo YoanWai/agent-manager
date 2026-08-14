@@ -15,6 +15,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -521,9 +522,11 @@ type attachDoneMsg struct {
 func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string) *Model {
 	statusSources := make(map[string]string, len(cfg.Tools))
 	sessionStores := make(map[string]string, len(cfg.Tools))
+	mcpStyles := make(map[string]string, len(cfg.Tools))
 	for name, tool := range cfg.Tools {
 		statusSources[name] = tool.StatusSource
 		sessionStores[name] = tool.SessionStore
+		mcpStyles[name] = mcpreg.Style(name, tool.MCP)
 	}
 	// A missing git binary only disables the diff view; everything else
 	// works without it, so the error surfaces on first use instead.
@@ -537,7 +540,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		gitDrv:              gitDriver,
 		engine:              engine,
 		setSnapshot:         st.SetSnapshot,
-		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, cfg.PollInterval.Duration),
+		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, cfg.PollInterval.Duration),
 		collapsed:           loadCollapsed(st),
 		split:               splitState{ratio: loadSplitRatio(st)},
 		focusOnEnter:        storedFocusOnEnter(st),

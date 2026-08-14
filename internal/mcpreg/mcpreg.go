@@ -21,6 +21,10 @@ import (
 
 const serverName = "agent-manager"
 
+// StyleNone is the style of a tool that registers no MCP server, so the
+// agent it launches holds the subcommands and nothing else.
+const StyleNone = "none"
+
 // ErrHermesMCPUnavailable reports a Hermes whose optional MCP SDK is not
 // installed, so no registration can succeed until `hermes setup` adds it.
 var ErrHermesMCPUnavailable = errors.New("hermes is missing MCP support: run hermes setup, then spawn again")
@@ -32,7 +36,7 @@ var knownStyles = map[string]bool{
 	"grok":     true,
 	"gemini":   true,
 	"hermes":   true,
-	"none":     true,
+	StyleNone:  true,
 }
 
 // Style resolves a tool's registration style: the explicit `mcp` config
@@ -43,12 +47,12 @@ func Style(toolName, explicit string) string {
 		if knownStyles[explicit] {
 			return explicit
 		}
-		return "none"
+		return StyleNone
 	}
 	if knownStyles[toolName] {
 		return toolName
 	}
-	return "none"
+	return StyleNone
 }
 
 // Apply mutates a session launch so the tool sees the MCP server: it may
