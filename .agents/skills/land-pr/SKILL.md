@@ -1,9 +1,9 @@
 ---
-name: coderabbit-merge
-description: Use when finishing an agent-manager pull request that is waiting on CodeRabbit's OSS hourly review limit, or when the user says poll CodeRabbit, wait for the next review, full review, handle CodeRabbit findings, or merge after CodeRabbit. Also use for /coderabbit-merge.
+name: land-pr
+description: Use when landing an agent-manager pull request end to end: wait out CodeRabbit's OSS hourly limit, run a full review, verify each finding, and squash-merge. Also use when the user says land the PR, merge after review, poll CodeRabbit, full review, handle CodeRabbit findings, or /land-pr.
 ---
 
-# CodeRabbit merge
+# Land PR
 
 Wait out the OSS hourly limit, run a full review, verify every finding, then squash-merge. Repo is `YoanWai/agent-manager`. PR is the argument, or the open PR for the current branch.
 

@@ -83,7 +83,7 @@ with `gh release edit <tag> --notes-file`. The header and footer from
 
 ## Skills
 
-`coderabbit-merge` waits out CodeRabbit's OSS hourly limit, runs a full review, verifies each finding, then squash-merges.
+`land-pr` waits out CodeRabbit's OSS hourly limit, runs a full review, verifies each finding, then squash-merges.
 
 ## Style
 
