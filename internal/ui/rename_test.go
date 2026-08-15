@@ -384,6 +384,7 @@ func TestRenameAgentToShellWithChildrenRefused(t *testing.T) {
 	spawnTerminal(t, m)
 	m.selectSessionRow(t, "coder")
 	m.openRename()
+	m.rename.input.SetValue("renamed")
 	for i, name := range m.rename.toolNames {
 		if name == "terminal" {
 			m.rename.toolIndex = i
@@ -397,6 +398,9 @@ func TestRenameAgentToShellWithChildrenRefused(t *testing.T) {
 	got, _ := m.store.Get(m.sessionRows()[0].ID)
 	if m.isShell(got.Tool) {
 		t.Fatalf("tool became %q", got.Tool)
+	}
+	if got.Name != "coder" {
+		t.Fatalf("name became %q", got.Name)
 	}
 }
 

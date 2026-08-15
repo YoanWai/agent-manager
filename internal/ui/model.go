@@ -70,8 +70,7 @@ type Model struct {
 	setSnapshot func(id, snapshot string) error
 
 	sessions []store.Session
-	// rows is the flat list the cursor indexes.
-	rows []treeRow
+	rows     []treeRow
 
 	groups         []string
 	groupPaths     map[string]string

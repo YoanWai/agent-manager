@@ -1243,7 +1243,7 @@ Extend `terminalCommands` with `Close(sessionID, terminalID string) error`.
 
 Replace `serverInstructions` with:
 
-```
+```text
 Use Agent Manager's terminal tools when the session itself is the point: the user should be able to watch it, approve what happens, attach, or take over. SSH into a host is the canonical case. Do not create a terminal for one-shot local commands or other internal work; those stay in your normal tools.
 
 Before opening a new terminal, call list_terminals and reuse a relevant running terminal when possible. create_terminal nests under this session unless nest is false. Use send_terminal and read_terminal while the job runs. When the job is finished and the terminal is not being left for the user, call close_terminal.

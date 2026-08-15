@@ -741,7 +741,12 @@ func (s *Store) PlaceSession(id, group, parentID string) error {
 		}
 		group = parent.Group
 	}
-	res, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(
 		`UPDATE sessions SET group_name = ?, parent_id = ?,
 		 sort_order = (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?)
 		 WHERE id = ?`,
@@ -753,11 +758,19 @@ func (s *Store) PlaceSession(id, group, parentID string) error {
 		return err
 	}
 	if parentID == "" {
-		if _, err := s.db.Exec(`UPDATE sessions SET group_name = ? WHERE parent_id = ?`, group, id); err != nil {
+		if _, err := tx.Exec(`UPDATE sessions SET group_name = ? WHERE parent_id = ?`, group, id); err != nil {
 			return err
 		}
 	}
-	return s.ensureGroup(group)
+	if group != "" {
+		if _, err := tx.Exec(
+			`INSERT INTO groups (name, sort_order)
+			 VALUES (?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+			 ON CONFLICT(name) DO NOTHING`, group); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) MoveSession(id, group string) error {

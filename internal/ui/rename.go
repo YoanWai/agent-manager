@@ -265,19 +265,6 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		// The worktree moves before the name is stored, so a directory or
-		// branch the new name cannot have leaves the rename card open with
-		// the reason instead of splitting the two apart.
-		if index >= 0 {
-			if err := renameSessionWorktree(m.gitDrv, m.store, &m.sessions[index], name); err != nil {
-				m.errBar.text = "worktree rename: " + err.Error()
-				return m, nil
-			}
-		}
-		if err := m.store.RenameSession(m.rename.sessID, name); err != nil {
-			m.errBar.text = err.Error()
-			return m, nil
-		}
 		tool := m.renameTool()
 		prevTool := ""
 		if index >= 0 {
@@ -294,6 +281,19 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 				m.errBar.text = "move its terminals first"
 				return m, nil
 			}
+		}
+		// The worktree moves before the name is stored, so a directory or
+		// branch the new name cannot have leaves the rename card open with
+		// the reason instead of splitting the two apart.
+		if index >= 0 {
+			if err := renameSessionWorktree(m.gitDrv, m.store, &m.sessions[index], name); err != nil {
+				m.errBar.text = "worktree rename: " + err.Error()
+				return m, nil
+			}
+		}
+		if err := m.store.RenameSession(m.rename.sessID, name); err != nil {
+			m.errBar.text = err.Error()
+			return m, nil
 		}
 		if toolChanged {
 			if err := m.store.UpdateTool(m.rename.sessID, tool); err != nil {

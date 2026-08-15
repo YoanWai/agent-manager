@@ -1355,6 +1355,38 @@ func TestArchiveAgentPersistsEveryChild(t *testing.T) {
 	}
 }
 
+func TestRestoreAgentUnarchivesEveryChild(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	shell := spawnTerminal(t, m)
+	agent := m.sessionRows()[0]
+	m.selectSessionRow(t, "coder")
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.applyCmd(t, cmd)
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "coder")
+	m.restoreSelected()
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.applyCmd(t, cmd)
+	for _, id := range []string{agent.ID, shell.ID} {
+		got, err := m.store.Get(id)
+		if err != nil || got.Archived {
+			t.Fatalf("%s archived=%v err=%v", id, got.Archived, err)
+		}
+		if !m.tmux.Exists(id) {
+			t.Fatalf("%s not running", id)
+		}
+	}
+}
+
 func TestDeleteAgentIncludesChildren(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

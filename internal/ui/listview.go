@@ -446,9 +446,8 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 	return m.renderSessionEntry(entry, selected, width, pad, guides, trail, bg)
 }
 
-// sessionGlyph is the mark ahead of a session's name. A shell takes a
-// caret rather than an idle dot it would never leave, but a pane that has
-// gone still has to say so.
+// A shell takes a caret rather than an idle dot it would never leave, but
+// a pane that has gone still has to say so.
 func (m *Model) sessionGlyph(sess store.Session) string {
 	resting := sess.Status != status.Dead && sess.Status != status.Errored
 	if resting && m.isShell(sess.Tool) {
