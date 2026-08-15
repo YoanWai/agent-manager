@@ -230,7 +230,7 @@ func TestARefusedDeleteLeavesTheCoordinationStateIntact(t *testing.T) {
 	if claimed, err := st.ClaimTask("t1", "a", now); err != nil || !claimed {
 		t.Fatalf("ClaimTask = %v, %v", claimed, err)
 	}
-	if err := st.Reserve(Reservation{
+	if _, err := st.Reserve(Reservation{
 		ID: "r1", SessionID: "a", Pattern: "internal/store/*.go", Mode: ReservationExclusive,
 		AcquiredAt: now, ExpiresAt: now.Add(time.Hour),
 	}); err != nil {

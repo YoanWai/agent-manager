@@ -1,6 +1,9 @@
 package store
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 const (
 	ReservationExclusive = "exclusive"
@@ -21,40 +24,61 @@ type Reservation struct {
 	ExpiresAt  time.Time
 }
 
-// Conflicts finds live reservations that overlap a pattern and are held by
-// someone else. Comparing with GLOB in both directions catches a pattern
-// against a literal path either way round; two patterns that both contain
-// wildcards are not comparable in SQL and are reported only on an exact
-// match, which is why these are advisory.
-func (s *Store) Conflicts(sessionID, pattern, mode string, now time.Time) ([]Reservation, error) {
-	rows, err := s.db.Query(`
+// Reserve takes or extends this session's lease on a pattern and returns the
+// live leases held by others that overlap it. Reading the overlap and taking
+// the lease is one transaction, because two agents reserving the same path at
+// once would otherwise both read the list before either wrote and neither
+// would hear about the other, which is the only thing the lease is for. A
+// session renewing its own lease is not a conflict with itself.
+func (s *Store) Reserve(reservation Reservation) ([]Reservation, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	conflicts, err := overlappingReservations(tx, reservation)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(`
+INSERT INTO file_reservations (id, session_id, pattern, mode, note, acquired_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(session_id, pattern) DO UPDATE SET
+	mode = excluded.mode, note = excluded.note, expires_at = excluded.expires_at`,
+		reservation.ID, reservation.SessionID, reservation.Pattern, reservation.Mode,
+		reservation.Note, encodeTime(reservation.AcquiredAt), encodeTime(reservation.ExpiresAt)); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return conflicts, nil
+}
+
+// overlappingReservations finds live leases over the same paths held by
+// someone else. It takes the transaction because the store holds a single
+// connection: a query issued on s.db while a Tx holds it waits forever.
+//
+// Comparing with GLOB in both directions catches a pattern against a literal
+// path either way round; two patterns that both contain wildcards are not
+// comparable in SQL and are reported only on an exact match, which is why
+// these are advisory.
+func overlappingReservations(tx *sql.Tx, reservation Reservation) ([]Reservation, error) {
+	rows, err := tx.Query(`
 SELECT id, session_id, pattern, mode, note, acquired_at, expires_at
   FROM file_reservations
  WHERE session_id != ? AND expires_at > ?
    AND (pattern = ? OR pattern GLOB ? OR ? GLOB pattern)
    AND (mode = ? OR ? = ?)
  ORDER BY acquired_at`,
-		sessionID, encodeTime(now),
-		pattern, pattern, pattern,
-		ReservationExclusive, mode, ReservationExclusive)
+		reservation.SessionID, encodeTime(reservation.AcquiredAt),
+		reservation.Pattern, reservation.Pattern, reservation.Pattern,
+		ReservationExclusive, reservation.Mode, ReservationExclusive)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	return scanReservations(rows)
-}
-
-// Reserve takes or extends this session's lease on a pattern. A session
-// renewing its own lease is not a conflict with itself.
-func (s *Store) Reserve(reservation Reservation) error {
-	_, err := s.db.Exec(`
-INSERT INTO file_reservations (id, session_id, pattern, mode, note, acquired_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(session_id, pattern) DO UPDATE SET
-	mode = excluded.mode, note = excluded.note, expires_at = excluded.expires_at`,
-		reservation.ID, reservation.SessionID, reservation.Pattern, reservation.Mode,
-		reservation.Note, encodeTime(reservation.AcquiredAt), encodeTime(reservation.ExpiresAt))
-	return err
 }
 
 // Release drops one pattern's lease, or every lease this session holds

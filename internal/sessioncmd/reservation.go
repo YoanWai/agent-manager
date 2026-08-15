@@ -93,13 +93,6 @@ func (s *Sessions) Reserve(sessionID string, patterns []string, mode, note strin
 	now := time.Now()
 	result := ReserveResult{Reserved: make([]Reservation, 0, len(cleaned))}
 	for _, pattern := range cleaned {
-		clashes, err := runtime.store.Conflicts(caller.ID, pattern, mode, now)
-		if err != nil {
-			return ReserveResult{}, err
-		}
-		for _, clash := range clashes {
-			result.Conflicts = append(result.Conflicts, runtime.reservationInfo(clash, names, caller.ID, now))
-		}
 		reservation := store.Reservation{
 			ID:         uuid.NewString()[:8],
 			SessionID:  caller.ID,
@@ -109,8 +102,12 @@ func (s *Sessions) Reserve(sessionID string, patterns []string, mode, note strin
 			AcquiredAt: now,
 			ExpiresAt:  now.Add(ttl),
 		}
-		if err := runtime.store.Reserve(reservation); err != nil {
+		clashes, err := runtime.store.Reserve(reservation)
+		if err != nil {
 			return ReserveResult{}, err
+		}
+		for _, clash := range clashes {
+			result.Conflicts = append(result.Conflicts, runtime.reservationInfo(clash, names, caller.ID, now))
 		}
 		result.Reserved = append(result.Reserved, runtime.reservationInfo(reservation, names, caller.ID, now))
 	}

@@ -96,7 +96,7 @@ func runReservations(out io.Writer, files fileCommands, args []string, sessionID
 func checkPaths(usage string, paths []string) error {
 	for _, path := range paths {
 		if strings.HasPrefix(path, "-") {
-			return fmt.Errorf("%q starts with a dash, so it reads as a flag rather than a path; usage: agent-manager %s", path, usage)
+			return fmt.Errorf("%q starts with a dash, so it is refused rather than leased as a pattern nothing can ever conflict with; usage: agent-manager %s", path, usage)
 		}
 	}
 	return nil
