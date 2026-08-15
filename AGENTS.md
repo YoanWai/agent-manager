@@ -81,6 +81,10 @@ with `gh release edit <tag> --notes-file`. The header and footer from
 - The badges workflow publishes the clone count and contributor image to the
   `badges` branch; neither generated asset is edited by hand.
 
+## Skills
+
+`land-pr` opens a PR for this checkout's branch if none exists, waits out CodeRabbit's OSS hourly limit, and repeats Wait → Trigger → Findings after each findings push until the latest review is APPROVED, or COMMENTED with zero actionable comments and no unresolved CodeRabbit threads. It then squash-merges only after CI is green and the PR is not a draft. It never lands a PR whose head is not the current branch.
+
 ## Style
 
 - Comments are rare and explain a non-obvious why, never what the code does.
