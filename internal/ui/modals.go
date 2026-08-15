@@ -293,10 +293,6 @@ func (m *Model) viewSettings() string {
 	if m.settings.themeAuto {
 		themeAuto = "on"
 	}
-	terminals := "inline"
-	if m.settings.shellsPinned {
-		terminals = "pinned"
-	}
 	notifications := "off"
 	if m.settings.notifications {
 		notifications = "on"
@@ -350,7 +346,6 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
 		row(settingsFieldArrowStep, "←→ step in/out", arrowStep) + betaTag + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
-		row(settingsFieldTerminals, "terminal rows", terminals) + "\n" +
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
