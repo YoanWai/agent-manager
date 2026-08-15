@@ -725,6 +725,13 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 		t.Fatalf("send args = id %q message %q", fake.sentID, fake.sentMessage)
 	}
 
+	if text, isError := callText(t, session, "message_status", map[string]any{"message_id": 7}); isError || !strings.Contains(text, "delivered") {
+		t.Fatalf("message_status = %q, isError=%v", text, isError)
+	}
+	if fake.statusID != 7 {
+		t.Fatalf("message_status reached the layer with id %d", fake.statusID)
+	}
+
 	if text, isError := callText(t, session, "read_session", map[string]any{"session_id": "a1b2c3d4"}); isError || text != "tests passing" {
 		t.Fatalf("read_session = %q, isError=%v", text, isError)
 	}

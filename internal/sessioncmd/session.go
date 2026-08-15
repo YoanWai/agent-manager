@@ -549,6 +549,11 @@ func (r *runtime) heldReason(sessionID string) (string, error) {
 	if !r.driver.Exists(target.ID) {
 		return fmt.Sprintf("session %s is not running, so nothing will type this in; revive it with %s", sessionID, r.words.Revive), nil
 	}
+	// A tool block deleted after the message was queued leaves the reader
+	// with nothing to judge readiness by, so the poller never types it in.
+	if r.cfg.Tools[target.Tool].ActivityCutoff == "" {
+		return fmt.Sprintf("tool %q declares no activity_cutoff, so Agent Manager cannot tell when %s is ready and nothing will type this in; add one to config.toml", target.Tool, sessionID), nil
+	}
 	pane, err := r.driver.CapturePane(target.ID)
 	if err != nil {
 		return "", err

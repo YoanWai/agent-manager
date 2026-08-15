@@ -51,8 +51,12 @@ func TestTaskVerbsDispatch(t *testing.T) {
 	}
 	for verb, run := range settled {
 		buf := &bytes.Buffer{}
+		fake.taskID = "unset"
 		if err := run(buf, fake, []string{"t1"}, "cafe0001"); err != nil {
 			t.Fatalf("task %s: %v", verb, err)
+		}
+		if fake.taskID != "t1" {
+			t.Fatalf("task %s reached the layer with id %q", verb, fake.taskID)
 		}
 		if !strings.HasPrefix(buf.String(), verb+" wire the cli (t1)") {
 			t.Fatalf("task %s output = %q", verb, buf.String())

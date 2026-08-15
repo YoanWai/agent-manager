@@ -446,14 +446,18 @@ func TestAFrontReportsWhatTheLayerDecided(t *testing.T) {
 
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands()
-	for _, name := range []string{
+	registered := []string{
 		"sessions", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive",
 		"groups", "create-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode",
-	} {
+	}
+	for _, name := range registered {
 		if table[name] == nil {
 			t.Fatalf("%s is not registered as a subcommand", name)
 		}
+	}
+	if len(table) != len(registered) {
+		t.Fatalf("the command table holds %d entries, not the %d named here: %v", len(table), len(registered), table)
 	}
 
 	help := Help()

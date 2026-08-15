@@ -676,6 +676,39 @@ func TestASenderIsToldWhenItsRecipientLeftTheManagersReach(t *testing.T) {
 	}
 }
 
+// A tool block can be deleted after a message was queued for a session
+// running that tool, which leaves the poller unable to read readiness and
+// the message waiting for a delivery that never comes.
+func TestASenderIsToldWhenTheRecipientsToolLeftTheConfig(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	runtime, err := h.sessions.open()
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer runtime.store.Close()
+	delete(runtime.cfg.Tools, "resting")
+
+	reason, err := runtime.heldReason(worker.ID)
+	if err != nil {
+		t.Fatalf("heldReason: %v", err)
+	}
+	if !strings.Contains(reason, "activity_cutoff") || !strings.Contains(reason, worker.ID) {
+		t.Fatalf("a message whose tool left the config reads as %q", reason)
+	}
+	if sent.MessageID == 0 {
+		t.Fatalf("Send returned no message id")
+	}
+}
+
 // The queue and rate caps count messages, so without a size cap one message
 // is an unbounded paste into another agent's prompt.
 func TestSendRefusesAMessageTooLargeToPasteIntoAPrompt(t *testing.T) {
