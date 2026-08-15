@@ -17,12 +17,14 @@ import (
 )
 
 type Terminal struct {
-	ID        string `json:"id" jsonschema:"managed terminal session id"`
-	Name      string `json:"name" jsonschema:"terminal name shown in Agent Manager"`
-	Group     string `json:"group" jsonschema:"group path holding the terminal; empty is the root"`
-	Directory string `json:"directory" jsonschema:"terminal's current working directory, or its launch directory when stopped"`
-	Status    string `json:"status" jsonschema:"stored Agent Manager status"`
-	Running   bool   `json:"running" jsonschema:"whether the terminal currently has a live tmux pane"`
+	ID         string `json:"id" jsonschema:"managed terminal session id"`
+	Name       string `json:"name" jsonschema:"terminal name shown in Agent Manager"`
+	Group      string `json:"group" jsonschema:"group path holding the terminal; empty is the root"`
+	Directory  string `json:"directory" jsonschema:"terminal's current working directory, or its launch directory when stopped"`
+	Status     string `json:"status" jsonschema:"stored Agent Manager status"`
+	Running    bool   `json:"running" jsonschema:"whether the terminal currently has a live tmux pane"`
+	ParentID   string `json:"parent_id" jsonschema:"id of the parent session when nested; empty when un-nested"`
+	ParentName string `json:"parent_name" jsonschema:"name of the parent session when nested; empty when un-nested"`
 }
 
 type TerminalScreen struct {
@@ -35,6 +37,7 @@ type CreateTerminalOptions struct {
 	// deliberately targets the root group.
 	Group     *string
 	Directory string
+	Nest      *bool
 }
 
 type Terminals struct {
@@ -111,13 +114,21 @@ func (r *terminalRuntime) info(sess store.Session, running bool) Terminal {
 			dir = current
 		}
 	}
+	parentName := ""
+	if sess.ParentID != "" {
+		if parent, err := r.store.Get(sess.ParentID); err == nil {
+			parentName = parent.Name
+		}
+	}
 	return Terminal{
-		ID:        sess.ID,
-		Name:      sess.Name,
-		Group:     sess.Group,
-		Directory: dir,
-		Status:    sess.Status,
-		Running:   running,
+		ID:         sess.ID,
+		Name:       sess.Name,
+		Group:      sess.Group,
+		Directory:  dir,
+		Status:     sess.Status,
+		Running:    running,
+		ParentID:   sess.ParentID,
+		ParentName: parentName,
 	}
 }
 
@@ -163,6 +174,13 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if !ok {
 		return Terminal{}, errors.New("no shell configured; add a tool block with shell = true to config.toml")
 	}
+	nest := true
+	if opts.Nest != nil {
+		nest = *opts.Nest
+	}
+	if nest && opts.Group != nil && strings.TrimSpace(*opts.Group) != caller.Group {
+		return Terminal{}, fmt.Errorf("set nest false to place in another group")
+	}
 	group, dir, err := runtime.createTarget(caller, opts)
 	if err != nil {
 		return Terminal{}, err
@@ -176,6 +194,10 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		Group:  group,
 		Status: status.Starting,
 	}
+	if nest {
+		sess.ParentID = caller.ID
+		sess.Group = caller.Group
+	}
 	if err := runtime.driver.Create(sess.ID, sess.Cwd, tool.Command, nil, 0, 0); err != nil {
 		return Terminal{}, err
 	}
@@ -185,6 +207,23 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	}
 	_ = runtime.driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
 	return runtime.info(sess, true), nil
+}
+
+func (t *Terminals) Close(sessionID, terminalID string) error {
+	runtime, err := t.open()
+	if err != nil {
+		return err
+	}
+	defer runtime.store.Close()
+	if _, err := runtime.caller(sessionID); err != nil {
+		return err
+	}
+	sess, err := runtime.terminal(terminalID)
+	if err != nil {
+		return err
+	}
+	_ = runtime.driver.Kill(sess.ID)
+	return runtime.store.Delete(sess.ID)
 }
 
 func (r *terminalRuntime) createTarget(caller store.Session, opts CreateTerminalOptions) (string, string, error) {

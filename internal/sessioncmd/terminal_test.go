@@ -169,8 +169,9 @@ func TestCreateTerminalResolvesExplicitGroupAndDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	nest := false
 	group := "platform/api"
-	inherited, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Group: &group})
+	inherited, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Group: &group, Nest: &nest})
 	if err != nil {
 		t.Fatalf("create inherited: %v", err)
 	}
@@ -179,7 +180,7 @@ func TestCreateTerminalResolvesExplicitGroupAndDirectory(t *testing.T) {
 	}
 
 	root := ""
-	explicit, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Group: &root, Directory: explicitDir})
+	explicit, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Group: &root, Directory: explicitDir, Nest: &nest})
 	if err != nil {
 		t.Fatalf("create explicit: %v", err)
 	}
@@ -189,13 +190,13 @@ func TestCreateTerminalResolvesExplicitGroupAndDirectory(t *testing.T) {
 	if err := h.store.SetGroupArchived("platform", true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Group: &group}); err == nil || !strings.Contains(err.Error(), "archived") {
+	if _, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Group: &group, Nest: &nest}); err == nil || !strings.Contains(err.Error(), "archived") {
 		t.Fatalf("archived group error = %v", err)
 	}
 
 	missing := "missing/group"
 	before, _ := h.store.ListSessions(false)
-	if _, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Group: &missing}); err == nil || !strings.Contains(err.Error(), "does not exist") {
+	if _, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Group: &missing, Nest: &nest}); err == nil || !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("missing group error = %v", err)
 	}
 	after, _ := h.store.ListSessions(false)
@@ -237,5 +238,60 @@ func TestTerminalCommandsRejectUnsafeTargetsAndInvalidInput(t *testing.T) {
 	}
 	if _, err := h.terminals.List(""); err == nil || !strings.Contains(err.Error(), "AGENT_MANAGER_SESSION_ID") {
 		t.Fatalf("missing caller error = %v", err)
+	}
+}
+
+func TestCreateNestsUnderCallerByDefault(t *testing.T) {
+	h := newTerminalHarness(t)
+	created, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.ParentID != h.caller.ID || created.ParentName != h.caller.Name {
+		t.Fatalf("created = %+v", created)
+	}
+}
+
+func TestCreateNestFalseIsUnnested(t *testing.T) {
+	h := newTerminalHarness(t)
+	nest := false
+	created, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Nest: &nest})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.ParentID != "" {
+		t.Fatalf("parent = %q", created.ParentID)
+	}
+}
+
+func TestCreateNestTrueRejectsOtherGroup(t *testing.T) {
+	h := newTerminalHarness(t)
+	if err := h.store.CreateGroup("elsewhere", h.caller.Cwd); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	group := "elsewhere"
+	_, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Group: &group})
+	if err == nil || !strings.Contains(err.Error(), "nest false") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCloseDeletesShellAndRefusesAgent(t *testing.T) {
+	h := newTerminalHarness(t)
+	created, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := h.terminals.Close(h.caller.ID, h.caller.ID); err == nil {
+		t.Fatal("close agent")
+	}
+	if err := h.terminals.Close(h.caller.ID, created.ID); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if _, err := h.store.Get(created.ID); err == nil {
+		t.Fatal("row still present")
+	}
+	if h.driver.Exists(created.ID) {
+		t.Fatal("pane still live")
 	}
 }
