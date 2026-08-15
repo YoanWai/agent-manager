@@ -39,6 +39,7 @@ type diffState struct {
 	scroll     int
 	cursorLine int
 	sideBySide bool
+	codeOnly   bool
 
 	scrollByFile map[string]int
 	reviewed     map[string]map[string]uint64
@@ -416,6 +417,7 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 			break
 		}
 	}
+	m.diff.fileIdx = m.nextShownFile(m.diff.fileIdx, 1)
 	m.clampDiffCursor()
 	currentLoad := m.loadCurrentDiffFile()
 	var statefulLoads []tea.Cmd
@@ -492,6 +494,11 @@ func (m *Model) handleDiffFileLoaded(msg diffFileLoadedMsg) tea.Cmd {
 	}
 	if msg.index != m.diff.fileIdx {
 		return nil
+	}
+	// A NUL sniff is the only thing that outs a blob whose name gives nothing
+	// away, so the file under the cursor can turn into one the filter hides.
+	if target := m.nextShownFile(m.diff.fileIdx, 1); target != m.diff.fileIdx {
+		return m.switchDiffFile(target - m.diff.fileIdx)
 	}
 	m.clampDiffCursor()
 	return m.ensureHighlight()
@@ -583,15 +590,83 @@ func (m *Model) scrollKey(path string) string {
 	return m.reviewKey() + "\x00" + m.diff.scope.String() + "\x00" + path
 }
 
+// nonCodeExts and nonCodeNames name the files a review takes in whole rather
+// than line by line: images, fonts, archives, compiled artifacts, and the lock
+// files a package manager rewrites wholesale.
+var nonCodeExts = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true,
+	".ico": true, ".svg": true, ".woff": true, ".woff2": true, ".ttf": true,
+	".otf": true, ".eot": true, ".wasm": true, ".bin": true, ".exe": true,
+	".dll": true, ".so": true, ".dylib": true, ".o": true, ".a": true,
+	".zip": true, ".tar": true, ".gz": true, ".bz2": true, ".xz": true,
+	".7z": true, ".mp3": true, ".mp4": true, ".wav": true, ".ogg": true,
+	".avi": true, ".mov": true, ".pdf": true, ".lock": true,
+	".class": true, ".pyc": true,
+}
+
+var nonCodeNames = map[string]bool{
+	"package-lock.json": true, "pnpm-lock.yaml": true, "go.sum": true,
+}
+
+func nonCodePath(repoPath string) bool {
+	name := filepath.Base(repoPath)
+	return nonCodeNames[name] || nonCodeExts[strings.ToLower(filepath.Ext(name))]
+}
+
+// diffFileHidden reports whether the code-only filter drops a file from the
+// review's file list. The name is what settles the verdict before the toggle
+// is ever pressed: git's numstat never classifies an untracked path, and the
+// loader sniffs for NUL only once the cursor reaches a file. Git's own binary
+// verdict and that sniff then catch a blob whose name gives nothing away.
+func (m *Model) diffFileHidden(fd *diff.FileDiff) bool {
+	return m.diff.codeOnly && (fd.Binary || fd.Stat.Binary || nonCodePath(fd.File.Path))
+}
+
+// nextShownFile walks from index in the direction dir to the first file the
+// code-only filter leaves in the list, and returns index untouched when the
+// filter hides every file.
+func (m *Model) nextShownFile(index, dir int) int {
+	count := len(m.diff.set.Files)
+	if count == 0 {
+		return index
+	}
+	for step := 0; step < count; step++ {
+		candidate := ((index+dir*step)%count + count) % count
+		if !m.diffFileHidden(&m.diff.set.Files[candidate]) {
+			return candidate
+		}
+	}
+	return index
+}
+
+// toggleCodeOnly hides or shows the non-code files, carrying the selection to
+// a file the list still shows.
+func (m *Model) toggleCodeOnly() tea.Cmd {
+	m.diff.codeOnly = !m.diff.codeOnly
+	target := m.nextShownFile(m.diff.fileIdx, 1)
+	if target == m.diff.fileIdx {
+		return nil
+	}
+	return m.switchDiffFile(target - m.diff.fileIdx)
+}
+
 func (m *Model) switchDiffFile(delta int) tea.Cmd {
 	count := len(m.diff.set.Files)
 	if count == 0 {
 		return nil
 	}
+	dir := 1
+	if delta < 0 {
+		dir = -1
+	}
+	target := m.nextShownFile((m.diff.fileIdx+delta+count)%count, dir)
+	if m.diffFileHidden(&m.diff.set.Files[target]) {
+		return nil
+	}
 	if fd := m.currentFileDiff(); fd != nil {
 		m.diff.scrollByFile[m.scrollKey(fd.File.Path)] = m.diff.scroll
 	}
-	m.diff.fileIdx = (m.diff.fileIdx + delta + count) % count
+	m.diff.fileIdx = target
 	fd := m.currentFileDiff()
 	m.diff.scroll = m.diff.scrollByFile[m.scrollKey(fd.File.Path)]
 	m.diff.cursorLine = m.diff.scroll
@@ -800,6 +875,8 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		lineIdx := m.cursorDiffLine()
 		m.diff.sideBySide = !m.diff.sideBySide
 		m.setCursorDiffLine(lineIdx)
+	case "f":
+		return m, m.toggleCodeOnly()
 	case " ", "space":
 		return m, m.toggleReviewed()
 	case "c":
@@ -871,7 +948,7 @@ func (m *Model) toggleReviewed() tea.Cmd {
 	// would leave that file unhighlighted.
 	for step := 1; step < len(m.diff.set.Files); step++ {
 		next := (m.diff.fileIdx + step) % len(m.diff.set.Files)
-		if marks[m.diff.set.Files[next].File.Path] == 0 {
+		if marks[m.diff.set.Files[next].File.Path] == 0 && !m.diffFileHidden(&m.diff.set.Files[next]) {
 			return m.switchDiffFile(next - m.diff.fileIdx)
 		}
 	}

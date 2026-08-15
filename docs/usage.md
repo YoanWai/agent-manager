@@ -189,6 +189,7 @@ Press `ctrl+r` on a session to open a full-screen review of its repo: changed fi
 | `b` | Pick the branch from the repo's worktrees |
 | `B` | Pick the target (merge-into branch) the "vs target" scope compares against |
 | `space` | Mark a file reviewed |
+| `f` | Show code files only, hiding images, compiled assets and lock files from the list; press again to show them |
 | `c` / `d` | Write / drop a line comment |
 | `C` | Send every comment to the agent as one review prompt (`enter` or `y` confirms) |
 | `esc` / `q` | Close the review |

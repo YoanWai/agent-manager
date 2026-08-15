@@ -384,8 +384,17 @@ func (m *Model) diffEmptyText() string {
 	return ""
 }
 
+// diffAllHiddenNote is what both review panes fall back to when the code-only
+// filter leaves nothing to show. It has to fit the narrow file rail.
+func diffAllHiddenNote() string {
+	return mutedStyle.Render("(no code files)") + "\n" +
+		subtleStyle.Render("f shows the rest")
+}
+
 func (m *Model) diffBodyNote(fd *diff.FileDiff) string {
 	switch {
+	case m.diffFileHidden(fd):
+		return diffAllHiddenNote()
 	case !fd.Loaded():
 		return mutedStyle.Render("(loading file…)")
 	case fd.Err != nil:
@@ -576,6 +585,9 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	left := "  " + lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("review · "+sessName) + "  " +
 		keyPill("s", m.diff.scope.String(), colorAccent2) + "  " +
 		keyPill("u", layout, colorAccent)
+	if m.diff.codeOnly {
+		left += "  " + keyPill("f", "code only", colorAccent)
+	}
 	if root := m.diff.set.Repo.Root; root != "" {
 		name := filepath.Base(m.diff.repoSel)
 		if name == "" || name == "." {
@@ -599,8 +611,14 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	}
 
 	adds, dels := 0, 0
+	shown := 0
 	uncounted := false
-	for _, fd := range m.diff.set.Files {
+	for i := range m.diff.set.Files {
+		fd := &m.diff.set.Files[i]
+		if m.diffFileHidden(fd) {
+			continue
+		}
+		shown++
 		if !fd.StatKnown() {
 			uncounted = true
 			continue
@@ -608,7 +626,7 @@ func (m *Model) viewDiffHeader(sessName string) string {
 		adds += fd.Stat.Adds
 		dels += fd.Stat.Dels
 	}
-	right := mutedStyle.Render(fmt.Sprintf("%d files", len(m.diff.set.Files))) + subtleStyle.Render(" · ") +
+	right := mutedStyle.Render(fmt.Sprintf("%d files", shown)) + subtleStyle.Render(" · ") +
 		lipgloss.NewStyle().Foreground(colorFinished).Render(fmt.Sprintf("+%d", adds)) + " " +
 		lipgloss.NewStyle().Foreground(colorErrored).Render(fmt.Sprintf("−%d", dels))
 	if uncounted {
@@ -628,7 +646,7 @@ func (m *Model) viewDiffHeader(sessName string) string {
 
 func (m *Model) diffCodeTitle() string {
 	fd := m.currentFileDiff()
-	if fd == nil {
+	if fd == nil || m.diffFileHidden(fd) {
 		return "Diff"
 	}
 	return fd.File.Path
@@ -639,7 +657,23 @@ func (m *Model) viewDiffFileList(width, height int) string {
 		return empty
 	}
 	files := m.diff.set.Files
-	start, end := scrollWindow(len(files), m.diff.fileIdx, height)
+	shown := make([]int, 0, len(files))
+	for i := range files {
+		if !m.diffFileHidden(&files[i]) {
+			shown = append(shown, i)
+		}
+	}
+	if len(shown) == 0 {
+		return diffAllHiddenNote()
+	}
+	cursor := 0
+	for pos, i := range shown {
+		if i == m.diff.fileIdx {
+			cursor = pos
+			break
+		}
+	}
+	start, end := scrollWindow(len(shown), cursor, height)
 	var b strings.Builder
 	if start > 0 {
 		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
@@ -648,7 +682,8 @@ func (m *Model) viewDiffFileList(width, height int) string {
 	for _, note := range m.diff.annotations[m.reviewKey()] {
 		notes[note.file]++
 	}
-	for i := start; i < end; i++ {
+	for pos := start; pos < end; pos++ {
+		i := shown[pos]
 		fd := files[i]
 		glyph := subtleStyle.Render("○")
 		if m.fileReviewed(fd.File.Path) {
@@ -681,8 +716,8 @@ func (m *Model) viewDiffFileList(width, height int) string {
 		}
 		b.WriteString(row + "\n")
 	}
-	if end < len(files) {
-		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(files)-end)))
+	if end < len(shown) {
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(shown)-end)))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -924,6 +959,10 @@ func (m *Model) viewDiffFooter() string {
 	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
 		send = fmt.Sprintf("send %d", count)
 	}
+	filter := "code only"
+	if m.diff.codeOnly {
+		filter = "all files"
+	}
 	return legendBar([]legendSection{
 		{title: "Review", pairs: [][2]string{
 			{"c", "comment"}, {"d", "remove"}, {"C", send}, {"space", "reviewed"},
@@ -931,7 +970,7 @@ func (m *Model) viewDiffFooter() string {
 		}},
 		{title: "Move", quiet: true, pairs: [][2]string{
 			{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"g/G", "top/bottom"},
-			{"tab/J K/shift+tab", "file"}, {"n/N", "change"}, {"u", "layout"},
+			{"tab/J K/shift+tab", "file"}, {"n/N", "change"}, {"u", "layout"}, {"f", filter},
 			{"esc/q", "close"}, {"ctrl+c", "quit"},
 		}},
 	}, m.width)
