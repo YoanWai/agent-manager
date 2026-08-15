@@ -1093,3 +1093,84 @@ func TestMoveGroupSameParentIsNoop(t *testing.T) {
 		t.Fatalf("MoveGroup: %v", err)
 	}
 }
+
+func TestParentIDRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	parent := sample("agent", "g1")
+	if err := st.CreateSession(parent); err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	child := sample("sh", "g1")
+	child.Tool = "terminal"
+	child.ParentID = "agent"
+	if err := st.CreateSession(child); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	got, err := st.Get("sh")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.ParentID != "agent" {
+		t.Fatalf("ParentID = %q, want agent", got.ParentID)
+	}
+	list, err := st.ListSessions(false)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	byID := map[string]Session{}
+	for _, sess := range list {
+		byID[sess.ID] = sess
+	}
+	if byID["sh"].ParentID != "agent" || byID["agent"].ParentID != "" {
+		t.Fatalf("list parent ids: %+v", byID)
+	}
+}
+
+func TestChildrenIncludesArchivedAndOrder(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g")); err != nil {
+		t.Fatalf("parent: %v", err)
+	}
+	first := sample("a", "g")
+	first.ParentID = "agent"
+	second := sample("b", "g")
+	second.ParentID = "agent"
+	if err := st.CreateSession(first); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if err := st.CreateSession(second); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if err := st.SetArchived("a", true); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	kids, err := st.Children("agent")
+	if err != nil {
+		t.Fatalf("children: %v", err)
+	}
+	if len(kids) != 2 || kids[0].ID != "a" || kids[1].ID != "b" {
+		t.Fatalf("children = %+v", kids)
+	}
+}
+
+func TestDeleteParentLeavesChildRow(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g")); err != nil {
+		t.Fatalf("parent: %v", err)
+	}
+	child := sample("sh", "g")
+	child.ParentID = "agent"
+	if err := st.CreateSession(child); err != nil {
+		t.Fatalf("child: %v", err)
+	}
+	if err := st.Delete("agent"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	got, err := st.Get("sh")
+	if err != nil {
+		t.Fatalf("get child: %v", err)
+	}
+	if got.ParentID != "agent" {
+		t.Fatalf("store must not cascade, ParentID = %q", got.ParentID)
+	}
+}
