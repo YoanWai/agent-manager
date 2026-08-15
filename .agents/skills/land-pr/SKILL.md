@@ -21,8 +21,9 @@ Stop if `BRANCH` is empty or `main`. Stop if the working tree is dirty. Stop unl
 A `$PR` argument must contain digits only. Resolve it in `REPO` and keep it only when it is open, targets `main`, and its head branch and repository are `BRANCH` and `REPO`:
 
 ```bash
-PR=$(gh pr view "$PR" -R "$REPO" --json number,headRefName,baseRefName,headRepository,state \
-  -q "select(.state==\"OPEN\" and .headRefName==\"$BRANCH\" and .baseRefName==\"main\" and .headRepository.nameWithOwner==\"$REPO\") | .number")
+PR=$(BRANCH="$BRANCH" REPO="$REPO" gh pr view "$PR" -R "$REPO" \
+  --json number,headRefName,baseRefName,headRepository,state \
+  -q 'select(.state=="OPEN" and .headRefName==env.BRANCH and .baseRefName=="main" and .headRepository.nameWithOwner==env.REPO) | .number')
 ```
 
 Stop on any command failure or empty result. Do not land it.
@@ -30,9 +31,9 @@ Stop on any command failure or empty result. Do not land it.
 If `$PR` is omitted:
 
 ```bash
-PR=$(gh pr list -R "$REPO" --state open --head "$BRANCH" \
+PR=$(BRANCH="$BRANCH" REPO="$REPO" gh pr list -R "$REPO" --state open --head "$BRANCH" \
   --json number,headRefName,baseRefName,headRepository \
-  -q "map(select(.headRefName==\"$BRANCH\" and .baseRefName==\"main\" and .headRepository.nameWithOwner==\"$REPO\")) | if length == 1 then .[0].number elif length == 0 then empty else error(\"multiple matching PRs\") end")
+  -q 'map(select(.headRefName==env.BRANCH and .baseRefName=="main" and .headRepository.nameWithOwner==env.REPO)) | if length == 1 then .[0].number elif length == 0 then empty else error("multiple matching PRs") end')
 ```
 
 Stop if discovery fails. If `PR` is empty: this session's work. Re-check `git branch --show-current` equals `BRANCH`. Push this branch and open one. Do not search the repo for another PR.
@@ -44,9 +45,9 @@ git fetch origin main
 git rev-list --count origin/main..HEAD   # must be > 0
 git push -u origin "$BRANCH"
 gh pr create -R "$REPO" --base main --head "$BRANCH" --title "$(git log -1 --format=%s)" --body-file "$NOTES"
-PR=$(gh pr list -R "$REPO" --state open --head "$BRANCH" \
+PR=$(BRANCH="$BRANCH" REPO="$REPO" gh pr list -R "$REPO" --state open --head "$BRANCH" \
   --json number,headRefName,baseRefName,headRepository \
-  -q "map(select(.headRefName==\"$BRANCH\" and .baseRefName==\"main\" and .headRepository.nameWithOwner==\"$REPO\")) | if length == 1 then .[0].number elif length == 0 then empty else error(\"multiple matching PRs\") end")
+  -q 'map(select(.headRefName==env.BRANCH and .baseRefName=="main" and .headRepository.nameWithOwner==env.REPO)) | if length == 1 then .[0].number elif length == 0 then empty else error("multiple matching PRs") end')
 ```
 
 Title stays Conventional Commits (it is the changelog line). Stop if `PR` is empty.
