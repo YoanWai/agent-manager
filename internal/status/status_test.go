@@ -212,6 +212,22 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 		// line and say nothing about whether the work drained.
 		{"claude background wait under a plugin banner (real capture)", "claude",
 			"⏺ ok\n✻ Waiting for 1 background agent to finish · 1 message hidden (/focus to show)\n  Plugins updated: 7 plugins · Run /reload-plugins to apply\n────\n❯ \n────", Working},
+		// 2026-08-15 real capture: a weekly/session limit lands above the
+		// turn-end summary, so matchScope (text after that summary) never
+		// sees it and the quiet turn would otherwise read as finished.
+		{"claude weekly usage limit (real capture)", "claude",
+			"  ⎿  You've hit your weekly limit · resets 1am (Asia/Jerusalem)\n" +
+				"     /usage-credits to finish what you’re working on.\n\n" +
+				"✻ Churned for 2h 0m 54s\n────\n❯ \n────", Errored},
+		{"claude session limit (real capture)", "claude",
+			"You've hit your session limit · resets 9pm (Asia/Jerusalem)\n" +
+				"✻ Crunched for 9s\n────\n❯ \n────", Errored},
+		{"claude old limit, newer finished turn", "claude",
+			"  ⎿  You've hit your weekly limit · resets 1am (Asia/Jerusalem)\n" +
+				"✻ Churned for 2h 0m 54s\n  All done now.\n✻ Worked for 5s\n────\n❯ \n────", Finished},
+		{"claude old limit, later turn-end with no other content", "claude",
+			"  ⎿  You've hit your weekly limit · resets 1am (Asia/Jerusalem)\n" +
+				"✻ Churned for 2h 0m 54s\n✻ Worked for 5s\n────\n❯ \n────", Finished},
 		{"claude streaming without spinner (real capture)", "claude",
 			"  183\n  184\n────\n❯ \n────\n  ▎ ● Fable 5 ✦ medium", Idle},
 		{"claude fresh start, typed unsubmitted", "claude",
@@ -232,6 +248,8 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 			"     Which fruit do you want to know more about?   \n     ▣  Build · GLM-5.2 · 10.4s   \n     \n  ┃     \n  ┃  Build · GLM-5.2 Z.AI Coding Plan · high   \n  ╹▀▀▀▀", Waiting},
 		{"opencode out of credits", "opencode",
 			"  ┃  This request requires more credits, or fewer max_tokens.", Errored},
+		{"opencode usage limit reached", "opencode",
+			"  ┃  Usage limit reached. It will reset in 4 hours.\n  ╹▀▀▀▀", Errored},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -279,6 +297,10 @@ func TestGrokRealPanes(t *testing.T) {
 			"  ┃  Remove victim2.txt file\n  ┃  rm victim2.txt\n  ┃\n  ┃  1 (●) Yes, and don't ask again for anything (always-approve mode)\n  ┃  2 (○) Yes, proceed\n  ┃  3 (○) No, reject (type to add feedback)\n  ┃\n\n  1/3:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel", Waiting},
 		{"grok errored", "grok",
 			"  error: request failed\n  │ ❯                    │", Errored},
+		{"grok rate limit", "grok",
+			"     You've hit the rate limit for your plan. Upgrade your account or try again later.\n  ╭────────────────────────────╮\n  │ ❯                        │\n  ╰──────────── Grok 4.5 (high) ─╯", Errored},
+		{"grok free usage limit", "grok",
+			"     You hit your free usage limit.\n  ╭────────────────────────────╮\n  │ ❯                        │\n  ╰──────────── Grok 4.5 (high) ─╯", Errored},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -370,7 +392,7 @@ func TestGeminiPanes(t *testing.T) {
 		{"gemini first-run auth dialog", "gemini",
 			"╭──────────────────────────────╮\n│ ? Get started                │\n│                              │\n│   How would you like to authenticate for this project?  │\n│                              │\n│   ● 1. Sign in with Google   │\n│     2. Use Gemini API Key    │\n│     3. Vertex AI             │\n│                              │\n│   (Use Enter to select)      │\n╰──────────────────────────────╯", Waiting},
 		{"gemini usage-limit dialog", "gemini",
-			"╭──────────────────────────────────────╮\n│                                      │\n│ Usage limit reached for gemini-3.5-flash.  │\n│ /stats model for usage details       │\n│ /model to switch models.             │\n│                                      │\n│ ● 1. Keep trying                     │\n│   2. Stop                            │\n│                                      │\n╰──────────────────────────────────────╯", Waiting},
+			"╭──────────────────────────────────────╮\n│                                      │\n│ Usage limit reached for gemini-3.5-flash.  │\n│ /stats model for usage details       │\n│ /model to switch models.             │\n│                                      │\n│ ● 1. Keep trying                     │\n│   2. Stop                            │\n│                                      │\n╰──────────────────────────────────────╯", Errored},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -407,6 +429,8 @@ func TestHermesPanes(t *testing.T) {
 			"⚕ No inference provider is configured yet — let's fix that.\n  Set up a provider now? [Y/n]: ", Waiting},
 		{"background work",
 			"Started a background delegation.\n  ⚕ hermes-4 │ ctx -- │ ⛓ 2 │ ⏲ 8s\n────────────────────────\n❯ ", Working},
+		{"rate limited",
+			"❌ Rate limited after 3 retries — too many requests\n  ⚕ hermes-4 │ ctx -- │ ⏲ 0s\n────────────────────────\n❯ ", Errored},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -451,6 +475,7 @@ func TestPiPanes(t *testing.T) {
 		{"old question", "Which option do you prefer?\n\nI used option A." + editor, Finished},
 		{"historical question frame", "Which option do you prefer?" + editor + "\n\nImplementation complete." + editor, Finished},
 		{"current error", "Error: request failed" + editor, Errored},
+		{"rate limit reached", "Hugging Face rate limit reached" + editor, Errored},
 		{"question-mark error", "Error: request failed?" + editor, Errored},
 		{"error with trailing blanks", "Error: request failed" + editor + "\n\n", Errored},
 		{"old error", "Error: first attempt failed\n\nRetry completed." + editor, Finished},
@@ -509,6 +534,15 @@ func TestNewEngineBadPattern(t *testing.T) {
 	}
 	if _, err := NewEngine(cfg); err == nil {
 		t.Fatal("expected error for invalid regex")
+	}
+
+	cfg = config.Config{
+		Tools: map[string]config.Tool{
+			"bad": {LimitLine: "("},
+		},
+	}
+	if _, err := NewEngine(cfg); err == nil {
+		t.Fatal("expected error for invalid limit_line regex")
 	}
 }
 

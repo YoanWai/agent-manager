@@ -57,7 +57,11 @@ type Tool struct {
 	// background agents and shells. Matching it in the newest turn keeps a
 	// turn-end summary from resolving to finished while that work runs.
 	BusyLine string `toml:"busy_line"`
-	Rules    []Rule `toml:"rules"`
+	// LimitLine is a usage or rate-limit banner. Matching it in the newest
+	// turn is errored even when a turn-end summary or a limit dialog would
+	// otherwise settle the turn.
+	LimitLine string `toml:"limit_line"`
+	Rules     []Rule `toml:"rules"`
 }
 
 type Config struct {
@@ -186,6 +190,7 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.BlockedLine, def.BlockedLine)
 	fill(&user.TrailingNote, def.TrailingNote)
 	fill(&user.BusyLine, def.BusyLine)
+	fill(&user.LimitLine, def.LimitLine)
 	if name == "claude" && user.BusyLine == busyLineAgentsOnly {
 		user.BusyLine = def.BusyLine
 	}
@@ -278,6 +283,8 @@ const defaultConfig = `poll_interval = "2s"
 
 # Rules are matched top-down against the visible pane text (ANSI stripped);
 # first match wins, except a matching waiting rule outranks a working match.
+# A limit_line match is errored even when a turn-end summary or a limit
+# dialog would otherwise settle the turn.
 # When no rule matches, the newest turn decides:
 # the content region is the text above the last activity_cutoff match
 # (the tool's input box). If the region's last content line — skipping
@@ -314,6 +321,8 @@ trailing_note = "^※"
 # "✻ Waiting for 2 background agents to finish" / "✻ Cooked for 4s · 2 shells
 # still running"
 busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for \\d+ background agents? to finish|.*· \\d+ shells? still running)"
+# a usage/rate-limit banner sits above the turn-end summary
+limit_line = "(?m)You've hit your .+limit"
 rules = [
   # selection dialogs (trust prompt, permission asks, questions) block on the user
   { state = "waiting", pattern = "Enter to confirm" },
@@ -339,6 +348,7 @@ default_status = "idle"
 activity_cutoff = "(?m)^\\s*╹"
 turn_end = "^\\s*▣ +.+· [\\dhms. ]+\\s*$"
 chrome_line = "^\\s*(┃.*)?$"
+limit_line = "(?i)requires more credits|(?:Usage|Free|Go) limit reached"
 rules = [
   { state = "errored", pattern = "(?i)requires more credits" },
   { state = "errored", pattern = "(?im)^\\s*error\\b" },
@@ -363,6 +373,7 @@ activity_cutoff = "(?m)^›"
 # through the quiet-region fallback instead
 turn_end = "(?m)^─+ Worked for [\\dhms. ]+─"
 chrome_line = "^\\s*─*\\s*$"
+limit_line = "(?m)You've hit your usage limit"
 rules = [
   # bottom-pane dialogs (command approval, choice prompts, first-run trust)
   # select a numbered option and block on the user's answer
@@ -372,7 +383,6 @@ rules = [
   # active status row is the final row above the input box; anchoring its full
   # shape keeps an answer that quotes "esc to interrupt" from looking active
   { state = "working", pattern = "(?m)^[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)?[ \\t\\n]*\\z" },
-  { state = "errored", pattern = "(?m)You've hit your usage limit" },
   { state = "errored", pattern = "(?im)^\\s*■.*\\berror\\b" },
 ]
 
@@ -391,6 +401,7 @@ activity_cutoff = "(?m)^\\s*│ ❯"
 turn_end = "(?m)^\\s*Worked for [\\dhms. ]+s\\.?(?:\\s|$).*\\bstop\\b"
 # input-box borders plus the right-edge scrollbar block on overflow panes
 chrome_line = "^\\s*[┃❙│─╭╮╰╯█]*\\s*$"
+limit_line = "(?i)You've hit the rate limit|You hit your free usage limit|You've reached your free Grok Build usage limit|usage limit reached|out of credits"
 rules = [
   # first-run "Do you trust this directory?" and other y/n prompts block on the user
   { state = "waiting", pattern = "(?m)^\\s*(Yes, proceed|No, quit)\\s{2,}[yn]\\s*$" },
@@ -425,6 +436,7 @@ activity_cutoff = "(?m)^\\s*[>!*] "
 # approval-mode banner ("Shift+Tab to accept edits", "auto-accept edits
 # shift+tab to manual", ...) are all chrome above the composer
 chrome_line = "^\\s*[╭╮╰╯│─▄▀█]*\\s*$|^\\s*\\? for shortcuts\\s*$|^\\s*press tab twice for more\\s*$|^\\s*Press Ctrl\\+O to show more lines.*$|(?i)^\\s*(auto-accept edits |plan |yolo )?\\S*tab\\S* to (accept edits|manual|plan|auto-accept edits)\\s*$"
+limit_line = "Usage limit reached"
 rules = [
   # selected row of an approval/trust dialog, inside its bordered box:
   # "│ ● 1. Allow once"
@@ -455,6 +467,7 @@ default_status = "idle"
 activity_cutoff = "(?m)^\\s*(?:\\S+\\s+)?[❯>$#›»→]\\s"
 chrome_line = "^\\s*[─╭╮╰╯│]*\\s*$|^\\s*⚕ .*$"
 busy_line = "(?:▶|⚙|⛓) \\d+"
+limit_line = "(?i)Rate limited|usage limit reached|Nous Portal rate limit"
 rules = [
   { state = "waiting", pattern = "↑/↓ to select, Enter to confirm" },
   { state = "waiting", pattern = "type (?:password|secret).*ESC to skip" },
@@ -490,6 +503,7 @@ rules = [
   { state = "idle", pattern = "(?ms)^[ \\t]*Resumed session[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
   { state = "waiting", pattern = "(?ms)^[ \\t]*Project trust[ \\t]*\\n.*\\n─{8,}[ \\t]*(?:\\n[ \\t]*)*\\z" },
   { state = "errored", pattern = "(?ms)^[ \\t]*Error:[^\\n]*(?:\\n[ \\t]+[^ \\t\\n][^\\n]*){0,8}\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
+  { state = "errored", pattern = "(?ms)^[ \\t]*[^\\n]*rate limit reached[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
   { state = "waiting", pattern = "(?ms)\\?[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
   { state = "working", pattern = "(?ms)^[ \\t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
 ]

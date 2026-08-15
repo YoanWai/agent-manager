@@ -326,6 +326,40 @@ func TestHookWorkingReconcilesToFinishedOnEndedTurn(t *testing.T) {
 // Claude fires Stop when the main agent stops responding, so a turn that
 // leaves background agents running reports finished while they work. The
 // pane still shows the wait, and that verdict has to win.
+func TestHookErroredReconcilesToPaneVerdict(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked-err", Tool: "claude-hooked"}
+	writeHookStatus(t, m, sess.ID, status.Errored)
+
+	if got := deriveStatus(t, m, sess, "Enter to confirm\n❯ \n", true); got != status.Waiting {
+		t.Fatalf("waiting pane should override hook errored, got %q", got)
+	}
+	if got := deriveStatus(t, m, sess,
+		"⏺ Security agent done. 2 left.\n✻ Waiting for 2 background agents to finish\n❯ \n", true); got != status.Working {
+		t.Fatalf("working pane should override hook errored, got %q", got)
+	}
+	if got := deriveStatus(t, m, sess, "here is the result\n\n✻ Baked for 5s\n\n❯ \n", true); got != status.Finished {
+		t.Fatalf("finished pane should override hook errored, got %q", got)
+	}
+
+	sess.Acked = true
+	if got := deriveStatus(t, m, sess, "here is the result\n\n✻ Baked for 5s\n\n❯ \n", true); got != status.Idle {
+		t.Fatalf("acked finished pane should idle over hook errored, got %q", got)
+	}
+}
+
+func TestHookFinishedUpgradesToErroredOnUsageLimit(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked-limit", Tool: "claude-hooked"}
+	writeHookStatus(t, m, sess.ID, status.Finished)
+
+	pane := "  ⎿  You've hit your weekly limit · resets 1am (Asia/Jerusalem)\n\n" +
+		"✻ Churned for 2h 0m 54s\n❯ \n"
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Errored {
+		t.Fatalf("a usage limit should read as errored, got %q", got)
+	}
+}
+
 func TestHookFinishedUpgradesToWorkingWhileBackgroundAgentsRun(t *testing.T) {
 	m := buildModel(t)
 	sess := store.Session{ID: "hooked08", Tool: "claude-hooked"}

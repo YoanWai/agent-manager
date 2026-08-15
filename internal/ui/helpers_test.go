@@ -31,6 +31,7 @@ func buildModel(t *testing.T) *Model {
 				ActivityCutoff: "(?m)^❯",
 				TurnEnd:        `^[✻✳✶✽✢·✦✧+*] \S+ for \d.*$`,
 				BusyLine:       `^[✻✳✶✽✢·✦✧+*] (?:Waiting for \d+ background agents? to finish|.*· \d+ shells? still running)`,
+				LimitLine:      `(?m)You've hit your .+limit`,
 				Rules: []config.Rule{
 					{State: status.Waiting, Pattern: "Enter to confirm"},
 					{State: status.Errored, Pattern: `(?im)^\s*error:`},
