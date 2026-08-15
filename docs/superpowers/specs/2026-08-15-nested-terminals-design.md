@@ -5,7 +5,7 @@ Status: approved
 
 ## Goal
 
-A terminal can hang under the agent it belongs to, so a related shell sits with its work in the list. Nesting is optional. `m` moves a terminal into a session or back to a group. The list is one inline tree.
+A terminal can hang under the agent it belongs to, so a related shell sits with its work in the list. Nesting is optional. `m` moves a terminal into a session or back to a group. The list is one inline tree. Agents open a terminal when a human should see, attach, or manage it, and they delete it when that job is finished.
 
 ## Decisions
 
@@ -16,6 +16,8 @@ A terminal can hang under the agent it belongs to, so a related shell sits with 
 - `T` on an agent, and MCP `create_terminal` with `nest` omitted or true, nest under that agent.
 - MCP `nest` omitted means true. The argument is optional `*bool`; a plain `bool` would treat omit as false.
 - The agent sets `nest: false` for a shared or unrelated shell. `m` fixes a wrong nest after the fact.
+- A managed terminal is for work a human should see, attach to, or manage (SSH into a host, a remote session, a process left running for the user). One-shot local commands and internal agent work stay in the agent's own execution.
+- When the job that terminal was opened for is finished, the agent calls `close_terminal`, which kills the pane and deletes the row. A terminal left for the user (the SSH case) stays.
 - Kill, archive, delete, restore, and revive on an agent include its terminals. The same keys on a child affect that child only.
 - Restart and fork stay on the agent. Children stay put. Fork does not copy terminals.
 - One list. The pinned Terminals block and the `terminal rows` setting go away. A stored `terminal_placement` value is ignored.
@@ -75,7 +77,19 @@ MCP `create_terminal`:
 - `nest: false`: `parent_id` empty; `group` and `directory` behave as they do today.
 - `directory` is independent of nest.
 
-`CreateTerminalOptions` gains `Nest *bool`. `list_terminals` returns `parent_id` and the parent's name (empty when un-nested). Server instructions and the tool description say the new terminal nests under the caller unless `nest` is false.
+`CreateTerminalOptions` gains `Nest *bool`. `list_terminals` returns `parent_id` and the parent's name (empty when un-nested).
+
+`close_terminal(terminal_id)` is a new `sessioncmd` / MCP tool. It refuses an agent id. It kills the tmux pane, removes hooks, and `store.Delete`s the row (the same end state as deleting that shell in the list). No confirm; the agent asked to clear it.
+
+## Agent policy
+
+Server instructions and the `create_terminal` / `close_terminal` descriptions carry this, and they replace today's "open a terminal for a test suite, build, or log tail":
+
+- Create a terminal when the session itself is the point: the user should be able to watch it, approve what happens, attach, or take over. SSH is the canonical case.
+- Run one-shot local commands and other internal work through the agent's normal tools. Those do not get a managed terminal.
+- Reuse a listed terminal that already matches the job before creating another.
+- Default nest under the caller (`nest` omitted or true).
+- When the job is finished and the terminal is not being left for the user, call `close_terminal`. Do not leave a finished shell nested under the agent.
 
 ## Move
 
@@ -118,6 +132,7 @@ Shells always sit in their group, with `❯` when resting. A leftover `terminal_
 - UI / MCP parent that is a shell: error naming it as a shell.
 - `r` changing an agent with children to a shell tool: error, keep the current tool.
 - `create_terminal` with `nest` true and a `group` other than the caller's: error telling the caller to set `nest` false.
+- `close_terminal` on a missing id, an agent, or an archived shell: error, no delete.
 - Confirm actions that include children fail on the first child error and leave the remaining rows as they are, same as today's multi-session kill.
 
 ## Testing
@@ -148,10 +163,12 @@ MCP / `sessioncmd`:
 - `nest: false` leaves `parent_id` empty
 - `nest` true plus a different `group` errors
 - `list_terminals` includes `parent_id` and parent name
+- `close_terminal` deletes a shell and refuses an agent
+- server instructions name SSH as a create case and tell the agent to close a finished job
 
 ## Docs
 
-`docs/usage.md` Terminal tabs: shells live in the tree; `T` on an agent nests; `m` moves a terminal into a session or a group. Drop the pinned-block section and the settings mention. MCP table: `create_terminal` nests under the caller unless `nest` is false. `?` help line for `m` matches.
+`docs/usage.md` Terminal tabs: shells live in the tree; `T` on an agent nests; `m` moves a terminal into a session or a group. Drop the pinned-block section and the settings mention. MCP table: `create_terminal` nests under the caller unless `nest` is false; `close_terminal` clears a finished shell. Agents create a terminal for human-visible work (SSH) and close it when that job ends. `?` help line for `m` matches.
 
 ## Out of scope
 
