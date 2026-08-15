@@ -1,11 +1,11 @@
 ---
 name: land-pr
-description: Use when landing this session's agent-manager branch end to end: open a PR if none exists, wait out CodeRabbit's OSS hourly limit, run a full review, verify each finding, and squash-merge. Also use when the user says land the PR, create the PR and merge, merge after review, poll CodeRabbit, full review, handle CodeRabbit findings, or /land-pr.
+description: Use when landing this session's agent-manager branch end to end, when the user says land the PR, create the PR and merge, merge after review, poll CodeRabbit, full review, handle CodeRabbit findings, iterate until CodeRabbit approves, or /land-pr.
 ---
 
 # Land PR
 
-Land **this checkout's branch only**. Wait out the OSS hourly limit, run a full review, verify every finding, then squash-merge. Repo is `YoanWai/agent-manager`.
+Land **this checkout's branch only**. Wait out the OSS hourly limit, run a full review, handle every finding, then run another full review. Repeat until CodeRabbit approves. Then squash-merge. Repo is `YoanWai/agent-manager`.
 
 macOS `sleep` takes seconds only.
 
@@ -69,6 +69,8 @@ Then, at most every 60s for 15 minutes, wait until both are true:
 
 Rate-limited again: go back to Wait.
 
+15 minutes with no qualifying review: stop. Do not merge.
+
 ## Findings
 
 Load every unresolved review thread from `coderabbitai[bot]`. For each one, read the cited code and prove the claim.
@@ -79,12 +81,37 @@ Load every unresolved review thread from `coderabbitai[bot]`. For each one, read
 
 Never apply a finding because the bot said so. Never reply "ack" or "will fix".
 
+Then go to **Again**. Do not merge from this section.
+
+## Again
+
+A findings push is not approval. Thread replies are not approval. CodeRabbit resolving a thread is not approval. CI green is not approval.
+
+After Findings, go to **Wait**, then **Trigger**. Loop Wait → Trigger → Findings until **Approved**.
+
+## Approved
+
+Only the latest `coderabbitai[bot]` review with `submitted_at` after the last `@coderabbitai full review` counts.
+
+Approved when that review's `state` is `APPROVED`.
+
+`COMMENTED` also counts when its body has `Actionable comments posted: 0` and there are zero unresolved `coderabbitai[bot]` threads.
+
+Not approved:
+
+- `CHANGES_REQUESTED`
+- any unresolved `coderabbitai[bot]` thread
+- a review submitted before the last findings push
+- check title `Review rate limited`
+
+If not approved, go to **Wait** (if limited) or **Trigger**.
+
 ## Merge
 
 Merge only when all of these hold:
 
 - `gh pr view "$PR" --json headRefName` is still `BRANCH`
-- every CodeRabbit thread is fixed or answered
+- the latest CodeRabbit review is **Approved**
 - CI is green
 - the PR is not a draft (run `gh pr ready` first if it is)
 
@@ -93,3 +120,12 @@ gh pr merge "$PR" --squash --delete-branch
 ```
 
 If merge is blocked, say the exact check or rule. Do not force.
+
+## Red flags
+
+These thoughts mean stop and run another full review:
+
+- "Threads are answered and CI is green, merge"
+- "The follow-up review is rate limited, the first review is enough"
+- "CodeRabbit resolved the threads, that is approval"
+- Merging after a findings push without a new `@coderabbitai full review`
