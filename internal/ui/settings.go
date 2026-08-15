@@ -253,6 +253,8 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.settings.field {
 		case settingsFieldBugReport:
 			return m, openLink(bugReportURL(m.update.version))
+		case settingsFieldFeatureRequest:
+			return m, openLink(featureRequestURL())
 		case settingsFieldCLIs:
 			m.openCLIPicker()
 			return m, nil

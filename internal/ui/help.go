@@ -153,7 +153,7 @@ func helpSections() []helpSection {
 		{title: "settings (s)", rows: [][2]string{
 			{"↑↓", "pick a field"},
 			{"←→", "change the value"},
-			{"↵", "run the field's action (CLIs, bug report, update)"},
+			{"↵", "run the field's action (CLIs, report, suggest, update)"},
 			{"esc", "save and close"},
 		}},
 		{title: "dialogs (n, g, r, f, m)", rows: [][2]string{

@@ -62,9 +62,8 @@ func TestActiveNoticesPinnedByDefault(t *testing.T) {
 		}
 	}
 	joined := strings.Join(welcome.body, " ")
-	if !strings.Contains(joined, "Settings (s)") || !strings.Contains(joined, "Found a bug?") ||
-		!strings.Contains(joined, "prefilled report") {
-		t.Fatalf("welcome should point at Settings for bug reports: %q", joined)
+	if !strings.Contains(joined, "Settings (s)") || !strings.Contains(joined, "A bug or an idea?") {
+		t.Fatalf("welcome should point at Settings for a bug or an idea: %q", joined)
 	}
 	for _, n := range m.activeNotices() {
 		if n.id != noticeWelcome && n.url == bugReportURL(m.update.version) {
@@ -328,8 +327,21 @@ func TestBugReportURLPrefillsVersion(t *testing.T) {
 	if !strings.HasPrefix(got, "https://github.com/YoanWai/agent-manager/issues/new") {
 		t.Fatalf("bug report should open the new-issue page, got %q", got)
 	}
-	if !strings.Contains(got, "v0.2.0") {
+	if !strings.Contains(got, "template=bug_report.yml") {
+		t.Fatalf("bug report should use the bug form, got %q", got)
+	}
+	if !strings.Contains(got, "version=v0.2.0") {
 		t.Fatalf("issue URL should carry the version, got %q", got)
+	}
+}
+
+func TestFeatureRequestURLUsesFeatureTemplate(t *testing.T) {
+	got := featureRequestURL()
+	if !strings.Contains(got, "template=feature_request.yml") {
+		t.Fatalf("feature request should use the feature form, got %q", got)
+	}
+	if strings.Contains(got, "template=bug_report.yml") {
+		t.Fatalf("feature request opened the bug form: %q", got)
 	}
 }
 
@@ -478,7 +490,7 @@ func TestOpenNoticesFromList(t *testing.T) {
 func TestNoticesViewListsAndDetails(t *testing.T) {
 	m := modalModel(t)
 	frame := ansi.Strip(m.View())
-	for _, want := range []string{"messages", "Welcome to agent-manager", "Settings (s)", "Found a bug?", "dismiss"} {
+	for _, want := range []string{"messages", "Welcome to agent-manager", "Settings (s)", "A bug or an idea?", "dismiss"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("modal missing %q:\n%s", want, frame)
 		}

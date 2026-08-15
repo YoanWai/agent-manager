@@ -406,6 +406,7 @@ const (
 	settingsFieldNotifyFinish
 	settingsFieldCLIs
 	settingsFieldBugReport
+	settingsFieldFeatureRequest
 	settingsFieldUpdate
 	settingsFieldCount
 )
