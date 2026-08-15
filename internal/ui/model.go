@@ -1508,6 +1508,11 @@ func (m *Model) rebuildRows() {
 	query := strings.ToLower(strings.TrimSpace(m.search))
 	prunedView := query != "" || m.statusFilter.active()
 
+	listed := m.listedSessions()
+	listedIDs := make(map[string]bool, len(listed))
+	for _, sess := range listed {
+		listedIDs[sess.ID] = true
+	}
 	byID := make(map[string]store.Session, len(m.sessions))
 	for _, sess := range m.sessions {
 		byID[sess.ID] = sess
@@ -1516,7 +1521,7 @@ func (m *Model) rebuildRows() {
 	// per-group slices inherit the user's manual order.
 	sessionsByGroup := map[string][]store.Session{}
 	childrenByParent := map[string][]store.Session{}
-	for _, sess := range m.listedSessions() {
+	for _, sess := range listed {
 		if query != "" && !matchesSearch(sess, query) {
 			continue
 		}
@@ -1529,22 +1534,37 @@ func (m *Model) rebuildRows() {
 		sessionsByGroup[sess.Group] = append(sessionsByGroup[sess.Group], sess)
 	}
 	if query != "" {
-		listed := map[string]bool{}
+		inGroup := map[string]bool{}
 		for _, groupSessions := range sessionsByGroup {
 			for _, sess := range groupSessions {
-				listed[sess.ID] = true
+				inGroup[sess.ID] = true
 			}
 		}
 		for parentID := range childrenByParent {
-			if listed[parentID] {
+			if inGroup[parentID] {
 				continue
 			}
 			parent, ok := byID[parentID]
-			if !ok {
+			if !ok || !listedIDs[parentID] {
 				continue
 			}
 			sessionsByGroup[parent.Group] = append(sessionsByGroup[parent.Group], parent)
 		}
+	}
+	walked := map[string]bool{}
+	for _, groupSessions := range sessionsByGroup {
+		for _, sess := range groupSessions {
+			walked[sess.ID] = true
+		}
+	}
+	for parentID, kids := range childrenByParent {
+		if walked[parentID] {
+			continue
+		}
+		for _, child := range kids {
+			sessionsByGroup[child.Group] = append(sessionsByGroup[child.Group], child)
+		}
+		delete(childrenByParent, parentID)
 	}
 
 	paths := groupClosure(m.groups, m.sessions)
