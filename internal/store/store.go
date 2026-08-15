@@ -710,20 +710,44 @@ func (s *Store) MoveGroup(path, newParent string) error {
 	return s.RenameGroup(path, newPath)
 }
 
-// MoveSession reassigns a session to another group ("" = root), placing
-// it at the end of the destination.
-func (s *Store) MoveSession(id, group string) error {
+func (s *Store) PlaceSession(id, group, parentID string) error {
+	parentID = strings.TrimSpace(parentID)
+	if parentID != "" {
+		if parentID == id {
+			return fmt.Errorf("session %s cannot be its own parent", id)
+		}
+		parent, err := s.Get(parentID)
+		if err != nil {
+			return fmt.Errorf("parent %s: %w", parentID, err)
+		}
+		if parent.ParentID != "" {
+			return fmt.Errorf("parent %s already has a parent", parentID)
+		}
+		group = parent.Group
+	}
 	res, err := s.db.Exec(
-		`UPDATE sessions SET group_name = ?,
-		 sort_order = (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ?)
-		 WHERE id = ?`, group, group, id)
+		`UPDATE sessions SET group_name = ?, parent_id = ?,
+		 sort_order = (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?)
+		 WHERE id = ?`,
+		group, parentID, group, parentID, id)
 	if err != nil {
 		return err
 	}
 	if err := requireRow(res, id); err != nil {
 		return err
 	}
+	if parentID == "" {
+		if _, err := s.db.Exec(`UPDATE sessions SET group_name = ? WHERE parent_id = ?`, group, id); err != nil {
+			return err
+		}
+	}
 	return s.ensureGroup(group)
+}
+
+// MoveSession reassigns a session to another group ("" = root), placing
+// it at the end of the destination.
+func (s *Store) MoveSession(id, group string) error {
+	return s.PlaceSession(id, group, "")
 }
 
 func (s *Store) RenameSession(id, name string) error {
@@ -934,8 +958,8 @@ func (s *Store) ReorderSession(id string, delta int, includeArchived bool) (bool
 		return false, err
 	}
 	rows, err := s.db.Query(
-		`SELECT id, archived FROM sessions WHERE group_name = ?
-		 ORDER BY sort_order, created_at`, sess.Group)
+		`SELECT id, archived FROM sessions WHERE group_name = ? AND parent_id = ?
+		 ORDER BY sort_order, created_at`, sess.Group, sess.ParentID)
 	if err != nil {
 		return false, err
 	}
@@ -1005,13 +1029,13 @@ func (s *Store) SwapSessionOrder(id, targetID string) error {
 	if err != nil {
 		return err
 	}
-	if sess.Group != target.Group {
+	if sess.Group != target.Group || sess.ParentID != target.ParentID {
 		return fmt.Errorf("sessions %s and %s are not siblings", id, targetID)
 	}
 
 	rows, err := s.db.Query(
-		`SELECT id FROM sessions WHERE group_name = ?
-		 ORDER BY sort_order, created_at`, sess.Group)
+		`SELECT id FROM sessions WHERE group_name = ? AND parent_id = ?
+		 ORDER BY sort_order, created_at`, sess.Group, sess.ParentID)
 	if err != nil {
 		return err
 	}
