@@ -51,7 +51,7 @@ PR=$(gh pr list -R "$REPO" --state open --head "$BRANCH" \
 
 Title stays Conventional Commits (it is the changelog line). Stop if `PR` is empty.
 
-Never run `gh pr list` and pick one. Never land a PR whose head is not `BRANCH`.
+Never run an unfiltered `gh pr list` and pick one. Never land a PR whose head is not `BRANCH`.
 
 ## Wait
 
