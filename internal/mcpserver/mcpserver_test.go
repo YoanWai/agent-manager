@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -304,6 +305,30 @@ func TestTheMCPVocabularyNamesRealTools(t *testing.T) {
 		tool, _, _ := strings.Cut(phrase, " ")
 		if !registered[tool] {
 			t.Fatalf("%s names %q, which this server does not serve: %v", field, tool, registered)
+		}
+	}
+}
+
+// A schema tag is a literal, so raising a constant would leave the tools
+// advertising the old ceiling while the shell front rewrote its own help.
+func TestSchemaBoundsMatchTheirConstants(t *testing.T) {
+	bounds := []struct {
+		args  any
+		field string
+		want  string
+	}{
+		{reserveFilesArgs{}, "TTLM", fmt.Sprintf("default %d, maximum %d",
+			int(sessioncmd.DefaultReservationTTL.Minutes()), int(sessioncmd.MaxReservationTTL.Minutes()))},
+		{waitSessionArgs{}, "TimeoutS", fmt.Sprintf("default %d, maximum %d",
+			int(sessioncmd.DefaultWaitTimeout.Seconds()), int(sessioncmd.MaxWaitTimeout.Seconds()))},
+	}
+	for _, bound := range bounds {
+		field, ok := reflect.TypeOf(bound.args).FieldByName(bound.field)
+		if !ok {
+			t.Fatalf("%T has no field %s", bound.args, bound.field)
+		}
+		if schema := field.Tag.Get("jsonschema"); !strings.Contains(schema, bound.want) {
+			t.Errorf("%T.%s describes itself as %q, which does not state %q", bound.args, bound.field, schema, bound.want)
 		}
 	}
 }

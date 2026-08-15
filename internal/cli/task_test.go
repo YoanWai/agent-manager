@@ -31,6 +31,7 @@ func TestTaskVerbsDispatch(t *testing.T) {
 		t.Fatalf("depends-on = %v", fake.dependsOn)
 	}
 
+	fake.taskID = "unset"
 	if err := runTaskClaim(&bytes.Buffer{}, fake, nil, "cafe0001"); err != nil {
 		t.Fatalf("task claim: %v", err)
 	}

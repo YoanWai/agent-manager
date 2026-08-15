@@ -60,6 +60,9 @@ func TestDetailHeadShedsChipsBeforeFacts(t *testing.T) {
 			t.Fatalf("wide head is missing %q: %q", want, wide)
 		}
 	}
+	if strings.Contains(wide, "✉") {
+		t.Errorf("head badged a session holding no queued message: %q", wide)
+	}
 	mid := ansi.Strip(strings.Split(m.viewDetail(60), "\n")[0])
 	if strings.Contains(mid, "am/add-rate-limiting") {
 		t.Errorf("60 columns kept the branch chip: %q", mid)

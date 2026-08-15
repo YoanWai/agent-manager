@@ -148,7 +148,7 @@ func TestTerminalsCreateListSendAndReadWithRealTmux(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Send keys: %v", err)
 	}
-	if keyed.Sent != "keys" {
+	if keyed.Sent != "keys" || keyed.TerminalID != created.ID {
 		t.Fatalf("send keys result = %+v", keyed)
 	}
 	waitForTerminalOutput(t, h.terminals, h.caller.ID, created.ID, keyMarker)
