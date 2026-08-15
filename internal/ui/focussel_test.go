@@ -231,6 +231,82 @@ func TestDragSelectsAcrossRows(t *testing.T) {
 	}
 }
 
+// Mouse coordinates are terminal cells, not rune offsets. A CJK glyph uses
+// two cells, so treating the cell as a rune index selected text to the right
+// of the pointer.
+func TestDragSelectsWideRunesAtDisplayColumns(t *testing.T) {
+	m := paneAt(t, "甲乙丙丁")
+	press(m, 12, 5) // display column 2: 乙
+	drag(m, 16, 5)  // display column 6: before 丁
+	if got := m.selectionText(); got != "乙丙" {
+		t.Fatalf("drag copied %q, want %q", got, "乙丙")
+	}
+}
+
+func TestDragSelectionKeepsCompleteGraphemes(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		line       string
+		start, end int
+		want       string
+	}{
+		{name: "wide rune end inside glyph", line: "甲乙丙丁", start: 2, end: 5, want: "乙丙"},
+		{name: "emoji sequence", line: "x👩‍💻y", start: 1, end: 2, want: "👩‍💻"},
+		{name: "nfd combining mark", line: "e\u0301 x", start: 0, end: 1, want: "e\u0301"},
+		{name: "keycap sequence", line: "#\ufe0f\u20e3", start: 0, end: 1, want: "#\ufe0f\u20e3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := paneAt(t, tc.line)
+			press(m, m.pane.box.x+tc.start, m.pane.box.y)
+			drag(m, m.pane.box.x+tc.end, m.pane.box.y)
+			if got := m.selectionText(); got != tc.want {
+				t.Fatalf("drag copied %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWordSelectionKeepsWideGraphemeWhole(t *testing.T) {
+	m := paneAt(t, "甲乙")
+	m.sel = focusSelection{
+		active: true, granule: selectWord,
+		anchorRow: 0, anchorCol: 1,
+		headRow: 0, headCol: 1,
+	}
+	m.expandSelection()
+	if m.sel.anchorCol != 0 || m.sel.headCol != 4 {
+		t.Fatalf("word bounds = [%d,%d), want [0,4)", m.sel.anchorCol, m.sel.headCol)
+	}
+	if got := m.selectionText(); got != "甲乙" {
+		t.Fatalf("word selection copied %q, want %q", got, "甲乙")
+	}
+}
+
+func TestWordSelectionKeepsCompleteGraphemes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		line string
+		col  int
+		want string
+	}{
+		{name: "nfd combining mark", line: "e\u0301 x", col: 0, want: "e\u0301"},
+		{name: "keycap sequence", line: "#\ufe0f\u20e3", col: 0, want: "#\ufe0f\u20e3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := paneAt(t, tc.line)
+			m.sel = focusSelection{
+				active: true, granule: selectWord,
+				anchorRow: 0, anchorCol: tc.col,
+				headRow: 0, headCol: tc.col,
+			}
+			m.expandSelection()
+			if got := m.selectionText(); got != tc.want {
+				t.Fatalf("word selection copied %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // Selection indices are taken from the plain text of a colored capture, so
 // escape sequences never shift what gets copied.
 func TestSelectionIgnoresANSI(t *testing.T) {
