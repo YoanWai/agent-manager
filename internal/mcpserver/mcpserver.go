@@ -36,7 +36,7 @@ type listTerminalsArgs struct{}
 
 type createTerminalArgs struct {
 	Group     *string `json:"group,omitempty" jsonschema:"existing group path for the new terminal; pass an empty string for the root group; defaults to this agent's group"`
-	Directory string  `json:"directory,omitempty" jsonschema:"existing directory to open; defaults to the selected group's inherited path, then this agent's current directory"`
+	Directory string  `json:"directory,omitempty" jsonschema:"existing directory to open; defaults to this agent's current directory, or to the selected group's inherited path when group is set"`
 }
 
 type sendTerminalArgs struct {

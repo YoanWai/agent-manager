@@ -113,6 +113,30 @@ func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
 	}
 }
 
+func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
+	full := config.Tool{
+		Command:           "claude",
+		ReviveCommand:     "claude --continue",
+		ResumeByIDCommand: "claude --resume {id}",
+	}
+	for _, tc := range []struct {
+		name           string
+		tool           config.Tool
+		agentSessionID string
+		want           string
+	}{
+		{"a captured id resumes that conversation", full, "abc-123", "claude --resume abc-123"},
+		{"no captured id falls back to the newest one", full, "", "claude --continue"},
+		{"a tool with no revive of its own starts fresh", config.Tool{Command: "pi"}, "abc-123", "pi"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ReviveCommand(tc.tool, tc.agentSessionID); got != tc.want {
+				t.Fatalf("ReviveCommand = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 	manager := hooks.NewManager(t.TempDir())
 

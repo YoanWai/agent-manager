@@ -76,4 +76,18 @@ func TestDeleteTaskLeavesTheEdgesOfAnIDThatNamesNoTask(t *testing.T) {
 	if len(blocked.DependsOn) != 1 || blocked.DependsOn[0] != "groundwork" {
 		t.Fatalf("the surviving task lost what it waits on: %+v", blocked)
 	}
+	claimed, err := st.ClaimTask("feature", "session01", time.Now())
+	if err != nil {
+		t.Fatalf("ClaimTask: %v", err)
+	}
+	if claimed {
+		t.Fatal("a task the list reports blocked was handed out by id")
+	}
+	next, taken, err := st.ClaimNextTask("session01", time.Now())
+	if err != nil {
+		t.Fatalf("ClaimNextTask: %v", err)
+	}
+	if taken {
+		t.Fatalf("a task the list reports blocked was handed out as the next one: %+v", next)
+	}
 }

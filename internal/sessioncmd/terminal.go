@@ -206,8 +206,9 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 
 // createTarget resolves the group and directory a new pane opens in.
 // A nil requested group inherits the caller's; an explicit one must
-// already exist. An explicit directory wins over the group's inherited
-// default path, which in turn wins over the caller's own directory.
+// already exist. An explicit directory wins outright; a caller that named
+// a group falls back to that group's nearest inherited default path; a
+// caller that named none opens beside itself.
 func (r *runtime) createTarget(caller store.Session, requestedGroup *string, directory string) (string, string, error) {
 	group := caller.Group
 	groups, err := r.store.Groups()

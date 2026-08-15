@@ -148,7 +148,6 @@ func railText(t *testing.T, m *Model) []string {
 	return railTextAt(m, 60)
 }
 
-// railTextAt renders the tree at one rail width, as plain text per line.
 func railTextAt(m *Model, width int) []string {
 	var out []string
 	for _, line := range m.entryLines(m.treeRows(), 0, width, 20) {

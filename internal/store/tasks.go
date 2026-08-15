@@ -71,14 +71,16 @@ func (s *Store) CreateTask(task Task) error {
 // ClaimTask takes a named task, refusing one already claimed or still
 // blocked. SQLite serializes writers, so the guard and the write happen
 // inside one write transaction and a second agent racing for the same
-// task matches zero rows rather than overwriting the winner.
+// task matches zero rows rather than overwriting the winner. An edge
+// naming no task blocks too, which is what Blocking reports: a dependency
+// nobody created is work that has not happened.
 func (s *Store) ClaimTask(id, sessionID string, at time.Time) (bool, error) {
 	res, err := s.db.Exec(`
 UPDATE tasks SET state = ?, owner_session_id = ?, updated_at = ?
  WHERE id = ? AND state = ?
    AND NOT EXISTS (
-     SELECT 1 FROM task_deps d JOIN tasks p ON p.id = d.depends_on_id
-      WHERE d.task_id = tasks.id AND p.state != ?
+     SELECT 1 FROM task_deps d LEFT JOIN tasks p ON p.id = d.depends_on_id
+      WHERE d.task_id = tasks.id AND (p.id IS NULL OR p.state != ?)
    )`, TaskInProgress, sessionID, encodeTime(at), id, TaskPending, TaskDone)
 	if err != nil {
 		return false, err
@@ -97,8 +99,8 @@ UPDATE tasks SET state = ?, owner_session_id = ?, updated_at = ?
    SELECT t.id FROM tasks t
     WHERE t.state = ?
       AND NOT EXISTS (
-        SELECT 1 FROM task_deps d JOIN tasks p ON p.id = d.depends_on_id
-         WHERE d.task_id = t.id AND p.state != ?
+        SELECT 1 FROM task_deps d LEFT JOIN tasks p ON p.id = d.depends_on_id
+         WHERE d.task_id = t.id AND (p.id IS NULL OR p.state != ?)
       )
     ORDER BY t.created_at, t.id LIMIT 1
  )

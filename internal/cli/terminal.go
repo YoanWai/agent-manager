@@ -54,7 +54,7 @@ func runTerminalList(out io.Writer, terminals terminalCommands, args []string, s
 func runTerminalCreate(out io.Writer, terminals terminalCommands, args []string, sessionID string) error {
 	set := newFlagSet(usageTerminalCreate)
 	group := set.String("group", "", "existing group path to open it in; pass an empty string for the root group")
-	directory := set.String("directory", "", "existing directory to open; defaults to the group's inherited path, then yours")
+	directory := set.String("directory", "", "existing directory to open; defaults to yours, or to the group's inherited path")
 	asJSON := jsonFlag(set)
 	if _, err := parseCommand(out, set, args, 0, 0); err != nil {
 		return err

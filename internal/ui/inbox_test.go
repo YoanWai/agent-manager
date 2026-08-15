@@ -111,29 +111,9 @@ func TestInboxDeliversToARestingAgentWithItsSenderNamed(t *testing.T) {
 		t.Fatalf("delivery was not recorded: %+v", state)
 	}
 
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		pane, err := m.tmux.CapturePane(sess.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(pane, "rebase on main") {
-			// The envelope wraps at the pane width, and tmux wraps without
-			// inserting anything, so the unwrapped text is the joined rows.
-			flat := strings.ReplaceAll(pane, "\n", "")
-			// claude-hooked registers no MCP server, so the reply it is sent
-			// after is the subcommand.
-			for _, want := range []string{"not from the user", "payments-fix", "agent-manager send sender01"} {
-				if !strings.Contains(flat, want) {
-					t.Fatalf("envelope is missing %q:\n%s", want, pane)
-				}
-			}
-			return
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	pane, _ := m.tmux.CapturePane(sess.ID)
-	t.Fatalf("message never reached the pane:\n%s", pane)
+	// claude-hooked registers no MCP server, so the reply it is sent after is
+	// the subcommand.
+	settledPane(t, m, sess.ID, "rebase on main", "not from the user", "payments-fix", "agent-manager send sender01")
 }
 
 // An agent holds one front or the other, so the envelope has to send the
