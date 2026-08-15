@@ -188,12 +188,25 @@ func TestDeletingASessionTakesItsMessagesBothWays(t *testing.T) {
 	if _, err := st.Enqueue(message("inbound", now), DefaultInboxLimits); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
-	// Deleting the sender must clear the message too: ids come from a fresh
-	// UUID prefix, so a survivor could re-attach to a later session.
-	if err := st.Delete("sender01"); err != nil {
-		t.Fatalf("Delete: %v", err)
+	// Either end must clear the message: ids come from a fresh UUID prefix,
+	// so a survivor could re-attach to a later session.
+	if err := st.Delete("target01"); err != nil {
+		t.Fatalf("Delete the recipient: %v", err)
 	}
 	counts, err := st.QueuedCounts()
+	if err != nil {
+		t.Fatalf("QueuedCounts: %v", err)
+	}
+	if len(counts) != 0 {
+		t.Fatalf("messages survived their recipient: %v", counts)
+	}
+	if _, err := st.Enqueue(message("inbound again", now), DefaultInboxLimits); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if err := st.Delete("sender01"); err != nil {
+		t.Fatalf("Delete the sender: %v", err)
+	}
+	counts, err = st.QueuedCounts()
 	if err != nil {
 		t.Fatalf("QueuedCounts: %v", err)
 	}
