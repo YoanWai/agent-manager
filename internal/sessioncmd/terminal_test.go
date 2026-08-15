@@ -295,3 +295,43 @@ func TestCloseDeletesShellAndRefusesAgent(t *testing.T) {
 		t.Fatal("pane still live")
 	}
 }
+
+func TestCloseRefusesTerminalOfAnotherSession(t *testing.T) {
+	h := newTerminalHarness(t)
+	other := store.Session{
+		ID:     uuid.NewString()[:8],
+		Name:   "other-agent",
+		Tool:   "claude",
+		Cwd:    h.caller.Cwd,
+		Group:  h.caller.Group,
+		Status: status.Idle,
+	}
+	if err := h.store.CreateSession(other); err != nil {
+		t.Fatalf("other agent: %v", err)
+	}
+	created, err := h.terminals.Create(other.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := h.terminals.Close(h.caller.ID, created.ID); err == nil {
+		t.Fatal("closed another session's terminal")
+	}
+	if _, err := h.store.Get(created.ID); err != nil {
+		t.Fatalf("row gone: %v", err)
+	}
+	if !h.driver.Exists(created.ID) {
+		t.Fatal("pane killed")
+	}
+}
+
+func TestCloseRefusesUnnestedTerminal(t *testing.T) {
+	h := newTerminalHarness(t)
+	nest := false
+	created, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Nest: &nest})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := h.terminals.Close(h.caller.ID, created.ID); err == nil {
+		t.Fatal("closed an un-nested terminal")
+	}
+}

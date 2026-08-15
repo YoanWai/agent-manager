@@ -1520,36 +1520,34 @@ func (m *Model) rebuildRows() {
 	}
 	// m.sessions arrives ordered by the store (group, sort_order), so
 	// per-group slices inherit the user's manual order.
+	matched := make(map[string]bool, len(listed))
+	for _, sess := range listed {
+		if query == "" || matchesSearch(sess, query) {
+			matched[sess.ID] = true
+		}
+	}
+	// A parent the search itself missed still comes along to carry its
+	// matching children, in the store's order rather than after them.
+	carried := map[string]bool{}
+	for _, sess := range listed {
+		if !matched[sess.ID] || sess.ParentID == "" || !listedIDs[sess.ParentID] {
+			continue
+		}
+		carried[sess.ParentID] = true
+	}
 	sessionsByGroup := map[string][]store.Session{}
 	childrenByParent := map[string][]store.Session{}
 	for _, sess := range listed {
-		if query != "" && !matchesSearch(sess, query) {
-			continue
-		}
 		if sess.ParentID != "" {
 			if _, ok := byID[sess.ParentID]; ok {
-				childrenByParent[sess.ParentID] = append(childrenByParent[sess.ParentID], sess)
+				if matched[sess.ID] {
+					childrenByParent[sess.ParentID] = append(childrenByParent[sess.ParentID], sess)
+				}
 				continue
 			}
 		}
-		sessionsByGroup[sess.Group] = append(sessionsByGroup[sess.Group], sess)
-	}
-	if query != "" {
-		inGroup := map[string]bool{}
-		for _, groupSessions := range sessionsByGroup {
-			for _, sess := range groupSessions {
-				inGroup[sess.ID] = true
-			}
-		}
-		for parentID := range childrenByParent {
-			if inGroup[parentID] {
-				continue
-			}
-			parent, ok := byID[parentID]
-			if !ok || !listedIDs[parentID] {
-				continue
-			}
-			sessionsByGroup[parent.Group] = append(sessionsByGroup[parent.Group], parent)
+		if matched[sess.ID] || carried[sess.ID] {
+			sessionsByGroup[sess.Group] = append(sessionsByGroup[sess.Group], sess)
 		}
 	}
 	walked := map[string]bool{}

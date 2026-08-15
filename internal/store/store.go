@@ -263,6 +263,14 @@ func (s *Store) CreateSession(sess Session) error {
 	if err != nil {
 		return err
 	}
+	sess.ParentID = strings.TrimSpace(sess.ParentID)
+	if sess.ParentID != "" {
+		parent, err := s.validParent(sess.ID, sess.ParentID)
+		if err != nil {
+			return err
+		}
+		sess.Group = parent.Group
+	}
 	_, err = s.db.Exec(
 		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, sort_order)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
@@ -710,18 +718,26 @@ func (s *Store) MoveGroup(path, newParent string) error {
 	return s.RenameGroup(path, newPath)
 }
 
+func (s *Store) validParent(id, parentID string) (Session, error) {
+	if parentID == id {
+		return Session{}, fmt.Errorf("session %s cannot be its own parent", id)
+	}
+	parent, err := s.Get(parentID)
+	if err != nil {
+		return Session{}, fmt.Errorf("parent %s: %w", parentID, err)
+	}
+	if parent.ParentID != "" {
+		return Session{}, fmt.Errorf("parent %s already has a parent", parentID)
+	}
+	return parent, nil
+}
+
 func (s *Store) PlaceSession(id, group, parentID string) error {
 	parentID = strings.TrimSpace(parentID)
 	if parentID != "" {
-		if parentID == id {
-			return fmt.Errorf("session %s cannot be its own parent", id)
-		}
-		parent, err := s.Get(parentID)
+		parent, err := s.validParent(id, parentID)
 		if err != nil {
-			return fmt.Errorf("parent %s: %w", parentID, err)
-		}
-		if parent.ParentID != "" {
-			return fmt.Errorf("parent %s already has a parent", parentID)
+			return err
 		}
 		group = parent.Group
 	}
@@ -744,8 +760,6 @@ func (s *Store) PlaceSession(id, group, parentID string) error {
 	return s.ensureGroup(group)
 }
 
-// MoveSession reassigns a session to another group ("" = root), placing
-// it at the end of the destination.
 func (s *Store) MoveSession(id, group string) error {
 	return s.PlaceSession(id, group, "")
 }

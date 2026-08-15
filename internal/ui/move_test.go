@@ -135,6 +135,42 @@ func TestMoveTerminalOntoGroupUnnests(t *testing.T) {
 	}
 }
 
+func TestMoveReportsPlacementFailure(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	agent := m.sessionRows()[0]
+	shell := spawnTerminal(t, m)
+	if err := m.store.PlaceSession(shell.ID, "backend", ""); err != nil {
+		t.Fatalf("unnest: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, shell.Name)
+	m.openMove()
+	for m.form.groups[m.form.groupIndex].sessID != agent.ID {
+		m.form.groupIndex++
+		if m.form.groupIndex >= len(m.form.groups) {
+			t.Fatal("picker must list the agent")
+		}
+	}
+	if err := m.store.Delete(agent.ID); err != nil {
+		t.Fatalf("delete agent: %v", err)
+	}
+	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	if m.errBar.text == "" {
+		t.Fatal("failed placement reported nothing")
+	}
+	got, err := m.store.Get(shell.ID)
+	if err != nil || got.ParentID != "" {
+		t.Fatalf("shell moved anyway: %+v err %v", got, err)
+	}
+}
+
 func TestMoveAgentPickerHasNoSessionTargets(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

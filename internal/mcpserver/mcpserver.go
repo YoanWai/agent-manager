@@ -73,7 +73,7 @@ type terminalCommands interface {
 
 const serverInstructions = `Use Agent Manager's terminal tools when the session itself is the point: the user should be able to watch it, approve what happens, attach, or take over. SSH into a host is the canonical case. Do not create a terminal for one-shot local commands or other internal work; those stay in your normal tools.
 
-Before opening a new terminal, call list_terminals and reuse a relevant running terminal when possible. create_terminal nests under this session unless nest is false. Use send_terminal and read_terminal while the job runs. When the job is finished and the terminal is not being left for the user, call close_terminal.
+Before opening a new terminal, call list_terminals and reuse a relevant running terminal when possible. create_terminal nests under this session unless nest is false. Use send_terminal and read_terminal while the job runs. When the job is finished and the terminal is not being left for the user, call close_terminal, which reaches the terminals nested under this session.
 
 Sending a terminal command executes on the user's machine and follows the same safety and approval expectations as normal shell execution.`
 
@@ -206,9 +206,9 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "close_terminal",
-		Description: "Delete a managed terminal you opened once its job is finished: kills the pane and removes the row. " +
+		Description: "Delete a terminal nested under this session once its job is finished: kills the pane and removes the row. " +
 			"Leave it running when you opened it for the user (for example an SSH session they may attach to). " +
-			"Refuses agent sessions.",
+			"Refuses agent sessions, un-nested terminals, and terminals under another session.",
 		Annotations: terminalToolAnnotations(false, true, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args closeTerminalArgs) (*mcp.CallToolResult, any, error) {
 		if err := terminals.Close(sessionID, args.TerminalID); err != nil {

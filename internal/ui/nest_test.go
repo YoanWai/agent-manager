@@ -74,6 +74,37 @@ func TestSearchMatchingChildKeepsParent(t *testing.T) {
 	}
 }
 
+func TestSearchCarriedParentKeepsStoreOrder(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "carrier", dir, "backend")
+	carrier := m.sessionRows()[0]
+	if err := m.store.CreateSession(store.Session{
+		ID: "sh1", Name: "ssh-prod", Tool: "terminal", Cwd: dir,
+		Group: "backend", ParentID: carrier.ID, Status: status.Idle,
+	}); err != nil {
+		t.Fatalf("child: %v", err)
+	}
+	createSession(t, m, "ssh-runner", dir, "backend")
+	m.applyCmd(t, m.refreshCmd())
+	m.search = "ssh"
+	m.rebuildRows()
+	names := []string{}
+	for _, row := range m.rows {
+		if !row.isGroup {
+			names = append(names, row.sess.Name)
+		}
+	}
+	want := []string{"carrier", "ssh-prod", "ssh-runner"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("order = %v, want %v", names, want)
+	}
+}
+
 func TestOrphanParentIDPaintsUnnested(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
@@ -81,10 +112,19 @@ func TestOrphanParentIDPaintsUnnested(t *testing.T) {
 		t.Fatalf("group: %v", err)
 	}
 	if err := m.store.CreateSession(store.Session{
+		ID: "gone", Name: "parent", Tool: "claude", Cwd: dir,
+		Group: "backend", Status: status.Idle,
+	}); err != nil {
+		t.Fatalf("parent: %v", err)
+	}
+	if err := m.store.CreateSession(store.Session{
 		ID: "sh1", Name: "loose", Tool: "terminal", Cwd: dir,
 		Group: "backend", ParentID: "gone", Status: status.Idle,
 	}); err != nil {
 		t.Fatalf("orphan: %v", err)
+	}
+	if err := m.store.Delete("gone"); err != nil {
+		t.Fatalf("delete parent: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	for _, row := range m.rows {

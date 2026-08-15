@@ -709,18 +709,28 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.errBar.text = ""
 		case actionRestore:
+			// Each session leaves the archive as it comes back, so a later
+			// failure cannot strand a running one in the archived view.
 			for _, sess := range m.confirm.sessions {
-				if m.tmux.Exists(sess.ID) {
+				if !m.tmux.Exists(sess.ID) {
+					if err := m.reviveSession(sess); err != nil {
+						m.reportLaunchError(err)
+						return m, nil
+					}
+				}
+				if m.confirm.isGroup {
 					continue
 				}
-				if err := m.reviveSession(sess); err != nil {
-					m.reportLaunchError(err)
+				if err := m.store.SetArchived(sess.ID, false); err != nil {
+					m.errBar.text = err.Error()
 					return m, nil
 				}
 			}
-			if err := m.applyConfirmedArchived(false); err != nil {
-				m.errBar.text = err.Error()
-				return m, nil
+			if m.confirm.isGroup {
+				if err := m.applyConfirmedArchived(false); err != nil {
+					m.errBar.text = err.Error()
+					return m, nil
+				}
 			}
 			m.errBar.text = ""
 		case actionKill:

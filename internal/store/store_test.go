@@ -1223,6 +1223,42 @@ func TestPlaceSessionRejectsBadParent(t *testing.T) {
 	}
 }
 
+func TestCreateSessionRejectsBadParent(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	nested := sample("mid", "g1")
+	nested.ParentID = "agent"
+	if err := st.CreateSession(nested); err != nil {
+		t.Fatalf("mid: %v", err)
+	}
+	missing := sample("sh1", "g1")
+	missing.ParentID = "gone"
+	if err := st.CreateSession(missing); err == nil {
+		t.Fatal("missing parent")
+	}
+	self := sample("sh2", "g1")
+	self.ParentID = "sh2"
+	if err := st.CreateSession(self); err == nil {
+		t.Fatal("self parent")
+	}
+	grandchild := sample("sh3", "g1")
+	grandchild.ParentID = "mid"
+	if err := st.CreateSession(grandchild); err == nil {
+		t.Fatal("parent that already has a parent")
+	}
+	elsewhere := sample("sh4", "g2")
+	elsewhere.ParentID = "agent"
+	if err := st.CreateSession(elsewhere); err != nil {
+		t.Fatalf("child in another group: %v", err)
+	}
+	got, err := st.Get("sh4")
+	if err != nil || got.Group != "g1" {
+		t.Fatalf("child group = %+v err %v", got, err)
+	}
+}
+
 func TestPlaceSessionMovesAgentChildren(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.CreateSession(sample("agent", "g1")); err != nil {

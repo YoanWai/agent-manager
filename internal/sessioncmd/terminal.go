@@ -87,8 +87,7 @@ func (r *terminalRuntime) caller(sessionID string) (store.Session, error) {
 }
 
 func (r *terminalRuntime) terminal(id string) (store.Session, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
+	if strings.TrimSpace(id) == "" {
 		return store.Session{}, errors.New("terminal_id is empty; call list_terminals to get one")
 	}
 	sess, err := r.store.Get(id)
@@ -107,7 +106,7 @@ func (r *terminalRuntime) terminal(id string) (store.Session, error) {
 	return sess, nil
 }
 
-func (r *terminalRuntime) info(sess store.Session, running bool) Terminal {
+func (r *terminalRuntime) info(sess store.Session, running bool) (Terminal, error) {
 	dir := sess.Cwd
 	if running {
 		if current, err := r.driver.PaneCurrentPath(sess.ID); err == nil {
@@ -116,9 +115,11 @@ func (r *terminalRuntime) info(sess store.Session, running bool) Terminal {
 	}
 	parentName := ""
 	if sess.ParentID != "" {
-		if parent, err := r.store.Get(sess.ParentID); err == nil {
-			parentName = parent.Name
+		parent, err := r.store.Get(sess.ParentID)
+		if err != nil {
+			return Terminal{}, fmt.Errorf("parent %s of terminal %s: %w", sess.ParentID, sess.ID, err)
 		}
+		parentName = parent.Name
 	}
 	return Terminal{
 		ID:         sess.ID,
@@ -129,7 +130,7 @@ func (r *terminalRuntime) info(sess store.Session, running bool) Terminal {
 		Running:    running,
 		ParentID:   sess.ParentID,
 		ParentName: parentName,
-	}
+	}, nil
 }
 
 func (t *Terminals) List(sessionID string) ([]Terminal, error) {
@@ -155,7 +156,11 @@ func (t *Terminals) List(sessionID string) ([]Terminal, error) {
 			continue
 		}
 		_, running := panes[sess.ID]
-		terminals = append(terminals, runtime.info(sess, running))
+		info, err := runtime.info(sess, running)
+		if err != nil {
+			return nil, err
+		}
+		terminals = append(terminals, info)
 	}
 	return terminals, nil
 }
@@ -206,7 +211,7 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		return Terminal{}, err
 	}
 	_ = runtime.driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
-	return runtime.info(sess, true), nil
+	return runtime.info(sess, true)
 }
 
 func (t *Terminals) Close(sessionID, terminalID string) error {
@@ -215,14 +220,20 @@ func (t *Terminals) Close(sessionID, terminalID string) error {
 		return err
 	}
 	defer runtime.store.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	caller, err := runtime.caller(sessionID)
+	if err != nil {
 		return err
 	}
 	sess, err := runtime.terminal(terminalID)
 	if err != nil {
 		return err
 	}
-	_ = runtime.driver.Kill(sess.ID)
+	if sess.ParentID != caller.ID {
+		return fmt.Errorf("terminal %s is not nested under this session; only the session it hangs under closes it", sess.ID)
+	}
+	if err := runtime.driver.Kill(sess.ID); err != nil {
+		return err
+	}
 	return runtime.store.Delete(sess.ID)
 }
 
@@ -366,8 +377,12 @@ func (t *Terminals) Read(sessionID, terminalID string) (TerminalScreen, error) {
 	if err != nil {
 		return TerminalScreen{}, err
 	}
+	info, err := runtime.info(terminal, true)
+	if err != nil {
+		return TerminalScreen{}, err
+	}
 	return TerminalScreen{
-		Terminal: runtime.info(terminal, true),
+		Terminal: info,
 		Output:   strings.TrimRight(ansi.Strip(output), "\r\n"),
 	}, nil
 }
