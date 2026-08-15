@@ -698,6 +698,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				delete(m.pickedRepos, sess.ID)
+				delete(m.awaitedRenames, sess.ID)
 				if err := m.store.Delete(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil

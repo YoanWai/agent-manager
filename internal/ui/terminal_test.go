@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func shellCount(m *Model) int {
@@ -93,6 +95,26 @@ func TestOpenTerminalSpawnsShellInSelectedGroup(t *testing.T) {
 	}
 	if row, ok := m.selected(); !ok || row.ID != sess.ID {
 		t.Fatalf("cursor should land on the new terminal, selected = %+v", row)
+	}
+}
+
+// A shell gets no prompt and no rename directive, so the name it is given
+// is its real one and the row shows it from the first frame.
+func TestTerminalRowShowsItsNameImmediately(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("backend", t.TempDir()); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+
+	sess := spawnTerminal(t, m)
+	if m.awaitingRename(sess) {
+		t.Fatalf("shell %q has no rename to wait for", sess.Name)
+	}
+	row := ansi.Strip(m.renderTreeRow(treeRow{sess: sess}, false, 80, 0, panelHex()))
+	if !strings.Contains(row, sess.Name) {
+		t.Fatalf("shell row is missing its name %q:\n%s", sess.Name, row)
 	}
 }
 

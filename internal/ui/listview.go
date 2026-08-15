@@ -500,6 +500,40 @@ func (m *Model) sessionGlyph(sess store.Session) string {
 	return lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
 }
 
+// namePlaceholder stands in for the name a spawn generated while the agent
+// it asked to name itself has not answered, so the row settles on one name
+// instead of flashing a throwaway one first.
+const namePlaceholder = "…"
+
+// renameGrace caps the wait for that answer. It spans the whole way there,
+// the boot, the directive reaching the agent, and the command it runs, so it
+// is generous; past it the session keeps the name it was given.
+const renameGrace = time.Minute
+
+// awaitingRename drops the record it reads as soon as the wait is over, so
+// a session settling on its name needs nothing to sweep the map after it.
+func (m *Model) awaitingRename(sess store.Session) bool {
+	generated, awaited := m.awaitedRenames[sess.ID]
+	if !awaited {
+		return false
+	}
+	if sess.Name == generated && sess.Status != status.Dead &&
+		time.Since(sess.CreatedAt) < renameGrace {
+		return true
+	}
+	delete(m.awaitedRenames, sess.ID)
+	return false
+}
+
+// displayName is what every reading of a session prints, so the rail row and
+// the columns beside it never disagree about who an agent is.
+func (m *Model) displayName(sess store.Session) string {
+	if m.awaitingRename(sess) {
+		return namePlaceholder
+	}
+	return sess.Name
+}
+
 func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
 	sess := entry.sess
 	dot := m.sessionGlyph(sess)
@@ -507,7 +541,7 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	if selected {
 		nameStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 	}
-	head := pad + guides + dot + " " + nameStyle.Render(sess.Name)
+	head := pad + guides + dot + " " + nameStyle.Render(m.displayName(sess))
 	focused := selected && m.mode == modeFocus
 	if focused {
 		head += " " + focusBadgeStyle.Render(" FOCUS ")
@@ -840,7 +874,7 @@ func (m *Model) viewDetail(width int) string {
 	// The branch a worktree session lives on is the fact that tells it apart
 	// from its siblings, so it rides beside the tool while the row has room,
 	// and the tool chip goes before the name does.
-	name := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(sess.Name)
+	name := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(m.displayName(sess))
 	withTool := name + "  " + chipStyle.Render(tool)
 	heads := []string{withTool, name}
 	if sess.WorktreeBranch != "" {
@@ -940,7 +974,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		}
 		tint := lipgloss.NewStyle().Foreground(statusColor(sess.Status))
 		rows = append(rows, rosterRow{
-			name:  tint.Render(statusGlyph(sess.Status)) + " " + valueStyle.Render(sess.Name),
+			name:  tint.Render(statusGlyph(sess.Status)) + " " + valueStyle.Render(m.displayName(sess)),
 			tool:  subtleStyle.Render(sess.Tool),
 			state: tint.Render(statusLabel(sess.Status)) + subtleStyle.Render(" · "+relSince(lastActivity(sess))),
 		})
@@ -1039,7 +1073,7 @@ func (m *Model) viewQuickBar(width int) string {
 			state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
 				Render(statusGlyph(sess.Status) + " " + statusLabel(sess.Status))
 			target = fitColumns(
-				[]string{label("answer") + lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(sess.Name)},
+				[]string{label("answer") + lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(m.displayName(sess))},
 				[]string{state + " " + chipStyle.Render(sess.Tool), state, ""}, width)
 		}
 	}
