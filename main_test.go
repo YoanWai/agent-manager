@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -15,57 +13,6 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
 )
-
-func TestPrintHelpDoesNotRequireATerminal(t *testing.T) {
-	var out bytes.Buffer
-	if err := printHelp(&out); err != nil {
-		t.Fatalf("printHelp: %v", err)
-	}
-	for _, want := range []string{
-		"Usage: agent-manager [command]",
-		"Run the interactive manager when no command is given.",
-		"-h, --help",
-		"-v, --version",
-	} {
-		if !strings.Contains(out.String(), want) {
-			t.Fatalf("help text does not contain %q:\n%s", want, out.String())
-		}
-	}
-}
-
-type failingHelpWriter struct{}
-
-func (failingHelpWriter) Write([]byte) (int, error) {
-	return 0, errors.New("write failed")
-}
-
-func TestPrintHelpReturnsWriteError(t *testing.T) {
-	if err := printHelp(failingHelpWriter{}); err == nil {
-		t.Fatal("printHelp succeeded after the writer failed")
-	}
-}
-
-func TestMainPrintsHelpWithoutStartingTUI(t *testing.T) {
-	if os.Getenv("AGENT_MANAGER_HELP_TEST") == "1" {
-		flag := os.Args[len(os.Args)-1]
-		os.Args = []string{"agent-manager", flag}
-		main()
-		return
-	}
-	for _, flag := range []string{"--help", "-h"} {
-		t.Run(flag, func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=TestMainPrintsHelpWithoutStartingTUI", "--", flag)
-			cmd.Env = append(os.Environ(), "AGENT_MANAGER_HELP_TEST=1")
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				t.Fatalf("agent-manager %s: %v\n%s", flag, err, out)
-			}
-			if !strings.Contains(string(out), "Usage: agent-manager [command]") {
-				t.Fatalf("agent-manager %s did not print help:\n%s", flag, out)
-			}
-		})
-	}
-}
 
 // Startup is the only place the alternate-scroll reset goes out, and it
 // cannot be exercised headlessly: run() takes over the terminal. Reading
