@@ -81,6 +81,11 @@ func (m *Model) openRename() {
 	} else {
 		input.SetValue(entry.sess.Name)
 		tools := sortedToolNames(m.cfg)
+		for name, tool := range m.cfg.Tools {
+			if tool.Shell {
+				tools = append(tools, name)
+			}
+		}
 		toolIndex := 0
 		for i, name := range tools {
 			if name == entry.sess.Tool {
@@ -279,6 +284,17 @@ func (m *Model) applyRename() (tea.Model, tea.Cmd) {
 			prevTool = m.sessions[index].Tool
 		}
 		toolChanged := tool != "" && tool != prevTool
+		if toolChanged && m.isShell(tool) {
+			kids, err := m.store.Children(m.rename.sessID)
+			if err != nil {
+				m.errBar.text = err.Error()
+				return m, nil
+			}
+			if len(kids) > 0 {
+				m.errBar.text = "move its terminals first"
+				return m, nil
+			}
+		}
 		if toolChanged {
 			if err := m.store.UpdateTool(m.rename.sessID, tool); err != nil {
 				m.errBar.text = err.Error()

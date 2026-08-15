@@ -372,6 +372,34 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 	}
 }
 
+func TestRenameAgentToShellWithChildrenRefused(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	spawnTerminal(t, m)
+	m.selectSessionRow(t, "coder")
+	m.openRename()
+	for i, name := range m.rename.toolNames {
+		if name == "terminal" {
+			m.rename.toolIndex = i
+		}
+	}
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	if m.errBar.text == "" {
+		t.Fatal("expected refuse")
+	}
+	got, _ := m.store.Get(m.sessionRows()[0].ID)
+	if m.isShell(got.Tool) {
+		t.Fatalf("tool became %q", got.Tool)
+	}
+}
+
 func TestGroupEditPersistsWorktreeChoice(t *testing.T) {
 	m := buildModel(t)
 	if err := m.store.CreateGroup("grp", t.TempDir()); err != nil {

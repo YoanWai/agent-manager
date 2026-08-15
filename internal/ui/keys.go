@@ -276,7 +276,7 @@ func (m *Model) visibleReorderTarget(entry treeRow, delta int) (treeRow, bool) {
 			}
 			continue
 		}
-		if !candidate.isGroup && candidate.sess.Group == entry.sess.Group {
+		if !candidate.isGroup && candidate.sess.Group == entry.sess.Group && candidate.sess.ParentID == entry.sess.ParentID {
 			return candidate, true
 		}
 	}

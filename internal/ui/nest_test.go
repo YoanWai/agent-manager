@@ -204,3 +204,28 @@ func TestSettingsHasNoTerminalRows(t *testing.T) {
 		t.Fatal("terminal rows setting must be gone")
 	}
 }
+
+func TestReorderAgentSkipsChildren(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	createSession(t, m, "other", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	spawnTerminal(t, m)
+	m.selectSessionRow(t, "coder")
+	_, cmd := m.reorderSelected(1)
+	m.applyCmd(t, cmd)
+	var names []string
+	for _, row := range m.rows {
+		if !row.isGroup && row.sess.ParentID == "" {
+			names = append(names, row.sess.Name)
+		}
+	}
+	if len(names) < 2 || names[0] != "other" || names[1] != "coder" {
+		t.Fatalf("un-nested order %v", names)
+	}
+}
