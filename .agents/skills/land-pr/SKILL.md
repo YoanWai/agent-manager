@@ -45,12 +45,12 @@ Never run `gh pr list` and pick one. Never land a PR whose head is not `BRANCH`.
 
 Read the newest issue comment by `coderabbitai[bot]` whose body contains `rate limited` or `next included review will be available in`.
 
-Parse `N` from `Next review available in:** **N minutes**` or `available in N minutes`. `N` must be digits only. Cap at 120. Ignore the comment if the author is not the bot or `N` is invalid.
+Parse `N` from `Next review available in:** **N minutes**` or `available in N minutes`. `N` must be digits only. Cap at 120. Ignore the comment if the author is not the bot, `N` is invalid, or `created_at + N` minutes is already past.
 
-If `N` > 0:
+If remaining minutes `R` > 0:
 
 ```bash
-sleep $(( (N + 2) * 60 ))
+sleep $(( (R + 2) * 60 ))
 ```
 
 One background sleep. Do not poll GitHub during the wait. After it ends, re-read. Still limited: parse again and sleep once more. Tell the user the wait, then keep going. Do not ask them to come back.
