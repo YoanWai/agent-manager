@@ -325,20 +325,21 @@ func (m *Model) viewSettings() string {
 	actionRow := func(field int, name, action string) string {
 		return lead(field, name) + keyStyle.Render("↵") + mutedStyle.Render(" "+action)
 	}
-	// Bug report stays accent-colored even when unfocused so the action
-	// reads as a call-to-action among the picker rows above it.
-	bugLead := func() string {
+	// Report and suggest stay accent-colored even when unfocused so the
+	// actions read as a call-to-action among the picker rows above them.
+	ctaLead := func(field int, name string) string {
 		marker := "  "
 		labelStyle := lipgloss.NewStyle().Foreground(colorAccent2).Bold(true)
-		if m.settings.field == settingsFieldBugReport {
+		if m.settings.field == field {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
-		return marker + padRight(labelStyle.Render("report a bug"), 18)
+		return marker + padRight(labelStyle.Render(name), 18)
 	}
-	bugRow := bugLead() + keyStyle.Render("↵") + " " +
-		lipgloss.NewStyle().Foreground(colorAccent2).Render("open a prefilled GitHub issue")
-	bugNote := subtleStyle.Render("  * found a bug? report it (prefilled)")
+	ctaRow := func(field int, name, action string) string {
+		return ctaLead(field, name) + keyStyle.Render("↵") + " " +
+			lipgloss.NewStyle().Foreground(colorAccent2).Render(action)
+	}
 	body := row(settingsFieldTool, "default tool", toolValue) + "\n" +
 		row(settingsFieldTheme, "theme", themes[m.settings.themeIndex].Name) + "  " +
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
@@ -353,13 +354,13 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
-		bugRow + "\n" +
-		bugNote + "\n" +
+		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
+		ctaRow(settingsFieldFeatureRequest, "suggest a change", "open the feature request form") + "\n" +
 		m.settingsVersionRow(lead, actionRow)
 	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save"}}
 	switch m.settings.field {
-	case settingsFieldBugReport:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "open issue"}, {"esc", "save"}}
+	case settingsFieldBugReport, settingsFieldFeatureRequest:
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
 	case settingsFieldCLIs:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
 	case settingsFieldUpdate:

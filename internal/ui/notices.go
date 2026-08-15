@@ -151,7 +151,7 @@ func (m *Model) activeNotices() []notice {
 				"x / v  kill / revive         s      settings",
 				"",
 				"Press ? for every key: the map scrolls, and / searches it.",
-				"Found a bug? Settings (s) opens a prefilled report.",
+				"A bug or an idea? Settings (s) has a row for each.",
 				"Messages like this one live here; x dismisses one for good.",
 			},
 			url: repoURL + "#readme",
@@ -186,8 +186,16 @@ func (m *Model) activeNotices() []notice {
 }
 
 func bugReportURL(version string) string {
-	body := fmt.Sprintf("**Version:** %s\n**OS:** %s/%s\n\n**What happened:**\n", version, runtime.GOOS, runtime.GOARCH)
-	return repoURL + "/issues/new?body=" + url.QueryEscape(body)
+	q := url.Values{}
+	q.Set("template", "bug_report.yml")
+	if version != "" {
+		q.Set("version", version)
+	}
+	return repoURL + "/issues/new?" + q.Encode()
+}
+
+func featureRequestURL() string {
+	return repoURL + "/issues/new?template=feature_request.yml"
 }
 
 // arrowStepFeedbackURL prefills a report scoped to the beta ←→ pair, so
