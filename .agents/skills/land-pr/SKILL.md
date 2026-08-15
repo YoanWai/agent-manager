@@ -89,7 +89,7 @@ Rate-limited again: go back to Wait.
 
 Load every unresolved review thread from `coderabbitai[bot]`. For each one, read the cited code and prove the claim.
 
-- Real, in scope, and correct for this repo: fix it, run `gofmt -l .` (must print nothing), `go vet ./...`, and `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test` on the packages you touched, commit, push, reply in the thread with the SHA.
+- Real, in scope, and correct for this repo: fix it, then run the complete repository gate before committing: `gofmt -l .` (must print nothing), `go vet ./...`, `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test -race ./...`, and `go build ./...`. Commit, push, then reply in the thread with the SHA.
 - Wrong, style-only, or against AGENTS.md / the surrounding code: reply why. Do not change the code.
 - Unclear: say what you cannot verify. Do not guess.
 
