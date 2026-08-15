@@ -220,7 +220,9 @@ func (m *Model) viewGroupPicker() string {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 		}
 		label := displayGroup(opt.path)
-		if opt.path != "" {
+		if opt.sessID != "" {
+			label = strings.Repeat("  ", opt.depth) + opt.name
+		} else if opt.path != "" {
 			label = strings.Repeat("  ", opt.depth) + baseName(opt.path)
 		}
 		style := mutedStyle
@@ -441,7 +443,7 @@ func themeSwatch(t Theme) string {
 }
 
 func (m *Model) viewMove() string {
-	return m.card("⇄ Move to group", m.viewGroupPicker(),
+	return m.card("⇄ Move", m.viewGroupPicker(),
 		[][2]string{{"↑↓", "pick"}, {"↵", "move"}, {"esc", "cancel"}})
 }
 

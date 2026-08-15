@@ -80,3 +80,75 @@ func TestMoveGroupRowExcludesDescendants(t *testing.T) {
 		}
 	}
 }
+
+func TestMoveTerminalOntoAgentNests(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectGroupRow(t, "backend")
+	shell := spawnTerminal(t, m)
+	m.selectSessionRow(t, shell.Name)
+	m.openMove()
+	agent, _ := m.store.Get(m.sessionRows()[0].ID)
+	for i, opt := range m.form.groups {
+		if opt.sessID == agent.ID {
+			m.form.groupIndex = i
+			break
+		}
+	}
+	if m.form.groups[m.form.groupIndex].sessID != agent.ID {
+		t.Fatal("picker must list the agent")
+	}
+	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	got, err := m.store.Get(shell.ID)
+	if err != nil || got.ParentID != agent.ID {
+		t.Fatalf("nested = %+v err %v", got, err)
+	}
+}
+
+func TestMoveTerminalOntoGroupUnnests(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.store.CreateGroup("other", dir); err != nil {
+		t.Fatalf("other: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	shell := spawnTerminal(t, m)
+	m.selectSessionRow(t, shell.Name)
+	m.openMove()
+	pickGroup(t, m, "other")
+	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	got, _ := m.store.Get(shell.ID)
+	if got.ParentID != "" || got.Group != "other" {
+		t.Fatalf("unnest = %+v", got)
+	}
+}
+
+func TestMoveAgentPickerHasNoSessionTargets(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	createSession(t, m, "other", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	m.openMove()
+	for _, opt := range m.form.groups {
+		if opt.sessID != "" {
+			t.Fatalf("agent move listed session %q", opt.sessID)
+		}
+	}
+}
