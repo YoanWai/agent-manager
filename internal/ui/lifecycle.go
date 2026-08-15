@@ -119,6 +119,22 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	if entry.isGroup {
 		return m.reviveMany(m.sessionsInGroup(entry.group), "no dead sessions to revive in "+entry.group)
 	}
+	set, err := m.sessionAndChildren(entry.sess)
+	if err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
+	if len(set) > 1 && !m.tmux.Exists(entry.sess.ID) {
+		m.confirm = confirmTarget{
+			action:   actionRevive,
+			sessions: set,
+			label: followConfirmLabel("revive", entry.sess.Name, len(set)-1,
+				"resumes its agent.",
+				"resumes their agents."),
+		}
+		m.mode = modeConfirmDelete
+		return m, nil
+	}
 	if err := m.reviveSession(entry.sess); err != nil {
 		m.reportLaunchError(err)
 		return m, nil
@@ -368,10 +384,17 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 			m.errBar.text = entry.sess.Name + " is already dead"
 			return m, nil
 		}
+		sessions, err := m.sessionAndChildren(entry.sess)
+		if err != nil {
+			m.errBar.text = err.Error()
+			return m, nil
+		}
 		m.confirm = confirmTarget{
 			action:   actionKill,
-			sessions: []store.Session{entry.sess},
-			label:    fmt.Sprintf("kill %s? frees its RAM, v revives it.", entry.sess.Name),
+			sessions: sessions,
+			label: followConfirmLabel("kill", entry.sess.Name, len(sessions)-1,
+				"frees its RAM, v revives it.",
+				"frees their RAM, v revives them."),
 		}
 	}
 	m.mode = modeConfirmDelete
@@ -474,10 +497,17 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 			label:    fmt.Sprintf("archive group %s (%d sessions)? frees their RAM, t to find them.", entry.group, len(subtree)),
 		}
 	} else {
+		sessions, err := m.sessionAndChildren(entry.sess)
+		if err != nil {
+			m.errBar.text = err.Error()
+			return m, nil
+		}
 		m.confirm = confirmTarget{
 			action:   actionArchive,
-			sessions: []store.Session{entry.sess},
-			label:    fmt.Sprintf("archive %s? frees its RAM, t to find it.", entry.sess.Name),
+			sessions: sessions,
+			label: followConfirmLabel("archive", entry.sess.Name, len(sessions)-1,
+				"frees its RAM, t to find it.",
+				"frees their RAM, t to find them."),
 		}
 	}
 	m.mode = modeConfirmDelete
@@ -503,10 +533,17 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 			label:    fmt.Sprintf("restore group %s (%d sessions)? resumes their agents.", entry.group, len(subtree)),
 		}
 	} else {
+		sessions, err := m.sessionAndChildren(entry.sess)
+		if err != nil {
+			m.errBar.text = err.Error()
+			return m, nil
+		}
 		m.confirm = confirmTarget{
 			action:   actionRestore,
-			sessions: []store.Session{entry.sess},
-			label:    fmt.Sprintf("restore %s? resumes its agent.", entry.sess.Name),
+			sessions: sessions,
+			label: followConfirmLabel("restore", entry.sess.Name, len(sessions)-1,
+				"resumes its agent.",
+				"resumes their agents."),
 		}
 	}
 	m.mode = modeConfirmDelete
@@ -538,7 +575,33 @@ func (m *Model) applyConfirmedArchived(archived bool) error {
 	if m.confirm.isGroup {
 		return m.store.SetGroupArchived(m.confirm.path, archived)
 	}
-	return m.store.SetArchived(m.confirm.sessions[0].ID, archived)
+	for _, sess := range m.confirm.sessions {
+		if err := m.store.SetArchived(sess.ID, archived); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Model) sessionAndChildren(sess store.Session) ([]store.Session, error) {
+	kids, err := m.store.Children(sess.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]store.Session, 0, 1+len(kids))
+	out = append(out, sess)
+	return append(out, kids...), nil
+}
+
+func followConfirmLabel(verb, name string, extra int, one, many string) string {
+	if extra <= 0 {
+		return fmt.Sprintf("%s %s? %s", verb, name, one)
+	}
+	unit := "terminal"
+	if extra != 1 {
+		unit = "terminals"
+	}
+	return fmt.Sprintf("%s %s and %d %s? %s", verb, name, extra, unit, many)
 }
 
 func (m *Model) prepareDelete() {
@@ -551,9 +614,16 @@ func (m *Model) prepareDelete() {
 		return
 	}
 	if !entry.isGroup {
+		sessions, err := m.sessionAndChildren(entry.sess)
+		if err != nil {
+			m.errBar.text = err.Error()
+			return
+		}
 		m.confirm = confirmTarget{
-			label:    "delete " + entry.sess.Name + "? kills its tmux session.",
-			sessions: []store.Session{entry.sess},
+			label: followConfirmLabel("delete", entry.sess.Name, len(sessions)-1,
+				"kills its tmux session.",
+				"kills their tmux sessions."),
+			sessions: sessions,
 		}
 		m.mode = modeConfirmDelete
 		return
@@ -671,6 +741,17 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.errBar.text = ""
 			m.rebuildRows()
+		case actionRevive:
+			for _, sess := range m.confirm.sessions {
+				if m.tmux.Exists(sess.ID) {
+					continue
+				}
+				if err := m.reviveSession(sess); err != nil {
+					m.reportLaunchError(err)
+					return m, nil
+				}
+			}
+			m.errBar.text = ""
 		case actionDelete:
 			for _, sess := range m.confirm.sessions {
 				if err := m.tmux.Kill(sess.ID); err != nil {

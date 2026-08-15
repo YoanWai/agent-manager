@@ -26,6 +26,8 @@ func (m *Model) confirmTitle() string {
 		return "◆ Restore " + subject
 	case actionRestart:
 		return "↻ Restart " + subject
+	case actionRevive:
+		return "◆ Revive " + subject
 	default:
 		return "⚠ Delete " + subject
 	}
@@ -69,6 +71,8 @@ func (m *Model) viewConfirm() string {
 		answer = "restore"
 	case actionRestart:
 		answer = "restart"
+	case actionRevive:
+		answer = "revive"
 	}
 	hint := [][2]string{{"y/↵", answer}, {"n/esc", "cancel"}}
 	return m.cardSized(width, m.confirmTitle(), strings.TrimRight(body.String(), "\n"), hint)

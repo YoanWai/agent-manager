@@ -301,6 +301,7 @@ const (
 	actionRestore = "restore"
 	actionKill    = "kill"
 	actionRestart = "restart"
+	actionRevive  = "revive"
 )
 
 type confirmTarget struct {
