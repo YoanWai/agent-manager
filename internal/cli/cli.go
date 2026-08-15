@@ -59,14 +59,17 @@ func Commands() map[string]Command {
 
 func Help() string {
 	var help strings.Builder
-	help.WriteString("agent-manager runs your session beside the user's other agents and terminals.\n\n")
-	help.WriteString("usage: agent-manager <command> [flags]\n")
-	help.WriteString("       agent-manager help\n\n")
+	help.WriteString("Usage: agent-manager [command]\n\n")
+	help.WriteString("Run the interactive manager when no command is given.\n\n")
+	help.WriteString("agent-manager runs your session beside the user's other agents and terminals.\n")
 	help.WriteString("Every command acts as the session it runs in, so run them from your own shell.\n")
 	for _, section := range sections() {
 		help.WriteString("\n" + section.title + "\n")
 		help.WriteString(usageLines(section.commands))
 	}
+	help.WriteString("\nOptions:\n")
+	help.WriteString("  -h, --help     Show this help text\n")
+	help.WriteString("  -v, --version  Print the installed version\n")
 	return help.String()
 }
 

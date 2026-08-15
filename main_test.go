@@ -6,7 +6,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
+	"os/exec"
 	"runtime/debug"
+	"strings"
 	"testing"
 )
 
