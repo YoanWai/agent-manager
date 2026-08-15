@@ -341,8 +341,8 @@ func (tr toolRules) turnIsNewest(after []string) bool {
 	return tr.settledBelow(after, false)
 }
 
-// limitIsNewest is turnIsNewest plus the turn-end summary of the limited
-// turn itself, which sits below the banner and is not a newer turn.
+// limitIsNewest is turnIsNewest plus the first turn-end summary below the
+// banner, which closed the limited turn. A second summary is a newer turn.
 func (tr toolRules) limitIsNewest(after []string) bool {
 	return tr.settledBelow(after, true)
 }
@@ -358,6 +358,7 @@ func (tr toolRules) settledBelow(after []string, skipTurnEnd bool) bool {
 			continue
 		}
 		if skipTurnEnd && tr.turnEnd != nil && tr.turnEnd.MatchString(trimmed) {
+			skipTurnEnd = false
 			continue
 		}
 		if tr.trailingNote != nil && tr.trailingNote.MatchString(strings.TrimLeft(trimmed, " \t")) {

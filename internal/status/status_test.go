@@ -225,6 +225,9 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 		{"claude old limit, newer finished turn", "claude",
 			"  ⎿  You've hit your weekly limit · resets 1am (Asia/Jerusalem)\n" +
 				"✻ Churned for 2h 0m 54s\n  All done now.\n✻ Worked for 5s\n────\n❯ \n────", Finished},
+		{"claude old limit, later turn-end with no other content", "claude",
+			"  ⎿  You've hit your weekly limit · resets 1am (Asia/Jerusalem)\n" +
+				"✻ Churned for 2h 0m 54s\n✻ Worked for 5s\n────\n❯ \n────", Finished},
 		{"claude streaming without spinner (real capture)", "claude",
 			"  183\n  184\n────\n❯ \n────\n  ▎ ● Fable 5 ✦ medium", Idle},
 		{"claude fresh start, typed unsubmitted", "claude",
@@ -531,6 +534,15 @@ func TestNewEngineBadPattern(t *testing.T) {
 	}
 	if _, err := NewEngine(cfg); err == nil {
 		t.Fatal("expected error for invalid regex")
+	}
+
+	cfg = config.Config{
+		Tools: map[string]config.Tool{
+			"bad": {LimitLine: "("},
+		},
+	}
+	if _, err := NewEngine(cfg); err == nil {
+		t.Fatal("expected error for invalid limit_line regex")
 	}
 }
 
