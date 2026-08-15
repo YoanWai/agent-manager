@@ -220,17 +220,22 @@ func TestReviewHeaderTargetLabelCleanAndKeyed(t *testing.T) {
 }
 
 // The header carries the filter state the way it carries the scope and the
-// layout, and its file count follows what the list actually shows.
+// layout, and its readings follow what the list actually shows. A lock file
+// is the case the totals turn on: git hands back real add and delete counts
+// for it, so a header that kept counting it would disagree with its own list.
 func TestReviewHeaderShowsCodeOnlyFilter(t *testing.T) {
 	m := buildModel(t)
 	if m.gitDrv == nil {
 		t.Skip("git not installed")
 	}
-	openReviewOn(t, m, "hdr", gitRepoWithBinaryBetweenTextFiles(t))
+	openReviewOn(t, m, "hdr", gitRepoWithLockFileBetweenTextFiles(t))
 
 	header := ansi.Strip(m.viewDiffHeader("hdr"))
-	if !strings.Contains(header, "3 files") {
+	if !strings.Contains(header, "4 files") {
 		t.Fatalf("header should count every changed file, got %q", header)
+	}
+	if !strings.Contains(header, "+5") || !strings.Contains(header, "−5") {
+		t.Fatalf("header should total every changed file, got %q", header)
 	}
 	if strings.Contains(header, "code only") {
 		t.Fatalf("header should not claim a filter that is off, got %q", header)
@@ -243,5 +248,8 @@ func TestReviewHeaderShowsCodeOnlyFilter(t *testing.T) {
 	}
 	if !strings.Contains(header, "2 files") {
 		t.Fatalf("header should count only the files on show, got %q", header)
+	}
+	if !strings.Contains(header, "+2") || !strings.Contains(header, "−2") {
+		t.Fatalf("header should drop the lock file's totals, got %q", header)
 	}
 }

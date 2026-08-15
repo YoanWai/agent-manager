@@ -1466,6 +1466,50 @@ func gitRepoWithBinaryBetweenTextFiles(t *testing.T) string {
 		})
 }
 
+// gitRepoWithLockFileBetweenTextFiles carries a lock file git counts in full,
+// so a header reading that follows the list can be told apart from one that
+// followed every changed file.
+func gitRepoWithLockFileBetweenTextFiles(t *testing.T) string {
+	t.Helper()
+	lock := func(version string) string {
+		return "one " + version + "\ntwo " + version + "\nthree " + version + "\n"
+	}
+	return writeGitRepo(t,
+		map[string]string{
+			"a.go":   "package a\n\nfunc A() int { return 1 }\n",
+			"b.dat":  "\x00\x01\x02one",
+			"c.go":   "package a\n\nfunc C() int { return 3 }\n",
+			"go.sum": lock("v1"),
+		},
+		map[string]string{
+			"a.go":   "package a\n\nfunc A() int { return 10 }\n",
+			"b.dat":  "\x00\x01\x02two",
+			"c.go":   "package a\n\nfunc C() int { return 30 }\n",
+			"go.sum": lock("v2"),
+		})
+}
+
+// A compiled artifact is dropped on its name alone, which is what a file git
+// has not classified yet needs: an untracked one carries no numstat verdict,
+// and nothing sniffs its bytes until the cursor reaches it.
+func TestNonCodePathNamesCompiledArtifacts(t *testing.T) {
+	hidden := []string{
+		"build/Main.class", "app/__pycache__/mod.pyc", "assets/logo.PNG",
+		"go.sum", "Cargo.lock", "web/package-lock.json", "vendor/lib.so",
+	}
+	for _, path := range hidden {
+		if !nonCodePath(path) {
+			t.Errorf("%q should be filtered out of a code-only review", path)
+		}
+	}
+	shown := []string{"main.go", "Main.java", "mod.py", "readme.md", "classy.go"}
+	for _, path := range shown {
+		if nonCodePath(path) {
+			t.Errorf("%q is source and should stay in the review", path)
+		}
+	}
+}
+
 // f drops the files git calls binary out of the review, and neither the
 // selection nor a file switch is left on one of them.
 func TestReviewCodeOnlyHidesBinaryFiles(t *testing.T) {

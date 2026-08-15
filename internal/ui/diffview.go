@@ -601,6 +601,7 @@ var nonCodeExts = map[string]bool{
 	".zip": true, ".tar": true, ".gz": true, ".bz2": true, ".xz": true,
 	".7z": true, ".mp3": true, ".mp4": true, ".wav": true, ".ogg": true,
 	".avi": true, ".mov": true, ".pdf": true, ".lock": true,
+	".class": true, ".pyc": true,
 }
 
 var nonCodeNames = map[string]bool{
