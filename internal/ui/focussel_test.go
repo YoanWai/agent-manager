@@ -252,6 +252,8 @@ func TestDragSelectionKeepsCompleteGraphemes(t *testing.T) {
 	}{
 		{name: "wide rune end inside glyph", line: "甲乙丙丁", start: 2, end: 5, want: "乙丙"},
 		{name: "emoji sequence", line: "x👩‍💻y", start: 1, end: 2, want: "👩‍💻"},
+		{name: "nfd combining mark", line: "e\u0301 x", start: 0, end: 1, want: "e\u0301"},
+		{name: "keycap sequence", line: "#\ufe0f\u20e3", start: 0, end: 1, want: "#\ufe0f\u20e3"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := paneAt(t, tc.line)
@@ -277,6 +279,31 @@ func TestWordSelectionKeepsWideGraphemeWhole(t *testing.T) {
 	}
 	if got := m.selectionText(); got != "甲乙" {
 		t.Fatalf("word selection copied %q, want %q", got, "甲乙")
+	}
+}
+
+func TestWordSelectionKeepsCompleteGraphemes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		line string
+		col  int
+		want string
+	}{
+		{name: "nfd combining mark", line: "e\u0301 x", col: 0, want: "e\u0301"},
+		{name: "keycap sequence", line: "#\ufe0f\u20e3", col: 0, want: "#\ufe0f\u20e3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := paneAt(t, tc.line)
+			m.sel = focusSelection{
+				active: true, granule: selectWord,
+				anchorRow: 0, anchorCol: tc.col,
+				headRow: 0, headCol: tc.col,
+			}
+			m.expandSelection()
+			if got := m.selectionText(); got != tc.want {
+				t.Fatalf("word selection copied %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

@@ -316,17 +316,16 @@ type graphemeSpan struct {
 
 func graphemeSpans(line string) []graphemeSpan {
 	var spans []graphemeSpan
-	for offset, cell, state := 0, 0, byte(0); offset < len(line); {
-		text, width, size, nextState := ansi.GraphemeWidth.DecodeSequenceInString(line[offset:], state, nil)
-		if size <= 0 {
+	for offset, cell := 0, 0; offset < len(line); {
+		text, width := ansi.FirstGraphemeCluster(line[offset:], ansi.GraphemeWidth)
+		if text == "" {
 			break
 		}
 		spans = append(spans, graphemeSpan{
-			start: offset, end: offset + size, startCell: cell, endCell: cell + width, text: text,
+			start: offset, end: offset + len(text), startCell: cell, endCell: cell + width, text: text,
 		})
-		offset += size
+		offset += len(text)
 		cell += width
-		state = nextState
 	}
 	return spans
 }
