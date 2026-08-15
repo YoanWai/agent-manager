@@ -13,7 +13,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | Key | Action |
 |-----|--------|
 | `n` | New session (name, tool, directory, worktree toggle, optional starting prompt, group picker) |
-| `T` | New terminal tab: a plain shell in the selected group, with no agent in it |
+| `T` | New terminal tab: a shell under the selected agent, or in the selected group |
 | `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
 | `g` | New group (name, parent, default path) |
@@ -25,7 +25,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `→` | Step into the row: focus the session, or open the group. In beta; Settings (`s`) can turn the pair off |
 | `←` | Step out: close the group, or — focused, with the caret at the start of the agent's prompt — back to the manager. This needs the tool's prompt marker (its `activity_cutoff`) on the caret's row, so a CLI without one keeps `←` entirely; anywhere else in the prompt it moves the caret as usual |
 | `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings |
-| `m` | Move session to another group |
+| `m` | Move a session to a group, or a terminal into a session |
 | `r` | Rename session / edit tool; edit group name and default path |
 | `x` | Kill the selected session, or every live session under a group: frees the RAM their agents hold, and the rows stay for `v` |
 | `X` | Kill every live session in view |
@@ -64,15 +64,11 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 
 ## Terminal tabs
 
-`T` opens a shell tab in the group under the cursor: a session like any other — same list, same row keys, same `enter`, `x`, `v` and `R` — with your shell in the pane instead of an agent. It lands in the selected session's directory, wherever that session has moved to, or in the group's default path when a group row is selected, so the shell that runs the tests sits next to the agent that wrote them. Its status rests at idle throughout, a build included: turn tracking belongs to agents, and a shell has no turns.
+`T` opens a shell tab: a session like any other (same list, same row keys, same `enter`, `x`, `v` and `R`) with your shell in the pane instead of an agent. On an agent, the new shell nests under that session, in that agent's group and directory. On a group, it lands in the group as an un-nested sibling, in the group's default path. On a nested shell it joins the same parent; on an un-nested shell it stays in that shell's group. Its status rests at idle throughout: turn tracking belongs to agents, and a shell has no turns.
 
 The shell is the `[tools.terminal]` block in [config.toml](configuration.md). It ships with no command, which leaves the pane on `$SHELL`; set one to open a different shell. What marks it as a shell is `shell = true`, not its name, so a `[tools.terminal]` block you wrote yourself stays the agent CLI you meant it to be.
 
-### Where the shells sit
-
-Shells gather under a **Terminals** rule pinned to the foot of the list, holding every shell from every group, each row naming the group it belongs to. The tree scrolls above it; the block keeps at most half the list and scrolls inside itself once you have more shells than that. Settings (`s`) has a `terminal rows` row that switches it from `pinned` to `inline`, which puts every shell back among the agents in its own group, marked with `❯` where an agent carries its status dot.
-
-A group's dots and counts describe its agents either way, so the shell you left running a build never shows up as work in progress.
+Shells live in the tree with the agents they belong to, marked with `❯` where an agent carries its status dot. `m` on a terminal moves it onto an agent (nests under that session) or onto a group (un-nests into that group). A group's dots and counts describe its agents, so only agent work shows as in progress.
 
 **The keys that write into a pane refuse a shell.** `space` and the review screen's `C` both paste their text and press Enter, so on a shell a sentence meant for an agent would run as a command. Both say the row is a shell and send nothing; enter the session (`↵`) to type there, where what you type is plainly a command. `f` says the same, since a shell has no conversation to fork.
 
@@ -157,13 +153,14 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `review_base` | Declare or clear the review base ref |
 | `review_mode` | Select the diff scope review opens with |
 | `list_terminals` | List active managed terminals and their current directories |
-| `create_terminal` | Open a terminal beside the calling agent, or in an explicit group or directory |
+| `create_terminal` | Open a terminal nested under the calling agent unless `nest` is false |
 | `send_terminal` | Submit a command or send exact keys to a running terminal |
 | `read_terminal` | Read the plain-text content currently visible in a terminal |
+| `close_terminal` | Close a finished terminal: kill the pane and delete the row |
 
-`create_terminal` defaults to the calling agent's group and live pane directory. An explicit group uses that group's nearest inherited default path; an explicit directory wins over both. `send_terminal` accepts exactly one of a command, which is pasted and submitted with Enter, or a sequence of tmux key names such as `C-c`, `Up`, and `Enter`. `read_terminal` returns the current screen rather than unlimited scrollback.
+`create_terminal` nests under the calling session unless `nest` is false. It defaults to the calling agent's group and live pane directory. An explicit group uses that group's nearest inherited default path; an explicit directory wins over both. `close_terminal` kills the pane and removes the row once the job is finished. `send_terminal` accepts exactly one of a command, which is pasted and submitted with Enter, or a sequence of tmux key names such as `C-c`, `Up`, and `Enter`. `read_terminal` returns the current screen rather than unlimited scrollback.
 
-The server's MCP initialization instructions teach agents to use this workflow without waiting for an explicit request: list and reuse a terminal before long-running, output-heavy or continuously monitored work; create one only when needed; send the command; then read its screen until the result is clear. The same guidance is repeated in the individual tool descriptions for clients that expose tools but not server instructions. Short one-shot commands stay in the agent's normal execution path when a separate persistent terminal adds no value.
+The server's MCP initialization instructions teach agents to open a terminal for human-visible work such as SSH, when the user should be able to watch it, attach, or take over. They list and reuse a relevant running terminal first; `create_terminal` nests under the caller unless `nest` is false; they send the command and read its screen while the job runs; and they call `close_terminal` when that job ends, unless the terminal is being left for the user. One-shot local commands stay in the agent's normal tools. The same guidance is repeated in the individual tool descriptions for clients that expose tools but not server instructions.
 
 Sending a command to a terminal executes it on the user's machine. Agents should treat `send_terminal` with the same care as typing into an attached shell: inspect the target returned by `list_terminals`, avoid destructive commands unless the user asked for them, and read the result before continuing.
 
