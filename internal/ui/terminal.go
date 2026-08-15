@@ -72,6 +72,15 @@ func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
 		Group:  m.contextGroup(),
 		Status: status.Starting,
 	}
+	if entry, ok := m.selectedRow(); ok && !entry.isGroup {
+		if m.isShell(entry.sess.Tool) {
+			sess.ParentID = entry.sess.ParentID
+			sess.Group = entry.sess.Group
+		} else {
+			sess.ParentID = entry.sess.ID
+			sess.Group = entry.sess.Group
+		}
+	}
 	if err := m.launchNewSession(sess, tool, tool.Command, launchOptions{}); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
