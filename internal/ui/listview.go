@@ -697,6 +697,30 @@ func focusTopRule(width int) string {
 	return rule
 }
 
+// startupFrames turn a quarter arc around the circle the status marks are
+// drawn from, so a booting session animates in their geometric family while
+// standing clear of every mark that names a state: a frame caught mid-turn
+// cannot be read as one of them.
+var startupFrames = []string{"◜", "◝", "◞", "◟"}
+
+// startupLoader is the preview's line for a selected session that is coming
+// up, and "" for every other session. A launching agent leaves its pane
+// blank for as long as it takes to draw, and an empty preview under a live
+// row reads as a broken session rather than one on its way up. paneBooted
+// is the poller's own test for a pane nothing has drawn to, so the loader
+// clears on the first captured frame rather than waiting for the poll that
+// moves the row off the launch state. A focused pane keeps its own first
+// row: that is the screen the user is typing on, and its caret lives there.
+func (m *Model) startupLoader() string {
+	sess, ok := m.selected()
+	if !ok || m.mode == modeFocus || sess.Status != status.Starting || paneBooted(m.preview) {
+		return ""
+	}
+	frame := startupFrames[m.startupPhase%len(startupFrames)]
+	return lipgloss.NewStyle().Foreground(statusColor(status.Starting)).
+		Render(frame + " " + statusLabel(status.Starting))
+}
+
 // previewLines is the captured pane, filling every row under the detail
 // separator. The captured rows are marked raw and drawn without the
 // column's gutters: painting our backdrop behind an agent's own CLI colors
@@ -704,12 +728,17 @@ func focusTopRule(width int) string {
 // would put a margin around a terminal that has its own.
 func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	var lines []contentLine
+	loader := m.startupLoader()
 	pane := paneExact(m.preview, height, width)
 	if len(pane) == 0 {
 		// No rows painted means nothing to hit-test: a box left over from
 		// the previous session would catch clicks on empty space.
 		m.pane.box = paneBox{}
-		return append(lines, contentLine{text: gutter + mutedStyle.Render("(no output yet)")})
+		notice := loader
+		if notice == "" {
+			notice = mutedStyle.Render("(no output yet)")
+		}
+		return append(lines, contentLine{text: gutter + notice})
 	}
 	// Record where these rows land so mouse hit-testing reads the same
 	// geometry the paint used.
@@ -721,6 +750,13 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 		ok:     true,
 	}
 	for i, line := range pane {
+		// The loader takes the pane's own first row rather than replacing the
+		// block, so the geometry recorded above is the geometry painted: a
+		// session whose pane stays blank keeps every click it would have had.
+		if i == 0 && loader != "" {
+			lines = append(lines, contentLine{text: previewLine(loader, width), raw: true})
+			continue
+		}
 		lines = append(lines, contentLine{text: m.renderPaneRow(i, line, width), raw: true})
 	}
 	// Rows past the capture stay raw too: a painted tail under unpainted
