@@ -514,3 +514,38 @@ func TestCursorPastEndOfLine(t *testing.T) {
 		t.Fatalf("cursor changed the line text: %q", plain)
 	}
 }
+
+// tmux reports the caret and takes the mouse in painted cells, so on a row
+// `go test` wrote the tab's cells have to count for the caret and the
+// selection the same way they count for the paint.
+func TestTabbedRowSharesItsColumns(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	const width = 30
+	m := paneAt(t, "ok  \tgithub.com/x/y\t1.5s")
+	m.pane.box.width = width
+	rows := paneExact(m.preview, m.pane.box.height, width)
+
+	// Column 8 is where the pane paints the package name's first letter.
+	m.pane.cursor = paneCursor{x: 8, y: 0, ok: true}
+	row := m.renderPaneRow(0, rows[0], width)
+	if !strings.Contains(row, cursorStyle().Render("g")) {
+		t.Fatalf("caret missed the cell tmux reported: %q", row)
+	}
+
+	// The caret at the end of the painted row still lands inside the frame.
+	m.pane.cursor = paneCursor{x: 28, y: 0, ok: true}
+	if end := m.renderPaneRow(0, rows[0], width); !strings.Contains(end, "\x1b[") ||
+		ansi.StringWidth(end) != width {
+		t.Fatalf("caret at the row's end paints %d cells: %q", ansi.StringWidth(end), end)
+	}
+
+	m.pane.cursor = paneCursor{}
+	press(m, m.pane.box.x+8, m.pane.box.y)
+	drag(m, m.pane.box.x+15, m.pane.box.y)
+	if text := m.selectionText(); text != "github." {
+		t.Fatalf("dragging over the painted columns copied %q", text)
+	}
+}

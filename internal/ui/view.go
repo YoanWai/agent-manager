@@ -355,11 +355,40 @@ func previewLine(line string, width int) string {
 	return pinPaneLineLTR(line)
 }
 
-// paneExact returns up to n lines of pane text as captured, preserving
-// blank rows so a full-screen agent TUI looks the same in the preview.
-// When the capture is taller than the panel (stale size), the bottom n
-// lines are kept — the visible end of the pane.
-func paneExact(pane string, n int) []string {
+// expandPaneTabs writes a captured row's tabs out as the spaces the pane
+// already painted. tmux serializes a tab as the single byte even though it
+// spans the cells up to the next eight-column stop, so a row that keeps one
+// measures narrower than it paints and overflows its column. The stops
+// count from the row's start, which is pane column zero; escape sequences
+// hold no column. A tab that would reach past the row's last cell stops on
+// it, which is where tmux leaves the cursor.
+func expandPaneTabs(line string, width int) string {
+	if !strings.ContainsRune(line, '\t') {
+		return line
+	}
+	const tabStop = 8
+	var out strings.Builder
+	column := 0
+	for i, segment := range strings.Split(line, "\t") {
+		if i > 0 {
+			pad := max(min(tabStop-column%tabStop, width-1-column), 0)
+			out.WriteString(strings.Repeat(" ", pad))
+			column += pad
+		}
+		out.WriteString(segment)
+		column += ansi.StringWidth(segment)
+	}
+	return out.String()
+}
+
+// paneExact returns up to n lines of pane text as the pane painted them,
+// preserving blank rows so a full-screen agent TUI looks the same in the
+// preview. When the capture is taller than the panel (stale size), the
+// bottom n lines are kept — the visible end of the pane. Rows arrive here
+// before anything measures them, so this is where a tab becomes the cells
+// it covers and the frame, the caret and the selection all count one set
+// of columns.
+func paneExact(pane string, n, width int) []string {
 	if n <= 0 || pane == "" {
 		return nil
 	}
@@ -368,6 +397,9 @@ func paneExact(pane string, n int) []string {
 	lines := strings.Split(pane, "\n")
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
+	}
+	for i, line := range lines {
+		lines[i] = expandPaneTabs(line, width)
 	}
 	return lines
 }

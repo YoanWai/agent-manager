@@ -704,7 +704,7 @@ func focusTopRule(width int) string {
 // would put a margin around a terminal that has its own.
 func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	var lines []contentLine
-	pane := paneExact(m.preview, height)
+	pane := paneExact(m.preview, height, width)
 	if len(pane) == 0 {
 		// No rows painted means nothing to hit-test: a box left over from
 		// the previous session would catch clicks on empty space.
