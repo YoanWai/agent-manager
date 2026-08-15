@@ -12,20 +12,30 @@ macOS `sleep` takes seconds only.
 ## Pin
 
 ```bash
+REPO=YoanWai/agent-manager
 BRANCH=$(git branch --show-current)
 ```
 
-Stop if `BRANCH` is empty or `main`. Stop if the working tree is dirty.
+Stop if `BRANCH` is empty or `main`. Stop if the working tree is dirty. Stop unless `gh repo view --json nameWithOwner -q .nameWithOwner` equals `REPO`.
 
-A `$PR` argument is allowed only as a check: it must already be an open PR whose `headRefName` equals `BRANCH`. If it does not match, stop. Do not land it.
+A `$PR` argument must contain digits only. Resolve it in `REPO` and keep it only when it is open, targets `main`, and its head branch and repository are `BRANCH` and `REPO`:
+
+```bash
+PR=$(gh pr view "$PR" -R "$REPO" --json number,headRefName,baseRefName,headRepository,state \
+  -q "select(.state==\"OPEN\" and .headRefName==\"$BRANCH\" and .baseRefName==\"main\" and .headRepository.nameWithOwner==\"$REPO\") | .number")
+```
+
+Stop on any command failure or empty result. Do not land it.
 
 If `$PR` is omitted:
 
 ```bash
-PR=$(gh pr view --json number,headRefName,state -q "select(.headRefName==\"$BRANCH\" and .state==\"OPEN\") | .number" || true)
+PR=$(gh pr list -R "$REPO" --state open --head "$BRANCH" \
+  --json number,headRefName,baseRefName,headRepository \
+  -q "map(select(.headRefName==\"$BRANCH\" and .baseRefName==\"main\" and .headRepository.nameWithOwner==\"$REPO\")) | if length == 1 then .[0].number elif length == 0 then empty else error(\"multiple matching PRs\") end")
 ```
 
-If `PR` is empty: this session's work. Re-check `git branch --show-current` equals `BRANCH`. Push this branch and open one. Do not search the repo for another PR.
+Stop if discovery fails. If `PR` is empty: this session's work. Re-check `git branch --show-current` equals `BRANCH`. Push this branch and open one. Do not search the repo for another PR.
 
 Write a filled body (What / Why / Verified from this branch's commits) to a file outside the checkout, then:
 
@@ -33,8 +43,10 @@ Write a filled body (What / Why / Verified from this branch's commits) to a file
 git fetch origin main
 git rev-list --count origin/main..HEAD   # must be > 0
 git push -u origin "$BRANCH"
-gh pr create --base main --head "$BRANCH" --title "$(git log -1 --format=%s)" --body-file "$NOTES"
-PR=$(gh pr view --json number,headRefName,state -q "select(.headRefName==\"$BRANCH\" and .state==\"OPEN\") | .number")
+gh pr create -R "$REPO" --base main --head "$BRANCH" --title "$(git log -1 --format=%s)" --body-file "$NOTES"
+PR=$(gh pr list -R "$REPO" --state open --head "$BRANCH" \
+  --json number,headRefName,baseRefName,headRepository \
+  -q "map(select(.headRefName==\"$BRANCH\" and .baseRefName==\"main\" and .headRepository.nameWithOwner==\"$REPO\")) | if length == 1 then .[0].number elif length == 0 then empty else error(\"multiple matching PRs\") end")
 ```
 
 Title stays Conventional Commits (it is the changelog line). Stop if `PR` is empty.
@@ -60,7 +72,7 @@ No rate-limit comment: continue.
 ## Trigger
 
 ```bash
-gh pr comment "$PR" --body '@coderabbitai full review'
+gh pr comment "$PR" -R "$REPO" --body '@coderabbitai full review'
 ```
 
 Then, at most every 60s for 15 minutes, wait until both are true:
@@ -76,7 +88,7 @@ Rate-limited again: go back to Wait.
 
 Load every unresolved review thread from `coderabbitai[bot]`. For each one, read the cited code and prove the claim.
 
-- Real, in scope, and correct for this repo: fix it, run `gofmt -l .` (must print nothing) and `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test` on the packages you touched, commit, push, reply in the thread with the SHA.
+- Real, in scope, and correct for this repo: fix it, run `gofmt -l .` (must print nothing), `go vet ./...`, and `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test` on the packages you touched, commit, push, reply in the thread with the SHA.
 - Wrong, style-only, or against AGENTS.md / the surrounding code: reply why. Do not change the code.
 - Unclear: say what you cannot verify. Do not guess.
 
@@ -111,14 +123,14 @@ If not approved, go to **Wait** (if limited) or **Trigger**.
 
 Merge only when all of these hold:
 
-- `gh pr view "$PR" --json headRefName` is still `BRANCH`
-- `headRefOid` equals the `commit_id` of the **Approved** review
-- the latest CodeRabbit review is **Approved**
+- `gh pr view "$PR" -R "$REPO" --json headRefName,baseRefName,headRefOid,headRepository,state` still shows the open `BRANCH` → `main` PR with `REPO` as its head repository
+- `headRefOid` equals the `commit_id` of the qualifying latest CodeRabbit review
+- the latest CodeRabbit review meets the **Approved** rules above
 - CI is green
-- the PR is not a draft (run `gh pr ready` first if it is)
+- the PR is not a draft (run `gh pr ready "$PR" -R "$REPO"` first if it is)
 
 ```bash
-gh pr merge "$PR" --squash --delete-branch
+gh pr merge "$PR" -R "$REPO" --squash --delete-branch
 ```
 
 If merge is blocked, say the exact check or rule. Do not force.
