@@ -160,7 +160,7 @@ func TestTerminalDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		descriptions[tool.Name] = tool.Description
 	}
 	for tool, wants := range map[string][]string{
-		"list_terminals":  {"Call proactively", "Reuse", "create_terminal"},
+		"list_terminals":  {"human-visible", "Reuse", "create_terminal"},
 		"create_terminal": {"SSH", "one-shot", "nests", "close_terminal"},
 		"close_terminal":  {"finished", "kills", "SSH"},
 		"send_terminal":   {"create_terminal", "read_terminal", "executes on the user's machine"},

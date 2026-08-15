@@ -138,8 +138,8 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "list_terminals",
-		Description: "Call proactively before long-running, output-heavy, persistent, or parallel shell work to find a terminal you can reuse. " +
-			"Lists active managed terminals with ids, names, groups, current directories, statuses, and whether their tmux panes are running. " +
+		Description: "Call before opening a terminal for human-visible work, to find one you can reuse. " +
+			"Lists active managed terminals with ids, names, groups, current directories, statuses, whether their tmux panes are running, and the session each one is nested under. " +
 			"Reuse a relevant running terminal when possible; otherwise call create_terminal. Use the returned id with send_terminal and read_terminal.",
 		Annotations: terminalToolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listTerminalsArgs) (*mcp.CallToolResult, listTerminalsOutput, error) {
