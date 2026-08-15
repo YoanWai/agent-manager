@@ -69,6 +69,11 @@ func statusCommand(state string) string {
 // block, so the matcher names the two that do.
 const blockingNotifications = "permission_prompt|elicitation_dialog"
 
+// limitStopFailures are the StopFailure error types that mean the account
+// hit a usage or rate limit. The pane also classifies those as errored;
+// the hook write covers the turn before the banner is visible.
+const limitStopFailures = "rate_limit"
+
 func settingsContent() ([]byte, error) {
 	report := func(matcher, state string) []hookMatcher {
 		return []hookMatcher{{Matcher: matcher, Hooks: []hookCommand{{Type: "command", Command: statusCommand(state)}}}}
@@ -79,6 +84,7 @@ func settingsContent() ([]byte, error) {
 		"PostToolUse":      report("*", status.Working),
 		"Notification":     report(blockingNotifications, status.Waiting),
 		"Stop":             report("", status.Finished),
+		"StopFailure":      report(limitStopFailures, status.Errored),
 		// compact fires SessionStart in the middle of an active turn
 		"SessionStart": report("startup|resume|clear", status.Idle),
 		"SessionEnd": {{Hooks: []hookCommand{{
@@ -126,7 +132,7 @@ func (m *Manager) Read(id string) (string, bool) {
 	}
 	state := strings.TrimSpace(string(raw))
 	switch state {
-	case status.Working, status.Waiting, status.Finished, status.Idle:
+	case status.Working, status.Waiting, status.Finished, status.Idle, status.Errored:
 		return state, true
 	}
 	return "", false

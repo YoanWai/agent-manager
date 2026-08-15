@@ -179,6 +179,36 @@ busy_line = '` + busyLineAgentsOnly + `'
 	}
 }
 
+func TestLoadDirBackfillsLimitLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[tools.claude]\ncommand = \"claude\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if !strings.Contains(cfg.Tools["claude"].LimitLine, "You've hit your") {
+		t.Fatalf("claude limit_line was not backfilled: %q", cfg.Tools["claude"].LimitLine)
+	}
+	if !strings.Contains(cfg.Tools["codex"].LimitLine, "You've hit your usage limit") {
+		t.Fatalf("codex limit_line was not backfilled: %q", cfg.Tools["codex"].LimitLine)
+	}
+	if !strings.Contains(cfg.Tools["gemini"].LimitLine, "Usage limit reached") {
+		t.Fatalf("gemini limit_line was not backfilled: %q", cfg.Tools["gemini"].LimitLine)
+	}
+	if !strings.Contains(cfg.Tools["opencode"].LimitLine, "limit reached") {
+		t.Fatalf("opencode limit_line was not backfilled: %q", cfg.Tools["opencode"].LimitLine)
+	}
+	if !strings.Contains(cfg.Tools["grok"].LimitLine, "rate limit") {
+		t.Fatalf("grok limit_line was not backfilled: %q", cfg.Tools["grok"].LimitLine)
+	}
+	if !strings.Contains(cfg.Tools["hermes"].LimitLine, "Rate limited") {
+		t.Fatalf("hermes limit_line was not backfilled: %q", cfg.Tools["hermes"].LimitLine)
+	}
+}
+
 func TestLoadDirPreservesCustomClaudeBusyLine(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")

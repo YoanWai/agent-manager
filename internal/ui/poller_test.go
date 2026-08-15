@@ -326,6 +326,18 @@ func TestHookWorkingReconcilesToFinishedOnEndedTurn(t *testing.T) {
 // Claude fires Stop when the main agent stops responding, so a turn that
 // leaves background agents running reports finished while they work. The
 // pane still shows the wait, and that verdict has to win.
+func TestHookFinishedUpgradesToErroredOnUsageLimit(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: "hooked-limit", Tool: "claude-hooked"}
+	writeHookStatus(t, m, sess.ID, status.Finished)
+
+	pane := "  ⎿  You've hit your weekly limit · resets 1am (Asia/Jerusalem)\n\n" +
+		"✻ Churned for 2h 0m 54s\n❯ \n"
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Errored {
+		t.Fatalf("a usage limit should read as errored, got %q", got)
+	}
+}
+
 func TestHookFinishedUpgradesToWorkingWhileBackgroundAgentsRun(t *testing.T) {
 	m := buildModel(t)
 	sess := store.Session{ID: "hooked08", Tool: "claude-hooked"}

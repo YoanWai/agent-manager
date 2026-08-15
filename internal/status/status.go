@@ -37,6 +37,7 @@ type toolRules struct {
 	blockedLine    *regexp.Regexp
 	trailingNote   *regexp.Regexp
 	busyLine       *regexp.Regexp
+	limitLine      *regexp.Regexp
 	rules          []rule
 }
 
@@ -66,6 +67,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.BlockedLine, &tr.blockedLine},
 			{tool.TrailingNote, &tr.trailingNote},
 			{tool.BusyLine, &tr.busyLine},
+			{tool.LimitLine, &tr.limitLine},
 		}
 		for _, opt := range optional {
 			if opt.pattern == "" {
@@ -83,18 +85,23 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 }
 
 // Match derives a status and reports whether any signal matched, so the
-// caller can distinguish a real signal from the default fallback. Rules
-// run first, scoped to the current turn. If the first matching rule is
-// working, a matching waiting rule later in the list overrides it so persisted
-// rule order cannot mask a user prompt. Every other first match returns as
-// configured. When no rule hits, the newest turn in the content region decides
-// finished versus waiting.
+// caller can distinguish a real signal from the default fallback. A usage
+// or rate-limit banner is errored even when a turn-end summary or a limit
+// dialog would otherwise settle the turn. Rules then run scoped to the
+// current turn. If the first matching rule is working, a matching waiting
+// rule later in the list overrides it so persisted rule order cannot mask
+// a user prompt. Every other first match returns as configured. When no
+// rule hits, the newest turn in the content region decides finished
+// versus waiting.
 func (e *Engine) Match(tool, pane string) (string, bool) {
 	tr, ok := e.tools[tool]
 	if !ok {
 		return Idle, false
 	}
 	scope := tr.matchScope(pane)
+	if tr.isLimit(pane) {
+		return Errored, true
+	}
 	for i, r := range tr.rules {
 		if !r.re.MatchString(scope) {
 			continue
@@ -115,6 +122,36 @@ func (e *Engine) Match(tool, pane string) (string, bool) {
 		return state, true
 	}
 	return tr.defaultStatus, false
+}
+
+// isLimit reports whether the newest turn is sitting on a usage or rate
+// limit. The banner lives above the turn-end summary, so matchScope never
+// sees it, and turnState would settle the quiet turn as finished. A limit
+// dialog can also look like a waiting prompt.
+func (tr toolRules) isLimit(pane string) bool {
+	if tr.limitLine == nil {
+		return false
+	}
+	region, ok := tr.activityRegion(pane)
+	if !ok {
+		return tr.limitLine.MatchString(pane)
+	}
+	lines := strings.Split(region, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if !tr.limitLine.MatchString(strings.TrimRight(lines[i], " \t")) {
+			continue
+		}
+		end := i + 1
+		for end < len(lines) {
+			line := lines[end]
+			if strings.TrimSpace(line) == "" || (line[0] != ' ' && line[0] != '\t') {
+				break
+			}
+			end++
+		}
+		return tr.limitIsNewest(lines[end:])
+	}
+	return false
 }
 
 // isBusy reports whether the newest turn is still running work that
@@ -301,6 +338,16 @@ func (e *Engine) TurnEndedState(tool, region string) string {
 // real content: only blanks, chrome, and trailing note blocks. Any other
 // content means a newer turn is already producing output.
 func (tr toolRules) turnIsNewest(after []string) bool {
+	return tr.settledBelow(after, false)
+}
+
+// limitIsNewest is turnIsNewest plus the turn-end summary of the limited
+// turn itself, which sits below the banner and is not a newer turn.
+func (tr toolRules) limitIsNewest(after []string) bool {
+	return tr.settledBelow(after, true)
+}
+
+func (tr toolRules) settledBelow(after []string, skipTurnEnd bool) bool {
 	inNote := false
 	for _, line := range after {
 		trimmed := strings.TrimRight(line, " \t")
@@ -308,6 +355,9 @@ func (tr toolRules) turnIsNewest(after []string) bool {
 			continue
 		}
 		if tr.chromeLine != nil && tr.chromeLine.MatchString(trimmed) {
+			continue
+		}
+		if skipTurnEnd && tr.turnEnd != nil && tr.turnEnd.MatchString(trimmed) {
 			continue
 		}
 		if tr.trailingNote != nil && tr.trailingNote.MatchString(strings.TrimLeft(trimmed, " \t")) {

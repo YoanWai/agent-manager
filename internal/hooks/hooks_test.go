@@ -32,7 +32,7 @@ func TestEnsureSettingsWritesValidHookJSON(t *testing.T) {
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		t.Fatalf("settings is not valid JSON: %v", err)
 	}
-	events := []string{"UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "SessionStart", "SessionEnd"}
+	events := []string{"UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "StopFailure", "SessionStart", "SessionEnd"}
 	if len(parsed.Hooks) != len(events) {
 		t.Fatalf("hooks has %d events, want %d: %v", len(parsed.Hooks), len(events), parsed.Hooks)
 	}
@@ -74,6 +74,13 @@ func TestEnsureSettingsWritesValidHookJSON(t *testing.T) {
 	}
 	if got := parsed.Hooks["SessionStart"][0].Matcher; got != "startup|resume|clear" {
 		t.Fatalf("SessionStart matcher = %q, want startup|resume|clear", got)
+	}
+	stopFailure := parsed.Hooks["StopFailure"][0]
+	if stopFailure.Matcher != limitStopFailures {
+		t.Fatalf("StopFailure matcher = %q, want %q", stopFailure.Matcher, limitStopFailures)
+	}
+	if command := stopFailure.Hooks[0].Command; !strings.Contains(command, "printf "+status.Errored) {
+		t.Fatalf("StopFailure command = %q, want a plain %s write", command, status.Errored)
 	}
 }
 
@@ -124,7 +131,7 @@ func TestReadWhitelist(t *testing.T) {
 		}
 	}
 
-	for _, valid := range []string{status.Working, status.Waiting, status.Finished, status.Idle} {
+	for _, valid := range []string{status.Working, status.Waiting, status.Finished, status.Idle, status.Errored} {
 		writeStatus(valid)
 		got, ok := manager.Read("x")
 		if !ok || got != valid {

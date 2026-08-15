@@ -708,6 +708,13 @@ func (p *poller) applyHookStatus(sess store.Session, text, hookStatus string) st
 			}
 			return paneStatus
 		}
+	case status.Errored:
+		if matched && (paneStatus == status.Waiting || paneStatus == status.Finished || paneStatus == status.Working) {
+			if paneStatus == status.Finished && sess.Acked {
+				return status.Idle
+			}
+			return paneStatus
+		}
 	}
 	return hookStatus
 }
