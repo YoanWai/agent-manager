@@ -22,31 +22,32 @@ A `$PR` argument is allowed only as a check: it must already be an open PR whose
 If `$PR` is omitted:
 
 ```bash
-gh pr view --json number,headRefName,state
+PR=$(gh pr view --json number,headRefName,state -q "select(.headRefName==\"$BRANCH\" and .state==\"OPEN\") | .number" || true)
 ```
 
-Use that number only when `headRefName` equals `BRANCH` and `state` is `OPEN`.
+If `PR` is empty: this session's work. Re-check `git branch --show-current` equals `BRANCH`. Push this branch and open one. Do not search the repo for another PR.
 
-No open PR for `BRANCH`: this session's work. Push this branch and open one. Do not search the repo for another PR.
+Write a filled body (What / Why / Verified from this branch's commits) to a file outside the checkout, then:
 
 ```bash
 git fetch origin main
 git rev-list --count origin/main..HEAD   # must be > 0
-git push -u origin HEAD
-gh pr create --base main --head "$BRANCH" --title "$(git log -1 --format=%s)" --body "$(cat .github/pull_request_template.md)"
+git push -u origin "$BRANCH"
+gh pr create --base main --head "$BRANCH" --title "$(git log -1 --format=%s)" --body-file "$NOTES"
+PR=$(gh pr view --json number,headRefName,state -q "select(.headRefName==\"$BRANCH\" and .state==\"OPEN\") | .number")
 ```
 
-Fill What / Why / Verified from **this branch's commits**. Title stays Conventional Commits (it is the changelog line).
+Title stays Conventional Commits (it is the changelog line). Stop if `PR` is empty.
 
-Never run `gh pr list` and pick one. Never land a PR whose head is not `BRANCH`. Re-check `headRefName` immediately before merge.
+Never run `gh pr list` and pick one. Never land a PR whose head is not `BRANCH`.
 
 ## Wait
 
-Read the newest issue comment whose body contains `rate limited by coderabbit.ai`.
+Read the newest issue comment by `coderabbitai[bot]` whose body contains `rate limited` or `next included review will be available in`.
 
-Parse `Next review available in:** **N minutes**`.
+Parse `N` from `Next review available in:** **N minutes**` or `available in N minutes`. `N` must be digits only. Cap at 120. Ignore the comment if the author is not the bot or `N` is invalid.
 
-If that comment exists and N > 0:
+If `N` > 0:
 
 ```bash
 sleep $(( (N + 2) * 60 ))
@@ -75,7 +76,7 @@ Rate-limited again: go back to Wait.
 
 Load every unresolved review thread from `coderabbitai[bot]`. For each one, read the cited code and prove the claim.
 
-- Real, in scope, and correct for this repo: fix it, run `gofmt` and `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test` on the packages you touched, commit, push, reply in the thread with the SHA.
+- Real, in scope, and correct for this repo: fix it, run `gofmt -l .` (must print nothing) and `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test` on the packages you touched, commit, push, reply in the thread with the SHA.
 - Wrong, style-only, or against AGENTS.md / the surrounding code: reply why. Do not change the code.
 - Unclear: say what you cannot verify. Do not guess.
 
@@ -111,6 +112,7 @@ If not approved, go to **Wait** (if limited) or **Trigger**.
 Merge only when all of these hold:
 
 - `gh pr view "$PR" --json headRefName` is still `BRANCH`
+- `headRefOid` equals the `commit_id` of the **Approved** review
 - the latest CodeRabbit review is **Approved**
 - CI is green
 - the PR is not a draft (run `gh pr ready` first if it is)
