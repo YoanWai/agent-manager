@@ -115,7 +115,7 @@ func helpSections() []helpSection {
 			{"ctrl+q", "back to the manager (ctrl+\\ too)"},
 			{"←", "focused: back to the manager, at the prompt's start"},
 			{"ctrl+r", "review the session's diff, esc returns"},
-			{"ctrl+o", "open its directory in an editor"},
+			{"f3", "open its directory in an editor"},
 			{"wheel", "focused: scroll the pane's history, type to catch up"},
 			{"drag", "focused: select pane text and copy it"},
 			{"double click", "focused: copy the word"},

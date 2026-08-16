@@ -451,7 +451,7 @@ func (m *Model) viewFooter() string {
 			{"typing", "goes to the agent"},
 			{"ctrl+q / ctrl+\\", "back to manager"},
 			{"ctrl+r", "review"},
-			{"ctrl+o", "editor"},
+			{"f3", "editor"},
 			// The footer holds one row: the word and line gestures are in
 			// the key map, where there is room to name all three.
 			{"drag / click", "copy"},

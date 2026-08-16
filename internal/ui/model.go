@@ -1313,7 +1313,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.requestRefresh()
 			return m, nil
 		}
-		// Ctrl+R and Ctrl+O inside the session leave a marker before
+		// Ctrl+R and F3 inside the session leave a marker before
 		// detaching; consume it here and carry it out for the session just
 		// attached.
 		request, err := m.tmux.PendingRequest()

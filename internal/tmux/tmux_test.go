@@ -345,6 +345,41 @@ func TestDetachRequestRoundTrip(t *testing.T) {
 	}
 }
 
+// The editor key moved off C-o, which the agents running inside a session
+// bind themselves. A server that predates the move still carries the old
+// binding, so EnsureBindings has to drop it as well as install F3.
+func TestEnsureBindingsMovesTheEditorKeyToF3(t *testing.T) {
+	driver := requireTmux(t)
+	if out, err := tmuxCmd("bind-key", "-n", "C-o", "display-message", "stale").CombinedOutput(); err != nil {
+		t.Fatalf("seed the old binding: %v: %s", err, out)
+	}
+
+	if err := driver.EnsureBindings(); err != nil {
+		t.Fatalf("EnsureBindings: %v", err)
+	}
+
+	bound, err := tmuxCmd("list-keys", "-T", "root").CombinedOutput()
+	if err != nil {
+		t.Fatalf("list root keys: %v: %s", err, bound)
+	}
+	editor := false
+	for _, line := range strings.Split(string(bound), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		if fields[3] == "C-o" {
+			t.Fatalf("C-o should be unbound, got %q", line)
+		}
+		if fields[3] == "F3" && strings.Contains(line, RequestEditor) {
+			editor = true
+		}
+	}
+	if !editor {
+		t.Fatalf("F3 should request the editor, got %q", bound)
+	}
+}
+
 func TestEnsureBindingsRestoresPrefixDetach(t *testing.T) {
 	driver := requireTmux(t)
 	t.Cleanup(func() {
