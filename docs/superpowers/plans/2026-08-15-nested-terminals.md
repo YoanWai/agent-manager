@@ -720,7 +720,7 @@ In `openTerminal`, after `sess` is built with `Group: m.contextGroup()`:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./internal/ui/ -run 'TestOpenTerminal' -count=1`
+Run: `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./internal/ui/ -run 'TestOpenTerminal|TestTerminalKeyOnUnnestedShellStaysUnnested' -count=1`
 
 Expected: PASS, including the existing group-directory tests.
 
