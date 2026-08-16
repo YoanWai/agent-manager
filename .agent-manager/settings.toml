@@ -1,22 +1,35 @@
 # How agent-manager bootstraps and runs its own worktrees.
 # Reference: docs/project-settings.md
 
-# A fresh worktree has no module cache warmed and no binary built. Doing it
-# here means the agent's first `go test` is not also the first download.
-setup = """
+# A fresh worktree has nothing warmed: no module cache, no build. Doing it
+# here means the agent's first `go test` is not also the first download, and
+# a worktree that cannot build says so before an agent starts working in it.
+setup = '''
 go mod download
 go build ./...
-"""
+'''
+
+# Testing a worktree's build means running this manager inside this manager.
+# HOME is redirected at a directory inside the worktree because config.Dir()
+# resolves under it: without that, a half-finished build would be reading and
+# writing the real ~/.config/agent-manager/state.db — your actual sessions —
+# and a bug in the thing under test would land on the sessions you were using
+# to test it. The dev instance therefore starts empty, every time.
+#
+# O attaches to this pane rather than opening a browser, since a TUI has
+# nothing to serve.
+[run.tui]
+command = '''
+mkdir -p .am-dev-home
+go build -o .am-dev . && HOME="$PWD/.am-dev-home" exec ./.am-dev
+'''
+description = "this manager, built from this worktree, on its own state"
+default = true
 
 [run.test]
 command = "go test ./..."
 description = "the whole suite"
-default = true
 
 [run.check]
 command = "gofmt -l . && go vet ./... && go test ./..."
 description = "what CI runs"
-
-[run.tui]
-command = "go run ."
-description = "this manager, from source"

@@ -108,11 +108,19 @@ tellable apart.
 `description` is what the picker shows; the command itself is shown when you
 leave it out.
 
-Starting one reports where it went — `running dev on :3170 · O opens it` —
-and **`O`** opens `http://localhost:<port>` in your browser, so starting a
-server and looking at it are one keystroke apart. `o` opens the worktree's
-directory in your editor; `O` opens what it serves. A port with nothing on it
-says so rather than opening a browser error page.
+Starting one reports where it went — `running dev on :3170 · O opens it`.
+
+**`O` shows whatever the worktree is currently running**, which is two
+different things depending on the project and should not be two keys:
+
+- Something serving on the worktree's port opens in your **browser**.
+- Otherwise a live run session's **pane takes the terminal**, which is what
+  you want when the thing under test is a TUI rather than a server.
+- Neither, and it says so and points at `p`.
+
+Nothing configures this. What is running is a fact that can be observed, so
+it is observed rather than declared. `o` opens the worktree's directory in
+your editor; `O` opens what it is doing.
 
 ## Ports
 

@@ -16,3 +16,7 @@ docs/badges/contributors.png
 *.p12
 id_rsa
 id_ed25519
+
+# dev builds of this manager, made by [run.tui]
+/.am-dev
+/.am-dev-home/

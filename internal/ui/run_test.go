@@ -586,8 +586,8 @@ func TestOpenKeyRefusesWhenNothingIsListening(t *testing.T) {
 	if m.errBar.worked() {
 		t.Fatalf("opening a dead port reported success: %q", m.errBar.text)
 	}
-	if !strings.Contains(m.errBar.text, "nothing listening") {
-		t.Fatalf("message = %q, want it to say nothing is listening", m.errBar.text)
+	if !strings.Contains(m.errBar.text, "no server") {
+		t.Fatalf("message = %q, want it to say there is no server", m.errBar.text)
 	}
 	// The fix is the other key, so the message has to name it.
 	if !strings.Contains(m.errBar.text, "press p") {
@@ -622,6 +622,51 @@ func TestOpenKeyOpensTheServerThatIsListening(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("O should return a command that opens the browser")
+	}
+}
+
+// A TUI has nothing to serve, so O opens its pane instead of a browser.
+// This is the case that prompted it: testing a build of this manager.
+func TestOpenKeyAttachesToATuiRunSession(t *testing.T) {
+	m := buildModel(t)
+	dir := writeProject(t, t.TempDir(), "[run.tui]\ncommand = \"cat\"\n")
+	onSessionIn(t, m, dir)
+	pressRunKey(t, m)
+
+	run, ok := m.selected()
+	if !ok || !m.isShell(run.Tool) {
+		t.Fatalf("expected a run session, got %+v", run)
+	}
+	// Nothing is listening, so the pane is the only thing to show.
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'O'}})
+
+	if !m.errBar.worked() {
+		t.Fatalf("O reported %q", m.errBar.text)
+	}
+	if !strings.Contains(m.errBar.text, "attaching") {
+		t.Fatalf("message = %q, want it to say it is attaching", m.errBar.text)
+	}
+	if cmd == nil {
+		t.Fatal("O should return a command that attaches the pane")
+	}
+}
+
+// A worktree with neither a server nor a pane says both halves, so the
+// reader knows which one they were expecting.
+func TestOpenKeyWithNothingRunningSaysBoth(t *testing.T) {
+	m := buildModel(t)
+	dir := writeProject(t, t.TempDir(), "[run.dev]\ncommand = \"cat\"\n")
+	onSessionIn(t, m, dir)
+
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'O'}})
+
+	if m.errBar.worked() {
+		t.Fatalf("nothing was running, but O reported success: %q", m.errBar.text)
+	}
+	for _, want := range []string{"no server", "no run session", "press p"} {
+		if !strings.Contains(m.errBar.text, want) {
+			t.Fatalf("message = %q, want it to mention %q", m.errBar.text, want)
+		}
 	}
 }
 

@@ -332,16 +332,20 @@ func (m *Model) writeGroupSettings(path string) (string, error) {
 	return project.Write(m.repoRootOf(path), setup, run)
 }
 
-// openKey opens the worktree's own server in a browser, so starting one and
-// looking at it are one keystroke apart rather than a port the reader has to
-// find first. o opens the directory in an editor; O opens what it serves.
+// openKey shows whatever this worktree is currently running, which is two
+// different things depending on the project and should not be two keys.
 //
-// A port with nothing on it is reported rather than opened: a browser error
-// page says nothing about which of the two things went wrong.
+// A worktree serving HTTP opens in a browser. One running a TUI — this
+// manager testing a build of itself is the case that prompted it — has
+// nothing to open in a browser, so its pane takes the terminal instead.
+// Neither needs configuring: what is running is a fact that can be observed,
+// so it is, rather than being asked about in the settings file.
+//
+// o opens the worktree's directory in an editor; O opens what it is doing.
 func (m *Model) openKey() (tea.Model, tea.Cmd) {
 	dir, ok := m.rowDir()
 	if !ok {
-		m.errBar.text = "no directory to open a server for: " + dir
+		m.errBar.text = "no directory to open anything for: " + dir
 		return m, nil
 	}
 	settings, err := project.Load(dir, m.repoRootOf(dir))
@@ -353,13 +357,52 @@ func (m *Model) openKey() (tea.Model, tea.Cmd) {
 		m.errBar.text = "no project settings here: press p to create them"
 		return m, nil
 	}
+	// Serving wins over the pane: a project with both a server and a pane
+	// full of its log is one whose interesting half is in the browser.
 	name := portKey(dir)
-	port := settings.Port(name)
-	if !project.Listening(port) {
-		m.errBar.text = fmt.Sprintf("nothing listening on :%d — press p to start a run script", port)
-		return m, nil
+	if port := settings.Port(name); project.Listening(port) {
+		url := settings.URL(name)
+		m.reportDone("opening " + url)
+		return m, openLink(url)
 	}
-	url := settings.URL(name)
-	m.reportDone("opening " + url)
-	return m, openLink(url)
+	if sess, ok := m.runSessionIn(dir); ok {
+		m.focusSession(sess.ID)
+		m.reportDone("attaching to " + sess.Name)
+		return m, m.attachCmd(sess.ID)
+	}
+	m.errBar.text = fmt.Sprintf(
+		"nothing running here: no server on :%d and no run session — press p to start one",
+		settings.Port(name))
+	return m, nil
+}
+
+// runSessionIn finds the live run session working in a directory: the shell
+// sessions p creates, newest first, so a script started twice opens the one
+// still meant to be looked at. Directories are compared resolved, since a
+// pane reports its path with symlinks followed and the row may not.
+func (m *Model) runSessionIn(dir string) (store.Session, bool) {
+	want := resolvePath(dir)
+	var found store.Session
+	for _, sess := range m.sessions {
+		if sess.Archived || !m.isShell(sess.Tool) {
+			continue
+		}
+		if resolvePath(sess.Cwd) != want || !m.tmux.Exists(sess.ID) {
+			continue
+		}
+		if found.ID == "" || sess.CreatedAt.After(found.CreatedAt) {
+			found = sess
+		}
+	}
+	return found, found.ID != ""
+}
+
+// resolvePath follows symlinks where it can. A tmux pane reports its
+// directory with symlinks already followed while a stored Cwd may not, so
+// the two only compare equal once both are put through this.
+func resolvePath(path string) string {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		return real
+	}
+	return path
 }
