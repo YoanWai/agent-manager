@@ -185,20 +185,41 @@ func TestPortLandsInTheConfiguredRange(t *testing.T) {
 	}
 }
 
-// Two names hashing to the same block must still both be runnable, which is
-// the case a plain hash would get wrong.
-func TestPortSkipsABlockAlreadyListening(t *testing.T) {
+// A port that answers "where is this worktree served" must give the same
+// answer before and after the server is up, or nothing can look it up.
+func TestPortDoesNotMoveWhenItsOwnServerIsListening(t *testing.T) {
 	settings := Settings{PortBase: DefaultPortBase}
-	taken := settings.Port("add-search")
+	before := settings.Port("add-search")
 
-	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(taken)))
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(before)))
 	if err != nil {
-		t.Skipf("cannot bind %d in this environment: %v", taken, err)
+		t.Skipf("cannot bind %d in this environment: %v", before, err)
 	}
 	defer listener.Close()
 
-	if got := settings.Port("add-search"); got == taken {
-		t.Fatalf("Port returned %d while it was listening", got)
+	if after := settings.Port("add-search"); after != before {
+		t.Fatalf("Port moved from %d to %d once its server was up", before, after)
+	}
+}
+
+// A collision is surfaced rather than worked around, and the whole block is
+// checked: a project deriving a second port would collide on the upper ports
+// without ever touching the first.
+func TestBlockBusySeesAnUpperPortInUse(t *testing.T) {
+	settings := Settings{PortBase: DefaultPortBase}
+	port := settings.Port("add-search")
+	if settings.BlockBusy("add-search") {
+		t.Skip("something is already using this block")
+	}
+
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port+1)))
+	if err != nil {
+		t.Skipf("cannot bind %d in this environment: %v", port+1, err)
+	}
+	defer listener.Close()
+
+	if !settings.BlockBusy("add-search") {
+		t.Fatalf("a listener on %d inside the block went unnoticed", port+1)
 	}
 }
 
@@ -370,26 +391,6 @@ func TestPortBaseAtTheEdgesIsAccepted(t *testing.T) {
 	}
 }
 
-// Only the base was probed before, so a block whose upper ports were taken
-// was still handed out — and a project deriving a second port from
-// $AGENT_MANAGER_PORT would collide with whatever already had it.
-func TestPortSkipsABlockWhoseUpperPortsAreTaken(t *testing.T) {
-	settings := Settings{PortBase: DefaultPortBase}
-	taken := settings.Port("add-search")
-
-	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(taken+1)))
-	if err != nil {
-		t.Skipf("cannot bind %d in this environment: %v", taken+1, err)
-	}
-	defer listener.Close()
-
-	if got := settings.Port("add-search"); got == taken {
-		t.Fatalf("Port returned %d while %d inside its block was listening", got, taken+1)
-	}
-}
-
-// Whatever the reader typed into the form must come back out of the file
-// unchanged: these are shell commands, full of quotes, backslashes and $.
 func TestWriteRoundTripsThroughLoad(t *testing.T) {
 	values := []string{
 		"npm ci",

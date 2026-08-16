@@ -16,6 +16,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `T` | New terminal tab: a plain shell in the selected group, with no agent in it |
 | `p` | Run a project script from `.agent-manager/settings.toml` in the row's directory, or offer to create the file when the project has none ([Project settings](project-settings.md)) |
 | `o` | Open the selected row's directory in your editor |
+| `O` | Open what this worktree serves (`http://localhost:<port>`) in your browser |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
 | `g` | New group (name, parent, default path) |
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |

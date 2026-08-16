@@ -346,20 +346,21 @@ func (s Settings) DefaultRun() (string, bool) {
 	return "", false
 }
 
-// Port is the first port of the block belonging to a session of this name.
+// Port is the first port of the block belonging to a worktree of this name.
 // Derived from the name rather than assigned from a counter so that it
 // survives restarts of both the session and the manager: a worktree keeps
 // the address you bookmarked for as long as it keeps its name.
 //
-// A block with anything listening anywhere in it is skipped, which is what
-// makes two names that happen to hash together still able to run at once.
-// The whole block is checked rather than only its base, since a project
-// deriving a second port from $AGENT_MANAGER_PORT would otherwise be handed
-// a block whose upper ports are already someone else's.
+// Deliberately does not probe. An earlier version skipped a block that was
+// already listening, which reads as helpful and is self-defeating: the
+// moment a worktree's own server came up, its port was "busy" and Port moved
+// somewhere else, so nothing could look up where that server was. A port
+// that answers the question "where is this worktree served" has to give the
+// same answer before and after the thing is running.
 //
-// The probe is a hint, not a reservation — nothing stops a process taking
-// the port between the probe and the server starting — so a project that
-// cannot tolerate that should bind and fail loudly rather than share.
+// Two names can therefore collide. That is reported when a script starts —
+// see BlockBusy — rather than worked around, because a server failing to
+// bind a port you can see beats one quietly serving on a port you cannot.
 func (s Settings) Port(name string) int {
 	base := s.PortBase
 	if base == 0 {
@@ -367,17 +368,16 @@ func (s Settings) Port(name string) int {
 	}
 	hash := fnv.New32a()
 	_, _ = hash.Write([]byte(name))
-	start := int(hash.Sum32() % portBlocks)
-	for offset := range portBlocks {
-		port := base + ((start+offset)%portBlocks)*portBlockSize
-		if blockFree(port) {
-			return port
-		}
-	}
-	// Every block busy: hand back the name's own, so the failure the project
-	// sees is its server refusing the port rather than a silent move to
-	// somewhere it was not expecting.
-	return base + start*portBlockSize
+	return base + int(hash.Sum32()%portBlocks)*portBlockSize
+}
+
+// BlockBusy reports whether anything is already listening in the block a
+// worktree of this name owns, so starting a script there can say so. The
+// whole block is checked, not just its base, since a project deriving a
+// second port from $AGENT_MANAGER_PORT would collide on the upper ports
+// without ever touching the first.
+func (s Settings) BlockBusy(name string) bool {
+	return !blockFree(s.Port(name))
 }
 
 // blockFree reports whether nothing is listening anywhere in the block that
@@ -389,6 +389,19 @@ func blockFree(port int) bool {
 		}
 	}
 	return true
+}
+
+// Listening reports whether something is already serving on the port, which
+// is how a worktree's server is told apart from one that was never started.
+func Listening(port int) bool {
+	return !portFree(port)
+}
+
+// URL is where a worktree's server is reached. Bound to localhost rather than
+// the port alone so a caller opens an address rather than assembling one, and
+// so a project serving somewhere else has one place to change.
+func (s Settings) URL(name string) string {
+	return fmt.Sprintf("http://localhost:%d", s.Port(name))
 }
 
 // portFree reports whether nothing is listening on the port yet.

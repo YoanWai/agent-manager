@@ -43,7 +43,7 @@ var helpDocumentedBy = map[string]string{
 	"shift+up": "K", "shift+down": "J",
 	"shift+k": "K", "shift+j": "J", "shift+a": "A", "shift+v": "V",
 	"shift+r": "R", "shift+x": "X", "shift+f": "F", "shift+m": "M",
-	"shift+t": "T",
+	"shift+t": "T", "shift+o": "O",
 	// Ctrl+C quits from every mode, so it belongs to no one context.
 	"ctrl+c": "q",
 }

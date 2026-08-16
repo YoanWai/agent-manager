@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -182,7 +183,7 @@ func TestRunScriptReceivesThePortInItsEnvironment(t *testing.T) {
 	onSessionIn(t, m, dir)
 
 	pressRunKey(t, m)
-	if m.errBar.text != "" {
+	if m.errBar.text != "" && !m.errBar.worked() {
 		t.Fatalf("run reported %q", m.errBar.text)
 	}
 
@@ -545,5 +546,94 @@ func TestRunScriptReceivesThePortUnderBothNames(t *testing.T) {
 	}
 	if fields[0] != fields[1] {
 		t.Fatalf("PORT = %s but %s = %s", fields[0], project.EnvPort, fields[1])
+	}
+}
+
+// Starting a server and looking at it should be one keystroke apart, so the
+// message p leaves behind has to carry the port and point at the key.
+func TestRunKeyReportsThePortAndHowToOpenIt(t *testing.T) {
+	m := buildModel(t)
+	dir := writeProject(t, t.TempDir(), "[run.dev]\ncommand = \"cat\"\n")
+	onSessionIn(t, m, dir)
+
+	pressRunKey(t, m)
+
+	settings, err := project.Load(dir, dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	port := strconv.Itoa(settings.Port(portKey(resolved(t, dir))))
+	if !strings.Contains(m.errBar.text, port) {
+		t.Fatalf("message %q should carry the port %s", m.errBar.text, port)
+	}
+	if !strings.Contains(m.errBar.text, "O") {
+		t.Fatalf("message %q should point at the key that opens it", m.errBar.text)
+	}
+	if !m.errBar.worked() {
+		t.Fatalf("starting a script is an outcome, not a failure: %q", m.errBar.text)
+	}
+}
+
+// A browser error page says nothing about which of the two things went
+// wrong, so a port with nothing on it is reported rather than opened.
+func TestOpenKeyRefusesWhenNothingIsListening(t *testing.T) {
+	m := buildModel(t)
+	dir := writeProject(t, t.TempDir(), "[run.dev]\ncommand = \"cat\"\n")
+	onSessionIn(t, m, dir)
+
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'O'}})
+
+	if m.errBar.worked() {
+		t.Fatalf("opening a dead port reported success: %q", m.errBar.text)
+	}
+	if !strings.Contains(m.errBar.text, "nothing listening") {
+		t.Fatalf("message = %q, want it to say nothing is listening", m.errBar.text)
+	}
+	// The fix is the other key, so the message has to name it.
+	if !strings.Contains(m.errBar.text, "press p") {
+		t.Fatalf("message = %q, want it to point at p", m.errBar.text)
+	}
+}
+
+func TestOpenKeyOpensTheServerThatIsListening(t *testing.T) {
+	m := buildModel(t)
+	dir := writeProject(t, t.TempDir(), "[run.dev]\ncommand = \"cat\"\n")
+	onSessionIn(t, m, dir)
+
+	settings, err := project.Load(dir, dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	port := settings.Port(portKey(resolved(t, dir)))
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Skipf("cannot bind %d here: %v", port, err)
+	}
+	defer listener.Close()
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'O'}})
+
+	if !m.errBar.worked() {
+		t.Fatalf("opening a live server reported %q", m.errBar.text)
+	}
+	want := "http://localhost:" + strconv.Itoa(port)
+	if !strings.Contains(m.errBar.text, want) {
+		t.Fatalf("message = %q, want the url %s", m.errBar.text, want)
+	}
+	if cmd == nil {
+		t.Fatal("O should return a command that opens the browser")
+	}
+}
+
+// A repository with no settings has no port to open, and saying so points at
+// the key that would give it one.
+func TestOpenKeyWithoutSettingsPointsAtP(t *testing.T) {
+	m := buildModel(t)
+	onSessionIn(t, m, t.TempDir())
+
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'O'}})
+
+	if !strings.Contains(m.errBar.text, "press p") {
+		t.Fatalf("message = %q, want it to point at p", m.errBar.text)
 	}
 }

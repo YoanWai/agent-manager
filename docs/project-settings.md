@@ -108,6 +108,12 @@ tellable apart.
 `description` is what the picker shows; the command itself is shown when you
 leave it out.
 
+Starting one reports where it went — `running dev on :3170 · O opens it` —
+and **`O`** opens `http://localhost:<port>` in your browser, so starting a
+server and looking at it are one keystroke apart. `o` opens the worktree's
+directory in your editor; `O` opens what it serves. A port with nothing on it
+says so rather than opening a browser error page.
+
 ## Ports
 
 Running five agents at once is not much use if their dev servers all want
@@ -125,14 +131,15 @@ have every worktree serving at once. A project that ignores it is unaffected.
 The block is derived from the worktree's directory name rather than handed
 out by a counter, so it survives restarts of both the session and the
 manager: a worktree keeps the address you bookmarked for as long as it keeps
-its name. A block already listening is skipped, so two names that happen to
-collide can still both run.
+its name — including while its own server is running, which is what lets `O`
+find it.
+
+Two worktree names can therefore land on the same block. That is reported
+when a script starts rather than worked around: a server failing to bind a
+port you can see beats one quietly serving on a port you cannot. Rename the
+worktree or move `port_base` if it happens.
 
 Need more than one port? Derive them: `$((AGENT_MANAGER_PORT + 1))`.
-
-A block is only handed out when **every** port in it is free, not just the
-first, so a project deriving a second port is never given a block whose upper
-half already belongs to something else.
 
 `port_base` moves the range. The default of 3100 sits above where a
 hand-started `npm run dev` usually lands, so a worktree server and one you

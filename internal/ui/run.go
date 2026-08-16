@@ -169,6 +169,8 @@ func (m *Model) startRun(settings project.Settings, dir, name string) (tea.Model
 	if entry, ok := m.selectedRow(); ok && !entry.isGroup {
 		label = name + "-" + entry.sess.Name
 	}
+	// Probed before the script starts, or its own server is what we find.
+	busy := settings.BlockBusy(portKey(dir))
 	sess := store.Session{
 		ID:     newID(),
 		Name:   label,
@@ -186,7 +188,18 @@ func (m *Model) startRun(settings project.Settings, dir, name string) (tea.Model
 	// Starting sits outside the attention set, so the row the key just made
 	// would be filtered off screen.
 	m.statusFilter = statusFilterAll
-	m.errBar.text = ""
+	// The port is the one thing the reader wanted and could not otherwise
+	// see: the row shows a name, the preview shows output, and neither says
+	// which of the worktrees' ports this one got.
+	port := settings.Port(portKey(dir))
+	message := fmt.Sprintf("running %s on :%d · O opens it", name, port)
+	if busy {
+		// Said plainly rather than worked around: a server failing to bind a
+		// port you can see beats one quietly serving somewhere you cannot.
+		message = fmt.Sprintf("running %s on :%d · something is already listening there",
+			name, port)
+	}
+	m.reportDone(message)
 	m.mode = modeList
 	m.focusSession(sess.ID)
 	return m, m.refreshCmd()
@@ -317,4 +330,36 @@ func (m *Model) writeGroupSettings(path string) (string, error) {
 		return "", nil
 	}
 	return project.Write(m.repoRootOf(path), setup, run)
+}
+
+// openKey opens the worktree's own server in a browser, so starting one and
+// looking at it are one keystroke apart rather than a port the reader has to
+// find first. o opens the directory in an editor; O opens what it serves.
+//
+// A port with nothing on it is reported rather than opened: a browser error
+// page says nothing about which of the two things went wrong.
+func (m *Model) openKey() (tea.Model, tea.Cmd) {
+	dir, ok := m.rowDir()
+	if !ok {
+		m.errBar.text = "no directory to open a server for: " + dir
+		return m, nil
+	}
+	settings, err := project.Load(dir, m.repoRootOf(dir))
+	if err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
+	if !settings.Found {
+		m.errBar.text = "no project settings here: press p to create them"
+		return m, nil
+	}
+	name := portKey(dir)
+	port := settings.Port(name)
+	if !project.Listening(port) {
+		m.errBar.text = fmt.Sprintf("nothing listening on :%d — press p to start a run script", port)
+		return m, nil
+	}
+	url := settings.URL(name)
+	m.reportDone("opening " + url)
+	return m, openLink(url)
 }
