@@ -90,6 +90,33 @@ func TestParentIDRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCreateSessionRejectsBadParent(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	nested := sample("mid", "g1")
+	nested.ParentID = "agent"
+	if err := st.CreateSession(nested); err != nil {
+		t.Fatalf("mid: %v", err)
+	}
+	missing := sample("sh1", "g1")
+	missing.ParentID = "gone"
+	if err := st.CreateSession(missing); err == nil {
+		t.Fatal("missing parent")
+	}
+	self := sample("sh2", "g1")
+	self.ParentID = "sh2"
+	if err := st.CreateSession(self); err == nil {
+		t.Fatal("self parent")
+	}
+	grandchild := sample("sh3", "g1")
+	grandchild.ParentID = "mid"
+	if err := st.CreateSession(grandchild); err == nil {
+		t.Fatal("parent that already has a parent")
+	}
+}
+
 func TestChildrenIncludesArchivedAndOrder(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.CreateSession(sample("agent", "g")); err != nil {
@@ -160,7 +187,7 @@ In `init` migrations, append:
 		`ALTER TABLE sessions ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`,
 ```
 
-`CreateSession` runs inside a transaction: it calls `validParent` for a non-empty `sess.ParentID`, takes the parent's group as its own, then inserts. Add `parent_id` to the column list and values, and change the `sort_order` subquery to:
+`CreateSession` runs inside a transaction and inserts the row. Task 2 adds `validParent` and routes this path through it, so the parent checks and the group inheritance land with `PlaceSession`. Add `parent_id` to the column list and values, and change the `sort_order` subquery to:
 
 ```sql
 (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?)
@@ -1080,7 +1107,7 @@ git commit -m "feat(ui): reorder nest siblings and block shell-tool parents"
 - Test: `internal/sessioncmd/terminal_test.go`
 
 **Interfaces:**
-- Consumes: `PlaceSession` is not needed at create time; `CreateSession` writes `ParentID`. `Close` uses existing kill + `store.Delete`.
+- Consumes: `PlaceSession` is not needed at create time; `CreateSession` writes `ParentID`. `Close` goes through `Store.DeleteChild`, which kills the pane inside the write transaction that removes the row.
 - Produces:
 
 ```go
@@ -1104,7 +1131,7 @@ type CreateTerminalOptions struct {
 func (t *Terminals) Close(sessionID, terminalID string) error
 ```
 
-Omitted `Nest` or `true`: `ParentID = caller.ID`, group = caller.Group. Explicit `group` that differs from the caller is an error (`set nest false to place in another group`). `nest: false`: empty parent, today's group rules. `Close` refuses an agent, a missing id, or an archived shell.
+Omitted `Nest` or `true`: `ParentID = caller.ID`, group = caller.Group. Explicit `group` that differs from the caller is an error (`set nest false to place in another group`). `nest: false`: empty parent, today's group rules. `Close` refuses an agent, a missing id, an archived shell, an un-nested shell, and a shell nested under another session. A failed kill keeps the row.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1143,6 +1170,36 @@ func TestCreateNestTrueRejectsOtherGroup(t *testing.T) {
 	_, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Group: &group})
 	if err == nil || !strings.Contains(err.Error(), "nest false") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCloseRefusesUnnestedTerminal(t *testing.T) {
+	h := newTerminalHarness(t)
+	nest := false
+	created, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Nest: &nest})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := h.terminals.Close(h.caller.ID, created.ID); err == nil {
+		t.Fatal("closed an un-nested terminal")
+	}
+}
+
+func TestCloseRefusesTerminalOfAnotherSession(t *testing.T) {
+	h := newTerminalHarness(t)
+	other := store.Session{
+		ID: uuid.NewString()[:8], Name: "other-agent", Tool: "claude",
+		Cwd: h.caller.Cwd, Group: h.caller.Group, Status: status.Idle,
+	}
+	if err := h.store.CreateSession(other); err != nil {
+		t.Fatalf("other agent: %v", err)
+	}
+	created, err := h.terminals.Create(other.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := h.terminals.Close(h.caller.ID, created.ID); err == nil {
+		t.Fatal("closed another session's terminal")
 	}
 }
 
@@ -1282,9 +1339,9 @@ Pass `Nest: args.Nest` into `Create`.
 
 ```go
 		Name: "close_terminal",
-		Description: "Delete a managed terminal you opened once its job is finished: kills the pane and removes the row. " +
+		Description: "Delete a terminal nested under this session once its job is finished: kills the pane and removes the row. " +
 			"Leave it running when you opened it for the user (for example an SSH session they may attach to). " +
-			"Refuses agent sessions.",
+			"Refuses agent sessions, un-nested terminals, and terminals under another session.",
 ```
 
 Extend `terminalCommands` with `Close(sessionID, terminalID string) error`.

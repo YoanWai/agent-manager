@@ -80,7 +80,7 @@ MCP `create_terminal`:
 
 `CreateTerminalOptions` gains `Nest *bool`. `list_terminals` returns `parent_id` and the parent's name (empty when un-nested).
 
-`close_terminal(terminal_id)` is a new `sessioncmd` / MCP tool. It refuses an agent id. It kills the tmux pane, removes hooks, and `store.Delete`s the row (the same end state as deleting that shell in the list). No confirm; the agent asked to clear it.
+`close_terminal(terminal_id)` is a new `sessioncmd` / MCP tool. It reaches only the terminals nested under the caller: an agent id, an un-nested shell, and a shell under another session are all refused. It goes through `Store.DeleteChild`, which re-asserts the parent link inside the write transaction, kills the tmux pane under that same writer lock, and deletes the row only once the kill succeeds, so a failed kill leaves the row in place. No confirm; the agent asked to clear it.
 
 ## Agent policy
 
@@ -134,6 +134,8 @@ Shells always sit in their group, with `❯` when resting. A leftover `terminal_
 - `r` changing an agent with children to a shell tool: error, keep the current tool.
 - `create_terminal` with `nest` true and a `group` other than the caller's: error telling the caller to set `nest` false.
 - `close_terminal` on a missing id, an agent, or an archived shell: error, no delete.
+- `close_terminal` on an un-nested shell or one nested under another session: error naming the ownership, no kill and no delete.
+- `close_terminal` whose tmux kill fails: error, the row and its review metadata stay.
 - Confirm actions that include children fail on the first child error and leave the remaining rows as they are, same as today's multi-session kill.
 
 ## Testing
@@ -142,7 +144,8 @@ Store (`store_test.go`):
 
 - `CreateSession` round-trip of `parent_id`
 - `PlaceSession` nest, un-nest, reparent; child's group follows the parent
-- reject self, missing parent, and a parent that already has a parent
+- reject self, missing parent, and a parent that already has a parent, on `PlaceSession` and on `CreateSession` alike
+- `PlaceSession` refuses a parent for a session that already has children
 - moving an agent updates children's `group_name`
 - `ReorderSession` only swaps the sibling set
 - `Children` includes archived
@@ -164,7 +167,8 @@ MCP / `sessioncmd`:
 - `nest: false` leaves `parent_id` empty
 - `nest` true plus a different `group` errors
 - `list_terminals` includes `parent_id` and parent name
-- `close_terminal` deletes a shell and refuses an agent
+- `close_terminal` deletes a nested shell and refuses an agent, an un-nested shell, one under another session, and one moved out after the check
+- a failing kill leaves the row and its review metadata
 - server instructions name SSH as a create case and tell the agent to close a finished job
 
 ## Docs
