@@ -1204,7 +1204,7 @@ type CreateTerminalOptions struct {
 func (t *Terminals) Close(sessionID, terminalID string) error
 ```
 
-Omitted `Nest` or `true`: `ParentID = caller.ID`, group = caller.Group. Explicit `group` that differs from the caller is an error (`set nest false to place in another group`). `nest: false`: empty parent, today's group rules. `Close` refuses an agent, a missing id, an archived shell, an un-nested shell, and a shell nested under another session. A failed kill keeps the row.
+Omitted `Nest` or `true`: `ParentID = caller.ID`, group = caller.Group; a shell caller gives its own parent instead, through `CreateSessionBeside`, which reads the caller's placement inside the insert transaction. Explicit `group` that differs from the caller is an error (`set nest false to place in another group`). `nest: false`: empty parent, today's group rules. `Close` refuses an agent, a missing id, an archived shell, an un-nested shell, and a shell nested under another session. A failed kill keeps the row.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1436,7 +1436,7 @@ Replace `serverInstructions` with:
 ```text
 Use Agent Manager's terminal tools when the session itself is the point: the user should be able to watch it, approve what happens, attach, or take over. SSH into a host is the canonical case. Do not create a terminal for one-shot local commands or other internal work; those stay in your normal tools.
 
-Before opening a new terminal, call list_terminals and reuse a relevant running terminal when possible. create_terminal nests under this session unless nest is false, and a terminal in another group needs nest false. Use send_terminal and read_terminal while the job runs. When the job is finished and the terminal is not being left for the user, call close_terminal.
+Before opening a new terminal, call list_terminals and reuse a relevant running terminal when possible. create_terminal nests under this session unless nest is false, joins this session's siblings when this session is itself a terminal, and needs nest false for a terminal in another group. Use send_terminal and read_terminal while the job runs. When the job is finished and the terminal is not being left for the user, call close_terminal.
 
 Sending a terminal command executes on the user's machine and follows the same safety and approval expectations as normal shell execution.
 ```

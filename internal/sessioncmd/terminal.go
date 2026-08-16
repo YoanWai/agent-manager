@@ -204,21 +204,34 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		Group:  group,
 		Status: status.Starting,
 	}
-	if nest {
-		// A shell caller is a terminal itself, and nesting is one level, so
-		// the new shell joins it as a sibling instead of hanging under it.
-		sess.ParentID = caller.ID
-		if runtime.cfg.Tools[caller.Tool].Shell {
-			sess.ParentID = caller.ParentID
-		}
-		sess.Group = caller.Group
-	}
 	if err := runtime.driver.Create(sess.ID, sess.Cwd, tool.Command, nil, 0, 0); err != nil {
 		return Terminal{}, err
 	}
-	if err := runtime.store.CreateSession(sess); err != nil {
+	// A shell caller is a terminal itself, and nesting is one level, so the
+	// new shell joins it as a sibling instead of hanging under it.
+	create := runtime.store.CreateSession
+	if nest {
+		if runtime.cfg.Tools[caller.Tool].Shell {
+			create = func(row store.Session) error {
+				return runtime.store.CreateSessionBeside(row, caller.ID)
+			}
+		} else {
+			create = func(row store.Session) error {
+				row.ParentID = caller.ID
+				return runtime.store.CreateSession(row)
+			}
+		}
+	}
+	if err := create(sess); err != nil {
 		_ = runtime.driver.Kill(sess.ID)
 		return Terminal{}, err
+	}
+	if nest {
+		stored, err := runtime.store.Get(sess.ID)
+		if err != nil {
+			return Terminal{}, err
+		}
+		sess = stored
 	}
 	_ = runtime.driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
 	return runtime.info(sess, true)

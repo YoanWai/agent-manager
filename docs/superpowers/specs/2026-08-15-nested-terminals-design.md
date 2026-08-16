@@ -74,7 +74,7 @@ Search: a matching child also lists its parent, so the indent has a home.
 
 MCP `create_terminal`:
 
-- `nest` omitted or `true`: parent is the caller, group is the caller's group. An explicit `group` that differs from the caller is an error (`set nest false to place in another group`). An explicit `group` that matches the caller is accepted.
+- `nest` omitted or `true`: parent is the caller, group is the caller's group. A caller that is itself a terminal hands over its own parent, so the new shell lands beside it rather than under it. An explicit `group` that differs from the caller is an error (`set nest false to place in another group`). An explicit `group` that matches the caller is accepted.
 - `nest: false`: `parent_id` empty; `group` and `directory` behave as they do today.
 - `directory` is independent of nest.
 

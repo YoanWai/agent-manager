@@ -1307,6 +1307,40 @@ func TestDeleteChildAuthorizesKeepsAndCleans(t *testing.T) {
 	}
 }
 
+func TestCreateSessionBesideFollowsTheAnchorPlacement(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	anchor := sample("sh", "g1")
+	anchor.ParentID = "agent"
+	if err := st.CreateSession(anchor); err != nil {
+		t.Fatalf("anchor: %v", err)
+	}
+	sibling := sample("sh2", "g2")
+	if err := st.CreateSessionBeside(sibling, "sh"); err != nil {
+		t.Fatalf("beside: %v", err)
+	}
+	got, err := st.Get("sh2")
+	if err != nil || got.ParentID != "agent" || got.Group != "g1" {
+		t.Fatalf("sibling = %+v err %v", got, err)
+	}
+	if err := st.PlaceSession("sh", "g3", ""); err != nil {
+		t.Fatalf("unnest anchor: %v", err)
+	}
+	loose := sample("sh3", "g1")
+	if err := st.CreateSessionBeside(loose, "sh"); err != nil {
+		t.Fatalf("beside un-nested: %v", err)
+	}
+	got, err = st.Get("sh3")
+	if err != nil || got.ParentID != "" || got.Group != "g3" {
+		t.Fatalf("un-nested sibling = %+v err %v", got, err)
+	}
+	if err := st.CreateSessionBeside(sample("sh4", "g1"), "gone"); err == nil {
+		t.Fatal("created beside a missing anchor")
+	}
+}
+
 func TestPlaceSessionRefusesParentThatHasChildren(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.CreateSession(sample("agent", "g1")); err != nil {

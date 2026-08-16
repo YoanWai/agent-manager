@@ -253,6 +253,18 @@ func (s *Store) SetSetting(key, value string) error {
 }
 
 func (s *Store) CreateSession(sess Session) error {
+	return s.createSession(sess, "")
+}
+
+// CreateSessionBeside places a new session as a sibling of anchorID: same
+// group, same parent, empty when the anchor is un-nested. The anchor is
+// read inside the write transaction, so a placement that lands first
+// decides where the new row goes rather than leaving it behind.
+func (s *Store) CreateSessionBeside(sess Session, anchorID string) error {
+	return s.createSession(sess, anchorID)
+}
+
+func (s *Store) createSession(sess Session, anchorID string) error {
 	if sess.CreatedAt.IsZero() {
 		sess.CreatedAt = time.Now()
 	}
@@ -264,11 +276,24 @@ func (s *Store) CreateSession(sess Session) error {
 		return err
 	}
 	sess.ParentID = strings.TrimSpace(sess.ParentID)
+	anchorID = strings.TrimSpace(anchorID)
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if anchorID != "" {
+		var anchorGroup, anchorParent string
+		err := tx.QueryRow(`SELECT group_name, parent_id FROM sessions WHERE id = ?`, anchorID).Scan(&anchorGroup, &anchorParent)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("session %s: %w", anchorID, err)
+		}
+		if err != nil {
+			return err
+		}
+		sess.ParentID = anchorParent
+		sess.Group = anchorGroup
+	}
 	if sess.ParentID != "" {
 		parentGroup, err := validParent(tx, sess.ID, sess.ParentID)
 		if err != nil {
