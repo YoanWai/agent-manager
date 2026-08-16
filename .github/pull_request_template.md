@@ -13,6 +13,7 @@ Closes #
 - [ ] `gofmt -l .` prints nothing
 - [ ] `go vet ./...` passes
 - [ ] `go test -race ./...` passes
+- [ ] `go build ./...` passes
 - [ ] Ran it against real sessions
 
 ## Visual evidence
