@@ -600,6 +600,24 @@ func (m *Model) sessionAndChildren(sess store.Session) ([]store.Session, error) 
 	return append(out, kids...), nil
 }
 
+// childrenFirst orders a follow-set so terminals go before the agent they
+// hang under: a cleanup that fails partway leaves no row pointing at a
+// parent that is already gone.
+func childrenFirst(sessions []store.Session) []store.Session {
+	ordered := make([]store.Session, 0, len(sessions))
+	for _, sess := range sessions {
+		if sess.ParentID != "" {
+			ordered = append(ordered, sess)
+		}
+	}
+	for _, sess := range sessions {
+		if sess.ParentID == "" {
+			ordered = append(ordered, sess)
+		}
+	}
+	return ordered
+}
+
 func followConfirmLabel(verb, name string, extra int, one, many string) string {
 	if extra <= 0 {
 		return fmt.Sprintf("%s %s? %s", verb, name, one)
@@ -770,7 +788,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.errBar.text = ""
 		case actionDelete:
-			for _, sess := range m.confirm.sessions {
+			for _, sess := range childrenFirst(m.confirm.sessions) {
 				if err := m.tmux.Kill(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil

@@ -1355,6 +1355,15 @@ func TestArchiveAgentPersistsEveryChild(t *testing.T) {
 	}
 }
 
+func TestDeleteRemovesChildrenBeforeTheirAgent(t *testing.T) {
+	agent := store.Session{ID: "agent"}
+	child := store.Session{ID: "sh", ParentID: "agent"}
+	ordered := childrenFirst([]store.Session{agent, child})
+	if len(ordered) != 2 || ordered[0].ID != child.ID || ordered[1].ID != agent.ID {
+		t.Fatalf("order = %+v", ordered)
+	}
+}
+
 func TestReviveRunningAgentRevivesDeadChild(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

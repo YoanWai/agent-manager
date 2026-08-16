@@ -1259,6 +1259,54 @@ func TestCreateSessionRejectsBadParent(t *testing.T) {
 	}
 }
 
+func TestDeleteChildAuthorizesKeepsAndCleans(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	if err := st.CreateSession(sample("other", "g1")); err != nil {
+		t.Fatalf("other: %v", err)
+	}
+	child := sample("sh", "g1")
+	child.ParentID = "agent"
+	if err := st.CreateSession(child); err != nil {
+		t.Fatalf("child: %v", err)
+	}
+	if err := st.SetReviewRepo("sh", "/repo"); err != nil {
+		t.Fatalf("review repo: %v", err)
+	}
+	if err := st.DeleteChild("sh", "other", func() error {
+		t.Fatal("kill ran for another session's terminal")
+		return nil
+	}); err == nil {
+		t.Fatal("deleted a terminal nested elsewhere")
+	}
+	killErr := errors.New("kill refused")
+	if err := st.DeleteChild("sh", "agent", func() error { return killErr }); !errors.Is(err, killErr) {
+		t.Fatalf("kill error = %v", err)
+	}
+	got, err := st.Get("sh")
+	if err != nil || got.ParentID != "agent" {
+		t.Fatalf("row after failed kill = %+v err %v", got, err)
+	}
+	if repo, err := st.ReviewRepo("sh"); err != nil || repo != "/repo" {
+		t.Fatalf("review repo after failed kill = %q err %v", repo, err)
+	}
+	killed := false
+	if err := st.DeleteChild("sh", "agent", func() error { killed = true; return nil }); err != nil {
+		t.Fatalf("DeleteChild: %v", err)
+	}
+	if !killed {
+		t.Fatal("kill never ran")
+	}
+	if _, err := st.Get("sh"); err == nil {
+		t.Fatal("row still present")
+	}
+	if repo, err := st.ReviewRepo("sh"); err != nil || repo != "" {
+		t.Fatalf("review repo = %q err %v", repo, err)
+	}
+}
+
 func TestPlaceSessionRefusesParentThatHasChildren(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.CreateSession(sample("agent", "g1")); err != nil {
