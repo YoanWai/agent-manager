@@ -379,6 +379,10 @@ func TestCreateFromAShellJoinsItsSiblings(t *testing.T) {
 	if second.ParentID != h.caller.ID || second.Group != first.Group || !sameTerminalPath(second.Directory, first.Directory) {
 		t.Fatalf("second = %+v, first = %+v", second, first)
 	}
+	// Siblings share a parent, so they share the name it gives them.
+	if want := "terminal-" + h.caller.Name + "-2"; second.Name != want {
+		t.Fatalf("sibling name = %q, want %q", second.Name, want)
+	}
 	nest := false
 	loose, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Nest: &nest})
 	if err != nil {
@@ -390,6 +394,9 @@ func TestCreateFromAShellJoinsItsSiblings(t *testing.T) {
 	}
 	if fromLoose.ParentID != "" || fromLoose.Group != loose.Group || !sameTerminalPath(fromLoose.Directory, loose.Directory) {
 		t.Fatalf("from un-nested shell = %+v, loose = %+v", fromLoose, loose)
+	}
+	if !regexp.MustCompile(`^terminal-[0-9a-f]{4}$`).MatchString(fromLoose.Name) {
+		t.Fatalf("from un-nested shell name = %q, want the generated terminal-<4 hex>", fromLoose.Name)
 	}
 }
 
