@@ -236,13 +236,13 @@ func TestEnvCarriesThePort(t *testing.T) {
 }
 
 func TestSetupCommandWithoutSetupIsTheAgentAlone(t *testing.T) {
-	if got := SetupCommand("  ", "claude"); got != "claude" {
+	if got := SetupCommand("  ", "claude", ""); got != "claude" {
 		t.Fatalf("SetupCommand = %q, want the agent command untouched", got)
 	}
 }
 
 func TestSetupCommandRunsTheAgentOnlyOnSuccess(t *testing.T) {
-	got := SetupCommand("npm install", "claude")
+	got := SetupCommand("npm install", "claude", "")
 	if !strings.Contains(got, "npm install") {
 		t.Fatalf("setup missing from %q", got)
 	}
@@ -270,7 +270,7 @@ func TestSetupCommandRunsTheAgentOnlyOnSuccess(t *testing.T) {
 // A pane with no agent still needs a command in the success branch; an empty
 // one is a syntax error the pane would die on.
 func TestSetupCommandStaysValidWithNoAgent(t *testing.T) {
-	got := SetupCommand("make deps", "")
+	got := SetupCommand("make deps", "", "")
 	if !strings.Contains(got, "then\n:\n") {
 		t.Fatalf("success branch should be a no-op, got %q", got)
 	}
@@ -285,7 +285,7 @@ func TestSetupCommandExecutes(t *testing.T) {
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "ran")
 
-	script := SetupCommand("touch "+marker, "true")
+	script := SetupCommand("touch "+marker, "true", "")
 	if out, err := runShell(t, dir, script); err != nil {
 		t.Fatalf("success path failed: %v (%s)", err, out)
 	}
@@ -294,7 +294,7 @@ func TestSetupCommandExecutes(t *testing.T) {
 	}
 
 	// A failing setup must report and not reach the agent command.
-	failing := SetupCommand("false", "touch "+filepath.Join(dir, "agent-ran"))
+	failing := SetupCommand("false", "touch "+filepath.Join(dir, "agent-ran"), "")
 	out, err := runShell(t, dir, failing)
 	if err != nil {
 		t.Fatalf("failure path should still exit cleanly: %v (%s)", err, out)

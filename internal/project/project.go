@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -44,12 +45,20 @@ type Run struct {
 	// otherwise open. Only the first one by name wins, so adding a second
 	// default cannot make the key ambiguous.
 	Default bool `toml:"default"`
+	// Auto starts this script when a worktree is created, once its setup
+	// script has finished. A project whose worktrees are only useful with
+	// the server up should not need the reader to remember to start it.
+	Auto bool `toml:"auto"`
 }
 
 // Settings is a repository's .agent-manager/settings.toml.
 type Settings struct {
 	// Setup runs inside a newly created worktree before its agent starts.
 	Setup string `toml:"setup"`
+	// Archive runs in a worktree that is about to be removed, for whatever
+	// the setup script created outside it: a database, a container, a
+	// tunnel. Git takes the directory away; nothing else knows to.
+	Archive string `toml:"archive"`
 	// PortBase is the low end of the range worktrees are given ports from.
 	// Zero means DefaultPortBase.
 	PortBase int `toml:"port_base"`
@@ -324,6 +333,19 @@ func (s Settings) RunNames() []string {
 	return names
 }
 
+// AutoRuns names the scripts a new worktree starts on its own, in a stable
+// order so a project with several always starts them the same way.
+func (s Settings) AutoRuns() []string {
+	var names []string
+	for name, run := range s.Run {
+		if run.Auto {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
 // DefaultRun names the script p runs without opening the picker: the one
 // marked default, or the only one there is. Two scripts marked default
 // resolve to the first by name rather than to whichever the map yielded.
@@ -446,7 +468,7 @@ func (s Settings) Env(name string) map[string]string {
 //
 // agentCommand may be empty, for a pane that opens a shell rather than an
 // agent; the setup still runs first.
-func SetupCommand(setup, agentCommand string) string {
+func SetupCommand(setup, agentCommand, marker string) string {
 	setup = strings.TrimSpace(setup)
 	if setup == "" {
 		return agentCommand
@@ -459,8 +481,50 @@ func SetupCommand(setup, agentCommand string) string {
 	}
 	// $? in the else branch is the setup's own status: printf is the first
 	// command to run there, so nothing has overwritten it yet.
+	if marker != "" {
+		success = "mkdir -p " + ShellQuote(filepath.Dir(marker)) +
+			" && : > " + ShellQuote(marker) + "\n" + success
+	}
 	return "if " + setup + "\nthen\n" + success + "\nelse\n" +
 		"  printf '\\n\\033[31magent-manager: setup failed (exit %d)\\033[0m\\n" +
 		"Fix it here, then press R to restart this session.\\n\\n' \"$?\"\n" +
 		"fi"
+}
+
+// SetupMarker is the file a setup script touches on success. An auto-run
+// script waits for it rather than racing the setup: the two live in separate
+// tmux panes with no channel between them, and a dev server started against
+// a tree whose dependencies are still installing fails in a way that looks
+// like the project's fault.
+func SetupMarker(worktree string) string {
+	return filepath.Join(worktree, Dir, ".setup-complete")
+}
+
+// WaitForSetup wraps an auto-run command so it starts once the setup script
+// has reported success, and gives up rather than waiting forever on a setup
+// that failed or was never going to finish.
+//
+// A project with no setup script has nothing to wait for, so the command is
+// returned untouched.
+func WaitForSetup(marker, command string, timeout time.Duration) string {
+	if marker == "" {
+		return command
+	}
+	deadline := int(timeout.Seconds() * 5) // polls, at 200ms each
+	return fmt.Sprintf(`waited=0
+while [ ! -f %s ]; do
+  waited=$((waited + 1))
+  if [ "$waited" -gt %d ]; then
+    printf '\n\033[31magent-manager: setup did not finish; not starting this script.\033[0m\n'
+    exit 1
+  fi
+  sleep 0.2
+done
+%s`, ShellQuote(marker), deadline, command)
+}
+
+// ShellQuote wraps a string for POSIX sh. Paths reaching a generated script
+// carry whatever the filesystem allows, including spaces.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

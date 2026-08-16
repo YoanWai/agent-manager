@@ -1,9 +1,14 @@
 package ui
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/project"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -405,4 +410,147 @@ func resolvePath(path string) string {
 		return real
 	}
 	return path
+}
+
+// autoRunWait caps how long an auto-run script waits on the setup marker. A
+// setup that installs a large dependency tree is slow but finite; one that
+// is never going to finish should not leave a pane spinning for the rest of
+// the session.
+const autoRunWait = 15 * time.Minute
+
+// startAutoRuns launches the scripts a project marked auto, for a worktree
+// that has just been created. Failures are reported and the rest still
+// start: one server refusing to come up is not a reason to withhold the
+// others.
+func (m *Model) startAutoRuns(settings project.Settings, dir, group string) {
+	names := settings.AutoRuns()
+	if len(names) == 0 {
+		return
+	}
+	toolName, tool, ok := m.shellTool()
+	if !ok {
+		m.errBar.text = `no shell configured: add a tool block with shell = true to config.toml`
+		return
+	}
+	marker := ""
+	if strings.TrimSpace(settings.Setup) != "" {
+		marker = project.SetupMarker(dir)
+	}
+	for _, name := range names {
+		command := project.WaitForSetup(marker, settings.Run[name].Command, autoRunWait)
+		sess := store.Session{
+			ID:     newID(),
+			Name:   name + "-" + filepath.Base(dir),
+			Tool:   toolName,
+			Cwd:    dir,
+			Group:  group,
+			Status: status.Starting,
+		}
+		if err := m.launchNewSession(sess, tool, command, launchOptions{
+			env: settings.Env(portKey(dir)),
+		}); err != nil {
+			m.errBar.text = "auto-run " + name + ": " + err.Error()
+		}
+	}
+}
+
+// archiveWorktree runs a project's archive script in a worktree that is
+// about to be removed, for whatever its setup created outside it — a
+// database, a container, a tunnel. Git takes the directory away; nothing
+// else knows to.
+//
+// Run synchronously, since the directory it needs is about to stop existing,
+// and capped by a timeout so a script that hangs cannot take the manager
+// with it. A failure is reported and removal continues: the resources have
+// leaked either way, and refusing to delete the session the reader asked to
+// delete would only add a second problem.
+func (m *Model) archiveWorktree(dir, repoRoot string) {
+	settings, err := m.projectSettings(dir, repoRoot)
+	if err != nil || strings.TrimSpace(settings.Archive) == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), archiveTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", "-c", settings.Archive)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), envPairs(settings.Env(portKey(dir)))...)
+	out, err := cmd.CombinedOutput()
+	switch {
+	case ctx.Err() != nil:
+		m.errBar.text = "archive script timed out after " + archiveTimeout.String()
+	case err != nil:
+		m.errBar.text = "archive script failed: " + firstLine(string(out))
+	}
+}
+
+// archiveTimeout is long enough for a container to stop and short enough
+// that a wedged script is noticed rather than waited on.
+const archiveTimeout = 2 * time.Minute
+
+func envPairs(env map[string]string) []string {
+	pairs := make([]string, 0, len(env))
+	for key, value := range env {
+		pairs = append(pairs, key+"="+value)
+	}
+	sort.Strings(pairs)
+	return pairs
+}
+
+// waveFrames is the run indicator: a single cell rising and falling, so a
+// script that is still going reads as alive at a glance. One column wide so
+// it sits in the glyph the row already has rather than taking space from the
+// name, and short enough that the whole cycle is legible.
+var waveFrames = []rune{'▁', '▂', '▄', '▆', '█', '▆', '▄', '▂'}
+
+// waveInterval is how often the indicator advances. Fast enough to read as
+// motion, slow enough that a repaint every tick is nothing: the frame is
+// rebuilt from data already in memory, with no tmux call behind it.
+const waveInterval = 180 * time.Millisecond
+
+type waveTickMsg struct{}
+
+// waveTick keeps the indicator moving only while something is running. A
+// manager with no live run script schedules nothing, so an idle session
+// costs exactly what it did before this existed.
+func (m *Model) waveTick() tea.Cmd {
+	if !m.anyRunning() {
+		return nil
+	}
+	return tea.Tick(waveInterval, func(time.Time) tea.Msg { return waveTickMsg{} })
+}
+
+// anyRunning reports whether any listed shell session has something in its
+// pane other than the shell itself.
+func (m *Model) anyRunning() bool {
+	for _, sess := range m.sessions {
+		if !sess.Archived && m.sessionRunning(sess) {
+			return true
+		}
+	}
+	return false
+}
+
+// sessionRunning reports whether a shell session is executing something
+// rather than sitting at a prompt. A shell has no turns for the status
+// engine to track, so the foreground command is the only signal there is.
+func (m *Model) sessionRunning(sess store.Session) bool {
+	if !m.isShell(sess.Tool) {
+		return false
+	}
+	command := m.paneCommands[sess.ID]
+	if command == "" {
+		return false
+	}
+	return !isShellCommand(command)
+}
+
+// isShellCommand recognizes a pane resting at a prompt. Matched by name
+// rather than against $SHELL, since the pane may be running a different one
+// than the manager was started from.
+func isShellCommand(command string) bool {
+	switch strings.TrimPrefix(command, "-") {
+	case "sh", "bash", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "ash", "nu", "elvish", "xonsh":
+		return true
+	}
+	return false
 }

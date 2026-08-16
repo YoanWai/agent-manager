@@ -705,7 +705,7 @@ func TestLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Panes: %v", err)
 	}
-	if panes[id] <= 0 {
+	if panes[id].PID <= 0 {
 		t.Fatalf("Panes should map %q to a pane pid, got %v", id, panes)
 	}
 

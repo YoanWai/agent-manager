@@ -15,6 +15,9 @@ type launchOptions struct {
 	// buildLaunch are left alone, so a project cannot shadow the hook and MCP
 	// wiring a session needs to report its status.
 	env map[string]string
+	// setupMarker is the file the setup wrapper touches on success, so an
+	// auto-run script in another pane can wait for it.
+	setupMarker string
 	// setup is the project's setup script, run in the pane before the agent.
 	// It is applied here rather than by the caller because buildLaunch appends
 	// to the command it is given — MCP config, a --settings path — and those
@@ -45,7 +48,7 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 			env[key] = value
 		}
 	}
-	command = project.SetupCommand(opts.setup, command)
+	command = project.SetupCommand(opts.setup, command, opts.setupMarker)
 	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
 		discardWorktree()
 		return err

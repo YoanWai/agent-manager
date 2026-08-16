@@ -555,19 +555,28 @@ func noServer(out string) bool {
 		strings.Contains(out, "error connecting to")
 }
 
-// Panes returns every managed session's pane pid in a single tmux call,
-// which doubles as a liveness check: a session absent from the map is gone.
-func (d *Driver) Panes() (map[string]int, error) {
-	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-F", "#{session_name} #{pane_pid}")...).CombinedOutput()
+// Pane is what one managed session's pane is doing: its pid, and the
+// command in the foreground. The command tells a shell sitting at a prompt
+// apart from one running something, which is the only signal there is that a
+// run script is still alive — a shell has no turns to track.
+type Pane struct {
+	PID     int
+	Command string
+}
+
+// Panes returns every managed session's pane in a single tmux call, which
+// doubles as a liveness check: a session absent from the map is gone.
+func (d *Driver) Panes() (map[string]Pane, error) {
+	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-F", "#{session_name} #{pane_pid} #{pane_current_command}")...).CombinedOutput()
 	if err != nil {
 		if noServer(string(out)) {
-			return map[string]int{}, nil
+			return map[string]Pane{}, nil
 		}
 		return nil, fmt.Errorf("tmux list-panes: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	panes := map[string]int{}
+	panes := map[string]Pane{}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		name, pidText, ok := strings.Cut(line, " ")
+		name, rest, ok := strings.Cut(line, " ")
 		if !ok || !strings.HasPrefix(name, prefix) {
 			continue
 		}
@@ -575,8 +584,11 @@ func (d *Driver) Panes() (map[string]int, error) {
 		if _, taken := panes[id]; taken {
 			continue
 		}
+		// The command may be absent on a pane tmux is still setting up, so
+		// the split is tolerant rather than required.
+		pidText, command, _ := strings.Cut(rest, " ")
 		if pid, err := strconv.Atoi(pidText); err == nil {
-			panes[id] = pid
+			panes[id] = Pane{PID: pid, Command: command}
 		}
 	}
 	return panes, nil

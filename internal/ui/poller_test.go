@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -786,7 +787,7 @@ func TestCaptureAgentSessionIDsAssignsInLaunchOrder(t *testing.T) {
 
 	sessions := []store.Session{sessB, sessA} // store order, not launch order
 	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}}
-	panes := map[string]int{"sess-A": 123, "sess-B": 456}
+	panes := map[string]tmux.Pane{"sess-A": {PID: 123}, "sess-B": {PID: 456}}
 	captured, err := p.captureAgentSessionIDs(sessions, panes)
 	if err != nil {
 		t.Fatal(err)
@@ -845,7 +846,7 @@ func TestCaptureAgentSessionIDsSkipsARetiredConversation(t *testing.T) {
 	}
 
 	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}}
-	if _, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]int{"sess": 42}); err != nil {
+	if _, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := st.Get("sess")
@@ -888,7 +889,7 @@ func TestCaptureAgentSessionIDsDropsAnAnswerARestartOutran(t *testing.T) {
 	}
 
 	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}}
-	captured, err := p.captureAgentSessionIDs([]store.Session{snapshot}, map[string]int{"sess": 7})
+	captured, err := p.captureAgentSessionIDs([]store.Session{snapshot}, map[string]tmux.Pane{"sess": {PID: 7}})
 	if err != nil {
 		t.Fatal(err)
 	}

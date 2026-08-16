@@ -91,6 +91,23 @@ file that is written but not yet committed is not in the checkout at all, so
 that case falls back to the repository the worktree branched from — the first
 attempt works rather than silently doing nothing.
 
+## The archive script
+
+```toml
+archive = "docker compose down -v"
+```
+
+Runs in a worktree that is about to be removed — on session delete, once no
+other session is using the directory. Git takes the directory away; nothing
+else knows to, so anything `setup` created *outside* it (a database, a
+container, a tunnel, a DNS record) is yours to clean up here.
+
+It runs synchronously, capped at two minutes so a wedged script cannot take
+the manager with it, with the same `$PORT` environment the other scripts get.
+A failure is reported and the removal continues: the resources have leaked
+either way, and refusing to delete the session you asked to delete would only
+add a second problem.
+
 ## Run scripts
 
 `p` runs a project command in a terminal tab beside the session under the
@@ -107,6 +124,20 @@ tellable apart.
 
 `description` is what the picker shows; the command itself is shown when you
 leave it out.
+
+`auto = true` starts a script by itself when a worktree is created, once its
+setup script has finished — for a project whose worktrees are only useful
+with the server already up. Auto-run scripts wait on a marker the setup
+wrapper writes rather than racing it: they live in separate panes with no
+channel between them, and a dev server started while dependencies are still
+installing fails in a way that looks like the project's fault. If setup never
+finishes, they give up after fifteen minutes and say so.
+
+A run script that is still going shows a small rising-and-falling bar in
+place of its row's glyph, so a server that died stops looking exactly like
+one that is serving. It is driven by the pane's foreground command — a shell
+has no turns for the status engine to track — and its tick only exists while
+something is actually running, so an idle manager schedules nothing.
 
 Starting one reports where it went — `running dev on :3170 · O opens it`.
 

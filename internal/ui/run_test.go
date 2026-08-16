@@ -11,6 +11,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/project"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // writeProject drops a .agent-manager/settings.toml into dir and hands back
@@ -275,7 +276,7 @@ func TestNonWorktreeSpawnLeavesSetupAlone(t *testing.T) {
 
 // A setup script that fails must not hand a half-installed tree to an agent.
 func TestFailingSetupDoesNotStartTheAgent(t *testing.T) {
-	command := project.SetupCommand("false", "touch agent-ran")
+	command := project.SetupCommand("false", "touch agent-ran", "")
 	if !strings.Contains(command, "false") {
 		t.Fatalf("setup missing from %q", command)
 	}
@@ -680,5 +681,196 @@ func TestOpenKeyWithoutSettingsPointsAtP(t *testing.T) {
 
 	if !strings.Contains(m.errBar.text, "press p") {
 		t.Fatalf("message = %q, want it to point at p", m.errBar.text)
+	}
+}
+
+// A shell has no turns for the status engine to track, so the foreground
+// command is the only signal that a run script is still going.
+func TestSessionRunningReadsThePaneCommand(t *testing.T) {
+	m := buildModel(t)
+	dir := writeProject(t, t.TempDir(), "[run.dev]\ncommand = \"cat\"\n")
+	onSessionIn(t, m, dir)
+	pressRunKey(t, m)
+
+	run, ok := m.selected()
+	if !ok {
+		t.Fatal("no run session")
+	}
+	for _, tc := range []struct {
+		command string
+		running bool
+	}{
+		{"cat", true}, {"node", true}, {"go", true},
+		{"zsh", false}, {"bash", false}, {"-zsh", false}, {"fish", false},
+		{"", false},
+	} {
+		m.paneCommands = map[string]string{run.ID: tc.command}
+		if got := m.sessionRunning(run); got != tc.running {
+			t.Errorf("pane command %q: running = %v, want %v", tc.command, got, tc.running)
+		}
+	}
+}
+
+// The indicator must not animate an agent, whose status the engine already
+// tracks properly.
+func TestSessionRunningIgnoresAgents(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "agent", t.TempDir(), "")
+	m.selectSessionRow(t, "agent")
+	sess, _ := m.selected()
+
+	m.paneCommands = map[string]string{sess.ID: "node"}
+	if m.sessionRunning(sess) {
+		t.Fatal("an agent session should never drive the run indicator")
+	}
+}
+
+// An idle manager must schedule nothing: the tick exists only while a script
+// is actually going.
+func TestWaveTickOnlyExistsWhileSomethingRuns(t *testing.T) {
+	m := buildModel(t)
+	dir := writeProject(t, t.TempDir(), "[run.dev]\ncommand = \"cat\"\n")
+	onSessionIn(t, m, dir)
+	pressRunKey(t, m)
+	run, _ := m.selected()
+
+	m.paneCommands = map[string]string{run.ID: "zsh"}
+	if cmd := m.waveTick(); cmd != nil {
+		t.Fatal("a manager with nothing running scheduled a tick")
+	}
+	m.paneCommands = map[string]string{run.ID: "node"}
+	if cmd := m.waveTick(); cmd == nil {
+		t.Fatal("a running script should keep the indicator moving")
+	}
+}
+
+// The glyph is one column, so it cannot push the name out of the row.
+func TestRunIndicatorIsOneColumn(t *testing.T) {
+	m := buildModel(t)
+	dir := writeProject(t, t.TempDir(), "[run.dev]\ncommand = \"cat\"\n")
+	onSessionIn(t, m, dir)
+	pressRunKey(t, m)
+	run, _ := m.selected()
+	m.paneCommands = map[string]string{run.ID: "node"}
+
+	seen := map[string]bool{}
+	for phase := range len(waveFrames) {
+		m.wavePhase = phase
+		glyph := ansi.Strip(m.sessionGlyph(run))
+		if width := ansi.StringWidth(glyph); width != 1 {
+			t.Fatalf("frame %d renders %d columns, want 1", phase, width)
+		}
+		seen[glyph] = true
+	}
+	if len(seen) < 2 {
+		t.Fatalf("the indicator never changed across a cycle: %v", seen)
+	}
+}
+
+// A project can ask for its server to be up before the agent is looked at.
+func TestAutoRunStartsAScriptForANewWorktree(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	projectSettingsDir(t, repo, "[run.dev]\ncommand = \"cat\"\nauto = true\n")
+
+	if err := m.spawnSession("claude", "wt-auto", repo, "", "", false, true); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	var started bool
+	for _, sess := range m.sessions {
+		if m.isShell(sess.Tool) && strings.HasPrefix(sess.Name, "dev-") {
+			started = true
+		}
+	}
+	if !started {
+		t.Fatalf("no auto-run session was started: %+v", m.sessions)
+	}
+}
+
+// A worktree with no auto script must not gain a session it never asked for.
+func TestAutoRunStartsNothingWhenUnmarked(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	projectSettingsDir(t, repo, "[run.dev]\ncommand = \"cat\"\n")
+
+	if err := m.spawnSession("claude", "wt-plain", repo, "", "", false, true); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	for _, sess := range m.sessions {
+		if m.isShell(sess.Tool) {
+			t.Fatalf("an unmarked script started anyway: %+v", sess)
+		}
+	}
+}
+
+// Whatever setup created outside the worktree — a database, a container, a
+// tunnel — is unreachable once git takes the directory away, so the archive
+// script gets its last chance here.
+func TestArchiveScriptRunsBeforeTheWorktreeGoes(t *testing.T) {
+	m := buildModel(t)
+	worktree := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "cleaned")
+	writeProject(t, worktree, "archive = \"touch "+marker+"\"\n")
+
+	m.archiveWorktree(worktree, worktree)
+
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("archive script did not run: %v", err)
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("a script that worked reported %q", m.errBar.text)
+	}
+}
+
+// The resources have leaked either way, so a failure is reported rather than
+// blocking the deletion the reader asked for.
+func TestArchiveScriptFailureIsReported(t *testing.T) {
+	m := buildModel(t)
+	worktree := t.TempDir()
+	writeProject(t, worktree, "archive = \"echo boom >&2; exit 3\"\n")
+
+	m.archiveWorktree(worktree, worktree)
+
+	if !strings.Contains(m.errBar.text, "archive script failed") {
+		t.Fatalf("message = %q, want it to report the failure", m.errBar.text)
+	}
+}
+
+func TestArchiveScriptGetsThePortEnvironment(t *testing.T) {
+	m := buildModel(t)
+	worktree := t.TempDir()
+	out := filepath.Join(t.TempDir(), "port")
+	writeProject(t, worktree, "archive = \"printf %s \\\"$PORT\\\" > "+out+"\"\n")
+
+	m.archiveWorktree(worktree, worktree)
+
+	body, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("archive script did not run: %v", err)
+	}
+	settings, err := project.Load(worktree, worktree)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if want := strconv.Itoa(settings.Port(portKey(worktree))); string(body) != want {
+		t.Fatalf("PORT = %q, want %q", body, want)
+	}
+}
+
+// A project with no archive script must not be charged for one.
+func TestArchiveWithoutAScriptDoesNothing(t *testing.T) {
+	m := buildModel(t)
+	worktree := writeProject(t, t.TempDir(), "setup = \"true\"\n")
+	m.archiveWorktree(worktree, worktree)
+	if m.errBar.text != "" {
+		t.Fatalf("reported %q for a project with no archive script", m.errBar.text)
 	}
 }

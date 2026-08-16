@@ -201,6 +201,15 @@ type Model struct {
 	// the frame is not repainted forever.
 	bannerPhase int
 
+	// paneCommands is each session's foreground command as of the last poll,
+	// which is how a shell running something is told from one at a prompt.
+	paneCommands map[string]string
+	// wavePhase advances the run indicator on rows whose script is still
+	// going, and waving marks the tick as already scheduled so a poll cannot
+	// start a second one racing the first.
+	wavePhase int
+	waving    bool
+
 	// startupPhase advances the preview's launch loader. It rides the
 	// preview tick, which already runs at its fast cadence while a session
 	// is starting, rather than adding a timer of its own.
@@ -452,6 +461,9 @@ type refreshMsg struct {
 	procFor        string
 	preview        string
 	agents         agentStats
+	// paneCommands is each session's foreground command, carried on the poll
+	// that already asked tmux for it rather than costing a second call.
+	paneCommands map[string]string
 }
 
 type previewMsg struct {
@@ -1042,6 +1054,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.bannerPhase = 0
 		return m, m.bannerTick()
 
+	case waveTickMsg:
+		m.wavePhase++
+		if !m.anyRunning() {
+			m.waving = false
+			return m, nil
+		}
+		return m, m.waveTick()
+
 	case browserOpenMsg:
 		m.handleBrowserOpen(msg)
 		return m, nil
@@ -1073,6 +1093,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.sessions = msg.sessions
+		m.paneCommands = msg.paneCommands
+		// A run script that started or ended between polls decides whether
+		// the indicator needs a tick at all.
+		wave := tea.Cmd(nil)
+		if m.anyRunning() && !m.waving {
+			m.waving = true
+			wave = m.waveTick()
+		} else if !m.anyRunning() {
+			m.waving = false
+		}
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
 		m.groupWorktrees = msg.groupWorktrees
@@ -1103,7 +1133,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
 			m.previewGen++
-			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd())
+			return m, tea.Batch(focusExit, wave, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd())
 		}
 		m.proc = msg.proc
 		m.procFor = msg.procFor

@@ -409,7 +409,7 @@ func (m *Model) liveSessions(sessions []store.Session) ([]store.Session, error) 
 	}
 	var live []store.Session
 	for _, sess := range sessions {
-		if panes[sess.ID] > 0 {
+		if panes[sess.ID].PID > 0 {
 			live = append(live, sess)
 		}
 	}
@@ -709,10 +709,16 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						m.errBar.text = "worktree cleanup: " + err.Error()
 					} else if used {
 						m.errBar.text = "worktree kept (used by another session): " + sess.Cwd
-					} else if removed, err := m.gitDrv.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch); err != nil {
-						m.errBar.text = "worktree cleanup: " + err.Error()
-					} else if !removed {
-						m.errBar.text = "worktree kept (has work): " + sess.Cwd
+					} else {
+						// Last chance to reach whatever the setup script
+						// created outside this directory: the directory is
+						// about to stop existing.
+						m.archiveWorktree(sess.Cwd, sess.WorktreeRepo)
+						if removed, err := m.gitDrv.RemoveWorktreeIfClean(sess.WorktreeRepo, sess.Cwd, sess.WorktreeBranch); err != nil {
+							m.errBar.text = "worktree cleanup: " + err.Error()
+						} else if !removed {
+							m.errBar.text = "worktree kept (has work): " + sess.Cwd
+						}
 					}
 				}
 			}

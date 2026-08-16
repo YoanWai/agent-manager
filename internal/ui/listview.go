@@ -494,6 +494,10 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 // gone still has to say so.
 func (m *Model) sessionGlyph(sess store.Session) string {
 	resting := sess.Status != status.Dead && sess.Status != status.Errored
+	if resting && m.sessionRunning(sess) {
+		frame := waveFrames[m.wavePhase%len(waveFrames)]
+		return lipgloss.NewStyle().Foreground(colorAccent).Render(string(frame))
+	}
 	if resting && m.isShell(sess.Tool) && !m.pinnedShell(sess) {
 		return subtleStyle.Render(shellGlyph)
 	}

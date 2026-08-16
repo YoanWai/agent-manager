@@ -624,7 +624,8 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	// there yet, and an agent started into that tree spends its first turn on
 	// errors that are not the code's. The setup script runs in the pane ahead
 	// of the agent so its output is visible and a failure holds the pane.
-	launchEnv, setup := map[string]string(nil), ""
+	launchEnv, setup, marker := map[string]string(nil), "", ""
+	var autoRuns project.Settings
 	if worktree {
 		settings, err := m.projectSettings(dir, worktreeRepo)
 		if err != nil {
@@ -632,6 +633,10 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 			return err
 		}
 		setup = settings.Setup
+		if setup != "" {
+			marker = project.SetupMarker(dir)
+		}
+		autoRuns = settings
 		launchEnv = settings.Env(filepath.Base(dir))
 	}
 	var pendingInputs []string
@@ -669,9 +674,14 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		rollbackWorktree: worktreeRepo != "",
 		env:              launchEnv,
 		setup:            setup,
+		setupMarker:      marker,
 	}); err != nil {
 		return err
 	}
+	// Auto-run scripts start after the session exists, so a failure to spawn
+	// the agent is not compounded by servers left running for a worktree
+	// that never got one. Each waits on the setup marker in its own pane.
+	m.startAutoRuns(autoRuns, dir, group)
 	// The directive went out with the launch, so the row waits for the name
 	// the agent picks instead of showing the one generated for it.
 	if autoNamed {
