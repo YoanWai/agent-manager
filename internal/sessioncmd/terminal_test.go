@@ -377,7 +377,12 @@ func TestCreateNestTrueRejectsOtherGroup(t *testing.T) {
 	group := "elsewhere"
 	_, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Group: &group})
 	if err == nil || !strings.Contains(err.Error(), "nest false") {
-		t.Fatalf("err = %v", err)
+		t.Fatalf("omitted nest err = %v", err)
+	}
+	nest := true
+	_, err = h.terminals.Create(h.caller.ID, CreateTerminalOptions{Group: &group, Nest: &nest})
+	if err == nil || !strings.Contains(err.Error(), "nest false") {
+		t.Fatalf("explicit nest err = %v", err)
 	}
 }
 
