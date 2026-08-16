@@ -11,6 +11,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/project"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -838,5 +839,86 @@ func TestGroupFormStoresWorktreeChoice(t *testing.T) {
 	}
 	if len(groups) != 1 || groups[0].Worktree != "on" {
 		t.Fatalf("group form should store the worktree choice, got %+v", groups)
+	}
+}
+
+// projectSettingsDir writes a settings file into a repository, so a spawn
+// test reads as "a project configured like this".
+func projectSettingsDir(t *testing.T, root, body string) {
+	t.Helper()
+	dir := filepath.Join(root, project.Dir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, project.File), []byte(body), 0o644); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+}
+
+// A worktree is a checkout of a commit, so a settings file written but not
+// yet committed is not in it — exactly the state a project is in the first
+// time anyone tries this. The spawn falls back to the repository the
+// worktree branched from so that first attempt works.
+func TestWorktreeSpawnFallsBackToUncommittedSourceSettings(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Committed first, so the worktree checkout is a real one; the settings
+	// are written afterwards and deliberately left uncommitted.
+	initGitRepo(t, repo)
+	projectSettingsDir(t, repo, "setup = \"touch fallback-ran\"\n")
+
+	if err := m.spawnSession("claude", "wt-fallback", repo, "", "", false, true); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sessions, err := m.store.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(sessions[0].Cwd, project.Dir, project.File)); err == nil {
+		t.Fatal("settings were committed; this no longer covers the fallback")
+	}
+	marker := filepath.Join(sessions[0].Cwd, "fallback-ran")
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(marker); err == nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("uncommitted setup never ran in the worktree (%s)", marker)
+}
+
+// Settings that will not parse must not leave a worktree and a branch behind
+// for a session that was never created.
+func TestWorktreeSpawnWithBrokenSettingsDiscardsTheWorktree(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	projectSettingsDir(t, repo, "port_base = 70000\n")
+
+	err := m.spawnSession("claude", "wt-broken", repo, "", "", false, true)
+	if err == nil {
+		t.Fatal("a spawn with unloadable settings should fail")
+	}
+	if !strings.Contains(err.Error(), "port_base") {
+		t.Fatalf("error should name the offending setting, got %v", err)
+	}
+
+	sessions, listErr := m.store.ListSessions(true)
+	if listErr != nil {
+		t.Fatalf("list: %v", listErr)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("a session was created despite the failure: %+v", sessions)
+	}
+	worktree := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-worktrees", "wt-broken")
+	if _, statErr := os.Stat(worktree); statErr == nil {
+		t.Fatalf("the worktree was left behind at %s", worktree)
 	}
 }

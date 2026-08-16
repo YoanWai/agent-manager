@@ -50,6 +50,12 @@ in the quick prompt, the worktree field in the new-session form, or a group
 that defaults to worktrees. A session pointed at a checkout you already
 prepared by hand is left alone.
 
+Discovery never climbs above the repository. `setup` and every run command
+are handed to a shell, so a settings file found in a directory *above* your
+checkout would be someone else's code running as you — and a shared parent
+directory is exactly where one would be planted. The walk stops at the
+repository root; a directory outside any repository is read on its own.
+
 Settings are read from the worktree, so they are versioned with the branch
 and a branch that changes its own setup script gets the new one. A settings
 file that is written but not yet committed is not in the checkout at all, so
@@ -89,6 +95,12 @@ collide can still both run.
 
 Need more than one port? Derive them: `$((AGENT_MANAGER_PORT + 1))`.
 
+A block is only handed out when **every** port in it is free, not just the
+first, so a project deriving a second port is never given a block whose upper
+half already belongs to something else.
+
 `port_base` moves the range. The default of 3100 sits above where a
 hand-started `npm run dev` usually lands, so a worktree server and one you
-started yourself do not fight.
+started yourself do not fight. It must leave room for the whole range, so it
+is rejected outside 1-64536 rather than silently handing out a port nothing
+can bind.

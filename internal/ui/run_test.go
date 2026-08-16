@@ -206,7 +206,7 @@ func TestRunScriptReceivesThePortInItsEnvironment(t *testing.T) {
 	}
 	// The pane resolves symlinks, so compare against the port the resolved
 	// directory name yields rather than the temp path as written.
-	settings, err := project.Load(dir)
+	settings, err := project.Load(dir, dir)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

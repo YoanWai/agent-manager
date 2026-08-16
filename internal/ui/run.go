@@ -33,7 +33,7 @@ func (m *Model) runKey() (tea.Model, tea.Cmd) {
 		m.errBar.text = "no directory to run in: " + dir
 		return m, nil
 	}
-	settings, err := project.Load(dir)
+	settings, err := project.Load(dir, m.repoRootOf(dir))
 	if err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
@@ -118,19 +118,37 @@ func (m *Model) startRun(settings project.Settings, dir, name string) (tea.Model
 // first time anyone tries this. Falling back to the repository the worktree
 // branched from makes that first attempt work instead of silently doing
 // nothing.
+// Both reads are bounded by the tree they read: a worktree is its own git
+// toplevel, so neither lookup can climb out of the repository into a
+// directory whose settings would be someone else's shell commands.
 func (m *Model) projectSettings(worktreeDir, repoRoot string) (project.Settings, error) {
-	settings, err := project.Load(worktreeDir)
+	settings, err := project.Load(worktreeDir, worktreeDir)
 	if err != nil {
 		return project.Settings{}, err
 	}
 	if settings.Found || repoRoot == "" {
 		return settings, nil
 	}
-	uncommitted, err := project.Load(repoRoot)
+	uncommitted, err := project.Load(repoRoot, repoRoot)
 	if err != nil {
 		return project.Settings{}, err
 	}
 	return uncommitted, nil
+}
+
+// repoRootOf is the repository a directory belongs to, and so how far up
+// settings discovery may walk from it. A directory outside any repository
+// bounds the walk to itself, which is the safe reading: nothing above a
+// loose directory is a project of the user's.
+func (m *Model) repoRootOf(dir string) string {
+	if m.gitDrv == nil {
+		return dir
+	}
+	root, err := m.gitDrv.RepoRoot(dir)
+	if err != nil || root == "" {
+		return dir
+	}
+	return root
 }
 
 // portKey is what a directory's port is derived from: the worktree's own

