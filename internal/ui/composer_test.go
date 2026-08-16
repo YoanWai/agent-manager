@@ -217,6 +217,31 @@ func TestComposerInsertTokenSpacesOffTheWordsAroundIt(t *testing.T) {
 	}
 }
 
+// A paste result carries the box it was started from, so the two screens
+// cannot land each other's images.
+func TestComposerTargetsRouteToTheirOwnBox(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	m.openForm()
+
+	if got := m.composerFor(composerQuick); got != &m.quick.composer {
+		t.Fatal("composerQuick should name the quick bar's box")
+	}
+	if got := m.composerFor(composerForm); got != &m.form.prompt {
+		t.Fatal("composerForm should name the form's prompt")
+	}
+	// The form is up and the bar is still armed behind it, so each box
+	// answers for itself rather than for whatever is on screen.
+	if !m.composerOpen(composerQuick) || !m.composerOpen(composerForm) {
+		t.Fatal("both boxes are open here")
+	}
+	m.quick.active = false
+	m.mode = modeList
+	if m.composerOpen(composerQuick) || m.composerOpen(composerForm) {
+		t.Fatal("a closed box has nowhere for an image to land")
+	}
+}
+
 func fileGone(path string) bool {
 	_, err := os.Stat(path)
 	return os.IsNotExist(err)

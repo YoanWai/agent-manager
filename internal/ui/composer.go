@@ -376,25 +376,19 @@ func captureImageCmd(target composerID, id int) tea.Cmd {
 
 // composerFor is the prompt box a target names, whatever screen is up.
 func (m *Model) composerFor(target composerID) *composer {
-	switch target {
-	case composerQuick:
-		return &m.quick.composer
-	case composerForm:
+	if target == composerForm {
 		return &m.form.prompt
 	}
-	return nil
+	return &m.quick.composer
 }
 
 // composerOpen reports whether that prompt box is still on screen, which
 // is what says an image still has somewhere to land.
 func (m *Model) composerOpen(target composerID) bool {
-	switch target {
-	case composerQuick:
-		return m.quick.active
-	case composerForm:
+	if target == composerForm {
 		return m.mode == modeForm
 	}
-	return false
+	return m.quick.active
 }
 
 // composerKey handles the keys a prompt box with chips owns: pasting an
@@ -402,9 +396,6 @@ func (m *Model) composerOpen(target composerID) bool {
 // every other key, which the caller types into the input itself.
 func (m *Model) composerKey(target composerID, msg tea.KeyMsg) (tea.Cmd, bool) {
 	c := m.composerFor(target)
-	if c == nil {
-		return nil, false
-	}
 	switch msg.String() {
 	case "ctrl+v":
 		if c.pasting() {
@@ -448,12 +439,6 @@ func (m *Model) composerKey(target composerID, msg tea.KeyMsg) (tea.Cmd, bool) {
 // the chip back out, and no-image falls through to a text paste.
 func (m *Model) handlePasteImageMsg(msg pasteImageMsg) (tea.Model, tea.Cmd) {
 	c := m.composerFor(msg.target)
-	if c == nil {
-		if msg.path != "" {
-			_ = os.Remove(msg.path)
-		}
-		return m, nil
-	}
 	att := c.attachment(msg.id)
 	if att == nil || !m.composerOpen(msg.target) {
 		if msg.path != "" {
