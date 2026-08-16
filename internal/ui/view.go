@@ -34,6 +34,8 @@ func (m *Model) View() string {
 		frame = m.viewMove()
 	case modeRepoPick:
 		frame = m.viewRepoPick()
+	case modeRunPick:
+		frame = m.viewRunPick()
 	case modeGroupForm:
 		frame = m.viewGroupForm()
 	case modeDiff:

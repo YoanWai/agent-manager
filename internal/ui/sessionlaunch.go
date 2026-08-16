@@ -4,11 +4,23 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/project"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 type launchOptions struct {
 	rollbackWorktree bool
+	// env is exported into the pane on top of what buildLaunch sets, for the
+	// project variables a run or setup script is given. Keys already set by
+	// buildLaunch are left alone, so a project cannot shadow the hook and MCP
+	// wiring a session needs to report its status.
+	env map[string]string
+	// setup is the project's setup script, run in the pane before the agent.
+	// It is applied here rather than by the caller because buildLaunch appends
+	// to the command it is given — MCP config, a --settings path — and those
+	// flags belong to the agent, inside the wrapper's success branch, not
+	// dangling after its fi.
+	setup string
 }
 
 func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseCommand string, opts launchOptions) error {
@@ -28,6 +40,12 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 		discardWorktree()
 		return err
 	}
+	for key, value := range opts.env {
+		if _, taken := env[key]; !taken {
+			env[key] = value
+		}
+	}
+	command = project.SetupCommand(opts.setup, command)
 	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
 		discardWorktree()
 		return err

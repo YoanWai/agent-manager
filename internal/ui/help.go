@@ -60,6 +60,7 @@ func helpSections() []helpSection {
 			{"K / J", "reorder the row up / down (shift+↑↓ too)"},
 			{"n", "new session"},
 			{"T", "new terminal tab: a shell in the group under the cursor"},
+			{"p", "run a project script from .agent-manager/settings.toml"},
 			{"g", "new group (name, parent, default path, worktree)"},
 			{"/", "search the list by name"},
 			{"w", "filter to what needs attention (waiting, finished, errored)"},
@@ -113,6 +114,7 @@ func helpSections() []helpSection {
 		{title: "inside a session (attached or focused)", rows: [][2]string{
 			{"typing", "goes straight to the agent, q included"},
 			{"ctrl+q", "back to the manager (ctrl+\\ too)"},
+			{"esc esc", "focused: back to the manager, one esc still interrupts"},
 			{"←", "focused: back to the manager, at the prompt's start"},
 			{"ctrl+r", "review the session's diff, esc returns"},
 			{"ctrl+o", "open its directory in an editor"},

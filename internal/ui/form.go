@@ -600,6 +600,21 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	deferDirective := autoNamed && !directiveEmbeddable(prompt)
 	prompt = launchPrompt(prompt, autoNamed)
 	base := withPrompt(tool, tool.Command, prompt)
+	// A worktree is a fresh checkout: whatever the project needs that git does
+	// not track — installed dependencies, an .env, generated files — is not
+	// there yet, and an agent started into that tree spends its first turn on
+	// errors that are not the code's. The setup script runs in the pane ahead
+	// of the agent so its output is visible and a failure holds the pane.
+	launchEnv, setup := map[string]string(nil), ""
+	if worktree {
+		settings, err := m.projectSettings(dir, worktreeRepo)
+		if err != nil {
+			m.discardWorktree(worktreeRepo, dir, worktreeBranch)
+			return err
+		}
+		setup = settings.Setup
+		launchEnv = settings.Env(filepath.Base(dir))
+	}
 	var pendingInputs []string
 	if tool.PromptMode == "send" {
 		if prompt != "" {
@@ -633,6 +648,8 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		PendingInputs:  pendingInputs,
 	}, tool, base, launchOptions{
 		rollbackWorktree: worktreeRepo != "",
+		env:              launchEnv,
+		setup:            setup,
 	}); err != nil {
 		return err
 	}

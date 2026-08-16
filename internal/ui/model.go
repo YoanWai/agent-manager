@@ -47,6 +47,9 @@ const (
 	// modeFocus routes the keyboard into the selected session's pane while
 	// the list and live preview stay on screen.
 	modeFocus
+	// modeRunPick lists a project's run scripts when p cannot tell which one
+	// was meant.
+	modeRunPick
 )
 
 type treeRow struct {
@@ -157,6 +160,7 @@ type Model struct {
 	moveID     string
 	movePath   string
 	repoPick   repoPickState
+	runPick    runPickState
 	// editorReturnID is the session an editor request detached from, so the
 	// attach it cost can be resumed once the editor is up.
 	editorReturnID string

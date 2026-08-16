@@ -1,0 +1,22 @@
+# How agent-manager bootstraps and runs its own worktrees.
+# Reference: docs/project-settings.md
+
+# A fresh worktree has no module cache warmed and no binary built. Doing it
+# here means the agent's first `go test` is not also the first download.
+setup = """
+go mod download
+go build ./...
+"""
+
+[run.test]
+command = "go test ./..."
+description = "the whole suite"
+default = true
+
+[run.check]
+command = "gofmt -l . && go vet ./... && go test ./..."
+description = "what CI runs"
+
+[run.tui]
+command = "go run ."
+description = "this manager, from source"

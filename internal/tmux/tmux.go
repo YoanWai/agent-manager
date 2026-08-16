@@ -217,6 +217,14 @@ func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// envCommand prefixes a launch line with the variables the pane needs.
+//
+// They are exported on their own lines rather than assigned inline, because
+// a command is not always the single simple command the inline form covers:
+// a project's run script is a shell snippet, and `K=v foo && bar` would
+// leave bar without it and expand a `$K` inside foo before the assignment
+// ever took effect. Exporting also carries them into the shell the launch
+// script exec's afterwards, so a pane that drops to a prompt keeps them.
 func envCommand(env map[string]string, command string) string {
 	keys := make([]string, 0, len(env))
 	for key := range env {
@@ -225,7 +233,7 @@ func envCommand(env map[string]string, command string) string {
 	sort.Strings(keys)
 	var line strings.Builder
 	for _, key := range keys {
-		line.WriteString(key + "=" + ShellQuote(env[key]) + " ")
+		line.WriteString("export " + key + "=" + ShellQuote(env[key]) + "\n")
 	}
 	line.WriteString(command)
 	return line.String()

@@ -1,0 +1,246 @@
+// Package project reads the per-repository settings a checked-in
+// .agent-manager/settings.toml carries: the setup script a new worktree is
+// bootstrapped with, and the run scripts p offers.
+//
+// These are repository settings rather than user settings on purpose. What
+// it takes to make a fresh worktree runnable — install dependencies, copy an
+// untracked .env, start the dev server — is a property of the project, the
+// same for everyone working in it, and so belongs in the repository next to
+// the code rather than in one developer's ~/.config.
+package project
+
+import (
+	"fmt"
+	"hash/fnv"
+	"net"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/BurntSushi/toml"
+)
+
+// Dir is the per-repository settings directory, and File the settings inside
+// it. Both are relative to the repository root.
+const (
+	Dir  = ".agent-manager"
+	File = "settings.toml"
+)
+
+// EnvPort is exported into every run script and setup script. A project whose
+// server binds it can have one worktree per feature all serving at once,
+// which is the whole point of running agents in parallel.
+const EnvPort = "AGENT_MANAGER_PORT"
+
+// Run is one entry in the picker p opens.
+type Run struct {
+	// Command is handed to the user's shell, so it may be a pipeline, use
+	// $AGENT_MANAGER_PORT, or be several lines.
+	Command string `toml:"command"`
+	// Description is what the picker shows beside the name. The command
+	// itself is shown when this is empty.
+	Description string `toml:"description"`
+	// Default marks the entry p runs without asking when the picker would
+	// otherwise open. Only the first one by name wins, so adding a second
+	// default cannot make the key ambiguous.
+	Default bool `toml:"default"`
+}
+
+// Settings is a repository's .agent-manager/settings.toml.
+type Settings struct {
+	// Setup runs inside a newly created worktree before its agent starts.
+	Setup string `toml:"setup"`
+	// PortBase is the low end of the range worktrees are given ports from.
+	// Zero means DefaultPortBase.
+	PortBase int `toml:"port_base"`
+	// Run holds the named scripts p offers, keyed by the name shown.
+	Run map[string]Run `toml:"run"`
+	// Root is the directory the settings were found in, and Found reports
+	// whether there was a file at all. A repository with no settings loads
+	// as a zero Settings rather than an error: the feature is opt-in.
+	Root  string `toml:"-"`
+	Found bool   `toml:"-"`
+}
+
+// DefaultPortBase is where per-worktree port blocks start when the project
+// does not choose. Above the range a plain `npm run dev` would take, so a
+// worktree server and a hand-started one do not collide by default.
+const DefaultPortBase = 3100
+
+// portBlocks is how many distinct blocks the range is divided into, and
+// portBlockSize how many consecutive ports each worktree gets. A project
+// needing more than one port per worktree can derive the rest by adding to
+// $AGENT_MANAGER_PORT, which is why a block is handed out rather than a
+// single number.
+const (
+	portBlocks    = 100
+	portBlockSize = 10
+)
+
+// Load reads the settings governing dir by walking up from it until a
+// .agent-manager/settings.toml turns up, stopping at the filesystem root.
+// Walking up rather than reading dir alone means a session started in a
+// subdirectory of the repository still finds them.
+//
+// A repository without the file is not an error; the returned Settings is
+// zero and Found is false.
+func Load(dir string) (Settings, error) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return Settings{}, err
+	}
+	for {
+		path := filepath.Join(dir, Dir, File)
+		if _, err := os.Stat(path); err == nil {
+			return parse(path, dir)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return Settings{}, nil
+		}
+		dir = parent
+	}
+}
+
+func parse(path, root string) (Settings, error) {
+	var settings Settings
+	if _, err := toml.DecodeFile(path, &settings); err != nil {
+		return Settings{}, fmt.Errorf("%s: %w", path, err)
+	}
+	settings.Root = root
+	settings.Found = true
+	if settings.PortBase == 0 {
+		settings.PortBase = DefaultPortBase
+	}
+	for name, run := range settings.Run {
+		if strings.TrimSpace(run.Command) == "" {
+			return Settings{}, fmt.Errorf("%s: run script %q has no command", path, name)
+		}
+	}
+	return settings, nil
+}
+
+// RunNames lists the run scripts in the order the picker shows them: the
+// default first so it sits under the cursor, then the rest by name, so the
+// list a project sees never depends on map iteration order.
+func (s Settings) RunNames() []string {
+	names := make([]string, 0, len(s.Run))
+	for name := range s.Run {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if def, ok := s.DefaultRun(); ok {
+		ordered := []string{def}
+		for _, name := range names {
+			if name != def {
+				ordered = append(ordered, name)
+			}
+		}
+		return ordered
+	}
+	return names
+}
+
+// DefaultRun names the script p runs without opening the picker: the one
+// marked default, or the only one there is. Two scripts marked default
+// resolve to the first by name rather than to whichever the map yielded.
+func (s Settings) DefaultRun() (string, bool) {
+	marked := make([]string, 0, 1)
+	for name, run := range s.Run {
+		if run.Default {
+			marked = append(marked, name)
+		}
+	}
+	if len(marked) > 0 {
+		sort.Strings(marked)
+		return marked[0], true
+	}
+	if len(s.Run) == 1 {
+		for name := range s.Run {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// Port is the first port of the block belonging to a session of this name.
+// Derived from the name rather than assigned from a counter so that it
+// survives restarts of both the session and the manager: a worktree keeps
+// the address you bookmarked for as long as it keeps its name.
+//
+// A block already listening is skipped, which is what makes two names that
+// happen to hash together still able to run at once. The probe is a hint,
+// not a reservation — nothing stops a process taking the port between the
+// probe and the server starting — so a project that cannot tolerate that
+// should bind with SO_REUSEPORT off and fail loudly rather than silently
+// share.
+func (s Settings) Port(name string) int {
+	base := s.PortBase
+	if base == 0 {
+		base = DefaultPortBase
+	}
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(name))
+	start := int(hash.Sum32() % portBlocks)
+	for offset := 0; offset < portBlocks; offset++ {
+		port := base + ((start+offset)%portBlocks)*portBlockSize
+		if port > 65535-portBlockSize {
+			continue
+		}
+		if portFree(port) {
+			return port
+		}
+	}
+	return base + start*portBlockSize
+}
+
+// portFree reports whether nothing is listening on the port yet.
+func portFree(port int) bool {
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		return false
+	}
+	_ = listener.Close()
+	return true
+}
+
+// Env is what a setup or run script is launched with on top of the session's
+// own environment.
+func (s Settings) Env(name string) map[string]string {
+	return map[string]string{EnvPort: strconv.Itoa(s.Port(name))}
+}
+
+// SetupCommand wraps the setup script so a failure is visible and
+// recoverable instead of silent. On success the agent runs exactly as it
+// would have without a setup script. On failure it is not started at all —
+// running one against a half-installed tree wastes a turn on errors that are
+// not the code's — and the pane says why.
+//
+// Neither branch execs. The launch script this is embedded in ends with its
+// own `exec $SHELL`, which is what leaves a usable prompt in the pane once
+// the command finishes; exec'ing here would replace the shell and take that
+// away, so a failed setup — or an agent that exits — would kill the pane
+// instead of leaving somewhere to fix it from.
+//
+// agentCommand may be empty, for a pane that opens a shell rather than an
+// agent; the setup still runs first.
+func SetupCommand(setup, agentCommand string) string {
+	setup = strings.TrimSpace(setup)
+	if setup == "" {
+		return agentCommand
+	}
+	// A pane with no agent still needs a command in the success branch, since
+	// an empty one is a syntax error.
+	success := strings.TrimSpace(agentCommand)
+	if success == "" {
+		success = ":"
+	}
+	// $? in the else branch is the setup's own status: printf is the first
+	// command to run there, so nothing has overwritten it yet.
+	return "if " + setup + "\nthen\n" + success + "\nelse\n" +
+		"  printf '\\n\\033[31magent-manager: setup failed (exit %d)\\033[0m\\n" +
+		"Fix it here, then press R to restart this session.\\n\\n' \"$?\"\n" +
+		"fi"
+}
