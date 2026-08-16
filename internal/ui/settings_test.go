@@ -533,6 +533,7 @@ func TestSettingsUpdateRowPersistsStagedSettings(t *testing.T) {
 
 func TestSettingsHasNoTerminalRows(t *testing.T) {
 	m := buildModel(t)
+	m.openSettings()
 	if strings.Contains(ansi.Strip(m.viewSettings()), "terminal rows") {
 		t.Fatal("terminal rows setting must be gone")
 	}

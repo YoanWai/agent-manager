@@ -285,7 +285,7 @@ func TestListAndReadCarryParentMetadata(t *testing.T) {
 	}
 }
 
-func TestListAndReadReportAMissingParent(t *testing.T) {
+func TestListAndReadKeepAnOrphanedTerminal(t *testing.T) {
 	h := newTerminalHarness(t)
 	created, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
 	if err != nil {
@@ -305,11 +305,29 @@ func TestListAndReadReportAMissingParent(t *testing.T) {
 	if err := h.store.CreateSession(other); err != nil {
 		t.Fatalf("reader: %v", err)
 	}
-	if _, err := h.terminals.List(other.ID); err == nil || !strings.Contains(err.Error(), "parent") {
-		t.Fatalf("List error = %v", err)
+	listed, err := h.terminals.List(other.ID)
+	if err != nil {
+		t.Fatalf("List: %v", err)
 	}
-	if _, err := h.terminals.Read(other.ID, created.ID); err == nil || !strings.Contains(err.Error(), "parent") {
-		t.Fatalf("Read error = %v", err)
+	found := false
+	for _, term := range listed {
+		if term.ID != created.ID {
+			continue
+		}
+		found = true
+		if term.ParentID != h.caller.ID || term.ParentName != "" {
+			t.Fatalf("orphan listed = %+v", term)
+		}
+	}
+	if !found {
+		t.Fatalf("orphan missing from %+v", listed)
+	}
+	screen, err := h.terminals.Read(other.ID, created.ID)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if screen.Terminal.ParentID != h.caller.ID || screen.Terminal.ParentName != "" {
+		t.Fatalf("orphan screen = %+v", screen.Terminal)
 	}
 }
 

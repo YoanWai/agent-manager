@@ -115,11 +115,16 @@ func (r *terminalRuntime) info(sess store.Session, running bool) (Terminal, erro
 	}
 	parentName := ""
 	if sess.ParentID != "" {
+		// A parent row that is gone leaves the terminal orphaned, which the
+		// list paints un-nested; anything else is a store failure.
 		parent, err := r.store.Get(sess.ParentID)
-		if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+		case err != nil:
 			return Terminal{}, fmt.Errorf("parent %s of terminal %s: %w", sess.ParentID, sess.ID, err)
+		default:
+			parentName = parent.Name
 		}
-		parentName = parent.Name
 	}
 	return Terminal{
 		ID:         sess.ID,

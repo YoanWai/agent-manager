@@ -568,7 +568,7 @@ If `search != ""`, after the match filter, if a collected child is visible and i
 
 When walking a group, emit each un-nested session at `depth+1`, then that session's `childrenByParent[id]` at `depth+2`.
 
-Set `m.pinnedShells = 0`. Delete `pinnedShell`, `treeRows` (callers use `m.rows`), `shellsPinned` on `Model` and settings, `storedShellsPinned`, `terminalPlacementSetting`, `settingsFieldTerminals`, the settings persist/toggle, and the `terminal rows` line in `viewSettings`.
+Delete `pinnedShells`, `pinnedShell`, `treeRows` (callers use `m.rows`), `shellsPinned` on `Model` and settings, `storedShellsPinned`, `terminalPlacementSetting`, `settingsFieldTerminals`, the settings persist/toggle, and the `terminal rows` line in `viewSettings`.
 
 In `listview.go`, stop calling `terminalSectionLines`; the rail is one window over `m.rows`. Resting shells keep the `❯` glyph (`sessionGlyph` already does this when not pinned).
 
@@ -793,7 +793,7 @@ type groupOption struct {
 
 `viewMove` title: `⇄ Move`.
 
-`openMove` on a shell: build the group tree as today, and after each group append that group's non-archived agents (`!m.isShell`) as options with `sessID`, `name`, `path` = agent.Group, `depth` = group depth + 1. Root agents go under the root option.
+`openMove` on a shell: build the group tree as today, and after each group append that group's agents (`!sess.Archived && !m.isShell`) as options with `sessID`, `name`, `path` = agent.Group, `depth` = group depth + 1. Root agents go under the root option.
 
 `openMove` on an agent or group: keep `rebuildGroupOptions` only.
 
@@ -1177,7 +1177,7 @@ Expected: FAIL, `ParentID` empty / `Close` undefined / group create still succee
 
 - [ ] **Step 3: Implement**
 
-`info` fills `ParentID` and looks up `ParentName` via `store.Get` when `ParentID != ""`.
+`info` fills `ParentID` and looks up `ParentName` via `store.Get` when `ParentID != ""`. A parent row that is gone leaves `ParentName` empty; any other lookup error is returned, so `info` hands back `(Terminal, error)` and `List`, `Create` and `Read` propagate it.
 
 `Create`: `nest := true`; if `opts.Nest != nil` use `*opts.Nest`. If nest and `opts.Group != nil` and `strings.TrimSpace(*opts.Group) != caller.Group`, return `fmt.Errorf("set nest false to place in another group")`. If nest, `sess.ParentID = caller.ID` and `sess.Group = caller.Group`. If not nest, keep `createTarget` as it is.
 
@@ -1188,19 +1188,24 @@ func (t *Terminals) Close(sessionID, terminalID string) error {
 		return err
 	}
 	defer runtime.store.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
+	caller, err := runtime.caller(sessionID)
+	if err != nil {
 		return err
 	}
 	sess, err := runtime.terminal(terminalID)
 	if err != nil {
 		return err
 	}
-	_ = runtime.driver.Kill(sess.ID)
-	return runtime.store.Delete(sess.ID)
+	if sess.ParentID != caller.ID {
+		return fmt.Errorf("terminal %s is not nested under this session; only the session it hangs under closes it", sess.ID)
+	}
+	return runtime.store.DeleteChild(sess.ID, caller.ID, func() error {
+		return runtime.driver.Kill(sess.ID)
+	})
 }
 ```
 
-`runtime.terminal` already refuses agents and archived shells.
+`runtime.terminal` already refuses agents and archived shells. `store.DeleteChild` re-asserts the parent link inside the write transaction, runs the kill under that writer lock, and keeps the row when the kill fails.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
