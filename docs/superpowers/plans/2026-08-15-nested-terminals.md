@@ -1183,6 +1183,12 @@ func TestCloseRefusesUnnestedTerminal(t *testing.T) {
 	if err := h.terminals.Close(h.caller.ID, created.ID); err == nil {
 		t.Fatal("closed an un-nested terminal")
 	}
+	if _, err := h.store.Get(created.ID); err != nil {
+		t.Fatalf("row gone: %v", err)
+	}
+	if !h.driver.Exists(created.ID) {
+		t.Fatal("pane killed")
+	}
 }
 
 func TestCloseRefusesTerminalOfAnotherSession(t *testing.T) {
@@ -1200,6 +1206,12 @@ func TestCloseRefusesTerminalOfAnotherSession(t *testing.T) {
 	}
 	if err := h.terminals.Close(h.caller.ID, created.ID); err == nil {
 		t.Fatal("closed another session's terminal")
+	}
+	if _, err := h.store.Get(created.ID); err != nil {
+		t.Fatalf("row gone: %v", err)
+	}
+	if !h.driver.Exists(created.ID) {
+		t.Fatal("pane killed")
 	}
 }
 
