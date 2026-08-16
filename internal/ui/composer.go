@@ -220,9 +220,6 @@ func (c *composer) setValue(value string, cursor int) tea.Cmd {
 // removeToken cuts a chip out of the text and releases its image.
 func (c *composer) removeToken(span tokenSpan) tea.Cmd {
 	runes := []rune(c.input.Value())
-	if span.end > len(runes) {
-		return nil
-	}
 	span = c.withPadding(span, runes)
 	cursor := c.cursorOffset()
 	switch {
