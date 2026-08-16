@@ -551,10 +551,12 @@ func (m *Model) prepareDelete() {
 		return
 	}
 	if !entry.isGroup {
-		m.confirm = confirmTarget{
-			label:    "delete " + entry.sess.Name + "? kills its tmux session.",
-			sessions: []store.Session{entry.sess},
+		shells, err := m.shellsOpenedFor(entry.sess.ID)
+		if err != nil {
+			m.errBar.text = err.Error()
+			return
 		}
+		m.confirm = sessionDelete(entry.sess, shells)
 		m.mode = modeConfirmDelete
 		return
 	}
@@ -569,6 +571,46 @@ func (m *Model) prepareDelete() {
 		m.confirm = m.wholeGroupDelete(entry.group, subtree)
 	}
 	m.mode = modeConfirmDelete
+}
+
+// namesShown is how many terminals a delete spells out before it counts the
+// rest: enough to recognise what is going, short of a dialog that is a list.
+const namesShown = 3
+
+// sessionDelete takes the terminals opened for a session with it, the way
+// deleting a group takes its subtree rather than stranding it. Delete is the
+// only key here that does not come back — kill revives, archive restores —
+// so it is the one place a parent's children follow it.
+//
+// The shells go first. A worktree is removed once no session is left in it,
+// so a terminal still in the store would keep alive the very directory its
+// session was deleted to clean up.
+//
+// They are named rather than counted because nothing else can speak for
+// them: a shell's status never leaves idle, build or no build, so neither
+// the row nor this dialog can tell one running a server from one sitting at
+// a prompt. Only the reader knows, and only if we say which.
+func sessionDelete(sess store.Session, shells []store.Session) confirmTarget {
+	target := confirmTarget{sessions: append(shells, sess)}
+	if len(shells) == 0 {
+		target.label = "delete " + sess.Name + "? kills its tmux session."
+		return target
+	}
+	noun := "terminals"
+	if len(shells) == 1 {
+		noun = "terminal"
+	}
+	names := make([]string, 0, namesShown)
+	for _, shell := range shells[:min(len(shells), namesShown)] {
+		names = append(names, shell.Name)
+	}
+	listed := strings.Join(names, ", ")
+	if rest := len(shells) - len(names); rest > 0 {
+		listed += fmt.Sprintf(" and %d more", rest)
+	}
+	target.label = fmt.Sprintf("delete %s? kills its tmux session and %d %s: %s.",
+		sess.Name, len(shells), noun, listed)
+	return target
 }
 
 // wholeGroupDelete targets the group as the active view shows it: the

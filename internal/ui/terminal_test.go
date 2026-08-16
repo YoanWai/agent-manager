@@ -384,3 +384,36 @@ func TestNestedShellLeavesTheColumnToItsSession(t *testing.T) {
 		t.Fatalf("label = %q, want the directory %q", label, filepath.Base(loose.Cwd))
 	}
 }
+
+// The delete reads the store, not the rail: a shell the archived view holds
+// is still one this session owns, and skipping it would strand exactly the
+// shell nobody can see to clean up.
+func TestShellsOpenedForReachesWhatTheRailDoesNot(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "agent-one", t.TempDir(), "")
+	createSession(t, m, "agent-two", t.TempDir(), "")
+	m.selectSessionRow(t, "agent-one")
+	mine := spawnTerminal(t, m)
+	m.selectSessionRow(t, "agent-two")
+	theirs := spawnTerminal(t, m)
+
+	if err := m.store.SetArchived(mine.ID, true); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	parent, ok := m.sessionByID(mine.ParentID)
+	if !ok || parent.Name != "agent-one" {
+		t.Fatalf("terminal %s lost its recorded session", mine.Name)
+	}
+	shells, err := m.shellsOpenedFor(parent.ID)
+	if err != nil {
+		t.Fatalf("shellsOpenedFor: %v", err)
+	}
+	if len(shells) != 1 || shells[0].ID != mine.ID {
+		t.Fatalf("want the archived terminal %s, got %+v", mine.Name, shells)
+	}
+	if shells[0].ID == theirs.ID {
+		t.Fatal("another session's terminal must not be swept in")
+	}
+}

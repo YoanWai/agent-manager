@@ -178,6 +178,26 @@ func (m *Model) shellParentIndex(sessions []store.Session) map[string]string {
 	return parents
 }
 
+// shellsOpenedFor is the shells a session owns, read from the store rather
+// than from the rail: a delete that skipped the archived ones, or the ones a
+// search is holding back, would strand exactly the shells nobody can see to
+// clean up. Only the recorded link counts here — the shell was opened for
+// this session whatever it has since been cd'd to, which is the one question
+// the directory cannot answer.
+func (m *Model) shellsOpenedFor(id string) ([]store.Session, error) {
+	sessions, err := m.store.ListSessions(true)
+	if err != nil {
+		return nil, err
+	}
+	var shells []store.Session
+	for _, sess := range sessions {
+		if sess.ParentID == id && m.isShell(sess.Tool) {
+			shells = append(shells, sess)
+		}
+	}
+	return shells, nil
+}
+
 // shellOriginLabel is what a shell row says about where it belongs, in the
 // column an agent gives to its tool. Nested, the session it hangs off is the
 // row above and the column stays empty. Pinned, the block stands away from

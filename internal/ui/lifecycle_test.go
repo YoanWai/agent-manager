@@ -1292,3 +1292,103 @@ func TestRestartLaunchIsAFreshStartForEveryShippedTool(t *testing.T) {
 		}
 	}
 }
+
+// Delete is the key that does not come back, so a session's terminals go
+// with it rather than outliving the row they hung off. The dialog names
+// them: nothing else can, since a shell's status never leaves idle.
+func TestDeleteTakesTheTerminalsOpenedForASession(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "agent-one", t.TempDir(), "")
+	createSession(t, m, "agent-two", t.TempDir(), "")
+	m.selectSessionRow(t, "agent-one")
+	first := spawnTerminal(t, m)
+	second := spawnTerminal(t, m)
+	m.selectSessionRow(t, "agent-two")
+	bystander := spawnTerminal(t, m)
+
+	m.selectSessionRow(t, "agent-one")
+	m.prepareDelete()
+
+	if len(m.confirm.sessions) != 3 {
+		t.Fatalf("confirm targets %d sessions, want the agent and its 2 terminals", len(m.confirm.sessions))
+	}
+	// The shells lead: a worktree is only removed once nothing is left in
+	// it, so a terminal still in the store would keep the directory alive.
+	if last := m.confirm.sessions[len(m.confirm.sessions)-1]; last.Name != "agent-one" {
+		t.Fatalf("the session should be deleted last, got %q", last.Name)
+	}
+	for _, want := range []string{first.Name, second.Name} {
+		if !strings.Contains(m.confirm.label, want) {
+			t.Fatalf("the dialog should name %q:\n%s", want, m.confirm.label)
+		}
+	}
+
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+
+	for _, gone := range []store.Session{first, second} {
+		if m.tmux.Exists(gone.ID) {
+			t.Fatalf("terminal %s should be killed with its session", gone.Name)
+		}
+	}
+	if !m.tmux.Exists(bystander.ID) {
+		t.Fatalf("terminal %s belongs to another session and should survive", bystander.Name)
+	}
+	all, _ := m.store.ListSessions(true)
+	if len(all) != 2 {
+		t.Fatalf("want agent-two and its terminal left, got %d rows", len(all))
+	}
+}
+
+// The reason the terminals go first: a shell left in the store counts as a
+// session using the directory, and would keep alive the worktree its own
+// session was deleted to clean up.
+func TestDeleteFreesAWorktreeItsTerminalWasHolding(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	if err := m.spawnSession("claude", "wt-owner", repo, "", "", false, true); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	sessions, _ := m.store.ListSessions(true)
+	worktree := sessions[0].Cwd
+
+	m.selectSessionRow(t, "wt-owner")
+	spawnTerminal(t, m)
+
+	deleteSession(t, m, "wt-owner")
+	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
+		t.Fatalf("worktree %s should be gone once its terminal went with the session", worktree)
+	}
+}
+
+// Kill and archive both come back, so neither takes a terminal with it:
+// the shell costs nothing to keep and may be running something.
+func TestKillAndArchiveLeaveTheTerminalsAlone(t *testing.T) {
+	for _, probe := range []struct {
+		name string
+		ask  func(*Model) (tea.Model, tea.Cmd)
+	}{
+		{"kill", (*Model).killSelected},
+		{"archive", (*Model).archiveSelected},
+	} {
+		t.Run(probe.name, func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "agent-one", t.TempDir(), "")
+			m.selectSessionRow(t, "agent-one")
+			shell := spawnTerminal(t, m)
+
+			m.selectSessionRow(t, "agent-one")
+			probe.ask(m)
+			if len(m.confirm.sessions) != 1 {
+				t.Fatalf("%s targets %d sessions, want the agent alone", probe.name, len(m.confirm.sessions))
+			}
+			_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+			m.applyCmd(t, cmd)
+
+			if !m.tmux.Exists(shell.ID) {
+				t.Fatalf("%s should leave the terminal running", probe.name)
+			}
+		})
+	}
+}

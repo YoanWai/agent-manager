@@ -33,7 +33,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `V` | Revive every dead session in view |
 | `R` | Restart the selected session on an empty context: same name, group, directory and tool |
 | `a` / `u` | Archive / restore a session or group. Archive kills the process and keeps the last preview; restore resumes it |
-| `d` | Delete session, or a group + its entire subtree |
+| `d` | Delete session and the terminals opened for it, or a group + its entire subtree |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
@@ -75,6 +75,8 @@ Shells gather under a **Terminals** rule pinned to the foot of the list, holding
 Settings (`s`) has a `terminal rows` row that switches this from `pinned` to `nested`, which hangs each shell off the session it was opened for, one level under it in the tree and marked with `❯` where an agent carries its status dot. The worktree a terminal belongs to is then the row above it rather than something to work out from a name, and the row leaves its own column empty because that row already says it. A second `T` on a shell joins it as a sibling instead of nesting deeper. A shell that recorded no session — one opened on a group row, or one whose session has since been archived — looks for the oldest agent launched in its own directory, so a terminal opened on a worktree's group row still finds the agent living there. Only a shell that finds neither, in its own group, sits in that group beside the agents.
 
 A group's dots and counts describe its agents either way, so the shell you left running a build never shows up as work in progress.
+
+Deleting a session (`d`) takes the terminals opened for it, the way deleting a group takes its subtree. The dialog names them before anything happens, because nothing else can speak for them: a shell rests at idle whatever it is running, so neither its row nor the dialog can tell one serving a port from one sitting at a prompt. `x` and `a` leave them alone — both come back, so there is nothing to clean up after. A shell that has since been `cd`'d elsewhere still goes: it was opened for that session, which is what the link records.
 
 **The keys that write into a pane refuse a shell.** `space` and the review screen's `C` both paste their text and press Enter, so on a shell a sentence meant for an agent would run as a command. Both say the row is a shell and send nothing; enter the session (`↵`) to type there, where what you type is plainly a command. `f` says the same, since a shell has no conversation to fork.
 
