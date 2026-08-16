@@ -40,6 +40,11 @@ var additionalContributors = []contributor{
 		AvatarURL: "https://avatars.githubusercontent.com/u/674667?v=4",
 		Type:      "User",
 	},
+	{
+		Login:     "roshaans",
+		AvatarURL: "https://avatars.githubusercontent.com/u/25015977?v=4",
+		Type:      "User",
+	},
 }
 
 func refreshContributors() error {
