@@ -237,7 +237,8 @@ func TestTerminalToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 func TestCloseTerminalForwardsID(t *testing.T) {
 	fake := &fakeTerminalCommands{}
 	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", fake))
-	if text, isError := callText(t, session, "close_terminal", map[string]any{"terminal_id": "a1b2c3d4"}); isError {
+	text, isError := callText(t, session, "close_terminal", map[string]any{"terminal_id": "a1b2c3d4"})
+	if isError || !strings.Contains(text, "closed terminal a1b2c3d4") {
 		t.Fatalf("close_terminal = %q, isError=%v", text, isError)
 	}
 	if fake.closedID != "a1b2c3d4" {

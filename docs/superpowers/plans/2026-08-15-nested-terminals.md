@@ -64,7 +64,7 @@ func TestParentIDRoundTrip(t *testing.T) {
 	if err := st.CreateSession(parent); err != nil {
 		t.Fatalf("create parent: %v", err)
 	}
-	child := sample("sh", "g1")
+	child := sample("sh", "g2")
 	child.Tool = "terminal"
 	child.ParentID = "agent"
 	if err := st.CreateSession(child); err != nil {
@@ -74,8 +74,8 @@ func TestParentIDRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.ParentID != "agent" {
-		t.Fatalf("ParentID = %q, want agent", got.ParentID)
+	if got.ParentID != "agent" || got.Group != "g1" {
+		t.Fatalf("nested child = %+v, want parent agent in g1", got)
 	}
 	list, err := st.ListSessions(false)
 	if err != nil {
@@ -100,20 +100,17 @@ func TestCreateSessionRejectsBadParent(t *testing.T) {
 	if err := st.CreateSession(nested); err != nil {
 		t.Fatalf("mid: %v", err)
 	}
-	missing := sample("sh1", "g1")
-	missing.ParentID = "gone"
-	if err := st.CreateSession(missing); err == nil {
-		t.Fatal("missing parent")
-	}
-	self := sample("sh2", "g1")
-	self.ParentID = "sh2"
-	if err := st.CreateSession(self); err == nil {
-		t.Fatal("self parent")
-	}
-	grandchild := sample("sh3", "g1")
-	grandchild.ParentID = "mid"
-	if err := st.CreateSession(grandchild); err == nil {
-		t.Fatal("parent that already has a parent")
+	for _, bad := range []Session{
+		func() Session { s := sample("sh1", "g1"); s.ParentID = "gone"; return s }(),
+		func() Session { s := sample("sh2", "g1"); s.ParentID = "sh2"; return s }(),
+		func() Session { s := sample("sh3", "g1"); s.ParentID = "mid"; return s }(),
+	} {
+		if err := st.CreateSession(bad); err == nil {
+			t.Fatalf("created %s under %s", bad.ID, bad.ParentID)
+		}
+		if _, err := st.Get(bad.ID); err == nil {
+			t.Fatalf("rejected %s still wrote a row", bad.ID)
+		}
 	}
 }
 
@@ -256,7 +253,7 @@ func TestPlaceSessionNestsAndUnnests(t *testing.T) {
 	if err := st.CreateSession(sample("sh", "g1")); err != nil {
 		t.Fatalf("shell: %v", err)
 	}
-	if err := st.PlaceSession("sh", "g1", "agent"); err != nil {
+	if err := st.PlaceSession("sh", "g2", "agent"); err != nil {
 		t.Fatalf("nest: %v", err)
 	}
 	got, err := st.Get("sh")
@@ -285,14 +282,20 @@ func TestPlaceSessionRejectsBadParent(t *testing.T) {
 	if err := st.CreateSession(sample("sh", "g")); err != nil {
 		t.Fatalf("sh: %v", err)
 	}
-	if err := st.PlaceSession("sh", "g", "missing"); err == nil {
-		t.Fatal("missing parent")
+	for _, parent := range []string{"missing", "sh", "mid"} {
+		if err := st.PlaceSession("sh", "g", parent); err == nil {
+			t.Fatalf("placed under %s", parent)
+		}
+		got, err := st.Get("sh")
+		if err != nil || got.ParentID != "" || got.Group != "g" {
+			t.Fatalf("refused placement moved the row: %+v err %v", got, err)
+		}
 	}
-	if err := st.PlaceSession("agent", "g", "agent"); err == nil {
-		t.Fatal("self parent")
+	if err := st.CreateSession(sample("other", "g")); err != nil {
+		t.Fatalf("other: %v", err)
 	}
-	if err := st.PlaceSession("sh", "g", "mid"); err == nil {
-		t.Fatal("parent that already has a parent")
+	if err := st.PlaceSession("agent", "g", "other"); err == nil {
+		t.Fatal("nested a session that has children")
 	}
 }
 
@@ -456,7 +459,7 @@ git commit -m "feat(store): place sessions under a parent and reorder siblings"
 - Modify: `internal/ui/listview.go` (drop `terminalSectionLines` and the pinned paint path)
 - Modify: `internal/ui/settings.go`, `internal/ui/modals.go`, `internal/ui/keys.go` (`terminalPlacementSetting`)
 - Modify: `internal/ui/terminals_section_test.go` (delete pinned tests; keep or move any inline glyph coverage that still belongs)
-- Test: `internal/ui/listview_test.go` or a new `internal/ui/nest_test.go`
+- Test: `internal/ui/model_test.go`, `internal/ui/settings_test.go`, `internal/ui/keys_test.go`
 
 **Interfaces:**
 - Consumes: `Session.ParentID`
@@ -464,7 +467,7 @@ git commit -m "feat(store): place sessions under a parent and reorder siblings"
 
 - [ ] **Step 1: Write the failing tests**
 
-Add `internal/ui/nest_test.go`:
+Add to `internal/ui/model_test.go`, and put the settings case in `internal/ui/settings_test.go` and the reorder case in `internal/ui/keys_test.go`:
 
 ```go
 package ui
@@ -599,7 +602,7 @@ Delete `pinnedShells`, `pinnedShell`, `treeRows` (callers use `m.rows`), `shells
 
 In `listview.go`, stop calling `terminalSectionLines`; the rail is one window over `m.rows`. Resting shells keep the `❯` glyph (`sessionGlyph` already does this when not pinned).
 
-Delete pinned-only tests in `terminals_section_test.go`. Keep tests that still describe inline glyphs, or move them next to `terminal_test.go`.
+Delete pinned-only tests in `terminals_section_test.go`. Keep tests that still describe inline glyphs, or move them next to the file they cover: the tree cases belong in `model_test.go`, the settings case in `settings_test.go`, and the reorder case in `keys_test.go`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -673,11 +676,27 @@ func TestOpenTerminalOnNestedShellSharesParent(t *testing.T) {
 		t.Fatalf("second parent=%q first parent=%q", second.ParentID, first.ParentID)
 	}
 }
+
+func TestTerminalKeyOnUnnestedShellStaysUnnested(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	loose := spawnTerminal(t, m)
+	m.selectSessionRow(t, loose.Name)
+	second := spawnTerminal(t, m)
+	if second.ParentID != "" || second.Group != loose.Group || second.Cwd != loose.Cwd {
+		t.Fatalf("second = %+v, first = %+v", second, loose)
+	}
+}
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./internal/ui/ -run 'TestOpenTerminalOnAgentNests|TestOpenTerminalOnGroupIsUnnested|TestOpenTerminalOnNestedShellSharesParent' -v`
+Run: `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./internal/ui/ -run 'TestOpenTerminalOnAgentNests|TestOpenTerminalOnGroupIsUnnested|TestOpenTerminalOnNestedShellSharesParent|TestTerminalKeyOnUnnestedShellStaysUnnested' -v`
 
 Expected: FAIL, `ParentID` empty on the agent case.
 
@@ -996,7 +1015,7 @@ git commit -m "feat(ui): agent kill archive delete revive follow child shells"
 **Files:**
 - Modify: `internal/ui/keys.go` (`visibleReorderTarget`)
 - Modify: `internal/ui/rename.go` (tool change)
-- Test: `internal/ui/listview_test.go` or `internal/ui/nest_test.go`; `internal/ui/rename_test.go`
+- Test: `internal/ui/keys_test.go`; `internal/ui/rename_test.go`
 
 **Interfaces:**
 - Consumes: `Session.ParentID`, `Children`
@@ -1094,7 +1113,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/ui/keys.go internal/ui/rename.go internal/ui/nest_test.go internal/ui/rename_test.go
+git add internal/ui/keys.go internal/ui/rename.go internal/ui/keys_test.go internal/ui/rename_test.go
 git commit -m "feat(ui): reorder nest siblings and block shell-tool parents"
 ```
 

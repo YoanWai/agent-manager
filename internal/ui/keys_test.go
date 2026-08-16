@@ -363,8 +363,9 @@ func TestReorderAgentSkipsChildren(t *testing.T) {
 	createSession(t, m, "coder", dir, "backend")
 	createSession(t, m, "other", dir, "backend")
 	m.selectSessionRow(t, "coder")
-	spawnTerminal(t, m)
+	shell := spawnTerminal(t, m)
 	m.selectSessionRow(t, "coder")
+	agent := m.sessionRows()[0]
 	_, cmd := m.reorderSelected(1)
 	m.applyCmd(t, cmd)
 	var names []string
@@ -375,5 +376,9 @@ func TestReorderAgentSkipsChildren(t *testing.T) {
 	}
 	if len(names) < 2 || names[0] != "other" || names[1] != "coder" {
 		t.Fatalf("un-nested order %v", names)
+	}
+	got, err := m.store.Get(shell.ID)
+	if err != nil || got.ParentID != agent.ID {
+		t.Fatalf("terminal left its parent: %+v err %v", got, err)
 	}
 }
