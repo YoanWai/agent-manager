@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "id": "terminals-under-their-agent",
+    "banner": "new: terminals live under their agent",
+    "title": "Terminals nest under the session they were opened for",
+    "body": [
+      "T on a session opens a shell under it, named after it: terminal-review-done rather than terminal-0ab5.",
+      "Kill, archive, restore and delete take a session's terminals with it, and m moves one onto another agent.",
+      "Agents open and close their own terminals over MCP, so an SSH login you can watch is one tool call away.",
+      "Restore resumes the agent, archive kills the pane it froze, and a session stays working while its shells run.",
+      "The in-session editor key is F3 now, because ctrl+o belongs to the agent in the pane.",
+      "Thanks to @roshaans for the terminal names, @OkunaRei for the selection fix, @sunnor92 for two reports,",
+      "and @andrelago13 for the editor key that moved. #326 is where every binding becomes yours to set."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.30.0"
+  }
+]
