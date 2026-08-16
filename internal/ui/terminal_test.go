@@ -139,6 +139,72 @@ func TestOpenTerminalOnSessionRowUsesItsDirectory(t *testing.T) {
 	}
 }
 
+func TestOpenTerminalOnAgentNests(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	agent, _ := m.selected()
+	shell := spawnTerminal(t, m)
+	if shell.ParentID != agent.ID || shell.Group != agent.Group {
+		t.Fatalf("shell parent=%q group=%q, want %q / %q", shell.ParentID, shell.Group, agent.ID, agent.Group)
+	}
+}
+
+func TestOpenTerminalOnGroupIsUnnested(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	shell := spawnTerminal(t, m)
+	if shell.ParentID != "" || shell.Group != "backend" {
+		t.Fatalf("group T = %+v", shell)
+	}
+}
+
+func TestOpenTerminalOnNestedShellSharesParent(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	first := spawnTerminal(t, m)
+	m.selectSessionRow(t, first.Name)
+	second := spawnTerminal(t, m)
+	if second.ParentID != first.ParentID || second.ParentID == "" || second.Group != first.Group {
+		t.Fatalf("second = %+v, first = %+v", second, first)
+	}
+}
+
+func TestTerminalKeyOnUnnestedShellStaysUnnested(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	loose := spawnTerminal(t, m)
+	if loose.ParentID != "" {
+		t.Fatalf("first shell nested: %+v", loose)
+	}
+	m.selectSessionRow(t, loose.Name)
+	second := spawnTerminal(t, m)
+	if second.ParentID != "" || second.Group != loose.Group {
+		t.Fatalf("second = %+v, first = %+v", second, loose)
+	}
+}
+
 // tmux keeps reporting a pane's path after the directory is removed under
 // it, so the row checks both the pane path and the recorded cwd rather than
 // handing back somewhere that is no longer there.

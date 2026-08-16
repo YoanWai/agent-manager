@@ -48,6 +48,7 @@ type Session struct {
 	WorktreeBranch      string
 	PendingInputs       []string
 	PendingInputClaimed bool
+	ParentID            string
 }
 
 // LaunchTime is when the agent now in the pane started: the last restart,
@@ -144,6 +145,7 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN retired_agent_session_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN pending_inputs TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE sessions ADD COLUMN pending_claimed INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -251,6 +253,17 @@ func (s *Store) SetSetting(key, value string) error {
 }
 
 func (s *Store) CreateSession(sess Session) error {
+	return s.createSession(sess, "")
+}
+
+// CreateSessionBeside reads the anchor inside the write transaction, so a
+// placement that lands first decides where the new row goes rather than
+// leaving it behind.
+func (s *Store) CreateSessionBeside(sess Session, anchorID string) error {
+	return s.createSession(sess, anchorID)
+}
+
+func (s *Store) createSession(sess Session, anchorID string) error {
 	if sess.CreatedAt.IsZero() {
 		sess.CreatedAt = time.Now()
 	}
@@ -261,18 +274,52 @@ func (s *Store) CreateSession(sess Session) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(
-		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ?))`,
+	sess.ParentID = strings.TrimSpace(sess.ParentID)
+	anchorID = strings.TrimSpace(anchorID)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if anchorID != "" {
+		var anchorGroup, anchorParent string
+		err := tx.QueryRow(`SELECT group_name, parent_id FROM sessions WHERE id = ?`, anchorID).Scan(&anchorGroup, &anchorParent)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("session %s: %w", anchorID, err)
+		}
+		if err != nil {
+			return err
+		}
+		sess.ParentID = anchorParent
+		sess.Group = anchorGroup
+	}
+	if sess.ParentID != "" {
+		parentGroup, err := validParent(tx, sess.ID, sess.ParentID)
+		if err != nil {
+			return err
+		}
+		sess.Group = parentGroup
+	}
+	_, err = tx.Exec(
+		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
 		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID,
-		sess.WorktreeRepo, sess.WorktreeBranch, pendingInputs, sess.Group,
+		sess.WorktreeRepo, sess.WorktreeBranch, pendingInputs, sess.ParentID, sess.Group, sess.ParentID,
 	)
 	if err != nil {
 		return err
 	}
-	return s.ensureGroup(sess.Group)
+	if sess.Group != "" {
+		if _, err := tx.Exec(
+			`INSERT INTO groups (name, sort_order)
+			 VALUES (?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+			 ON CONFLICT(name) DO NOTHING`, sess.Group); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // ensureGroup registers a group by name if it does not exist, leaving any
@@ -323,7 +370,7 @@ func (s *Store) AddGroup(name, path, worktree string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed, parent_id
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -344,7 +391,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
-			&agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed); err != nil {
+			&agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed, &sess.ParentID); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(pendingInputs), &sess.PendingInputs); err != nil {
@@ -367,11 +414,11 @@ func (s *Store) Get(id string) (Session, error) {
 	var created, lastStatus, agentLaunched int64
 	var pendingInputs string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed, parent_id
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
-		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed)
+		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed, &sess.ParentID)
 	if err != nil {
 		return Session{}, err
 	}
@@ -385,6 +432,23 @@ func (s *Store) Get(id string) (Session, error) {
 	sess.LastStatusAt = decodeTime(lastStatus)
 	sess.AgentLaunchedAt = decodeTime(agentLaunched)
 	return sess, nil
+}
+
+func (s *Store) Children(parentID string) ([]Session, error) {
+	if parentID == "" {
+		return nil, nil
+	}
+	sessions, err := s.ListSessions(true)
+	if err != nil {
+		return nil, err
+	}
+	var kids []Session
+	for _, sess := range sessions {
+		if sess.ParentID == parentID {
+			kids = append(kids, sess)
+		}
+	}
+	return kids, nil
 }
 
 func (s *Store) ClaimPendingInput(id, expected string) (bool, error) {
@@ -619,6 +683,45 @@ func (s *Store) Delete(id string) error {
 	return requireRow(res, id)
 }
 
+// DeleteChild removes a session only while it still hangs under parentID.
+// kill runs inside the same write transaction, which holds the database's
+// writer lock, so a placement cannot slip between the ownership check and
+// the delete, and a failed kill rolls the row back into place.
+func (s *Store) DeleteChild(id, parentID string, kill func() error) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE sessions SET parent_id = ? WHERE id = ? AND parent_id = ?`, parentID, id, parentID)
+	if err != nil {
+		return err
+	}
+	held, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if held == 0 {
+		return fmt.Errorf("session %s is no longer nested under %s", id, parentID)
+	}
+	if err := kill(); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM review_targets WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM review_bases WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // SessionsInSubtree returns every session (archived included) whose group
 // is the given path or any descendant of it.
 func (s *Store) SessionsInSubtree(path string) ([]Session, error) {
@@ -691,20 +794,78 @@ func (s *Store) MoveGroup(path, newParent string) error {
 	return s.RenameGroup(path, newPath)
 }
 
-// MoveSession reassigns a session to another group ("" = root), placing
-// it at the end of the destination.
-func (s *Store) MoveSession(id, group string) error {
-	res, err := s.db.Exec(
-		`UPDATE sessions SET group_name = ?,
-		 sort_order = (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ?)
-		 WHERE id = ?`, group, group, id)
+// validParent reads the parent through the caller's transaction, so the row
+// it approves cannot be deleted or nested before the write lands.
+func validParent(tx *sql.Tx, id, parentID string) (string, error) {
+	if parentID == id {
+		return "", fmt.Errorf("session %s cannot be its own parent", id)
+	}
+	var group, grandparent string
+	err := tx.QueryRow(`SELECT group_name, parent_id FROM sessions WHERE id = ?`, parentID).Scan(&group, &grandparent)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("parent %s: %w", parentID, err)
+	}
+	if err != nil {
+		return "", err
+	}
+	if grandparent != "" {
+		return "", fmt.Errorf("parent %s already has a parent", parentID)
+	}
+	return group, nil
+}
+
+func (s *Store) PlaceSession(id, group, parentID string) error {
+	parentID = strings.TrimSpace(parentID)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if parentID != "" {
+		parentGroup, err := validParent(tx, id, parentID)
+		if err != nil {
+			return err
+		}
+		group = parentGroup
+	}
+	if parentID != "" {
+		var kids int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE parent_id = ?`, id).Scan(&kids); err != nil {
+			return err
+		}
+		if kids > 0 {
+			return fmt.Errorf("session %s has terminals of its own; move them out first", id)
+		}
+	}
+	res, err := tx.Exec(
+		`UPDATE sessions SET group_name = ?, parent_id = ?,
+		 sort_order = (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?)
+		 WHERE id = ?`,
+		group, parentID, group, parentID, id)
 	if err != nil {
 		return err
 	}
 	if err := requireRow(res, id); err != nil {
 		return err
 	}
-	return s.ensureGroup(group)
+	if parentID == "" {
+		if _, err := tx.Exec(`UPDATE sessions SET group_name = ? WHERE parent_id = ?`, group, id); err != nil {
+			return err
+		}
+	}
+	if group != "" {
+		if _, err := tx.Exec(
+			`INSERT INTO groups (name, sort_order)
+			 VALUES (?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+			 ON CONFLICT(name) DO NOTHING`, group); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) MoveSession(id, group string) error {
+	return s.PlaceSession(id, group, "")
 }
 
 func (s *Store) RenameSession(id, name string) error {
@@ -915,8 +1076,8 @@ func (s *Store) ReorderSession(id string, delta int, includeArchived bool) (bool
 		return false, err
 	}
 	rows, err := s.db.Query(
-		`SELECT id, archived FROM sessions WHERE group_name = ?
-		 ORDER BY sort_order, created_at`, sess.Group)
+		`SELECT id, archived FROM sessions WHERE group_name = ? AND parent_id = ?
+		 ORDER BY sort_order, created_at`, sess.Group, sess.ParentID)
 	if err != nil {
 		return false, err
 	}
@@ -986,13 +1147,13 @@ func (s *Store) SwapSessionOrder(id, targetID string) error {
 	if err != nil {
 		return err
 	}
-	if sess.Group != target.Group {
+	if sess.Group != target.Group || sess.ParentID != target.ParentID {
 		return fmt.Errorf("sessions %s and %s are not siblings", id, targetID)
 	}
 
 	rows, err := s.db.Query(
-		`SELECT id FROM sessions WHERE group_name = ?
-		 ORDER BY sort_order, created_at`, sess.Group)
+		`SELECT id FROM sessions WHERE group_name = ? AND parent_id = ?
+		 ORDER BY sort_order, created_at`, sess.Group, sess.ParentID)
 	if err != nil {
 		return err
 	}

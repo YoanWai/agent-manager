@@ -17,12 +17,14 @@ import (
 )
 
 type Terminal struct {
-	ID        string `json:"id" jsonschema:"managed terminal session id"`
-	Name      string `json:"name" jsonschema:"terminal name shown in Agent Manager"`
-	Group     string `json:"group" jsonschema:"group path holding the terminal; empty is the root"`
-	Directory string `json:"directory" jsonschema:"terminal's current working directory, or its launch directory when stopped"`
-	Status    string `json:"status" jsonschema:"stored Agent Manager status"`
-	Running   bool   `json:"running" jsonschema:"whether the terminal currently has a live tmux pane"`
+	ID         string `json:"id" jsonschema:"managed terminal session id"`
+	Name       string `json:"name" jsonschema:"terminal name shown in Agent Manager"`
+	Group      string `json:"group" jsonschema:"group path holding the terminal; empty is the root"`
+	Directory  string `json:"directory" jsonschema:"terminal's current working directory, or its launch directory when stopped"`
+	Status     string `json:"status" jsonschema:"stored Agent Manager status"`
+	Running    bool   `json:"running" jsonschema:"whether the terminal currently has a live tmux pane"`
+	ParentID   string `json:"parent_id" jsonschema:"id of the parent session when nested; empty when un-nested"`
+	ParentName string `json:"parent_name" jsonschema:"name of the parent session when nested; empty when un-nested"`
 }
 
 type TerminalScreen struct {
@@ -35,6 +37,7 @@ type CreateTerminalOptions struct {
 	// deliberately targets the root group.
 	Group     *string
 	Directory string
+	Nest      *bool
 }
 
 type Terminals struct {
@@ -84,8 +87,7 @@ func (r *terminalRuntime) caller(sessionID string) (store.Session, error) {
 }
 
 func (r *terminalRuntime) terminal(id string) (store.Session, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
+	if strings.TrimSpace(id) == "" {
 		return store.Session{}, errors.New("terminal_id is empty; call list_terminals to get one")
 	}
 	sess, err := r.store.Get(id)
@@ -104,21 +106,36 @@ func (r *terminalRuntime) terminal(id string) (store.Session, error) {
 	return sess, nil
 }
 
-func (r *terminalRuntime) info(sess store.Session, running bool) Terminal {
+func (r *terminalRuntime) info(sess store.Session, running bool) (Terminal, error) {
 	dir := sess.Cwd
 	if running {
 		if current, err := r.driver.PaneCurrentPath(sess.ID); err == nil {
 			dir = current
 		}
 	}
-	return Terminal{
-		ID:        sess.ID,
-		Name:      sess.Name,
-		Group:     sess.Group,
-		Directory: dir,
-		Status:    sess.Status,
-		Running:   running,
+	parentName := ""
+	if sess.ParentID != "" {
+		// A parent row that is gone leaves the terminal orphaned, which the
+		// list paints un-nested; anything else is a store failure.
+		parent, err := r.store.Get(sess.ParentID)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+		case err != nil:
+			return Terminal{}, fmt.Errorf("parent %s of terminal %s: %w", sess.ParentID, sess.ID, err)
+		default:
+			parentName = parent.Name
+		}
 	}
+	return Terminal{
+		ID:         sess.ID,
+		Name:       sess.Name,
+		Group:      sess.Group,
+		Directory:  dir,
+		Status:     sess.Status,
+		Running:    running,
+		ParentID:   sess.ParentID,
+		ParentName: parentName,
+	}, nil
 }
 
 func (t *Terminals) List(sessionID string) ([]Terminal, error) {
@@ -144,7 +161,11 @@ func (t *Terminals) List(sessionID string) ([]Terminal, error) {
 			continue
 		}
 		_, running := panes[sess.ID]
-		terminals = append(terminals, runtime.info(sess, running))
+		info, err := runtime.info(sess, running)
+		if err != nil {
+			return nil, err
+		}
+		terminals = append(terminals, info)
 	}
 	return terminals, nil
 }
@@ -163,6 +184,13 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if !ok {
 		return Terminal{}, errors.New("no shell configured; add a tool block with shell = true to config.toml")
 	}
+	nest := true
+	if opts.Nest != nil {
+		nest = *opts.Nest
+	}
+	if nest && opts.Group != nil && strings.TrimSpace(*opts.Group) != caller.Group {
+		return Terminal{}, fmt.Errorf("set nest false to place in another group")
+	}
 	group, dir, err := runtime.createTarget(caller, opts)
 	if err != nil {
 		return Terminal{}, err
@@ -179,12 +207,58 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if err := runtime.driver.Create(sess.ID, sess.Cwd, tool.Command, nil, 0, 0); err != nil {
 		return Terminal{}, err
 	}
-	if err := runtime.store.CreateSession(sess); err != nil {
-		_ = runtime.driver.Kill(sess.ID)
+	// A shell caller is a terminal itself, and nesting is one level, so the
+	// new shell joins it as a sibling instead of hanging under it.
+	create := runtime.store.CreateSession
+	if nest {
+		if runtime.cfg.Tools[caller.Tool].Shell {
+			create = func(row store.Session) error {
+				return runtime.store.CreateSessionBeside(row, caller.ID)
+			}
+		} else {
+			create = func(row store.Session) error {
+				row.ParentID = caller.ID
+				return runtime.store.CreateSession(row)
+			}
+		}
+	}
+	if err := create(sess); err != nil {
+		if killErr := runtime.driver.Kill(sess.ID); killErr != nil {
+			return Terminal{}, fmt.Errorf("%w; its pane %s is still running and has no row: %w", err, sess.ID, killErr)
+		}
 		return Terminal{}, err
 	}
+	if nest {
+		stored, err := runtime.store.Get(sess.ID)
+		if err != nil {
+			return Terminal{}, err
+		}
+		sess = stored
+	}
 	_ = runtime.driver.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name))
-	return runtime.info(sess, true), nil
+	return runtime.info(sess, true)
+}
+
+func (t *Terminals) Close(sessionID, terminalID string) error {
+	runtime, err := t.open()
+	if err != nil {
+		return err
+	}
+	defer runtime.store.Close()
+	caller, err := runtime.caller(sessionID)
+	if err != nil {
+		return err
+	}
+	sess, err := runtime.terminal(terminalID)
+	if err != nil {
+		return err
+	}
+	if sess.ParentID != caller.ID {
+		return fmt.Errorf("terminal %s is not nested under this session; only the session it hangs under closes it", sess.ID)
+	}
+	return runtime.store.DeleteChild(sess.ID, caller.ID, func() error {
+		return runtime.driver.Kill(sess.ID)
+	})
 }
 
 func (r *terminalRuntime) createTarget(caller store.Session, opts CreateTerminalOptions) (string, string, error) {
@@ -327,8 +401,12 @@ func (t *Terminals) Read(sessionID, terminalID string) (TerminalScreen, error) {
 	if err != nil {
 		return TerminalScreen{}, err
 	}
+	info, err := runtime.info(terminal, true)
+	if err != nil {
+		return TerminalScreen{}, err
+	}
 	return TerminalScreen{
-		Terminal: runtime.info(terminal, true),
+		Terminal: info,
 		Output:   strings.TrimRight(ansi.Strip(output), "\r\n"),
 	}, nil
 }

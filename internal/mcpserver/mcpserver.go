@@ -37,6 +37,7 @@ type listTerminalsArgs struct{}
 type createTerminalArgs struct {
 	Group     *string `json:"group,omitempty" jsonschema:"existing group path for the new terminal; pass an empty string for the root group; defaults to this agent's group"`
 	Directory string  `json:"directory,omitempty" jsonschema:"existing directory to open; defaults to the selected group's inherited path, then this agent's current directory"`
+	Nest      *bool   `json:"nest,omitempty" jsonschema:"when true or omitted, nest under this session, or beside it under the same parent when this session is itself a terminal; false places an un-nested terminal in group"`
 }
 
 type sendTerminalArgs struct {
@@ -46,6 +47,10 @@ type sendTerminalArgs struct {
 }
 
 type readTerminalArgs struct {
+	TerminalID string `json:"terminal_id" jsonschema:"terminal id returned by list_terminals or create_terminal"`
+}
+
+type closeTerminalArgs struct {
 	TerminalID string `json:"terminal_id" jsonschema:"terminal id returned by list_terminals or create_terminal"`
 }
 
@@ -63,13 +68,14 @@ type terminalCommands interface {
 	Create(sessionID string, opts sessioncmd.CreateTerminalOptions) (sessioncmd.Terminal, error)
 	Send(sessionID, terminalID, command string, keys []string) error
 	Read(sessionID, terminalID string) (sessioncmd.TerminalScreen, error)
+	Close(sessionID, terminalID string) error
 }
 
-const serverInstructions = `Use Agent Manager's terminal tools proactively for task-related shell work that should remain visible, persistent, or run alongside the conversation. Do not wait for the user to ask when these conditions apply.
+const serverInstructions = `Use Agent Manager's terminal tools when the session itself is the point: the user should be able to watch it, approve what happens, attach, or take over. SSH into a host is the canonical case. Do not create a terminal for one-shot local commands or other internal work; those stay in your normal tools.
 
-Before starting a long-running, output-heavy, or continuously monitored command such as a test suite, build, development server, or log tail, call list_terminals. Reuse a relevant running terminal when possible; otherwise call create_terminal in the current group and directory. Use send_terminal to submit the command, then call read_terminal to inspect its screen. Read again as needed while the command is running, and use send_terminal keys for interactive input or interruption.
+Before opening a new terminal, call list_terminals and reuse a relevant running terminal when possible. create_terminal nests under this session unless nest is false, joins this session's siblings when this session is itself a terminal, and needs nest false for a terminal in another group. Use send_terminal and read_terminal while the job runs. When the job is finished and the terminal is not being left for the user, call close_terminal, which reaches the terminals nested under this session.
 
-Do not create a new terminal for every short one-shot command when persistence or separate visibility adds no value. Sending a terminal command executes on the user's machine and follows the same safety and approval expectations as normal shell execution.`
+Sending a terminal command executes on the user's machine and follows the same safety and approval expectations as normal shell execution.`
 
 // NewServer builds the MCP server with every session tool registered.
 // Split from Run so tests can connect an in-process client.
@@ -132,8 +138,8 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "list_terminals",
-		Description: "Call proactively before long-running, output-heavy, persistent, or parallel shell work to find a terminal you can reuse. " +
-			"Lists active managed terminals with ids, names, groups, current directories, statuses, and whether their tmux panes are running. " +
+		Description: "Call before opening a terminal for human-visible work, to find one you can reuse. " +
+			"Lists active managed terminals with ids, names, groups, current directories, statuses, whether their tmux panes are running, and the session each one is nested under. " +
 			"Reuse a relevant running terminal when possible; otherwise call create_terminal. Use the returned id with send_terminal and read_terminal.",
 		Annotations: terminalToolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listTerminalsArgs) (*mcp.CallToolResult, listTerminalsOutput, error) {
@@ -147,14 +153,15 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "create_terminal",
-		Description: "After list_terminals finds no relevant running terminal, call this without waiting for the user to create one for long-running, output-heavy, persistent, or parallel shell work. " +
-			"Returns its id and opens by default in this agent's group and current directory. Set group to use another existing group and its inherited directory, or set directory explicitly. " +
-			"Then call send_terminal with the returned id.",
+		Description: "Create a managed terminal for human-visible work such as SSH, not for one-shot local commands or other internal work. " +
+			"It nests under this session unless nest is false, and a terminal created from a terminal joins it as a sibling under the same agent. A group other than this session's needs nest false, since a nested terminal lives in its parent's group; that group then supplies its inherited directory, and directory set explicitly wins over both. " +
+			"Then call send_terminal with the returned id. Call close_terminal when the job is finished and the terminal is not being left for the user.",
 		Annotations: terminalToolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createTerminalArgs) (*mcp.CallToolResult, sessioncmd.Terminal, error) {
 		created, err := terminals.Create(sessionID, sessioncmd.CreateTerminalOptions{
 			Group:     args.Group,
 			Directory: args.Directory,
+			Nest:      args.Nest,
 		})
 		if err != nil {
 			return nil, sessioncmd.Terminal{}, err
@@ -195,6 +202,19 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands)
 			text = "terminal screen is empty"
 		}
 		return textContent(text), screen, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "close_terminal",
+		Description: "Delete a terminal nested under this session once its job is finished: kills the pane and removes the row. " +
+			"Leave it running when you opened it for the user (for example an SSH session they may attach to). " +
+			"Refuses agent sessions, un-nested terminals, and terminals under another session.",
+		Annotations: terminalToolAnnotations(false, true, false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args closeTerminalArgs) (*mcp.CallToolResult, any, error) {
+		if err := terminals.Close(sessionID, args.TerminalID); err != nil {
+			return nil, nil, err
+		}
+		return textContent("closed terminal " + args.TerminalID), nil, nil
 	})
 
 	return server

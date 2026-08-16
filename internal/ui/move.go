@@ -24,9 +24,39 @@ func (m *Model) openMove() {
 		m.moveID = row.sess.ID
 		m.movePath = ""
 		m.rebuildGroupOptions(row.sess.Group)
+		if m.isShell(row.sess.Tool) {
+			m.appendAgentMoveTargets()
+		}
 	}
 	m.mode = modeMove
 	m.errBar.text = ""
+}
+
+func (m *Model) appendAgentMoveTargets() {
+	selected := m.form.groups[m.form.groupIndex].path
+	var options []groupOption
+	for _, opt := range m.form.groups {
+		options = append(options, opt)
+		for _, sess := range m.sessions {
+			if sess.Archived || m.isShell(sess.Tool) || sess.Group != opt.path {
+				continue
+			}
+			options = append(options, groupOption{
+				path:   sess.Group,
+				depth:  opt.depth + 1,
+				sessID: sess.ID,
+				name:   sess.Name,
+			})
+		}
+	}
+	m.form.groups = options
+	m.form.groupIndex = 0
+	for i, opt := range options {
+		if opt.path == selected && opt.sessID == "" {
+			m.form.groupIndex = i
+			return
+		}
+	}
 }
 
 // pruneMoveTargets drops the moved group and its descendants from the
@@ -62,11 +92,29 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveGroupCursor(1)
 		return m, nil
 	case "enter":
-		group := m.selectedGroupPath()
 		if m.movePath != "" {
-			return m.moveGroupTo(group)
+			return m.moveGroupTo(m.selectedGroupPath())
 		}
-		if err := m.store.MoveSession(m.moveID, group); err != nil {
+		opt := m.form.groups[m.form.groupIndex]
+		sess, err := m.store.Get(m.moveID)
+		if err != nil {
+			m.errBar.text = err.Error()
+			return m, nil
+		}
+		// A picked session is re-read before the shortcut below closes the
+		// dialog, so re-picking the parent of a terminal whose agent has
+		// since gone reports that instead of a move that never happened.
+		if opt.sessID != "" {
+			if _, err := m.store.Get(opt.sessID); err != nil {
+				m.errBar.text = err.Error()
+				return m, nil
+			}
+		}
+		if sess.ParentID == opt.sessID && sess.Group == opt.path {
+			m.mode = modeList
+			return m, nil
+		}
+		if err := m.store.PlaceSession(m.moveID, opt.path, opt.sessID); err != nil {
 			m.errBar.text = err.Error()
 			return m, nil
 		}

@@ -134,10 +134,6 @@ func (m *Model) railLines(width, height int) []contentLine {
 	// is only laid while entries still have room under it: a rail that is all
 	// banner says nothing about the fleet.
 	const railBannerRows, railListMin = 3, 3
-	// Half the list at most, so the tree the block sits under keeps enough
-	// rows to still read as a tree.
-	shells := m.terminalSectionLines(width, listHeight/2)
-	listHeight -= len(shells)
 	room := func(cost int) bool { return listHeight-len(rows)-cost >= railListMin }
 	// Search heads the list it filters, so the query sits over the entries it
 	// is narrowing. It is also the field being typed into, so a rail too tight
@@ -170,12 +166,11 @@ func (m *Model) railLines(width, height int) []contentLine {
 			rows = append(rows, lines...)
 		}
 	}
-	rows = append(rows, m.entryLines(m.treeRows(), 0, width, max(listHeight-len(rows), 0))...)
+	rows = append(rows, m.entryLines(m.rows, 0, width, max(listHeight-len(rows), 0))...)
 	for len(rows) < listHeight {
 		rows = append(rows, contentLine{})
 	}
 	rows = rows[:listHeight]
-	rows = append(rows, shells...)
 	if meters != nil {
 		rows = append(rows, contentLine{rule: true})
 		for _, line := range meters {
@@ -262,23 +257,6 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 	return lines
 }
 
-// terminalSectionLines is the pinned Terminals block: a divider and the
-// shell rows under it, windowed like the tree so a long list of shells
-// scrolls inside the block instead of pushing the tree off screen. The
-// label is the first thing dropped when the rail is short, since a shell
-// row the cursor can reach outranks the heading over it.
-func (m *Model) terminalSectionLines(width, budget int) []contentLine {
-	if m.pinnedShells == 0 || budget < 1 {
-		return nil
-	}
-	at := len(m.rows) - m.pinnedShells
-	if budget == 1 {
-		return m.entryLines(m.rows[at:], at, width, 1)
-	}
-	head := contentLine{text: strings.Repeat(" ", railInset) + divider("Terminals", width-railInset)}
-	return append([]contentLine{head}, m.entryLines(m.rows[at:], at, width, budget-1)...)
-}
-
 // entryHeight is how many lines an entry paints: one in the compact list,
 // two once the comfortable density unstacks the meta onto its own line.
 // Groups match sessions either way, since a ragged list of one- and
@@ -331,21 +309,6 @@ func lineWindow(heights []int, cursor, budget int) (int, int) {
 	return start, end
 }
 
-// emptyTreeReason is why the tree is bare, phrased to follow "no agents".
-// Ranked like the title chain above it: the narrowest view wins.
-func (m *Model) emptyTreeReason() string {
-	switch {
-	case strings.TrimSpace(m.search) != "":
-		return "match"
-	case m.statusFilter.active():
-		return "need " + m.statusFilter.label()
-	case m.showArchived:
-		return "archived"
-	default:
-		return "yet"
-	}
-}
-
 func (m *Model) emptyRailLines(width, height int) []string {
 	title := "no sessions yet"
 	hint := keyCap("n", "starts one")
@@ -360,12 +323,6 @@ func (m *Model) emptyRailLines(width, height int) []string {
 	if search := strings.TrimSpace(m.search); search != "" {
 		title = "no matches"
 		hint = subtleStyle.Render("for \"" + search + "\"")
-	}
-	// The Terminals block below can be full while the tree is bare, so the
-	// empty state says what is missing rather than claiming the rail holds
-	// nothing.
-	if m.pinnedShells > 0 {
-		title = "no agents " + m.emptyTreeReason()
 	}
 	titleLine := centerLine(
 		lipgloss.NewStyle().Bold(true).Foreground(colorBright).Render(title),
@@ -489,12 +446,11 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 	return m.renderSessionEntry(entry, selected, width, pad, guides, trail, bg)
 }
 
-// sessionGlyph is the mark ahead of a session's name. An inline shell takes
-// a caret rather than an idle dot it would never leave, but a pane that has
-// gone still has to say so.
+// A shell takes a caret rather than an idle dot it would never leave, but
+// a pane that has gone still has to say so.
 func (m *Model) sessionGlyph(sess store.Session) string {
 	resting := sess.Status != status.Dead && sess.Status != status.Errored
-	if resting && m.isShell(sess.Tool) && !m.pinnedShell(sess) {
+	if resting && m.isShell(sess.Tool) {
 		return subtleStyle.Render(shellGlyph)
 	}
 	return lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
@@ -551,16 +507,10 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	if selected {
 		metaStyle = mutedStyle
 	}
-	// A pinned shell already sits under a Terminals heading, so its tool
-	// name is dead weight where the group it left behind is not.
-	detail := sess.Tool
-	if m.pinnedShell(sess) {
-		detail = displayGroup(sess.Group)
-	}
 	// A session names its state in words as well as in its dot; a group,
 	// whose row rolls several states together, is left to its dots.
 	meta := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
-		metaStyle.Render(" · "+detail+" · "+relSince(lastActivity(sess)))
+		metaStyle.Render(" · "+sess.Tool+" · "+relSince(lastActivity(sess)))
 
 	if m.comfortableRows {
 		return stackedRow(head, metaIndent(pad, trail)+meta, width, bg)

@@ -70,10 +70,7 @@ type Model struct {
 	setSnapshot func(id, snapshot string) error
 
 	sessions []store.Session
-	// rows is the flat list the cursor indexes. Its last pinnedShells entries
-	// are the Terminals block rather than part of the tree.
-	rows         []treeRow
-	pinnedShells int
+	rows     []treeRow
 
 	groups         []string
 	groupPaths     map[string]string
@@ -126,10 +123,6 @@ type Model struct {
 	// their meta on a second line instead of alongside the name. Every
 	// rail frame reads it, so it lives here instead of the store.
 	comfortableRows bool
-	// shellsPinned mirrors the persisted terminal placement: shells gather
-	// in their own block instead of sitting among the agents. rebuildRows
-	// reads it on every rebuild, so it lives here instead of the store.
-	shellsPinned bool
 	// watchedGen is previewGen as of the last poll pass, so a selection
 	// that has not moved since can be recognised as at rest.
 	watchedGen        uint64
@@ -307,6 +300,7 @@ const (
 	actionRestore = "restore"
 	actionKill    = "kill"
 	actionRestart = "restart"
+	actionRevive  = "revive"
 )
 
 type confirmTarget struct {
@@ -388,7 +382,6 @@ type settingsState struct {
 	arrowStep       bool
 	comfortableRows bool
 	worktreeDefault bool
-	shellsPinned    bool
 	notifications   bool
 	notifyFinished  bool
 	themeAuto       bool
@@ -413,7 +406,6 @@ const (
 	settingsFieldFocusKey
 	settingsFieldArrowStep
 	settingsFieldWorktree
-	settingsFieldTerminals
 	settingsFieldNotify
 	settingsFieldNotifyFinish
 	settingsFieldCLIs
@@ -539,7 +531,6 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		focusOnEnter:        storedFocusOnEnter(st),
 		arrowStep:           storedArrowStep(st),
 		comfortableRows:     storedComfortableRows(st),
-		shellsPinned:        storedShellsPinned(st),
 		mode:                modeList,
 		update:              updateInfo{version: version},
 		dismissed:           loadDismissed(st),
@@ -1498,17 +1489,6 @@ func rowsBelowRoot(rows []treeRow) []treeRow {
 	return rows
 }
 
-// treeRows is the list without the pinned shell block at its tail.
-func (m *Model) treeRows() []treeRow {
-	return m.rows[:len(m.rows)-m.pinnedShells]
-}
-
-// pinnedShell reports whether a session belongs in the Terminals block
-// rather than in its group.
-func (m *Model) pinnedShell(sess store.Session) bool {
-	return m.shellsPinned && m.isShell(sess.Tool)
-}
-
 func rowKey(entry treeRow) string {
 	if entry.isGroup {
 		return "g:" + entry.group
@@ -1528,21 +1508,69 @@ func (m *Model) rebuildRows() {
 	query := strings.ToLower(strings.TrimSpace(m.search))
 	prunedView := query != "" || m.statusFilter.active()
 
+	listed := m.listedSessions()
+	listedIDs := make(map[string]bool, len(listed))
+	for _, sess := range listed {
+		listedIDs[sess.ID] = true
+	}
+	byID := make(map[string]store.Session, len(m.sessions))
+	for _, sess := range m.sessions {
+		byID[sess.ID] = sess
+	}
 	// m.sessions arrives ordered by the store (group, sort_order), so
 	// per-group slices inherit the user's manual order.
-	sessionsByGroup := map[string][]store.Session{}
-	var shells []store.Session
-	for _, sess := range m.listedSessions() {
-		if query != "" && !matchesSearch(sess, query) {
+	matched := make(map[string]bool, len(listed))
+	for _, sess := range listed {
+		if query == "" || matchesSearch(sess, query) {
+			matched[sess.ID] = true
+		}
+	}
+	// A parent the search itself missed still comes along to carry its
+	// matching children, in the store's order rather than after them.
+	carried := map[string]bool{}
+	for _, sess := range listed {
+		if !matched[sess.ID] || sess.ParentID == "" || !listedIDs[sess.ParentID] {
 			continue
 		}
-		// Out of the group map as well as out of the tree, so a group whose
-		// only sessions are pinned reads as empty to the toggles that prune.
-		if m.pinnedShell(sess) {
-			shells = append(shells, sess)
+		carried[sess.ParentID] = true
+	}
+	sessionsByGroup := map[string][]store.Session{}
+	childrenByParent := map[string][]store.Session{}
+	for _, sess := range listed {
+		if sess.ParentID != "" {
+			if _, ok := byID[sess.ParentID]; ok {
+				if matched[sess.ID] {
+					childrenByParent[sess.ParentID] = append(childrenByParent[sess.ParentID], sess)
+				}
+				continue
+			}
+		}
+		if matched[sess.ID] || carried[sess.ID] {
+			sessionsByGroup[sess.Group] = append(sessionsByGroup[sess.Group], sess)
+		}
+	}
+	walked := map[string]bool{}
+	for _, groupSessions := range sessionsByGroup {
+		for _, sess := range groupSessions {
+			walked[sess.ID] = true
+		}
+	}
+	orphaned := map[string]bool{}
+	// A child whose parent never made it into a group paints un-nested, in
+	// the store's order rather than the order the parent map happens to
+	// yield.
+	for _, sess := range listed {
+		if _, nested := childrenByParent[sess.ParentID]; !nested || walked[sess.ParentID] {
+			continue
+		}
+		if !matched[sess.ID] {
 			continue
 		}
 		sessionsByGroup[sess.Group] = append(sessionsByGroup[sess.Group], sess)
+		orphaned[sess.ParentID] = true
+	}
+	for parentID := range orphaned {
+		delete(childrenByParent, parentID)
 	}
 
 	paths := groupClosure(m.groups, m.sessions)
@@ -1583,9 +1611,15 @@ func (m *Model) rebuildRows() {
 
 	// Root is a standing move and spawn target; its sessions stay flat.
 	rows := make([]treeRow, 0, len(m.sessions)+len(paths)+1)
+	appendSession := func(sess store.Session, depth int) {
+		rows = append(rows, treeRow{sess: sess, depth: depth})
+		for _, child := range childrenByParent[sess.ID] {
+			rows = append(rows, treeRow{sess: child, depth: depth + 1})
+		}
+	}
 	rows = append(rows, treeRow{isGroup: true, group: rootGroup})
 	for _, sess := range sessionsByGroup[""] {
-		rows = append(rows, treeRow{sess: sess})
+		appendSession(sess, 0)
 	}
 	var walk func(path string, depth int)
 	walk = func(path string, depth int) {
@@ -1594,7 +1628,7 @@ func (m *Model) rebuildRows() {
 			return
 		}
 		for _, sess := range sessionsByGroup[path] {
-			rows = append(rows, treeRow{sess: sess, depth: depth + 1})
+			appendSession(sess, depth+1)
 		}
 		for _, child := range children[path] {
 			walk(child, depth+1)
@@ -1603,12 +1637,6 @@ func (m *Model) rebuildRows() {
 	for _, root := range children[""] {
 		walk(root, 0)
 	}
-	// Depth 0 closes every tree branch above the block, keeping its rows out
-	// of the guide columns.
-	for _, sess := range shells {
-		rows = append(rows, treeRow{sess: sess})
-	}
-	m.pinnedShells = len(shells)
 
 	m.rows = rows
 	if previousKey != "" {
