@@ -308,7 +308,7 @@ func attachStatusRight(primary, secondary string) string {
 			break
 		}
 	}
-	return " agent-manager · Ctrl+r = review · Ctrl+o = editor · " + strings.Join(exits, " / ") + " = back "
+	return " agent-manager · Ctrl+r = review · F3 = editor · " + strings.Join(exits, " / ") + " = back "
 }
 
 func (d *Driver) EnsureBindings() error {
@@ -320,7 +320,11 @@ func (d *Driver) EnsureBindings() error {
 		{"bind-key", "-n", "C-q", "if-shell", "-F", inSession, "detach-client", "send-keys C-q"},
 		{"bind-key", "-n", `C-\`, "if-shell", "-F", inSession, "detach-client", `send-keys C-\\`},
 		{"bind-key", "-n", "C-r", "if-shell", "-F", inSession, request(RequestReview), "send-keys C-r"},
-		{"bind-key", "-n", "C-o", "if-shell", "-F", inSession, request(RequestEditor), "send-keys C-o"},
+		{"bind-key", "-n", "F3", "if-shell", "-F", inSession, request(RequestEditor), "send-keys F3"},
+		// The editor used to sit on C-o, which Claude Code, Gemini CLI and
+		// readline all bind; a server that outlives the update still carries
+		// that binding until it is dropped.
+		{"unbind-key", "-n", "C-o"},
 		// Restore the standard fallback when the prefix shadows a direct binding.
 		{"bind-key", "-T", "prefix", "d", "detach-client"},
 	}

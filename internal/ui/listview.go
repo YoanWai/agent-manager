@@ -722,7 +722,7 @@ func (m *Model) contentLines(width, height int) []contentLine {
 // focusTopRule is the hairline that caps the focused pane, titled so the
 // mode names itself where the eye already is.
 func focusTopRule(width int) string {
-	title := " focused · ctrl+q back · ctrl+r review · ctrl+o editor "
+	title := " focused · ctrl+q back · ctrl+r review · f3 editor "
 	rule := annotationStyle.Render(title)
 	rest := width - lipgloss.Width(title)
 	if rest > 0 {

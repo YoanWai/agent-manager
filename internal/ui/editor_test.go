@@ -244,7 +244,7 @@ func TestOpenEditorNamesADirectoryThatIsGone(t *testing.T) {
 	}
 }
 
-// Ctrl+O inside an attach leaves a request behind and detaches: the manager
+// F3 inside an attach leaves a request behind and detaches: the manager
 // opens the editor for the session it was in, then hands that session its
 // client back.
 func TestAttachDoneOpensEditorAndReturnsToTheSession(t *testing.T) {

@@ -29,6 +29,9 @@ func TestFocusKeyCommand(t *testing.T) {
 		{"enter", tea.KeyMsg{Type: tea.KeyEnter}, "send-keys -t am_x Enter", true},
 		{"escape", tea.KeyMsg{Type: tea.KeyEsc}, "send-keys -t am_x Escape", true},
 		{"ctrl-c", tea.KeyMsg{Type: tea.KeyCtrlC}, "send-keys -t am_x C-c", true},
+		// The editor sits on F3 now, so ctrl+o reaches the agent: Claude
+		// Code and Gemini CLI both bind it.
+		{"ctrl-o", tea.KeyMsg{Type: tea.KeyCtrlO}, "send-keys -t am_x C-o", true},
 		{"tab-not-ctrl-i", tea.KeyMsg{Type: tea.KeyTab}, "send-keys -t am_x Tab", true},
 		{"enter-not-ctrl-m", tea.KeyMsg{Type: tea.KeyEnter}, "send-keys -t am_x Enter", true},
 		{"shift-tab", tea.KeyMsg{Type: tea.KeyShiftTab}, "send-keys -t am_x BTab", true},
@@ -345,9 +348,9 @@ func TestFocusCtrlROpensReviewAndReturns(t *testing.T) {
 	}
 }
 
-// Ctrl+O opens the focused session's directory the way the list's o does,
+// F3 opens the focused session's directory the way the list's o does,
 // and a windowed editor leaves the focus where it was.
-func TestFocusCtrlOOpensEditor(t *testing.T) {
+func TestFocusF3OpensEditor(t *testing.T) {
 	m := buildModel(t)
 	launched := captureEditor(t, "code")
 	dir := t.TempDir()
@@ -360,10 +363,10 @@ func TestFocusCtrlOOpensEditor(t *testing.T) {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 
-	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlO})
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyF3})
 	*m = *updated.(*Model)
 	if cmd == nil {
-		t.Fatalf("ctrl+o in focus returned no launch, err = %q", m.errBar.text)
+		t.Fatalf("f3 in focus returned no launch, err = %q", m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
 
