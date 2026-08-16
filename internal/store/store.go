@@ -256,10 +256,9 @@ func (s *Store) CreateSession(sess Session) error {
 	return s.createSession(sess, "")
 }
 
-// CreateSessionBeside places a new session as a sibling of anchorID: same
-// group, same parent, empty when the anchor is un-nested. The anchor is
-// read inside the write transaction, so a placement that lands first
-// decides where the new row goes rather than leaving it behind.
+// CreateSessionBeside reads the anchor inside the write transaction, so a
+// placement that lands first decides where the new row goes rather than
+// leaving it behind.
 func (s *Store) CreateSessionBeside(sess Session, anchorID string) error {
 	return s.createSession(sess, anchorID)
 }
