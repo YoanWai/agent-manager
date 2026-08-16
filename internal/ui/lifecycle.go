@@ -136,8 +136,8 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 			action:   actionRevive,
 			sessions: set,
 			label: followConfirmLabel("revive", entry.sess.Name, len(set)-1,
-				"resumes its agent.",
-				"resumes their agents."),
+				"brings it back.",
+				"brings them back."),
 		}
 		m.mode = modeConfirmDelete
 		return m, nil
@@ -544,7 +544,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 			path:     entry.group,
 			action:   actionRestore,
 			sessions: subtree,
-			label:    fmt.Sprintf("restore group %s (%d sessions)? resumes their agents.", entry.group, len(subtree)),
+			label:    fmt.Sprintf("restore group %s (%d sessions)? brings them back.", entry.group, len(subtree)),
 		}
 	} else {
 		sessions, err := m.sessionAndChildren(entry.sess)
@@ -556,8 +556,8 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 			action:   actionRestore,
 			sessions: sessions,
 			label: followConfirmLabel("restore", entry.sess.Name, len(sessions)-1,
-				"resumes its agent.",
-				"resumes their agents."),
+				"brings it back.",
+				"brings them back."),
 		}
 	}
 	m.mode = modeConfirmDelete
