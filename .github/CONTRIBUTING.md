@@ -63,7 +63,13 @@ automatically. Do not duplicate feature and fix notes in the maintainer message
 feed; see [Release summaries and messages](../docs/notifications.md) for the two
 publishing paths.
 
-In the pull request description, say what changed and why, and how you verified it. Screenshots or a short recording make UI changes much easier to review.
+In the pull request description, say what changed and why, and how you verified
+it. Complete the Visual evidence section for every pull request. Include before
+and after screenshots whenever the change can be shown visually; use a short
+recording when interaction or motion is clearer that way. If useful visual
+evidence is not possible, say why. For example, a new UI may have no
+reproducible before state, while an internal refactor may have no meaningful
+visual state at all.
 
 ## Licensing
 
