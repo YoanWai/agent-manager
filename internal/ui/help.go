@@ -60,7 +60,7 @@ func helpSections() []helpSection {
 			{"K / J", "reorder the row up / down (shift+↑↓ too)"},
 			{"n", "new session"},
 			{"T", "new terminal tab: a shell in the group under the cursor"},
-			{"p", "run a project script, or create the settings file if there is none"},
+			{"p", "run a project script; creates or opens .agent-manager/settings.toml"},
 			{"g", "new group (name, parent, default path, worktree)"},
 			{"/", "search the list by name"},
 			{"w", "filter to what needs attention (waiting, finished, errored)"},

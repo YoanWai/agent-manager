@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/project"
@@ -45,9 +44,11 @@ func (m *Model) runKey() (tea.Model, tea.Cmd) {
 	if !settings.Found {
 		return m.openRunInit(dir)
 	}
+	// A file with no run scripts is a dead end otherwise: the reader has
+	// already opted in, and what they need is the file open.
 	if len(settings.Run) == 0 {
-		m.errBar.text = runSetupHint(settings)
-		return m, nil
+		m.reportDone(runSetupHint(settings))
+		return m.openInEditor(project.SettingsPath(settings.Root))
 	}
 	if name, ok := settings.DefaultRun(); ok {
 		return m.startRun(settings, dir, name)
@@ -155,7 +156,6 @@ func (m *Model) startRun(settings project.Settings, dir, name string) (tea.Model
 	if entry, ok := m.selectedRow(); ok && !entry.isGroup {
 		label = name + "-" + entry.sess.Name
 	}
-	port := settings.Port(portKey(dir))
 	sess := store.Session{
 		ID:     newID(),
 		Name:   label,
@@ -165,7 +165,7 @@ func (m *Model) startRun(settings project.Settings, dir, name string) (tea.Model
 		Status: status.Starting,
 	}
 	if err := m.launchNewSession(sess, tool, run.Command, launchOptions{
-		env: map[string]string{project.EnvPort: strconv.Itoa(port)},
+		env: settings.Env(portKey(dir)),
 	}); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
@@ -242,6 +242,11 @@ func (m *Model) handleRunPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.runPick.cursor < len(m.runPick.names)-1 {
 			m.runPick.cursor++
 		}
+	case "e":
+		// The picker is where a reader stands when they notice a command is
+		// wrong, so it is where the file that holds it should open from.
+		m.mode = modeList
+		return m.openInEditor(project.SettingsPath(m.runPick.settings.Root))
 	case "enter":
 		if m.runPick.cursor < len(m.runPick.names) {
 			return m.startRun(m.runPick.settings, m.runPick.dir, m.runPick.names[m.runPick.cursor])
@@ -273,7 +278,7 @@ func (m *Model) viewRunPick() string {
 	port := m.runPick.settings.Port(portKey(m.runPick.dir))
 	b.WriteByte('\n')
 	b.WriteString(subtleStyle.Render(fmt.Sprintf("  %s=%d", project.EnvPort, port)))
-	hint := [][2]string{{"↑↓", "move"}, {"↵", "run"}, {"esc", "back"}}
+	hint := [][2]string{{"↑↓", "move"}, {"↵", "run"}, {"e", "edit"}, {"esc", "back"}}
 	return m.card("▶ Run", strings.TrimRight(b.String(), "\n"), hint)
 }
 
@@ -284,4 +289,19 @@ func firstLine(s string) string {
 		return line + " …"
 	}
 	return line
+}
+
+// writeGroupSettings turns what the group form was told about the project
+// into its settings file, and reports the path when one was written.
+//
+// Nothing is written for a project that already has settings, or when both
+// fields were left empty: the form asks about the project, and a reader who
+// answered neither question has not asked for a file.
+func (m *Model) writeGroupSettings(path string) (string, error) {
+	setup := strings.TrimSpace(m.groupForm.setup.Value())
+	run := strings.TrimSpace(m.groupForm.run.Value())
+	if m.groupForm.settingsExist || (setup == "" && run == "") {
+		return "", nil
+	}
+	return project.Write(m.repoRootOf(path), setup, run)
 }

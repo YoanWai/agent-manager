@@ -242,10 +242,14 @@ func (m *Model) viewGroupForm() string {
 	}
 	worktreeVal := subtleStyle.Render("◂ ") + valueStyle.Render(groupWorktreeOptions[m.groupForm.worktreeIndex]) + subtleStyle.Render(" ▸")
 	b.WriteString(formField("worktree", worktreeVal, m.groupForm.focus == gfWorktree))
+	b.WriteString(m.viewGroupSettingsFields())
 	if m.groupForm.focus == gfParent {
 		b.WriteString("\n" + m.viewGroupPicker())
 	}
 	hint := [][2]string{{"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
+	if m.groupForm.settingsExist && (m.groupForm.focus == gfSetup || m.groupForm.focus == gfRun) {
+		hint = [][2]string{{"tab/↑↓", "move"}, {"e", "open settings.toml"}, {"↵", "create"}, {"esc", "cancel"}}
+	}
 	if m.groupForm.focus == gfParent {
 		hint = [][2]string{{"←→", "pick parent"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
@@ -464,4 +468,42 @@ func formField(label, value string, focused bool) string {
 		b.WriteString(strings.Repeat(" ", formLabelColumn) + line + "\n")
 	}
 	return b.String()
+}
+
+// viewGroupSettingsFields renders the two questions that author a project's
+// settings file. A project that already has one shows what it says, marked
+// read-only rather than hidden: knowing a setup script is already there is
+// worth more than a blank field, which would read as "there is none".
+func (m *Model) viewGroupSettingsFields() string {
+	if m.groupForm.settingsPath == "" {
+		return ""
+	}
+	var b strings.Builder
+	if m.groupForm.settingsExist {
+		setup, run := m.groupForm.setup.Value(), m.groupForm.run.Value()
+		b.WriteString(formField("setup", existingSetting(setup), m.groupForm.focus == gfSetup))
+		b.WriteString(formField("run", existingSetting(run), m.groupForm.focus == gfRun))
+		if m.groupForm.focus == gfSetup || m.groupForm.focus == gfRun {
+			b.WriteString(subtleStyle.Render("  from "+m.groupForm.settingsPath) + "\n")
+		}
+		return b.String()
+	}
+	b.WriteString(formField("setup", m.groupForm.setup.View(), m.groupForm.focus == gfSetup))
+	b.WriteString(formField("run", m.groupForm.run.View(), m.groupForm.focus == gfRun))
+	if m.groupForm.focus == gfSetup {
+		b.WriteString(subtleStyle.Render("  runs in every new worktree, before its agent") + "\n")
+	}
+	if m.groupForm.focus == gfRun {
+		b.WriteString(subtleStyle.Render("  what p runs; $PORT is this worktree's own") + "\n")
+	}
+	return b.String()
+}
+
+// existingSetting renders a value already in the settings file, or says the
+// file leaves it unset.
+func existingSetting(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return subtleStyle.Render("not set")
+	}
+	return mutedStyle.Render(value)
 }

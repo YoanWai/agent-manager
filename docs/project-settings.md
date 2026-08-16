@@ -9,15 +9,30 @@ in one person's `~/.config/agent-manager/config.toml`.
 Everything here is opt-in. A repository without the file behaves exactly as
 it did before.
 
-## Creating it
+## Creating it from the TUI
 
-Press `p` in a repository that has no settings and agent-manager offers to
-write one for you: `↵` creates `.agent-manager/settings.toml` at the
-repository root — not the session's directory, so a session started a level
+Two ways in, both inside the manager.
+
+**While setting up the project.** The new-group form (`g`) asks for a
+**setup** and a **run** command alongside the name, path and worktree
+default — setting up the project is exactly when you know what it takes to
+bootstrap it. Answer either and the file is written for you at the
+repository root. A project that already has settings shows them read-only,
+with `e` to open the real file: rewriting a hand-edited TOML from a form
+would have to preserve comments, key order and blocks the form has no field
+for, which is an editor, and you already have one.
+
+**From `p`.** Press `p` in a repository that has no settings and
+agent-manager offers to write one: `↵` creates `.agent-manager/settings.toml`
+at the repository root — not the session's directory, so a session started a level
 down does not leave a stray file there — and opens it in your editor.
 
 The starter it writes is entirely commented out, so creating it changes
 nothing until you fill it in. An existing settings file is never overwritten.
+
+Once a file exists, `e` opens it — from the run picker, or from the settings
+rows of the group form. A repository whose file has no run scripts opens it
+directly rather than dead-ending on an error.
 
 Edits take effect on the next `p`; there is nothing to reload. Changing
 `setup`, though, only affects worktrees created afterwards — it runs at
@@ -96,9 +111,15 @@ leave it out.
 ## Ports
 
 Running five agents at once is not much use if their dev servers all want
-port 3000. Every worktree is handed a block of ten ports, and
-`$AGENT_MANAGER_PORT` — the first of them — is exported into setup scripts,
-run scripts, and the agent's own pane. A project whose server binds it can
+port 3000. Every worktree is handed a block of ten ports, exported into setup
+scripts, run scripts and the agent's own pane under two names: `$PORT`, which
+node, rails, flask and most of the ecosystem already read, and
+`$AGENT_MANAGER_PORT` when you want to be explicit. `$PORT` is what makes
+isolation free — an unmodified `npm run dev` in five worktrees serves on five
+ports without the project changing a line.
+
+Neither is set for a project with no settings file, so opting out means doing
+nothing. A project whose server binds it can
 have every worktree serving at once. A project that ignores it is unaffected.
 
 The block is derived from the worktree's directory name rather than handed

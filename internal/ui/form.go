@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
+	"github.com/YoanWai/agent-manager/internal/project"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -35,6 +36,8 @@ const (
 	gfParent
 	gfPath
 	gfWorktree
+	gfSetup
+	gfRun
 	gfCount
 )
 
@@ -87,6 +90,22 @@ type groupForm struct {
 	pathAuto      bool
 	worktreeIndex int
 	focus         int
+	// setup and run author the project's .agent-manager/settings.toml, which
+	// is where a project says how to bootstrap a worktree and what to run in
+	// it. Setting up the project is exactly when that is known, so it is
+	// asked here rather than left to a file the reader has to find.
+	setup textinput.Model
+	run   textinput.Model
+	// settingsPath is where the two fields would be written, and
+	// settingsExist marks a project that already has a file. An existing one
+	// is shown but not edited: rewriting it from a form would have to
+	// preserve comments, key order and blocks the form has no field for.
+	settingsPath  string
+	settingsExist bool
+	// settingsFilled marks fields holding a file's values rather than typed
+	// ones, so retargeting the path at a project without settings clears the
+	// previous project's answers instead of offering them as this one's.
+	settingsFilled bool
 }
 
 // sessionLabel renders a session's identity for the tmux status bar.
@@ -719,9 +738,12 @@ func (m *Model) openGroupForm() {
 		path:     textField("default working directory", 400),
 		pathAuto: true,
 		focus:    gfName,
+		setup:    textField("npm ci  (optional)", 400),
+		run:      textField("npm run dev  (optional)", 400),
 	}
 	m.rebuildGroupOptions(m.contextGroup())
 	m.groupForm.path.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
+	m.syncGroupSettings()
 	m.syncGroupFormFieldWidths()
 	m.pathSugg.reset()
 	m.mode = modeGroupForm
@@ -748,6 +770,14 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "shift+tab":
 		m.groupFormFocus(-1)
 		return m, nil
+	case "e":
+		// Only on the read-only settings rows: anywhere else e is a letter
+		// the reader is typing into a field.
+		if m.groupForm.settingsExist &&
+			(m.groupForm.focus == gfSetup || m.groupForm.focus == gfRun) {
+			m.mode = modeList
+			return m.openInEditor(m.groupForm.settingsPath)
+		}
 	case "up":
 		if pathSuggesting {
 			if !m.pathSugg.move(-1) {
@@ -797,6 +827,14 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.groupForm.focus {
 	case gfName:
 		m.groupForm.name, cmd = m.groupForm.name.Update(msg)
+	case gfSetup:
+		if !m.groupForm.settingsExist {
+			m.groupForm.setup, cmd = m.groupForm.setup.Update(msg)
+		}
+	case gfRun:
+		if !m.groupForm.settingsExist {
+			m.groupForm.run, cmd = m.groupForm.run.Update(msg)
+		}
 	case gfPath:
 		m.groupForm.path, cmd = m.groupForm.path.Update(msg)
 		m.groupForm.pathAuto = false
@@ -810,12 +848,57 @@ func (m *Model) groupFormFocus(delta int) {
 	m.groupForm.focus = (m.groupForm.focus + delta + gfCount) % gfCount
 	m.groupForm.name.Blur()
 	m.groupForm.path.Blur()
+	m.groupForm.setup.Blur()
+	m.groupForm.run.Blur()
+	// A path just typed may have moved the form to a different repository,
+	// so what the settings fields show is resolved on every move rather than
+	// once at open.
+	m.syncGroupSettings()
 	switch m.groupForm.focus {
 	case gfName:
 		m.groupForm.name.Focus()
 	case gfPath:
 		m.groupForm.path.Focus()
+	case gfSetup:
+		if !m.groupForm.settingsExist {
+			m.groupForm.setup.Focus()
+		}
+	case gfRun:
+		if !m.groupForm.settingsExist {
+			m.groupForm.run.Focus()
+		}
 	}
+}
+
+// syncGroupSettings points the settings fields at whatever repository the
+// path field currently names, and fills them from a file that is already
+// there. A project with settings shows what it has rather than an empty box
+// that would read as "this project has none".
+func (m *Model) syncGroupSettings() {
+	path, ok := resolveExistingDir(m.groupForm.path.Value(), m.groupDefaultDir(m.selectedGroupPath()))
+	if !ok {
+		m.groupForm.settingsPath, m.groupForm.settingsExist = "", false
+		return
+	}
+	root := m.repoRootOf(path)
+	m.groupForm.settingsPath = project.SettingsPath(root)
+	settings, err := project.Load(root, root)
+	m.groupForm.settingsExist = err == nil && settings.Found
+	if !m.groupForm.settingsExist {
+		if m.groupForm.settingsFilled {
+			m.groupForm.setup.SetValue("")
+			m.groupForm.run.SetValue("")
+			m.groupForm.settingsFilled = false
+		}
+		return
+	}
+	m.groupForm.setup.SetValue(firstLine(settings.Setup))
+	if name, ok := settings.DefaultRun(); ok {
+		m.groupForm.run.SetValue(firstLine(settings.Run[name].Command))
+	} else {
+		m.groupForm.run.SetValue("")
+	}
+	m.groupForm.settingsFilled = true
 }
 
 func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
@@ -836,6 +919,14 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	worktree := groupWorktreeValue(m.groupForm.worktreeIndex)
+	// Written before the group exists: a settings file that cannot be
+	// written is worth refusing the whole creation over, since the reader
+	// typed those commands expecting them to be what the project runs.
+	written, err := m.writeGroupSettings(path)
+	if err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
 	if err := m.store.AddGroup(full, path, worktree); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
@@ -863,6 +954,9 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 	m.hideEmptyGroups = false
 	m.statusFilter = statusFilterAll
 	m.errBar.text = ""
+	if written != "" {
+		m.reportDone("wrote " + written)
+	}
 	m.mode = modeList
 	m.rebuildRows()
 	for i, row := range m.rows {

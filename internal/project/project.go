@@ -197,11 +197,84 @@ const Template = `# How agent-manager bootstraps and runs this project.
 # command = "npm test -- --watch"
 `
 
-// Scaffold writes Template into root's settings path and reports where it
-// landed. An existing file is never overwritten — the point is to give a
-// project its first one, and a project that already has settings has
-// something worth more than a template.
-func Scaffold(root string) (string, error) {
+// Write creates a repository's settings from the two things the group form
+// asks for, and reports where they landed. Either may be empty; a run
+// command is written as the default script, since a project asked for one
+// command means that command is what p should run.
+//
+// An existing file is never rewritten. Round-tripping a hand-edited TOML
+// file through a form would have to preserve comments, key order and the
+// blocks the form has no field for, which is an editor — and the manager
+// already has a key that opens the real one.
+func Write(root, setup, run string) (string, error) {
+	setup, run = strings.TrimSpace(setup), strings.TrimSpace(run)
+	var b strings.Builder
+	b.WriteString(writtenHeader)
+	if setup != "" {
+		b.WriteString("\n# Runs once inside every new worktree, before its agent starts.\n")
+		b.WriteString("setup = " + tomlString(setup) + "\n")
+	}
+	if run != "" {
+		b.WriteString("\n# What p runs. $PORT and $" + EnvPort + " are this worktree's own,\n")
+		b.WriteString("# so every branch can serve at once.\n")
+		b.WriteString("[run.dev]\ncommand = " + tomlString(run) + "\ndefault = true\n")
+	}
+	return create(root, b.String())
+}
+
+const writtenHeader = `# How agent-manager bootstraps and runs this project.
+# Docs: https://github.com/YoanWai/agent-manager/blob/main/docs/project-settings.md
+#
+# Commit this file. What it takes to bootstrap the project is the same for
+# everyone working on it, so it belongs next to the code.
+`
+
+// tomlString renders a value as TOML.
+//
+// Literal strings are preferred because these values are shell: a literal
+// has no escape processing at all, so a backslash, a $ or a quote in a
+// command survives being written and read back exactly as typed. A value
+// carrying the literal delimiter itself falls back to a basic string, which
+// can express anything once escaped.
+func tomlString(s string) string {
+	if !strings.Contains(s, "'''") && !strings.HasSuffix(s, "'") {
+		if strings.ContainsAny(s, "\n\r") {
+			// TOML trims the newline that follows the opening delimiter but
+			// not the one before the closing delimiter, so only the leading
+			// one is written: a trailing newline would come back as content.
+			return "'''\n" + s + "'''"
+		}
+		if !strings.Contains(s, "'") {
+			return "'" + s + "'"
+		}
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if r < 0x20 || r == 0x7f {
+				fmt.Fprintf(&b, `\u%04X`, r)
+				continue
+			}
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+func create(root, body string) (string, error) {
 	dir := filepath.Join(root, Dir)
 	path := filepath.Join(dir, File)
 	if _, err := os.Stat(path); err == nil {
@@ -210,10 +283,18 @@ func Scaffold(root string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, []byte(Template), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// Scaffold writes Template into root's settings path and reports where it
+// landed. An existing file is never overwritten — the point is to give a
+// project its first one, and a project that already has settings has
+// something worth more than a template.
+func Scaffold(root string) (string, error) {
+	return create(root, Template)
 }
 
 // SettingsPath is where a repository's settings live, whether or not the
@@ -320,10 +401,22 @@ func portFree(port int) bool {
 	return true
 }
 
+// EnvPortAlias is the name most dev servers already read — node, rails,
+// flask and the rest of the PORT convention. Exporting it too is what makes
+// isolation free: an unmodified `npm run dev` in five worktrees serves on
+// five ports without the project changing a line.
+const EnvPortAlias = "PORT"
+
 // Env is what a setup or run script is launched with on top of the session's
-// own environment.
+// own environment. A project that never opted in gets nothing: Env is only
+// meaningful for settings that were actually found, and exporting PORT into
+// every worktree regardless would change how unrelated projects behave.
 func (s Settings) Env(name string) map[string]string {
-	return map[string]string{EnvPort: strconv.Itoa(s.Port(name))}
+	if !s.Found {
+		return nil
+	}
+	port := strconv.Itoa(s.Port(name))
+	return map[string]string{EnvPort: port, EnvPortAlias: port}
 }
 
 // SetupCommand wraps the setup script so a failure is visible and

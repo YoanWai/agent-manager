@@ -203,7 +203,7 @@ func TestPortSkipsABlockAlreadyListening(t *testing.T) {
 }
 
 func TestEnvCarriesThePort(t *testing.T) {
-	settings := Settings{PortBase: 9000}
+	settings := Settings{PortBase: 9000, Found: true}
 	env := settings.Env("feature")
 	got, err := strconv.Atoi(env[EnvPort])
 	if err != nil {
@@ -385,5 +385,92 @@ func TestPortSkipsABlockWhoseUpperPortsAreTaken(t *testing.T) {
 
 	if got := settings.Port("add-search"); got == taken {
 		t.Fatalf("Port returned %d while %d inside its block was listening", got, taken+1)
+	}
+}
+
+// Whatever the reader typed into the form must come back out of the file
+// unchanged: these are shell commands, full of quotes, backslashes and $.
+func TestWriteRoundTripsThroughLoad(t *testing.T) {
+	values := []string{
+		"npm ci",
+		`sed -i "s/a/b/" file`,
+		`echo 'single' && echo "double"`,
+		`printf '%s\n' "$HOME" | grep -v '\.cache'`,
+		"npm ci\ncp ../app/.env .",
+		"echo it's fine",
+		`ends with a quote'`,
+		`carries ''' the delimiter`,
+		"tab\there",
+	}
+	for _, value := range values {
+		root := t.TempDir()
+		if _, err := Write(root, value, value); err != nil {
+			t.Fatalf("Write(%q): %v", value, err)
+		}
+		settings, err := Load(root, root)
+		if err != nil {
+			t.Fatalf("Load after Write(%q): %v", value, err)
+		}
+		if settings.Setup != value {
+			t.Fatalf("setup round-tripped as %q, want %q", settings.Setup, value)
+		}
+		name, ok := settings.DefaultRun()
+		if !ok {
+			t.Fatalf("Write(%q) left no default run script", value)
+		}
+		if got := settings.Run[name].Command; got != value {
+			t.Fatalf("command round-tripped as %q, want %q", got, value)
+		}
+	}
+}
+
+func TestWriteWithOnlyOneOfTheTwo(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Write(root, "make deps", ""); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	settings, err := Load(root, root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if settings.Setup != "make deps" {
+		t.Fatalf("setup = %q", settings.Setup)
+	}
+	// An empty run must not leave a [run.dev] with no command, which Load
+	// rejects outright.
+	if len(settings.Run) != 0 {
+		t.Fatalf("run scripts = %+v, want none", settings.Run)
+	}
+}
+
+func TestWriteRefusesToOverwrite(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "setup = \"mine\"\n")
+	if _, err := Write(root, "theirs", "theirs"); err == nil {
+		t.Fatal("Write overwrote existing settings")
+	}
+	settings, err := Load(root, root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if settings.Setup != "mine" {
+		t.Fatalf("existing settings were clobbered: %+v", settings)
+	}
+}
+
+// PORT is what most dev servers already read, so isolation costs the project
+// nothing. AGENT_MANAGER_PORT stays as the explicit name.
+func TestEnvExportsBothPortNames(t *testing.T) {
+	settings := Settings{PortBase: 9000, Found: true}
+	env := settings.Env("feature")
+	if env[EnvPort] == "" || env[EnvPort] != env[EnvPortAlias] {
+		t.Fatalf("env = %v, want both port names carrying the same value", env)
+	}
+}
+
+// A project that never opted in must not have PORT changed underneath it.
+func TestEnvIsEmptyWithoutSettings(t *testing.T) {
+	if env := (Settings{PortBase: 9000}).Env("feature"); len(env) != 0 {
+		t.Fatalf("env = %v, want nothing for a project with no settings", env)
 	}
 }

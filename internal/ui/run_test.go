@@ -359,7 +359,7 @@ func TestScaffoldedSettingsAreInert(t *testing.T) {
 	if path != project.SettingsPath(root) {
 		t.Fatalf("wrote %q, want %q", path, project.SettingsPath(root))
 	}
-	settings, err := project.Load(root)
+	settings, err := project.Load(root, root)
 	if err != nil {
 		t.Fatalf("the scaffold does not parse: %v", err)
 	}
@@ -378,11 +378,169 @@ func TestScaffoldRefusesToOverwrite(t *testing.T) {
 	if _, err := project.Scaffold(root); err == nil {
 		t.Fatal("Scaffold overwrote existing settings")
 	}
-	settings, err := project.Load(root)
+	settings, err := project.Load(root, root)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if settings.Setup != "mine" {
 		t.Fatalf("existing settings were clobbered: %+v", settings)
+	}
+}
+
+// typeInto drives a text field the way the keyboard does, so the test
+// exercises the form rather than the model's internals.
+func typeInto(t *testing.T, m *Model, text string) {
+	t.Helper()
+	for _, r := range text {
+		_, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+}
+
+func focusGroupField(t *testing.T, m *Model, field int) {
+	t.Helper()
+	for range gfCount {
+		if m.groupForm.focus == field {
+			return
+		}
+		_, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	}
+	t.Fatalf("never reached group form field %d", field)
+}
+
+// Setting up the project is when what it takes to bootstrap it is known, so
+// that is when the form asks.
+func TestGroupFormWritesProjectSettings(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+
+	m.openGroupForm()
+	typeInto(t, m, "backend")
+	focusGroupField(t, m, gfPath)
+	m.groupForm.path.SetValue(repo)
+	focusGroupField(t, m, gfSetup)
+	typeInto(t, m, "make deps")
+	focusGroupField(t, m, gfRun)
+	typeInto(t, m, "npm run dev")
+
+	_, cmd := m.submitGroupForm()
+	if m.mode != modeList {
+		t.Fatalf("submit left mode %v, err %q", m.mode, m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+
+	settings, err := project.Load(repo, repo)
+	if err != nil {
+		t.Fatalf("the written settings do not load: %v", err)
+	}
+	if settings.Setup != "make deps" {
+		t.Fatalf("setup = %q", settings.Setup)
+	}
+	name, ok := settings.DefaultRun()
+	if !ok {
+		t.Fatal("the run command should be written as the default script")
+	}
+	if got := settings.Run[name].Command; got != "npm run dev" {
+		t.Fatalf("command = %q", got)
+	}
+}
+
+// A group created without answering either question is a group, not a
+// project the reader asked to configure.
+func TestGroupFormWritesNothingWhenBothFieldsAreEmpty(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+
+	m.openGroupForm()
+	typeInto(t, m, "plain")
+	focusGroupField(t, m, gfPath)
+	m.groupForm.path.SetValue(repo)
+
+	if _, cmd := m.submitGroupForm(); m.mode == modeList {
+		m.applyCmd(t, cmd)
+	}
+	if _, err := os.Stat(project.SettingsPath(repo)); err == nil {
+		t.Fatal("a settings file was written for a group that asked for none")
+	}
+}
+
+// A project that already has settings shows them rather than an empty box,
+// and the form does not rewrite the file it cannot round-trip.
+func TestGroupFormShowsExistingSettingsReadOnly(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	writeProject(t, repo, "setup = \"existing setup\"\n\n[run.dev]\ncommand = \"existing run\"\n")
+
+	m.openGroupForm()
+	typeInto(t, m, "backend")
+	focusGroupField(t, m, gfPath)
+	m.groupForm.path.SetValue(repo)
+	focusGroupField(t, m, gfSetup)
+
+	if !m.groupForm.settingsExist {
+		t.Fatal("existing settings were not detected")
+	}
+	if m.groupForm.setup.Value() != "existing setup" {
+		t.Fatalf("setup field = %q, want the file's value", m.groupForm.setup.Value())
+	}
+	// Typing on a read-only row must not change what is shown.
+	typeInto(t, m, "zzz")
+	if m.groupForm.setup.Value() != "existing setup" {
+		t.Fatalf("a read-only field took input: %q", m.groupForm.setup.Value())
+	}
+
+	if _, cmd := m.submitGroupForm(); m.mode == modeList {
+		m.applyCmd(t, cmd)
+	}
+	settings, err := project.Load(repo, repo)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if settings.Setup != "existing setup" {
+		t.Fatalf("the form rewrote the file: setup = %q", settings.Setup)
+	}
+}
+
+// $PORT is what dev servers already read, so an unmodified `npm run dev` in
+// several worktrees serves on several ports.
+func TestRunScriptReceivesThePortUnderBothNames(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	out := filepath.Join(dir, "ports")
+	writeProject(t, dir,
+		"[run.dev]\ncommand = \"printf '%s %s' \\\"$PORT\\\" \\\"$"+project.EnvPort+"\\\" > "+out+" && cat\"\n")
+	onSessionIn(t, m, dir)
+
+	pressRunKey(t, m)
+	if m.errBar.text != "" && !m.errBar.worked() {
+		t.Fatalf("run reported %q", m.errBar.text)
+	}
+
+	var body []byte
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, err := os.ReadFile(out); err == nil && len(b) > 0 {
+			body = b
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	fields := strings.Fields(string(body))
+	if len(fields) != 2 {
+		t.Fatalf("pane wrote %q, want both port names", body)
+	}
+	if fields[0] != fields[1] {
+		t.Fatalf("PORT = %s but %s = %s", fields[0], project.EnvPort, fields[1])
 	}
 }
