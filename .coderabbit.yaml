@@ -75,6 +75,17 @@ reviews:
           description has no Breaking Changes section that names each
           change. Pass when there is no breaking change, or each one is
           documented.
+      - name: "Visual evidence"
+        mode: warning
+        instructions: >-
+          Check the PR description's Visual evidence section. For a change
+          that can be shown visually, fail when before and after screenshots
+          are missing. Accept a short recording instead when it demonstrates
+          interaction or motion more clearly. If one state cannot be captured,
+          accept the available evidence with an explicit explanation. For a
+          change with no meaningful visual state, accept an explicit reason
+          that visual evidence is not applicable. Fail when the description
+          provides neither useful visual evidence nor an explanation.
       - name: "No speculative fallbacks"
         mode: warning
         instructions: >-
