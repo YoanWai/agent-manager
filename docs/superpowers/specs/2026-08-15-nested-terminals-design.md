@@ -158,7 +158,7 @@ UI:
 - kill / archive / delete confirm on an agent includes children; on a child does not
 - archive/restore persists every id in the confirm set
 - `rebuildRows` indents children; search keeps the parent of a matching child
-- `J`/`K` on an agent skips child rows; on a child stays inside that parent
+- `J`/`K` on an agent skips child rows; a child swaps only with a sibling under the same parent and ignores another parent's child
 - Settings has no `terminal rows`; a stored `terminal_placement=pinned` still paints inline
 
 MCP / `sessioncmd`:

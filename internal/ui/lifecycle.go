@@ -387,13 +387,20 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 				entry.group, len(live)),
 		}
 	} else {
-		if !m.tmux.Exists(entry.sess.ID) {
-			m.errBar.text = entry.sess.Name + " is already dead"
-			return m, nil
-		}
 		sessions, err := m.sessionAndChildren(entry.sess)
 		if err != nil {
 			m.errBar.text = err.Error()
+			return m, nil
+		}
+		live := false
+		for _, sess := range sessions {
+			if m.tmux.Exists(sess.ID) {
+				live = true
+				break
+			}
+		}
+		if !live {
+			m.errBar.text = entry.sess.Name + " is already dead"
 			return m, nil
 		}
 		m.confirm = confirmTarget{

@@ -64,7 +64,7 @@ func TestParentIDRoundTrip(t *testing.T) {
 	if err := st.CreateSession(parent); err != nil {
 		t.Fatalf("create parent: %v", err)
 	}
-	child := sample("sh", "g2")
+	child := sample("sh", "g1")
 	child.Tool = "terminal"
 	child.ParentID = "agent"
 	if err := st.CreateSession(child); err != nil {
@@ -74,8 +74,8 @@ func TestParentIDRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.ParentID != "agent" || got.Group != "g1" {
-		t.Fatalf("nested child = %+v, want parent agent in g1", got)
+	if got.ParentID != "agent" {
+		t.Fatalf("ParentID = %q, want agent", got.ParentID)
 	}
 	list, err := st.ListSessions(false)
 	if err != nil {
@@ -87,30 +87,6 @@ func TestParentIDRoundTrip(t *testing.T) {
 	}
 	if byID["sh"].ParentID != "agent" || byID["agent"].ParentID != "" {
 		t.Fatalf("list parent ids: %+v", byID)
-	}
-}
-
-func TestCreateSessionRejectsBadParent(t *testing.T) {
-	st := newTestStore(t)
-	if err := st.CreateSession(sample("agent", "g1")); err != nil {
-		t.Fatalf("agent: %v", err)
-	}
-	nested := sample("mid", "g1")
-	nested.ParentID = "agent"
-	if err := st.CreateSession(nested); err != nil {
-		t.Fatalf("mid: %v", err)
-	}
-	for _, bad := range []Session{
-		func() Session { s := sample("sh1", "g1"); s.ParentID = "gone"; return s }(),
-		func() Session { s := sample("sh2", "g1"); s.ParentID = "sh2"; return s }(),
-		func() Session { s := sample("sh3", "g1"); s.ParentID = "mid"; return s }(),
-	} {
-		if err := st.CreateSession(bad); err == nil {
-			t.Fatalf("created %s under %s", bad.ID, bad.ParentID)
-		}
-		if _, err := st.Get(bad.ID); err == nil {
-			t.Fatalf("rejected %s still wrote a row", bad.ID)
-		}
 	}
 }
 
@@ -269,6 +245,30 @@ func TestPlaceSessionNestsAndUnnests(t *testing.T) {
 	}
 }
 
+func TestCreateSessionRejectsBadParent(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	nested := sample("mid", "g1")
+	nested.ParentID = "agent"
+	if err := st.CreateSession(nested); err != nil {
+		t.Fatalf("mid: %v", err)
+	}
+	for _, bad := range []Session{
+		func() Session { s := sample("sh1", "g1"); s.ParentID = "gone"; return s }(),
+		func() Session { s := sample("sh2", "g1"); s.ParentID = "sh2"; return s }(),
+		func() Session { s := sample("sh3", "g1"); s.ParentID = "mid"; return s }(),
+	} {
+		if err := st.CreateSession(bad); err == nil {
+			t.Fatalf("created %s under %s", bad.ID, bad.ParentID)
+		}
+		if _, err := st.Get(bad.ID); err == nil {
+			t.Fatalf("rejected %s still wrote a row", bad.ID)
+		}
+	}
+}
+
 func TestPlaceSessionRejectsBadParent(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.CreateSession(sample("agent", "g")); err != nil {
@@ -353,7 +353,7 @@ func TestReorderSessionStaysInSiblingSet(t *testing.T) {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./internal/store/ -run 'TestPlaceSession|TestReorderSessionStaysInSiblingSet' -v`
+Run: `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./internal/store/ -run 'TestPlaceSession|TestCreateSessionRejectsBadParent|TestReorderSessionStaysInSiblingSet' -v`
 
 Expected: FAIL, `PlaceSession undefined` and/or swap of agent with child succeeding.
 
@@ -1024,6 +1024,60 @@ git commit -m "feat(ui): agent kill archive delete revive follow child shells"
 - [ ] **Step 1: Write the failing tests**
 
 ```go
+func TestReorderChildStaysWithItsSiblings(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	first := spawnTerminal(t, m)
+	m.selectSessionRow(t, "coder")
+	second := spawnTerminal(t, m)
+	m.selectSessionRow(t, first.Name)
+	_, cmd := m.reorderSelected(1)
+	m.applyCmd(t, cmd)
+	var kids []string
+	for _, row := range m.rows {
+		if !row.isGroup && row.sess.ParentID != "" {
+			kids = append(kids, row.sess.Name)
+		}
+	}
+	if len(kids) != 2 || kids[0] != second.Name || kids[1] != first.Name {
+		t.Fatalf("sibling order = %v", kids)
+	}
+}
+
+func TestReorderChildIgnoresAnotherParentsChild(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	createSession(t, m, "other", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	mine := spawnTerminal(t, m)
+	m.selectSessionRow(t, "other")
+	theirs := spawnTerminal(t, m)
+	m.selectSessionRow(t, mine.Name)
+	_, cmd := m.reorderSelected(1)
+	m.applyCmd(t, cmd)
+	var names []string
+	for _, row := range m.rows {
+		if !row.isGroup {
+			names = append(names, row.sess.Name)
+		}
+	}
+	want := []string{"coder", mine.Name, "other", theirs.Name}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("order = %v, want %v", names, want)
+	}
+}
+
 func TestReorderAgentSkipsChildren(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
@@ -1080,7 +1134,7 @@ Wire `handleRenameKey` the same way existing rename tests do (read `rename_test.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./internal/ui/ -run 'TestReorderAgentSkipsChildren|TestRenameAgentToShellWithChildrenRefused' -v`
+Run: `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./internal/ui/ -run 'TestReorderAgentSkipsChildren|TestReorderChildStaysWithItsSiblings|TestReorderChildIgnoresAnotherParentsChild|TestRenameAgentToShellWithChildrenRefused' -v`
 
 Expected: FAIL.
 

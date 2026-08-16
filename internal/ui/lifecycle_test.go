@@ -1364,6 +1364,33 @@ func TestDeleteRemovesChildrenBeforeTheirAgent(t *testing.T) {
 	}
 }
 
+func TestKillDeadAgentStillKillsItsLiveChild(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	shell := spawnTerminal(t, m)
+	agent := m.sessionRows()[0]
+	if err := m.tmux.Kill(agent.ID); err != nil {
+		t.Fatalf("kill agent: %v", err)
+	}
+	m.selectSessionRow(t, "coder")
+	_, cmd := m.killSelected()
+	m.applyCmd(t, cmd)
+	if m.mode != modeConfirmDelete {
+		t.Fatalf("mode = %v, want the kill confirm (errBar %q)", m.mode, m.errBar.text)
+	}
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.applyCmd(t, cmd)
+	if m.tmux.Exists(shell.ID) {
+		t.Fatal("live child survived the kill")
+	}
+}
+
 func TestReviveRunningAgentRevivesDeadChild(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
