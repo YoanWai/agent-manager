@@ -143,7 +143,7 @@ Shells always sit in their group, with `❯` when resting. A leftover `terminal_
 Store (`store_test.go`):
 
 - `CreateSession` round-trip of `parent_id`
-- `PlaceSession` nest, un-nest, reparent; child's group follows the parent
+- `PlaceSession` nest, un-nest, reparent onto another agent; the child's group follows its parent and it lands last among its new siblings
 - reject self, missing parent, and a parent that already has a parent, on `PlaceSession` and on `CreateSession` alike
 - `PlaceSession` refuses a parent for a session that already has children
 - moving an agent updates children's `group_name`

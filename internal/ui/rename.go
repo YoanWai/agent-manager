@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/git"
@@ -81,11 +82,14 @@ func (m *Model) openRename() {
 	} else {
 		input.SetValue(entry.sess.Name)
 		tools := sortedToolNames(m.cfg)
+		shells := []string{}
 		for _, name := range m.cfg.ToolNames() {
 			if m.cfg.Tools[name].Shell {
-				tools = append(tools, name)
+				shells = append(shells, name)
 			}
 		}
+		sort.Strings(shells)
+		tools = append(tools, shells...)
 		toolIndex := 0
 		for i, name := range tools {
 			if name == entry.sess.Tool {

@@ -269,6 +269,37 @@ func TestCreateSessionRejectsBadParent(t *testing.T) {
 	}
 }
 
+func TestPlaceSessionReparentsBetweenAgents(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("first", "g1")); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if err := st.CreateSession(sample("second", "g2")); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	held := sample("held", "g2")
+	held.ParentID = "second"
+	if err := st.CreateSession(held); err != nil {
+		t.Fatalf("held: %v", err)
+	}
+	moved := sample("moved", "g1")
+	moved.ParentID = "first"
+	if err := st.CreateSession(moved); err != nil {
+		t.Fatalf("moved: %v", err)
+	}
+	if err := st.PlaceSession("moved", "g1", "second"); err != nil {
+		t.Fatalf("reparent: %v", err)
+	}
+	got, err := st.Get("moved")
+	if err != nil || got.ParentID != "second" || got.Group != "g2" {
+		t.Fatalf("reparented = %+v err %v", got, err)
+	}
+	kids, err := st.Children("second")
+	if err != nil || len(kids) != 2 || kids[0].ID != "held" || kids[1].ID != "moved" {
+		t.Fatalf("new siblings = %+v err %v", kids, err)
+	}
+}
+
 func TestPlaceSessionRejectsBadParent(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.CreateSession(sample("agent", "g")); err != nil {

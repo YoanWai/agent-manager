@@ -1341,6 +1341,40 @@ func TestCreateSessionBesideFollowsTheAnchorPlacement(t *testing.T) {
 	}
 }
 
+func TestPlaceSessionReparentsBetweenAgents(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("first", "g1")); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if err := st.CreateSession(sample("second", "g2")); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	held := sample("held", "g2")
+	held.ParentID = "second"
+	if err := st.CreateSession(held); err != nil {
+		t.Fatalf("held: %v", err)
+	}
+	moved := sample("moved", "g1")
+	moved.ParentID = "first"
+	if err := st.CreateSession(moved); err != nil {
+		t.Fatalf("moved: %v", err)
+	}
+	if err := st.PlaceSession("moved", "g1", "second"); err != nil {
+		t.Fatalf("reparent: %v", err)
+	}
+	got, err := st.Get("moved")
+	if err != nil || got.ParentID != "second" || got.Group != "g2" {
+		t.Fatalf("reparented = %+v err %v", got, err)
+	}
+	kids, err := st.Children("second")
+	if err != nil || len(kids) != 2 || kids[0].ID != "held" || kids[1].ID != "moved" {
+		t.Fatalf("new siblings = %+v err %v", kids, err)
+	}
+	if kids, err := st.Children("first"); err != nil || len(kids) != 0 {
+		t.Fatalf("old parent still holds %+v err %v", kids, err)
+	}
+}
+
 func TestPlaceSessionRefusesParentThatHasChildren(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.CreateSession(sample("agent", "g1")); err != nil {
@@ -1412,6 +1446,15 @@ func TestReorderSessionStaysInSiblingSet(t *testing.T) {
 	kids, _ := st.Children("agent")
 	if len(kids) != 2 || kids[0].ID != "b" || kids[1].ID != "a" {
 		t.Fatalf("child order %+v", kids)
+	}
+	roots := []string{}
+	for _, id := range listIDs(t, st, false) {
+		if id == "agent" || id == "other" {
+			roots = append(roots, id)
+		}
+	}
+	if len(roots) != 2 || roots[0] != "agent" || roots[1] != "other" {
+		t.Fatalf("un-nested order %v", roots)
 	}
 	if err := st.SwapSessionOrder("agent", "a"); err == nil {
 		t.Fatal("agent and its child are not siblings")
