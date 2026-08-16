@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -183,6 +184,57 @@ func TestOpenTerminalOnNestedShellSharesParent(t *testing.T) {
 	second := spawnTerminal(t, m)
 	if second.ParentID != first.ParentID || second.ParentID == "" || second.Group != first.Group {
 		t.Fatalf("second = %+v, first = %+v", second, first)
+	}
+}
+
+// A terminal is named for the session it hangs under, so the row says which
+// agent it was opened for even after the shell is cd'd somewhere else.
+func TestTerminalTakesTheNameOfItsSession(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "coder", t.TempDir(), "")
+	m.selectSessionRow(t, "coder")
+
+	shell := spawnTerminal(t, m)
+	if want := shellToolName + "-coder"; shell.Name != want {
+		t.Fatalf("terminal name = %q, want %q", shell.Name, want)
+	}
+}
+
+// The name is how one row is told from the next, so terminals sharing a
+// session count up instead of landing on one name. A terminal opened from
+// one of them is a sibling, and counts up in the same run.
+func TestTerminalsUnderOneSessionCountUp(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "coder", t.TempDir(), "")
+	m.selectSessionRow(t, "coder")
+	first := spawnTerminal(t, m)
+
+	m.selectSessionRow(t, "coder")
+	second := spawnTerminal(t, m)
+	if want := shellToolName + "-coder-2"; second.Name != want {
+		t.Fatalf("second terminal name = %q, want %q", second.Name, want)
+	}
+
+	m.selectSessionRow(t, first.Name)
+	third := spawnTerminal(t, m)
+	if want := shellToolName + "-coder-3"; third.Name != want {
+		t.Fatalf("sibling terminal name = %q, want %q", third.Name, want)
+	}
+}
+
+// A terminal opened on a group has no session to name it after, so it keeps
+// the generated name rather than taking the group's.
+func TestTerminalWithNoSessionKeepsItsGeneratedName(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("backend", t.TempDir()); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+
+	shell := spawnTerminal(t, m)
+	if !regexp.MustCompile(`^` + shellToolName + `-[0-9a-f]{4}$`).MatchString(shell.Name) {
+		t.Fatalf("terminal name = %q, want the generated %s-<4 hex>", shell.Name, shellToolName)
 	}
 }
 

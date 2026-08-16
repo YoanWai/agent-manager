@@ -195,10 +195,23 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if err != nil {
 		return Terminal{}, err
 	}
-	id := uuid.NewString()[:8]
+	// A shell caller is a terminal itself, and nesting is one level, so the
+	// new shell joins it as a sibling instead of hanging under it.
+	callerIsShell := runtime.cfg.Tools[caller.Tool].Shell
+	parentID := ""
+	if nest {
+		parentID = caller.ID
+		if callerIsShell {
+			parentID = caller.ParentID
+		}
+	}
+	name, err := runtime.shellName(toolName, parentID)
+	if err != nil {
+		return Terminal{}, err
+	}
 	sess := store.Session{
-		ID:     id,
-		Name:   toolName + "-" + id[:4],
+		ID:     uuid.NewString()[:8],
+		Name:   name,
 		Tool:   toolName,
 		Cwd:    dir,
 		Group:  group,
@@ -207,11 +220,9 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if err := runtime.driver.Create(sess.ID, sess.Cwd, tool.Command, nil, 0, 0); err != nil {
 		return Terminal{}, err
 	}
-	// A shell caller is a terminal itself, and nesting is one level, so the
-	// new shell joins it as a sibling instead of hanging under it.
 	create := runtime.store.CreateSession
 	if nest {
-		if runtime.cfg.Tools[caller.Tool].Shell {
+		if callerIsShell {
 			create = func(row store.Session) error {
 				return runtime.store.CreateSessionBeside(row, caller.ID)
 			}
@@ -259,6 +270,34 @@ func (t *Terminals) Close(sessionID, terminalID string) error {
 	return runtime.store.DeleteChild(sess.ID, caller.ID, func() error {
 		return runtime.driver.Kill(sess.ID)
 	})
+}
+
+// shellName names a terminal after the session it hangs under, so a row
+// says which session opened it rather than four random digits. A terminal
+// with no session over it keeps the digits, and one joining terminals
+// already named for that session counts up.
+func (r *terminalRuntime) shellName(toolName, parentID string) (string, error) {
+	sessions, err := r.store.ListSessions(true)
+	if err != nil {
+		return "", err
+	}
+	parentName := ""
+	taken := make(map[string]bool, len(sessions))
+	for _, sess := range sessions {
+		taken[sess.Name] = true
+		if sess.ID == parentID {
+			parentName = sess.Name
+		}
+	}
+	if parentName == "" {
+		return toolName + "-" + uuid.NewString()[:4], nil
+	}
+	base := toolName + "-" + parentName
+	name := base
+	for n := 2; taken[name]; n++ {
+		name = fmt.Sprintf("%s-%d", base, n)
+	}
+	return name, nil
 }
 
 func (r *terminalRuntime) createTarget(caller store.Session, opts CreateTerminalOptions) (string, string, error) {
