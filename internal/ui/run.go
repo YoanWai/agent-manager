@@ -47,8 +47,7 @@ func (m *Model) runKey() (tea.Model, tea.Cmd) {
 	// A file with no run scripts is a dead end otherwise: the reader has
 	// already opted in, and what they need is the file open.
 	if len(settings.Run) == 0 {
-		m.reportDone(runSetupHint(settings))
-		return m.openInEditor(project.SettingsPath(settings.Root))
+		return m.openSettingsFile(settings, runSetupHint(settings))
 	}
 	if name, ok := settings.DefaultRun(); ok {
 		return m.startRun(settings, dir, name)
@@ -64,6 +63,20 @@ func (m *Model) runKey() (tea.Model, tea.Cmd) {
 func runSetupHint(settings project.Settings) string {
 	return "no run scripts in " + project.SettingsPath(settings.Root) +
 		": add a [run.dev] block with a command"
+}
+
+// openSettingsFile opens a project's settings and says why, keeping the
+// reason on the status bar when there turns out to be no editor to open it
+// with. The reason carries the path, which is the half a reader on such a
+// machine actually needs; an editor failure alone would leave them knowing
+// only that nothing happened.
+func (m *Model) openSettingsFile(settings project.Settings, reason string) (tea.Model, tea.Cmd) {
+	m.reportDone(reason)
+	model, cmd := m.openInEditor(project.SettingsPath(settings.Root))
+	if !m.errBar.worked() {
+		m.errBar.text = reason + " — " + m.errBar.text
+	}
+	return model, cmd
 }
 
 // runInitState is the offer to give a project its first settings file: where

@@ -63,8 +63,11 @@ func TestRunKeyWithSettingsButNoScriptsSaysSo(t *testing.T) {
 
 	pressRunKey(t, m)
 
-	if !strings.Contains(m.errBar.text, "no run scripts") {
-		t.Fatalf("error = %q, want it to mention missing run scripts", m.errBar.text)
+	// The path is the useful half of the message, so it must survive whether
+	// or not this machine has an editor to open the file with.
+	if !strings.Contains(m.errBar.text, "no run scripts") ||
+		!strings.Contains(m.errBar.text, project.File) {
+		t.Fatalf("message = %q, want it to name the file with no run scripts", m.errBar.text)
 	}
 }
 
