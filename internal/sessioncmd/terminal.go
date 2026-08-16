@@ -223,7 +223,9 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		}
 	}
 	if err := create(sess); err != nil {
-		_ = runtime.driver.Kill(sess.ID)
+		if killErr := runtime.driver.Kill(sess.ID); killErr != nil {
+			return Terminal{}, fmt.Errorf("%w; its pane %s is still running and has no row: %v", err, sess.ID, killErr)
+		}
 		return Terminal{}, err
 	}
 	if nest {
