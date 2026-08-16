@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -108,7 +109,7 @@ func TestTerminalsCreateListSendAndReadWithRealTmux(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if created.ID == "" || created.Name != "terminal-"+created.ID[:4] {
+	if created.ID == "" || created.Name != "terminal-"+h.caller.Name {
 		t.Fatalf("created identity = %+v", created)
 	}
 	if created.Group != h.caller.Group || !sameTerminalPath(created.Directory, h.caller.Cwd) || !created.Running {
@@ -249,6 +250,41 @@ func TestCreateNestsUnderCallerByDefault(t *testing.T) {
 	}
 	if created.ParentID != h.caller.ID || created.ParentName != h.caller.Name {
 		t.Fatalf("created = %+v", created)
+	}
+}
+
+// A terminal an agent opens for itself is named after that agent, and the
+// next one counts up: the name is what tells one row from the next in the
+// list the user reads.
+func TestCreateNamesTerminalsAfterTheirSession(t *testing.T) {
+	h := newTerminalHarness(t)
+	first, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	second, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create second: %v", err)
+	}
+	if want := "terminal-" + h.caller.Name; first.Name != want {
+		t.Fatalf("first name = %q, want %q", first.Name, want)
+	}
+	if want := "terminal-" + h.caller.Name + "-2"; second.Name != want {
+		t.Fatalf("second name = %q, want %q", second.Name, want)
+	}
+}
+
+// An un-nested terminal has no session to name it after, so it keeps the
+// generated name.
+func TestCreateNestFalseKeepsTheGeneratedName(t *testing.T) {
+	h := newTerminalHarness(t)
+	nest := false
+	created, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Nest: &nest})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !regexp.MustCompile(`^terminal-[0-9a-f]{4}$`).MatchString(created.Name) {
+		t.Fatalf("name = %q, want the generated terminal-<4 hex>", created.Name)
 	}
 }
 
