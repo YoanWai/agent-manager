@@ -171,6 +171,31 @@ func TestMoveReportsPlacementFailure(t *testing.T) {
 	}
 }
 
+func TestMoveReportsMissingSource(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	shell := spawnTerminal(t, m)
+	m.selectSessionRow(t, shell.Name)
+	m.openMove()
+	if err := m.store.Delete(shell.ID); err != nil {
+		t.Fatalf("delete shell: %v", err)
+	}
+	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	if m.errBar.text == "" {
+		t.Fatal("missing source reported nothing")
+	}
+	if m.mode != modeMove {
+		t.Fatalf("mode = %v, want modeMove", m.mode)
+	}
+}
+
 func TestMoveAgentPickerHasNoSessionTargets(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

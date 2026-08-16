@@ -1259,6 +1259,32 @@ func TestCreateSessionRejectsBadParent(t *testing.T) {
 	}
 }
 
+func TestPlaceSessionRefusesParentThatHasChildren(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	if err := st.CreateSession(sample("host", "g1")); err != nil {
+		t.Fatalf("host: %v", err)
+	}
+	child := sample("sh", "g1")
+	child.ParentID = "host"
+	if err := st.CreateSession(child); err != nil {
+		t.Fatalf("child: %v", err)
+	}
+	if err := st.PlaceSession("host", "g1", "agent"); err == nil {
+		t.Fatal("nested a session that has children")
+	}
+	host, err := st.Get("host")
+	if err != nil || host.ParentID != "" {
+		t.Fatalf("host = %+v err %v", host, err)
+	}
+	got, err := st.Get("sh")
+	if err != nil || got.ParentID != "host" || got.Group != "g1" {
+		t.Fatalf("child = %+v err %v", got, err)
+	}
+}
+
 func TestPlaceSessionMovesAgentChildren(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.CreateSession(sample("agent", "g1")); err != nil {

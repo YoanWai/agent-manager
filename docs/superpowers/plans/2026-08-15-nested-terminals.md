@@ -486,10 +486,19 @@ func TestOrphanParentIDPaintsUnnested(t *testing.T) {
 		t.Fatalf("group: %v", err)
 	}
 	if err := m.store.CreateSession(store.Session{
+		ID: "gone", Name: "parent", Tool: "claude", Cwd: dir,
+		Group: "backend", Status: status.Idle,
+	}); err != nil {
+		t.Fatalf("parent: %v", err)
+	}
+	if err := m.store.CreateSession(store.Session{
 		ID: "sh1", Name: "loose", Tool: "terminal", Cwd: dir,
 		Group: "backend", ParentID: "gone", Status: status.Idle,
 	}); err != nil {
 		t.Fatalf("orphan: %v", err)
+	}
+	if err := m.store.Delete("gone"); err != nil {
+		t.Fatalf("delete parent: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
 	for _, row := range m.rows {

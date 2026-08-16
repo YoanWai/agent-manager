@@ -746,6 +746,15 @@ func (s *Store) PlaceSession(id, group, parentID string) error {
 		return err
 	}
 	defer tx.Rollback()
+	if parentID != "" {
+		var kids int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE parent_id = ?`, id).Scan(&kids); err != nil {
+			return err
+		}
+		if kids > 0 {
+			return fmt.Errorf("session %s has terminals of its own; move them out first", id)
+		}
+	}
 	res, err := tx.Exec(
 		`UPDATE sessions SET group_name = ?, parent_id = ?,
 		 sort_order = (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?)
