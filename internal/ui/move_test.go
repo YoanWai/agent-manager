@@ -143,11 +143,9 @@ func TestMoveReportsPlacementFailure(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
 	agent := m.sessionRows()[0]
 	shell := spawnTerminal(t, m)
-	if err := m.store.PlaceSession(shell.ID, "backend", ""); err != nil {
-		t.Fatalf("unnest: %v", err)
-	}
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, shell.Name)
 	m.openMove()
@@ -165,9 +163,12 @@ func TestMoveReportsPlacementFailure(t *testing.T) {
 	if m.errBar.text == "" {
 		t.Fatal("failed placement reported nothing")
 	}
+	if m.mode != modeMove {
+		t.Fatalf("mode = %v, want modeMove", m.mode)
+	}
 	got, err := m.store.Get(shell.ID)
-	if err != nil || got.ParentID != "" {
-		t.Fatalf("shell moved anyway: %+v err %v", got, err)
+	if err != nil || got.ParentID != agent.ID {
+		t.Fatalf("shell left its parent: %+v err %v", got, err)
 	}
 }
 

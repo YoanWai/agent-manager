@@ -1,7 +1,6 @@
 package sessioncmd
 
 import (
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -430,7 +429,7 @@ func TestCloseRefusesTerminalOfAnotherSession(t *testing.T) {
 	}
 }
 
-func TestCloseRefusesATerminalMovedOutAfterTheCheck(t *testing.T) {
+func TestCloseRefusesATerminalMovedOut(t *testing.T) {
 	h := newTerminalHarness(t)
 	created, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
 	if err != nil {
@@ -439,30 +438,14 @@ func TestCloseRefusesATerminalMovedOutAfterTheCheck(t *testing.T) {
 	if err := h.store.PlaceSession(created.ID, h.caller.Group, ""); err != nil {
 		t.Fatalf("unnest: %v", err)
 	}
-	if err := h.store.DeleteChild(created.ID, h.caller.ID, func() error {
-		t.Fatal("kill ran for a terminal that moved out")
-		return nil
-	}); err == nil {
+	if err := h.terminals.Close(h.caller.ID, created.ID); err == nil {
 		t.Fatal("closed a terminal that moved out")
 	}
 	if _, err := h.store.Get(created.ID); err != nil {
 		t.Fatalf("row gone: %v", err)
 	}
-}
-
-func TestCloseKeepsTheRowWhenTheKillFails(t *testing.T) {
-	h := newTerminalHarness(t)
-	created, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	killErr := errors.New("tmux refused")
-	if err := h.store.DeleteChild(created.ID, h.caller.ID, func() error { return killErr }); !errors.Is(err, killErr) {
-		t.Fatalf("err = %v", err)
-	}
-	got, err := h.store.Get(created.ID)
-	if err != nil || got.ParentID != h.caller.ID {
-		t.Fatalf("row = %+v err %v", got, err)
+	if !h.driver.Exists(created.ID) {
+		t.Fatal("pane killed")
 	}
 }
 

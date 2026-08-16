@@ -101,6 +101,15 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
+		// A picked session is re-read before the shortcut below closes the
+		// dialog, so re-picking the parent of a terminal whose agent has
+		// since gone reports that instead of a move that never happened.
+		if opt.sessID != "" {
+			if _, err := m.store.Get(opt.sessID); err != nil {
+				m.errBar.text = err.Error()
+				return m, nil
+			}
+		}
 		if sess.ParentID == opt.sessID && sess.Group == opt.path {
 			m.mode = modeList
 			return m, nil
