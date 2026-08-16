@@ -1352,7 +1352,7 @@ Expected: FAIL, `ParentID` empty / `Close` undefined / group create still succee
 
 `info` fills `ParentID` and looks up `ParentName` via `store.Get` when `ParentID != ""`. A parent row that is gone leaves `ParentName` empty; any other lookup error is returned, so `info` hands back `(Terminal, error)` and `List`, `Create` and `Read` propagate it.
 
-`Create`: `nest := true`; if `opts.Nest != nil` use `*opts.Nest`. If nest and `opts.Group != nil` and `strings.TrimSpace(*opts.Group) != caller.Group`, return `fmt.Errorf("set nest false to place in another group")`. If nest, `sess.ParentID = caller.ID` and `sess.Group = caller.Group`. If not nest, keep `createTarget` as it is.
+`Create`: `nest := true`; if `opts.Nest != nil` use `*opts.Nest`. If nest and `opts.Group != nil` and `strings.TrimSpace(*opts.Group) != caller.Group`, return `fmt.Errorf("set nest false to place in another group")`. If nest and the caller is an agent, `sess.ParentID = caller.ID`. If nest and the caller is itself a shell, insert through `store.CreateSessionBeside(sess, caller.ID)`, which reads the caller's parent and group inside the insert transaction and lands the new shell beside it. If not nest, keep `createTarget` as it is.
 
 ```go
 func (t *Terminals) Close(sessionID, terminalID string) error {

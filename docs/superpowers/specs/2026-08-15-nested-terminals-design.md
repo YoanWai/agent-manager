@@ -163,7 +163,8 @@ UI:
 
 MCP / `sessioncmd`:
 
-- omitted `nest` and `nest: true` set `parent_id` to the caller
+- omitted `nest` and `nest: true` set `parent_id` to an agent caller
+- a nested shell caller hands over its own parent, and an un-nested one leaves `parent_id` empty in that shell's group
 - `nest: false` leaves `parent_id` empty
 - `nest` true plus a different `group` errors
 - `list_terminals` includes `parent_id` and parent name
