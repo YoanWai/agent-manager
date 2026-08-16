@@ -1446,7 +1446,7 @@ Expected: FAIL, missing tool / missing SSH wording.
 `createTerminalArgs`:
 
 ```go
-	Nest *bool `json:"nest,omitempty" jsonschema:"when true or omitted, nest under this agent; false places an un-nested terminal in group"`
+	Nest *bool `json:"nest,omitempty" jsonschema:"when true or omitted, nest under this session, or beside it under the same parent when this session is itself a terminal; false places an un-nested terminal in group"`
 ```
 
 Pass `Nest: args.Nest` into `Create`.
