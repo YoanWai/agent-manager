@@ -181,8 +181,8 @@ func TestOpenTerminalOnNestedShellSharesParent(t *testing.T) {
 	first := spawnTerminal(t, m)
 	m.selectSessionRow(t, first.Name)
 	second := spawnTerminal(t, m)
-	if second.ParentID != first.ParentID || second.ParentID == "" {
-		t.Fatalf("second parent=%q first parent=%q", second.ParentID, first.ParentID)
+	if second.ParentID != first.ParentID || second.ParentID == "" || second.Group != first.Group {
+		t.Fatalf("second = %+v, first = %+v", second, first)
 	}
 }
 
