@@ -197,6 +197,27 @@ func TestMoveReportsMissingSource(t *testing.T) {
 	}
 }
 
+func TestMovePickerKeepsTheTerminalsOwnGroupSelected(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	for _, group := range []string{"alpha", "beta"} {
+		if err := m.store.CreateGroup(group, dir); err != nil {
+			t.Fatalf("group %s: %v", group, err)
+		}
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "beta")
+	shell := spawnTerminal(t, m)
+	m.selectSessionRow(t, shell.Name)
+	m.openMove()
+	if m.selectedGroupPath() != "beta" {
+		t.Fatalf("selected group = %q, want beta", m.selectedGroupPath())
+	}
+	if sessID := m.form.groups[m.form.groupIndex].sessID; sessID != "" {
+		t.Fatalf("selected option targets session %q", sessID)
+	}
+}
+
 func TestMoveAgentPickerHasNoSessionTargets(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
