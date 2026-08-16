@@ -58,7 +58,7 @@ func helpSections() []helpSection {
 			{"→", "step in: focus the session, open the group"},
 			{"←", "step out: close the group"},
 			{"K / J", "reorder the row up / down (shift+↑↓ too)"},
-			{"n", "new session"},
+			{"n", "new session (its first task takes a pasted image too)"},
 			{"T", "new terminal tab: a shell under the selected agent, or in the group"},
 			{"g", "new group (name, parent, default path, worktree)"},
 			{"/", "search the list by name"},

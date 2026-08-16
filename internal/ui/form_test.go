@@ -12,7 +12,9 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func TestNewSessionFormUsesSettingsDefaultTool(t *testing.T) {
@@ -260,11 +262,151 @@ func TestFormLongDirKeepsCursorEndVisible(t *testing.T) {
 	}
 }
 
+// focusFormPrompt moves the form's focus to the prompt field, where the
+// image keys apply.
+func focusFormPrompt(t *testing.T, m *Model) {
+	t.Helper()
+	m.formFocus(-2) // name -> group -> prompt
+	if m.form.focus != fieldPrompt {
+		t.Fatalf("focus = %v, want fieldPrompt", m.form.focus)
+	}
+}
+
+// pasteFormImage runs a full ctrl+v against a fake clipboard that yields
+// the given file, and returns the id of the chip it left behind.
+func pasteFormImage(t *testing.T, m *Model, path string) int {
+	t.Helper()
+	orig := captureClipboardImage
+	defer func() { captureClipboardImage = orig }()
+	captureClipboardImage = func() (string, error) { return path, nil }
+
+	_, cmd := m.handleFormKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if cmd == nil {
+		t.Fatal("ctrl+v should start an async clipboard read")
+	}
+	id := m.form.prompt.lastImageID
+	msg, ok := cmd().(pasteImageMsg)
+	if !ok {
+		t.Fatalf("clipboard cmd returned %T", cmd())
+	}
+	updated, _ := m.Update(msg)
+	*m = *updated.(*Model)
+	if m.errBar.text != "" {
+		t.Fatalf("paste: %q", m.errBar.text)
+	}
+	return id
+}
+
+func TestFormPasteSendsTheImagePathWithTheFirstTask(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+	for _, r := range "match this" {
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	path := tempImage(t, "mock.png")
+	id := pasteFormImage(t, m, path)
+
+	if got, want := m.form.prompt.input.Value(), "match this "+imageToken(id)+" "; got != want {
+		t.Fatalf("chip should land at the caret: got %q, want %q", got, want)
+	}
+	if got, want := m.form.prompt.message(), "match this "+path; got != want {
+		t.Fatalf("first task = %q, want %q", got, want)
+	}
+}
+
+func TestFormPasteChipDeletesAsOneAndReleasesItsImage(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+
+	path := tempImage(t, "mock.png")
+	pasteFormImage(t, m, path)
+
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	if got := m.form.prompt.input.Value(); got != "" {
+		t.Fatalf("backspace next to a chip should take the whole chip: %q", got)
+	}
+	if len(m.form.prompt.attachments) != 0 {
+		t.Fatalf("attachment should be released: %+v", m.form.prompt.attachments)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("the image file should be gone, stat err = %v", err)
+	}
+}
+
+func TestFormCancelReleasesPastedImages(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+
+	path := tempImage(t, "mock.png")
+	pasteFormImage(t, m, path)
+
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != modeList {
+		t.Fatalf("esc should close the form, mode = %v", m.mode)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("an abandoned form should release its images, stat err = %v", err)
+	}
+}
+
+func TestFormChipRendersInTheCard(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+	m.form.prompt.attachments = []imageAttachment{{id: 1, path: "/tmp/agent-manager-pastes/paste-123.png"}}
+	m.form.prompt.input.SetValue("match " + imageToken(1))
+
+	view := m.viewForm()
+	plain := ansi.Strip(view)
+	if !strings.Contains(plain, "match "+imageToken(1)) {
+		t.Fatalf("chip should read inline with the first task, got %q", plain)
+	}
+	if strings.Contains(plain, "paste-123") {
+		t.Fatalf("the card should not show the temp path, got %q", plain)
+	}
+	if !strings.Contains(view, imageChip(imageToken(1))) {
+		t.Fatal("chip should be styled in the rendered card")
+	}
+	if !strings.Contains(plain, "paste an image") {
+		t.Fatalf("the focused prompt should say how to attach one, got %q", plain)
+	}
+}
+
+func TestFormSubmitWaitsForAPasteStillReading(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+	m.form.name.SetValue("half-pasted")
+	m.form.dir.SetValue(t.TempDir())
+	// The chip a paste reserves before its clipboard read lands.
+	m.form.prompt.attachments = []imageAttachment{{id: 1}}
+	m.form.prompt.input.SetValue(imageToken(1))
+
+	if _, _ = m.submitForm(); m.errBar.text == "" {
+		t.Fatal("a submit with a chip still reading should be refused")
+	}
+	if m.mode != modeForm {
+		t.Fatalf("form should stay open, mode = %v", m.mode)
+	}
+	if len(m.sessionRows()) != 0 {
+		t.Fatalf("no session should be created, got %d", len(m.sessionRows()))
+	}
+}
+
 func TestFormLongPromptWrapsAcrossRows(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	m.formFocus(-2) // name -> group -> prompt
-	m.form.prompt.SetValue(strings.Repeat("word ", 25) + "finale")
+	m.form.prompt.input.SetValue(strings.Repeat("word ", 25) + "finale")
 	view := ansi.Strip(m.viewForm())
 	if !strings.Contains(view, "finale") {
 		t.Fatal("long prompt should wrap onto more rows instead of being clipped")
@@ -272,7 +414,7 @@ func TestFormLongPromptWrapsAcrossRows(t *testing.T) {
 }
 
 func TestTextareaRowsCountsExactMultipleWrap(t *testing.T) {
-	in := promptField()
+	in := promptField().input
 	in.SetWidth(12) // content width 10
 	in.SetValue("1234567890\nx")
 	if rows := textareaRows(in, 10, 5); rows != 3 {
@@ -353,7 +495,7 @@ func TestFormRejectsDashLeadingPrompt(t *testing.T) {
 	m.form.name.SetValue("flagged")
 	m.form.dir.SetValue(t.TempDir())
 	m.form.toolIndex = 0
-	m.form.prompt.SetValue("--version")
+	m.form.prompt.input.SetValue("--version")
 
 	if _, _ = m.submitForm(); m.errBar.text == "" {
 		t.Fatal("dash-leading prompt should be rejected")
