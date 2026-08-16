@@ -205,7 +205,12 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		Status: status.Starting,
 	}
 	if nest {
+		// A shell caller is a terminal itself, and nesting is one level, so
+		// the new shell joins it as a sibling instead of hanging under it.
 		sess.ParentID = caller.ID
+		if runtime.cfg.Tools[caller.Tool].Shell {
+			sess.ParentID = caller.ParentID
+		}
 		sess.Group = caller.Group
 	}
 	if err := runtime.driver.Create(sess.ID, sess.Cwd, tool.Command, nil, 0, 0); err != nil {

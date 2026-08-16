@@ -331,6 +331,33 @@ func TestListAndReadKeepAnOrphanedTerminal(t *testing.T) {
 	}
 }
 
+func TestCreateFromAShellJoinsItsSiblings(t *testing.T) {
+	h := newTerminalHarness(t)
+	first, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	second, err := h.terminals.Create(first.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create from shell: %v", err)
+	}
+	if second.ParentID != h.caller.ID {
+		t.Fatalf("second = %+v, want parent %s", second, h.caller.ID)
+	}
+	nest := false
+	loose, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Nest: &nest})
+	if err != nil {
+		t.Fatalf("Create un-nested: %v", err)
+	}
+	fromLoose, err := h.terminals.Create(loose.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create from un-nested shell: %v", err)
+	}
+	if fromLoose.ParentID != "" {
+		t.Fatalf("from un-nested shell = %+v", fromLoose)
+	}
+}
+
 func TestCreateNestFalseIsUnnested(t *testing.T) {
 	h := newTerminalHarness(t)
 	nest := false
