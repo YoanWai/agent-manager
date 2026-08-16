@@ -99,13 +99,19 @@ func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
 // the cursor, or that agent again when the cursor is already on one of its
 // shells, so a second terminal joins the first rather than hanging off it.
 // A group row has no session to hang off and answers false.
+//
+// The link is resolved against every session rather than against the index
+// the rail painted from, which a search narrows: a query matching shells but
+// not agents would otherwise store an empty parent on a terminal that has
+// one, and an empty parent is not a row that redraws — it is what the
+// directory fallback later reads, and it can land on a different agent.
 func (m *Model) shellOrigin() (store.Session, bool) {
 	entry, ok := m.selectedRow()
 	if !ok || entry.isGroup {
 		return store.Session{}, false
 	}
 	if m.isShell(entry.sess.Tool) {
-		return m.sessionByID(m.shellParents[entry.sess.ID])
+		return m.sessionByID(m.shellParentIndex(m.sessions)[entry.sess.ID])
 	}
 	return entry.sess, true
 }

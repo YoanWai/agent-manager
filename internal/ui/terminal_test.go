@@ -315,3 +315,72 @@ func TestAgentRowLegendKeepsTheConversationKeys(t *testing.T) {
 		}
 	}
 }
+
+// A terminal opened while the cursor is already on one joins it as a
+// sibling: a shell is not something to hang another shell off.
+func TestSecondShellJoinsTheFirstRatherThanNesting(t *testing.T) {
+	m := buildModel(t)
+	groupWithShell(t, m, "backend")
+	createSession(t, m, "agent-one", t.TempDir(), "backend")
+	m.selectSessionRow(t, "agent-one")
+	first := spawnTerminal(t, m)
+	second := spawnTerminal(t, m)
+	nestShells(t, m)
+
+	if m.shellParents[second.ID] != m.shellParents[first.ID] {
+		t.Fatalf("second shell hangs off %q, want the first's parent %q",
+			m.shellParents[second.ID], m.shellParents[first.ID])
+	}
+	if rowFor(t, m, second.ID).depth != rowFor(t, m, first.ID).depth {
+		t.Fatal("siblings sit at the same depth")
+	}
+	if first.Name == second.Name {
+		t.Fatalf("both shells are called %q; the name is how a row is told from its sibling", first.Name)
+	}
+}
+
+// A shell opened before the link was stored still finds its session, by the
+// directory both were launched in — for a worktree, the one agent there.
+func TestShellWithoutALinkNestsByDirectory(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	groupWithShell(t, m, "backend")
+	createSession(t, m, "agent-one", dir, "backend")
+	m.selectSessionRow(t, "agent-one")
+	shell := spawnTerminal(t, m)
+
+	for i := range m.sessions {
+		if m.sessions[i].ID == shell.ID {
+			m.sessions[i].ParentID = ""
+			m.sessions[i].Cwd = dir
+		}
+	}
+	nestShells(t, m)
+
+	agent := rowFor(t, m, m.shellParents[shell.ID])
+	if agent.sess.Name != "agent-one" {
+		t.Fatalf("shell fell back to %q, want the agent sharing its directory", agent.sess.Name)
+	}
+}
+
+// Nested, the session the shell hangs off is the row above it, so the row
+// says nothing a reader can already see. Only a shell with no session to
+// hang off spends the column, on the directory it was launched in.
+func TestNestedShellLeavesTheColumnToItsSession(t *testing.T) {
+	m := buildModel(t)
+	groupWithShell(t, m, "backend")
+	createSession(t, m, "agent-one", t.TempDir(), "backend")
+	m.selectSessionRow(t, "agent-one")
+	nested := spawnTerminal(t, m)
+
+	m.selectGroupRow(t, "backend")
+	loose := spawnTerminal(t, m)
+	nestShells(t, m)
+
+	if label := m.shellOriginLabel(nested); label != "" {
+		t.Fatalf("label = %q, want nothing where the session is the row above", label)
+	}
+	if label := m.shellOriginLabel(loose); label != filepath.Base(loose.Cwd) {
+		t.Fatalf("label = %q, want the directory %q", label, filepath.Base(loose.Cwd))
+	}
+}

@@ -304,3 +304,29 @@ func sessionNames(m *Model) []string {
 	}
 	return names
 }
+
+// pinShells and nestShells name the placement a test is about rather than
+// inherit it, so which one is the default is free to change without quietly
+// turning a test into a test of something else.
+func pinShells(t *testing.T, m *Model) {
+	t.Helper()
+	m.shellsPinned = true
+	m.rebuildRows()
+}
+
+func nestShells(t *testing.T, m *Model) {
+	t.Helper()
+	m.shellsPinned = false
+	m.rebuildRows()
+}
+
+func rowFor(t *testing.T, m *Model, id string) treeRow {
+	t.Helper()
+	for _, entry := range m.rows {
+		if !entry.isGroup && entry.sess.ID == id {
+			return entry
+		}
+	}
+	t.Fatalf("no row for session %s", id)
+	return treeRow{}
+}

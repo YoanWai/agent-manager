@@ -462,7 +462,8 @@ const worktreeSetting = "worktree_default"
 
 // terminalPlacementSetting is where shells sit: "pinned" gathers them in
 // their own block, "inline" nests each under the session it was opened for,
-// falling back to its group when there is no such session.
+// or under the oldest agent sharing its directory when it recorded none.
+// Only a shell that finds neither in its own group sits in that group.
 const terminalPlacementSetting = "terminal_placement"
 
 const notificationsSetting = "notifications"

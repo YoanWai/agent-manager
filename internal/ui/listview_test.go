@@ -922,3 +922,61 @@ func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
 		t.Fatalf("focused row 0 lost its caret: %q", first)
 	}
 }
+
+// A pinned row stands away from the tree, so it trades its tool name — one
+// every shell shares — for the session it was opened for. The group it
+// carries is shared by every worktree under it and would tell them apart
+// from nothing.
+func TestPinnedShellNamesItsSession(t *testing.T) {
+	m := buildModel(t)
+	groupWithShell(t, m, "backend")
+	createSession(t, m, "agent-one", t.TempDir(), "backend")
+	m.selectSessionRow(t, "agent-one")
+	shell := spawnTerminal(t, m)
+	pinShells(t, m)
+
+	rail := m.rail()
+	row := strings.Split(rail, "\n")[railRow(rail, shell.Name)]
+	if !strings.Contains(row, "agent-one") {
+		t.Fatalf("a pinned row should name the session it was opened for:\n%s", row)
+	}
+	if strings.Contains(row, "· "+shell.Tool+" ·") {
+		t.Fatalf("the tool name is redundant under the heading:\n%s", row)
+	}
+}
+
+// Without a session to name, the pinned row falls back to the directory it
+// was opened in, which is still narrower than the group.
+func TestPinnedShellWithoutASessionNamesItsDirectory(t *testing.T) {
+	m := buildModel(t)
+	groupWithShell(t, m, "backend")
+	shell := spawnTerminal(t, m)
+	pinShells(t, m)
+
+	rail := m.rail()
+	row := strings.Split(rail, "\n")[railRow(rail, shell.Name)]
+	if !strings.Contains(row, filepath.Base(shell.Cwd)) {
+		t.Fatalf("want the directory %q on the row:\n%s", filepath.Base(shell.Cwd), row)
+	}
+}
+
+// Nested, the row above already names the session, so the shell's own meta
+// spends nothing on repeating it and goes straight to how long it has been
+// resting.
+func TestNestedShellRowSpendsNothingOnItsSession(t *testing.T) {
+	m := buildModel(t)
+	groupWithShell(t, m, "backend")
+	createSession(t, m, "agent-one", t.TempDir(), "backend")
+	m.selectSessionRow(t, "agent-one")
+	shell := spawnTerminal(t, m)
+	nestShells(t, m)
+
+	rail := m.rail()
+	row := strings.Split(rail, "\n")[railRow(rail, shell.Name)]
+	if strings.Contains(row, "· agent-one") {
+		t.Fatalf("the session is the row above; the shell should not repeat it:\n%s", row)
+	}
+	if strings.Contains(row, "· "+shell.Tool+" ·") {
+		t.Fatalf("every shell runs the same tool, so the name is dead weight:\n%s", row)
+	}
+}

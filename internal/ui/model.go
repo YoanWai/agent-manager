@@ -888,8 +888,6 @@ func (m *Model) listedAgents() []store.Session {
 	return agents
 }
 
-// sessionByID finds a session in the current scope. An empty id, or one
-// belonging to a session the scope does not hold, answers false.
 func (m *Model) sessionByID(id string) (store.Session, bool) {
 	if id == "" {
 		return store.Session{}, false
@@ -1614,7 +1612,9 @@ func (m *Model) rebuildRows() {
 
 	// Root is a standing move and spawn target; its sessions stay flat.
 	rows := make([]treeRow, 0, len(m.sessions)+len(paths)+1)
-	// emit lays a session and, right under it, the shells opened for it.
+	// A shell sits immediately after its session rather than at the end of
+	// the group: the tree guides read depth off the rows around them, so a
+	// child separated from its parent draws a branch off whoever precedes it.
 	emit := func(sess store.Session, depth int) {
 		rows = append(rows, treeRow{sess: sess, depth: depth})
 		for _, shell := range shellsBySession[sess.ID] {

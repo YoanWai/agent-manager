@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -29,21 +28,6 @@ func railRow(rail, needle string) int {
 		at = i
 	}
 	return at
-}
-
-// pinShells and nestShells name the placement a test is about rather than
-// inherit it, so which one is the default is free to change without
-// quietly turning these into tests of something else.
-func pinShells(t *testing.T, m *Model) {
-	t.Helper()
-	m.shellsPinned = true
-	m.rebuildRows()
-}
-
-func nestShells(t *testing.T, m *Model) {
-	t.Helper()
-	m.shellsPinned = false
-	m.rebuildRows()
 }
 
 func groupWithShell(t *testing.T, m *Model, group string) {
@@ -83,43 +67,6 @@ func TestTerminalsBlockPinsShells(t *testing.T) {
 	}
 	if !(agent < divider && divider < shellAt) {
 		t.Fatalf("want the agent above the divider and the shell below it, got %d/%d/%d:\n%s", agent, divider, shellAt, rail)
-	}
-}
-
-// A pinned row stands away from the tree, so it trades its tool name — one
-// every shell shares — for the session it was opened for. The group it
-// carries is shared by every worktree under it and would tell them apart
-// from nothing.
-func TestPinnedShellNamesItsSession(t *testing.T) {
-	m := buildModel(t)
-	groupWithShell(t, m, "backend")
-	createSession(t, m, "agent-one", t.TempDir(), "backend")
-	m.selectSessionRow(t, "agent-one")
-	shell := spawnTerminal(t, m)
-	pinShells(t, m)
-
-	rail := m.rail()
-	row := strings.Split(rail, "\n")[railRow(rail, shell.Name)]
-	if !strings.Contains(row, "agent-one") {
-		t.Fatalf("a pinned row should name the session it was opened for:\n%s", row)
-	}
-	if strings.Contains(row, "· "+shell.Tool+" ·") {
-		t.Fatalf("the tool name is redundant under the heading:\n%s", row)
-	}
-}
-
-// Without a session to name, the pinned row falls back to the directory it
-// was opened in, which is still narrower than the group.
-func TestPinnedShellWithoutASessionNamesItsDirectory(t *testing.T) {
-	m := buildModel(t)
-	groupWithShell(t, m, "backend")
-	shell := spawnTerminal(t, m)
-	pinShells(t, m)
-
-	rail := m.rail()
-	row := strings.Split(rail, "\n")[railRow(rail, shell.Name)]
-	if !strings.Contains(row, filepath.Base(shell.Cwd)) {
-		t.Fatalf("want the directory %q on the row:\n%s", filepath.Base(shell.Cwd), row)
 	}
 }
 
@@ -189,19 +136,6 @@ func TestInlinePlacementPutsShellsInTheTree(t *testing.T) {
 	}
 }
 
-// rowFor is the tree row a session was laid on, so a test can assert where
-// it sits rather than only that it is somewhere.
-func rowFor(t *testing.T, m *Model, id string) treeRow {
-	t.Helper()
-	for _, entry := range m.rows {
-		if !entry.isGroup && entry.sess.ID == id {
-			return entry
-		}
-	}
-	t.Fatalf("no row for session %s", id)
-	return treeRow{}
-}
-
 // A terminal opened on a session hangs off it, and takes its name, so the
 // worktree it belongs to is the row above rather than something to work out.
 func TestShellNestsUnderTheSessionItWasOpenedOn(t *testing.T) {
@@ -228,75 +162,6 @@ func TestShellNestsUnderTheSessionItWasOpenedOn(t *testing.T) {
 	shellAt := railRow(rail, shell.Name)
 	if shellAt < 1 || !strings.Contains(lines[shellAt-1], "agent-one") {
 		t.Fatalf("want the shell painted directly under its session:\n%s", rail)
-	}
-}
-
-// A terminal opened while the cursor is already on one joins it as a
-// sibling: a shell is not something to hang another shell off.
-func TestSecondShellJoinsTheFirstRatherThanNesting(t *testing.T) {
-	m := buildModel(t)
-	groupWithShell(t, m, "backend")
-	createSession(t, m, "agent-one", t.TempDir(), "backend")
-	m.selectSessionRow(t, "agent-one")
-	first := spawnTerminal(t, m)
-	second := spawnTerminal(t, m)
-	nestShells(t, m)
-
-	if m.shellParents[second.ID] != m.shellParents[first.ID] {
-		t.Fatalf("second shell hangs off %q, want the first's parent %q",
-			m.shellParents[second.ID], m.shellParents[first.ID])
-	}
-	if rowFor(t, m, second.ID).depth != rowFor(t, m, first.ID).depth {
-		t.Fatal("siblings sit at the same depth")
-	}
-	if first.Name == second.Name {
-		t.Fatalf("both shells are called %q; the name is how a row is told from its sibling", first.Name)
-	}
-}
-
-// A shell opened before the link was stored still finds its session, by the
-// directory both were launched in — for a worktree, the one agent there.
-func TestShellWithoutALinkNestsByDirectory(t *testing.T) {
-	m := buildModel(t)
-	dir := t.TempDir()
-	groupWithShell(t, m, "backend")
-	createSession(t, m, "agent-one", dir, "backend")
-	m.selectSessionRow(t, "agent-one")
-	shell := spawnTerminal(t, m)
-
-	for i := range m.sessions {
-		if m.sessions[i].ID == shell.ID {
-			m.sessions[i].ParentID = ""
-			m.sessions[i].Cwd = dir
-		}
-	}
-	nestShells(t, m)
-
-	agent := rowFor(t, m, m.shellParents[shell.ID])
-	if agent.sess.Name != "agent-one" {
-		t.Fatalf("shell fell back to %q, want the agent sharing its directory", agent.sess.Name)
-	}
-}
-
-// Nested, the session the shell hangs off is the row above it, so the row
-// says nothing a reader can already see. Only a shell with no session to
-// hang off spends the column, on the directory it was launched in.
-func TestNestedShellLeavesTheColumnToItsSession(t *testing.T) {
-	m := buildModel(t)
-	groupWithShell(t, m, "backend")
-	createSession(t, m, "agent-one", t.TempDir(), "backend")
-	m.selectSessionRow(t, "agent-one")
-	nested := spawnTerminal(t, m)
-
-	m.selectGroupRow(t, "backend")
-	loose := spawnTerminal(t, m)
-	nestShells(t, m)
-
-	if label := m.shellOriginLabel(nested); label != "" {
-		t.Fatalf("label = %q, want nothing where the session is the row above", label)
-	}
-	if label := m.shellOriginLabel(loose); label != filepath.Base(loose.Cwd) {
-		t.Fatalf("label = %q, want the directory %q", label, filepath.Base(loose.Cwd))
 	}
 }
 
