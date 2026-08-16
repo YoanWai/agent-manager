@@ -1441,6 +1441,17 @@ func TestDeleteAgentIncludesChildren(t *testing.T) {
 	if !ids[shell.ID] {
 		t.Fatal("delete confirm omitted the child")
 	}
+	agent := m.sessionRows()[0]
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.applyCmd(t, cmd)
+	for _, id := range []string{shell.ID, agent.ID} {
+		if _, err := m.store.Get(id); err == nil {
+			t.Fatalf("%s row survived the delete", id)
+		}
+		if m.tmux.Exists(id) {
+			t.Fatalf("%s pane survived the delete", id)
+		}
+	}
 }
 
 func TestReviveAgentIncludesDeadChildren(t *testing.T) {

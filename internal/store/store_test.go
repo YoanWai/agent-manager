@@ -1183,7 +1183,7 @@ func TestPlaceSessionNestsAndUnnests(t *testing.T) {
 	if err := st.CreateSession(sample("sh", "g1")); err != nil {
 		t.Fatalf("shell: %v", err)
 	}
-	if err := st.PlaceSession("sh", "g1", "agent"); err != nil {
+	if err := st.PlaceSession("sh", "g2", "agent"); err != nil {
 		t.Fatalf("nest: %v", err)
 	}
 	got, err := st.Get("sh")
