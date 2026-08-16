@@ -160,7 +160,7 @@ In `init` migrations, append:
 		`ALTER TABLE sessions ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`,
 ```
 
-`CreateSession` INSERT: add `parent_id` to the column list and values. Change the `sort_order` subquery to:
+`CreateSession` runs inside a transaction: it calls `validParent` for a non-empty `sess.ParentID`, takes the parent's group as its own, then inserts. Add `parent_id` to the column list and values, and change the `sort_order` subquery to:
 
 ```sql
 (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?)
@@ -330,22 +330,48 @@ Expected: FAIL, `PlaceSession undefined` and/or swap of agent with child succeed
 - [ ] **Step 3: Implement**
 
 ```go
+// validParent reads the parent through the caller's transaction, so the row
+// it approves cannot be deleted or nested before the write lands.
+func validParent(tx *sql.Tx, id, parentID string) (string, error) {
+	if parentID == id {
+		return "", fmt.Errorf("session %s cannot be its own parent", id)
+	}
+	var group, grandparent string
+	err := tx.QueryRow(`SELECT group_name, parent_id FROM sessions WHERE id = ?`, parentID).Scan(&group, &grandparent)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("parent %s: %w", parentID, err)
+	}
+	if err != nil {
+		return "", err
+	}
+	if grandparent != "" {
+		return "", fmt.Errorf("parent %s already has a parent", parentID)
+	}
+	return group, nil
+}
+
 func (s *Store) PlaceSession(id, group, parentID string) error {
 	parentID = strings.TrimSpace(parentID)
-	if parentID != "" {
-		if parentID == id {
-			return fmt.Errorf("session %s cannot be its own parent", id)
-		}
-		parent, err := s.Get(parentID)
-		if err != nil {
-			return fmt.Errorf("parent %s: %w", parentID, err)
-		}
-		if parent.ParentID != "" {
-			return fmt.Errorf("parent %s already has a parent", parentID)
-		}
-		group = parent.Group
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
 	}
-	res, err := s.db.Exec(
+	defer tx.Rollback()
+	if parentID != "" {
+		parentGroup, err := validParent(tx, id, parentID)
+		if err != nil {
+			return err
+		}
+		group = parentGroup
+		var kids int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE parent_id = ?`, id).Scan(&kids); err != nil {
+			return err
+		}
+		if kids > 0 {
+			return fmt.Errorf("session %s has terminals of its own; move them out first", id)
+		}
+	}
+	res, err := tx.Exec(
 		`UPDATE sessions SET group_name = ?, parent_id = ?,
 		 sort_order = (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?)
 		 WHERE id = ?`,
@@ -357,11 +383,19 @@ func (s *Store) PlaceSession(id, group, parentID string) error {
 		return err
 	}
 	if parentID == "" {
-		if _, err := s.db.Exec(`UPDATE sessions SET group_name = ? WHERE parent_id = ?`, group, id); err != nil {
+		if _, err := tx.Exec(`UPDATE sessions SET group_name = ? WHERE parent_id = ?`, group, id); err != nil {
 			return err
 		}
 	}
-	return s.ensureGroup(group)
+	if group != "" {
+		if _, err := tx.Exec(
+			`INSERT INTO groups (name, sort_order)
+			 VALUES (?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+			 ON CONFLICT(name) DO NOTHING`, group); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) MoveSession(id, group string) error {

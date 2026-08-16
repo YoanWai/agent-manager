@@ -26,11 +26,12 @@ A terminal can hang under the agent it belongs to, so a related shell sits with 
 
 `sessions` gains `parent_id TEXT NOT NULL DEFAULT ''`.
 
-Store graph rules, enforced in `PlaceSession`:
+Store graph rules, enforced in `CreateSession` and `PlaceSession`, inside the transaction that writes the row:
 
 - `parent_id` empty is valid.
 - A non-empty parent must exist, must not be the row itself, and must itself have an empty `parent_id`.
 - The child's `group_name` is set to the parent's `group_name`.
+- `PlaceSession` refuses a non-empty parent for a session that already has children of its own.
 
 Shell-versus-agent is a config fact, not a store column. `PlaceSession` accepts any parent that passes the graph rules. UI and `sessioncmd` refuse a shell as parent. Renaming an agent (`r`, tab through tools) that has children refuses a shell tool: move the terminals first.
 
@@ -38,7 +39,7 @@ Shell-versus-agent is a config fact, not a store column. `PlaceSession` accepts 
 
 `Children(parentID)` returns the rows whose `parent_id` is that id, including archived, ordered by `sort_order, created_at`.
 
-`CreateSession` writes `parent_id` and assigns `sort_order` in that sibling set.
+`CreateSession` validates the same rules, inherits the parent's group, writes `parent_id`, and assigns `sort_order` in that sibling set.
 
 `Delete`, `SetArchived`, and `UpdateStatus` stay one-id. Callers that mean "agent plus terminals" pass the set they already built for confirm. An orphan `parent_id` (parent row gone) paints as un-nested.
 
