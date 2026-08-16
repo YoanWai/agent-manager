@@ -659,6 +659,45 @@ func (s *Store) Delete(id string) error {
 	return requireRow(res, id)
 }
 
+// DeleteChild removes a session only while it still hangs under parentID.
+// kill runs inside the same write transaction, which holds the database's
+// writer lock, so a placement cannot slip between the ownership check and
+// the delete, and a failed kill rolls the row back into place.
+func (s *Store) DeleteChild(id, parentID string, kill func() error) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE sessions SET parent_id = ? WHERE id = ? AND parent_id = ?`, parentID, id, parentID)
+	if err != nil {
+		return err
+	}
+	held, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if held == 0 {
+		return fmt.Errorf("session %s is no longer nested under %s", id, parentID)
+	}
+	if err := kill(); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM review_targets WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM review_bases WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // SessionsInSubtree returns every session (archived included) whose group
 // is the given path or any descendant of it.
 func (s *Store) SessionsInSubtree(path string) ([]Session, error) {

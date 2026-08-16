@@ -231,10 +231,9 @@ func (t *Terminals) Close(sessionID, terminalID string) error {
 	if sess.ParentID != caller.ID {
 		return fmt.Errorf("terminal %s is not nested under this session; only the session it hangs under closes it", sess.ID)
 	}
-	if err := runtime.driver.Kill(sess.ID); err != nil {
-		return err
-	}
-	return runtime.store.Delete(sess.ID)
+	return runtime.store.DeleteChild(sess.ID, caller.ID, func() error {
+		return runtime.driver.Kill(sess.ID)
+	})
 }
 
 func (r *terminalRuntime) createTarget(caller store.Session, opts CreateTerminalOptions) (string, string, error) {
