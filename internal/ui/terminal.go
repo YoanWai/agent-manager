@@ -143,13 +143,19 @@ func (m *Model) unusedName(name string) string {
 // shellParentIndex maps each shell in sessions to the session it hangs off.
 // The link a shell recorded when it was opened wins; a shell whose link is
 // missing or points somewhere this view does not hold falls back to the
-// oldest agent launched in the same directory, which for a worktree is the
-// one agent living there. Both are resolved against the same filtered set
+// oldest agent launched in the same directory and group, which for a
+// worktree is the one agent living there. Both are resolved against the set
 // the tree is built from, so a shell never points at a row the view is
 // holding back, and never out of the group it carries.
 func (m *Model) shellParentIndex(sessions []store.Session) map[string]string {
+	// Keyed by group as well as directory: a shell never nests outside the
+	// group it carries, so an older agent in another group pointed at the
+	// same checkout is not a candidate at all. Holding one agent per
+	// directory would let that agent take the slot and lose the shell a
+	// parent it did have.
+	type dirKey struct{ group, cwd string }
 	agents := map[string]store.Session{}
-	oldestInDir := map[string]store.Session{}
+	oldestInDir := map[dirKey]store.Session{}
 	for _, sess := range sessions {
 		if m.isShell(sess.Tool) {
 			continue
@@ -158,8 +164,9 @@ func (m *Model) shellParentIndex(sessions []store.Session) map[string]string {
 		if sess.Cwd == "" {
 			continue
 		}
-		if held, seen := oldestInDir[sess.Cwd]; !seen || sess.CreatedAt.Before(held.CreatedAt) {
-			oldestInDir[sess.Cwd] = sess
+		key := dirKey{group: sess.Group, cwd: sess.Cwd}
+		if held, seen := oldestInDir[key]; !seen || sess.CreatedAt.Before(held.CreatedAt) {
+			oldestInDir[key] = sess
 		}
 	}
 	parents := map[string]string{}
@@ -169,7 +176,7 @@ func (m *Model) shellParentIndex(sessions []store.Session) map[string]string {
 		}
 		parent, found := agents[sess.ParentID]
 		if !found && sess.Cwd != "" {
-			parent, found = oldestInDir[sess.Cwd]
+			parent, found = oldestInDir[dirKey{group: sess.Group, cwd: sess.Cwd}]
 		}
 		if found && parent.Group == sess.Group {
 			parents[sess.ID] = parent.ID

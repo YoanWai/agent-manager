@@ -334,8 +334,14 @@ func TestSecondShellJoinsTheFirstRatherThanNesting(t *testing.T) {
 	if rowFor(t, m, second.ID).depth != rowFor(t, m, first.ID).depth {
 		t.Fatal("siblings sit at the same depth")
 	}
-	if first.Name == second.Name {
-		t.Fatalf("both shells are called %q; the name is how a row is told from its sibling", first.Name)
+	// Spelled out rather than merely "different": the second shell is meant
+	// to read as the second one, which any unique suffix would satisfy
+	// without saying.
+	if first.Name != "terminal-agent-one" {
+		t.Fatalf("first shell name = %q, want terminal-agent-one", first.Name)
+	}
+	if second.Name != "terminal-agent-one-2" {
+		t.Fatalf("second shell name = %q, want terminal-agent-one-2", second.Name)
 	}
 }
 
@@ -415,5 +421,47 @@ func TestShellsOpenedForReachesWhatTheRailDoesNot(t *testing.T) {
 	}
 	if shells[0].ID == theirs.ID {
 		t.Fatal("another session's terminal must not be swept in")
+	}
+}
+
+// Two groups can point at one checkout — a working group and a review group
+// over the same directory. The directory fallback picks the oldest agent in
+// it, and a shell never nests outside the group it carries, so the older
+// agent in the other group must not take the slot and leave the shell
+// looking parentless when its own group had one.
+func TestDirectoryFallbackIgnoresAnOlderAgentInAnotherGroup(t *testing.T) {
+	m := buildModel(t)
+	shared := t.TempDir()
+	if err := m.store.CreateGroup("review", shared); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := m.store.CreateGroup("work", shared); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "reviewer", shared, "review")
+	createSession(t, m, "worker", shared, "work")
+	m.selectSessionRow(t, "worker")
+	shell := spawnTerminal(t, m)
+
+	// The reviewer is the older of the two, so a fallback keyed by directory
+	// alone would hand it this shell and then reject it for its group.
+	for i := range m.sessions {
+		switch m.sessions[i].Name {
+		case "reviewer":
+			m.sessions[i].CreatedAt = time.Now().Add(-time.Hour)
+		case shell.Name:
+			m.sessions[i].ParentID = ""
+			m.sessions[i].Cwd = shared
+		}
+	}
+	nestShells(t, m)
+
+	parent, ok := m.sessionByID(m.shellParents[shell.ID])
+	if !ok {
+		t.Fatal("the shell should still find the agent in its own group")
+	}
+	if parent.Name != "worker" {
+		t.Fatalf("shell nested under %q, want worker", parent.Name)
 	}
 }
