@@ -153,7 +153,7 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `review_base` | Declare or clear the review base ref |
 | `review_mode` | Select the diff scope review opens with |
 | `list_terminals` | List active managed terminals and their current directories |
-| `create_terminal` | Open a terminal nested under the calling agent unless `nest` is false |
+| `create_terminal` | Open a terminal under the calling session, or beside it when that session is itself a terminal, unless `nest` is false |
 | `send_terminal` | Submit a command or send exact keys to a running terminal |
 | `read_terminal` | Read the plain-text content currently visible in a terminal |
 | `close_terminal` | Close a finished terminal nested under the caller: kill the pane and delete the row |

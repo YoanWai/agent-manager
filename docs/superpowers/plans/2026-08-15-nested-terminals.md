@@ -1253,6 +1253,33 @@ func TestCreateNestsUnderCallerByDefault(t *testing.T) {
 	}
 }
 
+func TestCreateFromAShellJoinsItsSiblings(t *testing.T) {
+	h := newTerminalHarness(t)
+	first, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	second, err := h.terminals.Create(first.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create from shell: %v", err)
+	}
+	if second.ParentID != h.caller.ID || second.Group != first.Group || !sameTerminalPath(second.Directory, first.Directory) {
+		t.Fatalf("second = %+v, first = %+v", second, first)
+	}
+	nest := false
+	loose, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Nest: &nest})
+	if err != nil {
+		t.Fatalf("Create un-nested: %v", err)
+	}
+	fromLoose, err := h.terminals.Create(loose.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create from un-nested shell: %v", err)
+	}
+	if fromLoose.ParentID != "" || fromLoose.Group != loose.Group {
+		t.Fatalf("from un-nested shell = %+v, loose = %+v", fromLoose, loose)
+	}
+}
+
 func TestCreateNestFalseIsUnnested(t *testing.T) {
 	h := newTerminalHarness(t)
 	nest := false
