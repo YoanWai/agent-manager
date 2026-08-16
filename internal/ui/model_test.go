@@ -370,6 +370,46 @@ func TestStatusFilterHoldsNestedIdleShell(t *testing.T) {
 	}
 }
 
+func TestUnlistedParentsLeaveChildrenInStoreOrder(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "first", dir, "backend")
+	createSession(t, m, "second", dir, "backend")
+	rows := m.sessionRows()
+	for i, parent := range rows {
+		child := store.Session{
+			ID: "sh" + strconv.Itoa(i), Name: "term-" + strconv.Itoa(i), Tool: "terminal",
+			Cwd: dir, Group: "backend", ParentID: parent.ID, Status: status.Idle,
+		}
+		if err := m.store.CreateSession(child); err != nil {
+			t.Fatalf("child %d: %v", i, err)
+		}
+	}
+	for _, parent := range rows {
+		if err := m.store.SetArchived(parent.ID, true); err != nil {
+			t.Fatalf("archive %s: %v", parent.ID, err)
+		}
+	}
+	m.applyCmd(t, m.refreshCmd())
+	var names []string
+	for _, row := range m.rows {
+		if !row.isGroup {
+			names = append(names, row.sess.Name)
+			if row.depth != 1 {
+				t.Fatalf("%s painted nested: depth %d", row.sess.Name, row.depth)
+			}
+		}
+	}
+	want := []string{"term-0", "term-1"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("order = %v, want %v", names, want)
+	}
+}
+
 func TestSearchMatchingArchivedChildDoesNotHoistLiveParent(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

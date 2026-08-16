@@ -1555,13 +1555,21 @@ func (m *Model) rebuildRows() {
 			walked[sess.ID] = true
 		}
 	}
-	for parentID, kids := range childrenByParent {
-		if walked[parentID] {
+	orphaned := map[string]bool{}
+	// A child whose parent never made it into a group paints un-nested, in
+	// the store's order rather than the order the parent map happens to
+	// yield.
+	for _, sess := range listed {
+		if _, nested := childrenByParent[sess.ParentID]; !nested || walked[sess.ParentID] {
 			continue
 		}
-		for _, child := range kids {
-			sessionsByGroup[child.Group] = append(sessionsByGroup[child.Group], child)
+		if !matched[sess.ID] {
+			continue
 		}
+		sessionsByGroup[sess.Group] = append(sessionsByGroup[sess.Group], sess)
+		orphaned[sess.ParentID] = true
+	}
+	for parentID := range orphaned {
 		delete(childrenByParent, parentID)
 	}
 

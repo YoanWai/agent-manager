@@ -1355,6 +1355,32 @@ func TestArchiveAgentPersistsEveryChild(t *testing.T) {
 	}
 }
 
+func TestReviveRunningAgentRevivesDeadChild(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	shell := spawnTerminal(t, m)
+	if err := m.tmux.Kill(shell.ID); err != nil {
+		t.Fatalf("kill child: %v", err)
+	}
+	m.selectSessionRow(t, "coder")
+	_, cmd := m.reviveSelected()
+	m.applyCmd(t, cmd)
+	if m.mode != modeConfirmDelete {
+		t.Fatalf("mode = %v, want the revive confirm", m.mode)
+	}
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.applyCmd(t, cmd)
+	if !m.tmux.Exists(shell.ID) {
+		t.Fatal("child still dead")
+	}
+}
+
 func TestRestoreAgentUnarchivesEveryChild(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()

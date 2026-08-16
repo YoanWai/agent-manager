@@ -264,14 +264,19 @@ func (s *Store) CreateSession(sess Session) error {
 		return err
 	}
 	sess.ParentID = strings.TrimSpace(sess.ParentID)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	if sess.ParentID != "" {
-		parent, err := s.validParent(sess.ID, sess.ParentID)
+		parentGroup, err := validParent(tx, sess.ID, sess.ParentID)
 		if err != nil {
 			return err
 		}
-		sess.Group = parent.Group
+		sess.Group = parentGroup
 	}
-	_, err = s.db.Exec(
+	_, err = tx.Exec(
 		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, sort_order)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?))`,
@@ -282,7 +287,15 @@ func (s *Store) CreateSession(sess Session) error {
 	if err != nil {
 		return err
 	}
-	return s.ensureGroup(sess.Group)
+	if sess.Group != "" {
+		if _, err := tx.Exec(
+			`INSERT INTO groups (name, sort_order)
+			 VALUES (?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+			 ON CONFLICT(name) DO NOTHING`, sess.Group); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // ensureGroup registers a group by name if it does not exist, leaving any
@@ -718,34 +731,40 @@ func (s *Store) MoveGroup(path, newParent string) error {
 	return s.RenameGroup(path, newPath)
 }
 
-func (s *Store) validParent(id, parentID string) (Session, error) {
+// validParent reads the parent through the caller's transaction, so the row
+// it approves cannot be deleted or nested before the write lands.
+func validParent(tx *sql.Tx, id, parentID string) (string, error) {
 	if parentID == id {
-		return Session{}, fmt.Errorf("session %s cannot be its own parent", id)
+		return "", fmt.Errorf("session %s cannot be its own parent", id)
 	}
-	parent, err := s.Get(parentID)
+	var group, grandparent string
+	err := tx.QueryRow(`SELECT group_name, parent_id FROM sessions WHERE id = ?`, parentID).Scan(&group, &grandparent)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("parent %s: %w", parentID, err)
+	}
 	if err != nil {
-		return Session{}, fmt.Errorf("parent %s: %w", parentID, err)
+		return "", err
 	}
-	if parent.ParentID != "" {
-		return Session{}, fmt.Errorf("parent %s already has a parent", parentID)
+	if grandparent != "" {
+		return "", fmt.Errorf("parent %s already has a parent", parentID)
 	}
-	return parent, nil
+	return group, nil
 }
 
 func (s *Store) PlaceSession(id, group, parentID string) error {
 	parentID = strings.TrimSpace(parentID)
-	if parentID != "" {
-		parent, err := s.validParent(id, parentID)
-		if err != nil {
-			return err
-		}
-		group = parent.Group
-	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if parentID != "" {
+		parentGroup, err := validParent(tx, id, parentID)
+		if err != nil {
+			return err
+		}
+		group = parentGroup
+	}
 	if parentID != "" {
 		var kids int
 		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE parent_id = ?`, id).Scan(&kids); err != nil {

@@ -124,7 +124,14 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
-	if len(set) > 1 && !m.tmux.Exists(entry.sess.ID) {
+	dead := false
+	for _, sess := range set {
+		if !m.tmux.Exists(sess.ID) {
+			dead = true
+			break
+		}
+	}
+	if len(set) > 1 && dead {
 		m.confirm = confirmTarget{
 			action:   actionRevive,
 			sessions: set,

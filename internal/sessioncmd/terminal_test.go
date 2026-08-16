@@ -252,6 +252,66 @@ func TestCreateNestsUnderCallerByDefault(t *testing.T) {
 	}
 }
 
+func TestListAndReadCarryParentMetadata(t *testing.T) {
+	h := newTerminalHarness(t)
+	created, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	listed, err := h.terminals.List(h.caller.ID)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	found := false
+	for _, term := range listed {
+		if term.ID != created.ID {
+			continue
+		}
+		found = true
+		if term.ParentID != h.caller.ID || term.ParentName != h.caller.Name {
+			t.Fatalf("listed = %+v", term)
+		}
+	}
+	if !found {
+		t.Fatalf("terminal %s missing from %+v", created.ID, listed)
+	}
+	screen, err := h.terminals.Read(h.caller.ID, created.ID)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if screen.Terminal.ParentID != h.caller.ID || screen.Terminal.ParentName != h.caller.Name {
+		t.Fatalf("screen = %+v", screen.Terminal)
+	}
+}
+
+func TestListAndReadReportAMissingParent(t *testing.T) {
+	h := newTerminalHarness(t)
+	created, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := h.store.Delete(h.caller.ID); err != nil {
+		t.Fatalf("delete caller: %v", err)
+	}
+	other := store.Session{
+		ID:     uuid.NewString()[:8],
+		Name:   "reader",
+		Tool:   "claude",
+		Cwd:    h.caller.Cwd,
+		Group:  h.caller.Group,
+		Status: status.Idle,
+	}
+	if err := h.store.CreateSession(other); err != nil {
+		t.Fatalf("reader: %v", err)
+	}
+	if _, err := h.terminals.List(other.ID); err == nil || !strings.Contains(err.Error(), "parent") {
+		t.Fatalf("List error = %v", err)
+	}
+	if _, err := h.terminals.Read(other.ID, created.ID); err == nil || !strings.Contains(err.Error(), "parent") {
+		t.Fatalf("Read error = %v", err)
+	}
+}
+
 func TestCreateNestFalseIsUnnested(t *testing.T) {
 	h := newTerminalHarness(t)
 	nest := false

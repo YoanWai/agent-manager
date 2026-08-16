@@ -186,6 +186,25 @@ func TestOpenTerminalOnNestedShellSharesParent(t *testing.T) {
 	}
 }
 
+func TestTerminalKeyOnUnnestedShellStaysUnnested(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	loose := spawnTerminal(t, m)
+	if loose.ParentID != "" {
+		t.Fatalf("first shell nested: %+v", loose)
+	}
+	m.selectSessionRow(t, loose.Name)
+	second := spawnTerminal(t, m)
+	if second.ParentID != "" || second.Group != loose.Group {
+		t.Fatalf("second = %+v, first = %+v", second, loose)
+	}
+}
+
 // tmux keeps reporting a pane's path after the directory is removed under
 // it, so the row checks both the pane path and the recorded cwd rather than
 // handing back somewhere that is no longer there.
