@@ -74,6 +74,9 @@ type Model struct {
 	// are the Terminals block rather than part of the tree.
 	rows         []treeRow
 	pinnedShells int
+	// shellParents maps a shell to the session it hangs off, rebuilt with the
+	// rows so the nesting and the rows agree about what the view is showing.
+	shellParents map[string]string
 
 	groups         []string
 	groupPaths     map[string]string
@@ -885,6 +888,20 @@ func (m *Model) listedAgents() []store.Session {
 	return agents
 }
 
+// sessionByID finds a session in the current scope. An empty id, or one
+// belonging to a session the scope does not hold, answers false.
+func (m *Model) sessionByID(id string) (store.Session, bool) {
+	if id == "" {
+		return store.Session{}, false
+	}
+	for _, sess := range m.sessions {
+		if sess.ID == id {
+			return sess, true
+		}
+	}
+	return store.Session{}, false
+}
+
 func (m *Model) selected() (store.Session, bool) {
 	if m.cursor < 0 || m.cursor >= len(m.rows) || m.rows[m.cursor].isGroup {
 		return store.Session{}, false
@@ -1528,18 +1545,32 @@ func (m *Model) rebuildRows() {
 	query := strings.ToLower(strings.TrimSpace(m.search))
 	prunedView := query != "" || m.statusFilter.active()
 
-	// m.sessions arrives ordered by the store (group, sort_order), so
-	// per-group slices inherit the user's manual order.
-	sessionsByGroup := map[string][]store.Session{}
-	var shells []store.Session
+	kept := make([]store.Session, 0, len(m.sessions))
 	for _, sess := range m.listedSessions() {
 		if query != "" && !matchesSearch(sess, query) {
 			continue
 		}
+		kept = append(kept, sess)
+	}
+	m.shellParents = m.shellParentIndex(kept)
+
+	// m.sessions arrives ordered by the store (group, sort_order), so
+	// per-group slices inherit the user's manual order.
+	sessionsByGroup := map[string][]store.Session{}
+	shellsBySession := map[string][]store.Session{}
+	var shells []store.Session
+	for _, sess := range kept {
 		// Out of the group map as well as out of the tree, so a group whose
 		// only sessions are pinned reads as empty to the toggles that prune.
 		if m.pinnedShell(sess) {
 			shells = append(shells, sess)
+			continue
+		}
+		// A shell that knows which session it was opened for hangs off it, so
+		// the worktree a terminal belongs to is the row above it rather than
+		// something to work out from a name. One without stays in its group.
+		if parent := m.shellParents[sess.ID]; parent != "" {
+			shellsBySession[parent] = append(shellsBySession[parent], sess)
 			continue
 		}
 		sessionsByGroup[sess.Group] = append(sessionsByGroup[sess.Group], sess)
@@ -1583,9 +1614,16 @@ func (m *Model) rebuildRows() {
 
 	// Root is a standing move and spawn target; its sessions stay flat.
 	rows := make([]treeRow, 0, len(m.sessions)+len(paths)+1)
+	// emit lays a session and, right under it, the shells opened for it.
+	emit := func(sess store.Session, depth int) {
+		rows = append(rows, treeRow{sess: sess, depth: depth})
+		for _, shell := range shellsBySession[sess.ID] {
+			rows = append(rows, treeRow{sess: shell, depth: depth + 1})
+		}
+	}
 	rows = append(rows, treeRow{isGroup: true, group: rootGroup})
 	for _, sess := range sessionsByGroup[""] {
-		rows = append(rows, treeRow{sess: sess})
+		emit(sess, 0)
 	}
 	var walk func(path string, depth int)
 	walk = func(path string, depth int) {
@@ -1594,7 +1632,7 @@ func (m *Model) rebuildRows() {
 			return
 		}
 		for _, sess := range sessionsByGroup[path] {
-			rows = append(rows, treeRow{sess: sess, depth: depth + 1})
+			emit(sess, depth+1)
 		}
 		for _, child := range children[path] {
 			walk(child, depth+1)

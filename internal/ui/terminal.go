@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -64,13 +66,22 @@ func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
 		m.errBar.text = "no directory to open a terminal in: " + dir
 		return m, nil
 	}
+	// Named and linked for the session it was opened on, the way a run script
+	// already is: a shell called after four random hex digits says nothing
+	// about which of a group's worktrees it landed in.
+	name := toolName + "-" + newID()[:4]
+	parent, fromSession := m.shellOrigin()
+	if fromSession {
+		name = m.unusedName(toolName + "-" + parent.Name)
+	}
 	sess := store.Session{
-		ID:     newID(),
-		Name:   toolName + "-" + newID()[:4],
-		Tool:   toolName,
-		Cwd:    dir,
-		Group:  m.contextGroup(),
-		Status: status.Starting,
+		ID:       newID(),
+		Name:     name,
+		Tool:     toolName,
+		Cwd:      dir,
+		Group:    m.contextGroup(),
+		Status:   status.Starting,
+		ParentID: parent.ID,
 	}
 	if err := m.launchNewSession(sess, tool, tool.Command, launchOptions{}); err != nil {
 		m.errBar.text = err.Error()
@@ -82,6 +93,103 @@ func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
 	m.errBar.text = ""
 	m.focusSession(sess.ID)
 	return m, m.refreshCmd()
+}
+
+// shellOrigin is the session a shell opened here belongs to: the agent under
+// the cursor, or that agent again when the cursor is already on one of its
+// shells, so a second terminal joins the first rather than hanging off it.
+// A group row has no session to hang off and answers false.
+func (m *Model) shellOrigin() (store.Session, bool) {
+	entry, ok := m.selectedRow()
+	if !ok || entry.isGroup {
+		return store.Session{}, false
+	}
+	if m.isShell(entry.sess.Tool) {
+		return m.sessionByID(m.shellParents[entry.sess.ID])
+	}
+	return entry.sess, true
+}
+
+// unusedName keeps a name generated from a session's own unique among the
+// sessions there are: two shells opened on the same agent would otherwise
+// land on one name, and the name is how a row is told from its sibling. It
+// counts rather than reaching for an id, so the second shell on a session
+// reads as the second one.
+func (m *Model) unusedName(name string) string {
+	taken := make(map[string]bool, len(m.sessions))
+	for _, sess := range m.sessions {
+		taken[sess.Name] = true
+	}
+	if !taken[name] {
+		return name
+	}
+	// One candidate per session already named plus this one is always more
+	// than the names in the way, so the search cannot run past the end.
+	for n := 2; n <= len(taken)+2; n++ {
+		candidate := fmt.Sprintf("%s-%d", name, n)
+		if !taken[candidate] {
+			return candidate
+		}
+	}
+	return name
+}
+
+// shellParentIndex maps each shell in sessions to the session it hangs off.
+// The link a shell recorded when it was opened wins; a shell whose link is
+// missing or points somewhere this view does not hold falls back to the
+// oldest agent launched in the same directory, which for a worktree is the
+// one agent living there. Both are resolved against the same filtered set
+// the tree is built from, so a shell never points at a row the view is
+// holding back, and never out of the group it carries.
+func (m *Model) shellParentIndex(sessions []store.Session) map[string]string {
+	agents := map[string]store.Session{}
+	oldestInDir := map[string]store.Session{}
+	for _, sess := range sessions {
+		if m.isShell(sess.Tool) {
+			continue
+		}
+		agents[sess.ID] = sess
+		if sess.Cwd == "" {
+			continue
+		}
+		if held, seen := oldestInDir[sess.Cwd]; !seen || sess.CreatedAt.Before(held.CreatedAt) {
+			oldestInDir[sess.Cwd] = sess
+		}
+	}
+	parents := map[string]string{}
+	for _, sess := range sessions {
+		if !m.isShell(sess.Tool) {
+			continue
+		}
+		parent, found := agents[sess.ParentID]
+		if !found && sess.Cwd != "" {
+			parent, found = oldestInDir[sess.Cwd]
+		}
+		if found && parent.Group == sess.Group {
+			parents[sess.ID] = parent.ID
+		}
+	}
+	return parents
+}
+
+// shellOriginLabel is what a shell row says about where it belongs, in the
+// column an agent gives to its tool. Nested, the session it hangs off is the
+// row above and the column stays empty. Pinned, the block stands away from
+// the tree, so the row names that session itself; the group it carries is
+// shared by every worktree under it and tells them apart from nothing. With
+// no session either way it falls back to the directory it was launched in,
+// which is still narrower than the group.
+func (m *Model) shellOriginLabel(sess store.Session) string {
+	if parent, linked := m.sessionByID(m.shellParents[sess.ID]); linked {
+		if !m.pinnedShell(sess) {
+			return ""
+		}
+		return parent.Name
+	}
+	if sess.Cwd == "" {
+		return displayGroup(sess.Group)
+	}
+	return filepath.Base(sess.Cwd)
 }
 
 // rowDir is the directory the cursor points at: a live session's pane

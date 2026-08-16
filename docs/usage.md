@@ -64,13 +64,15 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 
 ## Terminal tabs
 
-`T` opens a shell tab in the group under the cursor: a session like any other — same list, same row keys, same `enter`, `x`, `v` and `R` — with your shell in the pane instead of an agent. It lands in the selected session's directory, wherever that session has moved to, or in the group's default path when a group row is selected, so the shell that runs the tests sits next to the agent that wrote them. Its status rests at idle throughout, a build included: turn tracking belongs to agents, and a shell has no turns.
+`T` opens a shell tab in the group under the cursor: a session like any other — same list, same row keys, same `enter`, `x`, `v` and `R` — with your shell in the pane instead of an agent. It lands in the selected session's directory, wherever that session has moved to, or in the group's default path when a group row is selected, so the shell that runs the tests sits next to the agent that wrote them. Opened on a session it takes that session's name — `terminal-review-done` rather than `terminal-0ab5` — and records which session it was opened for, so a shell stays attributable to its worktree even after you `cd` out of it. Its status rests at idle throughout, a build included: turn tracking belongs to agents, and a shell has no turns.
 
 The shell is the `[tools.terminal]` block in [config.toml](configuration.md). It ships with no command, which leaves the pane on `$SHELL`; set one to open a different shell. What marks it as a shell is `shell = true`, not its name, so a `[tools.terminal]` block you wrote yourself stays the agent CLI you meant it to be.
 
 ### Where the shells sit
 
-Shells gather under a **Terminals** rule pinned to the foot of the list, holding every shell from every group, each row naming the group it belongs to. The tree scrolls above it; the block keeps at most half the list and scrolls inside itself once you have more shells than that. Settings (`s`) has a `terminal rows` row that switches it from `pinned` to `inline`, which puts every shell back among the agents in its own group, marked with `❯` where an agent carries its status dot.
+Shells gather under a **Terminals** rule pinned to the foot of the list, holding every shell from every group. The tree scrolls above it; the block keeps at most half the list and scrolls inside itself once you have more shells than that. A pinned row stands away from the tree, so it names the session it was opened for — the group would be shared by every worktree under it and tell them apart from nothing. A shell with no session to name falls back to the directory it was launched in.
+
+Settings (`s`) has a `terminal rows` row that switches this from `pinned` to `nested`, which hangs each shell off the session it was opened for, one level under it in the tree and marked with `❯` where an agent carries its status dot. The worktree a terminal belongs to is then the row above it rather than something to work out from a name, and the row leaves its own column empty because that row already says it. A second `T` on a shell joins it as a sibling instead of nesting deeper. A shell opened on a group row, which has no session to hang off, sits in that group beside the agents; so does one whose session has been archived or killed.
 
 A group's dots and counts describe its agents either way, so the shell you left running a build never shows up as work in progress.
 

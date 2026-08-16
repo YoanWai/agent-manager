@@ -44,8 +44,12 @@ type Session struct {
 	// WorktreeRepo and WorktreeBranch are set for sessions running in a
 	// worktree Agent Manager created. Forks share these values so the last
 	// session to leave can clean up the worktree and its am/ branch.
-	WorktreeRepo        string
-	WorktreeBranch      string
+	WorktreeRepo   string
+	WorktreeBranch string
+	// ParentID is the session a terminal was opened from, so a shell stays
+	// attributable to the worktree it was spawned for even after it is cd'd
+	// somewhere else. Empty for agents and for shells opened on a group.
+	ParentID            string
 	PendingInputs       []string
 	PendingInputClaimed bool
 }
@@ -144,6 +148,7 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN retired_agent_session_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN pending_inputs TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE sessions ADD COLUMN pending_claimed INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -262,12 +267,12 @@ func (s *Store) CreateSession(sess Session) error {
 		return err
 	}
 	_, err = s.db.Exec(
-		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, parent_id, pending_inputs, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
 		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID,
-		sess.WorktreeRepo, sess.WorktreeBranch, pendingInputs, sess.Group,
+		sess.WorktreeRepo, sess.WorktreeBranch, sess.ParentID, pendingInputs, sess.Group,
 	)
 	if err != nil {
 		return err
@@ -323,7 +328,7 @@ func (s *Store) AddGroup(name, path, worktree string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, parent_id, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -343,7 +348,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		var pendingInputs string
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
-			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
+			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch, &sess.ParentID,
 			&agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed); err != nil {
 			return nil, err
 		}
@@ -367,11 +372,11 @@ func (s *Store) Get(id string) (Session, error) {
 	var created, lastStatus, agentLaunched int64
 	var pendingInputs string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, parent_id, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
-		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed)
+		&sess.WorktreeRepo, &sess.WorktreeBranch, &sess.ParentID, &agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed)
 	if err != nil {
 		return Session{}, err
 	}

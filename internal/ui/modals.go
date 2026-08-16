@@ -293,7 +293,7 @@ func (m *Model) viewSettings() string {
 	if m.settings.themeAuto {
 		themeAuto = "on"
 	}
-	terminals := "inline"
+	terminals := "nested"
 	if m.settings.shellsPinned {
 		terminals = "pinned"
 	}

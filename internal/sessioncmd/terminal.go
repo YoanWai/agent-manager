@@ -175,6 +175,10 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		Cwd:    dir,
 		Group:  group,
 		Status: status.Starting,
+		// The caller is the session this terminal was opened for, which is
+		// what nests it under that agent in the list instead of leaving it
+		// among a group's shells with no way back to who asked for it.
+		ParentID: caller.ID,
 	}
 	if err := runtime.driver.Create(sess.ID, sess.Cwd, tool.Command, nil, 0, 0); err != nil {
 		return Terminal{}, err

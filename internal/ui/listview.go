@@ -551,16 +551,19 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	if selected {
 		metaStyle = mutedStyle
 	}
-	// A pinned shell already sits under a Terminals heading, so its tool
-	// name is dead weight where the group it left behind is not.
+	// A shell's tool name is dead weight — every shell runs the same one —
+	// where the session it was opened for is the fact that places it.
 	detail := sess.Tool
-	if m.pinnedShell(sess) {
-		detail = displayGroup(sess.Group)
+	if m.isShell(sess.Tool) {
+		detail = m.shellOriginLabel(sess)
 	}
 	// A session names its state in words as well as in its dot; a group,
 	// whose row rolls several states together, is left to its dots.
-	meta := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
-		metaStyle.Render(" · "+detail+" · "+relSince(lastActivity(sess)))
+	meta := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status))
+	if detail != "" {
+		meta += metaStyle.Render(" · " + detail)
+	}
+	meta += metaStyle.Render(" · " + relSince(lastActivity(sess)))
 
 	if m.comfortableRows {
 		return stackedRow(head, metaIndent(pad, trail)+meta, width, bg)

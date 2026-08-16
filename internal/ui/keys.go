@@ -461,7 +461,8 @@ const quickCloseSetting = "quick_prompt_close"
 const worktreeSetting = "worktree_default"
 
 // terminalPlacementSetting is where shells sit: "pinned" gathers them in
-// their own block, "inline" leaves them among the agents in their group.
+// their own block, "inline" nests each under the session it was opened for,
+// falling back to its group when there is no such session.
 const terminalPlacementSetting = "terminal_placement"
 
 const notificationsSetting = "notifications"
