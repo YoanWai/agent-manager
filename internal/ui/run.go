@@ -38,6 +38,13 @@ func (m *Model) runKey() (tea.Model, tea.Cmd) {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
+	// Nothing to run because the project has never been told how. Offering to
+	// write the file beats an error naming a path the reader then has to
+	// leave the manager to create: p is where they already are when they
+	// discover the feature.
+	if !settings.Found {
+		return m.openRunInit(dir)
+	}
 	if len(settings.Run) == 0 {
 		m.errBar.text = runSetupHint(settings)
 		return m, nil
@@ -52,15 +59,78 @@ func (m *Model) runKey() (tea.Model, tea.Cmd) {
 }
 
 // runSetupHint says what to write and where, naming the file rather than the
-// feature: a project with no run scripts is the common case on first press,
-// and the error is the only documentation the user is looking at.
+// feature: the error is the only documentation the reader is looking at.
 func runSetupHint(settings project.Settings) string {
-	where := filepath.Join(project.Dir, project.File)
-	if settings.Found {
-		where = filepath.Join(settings.Root, project.Dir, project.File)
-		return "no run scripts in " + where + `: add a [run.dev] block with a command`
+	return "no run scripts in " + project.SettingsPath(settings.Root) +
+		": add a [run.dev] block with a command"
+}
+
+// runInitState is the offer to give a project its first settings file: where
+// it would go, and whether the repository root could be found at all.
+type runInitState struct {
+	root string
+	path string
+}
+
+// openRunInit offers to scaffold settings for the repository the cursor sits
+// in. The file belongs at the repository root rather than the session's
+// directory, so a session started in a subdirectory still configures the
+// project rather than leaving a stray settings file down a level.
+func (m *Model) openRunInit(dir string) (tea.Model, tea.Cmd) {
+	root := dir
+	if m.gitDrv != nil {
+		if found, err := m.gitDrv.RepoRoot(dir); err == nil && found != "" {
+			root = found
+		}
 	}
-	return "no " + where + " in this repo: add one with a [run.dev] block to run a project command here"
+	m.runInit = runInitState{root: root, path: project.SettingsPath(root)}
+	m.mode = modeRunInit
+	m.errBar.text = ""
+	return m, nil
+}
+
+// createRunSettings writes the starter file and opens it, so the reader lands
+// in the thing they just agreed to fill in rather than being told where it
+// is. A machine with no editor still gets the file and is told the path.
+func (m *Model) createRunSettings() (tea.Model, tea.Cmd) {
+	path, err := project.Scaffold(m.runInit.root)
+	m.mode = modeList
+	if err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
+	m.reportDone("created " + path)
+	return m.openInEditor(path)
+}
+
+func (m *Model) handleRunInitKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q", "ctrl+c", "n":
+		m.mode = modeList
+		return m, nil
+	case "enter", "y":
+		return m.createRunSettings()
+	}
+	return m, nil
+}
+
+func (m *Model) viewRunInit() string {
+	var b strings.Builder
+	b.WriteString(mutedStyle.Render("This project has no run scripts or setup script yet."))
+	b.WriteString("\n\n")
+	// Repository name plus the relative path rather than the absolute one: a
+	// checkout under a long path truncates in the card, and the half that
+	// survives would be the half the reader already knows.
+	b.WriteString(valueStyle.Render(
+		filepath.Join(filepath.Base(m.runInit.root), project.Dir, project.File)))
+	b.WriteString("\n\n")
+	b.WriteString(subtleStyle.Render("A commented starter, so nothing changes until you fill it in:"))
+	b.WriteString("\n")
+	b.WriteString(subtleStyle.Render("  setup    bootstraps every new worktree before its agent starts"))
+	b.WriteString("\n")
+	b.WriteString(subtleStyle.Render("  [run.*]  commands p offers, each on its own $" + project.EnvPort))
+	hint := [][2]string{{"↵", "create and open it"}, {"esc", "cancel"}}
+	return m.card("▶ Project settings", b.String(), hint)
 }
 
 // startRun spawns the script as a terminal tab. It is a shell session like

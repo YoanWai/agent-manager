@@ -40,7 +40,8 @@ func onSessionIn(t *testing.T, m *Model, dir string) {
 	m.selectSessionRow(t, "agent")
 }
 
-func TestRunKeyWithoutSettingsExplainsWhereToPutThem(t *testing.T) {
+// A repository with no settings gets the offer to create them, not an error.
+func TestRunKeyWithoutSettingsOffersTheScaffold(t *testing.T) {
 	m := buildModel(t)
 	onSessionIn(t, m, t.TempDir())
 
@@ -50,14 +51,8 @@ func TestRunKeyWithoutSettingsExplainsWhereToPutThem(t *testing.T) {
 	if len(m.sessions) != before {
 		t.Fatal("p spawned something for a project with no settings")
 	}
-	if m.mode != modeList {
-		t.Fatalf("mode = %v, want the list", m.mode)
-	}
-	// The error is the only documentation on screen, so it has to name the
-	// file the user is meant to create.
-	want := filepath.Join(project.Dir, project.File)
-	if !strings.Contains(m.errBar.text, want) {
-		t.Fatalf("error %q should name %q", m.errBar.text, want)
+	if m.mode != modeRunInit {
+		t.Fatalf("mode = %v, want the create-settings offer", m.mode)
 	}
 }
 
@@ -286,5 +281,108 @@ func TestFailingSetupDoesNotStartTheAgent(t *testing.T) {
 	}
 	if !strings.Contains(before, "touch agent-ran") {
 		t.Fatalf("the agent should run on the success branch, got %q", before)
+	}
+}
+
+// The old behaviour was an error naming a path the reader then had to leave
+// the manager to create. p is where they are when they discover the feature,
+// so it offers to write it instead.
+func TestRunKeyOffersToCreateSettingsWhenThereAreNone(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	onSessionIn(t, m, repo)
+
+	pressRunKey(t, m)
+
+	if m.mode != modeRunInit {
+		t.Fatalf("mode = %v, want the create-settings offer", m.mode)
+	}
+	// A long checkout path truncates in the card, so the offer shows the
+	// repository name and the relative path, both of which must survive.
+	view := m.View()
+	if !strings.Contains(view, project.Dir) || !strings.Contains(view, "repo") {
+		t.Fatalf("the offer should name where it would write: %q", view)
+	}
+}
+
+func TestRunInitEscapeWritesNothing(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	onSessionIn(t, m, repo)
+	pressRunKey(t, m)
+
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if m.mode != modeList {
+		t.Fatalf("mode = %v, want the list back", m.mode)
+	}
+	if _, err := os.Stat(project.SettingsPath(repo)); err == nil {
+		t.Fatal("escaping the offer wrote a settings file")
+	}
+}
+
+// The file lands at the repository root, not the session's directory, so a
+// session started a level down does not leave a stray settings file there.
+func TestRunInitWritesAtTheRepositoryRoot(t *testing.T) {
+	m := buildModel(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	nested := filepath.Join(repo, "cmd", "server")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	onSessionIn(t, m, nested)
+	pressRunKey(t, m)
+
+	if want := project.SettingsPath(resolved(t, repo)); m.runInit.path != want {
+		t.Fatalf("would write %q, want %q", m.runInit.path, want)
+	}
+}
+
+// The scaffold must be inert: creating it cannot change how anything already
+// works, so p on the fresh file reports no run scripts rather than running
+// something the reader never wrote.
+func TestScaffoldedSettingsAreInert(t *testing.T) {
+	root := t.TempDir()
+	path, err := project.Scaffold(root)
+	if err != nil {
+		t.Fatalf("Scaffold: %v", err)
+	}
+	if path != project.SettingsPath(root) {
+		t.Fatalf("wrote %q, want %q", path, project.SettingsPath(root))
+	}
+	settings, err := project.Load(root)
+	if err != nil {
+		t.Fatalf("the scaffold does not parse: %v", err)
+	}
+	if !settings.Found {
+		t.Fatal("the scaffold should be found once written")
+	}
+	if settings.Setup != "" || len(settings.Run) != 0 {
+		t.Fatalf("the scaffold should declare nothing, got %+v", settings)
+	}
+}
+
+func TestScaffoldRefusesToOverwrite(t *testing.T) {
+	root := t.TempDir()
+	writeProject(t, root, "setup = \"mine\"\n")
+
+	if _, err := project.Scaffold(root); err == nil {
+		t.Fatal("Scaffold overwrote existing settings")
+	}
+	settings, err := project.Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if settings.Setup != "mine" {
+		t.Fatalf("existing settings were clobbered: %+v", settings)
 	}
 }

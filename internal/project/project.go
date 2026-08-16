@@ -164,6 +164,64 @@ func parse(path, root string) (Settings, error) {
 	return settings, nil
 }
 
+// Template is what Scaffold writes. Every line is commented out except the
+// structure, so the file it produces is inert: pressing the key that creates
+// it cannot change how anything already works, and the reader edits rather
+// than deletes.
+const Template = `# How agent-manager bootstraps and runs this project.
+# Docs: https://github.com/YoanWai/agent-manager/blob/main/docs/project-settings.md
+#
+# Commit this file. What it takes to bootstrap the project is the same for
+# everyone working on it, so it belongs next to the code.
+
+# Runs once inside every new worktree, before its agent starts. A worktree is
+# a fresh checkout, so anything git does not track is missing from it.
+# On failure the agent does not start and the pane leaves you a shell.
+# setup = """
+# npm ci
+# cp ../` + "`basename $PWD`" + `/.env .
+# """
+
+# The low end of the port range worktrees are handed. 3100 by default.
+# port_base = 3100
+
+# Scripts p offers. Mark one default = true to have p run it without asking.
+# $AGENT_MANAGER_PORT is this worktree's own port, so every branch can serve
+# at once; derive more with $((AGENT_MANAGER_PORT + 1)).
+# [run.dev]
+# command = "npm run dev -- --port $AGENT_MANAGER_PORT"
+# description = "dev server"
+# default = true
+
+# [run.test]
+# command = "npm test -- --watch"
+`
+
+// Scaffold writes Template into root's settings path and reports where it
+// landed. An existing file is never overwritten — the point is to give a
+// project its first one, and a project that already has settings has
+// something worth more than a template.
+func Scaffold(root string) (string, error) {
+	dir := filepath.Join(root, Dir)
+	path := filepath.Join(dir, File)
+	if _, err := os.Stat(path); err == nil {
+		return path, fmt.Errorf("%s already exists", path)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, []byte(Template), 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// SettingsPath is where a repository's settings live, whether or not the
+// file is there yet.
+func SettingsPath(root string) string {
+	return filepath.Join(root, Dir, File)
+}
+
 // RunNames lists the run scripts in the order the picker shows them: the
 // default first so it sits under the cursor, then the rest by name, so the
 // list a project sees never depends on map iteration order.

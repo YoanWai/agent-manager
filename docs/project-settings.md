@@ -9,6 +9,20 @@ in one person's `~/.config/agent-manager/config.toml`.
 Everything here is opt-in. A repository without the file behaves exactly as
 it did before.
 
+## Creating it
+
+Press `p` in a repository that has no settings and agent-manager offers to
+write one for you: `↵` creates `.agent-manager/settings.toml` at the
+repository root — not the session's directory, so a session started a level
+down does not leave a stray file there — and opens it in your editor.
+
+The starter it writes is entirely commented out, so creating it changes
+nothing until you fill it in. An existing settings file is never overwritten.
+
+Edits take effect on the next `p`; there is nothing to reload. Changing
+`setup`, though, only affects worktrees created afterwards — it runs at
+worktree creation, so an existing one keeps whatever it was set up with.
+
 ```toml
 # Runs once inside every new worktree, before its agent starts.
 setup = """

@@ -54,6 +54,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRepoPickKey(msg)
 	case modeRunPick:
 		return m.handleRunPickKey(msg)
+	case modeRunInit:
+		return m.handleRunInitKey(msg)
 	case modeGroupForm:
 		return m.handleGroupFormKey(msg)
 	case modeDiff:

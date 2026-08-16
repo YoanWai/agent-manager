@@ -50,6 +50,9 @@ const (
 	// modeRunPick lists a project's run scripts when p cannot tell which one
 	// was meant.
 	modeRunPick
+	// modeRunInit offers to give a project its first settings file, on a p
+	// pressed in a repository that has none.
+	modeRunInit
 )
 
 type treeRow struct {
@@ -161,6 +164,7 @@ type Model struct {
 	movePath   string
 	repoPick   repoPickState
 	runPick    runPickState
+	runInit    runInitState
 	// editorReturnID is the session an editor request detached from, so the
 	// attach it cost can be resumed once the editor is up.
 	editorReturnID string

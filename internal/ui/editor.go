@@ -66,19 +66,29 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 		m.errBar.text = "directory no longer exists: " + dir
 		return m, nil
 	}
+	m.errBar.text = ""
+	return m.openInEditor(dir)
+}
+
+// openInEditor launches the configured editor on a path: the row's directory
+// for o, or a single file for the project settings p scaffolds. Editors take
+// either, so the only difference is what is appended to the command line.
+//
+// Any message already on the status bar is left alone, since a caller may
+// have put an outcome there that outlives the launch.
+func (m *Model) openInEditor(target string) (tea.Model, tea.Cmd) {
 	line := m.resolveEditor()
-	cmd, ok := editorCommand(line, dir)
+	cmd, ok := editorCommand(line, target)
 	if !ok {
 		m.errBar.text = `no editor found: set editor = "code" in config.toml`
 		return m, nil
 	}
-	m.errBar.text = ""
 	if !detachedEditors[editorName(line)] {
 		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 			return editorDoneMsg{err: err, tookScreen: true}
 		})
 	}
-	return m, startEditorCmd(cmd, editorName(line), dir)
+	return m, startEditorCmd(cmd, editorName(line), target)
 }
 
 // Starting a process is exec, which Update must not do: a slow launch

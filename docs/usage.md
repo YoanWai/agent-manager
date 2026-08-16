@@ -14,7 +14,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 |-----|--------|
 | `n` | New session (name, tool, directory, worktree toggle, optional starting prompt, group picker) |
 | `T` | New terminal tab: a plain shell in the selected group, with no agent in it |
-| `p` | Run a project script from `.agent-manager/settings.toml` in the row's directory ([Project settings](project-settings.md)) |
+| `p` | Run a project script from `.agent-manager/settings.toml` in the row's directory, or offer to create the file when the project has none ([Project settings](project-settings.md)) |
 | `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
 | `g` | New group (name, parent, default path) |
