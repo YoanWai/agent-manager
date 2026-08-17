@@ -411,18 +411,23 @@ func (d *Driver) awaitPasteEcho(target, before, text string) {
 	}
 }
 
-// MessageOpening is the slice of a message to look for in a pane. It stays
-// short and stops at the first line break because a composer wraps a long
-// message across lines, splitting any longer match.
+// MessageOpening is the slice of a message to look for in a pane: its first
+// line with anything on it, cut short because a composer wraps a long line
+// and would split any longer match. A message that opens on a blank line
+// still has to be waited for, so the blank lines are skipped rather than
+// answered with nothing to match.
 func MessageOpening(text string) string {
-	line := text
-	if end := strings.IndexAny(line, "\r\n"); end >= 0 {
-		line = line[:end]
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if runes := []rune(line); len(runes) > 16 {
+			line = strings.TrimSpace(string(runes[:16]))
+		}
+		return line
 	}
-	if runes := []rune(line); len(runes) > 16 {
-		line = string(runes[:16])
-	}
-	return strings.TrimSpace(line)
+	return ""
 }
 
 // paste loads text into a tmux buffer and pastes it into the pane.

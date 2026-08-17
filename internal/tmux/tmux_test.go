@@ -229,7 +229,8 @@ func TestSendTextSubmitsIntoAPaneThatReadsLate(t *testing.T) {
 	reads := "/tmp/am-late-" + id
 	t.Cleanup(func() { os.Remove(reads) })
 
-	text := "hello world"
+	// Opens on a blank line, which still has to be waited for.
+	text := "\nhello world"
 	// Stalls before its first read, then logs each read between pipes and
 	// echoes it back so the pane shows what it took.
 	command := "stty raw -echo; printf '\\033[?2004h'; sleep 0.4; " +
