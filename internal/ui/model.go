@@ -186,7 +186,6 @@ type Model struct {
 	// the frame is not repainted forever.
 	bannerPhase int
 
-	// startupPhase advances the launch animation in the rail and preview.
 	startupPhase     int
 	startupAnimating bool
 
@@ -508,7 +507,6 @@ func (m *Model) previewInterval() time.Duration {
 	return previewIntervalCalm
 }
 
-// previewTick re-arms the preview timer at the cadence the selection earns.
 func (m *Model) previewTick() tea.Cmd {
 	return tea.Tick(m.previewInterval(), func(time.Time) tea.Msg { return previewTickMsg{} })
 }
