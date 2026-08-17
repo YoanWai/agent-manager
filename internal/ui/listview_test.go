@@ -864,28 +864,43 @@ func TestPreviewSkipsLoaderForSettledSessions(t *testing.T) {
 	}
 }
 
-// The loader animates on the preview tick the starting session already
-// earns, and cycles rather than running off the end of its frames.
-func TestPreviewLoaderTurnsOnThePreviewTick(t *testing.T) {
+func TestPreviewLoaderIsCenteredAndMovesOnThePreviewTick(t *testing.T) {
 	m := previewModel(status.Starting, blankCapture)
-	glyph := func() string {
-		line := strings.TrimSpace(previewText(m))
-		if line == "" {
-			t.Fatalf("preview painted nothing")
+	first := previewText(m)
+	lines := strings.Split(first, "\n")
+	painted := make([]int, 0, 6)
+	for i, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			painted = append(painted, i)
 		}
-		return string([]rune(line)[0])
 	}
-	seen := map[string]bool{}
-	first := glyph()
-	for i := 0; i < len(startupFrames); i++ {
-		seen[glyph()] = true
-		m.Update(previewTickMsg{})
+	if len(painted) != 6 || painted[0] != 3 || painted[5] != 8 {
+		t.Fatalf("loader rows = %v, want the middle of a 12-row preview", painted)
 	}
-	if len(seen) != len(startupFrames) {
-		t.Fatalf("loader showed %d of %d frames over a full turn: %v", len(seen), len(startupFrames), seen)
+	if strings.Count(first, "●") != 1 || strings.Count(first, "•") != 1 {
+		t.Fatalf("loader should show one head and one trailing dot, got %q", first)
 	}
-	if got := glyph(); got != first {
-		t.Fatalf("after a full turn the loader shows %q, want %q", got, first)
+	for _, row := range painted {
+		left := len(lines[row]) - len(strings.TrimLeft(lines[row], " "))
+		content := strings.TrimSpace(lines[row])
+		right := 80 - left - ansi.StringWidth(content)
+		if diff := left - right; diff < -1 || diff > 1 {
+			t.Fatalf("loader row %q is not centered: left=%d right=%d", lines[row], left, right)
+		}
+	}
+	m.Update(previewTickMsg{})
+	if next := previewText(m); next == first {
+		t.Fatal("preview loader did not move on the preview tick")
+	}
+}
+
+func TestStartingSessionGlyphMovesOnThePreviewTick(t *testing.T) {
+	m := previewModel(status.Starting, blankCapture)
+	first := ansi.Strip(m.sessionGlyph(m.rows[0].sess))
+	m.Update(previewTickMsg{})
+	second := ansi.Strip(m.sessionGlyph(m.rows[0].sess))
+	if first == second {
+		t.Fatalf("starting session glyph stayed on %q", first)
 	}
 }
 

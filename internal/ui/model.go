@@ -186,9 +186,7 @@ type Model struct {
 	// the frame is not repainted forever.
 	bannerPhase int
 
-	// startupPhase advances the preview's launch loader. It rides the
-	// preview tick, which already runs at its fast cadence while a session
-	// is starting, rather than adding a timer of its own.
+	// startupPhase advances the launch animation in the rail and preview.
 	startupPhase int
 
 	update updateInfo
@@ -466,6 +464,7 @@ const previewSettle = 50 * time.Millisecond
 // agent that is producing output earns a fast cadence, one that is waiting
 // on a human does not.
 const (
+	startupInterval     = 80 * time.Millisecond
 	previewIntervalLive = 300 * time.Millisecond
 	previewIntervalCalm = 1200 * time.Millisecond
 	updateTickInterval  = 10 * time.Minute
@@ -487,14 +486,23 @@ func (m *Model) cursorBlink() tea.Cmd {
 // previewTickMsg drives that timer.
 type previewTickMsg struct{}
 
+func (m *Model) hasStartingRow() bool {
+	for _, row := range m.rows {
+		if !row.isGroup && row.sess.Status == status.Starting {
+			return true
+		}
+	}
+	return false
+}
+
 // previewTick re-arms the preview timer at the cadence the selection earns.
 func (m *Model) previewTick() tea.Cmd {
 	interval := previewIntervalCalm
-	if sess, ok := m.selected(); ok {
-		switch sess.Status {
-		case status.Working, status.Starting:
-			interval = previewIntervalLive
-		}
+	if sess, ok := m.selected(); ok && sess.Status == status.Working {
+		interval = previewIntervalLive
+	}
+	if m.hasStartingRow() {
+		interval = startupInterval
 	}
 	return tea.Tick(interval, func(time.Time) tea.Msg { return previewTickMsg{} })
 }
@@ -1037,6 +1045,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sess, ok := m.selected()
 		if !ok || (m.mode != modeList && m.mode != modeRename && m.mode != modeFocus) {
 			return m, m.previewTick()
+		}
+		if m.hasStartingRow() {
+			captureInterval := previewIntervalCalm
+			if sess.Status == status.Working || sess.Status == status.Starting {
+				captureInterval = previewIntervalLive
+			}
+			captureEvery := int((captureInterval + startupInterval - 1) / startupInterval)
+			if m.startupPhase%captureEvery != 0 {
+				return m, m.previewTick()
+			}
 		}
 		// A session with a control client already pushes every frame; a
 		// tick capture on top of that is work whose result is discarded.
