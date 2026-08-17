@@ -117,6 +117,62 @@ func TestQuickSpawnHermesWithoutMCPSupportClosesTheBar(t *testing.T) {
 	}
 }
 
+// A form spawn the hint dialog refused takes the form off screen with it,
+// so the images its prompt was holding have nothing left naming them.
+func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	m := buildModel(t)
+	m.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	installSDKlessHermes(t)
+
+	m.openForm()
+	m.form.name.SetValue("agent")
+	m.form.dir.SetValue(t.TempDir())
+	m.form.toolNames = []string{"hermes"}
+	m.form.toolIndex = 0
+	path := tempImage(t, "mock.png")
+	m.form.prompt.attachments = []imageAttachment{{id: 1, path: path}}
+	m.form.prompt.input.SetValue("match " + imageToken(1))
+
+	m.submitForm()
+
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
+	}
+	if len(m.form.prompt.attachments) != 0 {
+		t.Fatalf("attachments = %+v, want the refused form's images released", m.form.prompt.attachments)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("the image file should be gone, stat err = %v", err)
+	}
+}
+
+// An error the bar reports leaves the form up, so the prompt still names
+// its images and they have to survive for the retry.
+func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.name.SetValue("agent")
+	m.form.dir.SetValue(filepath.Join(t.TempDir(), "not-there"))
+	path := tempImage(t, "mock.png")
+	m.form.prompt.attachments = []imageAttachment{{id: 1, path: path}}
+	m.form.prompt.input.SetValue("match " + imageToken(1))
+
+	m.submitForm()
+
+	if m.mode != modeForm || m.errBar.text == "" {
+		t.Fatalf("mode = %v, err = %q, want the form still up with the error", m.mode, m.errBar.text)
+	}
+	if len(m.form.prompt.attachments) != 1 {
+		t.Fatalf("attachments = %+v, want the chip kept for the retry", m.form.prompt.attachments)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("the image the prompt still names must survive: %v", err)
+	}
+}
+
 // The whole spawn path: a Hermes without its MCP SDK must not produce a
 // session, and the dialog naming the fix must be what the user sees.
 func TestSpawnHermesWithoutMCPSupportPromptsInstall(t *testing.T) {

@@ -58,7 +58,7 @@ func helpSections() []helpSection {
 			{"→", "step in: focus the session, open the group"},
 			{"←", "step out: close the group"},
 			{"K / J", "reorder the row up / down (shift+↑↓ too)"},
-			{"n", "new session (its first task takes a pasted image too)"},
+			{"n", "new session"},
 			{"T", "new terminal tab: a shell under the selected agent, or in the group"},
 			{"g", "new group (name, parent, default path, worktree)"},
 			{"/", "search the list by name"},
@@ -158,6 +158,7 @@ func helpSections() []helpSection {
 		}},
 		{title: "dialogs (n, g, r, f, m)", rows: [][2]string{
 			{"tab / ↑↓", "next field"},
+			{"ctrl+v", "in a prompt field, paste an image as a chip"},
 			{"←→", "change a picker's value"},
 			{"↵", "confirm"},
 			{"esc", "cancel"},
