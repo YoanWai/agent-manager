@@ -25,6 +25,45 @@ func TestPreviewSettleDropsStaleGen(t *testing.T) {
 	}
 }
 
+func TestPreviewCadenceIsIndependentFromStartupAnimation(t *testing.T) {
+	tests := []struct {
+		name string
+		rows []treeRow
+		want time.Duration
+	}{
+		{"selected starting", []treeRow{{sess: store.Session{Status: status.Starting}}}, previewIntervalLive},
+		{"selected working", []treeRow{{sess: store.Session{Status: status.Working}}, {sess: store.Session{Status: status.Starting}}}, previewIntervalLive},
+		{"selected idle", []treeRow{{sess: store.Session{Status: status.Idle}}, {sess: store.Session{Status: status.Starting}}}, previewIntervalCalm},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &Model{rows: tt.rows}
+			if got := m.previewInterval(); got != tt.want {
+				t.Fatalf("preview interval = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStartupTickRunsOnlyWhileAStartingRowIsVisible(t *testing.T) {
+	m := &Model{}
+	if cmd := m.startStartupTick(); cmd != nil {
+		t.Fatal("startup tick began without a starting row")
+	}
+	m.rows = []treeRow{{sess: store.Session{Status: status.Starting}}}
+	if cmd := m.startStartupTick(); cmd == nil || !m.startupAnimating {
+		t.Fatal("starting row did not begin the startup tick")
+	}
+	if cmd := m.startStartupTick(); cmd != nil {
+		t.Fatal("an active startup tick was scheduled twice")
+	}
+	m.rows[0].sess.Status = status.Idle
+	_, cmd := m.Update(startupTickMsg{})
+	if cmd != nil || m.startupAnimating {
+		t.Fatal("startup tick kept running after the starting row settled")
+	}
+}
+
 func TestMoveCursorDebouncesPreview(t *testing.T) {
 	m := &Model{
 		mode:   modeList,

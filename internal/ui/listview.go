@@ -449,6 +449,10 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 // A shell takes a caret rather than an idle dot it would never leave, but
 // a pane that has gone still has to say so.
 func (m *Model) sessionGlyph(sess store.Session) string {
+	if sess.Status == status.Starting {
+		return lipgloss.NewStyle().Foreground(statusColor(status.Starting)).
+			Render(startupFrames[m.startupPhase%len(startupFrames)])
+	}
 	resting := sess.Status != status.Dead && sess.Status != status.Errored
 	if resting && m.isShell(sess.Tool) {
 		return subtleStyle.Render(shellGlyph)
@@ -681,28 +685,44 @@ func focusTopRule(width int) string {
 	return rule
 }
 
-// startupFrames turn a quarter arc around the circle the status marks are
-// drawn from, so a booting session animates in their geometric family while
-// standing clear of every mark that names a state: a frame caught mid-turn
-// cannot be read as one of them.
-var startupFrames = []string{"◜", "◝", "◞", "◟"}
+var startupFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
-// startupLoader is the preview's line for a selected session that is coming
-// up, and "" for every other session. A launching agent leaves its pane
-// blank for as long as it takes to draw, and an empty preview under a live
-// row reads as a broken session rather than one on its way up. paneBooted
-// is the poller's own test for a pane nothing has drawn to, so the loader
-// clears on the first captured frame rather than waiting for the poll that
-// moves the row off the launch state. A focused pane keeps its own first
-// row: that is the screen the user is typing on, and its caret lives there.
-func (m *Model) startupLoader() string {
+const startupRingPoints = 12
+
+func (m *Model) startupLoader(width, height int) []string {
 	sess, ok := m.selected()
 	if !ok || m.mode == modeFocus || sess.Status != status.Starting || paneBooted(m.preview) {
-		return ""
+		return nil
 	}
-	frame := startupFrames[m.startupPhase%len(startupFrames)]
-	return lipgloss.NewStyle().Foreground(statusColor(status.Starting)).
-		Render(frame + " " + statusLabel(status.Starting))
+
+	accent := lipgloss.NewStyle().Foreground(statusColor(status.Starting)).Bold(true)
+	glow := lipgloss.NewStyle().Foreground(statusColor(status.Starting))
+	phase := m.startupPhase % startupRingPoints
+	dot := func(position int) string {
+		switch position {
+		case phase:
+			return accent.Render("●")
+		case (phase + startupRingPoints - 1) % startupRingPoints:
+			return glow.Render("•")
+		default:
+			return subtleStyle.Render("·")
+		}
+	}
+
+	block := []string{
+		centerLine(dot(11)+"   "+dot(0)+"   "+dot(1), width),
+		centerLine(dot(10)+"       "+dot(2), width),
+		centerLine(dot(9)+"       "+dot(3), width),
+		centerLine(dot(8)+"       "+dot(4), width),
+		centerLine(dot(7)+"   "+dot(6)+"   "+dot(5), width),
+		centerLine(valueStyle.Bold(true).Render("starting up"), width),
+	}
+	if height <= len(block) {
+		return block[:height]
+	}
+	lines := make([]string, height)
+	copy(lines[(height-len(block))/2:], block)
+	return lines
 }
 
 // previewLines is the captured pane, filling every row under the detail
@@ -712,17 +732,19 @@ func (m *Model) startupLoader() string {
 // would put a margin around a terminal that has its own.
 func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	var lines []contentLine
-	loader := m.startupLoader()
+	loader := m.startupLoader(width, height)
 	pane := paneExact(m.preview, height, width)
 	if len(pane) == 0 {
 		// No rows painted means nothing to hit-test: a box left over from
 		// the previous session would catch clicks on empty space.
 		m.pane.box = paneBox{}
-		notice := loader
-		if notice == "" {
-			notice = mutedStyle.Render("(no output yet)")
+		if loader != nil {
+			for _, line := range loader {
+				lines = append(lines, contentLine{text: previewLine(line, width), raw: true})
+			}
+			return lines
 		}
-		return append(lines, contentLine{text: gutter + notice})
+		return append(lines, contentLine{text: gutter + mutedStyle.Render("(no output yet)")})
 	}
 	// Record where these rows land so mouse hit-testing reads the same
 	// geometry the paint used.
@@ -734,11 +756,8 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 		ok:     true,
 	}
 	for i, line := range pane {
-		// The loader takes the pane's own first row rather than replacing the
-		// block, so the geometry recorded above is the geometry painted: a
-		// session whose pane stays blank keeps every click it would have had.
-		if i == 0 && loader != "" {
-			lines = append(lines, contentLine{text: previewLine(loader, width), raw: true})
+		if i < len(loader) && loader[i] != "" {
+			lines = append(lines, contentLine{text: previewLine(loader[i], width), raw: true})
 			continue
 		}
 		lines = append(lines, contentLine{text: m.renderPaneRow(i, line, width), raw: true})

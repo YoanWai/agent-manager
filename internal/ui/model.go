@@ -186,10 +186,8 @@ type Model struct {
 	// the frame is not repainted forever.
 	bannerPhase int
 
-	// startupPhase advances the preview's launch loader. It rides the
-	// preview tick, which already runs at its fast cadence while a session
-	// is starting, rather than adding a timer of its own.
-	startupPhase int
+	startupPhase     int
+	startupAnimating bool
 
 	update updateInfo
 
@@ -466,6 +464,7 @@ const previewSettle = 50 * time.Millisecond
 // agent that is producing output earns a fast cadence, one that is waiting
 // on a human does not.
 const (
+	startupInterval     = 80 * time.Millisecond
 	previewIntervalLive = 300 * time.Millisecond
 	previewIntervalCalm = 1200 * time.Millisecond
 	updateTickInterval  = 10 * time.Minute
@@ -487,16 +486,41 @@ func (m *Model) cursorBlink() tea.Cmd {
 // previewTickMsg drives that timer.
 type previewTickMsg struct{}
 
-// previewTick re-arms the preview timer at the cadence the selection earns.
-func (m *Model) previewTick() tea.Cmd {
-	interval := previewIntervalCalm
+type startupTickMsg struct{}
+
+func (m *Model) hasStartingRow() bool {
+	for _, row := range m.rows {
+		if !row.isGroup && row.sess.Status == status.Starting {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) previewInterval() time.Duration {
 	if sess, ok := m.selected(); ok {
 		switch sess.Status {
 		case status.Working, status.Starting:
-			interval = previewIntervalLive
+			return previewIntervalLive
 		}
 	}
-	return tea.Tick(interval, func(time.Time) tea.Msg { return previewTickMsg{} })
+	return previewIntervalCalm
+}
+
+func (m *Model) previewTick() tea.Cmd {
+	return tea.Tick(m.previewInterval(), func(time.Time) tea.Msg { return previewTickMsg{} })
+}
+
+func (m *Model) startStartupTick() tea.Cmd {
+	if m.startupAnimating || !m.hasStartingRow() {
+		return nil
+	}
+	m.startupAnimating = true
+	return m.startupTick()
+}
+
+func (m *Model) startupTick() tea.Cmd {
+	return tea.Tick(startupInterval, func(time.Time) tea.Msg { return startupTickMsg{} })
 }
 
 type errMsg struct{ err error }
@@ -685,7 +709,7 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.sweepPastes, m.pasteSweepTick())
+	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick())
 }
 
 // updateMsg carries the result of a GitHub release check. A failed check may
@@ -1029,8 +1053,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleBrowserOpen(msg)
 		return m, nil
 
-	case previewTickMsg:
+	case startupTickMsg:
+		if !m.hasStartingRow() {
+			m.startupAnimating = false
+			return m, nil
+		}
 		m.startupPhase++
+		return m, m.startupTick()
+
+	case previewTickMsg:
 		// Only the list keeps a live pane on screen; review and the modal
 		// screens have no preview to feed, so they skip the capture and
 		// just keep the timer alive.
@@ -1086,7 +1117,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
 			m.previewGen++
-			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd())
+			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd(), m.startStartupTick())
 		}
 		m.proc = msg.proc
 		m.procFor = msg.procFor
@@ -1097,7 +1128,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.watchSelection()
 		}
 		m.watchedGen = m.previewGen
-		return m, tea.Batch(focusExit, m.diffRefreshCmd())
+		return m, tea.Batch(focusExit, m.diffRefreshCmd(), m.startStartupTick())
 
 	case updateMsg:
 		if msg.manual {
