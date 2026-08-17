@@ -14,6 +14,7 @@ type Vocabulary struct {
 	Revive         string
 	Restore        string
 	Send           string
+	Read           string
 }
 
 // MCPVocabulary spells the actions as the tools an MCP client sees.
@@ -28,6 +29,7 @@ func MCPVocabulary() Vocabulary {
 		Revive:         "revive_session",
 		Restore:        "archive_session archived false",
 		Send:           "send_session",
+		Read:           "read_session",
 	}
 }
 
@@ -43,5 +45,6 @@ func CLIVocabulary() Vocabulary {
 		Revive:         "agent-manager revive",
 		Restore:        "agent-manager archive --restore",
 		Send:           "agent-manager send",
+		Read:           "agent-manager read",
 	}
 }

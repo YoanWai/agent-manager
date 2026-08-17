@@ -12,7 +12,7 @@ func TestTerminalVerbsDispatch(t *testing.T) {
 	if err := runTerminalList(out, fake, nil, "cafe0001"); err != nil {
 		t.Fatalf("terminal list: %v", err)
 	}
-	if !strings.Contains(out.String(), "- build (t1) in root at /repo; status=idle; running=true") {
+	if !strings.Contains(out.String(), "- build (id t1) in root at /repo; status=idle; running=true") {
 		t.Fatalf("terminal list output = %q", out.String())
 	}
 

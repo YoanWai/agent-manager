@@ -676,6 +676,34 @@ func TestASenderIsToldWhenItsRecipientLeftTheManagersReach(t *testing.T) {
 	}
 }
 
+// An errored session is running, unarchived and configured, so every other
+// held case passes it by, while the poller types into resting sessions only.
+// A coordinator polling a handoff has to be able to tell that apart from a
+// recipient that is merely slow.
+func TestASenderIsToldWhenItsRecipientErrored(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if err := h.store.UpdateStatus(worker.ID, status.Errored); err != nil {
+		t.Fatalf("UpdateStatus: %v", err)
+	}
+
+	state, err := h.sessions.MessageStatus(h.caller.ID, sent.MessageID)
+	if err != nil {
+		t.Fatalf("MessageStatus: %v", err)
+	}
+	if state.State != "held" || !strings.Contains(state.Reason, "errored") ||
+		!strings.Contains(state.Reason, h.sessions.words.Read) {
+		t.Fatalf("a message to an errored session reads as %+v", state)
+	}
+}
+
 // A tool block can be deleted after a message was queued for a session
 // running that tool, which leaves the poller unable to read readiness and
 // the message waiting for a delivery that never comes.

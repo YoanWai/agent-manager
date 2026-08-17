@@ -22,7 +22,7 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 				return runSessions(out, f, args, "cafe0001")
 			},
-			want: "- api-worker (beef1234) running claude in api at /repo; status=working; running=true",
+			want: "- api-worker (id beef1234) running claude in api at /repo; status=working; running=true",
 			inspect: func(t *testing.T, f *fakeSessions) {
 				if f.callerID != "cafe0001" {
 					t.Fatalf("caller = %q", f.callerID)
@@ -56,7 +56,7 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 				return runKill(out, f, args, "cafe0001")
 			},
 			args: []string{"beef1234"},
-			want: "killed api-worker (beef1234)",
+			want: "killed api-worker (id beef1234)",
 		},
 		{
 			name: "revive names what it brought back",
@@ -64,7 +64,7 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 				return runRevive(out, f, args, "cafe0001")
 			},
 			args: []string{"beef1234"},
-			want: "revived api-worker (beef1234)",
+			want: "revived api-worker (id beef1234)",
 		},
 		{
 			name: "archive files a session away by default",
@@ -72,7 +72,7 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 				return runArchive(out, f, args, "cafe0001")
 			},
 			args: []string{"beef1234"},
-			want: "archived api-worker (beef1234)",
+			want: "archived api-worker (id beef1234)",
 			inspect: func(t *testing.T, f *fakeSessions) {
 				if !f.archived {
 					t.Fatal("archive without --restore should archive")
@@ -85,7 +85,7 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 				return runArchive(out, f, args, "cafe0001")
 			},
 			args: []string{"beef1234", "--restore"},
-			want: "restored api-worker (beef1234)",
+			want: "restored api-worker (id beef1234)",
 			inspect: func(t *testing.T, f *fakeSessions) {
 				if f.archived {
 					t.Fatal("--restore should unarchive")
@@ -159,7 +159,7 @@ func TestSpawnPassesOnlyTheFlagsGiven(t *testing.T) {
 	if fake.opts.Group != nil || fake.opts.Worktree != nil {
 		t.Fatalf("untyped flags should stay inherited, got group=%v worktree=%v", fake.opts.Group, fake.opts.Worktree)
 	}
-	if !strings.HasPrefix(out.String(), "created api-worker (beef1234)") {
+	if !strings.HasPrefix(out.String(), "created api-worker (id beef1234)") {
 		t.Fatalf("spawn output = %q", out.String())
 	}
 

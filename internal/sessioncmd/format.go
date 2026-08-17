@@ -16,7 +16,7 @@ func groupLabel(group string) string {
 }
 
 func FormatTerminal(terminal Terminal) string {
-	return fmt.Sprintf("%s (%s) in %s at %s", terminal.Name, terminal.ID, groupLabel(terminal.Group), terminal.Directory)
+	return fmt.Sprintf("%s (id %s) in %s at %s", terminal.Name, terminal.ID, groupLabel(terminal.Group), terminal.Directory)
 }
 
 func FormatTerminalList(terminals []Terminal) string {
@@ -42,7 +42,7 @@ func FormatTerminalScreen(screen TerminalScreen) string {
 }
 
 func FormatSession(session Session) string {
-	line := fmt.Sprintf("%s (%s) running %s in %s at %s", session.Name, session.ID, session.Tool, groupLabel(session.Group), session.Directory)
+	line := fmt.Sprintf("%s (id %s) running %s in %s at %s", session.Name, session.ID, session.Tool, groupLabel(session.Group), session.Directory)
 	if session.Branch != "" {
 		line += " on branch " + session.Branch
 	}

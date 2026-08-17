@@ -554,6 +554,12 @@ func (r *runtime) heldReason(sessionID string) (string, error) {
 	if r.cfg.Tools[target.Tool].ActivityCutoff == "" {
 		return fmt.Sprintf("tool %q declares no activity_cutoff, so Agent Manager cannot tell when %s is ready and nothing will type this in; add one to config.toml", target.Tool, sessionID), nil
 	}
+	// The poller types into a resting session, and an errored one is not
+	// resting: it is showing whatever stopped it, often a limit its agent
+	// cannot clear on its own.
+	if target.Status == status.Errored {
+		return fmt.Sprintf("session %s is errored, so nothing will type this in until it recovers; read its screen with %s", sessionID, r.words.Read), nil
+	}
 	pane, err := r.driver.CapturePane(target.ID)
 	if err != nil {
 		return "", err
