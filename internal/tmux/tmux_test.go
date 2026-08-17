@@ -257,6 +257,40 @@ func TestSendTextSubmitsIntoAPaneThatReadsLate(t *testing.T) {
 	t.Fatalf("pane reads = %q, want the paste to end a read (%q) before the Enter", got, want)
 }
 
+// A capture that fails leaves no baseline to measure the paste against, and
+// text already on screen would pass for it, so the Enter waits the window out
+// rather than matching against nothing.
+func TestSendTextWaitsOutTheWindowWhenTheBaselineCaptureFails(t *testing.T) {
+	dir := t.TempDir()
+	callLog := dir + "/calls"
+	stub := dir + "/tmux"
+	// Fails the first capture, then answers every later one with a pane that
+	// already holds the message.
+	script := "#!/bin/sh\necho \"$@\" >> " + callLog + "\n" +
+		"case \"$*\" in *capture-pane*)\n" +
+		"  [ \"$(grep -c capture-pane " + callLog + ")\" = 1 ] && exit 1\n" +
+		"  echo 'hello world';;\nesac\nexit 0\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	start := time.Now()
+	if err := driver.SendText("x1", "hello world"); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed < echoWait {
+		t.Fatalf("Enter went out after %v, want the pane to get its full %v", elapsed, echoWait)
+	}
+	logged, err := os.ReadFile(callLog)
+	if err != nil {
+		t.Fatalf("read call log: %v", err)
+	}
+	if !strings.Contains(string(logged), "send-keys -t am_x1 Enter") {
+		t.Fatalf("Enter never sent, calls:\n%s", logged)
+	}
+}
+
 // A clipboard paste forwarded into a focused pane must arrive inside the
 // pane's bracketed-paste markers with no Enter after it, so agent composers
 // keep multi-line text instead of submitting on the first newline.

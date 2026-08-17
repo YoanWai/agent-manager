@@ -376,11 +376,17 @@ const (
 // carriage return as part of the bracketed paste rather than as a submit,
 // stranding the message in the composer.
 func (d *Driver) pasteAndEnter(target, text string) error {
-	before, _ := d.capturePlain(target)
+	before, baseline := d.capturePlain(target)
 	if err := d.paste(target, text); err != nil {
 		return err
 	}
-	d.awaitPasteEcho(target, before, text)
+	if baseline != nil {
+		// Without a baseline, text already on screen reads as the new paste,
+		// so the pane gets the whole window to draw it rather than a match.
+		time.Sleep(echoWait)
+	} else {
+		d.awaitPasteEcho(target, before, text)
+	}
 	_, err := d.run("send-keys", "-t", target, "Enter")
 	return err
 }
