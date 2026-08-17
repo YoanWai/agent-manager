@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/bubbles/textarea"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // newComposer is a composer detached from any screen, so the chip logic can
@@ -138,6 +139,9 @@ func TestComposerRoomForTokenGuardsTheCharLimit(t *testing.T) {
 	}
 }
 
+// The value here spans two rows on purpose: setValue rewinds through the
+// InputBegin binding, and anything that only reaches the start of the
+// caret's own row leaves the head typed into the wrong line.
 func TestComposerSetValueLeavesTheCaretWhereItWasAsked(t *testing.T) {
 	c := newComposer("")
 	c.setValue("first line\nsecond line", len("first line\nsecond"))
@@ -214,6 +218,32 @@ func TestComposerInsertTokenSpacesOffTheWordsAroundIt(t *testing.T) {
 	}
 	if !att.leadPad || att.trailPad {
 		t.Fatalf("padding = lead %v trail %v, want only the space it added", att.leadPad, att.trailPad)
+	}
+}
+
+// The refusal roomForToken guards: a prompt with no room for the token
+// says so and stays exactly as it was, rather than inserting a chip the
+// textarea would truncate into text nothing points at.
+func TestComposerPasteRefusedWhenThePromptIsFull(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick.input.CharLimit = 40
+	full := strings.Repeat("x", m.quick.input.CharLimit)
+	m.quick.input.SetValue(full)
+
+	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+
+	if cmd != nil {
+		t.Fatal("a refused paste must not start a clipboard read")
+	}
+	if m.errBar.text != "prompt is full - shorten it before pasting an image" {
+		t.Fatalf("errBar = %q, want the full-prompt refusal", m.errBar.text)
+	}
+	if got := m.quick.input.Value(); got != full {
+		t.Fatalf("value = %q, want the prompt untouched", got)
+	}
+	if len(m.quick.attachments) != 0 {
+		t.Fatalf("no chip should be reserved: %+v", m.quick.attachments)
 	}
 }
 

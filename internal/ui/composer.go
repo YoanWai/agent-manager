@@ -206,7 +206,9 @@ func (c *composer) tokenStartingAt(offset int) (tokenSpan, bool) {
 // setValue rewrites the prompt with the caret left at the given rune
 // offset. The textarea only exposes a column setter, so the value is laid
 // down after the caret, the caret sent to the very beginning, and the head
-// typed back in front of it.
+// typed back in front of it. The beginning is reached by the InputBegin
+// binding because the method behind it is unexported, and CursorStart is
+// the start of the caret's own row rather than of the value.
 func (c *composer) setValue(value string, cursor int) tea.Cmd {
 	runes := []rune(value)
 	cursor = max(0, min(cursor, len(runes)))
@@ -249,9 +251,6 @@ func (c *composer) removeImage(id int) tea.Cmd {
 // removing a chip leaves the words around it as they were.
 func (c *composer) withPadding(span tokenSpan, runes []rune) tokenSpan {
 	att := c.attachment(span.id)
-	if att == nil {
-		return span
-	}
 	if att.leadPad && span.start > 0 && runes[span.start-1] == ' ' {
 		span.start--
 	}

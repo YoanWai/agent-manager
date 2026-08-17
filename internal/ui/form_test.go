@@ -354,6 +354,37 @@ func TestFormCancelReleasesPastedImages(t *testing.T) {
 	}
 }
 
+// The rule that keeps submitForm from releasing: the agent opens the path
+// after it launches, so a created session's images have to outlive the
+// form that named them. The sweep is what takes them, days later.
+func TestFormSubmitKeepsThePastedImage(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	focusFormPrompt(t, m)
+	m.form.name.SetValue("with-a-picture")
+	m.form.dir.SetValue(t.TempDir())
+
+	path := tempImage(t, "mock.png")
+	id := pasteFormImage(t, m, path)
+
+	if _, _ = m.submitForm(); m.errBar.text != "" {
+		t.Fatalf("submit: %q", m.errBar.text)
+	}
+	if m.mode != modeList {
+		t.Fatalf("a created session should close the form, mode = %v", m.mode)
+	}
+	if len(m.sessionRows()) != 1 {
+		t.Fatalf("want one session, got %v", sessionNames(m))
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("the agent still has to open this file: %v", err)
+	}
+	// And the path is what the session launched with, not the chip's text.
+	if strings.Contains(m.form.prompt.message(), imageToken(id)) {
+		t.Fatalf("the chip should have become its path: %q", m.form.prompt.message())
+	}
+}
+
 func TestFormChipRendersInTheCard(t *testing.T) {
 	prev := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
