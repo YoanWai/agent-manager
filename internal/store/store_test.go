@@ -772,6 +772,28 @@ func TestSessionWorktreeColumnsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLaunchPromptRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	prompt := "/create-jira-issue plan the sprint"
+	if err := s.CreateSession(Session{ID: "lp1", Name: "claude-1ff0", Tool: "claude", Cwd: "/tmp", LaunchPrompt: prompt}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.Get("lp1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.LaunchPrompt != prompt {
+		t.Fatalf("launch prompt = %q, want %q", got.LaunchPrompt, prompt)
+	}
+	list, err := s.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if list[0].LaunchPrompt != prompt {
+		t.Fatalf("list dropped the launch prompt: %+v", list[0])
+	}
+}
+
 func TestMoveSessionWorktree(t *testing.T) {
 	s := newTestStore(t)
 	sess := Session{

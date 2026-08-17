@@ -943,3 +943,19 @@ func TestPendingInputWaitsForTheLaunchPrompt(t *testing.T) {
 		t.Fatalf("pane should hold the directive, got:\n%s", pane)
 	}
 }
+
+// A prompt that never reaches the pane, because it scrolled out or the agent
+// never drew it, must not hold pending input past the grace.
+func TestLaunchPromptTakenGivesUpAfterTheGrace(t *testing.T) {
+	fresh := store.Session{LaunchPrompt: "/compact plan the sprint", CreatedAt: time.Now()}
+	if launchPromptTaken(fresh, "no prompt here") {
+		t.Fatal("pending input released before the prompt showed")
+	}
+	if !launchPromptTaken(fresh, "❯ /compact plan the sprint\nworking") {
+		t.Fatal("prompt in the region should release pending input")
+	}
+	stale := store.Session{LaunchPrompt: fresh.LaunchPrompt, CreatedAt: time.Now().Add(-launchPromptGrace - time.Second)}
+	if !launchPromptTaken(stale, "no prompt here") {
+		t.Fatal("pending input still held after the grace")
+	}
+}

@@ -840,3 +840,38 @@ func TestGroupFormStoresWorktreeChoice(t *testing.T) {
 		t.Fatalf("group form should store the worktree choice, got %+v", groups)
 	}
 }
+
+// The poller waits for a prompt the agent has to pick up on its own, so only
+// a command-line prompt is stored; a tool typed into gets its prompt as the
+// first pending input instead. Read before the first poll, which delivers it.
+func TestSpawnStoresOnlyACommandLinePrompt(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", dir, "", "/compact", true, false); err != nil {
+		t.Fatalf("command-line spawn: %v", err)
+	}
+	if err := m.spawnSession("send-tool", "send-tool-abcd", dir, "", "/compact", true, false); err != nil {
+		t.Fatalf("send spawn: %v", err)
+	}
+
+	sessions, err := m.store.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for _, sess := range sessions {
+		switch sess.Tool {
+		case "ready-tool":
+			if sess.LaunchPrompt != "/compact" {
+				t.Fatalf("command-line launch prompt = %q, want /compact", sess.LaunchPrompt)
+			}
+		case "send-tool":
+			if sess.LaunchPrompt != "" {
+				t.Fatalf("typed prompt stored as a launch prompt: %q", sess.LaunchPrompt)
+			}
+			if len(sess.PendingInputs) == 0 || sess.PendingInputs[0] != "/compact" {
+				t.Fatalf("typed prompt is not the first pending input: %q", sess.PendingInputs)
+			}
+		}
+	}
+}
