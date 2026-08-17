@@ -205,6 +205,11 @@ func (f *fakeSessionCommands) CreateGroup(_ string, path, directory string) (ses
 	return sessioncmd.Group{Path: path, Directory: directory}, f.err
 }
 
+func (f *fakeSessionCommands) DeleteGroup(_ string, path string) (sessioncmd.GroupRemoval, error) {
+	f.groupPath = path
+	return sessioncmd.GroupRemoval{Removed: []string{path}, Moved: []string{"a1b2c3d4"}}, f.err
+}
+
 func connect(t *testing.T, configDir, sessionID string) *mcp.ClientSession {
 	t.Helper()
 	return connectServer(t, NewServer(configDir, sessionID, "test"))

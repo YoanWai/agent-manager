@@ -756,3 +756,55 @@ func TestSendRefusesAMessageTooLargeToPasteIntoAPrompt(t *testing.T) {
 		t.Fatalf("a message at the limit was refused: %v", err)
 	}
 }
+
+// A fleet that opened a group for its work has to be able to close it, and
+// the sessions still filed there are not what it asked to remove.
+func TestDeleteGroupMovesItsSessionsToTheRoot(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := h.sessions.CreateGroup(h.caller.ID, "fleet", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	group := "fleet"
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker", Group: &group})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if worker.Group != "fleet" {
+		t.Fatalf("session landed in %q, not the group it was given", worker.Group)
+	}
+
+	removal, err := h.sessions.DeleteGroup(h.caller.ID, "fleet")
+	if err != nil {
+		t.Fatalf("DeleteGroup: %v", err)
+	}
+	if len(removal.Removed) != 1 || removal.Removed[0] != "fleet" {
+		t.Fatalf("removed = %v", removal.Removed)
+	}
+	if len(removal.Moved) != 1 || removal.Moved[0] != worker.ID {
+		t.Fatalf("moved = %v, want the session that was filed there", removal.Moved)
+	}
+
+	// The session is the point: it keeps running, at the root.
+	after, err := h.store.Get(worker.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if after.Group != "" {
+		t.Fatalf("session sits in %q rather than the root", after.Group)
+	}
+	if !h.driver.Exists(worker.ID) {
+		t.Fatal("deleting a group stopped the agent running in it")
+	}
+	groups, err := h.sessions.Groups(h.caller.ID)
+	if err != nil {
+		t.Fatalf("Groups: %v", err)
+	}
+	for _, g := range groups {
+		if g.Path == "fleet" {
+			t.Fatal("the group survived its deletion")
+		}
+	}
+	if _, err := h.sessions.DeleteGroup(h.caller.ID, "fleet"); err == nil {
+		t.Fatal("deleting a group that does not exist was accepted")
+	}
+}

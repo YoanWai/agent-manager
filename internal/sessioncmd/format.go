@@ -183,6 +183,15 @@ func FormatReleased(count int) string {
 	return fmt.Sprintf("released %d reservation(s)", count)
 }
 
+func FormatGroupRemoval(removal GroupRemoval) string {
+	line := fmt.Sprintf("deleted %s", strings.Join(removal.Removed, ", "))
+	if len(removal.Moved) > 0 {
+		line += fmt.Sprintf("; %d session(s) moved to the root group: %s",
+			len(removal.Moved), strings.Join(removal.Moved, ", "))
+	}
+	return line
+}
+
 func FormatGroupList(groups []Group) string {
 	if len(groups) == 0 {
 		return "no groups; sessions live in the root"

@@ -105,6 +105,11 @@ func (f *fakeSessions) CreateGroup(sessionID, path, directory string) (sessioncm
 	return sessioncmd.Group{Path: path, Directory: directory}, f.failWith
 }
 
+func (f *fakeSessions) DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error) {
+	f.callerID, f.groupPath = sessionID, path
+	return sessioncmd.GroupRemoval{Removed: []string{path}, Moved: []string{"beef1234"}}, f.failWith
+}
+
 func (f *fakeSessions) Tasks(sessionID string) ([]sessioncmd.Task, error) {
 	f.callerID = sessionID
 	return []sessioncmd.Task{f.task}, f.failWith
@@ -448,7 +453,7 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands()
 	registered := []string{
 		"sessions", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive",
-		"groups", "create-group", "task", "reserve", "release-files", "reservations", "terminal",
+		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode",
 	}
 	for _, name := range registered {

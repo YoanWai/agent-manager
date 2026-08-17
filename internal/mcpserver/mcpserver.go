@@ -110,6 +110,10 @@ type createGroupArgs struct {
 	Directory string `json:"directory,omitempty" jsonschema:"default working directory sessions created in this group inherit"`
 }
 
+type deleteGroupArgs struct {
+	Path string `json:"path" jsonschema:"full group path to delete, slash separated; groups nested under it go too"`
+}
+
 type listTerminalsOutput struct {
 	Terminals []sessioncmd.Terminal `json:"terminals"`
 }
@@ -172,6 +176,7 @@ type sessionCommands interface {
 	Reservations(sessionID string) ([]sessioncmd.Reservation, error)
 	Groups(sessionID string) ([]sessioncmd.Group, error)
 	CreateGroup(sessionID, path, directory string) (sessioncmd.Group, error)
+	DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error)
 }
 
 // serverInstructions is the block a client shows its model before any tool
@@ -540,6 +545,20 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			return nil, sessioncmd.Group{}, err
 		}
 		return textContent("created group " + created.Path), created, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "delete_group",
+		Description: "Delete a group once the work filed under it is done, so a fleet does not leave a heading behind in the user's list. " +
+			"Groups nested under it go too. Any session still filed there moves to the root group rather than being stopped, " +
+			"so this never ends an agent: kill_session or archive_session those first if that is what you mean.",
+		Annotations: toolAnnotations(false, true, false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args deleteGroupArgs) (*mcp.CallToolResult, sessioncmd.GroupRemoval, error) {
+		removal, err := sessions.DeleteGroup(sessionID, args.Path)
+		if err != nil {
+			return nil, sessioncmd.GroupRemoval{}, err
+		}
+		return textContent(sessioncmd.FormatGroupRemoval(removal)), removal, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{

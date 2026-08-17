@@ -24,6 +24,7 @@ const (
 	usageArchive       = "archive <session-id> [--restore] [--json]"
 	usageGroups        = "groups [--json]"
 	usageCreateGroup   = "create-group <path> [--directory <path>] [--json]"
+	usageDeleteGroup   = "delete-group <path> [--json]"
 )
 
 type sessionCommands interface {
@@ -38,6 +39,7 @@ type sessionCommands interface {
 	Archive(sessionID, targetID string, archived bool) (sessioncmd.Session, error)
 	Groups(sessionID string) ([]sessioncmd.Group, error)
 	CreateGroup(sessionID, path, directory string) (sessioncmd.Group, error)
+	DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error)
 }
 
 func newSessions(configDir string) sessionCommands {
@@ -59,6 +61,7 @@ func sessionSection() section {
 			{name: "archive", usage: usageArchive, about: "file a finished session out of the active list, or restore it with --restore", run: bind(newSessions, runArchive)},
 			{name: "groups", usage: usageGroups, about: "list the groups sessions and terminals are filed under", run: bind(newSessions, runGroups)},
 			{name: "create-group", usage: usageCreateGroup, about: "create a group so a fleet you spawn stays together in the user's list", run: bind(newSessions, runCreateGroup)},
+			{name: "delete-group", usage: usageDeleteGroup, about: "remove a group whose work is done; sessions still in it move to the root rather than stopping", run: bind(newSessions, runDeleteGroup)},
 		},
 	}
 }
@@ -255,4 +258,18 @@ func runCreateGroup(out io.Writer, sessions sessionCommands, args []string, sess
 		return err
 	}
 	return emit(out, *asJSON, created, "created group "+created.Path)
+}
+
+func runDeleteGroup(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	set := newFlagSet(usageDeleteGroup)
+	asJSON := jsonFlag(set)
+	operands, err := parseCommand(out, set, args, 1, 1)
+	if err != nil {
+		return err
+	}
+	removal, err := sessions.DeleteGroup(sessionID, operands[0])
+	if err != nil {
+		return err
+	}
+	return emit(out, *asJSON, removal, sessioncmd.FormatGroupRemoval(removal))
 }

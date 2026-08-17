@@ -175,6 +175,7 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `release_files` | Give those claims back |
 | `list_reservations` | See what every session is editing right now |
 | `list_groups` | List groups with their default directories, worktree defaults and session counts |
+| `delete_group` | remove a group whose work is done; sessions still filed there move to the root rather than stopping |
 | `create_group` | Add a group, nested with a slash path, to file a fleet under |
 | `list_terminals` | List active managed terminals and their current directories |
 | `create_terminal` | Open a terminal beside the calling agent, or in an explicit group or directory |

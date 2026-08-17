@@ -252,6 +252,62 @@ func (s *Sessions) CreateGroup(sessionID, path, directory string) (Group, error)
 	return Group{Path: path, Directory: resolved}, nil
 }
 
+// GroupRemoval is what deleting a group did, since a fleet that filed work
+// under one wants to know where its sessions went.
+type GroupRemoval struct {
+	Removed []string `json:"removed" jsonschema:"group paths that no longer exist, the named group and anything nested under it"`
+	Moved   []string `json:"moved,omitempty" jsonschema:"ids of sessions that were filed under those groups and now sit in the root group"`
+}
+
+// DeleteGroup removes a group and the groups nested under it. Sessions
+// filed there move to the root rather than going with it: an agent
+// tidying up the group it opened for a finished fleet is not asking to
+// destroy whatever is still running in it.
+func (s *Sessions) DeleteGroup(sessionID, path string) (GroupRemoval, error) {
+	path = strings.Trim(strings.TrimSpace(path), "/")
+	if path == "" {
+		return GroupRemoval{}, errors.New("group path is empty; the root group cannot be deleted")
+	}
+	runtime, err := s.open()
+	if err != nil {
+		return GroupRemoval{}, err
+	}
+	defer runtime.store.Close()
+	if _, err := runtime.caller(sessionID); err != nil {
+		return GroupRemoval{}, err
+	}
+	groups, err := runtime.store.Groups()
+	if err != nil {
+		return GroupRemoval{}, err
+	}
+	known := false
+	for _, group := range groups {
+		if group.Name == path {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return GroupRemoval{}, fmt.Errorf("group %q does not exist; call %s for current paths", path, runtime.words.ListGroups)
+	}
+	held, err := runtime.store.SessionsInSubtree(path)
+	if err != nil {
+		return GroupRemoval{}, err
+	}
+	moved := make([]string, 0, len(held))
+	for _, sess := range held {
+		if err := runtime.store.MoveSession(sess.ID, ""); err != nil {
+			return GroupRemoval{}, err
+		}
+		moved = append(moved, sess.ID)
+	}
+	removed, err := runtime.store.DeleteGroup(path)
+	if err != nil {
+		return GroupRemoval{}, err
+	}
+	return GroupRemoval{Removed: removed, Moved: moved}, nil
+}
+
 func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session, error) {
 	runtime, err := s.open()
 	if err != nil {
