@@ -23,6 +23,18 @@ func newComposer(value string) *composer {
 	return &composer{input: in, maxRows: quickBarMaxRows}
 }
 
+// applyMsg sends a message through the model and hands back the model it
+// answered with, failing the test rather than panicking on a surprise.
+func applyMsg(t *testing.T, m *Model, msg tea.Msg) *Model {
+	t.Helper()
+	updated, _ := m.Update(msg)
+	next, ok := updated.(*Model)
+	if !ok {
+		t.Fatalf("Update returned %T, want *Model", updated)
+	}
+	return next
+}
+
 // setCursorAt puts the caret at a rune offset into a single-row value, which
 // is where the chip helpers are exercised; the textarea only takes a column.
 func setCursorAt(t *testing.T, c *composer, offset int) {
@@ -266,8 +278,12 @@ func TestComposerNoImageFallsThroughToATextPaste(t *testing.T) {
 	m.quick.attachments = []imageAttachment{{id: 1}}
 	m.quick.input.InsertString(imageToken(1))
 
-	updated, cmd := m.Update(pasteImageMsg{target: composerQuick, id: 1, noImage: true})
-	m = updated.(*Model)
+	gen := m.quick.gen
+	updated, cmd := m.Update(pasteImageMsg{target: composerQuick, gen: gen, id: 1, noImage: true})
+	m, ok := updated.(*Model)
+	if !ok {
+		t.Fatalf("Update returned %T, want *Model", updated)
+	}
 	if len(m.quick.attachments) != 0 {
 		t.Fatalf("the reserved chip should go back out: %+v", m.quick.attachments)
 	}
@@ -281,8 +297,7 @@ func TestComposerNoImageFallsThroughToATextPaste(t *testing.T) {
 	if !ok {
 		t.Fatalf("paste cmd returned %T", cmd())
 	}
-	updated, _ = m.Update(text)
-	m = updated.(*Model)
+	m = applyMsg(t, m, text)
 	if got := m.quick.input.Value(); got != "see from the clipboard" {
 		t.Fatalf("value = %q, want the clipboard text in place of the chip", got)
 	}
@@ -293,15 +308,55 @@ func TestComposerTextPasteDroppedWhenItsBoxIsClosed(t *testing.T) {
 	m := buildModel(t)
 	m.openQuickMode()
 	m.quick.input.SetValue("kept")
+	gen := m.quick.gen
 	m.quick.active = false
 
-	updated, _ := m.Update(pasteTextMsg{
+	m = applyMsg(t, m, pasteTextMsg{
 		target: composerQuick,
+		gen:    gen,
 		inner:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("late")},
 	})
-	m = updated.(*Model)
 	if got := m.quick.input.Value(); got != "kept" {
 		t.Fatalf("value = %q, want the closed bar left alone", got)
+	}
+}
+
+// A clipboard read outlives the box it was started in. Cancelling a form
+// and opening another is quick enough to beat the read home, and the text
+// belongs to the prompt that is gone, not to the one now on screen.
+func TestComposerPasteFromAClosedBoxSkipsItsSuccessor(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	stale := m.form.prompt.gen
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.openForm()
+	if m.form.prompt.gen == stale {
+		t.Fatal("a reopened form should be a different box")
+	}
+	focusFormPrompt(t, m)
+	for _, r := range "typed since" {
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	m = applyMsg(t, m, pasteTextMsg{
+		target: composerForm,
+		gen:    stale,
+		inner:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" from the old form")},
+	})
+	if got := m.form.prompt.input.Value(); got != "typed since" {
+		t.Fatalf("value = %q, want the new form untouched by the old form's paste", got)
+	}
+
+	// An image read from the same dead box is dropped the same way, file
+	// and all, rather than filling a chip the new form never reserved.
+	path := tempImage(t, "stale.png")
+	m.form.prompt.attachments = []imageAttachment{{id: 1}}
+	m = applyMsg(t, m, pasteImageMsg{target: composerForm, gen: stale, id: 1, path: path})
+	if got := m.form.prompt.attachments[0].path; got != "" {
+		t.Fatalf("chip path = %q, want the stale read ignored", got)
+	}
+	if !fileGone(path) {
+		t.Fatal("a dropped read should not leave its file behind")
 	}
 }
 

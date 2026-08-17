@@ -279,6 +279,7 @@ func (m *Model) openForm() {
 
 	dir := textField("", 400)
 	prompt := promptField()
+	prompt.gen = m.nextComposerGen()
 
 	m.form = form{
 		name:      name,

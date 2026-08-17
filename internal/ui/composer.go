@@ -29,6 +29,11 @@ type composer struct {
 	// keystroke adding a wrapped row would otherwise scroll the first row
 	// away for good.
 	maxRows int
+	// gen tells this box from the one that stood in the same place before
+	// it. A clipboard read outlives the prompt that started it, and closing
+	// a form and opening another is fast enough to beat one home; without
+	// an identity, that read would type into a box its user never pasted in.
+	gen int
 }
 
 // imageAttachment is one pasted image: the id its token carries, and the
@@ -55,6 +60,7 @@ const (
 // a composer's ctrl+v handler.
 type pasteImageMsg struct {
 	target  composerID
+	gen     int
 	id      int
 	path    string
 	err     error
@@ -69,6 +75,7 @@ type pasteImageMsg struct {
 // exec off the update path.
 type pasteTextMsg struct {
 	target composerID
+	gen    int
 	inner  tea.Msg
 }
 
@@ -76,9 +83,9 @@ type pasteTextMsg struct {
 // can drive the fallback without an OS clipboard.
 var readClipboardText = textarea.Paste
 
-func pasteTextCmd(target composerID) tea.Cmd {
+func pasteTextCmd(target composerID, gen int) tea.Cmd {
 	return func() tea.Msg {
-		return pasteTextMsg{target: target, inner: readClipboardText()}
+		return pasteTextMsg{target: target, gen: gen, inner: readClipboardText()}
 	}
 }
 
@@ -375,23 +382,30 @@ func (c *composer) paste(target composerID) (tea.Cmd, bool) {
 	id := c.lastImageID
 	c.attachments = append(c.attachments, imageAttachment{id: id})
 	c.insertToken(&c.attachments[len(c.attachments)-1])
-	return captureImageCmd(target, id), true
+	return captureImageCmd(target, c.gen, id), true
 }
 
 // captureImageCmd reads the clipboard image off the UI thread and writes
 // it once into the pastes directory, keeping the TUI responsive while the
 // OS clipboard is read.
-func captureImageCmd(target composerID, id int) tea.Cmd {
+func captureImageCmd(target composerID, gen, id int) tea.Cmd {
 	return func() tea.Msg {
 		path, err := captureClipboardImage()
 		if err != nil {
 			if errors.Is(err, clipboard.ErrNoImage) {
-				return pasteImageMsg{target: target, id: id, noImage: true}
+				return pasteImageMsg{target: target, gen: gen, id: id, noImage: true}
 			}
-			return pasteImageMsg{target: target, id: id, err: err}
+			return pasteImageMsg{target: target, gen: gen, id: id, err: err}
 		}
-		return pasteImageMsg{target: target, id: id, path: path}
+		return pasteImageMsg{target: target, gen: gen, id: id, path: path}
 	}
+}
+
+// nextComposerGen numbers a freshly opened prompt box, so a clipboard read
+// still in flight can tell the box it was started in from its successor.
+func (m *Model) nextComposerGen() int {
+	m.composerSeq++
+	return m.composerSeq
 }
 
 // composerFor is the prompt box a target names, whatever screen is up.
@@ -459,6 +473,15 @@ func (m *Model) composerKey(target composerID, msg tea.KeyMsg) (tea.Cmd, bool) {
 // the chip back out, and no-image falls through to a text paste.
 func (m *Model) handlePasteImageMsg(msg pasteImageMsg) (tea.Model, tea.Cmd) {
 	c := m.composerFor(msg.target)
+	// A read started in a box that has since been closed and replaced: the
+	// one standing there now never asked for it, and its own chips are not
+	// this message's to take away.
+	if c.gen != msg.gen {
+		if msg.path != "" {
+			_ = os.Remove(msg.path)
+		}
+		return m, nil
+	}
 	att := c.attachment(msg.id)
 	if att == nil || !m.composerOpen(msg.target) {
 		if msg.path != "" {
@@ -476,7 +499,7 @@ func (m *Model) handlePasteImageMsg(msg pasteImageMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.noImage {
 		cmd := c.removeImage(msg.id)
-		return m, tea.Batch(cmd, pasteTextCmd(msg.target))
+		return m, tea.Batch(cmd, pasteTextCmd(msg.target, c.gen))
 	}
 	att.path = msg.path
 	m.errBar.text = ""
@@ -486,10 +509,10 @@ func (m *Model) handlePasteImageMsg(msg pasteImageMsg) (tea.Model, tea.Cmd) {
 // handlePasteTextMsg delivers a text clipboard to the box that asked for
 // it, as though the paste had been typed there.
 func (m *Model) handlePasteTextMsg(msg pasteTextMsg) (tea.Model, tea.Cmd) {
-	if !m.composerOpen(msg.target) {
+	c := m.composerFor(msg.target)
+	if c.gen != msg.gen || !m.composerOpen(msg.target) {
 		return m, nil
 	}
-	c := m.composerFor(msg.target)
 	c.input.SetHeight(c.maxRows)
 	var cmd tea.Cmd
 	c.input, cmd = c.input.Update(msg.inner)

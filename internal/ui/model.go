@@ -144,11 +144,13 @@ type Model struct {
 	rename     renameTarget
 	fork       forkState
 	quick      quickState
-	settings   settingsState
-	help       helpState
-	moveID     string
-	movePath   string
-	repoPick   repoPickState
+	// composerSeq numbers the prompt boxes this run has opened.
+	composerSeq int
+	settings    settingsState
+	help        helpState
+	moveID      string
+	movePath    string
+	repoPick    repoPickState
 	// editorReturnID is the session an editor request detached from, so the
 	// attach it cost can be resumed once the editor is up.
 	editorReturnID string

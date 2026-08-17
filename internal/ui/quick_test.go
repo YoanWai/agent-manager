@@ -337,7 +337,7 @@ func TestQuickPasteReservesTheChipUntilTheReadLands(t *testing.T) {
 	}
 
 	path := tempImage(t, "landed.png")
-	updated, _ := m.Update(pasteImageMsg{target: composerQuick, id: id, path: path})
+	updated, _ := m.Update(pasteImageMsg{target: composerQuick, gen: m.quick.gen, id: id, path: path})
 	m = updated.(*Model)
 	if m.quick.pasting() {
 		t.Fatal("the chip should settle once the read lands")
@@ -422,7 +422,7 @@ func TestQuickImageMsgNoImageReachesTextPaste(t *testing.T) {
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
 	id := m.quick.lastImageID
-	updated, cmd := m.Update(pasteImageMsg{target: composerQuick, id: id, noImage: true})
+	updated, cmd := m.Update(pasteImageMsg{target: composerQuick, gen: m.quick.gen, id: id, noImage: true})
 	m = updated.(*Model)
 	if m.quick.pasting() || len(m.quick.attachments) != 0 {
 		t.Fatalf("a clipboard with no image should take the chip back out: %+v", m.quick.attachments)

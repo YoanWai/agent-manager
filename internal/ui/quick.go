@@ -31,7 +31,7 @@ func (m *Model) openQuickMode() {
 	m.forgetWorktreeCapability()
 	m.quick = quickState{
 		active:         true,
-		composer:       composer{input: input, maxRows: quickBarMaxRows},
+		composer:       composer{input: input, maxRows: quickBarMaxRows, gen: m.nextComposerGen()},
 		toolNames:      names,
 		toolIndex:      index,
 		closeAfterSend: m.quickCloseAfterSend(),
