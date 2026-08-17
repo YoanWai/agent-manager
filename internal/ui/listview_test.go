@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -888,19 +889,26 @@ func TestPreviewLoaderIsCenteredAndMovesOnThePreviewTick(t *testing.T) {
 			t.Fatalf("loader row %q is not centered: left=%d right=%d", lines[row], left, right)
 		}
 	}
-	m.Update(previewTickMsg{})
+	m.Update(startupTickMsg{})
 	if next := previewText(m); next == first {
-		t.Fatal("preview loader did not move on the preview tick")
+		t.Fatal("preview loader did not move on the startup tick")
 	}
 }
 
-func TestStartingSessionGlyphMovesOnThePreviewTick(t *testing.T) {
-	m := previewModel(status.Starting, blankCapture)
-	first := ansi.Strip(m.sessionGlyph(m.rows[0].sess))
-	m.Update(previewTickMsg{})
-	second := ansi.Strip(m.sessionGlyph(m.rows[0].sess))
-	if first == second {
-		t.Fatalf("starting session glyph stayed on %q", first)
+func TestStartingSessionGlyphMovesOnTheStartupTick(t *testing.T) {
+	for _, tool := range []string{"agent", "shell"} {
+		m := previewModel(status.Starting, blankCapture)
+		m.rows[0].sess.Tool = tool
+		m.cfg.Tools = map[string]config.Tool{"shell": {Shell: true}}
+		first := ansi.Strip(m.sessionGlyph(m.rows[0].sess))
+		m.Update(startupTickMsg{})
+		second := ansi.Strip(m.sessionGlyph(m.rows[0].sess))
+		if first == second {
+			t.Fatalf("starting %s glyph stayed on %q", tool, first)
+		}
+		if second == shellGlyph {
+			t.Fatal("starting shell used the resting shell glyph")
+		}
 	}
 }
 

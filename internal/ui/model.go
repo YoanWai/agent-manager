@@ -187,7 +187,8 @@ type Model struct {
 	bannerPhase int
 
 	// startupPhase advances the launch animation in the rail and preview.
-	startupPhase int
+	startupPhase     int
+	startupAnimating bool
 
 	update updateInfo
 
@@ -486,6 +487,8 @@ func (m *Model) cursorBlink() tea.Cmd {
 // previewTickMsg drives that timer.
 type previewTickMsg struct{}
 
+type startupTickMsg struct{}
+
 func (m *Model) hasStartingRow() bool {
 	for _, row := range m.rows {
 		if !row.isGroup && row.sess.Status == status.Starting {
@@ -495,16 +498,31 @@ func (m *Model) hasStartingRow() bool {
 	return false
 }
 
+func (m *Model) previewInterval() time.Duration {
+	if sess, ok := m.selected(); ok {
+		switch sess.Status {
+		case status.Working, status.Starting:
+			return previewIntervalLive
+		}
+	}
+	return previewIntervalCalm
+}
+
 // previewTick re-arms the preview timer at the cadence the selection earns.
 func (m *Model) previewTick() tea.Cmd {
-	interval := previewIntervalCalm
-	if sess, ok := m.selected(); ok && sess.Status == status.Working {
-		interval = previewIntervalLive
+	return tea.Tick(m.previewInterval(), func(time.Time) tea.Msg { return previewTickMsg{} })
+}
+
+func (m *Model) startStartupTick() tea.Cmd {
+	if m.startupAnimating || !m.hasStartingRow() {
+		return nil
 	}
-	if m.hasStartingRow() {
-		interval = startupInterval
-	}
-	return tea.Tick(interval, func(time.Time) tea.Msg { return previewTickMsg{} })
+	m.startupAnimating = true
+	return m.startupTick()
+}
+
+func (m *Model) startupTick() tea.Cmd {
+	return tea.Tick(startupInterval, func(time.Time) tea.Msg { return startupTickMsg{} })
 }
 
 type errMsg struct{ err error }
@@ -693,7 +711,7 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.sweepPastes, m.pasteSweepTick())
+	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick())
 }
 
 // updateMsg carries the result of a GitHub release check. A failed check may
@@ -1037,24 +1055,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleBrowserOpen(msg)
 		return m, nil
 
-	case previewTickMsg:
+	case startupTickMsg:
+		if !m.hasStartingRow() {
+			m.startupAnimating = false
+			return m, nil
+		}
 		m.startupPhase++
+		return m, m.startupTick()
+
+	case previewTickMsg:
 		// Only the list keeps a live pane on screen; review and the modal
 		// screens have no preview to feed, so they skip the capture and
 		// just keep the timer alive.
 		sess, ok := m.selected()
 		if !ok || (m.mode != modeList && m.mode != modeRename && m.mode != modeFocus) {
 			return m, m.previewTick()
-		}
-		if m.hasStartingRow() {
-			captureInterval := previewIntervalCalm
-			if sess.Status == status.Working || sess.Status == status.Starting {
-				captureInterval = previewIntervalLive
-			}
-			captureEvery := int((captureInterval + startupInterval - 1) / startupInterval)
-			if m.startupPhase%captureEvery != 0 {
-				return m, m.previewTick()
-			}
 		}
 		// A session with a control client already pushes every frame; a
 		// tick capture on top of that is work whose result is discarded.
@@ -1104,7 +1119,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
 			m.previewGen++
-			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd())
+			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd(), m.startStartupTick())
 		}
 		m.proc = msg.proc
 		m.procFor = msg.procFor
@@ -1115,7 +1130,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.watchSelection()
 		}
 		m.watchedGen = m.previewGen
-		return m, tea.Batch(focusExit, m.diffRefreshCmd())
+		return m, tea.Batch(focusExit, m.diffRefreshCmd(), m.startStartupTick())
 
 	case updateMsg:
 		if msg.manual {

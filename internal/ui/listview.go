@@ -449,13 +449,13 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 // A shell takes a caret rather than an idle dot it would never leave, but
 // a pane that has gone still has to say so.
 func (m *Model) sessionGlyph(sess store.Session) string {
-	resting := sess.Status != status.Dead && sess.Status != status.Errored
-	if resting && m.isShell(sess.Tool) {
-		return subtleStyle.Render(shellGlyph)
-	}
 	if sess.Status == status.Starting {
 		return lipgloss.NewStyle().Foreground(statusColor(status.Starting)).
 			Render(startupFrames[m.startupPhase%len(startupFrames)])
+	}
+	resting := sess.Status != status.Dead && sess.Status != status.Errored
+	if resting && m.isShell(sess.Tool) {
+		return subtleStyle.Render(shellGlyph)
 	}
 	return lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
 }
@@ -718,7 +718,7 @@ func (m *Model) startupLoader(width, height int) []string {
 		centerLine(valueStyle.Bold(true).Render("starting up"), width),
 	}
 	if height <= len(block) {
-		return block[:max(height, 0)]
+		return block[:height]
 	}
 	lines := make([]string, height)
 	copy(lines[(height-len(block))/2:], block)

@@ -41,7 +41,12 @@ func groupWithShell(t *testing.T, m *Model, group string) {
 func TestRestingShellUsesCaretGlyph(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.refreshCmd())
-	spawnTerminal(t, m)
+	shell := spawnTerminal(t, m)
+	for i := range m.rows {
+		if m.rows[i].sess.ID == shell.ID {
+			m.rows[i].sess.Status = status.Idle
+		}
+	}
 
 	if rail := m.rail(); !strings.Contains(rail, shellGlyph) {
 		t.Fatalf("a resting shell should carry the caret:\n%s", rail)
@@ -52,6 +57,7 @@ func TestDeadInlineShellKeepsItsStatusGlyph(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.refreshCmd())
 	shell := spawnTerminal(t, m)
+	shell.Status = status.Idle
 
 	if glyph := ansi.Strip(m.sessionGlyph(shell)); glyph != shellGlyph {
 		t.Fatalf("a resting shell wears the caret, got %q", glyph)
