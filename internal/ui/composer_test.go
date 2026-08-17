@@ -247,6 +247,64 @@ func TestComposerPasteRefusedWhenThePromptIsFull(t *testing.T) {
 	}
 }
 
+// A clipboard holding text rather than an image still pastes. The read
+// comes back as a message only the textarea can read, so what this pins is
+// the routing: whatever the read yields has to reach the input the ctrl+v
+// was typed into, rather than being dropped on the way past.
+func TestComposerNoImageFallsThroughToATextPaste(t *testing.T) {
+	orig := readClipboardText
+	t.Cleanup(func() { readClipboardText = orig })
+	readClipboardText = func() tea.Msg {
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("from the clipboard")}
+	}
+
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick.input.SetValue("see ")
+	m.quick.input.CursorEnd()
+	m.quick.lastImageID = 1
+	m.quick.attachments = []imageAttachment{{id: 1}}
+	m.quick.input.InsertString(imageToken(1))
+
+	updated, cmd := m.Update(pasteImageMsg{target: composerQuick, id: 1, noImage: true})
+	m = updated.(*Model)
+	if len(m.quick.attachments) != 0 {
+		t.Fatalf("the reserved chip should go back out: %+v", m.quick.attachments)
+	}
+	if cmd == nil {
+		t.Fatal("a clipboard with no image should still start a text paste")
+	}
+
+	// The command carries the clipboard read; its message is what has to
+	// land in the input.
+	text, ok := cmd().(pasteTextMsg)
+	if !ok {
+		t.Fatalf("paste cmd returned %T", cmd())
+	}
+	updated, _ = m.Update(text)
+	m = updated.(*Model)
+	if got := m.quick.input.Value(); got != "see from the clipboard" {
+		t.Fatalf("value = %q, want the clipboard text in place of the chip", got)
+	}
+}
+
+// The same fallback, once the bar it was typed into is gone.
+func TestComposerTextPasteDroppedWhenItsBoxIsClosed(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick.input.SetValue("kept")
+	m.quick.active = false
+
+	updated, _ := m.Update(pasteTextMsg{
+		target: composerQuick,
+		inner:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("late")},
+	})
+	m = updated.(*Model)
+	if got := m.quick.input.Value(); got != "kept" {
+		t.Fatalf("value = %q, want the closed bar left alone", got)
+	}
+}
+
 // A paste result carries the box it was started from, so the two screens
 // cannot land each other's images.
 func TestComposerTargetsRouteToTheirOwnBox(t *testing.T) {

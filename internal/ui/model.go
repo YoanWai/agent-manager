@@ -1257,6 +1257,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pasteImageMsg:
 		return m.handlePasteImageMsg(msg)
 
+	case pasteTextMsg:
+		return m.handlePasteTextMsg(msg)
+
 	case attachDoneMsg:
 		// An agent that repainted the terminal background for itself leaves
 		// it on ours; the resume's WindowSizeMsg skips its own sync when the

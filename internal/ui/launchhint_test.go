@@ -149,13 +149,29 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	}
 }
 
-// An error the bar reports leaves the form up, so the prompt still names
-// its images and they have to survive for the retry.
+// A spawn that fails into the status bar leaves the form up, so the prompt
+// still names its images and they have to survive for the retry. The
+// failure is a worktree that cannot be created, which is the far side of
+// spawnSession rather than a field the form could have validated.
 func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
 	m := buildModel(t)
+	dir := t.TempDir()
+	initGitRepo(t, dir)
 	m.openForm()
 	m.form.name.SetValue("agent")
-	m.form.dir.SetValue(filepath.Join(t.TempDir(), "not-there"))
+	m.form.dir.SetValue(dir)
+	m.form.worktree = true
+	m.form.worktreeAuto = false
+	if !m.formWorktreeOn() {
+		t.Fatal("the worktree toggle should be on for this spawn")
+	}
+	// AddWorktree checks out into <repo>-worktrees/<session>, and refuses a
+	// path that is already there. Taking the name it would pick is what
+	// fails this spawn, on the far side of every field the form validates.
+	taken := filepath.Join(filepath.Dir(dir), filepath.Base(dir)+"-worktrees", "agent")
+	if err := os.MkdirAll(taken, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	path := tempImage(t, "mock.png")
 	m.form.prompt.attachments = []imageAttachment{{id: 1, path: path}}
 	m.form.prompt.input.SetValue("match " + imageToken(1))
@@ -164,6 +180,14 @@ func TestFormSpawnErrorInTheBarKeepsItsImages(t *testing.T) {
 
 	if m.mode != modeForm || m.errBar.text == "" {
 		t.Fatalf("mode = %v, err = %q, want the form still up with the error", m.mode, m.errBar.text)
+	}
+	// Named so the test cannot pass on an earlier refusal: this is the
+	// spawn failing, not a field the form checked before it got there.
+	if !strings.Contains(m.errBar.text, taken) {
+		t.Fatalf("err = %q, want the worktree path that blocked the spawn", m.errBar.text)
+	}
+	if len(m.sessionRows()) != 0 {
+		t.Fatalf("a failed spawn leaves no session, got %v", sessionNames(m))
 	}
 	if len(m.form.prompt.attachments) != 1 {
 		t.Fatalf("attachments = %+v, want the chip kept for the retry", m.form.prompt.attachments)

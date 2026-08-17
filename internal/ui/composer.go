@@ -61,6 +61,27 @@ type pasteImageMsg struct {
 	noImage bool
 }
 
+// pasteTextMsg carries a clipboard that turned out to hold text. The
+// textarea reads its own clipboard into a message only it can interpret,
+// and a command's message comes back to the app rather than to the widget
+// that asked for it, so the read is wrapped here and handed over on
+// arrival. Reading it in the command rather than on the way past keeps the
+// exec off the update path.
+type pasteTextMsg struct {
+	target composerID
+	inner  tea.Msg
+}
+
+// readClipboardText is the textarea's own clipboard read, seamed so a test
+// can drive the fallback without an OS clipboard.
+var readClipboardText = textarea.Paste
+
+func pasteTextCmd(target composerID) tea.Cmd {
+	return func() tea.Msg {
+		return pasteTextMsg{target: target, inner: readClipboardText()}
+	}
+}
+
 // imageTokenPattern matches the plain-text token a pasted image leaves in
 // the prompt value. The token carries the id, so a chip keeps its identity
 // wherever the text around it moves.
@@ -455,12 +476,24 @@ func (m *Model) handlePasteImageMsg(msg pasteImageMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.noImage {
 		cmd := c.removeImage(msg.id)
-		c.input.SetHeight(c.maxRows)
-		var pasteCmd tea.Cmd
-		c.input, pasteCmd = c.input.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
-		return m, tea.Batch(cmd, pasteCmd)
+		return m, tea.Batch(cmd, pasteTextCmd(msg.target))
 	}
 	att.path = msg.path
 	m.errBar.text = ""
 	return m, nil
+}
+
+// handlePasteTextMsg delivers a text clipboard to the box that asked for
+// it, as though the paste had been typed there.
+func (m *Model) handlePasteTextMsg(msg pasteTextMsg) (tea.Model, tea.Cmd) {
+	if !m.composerOpen(msg.target) {
+		return m, nil
+	}
+	c := m.composerFor(msg.target)
+	c.input.SetHeight(c.maxRows)
+	var cmd tea.Cmd
+	c.input, cmd = c.input.Update(msg.inner)
+	c.prune()
+	c.snapCursorOutOfToken()
+	return m, cmd
 }
