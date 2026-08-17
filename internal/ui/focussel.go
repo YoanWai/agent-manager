@@ -482,13 +482,14 @@ type focusCopiedMsg struct{ chars int }
 // agent's own colors would fight the highlight, and the selection is
 // transient.
 func (m *Model) renderPaneRow(row int, raw string, width int) string {
-	line := ansi.Strip(previewDangerSeqs.ReplaceAllString(raw, ""))
+	clean := previewDangerSeqs.ReplaceAllString(raw, "")
+	line := ansi.Strip(clean)
 	if !m.sel.active {
-		return m.withCursor(row, raw, []rune(line), width)
+		return m.withCursor(row, clean, []rune(line), width)
 	}
 	start, end, ok := m.selectionSpan(row, ansi.StringWidth(line))
 	if !ok {
-		return m.withCursor(row, raw, []rune(line), width)
+		return m.withCursor(row, clean, []rune(line), width)
 	}
 	startByte, endByte := graphemeRangeAtColumns(line, start, end)
 	before := line[:startByte]
@@ -498,17 +499,27 @@ func (m *Model) renderPaneRow(row int, raw string, width int) string {
 	return previewLine(painted, width)
 }
 
+func (m *Model) paneRowHasOverlay(row, paneHeight int) bool {
+	if m.sel.active {
+		start, _, end, _ := m.sel.selectionRange()
+		if row >= start && row <= end {
+			return true
+		}
+	}
+	cursorRow, _, ok := m.cursorCell(paneHeight)
+	return ok && cursorRow == row
+}
+
 // withCursor draws the focused session's own cursor as a lit cell, since a
 // captured pane carries no cursor of its own and the terminal's real one
 // sits wherever our frame ended. The row keeps every colour the agent
 // drew: only the caret cell is overpainted, spliced in by display column
 // so the surrounding escape state survives on both sides of it.
-func (m *Model) withCursor(row int, raw string, line []rune, width int) string {
+func (m *Model) withCursor(row int, clean string, line []rune, width int) string {
 	cursorRow, cursorCol, ok := m.cursorCell(m.pane.box.height)
 	if !ok || cursorRow != row {
-		return previewLine(raw, width)
+		return previewLine(clean, width)
 	}
-	clean := previewDangerSeqs.ReplaceAllString(raw, "")
 	lineWidth := ansi.StringWidth(clean)
 	if cursorCol >= lineWidth {
 		// The caret sits on padding the row does not have, which is where

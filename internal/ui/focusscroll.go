@@ -239,11 +239,14 @@ func (m *Model) scrollFocus(delta int) tea.Cmd {
 	return m.requestFocusRegion(sess.ID)
 }
 
-// requestFocusRegion fetches the current scroll target. Every notch gets
-// its own command: callers (including tests) rely on a non-nil command
-// per notch, and stale replies are discarded by the offset guard in
-// Update, so a burst costs extra captures but never a wrong frame.
+// requestFocusRegion fetches the current scroll target. While a capture is in
+// flight, wheel input only updates focusScroll; the completed capture then
+// fetches that final offset once.
 func (m *Model) requestFocusRegion(sessID string) tea.Cmd {
+	if m.focusScrollPending {
+		return nil
+	}
+	m.focusScrollPending = true
 	return m.focusRegionCmd(sessID, m.focusScroll)
 }
 
@@ -263,6 +266,15 @@ func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
 		out, ok := watch.query(command)
 		return focusScrollMsg{sessID: sessID, offset: offset, rows: rows, preview: matchExecShape(out), ok: ok}
 	}
+}
+
+func padFocusCapture(pane string, rows int) string {
+	lines := strings.Split(strings.TrimSuffix(pane, "\n"), "\n")
+	if len(lines) >= rows {
+		return pane
+	}
+	lines = append(lines, make([]string, rows-len(lines))...)
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // scrolledBack reports whether the focused pane is showing history rather

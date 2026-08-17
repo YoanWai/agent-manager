@@ -733,7 +733,7 @@ func (m *Model) startupLoader(width, height int) []string {
 func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	var lines []contentLine
 	loader := m.startupLoader(width, height)
-	pane := paneExact(m.preview, height, width)
+	pane, base := m.cachedPaneRows(width, height)
 	if len(pane) == 0 {
 		// No rows painted means nothing to hit-test: a box left over from
 		// the previous session would catch clicks on empty space.
@@ -760,7 +760,11 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 			lines = append(lines, contentLine{text: previewLine(loader[i], width), raw: true})
 			continue
 		}
-		lines = append(lines, contentLine{text: m.renderPaneRow(i, line, width), raw: true})
+		rendered := base[i]
+		if m.paneRowHasOverlay(i, len(pane)) {
+			rendered = m.renderPaneRow(i, line, width)
+		}
+		lines = append(lines, contentLine{text: rendered, raw: true})
 	}
 	// Rows past the capture stay raw too: a painted tail under unpainted
 	// output would read as a box drawn around the agent's last line.
@@ -768,6 +772,26 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 		lines = append(lines, contentLine{raw: true})
 	}
 	return lines
+}
+
+func (m *Model) cachedPaneRows(width, height int) ([]string, []string) {
+	cache := &m.paneRender
+	if cache.preview == m.preview && cache.width == width && cache.height == height {
+		return cache.raw, cache.base
+	}
+	raw := paneExact(m.preview, height, width)
+	base := make([]string, len(raw))
+	for i, line := range raw {
+		base[i] = previewLine(line, width)
+	}
+	*cache = paneRenderCache{
+		preview: m.preview,
+		width:   width,
+		height:  height,
+		raw:     raw,
+		base:    base,
+	}
+	return raw, base
 }
 
 // detailLabelWidth is the column every fact label in the content head is

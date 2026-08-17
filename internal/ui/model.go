@@ -112,6 +112,13 @@ type Model struct {
 	// focusScroll is how many lines the focused pane is scrolled back into
 	// its history; zero is live at the bottom.
 	focusScroll int
+	// focusScrollPending keeps rapid wheel input from queueing one capture per
+	// notch. The offset continues to move immediately; the next capture uses
+	// the final offset seen while the current one is in flight.
+	focusScrollPending bool
+	// paneRender avoids repeating ANSI normalization while the pane content
+	// stays unchanged and only surrounding UI state is moving.
+	paneRender paneRenderCache
 	// focusOnEnter mirrors the persisted focus-key setting; the footer
 	// reads it every frame, so it lives here instead of the store.
 	focusOnEnter bool
@@ -235,6 +242,17 @@ type paneMirror struct {
 	columnX int
 	cursor  paneCursor
 	geom    map[string][2]int
+}
+
+// paneRenderCache holds the expensive, interaction-free rendering of a pane.
+// Selection and cursor overlays are applied afterwards so they can change
+// without rebuilding every captured row.
+type paneRenderCache struct {
+	preview string
+	width   int
+	height  int
+	raw     []string
+	base    []string
 }
 
 type errBar struct {
@@ -1216,13 +1234,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !ok || sess.ID != msg.sessID {
 			return m, nil
 		}
+		m.focusScrollPending = false
+		// A mouse-tracking app owns the wheel and invalidates any plain-pane
+		// capture that was still in flight when it took over.
+		if m.pane.mouse {
+			return m, nil
+		}
 		if msg.offset != m.focusScroll || msg.rows != m.previewPaneHeight() {
 			// The wheel or a resize moved the target while this capture was
 			// in flight. Fetch just that final viewport.
+			m.focusScrollPending = true
 			return m, m.focusRegionCmd(sess.ID, m.focusScroll)
 		}
 		if msg.ok {
-			m.preview = msg.preview
+			m.preview = padFocusCapture(msg.preview, msg.rows)
 		}
 		return m, nil
 

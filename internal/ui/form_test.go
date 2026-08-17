@@ -777,6 +777,47 @@ func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	}
 }
 
+func TestBuildLaunchPreservesCodexScrollback(t *testing.T) {
+	m := buildModel(t)
+	tool := config.Tool{Command: "codex", SessionStore: "codex", MCP: "none"}
+
+	command, _, err := m.buildLaunch("codex", tool, tool.Command, "scroll01")
+	if err != nil {
+		t.Fatalf("buildLaunch: %v", err)
+	}
+	want := "codex -c 'tui.terminal_resize_reflow_max_rows=0'"
+	if command != want {
+		t.Fatalf("command = %q, want %q", command, want)
+	}
+
+	command = preserveCodexScrollback(tool, "codex resume session-id")
+	if command != "codex resume session-id -c 'tui.terminal_resize_reflow_max_rows=0'" {
+		t.Fatalf("resume command = %q", command)
+	}
+}
+
+func TestPreserveCodexScrollbackRecognizesConfiguredArguments(t *testing.T) {
+	tool := config.Tool{Command: "codex --no-alt-screen", SessionStore: "codex"}
+	command := "codex --no-alt-screen"
+	want := "codex --no-alt-screen -c 'tui.terminal_resize_reflow_max_rows=0'"
+	if got := preserveCodexScrollback(tool, command); got != want {
+		t.Fatalf("command = %q, want %q", got, want)
+	}
+}
+
+func TestPreserveCodexScrollbackLeavesOtherToolsAlone(t *testing.T) {
+	command := "opencode"
+	if got := preserveCodexScrollback(config.Tool{SessionStore: "opencode"}, command); got != command {
+		t.Fatalf("non-Codex command changed to %q", got)
+	}
+
+	command = "cat"
+	tool := config.Tool{Command: command, SessionStore: "codex"}
+	if got := preserveCodexScrollback(tool, command); got != command {
+		t.Fatalf("non-Codex executable changed to %q", got)
+	}
+}
+
 func TestSortedToolNamesOrder(t *testing.T) {
 	cfg := config.Config{Tools: map[string]config.Tool{
 		"grok":     {Command: "grok"},

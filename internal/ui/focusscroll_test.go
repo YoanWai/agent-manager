@@ -169,6 +169,99 @@ func TestFocusWheelScrollsHistory(t *testing.T) {
 	}
 }
 
+func TestFocusScrollCoalescesFastWheelInput(t *testing.T) {
+	m, sessID := focusedWithHistory(t, "coalesce")
+	m.View()
+	if len(m.paneRender.base) == 0 {
+		t.Fatal("initial pane render cache is empty")
+	}
+	base := &m.paneRender.base[0]
+	first := m.scrollFocus(-1)
+	if first == nil {
+		t.Fatal("first wheel notch produced no capture")
+	}
+	m.View()
+	if &m.paneRender.base[0] != base {
+		t.Fatal("wheel input rebuilt pane rows before new content arrived")
+	}
+	for i := 0; i < 9; i++ {
+		if cmd := m.scrollFocus(-1); cmd != nil {
+			t.Fatalf("wheel burst queued capture %d while one was in flight", i+2)
+		}
+		m.View()
+		if &m.paneRender.base[0] != base {
+			t.Fatalf("wheel input %d rebuilt pane rows before capture", i+2)
+		}
+	}
+	wantOffset := m.focusScroll
+
+	updated, follow := m.Update(first())
+	m = updated.(*Model)
+	if follow == nil {
+		t.Fatal("stale capture did not schedule the final viewport")
+	}
+	if !m.focusScrollPending {
+		t.Fatal("follow-up capture was not marked in flight")
+	}
+	m.View()
+	if &m.paneRender.base[0] != base {
+		t.Fatal("stale capture rebuilt pane rows before the final viewport arrived")
+	}
+	if m.focusScroll != wantOffset {
+		t.Fatalf("focusScroll = %d, want %d", m.focusScroll, wantOffset)
+	}
+
+	msg, ok := follow().(focusScrollMsg)
+	if !ok {
+		t.Fatalf("follow-up command returned %T, want focusScrollMsg", follow())
+	}
+	if msg.sessID != sessID || msg.offset != wantOffset {
+		t.Fatalf("follow-up capture = (%q, %d), want (%q, %d)", msg.sessID, msg.offset, sessID, wantOffset)
+	}
+	updated, follow = m.Update(msg)
+	m = updated.(*Model)
+	if follow != nil {
+		t.Fatal("current capture scheduled another request")
+	}
+	if m.focusScrollPending {
+		t.Fatal("capture remained marked as pending")
+	}
+}
+
+func TestFocusScrollCaptureFailureClearsPending(t *testing.T) {
+	m, sessID := focusedWithHistory(t, "capture-failure")
+	m.focusScrollPending = true
+	preview := m.preview
+
+	updated, follow := m.Update(focusScrollMsg{
+		sessID: sessID,
+		offset: m.focusScroll,
+		rows:   m.previewPaneHeight(),
+	})
+	m = updated.(*Model)
+	if follow != nil {
+		t.Fatal("failed current capture scheduled an unexpected follow-up")
+	}
+	if m.focusScrollPending {
+		t.Fatal("failed capture remained marked as pending")
+	}
+	if m.preview != preview {
+		t.Fatal("failed capture replaced the current preview")
+	}
+	if next := m.scrollFocus(-1); next == nil {
+		t.Fatal("wheel input did not recover after a failed capture")
+	}
+}
+
+func TestPadFocusCaptureKeepsRequestedRows(t *testing.T) {
+	if got := len(paneExact(padFocusCapture("first\nsecond\n", 4), 4, 80)); got != 4 {
+		t.Fatalf("padded capture has %d rows, want 4", got)
+	}
+	if got := padFocusCapture("first\nsecond\n", 2); got != "first\nsecond\n" {
+		t.Fatalf("already-sized capture changed to %q", got)
+	}
+}
+
 // A capture scheduled before the preview reflows must not blank the bottom
 // of the resized viewport when its reply arrives afterwards.
 func TestFocusScrollRecapturesAfterPreviewResize(t *testing.T) {
@@ -279,7 +372,9 @@ func TestScrollStopsAtHistoryTop(t *testing.T) {
 		t.Skip("pane reported no history")
 	}
 	for i := 0; i < 500; i++ {
-		if cmd := m.scrollFocus(-1); cmd == nil {
+		before := m.focusScroll
+		m.scrollFocus(-1)
+		if m.focusScroll == before {
 			break
 		}
 	}

@@ -697,7 +697,8 @@ func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id s
 		return "", nil, err
 	}
 	env := map[string]string{hooks.EnvSessionID: id}
-	command, err := mcpreg.Apply(mcpreg.Style(toolName, tool.MCP), mcpExecutable(), m.hooks.Dir(), baseCommand, env)
+	command := preserveCodexScrollback(tool, baseCommand)
+	command, err := mcpreg.Apply(mcpreg.Style(toolName, tool.MCP), mcpExecutable(), m.hooks.Dir(), command, env)
 	if err != nil {
 		return "", nil, err
 	}
@@ -713,6 +714,17 @@ func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id s
 	}
 	env[hooks.EnvStatusFile] = m.hooks.StatusFile(id)
 	return command + " --settings " + tmux.ShellQuote(settingsPath), env, nil
+}
+
+func preserveCodexScrollback(tool config.Tool, command string) string {
+	const key = "tui.terminal_resize_reflow_max_rows"
+	configured := strings.Fields(tool.Command)
+	if tool.SessionStore != "codex" || len(configured) == 0 || configured[0] != "codex" {
+		return command
+	}
+	// Codex otherwise clears terminal history on resize and replays only its
+	// terminal-specific row cap, which is 1000 rows for common macOS terminals.
+	return command + " -c " + tmux.ShellQuote(key+"=0")
 }
 
 // mcpExecutable names the binary generated MCP configs point at: the

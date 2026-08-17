@@ -127,6 +127,7 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	m.copied = 0
 	m.cursorOn = true
 	m.focusScroll = 0
+	m.focusScrollPending = false
 	// Pane state from a previously watched session must not route this
 	// one's wheel; a fresh watcher's first pushed capture reports the real
 	// values. When the watcher is already streaming this session and the
