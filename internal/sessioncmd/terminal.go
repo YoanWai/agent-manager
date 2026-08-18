@@ -290,15 +290,21 @@ func (t *Terminals) Close(sessionID, terminalID string) error {
 	})
 }
 
-// shellName names a terminal after the session it hangs under, so a row
-// says which session opened it rather than four random digits. A terminal
-// with no session over it keeps the digits, and one joining terminals
-// already named for that session counts up.
 func (r *runtime) shellName(toolName, parentID string) (string, error) {
 	sessions, err := r.store.ListSessions(true)
 	if err != nil {
 		return "", err
 	}
+	return ShellName(toolName, parentID, uuid.NewString()[:4], sessions), nil
+}
+
+// ShellName names a terminal after the session it hangs under, so a row
+// says which session opened it rather than four random digits. A terminal
+// with no session over it falls back to those digits, and one joining
+// terminals already named for that session counts up. Both the list's T
+// and the terminal tools name through here, so a shell reads the same
+// whichever opened it.
+func ShellName(toolName, parentID, fallbackSuffix string, sessions []store.Session) string {
 	parentName := ""
 	taken := make(map[string]bool, len(sessions))
 	for _, sess := range sessions {
@@ -308,14 +314,14 @@ func (r *runtime) shellName(toolName, parentID string) (string, error) {
 		}
 	}
 	if parentName == "" {
-		return toolName + "-" + uuid.NewString()[:4], nil
+		return toolName + "-" + fallbackSuffix
 	}
 	base := toolName + "-" + parentName
 	name := base
 	for n := 2; taken[name]; n++ {
 		name = fmt.Sprintf("%s-%d", base, n)
 	}
-	return name, nil
+	return name
 }
 
 // createTarget resolves the group and directory a new pane opens in.
