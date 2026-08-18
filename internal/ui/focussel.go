@@ -491,9 +491,10 @@ func (m *Model) renderPaneRow(row int, raw string, width int) string {
 		return m.withCursor(row, raw, []rune(line), width)
 	}
 	startByte, endByte := graphemeRangeAtColumns(line, start, end)
-	before := line[:startByte]
 	selected := line[startByte:endByte]
-	after := line[endByte:]
+	clean := previewDangerSeqs.ReplaceAllString(raw, "")
+	before := ansi.Truncate(clean, start, "")
+	after := ansi.TruncateLeft(clean, end, "")
 	painted := before + selectionStyle().Render(selected) + after
 	return previewLine(painted, width)
 }

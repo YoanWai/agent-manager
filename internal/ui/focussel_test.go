@@ -318,6 +318,21 @@ func TestSelectionIgnoresANSI(t *testing.T) {
 	}
 }
 
+func TestSelectionOverlayPreservesSurroundingANSI(t *testing.T) {
+	m := paneAt(t, "\x1b[31mred\x1b[0m \x1b[34mblue\x1b[0m")
+	m.sel = focusSelection{
+		active:    true,
+		anchorRow: 0,
+		anchorCol: 3,
+		headRow:   0,
+		headCol:   4,
+	}
+	row := m.renderPaneRow(0, m.preview, 20)
+	if !strings.Contains(row, "\x1b[31m") || !strings.Contains(row, "\x1b[34m") {
+		t.Fatalf("selection dropped surrounding ANSI colors: %q", row)
+	}
+}
+
 func TestSelectionSurvivesShortLines(t *testing.T) {
 	m := paneAt(t, "ab", "")
 	press(m, 10, 5)
