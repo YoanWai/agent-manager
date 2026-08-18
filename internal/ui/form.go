@@ -611,6 +611,12 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	if deferDirective {
 		pendingInputs = append(pendingInputs, deferredRenameDirective)
 	}
+	// A tool typed into receives its prompt as the first pending input, so
+	// there is nothing for later input to wait behind.
+	commandLinePrompt := prompt
+	if tool.PromptMode == "send" {
+		commandLinePrompt = ""
+	}
 	// Tools that accept a chosen session id launch with one, so a later
 	// revive resumes this exact conversation rather than the directory's
 	// most recent one. Tools without the flag mint their own id, captured
@@ -633,6 +639,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		WorktreeRepo:   worktreeRepo,
 		WorktreeBranch: worktreeBranch,
 		PendingInputs:  pendingInputs,
+		LaunchPrompt:   commandLinePrompt,
 	}, tool, base, launchOptions{
 		rollbackWorktree: worktreeRepo != "",
 	}); err != nil {
