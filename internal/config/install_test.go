@@ -31,8 +31,8 @@ func TestCheckInstalledRejectsMissingBinary(t *testing.T) {
 	if missing.Binary != "am-missing-cli-xyz" {
 		t.Fatalf("binary = %q", missing.Binary)
 	}
-	if missing.Install != "" {
-		t.Fatalf("unknown binary should not invent an installer, got %q", missing.Install)
+	if !strings.Contains(err.Error(), "install") {
+		t.Fatalf("error should name how to install, got %q", err)
 	}
 }
 
@@ -49,18 +49,7 @@ func TestCheckInstalledNamesOfficialInstaller(t *testing.T) {
 	if missing.Binary != "claude" {
 		t.Fatalf("binary = %q", missing.Binary)
 	}
-	if !strings.Contains(missing.Install, "claude.ai/install.sh") {
-		t.Fatalf("install = %q", missing.Install)
-	}
-}
-
-func TestOfficialInstallIsPortable(t *testing.T) {
-	if len(officialInstall) == 0 {
-		t.Fatal("no official installers")
-	}
-	for name, got := range officialInstall {
-		if strings.Contains(got, "brew") || strings.Contains(got, "apt") || strings.Contains(got, "winget") {
-			t.Errorf("%s install is OS-specific: %s", name, got)
-		}
+	if !strings.Contains(err.Error(), "claude.ai/install.sh") {
+		t.Fatalf("error = %q", err)
 	}
 }

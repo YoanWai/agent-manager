@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -31,12 +32,7 @@ func (m *Model) reportLaunchError(err error) {
 }
 
 func missingToolHint(missing config.MissingToolError) string {
-	if missing.Install != "" {
-		return missing.Binary + " is not installed.\n\n" +
-			"Run `" + missing.Install + "` to install it, then spawn again."
-	}
-	return missing.Binary + " is not installed.\n\n" +
-		"Install it so it is on PATH, then spawn again."
+	return missing.Binary + " is not installed.\n\n" + deps.Hint(missing.Binary)
 }
 
 // Any key closes the dialog, the way the confirm dialog reads every

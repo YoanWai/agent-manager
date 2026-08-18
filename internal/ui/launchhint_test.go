@@ -40,10 +40,7 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 func TestReportLaunchErrorOpensInstallHintForMissingCLI(t *testing.T) {
 	m := buildModel(t)
 
-	m.reportLaunchError(config.MissingToolError{
-		Binary:  "claude",
-		Install: "curl -fsSL https://claude.ai/install.sh | bash",
-	})
+	m.reportLaunchError(config.MissingToolError{Binary: "claude"})
 
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)

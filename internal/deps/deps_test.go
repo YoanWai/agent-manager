@@ -2,6 +2,7 @@ package deps
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -46,5 +47,27 @@ func TestHintNamesTheCommand(t *testing.T) {
 	stubPath(t, "pacman")
 	if got, want := hint("linux", "tmux"), "install it with: sudo pacman -S --needed tmux"; got != want {
 		t.Fatalf("hint = %q, want %q", got, want)
+	}
+}
+
+func TestHintPrefersOfficialInstallerOverPackageManager(t *testing.T) {
+	stubPath(t, "brew")
+	got := hint("darwin", "claude")
+	if !strings.Contains(got, "claude.ai/install.sh") {
+		t.Fatalf("hint = %q, want the official installer", got)
+	}
+	if strings.Contains(got, "brew install") {
+		t.Fatalf("official installer must win over brew, got %q", got)
+	}
+}
+
+func TestOfficialInstallIsPortable(t *testing.T) {
+	if len(official) == 0 {
+		t.Fatal("no official installers")
+	}
+	for name, got := range official {
+		if strings.Contains(got, "brew") || strings.Contains(got, "apt") || strings.Contains(got, "winget") {
+			t.Errorf("%s install is OS-specific: %s", name, got)
+		}
 	}
 }
