@@ -681,3 +681,46 @@ func TestRuleMatchLeavesTheFallbacksToMatch(t *testing.T) {
 		})
 	}
 }
+
+// TypingHold is what the poller reads before typing a queued message in,
+// so each branch is pinned here where the rules live: no readable input
+// region holds, a working or dialog rule holds, and a resting prompt takes
+// the text.
+func TestTypingHold(t *testing.T) {
+	cfg := config.Config{
+		Tools: map[string]config.Tool{
+			"claude": {
+				Command:        "claude",
+				DefaultStatus:  "idle",
+				ActivityCutoff: `(?m)^> `,
+				Rules: []config.Rule{
+					{State: "working", Pattern: "esc to interrupt"},
+					{State: "waiting", Pattern: `(?m)^ ❯ 1\.`},
+					{State: "errored", Pattern: "(?i)^error:"},
+				},
+			},
+		},
+	}
+	engine, err := NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	cases := []struct {
+		name string
+		pane string
+		want string
+	}{
+		{"no input line drawn yet", "starting up...", Working},
+		{"mid-turn spinner", "thinking... (esc to interrupt)\n> ", Working},
+		{"dialog on screen", "Do you want to proceed?\n ❯ 1. Yes\n   2. No\n> ", Waiting},
+		{"resting prompt takes the text", "all done here\n> ", ""},
+		{"errored is not a hold", "Error: something broke\n> ", ""},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := engine.TypingHold("claude", testCase.pane); got != testCase.want {
+				t.Fatalf("TypingHold(%q) = %q, want %q", testCase.pane, got, testCase.want)
+			}
+		})
+	}
+}

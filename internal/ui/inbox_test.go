@@ -499,8 +499,12 @@ func settledPane(t *testing.T, m *Model, sessionID string, markers ...string) st
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	// The quiet run gets its own budget: markers rendering can eat most
+	// of the first deadline on a loaded runner, and the few captures the
+	// settle needs should not have to fit in whatever is left.
+	settleDeadline := time.Now().Add(5 * time.Second)
 	repeats := 0
-	for time.Now().Before(deadline) {
+	for time.Now().Before(settleDeadline) {
 		pane, err := m.tmux.CapturePane(sessionID)
 		if err != nil {
 			t.Fatal(err)

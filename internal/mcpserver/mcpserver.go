@@ -235,14 +235,14 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			}
 			message, err := sessioncmd.ReviewBase(configDir, sessionID, cwd, ref)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, applyFailure(err, done)
 			}
 			done = append(done, message)
 		}
 		if args.Mode != "" {
 			message, err := sessioncmd.ReviewScope(configDir, sessionID, args.Mode)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, applyFailure(err, done)
 			}
 			done = append(done, message)
 		}
@@ -618,6 +618,16 @@ func toolAnnotations(readOnly, destructive, openWorld bool) *mcp.ToolAnnotations
 
 func textContent(message string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: message}}}
+}
+
+// applyFailure carries the declarations a review call already applied
+// into its error, so a caller that set several at once knows which took
+// effect before the failing one.
+func applyFailure(err error, done []string) error {
+	if len(done) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w (already applied: %s)", err, strings.Join(done, "; "))
 }
 
 func textResult(message string, err error) (*mcp.CallToolResult, any, error) {
