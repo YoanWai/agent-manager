@@ -65,8 +65,8 @@ rather than sitting above it, so a file passed that way has to carry the
 list itself. Publishing first and then editing is the simpler order: take
 what goreleaser published with `gh release view <tag> --json body -q .body`,
 put the summary and thanks above its `## What's Changed`, and send it back
-with `gh release edit <tag> --notes-file`. The header and footer from
-`.goreleaser.yaml` come along either way.
+with `gh release edit <tag> --notes-file notes.md`. The header and footer
+from `.goreleaser.yaml` come along either way.
 
 ## Layout
 
