@@ -79,8 +79,8 @@ check_path() {
 tmux_new_enough() {
 	command -v tmux >/dev/null 2>&1 || return 1
 	out=$(tmux -V 2>/dev/null) || return 1
-	set -- $out
-	ver=${2%%[a-zA-Z]*}
+	ver=${out#tmux }
+	ver=${ver%%[a-zA-Z]*}
 	major=${ver%%.*}
 	rest=${ver#*.}
 	minor=${rest%%.*}
@@ -173,7 +173,14 @@ install_deps() {
 	# that reads it would swallow the rest of the script.
 	stdin=/dev/null
 	have_tty && stdin=/dev/tty
-	sh -c "$cmd" <"$stdin" || say "that failed, run it yourself: ${cmd}"
+	if ! sh -c "$cmd" <"$stdin"; then
+		say "that failed, run it yourself: ${cmd}"
+		return 0
+	fi
+	remaining=$(missing_deps)
+	if [ -n "$remaining" ]; then
+		say "installed packages do not satisfy: ${remaining}"
+	fi
 }
 
 main() {
