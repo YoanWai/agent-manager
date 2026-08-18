@@ -2,6 +2,17 @@
 
 The two quickest routes are in the [README](../README.md#install): Homebrew and the install script. Every other supported route is here.
 
+## Dependencies
+
+| Tool | What it powers | Comes with |
+| --- | --- | --- |
+| tmux 3.1+ | every agent session | Homebrew, AUR, install script |
+| git | diff review and worktree sessions | Homebrew (git runs Homebrew itself), AUR, install script |
+| wl-clipboard, xclip, or xsel | pasting images into a prompt on Linux | your package manager |
+| notify-send | desktop notifications on Linux | your desktop's notification package |
+
+The mise, `go install`, and prebuilt-binary routes install the binary alone, so install tmux and git with your package manager. Whatever the route, the manager names the exact command for your machine when it starts without tmux, and the diff view says the same about git.
+
 ## Arch Linux
 
 ```bash
@@ -18,7 +29,7 @@ yay -S agent-manager-bin
 mise use -g ubi:YoanWai/agent-manager
 ```
 
-Reads the GitHub release directly, so it needs no registry entry. Install tmux with your own package manager.
+Reads the GitHub release directly, so it needs no registry entry. Install tmux and git with your own package manager.
 
 ## Go
 
@@ -26,11 +37,11 @@ Reads the GitHub release directly, so it needs no registry entry. Install tmux w
 go install github.com/YoanWai/agent-manager@latest
 ```
 
-Requires Go 1.26.5+ and tmux 3.1+; installs to `$(go env GOPATH)/bin`.
+Requires Go 1.26.5+, tmux 3.1+, and git; installs to `$(go env GOPATH)/bin`.
 
 ## Prebuilt binaries
 
-Download from [Releases](https://github.com/YoanWai/agent-manager/releases) (macOS and Linux, amd64/arm64).
+Download from [Releases](https://github.com/YoanWai/agent-manager/releases) (macOS and Linux, amd64/arm64), and install tmux and git with your package manager.
 
 ## Windows
 
