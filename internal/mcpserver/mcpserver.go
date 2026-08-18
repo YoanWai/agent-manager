@@ -191,13 +191,13 @@ type sessionCommands interface {
 // subagents instead. Claude Code truncates the block at 2048 characters, so
 // it stays under that; what individual tool descriptions already carry (the
 // review targets, the queueing rules) is left to them.
-const serverInstructions = `Agent Manager runs this conversation in a managed tmux session, beside the user's other agents and terminals. These tools operate that workspace. Use them whenever the conditions below apply, without waiting to be asked.
+const serverInstructions = `Agent Manager runs this conversation in one of the user's managed tmux sessions. The others are separate CLI processes with contexts of their own, running any CLI the user chose (Claude Code, Codex, Gemini), never subagents of this conversation. These tools operate that workspace. Use them whenever the conditions below apply, without waiting to be asked.
 
-Delegating to other agents. When the work holds two or more deliverables that could be built at once, or the user asks for parallel work, a second opinion or another agent: call list_sessions, reuse a relevant idle session, and otherwise create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. Repo work takes worktree: true so parallel agents never edit one checkout; where they share one, reserve_files before editing so an overlap surfaces early. Follow the work with read_session, send_session to answer or redirect an agent, and wait_for_session when your next step needs one finished. Put the plan on the shared task list with create_task: spawned agents claim_task their next piece and finish_task it, unblocking what waited on it with no handoff through you. Group related spawns with create_group, and archive_session once they are done. Sessions spend the user's tokens, so create one per workstream, never one per trivial step.
+Delegating to other agents. When the work holds two or more deliverables that could be built at once, or the user asks for parallel work, a second opinion or another agent: call list_sessions, reuse a relevant idle session, otherwise create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. Repo work takes worktree: true so parallel agents never share a checkout; where they do, reserve_files before editing so an overlap surfaces early. Follow with read_session, send_session to answer or redirect an agent, and wait_for_session when your next step needs one finished. Put the plan on the shared task list with create_task: spawned agents claim_task their next piece and finish_task it, unblocking what waited on it. Group related spawns with create_group, archive_session once done. Sessions spend the user's tokens, so create one per workstream, not per trivial step.
 
-Shell work the user should see. Open a terminal when the session itself is the point: the user should be able to watch it, attach or take over, as with SSH into a host. Keep one-shot local commands and internal work in your normal tools. Call list_terminals first and reuse a running terminal when possible. create_terminal nests under this session unless nest is false, which a terminal in another group needs. Use send_terminal and read_terminal, and close_terminal once that job is done unless the terminal is left for the user.
+Shell work the user should see. Open a terminal when the session itself is the point: the user should be able to watch, attach or take over, as with SSH into a host. Keep one-shot local commands in your normal tools. Call list_terminals first and reuse a running terminal when possible. create_terminal nests under this session unless nest is false, which another group needs. Use send_terminal and read_terminal, and close_terminal when that job is done unless it is left for the user.
 
-Everything here acts on the user's machine: create_session and create_terminal start real processes, send_terminal executes commands, and kill_session ends a running agent. Treat them with the care and approval expectations of normal shell execution.`
+Everything here acts on the user's machine: create_session and create_terminal start real processes, send_terminal runs commands, and kill_session ends a running agent. Treat them with the care and approval normal shell execution needs.`
 
 // NewServer builds the MCP server with every session tool registered.
 // Split from Run so tests can connect an in-process client.
@@ -263,6 +263,8 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		Name: "list_sessions",
 		Description: "Call first whenever the work involves another agent: before delegating, before reporting what the fleet is doing, and to find the id of a session to read, prompt, revive, kill or archive. " +
 			"Lists every agent session Agent Manager knows with ids, names, CLIs, groups, directories, worktree branches, statuses (starting, working, waiting, finished, idle, errored, dead) and which row is this session. " +
+			"These are separate CLI processes running on the user's machine, each with its own context and its own conversation, and any CLI the user configured: Claude Code, Codex, Gemini and others, not only Claude. " +
+			"They are not this conversation's subagents, they outlive this conversation, and the user watches them all in one list; nothing else this session can call reports them. " +
 			"Reuse a relevant idle session instead of creating another; otherwise call create_session.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, listSessionsOutput, error) {
@@ -276,6 +278,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "create_session",
 		Description: "Start another agent CLI in its own Agent Manager session and hand it a task, so independent work runs in parallel with this conversation instead of queued behind it. " +
+			"The new session is a full CLI process of its own on the user's machine, which the user can watch and type into, and it can run a different CLI than this one. " +
 			"Call it without waiting for the user whenever a task splits into parts that can run at the same time, or the user asks for a second agent, a parallel run or an independent opinion. " +
 			"Always pass a descriptive name and a prompt that states the whole task, since the new agent cannot see this conversation. " +
 			"Pass worktree true for work in a git repo so the new agent edits its own checkout and branch. " +

@@ -656,6 +656,24 @@ func TestListsFleetTools(t *testing.T) {
 	}
 }
 
+// A model already has a way to run work in parallel, and reads a list of
+// sessions as that list unless the block says otherwise. What the tools
+// reach is the user's machine, so the block names it: other CLIs, running
+// whatever the user picked, outliving this conversation.
+func TestServerTeachesThatSessionsAreOtherCLIsNotSubagents(t *testing.T) {
+	session := connect(t, t.TempDir(), "abc123")
+	instructions := session.InitializeResult().Instructions
+	for _, want := range []string{
+		"separate CLI processes",
+		"never subagents of this conversation",
+		"Codex",
+	} {
+		if !strings.Contains(instructions, want) {
+			t.Fatalf("server instructions do not teach %q:\n%s", want, instructions)
+		}
+	}
+}
+
 func TestServerTeachesDelegationWorkflow(t *testing.T) {
 	session := connect(t, t.TempDir(), "abc123")
 	instructions := session.InitializeResult().Instructions
