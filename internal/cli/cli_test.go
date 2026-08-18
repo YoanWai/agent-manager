@@ -239,6 +239,7 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"terminal create", nil, func(out io.Writer, args []string) error { return runTerminalCreate(out, terminals, args, "cafe0001") }},
 		{"terminal send", []string{"t1"}, func(out io.Writer, args []string) error { return runTerminalSend(out, terminals, args, "cafe0001") }},
 		{"terminal read", []string{"t1"}, func(out io.Writer, args []string) error { return runTerminalRead(out, terminals, args, "cafe0001") }},
+		{"terminal close", []string{"t1"}, func(out io.Writer, args []string) error { return runTerminalClose(out, terminals, args, "cafe0001") }},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

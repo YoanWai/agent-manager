@@ -214,3 +214,36 @@ func TestDeletingASessionTakesItsMessagesBothWays(t *testing.T) {
 		t.Fatalf("messages survived their sender: %v", counts)
 	}
 }
+
+// MarkDropped retires a message the poller could not prove reached the
+// pane: it leaves the queue for good, and a later ack from its recipient
+// must not dress it up as read.
+func TestMarkDroppedRetiresTheMessageForGood(t *testing.T) {
+	st := newTestStore(t)
+	now := time.Now()
+
+	id, err := st.Enqueue(message("rebase on main", now), DefaultInboxLimits)
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if err := st.MarkDropped(id, now); err != nil {
+		t.Fatalf("MarkDropped: %v", err)
+	}
+	if _, ok, err := st.HeadMessage("target01"); err != nil || ok {
+		t.Fatalf("a dropped message is still queued: ok=%v err=%v", ok, err)
+	}
+	state, err := st.Message(id, "sender01")
+	if err != nil {
+		t.Fatalf("Message: %v", err)
+	}
+	if state.DroppedAt.IsZero() || state.DeliveredAt.IsZero() {
+		t.Fatalf("dropping did not retire the row: %+v", state)
+	}
+	if err := st.MarkRead("target01", "sender01", now); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+	state, err = st.Message(id, "sender01")
+	if err != nil || !state.ReadAt.IsZero() {
+		t.Fatalf("an ack reached a dropped message: %+v err %v", state, err)
+	}
+}
