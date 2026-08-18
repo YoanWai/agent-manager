@@ -21,8 +21,6 @@ import (
 
 const serverName = "agent-manager"
 
-// StyleNone is the style of a tool that registers no MCP server, so the
-// agent it launches holds the subcommands and nothing else.
 const StyleNone = "none"
 
 // ErrHermesMCPUnavailable reports a Hermes whose optional MCP SDK is not

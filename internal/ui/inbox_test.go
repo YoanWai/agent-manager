@@ -484,7 +484,7 @@ func settledPane(t *testing.T, m *Model, sessionID string, markers ...string) st
 	// the whole deadline on a loaded runner: first wait for every marker
 	// to have rendered, then for the pane to stop changing.
 	deadline := time.Now().Add(10 * time.Second)
-	previous := ""
+	var previous string
 	for {
 		pane, err := m.tmux.CapturePane(sessionID)
 		if err != nil {
