@@ -36,7 +36,8 @@ type listTerminalsArgs struct{}
 
 type createTerminalArgs struct {
 	Group     *string `json:"group,omitempty" jsonschema:"existing group path for the new terminal; pass an empty string for the root group; defaults to this agent's group"`
-	Directory string  `json:"directory,omitempty" jsonschema:"existing directory to open; defaults to this agent's current directory, or to the selected group's inherited path when group is set"`
+	Directory string  `json:"directory,omitempty" jsonschema:"existing directory to open; defaults to the selected group's inherited path, then this agent's current directory"`
+	Nest      *bool   `json:"nest,omitempty" jsonschema:"when true or omitted, nest under this session, or beside it under the same parent when this session is itself a terminal; false places an un-nested terminal in group"`
 }
 
 type sendTerminalArgs struct {
@@ -114,6 +115,10 @@ type deleteGroupArgs struct {
 	Path string `json:"path" jsonschema:"full group path to delete, slash separated; groups nested under it go too"`
 }
 
+type closeTerminalArgs struct {
+	TerminalID string `json:"terminal_id" jsonschema:"terminal id returned by list_terminals or create_terminal"`
+}
+
 type listTerminalsOutput struct {
 	Terminals []sessioncmd.Terminal `json:"terminals"`
 }
@@ -153,6 +158,7 @@ type terminalCommands interface {
 	Create(sessionID string, opts sessioncmd.CreateTerminalOptions) (sessioncmd.Terminal, error)
 	Send(sessionID, terminalID, command string, keys []string) (sessioncmd.TerminalInput, error)
 	Read(sessionID, terminalID string) (sessioncmd.TerminalScreen, error)
+	Close(sessionID, terminalID string) error
 }
 
 type sessionCommands interface {
@@ -185,13 +191,13 @@ type sessionCommands interface {
 // subagents instead. Claude Code truncates the block at 2048 characters, so
 // it stays under that; what individual tool descriptions already carry (the
 // review targets, the queueing rules) is left to them.
-const serverInstructions = `Agent Manager runs this conversation in a managed tmux session, beside the user's other agent sessions and terminals. These tools operate that workspace. Use them proactively whenever the conditions below apply, without waiting to be asked.
+const serverInstructions = `Agent Manager runs this conversation in a managed tmux session, beside the user's other agents and terminals. These tools operate that workspace. Use them whenever the conditions below apply, without waiting to be asked.
 
-Delegating to other agents. When the work holds two or more deliverables that could be built at the same time, or the user asks for parallel work, a second opinion, or another agent: call list_sessions, reuse a relevant idle session, and otherwise create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. Repo work takes worktree: true so parallel agents never edit one checkout; where they do share one, reserve_files before editing so an overlap surfaces early. Follow the work with read_session, send_session to answer or redirect an agent, and wait_for_session when your next step depends on one finishing. Put the plan on the shared task list with create_task rather than in this conversation: spawned agents claim_task their next piece and finish_task it, unblocking what waited on it with no handoff through you. Group related spawns with create_group, and archive_session once their work is done. Sessions are long-lived and spend the user's tokens, so create one per real workstream, never one per trivial step.
+Delegating to other agents. When the work holds two or more deliverables that could be built at once, or the user asks for parallel work, a second opinion or another agent: call list_sessions, reuse a relevant idle session, and otherwise create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. Repo work takes worktree: true so parallel agents never edit one checkout; where they share one, reserve_files before editing so an overlap surfaces early. Follow the work with read_session, send_session to answer or redirect an agent, and wait_for_session when your next step needs one finished. Put the plan on the shared task list with create_task: spawned agents claim_task their next piece and finish_task it, unblocking what waited on it with no handoff through you. Group related spawns with create_group, and archive_session once they are done. Sessions spend the user's tokens, so create one per workstream, never one per trivial step.
 
-Shell work that stays visible. Before a long-running, output-heavy or monitored command (test suite, build, development server, log tail), call list_terminals, reuse a running terminal or create_terminal one, send the command with send_terminal, and read_terminal to watch it. Short one-shot commands stay in your normal execution path.
+Shell work the user should see. Open a terminal when the session itself is the point: the user should be able to watch it, attach or take over, as with SSH into a host. Keep one-shot local commands and internal work in your normal tools. Call list_terminals first and reuse a running terminal when possible. create_terminal nests under this session unless nest is false, which a terminal in another group needs. Use send_terminal and read_terminal, and close_terminal once that job is done unless the terminal is left for the user.
 
-Everything here acts on the user's machine: create_session and create_terminal start real processes, send_terminal executes commands, and kill_session ends a running agent. Treat them with the same care and approval expectations as normal shell execution.`
+Everything here acts on the user's machine: create_session and create_terminal start real processes, send_terminal executes commands, and kill_session ends a running agent. Treat them with the care and approval expectations of normal shell execution.`
 
 // NewServer builds the MCP server with every session tool registered.
 // Split from Run so tests can connect an in-process client.
@@ -563,8 +569,8 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "list_terminals",
-		Description: "Call proactively before long-running, output-heavy, persistent, or parallel shell work to find a terminal you can reuse. " +
-			"Lists active managed terminals with ids, names, groups, current directories, statuses, and whether their tmux panes are running. " +
+		Description: "Call before opening a terminal for human-visible work, to find one you can reuse. " +
+			"Lists active managed terminals with ids, names, groups, current directories, statuses, whether their tmux panes are running, and the session each one is nested under. " +
 			"Reuse a relevant running terminal when possible; otherwise call create_terminal. Use the returned id with send_terminal and read_terminal.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listTerminalsArgs) (*mcp.CallToolResult, listTerminalsOutput, error) {
@@ -578,14 +584,15 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "create_terminal",
-		Description: "After list_terminals finds no relevant running terminal, call this without waiting for the user to create one for long-running, output-heavy, persistent, or parallel shell work. " +
-			"Returns its id and opens by default in this agent's group and current directory. Set group to use another existing group and its inherited directory, or set directory explicitly. " +
-			"Then call send_terminal with the returned id. Use create_session instead to start another agent CLI rather than a shell.",
+		Description: "Create a managed terminal for human-visible work such as SSH, not for one-shot local commands or other internal work. " +
+			"It nests under this session unless nest is false, and a terminal created from a terminal joins it as a sibling under the same agent. A group other than this session's needs nest false, since a nested terminal lives in its parent's group; that group then supplies its inherited directory, and directory set explicitly wins over both. " +
+			"Then call send_terminal with the returned id, and create_session instead of this tool to start another agent CLI rather than a shell. Call close_terminal when the job is finished and the terminal is not being left for the user.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createTerminalArgs) (*mcp.CallToolResult, sessioncmd.Terminal, error) {
 		created, err := terminals.Create(sessionID, sessioncmd.CreateTerminalOptions{
 			Group:     args.Group,
 			Directory: args.Directory,
+			Nest:      args.Nest,
 		})
 		if err != nil {
 			return nil, sessioncmd.Terminal{}, err
@@ -618,6 +625,19 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			return nil, sessioncmd.TerminalScreen{}, err
 		}
 		return textContent(sessioncmd.FormatTerminalScreen(screen)), screen, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "close_terminal",
+		Description: "Delete a terminal nested under this session once its job is finished: kills the pane and removes the row. " +
+			"Leave it running when you opened it for the user (for example an SSH session they may attach to). " +
+			"Refuses agent sessions, un-nested terminals, and terminals under another session.",
+		Annotations: toolAnnotations(false, true, false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args closeTerminalArgs) (*mcp.CallToolResult, any, error) {
+		if err := terminals.Close(sessionID, args.TerminalID); err != nil {
+			return nil, nil, err
+		}
+		return textContent("closed terminal " + args.TerminalID), nil, nil
 	})
 
 	return server

@@ -26,6 +26,7 @@ type fakeTerminalCommands struct {
 	sentCommand string
 	sentKeys    []string
 	readID      string
+	closedID    string
 	err         error
 }
 
@@ -54,6 +55,11 @@ func (f *fakeTerminalCommands) Send(_ string, id, command string, keys []string)
 func (f *fakeTerminalCommands) Read(_ string, id string) (sessioncmd.TerminalScreen, error) {
 	f.readID = id
 	return f.screen, f.err
+}
+
+func (f *fakeTerminalCommands) Close(_ string, id string) error {
+	f.closedID = id
+	return f.err
 }
 
 type fakeSessionCommands struct {
@@ -281,7 +287,7 @@ func TestListsAllTools(t *testing.T) {
 	}
 	for _, want := range []string{
 		"rename", "review_repo", "review_base", "review_mode",
-		"list_terminals", "create_terminal", "send_terminal", "read_terminal",
+		"list_terminals", "create_terminal", "send_terminal", "read_terminal", "close_terminal",
 	} {
 		if !names[want] {
 			t.Fatalf("missing tool %q in %v", want, names)
@@ -343,12 +349,15 @@ func TestServerTeachesProactiveTerminalWorkflow(t *testing.T) {
 	instructions := session.InitializeResult().Instructions
 	for _, want := range []string{
 		"without waiting to be asked",
-		"long-running",
+		"SSH",
+		"one-shot",
 		"list_terminals",
 		"create_terminal",
 		"send_terminal",
 		"read_terminal",
+		"close_terminal",
 		"reuse a running terminal",
+		"nests under this session",
 	} {
 		if !strings.Contains(instructions, want) {
 			t.Fatalf("server instructions do not teach %q:\n%s", want, instructions)
@@ -367,8 +376,9 @@ func TestTerminalDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		descriptions[tool.Name] = tool.Description
 	}
 	for tool, wants := range map[string][]string{
-		"list_terminals":  {"Call proactively", "Reuse", "create_terminal"},
-		"create_terminal": {"without waiting for the user", "send_terminal"},
+		"list_terminals":  {"human-visible", "Reuse", "create_terminal"},
+		"create_terminal": {"SSH", "one-shot", "nests", "close_terminal"},
+		"close_terminal":  {"finished", "kills", "SSH"},
 		"send_terminal":   {"create_terminal", "read_terminal", "executes on the user's machine"},
 		"read_terminal":   {"after send_terminal", "monitor ongoing work"},
 	} {
@@ -440,6 +450,39 @@ func TestTerminalToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 	}
 }
 
+func TestCloseTerminalForwardsID(t *testing.T) {
+	fake := &fakeTerminalCommands{}
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", fake, &fakeSessionCommands{}))
+	text, isError := callText(t, session, "close_terminal", map[string]any{"terminal_id": "a1b2c3d4"})
+	if isError || !strings.Contains(text, "closed terminal a1b2c3d4") {
+		t.Fatalf("close_terminal = %q, isError=%v", text, isError)
+	}
+	if fake.closedID != "a1b2c3d4" {
+		t.Fatalf("closed id = %q", fake.closedID)
+	}
+}
+
+func TestCreateTerminalForwardsNest(t *testing.T) {
+	fake := &fakeTerminalCommands{
+		created: sessioncmd.Terminal{ID: "e5f6a7b8", Name: "terminal-e5f6"},
+	}
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", fake, &fakeSessionCommands{}))
+
+	if created := callTool(t, session, "create_terminal", map[string]any{}); created.IsError {
+		t.Fatalf("create_terminal no args = %+v", created)
+	}
+	if fake.createdOpts.Nest != nil {
+		t.Fatalf("omitted nest = %+v, want nil", fake.createdOpts.Nest)
+	}
+
+	if created := callTool(t, session, "create_terminal", map[string]any{"nest": false}); created.IsError {
+		t.Fatalf("create_terminal nest false = %+v", created)
+	}
+	if fake.createdOpts.Nest == nil || *fake.createdOpts.Nest {
+		t.Fatalf("nest false = %+v", fake.createdOpts.Nest)
+	}
+}
+
 func TestTerminalToolAnnotationsDescribeLocalRisk(t *testing.T) {
 	session := connect(t, t.TempDir(), "abc123")
 	listed, err := session.ListTools(context.Background(), nil)
@@ -464,6 +507,11 @@ func TestTerminalToolAnnotationsDescribeLocalRisk(t *testing.T) {
 	if annotations := tools["send_terminal"].Annotations; annotations == nil || annotations.DestructiveHint == nil || !*annotations.DestructiveHint || annotations.OpenWorldHint == nil || !*annotations.OpenWorldHint {
 		t.Fatalf("send annotations = %+v", annotations)
 	}
+	if tool := tools["close_terminal"]; tool == nil {
+		t.Fatal("missing close_terminal")
+	} else if annotations := tool.Annotations; annotations == nil || annotations.DestructiveHint == nil || !*annotations.DestructiveHint {
+		t.Fatalf("close annotations = %+v", annotations)
+	}
 }
 
 func TestTerminalToolErrorsAreToolErrors(t *testing.T) {
@@ -477,6 +525,7 @@ func TestTerminalToolErrorsAreToolErrors(t *testing.T) {
 		{"create_terminal", map[string]any{}},
 		{"send_terminal", map[string]any{"terminal_id": "a1", "command": "pwd"}},
 		{"read_terminal", map[string]any{"terminal_id": "a1"}},
+		{"close_terminal", map[string]any{"terminal_id": "a1"}},
 	} {
 		text, isError := callText(t, session, call.name, call.args)
 		if !isError || !strings.Contains(text, "not running") {

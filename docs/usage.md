@@ -4,7 +4,7 @@
 agent-manager
 ```
 
-Sessions run inside tmux (`am_*` namespace), so they survive the manager quitting. Inside a session, **Ctrl+Q** detaches back to the manager when your terminal and tmux leave it available; **Ctrl+\\** is an alternate under the same rule. **Ctrl+R** opens the session's diff review and **Ctrl+O** opens its directory in your editor. In a full-screen attach, the session footer also shows an inner tmux prefix followed by `d` when configured. When nested inside another tmux, send the inner prefix shown in the footer, then press `d`. If both tmux servers use the same prefix, invoke the outer tmux's `send-prefix` binding; if the outer tmux otherwise captures the inner prefix, configure it to forward that key. `agent-manager --version` prints the version.
+Sessions run inside tmux (`am_*` namespace), so they survive the manager quitting. Inside a session, **Ctrl+Q** detaches back to the manager when your terminal and tmux leave it available; **Ctrl+\\** is an alternate under the same rule. **Ctrl+R** opens the session's diff review and **F3** opens its directory in your editor. In a full-screen attach, the session footer also shows an inner tmux prefix followed by `d` when configured. When nested inside another tmux, send the inner prefix shown in the footer, then press `d`. If both tmux servers use the same prefix, invoke the outer tmux's `send-prefix` binding; if the outer tmux otherwise captures the inner prefix, configure it to forward that key. `agent-manager --version` prints the version.
 
 Agent sessions live on a private tmux server named `agentmgr`, so they never mix with the tmux you run yourself and a `kill-server` on your own socket leaves them alone. To reach one from a plain shell, name that server: `tmux -L agentmgr ls`, then `tmux -L agentmgr attach -t am_<id>`.
 
@@ -13,7 +13,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | Key | Action |
 |-----|--------|
 | `n` | New session (name, tool, directory, worktree toggle, optional starting prompt, group picker) |
-| `T` | New terminal tab: a plain shell in the selected group, with no agent in it |
+| `T` | New terminal tab: a shell under the selected agent, or in the selected group |
 | `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
 | `g` | New group (name, parent, default path) |
@@ -21,11 +21,11 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `A` | Attach session full screen (Settings can swap it with `enter`) |
 | `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available |
 | tmux prefix, then `d` | Inside a full-screen attach: back to the manager when the prefix reaches the inner tmux |
-| `ctrl+o` | Inside a session: open its directory in your editor |
+| `F3` | Inside a session: open its directory in your editor |
 | `→` | Step into the row: focus the session, or open the group. In beta; Settings (`s`) can turn the pair off |
 | `←` | Step out: close the group, or — focused, with the caret at the start of the agent's prompt — back to the manager. This needs the tool's prompt marker (its `activity_cutoff`) on the caret's row, so a CLI without one keeps `←` entirely; anywhere else in the prompt it moves the caret as usual |
 | `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings |
-| `m` | Move session to another group |
+| `m` | Move a session to a group, or a terminal into a session |
 | `r` | Rename session / edit tool; edit group name and default path |
 | `x` | Kill the selected session, or every live session under a group: frees the RAM their agents hold, and the rows stay for `v` |
 | `X` | Kill every live session in view |
@@ -64,15 +64,11 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 
 ## Terminal tabs
 
-`T` opens a shell tab in the group under the cursor: a session like any other — same list, same row keys, same `enter`, `x`, `v` and `R` — with your shell in the pane instead of an agent. It lands in the selected session's directory, wherever that session has moved to, or in the group's default path when a group row is selected, so the shell that runs the tests sits next to the agent that wrote them. Its status rests at idle throughout, a build included: turn tracking belongs to agents, and a shell has no turns.
+`T` opens a shell tab: a session like any other (same list, same row keys, same `enter`, `x`, `v` and `R`) with your shell in the pane instead of an agent. On an agent, the new shell nests under that session, in that agent's group and directory. On a group, it lands in the group as an un-nested sibling, in the group's default path. On a nested shell it joins the same parent; on an un-nested shell it stays un-nested in that shell's group. Either way it opens in that shell's own directory, so a shell you have `cd`'d somewhere hands the next one the same place. A nested shell is named after the session it hangs under, `terminal-review-done` rather than `terminal-0ab5`, and the next one under that session counts up to `terminal-review-done-2`; a shell with no session over it keeps the generated name, and `r` renames any of them. Its status rests at idle throughout: turn tracking belongs to agents, and a shell has no turns.
 
 The shell is the `[tools.terminal]` block in [config.toml](configuration.md). It ships with no command, which leaves the pane on `$SHELL`; set one to open a different shell. What marks it as a shell is `shell = true`, not its name, so a `[tools.terminal]` block you wrote yourself stays the agent CLI you meant it to be.
 
-### Where the shells sit
-
-Shells gather under a **Terminals** rule pinned to the foot of the list, holding every shell from every group, each row naming the group it belongs to. The tree scrolls above it; the block keeps at most half the list and scrolls inside itself once you have more shells than that. Settings (`s`) has a `terminal rows` row that switches it from `pinned` to `inline`, which puts every shell back among the agents in its own group, marked with `❯` where an agent carries its status dot.
-
-A group's dots and counts describe its agents either way, so the shell you left running a build never shows up as work in progress.
+Shells live in the tree with the agents they belong to, marked with `❯` where an agent carries its status dot. `m` on a terminal moves it onto an agent (nests under that session) or onto a group (un-nests into that group). A group's dots and counts describe its agents, so only agent work shows as in progress.
 
 **The keys that write into a pane refuse a shell.** `space` and the review screen's `C` both paste their text and press Enter, so on a shell a sentence meant for an agent would run as a command. Both say the row is a shell and send nothing; enter the session (`↵`) to type there, where what you type is plainly a command. `f` says the same, since a shell has no conversation to fork.
 
@@ -86,9 +82,9 @@ Agent Manager takes the first of these it finds: `editor` in [config.toml](confi
 
 The line is run directly, never through a shell, so nothing in it is expanded and an `.envrc` that sets `EDITOR` cannot smuggle a command in behind it. Arguments are allowed, and quotes group one that carries a space: `editor = "code -n"`, `editor = "open -a 'Visual Studio Code'"`.
 
-Inside a session, attached or focused, `ctrl+o` opens that session's directory the same way. It costs an attach its client, so the manager steps back into the session once a windowed editor is running, or once one that draws in the terminal exits. An editor that fails to start keeps the manager on screen, where you can read why.
+Inside a session, attached or focused, `F3` opens that session's directory the same way. It costs an attach its client, so the manager steps back into the session once a windowed editor is running, or once one that draws in the terminal exits. An editor that fails to start keeps the manager on screen, where you can read why.
 
-Like `ctrl+q` and `ctrl+r`, the manager keeps `ctrl+o` for itself inside a session, so a program running in there stops seeing it: in a [terminal tab](#terminal-tabs), `nano` saves with `ctrl+s` instead.
+Like `ctrl+q` and `ctrl+r`, the manager keeps `F3` for itself inside a session, so a program running in there stops seeing it. Every `ctrl` combination reaches the program instead, `ctrl+o` included: Claude Code shows more lines with it, Gemini CLI toggles copy mode, and in a [terminal tab](#terminal-tabs) `nano` writes the file out.
 
 A known windowed editor (the six above, plus `open` and `xdg-open`) starts detached and the manager stays on screen, with the status line naming what opened. Everything else takes the terminal over the way an attach does and hands it back on exit — that way round because a terminal editor started detached would have nowhere to draw, while a windowed one launched this way only costs a repaint.
 
@@ -178,9 +174,10 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `delete_group` | remove a group whose work is done; sessions still filed there move to the root rather than stopping |
 | `create_group` | Add a group, nested with a slash path, to file a fleet under |
 | `list_terminals` | List active managed terminals and their current directories |
-| `create_terminal` | Open a terminal beside the calling agent, or in an explicit group or directory |
+| `create_terminal` | Open a terminal under the calling session, or beside it when that session is itself a terminal, unless `nest` is false |
 | `send_terminal` | Submit a command or send exact keys to a running terminal |
 | `read_terminal` | Read the plain-text content currently visible in a terminal |
+| `close_terminal` | Close a finished terminal nested under the caller: kill the pane and delete the row |
 
 ### Spawning and steering other agents
 
@@ -214,9 +211,9 @@ A worktree per session stops two agents overwriting one checkout, and that is th
 
 ### Terminals
 
-`create_terminal` defaults to the calling agent's group and live pane directory. An explicit group uses that group's nearest inherited default path; an explicit directory wins over both. `send_terminal` accepts exactly one of a command, which is pasted and submitted with Enter, or a sequence of tmux key names such as `C-c`, `Up`, and `Enter`. `read_terminal` returns the current screen rather than unlimited scrollback.
+`create_terminal` nests under the calling session unless `nest` is false, and a call from a terminal opens the new shell beside it: under the same agent, or un-nested in the same group when that terminal is itself un-nested. It defaults to the calling agent's group and live pane directory. A group other than the caller's needs `nest: false`, since a nested terminal lives in its parent's group; that group then supplies its nearest inherited default path, and an explicit directory wins over both. `close_terminal` kills the pane and removes the row once the job is finished, and it reaches only the terminals nested under the calling session: a shell someone else opened, or one deliberately left un-nested, is the user's to close. `send_terminal` accepts exactly one of a command, which is pasted and submitted with Enter, or a sequence of tmux key names such as `C-c`, `Up`, and `Enter`. `read_terminal` returns the current screen rather than unlimited scrollback.
 
-The server's MCP initialization instructions teach agents to use these workflows without waiting for an explicit request: list sessions and delegate a parallel workstream to a named `create_session` before running it in series; list and reuse a terminal before long-running, output-heavy or continuously monitored work; create one only when needed; send the command; then read its screen until the result is clear. The same guidance is repeated in the individual tool descriptions for clients that expose tools but not server instructions. Short one-shot commands stay in the agent's normal execution path when a separate persistent terminal adds no value.
+The server's MCP initialization instructions teach agents to use these tools without waiting for an explicit request: list sessions and delegate a parallel workstream to a named `create_session` before running it in series, and open a terminal for human-visible work such as SSH, when the user should be able to watch it, attach, or take over. They list and reuse a relevant running terminal first; `create_terminal` nests under the caller unless `nest` is false; they send the command and read its screen while the job runs; and they call `close_terminal` when that job ends, unless the terminal is being left for the user. One-shot local commands stay in the agent's normal tools. The same guidance is repeated in the individual tool descriptions for clients that expose tools but not server instructions.
 
 Every one of these tools acts on the user's machine. Agents should treat `send_terminal` with the same care as typing into an attached shell, and treat `create_session` and `kill_session` as what they are: starting a real agent process that spends tokens, and interrupting one that may be mid-task. Inspect the target returned by `list_sessions` or `list_terminals` first, and read the result before continuing.
 

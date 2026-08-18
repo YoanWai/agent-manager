@@ -48,6 +48,14 @@ func TestTerminalVerbsDispatch(t *testing.T) {
 		t.Fatalf("terminal read output = %q", read.String())
 	}
 
+	closed := &bytes.Buffer{}
+	if err := runTerminalClose(closed, fake, []string{"t1"}, "cafe0001"); err != nil {
+		t.Fatalf("terminal close: %v", err)
+	}
+	if fake.closedID != "t1" || closed.String() != "closed terminal t1\n" {
+		t.Fatalf("terminal close got %q, printed %q", fake.closedID, closed.String())
+	}
+
 	if err := dispatch(&bytes.Buffer{}, "terminal", terminalVerbs(), []string{"tail"}, "cafe0001", t.TempDir()); err == nil {
 		t.Fatal("an unknown terminal verb should not dispatch")
 	}
@@ -62,6 +70,9 @@ func TestMissingTerminalIDIsAUsageError(t *testing.T) {
 		},
 		"read": func(out *bytes.Buffer, f *fakeTerminals, args []string) error {
 			return runTerminalRead(out, f, args, "cafe0001")
+		},
+		"close": func(out *bytes.Buffer, f *fakeTerminals, args []string) error {
+			return runTerminalClose(out, f, args, "cafe0001")
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

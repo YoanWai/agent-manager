@@ -1154,3 +1154,388 @@ func TestMoveGroupSameParentIsNoop(t *testing.T) {
 		t.Fatalf("MoveGroup: %v", err)
 	}
 }
+
+func TestParentIDRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	parent := sample("agent", "g1")
+	if err := st.CreateSession(parent); err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	child := sample("sh", "g1")
+	child.Tool = "terminal"
+	child.ParentID = "agent"
+	if err := st.CreateSession(child); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	got, err := st.Get("sh")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.ParentID != "agent" {
+		t.Fatalf("ParentID = %q, want agent", got.ParentID)
+	}
+	list, err := st.ListSessions(false)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	byID := map[string]Session{}
+	for _, sess := range list {
+		byID[sess.ID] = sess
+	}
+	if byID["sh"].ParentID != "agent" || byID["agent"].ParentID != "" {
+		t.Fatalf("list parent ids: %+v", byID)
+	}
+}
+
+func TestChildrenIncludesArchivedAndOrder(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g")); err != nil {
+		t.Fatalf("parent: %v", err)
+	}
+	first := sample("a", "g")
+	first.ParentID = "agent"
+	second := sample("b", "g")
+	second.ParentID = "agent"
+	if err := st.CreateSession(first); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if err := st.CreateSession(second); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if err := st.SetArchived("a", true); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	kids, err := st.Children("agent")
+	if err != nil {
+		t.Fatalf("children: %v", err)
+	}
+	if len(kids) != 2 || kids[0].ID != "a" || kids[1].ID != "b" {
+		t.Fatalf("children = %+v", kids)
+	}
+}
+
+func TestDeleteParentLeavesChildRow(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g")); err != nil {
+		t.Fatalf("parent: %v", err)
+	}
+	child := sample("sh", "g")
+	child.ParentID = "agent"
+	if err := st.CreateSession(child); err != nil {
+		t.Fatalf("child: %v", err)
+	}
+	if err := st.Delete("agent"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	got, err := st.Get("sh")
+	if err != nil {
+		t.Fatalf("get child: %v", err)
+	}
+	if got.ParentID != "agent" {
+		t.Fatalf("store must not cascade, ParentID = %q", got.ParentID)
+	}
+}
+
+func TestPlaceSessionNestsAndUnnests(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	if err := st.CreateSession(sample("sh", "g1")); err != nil {
+		t.Fatalf("shell: %v", err)
+	}
+	if err := st.PlaceSession("sh", "g2", "agent"); err != nil {
+		t.Fatalf("nest: %v", err)
+	}
+	got, err := st.Get("sh")
+	if err != nil || got.ParentID != "agent" || got.Group != "g1" {
+		t.Fatalf("nested = %+v err %v", got, err)
+	}
+	if err := st.PlaceSession("sh", "g2", ""); err != nil {
+		t.Fatalf("unnest: %v", err)
+	}
+	got, err = st.Get("sh")
+	if err != nil || got.ParentID != "" || got.Group != "g2" {
+		t.Fatalf("unnested = %+v err %v", got, err)
+	}
+}
+
+func TestPlaceSessionRejectsBadParent(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	child := sample("mid", "g")
+	child.ParentID = "agent"
+	if err := st.CreateSession(child); err != nil {
+		t.Fatalf("mid: %v", err)
+	}
+	if err := st.CreateSession(sample("sh", "g")); err != nil {
+		t.Fatalf("sh: %v", err)
+	}
+	if err := st.PlaceSession("sh", "g", "missing"); err == nil {
+		t.Fatal("missing parent")
+	}
+	if err := st.PlaceSession("agent", "g", "agent"); err == nil {
+		t.Fatal("self parent")
+	}
+	if err := st.PlaceSession("sh", "g", "mid"); err == nil {
+		t.Fatal("parent that already has a parent")
+	}
+}
+
+func TestCreateSessionRejectsBadParent(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	nested := sample("mid", "g1")
+	nested.ParentID = "agent"
+	if err := st.CreateSession(nested); err != nil {
+		t.Fatalf("mid: %v", err)
+	}
+	missing := sample("sh1", "g1")
+	missing.ParentID = "gone"
+	if err := st.CreateSession(missing); err == nil {
+		t.Fatal("missing parent")
+	}
+	self := sample("sh2", "g1")
+	self.ParentID = "sh2"
+	if err := st.CreateSession(self); err == nil {
+		t.Fatal("self parent")
+	}
+	grandchild := sample("sh3", "g1")
+	grandchild.ParentID = "mid"
+	if err := st.CreateSession(grandchild); err == nil {
+		t.Fatal("parent that already has a parent")
+	}
+	elsewhere := sample("sh4", "g2")
+	elsewhere.ParentID = "agent"
+	if err := st.CreateSession(elsewhere); err != nil {
+		t.Fatalf("child in another group: %v", err)
+	}
+	got, err := st.Get("sh4")
+	if err != nil || got.Group != "g1" {
+		t.Fatalf("child group = %+v err %v", got, err)
+	}
+}
+
+func TestDeleteChildAuthorizesKeepsAndCleans(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	if err := st.CreateSession(sample("other", "g1")); err != nil {
+		t.Fatalf("other: %v", err)
+	}
+	child := sample("sh", "g1")
+	child.ParentID = "agent"
+	if err := st.CreateSession(child); err != nil {
+		t.Fatalf("child: %v", err)
+	}
+	if err := st.SetReviewRepo("sh", "/repo"); err != nil {
+		t.Fatalf("review repo: %v", err)
+	}
+	if err := st.SetReviewBase("sh", "/repo", "origin/main"); err != nil {
+		t.Fatalf("review base: %v", err)
+	}
+	if err := st.SetReviewScope("sh", "staged"); err != nil {
+		t.Fatalf("review scope: %v", err)
+	}
+	if err := st.DeleteChild("sh", "other", func() error {
+		t.Fatal("kill ran for another session's terminal")
+		return nil
+	}); err == nil {
+		t.Fatal("deleted a terminal nested elsewhere")
+	}
+	killErr := errors.New("kill refused")
+	if err := st.DeleteChild("sh", "agent", func() error { return killErr }); !errors.Is(err, killErr) {
+		t.Fatalf("kill error = %v", err)
+	}
+	got, err := st.Get("sh")
+	if err != nil || got.ParentID != "agent" {
+		t.Fatalf("row after failed kill = %+v err %v", got, err)
+	}
+	if repo, err := st.ReviewRepo("sh"); err != nil || repo != "/repo" {
+		t.Fatalf("review repo after failed kill = %q err %v", repo, err)
+	}
+	if base, err := st.ReviewBase("sh", "/repo"); err != nil || base != "origin/main" {
+		t.Fatalf("review base after failed kill = %q err %v", base, err)
+	}
+	if scope, err := st.ReviewScope("sh"); err != nil || scope != "staged" {
+		t.Fatalf("review scope after failed kill = %q err %v", scope, err)
+	}
+	killed := false
+	if err := st.DeleteChild("sh", "agent", func() error { killed = true; return nil }); err != nil {
+		t.Fatalf("DeleteChild: %v", err)
+	}
+	if !killed {
+		t.Fatal("kill never ran")
+	}
+	if _, err := st.Get("sh"); err == nil {
+		t.Fatal("row still present")
+	}
+	if repo, err := st.ReviewRepo("sh"); err != nil || repo != "" {
+		t.Fatalf("review repo = %q err %v", repo, err)
+	}
+	if base, err := st.ReviewBase("sh", "/repo"); err != nil || base != "" {
+		t.Fatalf("review base = %q err %v", base, err)
+	}
+	if scope, err := st.ReviewScope("sh"); err != nil || scope != "" {
+		t.Fatalf("review scope = %q err %v", scope, err)
+	}
+}
+
+func TestCreateSessionBesideFollowsTheAnchorPlacement(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	anchor := sample("sh", "g1")
+	anchor.ParentID = "agent"
+	if err := st.CreateSession(anchor); err != nil {
+		t.Fatalf("anchor: %v", err)
+	}
+	sibling := sample("sh2", "g2")
+	if err := st.CreateSessionBeside(sibling, "sh"); err != nil {
+		t.Fatalf("beside: %v", err)
+	}
+	got, err := st.Get("sh2")
+	if err != nil || got.ParentID != "agent" || got.Group != "g1" {
+		t.Fatalf("sibling = %+v err %v", got, err)
+	}
+	if err := st.PlaceSession("sh", "g3", ""); err != nil {
+		t.Fatalf("unnest anchor: %v", err)
+	}
+	loose := sample("sh3", "g1")
+	if err := st.CreateSessionBeside(loose, "sh"); err != nil {
+		t.Fatalf("beside un-nested: %v", err)
+	}
+	got, err = st.Get("sh3")
+	if err != nil || got.ParentID != "" || got.Group != "g3" {
+		t.Fatalf("un-nested sibling = %+v err %v", got, err)
+	}
+	if err := st.CreateSessionBeside(sample("sh4", "g1"), "gone"); err == nil {
+		t.Fatal("created beside a missing anchor")
+	}
+}
+
+func TestPlaceSessionReparentsBetweenAgents(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("first", "g1")); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if err := st.CreateSession(sample("second", "g2")); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	held := sample("held", "g2")
+	held.ParentID = "second"
+	if err := st.CreateSession(held); err != nil {
+		t.Fatalf("held: %v", err)
+	}
+	moved := sample("moved", "g1")
+	moved.ParentID = "first"
+	if err := st.CreateSession(moved); err != nil {
+		t.Fatalf("moved: %v", err)
+	}
+	if err := st.PlaceSession("moved", "g1", "second"); err != nil {
+		t.Fatalf("reparent: %v", err)
+	}
+	got, err := st.Get("moved")
+	if err != nil || got.ParentID != "second" || got.Group != "g2" {
+		t.Fatalf("reparented = %+v err %v", got, err)
+	}
+	kids, err := st.Children("second")
+	if err != nil || len(kids) != 2 || kids[0].ID != "held" || kids[1].ID != "moved" {
+		t.Fatalf("new siblings = %+v err %v", kids, err)
+	}
+	if kids, err := st.Children("first"); err != nil || len(kids) != 0 {
+		t.Fatalf("old parent still holds %+v err %v", kids, err)
+	}
+}
+
+func TestPlaceSessionRefusesParentThatHasChildren(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	if err := st.CreateSession(sample("host", "g1")); err != nil {
+		t.Fatalf("host: %v", err)
+	}
+	child := sample("sh", "g1")
+	child.ParentID = "host"
+	if err := st.CreateSession(child); err != nil {
+		t.Fatalf("child: %v", err)
+	}
+	if err := st.PlaceSession("host", "g1", "agent"); err == nil {
+		t.Fatal("nested a session that has children")
+	}
+	host, err := st.Get("host")
+	if err != nil || host.ParentID != "" {
+		t.Fatalf("host = %+v err %v", host, err)
+	}
+	got, err := st.Get("sh")
+	if err != nil || got.ParentID != "host" || got.Group != "g1" {
+		t.Fatalf("child = %+v err %v", got, err)
+	}
+}
+
+func TestPlaceSessionMovesAgentChildren(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	child := sample("sh", "g1")
+	child.ParentID = "agent"
+	if err := st.CreateSession(child); err != nil {
+		t.Fatalf("child: %v", err)
+	}
+	if err := st.PlaceSession("agent", "g2", ""); err != nil {
+		t.Fatalf("move agent: %v", err)
+	}
+	agent, _ := st.Get("agent")
+	sh, _ := st.Get("sh")
+	if agent.Group != "g2" || sh.Group != "g2" || sh.ParentID != "agent" {
+		t.Fatalf("agent=%+v child=%+v", agent, sh)
+	}
+}
+
+func TestReorderSessionStaysInSiblingSet(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	if err := st.CreateSession(sample("other", "g")); err != nil {
+		t.Fatalf("other: %v", err)
+	}
+	a := sample("a", "g")
+	a.ParentID = "agent"
+	b := sample("b", "g")
+	b.ParentID = "agent"
+	if err := st.CreateSession(a); err != nil {
+		t.Fatalf("a: %v", err)
+	}
+	if err := st.CreateSession(b); err != nil {
+		t.Fatalf("b: %v", err)
+	}
+	moved, err := st.ReorderSession("a", 1, false)
+	if err != nil || !moved {
+		t.Fatalf("reorder child: moved=%v err=%v", moved, err)
+	}
+	kids, _ := st.Children("agent")
+	if len(kids) != 2 || kids[0].ID != "b" || kids[1].ID != "a" {
+		t.Fatalf("child order %+v", kids)
+	}
+	roots := []string{}
+	for _, id := range listIDs(t, st, false) {
+		if id == "agent" || id == "other" {
+			roots = append(roots, id)
+		}
+	}
+	if len(roots) != 2 || roots[0] != "agent" || roots[1] != "other" {
+		t.Fatalf("un-nested order %v", roots)
+	}
+	if err := st.SwapSessionOrder("agent", "a"); err == nil {
+		t.Fatal("agent and its child are not siblings")
+	}
+}

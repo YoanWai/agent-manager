@@ -530,3 +530,11 @@ func TestSettingsUpdateRowPersistsStagedSettings(t *testing.T) {
 		t.Fatalf("theme setting = %q, want staged %q persisted before the restart", got, staged)
 	}
 }
+
+func TestSettingsHasNoTerminalRows(t *testing.T) {
+	m := buildModel(t)
+	m.openSettings()
+	if strings.Contains(ansi.Strip(m.viewSettings()), "terminal rows") {
+		t.Fatal("terminal rows setting must be gone")
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -136,6 +137,123 @@ func TestOpenTerminalOnSessionRowUsesItsDirectory(t *testing.T) {
 	}
 	if sess.Group != "backend" {
 		t.Fatalf("terminal group = %q, want backend", sess.Group)
+	}
+}
+
+func TestOpenTerminalOnAgentNests(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	agent, _ := m.selected()
+	shell := spawnTerminal(t, m)
+	if shell.ParentID != agent.ID || shell.Group != agent.Group {
+		t.Fatalf("shell parent=%q group=%q, want %q / %q", shell.ParentID, shell.Group, agent.ID, agent.Group)
+	}
+}
+
+func TestOpenTerminalOnGroupIsUnnested(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	shell := spawnTerminal(t, m)
+	if shell.ParentID != "" || shell.Group != "backend" {
+		t.Fatalf("group T = %+v", shell)
+	}
+}
+
+func TestOpenTerminalOnNestedShellSharesParent(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	first := spawnTerminal(t, m)
+	m.selectSessionRow(t, first.Name)
+	second := spawnTerminal(t, m)
+	if second.ParentID != first.ParentID || second.ParentID == "" || second.Group != first.Group {
+		t.Fatalf("second = %+v, first = %+v", second, first)
+	}
+}
+
+// A terminal is named for the session it hangs under, so the row says which
+// agent it was opened for even after the shell is cd'd somewhere else.
+func TestTerminalTakesTheNameOfItsSession(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "coder", t.TempDir(), "")
+	m.selectSessionRow(t, "coder")
+
+	shell := spawnTerminal(t, m)
+	if want := shellToolName + "-coder"; shell.Name != want {
+		t.Fatalf("terminal name = %q, want %q", shell.Name, want)
+	}
+}
+
+// The name is how one row is told from the next, so terminals sharing a
+// session count up instead of landing on one name. A terminal opened from
+// one of them is a sibling, and counts up in the same run.
+func TestTerminalsUnderOneSessionCountUp(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "coder", t.TempDir(), "")
+	m.selectSessionRow(t, "coder")
+	first := spawnTerminal(t, m)
+
+	m.selectSessionRow(t, "coder")
+	second := spawnTerminal(t, m)
+	if want := shellToolName + "-coder-2"; second.Name != want {
+		t.Fatalf("second terminal name = %q, want %q", second.Name, want)
+	}
+
+	m.selectSessionRow(t, first.Name)
+	third := spawnTerminal(t, m)
+	if want := shellToolName + "-coder-3"; third.Name != want {
+		t.Fatalf("sibling terminal name = %q, want %q", third.Name, want)
+	}
+}
+
+// A terminal opened on a group has no session to name it after, so it keeps
+// the generated name rather than taking the group's.
+func TestTerminalWithNoSessionKeepsItsGeneratedName(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("backend", t.TempDir()); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+
+	shell := spawnTerminal(t, m)
+	if !regexp.MustCompile(`^` + shellToolName + `-[0-9a-f]{4}$`).MatchString(shell.Name) {
+		t.Fatalf("terminal name = %q, want the generated %s-<4 hex>", shell.Name, shellToolName)
+	}
+}
+
+func TestTerminalKeyOnUnnestedShellStaysUnnested(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+	loose := spawnTerminal(t, m)
+	if loose.ParentID != "" {
+		t.Fatalf("first shell nested: %+v", loose)
+	}
+	m.selectSessionRow(t, loose.Name)
+	second := spawnTerminal(t, m)
+	if second.ParentID != "" || second.Group != loose.Group {
+		t.Fatalf("second = %+v, first = %+v", second, loose)
 	}
 }
 

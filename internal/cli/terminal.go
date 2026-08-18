@@ -2,6 +2,7 @@ package cli
 
 import (
 	"flag"
+	"fmt"
 	"io"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -9,9 +10,10 @@ import (
 
 const (
 	usageTerminalList   = "terminal list [--json]"
-	usageTerminalCreate = "terminal create [--group <path>] [--directory <path>] [--json]"
+	usageTerminalCreate = "terminal create [--group <path>] [--directory <path>] [--nest=false] [--json]"
 	usageTerminalSend   = `terminal send <terminal-id> --command "<text>" | --keys <key,key> [--json]`
 	usageTerminalRead   = "terminal read <terminal-id> [--json]"
+	usageTerminalClose  = "terminal close <terminal-id>"
 )
 
 type terminalCommands interface {
@@ -19,6 +21,7 @@ type terminalCommands interface {
 	Create(sessionID string, opts sessioncmd.CreateTerminalOptions) (sessioncmd.Terminal, error)
 	Send(sessionID, terminalID, command string, keys []string) (sessioncmd.TerminalInput, error)
 	Read(sessionID, terminalID string) (sessioncmd.TerminalScreen, error)
+	Close(sessionID, terminalID string) error
 }
 
 func newTerminals(configDir string) terminalCommands {
@@ -27,15 +30,16 @@ func newTerminals(configDir string) terminalCommands {
 
 func terminalVerbs() []command {
 	return []command{
-		{name: "list", usage: usageTerminalList, about: "find a running terminal to reuse before starting a build, a test suite or a log tail", run: bind(newTerminals, runTerminalList)},
-		{name: "create", usage: usageTerminalCreate, about: "open a terminal in this session's group and directory when none fits", run: bind(newTerminals, runTerminalCreate)},
+		{name: "list", usage: usageTerminalList, about: "find a running terminal to reuse before opening another one", run: bind(newTerminals, runTerminalList)},
+		{name: "create", usage: usageTerminalCreate, about: "open a terminal for work the user should see, such as SSH into a host; it hangs under this session unless --nest=false", run: bind(newTerminals, runTerminalCreate)},
 		{name: "send", usage: usageTerminalSend, about: "run a command there, or send exact tmux keys such as C-c to control what is running", run: bind(newTerminals, runTerminalSend)},
 		{name: "read", usage: usageTerminalRead, about: "read what that terminal's screen currently shows", run: bind(newTerminals, runTerminalRead)},
+		{name: "close", usage: usageTerminalClose, about: "close a terminal opened under this session once its job is done, killing the pane and deleting the row", run: bind(newTerminals, runTerminalClose)},
 	}
 }
 
 func terminalSection() section {
-	return groupSection("Managed terminals", "terminal", "shells the user watches beside the agents, for long-running or output-heavy work", terminalVerbs())
+	return groupSection("Managed terminals", "terminal", "shells the user watches beside the agents, for work they should be able to watch, attach to or take over", terminalVerbs())
 }
 
 func runTerminalList(out io.Writer, terminals terminalCommands, args []string, sessionID string) error {
@@ -55,11 +59,12 @@ func runTerminalCreate(out io.Writer, terminals terminalCommands, args []string,
 	set := newFlagSet(usageTerminalCreate)
 	group := set.String("group", "", "existing group path to open it in; pass an empty string for the root group")
 	directory := set.String("directory", "", "existing directory to open; defaults to yours, or to the group's inherited path")
+	nest := set.Bool("nest", true, "hang the terminal under this session; pass --nest=false to leave it loose or to open it in another group")
 	asJSON := jsonFlag(set)
 	if _, err := parseCommand(out, set, args, 0, 0); err != nil {
 		return err
 	}
-	opts := sessioncmd.CreateTerminalOptions{Directory: *directory}
+	opts := sessioncmd.CreateTerminalOptions{Directory: *directory, Nest: nest}
 	// An omitted group inherits this session's, so only a flag the caller
 	// actually typed is passed on.
 	set.Visit(func(given *flag.Flag) {
@@ -103,4 +108,17 @@ func runTerminalRead(out io.Writer, terminals terminalCommands, args []string, s
 		return err
 	}
 	return emit(out, *asJSON, screen, sessioncmd.FormatTerminalScreen(screen))
+}
+
+func runTerminalClose(out io.Writer, terminals terminalCommands, args []string, sessionID string) error {
+	set := newFlagSet(usageTerminalClose)
+	operands, err := parseCommand(out, set, args, 1, 1)
+	if err != nil {
+		return err
+	}
+	if err := terminals.Close(sessionID, operands[0]); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(out, "closed terminal "+operands[0])
+	return err
 }

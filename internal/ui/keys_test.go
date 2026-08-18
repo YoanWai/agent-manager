@@ -352,3 +352,87 @@ func TestRightStepsIntoTheRow(t *testing.T) {
 		t.Fatalf("right did not focus the session, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 }
+
+func TestReorderChildStaysWithItsSiblings(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	first := spawnTerminal(t, m)
+	m.selectSessionRow(t, "coder")
+	second := spawnTerminal(t, m)
+	m.selectSessionRow(t, first.Name)
+	_, cmd := m.reorderSelected(1)
+	m.applyCmd(t, cmd)
+	var kids []string
+	for _, row := range m.rows {
+		if !row.isGroup && row.sess.ParentID != "" {
+			kids = append(kids, row.sess.Name)
+		}
+	}
+	if len(kids) != 2 || kids[0] != second.Name || kids[1] != first.Name {
+		t.Fatalf("sibling order = %v", kids)
+	}
+}
+
+func TestReorderChildIgnoresAnotherParentsChild(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	createSession(t, m, "other", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	mine := spawnTerminal(t, m)
+	m.selectSessionRow(t, "other")
+	theirs := spawnTerminal(t, m)
+	m.selectSessionRow(t, mine.Name)
+	_, cmd := m.reorderSelected(1)
+	m.applyCmd(t, cmd)
+	var names []string
+	for _, row := range m.rows {
+		if !row.isGroup {
+			names = append(names, row.sess.Name)
+		}
+	}
+	want := []string{"coder", mine.Name, "other", theirs.Name}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("order = %v, want %v", names, want)
+	}
+}
+
+func TestReorderAgentSkipsChildren(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	createSession(t, m, "other", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	shell := spawnTerminal(t, m)
+	m.selectSessionRow(t, "coder")
+	agent := m.sessionRows()[0]
+	_, cmd := m.reorderSelected(1)
+	m.applyCmd(t, cmd)
+	var names []string
+	for _, row := range m.rows {
+		if !row.isGroup && row.sess.ParentID == "" {
+			names = append(names, row.sess.Name)
+		}
+	}
+	if len(names) < 2 || names[0] != "other" || names[1] != "coder" {
+		t.Fatalf("un-nested order %v", names)
+	}
+	got, err := m.store.Get(shell.ID)
+	if err != nil || got.ParentID != agent.ID {
+		t.Fatalf("terminal left its parent: %+v err %v", got, err)
+	}
+}

@@ -220,7 +220,9 @@ func (m *Model) viewGroupPicker() string {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 		}
 		label := displayGroup(opt.path)
-		if opt.path != "" {
+		if opt.sessID != "" {
+			label = strings.Repeat("  ", opt.depth) + opt.name
+		} else if opt.path != "" {
 			label = strings.Repeat("  ", opt.depth) + baseName(opt.path)
 		}
 		style := mutedStyle
@@ -293,10 +295,6 @@ func (m *Model) viewSettings() string {
 	if m.settings.themeAuto {
 		themeAuto = "on"
 	}
-	terminals := "inline"
-	if m.settings.shellsPinned {
-		terminals = "pinned"
-	}
 	notifications := "off"
 	if m.settings.notifications {
 		notifications = "on"
@@ -350,7 +348,6 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
 		row(settingsFieldArrowStep, "←→ step in/out", arrowStep) + betaTag + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
-		row(settingsFieldTerminals, "terminal rows", terminals) + "\n" +
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
@@ -446,7 +443,7 @@ func themeSwatch(t Theme) string {
 }
 
 func (m *Model) viewMove() string {
-	return m.card("⇄ Move to group", m.viewGroupPicker(),
+	return m.card("⇄ Move", m.viewGroupPicker(),
 		[][2]string{{"↑↓", "pick"}, {"↵", "move"}, {"esc", "cancel"}})
 }
 

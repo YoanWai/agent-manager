@@ -158,6 +158,7 @@ func (f *fakeSessions) Reservations(sessionID string) ([]sessioncmd.Reservation,
 type fakeTerminals struct {
 	callerID   string
 	terminalID string
+	closedID   string
 	command    string
 	keys       []string
 	opts       sessioncmd.CreateTerminalOptions
@@ -167,6 +168,11 @@ type fakeTerminals struct {
 func (f *fakeTerminals) List(sessionID string) ([]sessioncmd.Terminal, error) {
 	f.callerID = sessionID
 	return []sessioncmd.Terminal{{ID: "t1", Name: "build", Directory: "/repo", Status: "idle", Running: true}}, f.failWith
+}
+
+func (f *fakeTerminals) Close(sessionID, terminalID string) error {
+	f.callerID, f.closedID = sessionID, terminalID
+	return f.failWith
 }
 
 func (f *fakeTerminals) Create(sessionID string, opts sessioncmd.CreateTerminalOptions) (sessioncmd.Terminal, error) {

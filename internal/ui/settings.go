@@ -155,16 +155,6 @@ func storedComfortableRows(st *store.Store) bool {
 	return chosen == "comfortable"
 }
 
-// storedShellsPinned reads the persisted terminal placement. Pinned is the
-// default; only an explicit "inline" leaves shells among the agents.
-func storedShellsPinned(st *store.Store) bool {
-	chosen, err := st.Setting(terminalPlacementSetting)
-	if err != nil {
-		return true
-	}
-	return chosen != "inline"
-}
-
 // enterFocuses reports which key opens a session where. Enter focuses the
 // preview and A attaches full screen by default; a stored "attach" choice
 // swaps the pair. Cached on the model because the footer reads it every
@@ -227,7 +217,6 @@ func (m *Model) openSettings() {
 
 		comfortableRows: m.comfortableRows,
 		worktreeDefault: m.defaultWorktree(),
-		shellsPinned:    m.shellsPinned,
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
 		themeAuto:       themeAutoEnabled(m.store),
@@ -280,8 +269,6 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) saveAndCloseSettings() (tea.Model, tea.Cmd) {
 	m.persistSettings()
-	// Placement changes the tree's shape, so the rail has to be rebuilt
-	// here rather than waiting for the next poll.
 	m.rebuildRows()
 	m.mode = modeList
 	return m, nil
@@ -351,13 +338,6 @@ func (m *Model) persistSettings() {
 	if err := m.store.SetSetting(worktreeSetting, worktreeChoice); err != nil {
 		m.errBar.text = err.Error()
 	}
-	placement := "pinned"
-	if !m.settings.shellsPinned {
-		placement = "inline"
-	}
-	if err := m.store.SetSetting(terminalPlacementSetting, placement); err != nil {
-		m.errBar.text = err.Error()
-	}
 	notifications := "off"
 	if m.settings.notifications {
 		notifications = "on"
@@ -375,7 +355,6 @@ func (m *Model) persistSettings() {
 	m.focusOnEnter = m.settings.enterFocuses
 	m.arrowStep = m.settings.arrowStep
 	m.comfortableRows = m.settings.comfortableRows
-	m.shellsPinned = m.settings.shellsPinned
 }
 
 func (m *Model) openCLIPicker() {
@@ -505,8 +484,6 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.arrowStep = !m.settings.arrowStep
 	case settingsFieldWorktree:
 		m.settings.worktreeDefault = !m.settings.worktreeDefault
-	case settingsFieldTerminals:
-		m.settings.shellsPinned = !m.settings.shellsPinned
 	case settingsFieldNotify:
 		m.settings.notifications = !m.settings.notifications
 	case settingsFieldNotifyFinish:

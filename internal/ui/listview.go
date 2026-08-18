@@ -134,10 +134,6 @@ func (m *Model) railLines(width, height int) []contentLine {
 	// is only laid while entries still have room under it: a rail that is all
 	// banner says nothing about the fleet.
 	const railBannerRows, railListMin = 3, 3
-	// Half the list at most, so the tree the block sits under keeps enough
-	// rows to still read as a tree.
-	shells := m.terminalSectionLines(width, listHeight/2)
-	listHeight -= len(shells)
 	room := func(cost int) bool { return listHeight-len(rows)-cost >= railListMin }
 	// Search heads the list it filters, so the query sits over the entries it
 	// is narrowing. It is also the field being typed into, so a rail too tight
@@ -170,12 +166,11 @@ func (m *Model) railLines(width, height int) []contentLine {
 			rows = append(rows, lines...)
 		}
 	}
-	rows = append(rows, m.entryLines(m.treeRows(), 0, width, max(listHeight-len(rows), 0))...)
+	rows = append(rows, m.entryLines(m.rows, 0, width, max(listHeight-len(rows), 0))...)
 	for len(rows) < listHeight {
 		rows = append(rows, contentLine{})
 	}
 	rows = rows[:listHeight]
-	rows = append(rows, shells...)
 	if meters != nil {
 		rows = append(rows, contentLine{rule: true})
 		for _, line := range meters {
@@ -262,23 +257,6 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 	return lines
 }
 
-// terminalSectionLines is the pinned Terminals block: a divider and the
-// shell rows under it, windowed like the tree so a long list of shells
-// scrolls inside the block instead of pushing the tree off screen. The
-// label is the first thing dropped when the rail is short, since a shell
-// row the cursor can reach outranks the heading over it.
-func (m *Model) terminalSectionLines(width, budget int) []contentLine {
-	if m.pinnedShells == 0 || budget < 1 {
-		return nil
-	}
-	at := len(m.rows) - m.pinnedShells
-	if budget == 1 {
-		return m.entryLines(m.rows[at:], at, width, 1)
-	}
-	head := contentLine{text: strings.Repeat(" ", railInset) + divider("Terminals", width-railInset)}
-	return append([]contentLine{head}, m.entryLines(m.rows[at:], at, width, budget-1)...)
-}
-
 // entryHeight is how many lines an entry paints: one in the compact list,
 // two once the comfortable density unstacks the meta onto its own line.
 // Groups match sessions either way, since a ragged list of one- and
@@ -331,21 +309,6 @@ func lineWindow(heights []int, cursor, budget int) (int, int) {
 	return start, end
 }
 
-// emptyTreeReason is why the tree is bare, phrased to follow "no agents".
-// Ranked like the title chain above it: the narrowest view wins.
-func (m *Model) emptyTreeReason() string {
-	switch {
-	case strings.TrimSpace(m.search) != "":
-		return "match"
-	case m.statusFilter.active():
-		return "need " + m.statusFilter.label()
-	case m.showArchived:
-		return "archived"
-	default:
-		return "yet"
-	}
-}
-
 func (m *Model) emptyRailLines(width, height int) []string {
 	title := "no sessions yet"
 	hint := keyCap("n", "starts one")
@@ -360,12 +323,6 @@ func (m *Model) emptyRailLines(width, height int) []string {
 	if search := strings.TrimSpace(m.search); search != "" {
 		title = "no matches"
 		hint = subtleStyle.Render("for \"" + search + "\"")
-	}
-	// The Terminals block below can be full while the tree is bare, so the
-	// empty state says what is missing rather than claiming the rail holds
-	// nothing.
-	if m.pinnedShells > 0 {
-		title = "no agents " + m.emptyTreeReason()
 	}
 	titleLine := centerLine(
 		lipgloss.NewStyle().Bold(true).Foreground(colorBright).Render(title),
@@ -489,12 +446,15 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 	return m.renderSessionEntry(entry, selected, width, pad, guides, trail, bg)
 }
 
-// sessionGlyph is the mark ahead of a session's name. An inline shell takes
-// a caret rather than an idle dot it would never leave, but a pane that has
-// gone still has to say so.
+// A shell takes a caret rather than an idle dot it would never leave, but
+// a pane that has gone still has to say so.
 func (m *Model) sessionGlyph(sess store.Session) string {
+	if sess.Status == status.Starting {
+		return lipgloss.NewStyle().Foreground(statusColor(status.Starting)).
+			Render(startupFrames[m.startupPhase%len(startupFrames)])
+	}
 	resting := sess.Status != status.Dead && sess.Status != status.Errored
-	if resting && m.isShell(sess.Tool) && !m.pinnedShell(sess) {
+	if resting && m.isShell(sess.Tool) {
 		return subtleStyle.Render(shellGlyph)
 	}
 	return lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusGlyph(sess.Status))
@@ -554,16 +514,10 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	if selected {
 		metaStyle = mutedStyle
 	}
-	// A pinned shell already sits under a Terminals heading, so its tool
-	// name is dead weight where the group it left behind is not.
-	detail := sess.Tool
-	if m.pinnedShell(sess) {
-		detail = displayGroup(sess.Group)
-	}
 	// A session names its state in words as well as in its dot; a group,
 	// whose row rolls several states together, is left to its dots.
 	meta := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
-		metaStyle.Render(" · "+detail+" · "+relSince(lastActivity(sess)))
+		metaStyle.Render(" · "+sess.Tool+" · "+relSince(lastActivity(sess)))
 
 	if m.comfortableRows {
 		return stackedRow(head, metaIndent(pad, trail)+meta, width, bg)
@@ -725,7 +679,7 @@ func (m *Model) contentLines(width, height int) []contentLine {
 // focusTopRule is the hairline that caps the focused pane, titled so the
 // mode names itself where the eye already is.
 func focusTopRule(width int) string {
-	title := " focused · ctrl+q back · ctrl+r review · ctrl+o editor "
+	title := " focused · ctrl+q back · ctrl+r review · f3 editor "
 	rule := annotationStyle.Render(title)
 	rest := width - lipgloss.Width(title)
 	if rest > 0 {
@@ -734,28 +688,44 @@ func focusTopRule(width int) string {
 	return rule
 }
 
-// startupFrames turn a quarter arc around the circle the status marks are
-// drawn from, so a booting session animates in their geometric family while
-// standing clear of every mark that names a state: a frame caught mid-turn
-// cannot be read as one of them.
-var startupFrames = []string{"◜", "◝", "◞", "◟"}
+var startupFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
-// startupLoader is the preview's line for a selected session that is coming
-// up, and "" for every other session. A launching agent leaves its pane
-// blank for as long as it takes to draw, and an empty preview under a live
-// row reads as a broken session rather than one on its way up. paneBooted
-// is the poller's own test for a pane nothing has drawn to, so the loader
-// clears on the first captured frame rather than waiting for the poll that
-// moves the row off the launch state. A focused pane keeps its own first
-// row: that is the screen the user is typing on, and its caret lives there.
-func (m *Model) startupLoader() string {
+const startupRingPoints = 12
+
+func (m *Model) startupLoader(width, height int) []string {
 	sess, ok := m.selected()
 	if !ok || m.mode == modeFocus || sess.Status != status.Starting || paneBooted(m.preview) {
-		return ""
+		return nil
 	}
-	frame := startupFrames[m.startupPhase%len(startupFrames)]
-	return lipgloss.NewStyle().Foreground(statusColor(status.Starting)).
-		Render(frame + " " + statusLabel(status.Starting))
+
+	accent := lipgloss.NewStyle().Foreground(statusColor(status.Starting)).Bold(true)
+	glow := lipgloss.NewStyle().Foreground(statusColor(status.Starting))
+	phase := m.startupPhase % startupRingPoints
+	dot := func(position int) string {
+		switch position {
+		case phase:
+			return accent.Render("●")
+		case (phase + startupRingPoints - 1) % startupRingPoints:
+			return glow.Render("•")
+		default:
+			return subtleStyle.Render("·")
+		}
+	}
+
+	block := []string{
+		centerLine(dot(11)+"   "+dot(0)+"   "+dot(1), width),
+		centerLine(dot(10)+"       "+dot(2), width),
+		centerLine(dot(9)+"       "+dot(3), width),
+		centerLine(dot(8)+"       "+dot(4), width),
+		centerLine(dot(7)+"   "+dot(6)+"   "+dot(5), width),
+		centerLine(valueStyle.Bold(true).Render("starting up"), width),
+	}
+	if height <= len(block) {
+		return block[:height]
+	}
+	lines := make([]string, height)
+	copy(lines[(height-len(block))/2:], block)
+	return lines
 }
 
 // previewLines is the captured pane, filling every row under the detail
@@ -765,17 +735,19 @@ func (m *Model) startupLoader() string {
 // would put a margin around a terminal that has its own.
 func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	var lines []contentLine
-	loader := m.startupLoader()
+	loader := m.startupLoader(width, height)
 	pane := paneExact(m.preview, height, width)
 	if len(pane) == 0 {
 		// No rows painted means nothing to hit-test: a box left over from
 		// the previous session would catch clicks on empty space.
 		m.pane.box = paneBox{}
-		notice := loader
-		if notice == "" {
-			notice = mutedStyle.Render("(no output yet)")
+		if loader != nil {
+			for _, line := range loader {
+				lines = append(lines, contentLine{text: previewLine(line, width), raw: true})
+			}
+			return lines
 		}
-		return append(lines, contentLine{text: gutter + notice})
+		return append(lines, contentLine{text: gutter + mutedStyle.Render("(no output yet)")})
 	}
 	// Record where these rows land so mouse hit-testing reads the same
 	// geometry the paint used.
@@ -787,11 +759,8 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 		ok:     true,
 	}
 	for i, line := range pane {
-		// The loader takes the pane's own first row rather than replacing the
-		// block, so the geometry recorded above is the geometry painted: a
-		// session whose pane stays blank keeps every click it would have had.
-		if i == 0 && loader != "" {
-			lines = append(lines, contentLine{text: previewLine(loader, width), raw: true})
+		if i < len(loader) && loader[i] != "" {
+			lines = append(lines, contentLine{text: previewLine(loader[i], width), raw: true})
 			continue
 		}
 		lines = append(lines, contentLine{text: m.renderPaneRow(i, line, width), raw: true})

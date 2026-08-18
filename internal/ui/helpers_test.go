@@ -206,7 +206,7 @@ func listSessionIDs(t *testing.T, st *store.Store) []string {
 func pickGroup(t *testing.T, m *Model, path string) {
 	t.Helper()
 	for i, opt := range m.form.groups {
-		if opt.path == path {
+		if opt.path == path && opt.sessID == "" {
 			m.form.groupIndex = i
 			return
 		}
