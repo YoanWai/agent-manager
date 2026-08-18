@@ -113,6 +113,19 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 			want: "- api; sessions=2",
 		},
 		{
+			name: "delete-group names what it removed and moved",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runDeleteGroup(out, f, args, "cafe0001")
+			},
+			args: []string{"fleet"},
+			want: "deleted fleet; 1 session(s) moved to the root group: beef1234",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if f.groupPath != "fleet" || f.callerID != "cafe0001" {
+					t.Fatalf("delete-group got %q as %q", f.groupPath, f.callerID)
+				}
+			},
+		},
+		{
 			name: "create-group takes a path and a directory",
 			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 				return runCreateGroup(out, f, args, "cafe0001")

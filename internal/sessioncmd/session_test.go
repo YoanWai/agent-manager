@@ -705,8 +705,8 @@ func TestASenderIsToldWhenItsRecipientErrored(t *testing.T) {
 }
 
 // A tool block can be deleted after a message was queued for a session
-// running that tool, which leaves the poller unable to read readiness and
-// the message waiting for a delivery that never comes.
+// running that tool, which leaves the poller unable to read readiness.
+// The message stays queued: the hold lifts if the tool block returns.
 func TestASenderIsToldWhenTheRecipientsToolLeftTheConfig(t *testing.T) {
 	h := newSessionHarness(t)
 	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker"})
@@ -806,5 +806,48 @@ func TestDeleteGroupMovesItsSessionsToTheRoot(t *testing.T) {
 	}
 	if _, err := h.sessions.DeleteGroup(h.caller.ID, "fleet"); err == nil {
 		t.Fatal("deleting a group that does not exist was accepted")
+	}
+}
+
+func TestDeleteGroupTakesItsSubtreeAndKeepsNesting(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := h.sessions.CreateGroup(h.caller.ID, "fleet", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	if _, err := h.sessions.CreateGroup(h.caller.ID, "fleet/backend", ""); err != nil {
+		t.Fatalf("CreateGroup nested: %v", err)
+	}
+	group := "fleet/backend"
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker", Group: &group})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	shell := store.Session{
+		ID: "aaaa1111", Name: "sh-worker", Tool: "resting",
+		Group: "fleet/backend", Status: status.Idle, ParentID: worker.ID,
+	}
+	if err := h.store.CreateSession(shell); err != nil {
+		t.Fatalf("nest shell: %v", err)
+	}
+
+	removal, err := h.sessions.DeleteGroup(h.caller.ID, "fleet")
+	if err != nil {
+		t.Fatalf("DeleteGroup: %v", err)
+	}
+	if len(removal.Removed) != 2 {
+		t.Fatalf("removed = %v, want the group and its child", removal.Removed)
+	}
+	if len(removal.Moved) != 2 {
+		t.Fatalf("moved = %v, want both sessions from the nested group", removal.Moved)
+	}
+	after, err := h.store.Get(shell.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if after.Group != "" {
+		t.Fatalf("nested session sits in %q rather than the root", after.Group)
+	}
+	if after.ParentID != worker.ID {
+		t.Fatalf("moving the subtree unhooked the terminal from its agent: parent %q", after.ParentID)
 	}
 }

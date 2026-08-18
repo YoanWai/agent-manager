@@ -276,32 +276,10 @@ func (s *Sessions) DeleteGroup(sessionID, path string) (GroupRemoval, error) {
 	if _, err := runtime.caller(sessionID); err != nil {
 		return GroupRemoval{}, err
 	}
-	groups, err := runtime.store.Groups()
-	if err != nil {
-		return GroupRemoval{}, err
-	}
-	known := false
-	for _, group := range groups {
-		if group.Name == path {
-			known = true
-			break
-		}
-	}
-	if !known {
+	removed, moved, err := runtime.store.RemoveGroup(path)
+	if errors.Is(err, store.ErrGroupNotFound) {
 		return GroupRemoval{}, fmt.Errorf("group %q does not exist; call %s for current paths", path, runtime.words.ListGroups)
 	}
-	held, err := runtime.store.SessionsInSubtree(path)
-	if err != nil {
-		return GroupRemoval{}, err
-	}
-	moved := make([]string, 0, len(held))
-	for _, sess := range held {
-		if err := runtime.store.MoveSession(sess.ID, ""); err != nil {
-			return GroupRemoval{}, err
-		}
-		moved = append(moved, sess.ID)
-	}
-	removed, err := runtime.store.DeleteGroup(path)
 	if err != nil {
 		return GroupRemoval{}, err
 	}

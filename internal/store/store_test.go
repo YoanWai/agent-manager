@@ -1614,3 +1614,85 @@ func TestReorderSessionStaysInSiblingSet(t *testing.T) {
 		t.Fatal("agent and its child are not siblings")
 	}
 }
+
+func TestRemoveGroupMovesTheSubtreeInOneStroke(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("fleet", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	if err := st.CreateGroup("fleet/backend", ""); err != nil {
+		t.Fatalf("CreateGroup nested: %v", err)
+	}
+	if err := st.CreateSession(sample("aa", "fleet")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	nested := sample("bb", "fleet/backend")
+	nested.ParentID = "aa"
+	if err := st.CreateSession(nested); err != nil {
+		t.Fatalf("create nested: %v", err)
+	}
+
+	removed, moved, err := st.RemoveGroup("fleet")
+	if err != nil {
+		t.Fatalf("RemoveGroup: %v", err)
+	}
+	sort.Strings(removed)
+	if !slices.Equal(removed, []string{"fleet", "fleet/backend"}) {
+		t.Fatalf("removed = %v", removed)
+	}
+	sort.Strings(moved)
+	if !slices.Equal(moved, []string{"aa", "bb"}) {
+		t.Fatalf("moved = %v", moved)
+	}
+	after, err := st.Get("bb")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if after.Group != "" || after.ParentID != "aa" {
+		t.Fatalf("nested session moved to %q under %q; want the root under aa", after.Group, after.ParentID)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("Groups: %v", err)
+	}
+	for _, g := range groups {
+		if strings.HasPrefix(g.Name, "fleet") {
+			t.Fatalf("group %q survived", g.Name)
+		}
+	}
+}
+
+func TestRemoveGroupReportsAMissingGroup(t *testing.T) {
+	st := newTestStore(t)
+	if _, _, err := st.RemoveGroup("ghost"); !errors.Is(err, ErrGroupNotFound) {
+		t.Fatalf("err = %v, want ErrGroupNotFound", err)
+	}
+	if _, _, err := st.RemoveGroup(""); err == nil {
+		t.Fatal("removing the root group was accepted")
+	}
+}
+
+// A group name may carry LIKE wildcards; they must not pull a sibling
+// group's sessions into the move.
+func TestRemoveGroupMatchesWildcardNamesLiterally(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("a_c", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	if err := st.CreateGroup("abc", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	if err := st.CreateSession(sample("cc", "abc/sub")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	removed, moved, err := st.RemoveGroup("a_c")
+	if err != nil {
+		t.Fatalf("RemoveGroup: %v", err)
+	}
+	if len(moved) != 0 {
+		t.Fatalf("moved = %v, want nothing from the sibling group", moved)
+	}
+	if !slices.Equal(removed, []string{"a_c"}) {
+		t.Fatalf("removed = %v", removed)
+	}
+}

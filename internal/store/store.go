@@ -1002,6 +1002,87 @@ func (s *Store) DeleteGroup(path string) ([]string, error) {
 	return s.deleteGroups(groups, func(g Group) bool { return inSubtree(g.Name, path) })
 }
 
+// ErrGroupNotFound reports a group path no row carries.
+var ErrGroupNotFound = errors.New("group does not exist")
+
+// RemoveGroup deletes a group and its descendant groups and moves every
+// session held beneath them to the root, in one transaction, so a failure
+// partway leaves the tree as it was. A moved session keeps its parent
+// link, so a terminal relocated with its agent still hangs under it.
+// Reports the group paths removed and the ids of the sessions moved.
+func (s *Store) RemoveGroup(path string) (removedGroups, movedSessions []string, err error) {
+	if path == "" {
+		return nil, nil, fmt.Errorf("cannot delete the root group")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Rollback()
+	groupNames, err := txStrings(tx, `SELECT name FROM groups ORDER BY sort_order, name`)
+	if err != nil {
+		return nil, nil, err
+	}
+	known := false
+	for _, name := range groupNames {
+		if name == path {
+			known = true
+		}
+		if inSubtree(name, path) {
+			removedGroups = append(removedGroups, name)
+		}
+	}
+	if !known {
+		return nil, nil, ErrGroupNotFound
+	}
+	held, err := txStrings(tx,
+		`SELECT id FROM sessions WHERE group_name = ? OR group_name LIKE ? || '/%' ESCAPE '\'
+		 ORDER BY group_name, parent_id, sort_order`,
+		path, escapeLike(path))
+	if err != nil {
+		return nil, nil, err
+	}
+	var nextOrder int
+	if err := tx.QueryRow(
+		`SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ''`,
+	).Scan(&nextOrder); err != nil {
+		return nil, nil, err
+	}
+	for _, id := range held {
+		if _, err := tx.Exec(
+			`UPDATE sessions SET group_name = '', sort_order = ? WHERE id = ?`, nextOrder, id); err != nil {
+			return nil, nil, err
+		}
+		nextOrder++
+	}
+	for _, name := range removedGroups {
+		if _, err := tx.Exec(`DELETE FROM groups WHERE name = ?`, name); err != nil {
+			return nil, nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+	return removedGroups, held, nil
+}
+
+func txStrings(tx *sql.Tx, query string, args ...any) ([]string, error) {
+	rows, err := tx.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var values []string
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
 // PruneArchivedGroups removes the groups in a subtree that are archived,
 // directly or through an archived ancestor, and hold no session anywhere
 // beneath them, reporting the paths it removed. A group that still holds
