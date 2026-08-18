@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/deps"
 )
 
 const prefix = "am_"
@@ -107,7 +109,7 @@ func New() (*Driver, error) {
 func NewWithSocket(socket string) (*Driver, error) {
 	bin, err := exec.LookPath("tmux")
 	if err != nil {
-		return nil, fmt.Errorf("tmux not found on PATH: %w", err)
+		return nil, fmt.Errorf("tmux not found on PATH: %w\n%s", err, deps.Hint("tmux"))
 	}
 	return &Driver{bin: bin, socket: socket}, nil
 }
