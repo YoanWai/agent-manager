@@ -576,6 +576,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		WorktreeRepo:   worktreeRepo,
 		WorktreeBranch: worktreeBranch,
 		PendingInputs:  plan.PendingInputs,
+		LaunchPrompt:   plan.LaunchPrompt,
 	}, tool, plan.Command, launchOptions{
 		rollbackWorktree: worktreeRepo != "",
 	}); err != nil {

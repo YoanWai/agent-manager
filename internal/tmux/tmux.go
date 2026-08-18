@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const prefix = "am_"
@@ -363,12 +364,70 @@ func (d *Driver) Paste(id, text string) error {
 
 var pasteSeq atomic.Uint64
 
+// Only a pane that never echoes what it reads waits out echoWait; an agent
+// redraws a paste in tens of milliseconds, even mid-launch.
+const (
+	echoWait = time.Second
+	echoPoll = 25 * time.Millisecond
+)
+
+// pasteAndEnter holds the Enter until the pane has drawn the paste. Both
+// writes reach one pty, and a pane too busy to read between them takes the
+// carriage return as part of the bracketed paste rather than as a submit,
+// stranding the message in the composer.
 func (d *Driver) pasteAndEnter(target, text string) error {
+	before, baseline := d.capturePlain(target)
 	if err := d.paste(target, text); err != nil {
 		return err
 	}
+	if baseline != nil {
+		// Without a baseline, text already on screen reads as the new paste,
+		// so the pane gets the whole window to draw it rather than a match.
+		time.Sleep(echoWait)
+	} else {
+		d.awaitPasteEcho(target, before, text)
+	}
 	_, err := d.run("send-keys", "-t", target, "Enter")
 	return err
+}
+
+// A pane that draws the paste some other way, as a collapsed placeholder or
+// not at all, is released at the cap and submits the way it did before.
+func (d *Driver) awaitPasteEcho(target, before, text string) {
+	opening := MessageOpening(text)
+	if opening == "" {
+		return
+	}
+	was := strings.Count(before, opening)
+	deadline := time.Now().Add(echoWait)
+	for {
+		if pane, err := d.capturePlain(target); err == nil && strings.Count(pane, opening) > was {
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(echoPoll)
+	}
+}
+
+// MessageOpening is the slice of a message to look for in a pane: its first
+// line with anything on it, cut short because a composer wraps a long line
+// and would split any longer match. A message that opens on a blank line
+// still has to be waited for, so the blank lines are skipped rather than
+// answered with nothing to match.
+func MessageOpening(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if runes := []rune(line); len(runes) > 16 {
+			line = strings.TrimSpace(string(runes[:16]))
+		}
+		return line
+	}
+	return ""
 }
 
 // paste loads text into a tmux buffer and pastes it into the pane.
@@ -477,6 +536,12 @@ func (d *Driver) Exists(id string) bool {
 // (-e), so previews keep the session's real colors. Strip before regex use.
 func (d *Driver) CapturePane(id string) (string, error) {
 	return d.run("capture-pane", "-p", "-e", "-t", sessionName(id))
+}
+
+// capturePlain drops the escapes CapturePane keeps, which an application is
+// free to write partway through a line, breaking a match on the text.
+func (d *Driver) capturePlain(target string) (string, error) {
+	return d.run("capture-pane", "-p", "-t", target)
 }
 
 // Resize pins a detached session's window to the given dimensions so its

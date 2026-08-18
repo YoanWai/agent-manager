@@ -536,7 +536,11 @@ func (p *poller) maybeSendPendingInput(sess store.Session, pane string, agentAli
 	if !agentAlive {
 		return false, nil
 	}
-	if _, ready := p.engine.ActivityRegion(sess.Tool, ansi.Strip(pane)); !ready {
+	region, ready := p.engine.ActivityRegion(sess.Tool, ansi.Strip(pane))
+	if !ready {
+		return false, nil
+	}
+	if !launchPromptTaken(sess, region) {
 		return false, nil
 	}
 	claimed, err := p.store.ClaimPendingInput(sess.ID, input)
@@ -728,6 +732,22 @@ func replyInstruction(senderID, mcpStyle string) string {
 		return fmt.Sprintf("Reply by running: %s %s \"<your reply>\".", sessioncmd.CLIVocabulary().Send, senderID)
 	}
 	return fmt.Sprintf("Reply with the %s tool, session_id %q.", sessioncmd.MCPVocabulary().Send, senderID)
+}
+
+// launchPromptGrace releases pending input for a session whose prompt
+// scrolled out of the pane, or whose agent never drew it there.
+const launchPromptGrace = 30 * time.Second
+
+// launchPromptTaken reports whether an agent has picked up the prompt it
+// launched with, which the prompt reaching finished output proves. Input
+// delivered before that is lost: taking the prompt clears the composer, and
+// anything pasted there goes with it.
+func launchPromptTaken(sess store.Session, region string) bool {
+	opening := tmux.MessageOpening(sess.LaunchPrompt)
+	if opening == "" || strings.Contains(region, opening) {
+		return true
+	}
+	return time.Since(sess.LaunchTime()) > launchPromptGrace
 }
 
 // applyPendingRename picks up a name the session's agent left via the

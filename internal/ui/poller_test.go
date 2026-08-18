@@ -4,11 +4,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -937,5 +939,60 @@ func TestThePollLeavesTheHeartbeatAloneBetweenStamps(t *testing.T) {
 	}
 	if third == first {
 		t.Fatal("an aged heartbeat was never restamped, so a running manager reads as closed")
+	}
+}
+
+// Taking the launch prompt clears the composer, so a directive delivered
+// before then is discarded and has to wait for the prompt to reach output.
+func TestPendingInputWaitsForTheLaunchPrompt(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("slow-take-tool", "slow-take-tool-abcd", t.TempDir(), "", "/compact", true, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	sess := m.sessionRows()[0]
+
+	// The input line is drawn from the first frame, so without the wait the
+	// directive would be gone by now.
+	for tries := 0; tries < 3; tries++ {
+		if !sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
+			pane, _ := m.tmux.CapturePane(sess.ID)
+			t.Fatalf("directive sent before the prompt was taken; pane:\n%s", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
+		m.applyCmd(t, m.refreshCmd())
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
+		if time.Now().After(deadline) {
+			pane, _ := m.tmux.CapturePane(sess.ID)
+			t.Fatalf("directive never sent after the prompt was taken; pane:\n%s", pane)
+		}
+		time.Sleep(100 * time.Millisecond)
+		m.applyCmd(t, m.refreshCmd())
+	}
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if !strings.Contains(pane, "agent-manager rename") {
+		t.Fatalf("pane should hold the directive, got:\n%s", pane)
+	}
+}
+
+// A prompt that never reaches the pane, because it scrolled out or the agent
+// never drew it, must not hold pending input past the grace.
+func TestLaunchPromptTakenGivesUpAfterTheGrace(t *testing.T) {
+	fresh := store.Session{LaunchPrompt: "/compact plan the sprint", CreatedAt: time.Now()}
+	if launchPromptTaken(fresh, "no prompt here") {
+		t.Fatal("pending input released before the prompt showed")
+	}
+	if !launchPromptTaken(fresh, "❯ /compact plan the sprint\nworking") {
+		t.Fatal("prompt in the region should release pending input")
+	}
+	stale := store.Session{LaunchPrompt: fresh.LaunchPrompt, CreatedAt: time.Now().Add(-launchPromptGrace - time.Second)}
+	if !launchPromptTaken(stale, "no prompt here") {
+		t.Fatal("pending input still held after the grace")
 	}
 }

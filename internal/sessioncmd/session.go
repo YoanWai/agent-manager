@@ -382,6 +382,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		WorktreeRepo:   worktree.repo,
 		WorktreeBranch: worktree.branch,
 		PendingInputs:  plan.PendingInputs,
+		LaunchPrompt:   plan.LaunchPrompt,
 	}
 	if err := runtime.driver.Create(sess.ID, sess.Cwd, command, env, 0, 0); err != nil {
 		discard()

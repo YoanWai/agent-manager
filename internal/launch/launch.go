@@ -88,6 +88,12 @@ type Plan struct {
 	Command        string
 	PendingInputs  []string
 	AgentSessionID string
+	// LaunchPrompt is the prompt the command line carries, which the agent
+	// clears its composer to pick up. Input delivered before then goes with
+	// it, so the poller waits for this text to reach the pane. A tool typed
+	// into takes its prompt as pending input instead, leaving nothing to
+	// wait behind.
+	LaunchPrompt string
 }
 
 // Assemble resolves a session's first prompt into a launch plan. A prompt
@@ -101,6 +107,9 @@ func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed boo
 	carried := DirectiveEmbeddable(rawPrompt)
 	prompt := Prompt(note, rawPrompt, autoNamed)
 	plan := Plan{Command: WithPrompt(tool, tool.Command, prompt)}
+	if tool.PromptMode != "send" {
+		plan.LaunchPrompt = prompt
+	}
 	if tool.PromptMode == "send" && prompt != "" {
 		plan.PendingInputs = append(plan.PendingInputs, prompt)
 	}

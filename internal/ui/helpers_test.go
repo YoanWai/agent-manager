@@ -56,6 +56,13 @@ func buildModel(t *testing.T) *Model {
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
 			},
+			// Draws its input line at once and takes the prompt it launched
+			// with half a second later, the way an agent finishes booting.
+			"slow-take-tool": {
+				Command:        `sh -c 'printf "❯ "; sleep 0.5; printf "\n❯ %s\n❯ " "$0"; cat'`,
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: "(?m)^❯",
+			},
 			// Stands in for the agent CLIs, which turn on mouse tracking and
 			// scroll themselves instead of leaving history for tmux.
 			"mouse-tool": {
