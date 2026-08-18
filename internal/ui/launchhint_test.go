@@ -108,7 +108,11 @@ func TestReviveMissingCLIPromptsInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.sessions = []store.Session{sess}
-	m.cfg.Tools["claude"] = config.Tool{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
+	m.cfg.Tools["claude"] = config.Tool{
+		Command:       "cat",
+		ReviveCommand: "am-missing-cli-xyz",
+		DefaultStatus: status.Idle,
+	}
 
 	err := m.reviveSession(sess)
 	if err == nil {
@@ -117,6 +121,9 @@ func TestReviveMissingCLIPromptsInstall(t *testing.T) {
 	m.reportLaunchError(err)
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
+	}
+	if !strings.Contains(m.launchHint, "am-missing-cli-xyz") {
+		t.Fatalf("hint %q should name the revive binary", m.launchHint)
 	}
 }
 

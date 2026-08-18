@@ -672,7 +672,7 @@ func withPrompt(tool config.Tool, command, prompt string) string {
 // settings file and their status-file path, plus a clean slate from any
 // earlier files under the same id.
 func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id string) (string, map[string]string, error) {
-	if err := config.CheckInstalled(tool); err != nil {
+	if err := config.CheckInstalled(baseCommand); err != nil {
 		return "", nil, err
 	}
 	if err := m.hooks.RemoveName(id); err != nil {

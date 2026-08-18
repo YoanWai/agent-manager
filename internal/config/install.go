@@ -17,8 +17,8 @@ func (e MissingToolError) Error() string {
 	return e.Binary + " is not installed; " + deps.Hint(e.Binary)
 }
 
-func CheckInstalled(tool Tool) error {
-	fields := strings.Fields(tool.Command)
+func CheckInstalled(command string) error {
+	fields := strings.Fields(command)
 	if len(fields) == 0 {
 		return nil
 	}

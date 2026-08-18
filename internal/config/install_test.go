@@ -11,19 +11,19 @@ func TestCheckInstalledAcceptsPresentBinary(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("looks up a Unix shell")
 	}
-	if err := CheckInstalled(Tool{Command: "sh -c true"}); err != nil {
+	if err := CheckInstalled("sh -c true"); err != nil {
 		t.Fatalf("present binary: %v", err)
 	}
 }
 
 func TestCheckInstalledSkipsEmptyCommand(t *testing.T) {
-	if err := CheckInstalled(Tool{Command: "", Shell: true}); err != nil {
+	if err := CheckInstalled(""); err != nil {
 		t.Fatalf("empty command: %v", err)
 	}
 }
 
 func TestCheckInstalledRejectsMissingBinary(t *testing.T) {
-	err := CheckInstalled(Tool{Command: "am-missing-cli-xyz --flag"})
+	err := CheckInstalled("am-missing-cli-xyz --flag")
 	var missing MissingToolError
 	if !errors.As(err, &missing) {
 		t.Fatalf("got %v", err)
@@ -41,7 +41,7 @@ func TestCheckInstalledNamesOfficialInstaller(t *testing.T) {
 	lookPath = func(string) (string, error) { return "", errors.New("missing") }
 	t.Cleanup(func() { lookPath = orig })
 
-	err := CheckInstalled(Tool{Command: "claude"})
+	err := CheckInstalled("claude")
 	var missing MissingToolError
 	if !errors.As(err, &missing) {
 		t.Fatalf("got %v", err)
