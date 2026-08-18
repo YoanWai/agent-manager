@@ -76,11 +76,23 @@ check_path() {
 	esac
 }
 
+tmux_new_enough() {
+	command -v tmux >/dev/null 2>&1 || return 1
+	out=$(tmux -V 2>/dev/null) || return 1
+	set -- $out
+	ver=${2%%[a-zA-Z]*}
+	major=${ver%%.*}
+	rest=${ver#*.}
+	minor=${rest%%.*}
+	[ -n "$major" ] && [ -n "$minor" ] || return 1
+	[ "$major" -gt 3 ] && return 0
+	[ "$major" -eq 3 ] && [ "$minor" -ge 1 ]
+}
+
 missing_deps() {
 	missing=
-	for dep in tmux git; do
-		command -v "$dep" >/dev/null 2>&1 || missing="${missing} ${dep}"
-	done
+	tmux_new_enough || missing="${missing} tmux"
+	command -v git >/dev/null 2>&1 || missing="${missing} git"
 	printf '%s' "${missing# }"
 }
 
