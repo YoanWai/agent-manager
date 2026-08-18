@@ -376,6 +376,10 @@ func TestFocusKeepsPaneHeight(t *testing.T) {
 		if got := m.previewPaneHeight(); got != listed {
 			t.Fatalf("width %d: focused box with mouse = %d rows, want %d", width, got, listed)
 		}
+		m.applyCmd(t, m.refreshCmd())
+		if got := windowHeight(t, sess.ID); got != listed {
+			t.Fatalf("width %d: focused pane with mouse = %d rows, want %d", width, got, listed)
+		}
 		m.pane.mouse = false
 		m.applyCmd(t, m.leaveFocus())
 	}
