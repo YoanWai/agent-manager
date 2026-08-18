@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // sgrMouseReportRe matches one SGR mouse report as cat echoes it back to the
@@ -318,25 +319,72 @@ func TestRefreshReassertsPaneHeight(t *testing.T) {
 		t.Fatalf("initial pane height = %d, want %d", got, want)
 	}
 
-	full := m.previewPaneHeight()
-	// Opening the quick bar shrinks the box without any terminal resize.
-	m.openQuickMode()
+	// A shorter frame with no size message: the header or the status line
+	// taking a row moves the box the same way.
+	m.height -= 4
 	shrunk := m.previewPaneHeight()
-	if shrunk >= full {
-		t.Fatal("quick bar did not shrink the box height")
-	}
 	m.applyCmd(t, m.refreshCmd())
 	if got := windowHeight(t, sess.ID); got != shrunk {
-		t.Fatalf("pane height after opening the quick bar = %d, want %d", got, shrunk)
+		t.Fatalf("pane height after the box shrank = %d, want %d", got, shrunk)
 	}
 
-	// Closing it grows the box back; the pane has to follow.
-	m.quick.active = false
+	m.height += 4
 	grown := m.previewPaneHeight()
 	m.applyCmd(t, m.refreshCmd())
 	if got := windowHeight(t, sess.ID); got != grown {
-		t.Fatalf("pane height after closing the quick bar = %d, want %d", got, grown)
+		t.Fatalf("pane height after the box grew = %d, want %d", got, grown)
 	}
+}
+
+// The quick bar takes its rows from the painted preview alone: resizing the
+// pane for it would make an agent drawing on the normal screen redraw its
+// whole transcript, so the pane stays pinned and the view crops instead.
+func TestQuickBarKeepsPaneHeight(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "sizer", t.TempDir(), "")
+	m.applyCmd(t, m.refreshCmd())
+	sess := m.rows[m.cursor].sess
+	pinned := m.previewPaneHeight()
+
+	rows := make([]string, pinned+10)
+	for i := range rows {
+		rows[i] = fmt.Sprintf("line%03d", i+1)
+	}
+	m.preview = strings.Join(rows, "\n") + "\n"
+	listed := paintedPreview(m)
+
+	m.openQuickMode()
+	if got := m.previewPaneHeight(); got != pinned {
+		t.Fatalf("box height with the quick bar open = %d, want %d", got, pinned)
+	}
+	painted := paintedPreview(m)
+	// The bar's rows come off the top of the view; the pane's live end stays.
+	if oldest := rows[len(rows)-pinned]; !strings.Contains(listed, oldest) || strings.Contains(painted, oldest) {
+		t.Fatalf("the quick bar should have cropped %s off the top:\n%s", oldest, painted)
+	}
+	if newest := rows[len(rows)-1]; !strings.Contains(painted, newest) {
+		t.Fatalf("the quick bar hid the pane's live end (%s):\n%s", newest, painted)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	if got := windowHeight(t, sess.ID); got != pinned {
+		t.Fatalf("pane height with the quick bar open = %d, want %d", got, pinned)
+	}
+
+	m.quick.active = false
+	m.applyCmd(t, m.refreshCmd())
+	if got := windowHeight(t, sess.ID); got != pinned {
+		t.Fatalf("pane height after closing the quick bar = %d, want %d", got, pinned)
+	}
+}
+
+// paintedPreview is the right column as the list paints it, escapes stripped.
+func paintedPreview(m *Model) string {
+	_, rightWidth := m.splitWidths()
+	var painted strings.Builder
+	for _, row := range m.contentLines(rightWidth, m.listBodyHeight()) {
+		painted.WriteString(ansi.Strip(row.text) + "\n")
+	}
+	return painted.String()
 }
 
 // windowHeight is the tmux window height a session is currently pinned to.
@@ -351,6 +399,38 @@ func windowHeight(t *testing.T, id string) int {
 		t.Fatalf("parse height %q: %v", out, err)
 	}
 	return height
+}
+
+// Focusing must leave the preview box where it was: a pane resized on the
+// way in makes an agent drawing on the normal screen redraw its whole
+// transcript, which throws the view up its history and back.
+func TestFocusKeepsPaneHeight(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "focused", t.TempDir(), "")
+	m.applyCmd(t, m.refreshCmd())
+	sess := m.rows[m.cursor].sess
+
+	for _, width := range []int{100, 240} {
+		m.width = width
+		m.applyCmd(t, m.refreshCmd())
+		listed := m.previewPaneHeight()
+
+		m.focusSelected()
+		if got := m.previewPaneHeight(); got != listed {
+			t.Fatalf("width %d: focused box = %d rows, want %d", width, got, listed)
+		}
+		m.applyCmd(t, m.refreshCmd())
+		if got := windowHeight(t, sess.ID); got != listed {
+			t.Fatalf("width %d: focused pane = %d rows, want %d", width, got, listed)
+		}
+		// An agent claiming the mouse adds a key to the focused tier.
+		m.pane.mouse = true
+		if got := m.previewPaneHeight(); got != listed {
+			t.Fatalf("width %d: focused box with mouse = %d rows, want %d", width, got, listed)
+		}
+		m.pane.mouse = false
+		m.applyCmd(t, m.leaveFocus())
+	}
 }
 
 // focusedMouseApp focuses a session whose tool claims the mouse, with the
