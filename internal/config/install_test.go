@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -38,7 +39,7 @@ func TestCheckInstalledRejectsMissingBinary(t *testing.T) {
 
 func TestCheckInstalledNamesOfficialInstaller(t *testing.T) {
 	orig := lookPath
-	lookPath = func(string) (string, error) { return "", errors.New("missing") }
+	lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	t.Cleanup(func() { lookPath = orig })
 
 	err := CheckInstalled("claude")
@@ -51,5 +52,21 @@ func TestCheckInstalledNamesOfficialInstaller(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "claude.ai/install.sh") {
 		t.Fatalf("error = %q", err)
+	}
+}
+
+func TestCheckInstalledKeepsLookupErrors(t *testing.T) {
+	orig := lookPath
+	denied := errors.New("permission denied")
+	lookPath = func(string) (string, error) { return "", denied }
+	t.Cleanup(func() { lookPath = orig })
+
+	err := CheckInstalled("claude")
+	if !errors.Is(err, denied) {
+		t.Fatalf("got %v", err)
+	}
+	var missing MissingToolError
+	if errors.As(err, &missing) {
+		t.Fatalf("lookup errors must not become MissingToolError")
 	}
 }

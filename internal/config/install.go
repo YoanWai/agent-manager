@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os/exec"
 	"strings"
 
@@ -23,8 +24,12 @@ func CheckInstalled(command string) error {
 		return nil
 	}
 	binary := fields[0]
-	if _, err := lookPath(binary); err == nil {
+	_, err := lookPath(binary)
+	if err == nil {
 		return nil
+	}
+	if !errors.Is(err, exec.ErrNotFound) {
+		return err
 	}
 	return MissingToolError{Binary: binary}
 }
