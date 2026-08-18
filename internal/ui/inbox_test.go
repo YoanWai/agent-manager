@@ -479,8 +479,27 @@ func pollUntilQueued(t *testing.T, m *Model, sessionID string, want int) {
 // since the tool echoes what was typed and then prints it back.
 func settledPane(t *testing.T, m *Model, sessionID string, markers ...string) string {
 	t.Helper()
+	// Two waits, not one. A paste still landing resets the quiet run, so
+	// requiring the markers and the quiet in the same capture can burn
+	// the whole deadline on a loaded runner: first wait for every marker
+	// to have rendered, then for the pane to stop changing.
 	deadline := time.Now().Add(10 * time.Second)
-	previous, repeats := "", 0
+	previous := ""
+	for {
+		pane, err := m.tmux.CapturePane(sessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		previous = pane
+		if containsAll(pane, markers) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pane never showed %v:\n%s", markers, previous)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	repeats := 0
 	for time.Now().Before(deadline) {
 		pane, err := m.tmux.CapturePane(sessionID)
 		if err != nil {
@@ -492,8 +511,11 @@ func settledPane(t *testing.T, m *Model, sessionID string, markers ...string) st
 			repeats = 0
 		}
 		previous = pane
-		if repeats >= 3 && containsAll(pane, markers) {
-			return pane
+		if repeats >= 3 {
+			if !containsAll(previous, markers) {
+				t.Fatalf("pane settled without %v:\n%s", markers, previous)
+			}
+			return previous
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
