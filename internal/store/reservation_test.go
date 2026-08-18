@@ -70,3 +70,28 @@ func TestConcurrentReservationsLeaveOnlyTheFirstHolderUnaware(t *testing.T) {
 		}
 	}
 }
+
+// One foreign lease overlapping two of the caller's patterns is one
+// holder, not two, so it comes back once.
+func TestReserveReportsOneOverlappingLeaseOnce(t *testing.T) {
+	st := newTestStore(t)
+	now := time.Now()
+	if _, err := st.Reserve([]Reservation{{
+		ID: "held0001", SessionID: "rival", Pattern: "internal/cli",
+		Mode: ReservationExclusive, AcquiredAt: now, ExpiresAt: now.Add(time.Hour),
+	}}); err != nil {
+		t.Fatalf("seed the rival lease: %v", err)
+	}
+	conflicts, err := st.Reserve([]Reservation{
+		{ID: "mine0001", SessionID: "me", Pattern: "internal/*",
+			Mode: ReservationExclusive, AcquiredAt: now, ExpiresAt: now.Add(time.Hour)},
+		{ID: "mine0002", SessionID: "me", Pattern: "internal/cli",
+			Mode: ReservationExclusive, AcquiredAt: now, ExpiresAt: now.Add(time.Hour)},
+	})
+	if err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+	if len(conflicts) != 1 || conflicts[0].ID != "held0001" {
+		t.Fatalf("conflicts = %+v, want the rival lease once", conflicts)
+	}
+}

@@ -646,7 +646,7 @@ func TestListsFleetTools(t *testing.T) {
 	for _, want := range []string{
 		"list_sessions", "create_session", "read_session", "send_session",
 		"revive_session", "kill_session", "archive_session",
-		"list_groups", "create_group", "message_status", "wait_for_session",
+		"list_groups", "create_group", "delete_group", "message_status", "wait_for_session",
 		"task",
 		"reserve_files", "release_files", "list_reservations",
 	} {
@@ -853,6 +853,17 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 	if fake.groupPath != "work/payments" || fake.groupDir != "/work" {
 		t.Fatalf("create_group args = %q %q", fake.groupPath, fake.groupDir)
 	}
+
+	text, isError := callText(t, session, "delete_group", map[string]any{"path": "work/payments"})
+	if isError {
+		t.Fatalf("delete_group errored: %q", text)
+	}
+	if fake.groupPath != "work/payments" {
+		t.Fatalf("delete_group path = %q", fake.groupPath)
+	}
+	if !strings.Contains(text, "deleted work/payments") || !strings.Contains(text, "a1b2c3d4") {
+		t.Fatalf("delete_group text = %q", text)
+	}
 }
 
 func TestSessionToolAnnotationsDescribeLocalRisk(t *testing.T) {
@@ -918,6 +929,7 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 		{"archive_session", map[string]any{"session_id": "a1"}},
 		{"list_groups", map[string]any{}},
 		{"create_group", map[string]any{"path": "work"}},
+		{"delete_group", map[string]any{"path": "work"}},
 	} {
 		text, isError := callText(t, session, call.name, call.args)
 		if !isError || !strings.Contains(text, "not running") {

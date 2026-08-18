@@ -38,12 +38,21 @@ func (s *Store) Reserve(reservations []Reservation) ([]Reservation, error) {
 	}
 	defer tx.Rollback()
 	var conflicts []Reservation
+	// One foreign lease can overlap several requested patterns; it is
+	// still one holder, so it is reported once.
+	seen := map[string]bool{}
 	for _, reservation := range reservations {
 		found, err := overlappingReservations(tx, reservation)
 		if err != nil {
 			return nil, err
 		}
-		conflicts = append(conflicts, found...)
+		for _, conflict := range found {
+			if seen[conflict.ID] {
+				continue
+			}
+			seen[conflict.ID] = true
+			conflicts = append(conflicts, conflict)
+		}
 		if _, err := tx.Exec(`
 INSERT INTO file_reservations (id, session_id, pattern, mode, note, acquired_at, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
