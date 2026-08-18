@@ -212,7 +212,10 @@ func TestTheEnvelopeKeepsAForgedBodyInsideItsFence(t *testing.T) {
 		t.Fatalf("a control byte reached the pane: %q", envelope)
 	}
 
-	second := regexp.MustCompile(`-{4}[A-Z2-7]{8}-{4}`).FindString(inboxEnvelope(msg, "claude"))
+	second := regexp.MustCompile(`-{4}CROSS-SESSION-MESSAGE-\S+?-[A-Z2-7]{8}-{4}`).FindString(inboxEnvelope(msg, "claude"))
+	if second == "" {
+		t.Fatal("the second envelope carries no fence")
+	}
 	if second == fence {
 		t.Fatalf("the fence repeats across deliveries, so a sender shown one message can forge the next: %q", fence)
 	}

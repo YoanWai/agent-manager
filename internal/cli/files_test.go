@@ -28,8 +28,12 @@ func TestReserveParsesPathsAndFlags(t *testing.T) {
 		t.Fatalf("reserve output = %q", out.String())
 	}
 
+	fake.patterns = nil
 	if err := runReserve(&bytes.Buffer{}, fake, []string{"--", "-notaflag"}, "cafe0001"); err == nil {
 		t.Fatal("a path that reads as a flag should be refused")
+	}
+	if fake.patterns != nil {
+		t.Fatalf("a refused path reached the layer: %v", fake.patterns)
 	}
 
 	// The flags parse wherever they sit, so a leading dash is the whole
@@ -43,8 +47,14 @@ func TestReserveParsesPathsAndFlags(t *testing.T) {
 		!strings.Contains(mistyped.Error(), "usage: agent-manager reserve") {
 		t.Fatalf("the refusal does not name the cause and the usage: %q", mistyped)
 	}
+	if fake.patterns != nil {
+		t.Fatalf("a mistyped flag reached the layer: %v", fake.patterns)
+	}
 	if err := runReserve(&bytes.Buffer{}, fake, nil, "cafe0001"); err == nil {
 		t.Fatal("reserve needs at least one path")
+	}
+	if fake.patterns != nil {
+		t.Fatalf("an empty reserve reached the layer: %v", fake.patterns)
 	}
 }
 
