@@ -112,6 +112,11 @@ func TestPreviewLine(t *testing.T) {
 		t.Fatalf("control chars should be dropped: %q", got)
 	}
 
+	escapes := "\x1b[?2026h\x1b[?1049h\x1b[12;34H\x1b]0;Title\x07\x1b]8;;http://x\x07\x1b[32mActive\x1b[0m\x1b]8;;\x07\x1b[?2026l"
+	if got := stripPreviewMarks(ansi.Strip(previewLine(escapes, 80))); strings.TrimRight(got, " ") != "Active" {
+		t.Fatalf("private modes, cursor moves and OSC should be stripped: %q", got)
+	}
+
 	wide := "\x1b[31m" + strings.Repeat("x", 100) + "\x1b[0m"
 	clipped := previewLine(wide, 20)
 	if w := lipglossWidth(clipped); w > 20 {

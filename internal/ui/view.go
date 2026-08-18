@@ -328,7 +328,11 @@ func (m *Model) groupStatusGlyphs(group string) string {
 // (S/T), insert/delete lines (L/M), set scroll region (r), and the 7-bit
 // index / reverse-index / next-line controls (D/M/E).
 var previewDangerSeqs = regexp.MustCompile(
-	`\x1b\[[0-9;]*[KJLMSTr]|\x1b[DEM]`,
+	`\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)` + // OSC sequences
+	`|\x1b\[[?<=>]?[0-9;]*[A-LN-Za-ln-z]` + // CSI non-SGR sequences (excludes 'm')
+	`|\x1b[P^_X][^\x07\x1b]*(?:\x07|\x1b\\)` + // DCS / PM / APC / SOS
+	`|\x1b[()#%*+][0-9A-Za-z]` + // Charset and mode designations
+	`|\x1b[0-9<=>cDEM78HFNPXZ]`, // 2-byte escape commands (RIS, IND, NEL, RI, DECSC, DECRC, etc.)
 )
 
 func previewLine(line string, width int) string {
