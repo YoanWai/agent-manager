@@ -286,7 +286,7 @@ func TestListsAllTools(t *testing.T) {
 		names[tool.Name] = true
 	}
 	for _, want := range []string{
-		"rename", "review_repo", "review_base", "review_mode",
+		"rename", "review",
 		"list_terminals", "create_terminal", "send_terminal", "read_terminal", "close_terminal",
 	} {
 		if !names[want] {
@@ -551,7 +551,7 @@ func TestReviewRepoWritesMailbox(t *testing.T) {
 	configDir := t.TempDir()
 	repo := gitRepo(t)
 	session := connect(t, configDir, "abc123")
-	text, isError := callText(t, session, "review_repo", map[string]any{"path": repo})
+	text, isError := callText(t, session, "review", map[string]any{"repo": repo})
 	if isError {
 		t.Fatalf("review_repo error: %q", text)
 	}
@@ -571,7 +571,7 @@ func TestReviewBaseAndAutoClear(t *testing.T) {
 	repo := gitRepo(t)
 	session := connect(t, configDir, "abc123")
 
-	text, isError := callText(t, session, "review_base", map[string]any{"ref": "main", "repo_path": repo})
+	text, isError := callText(t, session, "review", map[string]any{"base": "main", "repo": repo})
 	if isError || !strings.Contains(text, "main") {
 		t.Fatalf("review_base = %q, isError=%v", text, isError)
 	}
@@ -581,7 +581,7 @@ func TestReviewBaseAndAutoClear(t *testing.T) {
 		t.Fatalf("mailbox = %q, %v", content, err)
 	}
 
-	text, isError = callText(t, session, "review_base", map[string]any{"ref": "auto", "repo_path": repo})
+	text, isError = callText(t, session, "review", map[string]any{"base": "auto", "repo": repo})
 	if isError || !strings.Contains(text, "cleared") {
 		t.Fatalf("clear = %q, isError=%v", text, isError)
 	}
@@ -598,13 +598,13 @@ func TestBadInputsReturnToolErrors(t *testing.T) {
 	if text, isError := callText(t, session, "rename", map[string]any{"name": "  "}); !isError {
 		t.Fatalf("empty name should error, got %q", text)
 	}
-	if text, isError := callText(t, session, "review_repo", map[string]any{"path": t.TempDir()}); !isError {
+	if text, isError := callText(t, session, "review", map[string]any{"repo": t.TempDir()}); !isError {
 		t.Fatalf("non-repo path should error, got %q", text)
 	}
-	if text, isError := callText(t, session, "review_base", map[string]any{"ref": "nope-branch", "repo_path": gitRepo(t)}); !isError {
+	if text, isError := callText(t, session, "review", map[string]any{"base": "nope-branch", "repo": gitRepo(t)}); !isError {
 		t.Fatalf("unknown ref should error, got %q", text)
 	}
-	if text, isError := callText(t, session, "review_mode", map[string]any{"scope": "bogus"}); !isError {
+	if text, isError := callText(t, session, "review", map[string]any{"mode": "bogus"}); !isError {
 		t.Fatalf("unknown scope should error, got %q", text)
 	}
 
@@ -619,9 +619,9 @@ func TestReviewModeWritesMailbox(t *testing.T) {
 	session := connect(t, configDir, "abc123")
 
 	for _, scope := range []string{"uncommitted", "branch", "last_commit", "staged"} {
-		text, isError := callText(t, session, "review_mode", map[string]any{"scope": scope})
+		text, isError := callText(t, session, "review", map[string]any{"mode": scope})
 		if isError {
-			t.Fatalf("review_mode(%q) error: %q", scope, text)
+			t.Fatalf("review mode %q error: %q", scope, text)
 		}
 		content, err := os.ReadFile(hooks.NewManager(configDir).ReviewScopeFile("abc123"))
 		if err != nil {
@@ -647,7 +647,7 @@ func TestListsFleetTools(t *testing.T) {
 		"list_sessions", "create_session", "read_session", "send_session",
 		"revive_session", "kill_session", "archive_session",
 		"list_groups", "create_group", "message_status", "wait_for_session",
-		"list_tasks", "create_task", "claim_task", "finish_task", "release_task", "delete_task",
+		"task",
 		"reserve_files", "release_files", "list_reservations",
 	} {
 		if !names[want] {
@@ -683,7 +683,7 @@ func TestServerTeachesDelegationWorkflow(t *testing.T) {
 		"read_session",
 		"send_session",
 		"wait_for_session",
-		"create_task",
+		"the task tool",
 		"reserve_files",
 		"worktree",
 		"without waiting to be asked",
@@ -904,12 +904,12 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 		{"send_session", map[string]any{"session_id": "a1", "message": "hi"}},
 		{"message_status", map[string]any{"message_id": 7}},
 		{"wait_for_session", map[string]any{"session_id": "a1"}},
-		{"list_tasks", map[string]any{}},
-		{"create_task", map[string]any{"title": "x"}},
-		{"claim_task", map[string]any{}},
-		{"finish_task", map[string]any{"task_id": "t1"}},
-		{"release_task", map[string]any{"task_id": "t1"}},
-		{"delete_task", map[string]any{"task_id": "t1"}},
+		{"task", map[string]any{"action": "list"}},
+		{"task", map[string]any{"action": "create", "title": "x"}},
+		{"task", map[string]any{"action": "claim"}},
+		{"task", map[string]any{"action": "finish", "task_id": "t1"}},
+		{"task", map[string]any{"action": "release", "task_id": "t1"}},
+		{"task", map[string]any{"action": "delete", "task_id": "t1"}},
 		{"reserve_files", map[string]any{"paths": []string{"a.go"}}},
 		{"release_files", map[string]any{}},
 		{"list_reservations", map[string]any{}},
@@ -941,45 +941,50 @@ func TestTaskToolsForwardArgumentsAndRenderTheList(t *testing.T) {
 	}
 	session := connectServer(t, serverWithFakes(t, fake))
 
-	text, isError := callText(t, session, "list_tasks", map[string]any{})
+	text, isError := callText(t, session, "task", map[string]any{"action": "list"})
 	if isError {
-		t.Fatalf("list_tasks errored: %q", text)
+		t.Fatalf("task list errored: %q", text)
 	}
 	for _, want := range []string{"add the column", "blocked on t1", "held by worker", "yours"} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("list_tasks text missing %q: %s", want, text)
+			t.Fatalf("task list text missing %q: %s", want, text)
 		}
 	}
 
-	if _, isError := callText(t, session, "create_task", map[string]any{
-		"title": "fix retries", "body": "see internal/retry", "depends_on": []string{"t1"},
+	if _, isError := callText(t, session, "task", map[string]any{
+		"action": "create", "title": "fix retries", "body": "see internal/retry", "depends_on": []string{"t1"},
 	}); isError {
-		t.Fatal("create_task errored")
+		t.Fatal("task create errored")
 	}
 	if fake.taskTitle != "fix retries" || fake.taskBody != "see internal/retry" || strings.Join(fake.taskDeps, ",") != "t1" {
-		t.Fatalf("create_task args = %q %q %v", fake.taskTitle, fake.taskBody, fake.taskDeps)
+		t.Fatalf("task create args = %q %q %v", fake.taskTitle, fake.taskBody, fake.taskDeps)
 	}
 
-	if _, isError := callText(t, session, "claim_task", map[string]any{}); isError {
-		t.Fatal("claim_task with no id errored")
+	if _, isError := callText(t, session, "task", map[string]any{"action": "claim"}); isError {
+		t.Fatal("claim with no id errored")
 	}
 	if fake.claimedTaskID != "" {
 		t.Fatalf("claim-next should forward an empty id, got %q", fake.claimedTaskID)
 	}
-	if _, isError := callText(t, session, "claim_task", map[string]any{"task_id": "t2"}); isError {
-		t.Fatal("claim_task errored")
+	if _, isError := callText(t, session, "task", map[string]any{"action": "claim", "task_id": "t2"}); isError {
+		t.Fatal("claim errored")
 	}
 	if fake.claimedTaskID != "t2" {
 		t.Fatalf("claim id = %q", fake.claimedTaskID)
 	}
-	for _, tool := range []string{"finish_task", "release_task", "delete_task"} {
+	for _, action := range []string{"finish", "release", "delete"} {
 		fake.settledTaskID = ""
-		if _, isError := callText(t, session, tool, map[string]any{"task_id": "t3"}); isError {
-			t.Fatalf("%s errored", tool)
+		if _, isError := callText(t, session, "task", map[string]any{"action": action, "task_id": "t3"}); isError {
+			t.Fatalf("%s errored", action)
 		}
 		if fake.settledTaskID != "t3" {
-			t.Fatalf("%s id = %q", tool, fake.settledTaskID)
+			t.Fatalf("%s id = %q", action, fake.settledTaskID)
 		}
+	}
+
+	if text, isError := callText(t, session, "task", map[string]any{"action": "bogus"}); !isError ||
+		!strings.Contains(text, "unknown action") {
+		t.Fatalf("an unknown action answered %q, isError=%v", text, isError)
 	}
 }
 

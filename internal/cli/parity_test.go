@@ -110,9 +110,9 @@ func TestTheTwoFrontsShareOneTaskList(t *testing.T) {
 	})
 	id := taskID(t, created)
 
-	if text, isError := w.mcpText(t, w.worker.ID, "claim_task", map[string]any{"task_id": id}); isError ||
+	if text, isError := w.mcpText(t, w.worker.ID, "task", map[string]any{"action": "claim", "task_id": id}); isError ||
 		!strings.Contains(text, "claimed wire the cli ("+id+") [in_progress]") {
-		t.Fatalf("claim_task = %q, isError=%v", text, isError)
+		t.Fatalf("claim = %q, isError=%v", text, isError)
 	}
 	listed := cliText(t, func(out *bytes.Buffer) error {
 		return runTaskList(out, w.tasks, nil, w.lead.ID)
@@ -132,7 +132,7 @@ func TestTheTwoFrontsShareOneTaskList(t *testing.T) {
 	if !strings.Contains(finished, "[done]") {
 		t.Fatalf("finish = %q", finished)
 	}
-	if text, isError := w.mcpText(t, w.worker.ID, "list_tasks", map[string]any{}); isError ||
+	if text, isError := w.mcpText(t, w.worker.ID, "task", map[string]any{"action": "list"}); isError ||
 		!strings.Contains(text, "wire the cli ("+id+") [done]") {
 		t.Fatalf("the MCP front does not see the shell's finish: %q, isError=%v", text, isError)
 	}
@@ -153,9 +153,9 @@ func TestTheTwoFrontsAnswerOneOperationIdentically(t *testing.T) {
 	fromCLI := cliText(t, func(out *bytes.Buffer) error {
 		return runTaskList(out, w.tasks, nil, w.lead.ID)
 	})
-	fromMCP, isError := w.mcpText(t, w.lead.ID, "list_tasks", map[string]any{})
+	fromMCP, isError := w.mcpText(t, w.lead.ID, "task", map[string]any{"action": "list"})
 	if isError {
-		t.Fatalf("list_tasks errored: %q", fromMCP)
+		t.Fatalf("task list errored: %q", fromMCP)
 	}
 	if strings.TrimSpace(fromCLI) != strings.TrimSpace(fromMCP) {
 		t.Fatalf("the fronts describe one list differently:\ncli: %q\nmcp: %q", fromCLI, fromMCP)
@@ -168,7 +168,7 @@ func TestTheTwoFrontsAnswerOneOperationIdentically(t *testing.T) {
 	if err := json.Unmarshal([]byte(cliRecord), &cliTasks); err != nil {
 		t.Fatalf("task list --json is not JSON: %v (%q)", err, cliRecord)
 	}
-	structured := w.mcpCall(t, w.lead.ID, "list_tasks", map[string]any{}).StructuredContent
+	structured := w.mcpCall(t, w.lead.ID, "task", map[string]any{"action": "list"}).StructuredContent
 	encoded, err := json.Marshal(structured)
 	if err != nil {
 		t.Fatalf("marshal structured content: %v", err)
@@ -188,9 +188,9 @@ func TestTheTwoFrontsAnswerOneOperationIdentically(t *testing.T) {
 	if cliRefusal == nil {
 		t.Fatal("claiming a held task should be refused")
 	}
-	mcpRefusal, isError := w.mcpText(t, w.lead.ID, "claim_task", map[string]any{"task_id": id})
+	mcpRefusal, isError := w.mcpText(t, w.lead.ID, "task", map[string]any{"action": "claim", "task_id": id})
 	if !isError {
-		t.Fatalf("claim_task on a held task = %q, want a tool error", mcpRefusal)
+		t.Fatalf("claiming a held task = %q, want a tool error", mcpRefusal)
 	}
 	if cliRefusal.Error() != mcpRefusal {
 		t.Fatalf("the fronts refuse differently:\ncli: %q\nmcp: %q", cliRefusal, mcpRefusal)
@@ -256,15 +256,15 @@ func TestEachFrontNamesTheCommandsItsCallerHas(t *testing.T) {
 	if !strings.Contains(fromCLI.Error(), "agent-manager task list") {
 		t.Fatalf("the shell front does not name a subcommand: %q", fromCLI)
 	}
-	if strings.Contains(fromCLI.Error(), "list_tasks") {
+	if strings.Contains(fromCLI.Error(), `task with action "list"`) {
 		t.Fatalf("the shell front names an MCP tool its caller cannot call: %q", fromCLI)
 	}
 
-	fromMCP, isError := w.mcpText(t, w.lead.ID, "finish_task", map[string]any{"task_id": "nosuch12"})
+	fromMCP, isError := w.mcpText(t, w.lead.ID, "task", map[string]any{"action": "finish", "task_id": "nosuch12"})
 	if !isError {
-		t.Fatalf("finish_task on a missing task = %q, want a tool error", fromMCP)
+		t.Fatalf("finishing a missing task = %q, want a tool error", fromMCP)
 	}
-	if !strings.Contains(fromMCP, "list_tasks") || strings.Contains(fromMCP, "agent-manager") {
+	if !strings.Contains(fromMCP, `task with action "list"`) || strings.Contains(fromMCP, "agent-manager") {
 		t.Fatalf("the MCP front does not speak in tools: %q", fromMCP)
 	}
 }

@@ -149,9 +149,7 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | Tool | Action |
 |------|--------|
 | `rename` | Rename the calling session |
-| `review_repo` | Declare the repo or worktree under review |
-| `review_base` | Declare or clear the review base ref |
-| `review_mode` | Select the diff scope review opens with |
+| `review` | Declare the repo under review, the base ref and the diff scope, in one call |
 | `list_sessions` | List every agent session with its id, CLI, group, directory, worktree branch and status |
 | `create_session` | Start another agent CLI on a named task, optionally in its own git worktree |
 | `read_session` | Read what another agent's screen currently shows |
@@ -161,12 +159,7 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `revive_session` | Bring a dead session back, resuming the conversation it held |
 | `kill_session` | Stop a running agent, keeping its row and last screen |
 | `archive_session` | File a finished session out of the active list, or restore it |
-| `list_tasks` | Read the shared work list: pending, claimed, done and blocked |
-| `create_task` | Add work to the shared list, optionally behind dependencies |
-| `claim_task` | Take a task, by id or the oldest one nothing is blocking |
-| `finish_task` | Mark a claim done, unblocking whatever waited on it |
-| `release_task` | Hand a claim back to the list |
-| `delete_task` | Drop a task that turned out not to be needed |
+| `task` | The shared work list in one tool: `action` is `list`, `create`, `claim`, `finish`, `release` or `delete` |
 | `reserve_files` | Declare the files this session is editing, and see who else claims them |
 | `release_files` | Give those claims back |
 | `list_reservations` | See what every session is editing right now |
@@ -201,7 +194,7 @@ Delivery needs the manager running, since its poller is what types the message i
 
 `wait_for_session` parks a single tool call until a session reaches one of the states that mean it stopped working, so an agent that spawned work does not read screens in a loop while it waits. A timeout returns the session's current state with `reached` false, because a timeout is an answer rather than a failure; `outcome` separates that from the session dying before it ever reached one of the awaited states. It is an ordinary tool call, which is what makes it work with every MCP client.
 
-The task list is the manager's shared to-do list, visible to every session. `create_task` puts work on it, `claim_task` takes a piece (by id, or the oldest one nothing is blocking), and `finish_task` marks it done, which unblocks every task that depended on it. A claim is a single atomic write, so two agents racing for the same task cannot both win: the loser is told who holds it. A session that is deleted hands its claims back to the list rather than parking them forever.
+The task list is the manager's shared to-do list, visible to every session, all of it behind the one `task` tool. `create` puts work on it, `claim` takes a piece (by id, or the oldest one nothing is blocking), and `finish` marks it done, which unblocks every task that depended on it. A claim is a single atomic write, so two agents racing for the same task cannot both win: the loser is told who holds it. A session that is deleted hands its claims back to the list rather than parking them forever.
 
 ### File reservations
 

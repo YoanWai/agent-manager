@@ -7,6 +7,7 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -19,17 +20,10 @@ type renameArgs struct {
 	Name string `json:"name" jsonschema:"short 2-4 word kebab-case name for the broad feature of this whole session, not one subtask"`
 }
 
-type reviewRepoArgs struct {
-	Path string `json:"path" jsonschema:"absolute path to the git repo or worktree being worked on"`
-}
-
-type reviewBaseArgs struct {
-	Ref      string `json:"ref" jsonschema:"git ref the review diffs against (e.g. origin/develop); pass \"auto\" to return to auto-detection"`
-	RepoPath string `json:"repo_path,omitempty" jsonschema:"path inside the repo the ref belongs to; defaults to the current working directory"`
-}
-
-type reviewModeArgs struct {
-	Scope string `json:"scope" jsonschema:"diff scope: uncommitted, branch (vs target), last_commit, or staged"`
+type reviewArgs struct {
+	Repo string `json:"repo,omitempty" jsonschema:"path inside the git repo or worktree being worked on, so review opens there"`
+	Base string `json:"base,omitempty" jsonschema:"git ref the branch scope diffs against (e.g. origin/develop); \"auto\" returns to auto-detection"`
+	Mode string `json:"mode,omitempty" jsonschema:"diff scope review opens with: uncommitted, branch, last_commit or staged"`
 }
 
 type listTerminalsArgs struct{}
@@ -75,20 +69,12 @@ type archiveSessionArgs struct {
 	Archived  *bool  `json:"archived,omitempty" jsonschema:"true archives the session out of the active list, false restores it; defaults to true"`
 }
 
-type listTasksArgs struct{}
-
-type createTaskArgs struct {
-	Title     string   `json:"title" jsonschema:"one-line summary of the work, specific enough that another agent knows what done looks like"`
-	Body      string   `json:"body,omitempty" jsonschema:"full instruction for whoever claims it; it cannot see this conversation"`
-	DependsOn []string `json:"depends_on,omitempty" jsonschema:"ids of tasks that must be done first; a task with unfinished dependencies cannot be claimed"`
-}
-
-type claimTaskArgs struct {
-	TaskID string `json:"task_id,omitempty" jsonschema:"task id to claim; omit to take the oldest pending task nothing is blocking"`
-}
-
-type taskTargetArgs struct {
-	TaskID string `json:"task_id" jsonschema:"task id returned by list_tasks or claim_task"`
+type taskArgs struct {
+	Action    string   `json:"action" jsonschema:"list, create, claim, finish, release or delete"`
+	TaskID    string   `json:"task_id,omitempty" jsonschema:"task to act on; omit on claim to take the oldest pending task nothing is blocking"`
+	Title     string   `json:"title,omitempty" jsonschema:"create: one-line summary of the work, specific enough that another agent knows what done looks like"`
+	Body      string   `json:"body,omitempty" jsonschema:"create: full instruction for whoever claims it; it cannot see this conversation"`
+	DependsOn []string `json:"depends_on,omitempty" jsonschema:"create: ids of tasks that must be done first; a task with unfinished dependencies cannot be claimed"`
 }
 
 type reserveFilesArgs struct {
@@ -127,8 +113,9 @@ type listSessionsOutput struct {
 	Sessions []sessioncmd.Session `json:"sessions"`
 }
 
-type listTasksOutput struct {
-	Tasks []sessioncmd.Task `json:"tasks"`
+type taskOutput struct {
+	Tasks []sessioncmd.Task `json:"tasks,omitempty" jsonschema:"the whole shared list, for action list"`
+	Task  *sessioncmd.Task  `json:"task,omitempty" jsonschema:"the task acted on"`
 }
 
 type listReservationsOutput struct {
@@ -193,7 +180,7 @@ type sessionCommands interface {
 // review targets, the queueing rules) is left to them.
 const serverInstructions = `Agent Manager runs this conversation in one of the user's managed tmux sessions. The others are separate CLI processes with contexts of their own, running any CLI the user chose (Claude Code, Codex, Gemini), never subagents of this conversation. These tools operate that workspace. Use them whenever the conditions below apply, without waiting to be asked.
 
-Delegating to other agents. When the work holds two or more deliverables that could be built at once, or the user asks for parallel work, a second opinion or another agent: call list_sessions, reuse a relevant idle session, otherwise create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. Repo work takes worktree: true so parallel agents never share a checkout; where they do, reserve_files before editing so an overlap surfaces early. Follow with read_session, send_session to answer or redirect an agent, and wait_for_session when your next step needs one finished. Put the plan on the shared task list with create_task: spawned agents claim_task their next piece and finish_task it, unblocking what waited on it. Group related spawns with create_group, archive_session once done. Sessions spend the user's tokens, so create one per workstream, not per trivial step.
+Delegating to other agents. When the work holds two or more deliverables that could be built at once, or the user asks for parallel work, a second opinion or another agent: call list_sessions, reuse a relevant idle session, otherwise create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. Repo work takes worktree: true so parallel agents never share a checkout; where they do, reserve_files before editing so an overlap surfaces early. Follow with read_session, send_session to answer or redirect an agent, and wait_for_session when your next step needs one finished. Put the plan on the shared task list with the task tool: spawned agents claim their next piece and finish it, unblocking what waited on it. Group related spawns with create_group, archive_session once done. Sessions spend the user's tokens, so create one per workstream, not per trivial step.
 
 Shell work the user should see. Open a terminal when the session itself is the point: the user should be able to watch, attach or take over, as with SSH into a host. Keep one-shot local commands in your normal tools. Call list_terminals first and reuse a running terminal when possible. create_terminal nests under this session unless nest is false, which another group needs. Use send_terminal and read_terminal, and close_terminal when that job is done unless it is left for the user.
 
@@ -223,40 +210,46 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "review_repo",
-		Description: "Declare the git repo or worktree you are actively working in, so the manager's " +
-			"review screen opens on it. Call when you start working in a repo or switch to another " +
-			"repo or worktree.",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewRepoArgs) (*mcp.CallToolResult, any, error) {
-		return textResult(sessioncmd.ReviewRepo(configDir, sessionID, args.Path))
-	})
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "review_base",
-		Description: "Declare the git ref the manager's review screen diffs your work against " +
-			"(the merge target, e.g. origin/develop). Call when you know the branch your work " +
-			"will merge into; pass \"auto\" to return to auto-detection.",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewBaseArgs) (*mcp.CallToolResult, any, error) {
-		cwd := args.RepoPath
-		if cwd == "" {
-			cwd = "."
+		Name: "review",
+		Description: "Declare what the user's review screen shows for this session; set any of repo, base and mode together. " +
+			"repo is the git repo or worktree you are working in, so review opens there: declare it when you start in a repo or switch to another. " +
+			"base is the git ref your work will merge into (e.g. origin/develop), which the branch scope diffs against; \"auto\" returns to auto-detection. " +
+			"mode is the diff scope review opens with: uncommitted (working dir), branch (vs base), last_commit or staged, e.g. staged before committing.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewArgs) (*mcp.CallToolResult, any, error) {
+		var done []string
+		if args.Repo != "" {
+			message, err := sessioncmd.ReviewRepo(configDir, sessionID, args.Repo)
+			if err != nil {
+				return nil, nil, err
+			}
+			done = append(done, message)
 		}
-		ref := args.Ref
-		if ref == "auto" {
-			ref = ""
+		if args.Base != "" {
+			cwd := args.Repo
+			if cwd == "" {
+				cwd = "."
+			}
+			ref := args.Base
+			if ref == "auto" {
+				ref = ""
+			}
+			message, err := sessioncmd.ReviewBase(configDir, sessionID, cwd, ref)
+			if err != nil {
+				return nil, nil, err
+			}
+			done = append(done, message)
 		}
-		return textResult(sessioncmd.ReviewBase(configDir, sessionID, cwd, ref))
-	})
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "review_mode",
-		Description: "Set the diff scope the manager's review screen shows for this session. " +
-			"Valid values: uncommitted (working dir changes), branch (vs target/merge base), " +
-			"last_commit (HEAD diff), staged (cached changes). " +
-			"Call when you want the review to show a different scope, e.g. switch from " +
-			"uncommitted to staged before committing.",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewModeArgs) (*mcp.CallToolResult, any, error) {
-		return textResult(sessioncmd.ReviewScope(configDir, sessionID, args.Scope))
+		if args.Mode != "" {
+			message, err := sessioncmd.ReviewScope(configDir, sessionID, args.Mode)
+			if err != nil {
+				return nil, nil, err
+			}
+			done = append(done, message)
+		}
+		if len(done) == 0 {
+			return nil, nil, errors.New("set repo, base or mode")
+		}
+		return textContent(strings.Join(done, "; ")), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -277,12 +270,11 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "create_session",
-		Description: "Start another agent CLI in its own Agent Manager session and hand it a task, so independent work runs in parallel with this conversation instead of queued behind it. " +
+		Description: "Start another agent CLI in its own Agent Manager session and hand it a task, so independent work runs beside this conversation instead of queued behind it. " +
 			"The new session is a full CLI process of its own on the user's machine, which the user can watch and type into, and it can run a different CLI than this one. " +
-			"Call it without waiting for the user whenever a task splits into parts that can run at the same time, or the user asks for a second agent, a parallel run or an independent opinion. " +
-			"Always pass a descriptive name and a prompt that states the whole task, since the new agent cannot see this conversation. " +
-			"Pass worktree true for work in a git repo so the new agent edits its own checkout and branch. " +
-			"Returns the new session id; follow it with read_session and send_session. Use create_terminal instead for a plain shell.",
+			"Call it without waiting for the user when a task splits into parallel parts, or the user asks for a second agent or an independent opinion. " +
+			"Pass a descriptive name and a prompt stating the whole task, since the new agent cannot see this conversation, and worktree true for repo work so it edits its own checkout and branch. " +
+			"Follow it with read_session and send_session; use create_terminal instead for a plain shell.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
 		created, err := sessions.Create(sessionID, sessioncmd.CreateSessionOptions{
@@ -320,10 +312,8 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			"The message is not typed in the instant you send it: Agent Manager holds it until that agent is at rest, so it can never land on an approval prompt and answer it. " +
 			"It arrives labelled as coming from another agent rather than from the user, and cannot approve permissions or change that agent's configuration. " +
 			"Returns a message id for message_status; call read_session to see what the agent did with it. " +
-			"Guard rails a loop would otherwise hit: identical text to the same session inside ten minutes is refused as a duplicate, " +
-			"a sender is held to five messages a minute per recipient, a recipient holds at most twenty undelivered messages, " +
-			"and one message is capped at 8000 bytes, so point the agent at a file or a task for anything longer. " +
-			"When one of those refuses a send, call message_status on the earlier message rather than sending again.",
+			"Refused rather than delivered: identical text to the same session inside ten minutes, more than five messages a minute per recipient, more than twenty undelivered held by a recipient, or a message over 8000 bytes (point the agent at a file or a task instead). " +
+			"After a refusal, call message_status on the earlier message rather than sending again.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendSessionArgs) (*mcp.CallToolResult, sessioncmd.SendResult, error) {
 		result, err := sessions.Send(sessionID, args.SessionID, args.Message)
@@ -351,10 +341,9 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "wait_for_session",
 		Description: "Park until another session stops working, instead of calling read_session in a loop. " +
-			"Call it after handing an agent a task when your next step depends on its result: one parked call costs a fraction of repeated screen reads. " +
-			"By default it returns as soon as the session reaches any state that means it stopped (finished, waiting, idle, errored or dead); pass until to wait for particular states. " +
-			"A timeout is a normal answer, not a failure: the result carries reached false and the state the session is actually in, so check reached before assuming the work is done. " +
-			"outcome says which of the three endings it was: reached, timed_out, or died when the session's pane went away and dead was not among the states you asked for. " +
+			"Call it after handing an agent a task when your next step depends on its result. " +
+			"By default it returns once the session reaches any state that means it stopped (finished, waiting, idle, errored or dead); pass until to wait for particular states. " +
+			"A timeout is a normal answer, not a failure: the result carries reached false and the actual state, and outcome says whether it reached, timed_out or died. " +
 			"Follow it with read_session to see what the agent produced.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args waitSessionArgs) (*mcp.CallToolResult, sessioncmd.WaitResult, error) {
@@ -410,82 +399,54 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "list_tasks",
-		Description: "Read the work list every session in this manager shares: what is pending, who is working on what, what is done, and what is blocked waiting on something else. " +
-			"Call it before starting work so two agents do not build the same thing, and before reporting progress on a fleet.",
-		Annotations: toolAnnotations(true, false, false),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args listTasksArgs) (*mcp.CallToolResult, listTasksOutput, error) {
-		listed, err := sessions.Tasks(sessionID)
-		if err != nil {
-			return nil, listTasksOutput{}, err
-		}
-		return textContent(sessioncmd.FormatTaskList(listed)), listTasksOutput{Tasks: listed}, nil
-	})
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "create_task",
-		Description: "Put a piece of work on the shared list so any session can pick it up, instead of holding the plan in this conversation where nobody else can see it. " +
-			"Split work into tasks when you spawn a fleet: several agents can then claim their own next piece without waiting on you to hand it out. " +
-			"Use depends_on to sequence work that cannot run in parallel; a dependent task becomes claimable the moment what it waits on is finished.",
+		Name: "task",
+		Description: "The shared work list every session in this manager claims from; action picks the operation. " +
+			"list reads it: call it before starting work so two agents do not build the same thing, and before reporting progress on a fleet. " +
+			"create puts a piece of work up for any session to pick up, instead of holding the plan where nobody else sees it: split the plan into tasks when you spawn a fleet, and sequence with depends_on, which makes a dependent claimable the moment what it waits on finishes. " +
+			"claim takes a task before you start it, so no other session picks the same piece; omitting task_id takes the oldest unblocked pending task, which is how a worker finds its next job, and a task another session holds is refused with the holder named. " +
+			"finish marks a claimed task done, unblocking its dependents; call it the moment the work completes, since a task left in progress keeps other agents idle. " +
+			"release hands a claimed task back for another session. delete removes work that turned out not to be needed.",
 		Annotations: toolAnnotations(false, false, false),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args createTaskArgs) (*mcp.CallToolResult, sessioncmd.Task, error) {
-		created, err := sessions.CreateTask(sessionID, args.Title, args.Body, args.DependsOn)
-		if err != nil {
-			return nil, sessioncmd.Task{}, err
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args taskArgs) (*mcp.CallToolResult, taskOutput, error) {
+		switch args.Action {
+		case "list":
+			listed, err := sessions.Tasks(sessionID)
+			if err != nil {
+				return nil, taskOutput{}, err
+			}
+			return textContent(sessioncmd.FormatTaskList(listed)), taskOutput{Tasks: listed}, nil
+		case "create":
+			created, err := sessions.CreateTask(sessionID, args.Title, args.Body, args.DependsOn)
+			if err != nil {
+				return nil, taskOutput{}, err
+			}
+			return textContent("created " + sessioncmd.FormatTask(created)), taskOutput{Task: &created}, nil
+		case "claim":
+			claimed, err := sessions.ClaimTask(sessionID, args.TaskID)
+			if err != nil {
+				return nil, taskOutput{}, err
+			}
+			return textContent("claimed " + sessioncmd.FormatTask(claimed)), taskOutput{Task: &claimed}, nil
+		case "finish":
+			finished, err := sessions.FinishTask(sessionID, args.TaskID)
+			if err != nil {
+				return nil, taskOutput{}, err
+			}
+			return textContent("finished " + sessioncmd.FormatTask(finished)), taskOutput{Task: &finished}, nil
+		case "release":
+			released, err := sessions.ReleaseTask(sessionID, args.TaskID)
+			if err != nil {
+				return nil, taskOutput{}, err
+			}
+			return textContent("released " + sessioncmd.FormatTask(released)), taskOutput{Task: &released}, nil
+		case "delete":
+			if err := sessions.DeleteTask(sessionID, args.TaskID); err != nil {
+				return nil, taskOutput{}, err
+			}
+			return textContent("deleted task " + args.TaskID), taskOutput{}, nil
+		default:
+			return nil, taskOutput{}, fmt.Errorf("unknown action %q (list, create, claim, finish, release, delete)", args.Action)
 		}
-		return textContent("created " + sessioncmd.FormatTask(created)), created, nil
-	})
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "claim_task",
-		Description: "Take a task before you start working on it, so no other session picks up the same piece. " +
-			"Omit task_id to take the oldest pending task nothing is blocking, which is how a worker agent finds its next job on its own. " +
-			"A task another session already holds is refused rather than taken, and the error names the holder. Call finish_task when the work is done.",
-		Annotations: toolAnnotations(false, false, false),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args claimTaskArgs) (*mcp.CallToolResult, sessioncmd.Task, error) {
-		claimed, err := sessions.ClaimTask(sessionID, args.TaskID)
-		if err != nil {
-			return nil, sessioncmd.Task{}, err
-		}
-		return textContent("claimed " + sessioncmd.FormatTask(claimed)), claimed, nil
-	})
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "finish_task",
-		Description: "Mark a task you claimed as done, which unblocks every task waiting on it. " +
-			"Call it as soon as the work is actually complete: a task left in progress blocks its dependents and keeps other agents idle.",
-		Annotations: toolAnnotations(false, false, false),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args taskTargetArgs) (*mcp.CallToolResult, sessioncmd.Task, error) {
-		finished, err := sessions.FinishTask(sessionID, args.TaskID)
-		if err != nil {
-			return nil, sessioncmd.Task{}, err
-		}
-		return textContent("finished " + sessioncmd.FormatTask(finished)), finished, nil
-	})
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "release_task",
-		Description: "Hand a task you claimed back to the list, so another session can take it. " +
-			"Call it when you cannot finish the work rather than leaving the claim held, which would keep everyone else off it.",
-		Annotations: toolAnnotations(false, false, false),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args taskTargetArgs) (*mcp.CallToolResult, sessioncmd.Task, error) {
-		released, err := sessions.ReleaseTask(sessionID, args.TaskID)
-		if err != nil {
-			return nil, sessioncmd.Task{}, err
-		}
-		return textContent("released " + sessioncmd.FormatTask(released)), released, nil
-	})
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "delete_task",
-		Description: "Remove a task from the shared list, for work that turned out not to be needed. " +
-			"Prefer finish_task for work that was done and release_task for work you are handing back.",
-		Annotations: toolAnnotations(false, true, false),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args taskTargetArgs) (*mcp.CallToolResult, any, error) {
-		if err := sessions.DeleteTask(sessionID, args.TaskID); err != nil {
-			return nil, nil, err
-		}
-		return textContent("deleted task " + args.TaskID), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -588,8 +549,8 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "create_terminal",
 		Description: "Create a managed terminal for human-visible work such as SSH, not for one-shot local commands or other internal work. " +
-			"It nests under this session unless nest is false, and a terminal created from a terminal joins it as a sibling under the same agent. A group other than this session's needs nest false, since a nested terminal lives in its parent's group; that group then supplies its inherited directory, and directory set explicitly wins over both. " +
-			"Then call send_terminal with the returned id, and create_session instead of this tool to start another agent CLI rather than a shell. Call close_terminal when the job is finished and the terminal is not being left for the user.",
+			"It nests under this session unless nest is false, which a group other than this session's needs; a terminal created from a terminal joins it as a sibling under the same agent. The group supplies the inherited directory, and directory set explicitly wins. " +
+			"Then call send_terminal with the returned id; use create_session instead for another agent CLI. Call close_terminal when the job is finished and the terminal is not being left for the user.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createTerminalArgs) (*mcp.CallToolResult, sessioncmd.Terminal, error) {
 		created, err := terminals.Create(sessionID, sessioncmd.CreateTerminalOptions{

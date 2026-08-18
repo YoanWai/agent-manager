@@ -22,7 +22,7 @@ func MCPVocabulary() Vocabulary {
 	return Vocabulary{
 		ListSessions:   "list_sessions",
 		ListTerminals:  "list_terminals",
-		ListTasks:      "list_tasks",
+		ListTasks:      `task with action "list"`,
 		ListGroups:     "list_groups",
 		CreateGroup:    "create_group",
 		CreateTerminal: "create_terminal",

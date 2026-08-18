@@ -12,7 +12,7 @@ import (
 )
 
 type Task struct {
-	ID        string   `json:"id" jsonschema:"task id; pass it to claim_task, finish_task or release_task"`
+	ID        string   `json:"id" jsonschema:"task id to claim, finish or release"`
 	Title     string   `json:"title" jsonschema:"one-line summary of the work"`
 	Body      string   `json:"body,omitempty" jsonschema:"full instruction for whoever claims it"`
 	State     string   `json:"state" jsonschema:"pending, in_progress or done"`
