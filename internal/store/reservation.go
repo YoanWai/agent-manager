@@ -24,30 +24,35 @@ type Reservation struct {
 	ExpiresAt  time.Time
 }
 
-// Reserve takes or extends this session's lease on a pattern and returns the
-// live leases held by others that overlap it. Reading the overlap and taking
-// the lease is one transaction, because two agents reserving the same path at
-// once would otherwise both read the list before either wrote and neither
-// would hear about the other, which is the only thing the lease is for. A
-// session renewing its own lease is not a conflict with itself.
-func (s *Store) Reserve(reservation Reservation) ([]Reservation, error) {
+// Reserve takes or extends this session's leases on a set of patterns and
+// returns the live leases held by others that overlap them. Reading the
+// overlaps and taking every lease is one transaction: two agents reserving
+// the same path at once would otherwise both read the list before either
+// wrote and neither would hear about the other, and a failure on a later
+// pattern would leave earlier ones granted without their caller knowing it
+// holds them. A session renewing its own lease is not a conflict with itself.
+func (s *Store) Reserve(reservations []Reservation) ([]Reservation, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
-	conflicts, err := overlappingReservations(tx, reservation)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := tx.Exec(`
+	var conflicts []Reservation
+	for _, reservation := range reservations {
+		found, err := overlappingReservations(tx, reservation)
+		if err != nil {
+			return nil, err
+		}
+		conflicts = append(conflicts, found...)
+		if _, err := tx.Exec(`
 INSERT INTO file_reservations (id, session_id, pattern, mode, note, acquired_at, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(session_id, pattern) DO UPDATE SET
 	mode = excluded.mode, note = excluded.note, expires_at = excluded.expires_at`,
-		reservation.ID, reservation.SessionID, reservation.Pattern, reservation.Mode,
-		reservation.Note, encodeTime(reservation.AcquiredAt), encodeTime(reservation.ExpiresAt)); err != nil {
-		return nil, err
+			reservation.ID, reservation.SessionID, reservation.Pattern, reservation.Mode,
+			reservation.Note, encodeTime(reservation.AcquiredAt), encodeTime(reservation.ExpiresAt)); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err

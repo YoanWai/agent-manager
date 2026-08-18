@@ -91,9 +91,9 @@ func (s *Sessions) Reserve(sessionID string, patterns []string, mode, note strin
 		return ReserveResult{}, err
 	}
 	now := time.Now()
-	result := ReserveResult{Reserved: make([]Reservation, 0, len(cleaned))}
+	reservations := make([]store.Reservation, 0, len(cleaned))
 	for _, pattern := range cleaned {
-		reservation := store.Reservation{
+		reservations = append(reservations, store.Reservation{
 			ID:         uuid.NewString()[:8],
 			SessionID:  caller.ID,
 			Pattern:    pattern,
@@ -101,14 +101,19 @@ func (s *Sessions) Reserve(sessionID string, patterns []string, mode, note strin
 			Note:       strings.TrimSpace(note),
 			AcquiredAt: now,
 			ExpiresAt:  now.Add(ttl),
-		}
-		clashes, err := runtime.store.Reserve(reservation)
-		if err != nil {
-			return ReserveResult{}, err
-		}
-		for _, clash := range clashes {
-			result.Conflicts = append(result.Conflicts, runtime.reservationInfo(clash, names, caller.ID, now))
-		}
+		})
+	}
+	// One store call leases the whole set, so a failure grants nothing
+	// rather than leaving leases the caller was never told it holds.
+	clashes, err := runtime.store.Reserve(reservations)
+	if err != nil {
+		return ReserveResult{}, err
+	}
+	result := ReserveResult{Reserved: make([]Reservation, 0, len(reservations))}
+	for _, clash := range clashes {
+		result.Conflicts = append(result.Conflicts, runtime.reservationInfo(clash, names, caller.ID, now))
+	}
+	for _, reservation := range reservations {
 		result.Reserved = append(result.Reserved, runtime.reservationInfo(reservation, names, caller.ID, now))
 	}
 	return result, nil

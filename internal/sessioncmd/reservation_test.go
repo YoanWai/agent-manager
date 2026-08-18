@@ -97,14 +97,14 @@ func TestALapsedLeaseStopsBlockingAndReleaseClearsTheRest(t *testing.T) {
 	// A lease whose expiry is already behind us stands in for an agent that
 	// died holding one, which is the case the whole advisory design rests on.
 	lapsed := time.Now().Add(-time.Minute)
-	if _, err := h.store.Reserve(store.Reservation{
+	if _, err := h.store.Reserve([]store.Reservation{{
 		ID:         "lapsed01",
 		SessionID:  rival.ID,
 		Pattern:    "internal/ui/*.go",
 		Mode:       store.ReservationExclusive,
 		AcquiredAt: lapsed.Add(-time.Hour),
 		ExpiresAt:  lapsed,
-	}); err != nil {
+	}}); err != nil {
 		t.Fatalf("write a lapsed lease: %v", err)
 	}
 	fresh, err := h.sessions.Reserve(h.caller.ID, []string{"internal/ui/model.go"}, "", "", 0)

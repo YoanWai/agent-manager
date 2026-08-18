@@ -40,14 +40,14 @@ func TestConcurrentReservationsLeaveOnlyTheFirstHolderUnaware(t *testing.T) {
 				defer running.Done()
 				ready.Done()
 				<-start
-				clashes, err := stores[index].Reserve(Reservation{
+				clashes, err := stores[index].Reserve([]Reservation{{
 					ID:         fmt.Sprintf("r%d-%d", round, index),
 					SessionID:  fmt.Sprintf("s%d", index),
 					Pattern:    pattern,
 					Mode:       ReservationExclusive,
 					AcquiredAt: now,
 					ExpiresAt:  now.Add(time.Hour),
-				})
+				}})
 				clashCounts[index], failures[index] = len(clashes), err
 			}(index)
 		}
