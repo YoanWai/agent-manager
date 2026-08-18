@@ -70,9 +70,12 @@ type groupOption struct {
 }
 
 type form struct {
-	name         textinput.Model
-	dir          textinput.Model
-	prompt       textarea.Model
+	name textinput.Model
+	dir  textinput.Model
+	// prompt is a composer rather than a plain textarea: a first task is
+	// often a screenshot, so the box has to hold pasted images the way the
+	// quick prompt does.
+	prompt       composer
 	dirAuto      bool
 	toolNames    []string
 	toolIndex    int
@@ -132,7 +135,7 @@ const (
 	formPromptMaxRows = 4
 )
 
-func promptField() textarea.Model {
+func promptField() composer {
 	in := textarea.New()
 	in.CharLimit = 2000
 	in.Placeholder = "first task (optional)"
@@ -145,7 +148,7 @@ func promptField() textarea.Model {
 	})
 	in.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	in.SetHeight(1)
-	return in
+	return composer{input: in, maxRows: formPromptMaxRows}
 }
 
 // formValueWidth is the columns a field value can occupy inside the card.
@@ -166,7 +169,7 @@ func (m *Model) syncFormFieldWidths() {
 	// the next keystroke.
 	m.form.name.SetCursor(m.form.name.Position())
 	m.form.dir.SetCursor(m.form.dir.Position())
-	m.form.prompt.SetWidth(inner)
+	m.form.prompt.input.SetWidth(inner)
 }
 
 func (m *Model) syncGroupFormFieldWidths() {
@@ -276,6 +279,7 @@ func (m *Model) openForm() {
 
 	dir := textField("", 400)
 	prompt := promptField()
+	prompt.gen = m.nextComposerGen()
 
 	m.form = form{
 		name:      name,
@@ -345,6 +349,9 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.pathSugg.reset()
 			return m, nil
 		}
+		// The form is gone, and with it the only text naming the images it
+		// was holding.
+		m.form.prompt.release()
 		m.mode = modeList
 		return m, nil
 	case "tab":
@@ -409,6 +416,12 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.submitForm()
 	}
 
+	if m.form.focus == fieldPrompt {
+		if cmd, handled := m.composerKey(composerForm, msg); handled {
+			return m, cmd
+		}
+	}
+
 	var cmd tea.Cmd
 	switch m.form.focus {
 	case fieldName:
@@ -418,11 +431,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form.dirAuto = false
 		m.pathSugg.recompute(m.form.dir.Value())
 	case fieldPrompt:
-		// Update repositions the viewport against the height set at the
-		// last render; full cap height here keeps the first row from
-		// scrolling away when a keystroke adds a wrapped row.
-		m.form.prompt.SetHeight(formPromptMaxRows)
-		m.form.prompt, cmd = m.form.prompt.Update(msg)
+		cmd = m.form.prompt.typeKey(msg)
 	}
 	return m, cmd
 }
@@ -451,14 +460,14 @@ func (m *Model) formFocus(delta int) {
 	m.form.focus = (m.form.focus + delta + fieldCount) % fieldCount
 	m.form.name.Blur()
 	m.form.dir.Blur()
-	m.form.prompt.Blur()
+	m.form.prompt.input.Blur()
 	switch m.form.focus {
 	case fieldName:
 		m.form.name.Focus()
 	case fieldDir:
 		m.form.dir.Focus()
 	case fieldPrompt:
-		m.form.prompt.Focus()
+		m.form.prompt.input.Focus()
 	}
 }
 
@@ -503,6 +512,10 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	toolName := m.form.toolNames[m.form.toolIndex]
+	if m.form.prompt.pasting() {
+		m.errBar.text = "still reading the pasted image - try again in a moment"
+		return m, nil
+	}
 
 	name := strings.TrimSpace(m.form.name.Value())
 	autoNamed := name == ""
@@ -516,7 +529,9 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	group := m.selectedGroupPath()
-	prompt := strings.TrimSpace(m.form.prompt.Value())
+	// Chips become the paths of the images they stand for, so a first task
+	// reaches the agent with its screenshot named where it was pasted.
+	prompt := m.form.prompt.message()
 	if strings.HasPrefix(prompt, "-") {
 		m.errBar.text = `prompt cannot start with "-": the tool would read it as a flag`
 		return m, nil
@@ -524,6 +539,12 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 
 	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, m.formWorktreeOn()); err != nil {
 		m.reportLaunchError(err)
+		// A spawn the hint dialog refused takes the form off screen with it,
+		// so its images go the way esc sends them. An error reported in the
+		// bar leaves the form up, and the prompt still names them.
+		if m.mode == modeLaunchHint {
+			m.form.prompt.release()
+		}
 		return m, nil
 	}
 	// New sessions start as starting, which attention excludes; clear so

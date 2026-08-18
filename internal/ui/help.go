@@ -158,6 +158,7 @@ func helpSections() []helpSection {
 		}},
 		{title: "dialogs (n, g, r, f, m)", rows: [][2]string{
 			{"tab / ↑↓", "next field"},
+			{"ctrl+v", "in a prompt field, paste an image as a chip"},
 			{"←→", "change a picker's value"},
 			{"↵", "confirm"},
 			{"esc", "cancel"},

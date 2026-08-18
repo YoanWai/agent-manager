@@ -1050,7 +1050,7 @@ func (m *Model) viewQuickBar(width int) string {
 	m.quick.input.SetHeight(m.quickBarRows(width - 2))
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
-	return target + "\n" + m.renderQuickChips(m.quick.input.View())
+	return target + "\n" + m.quick.renderChips(m.quick.input.View())
 }
 
 // viewHeaderRows is the full-width band over both columns: the wordmark
