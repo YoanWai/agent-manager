@@ -11,7 +11,7 @@ The two quickest routes are in the [README](../README.md#install): Homebrew and 
 | wl-clipboard, xclip, or xsel | pasting images into a prompt on Linux | your package manager |
 | notify-send | desktop notifications on Linux | your desktop's notification package |
 
-The mise, `go install`, and prebuilt-binary routes install the binary alone, so install tmux and git with your package manager. Whatever the route, the manager names the exact command for your machine when it starts without tmux, and the diff view says the same about git.
+The mise, `go install`, and prebuilt-binary routes install the binary alone, so install tmux and git with your package manager. When the manager starts without tmux, or the diff view cannot find git, it names the install command it detected, or tells you to use your package manager.
 
 ## Arch Linux
 
