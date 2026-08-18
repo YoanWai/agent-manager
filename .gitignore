@@ -1,7 +1,6 @@
 /agent-manager
 /am
 .worktrees/
-.claude/worktrees/
 *.db
 *.db-*
 .DS_Store
@@ -16,3 +15,6 @@ docs/badges/contributors.png
 *.p12
 id_rsa
 id_ed25519
+.claude/
+.agents/
+.impeccable/
