@@ -510,11 +510,8 @@ func (m *Model) paneRowHasOverlay(row, paneHeight int) bool {
 	return ok && cursorRow == row
 }
 
-// withCursor draws the focused session's own cursor as a lit cell, since a
-// captured pane carries no cursor of its own and the terminal's real one
-// sits wherever our frame ended. The row keeps every colour the agent
-// drew: only the caret cell is overpainted, spliced in by display column
-// so the surrounding escape state survives on both sides of it.
+// withCursor draws the focused session's cursor because a captured pane has
+// no terminal cursor of its own.
 func (m *Model) withCursor(row int, clean string, line []rune, width int) string {
 	cursorRow, cursorCol, ok := m.cursorCell(m.pane.box.height)
 	if !ok || cursorRow != row {

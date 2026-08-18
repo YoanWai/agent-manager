@@ -316,7 +316,7 @@ func (m *Model) viewHelp() string {
 func (m *Model) helpSearchLine(sections []helpSection) string {
 	line := keyStyle.Render("search ") + valueStyle.Render(m.help.query)
 	if m.help.searching {
-		line += lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
+		line += cursorAnchorMarker + lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
 	}
 	count := helpRowCount(sections)
 	label := " keys"

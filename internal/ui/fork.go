@@ -165,6 +165,6 @@ func expandForkCommand(template, sourceID, newID, name, sessionFile string) stri
 func (m *Model) viewFork() string {
 	body := "  source  " + valueStyle.Render(m.fork.source.Name) + "\n" +
 		"  group   " + groupBadge(displayGroup(m.fork.source.Group)) + "\n" +
-		formField("name", m.fork.name.View(), true)
+		formField("name", textInputView(m.fork.name), true)
 	return m.card("⑂ Fork Session", body, [][2]string{{"↵", "create"}, {"esc", "cancel"}})
 }

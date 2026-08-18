@@ -147,14 +147,14 @@ func (m *Model) viewForm() string {
 	m.form.prompt.input.SetHeight(textareaRows(m.form.prompt.input, m.formValueWidth()-2, formPromptMaxRows))
 
 	var b strings.Builder
-	b.WriteString(formField("name", m.form.name.View(), m.form.focus == fieldName))
+	b.WriteString(formField("name", textInputView(m.form.name), m.form.focus == fieldName))
 
 	toolVal := "(none configured)"
 	if len(m.form.toolNames) > 0 {
 		toolVal = subtleStyle.Render("◂ ") + valueStyle.Render(m.form.toolNames[m.form.toolIndex]) + subtleStyle.Render(" ▸")
 	}
 	b.WriteString(formField("tool", toolVal, m.form.focus == fieldTool))
-	b.WriteString(formField("dir", m.form.dir.View(), m.form.focus == fieldDir))
+	b.WriteString(formField("dir", textInputView(m.form.dir), m.form.focus == fieldDir))
 	if m.form.focus == fieldDir && m.pathSugg.active() {
 		b.WriteString(m.viewPathSuggestions() + "\n")
 	}
@@ -169,7 +169,7 @@ func (m *Model) viewForm() string {
 	b.WriteString(formField("worktree", worktreeField, m.form.focus == fieldWorktree))
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
-	b.WriteString(formField("prompt", m.form.prompt.renderChips(m.form.prompt.input.View()), m.form.focus == fieldPrompt))
+	b.WriteString(formField("prompt", m.form.prompt.renderChips(textAreaView(m.form.prompt.input)), m.form.focus == fieldPrompt))
 	b.WriteString(formField("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), m.form.focus == fieldGroup))
 
 	if m.form.focus == fieldGroup {
@@ -241,9 +241,9 @@ func (m *Model) viewGroupPicker() string {
 
 func (m *Model) viewGroupForm() string {
 	var b strings.Builder
-	b.WriteString(formField("name", m.groupForm.name.View(), m.groupForm.focus == gfName))
+	b.WriteString(formField("name", textInputView(m.groupForm.name), m.groupForm.focus == gfName))
 	b.WriteString(formField("parent", groupBadge(displayGroup(m.selectedGroupPath())), m.groupForm.focus == gfParent))
-	b.WriteString(formField("path", m.groupForm.path.View(), m.groupForm.focus == gfPath))
+	b.WriteString(formField("path", textInputView(m.groupForm.path), m.groupForm.focus == gfPath))
 	if m.groupForm.focus == gfPath && m.pathSugg.active() {
 		b.WriteString(m.viewPathSuggestions() + "\n")
 	}

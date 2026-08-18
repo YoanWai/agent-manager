@@ -14,7 +14,7 @@ import (
 
 func (m *Model) View() string {
 	if m.width == 0 {
-		return "loading..."
+		return m.syncCursorAnchor("loading...")
 	}
 	var frame string
 	switch m.mode {
@@ -43,7 +43,8 @@ func (m *Model) View() string {
 	default:
 		frame = m.viewListFrame()
 	}
-	return clampFrame(pinFrameLTR(frame), m.height)
+	frame = clampFrame(pinFrameLTR(frame), m.height)
+	return m.syncCursorAnchor(frame)
 }
 
 // clampFrame pins a rendered frame to exactly height rows so the outer
@@ -219,7 +220,7 @@ func (m *Model) renameRowInput(entry treeRow, width int) string {
 	if fieldWidth := width - 4; fieldWidth >= 5 {
 		m.rename.input.Width = fieldWidth
 	}
-	return lead + " " + m.rename.input.View()
+	return lead + " " + textInputView(m.rename.input)
 }
 
 // divider renders a labeled section rule that fills the given width: an
@@ -332,6 +333,7 @@ var previewDangerSeqs = regexp.MustCompile(
 )
 
 func previewLine(line string, width int) string {
+	line = strings.ReplaceAll(line, cursorAnchorMarker, "")
 	line = previewDangerSeqs.ReplaceAllString(line, "")
 	line = strings.Map(func(r rune) rune {
 		if r < 0x20 && r != 0x1b && r != '\t' {

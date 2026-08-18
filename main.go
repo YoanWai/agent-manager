@@ -204,7 +204,11 @@ func run() error {
 	// scrolls the host's scrollback out from under the manager nor arrives
 	// as an arrow key that walks the session cursor. Alternate scroll is
 	// cleared too: a crashed earlier run can leave it set.
-	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	program := tea.NewProgram(model,
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+		tea.WithOutput(model.CursorOutput(os.Stdout)),
+	)
 	if err := ui.DisableAlternateScroll(); err != nil {
 		return err
 	}

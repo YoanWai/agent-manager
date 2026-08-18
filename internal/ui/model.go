@@ -109,6 +109,9 @@ type Model struct {
 	pane    paneMirror
 	// cursorOn is the caret's blink phase while focused.
 	cursorOn bool
+	// imeCursor is shared with the terminal output writer so the host input
+	// method can follow whichever software caret the UI rendered.
+	imeCursor *cursorAnchor
 	// focusScroll is how many lines the focused pane is scrolled back into
 	// its history; zero is live at the bottom.
 	focusScroll int
@@ -552,6 +555,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		focusOnEnter:        storedFocusOnEnter(st),
 		arrowStep:           storedArrowStep(st),
 		comfortableRows:     storedComfortableRows(st),
+		imeCursor:           &cursorAnchor{},
 		mode:                modeList,
 		update:              updateInfo{version: version},
 		dismissed:           loadDismissed(st),
