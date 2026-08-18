@@ -44,8 +44,6 @@ var official = map[string]string{
 	"pi":       "npm install -g @mariozechner/pi-coding-agent",
 }
 
-// Hint is a sentence fragment naming how to install tool, for appending to an
-// error or a status line.
 func Hint(tool string) string {
 	return hint(runtime.GOOS, tool)
 }

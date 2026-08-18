@@ -105,6 +105,9 @@ dep_install_cmd() {
 	set_sudo
 	for candidate in apt-get dnf pacman zypper apk brew; do
 		command -v "$candidate" >/dev/null 2>&1 || continue
+		if [ "$candidate" != brew ] && [ "$(id -u)" -ne 0 ] && [ -z "$SUDO" ]; then
+			continue
+		fi
 		case $candidate in
 		apt-get) printf '%sapt-get update && %sapt-get install -y %s' "$SUDO" "$SUDO" "$packages" ;;
 		dnf) printf '%sdnf install -y %s' "$SUDO" "$packages" ;;
