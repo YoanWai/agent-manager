@@ -231,6 +231,24 @@ func (c *composer) tokenStartingAt(offset int) (tokenSpan, bool) {
 	return tokenSpan{}, false
 }
 
+// updateInput hands the textarea a message, focusing it first when focus
+// has moved on to another field. A blurred textarea returns from Update
+// without reading the message, and a clipboard read lands whenever it
+// lands: without this the caret rewrite below and a delivered text paste
+// are both dropped on arrival.
+func (c *composer) updateInput(msg tea.Msg) tea.Cmd {
+	blurred := !c.input.Focused()
+	if blurred {
+		c.input.Focus()
+	}
+	var cmd tea.Cmd
+	c.input, cmd = c.input.Update(msg)
+	if blurred {
+		c.input.Blur()
+	}
+	return cmd
+}
+
 // setValue rewrites the prompt with the caret left at the given rune
 // offset. The textarea only exposes a column setter, so the value is laid
 // down after the caret, the caret sent to the very beginning, and the head
@@ -241,8 +259,7 @@ func (c *composer) setValue(value string, cursor int) tea.Cmd {
 	runes := []rune(value)
 	cursor = max(0, min(cursor, len(runes)))
 	c.input.SetValue(string(runes[cursor:]))
-	var cmd tea.Cmd
-	c.input, cmd = c.input.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'<'}, Alt: true})
+	cmd := c.updateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'<'}, Alt: true})
 	c.input.InsertString(string(runes[:cursor]))
 	return cmd
 }
@@ -514,8 +531,7 @@ func (m *Model) handlePasteTextMsg(msg pasteTextMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	c.input.SetHeight(c.maxRows)
-	var cmd tea.Cmd
-	c.input, cmd = c.input.Update(msg.inner)
+	cmd := c.updateInput(msg.inner)
 	c.prune()
 	c.snapCursorOutOfToken()
 	return m, cmd

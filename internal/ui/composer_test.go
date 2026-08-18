@@ -303,6 +303,52 @@ func TestComposerNoImageFallsThroughToATextPaste(t *testing.T) {
 	}
 }
 
+// The same fallback on the New Session form, where the prompt is one field
+// among several. Tabbing on while the read is in flight blurs the prompt,
+// and the result still belongs to the text the ctrl+v was typed into.
+func TestComposerNoImageFallsThroughToABlurredFormPrompt(t *testing.T) {
+	orig := readClipboardText
+	t.Cleanup(func() { readClipboardText = orig })
+	readClipboardText = func() tea.Msg {
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("from the clipboard")}
+	}
+
+	m := buildModel(t)
+	m.openForm()
+	m.form.focus = fieldPrompt
+	m.formFocus(0)
+	m.form.prompt.input.SetValue("see ")
+	m.form.prompt.input.CursorEnd()
+	m.form.prompt.attachments = []imageAttachment{{id: 1}}
+	m.form.prompt.input.InsertString(imageToken(1))
+
+	gen := m.form.prompt.gen
+	m.formFocus(1)
+	if m.form.prompt.input.Focused() {
+		t.Fatal("tabbing on to the next field blurs the prompt")
+	}
+
+	updated, cmd := m.Update(pasteImageMsg{target: composerForm, gen: gen, id: 1, noImage: true})
+	m, ok := updated.(*Model)
+	if !ok {
+		t.Fatalf("Update returned %T, want *Model", updated)
+	}
+	if cmd == nil {
+		t.Fatal("a clipboard with no image should still start a text paste")
+	}
+	text, ok := cmd().(pasteTextMsg)
+	if !ok {
+		t.Fatalf("paste cmd returned %T", cmd())
+	}
+	m = applyMsg(t, m, text)
+	if got := m.form.prompt.input.Value(); got != "see from the clipboard" {
+		t.Fatalf("value = %q, want the clipboard text in place of the chip", got)
+	}
+	if m.form.prompt.input.Focused() {
+		t.Fatal("a late paste must not steal focus back to the prompt")
+	}
+}
+
 // The same fallback, once the bar it was typed into is gone.
 func TestComposerTextPasteDroppedWhenItsBoxIsClosed(t *testing.T) {
 	m := buildModel(t)
