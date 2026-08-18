@@ -158,6 +158,8 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN retired_agent_session_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN pending_inputs TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE sessions ADD COLUMN pending_claimed INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN launch_prompt TEXT NOT NULL DEFAULT ''`,
 		`CREATE TABLE IF NOT EXISTS session_inbox (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			session_id   TEXT    NOT NULL,
@@ -200,8 +202,6 @@ CREATE TABLE IF NOT EXISTS settings (
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS file_reservations_holder ON file_reservations (session_id, pattern)`,
 		`CREATE INDEX IF NOT EXISTS file_reservations_live ON file_reservations (expires_at)`,
-		`ALTER TABLE sessions ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE sessions ADD COLUMN launch_prompt TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
