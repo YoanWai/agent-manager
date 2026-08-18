@@ -130,9 +130,9 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 		if !ok {
 			return nil
 		}
-		command := "send-keys -t " + tmux.SessionName(sess.ID) + " -H " + hexBytes(report)
+		command, args := guardedMouseCommand(sess.ID, report)
 		if !m.focus.attempt(command) {
-			if err := m.tmux.SendRaw(command); err != nil {
+			if err := m.tmux.SendCommand(args...); err != nil {
 				m.errBar.text = err.Error()
 			}
 		}
@@ -143,6 +143,19 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 		delta = -1
 	}
 	return m.scrollFocus(delta)
+}
+
+// guardedMouseCommand rechecks tmux's live mouse flags immediately before
+// forwarding a report. The watcher intentionally caches those flags, but an
+// app can leave mouse mode between captures; sending an SGR report then leaks
+// its printable tail into the app's prompt.
+func guardedMouseCommand(sessID, report string) (string, []string) {
+	target := tmux.SessionName(sessID)
+	condition := "#{||:#{mouse_any_flag},#{mouse_button_flag},#{mouse_standard_flag}}"
+	send := "send-keys -t " + target + " -H " + hexBytes(report)
+	command := "if-shell -F -t " + target + " '" + condition + "' '" + send + "' ''"
+	args := []string{"if-shell", "-F", "-t", target, condition, send, ""}
+	return command, args
 }
 
 // forwardFocusMouse sends an explicit Alt-modified click lifecycle to a
@@ -173,9 +186,9 @@ func (m *Model) sendFocusReport(report string) {
 	if !ok || m.focus == nil {
 		return
 	}
-	command := "send-keys -t " + tmux.SessionName(sess.ID) + " -H " + hexBytes(report)
+	command, args := guardedMouseCommand(sess.ID, report)
 	if !m.focus.attempt(command) {
-		if err := m.tmux.SendRaw(command); err != nil {
+		if err := m.tmux.SendCommand(args...); err != nil {
 			m.errBar.text = err.Error()
 		}
 	}

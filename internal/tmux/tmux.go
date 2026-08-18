@@ -469,6 +469,17 @@ func (d *Driver) SendRaw(command string) error {
 	return err
 }
 
+// SendCommand runs one tmux command from already-separated arguments. Unlike
+// SendRaw, it preserves arguments that contain spaces for commands such as
+// if-shell's nested command branch.
+func (d *Driver) SendCommand(args ...string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("tmux command is empty")
+	}
+	_, err := d.run(args...)
+	return err
+}
+
 // SetLabel puts the session's name and group path in the status bar's
 // left side, replacing the hidden window list.
 func (d *Driver) SetLabel(id, label string) error {

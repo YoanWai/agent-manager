@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -127,6 +128,32 @@ func TestPrepareAttachFallsBackWhenLatestRejected(t *testing.T) {
 		if !strings.HasSuffix(calls[i], "window-size "+wantValue) {
 			t.Fatalf("call %d = %q, want window-size %s", i, calls[i], wantValue)
 		}
+	}
+}
+
+func TestSendCommandPreservesStructuredArguments(t *testing.T) {
+	dir := t.TempDir()
+	callLog := filepath.Join(dir, "calls")
+	stub := filepath.Join(dir, "tmux")
+	script := "#!/bin/sh\nfor arg in \"$@\"; do printf '<%s>\\n' \"$arg\"; done > " + ShellQuote(callLog) + "\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	if err := driver.SendCommand(); err == nil {
+		t.Fatal("empty command succeeded")
+	}
+	if err := driver.SendCommand("if-shell", "-F", "condition", "send-keys -H 1b", ""); err != nil {
+		t.Fatalf("SendCommand: %v", err)
+	}
+	logged, err := os.ReadFile(callLog)
+	if err != nil {
+		t.Fatalf("read call log: %v", err)
+	}
+	want := "<-L>\n<" + testSocket + ">\n<if-shell>\n<-F>\n<condition>\n<send-keys -H 1b>\n<>\n"
+	if string(logged) != want {
+		t.Fatalf("arguments = %q, want %q", logged, want)
 	}
 }
 

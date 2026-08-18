@@ -597,6 +597,33 @@ func TestWheelReachesMouseTrackingApp(t *testing.T) {
 	}
 }
 
+func TestStaleMouseClaimDoesNotWriteReport(t *testing.T) {
+	m, sessID := focusedWithHistory(t, "stale-mouse")
+	// Simulate the watcher lagging one capture behind an app that has already
+	// left mouse mode. The live tmux flags remain off for this plain pane.
+	m.pane.mouse = true
+	m.pane.sgr = true
+	m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
+	if _, ok := m.focus.query(`display-message -p -t ` + tmux.SessionName(sessID) + ` "#{history_size}"`); !ok {
+		t.Fatal("control query failed after the guarded wheel report")
+	}
+
+	// A stopped watcher forces wheelFocus through the forked driver path. The
+	// nested if-shell arguments must survive that fallback as separate values.
+	m.focus.Close()
+	m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
+	if m.errBar.text != "" {
+		t.Fatalf("guarded fallback failed: %s", m.errBar.text)
+	}
+	pane, err := m.tmux.CapturePane(sessID)
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if strings.Contains(pane, "<64;") {
+		t.Fatalf("stale mouse report leaked into pane:\n%s", pane)
+	}
+}
+
 // A pane whose app owns the wheel must not stay parked on a scrollback
 // offset: the wheel goes to the app from then on, so nothing would walk
 // the offset back down and the view would hold a stale frame for good.
