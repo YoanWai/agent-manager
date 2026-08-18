@@ -603,6 +603,8 @@ func TestBadInputsReturnToolErrors(t *testing.T) {
 	}
 	if text, isError := callText(t, session, "review", map[string]any{"base": "nope-branch", "repo": gitRepo(t)}); !isError {
 		t.Fatalf("unknown ref should error, got %q", text)
+	} else if !strings.Contains(text, "already applied: review repo set to") {
+		t.Fatalf("the failure does not name the declaration that landed first: %q", text)
 	}
 	if text, isError := callText(t, session, "review", map[string]any{"mode": "bogus"}); !isError {
 		t.Fatalf("unknown scope should error, got %q", text)

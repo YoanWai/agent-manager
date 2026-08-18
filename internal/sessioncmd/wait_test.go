@@ -55,7 +55,7 @@ func TestWaitTimesOutWithTheCurrentStateRatherThanAnError(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("a %s wait took %s", asked, elapsed)
 	}
-	if result.Reached || result.Session.Status != status.Working {
+	if result.Reached || result.Outcome != WaitTimedOut || result.Session.Status != status.Working {
 		t.Fatalf("timeout result = %+v", result)
 	}
 	for _, timeout := range []time.Duration{-time.Second, MaxWaitTimeout + time.Second} {
