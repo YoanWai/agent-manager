@@ -1,10 +1,10 @@
 package ui
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -80,7 +80,7 @@ func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
 		}
 		sess.Group = entry.sess.Group
 	}
-	sess.Name = m.shellName(toolName, sess.ParentID)
+	sess.Name = sessioncmd.ShellName(toolName, sess.ParentID, newID()[:4], m.sessions)
 	if err := m.launchNewSession(sess, tool, tool.Command, launchOptions{}); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
@@ -91,30 +91,6 @@ func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
 	m.errBar.text = ""
 	m.focusSession(sess.ID)
 	return m, m.refreshCmd()
-}
-
-// shellName names a terminal after the session it hangs under, so its row
-// says which agent it was opened for rather than four random digits. A
-// terminal with no session over it keeps the digits, and one joining
-// terminals already named for that session counts up.
-func (m *Model) shellName(toolName, parentID string) string {
-	parentName := ""
-	taken := make(map[string]bool, len(m.sessions))
-	for _, sess := range m.sessions {
-		taken[sess.Name] = true
-		if sess.ID == parentID {
-			parentName = sess.Name
-		}
-	}
-	if parentName == "" {
-		return toolName + "-" + newID()[:4]
-	}
-	base := toolName + "-" + parentName
-	name := base
-	for n := 2; taken[name]; n++ {
-		name = fmt.Sprintf("%s-%d", base, n)
-	}
-	return name
 }
 
 // rowDir is the directory the cursor points at: a live session's pane

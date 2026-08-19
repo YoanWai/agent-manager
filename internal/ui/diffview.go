@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -1250,7 +1251,7 @@ const diffGutterSign = 2
 // content scrolls freely instead of sharing the narrow sidebar.
 func (m *Model) openDiff() tea.Cmd {
 	if m.gitDrv == nil {
-		m.errBar.text = "git not found in PATH"
+		m.errBar.text = "git not found in PATH, " + deps.Hint("git")
 		return nil
 	}
 	sess, ok := m.selected()

@@ -11,6 +11,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -229,24 +230,12 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 	m := buildModel(t)
 	tool := m.cfg.Tools["claude-hooked"]
 
-	command, _, err := m.buildLaunch("claude", tool, withPrompt(tool, tool.Command, "fix the bug"), "prompt01")
+	command, _, err := m.buildLaunch("claude", tool, launch.WithPrompt(tool, tool.Command, "fix the bug"), "prompt01")
 	if err != nil {
 		t.Fatalf("buildLaunch: %v", err)
 	}
 	if !strings.HasPrefix(command, "cat 'fix the bug' --mcp-config '") || !strings.Contains(command, "--settings '") {
 		t.Fatalf("command = %q", command)
-	}
-
-	flagged := config.Tool{Command: "opencode", PromptFlag: "--prompt"}
-	if got := withPrompt(flagged, flagged.Command, "do it"); got != "opencode --prompt 'do it'" {
-		t.Fatalf("flagged compose = %q", got)
-	}
-	if got := withPrompt(tool, tool.Command, ""); got != "cat" {
-		t.Fatalf("empty prompt should leave the command untouched, got %q", got)
-	}
-	sent := config.Tool{Command: "hermes --cli", PromptMode: "send"}
-	if got := withPrompt(sent, sent.Command, "do it"); got != sent.Command {
-		t.Fatalf("send-mode prompt changed launch command to %q", got)
 	}
 }
 
@@ -539,29 +528,6 @@ func TestFormRejectsDashLeadingPrompt(t *testing.T) {
 	}
 }
 
-func TestLaunchPromptInjectsDirectiveOnlyForAutoNamedWithPrompt(t *testing.T) {
-	withDirective := launchPrompt("build the api", true)
-	if !strings.HasPrefix(withDirective, renameDirective+"\n\n") || !strings.HasSuffix(withDirective, "build the api") {
-		t.Fatalf("auto-named prompt should carry the directive, got %q", withDirective)
-	}
-	named := launchPrompt("build the api", false)
-	if !strings.HasPrefix(named, renameAvailableNote+"\n\n") || !strings.HasSuffix(named, "build the api") {
-		t.Fatalf("custom-named prompt should note rename is optional later, got %q", named)
-	}
-	if strings.Contains(named, "Run rename only this once") || strings.HasPrefix(named, renameDirective) {
-		t.Fatalf("custom-named prompt must not force a rename, got %q", named)
-	}
-	if got := launchPrompt("", true); got != "" {
-		t.Fatalf("promptless session should stay clean, got %q", got)
-	}
-	if got := launchPrompt("/compact keep the api notes", true); got != "/compact keep the api notes" {
-		t.Fatalf("slash-command prompt should stay clean, got %q", got)
-	}
-	if got := launchPrompt("/compact keep the api notes", false); got != "/compact keep the api notes" {
-		t.Fatalf("named slash-command prompt should stay clean, got %q", got)
-	}
-}
-
 // Only a spawn that hands over the rename directive has a name to wait for;
 // one the user named itself is already at its final name.
 func TestSpawnAwaitsARenameOnlyWhenItAsksForOne(t *testing.T) {
@@ -594,7 +560,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	slashID := m.sessionRows()[0].ID
-	if !sessionHasPendingInput(t, m, slashID, deferredRenameDirective) {
+	if !sessionHasPendingInput(t, m, slashID, launch.DeferredRenameDirective) {
 		t.Fatal("slash-prompt spawn should defer the directive")
 	}
 
@@ -609,7 +575,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 		if sess.ID == slashID {
 			continue
 		}
-		if sessionHasPendingInput(t, m, sess.ID, deferredRenameDirective) {
+		if sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
 			t.Fatalf("session %q should not defer a directive", sess.Name)
 		}
 	}
@@ -627,7 +593,7 @@ func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 	// already present in the pane is success; a missing mark before any
 	// send is not possible after spawnSession.
 	deadline := time.Now().Add(5 * time.Second)
-	for sessionHasPendingInput(t, m, sess.ID, deferredRenameDirective) {
+	for sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
 		if time.Now().After(deadline) {
 			pane, _ := m.tmux.CapturePane(sess.ID)
 			t.Fatalf("directive never sent; pane:\n%s", pane)
@@ -655,7 +621,7 @@ func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
 	}
 	old := m.poller
 	m.poller = newPoller(m.store, m.tmux, m.engine, m.hooks, m.gitDrv,
-		old.statusSources, old.sessionStores, old.interval)
+		old.statusSources, old.sessionStores, old.mcpStyles, old.interval)
 	m.applyCmd(t, m.refreshCmd())
 	deadline := time.Now().Add(5 * time.Second)
 	for len(sessionPendingInputs(t, m, sess.ID)) > 0 {
@@ -687,7 +653,7 @@ func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
 	}
 	old := m.poller
 	m.poller = newPoller(m.store, m.tmux, m.engine, m.hooks, m.gitDrv,
-		old.statusSources, old.sessionStores, old.interval)
+		old.statusSources, old.sessionStores, old.mcpStyles, old.interval)
 	msg := m.poller.refreshOnce()
 	gotErr, ok := msg.(errMsg)
 	if !ok || !strings.Contains(gotErr.err.Error(), "ambiguous pending input") {
@@ -774,58 +740,6 @@ func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	}
 	if env[hooks.EnvSessionID] != "abcd1234" || env[hooks.EnvStatusFile] == "" {
 		t.Fatalf("hooked tool env = %v, want session id and status file", env)
-	}
-}
-
-func TestBuildLaunchPreservesCodexScrollback(t *testing.T) {
-	m := buildModel(t)
-	tool := config.Tool{Command: "codex", SessionStore: "codex", MCP: "none"}
-
-	command, _, err := m.buildLaunch("codex", tool, tool.Command, "scroll01")
-	if err != nil {
-		t.Fatalf("buildLaunch: %v", err)
-	}
-	want := "codex -c 'tui.terminal_resize_reflow_max_rows=0'"
-	if command != want {
-		t.Fatalf("command = %q, want %q", command, want)
-	}
-
-	tool.MCP = "codex"
-	command, _, err = m.buildLaunch("codex", tool, tool.Command, "scroll02")
-	if err != nil {
-		t.Fatalf("buildLaunch with MCP: %v", err)
-	}
-	scrollback := strings.Index(command, "tui.terminal_resize_reflow_max_rows=0")
-	mcpOverride := strings.Index(command, "mcp_servers.agent-manager.command=")
-	if scrollback < 0 || mcpOverride < 0 || scrollback > mcpOverride {
-		t.Fatalf("command = %q, want scrollback override before MCP overrides", command)
-	}
-
-	command = preserveCodexScrollback(tool, "codex resume session-id")
-	if command != "codex resume session-id -c 'tui.terminal_resize_reflow_max_rows=0'" {
-		t.Fatalf("resume command = %q", command)
-	}
-}
-
-func TestPreserveCodexScrollbackRecognizesConfiguredArguments(t *testing.T) {
-	tool := config.Tool{Command: "codex --no-alt-screen", SessionStore: "codex"}
-	command := "codex --no-alt-screen"
-	want := "codex --no-alt-screen -c 'tui.terminal_resize_reflow_max_rows=0'"
-	if got := preserveCodexScrollback(tool, command); got != want {
-		t.Fatalf("command = %q, want %q", got, want)
-	}
-}
-
-func TestPreserveCodexScrollbackLeavesOtherToolsAlone(t *testing.T) {
-	command := "opencode"
-	if got := preserveCodexScrollback(config.Tool{SessionStore: "opencode"}, command); got != command {
-		t.Fatalf("non-Codex command changed to %q", got)
-	}
-
-	command = "cat"
-	tool := config.Tool{Command: command, SessionStore: "codex"}
-	if got := preserveCodexScrollback(tool, command); got != command {
-		t.Fatalf("non-Codex executable changed to %q", got)
 	}
 }
 

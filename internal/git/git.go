@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/YoanWai/agent-manager/internal/deps"
 )
 
 var ErrNotARepo = errors.New("not a git repository")
@@ -30,7 +32,7 @@ type Driver struct {
 func New() (*Driver, error) {
 	bin, err := exec.LookPath("git")
 	if err != nil {
-		return nil, fmt.Errorf("git not found in PATH: %w", err)
+		return nil, fmt.Errorf("git not found in PATH: %w\n%s", err, deps.Hint("git"))
 	}
 	return &Driver{bin: bin}, nil
 }

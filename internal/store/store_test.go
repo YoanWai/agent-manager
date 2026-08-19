@@ -209,6 +209,67 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+// Delete strips a session's inbox, task claims and reservations before the
+// row itself, so a delete that gets partway through would leave a session
+// alive with the state its senders and the shared list depend on already
+// gone. It is one transaction, and a refused delete changes nothing.
+func TestARefusedDeleteLeavesTheCoordinationStateIntact(t *testing.T) {
+	st := newTestStore(t)
+	now := time.Now()
+	if err := st.CreateSession(sample("a", "g1")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := st.Enqueue(InboxMessage{
+		SessionID: "a", SenderID: "b", SenderName: "rival",
+		Body: "rebase on main", Fingerprint: "rebase on main", SentAt: now,
+	}, DefaultInboxLimits); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if err := st.CreateTask(Task{ID: "t1", Title: "wire it", State: TaskPending, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if claimed, err := st.ClaimTask("t1", "a", now); err != nil || !claimed {
+		t.Fatalf("ClaimTask = %v, %v", claimed, err)
+	}
+	if _, err := st.Reserve([]Reservation{{
+		ID: "r1", SessionID: "a", Pattern: "internal/store/*.go", Mode: ReservationExclusive,
+		AcquiredAt: now, ExpiresAt: now.Add(time.Hour),
+	}}); err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+
+	// The row alone going first is what the last statement refusing looks
+	// like from inside Delete.
+	if _, err := st.db.Exec(`DELETE FROM sessions WHERE id = ?`, "a"); err != nil {
+		t.Fatalf("drop the session row: %v", err)
+	}
+	if err := st.Delete("a"); !errors.Is(err, ErrSessionGone) {
+		t.Fatalf("deleting a vanished session = %v", err)
+	}
+
+	queued, err := st.QueuedCount("a")
+	if err != nil {
+		t.Fatalf("QueuedCount: %v", err)
+	}
+	if queued != 1 {
+		t.Fatalf("a refused delete took the inbox with it: %d queued", queued)
+	}
+	task, err := st.Task("t1")
+	if err != nil {
+		t.Fatalf("Task: %v", err)
+	}
+	if task.State != TaskInProgress || task.Owner != "a" {
+		t.Fatalf("a refused delete released the claim: %+v", task)
+	}
+	held, err := st.Reservations(now)
+	if err != nil {
+		t.Fatalf("Reservations: %v", err)
+	}
+	if len(held) != 1 {
+		t.Fatalf("a refused delete dropped the leases: %+v", held)
+	}
+}
+
 func TestMissingRowErrors(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.UpdateStatus("nope", "x"); err == nil {
@@ -1551,5 +1612,87 @@ func TestReorderSessionStaysInSiblingSet(t *testing.T) {
 	}
 	if err := st.SwapSessionOrder("agent", "a"); err == nil {
 		t.Fatal("agent and its child are not siblings")
+	}
+}
+
+func TestRemoveGroupMovesTheSubtreeInOneStroke(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("fleet", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	if err := st.CreateGroup("fleet/backend", ""); err != nil {
+		t.Fatalf("CreateGroup nested: %v", err)
+	}
+	if err := st.CreateSession(sample("aa", "fleet")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	nested := sample("bb", "fleet/backend")
+	nested.ParentID = "aa"
+	if err := st.CreateSession(nested); err != nil {
+		t.Fatalf("create nested: %v", err)
+	}
+
+	removed, moved, err := st.RemoveGroup("fleet")
+	if err != nil {
+		t.Fatalf("RemoveGroup: %v", err)
+	}
+	sort.Strings(removed)
+	if !slices.Equal(removed, []string{"fleet", "fleet/backend"}) {
+		t.Fatalf("removed = %v", removed)
+	}
+	sort.Strings(moved)
+	if !slices.Equal(moved, []string{"aa", "bb"}) {
+		t.Fatalf("moved = %v", moved)
+	}
+	after, err := st.Get("bb")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if after.Group != "" || after.ParentID != "aa" {
+		t.Fatalf("nested session moved to %q under %q; want the root under aa", after.Group, after.ParentID)
+	}
+	groups, err := st.Groups()
+	if err != nil {
+		t.Fatalf("Groups: %v", err)
+	}
+	for _, g := range groups {
+		if strings.HasPrefix(g.Name, "fleet") {
+			t.Fatalf("group %q survived", g.Name)
+		}
+	}
+}
+
+func TestRemoveGroupReportsAMissingGroup(t *testing.T) {
+	st := newTestStore(t)
+	if _, _, err := st.RemoveGroup("ghost"); !errors.Is(err, ErrGroupNotFound) {
+		t.Fatalf("err = %v, want ErrGroupNotFound", err)
+	}
+	if _, _, err := st.RemoveGroup(""); err == nil {
+		t.Fatal("removing the root group was accepted")
+	}
+}
+
+// A group name may carry LIKE wildcards; they must not pull a sibling
+// group's sessions into the move.
+func TestRemoveGroupMatchesWildcardNamesLiterally(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("a_c", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	if err := st.CreateGroup("abc", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	if err := st.CreateSession(sample("cc", "abc/sub")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	removed, moved, err := st.RemoveGroup("a_c")
+	if err != nil {
+		t.Fatalf("RemoveGroup: %v", err)
+	}
+	if len(moved) != 0 {
+		t.Fatalf("moved = %v, want nothing from the sibling group", moved)
+	}
+	if !slices.Equal(removed, []string{"a_c"}) {
+		t.Fatalf("removed = %v", removed)
 	}
 }

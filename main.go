@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,10 +11,10 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -61,7 +62,7 @@ func main() {
 	update.SetBuildSource(buildSource)
 
 	if len(os.Args) > 1 {
-		if os.Args[1] == "--help" || os.Args[1] == "-h" {
+		if os.Args[1] == "help" || os.Args[1] == "--help" || os.Args[1] == "-h" {
 			if err := printHelp(os.Stdout); err != nil {
 				fmt.Fprintln(os.Stderr, "agent-manager:", err)
 				os.Exit(1)
@@ -74,6 +75,11 @@ func main() {
 		}
 		if command, ok := subcommands()[os.Args[1]]; ok {
 			if err := command(os.Args[2:]); err != nil {
+				// A subcommand's -h has already printed its usage, and
+				// asking for it is not a failure.
+				if errors.Is(err, cli.ErrUsageShown) {
+					return
+				}
 				fmt.Fprintln(os.Stderr, "agent-manager:", err)
 				os.Exit(1)
 			}
@@ -87,32 +93,20 @@ func main() {
 }
 
 func printHelp(w io.Writer) error {
-	_, err := fmt.Fprint(w, `Usage: agent-manager [command]
-
-Run the interactive manager when no command is given.
-
-Commands:
-  mcp          Run the Model Context Protocol server for an agent session
-  rename       Rename the current agent session
-  review-repo  Record the repository for the current agent session
-  review-base  Record the base ref for the current agent session
-
-Options:
-  -h, --help     Show this help text
-  -v, --version  Print the installed version
-`)
+	_, err := fmt.Fprintln(w, cli.Help())
 	return err
 }
 
 func subcommands() map[string]func(args []string) error {
-	return map[string]func(args []string) error{
-		"rename":      withConfigDir(runRename),
-		"review-repo": withConfigDir(runReviewRepo),
-		"review-base": withConfigDir(runReviewBase),
+	table := map[string]func(args []string) error{
 		"mcp": withConfigDir(func(args []string, sessionID, configDir string) error {
 			return mcpserver.Run(configDir, sessionID, version)
 		}),
 	}
+	for name, command := range cli.Commands() {
+		table[name] = withConfigDir(command)
+	}
+	return table
 }
 
 func withConfigDir(command func(args []string, sessionID, configDir string) error) func([]string) error {
@@ -123,51 +117,6 @@ func withConfigDir(command func(args []string, sessionID, configDir string) erro
 		}
 		return command(args, os.Getenv(hooks.EnvSessionID), dir)
 	}
-}
-
-func runRename(args []string, sessionID, configDir string) error {
-	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
-		return fmt.Errorf(`usage: agent-manager rename "<name>"`)
-	}
-	message, err := sessioncmd.Rename(configDir, sessionID, args[0])
-	if err != nil {
-		return err
-	}
-	fmt.Println(message)
-	return nil
-}
-
-// runReviewRepo records the repo a session is working in, so review opens
-// there instead of guessing from the working directory.
-func runReviewRepo(args []string, sessionID, configDir string) error {
-	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
-		return fmt.Errorf(`usage: agent-manager review-repo <path>`)
-	}
-	message, err := sessioncmd.ReviewRepo(configDir, sessionID, args[0])
-	if err != nil {
-		return err
-	}
-	fmt.Println(message)
-	return nil
-}
-
-// runReviewBase records the base ref the session's branch diffs against, read
-// from the process working directory the agent runs it in. `--clear` writes an
-// empty ref line, meaning delete.
-func runReviewBase(args []string, sessionID, configDir string) error {
-	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
-		return fmt.Errorf(`usage: agent-manager review-base <ref>|--clear`)
-	}
-	ref := strings.TrimSpace(args[0])
-	if ref == "--clear" {
-		ref = ""
-	}
-	message, err := sessioncmd.ReviewBase(configDir, sessionID, ".", ref)
-	if err != nil {
-		return err
-	}
-	fmt.Println(message)
-	return nil
 }
 
 func run() error {
