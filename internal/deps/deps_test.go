@@ -50,6 +50,13 @@ func TestHintNamesTheCommand(t *testing.T) {
 	}
 }
 
+func TestInstallCommandApkHasNoSudo(t *testing.T) {
+	stubPath(t, "apk")
+	if got, want := installCommand("linux", "tmux"), "apk add tmux"; got != want {
+		t.Fatalf("installCommand = %q, want %q", got, want)
+	}
+}
+
 func TestHintPrefersOfficialInstallerOverPackageManager(t *testing.T) {
 	stubPath(t, "brew")
 	got := hint("darwin", "claude")
