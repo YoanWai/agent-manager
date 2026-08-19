@@ -790,6 +790,17 @@ func TestBuildLaunchPreservesCodexScrollback(t *testing.T) {
 		t.Fatalf("command = %q, want %q", command, want)
 	}
 
+	tool.MCP = "codex"
+	command, _, err = m.buildLaunch("codex", tool, tool.Command, "scroll02")
+	if err != nil {
+		t.Fatalf("buildLaunch with MCP: %v", err)
+	}
+	scrollback := strings.Index(command, "tui.terminal_resize_reflow_max_rows=0")
+	mcpOverride := strings.Index(command, "mcp_servers.agent-manager.command=")
+	if scrollback < 0 || mcpOverride < 0 || scrollback > mcpOverride {
+		t.Fatalf("command = %q, want scrollback override before MCP overrides", command)
+	}
+
 	command = preserveCodexScrollback(tool, "codex resume session-id")
 	if command != "codex resume session-id -c 'tui.terminal_resize_reflow_max_rows=0'" {
 		t.Fatalf("resume command = %q", command)
