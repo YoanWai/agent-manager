@@ -77,12 +77,7 @@ func TestClampFrame(t *testing.T) {
 	}
 }
 
-func stripPreviewMarks(s string) string {
-	return strings.NewReplacer("\u200e", "", "\u2066", "", "\u2069", "").Replace(s)
-}
-
 func TestPreviewLine(t *testing.T) {
-	pinnedHost(t)
 	colored := "\x1b[38;5;42mgreen text\x1b[39m"
 	got := previewLine(colored, 80)
 	if !strings.Contains(got, "\x1b[38;5;42m") {
@@ -91,25 +86,17 @@ func TestPreviewLine(t *testing.T) {
 	if !strings.Contains(got, "\x1b[0m") {
 		t.Fatalf("line with ANSI must reset SGR: %q", got)
 	}
-	if closed := previewLine("\x1b[31m\u05e9\u05dc\u05d5\u05dd\x1b[0m", 80); !strings.HasSuffix(closed, "\u2069") {
-		t.Fatalf("RTL line must close the isolate: %q", closed)
-	}
-	arabic := previewLine("\u0645\u0631\u062d\u0628\u0627", 40)
-	if !strings.HasPrefix(arabic, "\u200e\u2066") || !strings.HasSuffix(arabic, "\u2069") {
-		t.Fatalf("Arabic (bidi.AL) row must be isolated: %q", arabic)
-	}
-
 	erased := "abc\x1b[K\x1b[2Jdef"
-	if got := stripPreviewMarks(ansi.Strip(previewLine(erased, 80))); strings.TrimRight(got, " ") != "abcdef" {
+	if got := ansi.Strip(previewLine(erased, 80)); strings.TrimRight(got, " ") != "abcdef" {
 		t.Fatalf("erase sequences should be stripped: %q", got)
 	}
 	scrolled := "a\x1b[1Sb\x1bMc\x1b[2Td"
-	if got := stripPreviewMarks(ansi.Strip(previewLine(scrolled, 80))); strings.TrimRight(got, " ") != "abcd" {
+	if got := ansi.Strip(previewLine(scrolled, 80)); strings.TrimRight(got, " ") != "abcd" {
 		t.Fatalf("scroll sequences should be stripped: %q", got)
 	}
 
 	control := "a\rb\bc"
-	if got := stripPreviewMarks(ansi.Strip(previewLine(control, 80))); strings.TrimRight(got, " ") != "abc" {
+	if got := ansi.Strip(previewLine(control, 80)); strings.TrimRight(got, " ") != "abc" {
 		t.Fatalf("control chars should be dropped: %q", got)
 	}
 
@@ -123,28 +110,24 @@ func TestPreviewLine(t *testing.T) {
 	if strings.Contains(plain, "\x1b") {
 		t.Fatalf("plain line should gain no escapes: %q", plain)
 	}
-	// Terminals that give format characters a cell (Windows Terminal under
-	// conpty, issue 213) overflow the row and scroll the whole frame, so a
-	// line without an RTL run must carry no bidi controls at all.
-	if strings.ContainsAny(plain, "\u200e\u2066\u2069") {
-		t.Fatalf("LTR-only pane row must carry no bidi controls: %q", plain)
-	}
 	if w := ansi.StringWidth(plain); w != 80 {
 		t.Fatalf("pane row should fill its column, width %d", w)
 	}
-	mixed := stripPreviewMarks(ansi.Strip(previewLine("קודינג\",\"slowly\":false", 80)))
+	mixed := ansi.Strip(previewLine("קודינג\",\"slowly\":false", 80))
 	if strings.TrimRight(mixed, " ") != "קודינג\",\"slowly\":false" {
 		t.Fatalf("mixed-direction pane row lost its text: %q", mixed)
 	}
+	// An RTL row is painted like any other row: the same cells and no
+	// direction marks, so every host is handed the same frame.
 	hebrew := previewLine("  העצמון 25 חולון", 40)
-	if !strings.HasPrefix(hebrew, "\u200e\u2066") {
-		t.Fatalf("pure RTL row needs a leading LRM so the host keeps LTR: %q", hebrew)
+	if strings.ContainsAny(hebrew, "\u200e\u2066\u2069") {
+		t.Fatalf("pane row must carry no bidi controls: %q", hebrew)
 	}
 	if w := ansi.StringWidth(hebrew); w != 40 {
-		t.Fatalf("pure RTL row must pad inside the isolate to column width, got %d", w)
+		t.Fatalf("RTL row must pad to column width, got %d", w)
 	}
-	if body := strings.TrimRight(stripPreviewMarks(ansi.Strip(hebrew)), " "); body != "  העצמון 25 חולון" {
-		t.Fatalf("pure RTL row text changed: %q", body)
+	if body := strings.TrimRight(ansi.Strip(hebrew), " "); body != "  העצמון 25 חולון" {
+		t.Fatalf("RTL row text changed: %q", body)
 	}
 }
 
