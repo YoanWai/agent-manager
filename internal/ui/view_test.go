@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -441,8 +442,10 @@ func TestFooterInFocusMode(t *testing.T) {
 	if strings.Contains(footer, "navigate") || strings.Contains(footer, "View") {
 		t.Fatalf("app-wide keys go to the agent while focused, so the tier must go:\n%s", footer)
 	}
-	if lines := strings.Split(footer, "\n"); len(lines) != 1 {
-		t.Fatalf("focus footer should be one row, got %d:\n%s", len(lines), footer)
+	// Blank rows below hold the list footer's height so focusing never
+	// resizes the pane.
+	if lines := strings.Split(strings.TrimRight(footer, "\n"), "\n"); len(lines) != 1 {
+		t.Fatalf("focus footer should be one row of keys, got %d:\n%s", len(lines), footer)
 	}
 	if strings.Contains(footer, "agent UI") {
 		t.Fatalf("a plain focused pane should not offer mouse pass-through:\n%s", footer)
@@ -451,6 +454,82 @@ func TestFooterInFocusMode(t *testing.T) {
 	m.pane.mouse = true
 	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "click / alt+drag") || !strings.Contains(footer, "agent UI") {
 		t.Fatalf("a mouse-tracking pane should advertise pass-through:\n%s", footer)
+	}
+}
+
+// The quick bar takes its rows from the painted preview alone: resizing the
+// pane for it would make an agent drawing on the normal screen redraw its
+// whole transcript, so the pane stays pinned and the view crops instead.
+func TestQuickBarKeepsPaneHeight(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "sizer", t.TempDir(), "")
+	m.applyCmd(t, m.refreshCmd())
+	sess := m.rows[m.cursor].sess
+	pinned := m.previewPaneHeight()
+
+	rows := make([]string, pinned+10)
+	for i := range rows {
+		rows[i] = fmt.Sprintf("line%03d", i+1)
+	}
+	m.preview = strings.Join(rows, "\n") + "\n"
+	listed := paintedPreview(m)
+
+	m.openQuickMode()
+	if got := m.previewPaneHeight(); got != pinned {
+		t.Fatalf("box height with the quick bar open = %d, want %d", got, pinned)
+	}
+	painted := paintedPreview(m)
+	// The bar's rows come off the top of the view; the pane's live end stays.
+	if oldest := rows[len(rows)-pinned]; !strings.Contains(listed, oldest) || strings.Contains(painted, oldest) {
+		t.Fatalf("the quick bar should have cropped %s off the top:\n%s", oldest, painted)
+	}
+	if newest := rows[len(rows)-1]; !strings.Contains(painted, newest) {
+		t.Fatalf("the quick bar hid the pane's live end (%s):\n%s", newest, painted)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	if got := windowHeight(t, sess.ID); got != pinned {
+		t.Fatalf("pane height with the quick bar open = %d, want %d", got, pinned)
+	}
+
+	m.quick.active = false
+	m.applyCmd(t, m.refreshCmd())
+	if got := windowHeight(t, sess.ID); got != pinned {
+		t.Fatalf("pane height after closing the quick bar = %d, want %d", got, pinned)
+	}
+}
+
+func paintedPreview(m *Model) string {
+	_, rightWidth := m.splitWidths()
+	var painted strings.Builder
+	for _, row := range m.contentLines(rightWidth, m.listBodyHeight()) {
+		painted.WriteString(ansi.Strip(row.text) + "\n")
+	}
+	return painted.String()
+}
+
+// Every transient tier holds the list footer's height: the footer sets the
+// preview box, and a box that moves resizes every session's pane, which
+// costs an agent drawing on the normal screen a full transcript redraw.
+func TestTransientFootersKeepListHeight(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "sizer", t.TempDir(), "")
+	m.applyCmd(t, m.refreshCmd())
+	listed := lipgloss.Height(m.viewFooter())
+
+	for _, tier := range []struct {
+		name string
+		open func()
+	}{
+		{"prompt", func() { m.openQuickMode() }},
+		{"resize", func() { m.split.resizeMode = true }},
+		{"rename", func() { m.mode = modeRename }},
+		{"focus", func() { m.mode = modeFocus }},
+	} {
+		tier.open()
+		if got := lipgloss.Height(m.viewFooter()); got != listed {
+			t.Errorf("%s footer = %d rows, want %d", tier.name, got, listed)
+		}
+		m.quick.active, m.split.resizeMode, m.mode = false, false, modeList
 	}
 }
 

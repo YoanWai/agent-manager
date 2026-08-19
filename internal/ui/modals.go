@@ -144,7 +144,7 @@ func maxLineWidth(lines []string) int {
 }
 
 func (m *Model) viewForm() string {
-	m.form.prompt.SetHeight(textareaRows(m.form.prompt, m.formValueWidth()-2, formPromptMaxRows))
+	m.form.prompt.input.SetHeight(textareaRows(m.form.prompt.input, m.formValueWidth()-2, formPromptMaxRows))
 
 	var b strings.Builder
 	b.WriteString(formField("name", m.form.name.View(), m.form.focus == fieldName))
@@ -167,7 +167,9 @@ func (m *Model) viewForm() string {
 		worktreeField = subtleStyle.Render("◂ ") + valueStyle.Render(worktreeVal) + subtleStyle.Render(" ▸")
 	}
 	b.WriteString(formField("worktree", worktreeField, m.form.focus == fieldWorktree))
-	b.WriteString(formField("prompt", m.form.prompt.View(), m.form.focus == fieldPrompt))
+	// Chips are tokens inside the typed text, so they wrap and reflow with
+	// the words around them; painting happens on the rendered prompt.
+	b.WriteString(formField("prompt", m.form.prompt.renderChips(m.form.prompt.input.View()), m.form.focus == fieldPrompt))
 	b.WriteString(formField("group", groupBadge(displayGroup(m.form.groups[m.form.groupIndex].path)), m.form.focus == fieldGroup))
 
 	if m.form.focus == fieldGroup {
@@ -175,6 +177,9 @@ func (m *Model) viewForm() string {
 	}
 
 	hint := [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
+	if m.form.focus == fieldPrompt {
+		hint = [][2]string{{"ctrl+v", "paste an image"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
+	}
 	if m.form.focus == fieldGroup {
 		hint = [][2]string{{"←→", "pick group"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}

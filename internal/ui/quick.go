@@ -1,92 +1,12 @@
 package ui
 
 import (
-	"errors"
-	"os"
-	"strconv"
 	"strings"
 
-	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
-
-// attachQuickImageCmd reads the clipboard image off the UI thread and
-// writes it once into the pastes directory. Returning a Cmd keeps the TUI
-// responsive and shows a pasting chip while the OS clipboard is read.
-func (m *Model) attachQuickImageCmd(id int) tea.Cmd {
-	return func() tea.Msg {
-		path, err := captureClipboardImage()
-		if err != nil {
-			if errors.Is(err, clipboard.ErrNoImage) {
-				return quickImageMsg{id: id, noImage: true}
-			}
-			return quickImageMsg{id: id, err: err}
-		}
-		return quickImageMsg{id: id, path: path}
-	}
-}
-
-// handleQuickImageMsg applies an async clipboard result to the chip the
-// paste reserved: the path fills it in, a real error surfaces and takes
-// the chip back out, and no-image falls through to a text paste.
-func (m *Model) handleQuickImageMsg(msg quickImageMsg) (tea.Model, tea.Cmd) {
-	att := m.quickAttachment(msg.id)
-	if att == nil || !m.quick.active {
-		if msg.path != "" {
-			_ = os.Remove(msg.path)
-		}
-		if att != nil {
-			m.dropQuickAttachment(msg.id)
-		}
-		return m, nil
-	}
-	if msg.err != nil {
-		cmd := m.removeQuickImage(msg.id)
-		m.errBar.text = msg.err.Error()
-		return m, cmd
-	}
-	if msg.noImage {
-		cmd := m.removeQuickImage(msg.id)
-		m.quick.input.SetHeight(quickBarMaxRows)
-		var pasteCmd tea.Cmd
-		m.quick.input, pasteCmd = m.quick.input.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
-		return m, tea.Batch(cmd, pasteCmd)
-	}
-	att.path = msg.path
-	m.errBar.text = ""
-	return m, nil
-}
-
-// removeQuickImage takes a chip out of the text by id, wherever it sits.
-func (m *Model) removeQuickImage(id int) tea.Cmd {
-	for _, span := range m.quickTokenSpans() {
-		if span.id == id {
-			return m.removeQuickToken(span)
-		}
-	}
-	m.dropQuickAttachment(id)
-	return nil
-}
-
-// quickMessage is the text delivered on submit: the typed prompt with each
-// chip swapped back for its path, so the paths reach the agent in the
-// order and the places the user pasted them.
-func (m *Model) quickMessage() string {
-	value := imageTokenPattern.ReplaceAllStringFunc(m.quick.input.Value(), func(token string) string {
-		id, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(token, "[Image #"), "]"))
-		if err != nil {
-			return token
-		}
-		att := m.quickAttachment(id)
-		if att == nil || att.path == "" {
-			return token
-		}
-		return att.path
-	})
-	return strings.TrimSpace(value)
-}
 
 func (m *Model) openQuickMode() {
 	names, index := m.defaultToolSelection()
@@ -111,7 +31,7 @@ func (m *Model) openQuickMode() {
 	m.forgetWorktreeCapability()
 	m.quick = quickState{
 		active:         true,
-		input:          input,
+		composer:       composer{input: input, maxRows: quickBarMaxRows, gen: m.nextComposerGen()},
 		toolNames:      names,
 		toolIndex:      index,
 		closeAfterSend: m.quickCloseAfterSend(),
@@ -142,7 +62,7 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quick.active = false
 		// Reopening the bar starts a fresh prompt, so the images this one
 		// was holding have nowhere left to be referenced from.
-		m.releaseQuickAttachments()
+		m.quick.release()
 		return m, nil
 	case "up":
 		return m, m.moveCursor(-1)
@@ -163,56 +83,13 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quick.worktree = !m.quickWorktreeOn()
 		m.quick.worktreeTouched = true
 		return m, nil
-	case "ctrl+v":
-		if m.quickPasting() {
-			return m, nil
-		}
-		if !m.quickRoomForToken(m.quick.lastImageID + 1) {
-			m.errBar.text = "prompt is full - shorten it before pasting an image"
-			return m, nil
-		}
-		// The chip goes in at the caret now and fills in when the
-		// off-thread clipboard read lands, so it holds the spot the user
-		// pasted at even while they keep typing.
-		m.quick.lastImageID++
-		id := m.quick.lastImageID
-		m.quick.attachments = append(m.quick.attachments, quickAttachment{id: id})
-		m.insertQuickToken(&m.quick.attachments[len(m.quick.attachments)-1])
-		m.errBar.text = ""
-		return m, m.attachQuickImageCmd(id)
-	case "left":
-		if span, ok := m.tokenEndingAt(m.quickCursorOffset()); ok {
-			m.quick.input.SetCursor(m.quickCursorColumn() - span.length())
-			return m, nil
-		}
-	case "right":
-		if span, ok := m.tokenStartingAt(m.quickCursorOffset()); ok {
-			m.quick.input.SetCursor(m.quickCursorColumn() + span.length())
-			return m, nil
-		}
-	case "backspace", "ctrl+h":
-		if span, ok := m.tokenEndingAt(m.quickCursorOffset()); ok {
-			return m, m.removeQuickToken(span)
-		}
-	case "delete":
-		if span, ok := m.tokenStartingAt(m.quickCursorOffset()); ok {
-			return m, m.removeQuickToken(span)
-		}
 	case "enter":
 		return m.submitQuick()
 	}
-	// Update repositions its viewport against the height set at the last
-	// render; a keystroke that adds a wrapped row would scroll that first
-	// row away for good. Full cap height here keeps the viewport pinned,
-	// and the next render shrinks the bar back to the rows the text needs.
-	m.quick.input.SetHeight(quickBarMaxRows)
-	var cmd tea.Cmd
-	m.quick.input, cmd = m.quick.input.Update(msg)
-	// An edit that swallowed a chip (ctrl+u, word delete) releases its
-	// image, and the caret never rests inside a chip.
-	m.pruneQuickAttachments()
-	m.snapQuickCursorOutOfToken()
-	return m, cmd
+	if cmd, handled := m.composerKey(composerQuick, msg); handled {
+		return m, cmd
+	}
+	return m, m.quick.typeKey(msg)
 }
 
 // submitQuick answers the selected session, or spawns a new session with
@@ -225,11 +102,11 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 		m.errBar.text = "nothing selected"
 		return m, nil
 	}
-	if m.quickPasting() {
+	if m.quick.pasting() {
 		m.errBar.text = "still reading the pasted image - try again in a moment"
 		return m, nil
 	}
-	text := m.quickMessage()
+	text := m.quick.message()
 	if text == "" {
 		m.errBar.text = "prompt cannot be empty"
 		return m, nil
@@ -283,7 +160,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		// bar closes instead of swallowing the list keys behind the dialog.
 		if m.mode == modeLaunchHint {
 			m.quick.active = false
-			m.releaseQuickAttachments()
+			m.quick.release()
 		}
 		return m, nil
 	}

@@ -146,6 +146,9 @@ func ReviveCommand(tool config.Tool, agentSessionID string) string {
 // settings file and their status-file path, plus a clean slate from any
 // earlier files under the same id.
 func Environment(manager *hooks.Manager, toolName string, tool config.Tool, baseCommand, id string) (string, map[string]string, error) {
+	if err := config.CheckInstalled(baseCommand); err != nil {
+		return "", nil, err
+	}
 	if err := manager.RemoveName(id); err != nil {
 		return "", nil, err
 	}

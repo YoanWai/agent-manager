@@ -22,7 +22,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/update"
-	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -149,11 +148,13 @@ type Model struct {
 	rename     renameTarget
 	fork       forkState
 	quick      quickState
-	settings   settingsState
-	help       helpState
-	moveID     string
-	movePath   string
-	repoPick   repoPickState
+	// composerSeq numbers the prompt boxes this run has opened.
+	composerSeq int
+	settings    settingsState
+	help        helpState
+	moveID      string
+	movePath    string
+	repoPick    repoPickState
 	// editorReturnID is the session an editor request detached from, so the
 	// attach it cost can be resumed once the editor is up.
 	editorReturnID string
@@ -334,12 +335,10 @@ type renameTarget struct {
 // at the caret as an "[Image #N]" token that renders as a chip and steps,
 // deletes, and wraps as one unit; on submit each token becomes its path.
 type quickState struct {
-	active         bool
-	input          textarea.Model
+	active bool
+	composer
 	toolNames      []string
 	toolIndex      int
-	attachments    []quickAttachment
-	lastImageID    int
 	closeAfterSend bool
 	worktree       bool
 	// worktreeTouched marks an explicit toggle this run; until then the
@@ -351,26 +350,6 @@ type quickState struct {
 type repoAnswer struct {
 	capable bool
 	at      time.Time
-}
-
-// quickAttachment is one pasted image: the id its token carries, and the
-// temp file the clipboard read wrote (empty while that read is in flight).
-type quickAttachment struct {
-	id   int
-	path string
-	// Spacing the paste added around the token, given back when the chip
-	// goes away so the sentence reads as it did before.
-	leadPad  bool
-	trailPad bool
-}
-
-// quickImageMsg is the result of an async clipboard image read started
-// from the quick bar's ctrl+v handler.
-type quickImageMsg struct {
-	id      int
-	path    string
-	err     error
-	noImage bool
 }
 
 type settingsState struct {
@@ -1316,8 +1295,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errBar.text = msg.err.Error()
 		return m, nil
 
-	case quickImageMsg:
-		return m.handleQuickImageMsg(msg)
+	case pasteImageMsg:
+		return m.handlePasteImageMsg(msg)
+
+	case pasteTextMsg:
+		return m.handlePasteTextMsg(msg)
 
 	case attachDoneMsg:
 		// An agent that repainted the terminal background for itself leaves
