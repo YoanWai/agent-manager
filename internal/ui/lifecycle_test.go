@@ -461,6 +461,7 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	if err := m.store.SetAcked(sess.ID, true); err != nil {
 		t.Fatalf("set acked: %v", err)
 	}
+	m.preview = "old pane from last life\n"
 
 	if _, _ = m.reviveSelected(); m.errBar.text != "" {
 		t.Fatalf("revive: %q", m.errBar.text)
@@ -488,9 +489,12 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	if row.Status != status.Starting {
 		t.Fatalf("row status = %q want %q", row.Status, status.Starting)
 	}
-	m.preview = blankCapture
-	if got := previewText(m); !strings.Contains(got, "starting up") {
-		t.Fatalf("revived preview should carry the launch loader, got %q", got)
+	gotPreview := previewText(m)
+	if !strings.Contains(gotPreview, "starting up") {
+		t.Fatalf("revived preview should carry the launch loader, got %q", gotPreview)
+	}
+	if strings.Contains(gotPreview, "old pane from last life") {
+		t.Fatalf("stale pane should not survive revive, got %q", gotPreview)
 	}
 }
 
@@ -907,6 +911,9 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 		}
 		if stored.Status != status.Starting {
 			t.Fatalf("after restore, %s status = %q want %q", sess.Name, stored.Status, status.Starting)
+		}
+		if stored.LaunchTime().Equal(stored.CreatedAt) {
+			t.Fatalf("after restore, %s launch time was not refreshed", sess.Name)
 		}
 	}
 	m.applyCmd(t, cmd)
