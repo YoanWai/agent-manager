@@ -1,6 +1,8 @@
 package launch
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -179,6 +181,13 @@ func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 }
 
 func TestEnvironmentPreservesCodexScrollbackBeforeMCPOverrides(t *testing.T) {
+	binDir := t.TempDir()
+	codex := filepath.Join(binDir, "codex")
+	if err := os.WriteFile(codex, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write codex stub: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
 	manager := hooks.NewManager(t.TempDir())
 	tool := config.Tool{Command: "codex", SessionStore: "codex", MCP: "codex"}
 	command, _, err := Environment(manager, "codex", tool, tool.Command, "scroll02")
