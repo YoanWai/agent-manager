@@ -27,7 +27,7 @@ type sessionHarness struct {
 // sessionConfig gives the harness one agent CLI whose command echoes the
 // prompt it launched with, so a spawn's own pane proves the prompt reached
 // it, plus a shell block the agent tools must refuse.
-const sessionConfig = `[tools.claude]
+const sessionConfig = `[tools.echoer]
 command = "echo"
 revive_command = "echo resumed"
 default_status = "idle"
@@ -83,7 +83,7 @@ func newSessionHarness(t *testing.T) *sessionHarness {
 	caller := store.Session{
 		ID:     uuid.NewString()[:8],
 		Name:   "calling-agent",
-		Tool:   "claude",
+		Tool:   "echoer",
 		Cwd:    callerDir,
 		Group:  "backend",
 		Status: status.Idle,
@@ -143,7 +143,7 @@ func TestSessionsCreateCarriesNamePromptAndTargetWithRealTmux(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if created.Name != "payments-retry-fix" || created.Tool != "claude" || !created.Running {
+	if created.Name != "payments-retry-fix" || created.Tool != "echoer" || !created.Running {
 		t.Fatalf("created identity = %+v", created)
 	}
 	if created.Group != h.caller.Group || !sameTerminalPath(created.Directory, h.caller.Cwd) {
@@ -153,7 +153,7 @@ func TestSessionsCreateCarriesNamePromptAndTargetWithRealTmux(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stored session: %v", err)
 	}
-	if stored.Name != created.Name || stored.Tool != "claude" || stored.Status != status.Starting {
+	if stored.Name != created.Name || stored.Tool != "echoer" || stored.Status != status.Starting {
 		t.Fatalf("stored row = %+v", stored)
 	}
 	// echo prints what the launch command handed it, so the pane proves the
@@ -167,7 +167,7 @@ func TestSessionsCreateAutoNamesAndAsksForARename(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if created.Name != "claude-"+created.ID[:4] {
+	if created.Name != "echoer-"+created.ID[:4] {
 		t.Fatalf("auto-named session = %q", created.Name)
 	}
 	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "build the api")
