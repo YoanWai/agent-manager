@@ -14,6 +14,7 @@ func TestDetailHeadsFitTheirColumn(t *testing.T) {
 		session := shotModel()
 		session.sessions[3].WorktreeBranch = "am/add-rate-limiting"
 		session.rows[4].sess.WorktreeBranch = "am/add-rate-limiting"
+		session.queuedMessages = map[string]int{"add-rate-limiting": 2}
 
 		group := shotModel()
 		for i, row := range group.rows {
@@ -33,6 +34,16 @@ func TestDetailHeadsFitTheirColumn(t *testing.T) {
 				}
 			}
 		}
+
+		// The head's height feeds previewPaneHeight, so a fourth line would
+		// tmux-resize every live pane the moment a message arrived.
+		lines := strings.Split(heads["session"], "\n")
+		if len(lines) != 3 {
+			t.Errorf("badged head at %d is %d lines: %q", width, len(lines), ansi.Strip(heads["session"]))
+		}
+		if !strings.Contains(ansi.Strip(lines[0]), "✉2") {
+			t.Errorf("head at %d dropped the badge: %q", width, ansi.Strip(lines[0]))
+		}
 	}
 }
 
@@ -48,6 +59,9 @@ func TestDetailHeadShedsChipsBeforeFacts(t *testing.T) {
 		if !strings.Contains(wide, want) {
 			t.Fatalf("wide head is missing %q: %q", want, wide)
 		}
+	}
+	if strings.Contains(wide, "✉") {
+		t.Errorf("head badged a session holding no queued message: %q", wide)
 	}
 	mid := ansi.Strip(strings.Split(m.viewDetail(60), "\n")[0])
 	if strings.Contains(mid, "am/add-rate-limiting") {

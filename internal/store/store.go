@@ -68,8 +68,16 @@ type Store struct {
 	db *sql.DB
 }
 
+// busyTimeout is how long a writer waits for the lock before giving up.
+// The manager and every `agent-manager mcp` process share this database,
+// so without it a collision between the poller's write and a session
+// tool's write fails instantly with SQLITE_BUSY instead of waiting.
+// _txlock=immediate takes the write lock at BEGIN, so a multi-statement
+// transaction cannot fail halfway through trying to upgrade.
+const busyTimeout = "?_pragma=busy_timeout(5000)&_txlock=immediate"
+
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", path+busyTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -152,6 +160,48 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN pending_claimed INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN launch_prompt TEXT NOT NULL DEFAULT ''`,
+		`CREATE TABLE IF NOT EXISTS session_inbox (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id   TEXT    NOT NULL,
+			sender_id    TEXT    NOT NULL,
+			sender_name  TEXT    NOT NULL,
+			body         TEXT    NOT NULL,
+			fingerprint  TEXT    NOT NULL,
+			sent_at      INTEGER NOT NULL,
+			claimed_at   INTEGER NOT NULL DEFAULT 0,
+			delivered_at INTEGER NOT NULL DEFAULT 0,
+			read_at      INTEGER NOT NULL DEFAULT 0
+		)`,
+		`ALTER TABLE session_inbox ADD COLUMN dropped_at INTEGER NOT NULL DEFAULT 0`,
+		`CREATE INDEX IF NOT EXISTS session_inbox_queue ON session_inbox (session_id, delivered_at, id)`,
+		`CREATE INDEX IF NOT EXISTS session_inbox_sender ON session_inbox (session_id, sender_id, sent_at)`,
+		`CREATE TABLE IF NOT EXISTS tasks (
+			id               TEXT PRIMARY KEY,
+			title            TEXT NOT NULL,
+			body             TEXT NOT NULL DEFAULT '',
+			owner_session_id TEXT NOT NULL DEFAULT '',
+			state            TEXT NOT NULL DEFAULT 'pending',
+			created_at       INTEGER NOT NULL DEFAULT 0,
+			updated_at       INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS tasks_claimable ON tasks (state, created_at)`,
+		`CREATE TABLE IF NOT EXISTS task_deps (
+			task_id       TEXT NOT NULL,
+			depends_on_id TEXT NOT NULL,
+			PRIMARY KEY (task_id, depends_on_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS task_deps_reverse ON task_deps (depends_on_id)`,
+		`CREATE TABLE IF NOT EXISTS file_reservations (
+			id          TEXT    PRIMARY KEY,
+			session_id  TEXT    NOT NULL,
+			pattern     TEXT    NOT NULL,
+			mode        TEXT    NOT NULL DEFAULT 'exclusive',
+			note        TEXT    NOT NULL DEFAULT '',
+			acquired_at INTEGER NOT NULL DEFAULT 0,
+			expires_at  INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS file_reservations_holder ON file_reservations (session_id, pattern)`,
+		`CREATE INDEX IF NOT EXISTS file_reservations_live ON file_reservations (expires_at)`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -673,21 +723,45 @@ func (s *Store) unarchiveAncestorGroups(path string) error {
 	return err
 }
 
+// Delete removes a session and the coordination state that only makes
+// sense while it exists. One transaction, because a session row that
+// outlives its own inbox strands every sender waiting on a receipt.
 func (s *Store) Delete(id string) error {
-	if _, err := s.db.Exec(`DELETE FROM review_targets WHERE session_id = ?`, id); err != nil {
-		return err
-	}
-	if _, err := s.db.Exec(`DELETE FROM review_bases WHERE session_id = ?`, id); err != nil {
-		return err
-	}
-	if _, err := s.db.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, id); err != nil {
-		return err
-	}
-	res, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id)
+	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
-	return requireRow(res, id)
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM review_targets WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM review_bases WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	// Session ids are recycled from a fresh UUID prefix, so a message left
+	// pointing at a deleted id could be re-attached to a future session.
+	if _, err := tx.Exec(`DELETE FROM session_inbox WHERE session_id = ? OR sender_id = ?`, id, id); err != nil {
+		return err
+	}
+	// A claim outlives its holder as pending work rather than as a task
+	// parked forever against a session that no longer exists.
+	if err := releaseTasksOwnedBy(tx, id, time.Now()); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM file_reservations WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if err := requireRow(res, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DeleteChild removes a session only while it still hangs under parentID.
@@ -926,6 +1000,87 @@ func (s *Store) DeleteGroup(path string) ([]string, error) {
 		return nil, err
 	}
 	return s.deleteGroups(groups, func(g Group) bool { return inSubtree(g.Name, path) })
+}
+
+// ErrGroupNotFound reports a group path no row carries.
+var ErrGroupNotFound = errors.New("group does not exist")
+
+// RemoveGroup deletes a group and its descendant groups and moves every
+// session held beneath them to the root, in one transaction, so a failure
+// partway leaves the tree as it was. A moved session keeps its parent
+// link, so a terminal relocated with its agent still hangs under it.
+// Reports the group paths removed and the ids of the sessions moved.
+func (s *Store) RemoveGroup(path string) (removedGroups, movedSessions []string, err error) {
+	if path == "" {
+		return nil, nil, fmt.Errorf("cannot delete the root group")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Rollback()
+	groupNames, err := txStrings(tx, `SELECT name FROM groups ORDER BY sort_order, name`)
+	if err != nil {
+		return nil, nil, err
+	}
+	known := false
+	for _, name := range groupNames {
+		if name == path {
+			known = true
+		}
+		if inSubtree(name, path) {
+			removedGroups = append(removedGroups, name)
+		}
+	}
+	if !known {
+		return nil, nil, ErrGroupNotFound
+	}
+	held, err := txStrings(tx,
+		`SELECT id FROM sessions WHERE group_name = ? OR group_name LIKE ? || '/%' ESCAPE '\'
+		 ORDER BY group_name, parent_id, sort_order`,
+		path, escapeLike(path))
+	if err != nil {
+		return nil, nil, err
+	}
+	var nextOrder int
+	if err := tx.QueryRow(
+		`SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ''`,
+	).Scan(&nextOrder); err != nil {
+		return nil, nil, err
+	}
+	for _, id := range held {
+		if _, err := tx.Exec(
+			`UPDATE sessions SET group_name = '', sort_order = ? WHERE id = ?`, nextOrder, id); err != nil {
+			return nil, nil, err
+		}
+		nextOrder++
+	}
+	for _, name := range removedGroups {
+		if _, err := tx.Exec(`DELETE FROM groups WHERE name = ?`, name); err != nil {
+			return nil, nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+	return removedGroups, held, nil
+}
+
+func txStrings(tx *sql.Tx, query string, args ...any) ([]string, error) {
+	rows, err := tx.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var values []string
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
 }
 
 // PruneArchivedGroups removes the groups in a subtree that are archived,

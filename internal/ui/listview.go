@@ -506,6 +506,9 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	if focused {
 		head += " " + focusBadgeStyle.Render(" FOCUS ")
 	}
+	if queued := m.queuedMessages[sess.ID]; queued > 0 {
+		head += " " + inboxBadge(queued)
+	}
 
 	metaStyle := subtleStyle
 	if selected {
@@ -844,6 +847,12 @@ func (m *Model) viewDetail(width int) string {
 	// from its siblings, so it rides beside the tool while the row has room,
 	// and the tool chip goes before the name does.
 	name := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(m.displayName(sess))
+	// Ahead of the name because fitColumns trims the head from its tail: the
+	// rail still shows the name, while a trimmed badge leaves no trace that
+	// anything is waiting.
+	if queued := m.queuedMessages[sess.ID]; queued > 0 {
+		name = inboxBadge(queued) + " " + name
+	}
 	withTool := name + "  " + chipStyle.Render(tool)
 	heads := []string{withTool, name}
 	if sess.WorktreeBranch != "" {
