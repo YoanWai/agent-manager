@@ -174,10 +174,11 @@ func (m *Model) focusCursorAnchor() (col, row int, ok bool) {
 // render. It tracks alternate-screen lifecycle so an attached editor and the
 // restored shell receive their output untouched.
 type cursorOutputWriter struct {
-	out       io.Writer
-	anchor    *cursorAnchor
-	mu        sync.Mutex
-	altScreen bool
+	out             io.Writer
+	anchor          *cursorAnchor
+	mu              sync.Mutex
+	altScreen       bool
+	altScreenPrefix []byte
 }
 
 func (w *cursorOutputWriter) Write(p []byte) (int, error) {
@@ -188,8 +189,7 @@ func (w *cursorOutputWriter) Write(p []byte) (int, error) {
 	if err != nil || n != len(p) {
 		return n, err
 	}
-	w.trackAltScreen(p)
-	if !w.altScreen {
+	if incomplete := w.trackAltScreen(p); !w.altScreen || incomplete {
 		return n, nil
 	}
 	col, row, ok := w.anchor.get()
@@ -200,13 +200,34 @@ func (w *cursorOutputWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (w *cursorOutputWriter) trackAltScreen(p []byte) {
-	enter := bytes.LastIndex(p, []byte(ansi.SetModeAltScreenSaveCursor))
-	exit := bytes.LastIndex(p, []byte(ansi.ResetModeAltScreenSaveCursor))
+func (w *cursorOutputWriter) trackAltScreen(p []byte) bool {
+	data := p
+	if len(w.altScreenPrefix) > 0 {
+		data = make([]byte, len(w.altScreenPrefix)+len(p))
+		copy(data, w.altScreenPrefix)
+		copy(data[len(w.altScreenPrefix):], p)
+	}
+	enterSequence := []byte(ansi.SetModeAltScreenSaveCursor)
+	exitSequence := []byte(ansi.ResetModeAltScreenSaveCursor)
+	enter := bytes.LastIndex(data, enterSequence)
+	exit := bytes.LastIndex(data, exitSequence)
 	if enter < 0 && exit < 0 {
-		return
+		w.altScreenPrefix = trailingAltScreenPrefix(data, enterSequence, exitSequence)
+		return len(w.altScreenPrefix) > 0
 	}
 	w.altScreen = enter > exit
+	w.altScreenPrefix = trailingAltScreenPrefix(data, enterSequence, exitSequence)
+	return len(w.altScreenPrefix) > 0
+}
+
+func trailingAltScreenPrefix(data, enter, exit []byte) []byte {
+	for size := min(len(data), len(enter)-1); size > 0; size-- {
+		suffix := data[len(data)-size:]
+		if bytes.Equal(suffix, enter[:size]) || bytes.Equal(suffix, exit[:size]) {
+			return bytes.Clone(suffix)
+		}
+	}
+	return nil
 }
 
 // cursorTTYOutput preserves stdout's terminal identity for Bubble Tea while

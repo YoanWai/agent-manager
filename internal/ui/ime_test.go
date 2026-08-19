@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -234,6 +235,74 @@ func TestCursorOutputAnchorsOnlyInsideAlternateScreen(t *testing.T) {
 	}
 	if got := out.String(); got != ansi.ResetModeAltScreenSaveCursor {
 		t.Fatalf("alternate-screen exit was anchored: %q", got)
+	}
+}
+
+func TestCursorOutputTracksSplitAlternateScreenEntry(t *testing.T) {
+	sequence := ansi.SetModeAltScreenSaveCursor
+	for split := 1; split < len(sequence); split++ {
+		t.Run(fmt.Sprintf("split_at_%d", split), func(t *testing.T) {
+			var out bytes.Buffer
+			anchor := &cursorAnchor{}
+			anchor.set(14, 9, true)
+			w := &cursorOutputWriter{out: &out, anchor: anchor}
+
+			if _, err := w.Write([]byte(sequence[:split])); err != nil {
+				t.Fatal(err)
+			}
+			if got := out.String(); got != sequence[:split] {
+				t.Fatalf("partial entry output = %q, want %q", got, sequence[:split])
+			}
+			if _, err := w.Write([]byte(sequence[split:] + "frame")); err != nil {
+				t.Fatal(err)
+			}
+			want := sequence + "frame" + ansi.CursorPosition(14, 9)
+			if got := out.String(); got != want {
+				t.Fatalf("completed entry output = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestCursorOutputTracksSplitAlternateScreenExit(t *testing.T) {
+	sequence := ansi.ResetModeAltScreenSaveCursor
+	for split := 1; split < len(sequence); split++ {
+		t.Run(fmt.Sprintf("split_at_%d", split), func(t *testing.T) {
+			var out bytes.Buffer
+			anchor := &cursorAnchor{}
+			anchor.set(14, 9, true)
+			w := &cursorOutputWriter{out: &out, anchor: anchor, altScreen: true}
+
+			if _, err := w.Write([]byte(sequence[:split])); err != nil {
+				t.Fatal(err)
+			}
+			if got := out.String(); got != sequence[:split] {
+				t.Fatalf("partial exit output = %q, want %q", got, sequence[:split])
+			}
+			if _, err := w.Write([]byte(sequence[split:] + "shell")); err != nil {
+				t.Fatal(err)
+			}
+			if got := out.String(); got != sequence+"shell" {
+				t.Fatalf("completed exit output = %q, want %q", got, sequence+"shell")
+			}
+		})
+	}
+}
+
+func TestCursorOutputAnchorsConsecutiveAlternateScreenWrites(t *testing.T) {
+	var out bytes.Buffer
+	anchor := &cursorAnchor{}
+	anchor.set(14, 9, true)
+	w := &cursorOutputWriter{out: &out, anchor: anchor, altScreen: true}
+
+	for _, frame := range []string{"first", "second"} {
+		if _, err := w.Write([]byte(frame)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := "first" + ansi.CursorPosition(14, 9) + "second" + ansi.CursorPosition(14, 9)
+	if got := out.String(); got != want {
+		t.Fatalf("consecutive output = %q, want %q", got, want)
 	}
 }
 
