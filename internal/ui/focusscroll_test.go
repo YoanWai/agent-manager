@@ -413,24 +413,20 @@ func TestRefreshReassertsPaneHeight(t *testing.T) {
 		t.Fatalf("initial pane height = %d, want %d", got, want)
 	}
 
-	full := m.previewPaneHeight()
-	// Opening the quick bar shrinks the box without any terminal resize.
-	m.openQuickMode()
+	// A shorter frame with no size message: the header or the status line
+	// taking a row moves the box the same way.
+	m.height -= 4
 	shrunk := m.previewPaneHeight()
-	if shrunk >= full {
-		t.Fatal("quick bar did not shrink the box height")
-	}
 	m.applyCmd(t, m.refreshCmd())
 	if got := windowHeight(t, sess.ID); got != shrunk {
-		t.Fatalf("pane height after opening the quick bar = %d, want %d", got, shrunk)
+		t.Fatalf("pane height after the box shrank = %d, want %d", got, shrunk)
 	}
 
-	// Closing it grows the box back; the pane has to follow.
-	m.quick.active = false
+	m.height += 4
 	grown := m.previewPaneHeight()
 	m.applyCmd(t, m.refreshCmd())
 	if got := windowHeight(t, sess.ID); got != grown {
-		t.Fatalf("pane height after closing the quick bar = %d, want %d", got, grown)
+		t.Fatalf("pane height after the box grew = %d, want %d", got, grown)
 	}
 }
 
@@ -446,6 +442,42 @@ func windowHeight(t *testing.T, id string) int {
 		t.Fatalf("parse height %q: %v", out, err)
 	}
 	return height
+}
+
+// Focusing must leave the preview box where it was: a pane resized on the
+// way in makes an agent drawing on the normal screen redraw its whole
+// transcript, which throws the view up its history and back.
+func TestFocusKeepsPaneHeight(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "focused", t.TempDir(), "")
+	m.applyCmd(t, m.refreshCmd())
+	sess := m.rows[m.cursor].sess
+
+	for _, width := range []int{100, 240} {
+		m.width = width
+		m.applyCmd(t, m.refreshCmd())
+		listed := m.previewPaneHeight()
+
+		m.focusSelected()
+		if got := m.previewPaneHeight(); got != listed {
+			t.Fatalf("width %d: focused box = %d rows, want %d", width, got, listed)
+		}
+		m.applyCmd(t, m.refreshCmd())
+		if got := windowHeight(t, sess.ID); got != listed {
+			t.Fatalf("width %d: focused pane = %d rows, want %d", width, got, listed)
+		}
+		// An agent claiming the mouse adds a key to the focused tier.
+		m.pane.mouse = true
+		if got := m.previewPaneHeight(); got != listed {
+			t.Fatalf("width %d: focused box with mouse = %d rows, want %d", width, got, listed)
+		}
+		m.applyCmd(t, m.refreshCmd())
+		if got := windowHeight(t, sess.ID); got != listed {
+			t.Fatalf("width %d: focused pane with mouse = %d rows, want %d", width, got, listed)
+		}
+		m.pane.mouse = false
+		m.applyCmd(t, m.leaveFocus())
+	}
 }
 
 // focusedMouseApp focuses a session whose tool claims the mouse, with the

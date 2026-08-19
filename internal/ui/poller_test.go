@@ -10,6 +10,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -905,6 +906,42 @@ func TestCaptureAgentSessionIDsDropsAnAnswerARestartOutran(t *testing.T) {
 	}
 }
 
+// The heartbeat is what tells a sender whether a manager is home, and it
+// rides every poll pass. Stamping it on each one is a write transaction
+// every couple of seconds for as long as the manager stays open, so it is
+// allowed to age instead: its reader treats a stamp as fresh for far longer
+// than one poll.
+func TestThePollLeavesTheHeartbeatAloneBetweenStamps(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.refreshCmd())
+	first, err := m.store.Setting(store.PollerHeartbeatKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == "" {
+		t.Fatal("the first poll left no heartbeat, so no sender can tell a manager is running")
+	}
+
+	m.applyCmd(t, m.refreshCmd())
+	second, err := m.store.Setting(store.PollerHeartbeatKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != first {
+		t.Fatalf("the poll behind it rewrote the heartbeat: %q then %q", first, second)
+	}
+
+	m.poller.heartbeatAt = time.Now().Add(-store.PollerHeartbeatPeriod - time.Second)
+	m.applyCmd(t, m.refreshCmd())
+	third, err := m.store.Setting(store.PollerHeartbeatKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third == first {
+		t.Fatal("an aged heartbeat was never restamped, so a running manager reads as closed")
+	}
+}
+
 // Taking the launch prompt clears the composer, so a directive delivered
 // before then is discarded and has to wait for the prompt to reach output.
 func TestPendingInputWaitsForTheLaunchPrompt(t *testing.T) {
@@ -918,7 +955,7 @@ func TestPendingInputWaitsForTheLaunchPrompt(t *testing.T) {
 	// The input line is drawn from the first frame, so without the wait the
 	// directive would be gone by now.
 	for tries := 0; tries < 3; tries++ {
-		if !sessionHasPendingInput(t, m, sess.ID, deferredRenameDirective) {
+		if !sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
 			pane, _ := m.tmux.CapturePane(sess.ID)
 			t.Fatalf("directive sent before the prompt was taken; pane:\n%s", pane)
 		}
@@ -927,7 +964,7 @@ func TestPendingInputWaitsForTheLaunchPrompt(t *testing.T) {
 	}
 
 	deadline := time.Now().Add(5 * time.Second)
-	for sessionHasPendingInput(t, m, sess.ID, deferredRenameDirective) {
+	for sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
 		if time.Now().After(deadline) {
 			pane, _ := m.tmux.CapturePane(sess.ID)
 			t.Fatalf("directive never sent after the prompt was taken; pane:\n%s", pane)

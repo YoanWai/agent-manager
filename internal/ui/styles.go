@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -45,6 +46,7 @@ var (
 	annotationStyle lipgloss.Style
 	scopeBadgeStyle lipgloss.Style
 	focusBadgeStyle lipgloss.Style
+	inboxBadgeStyle lipgloss.Style
 	focusEdgeStyle  lipgloss.Style
 
 	chipStyle             lipgloss.Style
@@ -75,6 +77,9 @@ func rebuildStyles() {
 	annotationStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	scopeBadgeStyle = lipgloss.NewStyle().Foreground(colorBg).Background(colorAccent2).Bold(true).Padding(0, 1)
 	focusBadgeStyle = lipgloss.NewStyle().Foreground(colorBg).Background(colorAccent).Bold(true)
+	// Foreground only: a fill would punch a chip through the band a selected
+	// row paints behind it.
+	inboxBadgeStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	focusEdgeStyle = lipgloss.NewStyle().Foreground(colorAccent)
 
 	chipStyle = lipgloss.NewStyle().Background(colorSurface).Padding(0, 1)
@@ -223,6 +228,12 @@ func gaugeRamp(percent float64) string {
 // row of them reads as tokens rather than as more prose.
 func pill(text string, fg lipgloss.Color) string {
 	return chipStyle.Foreground(fg).Render(text)
+}
+
+// inboxBadge marks a session another agent has messages waiting for, in
+// the manager's own accent so it cannot be read as a state the agent is in.
+func inboxBadge(count int) string {
+	return inboxBadgeStyle.Render("✉" + strconv.Itoa(count))
 }
 
 // keyPill renders a chip with the key that changes it dimmed in front, so

@@ -39,12 +39,10 @@ A `fork_command` references its source through `{id}` or `{session_file}`, so on
 
 **Prompts.** `prompt_flag` controls how the new-session form's optional prompt is embedded into the launch command. Tools that take the prompt as a positional argument (Claude Code: `claude 'the prompt'`) leave it empty; tools whose positional argument means something else declare the flag (OpenCode: `prompt_flag = "--prompt"`, since its positional argument is the project path). `prompt_mode = "send"` handles a persistent CLI that accepts no startup prompt: Agent Manager waits until `activity_cutoff` finds its input box, then submits the prompt there (Hermes uses this). Set it to `"argument"` if a custom Hermes wrapper accepts a launch argument instead. The prompt setting only affects a new launch; revive (`v`) uses the revive commands untouched.
 
-**MCP.** `mcp = "claude" | "codex" | "opencode" | "grok" | "gemini" | "hermes" | "none"` picks how the agent-manager MCP server is registered into the tool's sessions (see [MCP](usage.md#mcp-how-agents-discover-these-commands)). An empty value uses the tool's config key when it names a known style. Hermes registration needs its MCP SDK, an optional part of the Hermes install: when it is missing, the spawn stops and a dialog points at `hermes setup`, which installs it.
+**MCP.** `mcp = "claude" | "codex" | "opencode" | "grok" | "gemini" | "hermes" | "none"` picks how the agent-manager MCP server is registered into the tool's sessions (see [MCP](usage.md#mcp-how-agents-discover-these-commands)). An empty value uses the tool's config key when it names a known style. Hermes registration needs its MCP SDK, an optional part of the Hermes install: when it is missing, the spawn stops and a dialog points at `hermes setup`, which installs it. The same dialog appears when the CLI itself is missing, using the same install hint as a missing tmux or git.
 
 State is stored next to the config in `state.db` (SQLite).
 
 ## Right-to-left text
 
-A row carrying Hebrew or Arabic can flip a terminal's paragraph direction, and the whole row is then right-justified into the sessions rail. Agent Manager pins such rows left with Unicode direction marks on the hosts that need them, iTerm2 today, detected through `TERM_PROGRAM` and `LC_TERMINAL`.
-
-Other hosts render RTL rows in column without the marks, and a host that runs its own bidi reorders a row that carries them until the frame no longer matches what was painted. Set `AGENT_MANAGER_RTL_PIN=1` to force the marks on, `AGENT_MANAGER_RTL_PIN=0` to force them off.
+Hebrew and Arabic rows are painted as the cells they occupy, the same on every host. A terminal that runs its own bidirectional layout, iTerm2's right-to-left support or WezTerm's `bidi_enabled`, reorders those rows itself; turn that support off to read the frame in the columns Agent Manager paints.

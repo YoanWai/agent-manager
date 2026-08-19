@@ -68,7 +68,7 @@ default_status = "idle"
 		store:  st,
 		caller: caller,
 	}
-	h.terminals = newTerminals(configDir, func() (*tmux.Driver, error) { return driver, nil })
+	h.terminals = newTerminals(configDir, MCPVocabulary(), func() (*tmux.Driver, error) { return driver, nil })
 	t.Cleanup(func() {
 		sessions, _ := st.ListSessions(true)
 		for _, sess := range sessions {
@@ -132,8 +132,12 @@ func TestTerminalsCreateListSendAndReadWithRealTmux(t *testing.T) {
 	}
 
 	const commandMarker = "terminal-command-marker"
-	if err := h.terminals.Send(h.caller.ID, created.ID, "printf '"+commandMarker+"\\n'", nil); err != nil {
+	sent, err := h.terminals.Send(h.caller.ID, created.ID, "printf '"+commandMarker+"\\n'", nil)
+	if err != nil {
 		t.Fatalf("Send command: %v", err)
+	}
+	if sent.TerminalID != created.ID || sent.Sent != "command" {
+		t.Fatalf("send result = %+v", sent)
 	}
 	screen := waitForTerminalOutput(t, h.terminals, h.caller.ID, created.ID, commandMarker)
 	if strings.Contains(screen.Output, "\x1b[") {
@@ -141,8 +145,12 @@ func TestTerminalsCreateListSendAndReadWithRealTmux(t *testing.T) {
 	}
 
 	const keyMarker = "terminal-keys-marker"
-	if err := h.terminals.Send(h.caller.ID, created.ID, "", []string{"printf '" + keyMarker + "\\n'", "Enter"}); err != nil {
+	keyed, err := h.terminals.Send(h.caller.ID, created.ID, "", []string{"printf '" + keyMarker + "\\n'", "Enter"})
+	if err != nil {
 		t.Fatalf("Send keys: %v", err)
+	}
+	if keyed.Sent != "keys" || keyed.TerminalID != created.ID {
+		t.Fatalf("send keys result = %+v", keyed)
 	}
 	waitForTerminalOutput(t, h.terminals, h.caller.ID, created.ID, keyMarker)
 
@@ -221,17 +229,17 @@ func TestTerminalCommandsRejectUnsafeTargetsAndInvalidInput(t *testing.T) {
 		{"both", "pwd", []string{"Enter"}},
 		{"empty key", "", []string{""}},
 	} {
-		if err := h.terminals.Send(h.caller.ID, terminal.ID, test.command, test.keys); err == nil {
+		if _, err := h.terminals.Send(h.caller.ID, terminal.ID, test.command, test.keys); err == nil {
 			t.Fatalf("%s input was accepted", test.name)
 		}
 	}
-	if err := h.terminals.Send(h.caller.ID, h.caller.ID, "pwd", nil); err == nil || !strings.Contains(err.Error(), "not a terminal") {
+	if _, err := h.terminals.Send(h.caller.ID, h.caller.ID, "pwd", nil); err == nil || !strings.Contains(err.Error(), "not a terminal") {
 		t.Fatalf("agent target error = %v", err)
 	}
 	if err := h.driver.Kill(terminal.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.terminals.Send(h.caller.ID, terminal.ID, "pwd", nil); err == nil || !strings.Contains(err.Error(), "not running") {
+	if _, err := h.terminals.Send(h.caller.ID, terminal.ID, "pwd", nil); err == nil || !strings.Contains(err.Error(), "not running") {
 		t.Fatalf("dead send error = %v", err)
 	}
 	if _, err := h.terminals.Read(h.caller.ID, terminal.ID); err == nil || !strings.Contains(err.Error(), "not running") {
