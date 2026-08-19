@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 func TestPromptInjectsDirectiveOnlyForAutoNamedWithPrompt(t *testing.T) {
@@ -125,7 +126,7 @@ func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
 		agentSessionID string
 		want           string
 	}{
-		{"a captured id resumes that conversation", full, "abc-123", "claude --resume abc-123"},
+		{"a captured id resumes that conversation", full, "abc-123", "claude --resume 'abc-123'"},
 		{"no captured id falls back to the newest one", full, "", "claude --continue"},
 		{"a tool with no revive of its own starts fresh", config.Tool{Command: "pi"}, "abc-123", "pi"},
 	} {
@@ -134,6 +135,15 @@ func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
 				t.Fatalf("ReviveCommand = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestReviveCommandQuotesCapturedSessionID(t *testing.T) {
+	tool := config.Tool{ResumeByIDCommand: "codex resume {id}"}
+	id := "session'; touch /tmp/agent-manager-pwned; echo '"
+	want := "codex resume " + tmux.ShellQuote(id)
+	if got := ReviveCommand(tool, id); got != want {
+		t.Fatalf("ReviveCommand = %q, want %q", got, want)
 	}
 }
 
