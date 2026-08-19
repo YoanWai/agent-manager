@@ -148,6 +148,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.errBar.text = m.degradedResumeNotice(entry.sess)
+	m.rebuildRows()
 	m.requestRefresh()
 	return m, nil
 }
@@ -189,6 +190,7 @@ func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Mo
 	default:
 		m.errBar.text = ""
 	}
+	m.rebuildRows()
 	m.requestRefresh()
 	return m, nil
 }
@@ -233,7 +235,15 @@ func (m *Model) reviveSession(sess store.Session) error {
 	if !isDir(sess.Cwd) {
 		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
-	return m.relaunchSession(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), tool.DefaultStatus, nil)
+	bind := func() error {
+		launchedAt := time.Now()
+		if err := m.store.SetAgentLaunchedAt(sess.ID, launchedAt); err != nil {
+			return err
+		}
+		m.bindReviveLocally(sess.ID, launchedAt)
+		return nil
+	}
+	return m.relaunchSession(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), status.Starting, bind)
 }
 
 // relaunchSession puts a dead session's row back on a running tmux window
@@ -351,6 +361,24 @@ func (m *Model) bindRestartLocally(id, agentSessionID string, launchedAt time.Ti
 		m.sessions[i].AgentLaunchedAt = launchedAt
 		m.sessions[i].Status = status.Starting
 		m.sessions[i].Acked = false
+	}
+}
+
+// bindReviveLocally mirrors the store write in the loaded rows, so the
+// startup loader can paint before the next poll re-reads them.
+func (m *Model) bindReviveLocally(id string, launchedAt time.Time) {
+	for i := range m.sessions {
+		if m.sessions[i].ID != id {
+			continue
+		}
+		m.sessions[i].AgentLaunchedAt = launchedAt
+		m.sessions[i].Status = status.Starting
+		m.sessions[i].Acked = false
+	}
+	if sel, ok := m.selected(); ok && sel.ID == id {
+		// A killed or archived row still holds its last pane; that would
+		// count as painted and hide the loader.
+		m.preview = ""
 	}
 }
 
@@ -759,6 +787,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.errBar.text = ""
+			m.rebuildRows()
 		case actionKill:
 			for _, sess := range m.confirm.sessions {
 				if err := m.killSession(sess); err != nil {
@@ -788,6 +817,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.errBar.text = ""
+			m.rebuildRows()
 		case actionDelete:
 			for _, sess := range childrenFirst(m.confirm.sessions) {
 				if err := m.tmux.Kill(sess.ID); err != nil {

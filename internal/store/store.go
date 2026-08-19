@@ -35,8 +35,8 @@ type Session struct {
 	// Revive resumes this exact conversation instead of the cwd's most recent one.
 	AgentSessionID string
 	// AgentLaunchedAt is when the agent process now in the pane started, which
-	// restart moves forward while CreatedAt keeps marking the row's birth.
-	// Zero for sessions that never restarted, whose launch is CreatedAt.
+	// restart and revive move forward while CreatedAt keeps marking the row's birth.
+	// Zero for sessions that never relaunched, whose launch is CreatedAt.
 	AgentLaunchedAt time.Time
 	// RetiredAgentSessionID is the conversation a restart left behind, kept so
 	// id capture never binds the fresh run back to the context it dropped.
@@ -55,8 +55,8 @@ type Session struct {
 	LaunchPrompt string
 }
 
-// LaunchTime is when the agent now in the pane started: the last restart,
-// or the row's creation for a session that never restarted.
+// LaunchTime is when the agent now in the pane started: the last restart
+// or revive, or the row's creation for a session that never relaunched.
 func (sess Session) LaunchTime() time.Time {
 	if sess.AgentLaunchedAt.IsZero() {
 		return sess.CreatedAt
@@ -665,6 +665,18 @@ func (s *Store) RestartAgent(id, agentSessionID string, launchedAt time.Time) er
 			agent_session_id = ?,
 			agent_launched_at = ?
 		 WHERE id = ?`, agentSessionID, encodeTime(launchedAt), id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
+}
+
+// SetAgentLaunchedAt records when the agent now in the pane started, without
+// touching the conversation it is resuming.
+func (s *Store) SetAgentLaunchedAt(id string, launchedAt time.Time) error {
+	res, err := s.db.Exec(
+		`UPDATE sessions SET agent_launched_at = ? WHERE id = ?`,
+		encodeTime(launchedAt), id)
 	if err != nil {
 		return err
 	}
