@@ -6,6 +6,13 @@ import (
 	"testing"
 )
 
+func stubUID(t *testing.T, uid int) {
+	t.Helper()
+	original := getUID
+	getUID = func() int { return uid }
+	t.Cleanup(func() { getUID = original })
+}
+
 func stubPath(t *testing.T, present ...string) {
 	t.Helper()
 	found := make(map[string]bool, len(present))
@@ -23,7 +30,8 @@ func stubPath(t *testing.T, present ...string) {
 }
 
 func TestInstallCommandPrefersNativeManagerOverBrew(t *testing.T) {
-	stubPath(t, "brew", "apt-get")
+	stubUID(t, 1)
+	stubPath(t, "brew", "apt-get", "sudo")
 	if got, want := installCommand("linux", "tmux"), "sudo apt-get update && sudo apt-get install -y tmux"; got != want {
 		t.Fatalf("installCommand = %q, want %q", got, want)
 	}
@@ -44,9 +52,26 @@ func TestHintFallsBackWithoutAKnownManager(t *testing.T) {
 }
 
 func TestHintNamesTheCommand(t *testing.T) {
-	stubPath(t, "pacman")
+	stubUID(t, 1)
+	stubPath(t, "pacman", "sudo")
 	if got, want := hint("linux", "tmux"), "install it with: sudo pacman -S --needed tmux"; got != want {
 		t.Fatalf("hint = %q, want %q", got, want)
+	}
+}
+
+func TestInstallCommandRootDropsSudo(t *testing.T) {
+	stubUID(t, 0)
+	stubPath(t, "apt-get")
+	if got, want := installCommand("linux", "tmux"), "apt-get update && apt-get install -y tmux"; got != want {
+		t.Fatalf("installCommand = %q, want %q", got, want)
+	}
+}
+
+func TestInstallCommandSkipsAptWithoutSudo(t *testing.T) {
+	stubUID(t, 1)
+	stubPath(t, "apt-get", "brew")
+	if got, want := installCommand("linux", "tmux"), "brew install tmux"; got != want {
+		t.Fatalf("installCommand = %q, want %q", got, want)
 	}
 }
 

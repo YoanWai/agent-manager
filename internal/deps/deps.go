@@ -5,11 +5,14 @@
 package deps
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 var lookPath = exec.LookPath
+var getUID = os.Getuid
 
 type manager struct {
 	bin     string
@@ -64,9 +67,27 @@ func installCommand(goos, tool string) string {
 		candidates = darwinManagers
 	}
 	for _, candidate := range candidates {
-		if _, err := lookPath(candidate.bin); err == nil {
-			return candidate.install + tool
+		if _, err := lookPath(candidate.bin); err != nil {
+			continue
 		}
+		command := privilegedInstall(candidate.install)
+		if command == "" {
+			continue
+		}
+		return command + tool
+	}
+	return ""
+}
+
+func privilegedInstall(command string) string {
+	if !strings.Contains(command, "sudo ") {
+		return command
+	}
+	if getUID() == 0 {
+		return strings.ReplaceAll(command, "sudo ", "")
+	}
+	if _, err := lookPath("sudo"); err == nil {
+		return command
 	}
 	return ""
 }
