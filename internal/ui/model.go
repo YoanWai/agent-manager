@@ -12,6 +12,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -61,7 +62,9 @@ type Model struct {
 	tmux   *tmux.Driver
 	hooks  *hooks.Manager
 	gitDrv *git.Driver
-	engine *status.Engine
+	// Resolving the install command walks PATH, which Update must not do.
+	gitMissingText string
+	engine         *status.Engine
 
 	// setSnapshot writes a session's pane capture before archive or kill
 	// takes the window; a seam so snapshot failures can be exercised
@@ -519,6 +522,10 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// A missing git binary only disables the diff view; everything else
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
+	gitMissingText := ""
+	if gitDriver == nil {
+		gitMissingText = "git not found in PATH, " + deps.Hint("git")
+	}
 	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
 	model := &Model{
 		cfg:                 cfg,
@@ -526,6 +533,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		tmux:                driver,
 		hooks:               hookManager,
 		gitDrv:              gitDriver,
+		gitMissingText:      gitMissingText,
 		engine:              engine,
 		setSnapshot:         st.SetSnapshot,
 		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, cfg.PollInterval.Duration),
