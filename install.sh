@@ -80,6 +80,7 @@ tmux_new_enough() {
 	command -v tmux >/dev/null 2>&1 || return 1
 	out=$(tmux -V 2>/dev/null) || return 1
 	ver=${out#tmux }
+	ver=${ver#next-}
 	ver=${ver%%[a-zA-Z]*}
 	major=${ver%%.*}
 	rest=${ver#*.}
