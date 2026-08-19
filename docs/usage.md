@@ -146,29 +146,75 @@ Agents usually work in git worktrees, one branch per worktree, and those worktre
 
 ## MCP: how agents discover these commands
 
-Every session of an MCP-capable tool carries the agent-manager MCP server on spawn and revive, so its agent sees the session and terminal operations as native tools with descriptions telling it when to call each: no prompt injection, no per-project setup. Pi is the one tool without an MCP client, so its sessions rely on the subcommands alone. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
+Every session of an MCP-capable tool carries the agent-manager MCP server on spawn and revive, so its agent sees the whole workspace as native tools with descriptions telling it when to call each: its own session, the other agent sessions running beside it, the groups they are filed under, and the managed terminals. No per-project setup. Pi is the one tool without an MCP client, so its sessions rely on the subcommands alone. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
 
 | Tool | Action |
 |------|--------|
 | `rename` | Rename the calling session |
-| `review_repo` | Declare the repo or worktree under review |
-| `review_base` | Declare or clear the review base ref |
-| `review_mode` | Select the diff scope review opens with |
+| `review` | Declare the repo under review, the base ref and the diff scope, in one call |
+| `list_sessions` | List every agent session with its id, CLI, group, directory, worktree branch and status |
+| `create_session` | Start another agent CLI on a named task, optionally in its own git worktree |
+| `read_session` | Read what another agent's screen currently shows |
+| `send_session` | Queue a message for another agent, delivered once it is at rest |
+| `message_status` | Check whether a message is queued, held, delivered, dropped or answered |
+| `wait_for_session` | Park until another session stops working, instead of polling it |
+| `revive_session` | Bring a dead session back, resuming the conversation it held |
+| `kill_session` | Stop a running agent, keeping its row and last screen |
+| `archive_session` | File a finished session out of the active list, or restore it |
+| `task` | The shared work list in one tool: `action` is `list`, `create`, `claim`, `finish`, `release` or `delete` |
+| `reserve_files` | Declare the files this session is editing, and see who else claims them |
+| `release_files` | Give those claims back |
+| `list_reservations` | See what every session is editing right now |
+| `list_groups` | List groups with their default directories, worktree defaults and session counts |
+| `delete_group` | remove a group whose work is done; sessions still filed there move to the root rather than stopping |
+| `create_group` | Add a group, nested with a slash path, to file a fleet under |
 | `list_terminals` | List active managed terminals and their current directories |
 | `create_terminal` | Open a terminal under the calling session, or beside it when that session is itself a terminal, unless `nest` is false |
 | `send_terminal` | Submit a command or send exact keys to a running terminal |
 | `read_terminal` | Read the plain-text content currently visible in a terminal |
 | `close_terminal` | Close a finished terminal nested under the caller: kill the pane and delete the row |
 
+### Spawning and steering other agents
+
+`create_session` gives an agent the same spawn the `n` form gives a human: a name, a CLI, a group, a working directory, a first prompt and a worktree choice. A session created this way is a normal row in the list, and the manager picks it up on its next poll, so it attaches, revives, forks and reviews like any other.
+
+Each field falls back the way the form does. The CLI defaults to the one the calling agent runs, the group and directory default to the caller's, an explicit group uses that group's nearest inherited default path, and an explicit directory wins over both. A name is the agent's to choose and should describe the work; leaving it empty generates a placeholder and asks the new session to rename itself, exactly as a promptless spawn from the form does. Passing `worktree: true` adds a git worktree and branch off the directory's repo, which is what keeps several agents working in one project from editing the same checkout; omitting it inherits the group's default, then the global setting.
+
+`read_session` returns the target's current screen, and its last captured screen once the session has stopped. `kill_session` ends the process and leaves the row dead with its last screen, `revive_session` brings it back on the conversation it held, and `archive_session` files a finished row away or restores it.
+
+### Messages between agents
+
+`send_session` queues a message rather than typing it immediately. Several agent CLIs keep their input line drawn underneath an approval dialog, so a message written at that moment would answer the dialog instead of being read. The manager holds it and types it in on the first poll where the target is at rest: its input region is drawn, its status is not mid-turn, its own rules report no dialog on screen, and nobody has a line part way written at its prompt. Delivery is at most once, and a message the manager cannot prove reached the pane is retired as `dropped` rather than repeated, so its sender knows to send it again.
+
+The gate is the recipient tool's own rules, because text typed onto a dialog picks an option: while one is on screen the queue waits, and `message_status` reports those messages as `held`, naming the session to go and answer. A question the agent left at a resting prompt trips no rule, and a message goes in there as an ordinary turn would, labelled as coming from another agent. `held` also covers a recipient the manager will never type into as things stand, a session archived or stopped since the message was queued, and says which it is.
+
+The message arrives labelled as coming from another session rather than from the user, with the sender's name and the id to answer on. The sender's own text sits inside a fence the manager mints at delivery, so a message written to imitate that label reads as what it is: the sender wrote it before the fence existed and cannot reproduce it. A receiving agent treats it as it would any untrusted input: it cannot approve a permission prompt, and it cannot change that session's configuration. Queue caps, a per-sender rate limit, a size cap on one message and a whitespace-insensitive fingerprint keep two agents from talking each other into a loop. `message_status` reports whether a message is queued, held, delivered, dropped or answered; answering a session acknowledges everything it sent.
+
+Delivery needs the manager running, since its poller is what types the message in. A message queued while Agent Manager is closed waits until it opens again, and `send_session` says so in its result rather than implying the message landed. A target that could never be reached is refused outright rather than queued: a session that is not running, an archived one, which the poller skips, and a tool declaring no `activity_cutoff`, which leaves nothing to read readiness from.
+
+### Waiting and the shared task list
+
+`wait_for_session` parks a single tool call until a session reaches one of the states that mean it stopped working, so an agent that spawned work does not read screens in a loop while it waits. A timeout returns the session's current state with `reached` false, because a timeout is an answer rather than a failure; `outcome` separates that from the session dying before it ever reached one of the awaited states. It is an ordinary tool call, which is what makes it work with every MCP client.
+
+The task list is the manager's shared to-do list, visible to every session, all of it behind the one `task` tool. `create` puts work on it, `claim` takes a piece (by id, or the oldest one nothing is blocking), and `finish` marks it done, which unblocks every task that depended on it. A claim is a single atomic write, so two agents racing for the same task cannot both win: the loser is told who holds it. A session that is deleted hands its claims back to the list rather than parking them forever.
+
+### File reservations
+
+A worktree per session stops two agents overwriting one checkout, and that is the right answer whenever the work divides cleanly. It does not help when sessions deliberately share a checkout, and it defers the other kind of collision to merge time: two agents making incompatible decisions about the same interface find out only when the branches meet.
+
+`reserve_files` declares the paths a session is about to edit. Overlap with a lease another session holds comes back as conflicts, naming the holder and what they said they were doing, so the two can settle it through `send_session` before either commits. The lease is advisory throughout: nothing is blocked, and an agent may edit anyway. It expires on its own, so a session that dies holding one never keeps the repo to itself, and `release_files` hands it back as soon as the edits land. An exclusive lease conflicts with any other lease on the same paths; two shared leases sit side by side. Matching compares a pattern against a literal path in both directions, so two patterns that each contain wildcards are only compared exactly, which is another reason these are a conversation starter rather than a lock.
+
+### Terminals
+
 `create_terminal` nests under the calling session unless `nest` is false, and a call from a terminal opens the new shell beside it: under the same agent, or un-nested in the same group when that terminal is itself un-nested. It defaults to the calling agent's group and live pane directory. A group other than the caller's needs `nest: false`, since a nested terminal lives in its parent's group; that group then supplies its nearest inherited default path, and an explicit directory wins over both. `close_terminal` kills the pane and removes the row once the job is finished, and it reaches only the terminals nested under the calling session: a shell someone else opened, or one deliberately left un-nested, is the user's to close. `send_terminal` accepts exactly one of a command, which is pasted and submitted with Enter, or a sequence of tmux key names such as `C-c`, `Up`, and `Enter`. `read_terminal` returns the current screen rather than unlimited scrollback.
 
-The server's MCP initialization instructions teach agents to open a terminal for human-visible work such as SSH, when the user should be able to watch it, attach, or take over. They list and reuse a relevant running terminal first; `create_terminal` nests under the caller unless `nest` is false; they send the command and read its screen while the job runs; and they call `close_terminal` when that job ends, unless the terminal is being left for the user. One-shot local commands stay in the agent's normal tools. The same guidance is repeated in the individual tool descriptions for clients that expose tools but not server instructions.
+The server's MCP initialization instructions teach agents to use these tools without waiting for an explicit request: list sessions and delegate a parallel workstream to a named `create_session` before running it in series, and open a terminal for human-visible work such as SSH, when the user should be able to watch it, attach, or take over. They list and reuse a relevant running terminal first; `create_terminal` nests under the caller unless `nest` is false; they send the command and read its screen while the job runs; and they call `close_terminal` when that job ends, unless the terminal is being left for the user. One-shot local commands stay in the agent's normal tools. The same guidance is repeated in the individual tool descriptions for clients that expose tools but not server instructions.
 
-Sending a command to a terminal executes it on the user's machine. Agents should treat `send_terminal` with the same care as typing into an attached shell: inspect the target returned by `list_terminals`, avoid destructive commands unless the user asked for them, and read the result before continuing.
+Every one of these tools acts on the user's machine. Agents should treat `send_terminal` with the same care as typing into an attached shell, and treat `create_session` and `kill_session` as what they are: starting a real agent process that spends tokens, and interrupting one that may be mid-task. Inspect the target returned by `list_sessions` or `list_terminals` first, and read the result before continuing.
 
-Registration is per tool. Claude gets a generated `--mcp-config` file. Codex gets `-c mcp_servers...` overrides. OpenCode gets an `OPENCODE_CONFIG` merge file. Grok and Gemini each get a one-time `mcp add --scope user` entry on their first launch. Hermes gets its own one-time `mcp add` flow, which needs the MCP SDK its installer treats as optional: a Hermes still missing it refuses the spawn with a dialog pointing at `hermes setup`, so a Hermes session always carries these tools.
+Registration is per tool. Claude gets a generated `--mcp-config` file. Codex gets `-c mcp_servers...` overrides. OpenCode gets an `OPENCODE_CONFIG` merge file. Grok and Gemini each get a one-time `mcp add --scope user` entry on their first launch. Hermes gets its own one-time `mcp add` flow, which needs the MCP SDK its installer treats as optional: a Hermes still missing it refuses the spawn with a dialog pointing at `hermes setup`, so a Hermes session always carries these tools. A spawn whose CLI is not on PATH is refused the same way, with the vendor's portable installer for a built-in agent, or the package manager on this machine for anything else.
 
-Pi does not include an MCP client. The `rename`, `review-repo`, and `review-base` commands still work inside Pi sessions.
+Pi does not include an MCP client. Its sessions reach the same workspace through the subcommands: `agent-manager --help` lists them, from `sessions`, `spawn`, `send` and `wait` to the shared task list, file reservations, terminals and the review declarations.
 
 A custom tool opts in with `mcp = "<style>"` in its config section. Set `mcp = "none"` to disable registration.
 

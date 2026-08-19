@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -168,22 +169,34 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 	if !ok {
 		return false
 	}
+	return !textBeforeCaret(m.engine, tool, row, m.pane.cursor.x) &&
+		m.pane.cursor.x >= ansi.StringWidth(prefix)
+}
+
+// textBeforeCaret reports whether anything but blanks sits between a tool's
+// prompt marker and the caret on this row, which is how a line someone has
+// half written is told from an empty prompt. A row that is not an input line
+// carries no such text. Claude pads its marker with a non-breaking space, so
+// blank means any space rune, not the ASCII one alone; tmux trims a row's
+// trailing blanks, so a row that ends before the caret is blank the rest of
+// the way.
+func textBeforeCaret(engine *status.Engine, tool, row string, caretX int) bool {
+	prefix, ok := engine.InputPrefix(tool, row)
+	if !ok {
+		return false
+	}
 	line := []rune(row)
-	// Every cell between the marker and the caret must be blank. Claude
-	// pads its marker with a non-breaking space, so blank means any space
-	// rune, not the ASCII one alone. tmux trims a row's trailing blanks,
-	// so a row that ends before the caret is blank the rest of the way.
-	for cell := ansi.StringWidth(prefix); cell < m.pane.cursor.x; {
+	for cell := ansi.StringWidth(prefix); cell < caretX; {
 		index := runeAtColumn(line, cell)
 		if index >= len(line) {
-			return true
+			return false
 		}
 		if !unicode.IsSpace(line[index]) {
-			return false
+			return true
 		}
 		cell += ansi.StringWidth(string(line[index]))
 	}
-	return m.pane.cursor.x >= ansi.StringWidth(prefix)
+	return false
 }
 
 // leaveFocus returns to the list. Mouse reporting stays on: handing it back

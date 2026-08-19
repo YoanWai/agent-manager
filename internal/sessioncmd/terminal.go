@@ -32,6 +32,14 @@ type TerminalScreen struct {
 	Output   string   `json:"output" jsonschema:"plain text currently visible in the terminal pane"`
 }
 
+// TerminalInput is what one send put into a terminal. Which of the two
+// kinds went in is decided here, where the dispatch happens, so neither
+// front reads it back off its own arguments.
+type TerminalInput struct {
+	TerminalID string `json:"terminal_id"`
+	Sent       string `json:"sent" jsonschema:"input kind sent: command or keys"`
+}
+
 type CreateTerminalOptions struct {
 	// Nil inherits the calling session's group; a pointer to an empty string
 	// deliberately targets the root group.
@@ -41,41 +49,50 @@ type CreateTerminalOptions struct {
 }
 
 type Terminals struct {
+	commands
+}
+
+func NewTerminals(configDir string, words Vocabulary) *Terminals {
+	return newTerminals(configDir, words, tmux.New)
+}
+
+func newTerminals(configDir string, words Vocabulary, newDriver func() (*tmux.Driver, error)) *Terminals {
+	return &Terminals{commands: commands{configDir: configDir, words: words, newDriver: newDriver}}
+}
+
+// commands is the shared plumbing of every managed-pane command: the
+// manager's config directory, the words the calling front speaks, and the
+// tmux driver behind its socket.
+type commands struct {
 	configDir string
+	words     Vocabulary
 	newDriver func() (*tmux.Driver, error)
 }
 
-func NewTerminals(configDir string) *Terminals {
-	return newTerminals(configDir, tmux.New)
-}
-
-func newTerminals(configDir string, newDriver func() (*tmux.Driver, error)) *Terminals {
-	return &Terminals{configDir: configDir, newDriver: newDriver}
-}
-
-type terminalRuntime struct {
+type runtime struct {
 	cfg    config.Config
+	words  Vocabulary
 	store  *store.Store
 	driver *tmux.Driver
 }
 
-func (t *Terminals) open() (*terminalRuntime, error) {
-	cfg, err := config.LoadDir(t.configDir)
+func (c *commands) open() (*runtime, error) {
+	cfg, err := config.LoadDir(c.configDir)
 	if err != nil {
 		return nil, err
 	}
-	driver, err := t.newDriver()
+	driver, err := c.newDriver()
 	if err != nil {
 		return nil, err
 	}
-	st, err := store.Open(filepath.Join(t.configDir, "state.db"))
+	st, err := store.Open(filepath.Join(c.configDir, "state.db"))
 	if err != nil {
 		return nil, err
 	}
-	return &terminalRuntime{cfg: cfg, store: st, driver: driver}, nil
+	return &runtime{cfg: cfg, words: c.words, store: st, driver: driver}, nil
 }
 
-func (r *terminalRuntime) caller(sessionID string) (store.Session, error) {
+func (r *runtime) caller(sessionID string) (store.Session, error) {
 	if err := validSession(sessionID); err != nil {
 		return store.Session{}, err
 	}
@@ -86,13 +103,14 @@ func (r *terminalRuntime) caller(sessionID string) (store.Session, error) {
 	return sess, err
 }
 
-func (r *terminalRuntime) terminal(id string) (store.Session, error) {
-	if strings.TrimSpace(id) == "" {
-		return store.Session{}, errors.New("terminal_id is empty; call list_terminals to get one")
+func (r *runtime) terminal(id string) (store.Session, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return store.Session{}, fmt.Errorf("terminal_id is empty; call %s to get one", r.words.ListTerminals)
 	}
 	sess, err := r.store.Get(id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return store.Session{}, fmt.Errorf("terminal %s does not exist; call list_terminals for current ids", id)
+		return store.Session{}, fmt.Errorf("terminal %s does not exist; call %s for current ids", id, r.words.ListTerminals)
 	}
 	if err != nil {
 		return store.Session{}, err
@@ -106,7 +124,7 @@ func (r *terminalRuntime) terminal(id string) (store.Session, error) {
 	return sess, nil
 }
 
-func (r *terminalRuntime) info(sess store.Session, running bool) (Terminal, error) {
+func (r *runtime) info(sess store.Session, running bool) (Terminal, error) {
 	dir := sess.Cwd
 	if running {
 		if current, err := r.driver.PaneCurrentPath(sess.ID); err == nil {
@@ -191,7 +209,7 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if nest && opts.Group != nil && strings.TrimSpace(*opts.Group) != caller.Group {
 		return Terminal{}, fmt.Errorf("set nest false to place in another group")
 	}
-	group, dir, err := runtime.createTarget(caller, opts)
+	group, dir, err := runtime.createTarget(caller, opts.Group, opts.Directory)
 	if err != nil {
 		return Terminal{}, err
 	}
@@ -272,15 +290,21 @@ func (t *Terminals) Close(sessionID, terminalID string) error {
 	})
 }
 
-// shellName names a terminal after the session it hangs under, so a row
-// says which session opened it rather than four random digits. A terminal
-// with no session over it keeps the digits, and one joining terminals
-// already named for that session counts up.
-func (r *terminalRuntime) shellName(toolName, parentID string) (string, error) {
+func (r *runtime) shellName(toolName, parentID string) (string, error) {
 	sessions, err := r.store.ListSessions(true)
 	if err != nil {
 		return "", err
 	}
+	return ShellName(toolName, parentID, uuid.NewString()[:4], sessions), nil
+}
+
+// ShellName names a terminal after the session it hangs under, so a row
+// says which session opened it rather than four random digits. A terminal
+// with no session over it falls back to those digits, and one joining
+// terminals already named for that session counts up. Both the list's T
+// and the terminal tools name through here, so a shell reads the same
+// whichever opened it.
+func ShellName(toolName, parentID, fallbackSuffix string, sessions []store.Session) string {
 	parentName := ""
 	taken := make(map[string]bool, len(sessions))
 	for _, sess := range sessions {
@@ -290,17 +314,22 @@ func (r *terminalRuntime) shellName(toolName, parentID string) (string, error) {
 		}
 	}
 	if parentName == "" {
-		return toolName + "-" + uuid.NewString()[:4], nil
+		return toolName + "-" + fallbackSuffix
 	}
 	base := toolName + "-" + parentName
 	name := base
 	for n := 2; taken[name]; n++ {
 		name = fmt.Sprintf("%s-%d", base, n)
 	}
-	return name, nil
+	return name
 }
 
-func (r *terminalRuntime) createTarget(caller store.Session, opts CreateTerminalOptions) (string, string, error) {
+// createTarget resolves the group and directory a new pane opens in.
+// A nil requested group inherits the caller's; an explicit one must
+// already exist. An explicit directory wins outright; a caller that named
+// a group falls back to that group's nearest inherited default path; a
+// caller that named none opens beside itself.
+func (r *runtime) createTarget(caller store.Session, requestedGroup *string, directory string) (string, string, error) {
 	group := caller.Group
 	groups, err := r.store.Groups()
 	if err != nil {
@@ -312,22 +341,22 @@ func (r *terminalRuntime) createTarget(caller store.Session, opts CreateTerminal
 		byName[candidate.Name] = candidate
 		archived[candidate.Name] = candidate.Archived
 	}
-	if opts.Group != nil {
-		group = strings.TrimSpace(*opts.Group)
+	if requestedGroup != nil {
+		group = strings.TrimSpace(*requestedGroup)
 		if group != "" {
 			if _, ok := byName[group]; !ok {
-				return "", "", fmt.Errorf("group %q does not exist", group)
+				return "", "", fmt.Errorf("group %q does not exist; call %s for the existing ones or %s to add it", group, r.words.ListGroups, r.words.CreateGroup)
 			}
 		}
 	}
 	if group != "" && store.EffectivelyArchived(archived, group) {
 		return "", "", fmt.Errorf("group %q is archived; restore it in Agent Manager first", group)
 	}
-	if strings.TrimSpace(opts.Directory) != "" {
-		dir, err := resolveTerminalDirectory(opts.Directory)
+	if strings.TrimSpace(directory) != "" {
+		dir, err := resolveTerminalDirectory(directory)
 		return group, dir, err
 	}
-	if opts.Group != nil {
+	if requestedGroup != nil {
 		for current := group; current != ""; current = parentGroup(current) {
 			if candidate := byName[current].Path; candidate != "" {
 				if dir, err := resolveTerminalDirectory(candidate); err == nil {
@@ -388,36 +417,42 @@ func sessionLabel(group, name string) string {
 	return group + " · " + name
 }
 
-func (t *Terminals) Send(sessionID, terminalID, command string, keys []string) error {
+func (t *Terminals) Send(sessionID, terminalID, command string, keys []string) (TerminalInput, error) {
 	hasCommand := strings.TrimSpace(command) != ""
 	hasKeys := len(keys) > 0
 	if hasCommand == hasKeys {
-		return errors.New("provide exactly one of command or keys")
+		return TerminalInput{}, errors.New("provide exactly one of command or keys")
 	}
 	for _, key := range keys {
 		if key == "" {
-			return errors.New("keys cannot contain an empty value")
+			return TerminalInput{}, errors.New("keys cannot contain an empty value")
 		}
 	}
 	runtime, err := t.open()
 	if err != nil {
-		return err
+		return TerminalInput{}, err
 	}
 	defer runtime.store.Close()
 	if _, err := runtime.caller(sessionID); err != nil {
-		return err
+		return TerminalInput{}, err
 	}
 	terminal, err := runtime.terminal(terminalID)
 	if err != nil {
-		return err
+		return TerminalInput{}, err
 	}
 	if !runtime.driver.Exists(terminal.ID) {
-		return fmt.Errorf("terminal %s is not running; revive it in Agent Manager first", terminal.ID)
+		return TerminalInput{}, fmt.Errorf("terminal %s is not running; revive it in Agent Manager first", terminal.ID)
 	}
 	if hasCommand {
-		return runtime.driver.SendText(terminal.ID, command)
+		if err := runtime.driver.SendText(terminal.ID, command); err != nil {
+			return TerminalInput{}, err
+		}
+		return TerminalInput{TerminalID: terminal.ID, Sent: "command"}, nil
 	}
-	return runtime.driver.SendKeys(terminal.ID, keys...)
+	if err := runtime.driver.SendKeys(terminal.ID, keys...); err != nil {
+		return TerminalInput{}, err
+	}
+	return TerminalInput{TerminalID: terminal.ID, Sent: "keys"}, nil
 }
 
 func (t *Terminals) Read(sessionID, terminalID string) (TerminalScreen, error) {

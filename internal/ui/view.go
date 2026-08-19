@@ -97,8 +97,9 @@ func (m *Model) previewPaneWidth() int {
 }
 
 // previewPaneHeight is the rows of session pane content the Preview
-// section can show. Mirrors viewSidebar + viewPreview so tmux is pinned
-// to the same box the UI paints into.
+// section can show with nothing transient over it, which is what tmux is
+// pinned to: the painted view crops a taller pane, where resizing it for
+// a passing overlay would cost an agent a full transcript redraw.
 func (m *Model) previewPaneHeight() int {
 	// Our own blocks wrap inside the column's gutters, so their heights
 	// are measured at that width rather than at the preview's full span.
@@ -112,9 +113,6 @@ func (m *Model) previewPaneHeight() int {
 	avail := m.listBodyHeight()
 	if avail < 1 {
 		return 1
-	}
-	if m.quick.active {
-		avail -= lipgloss.Height(m.viewQuickBar(inner)) + 1
 	}
 	// Mirrors contentLines: the detail head, the seam, then the pane
 	// filling everything below.
@@ -426,15 +424,15 @@ func (m *Model) viewFooter() string {
 		case m.quickWorktreeOn():
 			worktreeHint = "on"
 		}
-		return legendBar([]legendSection{{title: "Prompt", pairs: [][2]string{
+		return m.transientFooter(legendSection{title: "Prompt", pairs: [][2]string{
 			{"↵", "send"}, {"↑↓", "switch target"}, {"tab", "tool: " + m.quickTool()},
 			{"shift+tab", "worktree: " + worktreeHint}, {"esc", "close"},
-		}}}, m.width)
+		}})
 	}
 	if m.split.resizeMode {
-		return legendBar([]legendSection{{title: "Resize", pairs: [][2]string{
+		return m.transientFooter(legendSection{title: "Resize", pairs: [][2]string{
 			{"←→", "nudge"}, {"drag", "divider"}, {"| / release", "commit"}, {"esc", "cancel"},
-		}}}, m.width)
+		}})
 	}
 	if m.mode == modeRename {
 		pairs := [][2]string{{"↵", "save"}, {"esc", "cancel"}}
@@ -443,7 +441,7 @@ func (m *Model) viewFooter() string {
 		} else if tool := m.renameTool(); tool != "" {
 			pairs = [][2]string{{"tab", "tool: " + tool}, {"↵", "save"}, {"esc", "cancel"}}
 		}
-		return legendBar([]legendSection{{title: "Rename", pairs: pairs}}, m.width)
+		return m.transientFooter(legendSection{title: "Rename", pairs: pairs})
 	}
 	// Focused, the keyboard belongs to the agent: the tier says so in its
 	// title, carries the few keys the manager keeps, and drops the app-wide
@@ -461,9 +459,20 @@ func (m *Model) viewFooter() string {
 		if m.pane.mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}
-		return legendBar([]legendSection{{title: "Focused", pairs: pairs}}, m.width)
+		return m.transientFooter(legendSection{title: "Focused", pairs: pairs})
 	}
+	return m.listFooter()
+}
+
+func (m *Model) listFooter() string {
 	return legendBar([]legendSection{m.rowLegend(), m.viewLegend()}, m.width)
+}
+
+// transientFooter renders one tier at the list footer's height: the footer
+// sets the preview box, and a box that moves resizes every session's pane,
+// which costs an agent drawing on the normal screen a full transcript redraw.
+func (m *Model) transientFooter(section legendSection) string {
+	return padToHeight(legendBar([]legendSection{section}, m.width), lipgloss.Height(m.listFooter()))
 }
 
 // rowLegend is the tier for the entry under the cursor: what this session or
