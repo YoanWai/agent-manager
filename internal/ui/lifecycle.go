@@ -148,7 +148,6 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.errBar.text = m.degradedResumeNotice(entry.sess)
-	m.rebuildRows()
 	m.requestRefresh()
 	return m, nil
 }
@@ -190,7 +189,6 @@ func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Mo
 	default:
 		m.errBar.text = ""
 	}
-	m.rebuildRows()
 	m.requestRefresh()
 	return m, nil
 }
@@ -243,7 +241,11 @@ func (m *Model) reviveSession(sess store.Session) error {
 		m.bindReviveLocally(sess.ID, launchedAt)
 		return nil
 	}
-	return m.relaunchSession(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), status.Starting, bind)
+	if err := m.relaunchSession(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), status.Starting, bind); err != nil {
+		return err
+	}
+	m.rebuildRows()
+	return nil
 }
 
 // relaunchSession puts a dead session's row back on a running tmux window
@@ -787,7 +789,6 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.errBar.text = ""
-			m.rebuildRows()
 		case actionKill:
 			for _, sess := range m.confirm.sessions {
 				if err := m.killSession(sess); err != nil {
@@ -817,7 +818,6 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.errBar.text = ""
-			m.rebuildRows()
 		case actionDelete:
 			for _, sess := range childrenFirst(m.confirm.sessions) {
 				if err := m.tmux.Kill(sess.ID); err != nil {

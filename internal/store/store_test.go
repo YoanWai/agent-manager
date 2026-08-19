@@ -1001,7 +1001,7 @@ func TestSetAgentLaunchedAtMovesLaunchTimeWithoutRetiringConversation(t *testing
 		t.Fatal(err)
 	}
 
-	launchedAt := created.CreatedAt.Add(5 * 24 * time.Hour)
+	launchedAt := created.CreatedAt.Add(5 * 24 * time.Hour).In(time.FixedZone("east", 9*3600))
 	if err := st.SetAgentLaunchedAt("a", launchedAt); err != nil {
 		t.Fatalf("launch: %v", err)
 	}
