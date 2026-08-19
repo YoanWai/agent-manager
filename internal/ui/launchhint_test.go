@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
@@ -33,6 +34,99 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 	}
 	if m.launchHint != "" {
 		t.Fatalf("dismiss should clear the hint, got %q", m.launchHint)
+	}
+}
+
+func TestReportLaunchErrorOpensInstallHintForMissingCLI(t *testing.T) {
+	m := buildModel(t)
+
+	m.reportLaunchError(config.MissingToolError{Binary: "claude"})
+
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+	}
+	if !strings.Contains(m.launchHint, "claude.ai/install.sh") {
+		t.Fatalf("hint %q should name the install command", m.launchHint)
+	}
+	if !strings.Contains(m.launchHint, "claude") {
+		t.Fatalf("hint %q should name the missing CLI", m.launchHint)
+	}
+	frame := ansi.Strip(m.viewLaunchHint())
+	if !strings.Contains(frame, "claude.ai/install.sh") {
+		t.Fatalf("dialog should show the install command:\n%s", frame)
+	}
+}
+
+func TestReportLaunchErrorOpensHintForUnknownMissingCLI(t *testing.T) {
+	m := buildModel(t)
+
+	m.reportLaunchError(config.MissingToolError{Binary: "acme"})
+
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+	}
+	if !strings.Contains(m.launchHint, "acme") {
+		t.Fatalf("hint %q should name the missing CLI", m.launchHint)
+	}
+	if !strings.Contains(m.launchHint, "install") {
+		t.Fatalf("hint %q should name how to install", m.launchHint)
+	}
+}
+
+func TestSpawnMissingCLIPromptsInstall(t *testing.T) {
+	m := buildModel(t)
+	m.cfg.Tools["claude"] = config.Tool{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
+
+	m.openForm()
+	m.form.name.SetValue("agent")
+	m.form.dir.SetValue(t.TempDir())
+	claudeIndex := -1
+	for i, name := range m.form.toolNames {
+		if name == "claude" {
+			claudeIndex = i
+		}
+	}
+	if claudeIndex < 0 {
+		t.Fatalf("claude not offered by the form: %v", m.form.toolNames)
+	}
+	m.form.toolIndex = claudeIndex
+	pickGroup(t, m, "")
+	m.submitForm()
+
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
+	}
+	if !strings.Contains(m.launchHint, "am-missing-cli-xyz") {
+		t.Fatalf("hint %q should name the missing binary", m.launchHint)
+	}
+	if len(m.sessionRows()) != 0 {
+		t.Fatalf("no session may spawn without the CLI, got %v", sessionNames(m))
+	}
+}
+
+func TestReviveMissingCLIPromptsInstall(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: newID(), Name: "agent", Tool: "claude", Cwd: t.TempDir()}
+	if err := m.store.CreateSession(sess); err != nil {
+		t.Fatal(err)
+	}
+	m.sessions = []store.Session{sess}
+	m.cfg.Tools["claude"] = config.Tool{
+		Command:       "cat",
+		ReviveCommand: "am-missing-cli-xyz",
+		DefaultStatus: status.Idle,
+	}
+
+	err := m.reviveSession(sess)
+	if err == nil {
+		t.Fatal("revive of a missing CLI should fail")
+	}
+	m.reportLaunchError(err)
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, err = %q, want modeLaunchHint", m.mode, m.errBar.text)
+	}
+	if !strings.Contains(m.launchHint, "am-missing-cli-xyz") {
+		t.Fatalf("hint %q should name the revive binary", m.launchHint)
 	}
 }
 

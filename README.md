@@ -49,7 +49,7 @@ Runs on macOS and Linux, and on Windows inside [WSL2](docs/install.md#windows).
 brew install yoanwai/tap/agent-manager
 ```
 
-Installs tmux with it if missing. The tap ships a cask, so an install from the older formula switches over with `brew uninstall agent-manager` followed by the command above.
+Installs tmux with it if missing, and Homebrew runs on git, so both dependencies are covered. The tap ships a cask, so an install from the older formula switches over with `brew uninstall agent-manager` followed by the command above.
 
 ### Install script (macOS / Linux)
 
@@ -57,9 +57,9 @@ Installs tmux with it if missing. The tap ships a cask, so an install from the o
 curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh
 ```
 
-Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Set `AGENT_MANAGER_INSTALL_DIR` for another directory and `AGENT_MANAGER_VERSION` to pin a version. Install tmux with your own package manager.
+Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Then it checks for tmux 3.1+ and git and offers to install whichever is missing through the package manager it finds (Homebrew, apt, dnf, pacman, zypper, or apk), printing the exact command when you decline. Set `AGENT_MANAGER_INSTALL_DIR` for another directory, `AGENT_MANAGER_VERSION` to pin a version, and `AGENT_MANAGER_INSTALL_DEPS=1` to answer the dependency prompt up front (`=0` to skip it).
 
-Arch Linux, mise, `go install`, prebuilt binaries, Windows (WSL2), and updating: [docs/install.md](docs/install.md).
+Arch Linux, mise, `go install`, prebuilt binaries, Windows (WSL2), dependencies, and updating: [docs/install.md](docs/install.md).
 
 ## Usage
 
