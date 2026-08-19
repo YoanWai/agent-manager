@@ -81,6 +81,7 @@ tmux_new_enough() {
 	out=$(tmux -V 2>/dev/null) || return 1
 	ver=${out#tmux }
 	ver=${ver#next-}
+	ver=${ver%%-*}
 	ver=${ver%%[a-zA-Z]*}
 	major=${ver%%.*}
 	rest=${ver#*.}
