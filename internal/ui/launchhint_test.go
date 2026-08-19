@@ -68,6 +68,9 @@ func TestReportLaunchErrorOpensHintForUnknownMissingCLI(t *testing.T) {
 	if !strings.Contains(m.launchHint, "acme") {
 		t.Fatalf("hint %q should name the missing CLI", m.launchHint)
 	}
+	if !strings.Contains(m.launchHint, "install") {
+		t.Fatalf("hint %q should name how to install", m.launchHint)
+	}
 }
 
 func TestSpawnMissingCLIPromptsInstall(t *testing.T) {
