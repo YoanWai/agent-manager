@@ -75,10 +75,27 @@ func TestInstallCommandSkipsAptWithoutSudo(t *testing.T) {
 	}
 }
 
-func TestInstallCommandApkHasNoSudo(t *testing.T) {
+func TestInstallCommandApkAsRootHasNoSudo(t *testing.T) {
+	stubUID(t, 0)
 	stubPath(t, "apk")
 	if got, want := installCommand("linux", "tmux"), "apk add tmux"; got != want {
 		t.Fatalf("installCommand = %q, want %q", got, want)
+	}
+}
+
+func TestInstallCommandApkAsNonRootTakesSudo(t *testing.T) {
+	stubUID(t, 1)
+	stubPath(t, "apk", "sudo")
+	if got, want := installCommand("linux", "tmux"), "sudo apk add tmux"; got != want {
+		t.Fatalf("installCommand = %q, want %q", got, want)
+	}
+}
+
+func TestInstallCommandSkipsApkWithoutSudo(t *testing.T) {
+	stubUID(t, 1)
+	stubPath(t, "apk")
+	if got := installCommand("linux", "tmux"); got != "" {
+		t.Fatalf("installCommand = %q, want empty", got)
 	}
 }
 
