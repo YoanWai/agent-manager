@@ -60,7 +60,6 @@ func TestFocusKeyCommand(t *testing.T) {
 // bgRun returns, for each column, whether a background color is active,
 // by walking the row's SGR sequences the way a terminal would.
 func bgRun(row string, width int) []bool {
-	row = strings.NewReplacer("\u200e", "", "\u2066", "", "\u2069", "").Replace(row)
 	out := make([]bool, 0, width)
 	bg := false
 	i := 0

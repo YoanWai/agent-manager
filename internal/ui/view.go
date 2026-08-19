@@ -43,7 +43,7 @@ func (m *Model) View() string {
 	default:
 		frame = m.viewListFrame()
 	}
-	frame = clampFrame(pinFrameLTR(frame), m.height)
+	frame = clampFrame(frame, m.height)
 	return m.syncCursorAnchor(frame)
 }
 
@@ -352,7 +352,7 @@ func previewLine(line string, width int) string {
 	if w < width {
 		line += strings.Repeat(" ", width-w)
 	}
-	return pinPaneLineLTR(line)
+	return line
 }
 
 // expandPaneTabs writes a captured row's tabs out as the spaces the pane

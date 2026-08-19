@@ -45,6 +45,4 @@ State is stored next to the config in `state.db` (SQLite).
 
 ## Right-to-left text
 
-A row carrying Hebrew or Arabic can flip a terminal's paragraph direction, and the whole row is then right-justified into the sessions rail. Agent Manager pins such rows left with Unicode direction marks on the hosts that need them, iTerm2 today, detected through `TERM_PROGRAM` and `LC_TERMINAL`.
-
-Other hosts render RTL rows in column without the marks, and a host that runs its own bidi reorders a row that carries them until the frame no longer matches what was painted. Set `AGENT_MANAGER_RTL_PIN=1` to force the marks on, `AGENT_MANAGER_RTL_PIN=0` to force them off.
+Hebrew and Arabic rows are painted as the cells they occupy, the same on every host. A terminal that runs its own bidirectional layout, iTerm2's right-to-left support or WezTerm's `bidi_enabled`, reorders those rows itself; turn that support off to read the frame in the columns Agent Manager paints.

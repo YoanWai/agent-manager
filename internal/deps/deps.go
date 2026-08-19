@@ -26,7 +26,7 @@ var linuxManagers = []manager{
 	{"dnf", "sudo dnf install -y "},
 	{"pacman", "sudo pacman -S --needed "},
 	{"zypper", "sudo zypper install -y "},
-	{"apk", "apk add "},
+	{"apk", "sudo apk add "},
 	{"brew", "brew install "},
 }
 

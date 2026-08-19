@@ -385,7 +385,7 @@ func TestTripleClickOnRealFrameTakesPaneRowOnly(t *testing.T) {
 // plainCells is a painted frame row as visible cells, escape sequences
 // removed, so a column index in the frame is a column on screen.
 func plainCells(row string) []rune {
-	return []rune(strings.NewReplacer("\u200e", "", "\u2066", "", "\u2069", "").Replace(ansi.Strip(row)))
+	return []rune(ansi.Strip(row))
 }
 
 // A capture taken by the slower poll path must not repaint over a frame
