@@ -134,22 +134,12 @@ type diffProbeMsg struct {
 func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, refresh bool) tea.Cmd {
 	driver := m.gitDrv
 	stor := m.store
-	var cachedRoots []string
-	var cachedCWD string
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, refresh: refresh}
-		var roots []string
-		var err error
-		if sess.Cwd == cachedCWD && cachedRoots != nil {
-			roots = cachedRoots
-		} else {
-			roots, err = driver.ResolveRepos(sess.Cwd)
-			if err != nil {
-				msg.err = err
-				return msg
-			}
-			cachedCWD = sess.Cwd
-			cachedRoots = roots
+		roots, err := driver.ResolveRepos(sess.Cwd)
+		if err != nil {
+			msg.err = err
+			return msg
 		}
 		repoIdx, found := 0, false
 		for i, root := range roots {
@@ -1048,7 +1038,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		m.openAnnotate()
 	case "d":
-		m.removeAnnotation()
+		m.discardOrToggleAnnotation()
 	case "C":
 		if m.draftAnnotationCount() == 0 {
 			m.errBar.text = "no comments to send - press c on a line first"
@@ -1364,7 +1354,7 @@ func (m *Model) saveAnnotation() {
 	num, deleted := annotationLine(line)
 	if existing := m.annotationAt(fd.File.Path, line); existing != nil {
 		if text == "" {
-			m.removeAnnotation()
+			m.discardOrToggleAnnotation()
 			return
 		}
 		existing.text = text
@@ -1387,7 +1377,7 @@ func (m *Model) saveAnnotation() {
 	m.saveReviewState()
 }
 
-func (m *Model) removeAnnotation() {
+func (m *Model) discardOrToggleAnnotation() {
 	fd := m.currentFileDiff()
 	if fd == nil {
 		return

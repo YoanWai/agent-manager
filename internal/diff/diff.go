@@ -129,17 +129,33 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride stri
 // fillUnknownStats counts untracked files git's numstat never sees, so the
 // review file list can show +N or binary without waiting for a visit.
 func fillUnknownStats(driver *git.Driver, root string, files []FileDiff) {
-	var wg sync.WaitGroup
+	var unknown []int
 	for i := range files {
-		if files[i].statKnown || files[i].File.Status != git.Untracked {
-			continue
+		if !files[i].statKnown && files[i].File.Status == git.Untracked {
+			unknown = append(unknown, i)
 		}
-		wg.Add(1)
-		go func(fd *FileDiff) {
-			defer wg.Done()
-			_ = countUnknownStat(driver, root, fd)
-		}(&files[i])
 	}
+	if len(unknown) == 0 {
+		return
+	}
+
+	const maxWorkers = 8
+	workers := min(len(unknown), maxWorkers)
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				_ = countUnknownStat(driver, root, &files[i])
+			}
+		}()
+	}
+	for _, i := range unknown {
+		jobs <- i
+	}
+	close(jobs)
 	wg.Wait()
 }
 

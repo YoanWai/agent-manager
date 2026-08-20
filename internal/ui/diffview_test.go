@@ -1288,7 +1288,7 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 			break
 		}
 	}
-	m.removeAnnotation()
+	m.discardOrToggleAnnotation()
 	if !m.diff.annotations[m.reviewKey()][0].handled {
 		t.Fatal("d should mark a sent comment handled")
 	}
