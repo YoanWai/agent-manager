@@ -450,6 +450,18 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	if err := m.store.SetAgentSessionID(sess.ID, "kept-conversation"); err != nil {
 		t.Fatal(err)
 	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "phoenix")
+	sess = m.sessionRows()[0]
+	if sess.AgentSessionID != "kept-conversation" {
+		t.Fatalf("loaded session id = %q, want kept-conversation", sess.AgentSessionID)
+	}
+
+	argsFile := filepath.Join(t.TempDir(), "launch-args")
+	tool := m.cfg.Tools[sess.Tool]
+	tool.ResumeByIDCommand = argCaptureCommand(argsFile) + " --resume {id}"
+	m.cfg.Tools[sess.Tool] = tool
+
 	if err := m.tmux.Kill(sess.ID); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
@@ -495,6 +507,10 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	}
 	if strings.Contains(gotPreview, "old pane from last life") {
 		t.Fatalf("stale pane should not survive revive, got %q", gotPreview)
+	}
+	args := readWhenWritten(t, argsFile)
+	if !strings.Contains(args, "--resume") || !strings.Contains(args, "kept-conversation") {
+		t.Fatalf("revive launch arguments = %q, want --resume kept-conversation", args)
 	}
 }
 
