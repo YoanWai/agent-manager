@@ -1114,13 +1114,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resizeSessions()
 		}
 		m.rebuildRows()
-		m.reloadReviewState()
+		reviewStatuses := m.reviewStatusesCmd()
 		// A pass that ran with a stale selection (a session created this
 		// tick) carries the wrong preview; resync and fetch it directly.
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
 			m.previewGen++
-			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd(), m.startStartupTick())
+			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
 		}
 		m.proc = msg.proc
 		m.procFor = msg.procFor
@@ -1131,7 +1131,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.watchSelection()
 		}
 		m.watchedGen = m.previewGen
-		return m, tea.Batch(focusExit, m.diffRefreshCmd(), m.startStartupTick())
+		return m, tea.Batch(focusExit, m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
 
 	case updateMsg:
 		if msg.manual {
@@ -1306,6 +1306,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case diffProbeMsg:
 		return m, m.handleDiffProbe(msg)
+
+	case reviewStatusesLoadedMsg:
+		m.handleReviewStatusesLoaded(msg)
+		return m, nil
 
 	case errMsg:
 		m.errBar.text = msg.err.Error()

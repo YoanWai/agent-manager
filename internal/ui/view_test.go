@@ -210,6 +210,12 @@ func TestTruncatePathCutsAtSeparator(t *testing.T) {
 	if truncatePath("short.go", 20) != "short.go" {
 		t.Fatal("short paths should pass through")
 	}
+	if got := truncatePath(path, 1); got != "…" {
+		t.Fatalf("limit 1 = %q, want ellipsis", got)
+	}
+	if got := truncatePath(path, 0); got != "" {
+		t.Fatalf("limit 0 = %q, want empty", got)
+	}
 }
 
 // TestZZShot renders a full frame to disk for visual review. Skipped

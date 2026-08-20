@@ -15,9 +15,7 @@ import (
 // outgrow a terminal, it scrolls, and a search narrows it to the one line
 // the reader came for.
 
-// helpState is the key map's own view state: where the list is scrolled and
-// the search typed over it. back is the mode ? was pressed in, so closing
-// the map returns to review rather than dropping to the list.
+// back returns help to the screen it opened over.
 type helpState struct {
 	scroll    int
 	query     string

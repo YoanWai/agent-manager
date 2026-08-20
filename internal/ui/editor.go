@@ -43,13 +43,7 @@ var (
 	}
 )
 
-// editorDoneMsg ends an editor request. The status line waits on it rather
-// than announcing the editor from openEditor, so a launch that fails is
-// never reported as one that opened: name and path are filled once a
-// windowed editor is running, and err carries a launch that failed or a
-// terminal editor that exited badly. tookScreen marks the editor the
-// manager handed the terminal to, which comes back without the mouse
-// reporting and background the manager had set on it.
+// Waiting for this result prevents a failed launch from being reported as open.
 type editorDoneMsg struct {
 	name       string
 	path       string
@@ -133,13 +127,7 @@ func (m *Model) resolveEditor() string {
 	return ""
 }
 
-// editorCommand builds the launch from an editor line and the path to
-// open, reporting false when the line names nothing to run. The command
-// runs directly rather than through a shell: two of the four places an
-// editor line comes from are environment variables, and a repo that sets
-// EDITOR in an .envrc must not get a shell to write into. Nothing in the
-// line is expanded or substituted, and the directory is always its own
-// argument, whatever it contains.
+// Editor settings and environment variables are parsed as argv, never shell code.
 func editorCommand(line, path string) (*exec.Cmd, bool) {
 	argv := splitEditorLine(line)
 	if len(argv) == 0 {

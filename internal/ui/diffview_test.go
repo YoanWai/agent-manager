@@ -1317,9 +1317,12 @@ func TestAgentHandledUpdateReloadsWithoutDroppingTheComment(t *testing.T) {
 	if found, err := m.store.SetReviewCommentHandled(m.diff.sessID, note.id, true); err != nil || !found {
 		t.Fatalf("agent update = %v, %v", found, err)
 	}
-	m.reloadReviewState()
+	m.diff.annotations[m.reviewKey()] = append(m.diff.annotations[m.reviewKey()], annotation{
+		id: "localdraft000001", file: note.file, line: note.line, text: "keep this draft",
+	})
+	m.applyCmd(t, m.reviewStatusesCmd())
 	notes := m.diff.annotations[m.reviewKey()]
-	if len(notes) != 1 || !notes[0].handled || notes[0].round != 1 || notes[0].point != 1 {
+	if len(notes) != 2 || !notes[0].handled || notes[0].round != 1 || notes[0].point != 1 || notes[1].text != "keep this draft" {
 		t.Fatalf("reloaded history = %+v", notes)
 	}
 }
@@ -1337,7 +1340,11 @@ func TestSavedReviewRoundsGainStableIDsAndPointNumbers(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if !m.loadReviewState() {
+	state, err := readReviewState(m.store, m.diff.sessID, m.diff.repoSel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.restoreReviewState(state) {
 		t.Fatal("saved review state was not loaded")
 	}
 	notes := m.diff.annotations[m.reviewKey()]
@@ -1345,7 +1352,7 @@ func TestSavedReviewRoundsGainStableIDsAndPointNumbers(t *testing.T) {
 		notes[0].id == notes[1].id || notes[0].point != 1 || notes[1].point != 2 {
 		t.Fatalf("migrated comments = %+v", notes)
 	}
-	state, err := m.store.ReviewState(m.diff.sessID, m.diff.repoSel)
+	state, err = m.store.ReviewState(m.diff.sessID, m.diff.repoSel)
 	if err != nil || state.Comments[0].ID == "" || state.Comments[1].Point != 2 {
 		t.Fatalf("persisted migration = %+v, %v", state.Comments, err)
 	}
@@ -2715,7 +2722,11 @@ func TestReviewProgressAndDraftsRestoreFromStore(t *testing.T) {
 	delete(m.diff.annotations, key)
 	delete(m.diff.rounds, key)
 	delete(m.diff.stateLoaded, key)
-	if !m.loadReviewState() {
+	state, err := readReviewState(m.store, m.diff.sessID, m.diff.repoSel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.restoreReviewState(state) {
 		t.Fatal("review state was not restored")
 	}
 	if got := m.diff.reviewed[key][path]; got != wantHash {

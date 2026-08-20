@@ -126,8 +126,8 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride stri
 	return set, nil
 }
 
-// fillUnknownStats counts untracked files git's numstat never sees, so the
-// review file list can show +N or binary without waiting for a visit.
+// Git's numstat omits untracked files; count them before their first visit so
+// the file list can still show +N or binary.
 func fillUnknownStats(driver *git.Driver, root string, files []FileDiff) {
 	var unknown []int
 	for i := range files {

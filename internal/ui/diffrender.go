@@ -355,8 +355,6 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 	return rows
 }
 
-// annotationRows renders comments as indented full-width rows beneath the
-// code line. Shared by both layouts so drafts and earlier rounds stay visible.
 func (m *Model) annotationRows(fd *diff.FileDiff, lineIdx, width int) []string {
 	var rows []string
 	for _, note := range m.annotationsAt(fd.File.Path, fd.Lines[lineIdx]) {

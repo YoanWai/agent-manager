@@ -7,7 +7,6 @@ import (
 	"fmt"
 )
 
-// ReviewState is the durable state of one session reviewing one repository.
 type ReviewState struct {
 	Reviewed map[string]uint64 `json:"reviewed,omitempty"`
 	Comments []ReviewComment   `json:"comments,omitempty"`
@@ -67,8 +66,7 @@ func (s *Store) SetReviewState(sessionID, repoRoot string, state ReviewState) er
 	return err
 }
 
-// SetReviewCommentHandled updates a sent comment wherever its reviewed repo
-// is stored. The id is stable when edits move the comment to another line.
+// Comment IDs stay stable when edits move their line.
 func (s *Store) SetReviewCommentHandled(sessionID, commentID string, handled bool) (bool, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -137,8 +135,7 @@ func (s *Store) SetReviewCommentHandled(sessionID, commentID string, handled boo
 	return true, nil
 }
 
-// MergeReviewState saves UI-owned review data without overwriting handled
-// statuses an agent may have changed since the UI last loaded the state.
+// Preserve statuses an agent may have changed after the UI's last snapshot.
 func (s *Store) MergeReviewState(sessionID, repoRoot string, state ReviewState) error {
 	tx, err := s.db.Begin()
 	if err != nil {

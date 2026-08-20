@@ -603,8 +603,6 @@ func truncateTail(s string, max int) string {
 	return "…" + string(runes[len(runes)-max+1:])
 }
 
-// truncatePath keeps the tail of a path, cutting at a separator so a
-// tight file list shows `…/api/sessions.go` rather than `…ternal/api/…`.
 func truncatePath(path string, limit int) string {
 	runes := []rune(path)
 	if limit <= 0 {

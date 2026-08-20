@@ -15,7 +15,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// annotation is one draft or sent review comment anchored to a diff line.
 type annotation struct {
 	id       string
 	file     string
@@ -48,11 +47,12 @@ type diffState struct {
 	sideBySide bool
 	codeOnly   bool
 
-	scrollByFile map[string]int
-	reviewed     map[string]map[string]uint64
-	annotations  map[string][]annotation
-	rounds       map[string]store.ReviewRound
-	stateLoaded  map[string]bool
+	scrollByFile    map[string]int
+	reviewed        map[string]map[string]uint64
+	annotations     map[string][]annotation
+	rounds          map[string]store.ReviewRound
+	stateLoaded     map[string]bool
+	reviewStatusGen int
 
 	annotating  bool
 	annInput    textarea.Model
@@ -86,12 +86,15 @@ type diffState struct {
 }
 
 type diffLoadedMsg struct {
-	sessID string
-	scope  git.Scope
-	gen    int
-	set    diff.Set
-	fp     uint64
-	err    error
+	sessID            string
+	scope             git.Scope
+	gen               int
+	set               diff.Set
+	fp                uint64
+	err               error
+	reviewState       store.ReviewState
+	reviewStateLoaded bool
+	reviewStateErr    error
 	// repoRoots and repoRoot report which repo the load resolved to, so the UI
 	// can show the repo name and offer the picker when the cwd holds several.
 	repoRoots []string
@@ -130,6 +133,14 @@ type diffProbeMsg struct {
 	fp       uint64
 }
 
+type reviewStatusesLoadedMsg struct {
+	sessID   string
+	repoRoot string
+	gen      int
+	handled  map[string]bool
+	err      error
+}
+
 // repoWant is matched by path so the selection survives ResolveRepos re-ranking between loads.
 func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, refresh bool) tea.Cmd {
 	driver := m.gitDrv
@@ -158,6 +169,8 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 		}
 		msg.repoRoots = roots
 		msg.repoRoot = roots[repoIdx]
+		msg.reviewState, msg.reviewStateErr = readReviewState(stor, sess.ID, roots[repoIdx])
+		msg.reviewStateLoaded = msg.reviewStateErr == nil
 		override, err := stor.ReviewBase(sess.ID, resolveSymlinksOrSelf(roots[repoIdx]))
 		if err != nil {
 			msg.err = err
@@ -351,35 +364,11 @@ func (m *Model) reviewKey() string {
 	return m.diff.sessID + "\x00" + m.diff.repoSel
 }
 
-func (m *Model) loadReviewState() bool {
-	key := m.reviewKey()
-	if m.store == nil || m.diff.sessID == "" || m.diff.repoSel == "" || m.diff.stateLoaded[key] {
-		return false
-	}
-	if m.diff.reviewed == nil {
-		m.diff.reviewed = map[string]map[string]uint64{}
-	}
-	if m.diff.annotations == nil {
-		m.diff.annotations = map[string][]annotation{}
-	}
-	if m.diff.rounds == nil {
-		m.diff.rounds = map[string]store.ReviewRound{}
-	}
-	if m.diff.stateLoaded == nil {
-		m.diff.stateLoaded = map[string]bool{}
-	}
-	state, err := m.store.ReviewState(m.diff.sessID, m.diff.repoSel)
+func readReviewState(stor *store.Store, sessID, repoRoot string) (store.ReviewState, error) {
+	state, err := stor.ReviewState(sessID, repoRoot)
 	if err != nil {
-		m.errBar.text = "loading review state: " + err.Error()
-		return false
+		return store.ReviewState{}, err
 	}
-	marks := make(map[string]uint64, len(state.Reviewed))
-	for path, hash := range state.Reviewed {
-		if hash != 0 {
-			marks[path] = hash
-		}
-	}
-	notes := make([]annotation, 0, len(state.Comments))
 	points := map[int]int{}
 	migrated := false
 	for i := range state.Comments {
@@ -397,6 +386,41 @@ func (m *Model) loadReviewState() bool {
 				points[note.Round] = note.Point
 			}
 		}
+	}
+	if migrated {
+		if err := stor.SetReviewState(sessID, repoRoot, state); err != nil {
+			return store.ReviewState{}, err
+		}
+	}
+	return state, nil
+}
+
+func (m *Model) restoreReviewState(state store.ReviewState) bool {
+	key := m.reviewKey()
+	if m.diff.sessID == "" || m.diff.repoSel == "" || m.diff.stateLoaded[key] {
+		return false
+	}
+	if m.diff.reviewed == nil {
+		m.diff.reviewed = map[string]map[string]uint64{}
+	}
+	if m.diff.annotations == nil {
+		m.diff.annotations = map[string][]annotation{}
+	}
+	if m.diff.rounds == nil {
+		m.diff.rounds = map[string]store.ReviewRound{}
+	}
+	if m.diff.stateLoaded == nil {
+		m.diff.stateLoaded = map[string]bool{}
+	}
+	marks := make(map[string]uint64, len(state.Reviewed))
+	for path, hash := range state.Reviewed {
+		if hash != 0 {
+			marks[path] = hash
+		}
+	}
+	notes := make([]annotation, 0, len(state.Comments))
+	for i := range state.Comments {
+		note := &state.Comments[i]
 		notes = append(notes, annotation{
 			id: note.ID, file: note.File, line: note.Line, deleted: note.Deleted,
 			excerpt: note.Excerpt, text: note.Text, hash: note.ContentHash,
@@ -407,20 +431,47 @@ func (m *Model) loadReviewState() bool {
 	m.diff.annotations[key] = notes
 	m.diff.rounds[key] = state.Round
 	m.diff.stateLoaded[key] = true
-	if migrated {
-		if err := m.store.SetReviewState(m.diff.sessID, m.diff.repoSel, state); err != nil {
-			m.errBar.text = "migrating review comments: " + err.Error()
-		}
-	}
 	return true
 }
 
-func (m *Model) reloadReviewState() {
-	if !m.diff.active || m.diff.sessID == "" || m.diff.repoSel == "" {
+func (m *Model) reviewStatusesCmd() tea.Cmd {
+	if m.store == nil || !m.diff.active || m.diff.sessID == "" || m.diff.repoSel == "" {
+		return nil
+	}
+	m.diff.reviewStatusGen++
+	gen := m.diff.reviewStatusGen
+	sessID, repoRoot, stor := m.diff.sessID, m.diff.repoSel, m.store
+	return func() tea.Msg {
+		state, err := stor.ReviewState(sessID, repoRoot)
+		if err != nil {
+			return reviewStatusesLoadedMsg{sessID: sessID, repoRoot: repoRoot, gen: gen, err: err}
+		}
+		handled := make(map[string]bool, len(state.Comments))
+		for _, comment := range state.Comments {
+			if comment.ID != "" && comment.Round > 0 {
+				handled[comment.ID] = comment.Resolved
+			}
+		}
+		return reviewStatusesLoadedMsg{sessID: sessID, repoRoot: repoRoot, gen: gen, handled: handled}
+	}
+}
+
+func (m *Model) handleReviewStatusesLoaded(msg reviewStatusesLoadedMsg) {
+	if !m.diff.active || msg.sessID != m.diff.sessID || msg.repoRoot != m.diff.repoSel || msg.gen != m.diff.reviewStatusGen {
 		return
 	}
-	delete(m.diff.stateLoaded, m.reviewKey())
-	m.loadReviewState()
+	if msg.err != nil {
+		m.errBar.text = "loading review statuses: " + msg.err.Error()
+		return
+	}
+	key := m.reviewKey()
+	notes := m.diff.annotations[key]
+	for i := range notes {
+		if handled, ok := msg.handled[notes[i].id]; ok {
+			notes[i].handled = handled
+		}
+	}
+	m.diff.annotations[key] = notes
 }
 
 func (m *Model) persistReviewState() error {
@@ -494,7 +545,12 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	m.diff.repoRoots = msg.repoRoots
 	m.diff.repoSel = msg.repoRoot
 	m.diff.worktrees = msg.worktrees
-	restoredState := m.loadReviewState()
+	restoredState := false
+	if msg.reviewStateErr != nil {
+		m.errBar.text = "loading review state: " + msg.reviewStateErr.Error()
+	} else if msg.reviewStateLoaded {
+		restoredState = m.restoreReviewState(msg.reviewState)
+	}
 	if msg.missingRepo != "" {
 		m.errBar.text = fmt.Sprintf("picked or declared repo %s is no longer under the session directory",
 			filepath.Base(msg.missingRepo))
@@ -1415,6 +1471,7 @@ func (m *Model) discardOrToggleAnnotation() {
 	}
 	if target >= 0 {
 		handled := !notes[target].handled
+		m.diff.reviewStatusGen++
 		if m.store != nil {
 			found, err := m.store.SetReviewCommentHandled(m.diff.sessID, notes[target].id, handled)
 			if err != nil {

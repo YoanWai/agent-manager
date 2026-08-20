@@ -151,12 +151,6 @@ CREATE TABLE IF NOT EXISTS settings (
 			session_id TEXT PRIMARY KEY,
 			scope      TEXT NOT NULL
 		)`,
-		`CREATE TABLE IF NOT EXISTS review_states (
-			session_id TEXT NOT NULL,
-			repo_root  TEXT NOT NULL,
-			state      TEXT NOT NULL,
-			PRIMARY KEY (session_id, repo_root)
-		)`,
 		`ALTER TABLE sessions ADD COLUMN worktree_repo TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN worktree_branch TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE groups ADD COLUMN worktree TEXT NOT NULL DEFAULT ''`,
@@ -208,6 +202,12 @@ CREATE TABLE IF NOT EXISTS settings (
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS file_reservations_holder ON file_reservations (session_id, pattern)`,
 		`CREATE INDEX IF NOT EXISTS file_reservations_live ON file_reservations (expires_at)`,
+		`CREATE TABLE IF NOT EXISTS review_states (
+			session_id TEXT NOT NULL,
+			repo_root  TEXT NOT NULL,
+			state      TEXT NOT NULL,
+			PRIMARY KEY (session_id, repo_root)
+		)`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {

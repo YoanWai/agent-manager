@@ -146,8 +146,7 @@ func ReviewScope(configDir, sessionID, scope string) (string, error) {
 	return "review scope set to " + scope, nil
 }
 
-// ReviewComment records the agent's handled state for one point sent by the
-// reviewer without removing the comment from its review round.
+// Status changes leave the review history intact.
 func ReviewComment(configDir, sessionID, commentID string, handled bool) (string, error) {
 	if err := validSession(sessionID); err != nil {
 		return "", err
