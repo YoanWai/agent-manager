@@ -184,3 +184,22 @@ func TestUpdateDelegatedJSONKeepsTheRecordClean(t *testing.T) {
 		t.Fatalf("delegated --json output holds %d lines, want the record only: %q", len(lines), out.String())
 	}
 }
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("write failed") }
+
+func TestUpdateReportsProgressWriteFailures(t *testing.T) {
+	swapUpdateSeams(t, "agent-manager", update.Manager{}, update.Result{Latest: "v0.32.0"}, nil)
+	applied := false
+	oldApply := updateApply
+	updateApply = func(context.Context, string, string) error { applied = true; return nil }
+	t.Cleanup(func() { updateApply = oldApply })
+	err := runUpdate("0.31.0")(failingWriter{}, nil, "", t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "write failed") {
+		t.Fatalf("progress write failure returned %v", err)
+	}
+	if applied {
+		t.Fatal("apply ran despite the failed progress write")
+	}
+}

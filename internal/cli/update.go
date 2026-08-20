@@ -93,7 +93,9 @@ func runUpdate(version string) func(out io.Writer, args []string, sessionID, con
 		// The download can take a while, so say what is coming; --json keeps
 		// stdout to the single record.
 		if !*asJSON {
-			fmt.Fprintf(out, "updating to %s...\n", result.Latest)
+			if _, err := fmt.Fprintf(out, "updating to %s...\n", result.Latest); err != nil {
+				return err
+			}
 		}
 		if err := updateApply(context.Background(), result.Latest, execPath); err != nil {
 			return err
