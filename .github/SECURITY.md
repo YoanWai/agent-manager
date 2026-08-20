@@ -31,7 +31,7 @@ Useful context when judging whether something is a vulnerability:
 - **Process spawning.** Sessions launch the CLI command from your config (`[tools.<name>].command`) and its revive command. Anything you put in that config runs as you.
 - **Local state.** Config (`config.toml`) and state (`state.db`, SQLite) live in your OS user config directory. Session names, group paths, working directories, and review targets are stored there.
 - **Generated agent config.** Launching Claude Code, Codex, OpenCode, Grok, Gemini, or an MCP-enabled Hermes tool writes or registers generated settings or MCP configuration so the agent gets status hooks and the agent-manager MCP tools.
-- **MCP server.** `agent-manager mcp` speaks stdio to the agent in its own session and exposes `rename`, `review_repo`, and `review_base`. It identifies the calling session from its environment.
+- **MCP server.** `agent-manager mcp` speaks stdio to the agent in its own session and exposes session, group, task, reservation, terminal, messaging, and review operations. It identifies the calling session from its environment and scopes destructive terminal operations to the caller's own nested terminals.
 - **Git repositories.** Review mode runs read-only git commands against the repo a session declares or that ranking picks.
 - **Network.** One request a day to the GitHub Releases API to check for a newer version.
 

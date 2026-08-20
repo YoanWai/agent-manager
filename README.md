@@ -29,9 +29,9 @@ Instead of hunting through terminal tabs to see which agent is done and which is
 
 Press `f` on a session to continue its conversation in a separate named fork.
 
-The tools you use alongside agents live in the same list: `T` opens a plain shell tab in the selected group for builds, Git, and one-off commands.
+The tools you use alongside agents live in the same list: `T` opens a shell under the selected agent, or in the selected group, for builds, Git, and one-off commands. An agent can spawn another, send it a message, and wait until it is done: every MCP-capable session carries those tools on launch.
 
-Not here yet: cost tracking, mouse-driven navigation, and agents that can talk to each other.
+Not here yet: cost tracking and mouse-driven list navigation.
 
 **Jump to:** [Install](#install) · [Usage](#usage) · [Keys](docs/usage.md#keys) · [Diff review](docs/usage.md#diff-review) · [Configuration](docs/configuration.md) · [Docs site](https://agent-manager.dev/docs/)
 

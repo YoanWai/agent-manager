@@ -34,11 +34,11 @@ CI runs these four on every pull request. Run them locally first:
 ```bash
 gofmt -l .          # must print nothing
 go vet ./...
-go test -race ./...
+env -u TMUX TMUX_TMPDIR=/tmp/amtest go test -race ./...
 go build ./...
 ```
 
-The test suite includes end-to-end tests against a real tmux server on its own socket, so tmux must be installed for `go test` to pass.
+The test suite includes end-to-end tests against a real tmux server on its own socket, so tmux must be installed for `go test` to pass. `env -u TMUX` is required when your shell is already inside tmux, or the tests land on that server.
 
 ## Code style
 
