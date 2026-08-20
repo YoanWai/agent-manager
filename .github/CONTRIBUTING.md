@@ -38,7 +38,7 @@ env -u TMUX TMUX_TMPDIR=/tmp/amtest go test -race ./...
 go build ./...
 ```
 
-The test suite includes end-to-end tests against a real tmux server on its own socket, so tmux must be installed for `go test` to pass. `env -u TMUX` is required when your shell is already inside tmux, or the tests land on that server.
+The test suite includes end-to-end tests against a real tmux server on its own socket. Install tmux to run those tests locally; tmux-dependent tests are skipped when tmux is unavailable. `env -u TMUX` is required when your shell is already inside tmux, or the tests land on that server.
 
 ## Code style
 
