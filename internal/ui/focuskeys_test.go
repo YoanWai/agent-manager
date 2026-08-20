@@ -400,7 +400,7 @@ func TestFocusEditorThatTookTheScreenRearmsMouse(t *testing.T) {
 	}
 
 	// A windowed editor never took the terminal, so it has nothing to undo.
-	updated, cmd = m.Update(editorDoneMsg{name: "code", dir: "/tmp"})
+	updated, cmd = m.Update(editorDoneMsg{name: "code", path: "/tmp"})
 	*m = *updated.(*Model)
 	if cmd != nil {
 		t.Fatalf("a windowed editor should leave the terminal alone, got %T", cmd())

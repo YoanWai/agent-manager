@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 )
 
 // ReviewState is the durable state of one session reviewing one repository.
@@ -36,7 +38,7 @@ func (s *Store) ReviewState(sessionID, repoRoot string) (ReviewState, error) {
 	var encoded string
 	err := s.db.QueryRow(`SELECT state FROM review_states WHERE session_id = ? AND repo_root = ?`,
 		sessionID, repoRoot).Scan(&encoded)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return ReviewState{}, nil
 	}
 	if err != nil {
@@ -83,6 +85,7 @@ func (s *Store) SetReviewCommentHandled(sessionID, commentID string, handled boo
 		state    ReviewState
 	}
 	var changed []changedState
+	matches := 0
 	for rows.Next() {
 		var repoRoot, encoded string
 		if err := rows.Scan(&repoRoot, &encoded); err != nil {
@@ -99,6 +102,7 @@ func (s *Store) SetReviewCommentHandled(sessionID, commentID string, handled boo
 			if state.Comments[i].ID == commentID && state.Comments[i].Round > 0 {
 				state.Comments[i].Resolved = handled
 				updated = true
+				matches++
 			}
 		}
 		if updated {
@@ -110,6 +114,9 @@ func (s *Store) SetReviewCommentHandled(sessionID, commentID string, handled boo
 	}
 	if err := rows.Err(); err != nil {
 		return false, err
+	}
+	if matches > 1 {
+		return false, fmt.Errorf("review comment %s is ambiguous", commentID)
 	}
 	if len(changed) == 0 {
 		return false, nil
@@ -142,7 +149,7 @@ func (s *Store) MergeReviewState(sessionID, repoRoot string, state ReviewState) 
 	var existingJSON string
 	err = tx.QueryRow(`SELECT state FROM review_states WHERE session_id = ? AND repo_root = ?`,
 		sessionID, repoRoot).Scan(&existingJSON)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	if err == nil {

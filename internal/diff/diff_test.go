@@ -331,6 +331,30 @@ func TestUntrackedStatsFillAtBuildWithoutLoadingContents(t *testing.T) {
 	}
 }
 
+func TestUntrackedStatErrorIsRecorded(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "tracked.go", "package a\n")
+	commit(t, dir, "init")
+	if err := os.Symlink(t.TempDir(), filepath.Join(dir, "linked.go")); err != nil {
+		t.Fatal(err)
+	}
+
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Files) != 1 {
+		t.Fatalf("files = %d, want 1", len(set.Files))
+	}
+	fd := set.Files[0]
+	if fd.Err == nil {
+		t.Fatal("failed eager count did not reach the file diff")
+	}
+	if fd.StatKnown() || fd.Loaded() {
+		t.Fatalf("failed count marked the file known or loaded: %+v", fd)
+	}
+}
+
 func TestUnreadableUntrackedFileDoesNotAbortSet(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads any file regardless of mode")

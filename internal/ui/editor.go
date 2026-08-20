@@ -45,14 +45,14 @@ var (
 
 // editorDoneMsg ends an editor request. The status line waits on it rather
 // than announcing the editor from openEditor, so a launch that fails is
-// never reported as one that opened: name and dir are filled once a
+// never reported as one that opened: name and path are filled once a
 // windowed editor is running, and err carries a launch that failed or a
 // terminal editor that exited badly. tookScreen marks the editor the
 // manager handed the terminal to, which comes back without the mouse
 // reporting and background the manager had set on it.
 type editorDoneMsg struct {
 	name       string
-	dir        string
+	path       string
 	err        error
 	tookScreen bool
 }
@@ -100,12 +100,12 @@ func (m *Model) launchEditor(path string) (tea.Model, tea.Cmd) {
 
 // Starting a process is exec, which Update must not do: a slow launch
 // would hold the next keystroke.
-func startEditorCmd(cmd *exec.Cmd, name, dir string) tea.Cmd {
+func startEditorCmd(cmd *exec.Cmd, name, path string) tea.Cmd {
 	return func() tea.Msg {
 		if err := startEditor(cmd); err != nil {
 			return editorDoneMsg{err: err}
 		}
-		return editorDoneMsg{name: name, dir: dir}
+		return editorDoneMsg{name: name, path: path}
 	}
 }
 
@@ -133,19 +133,19 @@ func (m *Model) resolveEditor() string {
 	return ""
 }
 
-// editorCommand builds the launch from an editor line and the directory to
+// editorCommand builds the launch from an editor line and the path to
 // open, reporting false when the line names nothing to run. The command
 // runs directly rather than through a shell: two of the four places an
 // editor line comes from are environment variables, and a repo that sets
 // EDITOR in an .envrc must not get a shell to write into. Nothing in the
 // line is expanded or substituted, and the directory is always its own
 // argument, whatever it contains.
-func editorCommand(line, dir string) (*exec.Cmd, bool) {
+func editorCommand(line, path string) (*exec.Cmd, bool) {
 	argv := splitEditorLine(line)
 	if len(argv) == 0 {
 		return nil, false
 	}
-	args := append(append([]string{}, argv[1:]...), dir)
+	args := append(append([]string{}, argv[1:]...), path)
 	return exec.Command(argv[0], args...), true
 }
 

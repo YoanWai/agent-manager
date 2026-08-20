@@ -605,18 +605,18 @@ func truncateTail(s string, max int) string {
 
 // truncatePath keeps the tail of a path, cutting at a separator so a
 // tight file list shows `…/api/sessions.go` rather than `…ternal/api/…`.
-func truncatePath(path string, max int) string {
+func truncatePath(path string, limit int) string {
 	runes := []rune(path)
-	if max <= 0 {
+	if limit <= 0 {
 		return ""
 	}
-	if len(runes) <= max {
+	if len(runes) <= limit {
 		return path
 	}
-	if max == 1 {
+	if limit == 1 {
 		return "…"
 	}
-	tail := string(runes[len(runes)-max+1:])
+	tail := string(runes[len(runes)-limit+1:])
 	if i := strings.IndexByte(tail, '/'); i >= 0 && i < len(tail)-1 {
 		return "…" + tail[i:]
 	}

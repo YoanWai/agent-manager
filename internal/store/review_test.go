@@ -71,6 +71,27 @@ func TestReviewCommentHandledKeepsTheComment(t *testing.T) {
 	}
 }
 
+func TestReviewCommentHandledRejectsDuplicateIDs(t *testing.T) {
+	st := newTestStore(t)
+	const commentID = "0123456789abcdef"
+	for _, root := range []string{"/one", "/two"} {
+		if err := st.SetReviewState("session", root, ReviewState{Comments: []ReviewComment{{
+			ID: commentID, File: "main.go", Line: 1, Text: "fix this", Round: 1, Point: 1,
+		}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if found, err := st.SetReviewCommentHandled("session", commentID, true); err == nil || found {
+		t.Fatalf("duplicate comment id = found %v, err %v", found, err)
+	}
+	for _, root := range []string{"/one", "/two"} {
+		state, err := st.ReviewState("session", root)
+		if err != nil || state.Comments[0].Resolved {
+			t.Fatalf("%s changed after ambiguous update: %+v, %v", root, state, err)
+		}
+	}
+}
+
 func TestMergeReviewStatePreservesAConcurrentHandledUpdate(t *testing.T) {
 	st := newTestStore(t)
 	const commentID = "0123456789abcdef"

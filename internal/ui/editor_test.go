@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -159,6 +160,29 @@ func TestReviewOpensCurrentFileInEditor(t *testing.T) {
 	opened := (*launched)[len(*launched)-1]
 	if !strings.HasSuffix(opened, ".go") && !strings.HasSuffix(opened, ".txt") {
 		t.Fatalf("opened %q, want the file under the cursor", opened)
+	}
+}
+
+func TestReviewRefusesToOpenAFileThatIsGone(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	openReviewOn(t, m, "opener", gitTestRepo(t))
+	fd := m.currentFileDiff()
+	if fd == nil {
+		t.Fatal("review has no selected file")
+	}
+	path := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, cmd := m.openDiffFile(); cmd != nil {
+		t.Fatal("a vanished file should not launch an editor")
+	}
+	if len(*launched) != 0 {
+		t.Fatalf("editor launched for a vanished file: %v", *launched)
+	}
+	if !strings.HasSuffix(m.errBar.text, path) {
+		t.Fatalf("status line should name the file, got %q", m.errBar.text)
 	}
 }
 

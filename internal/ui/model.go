@@ -1409,7 +1409,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, resume
 		}
 		if msg.name != "" {
-			m.reportDone("opened " + msg.dir + " in " + msg.name)
+			m.reportDone("opened " + msg.path + " in " + msg.name)
 		}
 		if id := m.editorReturnID; id != "" {
 			m.editorReturnID = ""

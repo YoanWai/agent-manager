@@ -148,7 +148,9 @@ func fillUnknownStats(driver *git.Driver, root string, files []FileDiff) {
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				_ = countUnknownStat(driver, root, &files[i])
+				if err := countUnknownStat(driver, root, &files[i]); err != nil {
+					files[i].Err = err
+				}
 			}
 		}()
 	}

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -73,6 +75,10 @@ func TestStartupTickRunsWhileReviewLoads(t *testing.T) {
 	_, cmd := m.Update(startupTickMsg{})
 	if cmd != nil || m.startupAnimating {
 		t.Fatal("loader tick kept running after the review load settled")
+	}
+	m.diff.set.Files = []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}
+	if cmd := m.startStartupTick(); cmd == nil || !m.startupAnimating {
+		t.Fatal("an unloaded selected file should start the loader tick")
 	}
 }
 

@@ -126,28 +126,7 @@ func helpSections() []helpSection {
 			{"click", "focused: goes to the agent UI when it tracks the mouse"},
 			{"alt+drag", "focused: pass a whole drag to that agent UI"},
 		}},
-		{title: "review (ctrl+r)", rows: [][2]string{
-			{"", "Tell your agent what to review in Agent Manager; they set it up."},
-			{"c", "comment on the line"},
-			{"d", "remove a draft, or mark sent feedback handled / open"},
-			{"C", "send drafts to the agent as the next review round"},
-			{"space", "mark the file reviewed"},
-			{"f", "code files only (hides images, assets, lock files)"},
-			{"s", "cycle the scope (uncommitted / vs target / last commit / staged)"},
-			{"r", "pick the repo when the session dir holds several"},
-			{"b", "pick the branch from the repo's worktrees"},
-			{"B", "pick the target branch the branch diff compares against"},
-			{"↑↓ / jk", "move a line"},
-			{"ctrl+d / ctrl+u", "half a page"},
-			{"pgup / pgdn", "page"},
-			{"g / G", "top / bottom of the file"},
-			{"tab / shift+tab", "next / previous file (J / K too)"},
-			{"n / N", "next / previous change"},
-			{"u", "unified / split layout"},
-			{"o / f3", "open the current file in your editor"},
-			{"?", "this key map"},
-			{"esc / q", "close the review"},
-		}},
+		reviewHelpSection(),
 		{title: "messages (M)", rows: [][2]string{
 			{"↑↓", "pick a message"},
 			{"pgup / pgdn", "scroll its body"},
@@ -173,17 +152,36 @@ func helpSections() []helpSection {
 	}
 }
 
+func reviewHelpSection() helpSection {
+	return helpSection{title: "review (ctrl+r)", rows: [][2]string{
+		{"", "Tell your agent what to review in Agent Manager; they set it up."},
+		{"c", "comment on the line"},
+		{"d", "remove a draft, or mark sent feedback handled / open"},
+		{"C", "send drafts to the agent as the next review round"},
+		{"space", "mark the file reviewed"},
+		{"f", "code files only (hides images, assets, lock files)"},
+		{"s", "cycle the scope (uncommitted / vs target / last commit / staged)"},
+		{"r", "pick the repo when the session dir holds several"},
+		{"b", "pick the branch from the repo's worktrees"},
+		{"B", "pick the target branch the branch diff compares against"},
+		{"↑↓ / jk", "move a line"},
+		{"ctrl+d / ctrl+u", "half a page"},
+		{"pgup / pgdn", "page"},
+		{"g / G", "top / bottom of the file"},
+		{"tab / shift+tab", "next / previous file (J / K too)"},
+		{"n / N", "next / previous change"},
+		{"u", "unified / split layout"},
+		{"o / f3", "open the current file in your editor"},
+		{"?", "this key map"},
+		{"esc / q", "close the review"},
+	}}
+}
+
 func (m *Model) visibleHelpSections() []helpSection {
-	sections := helpSections()
 	if m.help.back != modeDiff {
-		return sections
+		return helpSections()
 	}
-	for _, section := range sections {
-		if strings.HasPrefix(section.title, "review") {
-			return []helpSection{section}
-		}
-	}
-	return nil
+	return []helpSection{reviewHelpSection()}
 }
 
 // matchHelp narrows the catalog to the rows whose key or description
