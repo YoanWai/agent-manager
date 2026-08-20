@@ -272,9 +272,9 @@ func TestEachFrontNamesTheCommandsItsCallerHas(t *testing.T) {
 // Every spelling the shell front hands out has to be a command that
 // actually dispatches, since the whole point is an agent running it.
 func TestTheCLIVocabularyNamesRealSubcommands(t *testing.T) {
-	table := Commands()
+	table := Commands("dev")
 	verbs := map[string][]command{}
-	for _, section := range sections() {
+	for _, section := range sections("dev") {
 		for _, registered := range section.commands {
 			verbs[registered.name] = registered.verbs
 		}

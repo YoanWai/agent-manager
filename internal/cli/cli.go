@@ -37,19 +37,20 @@ type section struct {
 	commands []command
 }
 
-func sections() []section {
+func sections(version string) []section {
 	return []section{
 		sessionSection(),
 		taskSection(),
 		fileSection(),
 		terminalSection(),
 		reviewSection(),
+		updateSection(version),
 	}
 }
 
-func Commands() map[string]Command {
+func Commands(version string) map[string]Command {
 	table := map[string]Command{}
-	for _, section := range sections() {
+	for _, section := range sections(version) {
 		for _, command := range section.commands {
 			table[command.name] = command.run
 		}
@@ -57,13 +58,13 @@ func Commands() map[string]Command {
 	return table
 }
 
-func Help() string {
+func Help(version string) string {
 	var help strings.Builder
 	help.WriteString("Usage: agent-manager [command]\n\n")
 	help.WriteString("Run the interactive manager when no command is given.\n\n")
 	help.WriteString("agent-manager runs your session beside the user's other agents and terminals.\n")
 	help.WriteString("Every command acts as the session it runs in, so run them from your own shell.\n")
-	for _, section := range sections() {
+	for _, section := range sections(version) {
 		help.WriteString("\n" + section.title + "\n")
 		help.WriteString(usageLines(section.commands))
 	}
