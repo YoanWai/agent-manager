@@ -456,6 +456,7 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	if sess.AgentSessionID != "kept-conversation" {
 		t.Fatalf("loaded session id = %q, want kept-conversation", sess.AgentSessionID)
 	}
+	previousLaunchTime := sess.LaunchTime()
 
 	argsFile := filepath.Join(t.TempDir(), "launch-args")
 	tool := m.cfg.Tools[sess.Tool]
@@ -496,6 +497,9 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	}
 	if got.AgentLaunchedAt.IsZero() || !got.LaunchTime().Equal(got.AgentLaunchedAt) {
 		t.Fatalf("launch time = %v, created = %v", got.LaunchTime(), got.CreatedAt)
+	}
+	if !got.AgentLaunchedAt.After(previousLaunchTime) {
+		t.Fatalf("launch time = %v, want after %v", got.AgentLaunchedAt, previousLaunchTime)
 	}
 	row := m.sessionRows()[0]
 	if row.Status != status.Starting {
