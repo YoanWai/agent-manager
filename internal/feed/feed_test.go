@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -85,7 +86,8 @@ func TestFetchStripsControlSequences(t *testing.T) {
 func TestFetchHonorsVersionBounds(t *testing.T) {
 	serve(t, `[
 		{"id":"old-only","banner":"x","title":"x","max_version":"v0.14.1"},
-		{"id":"new-only","banner":"x","title":"x","min_version":"v0.14.2"}
+		{"id":"new-only","banner":"x","title":"x","min_version":"v0.14.2"},
+		{"id":"wildcard-bound","banner":"x","title":"x","max_version":"0.14.x"}
 	]`)
 	messages := fetch(t, t.TempDir(), "v0.14.2")
 	if len(messages) != 1 || messages[0].ID != "feed-new-only" {
@@ -240,6 +242,7 @@ func TestShippedFeedFileIsRenderableAndRetires(t *testing.T) {
 	if err := json.Unmarshal(raw, &entries); err != nil {
 		t.Fatalf("shipped feed must parse or every install falls back to a stale cache: %v", err)
 	}
+	now := time.Now()
 	for _, entry := range entries {
 		if !validFeedID.MatchString(entry.ID) {
 			t.Errorf("%q: invalid id", entry.ID)
@@ -264,5 +267,40 @@ func TestShippedFeedFileIsRenderableAndRetires(t *testing.T) {
 		if entry.MaxVersion == "" && entry.ExpiresAt == "" {
 			t.Errorf("%s: needs max_version or expires_at, or it keeps showing after it stops being true", entry.ID)
 		}
+		if entry.MaxVersion != "" {
+			if !serves(sanitize(entries, entry.MaxVersion, now), entry.ID) {
+				t.Errorf("%s: max_version %q hides it from its own release; a bound that fails to parse hides it from everyone", entry.ID, entry.MaxVersion)
+			}
+			if above := majorAbove(t, entry.MaxVersion); serves(sanitize(entries, above, now), entry.ID) {
+				t.Errorf("%s: still served on %s", entry.ID, above)
+			}
+		}
+		if entry.ExpiresAt != "" {
+			if _, err := time.Parse(time.RFC3339, entry.ExpiresAt); err != nil {
+				t.Errorf("%s: expires_at %q does not parse, which drops the entry: %v", entry.ID, entry.ExpiresAt, err)
+			}
+		}
 	}
+}
+
+func serves(messages []Message, id string) bool {
+	for _, msg := range messages {
+		if msg.ID == "feed-"+id {
+			return true
+		}
+	}
+	return false
+}
+
+func majorAbove(t *testing.T, version string) string {
+	t.Helper()
+	fields := strings.Split(strings.TrimPrefix(version, "v"), ".")
+	if len(fields) != 3 {
+		t.Fatalf("version bound %q is not three fields", version)
+	}
+	major, err := strconv.Atoi(fields[0])
+	if err != nil {
+		t.Fatalf("version bound %q has a non-numeric major field", version)
+	}
+	return strconv.Itoa(major+1) + "." + fields[1] + "." + fields[2]
 }
