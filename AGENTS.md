@@ -70,8 +70,8 @@ from `.goreleaser.yaml` come along either way.
 
 ## Layout
 
-- `main.go` dispatches subcommands (`rename`, `review-repo`, `review-base`,
-  `mcp`) and boots the TUI.
+- `main.go` dispatches subcommands (`rename`, `review-repo`, `sessions`,
+  `spawn`, `mcp`, and the rest of the workspace CLI) and boots the TUI.
 - `internal/ui` is the Bubble Tea program: one `Model`, files grouped by
   feature (list, diff review, focus, quick prompt, settings).
 - `internal/tmux` owns the dedicated tmux socket and control-mode client;

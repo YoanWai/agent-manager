@@ -16,16 +16,17 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `T` | New terminal tab: a shell under the selected agent, or in the selected group |
 | `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
-| `g` | New group (name, parent, default path) |
+| `g` | New group (name, parent, default path, worktree default) |
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
 | `A` | Attach session full screen (Settings can swap it with `enter`) |
+| `.` | Mark a finished session idle without entering it |
 | `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available |
 | tmux prefix, then `d` | Inside a full-screen attach: back to the manager when the prefix reaches the inner tmux |
 | `F3` | Inside a session: open its directory in your editor |
 | `→` | Step into the row: focus the session, or open the group. In beta; Settings (`s`) can turn the pair off |
 | `←` | Step out: close the group, or — focused, with the caret at the start of the agent's prompt — back to the manager. This needs the tool's prompt marker (its `activity_cutoff`) on the caret's row, so a CLI without one keeps `←` entirely; anywhere else in the prompt it moves the caret as usual |
 | `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings |
-| `m` | Move a session to a group, or a terminal into a session |
+| `m` | Move a session to a group, a terminal into a session, or a group under another group |
 | `r` | Rename session / edit tool; edit group name and default path |
 | `x` | Kill the selected session, or every live session under a group: frees the RAM their agents hold, and the rows stay for `v` |
 | `X` | Kill every live session in view |
@@ -126,7 +127,7 @@ It asks to confirm first, and it works on a live session too: the running agent 
 
 The fork uses the source session's tool, group, working directory, and conversation history.
 
-Claude Code and Codex support forks by default. A custom tool needs a `fork_command` in its configuration. The source session must have a captured conversation ID.
+Claude Code, OpenCode, Codex, Grok, Gemini CLI, and Pi include default fork commands. A custom tool needs a `fork_command` in its configuration. The source session must have a captured conversation ID.
 
 A fork shares its source session's managed worktree. Agent Manager keeps the worktree until you delete the last session that uses it. You cannot rename the worktree while another session uses it.
 
