@@ -21,27 +21,45 @@ import (
 
 func TestCachedPaneRowsInvalidatesOnPreviewOrSizeChange(t *testing.T) {
 	m := &Model{preview: "first\nsecond\nthird\n"}
-	_, base := m.cachedPaneRows(12, 2)
+	raw, base := m.cachedPaneRows(12, 2)
 	if len(base) != 2 {
 		t.Fatalf("cached base rows = %d, want 2", len(base))
 	}
+	if len(raw) != 2 {
+		t.Fatalf("cached raw rows = %d, want 2", len(raw))
+	}
+	m.paneRender.raw[0] = "raw-cached"
 	m.paneRender.base[0] = "cached"
-	_, reused := m.cachedPaneRows(12, 2)
+	reusedRaw, reused := m.cachedPaneRows(12, 2)
+	if reusedRaw[0] != "raw-cached" {
+		t.Fatalf("same preview and size rebuilt raw rows")
+	}
 	if reused[0] != "cached" {
 		t.Fatalf("same preview and size rebuilt cached rows")
 	}
 	m.preview = "changed\nsecond\nthird\n"
-	_, changed := m.cachedPaneRows(12, 2)
+	changedRaw, changed := m.cachedPaneRows(12, 2)
+	if changedRaw[0] == "raw-cached" {
+		t.Fatalf("preview change reused stale raw pane row")
+	}
 	if changed[0] == "cached" {
 		t.Fatalf("preview change reused stale pane row")
 	}
+	m.paneRender.raw[0] = "raw-resized"
 	m.paneRender.base[0] = "resized"
-	_, resized := m.cachedPaneRows(13, 2)
+	resizedRaw, resized := m.cachedPaneRows(13, 2)
+	if resizedRaw[0] == "raw-resized" {
+		t.Fatalf("width change reused stale raw pane row")
+	}
 	if resized[0] == "resized" {
 		t.Fatalf("width change reused stale pane row")
 	}
+	m.paneRender.raw[0] = "raw-short"
 	m.paneRender.base[0] = "short"
-	_, taller := m.cachedPaneRows(13, 3)
+	tallerRaw, taller := m.cachedPaneRows(13, 3)
+	if tallerRaw[0] == "raw-short" {
+		t.Fatalf("height change reused stale raw pane row")
+	}
 	if len(taller) != 3 {
 		t.Fatalf("height change returned %d rows, want 3", len(taller))
 	}
@@ -85,6 +103,7 @@ func BenchmarkCachedPaneRows(b *testing.B) {
 	b.Run("rebuild", func(b *testing.B) {
 		m := &Model{preview: preview}
 		b.ReportAllocs()
+		b.ResetTimer()
 		for range b.N {
 			m.paneRender = paneRenderCache{}
 			m.cachedPaneRows(120, 44)
