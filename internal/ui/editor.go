@@ -66,8 +66,25 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 		m.errBar.text = "directory no longer exists: " + dir
 		return m, nil
 	}
+	return m.launchEditor(dir)
+}
+
+func (m *Model) openDiffFile() (tea.Model, tea.Cmd) {
+	fd := m.currentFileDiff()
+	if fd == nil || m.diffFileHidden(fd) || m.diff.set.Repo.Root == "" {
+		return m, nil
+	}
+	path := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
+	if _, err := os.Stat(path); err != nil {
+		m.errBar.text = "file no longer exists: " + path
+		return m, nil
+	}
+	return m.launchEditor(path)
+}
+
+func (m *Model) launchEditor(path string) (tea.Model, tea.Cmd) {
 	line := m.resolveEditor()
-	cmd, ok := editorCommand(line, dir)
+	cmd, ok := editorCommand(line, path)
 	if !ok {
 		m.errBar.text = `no editor found: set editor = "code" in config.toml`
 		return m, nil
@@ -78,7 +95,7 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 			return editorDoneMsg{err: err, tookScreen: true}
 		})
 	}
-	return m, startEditorCmd(cmd, editorName(line), dir)
+	return m, startEditorCmd(cmd, editorName(line), path)
 }
 
 // Starting a process is exec, which Update must not do: a slow launch

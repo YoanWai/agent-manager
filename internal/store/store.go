@@ -151,6 +151,12 @@ CREATE TABLE IF NOT EXISTS settings (
 			session_id TEXT PRIMARY KEY,
 			scope      TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS review_states (
+			session_id TEXT NOT NULL,
+			repo_root  TEXT NOT NULL,
+			state      TEXT NOT NULL,
+			PRIMARY KEY (session_id, repo_root)
+		)`,
 		`ALTER TABLE sessions ADD COLUMN worktree_repo TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN worktree_branch TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE groups ADD COLUMN worktree TEXT NOT NULL DEFAULT ''`,
@@ -753,6 +759,9 @@ func (s *Store) Delete(id string) error {
 	if _, err := tx.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM review_states WHERE session_id = ?`, id); err != nil {
+		return err
+	}
 	// Session ids are recycled from a fresh UUID prefix, so a message left
 	// pointing at a deleted id could be re-attached to a future session.
 	if _, err := tx.Exec(`DELETE FROM session_inbox WHERE session_id = ? OR sender_id = ?`, id, id); err != nil {
@@ -807,6 +816,9 @@ func (s *Store) DeleteChild(id, parentID string, kill func() error) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM review_states WHERE session_id = ?`, id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {

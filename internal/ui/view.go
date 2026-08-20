@@ -591,10 +591,36 @@ func humanBytes(b uint64) string {
 // truncateTail keeps the end of the string (best for paths).
 func truncateTail(s string, max int) string {
 	runes := []rune(s)
-	if len(runes) <= max || max <= 1 {
+	if max <= 0 {
+		return ""
+	}
+	if len(runes) <= max {
 		return s
 	}
+	if max == 1 {
+		return "…"
+	}
 	return "…" + string(runes[len(runes)-max+1:])
+}
+
+// truncatePath keeps the tail of a path, cutting at a separator so a
+// tight file list shows `…/api/sessions.go` rather than `…ternal/api/…`.
+func truncatePath(path string, max int) string {
+	runes := []rune(path)
+	if max <= 0 {
+		return ""
+	}
+	if len(runes) <= max {
+		return path
+	}
+	if max == 1 {
+		return "…"
+	}
+	tail := string(runes[len(runes)-max+1:])
+	if i := strings.IndexByte(tail, '/'); i >= 0 && i < len(tail)-1 {
+		return "…" + tail[i:]
+	}
+	return "…" + tail
 }
 
 // scrollWindow keeps the cursor visible inside a height-limited window of

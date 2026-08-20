@@ -697,10 +697,13 @@ func (m *Model) startupLoader(width, height int) []string {
 	if !ok || m.mode == modeFocus || sess.Status != status.Starting || paneBooted(m.preview) {
 		return nil
 	}
+	return ringLoader(width, height, "starting up", m.startupPhase)
+}
 
+func ringLoader(width, height int, label string, phase int) []string {
 	accent := lipgloss.NewStyle().Foreground(statusColor(status.Starting)).Bold(true)
 	glow := lipgloss.NewStyle().Foreground(statusColor(status.Starting))
-	phase := m.startupPhase % startupRingPoints
+	phase = phase % startupRingPoints
 	dot := func(position int) string {
 		switch position {
 		case phase:
@@ -718,7 +721,7 @@ func (m *Model) startupLoader(width, height int) []string {
 		centerLine(dot(9)+"       "+dot(3), width),
 		centerLine(dot(8)+"       "+dot(4), width),
 		centerLine(dot(7)+"   "+dot(6)+"   "+dot(5), width),
-		centerLine(valueStyle.Bold(true).Render("starting up"), width),
+		centerLine(valueStyle.Bold(true).Render(label), width),
 	}
 	if height <= len(block) {
 		return block[:height]

@@ -10,6 +10,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // captureEditor swaps both editor seams: PATH answers only for the names
@@ -139,6 +140,25 @@ func TestOpenEditorFallsBackToRecordedCwd(t *testing.T) {
 	want := []string{"code", entry.sess.Cwd}
 	if !slices.Equal(*launched, want) {
 		t.Fatalf("launched %v, want %v", *launched, want)
+	}
+}
+
+func TestReviewOpensCurrentFileInEditor(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	dir := gitTestRepo(t)
+	openReviewOn(t, m, "opener", dir)
+	_, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if cmd == nil {
+		t.Fatalf("o returned no command, err = %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	if len(*launched) == 0 {
+		t.Fatal("the editor never launched")
+	}
+	opened := (*launched)[len(*launched)-1]
+	if !strings.HasSuffix(opened, ".go") && !strings.HasSuffix(opened, ".txt") {
+		t.Fatalf("opened %q, want the file under the cursor", opened)
 	}
 }
 

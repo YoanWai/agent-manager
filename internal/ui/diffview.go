@@ -15,13 +15,19 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// annotation is one line comment destined for the agent.
+// annotation is one draft or sent review comment anchored to a diff line.
 type annotation struct {
-	file    string
-	line    int // NewNum, or OldNum for pure deletions
-	deleted bool
-	excerpt string
-	text    string
+	id       string
+	file     string
+	line     int // NewNum, or OldNum for pure deletions
+	deleted  bool
+	excerpt  string
+	text     string
+	hash     uint64
+	round    int
+	point    int
+	handled  bool
+	outdated bool
 }
 
 // diffState drives the diff panel and the full-screen review mode. The
@@ -45,6 +51,8 @@ type diffState struct {
 	scrollByFile map[string]int
 	reviewed     map[string]map[string]uint64
 	annotations  map[string][]annotation
+	rounds       map[string]store.ReviewRound
+	stateLoaded  map[string]bool
 
 	annotating  bool
 	annInput    textarea.Model
@@ -318,11 +326,20 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 	if !m.diff.active {
 		return nil
 	}
-	m.diff.scope = m.diff.scope.Next()
 	sess, ok := m.diffSession()
 	if !ok {
 		return nil
 	}
+	var override string
+	if m.diff.repoSel != "" && len(m.diff.repoRoots) > 0 {
+		var err error
+		override, err = m.store.ReviewBase(sess.ID, resolveSymlinksOrSelf(m.diff.repoSel))
+		if err != nil {
+			m.errBar.text = err.Error()
+			return nil
+		}
+	}
+	m.diff.scope = m.diff.scope.Next()
 	m.diff.gen++
 	m.diff.loading = true
 	m.diff.errText = ""
@@ -333,21 +350,119 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 	m.diff.fileLoading = nil
 	m.diff.reanchor = nil
 	if m.diff.repoSel != "" && len(m.diff.repoRoots) > 0 {
-		override, err := m.store.ReviewBase(sess.ID, resolveSymlinksOrSelf(m.diff.repoSel))
-		if err != nil {
-			m.diff.loading = false
-			m.errBar.text = err.Error()
-			return nil
-		}
-		return m.diffReloadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, override, m.diff.repoRoots)
+		return tea.Batch(m.diffReloadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, override, m.diff.repoRoots), m.startStartupTick())
 	}
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
+	return tea.Batch(m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false), m.startStartupTick())
 }
 
 // reviewKey scopes a session's comments and reviewed marks to the repo under
 // review, so switching repos never leaks marks between same-named files.
 func (m *Model) reviewKey() string {
 	return m.diff.sessID + "\x00" + m.diff.repoSel
+}
+
+func (m *Model) loadReviewState() bool {
+	key := m.reviewKey()
+	if m.store == nil || m.diff.sessID == "" || m.diff.repoSel == "" || m.diff.stateLoaded[key] {
+		return false
+	}
+	if m.diff.reviewed == nil {
+		m.diff.reviewed = map[string]map[string]uint64{}
+	}
+	if m.diff.annotations == nil {
+		m.diff.annotations = map[string][]annotation{}
+	}
+	if m.diff.rounds == nil {
+		m.diff.rounds = map[string]store.ReviewRound{}
+	}
+	if m.diff.stateLoaded == nil {
+		m.diff.stateLoaded = map[string]bool{}
+	}
+	state, err := m.store.ReviewState(m.diff.sessID, m.diff.repoSel)
+	if err != nil {
+		m.errBar.text = "loading review state: " + err.Error()
+		return false
+	}
+	marks := make(map[string]uint64, len(state.Reviewed))
+	for path, hash := range state.Reviewed {
+		if hash != 0 {
+			marks[path] = hash
+		}
+	}
+	notes := make([]annotation, 0, len(state.Comments))
+	points := map[int]int{}
+	migrated := false
+	for i := range state.Comments {
+		note := &state.Comments[i]
+		if note.ID == "" {
+			note.ID = newReviewCommentID()
+			migrated = true
+		}
+		if note.Round > 0 {
+			points[note.Round]++
+			if note.Point == 0 {
+				note.Point = points[note.Round]
+				migrated = true
+			} else if note.Point > points[note.Round] {
+				points[note.Round] = note.Point
+			}
+		}
+		notes = append(notes, annotation{
+			id: note.ID, file: note.File, line: note.Line, deleted: note.Deleted,
+			excerpt: note.Excerpt, text: note.Text, hash: note.ContentHash,
+			round: note.Round, point: note.Point, handled: note.Resolved, outdated: note.Outdated,
+		})
+	}
+	m.diff.reviewed[key] = marks
+	m.diff.annotations[key] = notes
+	m.diff.rounds[key] = state.Round
+	m.diff.stateLoaded[key] = true
+	if migrated {
+		if err := m.store.SetReviewState(m.diff.sessID, m.diff.repoSel, state); err != nil {
+			m.errBar.text = "migrating review comments: " + err.Error()
+		}
+	}
+	return true
+}
+
+func (m *Model) reloadReviewState() {
+	if !m.diff.active || m.diff.sessID == "" || m.diff.repoSel == "" {
+		return
+	}
+	delete(m.diff.stateLoaded, m.reviewKey())
+	m.loadReviewState()
+}
+
+func (m *Model) persistReviewState() error {
+	if m.store == nil || m.diff.sessID == "" || m.diff.repoSel == "" {
+		return nil
+	}
+	key := m.reviewKey()
+	marks := make(map[string]uint64, len(m.diff.reviewed[key]))
+	for path, hash := range m.diff.reviewed[key] {
+		if hash != 0 {
+			marks[path] = hash
+		}
+	}
+	notes := make([]store.ReviewComment, 0, len(m.diff.annotations[key]))
+	for _, note := range m.diff.annotations[key] {
+		notes = append(notes, store.ReviewComment{
+			ID: note.id, File: note.file, Line: note.line, Deleted: note.deleted,
+			Excerpt: note.excerpt, Text: note.text, ContentHash: note.hash,
+			Round: note.round, Point: note.point, Resolved: note.handled, Outdated: note.outdated,
+		})
+	}
+	return m.store.MergeReviewState(m.diff.sessID, m.diff.repoSel, store.ReviewState{
+		Reviewed: marks,
+		Comments: notes,
+		Round:    m.diff.rounds[key],
+	})
+}
+
+func (m *Model) saveReviewState() {
+	if err := m.persistReviewState(); err != nil {
+		m.errBar.text = "saving review state: " + err.Error()
+	}
 }
 
 // diffSession resolves the session the diff is pinned to.
@@ -378,14 +493,18 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	if msg.err != nil {
 		m.diff.errText = msg.err.Error()
 		m.diff.set = diff.Set{}
-		m.diff.repoRoots = nil
 		m.diff.worktrees = nil
+		if len(msg.repoRoots) > 0 {
+			m.diff.repoRoots = msg.repoRoots
+			m.diff.repoSel = msg.repoRoot
+		}
 		return nil
 	}
 	m.diff.errText = ""
 	m.diff.repoRoots = msg.repoRoots
 	m.diff.repoSel = msg.repoRoot
 	m.diff.worktrees = msg.worktrees
+	restoredState := m.loadReviewState()
 	if msg.missingRepo != "" {
 		m.errBar.text = fmt.Sprintf("picked or declared repo %s is no longer under the session directory",
 			filepath.Base(msg.missingRepo))
@@ -398,13 +517,16 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 		previousPath = fd.File.Path
 	}
 	m.diff.set = msg.set
-	clearStaleReviewedMarks(m)
+	stateChanged := clearStaleReviewedMarks(m)
+	if msg.refresh || restoredState {
+		stateChanged = m.markMissingRoundCommentsOutdated() || stateChanged
+	}
 	// Re-anchor only on a silent same-scope refresh. A scope cycle or session
 	// switch loads a different file set, where matching a comment by excerpt
 	// would rewrite its line against content it was never made against.
 	m.diff.fileLoading = map[int]bool{}
 	m.diff.reanchor = nil
-	if msg.refresh {
+	if msg.refresh || restoredState {
 		m.diff.reanchor = map[string]bool{}
 		for _, note := range m.diff.annotations[m.reviewKey()] {
 			m.diff.reanchor[note.file] = true
@@ -422,7 +544,7 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	m.clampDiffCursor()
 	currentLoad := m.loadCurrentDiffFile()
 	var statefulLoads []tea.Cmd
-	if msg.refresh {
+	if msg.refresh || restoredState {
 		stateful := map[string]bool{}
 		for path, hash := range m.diff.reviewed[m.reviewKey()] {
 			if hash != 0 {
@@ -440,10 +562,13 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 			}
 		}
 	}
+	if stateChanged {
+		m.saveReviewState()
+	}
 	// The selected file gets its own command so it becomes usable immediately.
 	// Less urgent review-state files load serially in one background command,
 	// avoiding an unbounded git/process fan-out after a large review refresh.
-	return tea.Batch(currentLoad, diffFilesLoadCmd(statefulLoads))
+	return tea.Batch(currentLoad, diffFilesLoadCmd(statefulLoads), m.startStartupTick())
 }
 
 func (m *Model) loadCurrentDiffFile() tea.Cmd {
@@ -488,10 +613,13 @@ func (m *Model) handleDiffFileLoaded(msg diffFileLoadedMsg) tea.Cmd {
 	}
 	delete(m.diff.fileLoading, msg.index)
 	m.diff.set.Files[msg.index] = msg.fd
-	clearStaleReviewedMark(m, msg.path)
+	stateChanged := clearStaleReviewedMark(m, msg.path)
 	if m.diff.reanchor[msg.path] {
-		m.reanchorAnnotationsFor(msg.path)
+		stateChanged = m.reanchorAnnotationsFor(msg.path) || stateChanged
 		delete(m.diff.reanchor, msg.path)
+	}
+	if stateChanged {
+		m.saveReviewState()
 	}
 	if msg.index != m.diff.fileIdx {
 		return nil
@@ -524,7 +652,7 @@ func (m *Model) handleDiffProbe(msg diffProbeMsg) tea.Cmd {
 	if msg.repoRoot != m.diff.repoSel {
 		return nil
 	}
-	if msg.fp == 0 || msg.fp == m.diff.fingerprint {
+	if m.diff.loading || msg.fp == 0 || msg.fp == m.diff.fingerprint {
 		return nil
 	}
 	sess, ok := m.diffSession()
@@ -532,6 +660,7 @@ func (m *Model) handleDiffProbe(msg diffProbeMsg) tea.Cmd {
 		return nil
 	}
 	m.diff.gen++
+	m.diff.loading = true
 	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, true)
 }
 
@@ -672,7 +801,7 @@ func (m *Model) switchDiffFile(delta int) tea.Cmd {
 	m.diff.scroll = m.diff.scrollByFile[m.scrollKey(fd.File.Path)]
 	m.diff.cursorLine = m.diff.scroll
 	m.clampDiffCursor()
-	return m.loadCurrentDiffFile()
+	return tea.Batch(m.loadCurrentDiffFile(), m.startStartupTick())
 }
 
 func (m *Model) clampDiffCursor() {
@@ -812,8 +941,38 @@ func (m *Model) diffCodeHeight() int {
 	return height
 }
 
+const annotationInputMaxRows = 5
+
 func (m *Model) diffAnnBarRows() int {
-	return 2
+	if !m.diff.annotating {
+		return 0
+	}
+	_, codeWidth := m.diffPaneWidths()
+	return 1 + m.annotationInputHeight(codeWidth-2*contentGutter)
+}
+
+func (m *Model) annotationInputHeight(width int) int {
+	inner := width - 2
+	if inner < 4 {
+		inner = 4
+	}
+	n := len(wrapTinted(m.diff.annInput.Value(), nil, "", "", inner))
+	if n < 1 {
+		n = 1
+	}
+	if n > annotationInputMaxRows {
+		n = annotationInputMaxRows
+	}
+	return n
+}
+
+func (m *Model) diffPaneWidths() (fileWidth, codeWidth int) {
+	fileWidth = m.width * 24 / 100
+	if fileWidth < 28 {
+		fileWidth = 28
+	}
+	codeWidth = m.width - fileWidth - 2
+	return fileWidth, codeWidth
 }
 
 // handleDiffKey owns the whole keymap in fullscreen review mode.
@@ -829,7 +988,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter", "y":
 			m.diff.sendConfirm = false
 			return m.sendAnnotations()
-		default:
+		case "esc", "q":
 			m.diff.sendConfirm = false
 		}
 		return m, nil
@@ -840,6 +999,8 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "q", "esc":
 		return m, m.closeDiff()
+	case "?":
+		m.openHelp()
 	case "up", "k":
 		m.moveDiffCursor(-1, height)
 	case "down", "j":
@@ -848,6 +1009,10 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveDiffCursor(height/2, height)
 	case "ctrl+u":
 		m.moveDiffCursor(-height/2, height)
+	case "pgup":
+		m.moveDiffCursor(-height, height)
+	case "pgdown", "pgdn":
+		m.moveDiffCursor(height, height)
 	case "g":
 		m.diff.cursorLine = 0
 		m.diff.scroll = 0
@@ -885,11 +1050,13 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		m.removeAnnotation()
 	case "C":
-		if len(m.diff.annotations[m.reviewKey()]) == 0 {
+		if m.draftAnnotationCount() == 0 {
 			m.errBar.text = "no comments to send - press c on a line first"
 		} else {
 			m.diff.sendConfirm = true
 		}
+	case "o", "f3":
+		return m.openDiffFile()
 	}
 	return m, nil
 }
@@ -931,7 +1098,7 @@ func (m *Model) closeDiff() tea.Cmd {
 
 func (m *Model) toggleReviewed() tea.Cmd {
 	fd := m.currentFileDiff()
-	if fd == nil || !fd.Loaded() {
+	if fd == nil || !fd.Loaded() || m.diffFileHidden(fd) {
 		return nil
 	}
 	marks := m.diff.reviewed[m.reviewKey()]
@@ -940,10 +1107,12 @@ func (m *Model) toggleReviewed() tea.Cmd {
 		m.diff.reviewed[m.reviewKey()] = marks
 	}
 	if marks[fd.File.Path] != 0 {
-		marks[fd.File.Path] = 0
+		delete(marks, fd.File.Path)
+		m.saveReviewState()
 		return nil
 	}
 	marks[fd.File.Path] = contentHash(fd)
+	m.saveReviewState()
 	// Advance to the next unreviewed file, review-queue style. The switch
 	// returns the highlight command for the newly shown file; dropping it
 	// would leave that file unhighlighted.
@@ -960,11 +1129,12 @@ func (m *Model) fileReviewed(path string) bool {
 	return m.diff.reviewed[m.reviewKey()][path] != 0
 }
 
-func clearStaleReviewedMarks(m *Model) {
+func clearStaleReviewedMarks(m *Model) bool {
 	marks := m.diff.reviewed[m.reviewKey()]
 	if len(marks) == 0 {
-		return
+		return false
 	}
+	changed := false
 	for path, stored := range marks {
 		if stored == 0 {
 			continue
@@ -972,29 +1142,50 @@ func clearStaleReviewedMarks(m *Model) {
 		fd := m.fileDiffByPath(path)
 		if fd == nil {
 			delete(marks, path)
+			changed = true
 			continue
 		}
 		if fd.Loaded() && contentHash(fd) != stored {
 			delete(marks, path)
+			changed = true
 		}
 	}
+	return changed
 }
 
-func clearStaleReviewedMark(m *Model, path string) {
+func clearStaleReviewedMark(m *Model, path string) bool {
 	marks := m.diff.reviewed[m.reviewKey()]
 	stored := marks[path]
 	if stored == 0 {
-		return
+		return false
 	}
 	fd := m.fileDiffByPath(path)
 	if fd == nil || (fd.Loaded() && contentHash(fd) != stored) {
 		delete(marks, path)
+		return true
 	}
+	return false
+}
+
+func (m *Model) markMissingRoundCommentsOutdated() bool {
+	paths := make(map[string]bool, len(m.diff.set.Files))
+	for i := range m.diff.set.Files {
+		paths[m.diff.set.Files[i].File.Path] = true
+	}
+	notes := m.diff.annotations[m.reviewKey()]
+	changed := false
+	for i := range notes {
+		if notes[i].round > 0 && !paths[notes[i].file] && !notes[i].outdated {
+			notes[i].outdated = true
+			changed = true
+		}
+	}
+	return changed
 }
 
 func (m *Model) openAnnotate() {
 	fd := m.currentFileDiff()
-	if fd == nil {
+	if fd == nil || m.diffFileHidden(fd) {
 		return
 	}
 	lineIdx := m.cursorDiffLine()
@@ -1032,31 +1223,66 @@ func (m *Model) annotationAt(path string, line diff.Line) *annotation {
 	num, deleted := annotationLine(line)
 	notes := m.diff.annotations[m.reviewKey()]
 	for i := range notes {
-		if notes[i].file == path && notes[i].line == num && notes[i].deleted == deleted {
+		if notes[i].round == 0 && notes[i].file == path && notes[i].line == num && notes[i].deleted == deleted {
 			return &notes[i]
 		}
 	}
 	return nil
 }
 
+func (m *Model) annotationsAt(path string, line diff.Line) []*annotation {
+	num, deleted := annotationLine(line)
+	notes := m.diff.annotations[m.reviewKey()]
+	var matched []*annotation
+	for i := range notes {
+		if notes[i].file == path && notes[i].line == num && notes[i].deleted == deleted {
+			matched = append(matched, &notes[i])
+		}
+	}
+	return matched
+}
+
+func (m *Model) draftAnnotationCount() int {
+	count := 0
+	for _, note := range m.diff.annotations[m.reviewKey()] {
+		if note.round == 0 {
+			count++
+		}
+	}
+	return count
+}
+
 // reanchorAnnotationsFor re-points saved comments at the line that still
 // carries their excerpt after a reload shifted line numbers (the agent
 // edits while the user reviews), choosing the nearest match. A comment
 // whose line vanished entirely keeps its number as the best guess.
-func (m *Model) reanchorAnnotationsFor(path string) {
+func (m *Model) reanchorAnnotationsFor(path string) bool {
 	notes := m.diff.annotations[m.reviewKey()]
+	changed := false
 	for i := range notes {
 		note := &notes[i]
 		if path != "" && note.file != path {
 			continue
 		}
+		fd := m.fileDiffByPath(note.file)
+		if fd == nil {
+			continue
+		}
+		currentHash := contentHash(fd)
+		if note.hash != 0 && note.hash == currentHash {
+			if note.outdated {
+				note.outdated = false
+				changed = true
+			}
+			continue
+		}
 		// A blank line's excerpt is empty and would match every blank line;
 		// only a distinctive excerpt can re-anchor.
 		if note.excerpt == "" {
-			continue
-		}
-		fd := m.fileDiffByPath(note.file)
-		if fd == nil {
+			if note.round > 0 && !note.outdated {
+				note.outdated = true
+				changed = true
+			}
 			continue
 		}
 		matches, target := 0, 0
@@ -1072,9 +1298,18 @@ func (m *Model) reanchorAnnotationsFor(path string) {
 		// are ambiguous, so the stored line stays put rather than snapping to
 		// the wrong line or collapsing two comments onto one.
 		if matches == 1 && !m.annotationOccupies(note.file, target, note.deleted, i) {
-			note.line = target
+			if note.line != target || note.hash != currentHash || note.outdated {
+				note.line = target
+				note.hash = currentHash
+				note.outdated = false
+				changed = true
+			}
+		} else if note.round > 0 && !note.outdated {
+			note.outdated = true
+			changed = true
 		}
 	}
+	return changed
 }
 
 // annotationOccupies reports whether a note other than self already anchors
@@ -1133,18 +1368,23 @@ func (m *Model) saveAnnotation() {
 			return
 		}
 		existing.text = text
+		existing.hash = contentHash(fd)
+		m.saveReviewState()
 		return
 	}
 	if text == "" {
 		return
 	}
 	m.diff.annotations[m.reviewKey()] = append(m.diff.annotations[m.reviewKey()], annotation{
+		id:      newReviewCommentID(),
 		file:    fd.File.Path,
 		line:    num,
 		deleted: deleted,
 		excerpt: excerptOf(line.Text),
 		text:    text,
+		hash:    contentHash(fd),
 	})
+	m.saveReviewState()
 }
 
 func (m *Model) removeAnnotation() {
@@ -1159,10 +1399,45 @@ func (m *Model) removeAnnotation() {
 	num, deleted := annotationLine(fd.Lines[lineIdx])
 	notes := m.diff.annotations[m.reviewKey()]
 	for i := range notes {
-		if notes[i].file == fd.File.Path && notes[i].line == num && notes[i].deleted == deleted {
+		if notes[i].round == 0 && notes[i].file == fd.File.Path && notes[i].line == num && notes[i].deleted == deleted {
 			m.diff.annotations[m.reviewKey()] = append(notes[:i], notes[i+1:]...)
+			m.saveReviewState()
 			return
 		}
+	}
+	latestOpen := -1
+	latestHandled := -1
+	for i := range notes {
+		if notes[i].round == 0 || notes[i].file != fd.File.Path || notes[i].line != num || notes[i].deleted != deleted {
+			continue
+		}
+		if notes[i].handled {
+			if latestHandled < 0 || notes[i].round >= notes[latestHandled].round {
+				latestHandled = i
+			}
+		} else if latestOpen < 0 || notes[i].round >= notes[latestOpen].round {
+			latestOpen = i
+		}
+	}
+	target := latestOpen
+	if target < 0 {
+		target = latestHandled
+	}
+	if target >= 0 {
+		handled := !notes[target].handled
+		if m.store != nil {
+			found, err := m.store.SetReviewCommentHandled(m.diff.sessID, notes[target].id, handled)
+			if err != nil {
+				m.errBar.text = "updating review comment: " + err.Error()
+				return
+			}
+			if !found {
+				m.errBar.text = "review comment no longer exists"
+				return
+			}
+		}
+		notes[target].handled = handled
+		m.diff.annotations[m.reviewKey()] = notes
 	}
 }
 
@@ -1183,30 +1458,61 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 		m.errBar.text = deadSessionHint
 		return m, nil
 	}
-	notes := m.diff.annotations[m.reviewKey()]
+	key := m.reviewKey()
+	notes := append([]annotation(nil), m.diff.annotations[key]...)
+	round := m.diff.rounds[key]
+	nextRound := round.Number + 1
 	var parts []string
+	draftIndexes := make([]int, 0, len(notes))
 	for i, note := range notes {
+		if note.round != 0 {
+			continue
+		}
+		draftIndexes = append(draftIndexes, i)
+		if notes[i].id == "" {
+			notes[i].id = newReviewCommentID()
+		}
+		notes[i].point = len(parts) + 1
 		location := fmt.Sprintf("%s:%d", note.file, note.line)
 		body := strings.ReplaceAll(note.text, "\n", " / ")
 		if note.deleted {
-			parts = append(parts, fmt.Sprintf("(%d) %s (deleted line) — %s", i+1, location, body))
+			parts = append(parts, fmt.Sprintf("(%d) [comment %s] %s (deleted line): %s", len(parts)+1, notes[i].id, location, body))
 		} else {
-			parts = append(parts, fmt.Sprintf("(%d) %s (code: `%s`) — %s", i+1, location, note.excerpt, body))
+			parts = append(parts, fmt.Sprintf("(%d) [comment %s] %s (code: `%s`): %s", len(parts)+1, notes[i].id, location, note.excerpt, body))
 		}
 	}
+	if len(parts) == 0 {
+		m.errBar.text = "no comments to send - press c on a line first"
+		return m, nil
+	}
 	prompt := fmt.Sprintf(
-		"Code review of %s — address each numbered point, then summarize what you changed per point: %s",
+		"Code review of %s. Address each numbered point, then mark its comment handled with the review_comment tool (or `agent-manager review-comment <comment-id>`), and summarize what you changed per point: %s",
 		scopePhrase(m.diff.scope), strings.Join(parts, "; "))
 	if err := m.tmux.SendText(sess.ID, prompt); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
-	count := len(notes)
-	delete(m.diff.annotations, m.reviewKey())
-	m.diff.notice = fmt.Sprintf("sent %d review %s to %s", count, commentNoun(count), sess.Name)
-	if err := m.store.SetAcked(sess.ID, false); err != nil {
+	round.Number = nextRound
+	round.Scope = m.diff.scope.String()
+	round.Fingerprint = m.diff.fingerprint
+	m.diff.rounds[key] = round
+	for _, i := range draftIndexes {
+		notes[i].round = round.Number
+		notes[i].handled = false
+		notes[i].outdated = false
+	}
+	m.diff.annotations[key] = notes
+	count := len(draftIndexes)
+	m.diff.notice = fmt.Sprintf("sent review round %d (%d %s) to %s",
+		round.Number, count, commentNoun(count), sess.Name)
+	if err := m.persistReviewState(); err != nil {
 		m.diff.notice = ""
-		m.errBar.text = "comments sent, but clearing the alert ack failed: " + err.Error()
+		m.errBar.text = "comments sent, but saving the review round failed: " + err.Error()
+	} else if m.store != nil {
+		if err := m.store.SetAcked(sess.ID, false); err != nil {
+			m.diff.notice = ""
+			m.errBar.text = "comments sent, but clearing the alert ack failed: " + err.Error()
+		}
 	}
 	m.requestRefresh()
 	return m, nil
@@ -1227,6 +1533,10 @@ func commentNoun(count int) string {
 		return "comment"
 	}
 	return "comments"
+}
+
+func newReviewCommentID() string {
+	return newID() + newID()
 }
 
 func scopePhrase(scope git.Scope) string {
@@ -1261,9 +1571,19 @@ func (m *Model) openDiff() tea.Cmd {
 	}
 	if m.diff.scrollByFile == nil {
 		m.diff.scrollByFile = map[string]int{}
-		m.diff.reviewed = map[string]map[string]uint64{}
-		m.diff.annotations = map[string][]annotation{}
 		m.diff.sideBySide = m.defaultSplitLayout()
+	}
+	if m.diff.reviewed == nil {
+		m.diff.reviewed = map[string]map[string]uint64{}
+	}
+	if m.diff.annotations == nil {
+		m.diff.annotations = map[string][]annotation{}
+	}
+	if m.diff.rounds == nil {
+		m.diff.rounds = map[string]store.ReviewRound{}
+	}
+	if m.diff.stateLoaded == nil {
+		m.diff.stateLoaded = map[string]bool{}
 	}
 	if m.diff.hl == nil {
 		m.diff.hl = newHLCache()
@@ -1275,5 +1595,5 @@ func (m *Model) openDiff() tea.Cmd {
 	// afterward when review should return to the session instead.
 	m.diff.reattachID = ""
 	m.applyStoredScope(sess.ID)
-	return m.retargetDiff(sess)
+	return tea.Batch(m.retargetDiff(sess), m.startStartupTick())
 }

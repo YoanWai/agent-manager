@@ -190,6 +190,26 @@ func TestTruncateRuneSafe(t *testing.T) {
 	if truncateTail("short", 10) != "short" {
 		t.Fatal("short strings should pass through")
 	}
+	if got := truncateTail("abcdef", 1); got != "…" {
+		t.Fatalf("max 1 = %q, want ellipsis", got)
+	}
+	if got := truncateTail("abcdef", 0); got != "" {
+		t.Fatalf("max 0 = %q, want empty", got)
+	}
+}
+
+func TestTruncatePathCutsAtSeparator(t *testing.T) {
+	path := "internal/api/handlers/sessions.go"
+	got := truncatePath(path, 16)
+	if !strings.HasPrefix(got, "…/") || !strings.HasSuffix(got, "sessions.go") {
+		t.Fatalf("truncatePath = %q, want a slash-cut tail ending in sessions.go", got)
+	}
+	if strings.Contains(got, "ternal") {
+		t.Fatalf("cut mid-segment: %q", got)
+	}
+	if truncatePath("short.go", 20) != "short.go" {
+		t.Fatal("short paths should pass through")
+	}
 }
 
 // TestZZShot renders a full frame to disk for visual review. Skipped

@@ -297,7 +297,7 @@ func TestTruncatedTrackedFileKeepsNumstat(t *testing.T) {
 	}
 }
 
-func TestUntrackedStatsLoadLazily(t *testing.T) {
+func TestUntrackedStatsFillAtBuildWithoutLoadingContents(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "tracked.go", "package a\n")
 	commit(t, dir, "init")
@@ -315,21 +315,11 @@ func TestUntrackedStatsLoadLazily(t *testing.T) {
 		t.Fatalf("files = %d, want %d", len(set.Files), files)
 	}
 
-	for i := range set.Files {
-		fd := set.Files[i]
-		if fd.StatKnown() {
-			t.Fatalf("%s should keep its stat deferred after BuildSet", fd.File.Path)
-		}
+	adds := 0
+	for _, fd := range set.Files {
 		if fd.Loaded() {
 			t.Fatalf("%s should keep its contents deferred after BuildSet", fd.File.Path)
 		}
-	}
-
-	for i := range set.Files {
-		ensureFile(driver, &set, i)
-	}
-	adds := 0
-	for _, fd := range set.Files {
 		if !fd.StatKnown() || fd.Stat.Adds != linesEach {
 			t.Errorf("%s stat = %+v known=%v, want %d adds",
 				fd.File.Path, fd.Stat, fd.StatKnown(), linesEach)

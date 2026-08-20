@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	usageRename     = `rename "<name>"`
-	usageReviewRepo = "review-repo <path>"
-	usageReviewBase = "review-base <ref>|--clear"
-	usageReviewMode = "review-mode <uncommitted|branch|last_commit|staged>"
+	usageRename        = `rename "<name>"`
+	usageReviewRepo    = "review-repo <path>"
+	usageReviewBase    = "review-base <ref>|--clear"
+	usageReviewMode    = "review-mode <uncommitted|branch|last_commit|staged>"
+	usageReviewComment = "review-comment <comment-id> [--reopen]"
 )
 
 func reviewSection() section {
@@ -23,6 +24,7 @@ func reviewSection() section {
 			{name: "review-repo", usage: usageReviewRepo, about: "declare the repo or worktree you are working in, so the user's review screen opens on it", run: configCommand(runReviewRepo)},
 			{name: "review-base", usage: usageReviewBase, about: "declare the ref your branch merges into, which review diffs against; --clear returns to auto-detection", run: configCommand(runReviewBase)},
 			{name: "review-mode", usage: usageReviewMode, about: "point the user's review screen at the diff scope you want them to see", run: configCommand(runReviewMode)},
+			{name: "review-comment", usage: usageReviewComment, about: "mark a review comment handled after addressing it; --reopen marks it open again", run: configCommand(runReviewComment)},
 		},
 	}
 }
@@ -84,6 +86,17 @@ func runReviewMode(out io.Writer, args []string, sessionID, configDir string) er
 		return err
 	}
 	message, err := sessioncmd.ReviewScope(configDir, sessionID, operands[0])
+	return printMessage(out, message, err)
+}
+
+func runReviewComment(out io.Writer, args []string, sessionID, configDir string) error {
+	set := newFlagSet(usageReviewComment)
+	reopen := set.Bool("reopen", false, "mark the comment open again")
+	operands, err := parseCommand(out, set, args, 1, 1)
+	if err != nil {
+		return err
+	}
+	message, err := sessioncmd.ReviewComment(configDir, sessionID, operands[0], !*reopen)
 	return printMessage(out, message, err)
 }
 

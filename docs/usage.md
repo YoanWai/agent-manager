@@ -10,6 +10,8 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 
 ## Keys
 
+Tell your agent what you want to review in Agent Manager. Your agent will set up the repository or worktree, target and scope for you to view in the review panel. You can also tell your agent to manage sessions and terminals in Agent Manager; it can set them up and control them for you.
+
 | Key | Action |
 |-----|--------|
 | `n` | New session (name, tool, directory, worktree toggle, optional starting prompt, group picker) |
@@ -45,7 +47,7 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `M` | Messages (updates, tips; `x` dismisses one for good). The welcome message points at Settings for a bug or an idea. |
 | `e` | Hide / show empty groups |
 | `/` | Search |
-| `?` | The key map: every binding, grouped by what it acts on. It scrolls (`↑↓`/`jk`, `pgup`/`pgdn`, `g`/`G`) and `/` searches it down to one line. |
+| `?` | The key map for the current screen. From the list it shows every group; from review it shows only review bindings. It scrolls (`↑↓`/`jk`, `pgup`/`pgdn`, `g`/`G`) and `/` searches it down to one line. |
 | `q` | Quit (sessions keep running) |
 
 Navigation is keyboard-driven. The manager claims mouse reporting so the wheel stays inside the app and cannot scroll the TUI out of view: a notch scrolls the diff, and in a focused session it walks that pane's scrollback, where click-drag also selects pane text and copies it. In a focused agent that tracks the mouse, a click passes straight through to its own clickable UI while a drag still selects and copies; hold `alt` to pass a whole drag through instead, for the agent's own text selection or sliders. In the list the wheel does nothing, since moving the selection with it retargets every key that follows. Fuller mouse support, on by default with a settings toggle, is tracked in [#110](https://github.com/YoanWai/agent-manager/issues/110).
@@ -153,6 +155,7 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 |------|--------|
 | `rename` | Rename the calling session |
 | `review` | Declare the repo under review, the base ref and the diff scope, in one call |
+| `review_comment` | Mark a sent review comment handled after addressing it, or reopen it |
 | `list_sessions` | List every agent session with its id, CLI, group, directory, worktree branch and status |
 | `create_session` | Start another agent CLI on a named task, optionally in its own git worktree |
 | `read_session` | Read what another agent's screen currently shows |
@@ -223,11 +226,13 @@ A custom tool opts in with `mcp = "<style>"` in its config section. Set `mcp = "
 
 Press `ctrl+r` on a session to open a full-screen review of its repo: changed files with +/− counts on the left, the whole file on the right with syntax highlighting and changed lines tinted, so every edit reads in full context. The diff refreshes as the agent keeps editing.
 
+Tell your agent what you want to review in Agent Manager. Your agent can declare the repository or worktree, target and scope together, then open those changes for you in the review panel without you configuring each picker.
+
 | Key | Action |
 |-----|--------|
-| `↑↓` / `jk`, `ctrl+d` / `ctrl+u` | Scroll the file |
+| `↑↓` / `jk`, `ctrl+d` / `ctrl+u`, `pgup` / `pgdn` | Scroll the file |
 | `g` / `G` | Jump to top / bottom |
-| `J` / `K` (or `tab` / `shift+tab`) | Previous / next file |
+| `J` / `K` (or `tab` / `shift+tab`) | Next / previous file |
 | `n` / `N` | Jump between changes |
 | `u` | Toggle unified and side-by-side |
 | `s` | Cycle the scope: uncommitted, vs target, last commit, staged |
@@ -236,15 +241,19 @@ Press `ctrl+r` on a session to open a full-screen review of its repo: changed fi
 | `B` | Pick the target (merge-into branch) the "vs target" scope compares against |
 | `space` | Mark a file reviewed |
 | `f` | Show code files only, hiding images, compiled assets and lock files from the list; press again to show them |
-| `c` / `d` | Write / drop a line comment |
-| `C` | Send every comment to the agent as one review prompt (`enter` or `y` confirms) |
+| `c` / `d` | Write or drop a draft; mark feedback from a sent round handled or open |
+| `C` | Send every comment to the agent as one review prompt (`enter` or `y` confirms, `esc` cancels) |
+| `o` / `F3` | Open the current file in your editor |
+| `?` | Review bindings only; `esc` returns to the review |
 | `esc` / `q` | Close the review |
 
 Each changeable value in the header wears its own key, so the scope, layout, repo, and target pills read as `s`, `u`, `r`, `B` legends at a glance.
 
 ![review, side by side, with the changed lines tinted in full file context](screenshot-review.png)
 
-Comments stay on the review screen until you send them: `C` flattens every one of them into a single prompt, asks you to confirm, and delivers it into the agent's pane, so the agent starts addressing your notes while you watch the diff update.
+Comments and reviewed-file marks are saved as you work and return after Agent Manager restarts. `C` sends only the current drafts as one prompt and records them as the next numbered review round. Every sent comment stays inline as permanent review history, labelled with its review round and point number. Open comments keep the accent wash; handled comments settle into a subtle dark green wash, and `d` toggles the status locally.
+
+Each point sent to the agent carries a stable comment id. After addressing it, an MCP-capable agent marks it handled with `review_comment`; an agent using shell commands runs `agent-manager review-comment <comment-id>`. Either can reopen it. The status is stored immediately, so opening review shows the current state at once; a panel already open picks it up on its next refresh. The comment itself remains in place. The header names the latest review round and marks it changed when that scope differs from what was sent. A comment whose original code can no longer be found is marked outdated instead of silently moving to an unrelated line.
 
 ![review mode: scrolling a changed file, switching to unified, jumping to the next file, then a line comment sent back to the agent](demo-diff.gif)
 

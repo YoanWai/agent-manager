@@ -495,12 +495,27 @@ func (m *Model) previewTick() tea.Cmd {
 	return tea.Tick(m.previewInterval(), func(time.Time) tea.Msg { return previewTickMsg{} })
 }
 
+func (m *Model) needsLoaderTick() bool {
+	return m.hasStartingRow() || m.reviewNeedsLoader()
+}
+
+func (m *Model) reviewNeedsLoader() bool {
+	if m.mode != modeDiff || !m.diff.active {
+		return false
+	}
+	if m.diff.loading && len(m.diff.set.Files) == 0 {
+		return true
+	}
+	fd := m.currentFileDiff()
+	return fd != nil && !fd.Loaded() && !m.diffFileHidden(fd)
+}
+
 func (m *Model) startStartupTick() tea.Cmd {
-	if m.startupAnimating || !m.hasStartingRow() {
+	if m.startupAnimating || !m.needsLoaderTick() {
 		return nil
 	}
 	m.startupAnimating = true
-	return m.startupTick()
+	return func() tea.Msg { return startupTickMsg{} }
 }
 
 func (m *Model) startupTick() tea.Cmd {
@@ -1040,7 +1055,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case startupTickMsg:
-		if !m.hasStartingRow() {
+		if !m.needsLoaderTick() {
 			m.startupAnimating = false
 			return m, nil
 		}
@@ -1099,6 +1114,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resizeSessions()
 		}
 		m.rebuildRows()
+		m.reloadReviewState()
 		// A pass that ran with a stale selection (a session created this
 		// tick) carries the wrong preview; resync and fetch it directly.
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {

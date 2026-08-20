@@ -26,6 +26,11 @@ type reviewArgs struct {
 	Mode string `json:"mode,omitempty" jsonschema:"diff scope review opens with: uncommitted, branch, last_commit or staged"`
 }
 
+type reviewCommentArgs struct {
+	CommentID string `json:"comment_id" jsonschema:"stable comment id included in the review prompt"`
+	Handled   *bool  `json:"handled,omitempty" jsonschema:"true or omitted after addressing the point; false reopens it"`
+}
+
 type listTerminalsArgs struct{}
 
 type createTerminalArgs struct {
@@ -250,6 +255,18 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			return nil, nil, errors.New("set repo, base or mode")
 		}
 		return textContent(strings.Join(done, "; ")), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "review_comment",
+		Description: "Mark one sent review comment handled after addressing it, using the stable comment_id from the review prompt. " +
+			"The comment stays visible in its original review round. Pass handled false only to reopen it.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewCommentArgs) (*mcp.CallToolResult, any, error) {
+		handled := true
+		if args.Handled != nil {
+			handled = *args.Handled
+		}
+		return textResult(sessioncmd.ReviewComment(configDir, sessionID, args.CommentID, handled))
 	})
 
 	mcp.AddTool(server, &mcp.Tool{

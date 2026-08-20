@@ -122,7 +122,25 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride stri
 		fd := FileDiff{File: file, Stat: stat, statKnown: known}
 		set.Files = append(set.Files, fd)
 	}
+	fillUnknownStats(driver, repo.Root, set.Files)
 	return set, nil
+}
+
+// fillUnknownStats counts untracked files git's numstat never sees, so the
+// review file list can show +N or binary without waiting for a visit.
+func fillUnknownStats(driver *git.Driver, root string, files []FileDiff) {
+	var wg sync.WaitGroup
+	for i := range files {
+		if files[i].statKnown || files[i].File.Status != git.Untracked {
+			continue
+		}
+		wg.Add(1)
+		go func(fd *FileDiff) {
+			defer wg.Done()
+			_ = countUnknownStat(driver, root, fd)
+		}(&files[i])
+	}
+	wg.Wait()
 }
 
 // LoadFile builds one file's line model without mutating set, which makes it

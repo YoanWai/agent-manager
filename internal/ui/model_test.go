@@ -64,6 +64,18 @@ func TestStartupTickRunsOnlyWhileAStartingRowIsVisible(t *testing.T) {
 	}
 }
 
+func TestStartupTickRunsWhileReviewLoads(t *testing.T) {
+	m := &Model{mode: modeDiff, diff: diffState{active: true, loading: true}}
+	if cmd := m.startStartupTick(); cmd == nil || !m.startupAnimating {
+		t.Fatal("a loading review should start the loader tick")
+	}
+	m.diff.loading = false
+	_, cmd := m.Update(startupTickMsg{})
+	if cmd != nil || m.startupAnimating {
+		t.Fatal("loader tick kept running after the review load settled")
+	}
+}
+
 func TestMoveCursorDebouncesPreview(t *testing.T) {
 	m := &Model{
 		mode:   modeList,
