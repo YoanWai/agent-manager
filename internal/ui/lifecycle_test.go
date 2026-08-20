@@ -518,6 +518,27 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	}
 }
 
+func TestReviveKillsNewPaneWhenLaunchTimeCannotPersist(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "phoenix", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	if err := m.store.Delete(sess.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	err := m.reviveSession(sess)
+	if !errors.Is(err, store.ErrSessionGone) {
+		t.Fatalf("revive error = %v, want ErrSessionGone", err)
+	}
+	if m.tmux.Exists(sess.ID) {
+		t.Fatal("failed revive must kill the newly created tmux session")
+	}
+}
+
 func TestRevivedLaunchTimeSitsInsideStartingGrace(t *testing.T) {
 	created := time.Now().Add(-5 * 24 * time.Hour)
 	revived := store.Session{CreatedAt: created, AgentLaunchedAt: time.Now()}
