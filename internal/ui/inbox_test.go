@@ -559,6 +559,7 @@ func TestThePollLoopDeliversQueuedMessagesOldestFirst(t *testing.T) {
 	if head.ID != second {
 		t.Fatalf("the newer message was delivered first: head = %+v", head)
 	}
+	settledPane(t, m, sess.ID, "rebase on main")
 
 	pollUntilQueued(t, m, sess.ID, 0)
 	for _, id := range []int64{first, second} {
@@ -570,7 +571,7 @@ func TestThePollLoopDeliversQueuedMessagesOldestFirst(t *testing.T) {
 			t.Fatalf("message %d never reached the pane: %+v", id, state)
 		}
 	}
-	settledPane(t, m, sess.ID, "rebase on main", "then push the branch")
+	settledPane(t, m, sess.ID, "then push the branch")
 }
 
 // A message typed a second time runs the same instruction twice, so the
