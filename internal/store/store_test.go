@@ -432,14 +432,15 @@ func TestWritesToADeletedSessionReportGone(t *testing.T) {
 	}
 
 	writes := map[string]error{
-		"UpdateStatus":      st.UpdateStatus("a", "idle"),
-		"SetAcked":          st.SetAcked("a", true),
-		"SetAgentSessionID": st.SetAgentSessionID("a", "conv"),
-		"SetSnapshot":       st.SetSnapshot("a", "pane"),
-		"SetArchived":       st.SetArchived("a", true),
-		"RenameSession":     st.RenameSession("a", "renamed"),
-		"UpdateTool":        st.UpdateTool("a", "grok"),
-		"Delete":            st.Delete("a"),
+		"UpdateStatus":       st.UpdateStatus("a", "idle"),
+		"SetAcked":           st.SetAcked("a", true),
+		"SetAgentSessionID":  st.SetAgentSessionID("a", "conv"),
+		"SetAgentLaunchedAt": st.SetAgentLaunchedAt("a", time.Now()),
+		"SetSnapshot":        st.SetSnapshot("a", "pane"),
+		"SetArchived":        st.SetArchived("a", true),
+		"RenameSession":      st.RenameSession("a", "renamed"),
+		"UpdateTool":         st.UpdateTool("a", "grok"),
+		"Delete":             st.Delete("a"),
 	}
 	for name, err := range writes {
 		if !errors.Is(err, ErrSessionGone) {
@@ -455,13 +456,14 @@ func TestNoOpWriteDoesNotLookLikeADeletedSession(t *testing.T) {
 	// Rewriting a column with the value it already holds still counts as a
 	// row affected, so ErrSessionGone only ever means the row is absent.
 	writes := map[string]error{
-		"UpdateStatus":      st.UpdateStatus("a", "idle"),
-		"SetAcked":          st.SetAcked("a", false),
-		"SetAgentSessionID": st.SetAgentSessionID("a", ""),
-		"SetSnapshot":       st.SetSnapshot("a", ""),
-		"SetArchived":       st.SetArchived("a", false),
-		"RenameSession":     st.RenameSession("a", "n-a"),
-		"UpdateTool":        st.UpdateTool("a", "claude"),
+		"UpdateStatus":       st.UpdateStatus("a", "idle"),
+		"SetAcked":           st.SetAcked("a", false),
+		"SetAgentSessionID":  st.SetAgentSessionID("a", ""),
+		"SetAgentLaunchedAt": st.SetAgentLaunchedAt("a", time.Time{}),
+		"SetSnapshot":        st.SetSnapshot("a", ""),
+		"SetArchived":        st.SetArchived("a", false),
+		"RenameSession":      st.RenameSession("a", "n-a"),
+		"UpdateTool":         st.UpdateTool("a", "claude"),
 	}
 	for name, err := range writes {
 		if err != nil {
@@ -984,6 +986,34 @@ func TestAddGroupStoresSettingsWithoutReplacingExistingGroup(t *testing.T) {
 	}
 	if len(groups) != 1 || groups[0].Path != "/first" || groups[0].Worktree != "off" {
 		t.Fatalf("duplicate add changed group: %+v", groups)
+	}
+}
+
+func TestSetAgentLaunchedAtMovesLaunchTimeWithoutRetiringConversation(t *testing.T) {
+	st := newTestStore(t)
+	sess := sample("a", "g1")
+	sess.AgentSessionID = "kept"
+	if err := st.CreateSession(sess); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	created, err := st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	launchedAt := created.CreatedAt.Add(5 * 24 * time.Hour).In(time.FixedZone("east", 9*3600))
+	if err := st.SetAgentLaunchedAt("a", launchedAt); err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	got, err := st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "kept" || got.RetiredAgentSessionID != "" {
+		t.Fatalf("conversation = %q retired = %q, want kept and empty", got.AgentSessionID, got.RetiredAgentSessionID)
+	}
+	if !got.LaunchTime().Equal(launchedAt) {
+		t.Fatalf("launch time = %v, want %v", got.LaunchTime(), launchedAt)
 	}
 }
 

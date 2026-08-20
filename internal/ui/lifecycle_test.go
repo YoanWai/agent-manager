@@ -53,6 +53,16 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	m.restoreSelected()
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Starting {
+		t.Fatalf("after restore, status = %q want %q", got.Status, status.Starting)
+	}
+	if got.LaunchTime().Equal(got.CreatedAt) {
+		t.Fatal("restore should stamp a new launch time")
+	}
 	m.applyCmd(t, cmd)
 	m.showArchived = false
 	m.applyCmd(t, m.refreshCmd())
@@ -437,6 +447,22 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	createSession(t, m, "phoenix", t.TempDir(), "")
 
 	sess := m.sessionRows()[0]
+	if err := m.store.SetAgentSessionID(sess.ID, "kept-conversation"); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "phoenix")
+	sess = m.sessionRows()[0]
+	if sess.AgentSessionID != "kept-conversation" {
+		t.Fatalf("loaded session id = %q, want kept-conversation", sess.AgentSessionID)
+	}
+	previousLaunchTime := sess.LaunchTime()
+
+	argsFile := filepath.Join(t.TempDir(), "launch-args")
+	tool := m.cfg.Tools[sess.Tool]
+	tool.ResumeByIDCommand = argCaptureCommand(argsFile) + " --resume {id}"
+	m.cfg.Tools[sess.Tool] = tool
+
 	if err := m.tmux.Kill(sess.ID); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
@@ -448,6 +474,7 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	if err := m.store.SetAcked(sess.ID, true); err != nil {
 		t.Fatalf("set acked: %v", err)
 	}
+	m.preview = "old pane from last life\n"
 
 	if _, _ = m.reviveSelected(); m.errBar.text != "" {
 		t.Fatalf("revive: %q", m.errBar.text)
@@ -459,11 +486,68 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.Status != status.Idle {
-		t.Fatalf("after revive, status = %q want %q", got.Status, status.Idle)
+	if got.Status != status.Starting {
+		t.Fatalf("after revive, status = %q want %q", got.Status, status.Starting)
 	}
 	if got.Acked {
 		t.Fatal("revive should clear a leftover ack")
+	}
+	if got.AgentSessionID != "kept-conversation" || got.RetiredAgentSessionID != "" {
+		t.Fatalf("conversation = %q retired = %q, want kept-conversation", got.AgentSessionID, got.RetiredAgentSessionID)
+	}
+	if got.AgentLaunchedAt.IsZero() || !got.LaunchTime().Equal(got.AgentLaunchedAt) {
+		t.Fatalf("launch time = %v, created = %v", got.LaunchTime(), got.CreatedAt)
+	}
+	if !got.AgentLaunchedAt.After(previousLaunchTime) {
+		t.Fatalf("launch time = %v, want after %v", got.AgentLaunchedAt, previousLaunchTime)
+	}
+	row := m.sessionRows()[0]
+	if row.Status != status.Starting {
+		t.Fatalf("row status = %q want %q", row.Status, status.Starting)
+	}
+	gotPreview := previewText(m)
+	if !strings.Contains(gotPreview, "starting up") {
+		t.Fatalf("revived preview should carry the launch loader, got %q", gotPreview)
+	}
+	if strings.Contains(gotPreview, "old pane from last life") {
+		t.Fatalf("stale pane should not survive revive, got %q", gotPreview)
+	}
+	args := readWhenWritten(t, argsFile)
+	if !strings.Contains(args, "--resume") || !strings.Contains(args, "kept-conversation") {
+		t.Fatalf("revive launch arguments = %q, want --resume kept-conversation", args)
+	}
+}
+
+func TestReviveKillsNewPaneWhenLaunchTimeCannotPersist(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "phoenix", t.TempDir(), "")
+
+	sess := m.sessionRows()[0]
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	if err := m.store.Delete(sess.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	err := m.reviveSession(sess)
+	if !errors.Is(err, store.ErrSessionGone) {
+		t.Fatalf("revive error = %v, want ErrSessionGone", err)
+	}
+	if m.tmux.Exists(sess.ID) {
+		t.Fatal("failed revive must kill the newly created tmux session")
+	}
+}
+
+func TestRevivedLaunchTimeSitsInsideStartingGrace(t *testing.T) {
+	created := time.Now().Add(-5 * 24 * time.Hour)
+	revived := store.Session{CreatedAt: created, AgentLaunchedAt: time.Now()}
+	if time.Since(revived.LaunchTime()) >= startingGrace {
+		t.Fatal("a revive that stamps launch time must still be inside the grace")
+	}
+	stale := store.Session{CreatedAt: created}
+	if time.Since(stale.LaunchTime()) < startingGrace {
+		t.Fatal("a 5-day-old row with no relaunch is outside the grace")
 	}
 }
 
@@ -858,8 +942,21 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 	}
 
 	m.selectGroupRow(t, "proj")
+	archived := m.sessionRows()
 	m.restoreSelected()
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	for _, sess := range archived {
+		stored, err := m.store.Get(sess.ID)
+		if err != nil {
+			t.Fatalf("get %s: %v", sess.Name, err)
+		}
+		if stored.Status != status.Starting {
+			t.Fatalf("after restore, %s status = %q want %q", sess.Name, stored.Status, status.Starting)
+		}
+		if stored.LaunchTime().Equal(stored.CreatedAt) {
+			t.Fatalf("after restore, %s launch time was not refreshed", sess.Name)
+		}
+	}
 	m.applyCmd(t, cmd)
 	m.showArchived = false
 	m.applyCmd(t, m.refreshCmd())
