@@ -73,26 +73,6 @@ func TestDetailHeadShedsChipsBeforeFacts(t *testing.T) {
 	}
 }
 
-func TestViewDetailShowsQueuedMessageBadge(t *testing.T) {
-	m := shotModel()
-	sess, ok := m.selected()
-	if !ok {
-		t.Fatal("shot model did not select a session")
-	}
-
-	m.queuedMessages = map[string]int{sess.ID: 2}
-	withMessages := ansi.Strip(m.viewDetail(120))
-	if !strings.Contains(withMessages, "✉2") {
-		t.Fatalf("detail omitted queued-message badge: %q", withMessages)
-	}
-
-	m.queuedMessages = nil
-	withoutMessages := ansi.Strip(m.viewDetail(120))
-	if strings.Contains(withoutMessages, "✉") {
-		t.Fatalf("detail showed badge without queued messages: %q", withoutMessages)
-	}
-}
-
 // A roster is a table: every tool starts on one column and every state ends
 // on one edge, whatever the names around them do.
 func TestGroupRosterColumnsAlign(t *testing.T) {

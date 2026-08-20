@@ -50,6 +50,26 @@ func TestCachedPaneRowsInvalidatesOnPreviewOrSizeChange(t *testing.T) {
 	}
 }
 
+func TestViewDetailShowsQueuedMessageBadge(t *testing.T) {
+	m := shotModel()
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("shot model did not select a session")
+	}
+
+	m.queuedMessages = map[string]int{sess.ID: 2}
+	withMessages := ansi.Strip(m.viewDetail(120))
+	if !strings.Contains(withMessages, "✉2") {
+		t.Fatalf("detail omitted queued-message badge: %q", withMessages)
+	}
+
+	m.queuedMessages = nil
+	withoutMessages := ansi.Strip(m.viewDetail(120))
+	if strings.Contains(withoutMessages, "✉") {
+		t.Fatalf("detail showed badge without queued messages: %q", withoutMessages)
+	}
+}
+
 func BenchmarkCachedPaneRows(b *testing.B) {
 	line := "\x1b[38;5;45mworking\x1b[0m " + strings.Repeat("context ", 12) + "\n"
 	preview := strings.Repeat(line, 44)
