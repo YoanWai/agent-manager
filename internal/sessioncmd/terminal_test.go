@@ -250,6 +250,28 @@ func TestTerminalCommandsRejectUnsafeTargetsAndInvalidInput(t *testing.T) {
 	}
 }
 
+func TestSendRefusesTerminalOfAnotherSession(t *testing.T) {
+	h := newTerminalHarness(t)
+	other := store.Session{
+		ID:     uuid.NewString()[:8],
+		Name:   "other-agent",
+		Tool:   "claude",
+		Cwd:    h.caller.Cwd,
+		Group:  h.caller.Group,
+		Status: status.Idle,
+	}
+	if err := h.store.CreateSession(other); err != nil {
+		t.Fatalf("other agent: %v", err)
+	}
+	terminal, err := h.terminals.Create(other.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := h.terminals.Send(h.caller.ID, terminal.ID, "pwd", nil); err == nil || !strings.Contains(err.Error(), "not nested under this session") {
+		t.Fatalf("cross-session send error = %v", err)
+	}
+}
+
 func TestCreateNestsUnderCallerByDefault(t *testing.T) {
 	h := newTerminalHarness(t)
 	created, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})

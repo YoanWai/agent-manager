@@ -124,6 +124,21 @@ func (r *runtime) terminal(id string) (store.Session, error) {
 	return sess, nil
 }
 
+func (r *runtime) nestedTerminal(sessionID, terminalID string) (store.Session, error) {
+	caller, err := r.caller(sessionID)
+	if err != nil {
+		return store.Session{}, err
+	}
+	terminal, err := r.terminal(terminalID)
+	if err != nil {
+		return store.Session{}, err
+	}
+	if terminal.ParentID != caller.ID {
+		return store.Session{}, fmt.Errorf("terminal %s is not nested under this session", terminal.ID)
+	}
+	return terminal, nil
+}
+
 func (r *runtime) info(sess store.Session, running bool) (Terminal, error) {
 	dir := sess.Cwd
 	if running {
@@ -274,18 +289,11 @@ func (t *Terminals) Close(sessionID, terminalID string) error {
 		return err
 	}
 	defer runtime.store.Close()
-	caller, err := runtime.caller(sessionID)
+	sess, err := runtime.nestedTerminal(sessionID, terminalID)
 	if err != nil {
 		return err
 	}
-	sess, err := runtime.terminal(terminalID)
-	if err != nil {
-		return err
-	}
-	if sess.ParentID != caller.ID {
-		return fmt.Errorf("terminal %s is not nested under this session; only the session it hangs under closes it", sess.ID)
-	}
-	return runtime.store.DeleteChild(sess.ID, caller.ID, func() error {
+	return runtime.store.DeleteChild(sess.ID, sess.ParentID, func() error {
 		return runtime.driver.Kill(sess.ID)
 	})
 }
@@ -433,10 +441,7 @@ func (t *Terminals) Send(sessionID, terminalID, command string, keys []string) (
 		return TerminalInput{}, err
 	}
 	defer runtime.store.Close()
-	if _, err := runtime.caller(sessionID); err != nil {
-		return TerminalInput{}, err
-	}
-	terminal, err := runtime.terminal(terminalID)
+	terminal, err := runtime.nestedTerminal(sessionID, terminalID)
 	if err != nil {
 		return TerminalInput{}, err
 	}
