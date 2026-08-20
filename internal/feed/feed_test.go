@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -227,5 +228,41 @@ func TestFetchCapsCountAndSize(t *testing.T) {
 	}
 	if len(messages[0].Banner) > maxBannerLen || len(messages[0].Title) > maxTitleLen {
 		t.Fatalf("field lengths must be capped, got banner=%d title=%d", len(messages[0].Banner), len(messages[0].Title))
+	}
+}
+
+func TestShippedFeedFileIsRenderableAndRetires(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "messages.json"))
+	if err != nil {
+		t.Fatalf("read shipped feed: %v", err)
+	}
+	var entries []rawMessage
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		t.Fatalf("shipped feed must parse or every install falls back to a stale cache: %v", err)
+	}
+	for _, entry := range entries {
+		if !validFeedID.MatchString(entry.ID) {
+			t.Errorf("%q: invalid id", entry.ID)
+		}
+		if entry.URL != "" && !safeURL(entry.URL) {
+			t.Errorf("%s: unsafe url %q", entry.ID, entry.URL)
+		}
+		if got := cleanText(entry.Banner, maxBannerLen); got != entry.Banner {
+			t.Errorf("%s: banner is cut to %q", entry.ID, got)
+		}
+		if got := cleanText(entry.Title, maxTitleLen); got != entry.Title {
+			t.Errorf("%s: title is cut to %q", entry.ID, got)
+		}
+		if len(entry.Body) > maxBodyLines {
+			t.Errorf("%s: %d body lines, only the first %d render", entry.ID, len(entry.Body), maxBodyLines)
+		}
+		for i, line := range entry.Body {
+			if got := cleanText(line, maxBodyLine); got != line {
+				t.Errorf("%s: body line %d is cut to %q", entry.ID, i+1, got)
+			}
+		}
+		if entry.MaxVersion == "" && entry.ExpiresAt == "" {
+			t.Errorf("%s: needs max_version or expires_at, or it keeps showing after it stops being true", entry.ID)
+		}
 	}
 }

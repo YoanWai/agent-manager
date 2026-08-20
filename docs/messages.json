@@ -1,5 +1,21 @@
 [
   {
+    "id": "sessions-coordinate-with-each-other",
+    "banner": "new: agents spawn and message each other",
+    "title": "Agent sessions spawn, message and coordinate with each other",
+    "body": [
+      "A session can spawn another agent on its own task, so independent work runs beside you instead of behind you.",
+      "Sessions list each other, read a pane, send a message that lands when that agent is at rest, and wait for one to stop.",
+      "Declare the files you are about to edit and another agent in the same checkout finds out before both of you change them.",
+      "Every verb is an MCP tool for the agent in the pane and an agent-manager subcommand for anything you script.",
+      "ctrl+v pastes a clipboard image into a new session's first task, and a missing agent CLI now names its own installer.",
+      "Thanks to @roshaans for the image paste and @creatorrr for the report behind the repaint of RTL rows.",
+      "@KyleBastien and @pandysp filed what is shaping the next one: #337, #349, #350 and #351."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.31.0",
+    "max_version": "0.31.0"
+  },
+  {
     "id": "terminals-under-their-agent",
     "banner": "new: terminals live under their agent",
     "title": "Terminals nest under the session they were opened for",
@@ -12,6 +28,7 @@
       "Thanks to @roshaans for the terminal names, @OkunaRei for the selection fix, @sunnor92 for two reports,",
       "and @andrelago13 for the editor key that moved. #326 is where every binding becomes yours to set."
     ],
-    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.30.0"
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.30.0",
+    "max_version": "0.30.0"
   }
 ]
