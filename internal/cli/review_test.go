@@ -132,7 +132,7 @@ func TestReviewRepoRejectsBadInput(t *testing.T) {
 	}
 }
 
-func TestReviewCommentWritesHandledAndReopenMailbox(t *testing.T) {
+func TestReviewCommentPrintsAndStoresTheHandledFlag(t *testing.T) {
 	configDir := t.TempDir()
 	st, err := store.Open(filepath.Join(configDir, "state.db"))
 	if err != nil {

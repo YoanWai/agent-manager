@@ -1348,13 +1348,10 @@ func clearStaleReviewedMarks(m *Model) bool {
 		if stored == 0 {
 			continue
 		}
+		// A scope that does not list the file says nothing about whether it
+		// changed since it was marked, and the mark outlives the scope.
 		fd := m.fileDiffByPath(path)
-		if fd == nil {
-			delete(marks, path)
-			changed = true
-			continue
-		}
-		if fd.Loaded() && contentHash(fd) != stored {
+		if fd != nil && fd.Loaded() && contentHash(fd) != stored {
 			delete(marks, path)
 			changed = true
 		}
@@ -1369,7 +1366,7 @@ func clearStaleReviewedMark(m *Model, path string) bool {
 		return false
 	}
 	fd := m.fileDiffByPath(path)
-	if fd == nil || (fd.Loaded() && contentHash(fd) != stored) {
+	if fd != nil && fd.Loaded() && contentHash(fd) != stored {
 		delete(marks, path)
 		return true
 	}

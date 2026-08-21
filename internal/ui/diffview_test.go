@@ -1012,6 +1012,8 @@ func (m *Model) drainCmds(t *testing.T, cmd tea.Cmd) {
 			}
 			return
 		}
+		// The startup tick reschedules itself, so following its command
+		// would spin here rather than drain what the batch already holds.
 		if _, ok := msg.(startupTickMsg); ok {
 			updated, _ := m.Update(msg)
 			*m = *updated.(*Model)
@@ -3121,5 +3123,32 @@ func TestFailedDiffLoadKeepsRepoPicker(t *testing.T) {
 	m.openRepoPick()
 	if m.mode != modeRepoPick {
 		t.Fatalf("r should still open, mode = %v", m.mode)
+	}
+}
+
+// A scope that does not list a file says nothing about whether it changed,
+// so its mark waits for the scope that shows it again.
+func TestAScopeMissingAFileKeepsItsReviewedMark(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "scopemarks", gitTestRepo(t))
+	fd := m.currentFileDiff()
+	if fd == nil {
+		t.Fatal("review has no selected file")
+	}
+	path := fd.File.Path
+	m.drainCmds(t, m.toggleReviewed())
+	if !m.fileReviewed(path) {
+		t.Fatalf("%s was not marked reviewed", path)
+	}
+
+	m.diff.set.Files = nil
+	if clearStaleReviewedMarks(m) {
+		t.Fatal("a file the scope does not list counted as a stale mark")
+	}
+	if !m.fileReviewed(path) {
+		t.Fatalf("the mark for %s did not survive a scope without it", path)
 	}
 }
