@@ -617,6 +617,7 @@ func (m *Model) applyConfirmedArchived(archived bool) error {
 		if err := m.store.SetArchived(sess.ID, archived); err != nil {
 			return err
 		}
+		m.forgetLaunch(sess.ID)
 	}
 	return nil
 }
@@ -846,6 +847,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				delete(m.pickedRepos, sess.ID)
 				delete(m.awaitedRenames, sess.ID)
+				m.forgetLaunch(sess.ID)
 				if err := m.store.Delete(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
