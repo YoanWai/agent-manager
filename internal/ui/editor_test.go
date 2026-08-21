@@ -158,7 +158,7 @@ func TestReviewOpensCurrentFileInEditor(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("o returned no command, err = %q", m.errBar.text)
 	}
-	m.applyCmd(t, cmd)
+	m.applyCmd(t, m.stepCmd(t, cmd))
 	if len(*launched) == 0 {
 		t.Fatal("the editor never launched")
 	}
@@ -180,7 +180,8 @@ func TestReviewRefusesToOpenAFileThatIsGone(t *testing.T) {
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if _, cmd := m.openDiffFile(); cmd != nil {
+	_, cmd := m.openDiffFile()
+	if next := m.stepCmd(t, cmd); next != nil {
 		t.Fatal("a vanished file should not launch an editor")
 	}
 	if len(*launched) != 0 {
@@ -206,7 +207,8 @@ func TestReviewReportsFileCheckErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, cmd := m.openDiffFile(); cmd != nil {
+	_, cmd := m.openDiffFile()
+	if next := m.stepCmd(t, cmd); next != nil {
 		t.Fatal("a file with a failed stat should not launch an editor")
 	}
 	wantPrefix := "checking file " + path + ": "

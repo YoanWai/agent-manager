@@ -15,12 +15,11 @@ import (
 // outgrow a terminal, it scrolls, and a search narrows it to the one line
 // the reader came for.
 
-// back returns help to the screen it opened over.
 type helpState struct {
-	scroll    int
-	query     string
-	searching bool
-	back      mode
+	scroll     int
+	query      string
+	searching  bool
+	returnMode mode
 }
 
 // helpSection is one context's bindings, titled for the thing the keys act
@@ -176,7 +175,7 @@ func reviewHelpSection() helpSection {
 }
 
 func (m *Model) visibleHelpSections() []helpSection {
-	if m.help.back != modeDiff {
+	if m.help.returnMode != modeDiff {
 		return helpSections()
 	}
 	return []helpSection{reviewHelpSection()}
@@ -325,7 +324,7 @@ func (m *Model) viewHelp() string {
 	lines := append(head, fitBody(body, m.helpBodyRoom(), m.help.scroll)...)
 
 	title := "? Keys"
-	if m.help.back == modeDiff {
+	if m.help.returnMode == modeDiff {
 		title = "? Review keys"
 	}
 	return m.cardSized(width, title, strings.Join(lines, "\n"), m.helpHint())
@@ -360,12 +359,12 @@ func (m *Model) helpHint() [][2]string {
 }
 
 func (m *Model) openHelp() {
-	m.help = helpState{back: m.mode}
+	m.help = helpState{returnMode: m.mode}
 	m.mode = modeHelp
 }
 
 func (m *Model) closeHelp() {
-	back := m.help.back
+	back := m.help.returnMode
 	m.help = helpState{}
 	m.mode = back
 }

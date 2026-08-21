@@ -1406,6 +1406,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.requestRefresh()
 		return m, nil
 
+	case diffFileCheckedMsg:
+		return m.handleDiffFileChecked(msg)
+
 	case editorDoneMsg:
 		var resume tea.Cmd
 		if msg.tookScreen {

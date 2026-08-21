@@ -44,6 +44,11 @@ var (
 )
 
 // Waiting for this result prevents a failed launch from being reported as open.
+type diffFileCheckedMsg struct {
+	path string
+	err  error
+}
+
 type editorDoneMsg struct {
 	name       string
 	path       string
@@ -68,16 +73,28 @@ func (m *Model) openDiffFile() (tea.Model, tea.Cmd) {
 	if fd == nil || m.diffFileHidden(fd) || m.diff.set.Repo.Root == "" {
 		return m, nil
 	}
-	path := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			m.errBar.text = "file no longer exists: " + path
+	return m, diffFileCheckCmd(filepath.Join(m.diff.set.Repo.Root, fd.File.Path))
+}
+
+// Reading the filesystem is I/O, which Update must not do: a slow stat
+// would hold the next keystroke.
+func diffFileCheckCmd(path string) tea.Cmd {
+	return func() tea.Msg {
+		_, err := os.Stat(path)
+		return diffFileCheckedMsg{path: path, err: err}
+	}
+}
+
+func (m *Model) handleDiffFileChecked(msg diffFileCheckedMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		if os.IsNotExist(msg.err) {
+			m.errBar.text = "file no longer exists: " + msg.path
 		} else {
-			m.errBar.text = "checking file " + path + ": " + err.Error()
+			m.errBar.text = "checking file " + msg.path + ": " + msg.err.Error()
 		}
 		return m, nil
 	}
-	return m.launchEditor(path)
+	return m.launchEditor(msg.path)
 }
 
 func (m *Model) launchEditor(path string) (tea.Model, tea.Cmd) {

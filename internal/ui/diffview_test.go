@@ -1338,6 +1338,18 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 	if len(state.Comments) != 1 || !state.Comments[0].Resolved || !state.Comments[0].Outdated {
 		t.Fatalf("persisted handled comment = %+v", state.Comments)
 	}
+
+	note := m.diff.annotations[m.reviewKey()][0]
+	m.handleReviewCommentHandled(reviewCommentHandledMsg{
+		sessID: m.diff.sessID, repoRoot: m.diff.repoSel,
+		commentID: note.id, handled: note.handled, previous: false,
+	})
+	if m.diff.annotations[m.reviewKey()][0].handled {
+		t.Fatal("a comment the store no longer holds should drop back to open")
+	}
+	if m.errBar.text == "" {
+		t.Fatal("a failed handled toggle should reach the status line")
+	}
 }
 
 func TestAgentHandledUpdateReloadsWithoutDroppingTheComment(t *testing.T) {
@@ -2952,28 +2964,25 @@ func TestDiffProbeSetsLoadingSoItDoesNotStack(t *testing.T) {
 	}
 }
 
-func TestCycleDiffScopeKeepsSetWhenBaseLookupFails(t *testing.T) {
+func TestCycleDiffScopeReportsAFailedBaseLookup(t *testing.T) {
 	m := buildModel(t)
 	openReviewOn(t, m, "keepset", gitTestRepo(t))
 	if len(m.diff.set.Files) == 0 {
 		t.Fatal("expected files")
 	}
-	files := len(m.diff.set.Files)
-	scope := m.diff.scope
 	if err := m.store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if cmd := m.cycleDiffScope(); cmd != nil {
-		t.Fatal("a failed lookup should not start a load")
+	cmd := m.cycleDiffScope()
+	if cmd == nil {
+		t.Fatal("cycling the scope should start a load")
 	}
-	if m.diff.scope != scope {
-		t.Fatalf("scope advanced to %s on a failed lookup", m.diff.scope)
+	m.drainCmds(t, cmd)
+	if m.diff.loading {
+		t.Fatal("the failed load should have landed")
 	}
-	if len(m.diff.set.Files) != files {
-		t.Fatalf("set was wiped, %d files left", len(m.diff.set.Files))
-	}
-	if m.errBar.text == "" {
-		t.Fatal("the lookup error should be shown")
+	if m.diff.errText == "" {
+		t.Fatal("the lookup error should reach the review panel")
 	}
 }
 

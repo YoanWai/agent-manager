@@ -256,6 +256,23 @@ func (m *Model) diffReloadCmd(sess store.Session, scope git.Scope, gen int, gitR
 	}
 }
 
+// diffRebaseCmd reloads the way diffReloadCmd does, but reads the stored
+// base itself: the single store connection can wait behind the poller, and
+// Update is not the place to wait for it.
+func (m *Model) diffRebaseCmd(sess store.Session, scope git.Scope, gen int, gitRoot string, repoRoots []string) tea.Cmd {
+	driver, stor := m.gitDrv, m.store
+	return func() tea.Msg {
+		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, repoRoots: repoRoots, repoRoot: gitRoot}
+		override, err := stor.ReviewBase(sess.ID, resolveSymlinksOrSelf(gitRoot))
+		if err != nil {
+			msg.err = err
+			return msg
+		}
+		finishDiffMsg(driver, scope, gen, gitRoot, override, repoRoots, &msg)
+		return msg
+	}
+}
+
 func (m *Model) diffHLCmd(fd diff.FileDiff, key hlKey) tea.Cmd {
 	return func() tea.Msg {
 		return diffHLMsg{key: key, hl: highlightFile(&fd)}
@@ -376,15 +393,6 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	var override string
-	if m.diff.repoSel != "" && len(m.diff.repoRoots) > 0 {
-		var err error
-		override, err = m.store.ReviewBase(sess.ID, resolveSymlinksOrSelf(m.diff.repoSel))
-		if err != nil {
-			m.errBar.text = err.Error()
-			return nil
-		}
-	}
 	m.diff.scope = m.diff.scope.Next()
 	m.diff.gen++
 	m.diff.loading = true
@@ -396,7 +404,7 @@ func (m *Model) cycleDiffScope() tea.Cmd {
 	m.diff.fileLoading = nil
 	m.diff.reanchor = nil
 	if m.diff.repoSel != "" && len(m.diff.repoRoots) > 0 {
-		return tea.Batch(m.diffReloadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, override, m.diff.repoRoots), m.startStartupTick())
+		return tea.Batch(m.diffRebaseCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, m.diff.repoRoots), m.startStartupTick())
 	}
 	return tea.Batch(m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false), m.startStartupTick())
 }

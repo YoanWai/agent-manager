@@ -242,7 +242,7 @@ Tell your agent what you want to review in Agent Manager. Your agent can declare
 | `space` | Mark a file reviewed |
 | `f` | Show code files only, hiding images, compiled assets and lock files from the list; press again to show them |
 | `c` / `d` | Write or drop a draft; mark feedback from a sent round handled or open |
-| `C` | Send every comment to the agent as one review prompt (`enter` or `y` confirms, `esc` cancels) |
+| `C` | Send the current drafts to the agent as one review prompt (`enter` or `y` confirms, `esc` cancels) |
 | `o` / `F3` | Open the current file in your editor |
 | `?` | Review bindings only; `esc` returns to the review |
 | `esc` / `q` | Close the review |
