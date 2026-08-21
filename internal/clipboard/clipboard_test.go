@@ -1,6 +1,7 @@
 package clipboard
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"os"
@@ -456,6 +457,29 @@ func TestCopyCommandPlatformWriters(t *testing.T) {
 	wslProbe = func() bool { return true }
 	if name, _, ok := copyCommand(); !ok || name != "clip.exe" {
 		t.Fatalf("WSL writer = %q %v", name, ok)
+	}
+}
+
+func TestClipboardTextEncodesWSLClipAsUTF16LE(t *testing.T) {
+	defer restore()()
+	goos = "linux"
+	wslProbe = func() bool { return true }
+
+	got := clipboardText("clip.exe", "A─😀")
+	want := []byte{0x41, 0x00, 0x00, 0x25, 0x3d, 0xd8, 0x00, 0xde}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("WSL clipboard bytes = %x, want %x", got, want)
+	}
+}
+
+func TestClipboardTextLeavesOtherWritersUTF8(t *testing.T) {
+	defer restore()()
+	goos = "linux"
+	wslProbe = func() bool { return false }
+
+	text := "A─😀"
+	if got := clipboardText("xclip", text); !bytes.Equal(got, []byte(text)) {
+		t.Fatalf("Linux clipboard bytes = %x, want UTF-8 %x", got, []byte(text))
 	}
 }
 
