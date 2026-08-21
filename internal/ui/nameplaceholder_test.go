@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/clipboard"
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/x/ansi"
@@ -81,5 +84,26 @@ func TestAPromptNamedRowFallsBackToItsGeneratedNamePastTheGrace(t *testing.T) {
 	got := ansi.Strip(m.displayName(sess))
 	if got != sess.Name || !strings.HasPrefix(got, "claude-") {
 		t.Fatalf("displayName past the grace = %q, want the generated name %q", got, sess.Name)
+	}
+}
+
+func TestAWaitingRowIsNamedByTheWordsNotThePastedImage(t *testing.T) {
+	// A chip reaches the agent as the path the picture was written to, so an
+	// image-first prompt would otherwise name every such row the same thing.
+	pasted, err := clipboard.SaveToTemp([]byte("not really a png"), "png")
+	if err != nil {
+		t.Fatalf("save paste: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(pasted) })
+
+	m := buildModel(t)
+	sess := spawnUnnamed(t, m, pasted+" fix the flaky auth middleware test")
+
+	got := ansi.Strip(m.displayName(sess))
+	if strings.Contains(got, "/") || strings.Contains(got, "paste-") {
+		t.Fatalf("displayName = %q, want the words rather than the pasted path", got)
+	}
+	if !strings.HasPrefix(got, "fix the") {
+		t.Fatalf("displayName = %q, want it to open with what was typed", got)
 	}
 }

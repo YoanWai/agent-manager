@@ -58,6 +58,13 @@ func pastesDir() string {
 	return filepath.Join(os.TempDir(), "agent-manager-pastes")
 }
 
+// IsPastePath reports whether a word is one of the image paths a pasted
+// picture becomes on its way to an agent, so a reader showing the prompt
+// back can leave the pictures out of it.
+func IsPastePath(word string) bool {
+	return filepath.Dir(word) == pastesDir()
+}
+
 // StaleAfter is how long a pasted image stays on disk before a sweep can
 // take it: long enough for an agent to reopen an image from an earlier
 // session, short enough that screenshots do not pile up in temp.

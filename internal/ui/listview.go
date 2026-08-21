@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -515,8 +516,18 @@ func (m *Model) displayName(sess store.Session) string {
 
 // promptPreview flattens a prompt into the one short line a row can wear as
 // a name, so five agents spawned in a burst say which is which right away.
+// A pasted image reaches the agent as the path it was written to, which
+// would name every image-first spawn the same thing, so the pictures drop
+// out of the preview and the words stay.
 func promptPreview(prompt string) string {
-	return ansi.Truncate(strings.Join(strings.Fields(prompt), " "), placeholderPromptWidth, "…")
+	words := make([]string, 0, len(strings.Fields(prompt)))
+	for _, word := range strings.Fields(prompt) {
+		if clipboard.IsPastePath(word) {
+			continue
+		}
+		words = append(words, word)
+	}
+	return ansi.Truncate(strings.Join(words, " "), placeholderPromptWidth, "…")
 }
 
 func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
