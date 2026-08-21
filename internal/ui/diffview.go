@@ -1669,9 +1669,6 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 			continue
 		}
 		draftIndexes = append(draftIndexes, i)
-		if notes[i].id == "" {
-			notes[i].id = newReviewCommentID()
-		}
 		notes[i].point = len(parts) + 1
 		location := fmt.Sprintf("%s:%d", note.file, note.line)
 		body := strings.ReplaceAll(note.text, "\n", " / ")
