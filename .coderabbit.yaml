@@ -187,8 +187,5 @@ knowledge_base:
   pull_requests:
     scope: local
   automatic_repository_linking: true
-  linked_repositories:
-    - repository: "YoanWai/agent-manager-tools"
-      instructions: "Community TOML profiles for CLI tools beyond the built-ins"
   code_guidelines:
     enabled: true
