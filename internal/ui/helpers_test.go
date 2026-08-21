@@ -119,9 +119,8 @@ func (m *Model) applyCmd(t *testing.T, cmd tea.Cmd) {
 	*m = *updated.(*Model)
 }
 
-// stepCmd runs one command, hands its message to Update, and returns the
-// command that message produced, so a test can follow work the model spreads
-// across messages.
+// applyCmd drops whatever command a message produces, so a test whose next
+// step is that command steps through this instead.
 func (m *Model) stepCmd(t *testing.T, cmd tea.Cmd) tea.Cmd {
 	t.Helper()
 	if cmd == nil {
