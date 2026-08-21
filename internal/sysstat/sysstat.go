@@ -497,24 +497,38 @@ func nameChildren(stats map[int]ProcStat, children map[int][]int) {
 	// ps exits non-zero when every pid it was given has gone, which is a
 	// child that ended between the two calls rather than a failure: there is
 	// nothing left to name and the next sample sees whatever replaced it.
-	out, err := exec.Command("ps", "-o", "pid=,args=", "-p", strings.Join(wanted, ",")).Output()
+	out, err := exec.Command("ps", "-o", "pid=,ppid=,args=", "-p", strings.Join(wanted, ",")).Output()
 	if err != nil {
 		return
 	}
-	commands := make(map[int]string, len(wanted))
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	applyChildNames(stats, children, string(out))
+}
+
+// applyChildNames matches the second ps pass back to the tree the first one
+// built. The parent has to still be the root it was sampled under: a child
+// that exited between the two calls leaves its pid free for a process that
+// is nothing to do with this pane.
+func applyChildNames(stats map[int]ProcStat, children map[int][]int, psOutput string) {
+	type child struct {
+		ppid    int
+		command string
+	}
+	named := map[int]child{}
+	for _, line := range strings.Split(strings.TrimSpace(psOutput), "\n") {
 		pidText, rest := nextField(line)
+		ppidText, rest := nextField(rest)
 		command, _ := nextField(rest)
-		pid, err := strconv.Atoi(pidText)
-		if err != nil || command == "" {
+		pid, err1 := strconv.Atoi(pidText)
+		ppid, err2 := strconv.Atoi(ppidText)
+		if err1 != nil || err2 != nil || command == "" {
 			continue
 		}
-		commands[pid] = command
+		named[pid] = child{ppid: ppid, command: command}
 	}
 	for root, stat := range stats {
-		for _, child := range children[root] {
-			if command := commands[child]; command != "" {
-				stat.Children = append(stat.Children, command)
+		for _, pid := range children[root] {
+			if named[pid].ppid == root {
+				stat.Children = append(stat.Children, named[pid].command)
 			}
 		}
 		stats[root] = stat

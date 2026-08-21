@@ -220,14 +220,15 @@ func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// InlineEnv prefixes a command with the session environment, for a command
-// typed into a pane whose shell does not carry it: a session launched
-// before the manager started exporting these values still holds a shell
-// that never received them.
-func InlineEnv(env map[string]string, command string) string {
+// ExportEnv prefixes a command with exports of the session environment, for
+// a command typed into a pane whose shell does not carry it: a session
+// launched before the manager started exporting these values still holds a
+// shell that never received them, and it keeps them once this agent exits
+// too.
+func ExportEnv(env map[string]string, command string) string {
 	var line strings.Builder
 	for _, key := range sortedKeys(env) {
-		line.WriteString(key + "=" + ShellQuote(env[key]) + " ")
+		line.WriteString("export " + key + "=" + ShellQuote(env[key]) + "; ")
 	}
 	line.WriteString(command)
 	return line.String()

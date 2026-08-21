@@ -955,9 +955,10 @@ func TestCreateNamesTheWayBackWhenTheAgentExits(t *testing.T) {
 	waitForPane(t, driver, id, relaunchHint)
 }
 
-func TestInlineEnvPrefixesTheCommand(t *testing.T) {
+func TestExportEnvPrefixesTheCommand(t *testing.T) {
 	env := map[string]string{"B": "second", "A": "fir st"}
-	if got, want := InlineEnv(env, "claude --resume 7"), `A='fir st' B='second' claude --resume 7`; got != want {
-		t.Fatalf("InlineEnv = %q, want %q", got, want)
+	want := `export A='fir st'; export B='second'; claude --resume 7`
+	if got := ExportEnv(env, "claude --resume 7"); got != want {
+		t.Fatalf("ExportEnv = %q, want %q", got, want)
 	}
 }

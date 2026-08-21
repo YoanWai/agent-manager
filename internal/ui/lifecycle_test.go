@@ -1699,4 +1699,27 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	if got.Acked {
 		t.Fatal("revive must clear the ack of the agent that exited")
 	}
+
+	// The relaunch exports rather than prefixes, so the shell it lands in
+	// keeps the session identity once this agent exits as well.
+	if err := m.tmux.SendKeys(sess.ID, "C-d"); err != nil {
+		t.Fatalf("send ctrl-d: %v", err)
+	}
+	waitForAgent(t, m, sess.ID, false)
+	marker := filepath.Join(t.TempDir(), "env")
+	report := `printf '%s\n' "$AGENT_MANAGER_SESSION_ID" > ` + marker + `.part && mv ` + marker + `.part ` + marker
+	if err := m.tmux.SendKeys(sess.ID, report, "Enter"); err != nil {
+		t.Fatalf("read the shell environment: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if data, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(data)) == sess.ID {
+			break
+		}
+		if time.Now().After(deadline) {
+			pane, _ := m.tmux.CapturePane(sess.ID)
+			t.Fatalf("the shell lost the session id after the relaunched agent exited; pane:\n%s", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }

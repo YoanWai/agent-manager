@@ -31,6 +31,7 @@ func TestDetectRelaunchedTool(t *testing.T) {
 		"claude":   "claude",
 		"codex":    "codex",
 		"terminal": "",
+		"gemini":   "gemini",
 		// Two blocks of the same CLI: nothing in a process name says which
 		// of them a pane is running.
 		"grok":      "grok",
@@ -41,16 +42,17 @@ func TestDetectRelaunchedTool(t *testing.T) {
 		children []string
 		want     string
 	}{
-		"another CLI took the pane":  {"claude", []string{"/opt/homebrew/bin/codex"}, "codex"},
-		"same CLI came back":         {"claude", []string{"claude"}, ""},
-		"nothing agent-like running": {"claude", []string{"vim", "-bash"}, ""},
-		"empty pane":                 {"claude", nil, ""},
-		"terminals stay terminals":   {"terminal", []string{"claude"}, ""},
-		"unknown tool row":           {"retired-tool", []string{"codex"}, ""},
-		"two blocks claim it":        {"claude", []string{"grok"}, ""},
-		"agent beside its own CLI":   {"claude", []string{"codex", "claude"}, ""},
-		"two other CLIs":             {"claude", []string{"codex", "gemini"}, "codex"},
-		"a shell is not a CLI":       {"claude", []string{"sh", "node"}, ""},
+		"another CLI took the pane":         {"claude", []string{"/opt/homebrew/bin/codex"}, "codex"},
+		"same CLI came back":                {"claude", []string{"claude"}, ""},
+		"nothing agent-like running":        {"claude", []string{"vim", "-bash"}, ""},
+		"empty pane":                        {"claude", nil, ""},
+		"terminals stay terminals":          {"terminal", []string{"claude"}, ""},
+		"unknown tool row":                  {"retired-tool", []string{"codex"}, ""},
+		"two blocks claim it":               {"claude", []string{"grok"}, ""},
+		"agent beside its own CLI":          {"claude", []string{"codex", "claude"}, ""},
+		"one configured CLI beside another": {"claude", []string{"codex", "aider"}, "codex"},
+		"two configured CLIs":               {"claude", []string{"codex", "gemini"}, ""},
+		"a shell is not a CLI":              {"claude", []string{"sh", "node"}, ""},
 	}
 	for name, tc := range cases {
 		if got := detectRelaunchedTool(tc.current, tc.children, binaries); got != tc.want {

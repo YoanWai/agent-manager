@@ -342,7 +342,7 @@ func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
 		if err != nil {
 			return failed(err)
 		}
-		if err := driver.SendKeys(sess.ID, tmux.InlineEnv(env, command), "Enter"); err != nil {
+		if err := driver.SendKeys(sess.ID, tmux.ExportEnv(env, command), "Enter"); err != nil {
 			return failed(err)
 		}
 		launchedAt := time.Now()

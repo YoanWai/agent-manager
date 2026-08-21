@@ -443,3 +443,15 @@ func TestTreesNamesDirectChildren(t *testing.T) {
 		t.Fatalf("children = %v, want no grandchild in it", children)
 	}
 }
+
+// A child that exits between the two ps passes frees its pid, and a pid the
+// kernel hands to something unrelated must not be read as this pane's agent.
+func TestChildNamesRequireTheSampledParent(t *testing.T) {
+	stats := map[int]ProcStat{100: {OK: true}}
+	children := map[int][]int{100: {101, 102}}
+	applyChildNames(stats, children, "  101   100 /opt/homebrew/bin/codex --resume 7\n  102   999 /usr/bin/vim notes.txt\n")
+	want := []string{"/opt/homebrew/bin/codex"}
+	if got := stats[100].Children; !slices.Equal(got, want) {
+		t.Fatalf("children = %v, want %v", got, want)
+	}
+}
