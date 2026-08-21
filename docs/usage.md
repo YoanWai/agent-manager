@@ -251,7 +251,7 @@ Each changeable value in the header wears its own key, so the scope, layout, rep
 
 ![review, side by side, with the changed lines tinted in full file context](screenshot-review.png)
 
-Comments and reviewed-file marks are saved as you work and return after Agent Manager restarts. `C` sends only the current drafts as one prompt and records them as the next numbered review round. Every sent comment stays inline as permanent review history, labelled with its review round and point number. Open comments keep the accent wash; handled comments settle into a subtle dark green wash, and `d` toggles the status locally.
+Comments and reviewed-file marks are saved as you work and return after Agent Manager restarts. `C` sends only the current drafts as one prompt and records them as the next numbered review round. Every sent comment stays inline as the session's review history, labelled with its review round and point number. Open comments keep the accent wash; handled comments settle into a subtle dark green wash, and `d` toggles the status locally.
 
 Each point sent to the agent carries a stable comment id. After addressing it, an MCP-capable agent marks it handled with `review_comment`; an agent using shell commands runs `agent-manager review-comment <comment-id>`. Either can reopen it. The status is stored immediately, so opening review shows the current state at once; a panel already open picks it up on its next refresh. The comment itself remains in place. The header names the latest review round and marks it changed when the scope or the code differs from what was sent. A comment whose original code can no longer be found is marked outdated instead of silently moving to an unrelated line.
 
