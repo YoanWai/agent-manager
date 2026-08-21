@@ -509,6 +509,9 @@ func TestReviewDoesNotOpenTheFileTheCursorLeft(t *testing.T) {
 	if first == nil {
 		t.Fatal("review has no selected file")
 	}
+	// The loaded file replaces its slot in the set, so the path is what
+	// survives the reload the switch below drains.
+	firstPath := first.File.Path
 	_, cmd := m.openDiffFile()
 	if cmd == nil {
 		t.Fatal("o returned no command")
@@ -516,8 +519,8 @@ func TestReviewDoesNotOpenTheFileTheCursorLeft(t *testing.T) {
 
 	m.drainCmds(t, m.switchDiffFile(1))
 	moved := m.currentFileDiff()
-	if moved == nil || moved.File.Path == first.File.Path {
-		t.Fatalf("the cursor did not move off %s", first.File.Path)
+	if moved == nil || moved.File.Path == firstPath {
+		t.Fatalf("the cursor did not move off %s", firstPath)
 	}
 
 	if next := m.stepCmd(t, cmd); next != nil {

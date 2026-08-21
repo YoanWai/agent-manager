@@ -433,7 +433,14 @@ func readReviewState(stor *store.Store, sessID, repoRoot string) (store.ReviewSt
 	if err != nil {
 		return store.ReviewState{}, err
 	}
-	points := map[int]int{}
+	// A round's numbered points are read before any are handed out, so a
+	// point a comment already carries cannot be handed to another one.
+	highest := map[int]int{}
+	for _, note := range state.Comments {
+		if note.Round > 0 && note.Point > highest[note.Round] {
+			highest[note.Round] = note.Point
+		}
+	}
 	migrated := false
 	for i := range state.Comments {
 		note := &state.Comments[i]
@@ -441,14 +448,10 @@ func readReviewState(stor *store.Store, sessID, repoRoot string) (store.ReviewSt
 			note.ID = newReviewCommentID()
 			migrated = true
 		}
-		if note.Round > 0 {
-			points[note.Round]++
-			if note.Point == 0 {
-				note.Point = points[note.Round]
-				migrated = true
-			} else if note.Point > points[note.Round] {
-				points[note.Round] = note.Point
-			}
+		if note.Round > 0 && note.Point == 0 {
+			highest[note.Round]++
+			note.Point = highest[note.Round]
+			migrated = true
 		}
 	}
 	// Merge rather than set: this write lands outside the review write

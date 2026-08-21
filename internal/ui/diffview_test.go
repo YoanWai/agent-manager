@@ -3200,3 +3200,33 @@ func TestAnotherScopeDoesNotOutdateARoundsComments(t *testing.T) {
 		t.Fatal("the comment was labelled outdated by a scope it was not sent in")
 	}
 }
+
+func TestMigratedPointsNeverRepeatWithinARound(t *testing.T) {
+	m := buildModel(t)
+	const repo = "/repo"
+	if err := m.store.SetReviewState("pts123", repo, store.ReviewState{
+		Comments: []store.ReviewComment{
+			{ID: "aaaaaaaaaaaaaaa1", File: "a.go", Line: 1, Text: "no point", Round: 1},
+			{ID: "aaaaaaaaaaaaaaa2", File: "a.go", Line: 2, Text: "point one", Round: 1, Point: 1},
+			{ID: "aaaaaaaaaaaaaaa3", File: "a.go", Line: 3, Text: "also none", Round: 1},
+		},
+		Round: store.ReviewRound{Number: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := readReviewState(m.store, "pts123", repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[int]string{}
+	for _, note := range state.Comments {
+		if note.Point == 0 {
+			t.Fatalf("comment %s kept point 0", note.ID)
+		}
+		if other, taken := seen[note.Point]; taken {
+			t.Fatalf("comments %s and %s share point %d", other, note.ID, note.Point)
+		}
+		seen[note.Point] = note.ID
+	}
+}
