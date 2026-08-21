@@ -223,6 +223,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	p.tick++
 
+	listedAt := time.Now()
 	sessions, err := p.store.ListSessions(includeArchived)
 	if err != nil {
 		return errMsg{err}
@@ -404,6 +405,7 @@ func (p *poller) refreshOnce() tea.Msg {
 
 	msg := refreshMsg{
 		sessions:       sessions,
+		listedAt:       listedAt,
 		groups:         names,
 		groupPaths:     paths,
 		groupWorktrees: worktrees,

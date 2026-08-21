@@ -181,6 +181,9 @@ type Model struct {
 	// settle timers with an older gen are dropped so key-repeat cannot
 	// queue a second of tmux work after the user stops.
 	previewGen uint64
+	// launched is when this run recorded each session it spawned. A poll
+	// that listed the store before that has nothing to say about the row.
+	launched map[string]time.Time
 	// terminalKeyAt is when the last T finished being handled. Held down it
 	// autorepeats into a burst of keystrokes, and T is the only key that
 	// spawns on the keystroke itself rather than opening a form that would
@@ -406,7 +409,10 @@ type agentStats struct {
 }
 
 type refreshMsg struct {
-	sessions       []store.Session
+	sessions []store.Session
+	// listedAt is when the pass read that list, which is a whole pass of
+	// tmux and ps calls before the UI sees it.
+	listedAt       time.Time
 	groups         []string
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
@@ -1072,7 +1078,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				focusExit = m.leaveFocus()
 			}
 		}
-		m.sessions = msg.sessions
+		m.sessions = m.keepPendingLaunches(msg.sessions, msg.listedAt)
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
 		m.groupWorktrees = msg.groupWorktrees
