@@ -145,6 +145,17 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		m.mode = modeConfirmDelete
 		return m, nil
 	}
+	// A pane the user quit the agent in is still a live window sitting at a
+	// shell; the agent alone is gone, and it comes back inside that shell.
+	if m.tmux.Exists(entry.sess.ID) {
+		cmd, err := m.relaunchInPane(entry.sess)
+		if err != nil {
+			m.reportLaunchError(err)
+			return m, nil
+		}
+		m.errBar.text = m.degradedResumeNotice(entry.sess)
+		return m, cmd
+	}
 	if err := m.reviveSession(entry.sess); err != nil {
 		m.reportLaunchError(err)
 		return m, nil
@@ -225,21 +236,15 @@ func (m *Model) degradedResumeNotice(sess store.Session) string {
 // resume_by_id_command instead of the working directory's most recent one,
 // which would be the wrong conversation whenever sessions share a cwd.
 func (m *Model) reviveSession(sess store.Session) error {
+	if m.tmux.Exists(sess.ID) {
+		return fmt.Errorf("session %s is still running; revive only applies to dead sessions", sess.Name)
+	}
 	tool, ok := m.cfg.Tools[sess.Tool]
 	if !ok {
 		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
 	}
 	if !isDir(sess.Cwd) {
 		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
-	}
-	// A pane the user quit the agent in is still a live window sitting at a
-	// shell; the agent alone is gone, and it comes back inside that shell.
-	if m.tmux.Exists(sess.ID) {
-		if err := m.relaunchInPane(sess, tool); err != nil {
-			return err
-		}
-		m.rebuildRows()
-		return nil
 	}
 	bind := func() error {
 		launchedAt := time.Now()
@@ -292,42 +297,68 @@ func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseComman
 	return m.store.SetAcked(sess.ID, false)
 }
 
-// relaunchInPane starts a session's tool again inside the shell its pane
-// already holds, for a session whose window is alive because only the agent
-// exited. The command is typed into that shell rather than launched over a
-// fresh window, so nothing about the pane is lost and the agent comes back
-// as the shell's child, the shape every other session has. It carries the
-// session environment inline as well, since a pane opened by an older
-// manager holds a shell that was never given it.
-func (m *Model) relaunchInPane(sess store.Session, tool config.Tool) error {
+// relaunchedMsg carries the result of starting an agent in a pane that was
+// left on its shell.
+type relaunchedMsg struct {
+	sessID     string
+	launchedAt time.Time
+	err        error
+}
+
+// relaunchInPane builds the command that starts a session's tool again
+// inside the shell its pane already holds, for a session whose window is
+// alive because only the agent exited. The command is typed into that
+// shell rather than launched over a fresh window, so nothing about the
+// pane is lost and the agent comes back as the shell's child, the shape
+// every other session has. It carries the session environment inline as
+// well, since a pane opened by an older manager holds a shell that was
+// never given it. The probe and the send run off the update path, where a
+// pane that answers slowly would hold up the whole UI.
+func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
+	tool, ok := m.cfg.Tools[sess.Tool]
+	if !ok {
+		return nil, fmt.Errorf("tool %s is no longer configured", sess.Tool)
+	}
 	if tool.Shell {
-		return fmt.Errorf("%s is a shell; its pane is already open", sess.Name)
+		return nil, fmt.Errorf("%s is a shell; its pane is already open", sess.Name)
 	}
-	running, err := m.agentRunning(sess.ID)
-	if err != nil {
-		return err
+	if !isDir(sess.Cwd) {
+		return nil, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
-	if running {
-		return fmt.Errorf("session %s is still running; revive brings back an agent that exited", sess.Name)
-	}
-	command, env, err := m.buildLaunch(sess.Tool, tool, launch.ReviveCommand(tool, sess.AgentSessionID), sess.ID)
-	if err != nil {
-		return err
-	}
-	if err := m.tmux.SendKeys(sess.ID, tmux.InlineEnv(env, command), "Enter"); err != nil {
-		return err
-	}
-	launchedAt := time.Now()
-	if err := m.store.SetAgentLaunchedAt(sess.ID, launchedAt); err != nil {
-		return err
-	}
-	m.bindReviveLocally(sess.ID, launchedAt)
-	if err := m.store.UpdateStatus(sess.ID, status.Starting); err != nil {
-		return err
-	}
-	// A leftover ack from the agent that exited must not swallow the first
-	// finished alert of the one taking its place.
-	return m.store.SetAcked(sess.ID, false)
+	driver, stor, hookManager := m.tmux, m.store, m.hooks
+	base := launch.ReviveCommand(tool, sess.AgentSessionID)
+	return func() tea.Msg {
+		failed := func(err error) tea.Msg {
+			return relaunchedMsg{sessID: sess.ID, err: err}
+		}
+		running, err := agentRunning(driver, sess.ID)
+		if err != nil {
+			return failed(err)
+		}
+		if running {
+			return failed(fmt.Errorf("session %s is still running; revive brings back an agent that exited", sess.Name))
+		}
+		command, env, err := launch.Environment(hookManager, sess.Tool, tool, base, sess.ID)
+		if err != nil {
+			return failed(err)
+		}
+		if err := driver.SendKeys(sess.ID, tmux.InlineEnv(env, command), "Enter"); err != nil {
+			return failed(err)
+		}
+		launchedAt := time.Now()
+		if err := stor.SetAgentLaunchedAt(sess.ID, launchedAt); err != nil {
+			return failed(err)
+		}
+		if err := stor.UpdateStatus(sess.ID, status.Starting); err != nil {
+			return failed(err)
+		}
+		// A leftover ack from the agent that exited must not swallow the
+		// first finished alert of the one taking its place.
+		if err := stor.SetAcked(sess.ID, false); err != nil {
+			return failed(err)
+		}
+		return relaunchedMsg{sessID: sess.ID, launchedAt: launchedAt}
+	}, nil
 }
 
 // paneSettle is how long a busy pane is given to come back empty. A shell
@@ -339,17 +370,17 @@ const paneSettle = 250 * time.Millisecond
 // own pid is its shell, so anything under it is the agent. A sample that
 // could not be read counts as running, because typing a command into a pane
 // that turns out to hold an agent puts the text in its composer.
-func (m *Model) agentRunning(sessID string) (bool, error) {
-	busy, err := m.paneBusy(sessID)
+func agentRunning(driver *tmux.Driver, sessID string) (bool, error) {
+	busy, err := paneBusy(driver, sessID)
 	if err != nil || !busy {
 		return busy, err
 	}
 	time.Sleep(paneSettle)
-	return m.paneBusy(sessID)
+	return paneBusy(driver, sessID)
 }
 
-func (m *Model) paneBusy(sessID string) (bool, error) {
-	pid, err := m.tmux.PanePID(sessID)
+func paneBusy(driver *tmux.Driver, sessID string) (bool, error) {
+	pid, err := driver.PanePID(sessID)
 	if err != nil {
 		return true, err
 	}

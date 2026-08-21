@@ -189,9 +189,9 @@ func storedPreview(st *store.Store, driver *tmux.Driver, sessID string) (string,
 
 // refreshOnce polls every live session's pane, derives and stores status,
 // and samples system stats. Liveness and pane pids come from one tmux
-// call, and every process tree from one ps sample, so the poll cost stays
-// flat as sessions are added. runMu serializes the loop with one-off
-// refreshes issued as tea commands.
+// call, and every process tree from one ps pass with a second scoped to
+// the pane children, so the poll cost stays flat as sessions are added.
+// runMu serializes the loop with one-off refreshes issued as tea commands.
 func (p *poller) refreshOnce() tea.Msg {
 	p.runMu.Lock()
 	defer p.runMu.Unlock()

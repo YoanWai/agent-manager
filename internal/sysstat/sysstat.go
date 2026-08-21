@@ -401,8 +401,6 @@ func parsePSTime(s string) (float64, error) {
 	}
 }
 
-// nextField takes the first space-separated field off a ps line and
-// returns it with what follows.
 func nextField(line string) (string, string) {
 	line = strings.TrimLeft(line, " ")
 	if i := strings.IndexByte(line, ' '); i >= 0 {
@@ -496,6 +494,9 @@ func nameChildren(stats map[int]ProcStat, children map[int][]int) {
 	if len(wanted) == 0 {
 		return
 	}
+	// ps exits non-zero when every pid it was given has gone, which is a
+	// child that ended between the two calls rather than a failure: there is
+	// nothing left to name and the next sample sees whatever replaced it.
 	out, err := exec.Command("ps", "-o", "pid=,args=", "-p", strings.Join(wanted, ",")).Output()
 	if err != nil {
 		return

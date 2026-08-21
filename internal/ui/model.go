@@ -1407,6 +1407,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, resume
 
+	case relaunchedMsg:
+		if msg.err != nil {
+			m.reportLaunchError(msg.err)
+			return m, nil
+		}
+		m.bindReviveLocally(msg.sessID, msg.launchedAt)
+		m.rebuildRows()
+		m.requestRefresh()
+		return m, nil
+
 	case reattachPreparedMsg:
 		if msg.diffGen != m.diff.gen || m.diff.active {
 			return m, nil

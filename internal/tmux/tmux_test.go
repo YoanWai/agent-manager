@@ -894,7 +894,6 @@ func sessionOption(t *testing.T, name, option string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// waitForPane waits for text to appear in a session's pane.
 func waitForPane(t *testing.T, driver *Driver, id, want string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)

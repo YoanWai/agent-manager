@@ -319,7 +319,7 @@ func waitForAgent(t *testing.T, m *Model, sessID string, want bool) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if running, err := m.agentRunning(sessID); err == nil && running == want {
+		if running, err := agentRunning(m.tmux, sessID); err == nil && running == want {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)

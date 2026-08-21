@@ -108,12 +108,13 @@ func (p *poller) applyRelaunchedTool(sess *store.Session, children []string) err
 	if detected == "" {
 		return nil
 	}
-	if err := ignoreDeletedSession(p.store.UpdateTool(sess.ID, detected)); err != nil {
+	// The old tool's leftover status file goes first: it would otherwise
+	// speak for a tool that writes none, and a removal that fails leaves the
+	// row on its old tool for the next poll to retry.
+	if err := p.hooks.Remove(sess.ID); err != nil {
 		return err
 	}
-	// A status file the old tool's hooks left behind would otherwise speak
-	// for a tool that writes none.
-	if err := p.hooks.Remove(sess.ID); err != nil {
+	if err := ignoreDeletedSession(p.store.UpdateTool(sess.ID, detected)); err != nil {
 		return err
 	}
 	sess.Tool = detected

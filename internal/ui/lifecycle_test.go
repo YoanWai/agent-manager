@@ -785,8 +785,10 @@ func TestReviveRefusesLiveSession(t *testing.T) {
 	waitForAgent(t, m, m.sessionRows()[0].ID, true)
 	m.selectSessionRow(t, "alive")
 
-	if _, _ = m.reviveSelected(); m.errBar.text == "" {
-		t.Fatal("revive on a live session should error")
+	_, cmd := m.reviveSelected()
+	m.applyCmd(t, cmd)
+	if !strings.Contains(m.errBar.text, "still running") {
+		t.Fatalf("revive said %q, want it to refuse a pane that still holds its agent", m.errBar.text)
 	}
 	if !m.tmux.Exists(m.sessionRows()[0].ID) {
 		t.Fatal("live session must keep running")
@@ -1670,7 +1672,9 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	}
 	m.selectSessionRow(t, "quit-and-back")
 
-	if _, _ = m.reviveSelected(); m.errBar.text != "" {
+	_, cmd := m.reviveSelected()
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
 		t.Fatalf("revive: %q", m.errBar.text)
 	}
 	waitForAgent(t, m, sess.ID, true)
@@ -1694,19 +1698,5 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	}
 	if got.Acked {
 		t.Fatal("revive must clear the ack of the agent that exited")
-	}
-}
-
-// Revive brings back an agent that exited. A pane still running one is
-// left alone: its text would land in that agent's composer.
-func TestReviveRefusesWhileTheAgentIsRunning(t *testing.T) {
-	m := buildModel(t)
-	createSessionOn(t, m, "busy", "quietchat", t.TempDir())
-	sess := m.sessionRows()[0]
-	waitForAgent(t, m, sess.ID, true)
-
-	err := m.reviveSession(sess)
-	if err == nil || !strings.Contains(err.Error(), "still running") {
-		t.Fatalf("revive error = %v, want it to refuse a running agent", err)
 	}
 }
