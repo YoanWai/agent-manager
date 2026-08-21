@@ -194,6 +194,7 @@ func TestReviewRefusesToOpenAFileThatIsGone(t *testing.T) {
 
 func TestReviewReportsFileCheckErrors(t *testing.T) {
 	m := buildModel(t)
+	launched := captureEditor(t, "code")
 	openReviewOn(t, m, "opener", gitTestRepo(t))
 	fd := m.currentFileDiff()
 	if fd == nil {
@@ -212,6 +213,9 @@ func TestReviewReportsFileCheckErrors(t *testing.T) {
 	_, cmd := m.openDiffFile()
 	if next := m.stepCmd(t, cmd); next != nil {
 		t.Fatal("a file with a failed stat should not launch an editor")
+	}
+	if len(*launched) != 0 {
+		t.Fatalf("editor launched for a file that failed its check: %v", *launched)
 	}
 	wantPrefix := "checking file " + path + ": "
 	if !strings.HasPrefix(m.errBar.text, wantPrefix) {
