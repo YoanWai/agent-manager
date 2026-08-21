@@ -67,7 +67,7 @@ The new-session form's optional `prompt` field launches an agent the same way. I
 
 ## Which CLIs you get offered
 
-Every configured tool is offered when you create a session, which is more than most people run. Settings (`s`) has a `CLIs` row: `enter` opens a checklist, `space` or `enter` unchecks the tool under the cursor, `esc` saves, and the ones left checked are what the `n` form's `tool` picker and the quick prompt's `tab` cycle through. It only narrows the pickers, so a session already on an unchecked tool keeps running and revives on that same tool. The last row, `request CLI support`, opens an issue for a CLI we do not ship rules for yet.
+Every configured tool is offered when you create a session, which is more than most people run. Settings (`s`) has a `CLIs` row: `enter` opens a checklist, `space` or `enter` unchecks the tool under the cursor, `esc` saves, and the ones left checked are what the `n` form's `tool` picker and the quick prompt's `tab` cycle through. The last checked tool cannot be unchecked, since a picker with nothing in it could not create a session. It only narrows the pickers, so a session already on an unchecked tool keeps running and revives on that same tool. The last row, `request CLI support`, opens an issue for a CLI we do not ship rules for yet.
 
 ## Terminal tabs
 
@@ -231,7 +231,7 @@ Press `ctrl+r` on a session to open a full-screen review of its repo: changed fi
 |-----|--------|
 | `↑↓` / `jk`, `ctrl+d` / `ctrl+u` | Scroll the file |
 | `g` / `G` | Jump to top / bottom |
-| `J` / `K` (or `tab` / `shift+tab`) | Previous / next file |
+| `J` / `K` (or `tab` / `shift+tab`) | Next / previous file |
 | `n` / `N` | Jump between changes |
 | `u` | Toggle unified and side-by-side |
 | `s` | Cycle the scope: uncommitted, vs target, last commit, staged |
