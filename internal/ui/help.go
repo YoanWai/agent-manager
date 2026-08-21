@@ -89,6 +89,15 @@ func helpSections() []helpSection {
 			{"a / u", "archive / restore (archive kills, restore revives)"},
 			{"d", "delete it"},
 		}},
+		{title: "the mark on a session row", rows: [][2]string{
+			{"◐ working", "the agent is busy on a turn"},
+			{"◆ waiting", "blocked on you: a dialog, a permission ask, a question"},
+			{"● finished", "the turn ended; entering the session clears it to idle"},
+			{"○ idle", "nothing running"},
+			{"✕ errored", "the tool reported an error, or the session is dead"},
+			{"◌ starting", "the pane is still launching"},
+			{"", "w filters the list down to the marks that need you"},
+		}},
 		{title: "group under the cursor", rows: [][2]string{
 			{"↵", "fold / unfold"},
 			{"space", "quick prompt: spawn a new agent in the group"},

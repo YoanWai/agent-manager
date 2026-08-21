@@ -55,7 +55,7 @@ Navigation is keyboard-driven. The manager claims mouse reporting so the wheel s
 Press `space` to dock a prompt bar at the bottom of the sidebar. The target follows the cursor while the bar is open (`↑↓` still navigate):
 
 - On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar clears and stays open, ready for the next answer; Settings (`s`) can make it close instead.
-- On a **group** row, `enter` spawns a new agent in that group and submits the prompt at startup, using the group's default path. The spawn tool starts at the Settings default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. `alt+w` toggles whether the new agent spawns into its own git worktree, starting from the Settings default; the footer shows `worktree: on` or `worktree: off`, or `worktree: unavailable (not a git repo)` when the target directory cannot hold one. Answering an existing session ignores the toggle, since there is no new session to place in a worktree. The agent starts working on the prompt immediately.
+- On a **group** row, `enter` spawns a new agent in that group and submits the prompt at startup, using the group's default path. This is the shortest path to a fresh agent: `space`, type the task, `enter`, with no form and no name to invent. The spawn tool starts at the Settings default and `tab` (or `alt+m`) cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. `shift+tab` (or `alt+w`) toggles whether the new agent spawns into its own git worktree, starting from the Settings default; the footer shows `worktree: on` or `worktree: off`, or `worktree: unavailable (not a git repo)` when the target directory cannot hold one. Answering an existing session ignores the toggle, since there is no new session to place in a worktree. The agent starts working on the prompt immediately.
 
 `ctrl+v` pastes an image from the system clipboard as an `[Image #1]` chip at the caret. The image is saved under `agent-manager-pastes` in your temp directory, and on send each chip is swapped back for its path, so the paths reach the agent in the order and the places you pasted them. `backspace` next to a chip removes the whole chip, and an edit that swallows one releases its image. A clipboard holding text rather than an image pastes as text. Pasted images older than seven days are cleared at startup and once a day while the manager runs, so an agent can still open one from an earlier session while temp stays tidy.
 
@@ -258,14 +258,17 @@ Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Session
 
 Each session's tmux pane is polled (default every 2s) to derive a status:
 
-| Status | Meaning |
-|--------|---------|
-| `working` | The agent is busy on a turn |
-| `waiting` | Blocked on you: a dialog, a permission ask, or a plain-text question |
-| `finished` | Turn ended — an alert that clears to `idle` once you enter the session |
-| `errored` | The tool reported an error |
-| `idle` | Nothing running |
-| `dead` | The tmux session is gone |
+| Mark | Status | Meaning |
+|------|--------|---------|
+| `◐` | `working` | The agent is busy on a turn |
+| `◆` | `waiting` | Blocked on you: a dialog, a permission ask, or a plain-text question |
+| `●` | `finished` | Turn ended — an alert that clears to `idle` once you enter the session, or on `.` |
+| `✕` | `errored` | The tool reported an error |
+| `○` | `idle` | Nothing running |
+| `✕` | `dead` | The tmux session is gone |
+| `◌` | `starting` | The pane is still launching |
+
+Every row carries its mark, and each state has its own color from the active theme, so a glance down the rail tells you who needs you. The key map (`?`) lists the marks under "the mark on a session row".
 
 `w` narrows the list to sessions that need attention (`waiting`, `finished`, `errored`). Press again to show every status. An `ATTENTION` badge sits over the list with the key that clears it, and the session counts follow the filter; folds open so matches are not hidden. The archived view (`t`) and hidden empty groups (`e`) label themselves the same way. The badges take whatever room the rail has: padded away from the entries on a tall terminal, tight against them on a short one, and yielding to the entries once the list is down to its last rows.
 
