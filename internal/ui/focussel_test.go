@@ -327,9 +327,35 @@ func TestSelectionOverlayPreservesSurroundingANSI(t *testing.T) {
 		headRow:   0,
 		headCol:   4,
 	}
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 	row := m.renderPaneRow(0, m.preview, 20)
-	if !strings.Contains(row, "\x1b[31m") || !strings.Contains(row, "\x1b[34m") {
-		t.Fatalf("selection dropped surrounding ANSI colors: %q", row)
+	overlay := selectionStyle().Render(" ")
+	redStart := strings.Index(row, "\x1b[31mred")
+	overlayStart := strings.Index(row, overlay)
+	blueStart := strings.Index(row, "\x1b[34mblue")
+	if redStart < 0 || overlayStart < 0 || blueStart < 0 ||
+		redStart >= overlayStart || overlayStart >= blueStart {
+		t.Fatalf("selection overlay missing or misplaced: %q", row)
+	}
+}
+
+// A selection edge landing on one cell of a wide grapheme snaps outward to
+// the whole grapheme; the styled splice must keep the row's text intact
+// rather than repeating the grapheme on both sides of the edge.
+func TestSelectionOverlayKeepsWideGraphemesWhole(t *testing.T) {
+	m := paneAt(t, "a\U0001f600b")
+	m.sel = focusSelection{
+		active:    true,
+		anchorRow: 0,
+		anchorCol: 0,
+		headRow:   0,
+		headCol:   2,
+	}
+	row := m.renderPaneRow(0, m.preview, 10)
+	if plain := strings.TrimRight(ansi.Strip(row), " "); plain != "a\U0001f600b" {
+		t.Fatalf("selection overlay changed row text: %q", plain)
 	}
 }
 
