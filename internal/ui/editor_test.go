@@ -187,8 +187,8 @@ func TestReviewRefusesToOpenAFileThatIsGone(t *testing.T) {
 	if len(*launched) != 0 {
 		t.Fatalf("editor launched for a vanished file: %v", *launched)
 	}
-	if !strings.HasSuffix(m.errBar.text, path) {
-		t.Fatalf("status line should name the file, got %q", m.errBar.text)
+	if want := "file no longer exists: " + path; m.errBar.text != want {
+		t.Fatalf("status line = %q, want %q", m.errBar.text, want)
 	}
 }
 
