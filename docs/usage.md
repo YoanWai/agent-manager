@@ -226,7 +226,7 @@ A custom tool opts in with `mcp = "<style>"` in its config section. Set `mcp = "
 
 Press `ctrl+r` on a session to open a full-screen review of its repo: changed files with +/− counts on the left, the whole file on the right with syntax highlighting and changed lines tinted, so every edit reads in full context. The diff refreshes as the agent keeps editing.
 
-Tell your agent what you want to review in Agent Manager. Your agent can declare the repository or worktree, target and scope together, then open those changes for you in the review panel without you configuring each picker.
+Tell your agent what you want to review in Agent Manager. Your agent can declare the repository or worktree, target and scope together, so the panel opens on those changes when you press `ctrl+r`, without you configuring each picker.
 
 | Key | Action |
 |-----|--------|

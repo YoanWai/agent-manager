@@ -94,9 +94,13 @@ func diffFileCheckCmd(msg diffFileCheckedMsg) tea.Cmd {
 }
 
 func (m *Model) handleDiffFileChecked(msg diffFileCheckedMsg) (tea.Model, tea.Cmd) {
-	// A review closed or retargeted while the stat ran asked for a file the
-	// screen no longer shows.
+	// A review closed, retargeted, or moved to another file while the stat
+	// ran asked for a file the screen no longer shows.
 	if !m.diff.active || msg.sessID != m.diff.sessID || msg.repoRoot != m.diff.repoSel || msg.gen != m.diff.gen {
+		return m, nil
+	}
+	fd := m.currentFileDiff()
+	if fd == nil || filepath.Join(m.diff.set.Repo.Root, fd.File.Path) != msg.path {
 		return m, nil
 	}
 	if msg.err != nil {

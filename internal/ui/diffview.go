@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -195,6 +196,9 @@ type reviewSendRequest struct {
 func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, refresh bool) tea.Cmd {
 	driver := m.gitDrv
 	stor := m.store
+	// Restoring happens once per repo, so a reload that would only have its
+	// state discarded reads nothing and cannot migrate over a chained write.
+	restored := maps.Clone(m.diff.stateLoaded)
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, refresh: refresh}
 		roots, err := driver.ResolveRepos(sess.Cwd)
@@ -219,8 +223,10 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 		}
 		msg.repoRoots = roots
 		msg.repoRoot = roots[repoIdx]
-		msg.reviewState, msg.reviewStateErr = readReviewState(stor, sess.ID, roots[repoIdx])
-		msg.reviewStateLoaded = msg.reviewStateErr == nil
+		if !restored[sess.ID+"\x00"+roots[repoIdx]] {
+			msg.reviewState, msg.reviewStateErr = readReviewState(stor, sess.ID, roots[repoIdx])
+			msg.reviewStateLoaded = msg.reviewStateErr == nil
+		}
 		override, err := stor.ReviewBase(sess.ID, resolveSymlinksOrSelf(roots[repoIdx]))
 		if err != nil {
 			msg.err = err

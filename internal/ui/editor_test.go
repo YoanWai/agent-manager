@@ -500,3 +500,30 @@ func TestAttachDoneEditorFollowsTheSessionThatDetached(t *testing.T) {
 		t.Fatalf("status line should say why, got %q", m.errBar.text)
 	}
 }
+
+func TestReviewDoesNotOpenTheFileTheCursorLeft(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	openReviewOn(t, m, "opener", gitRepoWithTwoChangedFiles(t))
+	first := m.currentFileDiff()
+	if first == nil {
+		t.Fatal("review has no selected file")
+	}
+	_, cmd := m.openDiffFile()
+	if cmd == nil {
+		t.Fatal("o returned no command")
+	}
+
+	m.drainCmds(t, m.switchDiffFile(1))
+	moved := m.currentFileDiff()
+	if moved == nil || moved.File.Path == first.File.Path {
+		t.Fatalf("the cursor did not move off %s", first.File.Path)
+	}
+
+	if next := m.stepCmd(t, cmd); next != nil {
+		t.Fatal("the check for the file the cursor left should not launch an editor")
+	}
+	if len(*launched) != 0 {
+		t.Fatalf("editor launched for the file the cursor left: %v", *launched)
+	}
+}
