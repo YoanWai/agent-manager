@@ -653,7 +653,8 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	}
 	if round := m.diff.rounds[m.reviewKey()]; round.Number > 0 {
 		label := fmt.Sprintf("Review round %d", round.Number)
-		if !m.diff.loading && round.Scope == m.diff.scope.String() && round.Fingerprint != 0 && round.Fingerprint != m.diff.fingerprint {
+		if !m.diff.loading && round.Fingerprint != 0 &&
+			(round.Scope != m.diff.scope.String() || round.Fingerprint != m.diff.fingerprint) {
 			label += " · changed"
 		}
 		right += subtleStyle.Render(" · ") + annotationStyle.Render(label)

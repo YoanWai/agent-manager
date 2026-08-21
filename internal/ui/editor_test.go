@@ -149,6 +149,11 @@ func TestReviewOpensCurrentFileInEditor(t *testing.T) {
 	launched := captureEditor(t, "code")
 	dir := gitTestRepo(t)
 	openReviewOn(t, m, "opener", dir)
+	fd := m.currentFileDiff()
+	if fd == nil {
+		t.Fatal("review has no selected file")
+	}
+	want := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
 	_, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	if cmd == nil {
 		t.Fatalf("o returned no command, err = %q", m.errBar.text)
@@ -158,8 +163,8 @@ func TestReviewOpensCurrentFileInEditor(t *testing.T) {
 		t.Fatal("the editor never launched")
 	}
 	opened := (*launched)[len(*launched)-1]
-	if !strings.HasSuffix(opened, ".go") && !strings.HasSuffix(opened, ".txt") {
-		t.Fatalf("opened %q, want the file under the cursor", opened)
+	if opened != want {
+		t.Fatalf("opened %q, want %q", opened, want)
 	}
 }
 

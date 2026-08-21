@@ -133,7 +133,7 @@ func filterUntrackedSpecialFiles(root string, files []git.ChangedFile) []git.Cha
 	kept := files[:0]
 	for _, file := range files {
 		if file.Status == git.Untracked {
-			info, err := os.Stat(filepath.Join(root, file.Path))
+			info, err := os.Lstat(filepath.Join(root, file.Path))
 			if err == nil && !info.Mode().IsRegular() {
 				continue
 			}

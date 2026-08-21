@@ -154,6 +154,12 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 		t.Fatalf("changed-since-round marker missing: %q", header)
 	}
 	m.diff.fingerprint = originalFingerprint
+	originalScope := m.diff.scope
+	m.diff.scope = originalScope.Next()
+	if header := ansi.Strip(m.viewDiffHeader(sess.Name)); !strings.Contains(header, "Review round 1 · changed") {
+		t.Fatalf("scope change did not mark the round changed: %q", header)
+	}
+	m.diff.scope = originalScope
 	// Join wrapped lines so the delivery check does not depend on where the
 	// pane's width breaks the prompt; the session sizes to the model width.
 	out, err := tmuxCmd("capture-pane", "-p", "-J", "-t", "am_"+sess.ID).CombinedOutput()

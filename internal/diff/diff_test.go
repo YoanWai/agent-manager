@@ -333,12 +333,18 @@ func TestUntrackedStatsFillAtBuildWithoutLoadingContents(t *testing.T) {
 }
 
 func TestUntrackedStatErrorIsRecorded(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads any file regardless of mode")
+	}
 	driver, dir := testRepo(t)
 	write(t, dir, "tracked.go", "package a\n")
 	commit(t, dir, "init")
-	if err := os.Symlink("linked.go", filepath.Join(dir, "linked.go")); err != nil {
+	write(t, dir, "locked.go", "package a\n")
+	locked := filepath.Join(dir, "locked.go")
+	if err := os.Chmod(locked, 0o000); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { os.Chmod(locked, 0o644) })
 
 	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
 	if err != nil {
@@ -362,6 +368,13 @@ func TestBuildSetSkipsUntrackedSpecialFiles(t *testing.T) {
 	commit(t, dir, "init")
 	write(t, dir, "regular.go", "package a\n")
 	if err := unix.Mkfifo(filepath.Join(dir, "blocked.pipe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.go")
+	if err := os.WriteFile(outside, []byte("package outside\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "escape.go")); err != nil {
 		t.Fatal(err)
 	}
 
