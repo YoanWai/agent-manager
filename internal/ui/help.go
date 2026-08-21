@@ -159,7 +159,7 @@ func reviewHelpSection() helpSection {
 		{"f", "code files only (hides images, assets, lock files)"},
 		{"s", "cycle the scope (uncommitted / vs target / last commit / staged)"},
 		{"r", "pick the repo when the session dir holds several"},
-		{"b", "pick the branch from the repo's worktrees"},
+		{"b", "switch to another worktree, listed by branch"},
 		{"B", "pick the target branch the branch diff compares against"},
 		{"↑↓ / jk", "move a line"},
 		{"ctrl+d / ctrl+u", "half a page"},

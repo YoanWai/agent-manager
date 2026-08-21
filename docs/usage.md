@@ -237,7 +237,7 @@ Tell your agent what you want to review in Agent Manager. Your agent can declare
 | `u` | Toggle unified and side-by-side |
 | `s` | Cycle the scope: uncommitted, vs target, last commit, staged |
 | `r` | Pick the repo when the session's directory holds several (type to filter) |
-| `b` | Pick the branch from the repo's worktrees |
+| `b` | Switch review to another of the repo's worktrees, listed by branch |
 | `B` | Pick the target (merge-into branch) the "vs target" scope compares against |
 | `space` | Mark a file reviewed |
 | `f` | Show code files only, hiding images, compiled assets and lock files from the list; press again to show them |
