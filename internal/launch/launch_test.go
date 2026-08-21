@@ -1,11 +1,16 @@
 package launch
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 func TestPromptInjectsDirectiveOnlyForAutoNamedWithPrompt(t *testing.T) {
@@ -125,7 +130,7 @@ func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
 		agentSessionID string
 		want           string
 	}{
-		{"a captured id resumes that conversation", full, "abc-123", "claude --resume abc-123"},
+		{"a captured id resumes that conversation", full, "abc-123", "claude --resume 'abc-123'"},
 		{"no captured id falls back to the newest one", full, "", "claude --continue"},
 		{"a tool with no revive of its own starts fresh", config.Tool{Command: "pi"}, "abc-123", "pi"},
 	} {
@@ -134,6 +139,67 @@ func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
 				t.Fatalf("ReviveCommand = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// A conversation id is read from the agent CLI's own store, so it is not
+// ours to trust. Spliced raw it would need no quote to break out of: a
+// semicolon ends the resume command and starts whatever follows.
+func TestReviveCommandQuotesAnIDThatSpellsAnotherCommand(t *testing.T) {
+	tool := config.Tool{ResumeByIDCommand: "codex resume {id}"}
+	for _, tc := range []struct{ name, id, want string }{
+		{"a command after a semicolon", `abc; touch pwned`, `codex resume 'abc; touch pwned'`},
+		{"an id closing the quote itself", `abc'; touch pwned; echo '`, `codex resume 'abc'\''; touch pwned; echo '\'''`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ReviveCommand(tool, tc.id); got != tc.want {
+				t.Fatalf("ReviveCommand = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The quoting has to hold against a real shell, not just against a string
+// comparison: the revive command reaches one through tmux.
+func TestReviveCommandKeepsACapturedIDOutOfTheShell(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "pwned")
+	id := `abc; touch ` + marker
+
+	command := ReviveCommand(config.Tool{ResumeByIDCommand: "echo resume {id}"}, id)
+	driver, err := tmux.NewWithSocket("amrevivequote")
+	if err != nil {
+		t.Fatalf("driver: %v", err)
+	}
+	sessID := "revive-quote-probe"
+	// Wide enough that the echoed id lands on one row, since a wrapped
+	// capture would split the text the assertion looks for.
+	if err := driver.Create(sessID, dir, command, map[string]string{}, 400, 24); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	t.Cleanup(func() { _ = driver.Kill(sessID) })
+
+	echoed := "resume " + id
+	deadline := time.Now().Add(10 * time.Second)
+	var pane string
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(marker); err == nil {
+			pane, _ = driver.CapturePane(sessID)
+			t.Fatalf("the id ran as a shell command: %s was created; pane:\n%s", marker, strings.TrimSpace(pane))
+		}
+		pane, _ = driver.CapturePane(sessID)
+		if strings.Contains(pane, echoed) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	// Echoing the whole id as one argument is what proves the command ran
+	// and the shell read the id as text, rather than nothing having run.
+	if !strings.Contains(pane, echoed) {
+		t.Fatalf("the resume command never echoed the id as one argument; pane:\n%s", strings.TrimSpace(pane))
 	}
 }
 
