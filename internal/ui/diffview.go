@@ -16,6 +16,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+const (
+	diffFileRailWidth = 28
+	diffCodeMinWidth  = 20
+	// The seam column and the fill's bleed edge between the two surfaces.
+	diffPaneSeam = 2
+)
+
 type annotation struct {
 	id       string
 	file     string
@@ -1177,12 +1184,13 @@ func (m *Model) annotationInputHeight(width int) int {
 }
 
 func (m *Model) diffPaneWidths() (fileWidth, codeWidth int) {
-	fileWidth = m.width * 24 / 100
-	if fileWidth < 28 {
-		fileWidth = 28
+	fileWidth = max(m.width*24/100, diffFileRailWidth)
+	// The file rail keeps its share only while the code pane still has one:
+	// a terminal too narrow for both gives the rail what is left over.
+	if m.width-fileWidth-diffPaneSeam < diffCodeMinWidth {
+		fileWidth = max(m.width-diffPaneSeam-diffCodeMinWidth, 0)
 	}
-	codeWidth = m.width - fileWidth - 2
-	return fileWidth, codeWidth
+	return fileWidth, max(m.width-fileWidth-diffPaneSeam, 0)
 }
 
 // handleDiffKey owns the whole keymap in fullscreen review mode.

@@ -3152,3 +3152,24 @@ func TestAScopeMissingAFileKeepsItsReviewedMark(t *testing.T) {
 		t.Fatalf("the mark for %s did not survive a scope without it", path)
 	}
 }
+
+func TestNarrowReviewKeepsBothPanesMeasurable(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "narrow", gitTestRepo(t))
+	for _, width := range []int{29, 24, 10, 1} {
+		m.width = width
+		fileWidth, codeWidth := m.diffPaneWidths()
+		if fileWidth < 0 || codeWidth < 0 {
+			t.Fatalf("width %d gave panes %d and %d", width, fileWidth, codeWidth)
+		}
+		if fileWidth+codeWidth > width {
+			t.Fatalf("width %d gave panes wider than the screen: %d and %d", width, fileWidth, codeWidth)
+		}
+		if lines := splitLines(m.View()); len(lines) == 0 {
+			t.Fatalf("width %d rendered nothing", width)
+		}
+	}
+}
