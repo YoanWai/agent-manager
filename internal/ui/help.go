@@ -85,7 +85,7 @@ func helpSections() []helpSection {
 			{"o", "open its working directory in your editor"},
 			{"R", "restart it on an empty context (same name, group, dir, tool)"},
 			{"x / X", "kill it / kill every live session (frees their RAM)"},
-			{"v / V", "revive it / revive every dead session (resumes the agent)"},
+			{"v / V", "revive it, its pane included / revive every dead session"},
 			{"a / u", "archive / restore (archive kills, restore revives)"},
 			{"d", "delete it"},
 		}},

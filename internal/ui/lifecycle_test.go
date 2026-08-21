@@ -779,7 +779,10 @@ func TestReviveAllRecreatesEveryDeadSession(t *testing.T) {
 
 func TestReviveRefusesLiveSession(t *testing.T) {
 	m := buildModel(t)
-	createSession(t, m, "alive", t.TempDir(), "")
+	// A tool whose process stays up: revive leaves a pane alone only while
+	// something is running in it.
+	createSessionOn(t, m, "alive", "quietchat", t.TempDir())
+	waitForAgent(t, m, m.sessionRows()[0].ID, true)
 	m.selectSessionRow(t, "alive")
 
 	if _, _ = m.reviveSelected(); m.errBar.text == "" {
@@ -1650,5 +1653,60 @@ func TestKillAgentConfirmNamesExtraTerminals(t *testing.T) {
 	want := "kill coder and 2 terminals? frees their RAM, v revives them."
 	if m.confirm.label != want {
 		t.Fatalf("label = %q, want %q", m.confirm.label, want)
+	}
+}
+
+// Quitting the agent leaves the window alive on a shell, and v is what
+// brings the agent back there: launched by the manager, so it carries the
+// session identity, the MCP registration and the hook settings that a CLI
+// started by hand from that shell has no way to pick up.
+func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
+	m := buildModel(t)
+	createSessionOn(t, m, "quit-and-back", "quietchat", t.TempDir())
+	sess := m.sessionRows()[0]
+	quitAgent(t, m, sess.ID)
+	if err := m.store.SetAcked(sess.ID, true); err != nil {
+		t.Fatalf("set acked: %v", err)
+	}
+	m.selectSessionRow(t, "quit-and-back")
+
+	if _, _ = m.reviveSelected(); m.errBar.text != "" {
+		t.Fatalf("revive: %q", m.errBar.text)
+	}
+	waitForAgent(t, m, sess.ID, true)
+	if !m.tmux.Exists(sess.ID) {
+		t.Fatal("revive must keep the window it relaunched in")
+	}
+
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if !strings.Contains(pane, "AGENT_MANAGER_SESSION_ID='"+sess.ID+"'") {
+		t.Fatalf("relaunch did not carry the session identity; pane:\n%s", pane)
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Starting {
+		t.Fatalf("status after revive = %q, want %q", got.Status, status.Starting)
+	}
+	if got.Acked {
+		t.Fatal("revive must clear the ack of the agent that exited")
+	}
+}
+
+// Revive brings back an agent that exited. A pane still running one is
+// left alone: its text would land in that agent's composer.
+func TestReviveRefusesWhileTheAgentIsRunning(t *testing.T) {
+	m := buildModel(t)
+	createSessionOn(t, m, "busy", "quietchat", t.TempDir())
+	sess := m.sessionRows()[0]
+	waitForAgent(t, m, sess.ID, true)
+
+	err := m.reviveSession(sess)
+	if err == nil || !strings.Contains(err.Error(), "still running") {
+		t.Fatalf("revive error = %v, want it to refuse a running agent", err)
 	}
 }

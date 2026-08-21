@@ -115,6 +115,8 @@ Deleting (`d`) a session that holds a worktree removes the worktree and its bran
 
 `v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`, `gemini --resume {id}`, `pi --session {id}`, `hermes --cli --resume {id}`.
 
+Quitting the agent inside a session leaves the window alive on a shell, and `v` brings it back there: the manager types the launch command into that shell, so the agent returns in the pane it left, carrying the session id, the MCP registration and the hook settings a launch gives it. The pane names that key the moment the agent exits. Those values stay exported in the shell as well, so `agent-manager rename` and the rest of the subcommands keep working from it, and so does an agent you start there by hand.
+
 The id arrives one of two ways: tools with a `session_id_flag` launch under an id the manager mints, and tools that mint their own are read back by a `session_store` capturer (`codex`, `opencode`, `gemini`, `hermes`). Without an id, revive falls back to `revive_command` (`claude --continue`), which resumes the working directory's most recent conversation, and the manager says so in the status line, since sessions sharing a directory would otherwise land on the wrong one. On a group row `v` revives every dead session under it, and `V` revives every dead session in view; both revive what they can and name the first failure rather than stopping.
 
 ## Restarting a session on an empty context
@@ -256,7 +258,7 @@ Comments stay on the review screen until you send them: `C` flattens every one o
 
 ![folding the tree, creating a nested group, reordering, and archiving one](demo-groups.gif)
 
-Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `enter` on its row, fold or unfold the whole tree with `F`, hide or restore empty groups visually with `e`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool (status rules and revive follow the new tool; useful when you quit one agent in the pane and start another).
+Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `enter` on its row, fold or unfold the whole tree with `F`, hide or restore empty groups visually with `e`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool. Quitting one CLI in a session's pane and starting another there moves the row onto that CLI on the next poll, with the status rules and the revive command that come with it; `tab` sets it by hand for a CLI whose process name is its runtime rather than itself, such as one installed as a node script.
 
 ## Status
 

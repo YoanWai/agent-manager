@@ -10,6 +10,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/sysstat"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 )
@@ -223,15 +225,21 @@ func (m *Model) degradedResumeNotice(sess store.Session) string {
 // resume_by_id_command instead of the working directory's most recent one,
 // which would be the wrong conversation whenever sessions share a cwd.
 func (m *Model) reviveSession(sess store.Session) error {
-	if m.tmux.Exists(sess.ID) {
-		return fmt.Errorf("session %s is still running; revive only applies to dead sessions", sess.Name)
-	}
 	tool, ok := m.cfg.Tools[sess.Tool]
 	if !ok {
 		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
 	}
 	if !isDir(sess.Cwd) {
 		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
+	}
+	// A pane the user quit the agent in is still a live window sitting at a
+	// shell; the agent alone is gone, and it comes back inside that shell.
+	if m.tmux.Exists(sess.ID) {
+		if err := m.relaunchInPane(sess, tool); err != nil {
+			return err
+		}
+		m.rebuildRows()
+		return nil
 	}
 	bind := func() error {
 		launchedAt := time.Now()
@@ -282,6 +290,74 @@ func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseComman
 	// A leftover ack from the previous life must not swallow the relaunched
 	// agent's first finished alert.
 	return m.store.SetAcked(sess.ID, false)
+}
+
+// relaunchInPane starts a session's tool again inside the shell its pane
+// already holds, for a session whose window is alive because only the agent
+// exited. The command is typed into that shell rather than launched over a
+// fresh window, so nothing about the pane is lost and the agent comes back
+// as the shell's child, the shape every other session has. It carries the
+// session environment inline as well, since a pane opened by an older
+// manager holds a shell that was never given it.
+func (m *Model) relaunchInPane(sess store.Session, tool config.Tool) error {
+	if tool.Shell {
+		return fmt.Errorf("%s is a shell; its pane is already open", sess.Name)
+	}
+	running, err := m.agentRunning(sess.ID)
+	if err != nil {
+		return err
+	}
+	if running {
+		return fmt.Errorf("session %s is still running; revive brings back an agent that exited", sess.Name)
+	}
+	command, env, err := m.buildLaunch(sess.Tool, tool, launch.ReviveCommand(tool, sess.AgentSessionID), sess.ID)
+	if err != nil {
+		return err
+	}
+	if err := m.tmux.SendKeys(sess.ID, tmux.InlineEnv(env, command), "Enter"); err != nil {
+		return err
+	}
+	launchedAt := time.Now()
+	if err := m.store.SetAgentLaunchedAt(sess.ID, launchedAt); err != nil {
+		return err
+	}
+	m.bindReviveLocally(sess.ID, launchedAt)
+	if err := m.store.UpdateStatus(sess.ID, status.Starting); err != nil {
+		return err
+	}
+	// A leftover ack from the agent that exited must not swallow the first
+	// finished alert of the one taking its place.
+	return m.store.SetAcked(sess.ID, false)
+}
+
+// paneSettle is how long a busy pane is given to come back empty. A shell
+// forks for its own startup work, and one sample cannot tell that apart
+// from an agent.
+const paneSettle = 250 * time.Millisecond
+
+// agentRunning reports whether a live pane still holds an agent: the pane's
+// own pid is its shell, so anything under it is the agent. A sample that
+// could not be read counts as running, because typing a command into a pane
+// that turns out to hold an agent puts the text in its composer.
+func (m *Model) agentRunning(sessID string) (bool, error) {
+	busy, err := m.paneBusy(sessID)
+	if err != nil || !busy {
+		return busy, err
+	}
+	time.Sleep(paneSettle)
+	return m.paneBusy(sessID)
+}
+
+func (m *Model) paneBusy(sessID string) (bool, error) {
+	pid, err := m.tmux.PanePID(sessID)
+	if err != nil {
+		return true, err
+	}
+	stat, sampled := sysstat.Trees([]int{pid})[pid]
+	if !sampled || !stat.OK {
+		return true, fmt.Errorf("cannot read what session %s is running", sessID)
+	}
+	return stat.Procs > 1, nil
 }
 
 // restartSelected asks to relaunch the selected session with an empty

@@ -57,6 +57,10 @@ type ProcStat struct {
 	PCPU  float64
 	Procs int
 	OK    bool
+	// Children names what the root pid runs directly, one entry per child
+	// process, as the program was invoked. A tmux pane's root is its shell,
+	// so this is the agent that shell is running right now.
+	Children []string
 }
 
 func Sample(diskPath string) Snapshot {
@@ -397,10 +401,21 @@ func parsePSTime(s string) (float64, error) {
 	}
 }
 
+// nextField takes the first space-separated field off a ps line and
+// returns it with what follows.
+func nextField(line string) (string, string) {
+	line = strings.TrimLeft(line, " ")
+	if i := strings.IndexByte(line, ' '); i >= 0 {
+		return line[:i], line[i+1:]
+	}
+	return line, ""
+}
+
 // Trees reports the combined CPU and resident memory of each requested
-// process and all of its descendants, from a single ps invocation. tmux
-// pane pids are shells whose real work happens in child processes, so a
-// tree sum is the only honest number.
+// process and all of its descendants, from one ps pass over the machine
+// and a second limited to the roots' own children. tmux pane pids are
+// shells whose real work happens in child processes, so a tree sum is the
+// only honest number.
 //
 // CPUSeconds is cumulative CPU time for interval host-share math. PCPU is
 // the raw ps %cpu sum (fallback). Callers convert to host % via
@@ -463,5 +478,44 @@ func Trees(rootPIDs []int) map[int]ProcStat {
 		// Leave CPUPercent 0 until the caller applies interval or fallback.
 		stats[root] = stat
 	}
+	nameChildren(stats, children)
 	return stats
+}
+
+// nameChildren fills in what each root runs directly. The programs come
+// from a second ps limited to those pids: arguments cost the kernel a
+// lookup per process, which is worth paying for a pane's own children and
+// not for every process on the machine.
+func nameChildren(stats map[int]ProcStat, children map[int][]int) {
+	var wanted []string
+	for root := range stats {
+		for _, child := range children[root] {
+			wanted = append(wanted, strconv.Itoa(child))
+		}
+	}
+	if len(wanted) == 0 {
+		return
+	}
+	out, err := exec.Command("ps", "-o", "pid=,args=", "-p", strings.Join(wanted, ",")).Output()
+	if err != nil {
+		return
+	}
+	commands := make(map[int]string, len(wanted))
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		pidText, rest := nextField(line)
+		command, _ := nextField(rest)
+		pid, err := strconv.Atoi(pidText)
+		if err != nil || command == "" {
+			continue
+		}
+		commands[pid] = command
+	}
+	for root, stat := range stats {
+		for _, child := range children[root] {
+			if command := commands[child]; command != "" {
+				stat.Children = append(stat.Children, command)
+			}
+		}
+		stats[root] = stat
+	}
 }

@@ -540,7 +540,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		gitDrv:              gitDriver,
 		engine:              engine,
 		setSnapshot:         st.SetSnapshot,
-		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, cfg.PollInterval.Duration),
+		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, newToolBinaries(cfg), cfg.PollInterval.Duration),
 		collapsed:           loadCollapsed(st),
 		split:               splitState{ratio: loadSplitRatio(st)},
 		focusOnEnter:        storedFocusOnEnter(st),

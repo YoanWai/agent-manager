@@ -893,3 +893,72 @@ func sessionOption(t *testing.T, name, option string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// waitForPane waits for text to appear in a session's pane.
+func waitForPane(t *testing.T, driver *Driver, id, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var pane string
+	for time.Now().Before(deadline) {
+		pane, _ = driver.CapturePane(id)
+		if strings.Contains(pane, want) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("pane never showed %q; pane:\n%s", want, pane)
+}
+
+// The session environment has to outlive the launch command. Quitting the
+// agent drops the pane onto the shell the script execs, and an agent
+// started again from that shell belongs to this managed session only if it
+// inherits these values: the rename subcommand and the MCP server both
+// identify the session by AGENT_MANAGER_SESSION_ID alone.
+func TestCreateExportsSessionEnvIntoTheShell(t *testing.T) {
+	driver := requireTmux(t)
+	id := "senv" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	marker := t.TempDir() + "/env"
+	env := map[string]string{
+		"AGENT_MANAGER_SESSION_ID":  "abc123",
+		"AGENT_MANAGER_STATUS_FILE": "/tmp/status-abc123",
+	}
+	// A launch command that returns at once stands in for the user quitting
+	// the agent back to the pane's shell.
+	if err := driver.Create(id, "/tmp", "printf 'agent ran\\n'", env, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	waitForPane(t, driver, id, relaunchHint)
+
+	// Written whole and moved into place, so the read cannot land between
+	// the two values.
+	report := `printf '%s %s\n' "$AGENT_MANAGER_SESSION_ID" "$AGENT_MANAGER_STATUS_FILE" > ` +
+		marker + `.part && mv ` + marker + `.part ` + marker
+	if err := driver.SendKeys(id, report, "Enter"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+	got := strings.Fields(waitForFile(t, driver, id, marker))
+	want := []string{"abc123", "/tmp/status-abc123"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("environment left to the shell = %v, want %v", got, want)
+	}
+}
+
+// The pane is where the user is looking when the agent exits, so the way
+// back to a wired agent is named there.
+func TestCreateNamesTheWayBackWhenTheAgentExits(t *testing.T) {
+	driver := requireTmux(t)
+	id := "hint" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "printf 'agent ran\\n'", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	waitForPane(t, driver, id, relaunchHint)
+}
+
+func TestInlineEnvPrefixesTheCommand(t *testing.T) {
+	env := map[string]string{"B": "second", "A": "fir st"}
+	if got, want := InlineEnv(env, "claude --resume 7"), `A='fir st' B='second' claude --resume 7`; got != want {
+		t.Fatalf("InlineEnv = %q, want %q", got, want)
+	}
+}
