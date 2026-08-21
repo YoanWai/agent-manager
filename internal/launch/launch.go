@@ -129,10 +129,12 @@ func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed boo
 // ReviveCommand is the base command a dead session comes back on. When
 // its own conversation id was captured, it resumes that exact
 // conversation instead of the working directory's most recent one, which
-// would be the wrong conversation whenever sessions share a cwd.
+// would be the wrong conversation whenever sessions share a cwd. The id is
+// read from the agent CLI's own store rather than minted here, so it is
+// quoted for the shell the way a fork's {id} already is.
 func ReviveCommand(tool config.Tool, agentSessionID string) string {
 	if agentSessionID != "" && tool.ResumeByIDCommand != "" {
-		return strings.ReplaceAll(tool.ResumeByIDCommand, "{id}", agentSessionID)
+		return strings.ReplaceAll(tool.ResumeByIDCommand, "{id}", tmux.ShellQuote(agentSessionID))
 	}
 	if tool.ReviveCommand != "" {
 		return tool.ReviveCommand
