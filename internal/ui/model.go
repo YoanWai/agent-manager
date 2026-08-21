@@ -1311,6 +1311,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleReviewStatusesLoaded(msg)
 		return m, nil
 
+	case reviewStateSavedMsg:
+		m.handleReviewStateSaved(msg)
+		return m, nil
+
+	case reviewCommentHandledMsg:
+		m.handleReviewCommentHandled(msg)
+		return m, nil
+
+	case reviewSendFinishedMsg:
+		m.handleReviewSendFinished(msg)
+		return m, nil
+
 	case errMsg:
 		m.errBar.text = msg.err.Error()
 		return m, nil

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -47,12 +48,14 @@ type diffState struct {
 	sideBySide bool
 	codeOnly   bool
 
-	scrollByFile    map[string]int
-	reviewed        map[string]map[string]uint64
-	annotations     map[string][]annotation
-	rounds          map[string]store.ReviewRound
-	stateLoaded     map[string]bool
-	reviewStatusGen int
+	scrollByFile      map[string]int
+	reviewed          map[string]map[string]uint64
+	annotations       map[string][]annotation
+	rounds            map[string]store.ReviewRound
+	stateLoaded       map[string]bool
+	reviewStatusGen   int
+	reviewWriteDone   <-chan struct{}
+	reviewSendPending bool
 
 	annotating  bool
 	annInput    textarea.Model
@@ -139,6 +142,46 @@ type reviewStatusesLoadedMsg struct {
 	gen      int
 	handled  map[string]bool
 	err      error
+}
+
+type reviewStateSavedMsg struct {
+	sessID   string
+	repoRoot string
+	err      error
+}
+
+type reviewCommentHandledMsg struct {
+	sessID    string
+	repoRoot  string
+	commentID string
+	handled   bool
+	previous  bool
+	found     bool
+	err       error
+}
+
+type reviewSendFinishedMsg struct {
+	sessID        string
+	repoRoot      string
+	commentIDs    []string
+	previousRound store.ReviewRound
+	round         int
+	count         int
+	sessName      string
+	delivered     bool
+	err           error
+	ackErr        error
+}
+
+type reviewSendRequest struct {
+	sess          store.Session
+	prompt        string
+	state         store.ReviewState
+	previousState store.ReviewState
+	commentIDs    []string
+	previousRound store.ReviewRound
+	round         int
+	count         int
 }
 
 // repoWant is matched by path so the selection survives ResolveRepos re-ranking between loads.
@@ -441,7 +484,11 @@ func (m *Model) reviewStatusesCmd() tea.Cmd {
 	m.diff.reviewStatusGen++
 	gen := m.diff.reviewStatusGen
 	sessID, repoRoot, stor := m.diff.sessID, m.diff.repoSel, m.store
+	writesDone := m.diff.reviewWriteDone
 	return func() tea.Msg {
+		if writesDone != nil {
+			<-writesDone
+		}
 		state, err := stor.ReviewState(sessID, repoRoot)
 		if err != nil {
 			return reviewStatusesLoadedMsg{sessID: sessID, repoRoot: repoRoot, gen: gen, err: err}
@@ -474,11 +521,7 @@ func (m *Model) handleReviewStatusesLoaded(msg reviewStatusesLoadedMsg) {
 	m.diff.annotations[key] = notes
 }
 
-func (m *Model) persistReviewState() error {
-	if m.store == nil || m.diff.sessID == "" || m.diff.repoSel == "" {
-		return nil
-	}
-	key := m.reviewKey()
+func (m *Model) reviewStateSnapshot(key string) store.ReviewState {
 	marks := make(map[string]uint64, len(m.diff.reviewed[key]))
 	for path, hash := range m.diff.reviewed[key] {
 		if hash != 0 {
@@ -493,17 +536,138 @@ func (m *Model) persistReviewState() error {
 			Round: note.round, Point: note.point, Resolved: note.handled, Outdated: note.outdated,
 		})
 	}
-	return m.store.MergeReviewState(m.diff.sessID, m.diff.repoSel, store.ReviewState{
+	return store.ReviewState{
 		Reviewed: marks,
 		Comments: notes,
 		Round:    m.diff.rounds[key],
+	}
+}
+
+func (m *Model) chainReviewWrite(run func() tea.Msg) tea.Cmd {
+	previous := m.diff.reviewWriteDone
+	done := make(chan struct{})
+	m.diff.reviewWriteDone = done
+	return func() tea.Msg {
+		if previous != nil {
+			<-previous
+		}
+		defer close(done)
+		return run()
+	}
+}
+
+func (m *Model) saveReviewStateCmd() tea.Cmd {
+	if m.store == nil || m.diff.sessID == "" || m.diff.repoSel == "" {
+		return nil
+	}
+	sessID, repoRoot, stor := m.diff.sessID, m.diff.repoSel, m.store
+	state := m.reviewStateSnapshot(m.reviewKey())
+	return m.chainReviewWrite(func() tea.Msg {
+		return reviewStateSavedMsg{sessID: sessID, repoRoot: repoRoot, err: stor.MergeReviewState(sessID, repoRoot, state)}
 	})
 }
 
-func (m *Model) saveReviewState() {
-	if err := m.persistReviewState(); err != nil {
-		m.errBar.text = "saving review state: " + err.Error()
+func (m *Model) reviewCommentHandledCmd(commentID string, handled, previous bool) tea.Cmd {
+	sessID, repoRoot, stor := m.diff.sessID, m.diff.repoSel, m.store
+	return m.chainReviewWrite(func() tea.Msg {
+		found, err := stor.SetReviewCommentHandled(sessID, commentID, handled)
+		return reviewCommentHandledMsg{
+			sessID: sessID, repoRoot: repoRoot, commentID: commentID,
+			handled: handled, previous: previous, found: found, err: err,
+		}
+	})
+}
+
+func (m *Model) handleReviewStateSaved(msg reviewStateSavedMsg) {
+	if msg.err != nil && msg.sessID == m.diff.sessID && msg.repoRoot == m.diff.repoSel {
+		m.errBar.text = "saving review state: " + msg.err.Error()
 	}
+}
+
+func (m *Model) handleReviewCommentHandled(msg reviewCommentHandledMsg) {
+	if msg.err == nil && msg.found {
+		return
+	}
+	key := msg.sessID + "\x00" + msg.repoRoot
+	notes := m.diff.annotations[key]
+	for i := range notes {
+		if notes[i].id == msg.commentID && notes[i].handled == msg.handled {
+			notes[i].handled = msg.previous
+		}
+	}
+	m.diff.annotations[key] = notes
+	if msg.sessID != m.diff.sessID || msg.repoRoot != m.diff.repoSel {
+		return
+	}
+	if msg.err != nil {
+		m.errBar.text = "updating review comment: " + msg.err.Error()
+	} else {
+		m.errBar.text = "review comment no longer exists"
+	}
+}
+
+func (m *Model) reviewSendCmd(req reviewSendRequest) tea.Cmd {
+	sessID, repoRoot, stor, tmuxDriver := m.diff.sessID, m.diff.repoSel, m.store, m.tmux
+	return m.chainReviewWrite(func() tea.Msg {
+		msg := reviewSendFinishedMsg{
+			sessID: sessID, repoRoot: repoRoot, commentIDs: req.commentIDs,
+			previousRound: req.previousRound, round: req.round, count: req.count, sessName: req.sess.Name,
+		}
+		if !tmuxDriver.Exists(req.sess.ID) {
+			msg.err = errors.New(deadSessionHint)
+			return msg
+		}
+		if err := stor.MergeReviewState(sessID, repoRoot, req.state); err != nil {
+			msg.err = fmt.Errorf("saving review round: %w", err)
+			return msg
+		}
+		if err := tmuxDriver.SendText(req.sess.ID, req.prompt); err != nil {
+			msg.err = err
+			if rollbackErr := stor.MergeReviewState(sessID, repoRoot, req.previousState); rollbackErr != nil {
+				msg.err = fmt.Errorf("%v; restoring review drafts: %w", err, rollbackErr)
+			}
+			return msg
+		}
+		msg.delivered = true
+		msg.ackErr = stor.SetAcked(req.sess.ID, false)
+		return msg
+	})
+}
+
+func (m *Model) handleReviewSendFinished(msg reviewSendFinishedMsg) {
+	m.diff.reviewSendPending = false
+	key := msg.sessID + "\x00" + msg.repoRoot
+	if !msg.delivered {
+		ids := make(map[string]bool, len(msg.commentIDs))
+		for _, id := range msg.commentIDs {
+			ids[id] = true
+		}
+		notes := m.diff.annotations[key]
+		for i := range notes {
+			if ids[notes[i].id] && notes[i].round == msg.round {
+				notes[i].round = 0
+				notes[i].point = 0
+			}
+		}
+		m.diff.annotations[key] = notes
+		if m.diff.rounds[key].Number == msg.round {
+			m.diff.rounds[key] = msg.previousRound
+		}
+	}
+	if msg.sessID != m.diff.sessID || msg.repoRoot != m.diff.repoSel {
+		return
+	}
+	if msg.err != nil {
+		m.diff.notice = ""
+		m.errBar.text = msg.err.Error()
+		return
+	}
+	m.diff.notice = fmt.Sprintf("sent review round %d (%d %s) to %s",
+		msg.round, msg.count, commentNoun(msg.count), msg.sessName)
+	if msg.ackErr != nil {
+		m.errBar.text = "comments sent, but clearing the alert ack failed: " + msg.ackErr.Error()
+	}
+	m.requestRefresh()
 }
 
 // diffSession resolves the session the diff is pinned to.
@@ -608,13 +772,14 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 			}
 		}
 	}
+	var stateSave tea.Cmd
 	if stateChanged {
-		m.saveReviewState()
+		stateSave = m.saveReviewStateCmd()
 	}
 	// The selected file gets its own command so it becomes usable immediately.
 	// Less urgent review-state files load serially in one background command,
 	// avoiding an unbounded git/process fan-out after a large review refresh.
-	return tea.Batch(currentLoad, diffFilesLoadCmd(statefulLoads), m.startStartupTick())
+	return tea.Batch(currentLoad, diffFilesLoadCmd(statefulLoads), stateSave, m.startStartupTick())
 }
 
 func (m *Model) loadCurrentDiffFile() tea.Cmd {
@@ -664,19 +829,20 @@ func (m *Model) handleDiffFileLoaded(msg diffFileLoadedMsg) tea.Cmd {
 		stateChanged = m.reanchorAnnotationsFor(msg.path) || stateChanged
 		delete(m.diff.reanchor, msg.path)
 	}
+	var stateSave tea.Cmd
 	if stateChanged {
-		m.saveReviewState()
+		stateSave = m.saveReviewStateCmd()
 	}
 	if msg.index != m.diff.fileIdx {
-		return nil
+		return stateSave
 	}
 	// A NUL sniff is the only thing that outs a blob whose name gives nothing
 	// away, so the file under the cursor can turn into one the filter hides.
 	if target := m.nextShownFile(m.diff.fileIdx, 1); target != m.diff.fileIdx {
-		return m.switchDiffFile(target - m.diff.fileIdx)
+		return tea.Batch(stateSave, m.switchDiffFile(target-m.diff.fileIdx))
 	}
 	m.clampDiffCursor()
-	return m.ensureHighlight()
+	return tea.Batch(stateSave, m.ensureHighlight())
 }
 
 func (m *Model) handleDiffHL(msg diffHLMsg) {
@@ -1094,7 +1260,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		m.openAnnotate()
 	case "d":
-		m.discardOrToggleAnnotation()
+		return m, m.discardOrToggleAnnotation()
 	case "C":
 		if m.draftAnnotationCount() == 0 {
 			m.errBar.text = "no comments to send - press c on a line first"
@@ -1154,21 +1320,20 @@ func (m *Model) toggleReviewed() tea.Cmd {
 	}
 	if marks[fd.File.Path] != 0 {
 		delete(marks, fd.File.Path)
-		m.saveReviewState()
-		return nil
+		return m.saveReviewStateCmd()
 	}
 	marks[fd.File.Path] = contentHash(fd)
-	m.saveReviewState()
+	stateSave := m.saveReviewStateCmd()
 	// Advance to the next unreviewed file, review-queue style. The switch
 	// returns the highlight command for the newly shown file; dropping it
 	// would leave that file unhighlighted.
 	for step := 1; step < len(m.diff.set.Files); step++ {
 		next := (m.diff.fileIdx + step) % len(m.diff.set.Files)
 		if marks[m.diff.set.Files[next].File.Path] == 0 && !m.diffFileHidden(&m.diff.set.Files[next]) {
-			return m.switchDiffFile(next - m.diff.fileIdx)
+			return tea.Batch(stateSave, m.switchDiffFile(next-m.diff.fileIdx))
 		}
 	}
-	return nil
+	return stateSave
 }
 
 func (m *Model) fileReviewed(path string) bool {
@@ -1387,39 +1552,36 @@ func (m *Model) handleAnnotateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.diff.annotating = false
 		return m, nil
 	case "enter":
-		m.saveAnnotation()
-		return m, nil
+		return m, m.saveAnnotation()
 	}
 	var cmd tea.Cmd
 	m.diff.annInput, cmd = m.diff.annInput.Update(msg)
 	return m, cmd
 }
 
-func (m *Model) saveAnnotation() {
+func (m *Model) saveAnnotation() tea.Cmd {
 	m.diff.annotating = false
 	fd := m.currentFileDiff()
 	if fd == nil {
-		return
+		return nil
 	}
 	lineIdx := m.cursorDiffLine()
 	if lineIdx < 0 || lineIdx >= len(fd.Lines) {
-		return
+		return nil
 	}
 	text := strings.TrimSpace(m.diff.annInput.Value())
 	line := fd.Lines[lineIdx]
 	num, deleted := annotationLine(line)
 	if existing := m.annotationAt(fd.File.Path, line); existing != nil {
 		if text == "" {
-			m.discardOrToggleAnnotation()
-			return
+			return m.discardOrToggleAnnotation()
 		}
 		existing.text = text
 		existing.hash = contentHash(fd)
-		m.saveReviewState()
-		return
+		return m.saveReviewStateCmd()
 	}
 	if text == "" {
-		return
+		return nil
 	}
 	m.diff.annotations[m.reviewKey()] = append(m.diff.annotations[m.reviewKey()], annotation{
 		id:      newReviewCommentID(),
@@ -1430,25 +1592,24 @@ func (m *Model) saveAnnotation() {
 		text:    text,
 		hash:    contentHash(fd),
 	})
-	m.saveReviewState()
+	return m.saveReviewStateCmd()
 }
 
-func (m *Model) discardOrToggleAnnotation() {
+func (m *Model) discardOrToggleAnnotation() tea.Cmd {
 	fd := m.currentFileDiff()
 	if fd == nil {
-		return
+		return nil
 	}
 	lineIdx := m.cursorDiffLine()
 	if lineIdx < 0 || lineIdx >= len(fd.Lines) {
-		return
+		return nil
 	}
 	num, deleted := annotationLine(fd.Lines[lineIdx])
 	notes := m.diff.annotations[m.reviewKey()]
 	for i := range notes {
 		if notes[i].round == 0 && notes[i].file == fd.File.Path && notes[i].line == num && notes[i].deleted == deleted {
 			m.diff.annotations[m.reviewKey()] = append(notes[:i], notes[i+1:]...)
-			m.saveReviewState()
-			return
+			return m.saveReviewStateCmd()
 		}
 	}
 	latestOpen := -1
@@ -1470,28 +1631,24 @@ func (m *Model) discardOrToggleAnnotation() {
 		target = latestHandled
 	}
 	if target >= 0 {
+		previous := notes[target].handled
 		handled := !notes[target].handled
 		m.diff.reviewStatusGen++
-		if m.store != nil {
-			found, err := m.store.SetReviewCommentHandled(m.diff.sessID, notes[target].id, handled)
-			if err != nil {
-				m.errBar.text = "updating review comment: " + err.Error()
-				return
-			}
-			if !found {
-				m.errBar.text = "review comment no longer exists"
-				return
-			}
-		}
 		notes[target].handled = handled
 		m.diff.annotations[m.reviewKey()] = notes
+		if m.store != nil {
+			return m.reviewCommentHandledCmd(notes[target].id, handled, previous)
+		}
 	}
+	return nil
 }
 
-// sendAnnotations flattens every comment into one single-line prompt and
-// delivers it into the session's pane, mirroring the quick-prompt path.
-// The prompt must stay one line: an embedded newline would submit early.
+// Newlines would submit the prompt before every comment reaches the pane.
 func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
+	if m.diff.reviewSendPending {
+		m.errBar.text = "review round is already being sent"
+		return m, nil
+	}
 	sess, ok := m.diffSession()
 	if !ok {
 		m.errBar.text = "session is gone"
@@ -1501,13 +1658,11 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 		m.errBar.text = shellPromptHint(sess.Name)
 		return m, nil
 	}
-	if !m.tmux.Exists(sess.ID) {
-		m.errBar.text = deadSessionHint
-		return m, nil
-	}
 	key := m.reviewKey()
+	previousState := m.reviewStateSnapshot(key)
 	notes := append([]annotation(nil), m.diff.annotations[key]...)
 	round := m.diff.rounds[key]
+	previousRound := round
 	nextRound := round.Number + 1
 	var parts []string
 	draftIndexes := make([]int, 0, len(notes))
@@ -1535,10 +1690,6 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 	prompt := fmt.Sprintf(
 		"Code review of %s. Address each numbered point, then mark its comment handled with the review_comment tool (or `agent-manager review-comment <comment-id>`), and summarize what you changed per point: %s",
 		scopePhrase(m.diff.scope), strings.Join(parts, "; "))
-	if err := m.tmux.SendText(sess.ID, prompt); err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
-	}
 	round.Number = nextRound
 	round.Scope = m.diff.scope.String()
 	round.Fingerprint = m.diff.fingerprint
@@ -1550,19 +1701,18 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 	}
 	m.diff.annotations[key] = notes
 	count := len(draftIndexes)
-	m.diff.notice = fmt.Sprintf("sent review round %d (%d %s) to %s",
-		round.Number, count, commentNoun(count), sess.Name)
-	if err := m.persistReviewState(); err != nil {
-		m.diff.notice = ""
-		m.errBar.text = "comments sent, but saving the review round failed: " + err.Error()
-	} else if m.store != nil {
-		if err := m.store.SetAcked(sess.ID, false); err != nil {
-			m.diff.notice = ""
-			m.errBar.text = "comments sent, but clearing the alert ack failed: " + err.Error()
-		}
+	commentIDs := make([]string, 0, len(draftIndexes))
+	for _, i := range draftIndexes {
+		commentIDs = append(commentIDs, notes[i].id)
 	}
-	m.requestRefresh()
-	return m, nil
+	m.diff.reviewSendPending = true
+	m.diff.notice = fmt.Sprintf("sending review round %d to %s", round.Number, sess.Name)
+	return m, m.reviewSendCmd(reviewSendRequest{
+		sess: sess, prompt: prompt,
+		state: m.reviewStateSnapshot(key), previousState: previousState,
+		commentIDs: commentIDs, previousRound: previousRound,
+		round: round.Number, count: count,
+	})
 }
 
 // excerptOf caps a code excerpt at 60 runes, never splitting a rune, so

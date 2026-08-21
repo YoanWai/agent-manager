@@ -414,9 +414,6 @@ func diffAllHiddenNote() string {
 }
 
 func (m *Model) diffBodyNote(fd *diff.FileDiff) string {
-	if fd == nil {
-		return ""
-	}
 	switch {
 	case m.diffFileHidden(fd):
 		return diffAllHiddenNote()

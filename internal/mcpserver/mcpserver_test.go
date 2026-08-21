@@ -673,6 +673,12 @@ func TestReviewCommentToolWritesHandledState(t *testing.T) {
 	if isError || !strings.Contains(text, "reopened") {
 		t.Fatalf("reopen = %q, error=%v", text, isError)
 	}
+	for _, invalidID := range []string{"bad", "fedcba9876543210"} {
+		text, isError = callText(t, session, "review_comment", map[string]any{"comment_id": invalidID})
+		if !isError {
+			t.Fatalf("comment id %q unexpectedly succeeded: %q", invalidID, text)
+		}
+	}
 	st, err = store.Open(filepath.Join(configDir, "state.db"))
 	if err != nil {
 		t.Fatal(err)

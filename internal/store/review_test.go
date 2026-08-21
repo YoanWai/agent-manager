@@ -135,6 +135,20 @@ func TestEmptyReviewStateDeletesRow(t *testing.T) {
 	if count != 0 {
 		t.Fatalf("review state rows = %d, want 0", count)
 	}
+	if err := st.SetReviewState("session", "/repo", ReviewState{
+		Reviewed: map[string]uint64{"main.go": 42},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MergeReviewState("session", "/repo", ReviewState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.db.QueryRow(`SELECT COUNT(*) FROM review_states`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("review state rows after merge = %d, want 0", count)
+	}
 }
 
 func TestDeleteSessionCleansReviewState(t *testing.T) {

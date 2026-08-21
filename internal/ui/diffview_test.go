@@ -125,7 +125,7 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	m.diff.cursorLine = target
 	m.openAnnotate()
 	m.diff.annInput.SetValue("use fmt.Println here")
-	m.saveAnnotation()
+	m.applyCmd(t, m.saveAnnotation())
 	if len(m.diff.annotations[m.reviewKey()]) != 1 {
 		t.Fatalf("annotations = %+v", m.diff.annotations)
 	}
@@ -168,7 +168,7 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 
 	m.openAnnotate()
 	m.diff.annInput.SetValue("second pass")
-	m.saveAnnotation()
+	m.applyCmd(t, m.saveAnnotation())
 	_, cmd = m.sendAnnotations()
 	m.applyCmd(t, cmd)
 	notes = m.diff.annotations[m.reviewKey()]
@@ -181,6 +181,39 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	}
 	if state.Round.Number != 2 || len(state.Comments) != 2 {
 		t.Fatalf("second persisted review round = %+v", state)
+	}
+}
+
+func TestSendAnnotationsDoesNotDeliverAnUnpersistedRound(t *testing.T) {
+	m := buildModel(t)
+	openReviewOn(t, m, "persist-first", gitRepoWithTwoChangedFiles(t))
+	m.pressDiffKey(t, 'n')
+	m.openAnnotate()
+	m.diff.annInput.SetValue("do not deliver without durable state")
+	m.applyCmd(t, m.saveAnnotation())
+	if err := m.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, cmd := m.sendAnnotations()
+	m.applyCmd(t, cmd)
+	notes := m.diff.annotations[m.reviewKey()]
+	if len(notes) != 1 || notes[0].round != 0 || m.diff.rounds[m.reviewKey()].Number != 0 {
+		t.Fatalf("failed send did not restore the draft: notes=%+v round=%+v", notes, m.diff.rounds[m.reviewKey()])
+	}
+	if m.diff.reviewSendPending || m.diff.notice != "" || !strings.Contains(m.errBar.text, "saving review round") {
+		t.Fatalf("failed send state: pending=%v notice=%q err=%q", m.diff.reviewSendPending, m.diff.notice, m.errBar.text)
+	}
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("review session disappeared")
+	}
+	out, err := tmuxCmd("capture-pane", "-p", "-J", "-t", "am_"+sess.ID).CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "do not deliver without durable state") {
+		t.Fatalf("unpersisted review reached the pane:\n%s", out)
 	}
 }
 
@@ -206,7 +239,7 @@ func TestDiffCommentVisibleInBothLayouts(t *testing.T) {
 	}
 	m.openAnnotate()
 	m.diff.annInput.SetValue("use fmt.Println here")
-	m.saveAnnotation()
+	m.applyCmd(t, m.saveAnnotation())
 
 	m.diff.sideBySide = false
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
@@ -1228,7 +1261,7 @@ func TestAnnotationsReanchorAfterRefresh(t *testing.T) {
 	m.pressDiffKey(t, 'n') // jump to the changed line (return 10)
 	m.openAnnotate()
 	m.diff.annInput.SetValue("note")
-	m.saveAnnotation()
+	m.applyCmd(t, m.saveAnnotation())
 	notes := m.diff.annotations[m.reviewKey()]
 	if len(notes) != 1 || notes[0].line != 3 {
 		t.Fatalf("annotation = %+v, want line 3", notes)
@@ -1254,7 +1287,7 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 	m.pressDiffKey(t, 'n')
 	m.openAnnotate()
 	m.diff.annInput.SetValue("verify this return value")
-	m.saveAnnotation()
+	m.applyCmd(t, m.saveAnnotation())
 	_, cmd := m.sendAnnotations()
 	m.applyCmd(t, cmd)
 
@@ -1288,7 +1321,7 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 			break
 		}
 	}
-	m.discardOrToggleAnnotation()
+	m.applyCmd(t, m.discardOrToggleAnnotation())
 	if !m.diff.annotations[m.reviewKey()][0].handled {
 		t.Fatal("d should mark a sent comment handled")
 	}
@@ -1310,7 +1343,7 @@ func TestAgentHandledUpdateReloadsWithoutDroppingTheComment(t *testing.T) {
 	m.pressDiffKey(t, 'n')
 	m.openAnnotate()
 	m.diff.annInput.SetValue("fix this")
-	m.saveAnnotation()
+	m.applyCmd(t, m.saveAnnotation())
 	_, cmd := m.sendAnnotations()
 	m.applyCmd(t, cmd)
 	note := m.diff.annotations[m.reviewKey()][0]
@@ -1369,7 +1402,7 @@ func TestScopeCycleDoesNotReanchor(t *testing.T) {
 	m.pressDiffKey(t, 'n')
 	m.openAnnotate()
 	m.diff.annInput.SetValue("note")
-	m.saveAnnotation()
+	m.applyCmd(t, m.saveAnnotation())
 	before := m.diff.annotations[m.reviewKey()][0].line
 
 	m.drainCmds(t, m.cycleDiffScope())
@@ -2709,7 +2742,7 @@ func TestReviewProgressAndDraftsRestoreFromStore(t *testing.T) {
 	m.pressDiffKey(t, 'n')
 	m.openAnnotate()
 	m.diff.annInput.SetValue("keep this feedback")
-	m.saveAnnotation()
+	m.applyCmd(t, m.saveAnnotation())
 	path := m.currentFileDiff().File.Path
 	m.drainCmds(t, m.toggleReviewed())
 	wantHash := m.diff.reviewed[m.reviewKey()][path]
