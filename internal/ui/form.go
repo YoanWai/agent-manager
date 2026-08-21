@@ -607,9 +607,9 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	// the agent picks instead of showing the one generated for it.
 	if autoNamed {
 		if m.awaitedRenames == nil {
-			m.awaitedRenames = map[string]string{}
+			m.awaitedRenames = map[string]awaitedRename{}
 		}
-		m.awaitedRenames[id] = name
+		m.awaitedRenames[id] = awaitedRename{generated: name, prompt: prompt}
 	}
 	return nil
 }

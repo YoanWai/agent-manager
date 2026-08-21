@@ -465,19 +465,33 @@ func (m *Model) sessionGlyph(sess store.Session) string {
 // instead of flashing a throwaway one first.
 const namePlaceholder = "…"
 
+// placeholderPromptWidth caps the prompt a waiting row borrows. It is what
+// the narrowest rail affords beside a starting row's state, tool and age, so
+// the row keeps the shape every other row has instead of pushing a column
+// off its own end.
+const placeholderPromptWidth = 12
+
 // renameGrace caps the wait for that answer. It spans the whole way there,
 // the boot, the directive reaching the agent, and the command it runs, so it
 // is generous; past it the session keeps the name it was given.
 const renameGrace = time.Minute
 
+// awaitedRename is what a spawn launched with: the name generated for it,
+// which it falls back to, and the prompt it was given, which says which task
+// the row is while it has no name of its own.
+type awaitedRename struct {
+	generated string
+	prompt    string
+}
+
 // awaitingRename drops the record it reads as soon as the wait is over, so
 // a session settling on its name needs nothing to sweep the map after it.
 func (m *Model) awaitingRename(sess store.Session) bool {
-	generated, awaited := m.awaitedRenames[sess.ID]
-	if !awaited {
+	awaited, ok := m.awaitedRenames[sess.ID]
+	if !ok {
 		return false
 	}
-	if sess.Name == generated && sess.Status != status.Dead &&
+	if sess.Name == awaited.generated && sess.Status != status.Dead &&
 		time.Since(sess.CreatedAt) < renameGrace {
 		return true
 	}
@@ -488,10 +502,21 @@ func (m *Model) awaitingRename(sess store.Session) bool {
 // displayName is what every reading of a session prints, so the rail row and
 // the columns beside it never disagree about who an agent is.
 func (m *Model) displayName(sess store.Session) string {
-	if m.awaitingRename(sess) {
-		return namePlaceholder
+	if !m.awaitingRename(sess) {
+		return sess.Name
 	}
-	return sess.Name
+	// The stored LaunchPrompt is the decorated one, carrying the rename
+	// directive the agent was sent; what the row wants is what was typed.
+	if preview := promptPreview(m.awaitedRenames[sess.ID].prompt); preview != "" {
+		return preview
+	}
+	return namePlaceholder
+}
+
+// promptPreview flattens a prompt into the one short line a row can wear as
+// a name, so five agents spawned in a burst say which is which right away.
+func promptPreview(prompt string) string {
+	return ansi.Truncate(strings.Join(strings.Fields(prompt), " "), placeholderPromptWidth, "…")
 }
 
 func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
