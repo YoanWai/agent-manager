@@ -3173,3 +3173,30 @@ func TestNarrowReviewKeepsBothPanesMeasurable(t *testing.T) {
 		}
 	}
 }
+
+func TestAnotherScopeDoesNotOutdateARoundsComments(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "scopeoutdated", gitRepoWithTwoChangedFiles(t))
+	key := m.reviewKey()
+	m.diff.annotations[key] = []annotation{{
+		id: "0123456789abcdef", file: "gone-from-this-scope.go", line: 1,
+		text: "look at this", round: 1, point: 1,
+	}}
+	m.diff.rounds[key] = store.ReviewRound{Number: 1, Scope: m.diff.scope.String()}
+
+	if !m.markMissingRoundCommentsOutdated() {
+		t.Fatal("a file missing from the scope the round was sent in should read outdated")
+	}
+	m.diff.annotations[key][0].outdated = false
+
+	m.diff.rounds[key] = store.ReviewRound{Number: 1, Scope: m.diff.scope.Next().String()}
+	if m.markMissingRoundCommentsOutdated() {
+		t.Fatal("another scope's file list marked the round outdated")
+	}
+	if m.diff.annotations[key][0].outdated {
+		t.Fatal("the comment was labelled outdated by a scope it was not sent in")
+	}
+}

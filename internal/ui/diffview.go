@@ -1381,7 +1381,12 @@ func clearStaleReviewedMark(m *Model, path string) bool {
 	return false
 }
 
+// A round sent under another scope listed other files, so this scope's file
+// list says nothing about whether those comments still sit on their code.
 func (m *Model) markMissingRoundCommentsOutdated() bool {
+	if round := m.diff.rounds[m.reviewKey()]; round.Scope != "" && round.Scope != m.diff.scope.String() {
+		return false
+	}
 	paths := make(map[string]bool, len(m.diff.set.Files))
 	for i := range m.diff.set.Files {
 		paths[m.diff.set.Files[i].File.Path] = true
@@ -1634,14 +1639,16 @@ func (m *Model) discardOrToggleAnnotation() tea.Cmd {
 		target = latestHandled
 	}
 	if target >= 0 {
+		if m.store == nil {
+			m.errBar.text = "review state is unavailable"
+			return nil
+		}
 		previous := notes[target].handled
 		handled := !notes[target].handled
 		m.diff.reviewStatusGen++
 		notes[target].handled = handled
 		m.diff.annotations[m.reviewKey()] = notes
-		if m.store != nil {
-			return m.reviewCommentHandledCmd(notes[target].id, handled, previous)
-		}
+		return m.reviewCommentHandledCmd(notes[target].id, handled, previous)
 	}
 	return nil
 }
