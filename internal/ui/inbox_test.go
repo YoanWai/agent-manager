@@ -459,9 +459,14 @@ func TestRefreshReplacesTheQueuedCountsWholesale(t *testing.T) {
 // pollUntilQueued runs the poller's own loop until the session's queue is
 // the given depth, so delivery goes through the gate a live manager
 // applies rather than a hand-picked pane and status.
+//
+// The budget is generous because the gate holds the next message until the
+// pane looks at rest again, and the tool's echo of the message just typed
+// takes as long as the runner needs; a race-enabled run on two cores has
+// missed ten seconds often enough to redden CI.
 func pollUntilQueued(t *testing.T, m *Model, sessionID string, want int) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for {
 		queued, err := m.store.QueuedCount(sessionID)
 		if err != nil {
