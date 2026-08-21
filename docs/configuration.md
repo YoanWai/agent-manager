@@ -41,6 +41,10 @@ A `fork_command` references its source through `{id}` or `{session_file}`, so on
 
 **MCP.** `mcp = "claude" | "codex" | "opencode" | "grok" | "gemini" | "hermes" | "none"` picks how the agent-manager MCP server is registered into the tool's sessions (see [MCP](usage.md#mcp-how-agents-discover-these-commands)). An empty value uses the tool's config key when it names a known style. Hermes registration needs its MCP SDK, an optional part of the Hermes install: when it is missing, the spawn stops and a dialog points at `hermes setup`, which installs it. The same dialog appears when the CLI itself is missing, using the same install hint as a missing tmux or git.
 
+**Your config wins.** A field you left out is filled from the built-in defaults on every launch, and a tool missing from the file is added whole, so an older config picks up new capabilities. A field you do have is yours and stays: a `[tools.pi]` block that already carries a `rules = [...]` array keeps that array even after a release ships better rules for Pi. That is what you want for a block you tuned, and it is the first thing to check when a tool the manager supports reads its status wrong.
+
+**When a status looks wrong.** Delete the `rules` array from that tool's block (or the whole `[tools.<name>]` block) and relaunch: the block comes back on the current built-in rules. To see what the rules are being matched against, read the pane the way the poller does — `tmux -L agentmgr capture-pane -p -t am_<id>` — and compare it with the patterns in your block. A CLI that changed its output in a new version is worth [an issue](https://github.com/YoanWai/agent-manager/issues/new/choose) with that pane text and the CLI's version, since the built-in rules then need updating for everyone.
+
 State is stored next to the config in `state.db` (SQLite).
 
 ## Right-to-left text

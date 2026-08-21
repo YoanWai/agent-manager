@@ -47,7 +47,7 @@ func TestNoAlternateScrollEnableInTree(t *testing.T) {
 			return err
 		}
 		if entry.IsDir() {
-			if name := entry.Name(); name == ".git" || name == ".claude" || name == "vendor" {
+			if name := entry.Name(); name == ".git" || name == ".claude" || name == "vendor" || name == ".worktrees" {
 				return filepath.SkipDir
 			}
 			return nil

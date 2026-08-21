@@ -60,6 +60,13 @@ body:
         - A custom tool from my config
         - Not tool specific
 
+  - type: input
+    id: tool-version
+    attributes:
+      label: Agent CLI version
+      description: The version that CLI reports. Status detection reads its output, so a new release can change what the manager sees.
+      placeholder: claude 2.4.1
+
   - type: textarea
     id: config
     attributes:
