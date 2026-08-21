@@ -624,7 +624,7 @@ func (m *Model) reviewSendCmd(req reviewSendRequest) tea.Cmd {
 		if err := tmuxDriver.SendText(req.sess.ID, req.prompt); err != nil {
 			msg.err = err
 			if rollbackErr := stor.MergeReviewState(sessID, repoRoot, req.previousState); rollbackErr != nil {
-				msg.err = fmt.Errorf("%v; restoring review drafts: %w", err, rollbackErr)
+				msg.err = fmt.Errorf("%w; restoring review drafts: %w", err, rollbackErr)
 			}
 			return msg
 		}

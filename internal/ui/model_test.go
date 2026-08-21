@@ -80,6 +80,11 @@ func TestStartupTickRunsWhileReviewLoads(t *testing.T) {
 	if cmd := m.startStartupTick(); cmd == nil || !m.startupAnimating {
 		t.Fatal("an unloaded selected file should start the loader tick")
 	}
+	m.diff.set.Files[0] = diff.BuildFile(nil, nil, git.ChangedFile{Path: "main.go"}, git.FileStat{})
+	_, cmd = m.Update(startupTickMsg{})
+	if cmd != nil || m.startupAnimating {
+		t.Fatal("loader tick kept running after the selected file loaded")
+	}
 }
 
 func TestMoveCursorDebouncesPreview(t *testing.T) {

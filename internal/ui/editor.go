@@ -70,7 +70,11 @@ func (m *Model) openDiffFile() (tea.Model, tea.Cmd) {
 	}
 	path := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
 	if _, err := os.Stat(path); err != nil {
-		m.errBar.text = "file no longer exists: " + path
+		if os.IsNotExist(err) {
+			m.errBar.text = "file no longer exists: " + path
+		} else {
+			m.errBar.text = "checking file " + path + ": " + err.Error()
+		}
 		return m, nil
 	}
 	return m.launchEditor(path)

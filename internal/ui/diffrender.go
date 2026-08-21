@@ -766,7 +766,7 @@ func (m *Model) viewDiffCode(width, height int) string {
 		return empty
 	}
 	fd := m.currentFileDiff()
-	if fd != nil && !fd.Loaded() && !m.diffFileHidden(fd) {
+	if !fd.Loaded() && !m.diffFileHidden(fd) {
 		return m.reviewRing("loading file", width, height)
 	}
 	if body := m.diffBodyNote(fd); body != "" {

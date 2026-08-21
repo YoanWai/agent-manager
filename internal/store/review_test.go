@@ -31,7 +31,11 @@ func TestReviewStatePersistsAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() {
+		if err := st.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	got, err := st.ReviewState("session", "/repo")
 	if err != nil {
 		t.Fatal(err)
@@ -92,29 +96,40 @@ func TestReviewCommentHandledRejectsDuplicateIDs(t *testing.T) {
 	}
 }
 
-func TestMergeReviewStatePreservesAConcurrentHandledUpdate(t *testing.T) {
-	st := newTestStore(t)
+func TestMergeReviewStatePreservesConcurrentCommentStatus(t *testing.T) {
 	const commentID = "0123456789abcdef"
-	if err := st.SetReviewState("session", "/repo", ReviewState{Comments: []ReviewComment{{
-		ID: commentID, File: "main.go", Line: 7, Text: "fix this", Round: 1, Point: 1,
-	}}}); err != nil {
-		t.Fatal(err)
-	}
-	if found, err := st.SetReviewCommentHandled("session", commentID, true); err != nil || !found {
-		t.Fatalf("mark handled = %v, %v", found, err)
-	}
-	if err := st.MergeReviewState("session", "/repo", ReviewState{Comments: []ReviewComment{
-		{ID: commentID, File: "main.go", Line: 9, Text: "fix this", Round: 1, Point: 1},
-		{ID: "fedcba9876543210", File: "main.go", Line: 12, Text: "draft"},
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	state, err := st.ReviewState("session", "/repo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(state.Comments) != 2 || !state.Comments[0].Resolved || state.Comments[0].Line != 9 {
-		t.Fatalf("merged state = %+v", state.Comments)
+	for _, tc := range []struct {
+		name    string
+		initial bool
+		updated bool
+	}{
+		{name: "handled", updated: true},
+		{name: "reopened", initial: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := newTestStore(t)
+			if err := st.SetReviewState("session", "/repo", ReviewState{Comments: []ReviewComment{{
+				ID: commentID, File: "main.go", Line: 7, Text: "fix this", Round: 1, Point: 1, Resolved: tc.initial,
+			}}}); err != nil {
+				t.Fatal(err)
+			}
+			if found, err := st.SetReviewCommentHandled("session", commentID, tc.updated); err != nil || !found {
+				t.Fatalf("update status = %v, %v", found, err)
+			}
+			if err := st.MergeReviewState("session", "/repo", ReviewState{Comments: []ReviewComment{
+				{ID: commentID, File: "main.go", Line: 9, Text: "fix this", Round: 1, Point: 1, Resolved: tc.initial},
+				{ID: "fedcba9876543210", File: "main.go", Line: 12, Text: "draft"},
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			state, err := st.ReviewState("session", "/repo")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(state.Comments) != 2 || state.Comments[0].Resolved != tc.updated || state.Comments[0].Line != 9 {
+				t.Fatalf("merged state = %+v", state.Comments)
+			}
+		})
 	}
 }
 

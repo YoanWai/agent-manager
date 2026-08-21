@@ -4,6 +4,8 @@
 package diff
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -116,6 +118,7 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride stri
 	if statsErr != nil {
 		return Set{}, statsErr
 	}
+	files = filterUntrackedSpecialFiles(repo.Root, files)
 
 	for _, file := range files {
 		stat, known := stats[file.Path]
@@ -124,6 +127,20 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride stri
 	}
 	fillUnknownStats(driver, repo.Root, set.Files)
 	return set, nil
+}
+
+func filterUntrackedSpecialFiles(root string, files []git.ChangedFile) []git.ChangedFile {
+	kept := files[:0]
+	for _, file := range files {
+		if file.Status == git.Untracked {
+			info, err := os.Stat(filepath.Join(root, file.Path))
+			if err == nil && !info.Mode().IsRegular() {
+				continue
+			}
+		}
+		kept = append(kept, file)
+	}
+	return kept
 }
 
 // Git's numstat omits untracked files; count them before their first visit so

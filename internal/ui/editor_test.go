@@ -186,6 +186,30 @@ func TestReviewRefusesToOpenAFileThatIsGone(t *testing.T) {
 	}
 }
 
+func TestReviewReportsFileCheckErrors(t *testing.T) {
+	m := buildModel(t)
+	openReviewOn(t, m, "opener", gitTestRepo(t))
+	fd := m.currentFileDiff()
+	if fd == nil {
+		t.Fatal("review has no selected file")
+	}
+	path := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(fd.File.Path, path); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, cmd := m.openDiffFile(); cmd != nil {
+		t.Fatal("a file with a failed stat should not launch an editor")
+	}
+	wantPrefix := "checking file " + path + ": "
+	if !strings.HasPrefix(m.errBar.text, wantPrefix) {
+		t.Fatalf("status line = %q, want prefix %q", m.errBar.text, wantPrefix)
+	}
+}
+
 // Each boundary of the resolution order, with both neighbours present and
 // the higher one expected.
 func TestResolveEditorPrecedence(t *testing.T) {
