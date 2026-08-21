@@ -1072,13 +1072,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ageError()
 		// The focused session can die or vanish under us; fall back to the
 		// list rather than typing into nothing.
+		sessions := m.keepPendingLaunches(msg.sessions, msg.listedAt)
 		var focusExit tea.Cmd
 		if m.mode == modeFocus {
-			if sess, ok := m.selected(); !ok || sessionGone(msg.sessions, sess.ID) {
+			if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
 				focusExit = m.leaveFocus()
 			}
 		}
-		m.sessions = m.keepPendingLaunches(msg.sessions, msg.listedAt)
+		m.sessions = sessions
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
 		m.groupWorktrees = msg.groupWorktrees

@@ -48,6 +48,13 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 	return labelErr
 }
 
+// forgetLaunch drops a row from the pending set, so a session the user has
+// since sent away is not carried back onto the tree by a poll that listed
+// the store before it was launched.
+func (m *Model) forgetLaunch(id string) {
+	delete(m.launched, id)
+}
+
 // keepPendingLaunches carries over the rows this run spawned that the poll
 // has not looked for yet. A poll lists its sessions and then spends the pass
 // in tmux and ps calls, so the list the UI finally receives can predate a
