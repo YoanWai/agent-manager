@@ -270,6 +270,8 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 
 Every row carries its mark, and each state has its own color from the active theme, so a glance down the rail tells you who needs you. The key map (`?`) lists the marks under "the mark on a session row".
 
+A session stuck on the wrong mark is usually a rules question: the `[tools.<name>]` block in your own config is what the poller matches, and it keeps the rules it already has when a release ships better ones. [Configuration](configuration.md) has the two-line reset and how to read the pane the poller reads.
+
 `w` narrows the list to sessions that need attention (`waiting`, `finished`, `errored`). Press again to show every status. An `ATTENTION` badge sits over the list with the key that clears it, and the session counts follow the filter; folds open so matches are not hidden. The archived view (`t`) and hidden empty groups (`e`) label themselves the same way. The badges take whatever room the rail has: padded away from the entries on a tall terminal, tight against them on a short one, and yielding to the entries once the list is down to its last rows.
 
 ![the session tree, with a waiting agent's permission prompt in the preview](screenshot-sessions.png)
