@@ -1382,6 +1382,11 @@ func TestSavedReviewRoundsGainStableIDsAndPointNumbers(t *testing.T) {
 	m := buildModel(t)
 	m.diff.sessID = "abc123"
 	m.diff.repoSel = "/repo"
+	// A synthetic session skips openDiff, which is what lays these out.
+	m.diff.reviewed = map[string]map[string]uint64{}
+	m.diff.annotations = map[string][]annotation{}
+	m.diff.rounds = map[string]store.ReviewRound{}
+	m.diff.stateLoaded = map[string]bool{}
 	if err := m.store.SetReviewState(m.diff.sessID, m.diff.repoSel, store.ReviewState{
 		Comments: []store.ReviewComment{
 			{File: "a.go", Line: 2, Text: "first", Round: 3},

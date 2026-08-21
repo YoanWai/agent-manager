@@ -45,8 +45,11 @@ var (
 
 // Waiting for this result prevents a failed launch from being reported as open.
 type diffFileCheckedMsg struct {
-	path string
-	err  error
+	sessID   string
+	repoRoot string
+	gen      int
+	path     string
+	err      error
 }
 
 type editorDoneMsg struct {
@@ -73,19 +76,29 @@ func (m *Model) openDiffFile() (tea.Model, tea.Cmd) {
 	if fd == nil || m.diffFileHidden(fd) || m.diff.set.Repo.Root == "" {
 		return m, nil
 	}
-	return m, diffFileCheckCmd(filepath.Join(m.diff.set.Repo.Root, fd.File.Path))
+	return m, diffFileCheckCmd(diffFileCheckedMsg{
+		sessID:   m.diff.sessID,
+		repoRoot: m.diff.repoSel,
+		gen:      m.diff.gen,
+		path:     filepath.Join(m.diff.set.Repo.Root, fd.File.Path),
+	})
 }
 
 // Reading the filesystem is I/O, which Update must not do: a slow stat
 // would hold the next keystroke.
-func diffFileCheckCmd(path string) tea.Cmd {
+func diffFileCheckCmd(msg diffFileCheckedMsg) tea.Cmd {
 	return func() tea.Msg {
-		_, err := os.Stat(path)
-		return diffFileCheckedMsg{path: path, err: err}
+		_, msg.err = os.Stat(msg.path)
+		return msg
 	}
 }
 
 func (m *Model) handleDiffFileChecked(msg diffFileCheckedMsg) (tea.Model, tea.Cmd) {
+	// A review closed or retargeted while the stat ran asked for a file the
+	// screen no longer shows.
+	if !m.diff.active || msg.sessID != m.diff.sessID || msg.repoRoot != m.diff.repoSel || msg.gen != m.diff.gen {
+		return m, nil
+	}
 	if msg.err != nil {
 		if os.IsNotExist(msg.err) {
 			m.errBar.text = "file no longer exists: " + msg.path

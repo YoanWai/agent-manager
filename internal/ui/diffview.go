@@ -438,8 +438,10 @@ func readReviewState(stor *store.Store, sessID, repoRoot string) (store.ReviewSt
 			}
 		}
 	}
+	// Merge rather than set: this write lands outside the review write
+	// chain, and merging keeps a status an agent set while the load ran.
 	if migrated {
-		if err := stor.SetReviewState(sessID, repoRoot, state); err != nil {
+		if err := stor.MergeReviewState(sessID, repoRoot, state); err != nil {
 			return store.ReviewState{}, err
 		}
 	}
@@ -450,18 +452,6 @@ func (m *Model) restoreReviewState(state store.ReviewState) bool {
 	key := m.reviewKey()
 	if m.diff.sessID == "" || m.diff.repoSel == "" || m.diff.stateLoaded[key] {
 		return false
-	}
-	if m.diff.reviewed == nil {
-		m.diff.reviewed = map[string]map[string]uint64{}
-	}
-	if m.diff.annotations == nil {
-		m.diff.annotations = map[string][]annotation{}
-	}
-	if m.diff.rounds == nil {
-		m.diff.rounds = map[string]store.ReviewRound{}
-	}
-	if m.diff.stateLoaded == nil {
-		m.diff.stateLoaded = map[string]bool{}
 	}
 	marks := make(map[string]uint64, len(state.Reviewed))
 	for path, hash := range state.Reviewed {
