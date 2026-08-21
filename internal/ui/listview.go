@@ -915,7 +915,14 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	dir := func(room int) string { return mutedStyle.Render(truncateTail(path, room)) }
 	lines := []string{head, factRow("dir", dir, source, width)}
 	if breakdown := m.groupStatusBreakdown(group); breakdown != "" {
-		lines = append(lines, factRow("state", trimmedValue(breakdown), "", width))
+		// The key that spawns into a group is the one people miss, since the
+		// same key answers a session, so the group says what it does here.
+		// The breakdown is the reading, so a column too tight for both keeps it.
+		hint := keyCap("space", "new agent")
+		if detailLabelWidth+ansi.StringWidth(breakdown)+ansi.StringWidth(hint)+2 > width {
+			hint = ""
+		}
+		lines = append(lines, factRow("state", trimmedValue(breakdown), hint, width))
 	}
 	return strings.Join(lines, "\n")
 }
