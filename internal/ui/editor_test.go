@@ -203,7 +203,9 @@ func TestReviewReportsFileCheckErrors(t *testing.T) {
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(fd.File.Path, path); err != nil {
+	// A relative target resolves beside the link, so its own base name is
+	// what makes it point at itself whatever directory the file sits in.
+	if err := os.Symlink(filepath.Base(path), path); err != nil {
 		t.Fatal(err)
 	}
 
