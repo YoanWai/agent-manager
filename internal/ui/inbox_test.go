@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // queueMessage puts one message in a session's inbox the way the MCP
@@ -476,11 +478,42 @@ func pollUntilQueued(t *testing.T, m *Model, sessionID string, want int) {
 			return
 		}
 		if !time.Now().Before(deadline) {
-			t.Fatalf("queue held %d messages, want %d", queued, want)
+			t.Fatalf("queue held %d messages, want %d\n%s", queued, want, inboxStall(t, m, sessionID))
 		}
 		m.applyCmd(t, m.refreshCmd())
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// inboxStall reports what the delivery gate was looking at, since a queue
+// that never drains is the gate holding rather than the loop being slow.
+func inboxStall(t *testing.T, m *Model, sessionID string) string {
+	t.Helper()
+	var report strings.Builder
+	sess, err := m.store.Get(sessionID)
+	if err != nil {
+		return "session: " + err.Error()
+	}
+	fmt.Fprintf(&report, "status=%s pendingInputs=%d\n", sess.Status, len(sess.PendingInputs))
+	if head, queued, err := m.store.HeadMessage(sessionID); err != nil {
+		fmt.Fprintf(&report, "head: %v\n", err)
+	} else {
+		fmt.Fprintf(&report, "head: queued=%v id=%d claimed=%v\n", queued, head.ID, !head.ClaimedAt.IsZero())
+	}
+	pane, err := m.tmux.CapturePane(sessionID)
+	if err != nil {
+		fmt.Fprintf(&report, "pane: %v\n", err)
+		return report.String()
+	}
+	clean := ansi.Strip(pane)
+	fmt.Fprintf(&report, "typingHold=%q\n", m.poller.engine.TypingHold(sess.Tool, clean))
+	if typed, err := m.poller.promptCarriesTypedText(sess, clean); err != nil {
+		fmt.Fprintf(&report, "promptCarriesTypedText: %v\n", err)
+	} else {
+		fmt.Fprintf(&report, "promptCarriesTypedText=%v\n", typed)
+	}
+	fmt.Fprintf(&report, "pane:\n%s", clean)
+	return report.String()
 }
 
 // settledPane waits for the pane to hold every marker and stop changing,
