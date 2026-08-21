@@ -81,9 +81,19 @@ func TestUpdateReportsUpToDate(t *testing.T) {
 
 func TestUpdateRefusesNonReleaseBuilds(t *testing.T) {
 	swapUpdateSeams(t, "agent-manager", update.Manager{}, update.Result{}, nil)
+	refreshed := false
+	oldRefresh := updateRefresh
+	updateRefresh = func(context.Context, string, string) (update.Result, error) {
+		refreshed = true
+		return update.Result{}, nil
+	}
+	t.Cleanup(func() { updateRefresh = oldRefresh })
 	err := runUpdate("dev")(&bytes.Buffer{}, nil, "", t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "not a release") {
 		t.Fatalf("dev build update returned %v", err)
+	}
+	if refreshed {
+		t.Fatal("refresh ran for a dev build")
 	}
 }
 
@@ -131,7 +141,7 @@ func TestUpdateJSONReportsTheVersion(t *testing.T) {
 func TestUpdateReportsRefreshFailures(t *testing.T) {
 	swapUpdateSeams(t, "agent-manager", update.Manager{}, update.Result{}, errors.New("github unreachable"))
 	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, "", t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "github unreachable") {
+	if err == nil || err.Error() != "update: could not reach GitHub: github unreachable" {
 		t.Fatalf("refresh failure returned %v", err)
 	}
 }
@@ -142,7 +152,7 @@ func TestUpdateReportsApplyFailures(t *testing.T) {
 	updateApply = func(context.Context, string, string) error { return errors.New("disk full") }
 	t.Cleanup(func() { updateApply = oldApply })
 	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, "", t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "disk full") {
+	if err == nil || err.Error() != "update: disk full" {
 		t.Fatalf("apply failure returned %v", err)
 	}
 }

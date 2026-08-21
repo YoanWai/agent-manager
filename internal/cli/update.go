@@ -78,16 +78,16 @@ func runUpdate(version string) func(out io.Writer, args []string, sessionID, con
 				fmt.Sprintf("updated with %s", manager.String()))
 		}
 
+		if !update.VersionWithin(version, "0.0.0", "") {
+			// A dev build carries no release tag, so there is nothing to
+			// compare against or download.
+			return errors.New("update: this build is not a release; reinstall to upgrade")
+		}
 		result, err := updateRefresh(context.Background(), configDir, version)
 		if err != nil {
-			return err
+			return fmt.Errorf("update: could not reach GitHub: %w", err)
 		}
 		if result.Latest == "" {
-			// A catalog with no releases at all means this build is not a
-			// release (a dev build), not that it is current.
-			if len(result.Releases) == 0 {
-				return errors.New("update: this build is not a release; reinstall to upgrade")
-			}
 			return emit(out, *asJSON, updateReport{UpToDate: true}, "already up to date")
 		}
 		// The download can take a while, so say what is coming; --json keeps
@@ -98,7 +98,7 @@ func runUpdate(version string) func(out io.Writer, args []string, sessionID, con
 			}
 		}
 		if err := updateApply(context.Background(), result.Latest, execPath); err != nil {
-			return err
+			return fmt.Errorf("update: %w", err)
 		}
 		return emit(out, *asJSON, updateReport{Version: result.Latest},
 			fmt.Sprintf("updated to %s", result.Latest))

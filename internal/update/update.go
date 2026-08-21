@@ -27,6 +27,7 @@ const (
 	cacheFile            = "update-check.json"
 	checkInterval        = 10 * time.Minute
 	requestBudget        = 4 * time.Second
+	refreshBudget        = 2 * time.Minute
 	maxPayload           = 16 << 20
 	maxReleases          = 100
 	maxChangesPerRelease = 12
@@ -132,7 +133,13 @@ func check(ctx context.Context, configDir, current string, force bool) (Result, 
 	if haveCatalog {
 		etag = cached.ETag
 	}
-	releases, nextETag, notModified, err := fetchReleases(ctx, etag)
+	// A background Check gives up quickly and silently; a Refresh answers
+	// a user who is waiting on it, so it waits like the download does.
+	budget := requestBudget
+	if force {
+		budget = refreshBudget
+	}
+	releases, nextETag, notModified, err := fetchReleases(ctx, etag, budget)
 	if err != nil {
 		if haveCatalog {
 			return resultFor(currentParts, cached.Releases), err
@@ -180,8 +187,8 @@ func latestRelease(releases []Release) (string, string) {
 	return releases[0].Version, releases[0].URL
 }
 
-func fetchReleases(ctx context.Context, etag string) ([]Release, string, bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, requestBudget)
+func fetchReleases(ctx context.Context, etag string, budget time.Duration) ([]Release, string, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releasesURL, nil)
