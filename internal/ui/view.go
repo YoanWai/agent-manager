@@ -157,10 +157,11 @@ func (m *Model) statusLine() string {
 // through reads as an outcome, everything else as a failure, in the glyphs
 // the calling surface marks the two with.
 func (m *Model) statusMessage(fail, done string) string {
+	text := escapeControls(m.errBar.text)
 	if m.errBar.worked() {
-		return doneStyle.Render(done + " " + m.errBar.text)
+		return doneStyle.Render(done + " " + text)
 	}
-	return errStyle.Render(fail + " " + m.errBar.text)
+	return errStyle.Render(fail + " " + text)
 }
 
 // inGroupSubtree reports whether a session's group sits at or below the

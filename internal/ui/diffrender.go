@@ -114,12 +114,13 @@ func highlightFile(fd *diff.FileDiff) *fileHL {
 func sideTexts(fd *diff.FileDiff) (oldText, newText string) {
 	var oldBuilder, newBuilder strings.Builder
 	for _, line := range fd.Lines {
+		text := escapeControls(line.Text)
 		if line.Kind != diff.Add {
-			oldBuilder.WriteString(line.Text)
+			oldBuilder.WriteString(text)
 			oldBuilder.WriteByte('\n')
 		}
 		if line.Kind != diff.Del {
-			newBuilder.WriteString(line.Text)
+			newBuilder.WriteString(text)
 			newBuilder.WriteByte('\n')
 		}
 	}
@@ -159,7 +160,7 @@ func (hl *fileHL) hlLine(line diff.Line) string {
 			return hl.newLines[line.NewNum-1]
 		}
 	}
-	return line.Text
+	return escapeControls(line.Text)
 }
 
 // wrapTinted overlays a diff background onto a chroma-highlighted line
@@ -394,7 +395,7 @@ func (m *Model) reviewSpinnerLine(label string) string {
 
 func (m *Model) diffEmptyText() string {
 	if m.diff.errText != "" {
-		return errStyle.Render("✖ " + m.diff.errText)
+		return errStyle.Render("✖ " + escapeControls(m.diff.errText))
 	}
 	if m.diff.sessID == "" {
 		return mutedStyle.Render("(select a session to diff)")
@@ -418,7 +419,7 @@ func (m *Model) diffBodyNote(fd *diff.FileDiff) string {
 	case m.diffFileHidden(fd):
 		return diffAllHiddenNote()
 	case fd.Err != nil:
-		return errStyle.Render("✖ " + fd.Err.Error())
+		return errStyle.Render("✖ " + escapeControls(fd.Err.Error()))
 	case fd.Binary:
 		return mutedStyle.Render("(binary file)")
 	case fd.Truncated && len(fd.Lines) == 0:
@@ -450,7 +451,7 @@ func (m *Model) renderDiffRow(fd *diff.FileDiff, hl *fileHL, index, width int, c
 	if textWidth < 4 {
 		textWidth = 4
 	}
-	textRows := wrapTinted(hl.hlLine(line), line.Spans, baseBg, spanBg, textWidth)
+	textRows := wrapTinted(hl.hlLine(line), escapeSpans(line.Text, line.Spans), baseBg, spanBg, textWidth)
 
 	marker := " "
 	if len(m.annotationsAt(fd.File.Path, line)) > 0 {
@@ -552,7 +553,7 @@ func (m *Model) viewDiffFull() string {
 	// application rather than a second one.
 	fileLines := append([]string{"", strings.Repeat(" ", railInset) + subtleStyle.Render("files")},
 		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railInset)...)
-	codeLines := append([]string{"", "  " + subtleStyle.Render(ansi.Strip(m.diffCodeTitle()))},
+	codeLines := append([]string{"", "  " + subtleStyle.Render(escapeControls(m.diffCodeTitle()))},
 		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
 	// The column seam tees into the rules that open and close the body,
@@ -609,13 +610,14 @@ func (m *Model) viewDiffHeader(sessName string) string {
 		if name == "" || name == "." {
 			name = filepath.Base(root)
 		}
+		name = escapeControls(name)
 		if len(m.diff.repoRoots) > 1 {
 			name = fmt.Sprintf("%s · %d repos", name, len(m.diff.repoRoots))
 		}
 		left += "  " + keyPill("r", name, colorAccent)
-		branch := m.diff.set.Repo.Branch
+		branch := escapeControls(m.diff.set.Repo.Branch)
 		if m.diff.scope == git.ScopeBranch && m.diff.set.BaseDesc != "" && branch != "" {
-			target := stripBaseHash(m.diff.set.BaseDesc)
+			target := escapeControls(stripBaseHash(m.diff.set.BaseDesc))
 			summary := target + " → " + branch
 			if m.diff.set.BaseOverride == "" {
 				summary += " " + subtleStyle.Render("(auto)")
@@ -741,7 +743,7 @@ func (m *Model) viewDiffFileList(width, height int) string {
 		if nameBudget < 4 {
 			nameBudget = 4
 		}
-		name := truncatePath(fd.File.Path, nameBudget)
+		name := truncatePath(escapeControls(fd.File.Path), nameBudget)
 		left := bar + glyph + " " + valueStyle.Render(name)
 		gap := width - ansi.StringWidth(left) - ansi.StringWidth(counts)
 		if gap < 1 {
@@ -780,7 +782,7 @@ func (m *Model) viewDiffCode(width, height int) string {
 		num, _ := annotationLine(fdLine)
 		m.diff.annInput.SetWidth(width)
 		m.diff.annInput.SetHeight(m.annotationInputHeight(width))
-		bar = divider(fmt.Sprintf("Comment · %s:%d", fd.File.Path, num), width) + "\n" + m.diff.annInput.View()
+		bar = divider(fmt.Sprintf("Comment · %s:%d", escapeControls(fd.File.Path), num), width) + "\n" + m.diff.annInput.View()
 		height -= lipgloss.Height(bar) + 1
 		if height < 3 {
 			height = 3
@@ -960,7 +962,7 @@ func (m *Model) renderSideCell(fd *diff.FileDiff, hl *fileHL, index, width int, 
 	if textWidth < 4 {
 		textWidth = 4
 	}
-	textRows := wrapTinted(hl.hlLine(line), line.Spans, baseBg, spanBg, textWidth)
+	textRows := wrapTinted(hl.hlLine(line), escapeSpans(line.Text, line.Spans), baseBg, spanBg, textWidth)
 	blankGutter := strings.Repeat(" ", gutterWidth)
 	out := make([]string, len(textRows))
 	for i, text := range textRows {
@@ -996,7 +998,7 @@ func (m *Model) viewDiffFooter() string {
 	}
 	repo := "repo"
 	if len(m.diff.repoRoots) > 0 {
-		repo = "repo: " + filepath.Base(m.diff.repoSel)
+		repo = "repo: " + escapeControls(filepath.Base(m.diff.repoSel))
 	}
 	send := "send"
 	if count := m.draftAnnotationCount(); count > 0 {
