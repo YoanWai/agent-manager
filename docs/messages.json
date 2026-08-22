@@ -1,5 +1,22 @@
 [
   {
+    "id": "update-itself-and-review-that-remembers",
+    "banner": "new: agent-manager updates itself",
+    "title": "One command updates the binary, and review remembers every round",
+    "body": [
+      "`agent-manager update` brings the binary to its newest release through whatever installed it, or swaps it in place.",
+      "Review keeps its rounds, drafts and sent comments per session and repo, so feedback survives a restart.",
+      "Agents mark a comment handled or reopen it over MCP and the CLI, closing the loop without erasing what was said.",
+      "A reviewed file shows its control bytes now instead of obeying them: a hidden escape sequence cannot repaint the screen.",
+      "A session waiting on its rename wears the prompt it was given, and the preview leaves a Codex pane's scrollback alone.",
+      "Thanks to @dolutech, who asked for a self-update command in #355 and then wrote it (#361), and to @creatorrr for the",
+      "WSL clipboard fix that keeps box-drawing characters whole in a pane selection (#341).",
+      "@pandysp's #349 is why left and right step in and out of a session; pi's bare prompt joins that pair now."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.32.0",
+    "max_version": "0.32.0"
+  },
+  {
     "id": "sessions-coordinate-with-each-other",
     "banner": "new: agents spawn and message each other",
     "title": "Agent sessions spawn, message and coordinate with each other",
@@ -14,21 +31,5 @@
     ],
     "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.31.0",
     "max_version": "0.31.0"
-  },
-  {
-    "id": "terminals-under-their-agent",
-    "banner": "new: terminals live under their agent",
-    "title": "Terminals nest under the session they were opened for",
-    "body": [
-      "T on a session opens a shell under it, named after it: terminal-review-done rather than terminal-0ab5.",
-      "Kill, archive, restore and delete take a session's terminals with it, and m moves one onto another agent.",
-      "Agents open and close their own terminals over MCP, so an SSH login you can watch is one tool call away.",
-      "Restore resumes the agent, archive kills the pane it froze, and a session stays working while its shells run.",
-      "The in-session editor key is F3 now, because ctrl+o belongs to the agent in the pane.",
-      "Thanks to @roshaans for the terminal names, @OkunaRei for the selection fix, @sunnor92 for two reports,",
-      "and @andrelago13 for the editor key that moved. #326 is where every binding becomes yours to set."
-    ],
-    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.30.0",
-    "max_version": "0.30.0"
   }
 ]
