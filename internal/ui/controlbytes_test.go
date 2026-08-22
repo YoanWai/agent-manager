@@ -63,7 +63,7 @@ func TestEscapeControlsShowsBytesAndKeepsUTF8(t *testing.T) {
 		"x\x9b31mred":  `x\x9B31mred`,
 		"x\x9d0;P\x9c": `x\x9D0;P\x9C`,
 		// The same code points encoded properly are ordinary text.
-		"x31m": "x31m",
+		"x\u009b31m": "x\u009b31m",
 	}
 	for in, want := range cases {
 		if got := escapeControls(in); got != want {
@@ -89,6 +89,13 @@ func TestEscapeSpansFollowTheEscapedText(t *testing.T) {
 	if len(spans) != 1 || spans[0] != (diff.Span{Start: 3, End: 5}) {
 		t.Fatalf("spans = %+v, want [{3 5}]", spans)
 	}
+	// "a\x9bbc": the malformed byte renders as four bytes of hex, so the span
+	// over "bc" moves from byte 2 to byte 5.
+	spans = escapeSpans("a\x9bbc", []diff.Span{{Start: 2, End: 4}})
+	if len(spans) != 1 || spans[0] != (diff.Span{Start: 5, End: 7}) {
+		t.Fatalf("malformed-byte spans = %+v, want [{5 7}]", spans)
+	}
+
 	clean := []diff.Span{{Start: 1, End: 2}}
 	if got := escapeSpans("abc", clean); &got[0] != &clean[0] {
 		t.Fatal("a line with no control bytes should keep its spans untouched")
