@@ -1106,7 +1106,6 @@ func TestResizeReportsUnreadableGeometry(t *testing.T) {
 	}
 }
 
-// teammateSize reports the second pane of a session's window.
 func teammateSize(t *testing.T, id string) [2]int {
 	t.Helper()
 	out, err := tmuxCmd("list-panes", "-t", "am_"+id, "-f", "#{==:#{pane_index},1}", "-F", "#{pane_width} #{pane_height}").CombinedOutput()
@@ -1120,4 +1119,33 @@ func teammateSize(t *testing.T, id string) [2]int {
 	width, _ := strconv.Atoi(fields[0])
 	height, _ := strconv.Atoi(fields[1])
 	return [2]int{width, height}
+}
+
+// A window someone opened inside a session becomes that session's current
+// window, which is not the one the agent runs in. Everything the preview
+// pins has to stay on the agent's window through that.
+func TestResizePinsTheAgentWindowNotTheCurrentOne(t *testing.T) {
+	driver := requireTmux(t)
+	id := "window" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "cat", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	// No -d: the new window is left current, which is what a session-wide
+	// target would resize.
+	if out, err := tmuxCmd("new-window", "-t", "am_"+id, "--", "sh", "-c", "sleep 30").CombinedOutput(); err != nil {
+		t.Fatalf("new-window: %v: %s", err, out)
+	}
+
+	if err := driver.Resize(id, 100, 30); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+
+	panes, err := driver.Panes()
+	if err != nil {
+		t.Fatalf("Panes: %v", err)
+	}
+	if got := panes[id]; got.Width != 100 || got.Height != 30 {
+		t.Fatalf("agent pane = %dx%d, want the preview box 100x30", got.Width, got.Height)
+	}
 }

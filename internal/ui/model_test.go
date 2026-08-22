@@ -544,7 +544,6 @@ func TestRefreshRepinsAnAgentSplitPane(t *testing.T) {
 	}
 }
 
-// agentPaneSize reports the cells a session's agent pane holds.
 func agentPaneSize(t *testing.T, id string) (int, int) {
 	t.Helper()
 	out, err := tmuxCmd("list-panes", "-t", "am_"+id, "-f", "#{==:#{pane_index},0}", "-F", "#{pane_width} #{pane_height}").CombinedOutput()

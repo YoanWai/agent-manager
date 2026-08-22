@@ -122,6 +122,13 @@ func sessionName(id string) string {
 	return prefix + id
 }
 
+// windowTarget addresses the window the agent's pane lives in, the
+// session's first, which is not the session's current window once anyone
+// opens a second one inside it.
+func windowTarget(id string) string {
+	return sessionName(id) + ":^"
+}
+
 // PaneTarget addresses the pane the agent itself runs in. A bare session
 // name does not: tmux resolves that to whichever pane is active, and an
 // agent is free to split the window and hand focus to the new pane, as
@@ -131,7 +138,7 @@ func sessionName(id string) string {
 // and EnsureBindings pins pane-base-index so ".0" is the agent's pane on
 // any user's tmux config.
 func PaneTarget(id string) string {
-	return sessionName(id) + ":^.0"
+	return windowTarget(id) + ".0"
 }
 
 // tmux requires -L <socket> before the command word.
@@ -608,7 +615,7 @@ func (d *Driver) Resize(id string, width, height int) error {
 	if width <= 0 || height <= 0 {
 		return nil
 	}
-	if _, err := d.run("resize-window", "-t", sessionName(id), "-x", strconv.Itoa(width), "-y", strconv.Itoa(height)); err != nil {
+	if _, err := d.run("resize-window", "-t", windowTarget(id), "-x", strconv.Itoa(width), "-y", strconv.Itoa(height)); err != nil {
 		return err
 	}
 	return d.fitAgentPane(id, width, height)
@@ -639,7 +646,7 @@ func (d *Driver) fitAgentPane(id string, width, height int) error {
 	if growWidth == 0 && growHeight == 0 {
 		return nil
 	}
-	if _, err := d.run("resize-window", "-t", sessionName(id),
+	if _, err := d.run("resize-window", "-t", windowTarget(id),
 		"-x", strconv.Itoa(windowWidth+growWidth), "-y", strconv.Itoa(windowHeight+growHeight)); err != nil {
 		return err
 	}
