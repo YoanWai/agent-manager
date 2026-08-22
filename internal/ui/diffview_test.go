@@ -3309,6 +3309,32 @@ func TestScopeCycleOutdatesTheArrivingScopesComments(t *testing.T) {
 	}
 }
 
+// A same-scope refresh re-anchors only that scope's comments: another
+// scope renders the same file differently, so its comment keeps the line
+// and hash it was made against.
+func TestRefreshDoesNotReanchorOtherScopesComments(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "scopereanchor", gitTestRepo(t))
+	key := m.reviewKey()
+	other := m.diff.scope.Next().String()
+	m.diff.annotations[key] = []annotation{{
+		id: "aaaaaaaaaaaaaaa1", file: "main.go", line: 999,
+		excerpt: "func main() { println(1) }", text: "from another scope",
+		round: 1, point: 1, scope: other, hash: 12345,
+	}}
+	m.diff.rounds[key] = store.ReviewRound{Number: 1, Scope: other}
+
+	if m.reanchorAnnotationsFor("main.go") {
+		t.Fatal("a refresh in this scope re-anchored another scope's comment")
+	}
+	if note := m.diff.annotations[key][0]; note.line != 999 || note.hash != 12345 {
+		t.Fatalf("the comment moved: line=%d hash=%d", note.line, note.hash)
+	}
+}
+
 // Marks persisted before marks were scope-keyed carry a bare path; they can
 // never match a scoped lookup, so restore drops them and the next save
 // clears them from the row.

@@ -1527,6 +1527,17 @@ func (m *Model) reanchorAnnotationsFor(path string) bool {
 		if path != "" && note.file != path {
 			continue
 		}
+		// A comment's line and hash track the rendering of its own scope;
+		// another scope's rendering would move it onto lines it was never
+		// made against. Comments saved before they carried a scope fall
+		// back to the latest round's scope, the only one recorded then.
+		scope := note.scope
+		if scope == "" && note.round > 0 {
+			scope = m.diff.rounds[m.reviewKey()].Scope
+		}
+		if scope != "" && scope != m.diff.scope.String() {
+			continue
+		}
 		fd := m.fileDiffByPath(note.file)
 		if fd == nil {
 			continue
@@ -1630,6 +1641,7 @@ func (m *Model) saveAnnotation() tea.Cmd {
 		}
 		existing.text = text
 		existing.hash = contentHash(fd)
+		existing.scope = m.diff.scope.String()
 		return m.saveReviewStateCmd()
 	}
 	if text == "" {
@@ -1643,6 +1655,7 @@ func (m *Model) saveAnnotation() tea.Cmd {
 		excerpt: excerptOf(line.Text),
 		text:    text,
 		hash:    contentHash(fd),
+		scope:   m.diff.scope.String(),
 	})
 	return m.saveReviewStateCmd()
 }
