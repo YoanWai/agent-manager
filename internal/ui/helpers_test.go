@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -350,6 +351,27 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
+}
+
+// waitForPaneChild waits for a pane to run a named program, which is a
+// step past waitForAgent: a shell counts as busy from the moment it forks,
+// before the child has exec'd the program it was asked for.
+func waitForPaneChild(t *testing.T, m *Model, sessID, name string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	var children []string
+	for time.Now().Before(deadline) {
+		if pid, err := m.tmux.PanePID(sessID); err == nil {
+			children = sysstat.Trees([]int{pid})[pid].Children
+			for _, child := range children {
+				if filepath.Base(child) == name {
+					return
+				}
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("pane never ran %s; children = %v", name, children)
 }
 
 // quitAgent ends the CLI the session launched with, leaving the pane on the

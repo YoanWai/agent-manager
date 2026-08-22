@@ -1666,6 +1666,13 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	m := buildModel(t)
 	createSessionOn(t, m, "quit-and-back", "quietchat", t.TempDir())
 	sess := m.sessionRows()[0]
+	// Hooks give the session a status file beside its id, so the relaunch
+	// has both to carry. The command runs through a shell, which is what
+	// survives the settings flag a hooked tool launches with.
+	hooked := m.cfg.Tools[sess.Tool]
+	hooked.Command = "sh -c 'cat'"
+	hooked.StatusSource = "claude-hooks"
+	m.cfg.Tools[sess.Tool] = hooked
 	quitAgent(t, m, sess.ID)
 	if err := m.store.SetAcked(sess.ID, true); err != nil {
 		t.Fatalf("set acked: %v", err)
@@ -1686,8 +1693,13 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	if err != nil {
 		t.Fatalf("capture: %v", err)
 	}
-	if !strings.Contains(pane, "AGENT_MANAGER_SESSION_ID='"+sess.ID+"'") {
+	// The pane wraps the line it was sent at its own width.
+	typed := strings.ReplaceAll(pane, "\n", "")
+	if !strings.Contains(typed, "AGENT_MANAGER_SESSION_ID='"+sess.ID+"'") {
 		t.Fatalf("relaunch did not carry the session identity; pane:\n%s", pane)
+	}
+	if !strings.Contains(typed, "AGENT_MANAGER_STATUS_FILE='"+m.hooks.StatusFile(sess.ID)+"'") {
+		t.Fatalf("relaunch did not carry the hook status file; pane:\n%s", pane)
 	}
 	got, err := m.store.Get(sess.ID)
 	if err != nil {
@@ -1707,18 +1719,19 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	}
 	waitForAgent(t, m, sess.ID, false)
 	marker := filepath.Join(t.TempDir(), "env")
-	report := `printf '%s\n' "$AGENT_MANAGER_SESSION_ID" > ` + marker + `.part && mv ` + marker + `.part ` + marker
+	report := `printf '%s %s\n' "$AGENT_MANAGER_SESSION_ID" "$AGENT_MANAGER_STATUS_FILE" > ` + marker + `.part && mv ` + marker + `.part ` + marker
 	if err := m.tmux.SendKeys(sess.ID, report, "Enter"); err != nil {
 		t.Fatalf("read the shell environment: %v", err)
 	}
+	want := sess.ID + " " + m.hooks.StatusFile(sess.ID)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if data, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(data)) == sess.ID {
+		if data, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(data)) == want {
 			break
 		}
 		if time.Now().After(deadline) {
 			pane, _ := m.tmux.CapturePane(sess.ID)
-			t.Fatalf("the shell lost the session id after the relaunched agent exited; pane:\n%s", pane)
+			t.Fatalf("the shell lost the session environment after the relaunched agent exited; pane:\n%s", pane)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

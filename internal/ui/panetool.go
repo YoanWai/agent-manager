@@ -8,9 +8,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
-// toolBinaries names the binary each configured tool runs, keyed by tool
-// name. Shells and blocks without a command hold no binary: a terminal row
-// is a shell whatever gets typed into it.
+// Shells and blocks without a command hold no binary: a terminal row is a
+// shell whatever gets typed into it.
 type toolBinaries map[string]string
 
 func newToolBinaries(cfg config.Config) toolBinaries {

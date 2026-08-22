@@ -86,7 +86,7 @@ func TestPollRetypesARowOntoTheCLIItsPaneRuns(t *testing.T) {
 	if err := m.tmux.SendKeys(sess.ID, "tail -f /dev/null", "Enter"); err != nil {
 		t.Fatalf("start the other CLI: %v", err)
 	}
-	waitForAgent(t, m, sess.ID, true)
+	waitForPaneChild(t, m, sess.ID, "tail")
 	m.applyCmd(t, m.refreshCmd())
 
 	got, err := m.store.Get(sess.ID)
