@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -465,19 +466,33 @@ func (m *Model) sessionGlyph(sess store.Session) string {
 // instead of flashing a throwaway one first.
 const namePlaceholder = "…"
 
+// placeholderPromptWidth caps the prompt a waiting row borrows. It is what
+// the narrowest rail affords beside a starting row's state, tool and age, so
+// the row keeps the shape every other row has instead of pushing a column
+// off its own end.
+const placeholderPromptWidth = 12
+
 // renameGrace caps the wait for that answer. It spans the whole way there,
 // the boot, the directive reaching the agent, and the command it runs, so it
 // is generous; past it the session keeps the name it was given.
 const renameGrace = time.Minute
 
+// awaitedRename is what a spawn launched with: the name generated for it,
+// which it falls back to, and the prompt it was given, which says which task
+// the row is while it has no name of its own.
+type awaitedRename struct {
+	generated string
+	prompt    string
+}
+
 // awaitingRename drops the record it reads as soon as the wait is over, so
 // a session settling on its name needs nothing to sweep the map after it.
 func (m *Model) awaitingRename(sess store.Session) bool {
-	generated, awaited := m.awaitedRenames[sess.ID]
-	if !awaited {
+	awaited, ok := m.awaitedRenames[sess.ID]
+	if !ok {
 		return false
 	}
-	if sess.Name == generated && sess.Status != status.Dead &&
+	if sess.Name == awaited.generated && sess.Status != status.Dead &&
 		time.Since(sess.CreatedAt) < renameGrace {
 		return true
 	}
@@ -488,10 +503,31 @@ func (m *Model) awaitingRename(sess store.Session) bool {
 // displayName is what every reading of a session prints, so the rail row and
 // the columns beside it never disagree about who an agent is.
 func (m *Model) displayName(sess store.Session) string {
-	if m.awaitingRename(sess) {
-		return namePlaceholder
+	if !m.awaitingRename(sess) {
+		return sess.Name
 	}
-	return sess.Name
+	// The stored LaunchPrompt is the decorated one, carrying the rename
+	// directive the agent was sent; what the row wants is what was typed.
+	if preview := promptPreview(m.awaitedRenames[sess.ID].prompt); preview != "" {
+		return preview
+	}
+	return namePlaceholder
+}
+
+// promptPreview flattens a prompt into the one short line a row can wear as
+// a name, so five agents spawned in a burst say which is which right away.
+// A pasted image reaches the agent as the path it was written to, which
+// would name every image-first spawn the same thing, so the pictures drop
+// out of the preview and the words stay.
+func promptPreview(prompt string) string {
+	words := make([]string, 0, len(strings.Fields(prompt)))
+	for _, word := range strings.Fields(prompt) {
+		if clipboard.IsPastePath(word) {
+			continue
+		}
+		words = append(words, word)
+	}
+	return ansi.Truncate(strings.Join(words, " "), placeholderPromptWidth, "…")
 }
 
 func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
@@ -697,10 +733,13 @@ func (m *Model) startupLoader(width, height int) []string {
 	if !ok || m.mode == modeFocus || sess.Status != status.Starting || paneBooted(m.preview) {
 		return nil
 	}
+	return ringLoader(width, height, "starting up", m.startupPhase)
+}
 
+func ringLoader(width, height int, label string, phase int) []string {
 	accent := lipgloss.NewStyle().Foreground(statusColor(status.Starting)).Bold(true)
 	glow := lipgloss.NewStyle().Foreground(statusColor(status.Starting))
-	phase := m.startupPhase % startupRingPoints
+	phase = phase % startupRingPoints
 	dot := func(position int) string {
 		switch position {
 		case phase:
@@ -718,7 +757,7 @@ func (m *Model) startupLoader(width, height int) []string {
 		centerLine(dot(9)+"       "+dot(3), width),
 		centerLine(dot(8)+"       "+dot(4), width),
 		centerLine(dot(7)+"   "+dot(6)+"   "+dot(5), width),
-		centerLine(valueStyle.Bold(true).Render("starting up"), width),
+		centerLine(valueStyle.Bold(true).Render(label), width),
 	}
 	if height <= len(block) {
 		return block[:height]
@@ -915,7 +954,14 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	dir := func(room int) string { return mutedStyle.Render(truncateTail(path, room)) }
 	lines := []string{head, factRow("dir", dir, source, width)}
 	if breakdown := m.groupStatusBreakdown(group); breakdown != "" {
-		lines = append(lines, factRow("state", trimmedValue(breakdown), "", width))
+		// The key that spawns into a group is the one people miss, since the
+		// same key answers a session, so the group says what it does here.
+		// The breakdown is the reading, so a column too tight for both keeps it.
+		hint := keyCap("space", "new agent")
+		if detailLabelWidth+ansi.StringWidth(breakdown)+ansi.StringWidth(hint)+2 > width {
+			hint = ""
+		}
+		lines = append(lines, factRow("state", trimmedValue(breakdown), hint, width))
 	}
 	return strings.Join(lines, "\n")
 }

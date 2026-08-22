@@ -103,3 +103,26 @@ func TestGroupRosterColumnsAlign(t *testing.T) {
 		}
 	}
 }
+
+// A group head names the key that spawns into it, since the same key answers
+// a session and is read as belonging to sessions alone. The state breakdown
+// is the reading on that row, so a column too tight for both keeps it.
+func TestGroupHeadNamesTheSpawnKey(t *testing.T) {
+	m := shotModel()
+	for i, row := range m.rows {
+		if row.isGroup && row.group == "backend" {
+			m.cursor = i
+		}
+	}
+	wide := ansi.Strip(m.viewDetail(76))
+	if !strings.Contains(wide, "space") || !strings.Contains(wide, "new agent") {
+		t.Errorf("wide group head does not name the spawn key: %q", wide)
+	}
+	narrow := ansi.Strip(m.viewDetail(40))
+	if strings.Contains(narrow, "new agent") {
+		t.Errorf("narrow group head kept the hint over the state: %q", narrow)
+	}
+	if !strings.Contains(narrow, "working") {
+		t.Errorf("narrow group head lost the state breakdown: %q", narrow)
+	}
+}

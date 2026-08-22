@@ -141,7 +141,7 @@ func captureHermes(path, cwd string, launchedAt time.Time, claimed map[string]bo
 		if rows.Scan(&id, &sessionCwd, &started) != nil {
 			return "", false
 		}
-		if id == "" || claimed[id] || !sessionCwd.Valid || resolvePath(sessionCwd.String) != wantCwd {
+		if !sessionIDPattern.MatchString(id) || claimed[id] || !sessionCwd.Valid || resolvePath(sessionCwd.String) != wantCwd {
 			continue
 		}
 		cands = append(cands, candidate{id: id, modTime: time.Unix(0, int64(started*float64(time.Second)))})
@@ -202,6 +202,13 @@ func runOpencodeHead(cwd string, args ...string) ([]byte, error) {
 }
 
 var opencodeIDPattern = regexp.MustCompile(`ses_[A-Za-z0-9]+`)
+
+// sessionIDPattern is the shape a conversation id has in every store we
+// read: a UUID from codex, gemini and hermes, and opencode's ses_ token.
+// The id arrives from a file or database the agent CLI owns rather than
+// from us, and it goes on to name a session and reach a command line, so
+// one shaped like anything else is left where it was found.
+var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
 // opencodeListIDs returns session ids newest-first from `opencode session
 // list` run in cwd. A package variable so tests substitute canned output.
@@ -377,7 +384,7 @@ func codexMeta(path string) (id, cwd string, ok bool) {
 	if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
 		return "", "", false
 	}
-	if line.Type != "session_meta" || line.Payload.SessionID == "" {
+	if line.Type != "session_meta" || !sessionIDPattern.MatchString(line.Payload.SessionID) {
 		return "", "", false
 	}
 	return line.Payload.SessionID, line.Payload.Cwd, true
@@ -449,7 +456,7 @@ func geminiSessionMeta(path string) (id, projectHash string, ok bool) {
 	if err := json.Unmarshal(scanner.Bytes(), &header); err != nil {
 		return "", "", false
 	}
-	if header.SessionID == "" {
+	if !sessionIDPattern.MatchString(header.SessionID) {
 		return "", "", false
 	}
 	return header.SessionID, header.ProjectHash, true

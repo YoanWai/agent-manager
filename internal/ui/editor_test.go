@@ -4,12 +4,14 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // captureEditor swaps both editor seams: PATH answers only for the names
@@ -139,6 +141,85 @@ func TestOpenEditorFallsBackToRecordedCwd(t *testing.T) {
 	want := []string{"code", entry.sess.Cwd}
 	if !slices.Equal(*launched, want) {
 		t.Fatalf("launched %v, want %v", *launched, want)
+	}
+}
+
+func TestReviewOpensCurrentFileInEditor(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	dir := gitTestRepo(t)
+	openReviewOn(t, m, "opener", dir)
+	fd := m.currentFileDiff()
+	if fd == nil {
+		t.Fatal("review has no selected file")
+	}
+	want := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
+	_, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if cmd == nil {
+		t.Fatalf("o returned no command, err = %q", m.errBar.text)
+	}
+	m.applyCmd(t, m.stepCmd(t, cmd))
+	if len(*launched) == 0 {
+		t.Fatal("the editor never launched")
+	}
+	opened := (*launched)[len(*launched)-1]
+	if opened != want {
+		t.Fatalf("opened %q, want %q", opened, want)
+	}
+}
+
+func TestReviewRefusesToOpenAFileThatIsGone(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	openReviewOn(t, m, "opener", gitTestRepo(t))
+	fd := m.currentFileDiff()
+	if fd == nil {
+		t.Fatal("review has no selected file")
+	}
+	path := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	_, cmd := m.openDiffFile()
+	if next := m.stepCmd(t, cmd); next != nil {
+		t.Fatal("a vanished file should not launch an editor")
+	}
+	if len(*launched) != 0 {
+		t.Fatalf("editor launched for a vanished file: %v", *launched)
+	}
+	if want := "file no longer exists: " + path; m.errBar.text != want {
+		t.Fatalf("status line = %q, want %q", m.errBar.text, want)
+	}
+}
+
+func TestReviewReportsFileCheckErrors(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	openReviewOn(t, m, "opener", gitTestRepo(t))
+	fd := m.currentFileDiff()
+	if fd == nil {
+		t.Fatal("review has no selected file")
+	}
+	path := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	// A relative target resolves beside the link, so its own base name is
+	// what makes it point at itself whatever directory the file sits in.
+	if err := os.Symlink(filepath.Base(path), path); err != nil {
+		t.Fatal(err)
+	}
+
+	_, cmd := m.openDiffFile()
+	if next := m.stepCmd(t, cmd); next != nil {
+		t.Fatal("a file with a failed stat should not launch an editor")
+	}
+	if len(*launched) != 0 {
+		t.Fatalf("editor launched for a file that failed its check: %v", *launched)
+	}
+	wantPrefix := "checking file " + path + ": "
+	if !strings.HasPrefix(m.errBar.text, wantPrefix) {
+		t.Fatalf("status line = %q, want prefix %q", m.errBar.text, wantPrefix)
 	}
 }
 
@@ -417,5 +498,35 @@ func TestAttachDoneEditorFollowsTheSessionThatDetached(t *testing.T) {
 	}
 	if !strings.Contains(m.errBar.text, "left the list") {
 		t.Fatalf("status line should say why, got %q", m.errBar.text)
+	}
+}
+
+func TestReviewDoesNotOpenTheFileTheCursorLeft(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	openReviewOn(t, m, "opener", gitRepoWithTwoChangedFiles(t))
+	first := m.currentFileDiff()
+	if first == nil {
+		t.Fatal("review has no selected file")
+	}
+	// The loaded file replaces its slot in the set, so the path is what
+	// survives the reload the switch below drains.
+	firstPath := first.File.Path
+	_, cmd := m.openDiffFile()
+	if cmd == nil {
+		t.Fatal("o returned no command")
+	}
+
+	m.drainCmds(t, m.switchDiffFile(1))
+	moved := m.currentFileDiff()
+	if moved == nil || moved.File.Path == firstPath {
+		t.Fatalf("the cursor did not move off %s", firstPath)
+	}
+
+	if next := m.stepCmd(t, cmd); next != nil {
+		t.Fatal("the check for the file the cursor left should not launch an editor")
+	}
+	if len(*launched) != 0 {
+		t.Fatalf("editor launched for the file the cursor left: %v", *launched)
 	}
 }

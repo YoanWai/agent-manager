@@ -49,7 +49,9 @@ Run inside [WSL2](https://learn.microsoft.com/windows/wsl/install): agent-manage
 
 ## Updating
 
-The manager checks GitHub Releases once a day and shows a `↑ vX.Y.Z available` badge in the header when a newer version is out. Press `u` on the update message (or `enter` on the version row in Settings) and the manager updates itself whatever the install source: a Homebrew, mise, or AUR install hands the terminal to that package manager's upgrade command, a direct install downloads the release and swaps the binary in place, and either way the manager restarts into the new build with every session intact. A pacman install needs an AUR helper (`yay` or `paru`) on PATH; without one the manager shows the command to run instead: `yay -S agent-manager-bin`.
+The manager checks GitHub Releases every ten minutes and shows a `↑ vX.Y.Z available` badge in the header when a newer version is out. Press `u` on the update message (or `enter` on the version row in Settings) and what happens next follows the install. A Homebrew, mise, or AUR install hands the terminal to that package manager's own upgrade command, so its progress and any password prompt behave as they would in a shell. An install-script, `go install`, or manual download is updated in place, by downloading the release and swapping the binary. Either way the manager restarts into the new build with every session still running.
+
+One case updates by hand: a pacman-owned install needs an AUR helper (`yay` or `paru`) on PATH, and without one the manager runs nothing and prints the command to use instead: `yay -S agent-manager-bin`.
 
 The same commands work from a shell:
 

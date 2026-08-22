@@ -163,12 +163,11 @@ type Model struct {
 	// declaration for as long as this manager runs.
 	pickedRepos map[string]string
 
-	// awaitedRenames holds the generated name a spawned session launched
-	// under, for as long as the agent it carries the rename directive to is
-	// still expected to answer. A rename that has not landed by the time
-	// this manager run ends is one that is never arriving, so the set is
-	// deliberately not persisted.
-	awaitedRenames map[string]string
+	// awaitedRenames holds what a spawned session launched with, for as long
+	// as the agent it carries the rename directive to is still expected to
+	// answer. A rename that has not landed by the time this manager run ends
+	// is one that is never arriving, so the set is deliberately not persisted.
+	awaitedRenames map[string]awaitedRename
 
 	width  int
 	height int
@@ -181,6 +180,9 @@ type Model struct {
 	// settle timers with an older gen are dropped so key-repeat cannot
 	// queue a second of tmux work after the user stops.
 	previewGen uint64
+	// launched is when this run recorded each session it spawned. A poll
+	// that listed the store before that has nothing to say about the row.
+	launched map[string]time.Time
 	// terminalKeyAt is when the last T finished being handled. Held down it
 	// autorepeats into a burst of keystrokes, and T is the only key that
 	// spawns on the keystroke itself rather than opening a form that would
@@ -406,7 +408,10 @@ type agentStats struct {
 }
 
 type refreshMsg struct {
-	sessions       []store.Session
+	sessions []store.Session
+	// listedAt is when the pass read that list, which is a whole pass of
+	// tmux and ps calls before the UI sees it.
+	listedAt       time.Time
 	groups         []string
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
@@ -495,12 +500,27 @@ func (m *Model) previewTick() tea.Cmd {
 	return tea.Tick(m.previewInterval(), func(time.Time) tea.Msg { return previewTickMsg{} })
 }
 
+func (m *Model) needsLoaderTick() bool {
+	return m.hasStartingRow() || m.reviewNeedsLoader()
+}
+
+func (m *Model) reviewNeedsLoader() bool {
+	if m.mode != modeDiff || !m.diff.active {
+		return false
+	}
+	if m.diff.loading && len(m.diff.set.Files) == 0 {
+		return true
+	}
+	fd := m.currentFileDiff()
+	return fd != nil && !fd.Loaded() && !m.diffFileHidden(fd)
+}
+
 func (m *Model) startStartupTick() tea.Cmd {
-	if m.startupAnimating || !m.hasStartingRow() {
+	if m.startupAnimating || !m.needsLoaderTick() {
 		return nil
 	}
 	m.startupAnimating = true
-	return m.startupTick()
+	return func() tea.Msg { return startupTickMsg{} }
 }
 
 func (m *Model) startupTick() tea.Cmd {
@@ -1040,7 +1060,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case startupTickMsg:
-		if !m.hasStartingRow() {
+		if !m.needsLoaderTick() {
 			m.startupAnimating = false
 			return m, nil
 		}
@@ -1066,13 +1086,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ageError()
 		// The focused session can die or vanish under us; fall back to the
 		// list rather than typing into nothing.
+		sessions := m.keepPendingLaunches(msg.sessions, msg.listedAt)
 		var focusExit tea.Cmd
 		if m.mode == modeFocus {
-			if sess, ok := m.selected(); !ok || sessionGone(msg.sessions, sess.ID) {
+			if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
 				focusExit = m.leaveFocus()
 			}
 		}
-		m.sessions = msg.sessions
+		m.sessions = sessions
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
 		m.groupWorktrees = msg.groupWorktrees
@@ -1099,12 +1120,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resizeSessions()
 		}
 		m.rebuildRows()
+		reviewStatuses := m.reviewStatusesCmd()
 		// A pass that ran with a stale selection (a session created this
 		// tick) carries the wrong preview; resync and fetch it directly.
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
 			m.previewGen++
-			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd(), m.startStartupTick())
+			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
 		}
 		m.proc = msg.proc
 		m.procFor = msg.procFor
@@ -1115,7 +1137,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.watchSelection()
 		}
 		m.watchedGen = m.previewGen
-		return m, tea.Batch(focusExit, m.diffRefreshCmd(), m.startStartupTick())
+		return m, tea.Batch(focusExit, m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
 
 	case updateMsg:
 		if msg.manual {
@@ -1291,6 +1313,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case diffProbeMsg:
 		return m, m.handleDiffProbe(msg)
 
+	case reviewStatusesLoadedMsg:
+		m.handleReviewStatusesLoaded(msg)
+		return m, nil
+
+	case reviewStateSavedMsg:
+		m.handleReviewStateSaved(msg)
+		return m, nil
+
+	case reviewCommentHandledMsg:
+		m.handleReviewCommentHandled(msg)
+		return m, nil
+
+	case reviewSendFinishedMsg:
+		m.handleReviewSendFinished(msg)
+		return m, nil
+
 	case errMsg:
 		m.errBar.text = msg.err.Error()
 		return m, nil
@@ -1374,6 +1412,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.requestRefresh()
 		return m, nil
 
+	case diffFileCheckedMsg:
+		return m.handleDiffFileChecked(msg)
+
 	case editorDoneMsg:
 		var resume tea.Cmd
 		if msg.tookScreen {
@@ -1393,7 +1434,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, resume
 		}
 		if msg.name != "" {
-			m.reportDone("opened " + msg.dir + " in " + msg.name)
+			m.reportDone("opened " + msg.path + " in " + msg.name)
 		}
 		if id := m.editorReturnID; id != "" {
 			m.editorReturnID = ""

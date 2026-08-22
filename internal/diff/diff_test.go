@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/git"
+	"golang.org/x/sys/unix"
 )
 
 func testRepo(t *testing.T) (*git.Driver, string) {
@@ -297,7 +298,7 @@ func TestTruncatedTrackedFileKeepsNumstat(t *testing.T) {
 	}
 }
 
-func TestUntrackedStatsLoadLazily(t *testing.T) {
+func TestUntrackedStatsFillAtBuildWithoutLoadingContents(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "tracked.go", "package a\n")
 	commit(t, dir, "init")
@@ -315,21 +316,11 @@ func TestUntrackedStatsLoadLazily(t *testing.T) {
 		t.Fatalf("files = %d, want %d", len(set.Files), files)
 	}
 
-	for i := range set.Files {
-		fd := set.Files[i]
-		if fd.StatKnown() {
-			t.Fatalf("%s should keep its stat deferred after BuildSet", fd.File.Path)
-		}
+	adds := 0
+	for _, fd := range set.Files {
 		if fd.Loaded() {
 			t.Fatalf("%s should keep its contents deferred after BuildSet", fd.File.Path)
 		}
-	}
-
-	for i := range set.Files {
-		ensureFile(driver, &set, i)
-	}
-	adds := 0
-	for _, fd := range set.Files {
 		if !fd.StatKnown() || fd.Stat.Adds != linesEach {
 			t.Errorf("%s stat = %+v known=%v, want %d adds",
 				fd.File.Path, fd.Stat, fd.StatKnown(), linesEach)
@@ -338,6 +329,61 @@ func TestUntrackedStatsLoadLazily(t *testing.T) {
 	}
 	if want := files * linesEach; adds != want {
 		t.Fatalf("total adds = %d, want %d", adds, want)
+	}
+}
+
+func TestUntrackedStatErrorIsRecorded(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads any file regardless of mode")
+	}
+	driver, dir := testRepo(t)
+	write(t, dir, "tracked.go", "package a\n")
+	commit(t, dir, "init")
+	write(t, dir, "locked.go", "package a\n")
+	locked := filepath.Join(dir, "locked.go")
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o644) })
+
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Files) != 1 {
+		t.Fatalf("files = %d, want 1", len(set.Files))
+	}
+	fd := set.Files[0]
+	if fd.Err == nil {
+		t.Fatal("failed eager count did not reach the file diff")
+	}
+	if fd.StatKnown() || fd.Loaded() {
+		t.Fatalf("failed count marked the file known or loaded: %+v", fd)
+	}
+}
+
+func TestBuildSetSkipsUntrackedSpecialFiles(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "tracked.go", "package a\n")
+	commit(t, dir, "init")
+	write(t, dir, "regular.go", "package a\n")
+	if err := unix.Mkfifo(filepath.Join(dir, "blocked.pipe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.go")
+	if err := os.WriteFile(outside, []byte("package outside\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "escape.go")); err != nil {
+		t.Fatal(err)
+	}
+
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Files) != 1 || set.Files[0].File.Path != "regular.go" {
+		t.Fatalf("files = %+v, want only regular.go", set.Files)
 	}
 }
 

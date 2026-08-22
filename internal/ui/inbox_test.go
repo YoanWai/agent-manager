@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // queueMessage puts one message in a session's inbox the way the MCP
@@ -456,12 +458,13 @@ func TestRefreshReplacesTheQueuedCountsWholesale(t *testing.T) {
 	}
 }
 
-// pollUntilQueued runs the poller's own loop until the session's queue is
-// the given depth, so delivery goes through the gate a live manager
-// applies rather than a hand-picked pane and status.
+// pollUntilQueued drives the poller's own loop so delivery passes the gate a
+// live manager applies rather than a hand-picked pane and status. The budget
+// is generous because that gate waits for the tool to echo the message just
+// typed, which takes as long as the runner needs.
 func pollUntilQueued(t *testing.T, m *Model, sessionID string, want int) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for {
 		queued, err := m.store.QueuedCount(sessionID)
 		if err != nil {
@@ -471,11 +474,42 @@ func pollUntilQueued(t *testing.T, m *Model, sessionID string, want int) {
 			return
 		}
 		if !time.Now().Before(deadline) {
-			t.Fatalf("queue held %d messages, want %d", queued, want)
+			t.Fatalf("queue held %d messages, want %d\n%s", queued, want, inboxStall(t, m, sessionID))
 		}
 		m.applyCmd(t, m.refreshCmd())
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// inboxStall reports what the delivery gate was looking at, since a queue
+// that never drains is the gate holding rather than the loop being slow.
+func inboxStall(t *testing.T, m *Model, sessionID string) string {
+	t.Helper()
+	var report strings.Builder
+	sess, err := m.store.Get(sessionID)
+	if err != nil {
+		return "session: " + err.Error()
+	}
+	fmt.Fprintf(&report, "status=%s pendingInputs=%d\n", sess.Status, len(sess.PendingInputs))
+	if head, queued, err := m.store.HeadMessage(sessionID); err != nil {
+		fmt.Fprintf(&report, "head: %v\n", err)
+	} else {
+		fmt.Fprintf(&report, "head: queued=%v id=%d claimed=%v\n", queued, head.ID, !head.ClaimedAt.IsZero())
+	}
+	pane, err := m.tmux.CapturePane(sessionID)
+	if err != nil {
+		fmt.Fprintf(&report, "pane: %v\n", err)
+		return report.String()
+	}
+	clean := ansi.Strip(pane)
+	fmt.Fprintf(&report, "typingHold=%q\n", m.poller.engine.TypingHold(sess.Tool, clean))
+	if typed, err := m.poller.promptCarriesTypedText(sess, clean); err != nil {
+		fmt.Fprintf(&report, "promptCarriesTypedText: %v\n", err)
+	} else {
+		fmt.Fprintf(&report, "promptCarriesTypedText=%v\n", typed)
+	}
+	fmt.Fprintf(&report, "pane:\n%s", clean)
+	return report.String()
 }
 
 // settledPane waits for the pane to hold every marker and stop changing,
@@ -486,7 +520,7 @@ func settledPane(t *testing.T, m *Model, sessionID string, markers ...string) st
 	// requiring the markers and the quiet in the same capture can burn
 	// the whole deadline on a loaded runner: first wait for every marker
 	// to have rendered, then for the pane to stop changing.
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	var previous string
 	for {
 		pane, err := m.tmux.CapturePane(sessionID)
@@ -505,7 +539,7 @@ func settledPane(t *testing.T, m *Model, sessionID string, markers ...string) st
 	// The quiet run gets its own budget: markers rendering can eat most
 	// of the first deadline on a loaded runner, and the few captures the
 	// settle needs should not have to fit in whatever is left.
-	settleDeadline := time.Now().Add(5 * time.Second)
+	settleDeadline := time.Now().Add(20 * time.Second)
 	repeats := 0
 	for time.Now().Before(settleDeadline) {
 		pane, err := m.tmux.CapturePane(sessionID)

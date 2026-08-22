@@ -183,6 +183,33 @@ func TestHelpSearchOnASectionTitleKeepsItsRows(t *testing.T) {
 	t.Fatal("the review section did not survive its own title")
 }
 
+func TestReviewHelpOnlyShowsReviewBindingsAndSetupGuidance(t *testing.T) {
+	m := &Model{width: 120, height: 30, mode: modeDiff, diff: diffState{active: true}}
+	m.openHelp()
+	sections := m.visibleHelpSections()
+	if len(sections) != 1 || !strings.HasPrefix(sections[0].title, "review") {
+		t.Fatalf("review help sections = %+v", sections)
+	}
+	frame := ansi.Strip(m.View())
+	for _, want := range []string{"Review keys", "Tell your agent what to review", "comment on the line"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("review help missing %q:\n%s", want, frame)
+		}
+	}
+	for _, unwanted := range []string{"new session", "quick prompt", "messages (M)"} {
+		if strings.Contains(frame, unwanted) {
+			t.Errorf("review help includes %q:\n%s", unwanted, frame)
+		}
+	}
+}
+
+func TestGlobalHelpShowsAgentManagementGuidance(t *testing.T) {
+	frame := ansi.Strip(helpModel().View())
+	if !strings.Contains(frame, "Tell your agent to manage sessions and terminals in Agent Manager") {
+		t.Fatalf("global help is missing agent-management guidance:\n%s", frame)
+	}
+}
+
 func helpModel() *Model {
 	return &Model{width: 120, height: 30, mode: modeHelp}
 }

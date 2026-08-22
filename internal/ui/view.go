@@ -591,10 +591,34 @@ func humanBytes(b uint64) string {
 // truncateTail keeps the end of the string (best for paths).
 func truncateTail(s string, max int) string {
 	runes := []rune(s)
-	if len(runes) <= max || max <= 1 {
+	if max <= 0 {
+		return ""
+	}
+	if len(runes) <= max {
 		return s
 	}
+	if max == 1 {
+		return "…"
+	}
 	return "…" + string(runes[len(runes)-max+1:])
+}
+
+func truncatePath(path string, limit int) string {
+	runes := []rune(path)
+	if limit <= 0 {
+		return ""
+	}
+	if len(runes) <= limit {
+		return path
+	}
+	if limit == 1 {
+		return "…"
+	}
+	tail := string(runes[len(runes)-limit+1:])
+	if i := strings.IndexByte(tail, '/'); i >= 0 && i < len(tail)-1 {
+		return "…" + tail[i:]
+	}
+	return "…" + tail
 }
 
 // scrollWindow keeps the cursor visible inside a height-limited window of

@@ -43,16 +43,18 @@ var (
 	}
 )
 
-// editorDoneMsg ends an editor request. The status line waits on it rather
-// than announcing the editor from openEditor, so a launch that fails is
-// never reported as one that opened: name and dir are filled once a
-// windowed editor is running, and err carries a launch that failed or a
-// terminal editor that exited badly. tookScreen marks the editor the
-// manager handed the terminal to, which comes back without the mouse
-// reporting and background the manager had set on it.
+// Waiting for this result prevents a failed launch from being reported as open.
+type diffFileCheckedMsg struct {
+	sessID   string
+	repoRoot string
+	gen      int
+	path     string
+	err      error
+}
+
 type editorDoneMsg struct {
 	name       string
-	dir        string
+	path       string
 	err        error
 	tookScreen bool
 }
@@ -66,8 +68,55 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 		m.errBar.text = "directory no longer exists: " + dir
 		return m, nil
 	}
+	return m.launchEditor(dir)
+}
+
+func (m *Model) openDiffFile() (tea.Model, tea.Cmd) {
+	fd := m.currentFileDiff()
+	if fd == nil || m.diffFileHidden(fd) || m.diff.set.Repo.Root == "" {
+		return m, nil
+	}
+	return m, diffFileCheckCmd(diffFileCheckedMsg{
+		sessID:   m.diff.sessID,
+		repoRoot: m.diff.repoSel,
+		gen:      m.diff.gen,
+		path:     filepath.Join(m.diff.set.Repo.Root, fd.File.Path),
+	})
+}
+
+// Reading the filesystem is I/O, which Update must not do: a slow stat
+// would hold the next keystroke.
+func diffFileCheckCmd(msg diffFileCheckedMsg) tea.Cmd {
+	return func() tea.Msg {
+		_, msg.err = os.Stat(msg.path)
+		return msg
+	}
+}
+
+func (m *Model) handleDiffFileChecked(msg diffFileCheckedMsg) (tea.Model, tea.Cmd) {
+	// A review closed, retargeted, or moved to another file while the stat
+	// ran asked for a file the screen no longer shows.
+	if !m.diff.active || msg.sessID != m.diff.sessID || msg.repoRoot != m.diff.repoSel || msg.gen != m.diff.gen {
+		return m, nil
+	}
+	fd := m.currentFileDiff()
+	if fd == nil || filepath.Join(m.diff.set.Repo.Root, fd.File.Path) != msg.path {
+		return m, nil
+	}
+	if msg.err != nil {
+		if os.IsNotExist(msg.err) {
+			m.errBar.text = "file no longer exists: " + msg.path
+		} else {
+			m.errBar.text = "checking file " + msg.path + ": " + msg.err.Error()
+		}
+		return m, nil
+	}
+	return m.launchEditor(msg.path)
+}
+
+func (m *Model) launchEditor(path string) (tea.Model, tea.Cmd) {
 	line := m.resolveEditor()
-	cmd, ok := editorCommand(line, dir)
+	cmd, ok := editorCommand(line, path)
 	if !ok {
 		m.errBar.text = `no editor found: set editor = "code" in config.toml`
 		return m, nil
@@ -78,17 +127,17 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 			return editorDoneMsg{err: err, tookScreen: true}
 		})
 	}
-	return m, startEditorCmd(cmd, editorName(line), dir)
+	return m, startEditorCmd(cmd, editorName(line), path)
 }
 
 // Starting a process is exec, which Update must not do: a slow launch
 // would hold the next keystroke.
-func startEditorCmd(cmd *exec.Cmd, name, dir string) tea.Cmd {
+func startEditorCmd(cmd *exec.Cmd, name, path string) tea.Cmd {
 	return func() tea.Msg {
 		if err := startEditor(cmd); err != nil {
 			return editorDoneMsg{err: err}
 		}
-		return editorDoneMsg{name: name, dir: dir}
+		return editorDoneMsg{name: name, path: path}
 	}
 }
 
@@ -116,19 +165,13 @@ func (m *Model) resolveEditor() string {
 	return ""
 }
 
-// editorCommand builds the launch from an editor line and the directory to
-// open, reporting false when the line names nothing to run. The command
-// runs directly rather than through a shell: two of the four places an
-// editor line comes from are environment variables, and a repo that sets
-// EDITOR in an .envrc must not get a shell to write into. Nothing in the
-// line is expanded or substituted, and the directory is always its own
-// argument, whatever it contains.
-func editorCommand(line, dir string) (*exec.Cmd, bool) {
+// Editor settings and environment variables are parsed as argv, never shell code.
+func editorCommand(line, path string) (*exec.Cmd, bool) {
 	argv := splitEditorLine(line)
 	if len(argv) == 0 {
 		return nil, false
 	}
-	args := append(append([]string{}, argv[1:]...), dir)
+	args := append(append([]string{}, argv[1:]...), path)
 	return exec.Command(argv[0], args...), true
 }
 

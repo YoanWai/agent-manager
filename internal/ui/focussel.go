@@ -478,11 +478,13 @@ func (m *Model) copySelectionCmd() tea.Cmd {
 type focusCopiedMsg struct{ chars int }
 
 // renderPaneRow draws one captured pane row, overlaying the selection when
-// it covers part of it. A selected row is painted from its plain text: the
-// agent's own colors would fight the highlight, and the selection is
-// transient.
+// it covers part of it. The agent's own styling survives on both sides of
+// the highlight; only the selected span is repainted. The splice points are
+// the selection's grapheme-snapped columns, so a wide grapheme under an
+// edge stays on exactly one side.
 func (m *Model) renderPaneRow(row int, raw string, width int) string {
-	line := ansi.Strip(previewDangerSeqs.ReplaceAllString(raw, ""))
+	clean := previewDangerSeqs.ReplaceAllString(raw, "")
+	line := ansi.Strip(clean)
 	if !m.sel.active {
 		return m.withCursor(row, raw, []rune(line), width)
 	}
@@ -491,9 +493,9 @@ func (m *Model) renderPaneRow(row int, raw string, width int) string {
 		return m.withCursor(row, raw, []rune(line), width)
 	}
 	startByte, endByte := graphemeRangeAtColumns(line, start, end)
-	before := line[:startByte]
 	selected := line[startByte:endByte]
-	after := line[endByte:]
+	before := ansi.Truncate(clean, ansi.StringWidth(line[:startByte]), "")
+	after := ansi.TruncateLeft(clean, ansi.StringWidth(line[:endByte]), "")
 	painted := before + selectionStyle().Render(selected) + after
 	return previewLine(painted, width)
 }

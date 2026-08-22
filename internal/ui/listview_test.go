@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -657,7 +658,7 @@ func TestSessionRowStandsInForAnAwaitedName(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &Model{}
 			if tc.awaited {
-				m.awaitedRenames = map[string]string{tc.sess.ID: generated}
+				m.awaitedRenames = map[string]awaitedRename{tc.sess.ID: {generated: generated}}
 			}
 			row := ansi.Strip(m.renderTreeRow(treeRow{sess: tc.sess}, false, 80, 0, panelHex()))
 			if !strings.Contains(row, tc.want) {
@@ -702,11 +703,14 @@ func TestEveryReadingOfASessionStandsInForAnAwaitedName(t *testing.T) {
 	m.openQuickMode()
 	readings = append(readings, reading{"quick bar", ansi.Strip(m.viewQuickBar(112))})
 
+	// The prompt the spawn was given is what every reading wears until the
+	// agent answers with a name of its own.
+	const standIn = "do things"
 	for _, shown := range readings {
 		if strings.Contains(shown.text, generated) {
 			t.Errorf("%s shows the generated name:\n%s", shown.where, shown.text)
 		}
-		if !strings.Contains(shown.text, namePlaceholder) {
+		if !strings.Contains(shown.text, standIn) {
 			t.Errorf("%s does not stand in for the awaited name:\n%s", shown.where, shown.text)
 		}
 	}
@@ -1022,5 +1026,26 @@ func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
 	}
 	if !strings.Contains(first, "\x1b[") {
 		t.Fatalf("focused row 0 lost its caret: %q", first)
+	}
+}
+
+func TestRingLoaderWrapsThePhaseRoundTheRing(t *testing.T) {
+	const width, height = 30, 6
+	for _, phase := range []int{startupRingPoints, startupRingPoints + 3, startupRingPoints * 4} {
+		want := ringLoader(width, height, "starting up", phase%startupRingPoints)
+		if got := ringLoader(width, height, "starting up", phase); !slices.Equal(got, want) {
+			t.Fatalf("phase %d rendered\n%s\nwant the phase %d ring\n%s",
+				phase, strings.Join(got, "\n"), phase%startupRingPoints, strings.Join(want, "\n"))
+		}
+	}
+	lit := ringLoader(width, height, "starting up", 0)
+	if slices.Equal(lit, ringLoader(width, height, "starting up", 1)) {
+		t.Fatal("neighbouring phases render the same ring, so the comparison proves nothing")
+	}
+
+	const label = "reviving"
+	rendered := ansi.Strip(strings.Join(ringLoader(width, height, label, 0), "\n"))
+	if !strings.Contains(rendered, label) {
+		t.Fatalf("the ring dropped the label it was given:\n%s", rendered)
 	}
 }

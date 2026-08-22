@@ -202,6 +202,12 @@ CREATE TABLE IF NOT EXISTS settings (
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS file_reservations_holder ON file_reservations (session_id, pattern)`,
 		`CREATE INDEX IF NOT EXISTS file_reservations_live ON file_reservations (expires_at)`,
+		`CREATE TABLE IF NOT EXISTS review_states (
+			session_id TEXT NOT NULL,
+			repo_root  TEXT NOT NULL,
+			state      TEXT NOT NULL,
+			PRIMARY KEY (session_id, repo_root)
+		)`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
@@ -753,6 +759,9 @@ func (s *Store) Delete(id string) error {
 	if _, err := tx.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM review_states WHERE session_id = ?`, id); err != nil {
+		return err
+	}
 	// Session ids are recycled from a fresh UUID prefix, so a message left
 	// pointing at a deleted id could be re-attached to a future session.
 	if _, err := tx.Exec(`DELETE FROM session_inbox WHERE session_id = ? OR sender_id = ?`, id, id); err != nil {
@@ -807,6 +816,9 @@ func (s *Store) DeleteChild(id, parentID string, kill func() error) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM review_scopes WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM review_states WHERE session_id = ?`, id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {

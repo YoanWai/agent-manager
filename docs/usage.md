@@ -10,6 +10,8 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 
 ## Keys
 
+Tell your agent what you want to review in Agent Manager. Your agent will set up the repository or worktree, target and scope for you to view in the review panel. You can also tell your agent to manage sessions and terminals in Agent Manager; it can set them up and control them for you.
+
 | Key | Action |
 |-----|--------|
 | `n` | New session (name, tool, directory, worktree toggle, optional starting prompt, group picker) |
@@ -38,14 +40,14 @@ Agent sessions live on a private tmux server named `agentmgr`, so they never mix
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
-| `s` | Settings (quick-spawn tool, theme, theme follows OS, list density, review layout, after quick send, session keys, ←→ step in/out, worktree sessions, notifications, report a bug, suggest a change) |
+| `s` | Settings (default tool, theme, theme follows OS, list density, review layout, after quick send, session keys, ←→ step in/out, spawn in worktree, notifications, notify on finish, CLIs, report a bug, suggest a change, and the version row that updates in place) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
 | `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
 | `M` | Messages (updates, tips; `x` dismisses one for good). The welcome message points at Settings for a bug or an idea. |
 | `e` | Hide / show empty groups |
 | `/` | Search |
-| `?` | The key map: every binding, grouped by what it acts on. It scrolls (`↑↓`/`jk`, `pgup`/`pgdn`, `g`/`G`) and `/` searches it down to one line. |
+| `?` | The key map for the current screen. From the list it shows every group; from review it shows only review bindings. It scrolls (`↑↓`/`jk`, `pgup`/`pgdn`, `g`/`G`) and `/` searches it down to one line. |
 | `q` | Quit (sessions keep running) |
 
 Navigation is keyboard-driven. The manager claims mouse reporting so the wheel stays inside the app and cannot scroll the TUI out of view: a notch scrolls the diff, and in a focused session it walks that pane's scrollback, where click-drag also selects pane text and copies it. In a focused agent that tracks the mouse, a click passes straight through to its own clickable UI while a drag still selects and copies; hold `alt` to pass a whole drag through instead, for the agent's own text selection or sliders. In the list the wheel does nothing, since moving the selection with it retargets every key that follows. Fuller mouse support, on by default with a settings toggle, is tracked in [#110](https://github.com/YoanWai/agent-manager/issues/110).
@@ -55,7 +57,7 @@ Navigation is keyboard-driven. The manager claims mouse reporting so the wheel s
 Press `space` to dock a prompt bar at the bottom of the sidebar. The target follows the cursor while the bar is open (`↑↓` still navigate):
 
 - On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar clears and stays open, ready for the next answer; Settings (`s`) can make it close instead.
-- On a **group** row, `enter` spawns a new agent in that group and submits the prompt at startup, using the group's default path. The spawn tool starts at the Settings default and `tab` cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. `alt+w` toggles whether the new agent spawns into its own git worktree, starting from the Settings default; the footer shows `worktree: on` or `worktree: off`, or `worktree: unavailable (not a git repo)` when the target directory cannot hold one. Answering an existing session ignores the toggle, since there is no new session to place in a worktree. The agent starts working on the prompt immediately.
+- On a **group** row, `enter` spawns a new agent in that group and submits the prompt at startup, using the group's default path. This is the shortest path to a fresh agent: `space`, type the task, `enter`, with no form and no name to invent. The spawn tool starts at the Settings default and `tab` (or `alt+m`) cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. `shift+tab` (or `alt+w`) toggles whether the new agent spawns into its own git worktree, starting from the Settings default; the footer shows `worktree: on` or `worktree: off`, or `worktree: unavailable (not a git repo)` when the target directory cannot hold one. Answering an existing session ignores the toggle, since there is no new session to place in a worktree. The agent starts working on the prompt immediately.
 
 `ctrl+v` pastes an image from the system clipboard as an `[Image #1]` chip at the caret. The image is saved under `agent-manager-pastes` in your temp directory, and on send each chip is swapped back for its path, so the paths reach the agent in the order and the places you pasted them. `backspace` next to a chip removes the whole chip, and an edit that swallows one releases its image. A clipboard holding text rather than an image pastes as text. Pasted images older than seven days are cleared at startup and once a day while the manager runs, so an agent can still open one from an earlier session while temp stays tidy.
 
@@ -64,6 +66,10 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 The new-session form's optional `prompt` field launches an agent the same way. It takes `ctrl+v` and its chips too, since a first task is often the screenshot that explains it: paste the design to match or the crash to read, and the agent opens the file on its first turn. Leaving the form without creating the session releases the images it was holding, the way closing the bar does. Tools whose CLI takes the prompt behind a flag declare it with `prompt_flag`, while a persistent CLI with no startup-prompt argument uses `prompt_mode = "send"` (see [Configuration](configuration.md)).
 
 ![answering a working Claude Code session from the prompt bar, without attaching](demo-space.gif)
+
+## Which CLIs you get offered
+
+Every configured tool is offered when you create a session, which is more than most people run. Settings (`s`) has a `CLIs` row: `enter` opens a checklist, `space` or `enter` unchecks the tool under the cursor, `esc` saves, and the ones left checked are what the `n` form's `tool` picker and the quick prompt's `tab` cycle through. The last checked tool cannot be unchecked, since a picker with nothing in it could not create a session. It only narrows the pickers, so a session already on an unchecked tool keeps running and revives on that same tool. The last row, `request CLI support`, opens an issue for a CLI we do not ship rules for yet.
 
 ## Terminal tabs
 
@@ -143,7 +149,7 @@ A session's working directory is often an umbrella folder holding many repos, so
 
 An agent can also declare what its branch diffs against by running `agent-manager review-base <ref>` from inside its worktree: the ref is validated in that repo, stored per session and repo, and the "vs target" scope uses it from then on. `agent-manager review-base --clear` returns to automatic detection. A stored ref that stops resolving surfaces as an error in review, and `B` opens a target picker (the repo's branches plus an `auto` entry) to set or clear it by hand.
 
-Agents usually work in git worktrees, one branch per worktree, and those worktrees can live anywhere on disk. A declared path that is a worktree root is accepted wherever it lives, so one `review-repo` call names both the repo and the branch under review. Review resolves its target in a fixed order: a repo you picked by hand with `r` or `b` wins for as long as the manager is running, then the agent's declared repo, then the ranking (dirty working trees first, then most recent commit). When the picked or declared path stops being a git repo, review says so in the status line and `r` is there to pick the right one.
+Agents usually work in git worktrees, one branch per worktree, and those worktrees can live anywhere on disk. A declared path that is a worktree root is accepted wherever it lives, so one `review-repo` call names both the repo and the branch under review. Review resolves its target in a fixed order: a repo or worktree you picked by hand with `r` or `b` wins for as long as the manager is running, then the agent's declared repo, then the ranking (dirty working trees first, then most recent commit). When the picked or declared path stops being a git repo, review says so in the status line and `r` is there to pick the right one.
 
 ## MCP: how agents discover these commands
 
@@ -153,6 +159,7 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 |------|--------|
 | `rename` | Rename the calling session |
 | `review` | Declare the repo under review, the base ref and the diff scope, in one call |
+| `review_comment` | Mark a sent review comment handled after addressing it, or reopen it |
 | `list_sessions` | List every agent session with its id, CLI, group, directory, worktree branch and status |
 | `create_session` | Start another agent CLI on a named task, optionally in its own git worktree |
 | `read_session` | Read what another agent's screen currently shows |
@@ -223,28 +230,34 @@ A custom tool opts in with `mcp = "<style>"` in its config section. Set `mcp = "
 
 Press `ctrl+r` on a session to open a full-screen review of its repo: changed files with +/− counts on the left, the whole file on the right with syntax highlighting and changed lines tinted, so every edit reads in full context. The diff refreshes as the agent keeps editing.
 
+Tell your agent what you want to review in Agent Manager. Your agent can declare the repository or worktree, target and scope together, so the panel opens on those changes when you press `ctrl+r`, without you configuring each picker.
+
 | Key | Action |
 |-----|--------|
-| `↑↓` / `jk`, `ctrl+d` / `ctrl+u` | Scroll the file |
+| `↑↓` / `jk`, `ctrl+d` / `ctrl+u`, `pgup` / `pgdn` | Scroll the file |
 | `g` / `G` | Jump to top / bottom |
-| `J` / `K` (or `tab` / `shift+tab`) | Previous / next file |
+| `J` / `K` (or `tab` / `shift+tab`) | Next / previous file |
 | `n` / `N` | Jump between changes |
 | `u` | Toggle unified and side-by-side |
 | `s` | Cycle the scope: uncommitted, vs target, last commit, staged |
 | `r` | Pick the repo when the session's directory holds several (type to filter) |
-| `b` | Pick the branch from the repo's worktrees |
+| `b` | Switch review to another of the repo's worktrees, listed by branch |
 | `B` | Pick the target (merge-into branch) the "vs target" scope compares against |
 | `space` | Mark a file reviewed |
 | `f` | Show code files only, hiding images, compiled assets and lock files from the list; press again to show them |
-| `c` / `d` | Write / drop a line comment |
-| `C` | Send every comment to the agent as one review prompt (`enter` or `y` confirms) |
+| `c` / `d` | Write or drop a draft; mark feedback from a sent round handled or open |
+| `C` | Send the current drafts to the agent as one review prompt (`enter` or `y` confirms, `esc` cancels) |
+| `o` / `F3` | Open the current file in your editor |
+| `?` | Review bindings only; `esc` returns to the review |
 | `esc` / `q` | Close the review |
 
 Each changeable value in the header wears its own key, so the scope, layout, repo, and target pills read as `s`, `u`, `r`, `B` legends at a glance.
 
 ![review, side by side, with the changed lines tinted in full file context](screenshot-review.png)
 
-Comments stay on the review screen until you send them: `C` flattens every one of them into a single prompt, asks you to confirm, and delivers it into the agent's pane, so the agent starts addressing your notes while you watch the diff update.
+Comments and reviewed-file marks are saved as you work and return after Agent Manager restarts. `C` sends only the current drafts as one prompt and records them as the next numbered review round. Every sent comment stays inline as the session's review history, labelled with its review round and point number. Open comments keep the accent wash; handled comments settle into a subtle dark green wash, and `d` toggles the status locally.
+
+Each point sent to the agent carries a stable comment id. After addressing it, an MCP-capable agent marks it handled with `review_comment`; an agent using shell commands runs `agent-manager review-comment <comment-id>`. Either can reopen it, with `handled: false` or `--reopen`. The status is stored immediately, so opening review shows the current state at once; a panel already open picks it up on its next refresh. The comment itself remains in place. The header names the latest review round and marks it changed when the scope or the code differs from what was sent. A comment whose original code can no longer be found is marked outdated instead of silently moving to an unrelated line.
 
 ![review mode: scrolling a changed file, switching to unified, jumping to the next file, then a line comment sent back to the agent](demo-diff.gif)
 
@@ -258,14 +271,19 @@ Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Session
 
 Each session's tmux pane is polled (default every 2s) to derive a status:
 
-| Status | Meaning |
-|--------|---------|
-| `working` | The agent is busy on a turn |
-| `waiting` | Blocked on you: a dialog, a permission ask, or a plain-text question |
-| `finished` | Turn ended — an alert that clears to `idle` once you enter the session |
-| `errored` | The tool reported an error |
-| `idle` | Nothing running |
-| `dead` | The tmux session is gone |
+| Mark | Status | Meaning |
+|------|--------|---------|
+| `◐` | `working` | The agent is busy on a turn |
+| `◆` | `waiting` | Blocked on you: a dialog, a permission ask, or a plain-text question |
+| `●` | `finished` | Turn ended — an alert that clears to `idle` once you enter the session, or on `.` |
+| `✕` | `errored` | The tool reported an error |
+| `○` | `idle` | Nothing running |
+| `✕` | `dead` | The tmux session is gone |
+| `◌` | `starting` | The pane is still launching |
+
+Every row carries its mark, and each state has its own color from the active theme, so a glance down the rail tells you who needs you. The key map (`?`) lists the marks under "the mark on a session row".
+
+A session stuck on the wrong mark is usually a rules question: the `[tools.<name>]` block in your own config is what the poller matches, and it keeps the rules it already has when a release ships better ones. [Configuration](configuration.md) has the two-line reset and how to read the pane the poller reads.
 
 `w` narrows the list to sessions that need attention (`waiting`, `finished`, `errored`). Press again to show every status. An `ATTENTION` badge sits over the list with the key that clears it, and the session counts follow the filter; folds open so matches are not hidden. The archived view (`t`) and hidden empty groups (`e`) label themselves the same way. The badges take whatever room the rail has: padded away from the entries on a tall terminal, tight against them on a short one, and yielding to the entries once the list is down to its last rows.
 

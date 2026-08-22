@@ -15,12 +15,11 @@ import (
 // outgrow a terminal, it scrolls, and a search narrows it to the one line
 // the reader came for.
 
-// helpState is the key map's own view state: where the list is scrolled and
-// the search typed over it.
 type helpState struct {
-	scroll    int
-	query     string
-	searching bool
+	scroll     int
+	query      string
+	searching  bool
+	returnMode mode
 }
 
 // helpSection is one context's bindings, titled for the thing the keys act
@@ -54,6 +53,7 @@ const helpCardMaxWidth = 92
 func helpSections() []helpSection {
 	return []helpSection{
 		{title: "list", rows: [][2]string{
+			{"", "Tell your agent to manage sessions and terminals in Agent Manager."},
 			{"↑↓ / jk", "move the cursor"},
 			{"→", "step in: focus the session, open the group"},
 			{"←", "step out: close the group"},
@@ -89,6 +89,15 @@ func helpSections() []helpSection {
 			{"a / u", "archive / restore (archive kills, restore revives)"},
 			{"d", "delete it"},
 		}},
+		{title: "the mark on a session row", rows: [][2]string{
+			{"◐ working", "the agent is busy on a turn"},
+			{"◆ waiting", "blocked on you: a dialog, a permission ask, a question"},
+			{"● finished", "the turn ended; entering the session clears it to idle"},
+			{"○ idle", "nothing running"},
+			{"✕ errored", "the tool reported an error, or the session is dead"},
+			{"◌ starting", "the pane is still launching"},
+			{"", "w filters the list down to the marks that need you"},
+		}},
 		{title: "group under the cursor", rows: [][2]string{
 			{"↵", "fold / unfold"},
 			{"space", "quick prompt: spawn a new agent in the group"},
@@ -123,24 +132,7 @@ func helpSections() []helpSection {
 			{"click", "focused: goes to the agent UI when it tracks the mouse"},
 			{"alt+drag", "focused: pass a whole drag to that agent UI"},
 		}},
-		{title: "review (ctrl+r)", rows: [][2]string{
-			{"c", "comment on the line"},
-			{"d", "remove the comment"},
-			{"C", "send every comment to the agent"},
-			{"space", "mark the file reviewed"},
-			{"f", "code files only (hides images, assets, lock files)"},
-			{"s", "cycle the scope (uncommitted / branch / last commit / staged)"},
-			{"r", "pick the repo when the session dir holds several"},
-			{"b", "pick the branch from the repo's worktrees"},
-			{"B", "pick the target branch the branch diff compares against"},
-			{"↑↓ / jk", "move a line"},
-			{"ctrl+d / ctrl+u", "half a page"},
-			{"g / G", "top / bottom of the file"},
-			{"tab / shift+tab", "next / previous file (J / K too)"},
-			{"n / N", "next / previous change"},
-			{"u", "unified / split layout"},
-			{"esc / q", "close the review"},
-		}},
+		reviewHelpSection(),
 		{title: "messages (M)", rows: [][2]string{
 			{"↑↓", "pick a message"},
 			{"pgup / pgdn", "scroll its body"},
@@ -164,6 +156,38 @@ func helpSections() []helpSection {
 			{"esc", "cancel"},
 		}},
 	}
+}
+
+func reviewHelpSection() helpSection {
+	return helpSection{title: "review (ctrl+r)", rows: [][2]string{
+		{"", "Tell your agent what to review in Agent Manager; they set it up."},
+		{"c", "comment on the line"},
+		{"d", "remove a draft, or mark sent feedback handled / open"},
+		{"C", "send drafts to the agent as the next review round"},
+		{"space", "mark the file reviewed"},
+		{"f", "code files only (hides images, assets, lock files)"},
+		{"s", "cycle the scope (uncommitted / vs target / last commit / staged)"},
+		{"r", "pick the repo when the session dir holds several"},
+		{"b", "switch to another worktree, listed by branch"},
+		{"B", "pick the target branch the branch diff compares against"},
+		{"↑↓ / jk", "move a line"},
+		{"ctrl+d / ctrl+u", "half a page"},
+		{"pgup / pgdn", "page"},
+		{"g / G", "top / bottom of the file"},
+		{"tab / shift+tab", "next / previous file (J / K too)"},
+		{"n / N", "next / previous change"},
+		{"u", "unified / split layout"},
+		{"o / f3", "open the current file in your editor"},
+		{"?", "this key map"},
+		{"esc / q", "close the review"},
+	}}
+}
+
+func (m *Model) visibleHelpSections() []helpSection {
+	if m.help.returnMode != modeDiff {
+		return helpSections()
+	}
+	return []helpSection{reviewHelpSection()}
 }
 
 // matchHelp narrows the catalog to the rows whose key or description
@@ -287,7 +311,7 @@ func (m *Model) helpSearchActive() bool {
 }
 
 func (m *Model) helpScrollLimit() int {
-	sections := matchHelp(helpSections(), m.help.query)
+	sections := matchHelp(m.visibleHelpSections(), m.help.query)
 	body := helpBodyLines(sections, cardInnerWidth(helpCardWidth(m.width)), m.help.query)
 	return max(0, len(body)-m.helpBodyRoom())
 }
@@ -295,7 +319,7 @@ func (m *Model) helpScrollLimit() int {
 func (m *Model) viewHelp() string {
 	width := helpCardWidth(m.width)
 	inner := cardInnerWidth(width)
-	sections := matchHelp(helpSections(), m.help.query)
+	sections := matchHelp(m.visibleHelpSections(), m.help.query)
 
 	var head []string
 	if m.helpSearchActive() {
@@ -308,7 +332,11 @@ func (m *Model) viewHelp() string {
 	}
 	lines := append(head, fitBody(body, m.helpBodyRoom(), m.help.scroll)...)
 
-	return m.cardSized(width, "? Keys", strings.Join(lines, "\n"), m.helpHint())
+	title := "? Keys"
+	if m.help.returnMode == modeDiff {
+		title = "? Review keys"
+	}
+	return m.cardSized(width, title, strings.Join(lines, "\n"), m.helpHint())
 }
 
 // helpSearchLine is the search's own row: what was typed, and how much of
@@ -340,13 +368,14 @@ func (m *Model) helpHint() [][2]string {
 }
 
 func (m *Model) openHelp() {
-	m.help = helpState{}
+	m.help = helpState{returnMode: m.mode}
 	m.mode = modeHelp
 }
 
 func (m *Model) closeHelp() {
+	back := m.help.returnMode
 	m.help = helpState{}
-	m.mode = modeList
+	m.mode = back
 }
 
 func (m *Model) scrollHelp(delta int) {
@@ -372,8 +401,10 @@ func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.closeHelp()
+		return m, m.startStartupTick()
 	case "q", "?", "enter":
 		m.closeHelp()
+		return m, m.startStartupTick()
 	case "/":
 		m.help.searching = true
 	case "up", "k":

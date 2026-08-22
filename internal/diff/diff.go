@@ -4,6 +4,8 @@
 package diff
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -116,13 +118,64 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride stri
 	if statsErr != nil {
 		return Set{}, statsErr
 	}
+	files = filterUntrackedSpecialFiles(repo.Root, files)
 
 	for _, file := range files {
 		stat, known := stats[file.Path]
 		fd := FileDiff{File: file, Stat: stat, statKnown: known}
 		set.Files = append(set.Files, fd)
 	}
+	fillUnknownStats(driver, repo.Root, set.Files)
 	return set, nil
+}
+
+func filterUntrackedSpecialFiles(root string, files []git.ChangedFile) []git.ChangedFile {
+	kept := files[:0]
+	for _, file := range files {
+		if file.Status == git.Untracked {
+			info, err := os.Lstat(filepath.Join(root, file.Path))
+			if err == nil && !info.Mode().IsRegular() {
+				continue
+			}
+		}
+		kept = append(kept, file)
+	}
+	return kept
+}
+
+// Git's numstat omits untracked files; count them before their first visit so
+// the file list can still show +N or binary.
+func fillUnknownStats(driver *git.Driver, root string, files []FileDiff) {
+	var unknown []int
+	for i := range files {
+		if !files[i].statKnown && files[i].File.Status == git.Untracked {
+			unknown = append(unknown, i)
+		}
+	}
+	if len(unknown) == 0 {
+		return
+	}
+
+	const maxWorkers = 8
+	workers := min(len(unknown), maxWorkers)
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				if err := countUnknownStat(driver, root, &files[i]); err != nil {
+					files[i].Err = err
+				}
+			}
+		}()
+	}
+	for _, i := range unknown {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
 }
 
 // LoadFile builds one file's line model without mutating set, which makes it

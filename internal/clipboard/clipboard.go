@@ -3,8 +3,10 @@
 package clipboard
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/YoanWai/agent-manager/internal/termseq"
 	"github.com/charmbracelet/x/ansi"
@@ -56,6 +59,13 @@ var (
 // pastesDir is the shared temp directory for clipboard image files.
 func pastesDir() string {
 	return filepath.Join(os.TempDir(), "agent-manager-pastes")
+}
+
+// IsPastePath reports whether a word is one of the image paths a pasted
+// picture becomes on its way to an agent, so a reader showing the prompt
+// back can leave the pictures out of it.
+func IsPastePath(word string) bool {
+	return filepath.Dir(word) == pastesDir()
 }
 
 // StaleAfter is how long a pasted image stays on disk before a sweep can
@@ -354,7 +364,7 @@ func WriteText(text string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdin = strings.NewReader(text)
+	cmd.Stdin = bytes.NewReader(clipboardText(name, text))
 	if err := cmd.Run(); err != nil {
 		// A selected writer can still die at runtime: a stale SSH DISPLAY,
 		// a Wayland socket that is gone, a broken install. The terminal's
@@ -368,6 +378,18 @@ func WriteText(text string) error {
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	return nil
+}
+
+func clipboardText(name, text string) []byte {
+	if goos != "linux" || !wslProbe() || !strings.EqualFold(filepath.Base(name), "clip.exe") {
+		return []byte(text)
+	}
+	units := utf16.Encode([]rune(text))
+	data := make([]byte, len(units)*2)
+	for i, unit := range units {
+		binary.LittleEndian.PutUint16(data[i*2:], unit)
+	}
+	return data
 }
 
 // copyCommand picks the platform's clipboard writer. The false return means
