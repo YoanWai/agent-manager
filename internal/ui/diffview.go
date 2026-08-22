@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/diff"
@@ -480,7 +481,7 @@ func (m *Model) restoreReviewState(state store.ReviewState) bool {
 		note := &state.Comments[i]
 		notes = append(notes, annotation{
 			id: note.ID, file: note.File, line: note.Line, deleted: note.Deleted,
-			excerpt: note.Excerpt, text: note.Text, hash: note.ContentHash,
+			excerpt: withoutControlBytes(note.Excerpt), text: withoutControlBytes(note.Text), hash: note.ContentHash,
 			round: note.Round, point: note.Point, handled: note.Resolved, outdated: note.Outdated,
 		})
 	}
@@ -1586,7 +1587,7 @@ func (m *Model) saveAnnotation() tea.Cmd {
 	if lineIdx < 0 || lineIdx >= len(fd.Lines) {
 		return nil
 	}
-	text := strings.TrimSpace(m.diff.annInput.Value())
+	text := strings.TrimSpace(withoutControlBytes(m.diff.annInput.Value()))
 	line := fd.Lines[lineIdx]
 	num, deleted := annotationLine(line)
 	if existing := m.annotationAt(fd.File.Path, line); existing != nil {
@@ -1737,8 +1738,25 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 
 // excerptOf caps a code excerpt at 60 runes, never splitting a rune, so
 // multibyte lines stay valid UTF-8 in the prompt sent to the agent.
+// A comment and its excerpt are painted into the pane and pasted into the
+// agent's prompt, so a control byte from the file under review or from a
+// paste would drive the terminal instead of reading as text.
+func withoutControlBytes(text string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n':
+			return r
+		case r == '\t':
+			return ' '
+		case unicode.IsControl(r):
+			return -1
+		}
+		return r
+	}, text)
+}
+
 func excerptOf(text string) string {
-	excerpt := strings.TrimSpace(text)
+	excerpt := strings.TrimSpace(withoutControlBytes(text))
 	if runes := []rune(excerpt); len(runes) > 60 {
 		return string(runes[:60])
 	}

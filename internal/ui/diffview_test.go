@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
@@ -3228,5 +3229,20 @@ func TestMigratedPointsNeverRepeatWithinARound(t *testing.T) {
 			t.Fatalf("comments %s and %s share point %d", other, note.ID, note.Point)
 		}
 		seen[note.Point] = note.ID
+	}
+}
+
+func TestAnnotationsDropControlBytes(t *testing.T) {
+	const escape = "\x1b[31mred\x07\x1b]0;title\x07"
+	if got := withoutControlBytes(escape); strings.ContainsFunc(got, func(r rune) bool {
+		return r != '\n' && unicode.IsControl(r)
+	}) {
+		t.Fatalf("control bytes survived: %q", got)
+	}
+	if got := withoutControlBytes("keep\tthe\nshape"); got != "keep the\nshape" {
+		t.Fatalf("tab and newline handling = %q", got)
+	}
+	if got := excerptOf("\x1b[2Jfunc main() {"); got != "[2Jfunc main() {" {
+		t.Fatalf("excerpt = %q, want the escape introducer gone", got)
 	}
 }
