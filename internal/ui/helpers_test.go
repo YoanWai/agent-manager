@@ -45,9 +45,10 @@ func buildModel(t *testing.T) *Model {
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^›",
 			},
-			// Redraws its prompt for every line it reads, the way the agent
-			// CLIs keep an input line drawn: a long inbox envelope must not
-			// scroll the prompt off the pane, or TypingHold holds forever.
+			// Draws a fresh prompt for every line it reads, so the prompt
+			// stays on the pane however long an inbox envelope is. Left to
+			// `cat`, a long envelope scrolls it off and TypingHold never
+			// clears.
 			"ready-tool": {
 				Command:        `sh -c 'printf "❯ "; while IFS= read -r line; do printf "\n❯ "; done'`,
 				DefaultStatus:  status.Idle,

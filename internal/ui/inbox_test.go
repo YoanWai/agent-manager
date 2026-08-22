@@ -512,8 +512,9 @@ func inboxStall(t *testing.T, m *Model, sessionID string) string {
 	return report.String()
 }
 
-// settledPane waits for the pane to hold every marker and stop changing,
-// since the tool echoes what was typed and then prints it back.
+// settledPane waits for the pane to hold every marker and stop changing.
+// The markers come from the tty echo of what was pasted; the fixture tools
+// consume their input and print only a fresh prompt.
 func settledPane(t *testing.T, m *Model, sessionID string, markers ...string) string {
 	t.Helper()
 	// Two waits, not one. A paste still landing resets the quiet run, so
@@ -593,6 +594,11 @@ func TestThePollLoopDeliversQueuedMessagesOldestFirst(t *testing.T) {
 	if head.ID != second {
 		t.Fatalf("the newer message was delivered first: head = %+v", head)
 	}
+	// Prove the oldest body rendered while it is still the only one on the
+	// pane. Once the second envelope lands it scrolls off, and the store's
+	// delivery stamp alone would not tell a delivered paste from one that
+	// never reached the composer.
+	settledPane(t, m, sess.ID, "rebase on main")
 
 	pollUntilQueued(t, m, sess.ID, 0)
 	for _, id := range []int64{first, second} {
@@ -604,9 +610,9 @@ func TestThePollLoopDeliversQueuedMessagesOldestFirst(t *testing.T) {
 			t.Fatalf("message %d never reached the pane: %+v", id, state)
 		}
 	}
-	// The tool keeps its input line drawn, so two envelopes overflow the
-	// pane and the first body scrolls off; its delivery is what the store
-	// recorded above.
+	// The fixture draws a fresh prompt per line it reads, so two envelopes
+	// overflow the pane and the first body has scrolled off by now; it was
+	// asserted above while it was still visible.
 	settledPane(t, m, sess.ID, "then push the branch")
 }
 
