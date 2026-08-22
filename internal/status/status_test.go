@@ -510,6 +510,7 @@ func TestCommandCodePanes(t *testing.T) {
 		{"finished turn", "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\nHey! I can dig into code, build something, debug issues, or explore the repo.\n ✻ Worked for 3s\n" + composer, Finished},
 		{"finished turn with trailing blanks", "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\nHey! I can dig into code, build something, debug issues, or explore the repo.\n ✻ Worked for 3s\n" + composer + "\n\n", Finished},
 		{"resumed conversation", "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\n⠶ Hey! What are we working on today? I can dig into code, build something, debug issues, or explore the repo.\n" + composer + "\n  ? for shortcuts · taste on", Idle},
+		{"current error", "Error: request failed\n" + composer, Errored},
 		{"question turn", "❯ hi\nWhich file should I edit, A or B?\n ✻ Worked for 3s\n" + composer, Waiting},
 	}
 	for _, tc := range cases {

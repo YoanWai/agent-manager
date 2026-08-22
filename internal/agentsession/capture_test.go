@@ -153,6 +153,25 @@ func TestCaptureCommandCodeNoMatch(t *testing.T) {
 	}
 }
 
+func TestCaptureCommandCodeSkipsMalformedTranscripts(t *testing.T) {
+	root := t.TempDir()
+	launch := time.Now()
+	// A corrupt first line does not parse: not ours.
+	writeFile(t, filepath.Join(root, "a", "broken.jsonl"),
+		`{"type":"session","id":`+"\n", launch.Add(time.Second))
+	// A record that is not a session header does not count either.
+	writeFile(t, filepath.Join(root, "a", "legacy.jsonl"),
+		`{"type":"message","id":"legacy-uuid","cwd":"/repo"}`+"\n", launch.Add(2*time.Second))
+	// Ours: a valid session record written after launch.
+	writeFile(t, filepath.Join(root, "a", "ours.jsonl"),
+		commandCodeSession("ours-uuid", "/repo"), launch.Add(3*time.Second))
+
+	id, ok := captureCommandCode(root, "/repo", launch, map[string]bool{})
+	if !ok || id != "ours-uuid" {
+		t.Fatalf("got id=%q ok=%v, want ours-uuid true", id, ok)
+	}
+}
+
 type ocMeta struct {
 	dir     string
 	created time.Time

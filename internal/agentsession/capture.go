@@ -122,7 +122,6 @@ func captureCommandCode(root, cwd string, launchedAt time.Time, claimed map[stri
 	return pickEarliest(cands)
 }
 
-// commandCodeMeta reads the session id and cwd from a transcript's first line.
 func commandCodeMeta(path string) (id, cwd string, ok bool) {
 	file, err := os.Open(path)
 	if err != nil {
