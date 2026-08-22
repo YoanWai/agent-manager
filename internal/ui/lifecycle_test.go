@@ -1736,3 +1736,107 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+func TestConfirmedDeleteDropsTheRowBeforeTheNextPoll(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "doomed", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+
+	deleteSession(t, m, "doomed")
+
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("deleted session still on screen before the next poll: %+v", row)
+		}
+	}
+}
+
+func TestConfirmedArchiveLeavesTheActiveViewAtOnce(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "shelved", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+
+	m.selectSessionRow(t, "shelved")
+	m.archiveSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	if _, err := m.store.Get(sess.ID); err != nil {
+		t.Fatalf("archive did not reach the store: %v", err)
+	}
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("archived session still on the active tree before the next poll, status %q", row.Status)
+		}
+	}
+
+	// The archived view still holds it once a fresh listing has run.
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	if len(m.sessionRows()) != 1 || !m.sessionRows()[0].Archived {
+		t.Fatalf("archived session should show in the archived view, rows = %v", sessionNames(m))
+	}
+}
+
+// A poll that listed the store before the delete delivers its full list
+// afterwards; that stale copy must not put the row back on screen.
+func TestAStalePollCannotResurrectADeletedRow(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "doomed", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	listedAt := time.Now()
+
+	deleteSession(t, m, "doomed")
+
+	stale := sess
+	stale.Status = status.Dead
+	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
+	*m = *updated.(*Model)
+
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("a stale poll brought the deleted row back as %q", row.Status)
+		}
+	}
+}
+
+func TestAStalePollCannotBringAnArchivedRowBackLive(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "shelved", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	listedAt := time.Now()
+
+	m.selectSessionRow(t, "shelved")
+	m.archiveSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	stale := sess
+	stale.Status = status.Dead
+	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
+	*m = *updated.(*Model)
+
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("a stale poll brought the archived row back on the live tree")
+		}
+	}
+}
+
+func TestConfirmedGroupDeleteDropsTheGroupRowAtOnce(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("zone", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "in-zone", dir, "zone")
+
+	m.selectGroupRow(t, "zone")
+	m.prepareDelete()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	for _, r := range m.rows {
+		if r.isGroup && r.group == "zone" {
+			t.Fatalf("deleted group still on screen before the next poll")
+		}
+	}
+}

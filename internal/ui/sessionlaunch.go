@@ -80,3 +80,49 @@ func (m *Model) keepPendingLaunches(polled []store.Session, listedAt time.Time) 
 	}
 	return polled
 }
+
+// goneMark records how a session left the loaded list: deleted outright,
+// or archived out of the active view while the archived view keeps it.
+type goneMark struct {
+	at       time.Time
+	archived bool
+}
+
+// markGone records that this run just removed a row from the list, so
+// stale polls predating the removal are dropped on arrival.
+func (m *Model) markGone(id string, archived bool) {
+	if m.gone == nil {
+		m.gone = map[string]goneMark{}
+	}
+	m.gone[id] = goneMark{at: time.Now(), archived: archived}
+}
+
+// dropRecentlyRemoved filters out the rows a poll listed before this run
+// took them off the list itself: without it, a pass in flight across a
+// delete or an archive delivers its pre-change listing afterwards and the
+// row blinks back for one more frame. A poll whose listing postdates the
+// removal is the authority on the new state and retires the record; an
+// archived row reported as archived belongs in the archived view and stays.
+func (m *Model) dropRecentlyRemoved(polled []store.Session, listedAt time.Time) []store.Session {
+	if len(m.gone) == 0 {
+		return polled
+	}
+	kept := make([]store.Session, 0, len(polled))
+	for _, sess := range polled {
+		mark, gone := m.gone[sess.ID]
+		if !gone || listedAt.After(mark.at) || (mark.archived && sess.Archived) {
+			if gone {
+				delete(m.gone, sess.ID)
+			}
+			kept = append(kept, sess)
+			continue
+		}
+	}
+	return kept
+}
+
+// unmarkGone forgets a removal record, for a session brought back before
+// any poll has had the chance to retire it.
+func (m *Model) unmarkGone(id string) {
+	delete(m.gone, id)
+}

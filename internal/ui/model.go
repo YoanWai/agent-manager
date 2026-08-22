@@ -186,6 +186,10 @@ type Model struct {
 	// launched is when this run recorded each session it spawned. A poll
 	// that listed the store before that has nothing to say about the row.
 	launched map[string]time.Time
+	// gone is when this run took each session off the loaded list itself,
+	// by deleting or archiving it, so a poll that listed the store before
+	// that moment cannot put the row back on screen for a frame.
+	gone map[string]goneMark
 	// terminalKeyAt is when the last T finished being handled. Held down it
 	// autorepeats into a burst of keystrokes, and T is the only key that
 	// spawns on the keystroke itself rather than opening a form that would
@@ -1133,7 +1137,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ageError()
 		// The focused session can die or vanish under us; fall back to the
 		// list rather than typing into nothing.
-		sessions := m.keepPendingLaunches(msg.sessions, msg.listedAt)
+		sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
 		var focusExit tea.Cmd
 		if m.mode == modeFocus {
 			if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {

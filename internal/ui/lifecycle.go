@@ -730,6 +730,67 @@ func (m *Model) applyConfirmedArchived(archived bool) error {
 	return nil
 }
 
+// removeSessionLocally takes a deleted row off the loaded list right away,
+// so it leaves the screen on this frame instead of waiting for the next
+// poll to confirm what the store already knows.
+func (m *Model) removeSessionLocally(id string) {
+	for i := range m.sessions {
+		if m.sessions[i].ID == id {
+			m.sessions = append(m.sessions[:i], m.sessions[i+1:]...)
+			break
+		}
+	}
+	m.markGone(id, false)
+	m.rebuildRows()
+}
+
+// markArchivedLocally flags the confirmed sessions archived in the loaded
+// rows, so they leave the active view on this frame instead of first
+// showing the dead state their kill just gave them.
+func (m *Model) markArchivedLocally(sessions []store.Session) {
+	changed := false
+	for i := range m.sessions {
+		if m.sessions[i].Archived {
+			continue
+		}
+		for _, sess := range sessions {
+			if m.sessions[i].ID != sess.ID {
+				continue
+			}
+			m.sessions[i].Archived = true
+			m.markGone(sess.ID, true)
+			changed = true
+			break
+		}
+	}
+	if changed {
+		m.rebuildRows()
+	}
+}
+
+// pruneGroupsLocally drops the removed group paths from the loaded tree,
+// so a deleted group's header goes with its sessions instead of hanging
+// around empty until the next poll.
+func (m *Model) pruneGroupsLocally(removed []string) {
+	gone := make(map[string]bool, len(removed))
+	for _, path := range removed {
+		gone[path] = true
+	}
+	groups := make([]string, 0, len(m.groups))
+	for _, group := range m.groups {
+		if !gone[group] {
+			groups = append(groups, group)
+		}
+	}
+	m.groups = groups
+	for _, path := range removed {
+		delete(m.groupPaths, path)
+		delete(m.groupWorktrees, path)
+		delete(m.archivedGroups, path)
+	}
+	m.rebuildRows()
+}
+
 func (m *Model) sessionAndChildren(sess store.Session) ([]store.Session, error) {
 	kids, err := m.store.Children(sess.ID)
 	if err != nil {
@@ -872,6 +933,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.errBar.text = err.Error()
 				return m, nil
 			}
+			m.markArchivedLocally(m.confirm.sessions)
 			m.errBar.text = ""
 		case actionRestore:
 			// Each session leaves the archive as it comes back, so a later
@@ -890,11 +952,15 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
+				m.unmarkGone(sess.ID)
 			}
 			if m.confirm.isGroup {
 				if err := m.applyConfirmedArchived(false); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
+				}
+				for _, sess := range m.confirm.sessions {
+					m.unmarkGone(sess.ID)
 				}
 			}
 			m.errBar.text = ""
@@ -960,6 +1026,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
+				m.removeSessionLocally(sess.ID)
 				if sess.WorktreeRepo != "" && m.gitDrv != nil {
 					used, err := m.sessionUsesDir(sess.Cwd)
 					if err != nil {
@@ -983,6 +1050,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					delete(m.collapsed, path)
 				}
 				m.persistCollapsed()
+				m.pruneGroupsLocally(removed)
 			}
 		default:
 			m.errBar.text = fmt.Sprintf("unknown confirm action %q", m.confirm.action)
