@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -61,6 +63,27 @@ func TestStartupTickRunsOnlyWhileAStartingRowIsVisible(t *testing.T) {
 	_, cmd := m.Update(startupTickMsg{})
 	if cmd != nil || m.startupAnimating {
 		t.Fatal("startup tick kept running after the starting row settled")
+	}
+}
+
+func TestStartupTickRunsWhileReviewLoads(t *testing.T) {
+	m := &Model{mode: modeDiff, diff: diffState{active: true, loading: true}}
+	if cmd := m.startStartupTick(); cmd == nil || !m.startupAnimating {
+		t.Fatal("a loading review should start the loader tick")
+	}
+	m.diff.loading = false
+	_, cmd := m.Update(startupTickMsg{})
+	if cmd != nil || m.startupAnimating {
+		t.Fatal("loader tick kept running after the review load settled")
+	}
+	m.diff.set.Files = []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}
+	if cmd := m.startStartupTick(); cmd == nil || !m.startupAnimating {
+		t.Fatal("an unloaded selected file should start the loader tick")
+	}
+	m.diff.set.Files[0] = diff.BuildFile(nil, nil, git.ChangedFile{Path: "main.go"}, git.FileStat{})
+	_, cmd = m.Update(startupTickMsg{})
+	if cmd != nil || m.startupAnimating {
+		t.Fatal("loader tick kept running after the selected file loaded")
 	}
 }
 

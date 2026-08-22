@@ -355,22 +355,44 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 	return rows
 }
 
-// annotationRows renders the comment attached to line lineIdx, if any, as
-// its own indented full-width rows beneath the code line. Shared by the
-// unified and side-by-side layouts so both surface saved comments.
 func (m *Model) annotationRows(fd *diff.FileDiff, lineIdx, width int) []string {
-	note := m.annotationAt(fd.File.Path, fd.Lines[lineIdx])
-	if note == nil {
-		return nil
+	var rows []string
+	for _, note := range m.annotationsAt(fd.File.Path, fd.Lines[lineIdx]) {
+		label := "¶"
+		style := annotationStyle
+		background := annotationBg()
+		if note.round > 0 {
+			label = fmt.Sprintf("Review round %d", note.round)
+			if note.point > 0 {
+				label += fmt.Sprintf(" · point %d", note.point)
+			}
+		}
+		if note.handled {
+			label += " · handled"
+			style = doneStyle
+			background = handledAnnotationBg()
+		} else if note.round > 0 {
+			label += " · open"
+		}
+		if note.outdated {
+			label += " · outdated"
+		}
+		comment := style.Render("  " + label + " " + note.text)
+		rows = append(rows, wrapTinted(comment, nil, background, background, width)...)
 	}
-	comment := annotationStyle.Render("  ¶ " + note.text)
-	return wrapTinted(comment, nil, annotationBg(), annotationBg(), width)
+	return rows
+}
+
+func (m *Model) reviewRing(label string, width, height int) string {
+	return strings.Join(ringLoader(width, height, label, m.startupPhase), "\n")
+}
+
+func (m *Model) reviewSpinnerLine(label string) string {
+	frame := startupFrames[m.startupPhase%len(startupFrames)]
+	return mutedStyle.Render(frame + " " + label)
 }
 
 func (m *Model) diffEmptyText() string {
-	if m.diff.loading && len(m.diff.set.Files) == 0 {
-		return mutedStyle.Render("(loading diff…)")
-	}
 	if m.diff.errText != "" {
 		return errStyle.Render("✖ " + m.diff.errText)
 	}
@@ -395,8 +417,6 @@ func (m *Model) diffBodyNote(fd *diff.FileDiff) string {
 	switch {
 	case m.diffFileHidden(fd):
 		return diffAllHiddenNote()
-	case !fd.Loaded():
-		return mutedStyle.Render("(loading file…)")
 	case fd.Err != nil:
 		return errStyle.Render("✖ " + fd.Err.Error())
 	case fd.Binary:
@@ -433,7 +453,7 @@ func (m *Model) renderDiffRow(fd *diff.FileDiff, hl *fileHL, index, width int, c
 	textRows := wrapTinted(hl.hlLine(line), line.Spans, baseBg, spanBg, textWidth)
 
 	marker := " "
-	if m.annotationAt(fd.File.Path, line) != nil {
+	if len(m.annotationsAt(fd.File.Path, line)) > 0 {
 		marker = lipgloss.NewStyle().Foreground(colorAccent).Render("¶")
 	}
 	signCell := sign
@@ -523,13 +543,9 @@ func (m *Model) viewDiffFull() string {
 		bodyHeight = 5
 	}
 
-	fileWidth := m.width * 24 / 100
-	if fileWidth < 28 {
-		fileWidth = 28
-	}
 	// Two columns go to the seam and the fill's bleed edge between the
 	// two surfaces.
-	codeWidth := m.width - fileWidth - 2
+	fileWidth, codeWidth := m.diffPaneWidths()
 
 	// Files sit on the rail surface, the code on the backdrop: the same
 	// two-surface split the session list uses, so review reads as the same
@@ -632,14 +648,26 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	if uncounted {
 		right += " " + mutedStyle.Render("+?")
 	}
-	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
+	if count := m.draftAnnotationCount(); count > 0 {
 		right += subtleStyle.Render(" · ") + lipgloss.NewStyle().Foreground(colorAccent).Render(fmt.Sprintf("¶%d", count))
+	}
+	if round := m.diff.rounds[m.reviewKey()]; round.Number > 0 {
+		label := fmt.Sprintf("Review round %d", round.Number)
+		if !m.diff.loading && round.Fingerprint != 0 &&
+			(round.Scope != m.diff.scope.String() || round.Fingerprint != m.diff.fingerprint) {
+			label += " · changed"
+		}
+		right += subtleStyle.Render(" · ") + annotationStyle.Render(label)
 	}
 	right += " "
 
 	gap := m.width - ansi.StringWidth(left) - ansi.StringWidth(right)
 	if gap < 1 {
-		return padRight(left, m.width)
+		budget := m.width - ansi.StringWidth(right)
+		if budget < 1 {
+			return padRight(right, m.width)
+		}
+		return padRight(left, budget) + right
 	}
 	return left + strings.Repeat(" ", gap) + right
 }
@@ -653,6 +681,9 @@ func (m *Model) diffCodeTitle() string {
 }
 
 func (m *Model) viewDiffFileList(width, height int) string {
+	if m.diff.loading && len(m.diff.set.Files) == 0 {
+		return m.reviewSpinnerLine("loading diff")
+	}
 	if empty := m.diffEmptyText(); empty != "" {
 		return empty
 	}
@@ -680,7 +711,9 @@ func (m *Model) viewDiffFileList(width, height int) string {
 	}
 	notes := map[string]int{}
 	for _, note := range m.diff.annotations[m.reviewKey()] {
-		notes[note.file]++
+		if !note.handled {
+			notes[note.file]++
+		}
 	}
 	for pos := start; pos < end; pos++ {
 		i := shown[pos]
@@ -704,15 +737,19 @@ func (m *Model) viewDiffFileList(width, height int) string {
 		if count := notes[fd.File.Path]; count > 0 {
 			counts = lipgloss.NewStyle().Foreground(colorAccent).Render(fmt.Sprintf("¶%d ", count)) + counts
 		}
-		name := truncateTail(fd.File.Path, width-ansi.StringWidth(counts)-6)
+		nameBudget := width - ansi.StringWidth(counts) - 6
+		if nameBudget < 4 {
+			nameBudget = 4
+		}
+		name := truncatePath(fd.File.Path, nameBudget)
 		left := bar + glyph + " " + valueStyle.Render(name)
 		gap := width - ansi.StringWidth(left) - ansi.StringWidth(counts)
 		if gap < 1 {
 			gap = 1
 		}
-		row := left + strings.Repeat(" ", gap) + counts
+		row := padRight(left+strings.Repeat(" ", gap)+counts, width)
 		if i == m.diff.fileIdx {
-			row = renderSelectedRow(padRight(row, width))
+			row = renderSelectedRow(row)
 		}
 		b.WriteString(row + "\n")
 	}
@@ -723,10 +760,16 @@ func (m *Model) viewDiffFileList(width, height int) string {
 }
 
 func (m *Model) viewDiffCode(width, height int) string {
+	if m.diff.loading && len(m.diff.set.Files) == 0 {
+		return m.reviewRing("loading diff", width, height)
+	}
 	if empty := m.diffEmptyText(); empty != "" {
 		return empty
 	}
 	fd := m.currentFileDiff()
+	if !fd.Loaded() && !m.diffFileHidden(fd) {
+		return m.reviewRing("loading file", width, height)
+	}
 	if body := m.diffBodyNote(fd); body != "" {
 		return body
 	}
@@ -736,7 +779,7 @@ func (m *Model) viewDiffCode(width, height int) string {
 		fdLine := fd.Lines[m.cursorDiffLine()]
 		num, _ := annotationLine(fdLine)
 		m.diff.annInput.SetWidth(width)
-		m.diff.annInput.SetHeight(1)
+		m.diff.annInput.SetHeight(m.annotationInputHeight(width))
 		bar = divider(fmt.Sprintf("Comment · %s:%d", fd.File.Path, num), width) + "\n" + m.diff.annInput.View()
 		height -= lipgloss.Height(bar) + 1
 		if height < 3 {
@@ -938,7 +981,7 @@ func (m *Model) viewDiffStatus() string {
 		return padRight(doneStyle.Render(" ✔ "+m.diff.notice), m.width)
 	}
 	if m.diff.sendConfirm {
-		count := len(m.diff.annotations[m.reviewKey()])
+		count := m.draftAnnotationCount()
 		return padRight(errStyle.Render(fmt.Sprintf(" ¶ send %d %s to the agent?", count, commentNoun(count)))+
 			subtleStyle.Render("  ↵/y send · esc cancel"), m.width)
 	}
@@ -956,7 +999,7 @@ func (m *Model) viewDiffFooter() string {
 		repo = "repo: " + filepath.Base(m.diff.repoSel)
 	}
 	send := "send"
-	if count := len(m.diff.annotations[m.reviewKey()]); count > 0 {
+	if count := m.draftAnnotationCount(); count > 0 {
 		send = fmt.Sprintf("send %d", count)
 	}
 	filter := "code only"
@@ -965,12 +1008,13 @@ func (m *Model) viewDiffFooter() string {
 	}
 	return legendBar([]legendSection{
 		{title: "Review", pairs: [][2]string{
-			{"c", "comment"}, {"d", "remove"}, {"C", send}, {"space", "reviewed"},
+			{"c", "comment"}, {"d", "remove/handle"}, {"C", send}, {"space", "reviewed"},
 			{"s", "scope: " + m.diff.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
 		}},
 		{title: "Move", quiet: true, pairs: [][2]string{
-			{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"g/G", "top/bottom"},
-			{"tab/J K/shift+tab", "file"}, {"n/N", "change"}, {"u", "layout"}, {"f", filter},
+			{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"pgup/pgdn", "page"},
+			{"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"}, {"n/N", "change"},
+			{"u", "layout"}, {"f", filter}, {"o/f3", "open file"}, {"?", "keys"},
 			{"esc/q", "close"}, {"ctrl+c", "quit"},
 		}},
 	}, m.width)

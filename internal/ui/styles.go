@@ -107,12 +107,14 @@ func renderSelectedRow(s string) string {
 	return selectedRowStyle.Render(strings.ReplaceAll(s, "\x1b[0m", reapply))
 }
 
-// annotationBg is the wash behind a reviewer's inline comment: the theme's
-// backdrop lifted toward the accent, so the note reads as ours rather than
-// as part of the diff. Resolved per call so it follows the live color
-// profile as well as the live theme.
+// The accent lift separates reviewer notes from the diff itself. Resolve it
+// per call so live theme and color-profile changes take effect immediately.
 func annotationBg() string {
 	return bgSeq(mix(current.Bg, current.Accent, 0.18))
+}
+
+func handledAnnotationBg() string {
+	return bgSeq(mix(current.Bg, current.Finished, 0.14))
 }
 
 func statusColor(s string) lipgloss.Color {

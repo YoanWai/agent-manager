@@ -1447,6 +1447,9 @@ func TestDeleteChildAuthorizesKeepsAndCleans(t *testing.T) {
 	if err := st.SetReviewScope("sh", "staged"); err != nil {
 		t.Fatalf("review scope: %v", err)
 	}
+	if err := st.SetReviewState("sh", "/repo", ReviewState{Round: ReviewRound{Number: 1}}); err != nil {
+		t.Fatalf("review state: %v", err)
+	}
 	if err := st.DeleteChild("sh", "other", func() error {
 		t.Fatal("kill ran for another session's terminal")
 		return nil
@@ -1470,6 +1473,9 @@ func TestDeleteChildAuthorizesKeepsAndCleans(t *testing.T) {
 	if scope, err := st.ReviewScope("sh"); err != nil || scope != "staged" {
 		t.Fatalf("review scope after failed kill = %q err %v", scope, err)
 	}
+	if state, err := st.ReviewState("sh", "/repo"); err != nil || state.Round.Number != 1 {
+		t.Fatalf("review state after failed kill = %+v err %v", state, err)
+	}
 	killed := false
 	if err := st.DeleteChild("sh", "agent", func() error { killed = true; return nil }); err != nil {
 		t.Fatalf("DeleteChild: %v", err)
@@ -1488,6 +1494,9 @@ func TestDeleteChildAuthorizesKeepsAndCleans(t *testing.T) {
 	}
 	if scope, err := st.ReviewScope("sh"); err != nil || scope != "" {
 		t.Fatalf("review scope = %q err %v", scope, err)
+	}
+	if state, err := st.ReviewState("sh", "/repo"); err != nil || state.Round.Number != 0 {
+		t.Fatalf("review state = %+v err %v", state, err)
 	}
 }
 

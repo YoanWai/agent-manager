@@ -119,6 +119,22 @@ func (m *Model) applyCmd(t *testing.T, cmd tea.Cmd) {
 	*m = *updated.(*Model)
 }
 
+// applyCmd drops whatever command a message produces, so a test whose next
+// step is that command steps through this instead.
+func (m *Model) stepCmd(t *testing.T, cmd tea.Cmd) tea.Cmd {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("no command to run")
+	}
+	msg := cmd()
+	if msg == nil {
+		return nil
+	}
+	updated, next := m.Update(msg)
+	*m = *updated.(*Model)
+	return next
+}
+
 // clearRequestOnCleanup drops the server-global detach marker when the test
 // ends: one left behind reaches every later test that reads it.
 func clearRequestOnCleanup(t *testing.T, m *Model) {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -286,7 +287,7 @@ func TestListsAllTools(t *testing.T) {
 		names[tool.Name] = true
 	}
 	for _, want := range []string{
-		"rename", "review",
+		"rename", "review", "review_comment",
 		"list_terminals", "create_terminal", "send_terminal", "read_terminal", "close_terminal",
 	} {
 		if !names[want] {
@@ -632,6 +633,60 @@ func TestReviewModeWritesMailbox(t *testing.T) {
 		if got := strings.TrimSpace(string(content)); got != scope {
 			t.Fatalf("mailbox scope = %q, want %q", got, scope)
 		}
+	}
+}
+
+func TestReviewCommentToolWritesHandledState(t *testing.T) {
+	configDir := t.TempDir()
+	st, err := store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const commentID = "0123456789abcdef"
+	if err := st.SetReviewState("abc123", "/repo", store.ReviewState{Comments: []store.ReviewComment{{
+		ID: commentID, Round: 1, Point: 1, Text: "fix this",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	session := connect(t, configDir, "abc123")
+
+	text, isError := callText(t, session, "review_comment", map[string]any{"comment_id": commentID})
+	if isError || !strings.Contains(text, "marked handled") {
+		t.Fatalf("mark handled = %q, error=%v", text, isError)
+	}
+	st, err = store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := st.ReviewState("abc123", "/repo")
+	if err != nil || len(state.Comments) != 1 || !state.Comments[0].Resolved {
+		t.Fatalf("handled comment = %+v, %v", state.Comments, err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	text, isError = callText(t, session, "review_comment", map[string]any{"comment_id": commentID, "handled": false})
+	if isError || !strings.Contains(text, "reopened") {
+		t.Fatalf("reopen = %q, error=%v", text, isError)
+	}
+	for _, invalidID := range []string{"bad", "fedcba9876543210"} {
+		text, isError = callText(t, session, "review_comment", map[string]any{"comment_id": invalidID})
+		if !isError {
+			t.Fatalf("comment id %q unexpectedly succeeded: %q", invalidID, text)
+		}
+	}
+	st, err = store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	state, err = st.ReviewState("abc123", "/repo")
+	if err != nil || len(state.Comments) != 1 || state.Comments[0].Resolved {
+		t.Fatalf("open comment = %+v, %v", state.Comments, err)
 	}
 }
 

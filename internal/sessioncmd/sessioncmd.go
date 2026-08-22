@@ -14,9 +14,11 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 var sessionIDPattern = regexp.MustCompile(`^[0-9a-f]+$`)
+var reviewCommentIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
 func validSession(sessionID string) error {
 	if sessionID == "" {
@@ -142,6 +144,36 @@ func ReviewScope(configDir, sessionID, scope string) (string, error) {
 		return "", err
 	}
 	return "review scope set to " + scope, nil
+}
+
+func ReviewComment(configDir, sessionID, commentID string, handled bool) (string, error) {
+	if err := validSession(sessionID); err != nil {
+		return "", err
+	}
+	commentID = strings.TrimSpace(commentID)
+	if !reviewCommentIDPattern.MatchString(commentID) {
+		return "", fmt.Errorf("invalid review comment id %q", commentID)
+	}
+	st, err := store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		return "", err
+	}
+	found, err := st.SetReviewCommentHandled(sessionID, commentID, handled)
+	closeErr := st.Close()
+	if err != nil {
+		return "", err
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	if !found {
+		return "", fmt.Errorf("review comment %s was not found for this session", commentID)
+	}
+	message := "review comment " + commentID + " reopened"
+	if handled {
+		message = "review comment " + commentID + " marked handled"
+	}
+	return message, nil
 }
 
 // Both sides are resolved first because git reports a toplevel with symlinks expanded.

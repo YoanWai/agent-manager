@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 // Every launched session runs `agent-manager rename "<name>"` as the first
@@ -128,6 +129,68 @@ func TestReviewRepoRejectsBadInput(t *testing.T) {
 		if err == nil || err.Error() != usage {
 			t.Errorf("runReviewRepo(%v) = %v, want %q", args, err, usage)
 		}
+	}
+}
+
+func TestReviewCommentPrintsAndStoresTheHandledFlag(t *testing.T) {
+	configDir := t.TempDir()
+	st, err := store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const commentID = "0123456789abcdef"
+	if err := st.SetReviewState("abc123", "/repo", store.ReviewState{Comments: []store.ReviewComment{{
+		ID: commentID, Round: 1, Point: 1, Text: "fix this",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &bytes.Buffer{}
+	if err := runReviewComment(out, []string{commentID}, "abc123", configDir); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "review comment "+commentID+" marked handled\n" {
+		t.Fatalf("output = %q", out.String())
+	}
+	st, err = store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := st.ReviewState("abc123", "/repo")
+	if err != nil || len(state.Comments) != 1 || !state.Comments[0].Resolved {
+		t.Fatalf("handled comment = %+v, %v", state.Comments, err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	out.Reset()
+	if err := runReviewComment(out, []string{commentID, "--reopen"}, "abc123", configDir); err != nil {
+		t.Fatal(err)
+	}
+	st, err = store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	state, err = st.ReviewState("abc123", "/repo")
+	if err != nil || len(state.Comments) != 1 || state.Comments[0].Resolved {
+		t.Fatalf("reopened comment = %+v, %v", state.Comments, err)
+	}
+}
+
+func TestReviewCommentRejectsUnknownOrInvalidID(t *testing.T) {
+	configDir := t.TempDir()
+	for _, id := range []string{"../bad", "0123456789abcdef"} {
+		if err := runReviewComment(&bytes.Buffer{}, []string{id}, "abc123", configDir); err == nil {
+			t.Fatalf("comment id %q should fail", id)
+		}
+	}
+	if err := runReviewComment(&bytes.Buffer{}, nil, "abc123", configDir); err == nil || err.Error() != "usage: agent-manager "+usageReviewComment {
+		t.Fatalf("missing id = %v", err)
 	}
 }
 

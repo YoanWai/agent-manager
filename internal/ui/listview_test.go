@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1025,5 +1026,26 @@ func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
 	}
 	if !strings.Contains(first, "\x1b[") {
 		t.Fatalf("focused row 0 lost its caret: %q", first)
+	}
+}
+
+func TestRingLoaderWrapsThePhaseRoundTheRing(t *testing.T) {
+	const width, height = 30, 6
+	for _, phase := range []int{startupRingPoints, startupRingPoints + 3, startupRingPoints * 4} {
+		want := ringLoader(width, height, "starting up", phase%startupRingPoints)
+		if got := ringLoader(width, height, "starting up", phase); !slices.Equal(got, want) {
+			t.Fatalf("phase %d rendered\n%s\nwant the phase %d ring\n%s",
+				phase, strings.Join(got, "\n"), phase%startupRingPoints, strings.Join(want, "\n"))
+		}
+	}
+	lit := ringLoader(width, height, "starting up", 0)
+	if slices.Equal(lit, ringLoader(width, height, "starting up", 1)) {
+		t.Fatal("neighbouring phases render the same ring, so the comparison proves nothing")
+	}
+
+	const label = "reviving"
+	rendered := ansi.Strip(strings.Join(ringLoader(width, height, label, 0), "\n"))
+	if !strings.Contains(rendered, label) {
+		t.Fatalf("the ring dropped the label it was given:\n%s", rendered)
 	}
 }

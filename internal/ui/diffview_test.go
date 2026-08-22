@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,14 +10,19 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func gitTestRepo(t *testing.T) string {
@@ -120,20 +126,41 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	m.diff.cursorLine = target
 	m.openAnnotate()
 	m.diff.annInput.SetValue("use fmt.Println here")
-	m.saveAnnotation()
+	m.applyCmd(t, m.saveAnnotation())
 	if len(m.diff.annotations[m.reviewKey()]) != 1 {
 		t.Fatalf("annotations = %+v", m.diff.annotations)
 	}
 
 	_, cmd := m.sendAnnotations()
 	m.applyCmd(t, cmd)
-	if len(m.diff.annotations[m.reviewKey()]) != 0 {
-		t.Fatal("annotations should clear after send")
+	notes := m.diff.annotations[m.reviewKey()]
+	if len(notes) != 1 || notes[0].round != 1 || notes[0].point != 1 || len(notes[0].id) != 16 {
+		t.Fatalf("sent annotations = %+v, want one comment in round 1", notes)
 	}
-	if !strings.Contains(m.diff.notice, "review comment") {
+	if !strings.Contains(m.diff.notice, "review round 1 (1 comment)") {
 		t.Fatalf("notice = %q (err=%q)", m.diff.notice, m.errBar.text)
 	}
 	sess := m.sessionRows()[0]
+	state, err := m.store.ReviewState(sess.ID, m.diff.repoSel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Round.Number != 1 || state.Round.Fingerprint != m.diff.fingerprint ||
+		len(state.Comments) != 1 || state.Comments[0].Round != 1 || state.Comments[0].Point != 1 || state.Comments[0].ID != notes[0].id {
+		t.Fatalf("persisted review round = %+v", state)
+	}
+	originalFingerprint := m.diff.fingerprint
+	m.diff.fingerprint++
+	if header := ansi.Strip(m.viewDiffHeader(sess.Name)); !strings.Contains(header, "Review round 1 · changed") {
+		t.Fatalf("changed-since-round marker missing: %q", header)
+	}
+	m.diff.fingerprint = originalFingerprint
+	originalScope := m.diff.scope
+	m.diff.scope = originalScope.Next()
+	if header := ansi.Strip(m.viewDiffHeader(sess.Name)); !strings.Contains(header, "Review round 1 · changed") {
+		t.Fatalf("scope change did not mark the round changed: %q", header)
+	}
+	m.diff.scope = originalScope
 	// Join wrapped lines so the delivery check does not depend on where the
 	// pane's width breaks the prompt; the session sizes to the model width.
 	out, err := tmuxCmd("capture-pane", "-p", "-J", "-t", "am_"+sess.ID).CombinedOutput()
@@ -141,8 +168,59 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	pane := string(out)
-	if !strings.Contains(pane, "use fmt.Println here") || !strings.Contains(pane, "main.go:3") {
+	if !strings.Contains(pane, "use fmt.Println here") || !strings.Contains(pane, "main.go:3") ||
+		!strings.Contains(pane, "[comment "+notes[0].id+"]") || !strings.Contains(pane, "review_comment") {
 		t.Fatalf("prompt not delivered:\n%s", pane)
+	}
+
+	m.openAnnotate()
+	m.diff.annInput.SetValue("second pass")
+	m.applyCmd(t, m.saveAnnotation())
+	_, cmd = m.sendAnnotations()
+	m.applyCmd(t, cmd)
+	notes = m.diff.annotations[m.reviewKey()]
+	if len(notes) != 2 || notes[0].round != 1 || notes[1].round != 2 {
+		t.Fatalf("review history = %+v, want rounds 1 and 2", notes)
+	}
+	state, err = m.store.ReviewState(sess.ID, m.diff.repoSel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Round.Number != 2 || len(state.Comments) != 2 {
+		t.Fatalf("second persisted review round = %+v", state)
+	}
+}
+
+func TestSendAnnotationsDoesNotDeliverAnUnpersistedRound(t *testing.T) {
+	m := buildModel(t)
+	openReviewOn(t, m, "persist-first", gitRepoWithTwoChangedFiles(t))
+	m.pressDiffKey(t, 'n')
+	m.openAnnotate()
+	m.diff.annInput.SetValue("do not deliver without durable state")
+	m.applyCmd(t, m.saveAnnotation())
+	if err := m.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, cmd := m.sendAnnotations()
+	m.applyCmd(t, cmd)
+	notes := m.diff.annotations[m.reviewKey()]
+	if len(notes) != 1 || notes[0].round != 0 || m.diff.rounds[m.reviewKey()].Number != 0 {
+		t.Fatalf("failed send did not restore the draft: notes=%+v round=%+v", notes, m.diff.rounds[m.reviewKey()])
+	}
+	if m.diff.reviewSendPending || m.diff.notice != "" || !strings.Contains(m.errBar.text, "saving review round") {
+		t.Fatalf("failed send state: pending=%v notice=%q err=%q", m.diff.reviewSendPending, m.diff.notice, m.errBar.text)
+	}
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("review session disappeared")
+	}
+	out, err := tmuxCmd("capture-pane", "-p", "-J", "-t", "am_"+sess.ID).CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "do not deliver without durable state") {
+		t.Fatalf("unpersisted review reached the pane:\n%s", out)
 	}
 }
 
@@ -168,7 +246,7 @@ func TestDiffCommentVisibleInBothLayouts(t *testing.T) {
 	}
 	m.openAnnotate()
 	m.diff.annInput.SetValue("use fmt.Println here")
-	m.saveAnnotation()
+	m.applyCmd(t, m.saveAnnotation())
 
 	m.diff.sideBySide = false
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
@@ -177,6 +255,36 @@ func TestDiffCommentVisibleInBothLayouts(t *testing.T) {
 	m.diff.sideBySide = true
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
 		t.Fatalf("comment missing in split layout:\n%s", view)
+	}
+}
+
+func TestHandledCommentsStayVisibleWithAMutedColor(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+	m := &Model{diff: diffState{
+		sessID: "abc123", repoSel: "/repo",
+		annotations: map[string][]annotation{
+			"abc123\x00/repo": {
+				{id: "0123456789abcdef", file: "main.go", line: 1, text: "still open", round: 2, point: 1},
+				{id: "fedcba9876543210", file: "main.go", line: 1, text: "already fixed", round: 1, point: 3, handled: true},
+			},
+		},
+	}}
+	fd := &diff.FileDiff{File: git.ChangedFile{Path: "main.go"}, Lines: []diff.Line{{NewNum: 1, Text: "line"}}}
+	rows := m.annotationRows(fd, 0, 80)
+	rendered := strings.Join(rows, "\n")
+	plain := ansi.Strip(rendered)
+	for _, want := range []string{"Review round 2 · point 1 · open still open", "Review round 1 · point 3 · handled already fixed"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("comment history is missing %q:\n%s", want, plain)
+		}
+	}
+	if annotationBg() == handledAnnotationBg() || !strings.Contains(rendered, annotationBg()) || !strings.Contains(rendered, handledAnnotationBg()) {
+		t.Fatalf("open and handled comments should use different washes: %q", rendered)
+	}
+	if handledAnnotationBg() != bgSeq(mix(current.Bg, current.Finished, 0.14)) || !strings.Contains(rendered, fgSeq(current.Finished)) {
+		t.Fatalf("handled comment should use the theme's finished green: %q", rendered)
 	}
 }
 
@@ -905,6 +1013,13 @@ func (m *Model) drainCmds(t *testing.T, cmd tea.Cmd) {
 			}
 			return
 		}
+		// The startup tick reschedules itself, so following its command
+		// would spin here rather than drain what the batch already holds.
+		if _, ok := msg.(startupTickMsg); ok {
+			updated, _ := m.Update(msg)
+			*m = *updated.(*Model)
+			return
+		}
 		updated, next := m.Update(msg)
 		*m = *updated.(*Model)
 		cmd = next
@@ -1155,7 +1270,7 @@ func TestAnnotationsReanchorAfterRefresh(t *testing.T) {
 	m.pressDiffKey(t, 'n') // jump to the changed line (return 10)
 	m.openAnnotate()
 	m.diff.annInput.SetValue("note")
-	m.saveAnnotation()
+	m.applyCmd(t, m.saveAnnotation())
 	notes := m.diff.annotations[m.reviewKey()]
 	if len(notes) != 1 || notes[0].line != 3 {
 		t.Fatalf("annotation = %+v, want line 3", notes)
@@ -1171,6 +1286,137 @@ func TestAnnotationsReanchorAfterRefresh(t *testing.T) {
 	}
 }
 
+func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	dir := gitRepoWithTwoChangedFiles(t)
+	openReviewOn(t, m, "rounds", dir)
+	m.pressDiffKey(t, 'n')
+	m.openAnnotate()
+	m.diff.annInput.SetValue("verify this return value")
+	m.applyCmd(t, m.saveAnnotation())
+	_, cmd := m.sendAnnotations()
+	m.applyCmd(t, cmd)
+
+	shifted := "package a\n\n// pushed down\nfunc A() int { return 10 }\n"
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte(shifted), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.refreshDiff(t)
+	notes := m.diff.annotations[m.reviewKey()]
+	if len(notes) != 1 || notes[0].line != 4 || notes[0].outdated {
+		t.Fatalf("re-anchored round comment = %+v", notes)
+	}
+
+	replaced := "package a\n\n// pushed down\nfunc A() int { return 11 }\n"
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte(replaced), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.refreshDiff(t)
+	notes = m.diff.annotations[m.reviewKey()]
+	if !notes[0].outdated {
+		t.Fatalf("changed comment should be outdated: %+v", notes[0])
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "Review round 1 · point 1 · open · outdated") {
+		t.Fatalf("outdated round comment is not visible:\n%s", view)
+	}
+
+	fd := m.currentFileDiff()
+	for i, line := range fd.Lines {
+		if line.NewNum == notes[0].line && !notes[0].deleted {
+			m.setCursorDiffLine(i)
+			break
+		}
+	}
+	m.applyCmd(t, m.discardOrToggleAnnotation())
+	if !m.diff.annotations[m.reviewKey()][0].handled {
+		t.Fatal("d should mark a sent comment handled")
+	}
+	state, err := m.store.ReviewState(m.diff.sessID, m.diff.repoSel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Comments) != 1 || !state.Comments[0].Resolved || !state.Comments[0].Outdated {
+		t.Fatalf("persisted handled comment = %+v", state.Comments)
+	}
+
+	note := m.diff.annotations[m.reviewKey()][0]
+	m.handleReviewCommentHandled(reviewCommentHandledMsg{
+		sessID: m.diff.sessID, repoRoot: m.diff.repoSel,
+		commentID: note.id, handled: note.handled, previous: false,
+	})
+	if m.diff.annotations[m.reviewKey()][0].handled {
+		t.Fatal("a comment the store no longer holds should drop back to open")
+	}
+	if m.errBar.text == "" {
+		t.Fatal("a failed handled toggle should reach the status line")
+	}
+}
+
+func TestAgentHandledUpdateReloadsWithoutDroppingTheComment(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "handled", gitRepoWithTwoChangedFiles(t))
+	m.pressDiffKey(t, 'n')
+	m.openAnnotate()
+	m.diff.annInput.SetValue("fix this")
+	m.applyCmd(t, m.saveAnnotation())
+	_, cmd := m.sendAnnotations()
+	m.applyCmd(t, cmd)
+	note := m.diff.annotations[m.reviewKey()][0]
+	if found, err := m.store.SetReviewCommentHandled(m.diff.sessID, note.id, true); err != nil || !found {
+		t.Fatalf("agent update = %v, %v", found, err)
+	}
+	m.diff.annotations[m.reviewKey()] = append(m.diff.annotations[m.reviewKey()], annotation{
+		id: "localdraft000001", file: note.file, line: note.line, text: "keep this draft",
+	})
+	m.applyCmd(t, m.reviewStatusesCmd())
+	notes := m.diff.annotations[m.reviewKey()]
+	if len(notes) != 2 || !notes[0].handled || notes[0].round != 1 || notes[0].point != 1 || notes[1].text != "keep this draft" {
+		t.Fatalf("reloaded history = %+v", notes)
+	}
+}
+
+func TestSavedReviewRoundsGainStableIDsAndPointNumbers(t *testing.T) {
+	m := buildModel(t)
+	m.diff.sessID = "abc123"
+	m.diff.repoSel = "/repo"
+	// A synthetic session skips openDiff, which is what lays these out.
+	m.diff.reviewed = map[string]map[string]uint64{}
+	m.diff.annotations = map[string][]annotation{}
+	m.diff.rounds = map[string]store.ReviewRound{}
+	m.diff.stateLoaded = map[string]bool{}
+	if err := m.store.SetReviewState(m.diff.sessID, m.diff.repoSel, store.ReviewState{
+		Comments: []store.ReviewComment{
+			{File: "a.go", Line: 2, Text: "first", Round: 3},
+			{File: "b.go", Line: 4, Text: "second", Round: 3},
+		},
+		Round: store.ReviewRound{Number: 3},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	state, err := readReviewState(m.store, m.diff.sessID, m.diff.repoSel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.restoreReviewState(state) {
+		t.Fatal("saved review state was not loaded")
+	}
+	notes := m.diff.annotations[m.reviewKey()]
+	if len(notes) != 2 || len(notes[0].id) != 16 || len(notes[1].id) != 16 ||
+		notes[0].id == notes[1].id || notes[0].point != 1 || notes[1].point != 2 {
+		t.Fatalf("migrated comments = %+v", notes)
+	}
+	state, err = m.store.ReviewState(m.diff.sessID, m.diff.repoSel)
+	if err != nil || state.Comments[0].ID == "" || state.Comments[1].Point != 2 {
+		t.Fatalf("persisted migration = %+v, %v", state.Comments, err)
+	}
+}
+
 // A scope cycle loads a different file set; it must not re-anchor a comment's
 // stored line against content it was never made against.
 func TestScopeCycleDoesNotReanchor(t *testing.T) {
@@ -1182,7 +1428,7 @@ func TestScopeCycleDoesNotReanchor(t *testing.T) {
 	m.pressDiffKey(t, 'n')
 	m.openAnnotate()
 	m.diff.annInput.SetValue("note")
-	m.saveAnnotation()
+	m.applyCmd(t, m.saveAnnotation())
 	before := m.diff.annotations[m.reviewKey()][0].line
 
 	m.drainCmds(t, m.cycleDiffScope())
@@ -1597,8 +1843,11 @@ func TestReviewCodeOnlyHidesUntrackedAndLockFiles(t *testing.T) {
 	if untracked == nil {
 		t.Fatalf("z.png missing from the diff set: %+v", m.diff.set.Files)
 	}
-	if untracked.Loaded() || untracked.Stat.Binary {
-		t.Fatal("an untracked file the cursor never reached should carry no binary verdict")
+	if untracked.Loaded() {
+		t.Fatal("an untracked file the cursor never reached should stay unloaded")
+	}
+	if !untracked.StatKnown() || !untracked.Stat.Binary {
+		t.Fatal("an untracked image should already count as binary in the file list")
 	}
 
 	m.pressFilterKey(t)
@@ -1756,6 +2005,16 @@ func TestReviewCodeOnlyWithNoCodeFiles(t *testing.T) {
 	m.pressDiffKey(t, 'J')
 	if m.diff.fileIdx != 0 {
 		t.Fatalf("tab should not walk the selection through hidden files, fileIdx = %d", m.diff.fileIdx)
+	}
+
+	path := m.diff.set.Files[m.diff.fileIdx].File.Path
+	m.pressDiffKey(t, ' ')
+	if m.fileReviewed(path) {
+		t.Fatal("space should not mark a file the filter is hiding")
+	}
+	m.pressDiffKey(t, 'c')
+	if m.diff.annotating {
+		t.Fatal("c should not comment a file the filter is hiding")
 	}
 }
 
@@ -2500,6 +2759,44 @@ func TestReviewedMarkClearsOnContentChange(t *testing.T) {
 	}
 }
 
+func TestReviewProgressAndDraftsRestoreFromStore(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "restore", gitRepoWithTwoChangedFiles(t))
+	m.pressDiffKey(t, 'n')
+	m.openAnnotate()
+	m.diff.annInput.SetValue("keep this feedback")
+	m.applyCmd(t, m.saveAnnotation())
+	path := m.currentFileDiff().File.Path
+	m.drainCmds(t, m.toggleReviewed())
+	wantHash := m.diff.reviewed[m.reviewKey()][path]
+	if wantHash == 0 {
+		t.Fatal("reviewed hash was not recorded")
+	}
+
+	key := m.reviewKey()
+	delete(m.diff.reviewed, key)
+	delete(m.diff.annotations, key)
+	delete(m.diff.rounds, key)
+	delete(m.diff.stateLoaded, key)
+	state, err := readReviewState(m.store, m.diff.sessID, m.diff.repoSel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.restoreReviewState(state) {
+		t.Fatal("review state was not restored")
+	}
+	if got := m.diff.reviewed[key][path]; got != wantHash {
+		t.Fatalf("restored reviewed hash = %d, want %d", got, wantHash)
+	}
+	notes := m.diff.annotations[key]
+	if len(notes) != 1 || notes[0].text != "keep this feedback" || notes[0].round != 0 {
+		t.Fatalf("restored draft = %+v", notes)
+	}
+}
+
 // Sending review comments writes into the pane the same way the quick
 // prompt does, so it refuses a shell for the same reason: the prompt is an
 // English sentence, and a shell would run it.
@@ -2524,5 +2821,428 @@ func TestSendAnnotationsRefusesAShell(t *testing.T) {
 	}
 	if len(m.diff.annotations[m.reviewKey()]) != 1 {
 		t.Fatal("a refused send should keep the comments")
+	}
+}
+
+func TestDiffSendConfirmIgnoresMotionKeys(t *testing.T) {
+	m := &Model{
+		mode: modeDiff,
+		diff: diffState{
+			active:      true,
+			sendConfirm: true,
+			annotations: map[string][]annotation{
+				"\x00": {{file: "main.go", line: 1, text: "keep me"}},
+			},
+		},
+	}
+	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if !m.diff.sendConfirm {
+		t.Fatal("j should leave the send prompt up")
+	}
+	if len(m.diff.annotations[m.reviewKey()]) != 1 {
+		t.Fatal("j must not send or drop comments")
+	}
+	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.diff.sendConfirm {
+		t.Fatal("esc should cancel the send prompt")
+	}
+	if len(m.diff.annotations[m.reviewKey()]) != 1 {
+		t.Fatal("cancel should keep the comments")
+	}
+}
+
+func TestDiffPageKeysMoveAViewport(t *testing.T) {
+	m := buildModel(t)
+	dir := gitRepoWithLongFile(t, 80)
+	openReviewOn(t, m, "pager", dir)
+	before := m.diff.cursorLine
+	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyPgDown})
+	if m.diff.cursorLine <= before {
+		t.Fatalf("pgdown left cursor at %d", m.diff.cursorLine)
+	}
+	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyPgUp})
+	if m.diff.cursorLine != before {
+		t.Fatalf("pgup should return to %d, got %d", before, m.diff.cursorLine)
+	}
+}
+
+func TestDiffHelpReturnsToReview(t *testing.T) {
+	m := buildModel(t)
+	dir := gitTestRepo(t)
+	openReviewOn(t, m, "helper", dir)
+	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	if m.mode != modeHelp {
+		t.Fatalf("? should open the key map, mode = %v", m.mode)
+	}
+	if !m.diff.active {
+		t.Fatal("opening help must not close the review")
+	}
+	m.handleHelpKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != modeDiff || !m.diff.active {
+		t.Fatalf("esc should return to review, mode = %v active = %v", m.mode, m.diff.active)
+	}
+}
+
+func TestDiffHelpRestartsLoaderOnReturn(t *testing.T) {
+	m := &Model{mode: modeDiff, diff: diffState{active: true, loading: true}}
+	if cmd := m.startStartupTick(); cmd == nil {
+		t.Fatal("loading review should start the loader")
+	}
+	m.openHelp()
+	m.Update(startupTickMsg{})
+	if m.startupAnimating {
+		t.Fatal("loader should stop while help covers the review")
+	}
+	_, cmd := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil || !m.startupAnimating {
+		t.Fatal("returning to a loading review should restart the loader")
+	}
+}
+
+func TestDiffHeaderKeepsCountsWhenNarrow(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 52, 24
+	openReviewOn(t, m, "very-long-session-name", gitTestRepo(t))
+	got := ansi.Strip(m.viewDiffHeader("very-long-session-name"))
+	if !strings.Contains(got, "+") || !strings.Contains(got, "−") {
+		t.Fatalf("narrow header dropped counts:\n%s", got)
+	}
+}
+
+func TestDiffFileListTruncatesAtSlash(t *testing.T) {
+	m := buildModel(t)
+	openReviewOn(t, m, "paths", gitTestRepo(t))
+	m.diff.set.Files[0].File.Path = "internal/api/handlers/sessions.go"
+	list := ansi.Strip(m.viewDiffFileList(28, 8))
+	if strings.Contains(list, "ternal") {
+		t.Fatalf("file list cut mid-segment:\n%s", list)
+	}
+	if !strings.Contains(list, "sessions.go") {
+		t.Fatalf("file list lost the filename:\n%s", list)
+	}
+}
+
+func TestDiffCommentBoxGrowsWithText(t *testing.T) {
+	m := &Model{width: 100, height: 30, mode: modeDiff}
+	m.diff.annInput = textarea.New()
+	m.diff.annotating = true
+	if m.annotationInputHeight(40) != 1 {
+		t.Fatal("empty comment should stay one row")
+	}
+	m.diff.annInput.SetValue(strings.Repeat("word ", 40))
+	got := m.annotationInputHeight(40)
+	if got <= 1 {
+		t.Fatalf("long comment stayed %d rows", got)
+	}
+	if got > annotationInputMaxRows {
+		t.Fatalf("comment box grew past the cap: %d", got)
+	}
+}
+
+func TestDiffProbeSetsLoadingSoItDoesNotStack(t *testing.T) {
+	m := buildModel(t)
+	openReviewOn(t, m, "probe-load", gitTestRepo(t))
+	gen := m.diff.gen
+	fp := m.diff.fingerprint
+	if fp == 0 {
+		t.Fatal("loaded review should have a fingerprint")
+	}
+	cmd := m.handleDiffProbe(diffProbeMsg{
+		sessID: m.diff.sessID, scope: m.diff.scope, repoRoot: m.diff.repoSel, fp: fp + 1,
+	})
+	if cmd == nil {
+		t.Fatal("a changed fingerprint should start a reload")
+	}
+	if !m.diff.loading {
+		t.Fatal("reload must set loading so the next probe cannot cancel it")
+	}
+	if m.diff.gen != gen+1 {
+		t.Fatalf("gen = %d, want %d", m.diff.gen, gen+1)
+	}
+	if stacked := m.handleDiffProbe(diffProbeMsg{
+		sessID: m.diff.sessID, scope: m.diff.scope, repoRoot: m.diff.repoSel, fp: fp + 2,
+	}); stacked != nil {
+		t.Fatal("a probe while loading must not start another reload")
+	}
+	if m.diff.gen != gen+1 {
+		t.Fatalf("stacked probe bumped gen to %d", m.diff.gen)
+	}
+	if m.diffRefreshCmd() != nil {
+		t.Fatal("refresh must wait until the in-flight load lands")
+	}
+}
+
+func TestCycleDiffScopeReportsAFailedBaseLookup(t *testing.T) {
+	m := buildModel(t)
+	openReviewOn(t, m, "keepset", gitTestRepo(t))
+	if len(m.diff.set.Files) == 0 {
+		t.Fatal("expected files")
+	}
+	if err := m.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cmd := m.cycleDiffScope()
+	if cmd == nil {
+		t.Fatal("cycling the scope should start a load")
+	}
+	m.drainCmds(t, cmd)
+	if m.diff.loading {
+		t.Fatal("the failed load should have landed")
+	}
+	if m.diff.errText == "" {
+		t.Fatal("the lookup error should reach the review panel")
+	}
+}
+
+func TestReviewUntrackedFileShowsCountWithoutOpening(t *testing.T) {
+	m := buildModel(t)
+	openReviewOn(t, m, "counts", gitTestRepo(t))
+	var extra *diff.FileDiff
+	for i := range m.diff.set.Files {
+		if m.diff.set.Files[i].File.Path == "extra.txt" {
+			extra = &m.diff.set.Files[i]
+		}
+	}
+	if extra == nil {
+		t.Fatal("extra.txt missing")
+	}
+	if extra.Loaded() {
+		t.Fatal("unselected untracked file should stay unloaded")
+	}
+	if !extra.StatKnown() || extra.Stat.Adds < 1 {
+		t.Fatalf("untracked extra.txt should already have a +N, known=%v stat=%+v", extra.StatKnown(), extra.Stat)
+	}
+	list := ansi.Strip(m.viewDiffFileList(60, 20))
+	if strings.Contains(list, "?") {
+		t.Fatalf("file list should not use ? for a counted untracked file:\n%s", list)
+	}
+	if !strings.Contains(list, "+") {
+		t.Fatalf("file list should show adds for extra.txt:\n%s", list)
+	}
+}
+
+func TestReviewUntrackedImageShowsBinaryWithoutOpening(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	dir := gitTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "shot.png"), []byte("\x89PNG\r\n\x1a\n\x00\x00binary"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	openReviewOn(t, m, "shots", dir)
+	var shot *diff.FileDiff
+	for i := range m.diff.set.Files {
+		if m.diff.set.Files[i].File.Path == "shot.png" {
+			shot = &m.diff.set.Files[i]
+		}
+	}
+	if shot == nil {
+		t.Fatal("shot.png missing")
+	}
+	if shot.Loaded() {
+		t.Fatal("unselected image should stay unloaded")
+	}
+	if !shot.StatKnown() || !shot.Stat.Binary {
+		t.Fatalf("untracked image should count as binary, known=%v stat=%+v", shot.StatKnown(), shot.Stat)
+	}
+	list := ansi.Strip(m.viewDiffFileList(60, 20))
+	if !strings.Contains(list, "binary") {
+		t.Fatalf("file list should say binary, not ?:\n%s", list)
+	}
+}
+
+func TestReviewShowsLoaderWhileDiffLoads(t *testing.T) {
+	m := &Model{width: 100, height: 30, mode: modeDiff, diff: diffState{active: true, loading: true, sessID: "s"}}
+	code := ansi.Strip(m.viewDiffCode(80, 20))
+	if !strings.Contains(code, "loading diff") {
+		t.Fatalf("code pane should carry the diff loader, got %q", code)
+	}
+	if strings.Count(code, "●") != 1 || strings.Count(code, "•") != 1 {
+		t.Fatalf("diff loader should show the ring, got %q", code)
+	}
+	list := ansi.Strip(m.viewDiffFileList(28, 10))
+	if !strings.Contains(list, "loading diff") {
+		t.Fatalf("file list should carry the compact loader, got %q", list)
+	}
+	if cmd := m.startStartupTick(); cmd == nil {
+		t.Fatal("loading review should start the loader tick")
+	}
+	first := code
+	m.Update(startupTickMsg{})
+	if next := ansi.Strip(m.viewDiffCode(80, 20)); next == first {
+		t.Fatal("diff loader did not move on the tick")
+	}
+}
+
+func TestReviewShowsLoaderWhileFileLoads(t *testing.T) {
+	m := &Model{
+		width: 100, height: 30, mode: modeDiff,
+		diff: diffState{
+			active: true,
+			sessID: "s",
+			set:    diff.Set{Files: []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}},
+		},
+	}
+	code := ansi.Strip(m.viewDiffCode(80, 20))
+	if !strings.Contains(code, "loading file") {
+		t.Fatalf("code pane should carry the file loader, got %q", code)
+	}
+	if strings.Count(code, "●") != 1 {
+		t.Fatalf("file loader should show the ring, got %q", code)
+	}
+	list := ansi.Strip(m.viewDiffFileList(40, 8))
+	if strings.Contains(list, "loading") {
+		t.Fatalf("file list should keep the files while one loads, got %q", list)
+	}
+}
+
+func TestFailedDiffLoadKeepsRepoPicker(t *testing.T) {
+	m := buildModel(t)
+	openReviewOn(t, m, "keeprepo", gitTestRepo(t))
+	roots := append([]string{}, m.diff.repoRoots...)
+	sel := m.diff.repoSel
+	if len(roots) == 0 {
+		t.Fatal("expected repo roots")
+	}
+	if cmd := m.handleDiffLoaded(diffLoadedMsg{
+		sessID:    m.diff.sessID,
+		scope:     m.diff.scope,
+		gen:       m.diff.gen,
+		err:       errors.New("git died"),
+		repoRoots: roots,
+		repoRoot:  sel,
+	}); cmd != nil {
+		t.Fatal("errored load should not follow up")
+	}
+	if m.diff.errText == "" {
+		t.Fatal("error text missing")
+	}
+	if len(m.diff.repoRoots) == 0 {
+		t.Fatal("repo list should survive a failed load so r still works")
+	}
+	m.openRepoPick()
+	if m.mode != modeRepoPick {
+		t.Fatalf("r should still open, mode = %v", m.mode)
+	}
+}
+
+// A scope that does not list a file says nothing about whether it changed,
+// so its mark waits for the scope that shows it again.
+func TestAScopeMissingAFileKeepsItsReviewedMark(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "scopemarks", gitTestRepo(t))
+	fd := m.currentFileDiff()
+	if fd == nil {
+		t.Fatal("review has no selected file")
+	}
+	path := fd.File.Path
+	m.drainCmds(t, m.toggleReviewed())
+	if !m.fileReviewed(path) {
+		t.Fatalf("%s was not marked reviewed", path)
+	}
+
+	m.diff.set.Files = nil
+	if clearStaleReviewedMarks(m) {
+		t.Fatal("a file the scope does not list counted as a stale mark")
+	}
+	if !m.fileReviewed(path) {
+		t.Fatalf("the mark for %s did not survive a scope without it", path)
+	}
+}
+
+func TestNarrowReviewKeepsBothPanesMeasurable(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "narrow", gitTestRepo(t))
+	for _, width := range []int{29, 24, 10, 1} {
+		m.width = width
+		fileWidth, codeWidth := m.diffPaneWidths()
+		if fileWidth < 0 || codeWidth < 0 {
+			t.Fatalf("width %d gave panes %d and %d", width, fileWidth, codeWidth)
+		}
+		if fileWidth+codeWidth > width {
+			t.Fatalf("width %d gave panes wider than the screen: %d and %d", width, fileWidth, codeWidth)
+		}
+		if lines := splitLines(m.View()); len(lines) == 0 {
+			t.Fatalf("width %d rendered nothing", width)
+		}
+	}
+}
+
+func TestAnotherScopeDoesNotOutdateARoundsComments(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "scopeoutdated", gitRepoWithTwoChangedFiles(t))
+	key := m.reviewKey()
+	m.diff.annotations[key] = []annotation{{
+		id: "0123456789abcdef", file: "gone-from-this-scope.go", line: 1,
+		text: "look at this", round: 1, point: 1,
+	}}
+	m.diff.rounds[key] = store.ReviewRound{Number: 1, Scope: m.diff.scope.String()}
+
+	if !m.markMissingRoundCommentsOutdated() {
+		t.Fatal("a file missing from the scope the round was sent in should read outdated")
+	}
+	m.diff.annotations[key][0].outdated = false
+
+	m.diff.rounds[key] = store.ReviewRound{Number: 1, Scope: m.diff.scope.Next().String()}
+	if m.markMissingRoundCommentsOutdated() {
+		t.Fatal("another scope's file list marked the round outdated")
+	}
+	if m.diff.annotations[key][0].outdated {
+		t.Fatal("the comment was labelled outdated by a scope it was not sent in")
+	}
+}
+
+func TestMigratedPointsNeverRepeatWithinARound(t *testing.T) {
+	m := buildModel(t)
+	const repo = "/repo"
+	if err := m.store.SetReviewState("pts123", repo, store.ReviewState{
+		Comments: []store.ReviewComment{
+			{ID: "aaaaaaaaaaaaaaa1", File: "a.go", Line: 1, Text: "no point", Round: 1},
+			{ID: "aaaaaaaaaaaaaaa2", File: "a.go", Line: 2, Text: "point one", Round: 1, Point: 1},
+			{ID: "aaaaaaaaaaaaaaa3", File: "a.go", Line: 3, Text: "also none", Round: 1},
+		},
+		Round: store.ReviewRound{Number: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := readReviewState(m.store, "pts123", repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[int]string{}
+	for _, note := range state.Comments {
+		if note.Point == 0 {
+			t.Fatalf("comment %s kept point 0", note.ID)
+		}
+		if other, taken := seen[note.Point]; taken {
+			t.Fatalf("comments %s and %s share point %d", other, note.ID, note.Point)
+		}
+		seen[note.Point] = note.ID
+	}
+}
+
+func TestAnnotationsDropControlBytes(t *testing.T) {
+	const escape = "\x1b[31mred\x07\x1b]0;title\x07"
+	if got := withoutControlBytes(escape); strings.ContainsFunc(got, func(r rune) bool {
+		return r != '\n' && unicode.IsControl(r)
+	}) {
+		t.Fatalf("control bytes survived: %q", got)
+	}
+	if got := withoutControlBytes("keep\tthe\nshape"); got != "keep the\nshape" {
+		t.Fatalf("tab and newline handling = %q", got)
+	}
+	if got := excerptOf("\x1b[2Jfunc main() {"); got != "[2Jfunc main() {" {
+		t.Fatalf("excerpt = %q, want the escape introducer gone", got)
 	}
 }

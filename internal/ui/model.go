@@ -500,12 +500,27 @@ func (m *Model) previewTick() tea.Cmd {
 	return tea.Tick(m.previewInterval(), func(time.Time) tea.Msg { return previewTickMsg{} })
 }
 
+func (m *Model) needsLoaderTick() bool {
+	return m.hasStartingRow() || m.reviewNeedsLoader()
+}
+
+func (m *Model) reviewNeedsLoader() bool {
+	if m.mode != modeDiff || !m.diff.active {
+		return false
+	}
+	if m.diff.loading && len(m.diff.set.Files) == 0 {
+		return true
+	}
+	fd := m.currentFileDiff()
+	return fd != nil && !fd.Loaded() && !m.diffFileHidden(fd)
+}
+
 func (m *Model) startStartupTick() tea.Cmd {
-	if m.startupAnimating || !m.hasStartingRow() {
+	if m.startupAnimating || !m.needsLoaderTick() {
 		return nil
 	}
 	m.startupAnimating = true
-	return m.startupTick()
+	return func() tea.Msg { return startupTickMsg{} }
 }
 
 func (m *Model) startupTick() tea.Cmd {
@@ -1045,7 +1060,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case startupTickMsg:
-		if !m.hasStartingRow() {
+		if !m.needsLoaderTick() {
 			m.startupAnimating = false
 			return m, nil
 		}
@@ -1105,12 +1120,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resizeSessions()
 		}
 		m.rebuildRows()
+		reviewStatuses := m.reviewStatusesCmd()
 		// A pass that ran with a stale selection (a session created this
 		// tick) carries the wrong preview; resync and fetch it directly.
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
 			m.previewGen++
-			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd(), m.startStartupTick())
+			return m, tea.Batch(focusExit, m.previewCmd(sess, m.previewGen), m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
 		}
 		m.proc = msg.proc
 		m.procFor = msg.procFor
@@ -1121,7 +1137,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.watchSelection()
 		}
 		m.watchedGen = m.previewGen
-		return m, tea.Batch(focusExit, m.diffRefreshCmd(), m.startStartupTick())
+		return m, tea.Batch(focusExit, m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
 
 	case updateMsg:
 		if msg.manual {
@@ -1297,6 +1313,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case diffProbeMsg:
 		return m, m.handleDiffProbe(msg)
 
+	case reviewStatusesLoadedMsg:
+		m.handleReviewStatusesLoaded(msg)
+		return m, nil
+
+	case reviewStateSavedMsg:
+		m.handleReviewStateSaved(msg)
+		return m, nil
+
+	case reviewCommentHandledMsg:
+		m.handleReviewCommentHandled(msg)
+		return m, nil
+
+	case reviewSendFinishedMsg:
+		m.handleReviewSendFinished(msg)
+		return m, nil
+
 	case errMsg:
 		m.errBar.text = msg.err.Error()
 		return m, nil
@@ -1380,6 +1412,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.requestRefresh()
 		return m, nil
 
+	case diffFileCheckedMsg:
+		return m.handleDiffFileChecked(msg)
+
 	case editorDoneMsg:
 		var resume tea.Cmd
 		if msg.tookScreen {
@@ -1399,7 +1434,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, resume
 		}
 		if msg.name != "" {
-			m.reportDone("opened " + msg.dir + " in " + msg.name)
+			m.reportDone("opened " + msg.path + " in " + msg.name)
 		}
 		if id := m.editorReturnID; id != "" {
 			m.editorReturnID = ""
