@@ -802,3 +802,65 @@ func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
 		t.Fatalf("left on pi's blank composer row did not unfocus, mode = %v", m.mode)
 	}
 }
+
+// opencode's composer is a block of gutter rows; the caret sits on the
+// draft's own text row and tracks every keystroke, parking at the
+// text-start column of a blank gutter row only when the composer is empty
+// (shapes and caret positions taken from a live opencode 1.18.21 pane).
+// The gutter-bar prefix reads that as the prompt head; a multi-line
+// draft's blank continuation row is rejected by the drafted row above it.
+func TestCaretOnOpencodesGutterComposer(t *testing.T) {
+	engine, err := status.NewEngine(config.Config{Tools: map[string]config.Tool{
+		"opencode": {
+			ActivityCutoff: `(?m)^\s*╹`,
+			InputPrefix:    `(?m)^\s*┃`,
+		},
+	}})
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	build := func(x int, y int, rows ...string) *Model {
+		m := &Model{engine: engine, mode: modeFocus}
+		m.preview = strings.Join(rows, "\n") + "\n"
+		m.pane.forID = "s1"
+		m.pane.cursor = paneCursor{x: x, y: y, ok: true}
+		return m
+	}
+
+	footer := "  ┃  Build · Ox Alpha Free (Unlimited) OpenCode Zen · max"
+	bar := "  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀"
+
+	// Empty composer at rest: caret at the text-start column of the middle
+	// blank gutter row, blank gutter rows around it.
+	m := build(5, 2, "", "  ┃", "  ┃", "  ┃", footer, bar)
+	if !m.caretAtInputStart("s1", "opencode") {
+		t.Fatal("the empty composer's caret row was not recognised")
+	}
+
+	// A draft: the caret tracks the text row, so mid-draft Left stays with
+	// the agent, and the head of the draft is a no-op for opencode.
+	m = build(7, 2, "", "  ┃", "  ┃  xy", "  ┃", footer, bar)
+	if m.caretAtInputStart("s1", "opencode") {
+		t.Fatal("a caret inside a draft was read as input start")
+	}
+	m = build(5, 2, "", "  ┃", "  ┃  xy", "  ┃", footer, bar)
+	if !m.caretAtInputStart("s1", "opencode") {
+		t.Fatal("the head of a draft was not recognised (Left is a no-op there)")
+	}
+
+	// A multi-line draft's blank second row: the drafted row above carries
+	// the bar with text past it, and Left belongs to the agent (it moves
+	// the caret to the end of the first line on a live pane).
+	m = build(5, 2, "", "  ┃  first line", "  ┃", "  ┃", footer, bar)
+	if m.caretAtInputStart("s1", "opencode") {
+		t.Fatal("a multi-line draft's continuation row was read as input start")
+	}
+
+	// The fresh home screen: a wide-margin composer whose placeholder text
+	// sits past the caret, which rests at the text-start column.
+	margin := strings.Repeat(" ", 63)
+	m = build(66, 1, margin+"┃", margin+"┃  Ask anything... \"Fix broken tests\"", margin+"┃", footer)
+	if !m.caretAtInputStart("s1", "opencode") {
+		t.Fatal("the home screen's empty composer was not recognised")
+	}
+}

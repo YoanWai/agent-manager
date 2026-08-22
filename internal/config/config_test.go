@@ -77,8 +77,8 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["pi"].InputPrefix; got != "^" {
 		t.Fatalf("pi input_prefix = %q want ^ (blank composer row)", got)
 	}
-	if got := cfg.Tools["opencode"].InputPrefix; got != "" {
-		t.Fatalf("opencode input_prefix = %q want empty (its caret parks off the composer)", got)
+	if got := cfg.Tools["opencode"].InputPrefix; got != `(?m)^\s*┃` {
+		t.Fatalf("opencode input_prefix = %q want the gutter bar", got)
 	}
 	if cfg.Tools["claude"].Command != "claude" {
 		t.Fatalf("claude command = %q", cfg.Tools["claude"].Command)
@@ -316,8 +316,9 @@ func TestBackfillToolDefaults(t *testing.T) {
 }
 
 // The arrow-unfocus fix needs per-tool input-line knowledge: pi declares
-// its blank composer row. Older configs written before the field existed
-// gain it on load, and a value the user wrote is kept.
+// its blank composer row and opencode its gutter bar. Older configs written
+// before the field existed gain both on load, and a value the user wrote is
+// kept.
 func TestBackfillArrowUnfocusFields(t *testing.T) {
 	user := `^\s*┃\s+mine`
 	cfg := Config{Tools: map[string]Tool{
@@ -332,6 +333,13 @@ func TestBackfillArrowUnfocusFields(t *testing.T) {
 	}
 	if got := cfg.Tools["opencode"].InputPrefix; got != user {
 		t.Fatalf("opencode input_prefix = %q want user value kept", got)
+	}
+	plain := Config{Tools: map[string]Tool{"opencode": {Command: "opencode"}}}
+	if err := plain.backfillToolDefaults(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if got := plain.Tools["opencode"].InputPrefix; got != `(?m)^\s*┃` {
+		t.Fatalf("opencode input_prefix = %q want the gutter bar (backfilled)", got)
 	}
 }
 
