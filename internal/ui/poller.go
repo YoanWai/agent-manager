@@ -237,8 +237,8 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	var livePIDs []int
 	for _, sess := range sessions {
-		if !sess.Archived && panes[sess.ID] > 0 {
-			livePIDs = append(livePIDs, panes[sess.ID])
+		if !sess.Archived && panes[sess.ID].PID > 0 {
+			livePIDs = append(livePIDs, panes[sess.ID].PID)
 		}
 	}
 	trees := sysstat.Trees(livePIDs)
@@ -271,7 +271,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			return errMsg{err}
 		}
 		newStatus := status.Dead
-		if pid := panes[sess.ID]; pid > 0 {
+		if pid := panes[sess.ID].PID; pid > 0 {
 			stat := trees[pid]
 			if stat.OK {
 				nextTreeCPU[pid] = stat.CPUSeconds
@@ -363,7 +363,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	if preview == "" && selectedID != "" {
 		for _, sess := range sessions {
-			if sess.ID == selectedID && (sess.Archived || panes[sess.ID] == 0) {
+			if sess.ID == selectedID && (sess.Archived || panes[sess.ID].PID == 0) {
 				snapshot, err := storedPreview(p.store, p.tmux, sess.ID)
 				if err != nil {
 					return errMsg{err}
@@ -424,6 +424,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		preview:        preview,
 		agents:         agents,
 		queuedMessages: queued,
+		panes:          panes,
 	}
 	if sampleStats {
 		msg.snap = sysstat.Sample("/")
@@ -434,8 +435,8 @@ func (p *poller) refreshOnce() tea.Msg {
 
 // idMinting reports whether a live, not-yet-captured session belongs to a
 // tool that mints its own conversation id.
-func (p *poller) idMinting(sess store.Session, panes map[string]int) bool {
-	return !sess.Archived && panes[sess.ID] != 0 && sess.AgentSessionID == "" &&
+func (p *poller) idMinting(sess store.Session, panes map[string]tmux.Pane) bool {
+	return !sess.Archived && panes[sess.ID].PID != 0 && sess.AgentSessionID == "" &&
 		p.sessionStores[sess.Tool] != ""
 }
 
@@ -445,7 +446,7 @@ func (p *poller) idMinting(sess store.Session, panes map[string]int) bool {
 // including a freshly submitted session's first appearance. One pass runs at
 // a time, on a snapshot, and a pass that captures anything pokes a refresh so
 // the UI and store pick up the new ids.
-func (p *poller) startCaptureIfIdle(sessions []store.Session, panes map[string]int) {
+func (p *poller) startCaptureIfIdle(sessions []store.Session, panes map[string]tmux.Pane) {
 	hasWork := false
 	for _, sess := range sessions {
 		if p.idMinting(sess, panes) {
@@ -478,7 +479,7 @@ func (p *poller) startCaptureIfIdle(sessions []store.Session, panes map[string]i
 // started in the same directory then skips that one via claimed and captures
 // its own. Launch times carry nanosecond precision, so sessions launched a
 // moment apart in the same directory still order deterministically.
-func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[string]int) (int, error) {
+func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[string]tmux.Pane) (int, error) {
 	claimed := make(map[string]bool, len(sessions))
 	for _, sess := range sessions {
 		if sess.AgentSessionID != "" {

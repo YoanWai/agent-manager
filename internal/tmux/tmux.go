@@ -122,8 +122,23 @@ func sessionName(id string) string {
 	return prefix + id
 }
 
-func SessionName(id string) string {
-	return sessionName(id)
+// windowTarget addresses the window the agent's pane lives in, the
+// session's first, which is not the session's current window once anyone
+// opens a second one inside it.
+func windowTarget(id string) string {
+	return sessionName(id) + ":^"
+}
+
+// PaneTarget addresses the pane the agent itself runs in. A bare session
+// name does not: tmux resolves that to whichever pane is active, and an
+// agent is free to split the window and hand focus to the new pane, as
+// Claude Code's agent teams do when they run a teammate beside their
+// leader. Reading or typing through a session-wide target then lands on
+// the teammate. ":^" pins the session's first window for the same reason,
+// and EnsureBindings pins pane-base-index so ".0" is the agent's pane on
+// any user's tmux config.
+func PaneTarget(id string) string {
+	return windowTarget(id) + ".0"
 }
 
 // tmux requires -L <socket> before the command word.
@@ -341,12 +356,19 @@ func attachStatusRight(primary, secondary string) string {
 	return " agent-manager · Ctrl+r = review · F3 = editor · " + strings.Join(exits, " / ") + " = back "
 }
 
+// EnsureBindings installs the server-wide setup every managed session
+// relies on: the in-session key bindings, and the pane numbering
+// PaneTarget addresses. A tmux config that starts panes at 1 is the
+// dangerous case for the numbering, because tmux answers a target whose
+// index does not exist with the active pane rather than an error, so
+// every capture and keystroke would silently follow the focused pane.
 func (d *Driver) EnsureBindings() error {
 	inSession := "#{m:" + prefix + "*,#{session_name}}"
 	request := func(name string) string {
 		return "set-option -g " + requestOption + " " + name + " ; detach-client"
 	}
-	binds := [][]string{
+	commands := [][]string{
+		{"set-window-option", "-g", "pane-base-index", "0"},
 		{"bind-key", "-n", "C-q", "if-shell", "-F", inSession, "detach-client", "send-keys C-q"},
 		{"bind-key", "-n", `C-\`, "if-shell", "-F", inSession, "detach-client", `send-keys C-\\`},
 		{"bind-key", "-n", "C-r", "if-shell", "-F", inSession, request(RequestReview), "send-keys C-r"},
@@ -358,7 +380,7 @@ func (d *Driver) EnsureBindings() error {
 		// Restore the standard fallback when the prefix shadows a direct binding.
 		{"bind-key", "-T", "prefix", "d", "detach-client"},
 	}
-	_, err := d.run(commandList(binds...)...)
+	_, err := d.run(commandList(commands...)...)
 	return err
 }
 
@@ -372,13 +394,13 @@ func (d *Driver) RefreshChrome(id string) error {
 // SendText delivers text into the session's pane and presses Enter, so the
 // agent inside receives it as a user message.
 func (d *Driver) SendText(id, text string) error {
-	return d.pasteAndEnter(sessionName(id), text)
+	return d.pasteAndEnter(PaneTarget(id), text)
 }
 
 // SendKeys delivers exact tmux key names to a session. Keeping each key as
 // its own argv entry avoids routing agent-supplied input through a shell.
 func (d *Driver) SendKeys(id string, keys ...string) error {
-	args := []string{"send-keys", "-t", sessionName(id), "--"}
+	args := []string{"send-keys", "-t", PaneTarget(id), "--"}
 	_, err := d.run(append(args, keys...)...)
 	return err
 }
@@ -388,7 +410,7 @@ func (d *Driver) SendKeys(id string, keys ...string) error {
 // keystrokes would turn every newline into an Enter press and submit the
 // agent's prompt mid-paste.
 func (d *Driver) Paste(id, text string) error {
-	return d.paste(sessionName(id), text)
+	return d.paste(PaneTarget(id), text)
 }
 
 var pasteSeq atomic.Uint64
@@ -575,7 +597,7 @@ func (d *Driver) Exists(id string) bool {
 // CapturePane returns the visible pane content with ANSI escapes intact
 // (-e), so previews keep the session's real colors. Strip before regex use.
 func (d *Driver) CapturePane(id string) (string, error) {
-	return d.run("capture-pane", "-p", "-e", "-t", sessionName(id))
+	return d.run("capture-pane", "-p", "-e", "-t", PaneTarget(id))
 }
 
 // capturePlain drops the escapes CapturePane keeps, which an application is
@@ -593,8 +615,51 @@ func (d *Driver) Resize(id string, width, height int) error {
 	if width <= 0 || height <= 0 {
 		return nil
 	}
-	_, err := d.run("resize-window", "-t", sessionName(id), "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
+	panes, windowWidth, windowHeight, paneWidth, paneHeight, err := d.geometry(id)
+	if err != nil {
+		return err
+	}
+	// A window the agent split shares its geometry with the teammate panes,
+	// so pinning it to the box leaves the pane the preview draws at a
+	// fraction of the panel, with the rest of the panel blank. Sizing the
+	// window to the box plus what the teammates already hold, then pinning
+	// the agent's pane to the box, gives the preview its pane at full size
+	// and hands the teammates back their share of the axis the split
+	// divides, whether the box grew or shrank -- which is what keeps a Codex
+	// teammate's scrollback (#369). The other axis belongs to the window, so
+	// every pane follows the box there.
+	if panes > 1 {
+		windowWidth = width + (windowWidth - paneWidth)
+		windowHeight = height + (windowHeight - paneHeight)
+	} else {
+		windowWidth, windowHeight = width, height
+	}
+	if _, err := d.run("resize-window", "-t", windowTarget(id),
+		"-x", strconv.Itoa(windowWidth), "-y", strconv.Itoa(windowHeight)); err != nil {
+		return err
+	}
+	if panes < 2 {
+		return nil
+	}
+	_, err = d.run("resize-pane", "-t", PaneTarget(id), "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
 	return err
+}
+
+// geometry reports how many panes share the agent's window, the window's
+// size and the agent pane's own, which is what a resize needs to tell the
+// teammates' share of the window from the pane the preview draws.
+func (d *Driver) geometry(id string) (panes, windowWidth, windowHeight, paneWidth, paneHeight int, err error) {
+	out, err := d.run("display-message", "-p", "-t", PaneTarget(id),
+		"#{window_panes} #{window_width} #{window_height} #{pane_width} #{pane_height}")
+	if err != nil {
+		return 0, 0, 0, 0, 0, err
+	}
+	line := strings.TrimSpace(out)
+	if _, err := fmt.Sscanf(line, "%d %d %d %d %d",
+		&panes, &windowWidth, &windowHeight, &paneWidth, &paneHeight); err != nil {
+		return 0, 0, 0, 0, 0, fmt.Errorf("tmux geometry %q for session %s: %w", line, id, err)
+	}
+	return panes, windowWidth, windowHeight, paneWidth, paneHeight, nil
 }
 
 // PrepareAttach restores automatic window sizing so the session fills the
@@ -622,7 +687,7 @@ func (d *Driver) PrepareAttach(id string) error {
 // cells from the top left. A capture carries no cursor, so a caller that
 // has to tell an empty prompt from a half-written line asks tmux for it.
 func (d *Driver) Cursor(id string) (int, int, error) {
-	out, err := d.run("display-message", "-p", "-t", sessionName(id), "#{cursor_x},#{cursor_y}")
+	out, err := d.run("display-message", "-p", "-t", PaneTarget(id), "#{cursor_x},#{cursor_y}")
 	if err != nil {
 		return 0, 0, err
 	}
@@ -642,7 +707,7 @@ func (d *Driver) Cursor(id string) (int, int, error) {
 }
 
 func (d *Driver) PanePID(id string) (int, error) {
-	out, err := d.run("list-panes", "-t", sessionName(id), "-F", "#{pane_pid}")
+	out, err := d.run("display-message", "-p", "-t", PaneTarget(id), "#{pane_pid}")
 	if err != nil {
 		return 0, err
 	}
@@ -650,7 +715,6 @@ func (d *Driver) PanePID(id string) (int, error) {
 	if line == "" {
 		return 0, fmt.Errorf("no pane for session %s", id)
 	}
-	line = strings.SplitN(line, "\n", 2)[0]
 	return strconv.Atoi(line)
 }
 
@@ -658,7 +722,7 @@ func (d *Driver) PanePID(id string) (int, error) {
 // cd the shell or the agent made since launch, unlike the directory the
 // session was created in.
 func (d *Driver) PaneCurrentPath(id string) (string, error) {
-	out, err := d.run("list-panes", "-t", sessionName(id), "-F", "#{pane_current_path}")
+	out, err := d.run("display-message", "-p", "-t", PaneTarget(id), "#{pane_current_path}")
 	if err != nil {
 		return "", err
 	}
@@ -679,49 +743,33 @@ func noServer(out string) bool {
 		strings.Contains(out, "error connecting to")
 }
 
-// WindowSizes returns every managed session's window width×height in a
-// single tmux call, so sessions adopted from a previous run resize from
-// their real geometry rather than from nothing.
-func (d *Driver) WindowSizes() (map[string][2]int, error) {
-	out, err := exec.Command(d.bin, d.args("list-windows", "-a", "-F", "#{session_name} #{window_width} #{window_height}")...).CombinedOutput()
-	if err != nil {
-		if noServer(string(out)) {
-			return map[string][2]int{}, nil
-		}
-		return nil, fmt.Errorf("tmux list-windows: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	sizes := map[string][2]int{}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 3 || !strings.HasPrefix(fields[0], prefix) {
-			continue
-		}
-		id := strings.TrimPrefix(fields[0], prefix)
-		if _, taken := sizes[id]; taken {
-			continue
-		}
-		width, widthErr := strconv.Atoi(fields[1])
-		height, heightErr := strconv.Atoi(fields[2])
-		if widthErr == nil && heightErr == nil {
-			sizes[id] = [2]int{width, height}
-		}
-	}
-	return sizes, nil
+// Pane is a managed session's agent pane: the process running in it, the
+// size the preview draws it at, and how many panes share its window. A
+// count above one means the agent split the window itself, leaving its own
+// pane a fraction of the geometry the manager pinned.
+type Pane struct {
+	PID    int
+	Width  int
+	Height int
+	Panes  int
 }
 
-// Panes returns every managed session's pane pid in a single tmux call,
+// Panes returns every managed session's agent pane in a single tmux call,
 // which doubles as a liveness check: a session absent from the map is gone.
-func (d *Driver) Panes() (map[string]int, error) {
-	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-F", "#{session_name} #{pane_pid}")...).CombinedOutput()
+// The filter keeps the agent's own pane, the one PaneTarget addresses, so a
+// session whose agent split the window reports the agent's own process and
+// the size the preview draws, never a teammate's.
+func (d *Driver) Panes() (map[string]Pane, error) {
+	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_pid} #{pane_width} #{pane_height} #{window_panes}")...).CombinedOutput()
 	if err != nil {
 		if noServer(string(out)) {
-			return map[string]int{}, nil
+			return map[string]Pane{}, nil
 		}
 		return nil, fmt.Errorf("tmux list-panes: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	panes := map[string]int{}
+	panes := map[string]Pane{}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		name, pidText, ok := strings.Cut(line, " ")
+		name, geometry, ok := strings.Cut(line, " ")
 		if !ok || !strings.HasPrefix(name, prefix) {
 			continue
 		}
@@ -729,8 +777,9 @@ func (d *Driver) Panes() (map[string]int, error) {
 		if _, taken := panes[id]; taken {
 			continue
 		}
-		if pid, err := strconv.Atoi(pidText); err == nil {
-			panes[id] = pid
+		var pane Pane
+		if _, err := fmt.Sscanf(geometry, "%d %d %d %d", &pane.PID, &pane.Width, &pane.Height, &pane.Panes); err == nil {
+			panes[id] = pane
 		}
 	}
 	return panes, nil
