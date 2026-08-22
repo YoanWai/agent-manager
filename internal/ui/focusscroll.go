@@ -116,6 +116,19 @@ func (m *Model) mouseReport(button int, release bool, col, row int) (string, boo
 // plain pane, so the wheel walks tmux's own scrollback instead. Agent CLIs
 // are the first case: they run on the alternate screen, where tmux keeps
 // no history at all, and do their own scrolling.
+// guardedMouseCommand has tmux drop the report unless the pane still tracks
+// the mouse when it arrives. The cached flag trails a pane that left mouse
+// mode by a debounce, and a report the application no longer expects is
+// printed on its input line instead. mouse_any_flag covers every mode, so
+// the per-mode flags would only repeat it.
+func guardedMouseCommand(sessID, report string) (string, []string) {
+	target := tmux.SessionName(sessID)
+	const condition = "#{mouse_any_flag}"
+	send := "send-keys -t " + target + " -H " + hexBytes(report)
+	command := "if-shell -F -t " + target + " '" + condition + "' '" + send + "'"
+	return command, []string{"if-shell", "-F", "-t", target, condition, send}
+}
+
 func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 	sess, ok := m.selected()
 	if !ok || m.mode != modeFocus || m.focus == nil {
@@ -130,9 +143,9 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 		if !ok {
 			return nil
 		}
-		command := "send-keys -t " + tmux.SessionName(sess.ID) + " -H " + hexBytes(report)
+		command, args := guardedMouseCommand(sess.ID, report)
 		if !m.focus.attempt(command) {
-			if err := m.tmux.SendRaw(command); err != nil {
+			if err := m.tmux.SendCommand(args...); err != nil {
 				m.errBar.text = err.Error()
 			}
 		}
@@ -173,9 +186,9 @@ func (m *Model) sendFocusReport(report string) {
 	if !ok || m.focus == nil {
 		return
 	}
-	command := "send-keys -t " + tmux.SessionName(sess.ID) + " -H " + hexBytes(report)
+	command, args := guardedMouseCommand(sess.ID, report)
 	if !m.focus.attempt(command) {
-		if err := m.tmux.SendRaw(command); err != nil {
+		if err := m.tmux.SendCommand(args...); err != nil {
 			m.errBar.text = err.Error()
 		}
 	}
