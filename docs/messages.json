@@ -11,10 +11,10 @@
       "A session waiting on its rename wears the prompt it was given, and the preview leaves a Codex pane's scrollback alone.",
       "Thanks to @dolutech, who asked for a self-update command in #355 and then wrote it (#361), and to @creatorrr for the",
       "WSL clipboard fix that keeps box-drawing characters whole in a pane selection (#341).",
-      "@pandysp's #349 is why left and right step in and out of a session; pi's bare prompt joins that pair now."
+      "@pandysp's #349 is why left and right step in and out of a session; pi and opencode join that pair now."
     ],
     "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.32.0",
-    "max_version": "0.32.0"
+    "max_version": "0.32.1"
   },
   {
     "id": "sessions-coordinate-with-each-other",
