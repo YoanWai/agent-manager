@@ -261,15 +261,18 @@ func (m *Model) requestFocusRegion(sessID string) tea.Cmd {
 }
 
 // focusRegionCmd captures the pane region that sits offset lines above the
-// live bottom. The pane can be taller than the panel (resizeSessions
-// leaves it tall rather than costing Codex its scrollback), so the pane's
-// bottom, not tmux's visible row zero, anchors the window: the capture
-// takes the offset history lines plus the whole visible pane ("-E -"),
-// and the window is cut from its end, which needs no pane height at all.
+// live bottom. The pane's height rarely matches the panel — resizeSessions
+// leaves a pane taller rather than costing Codex its scrollback, and the
+// session's status line makes the visible pane one row shorter than the
+// pinned window — so the pane's bottom, not tmux's visible row zero,
+// anchors the window: the capture reaches rows+offset lines into history
+// and runs to the visible end ("-E -"), and the window is cut from its
+// end, which needs no pane height at all. tmux clamps the start to the
+// history top, so a shallow history just yields a shorter frame.
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
 	rows := m.previewPaneHeight()
 	command := fmt.Sprintf(`capture-pane -p -e -t %s -S %d -E -`,
-		tmux.SessionName(sessID), -offset)
+		tmux.SessionName(sessID), -(offset+rows))
 	watch := m.focus
 	return func() tea.Msg {
 		if watch == nil {
