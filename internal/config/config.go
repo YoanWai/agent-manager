@@ -534,16 +534,19 @@ revive_command = "cmd --continue"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 turn_end = "^\\s*✻ Worked for [\\dhms. ]+$"
+limit_line = "^\\s*⚠ You have insufficient credits"
 chrome_line = "^\\s*[─]{4,}\\s*$|^# .*$|^[ \\t█]*$|^\\s*\\? for shortcuts.*$"
 rules = [
-  # the trust and selection dialogs block on the user's answer
-  { state = "waiting", pattern = "(?m)^\\s*(Yes, proceed|No, exit)\\s*$" },
-  { state = "waiting", pattern = "Do you trust the files in this folder" },
-  # the response streams behind a braille spinner; a turn in flight hides
-  # the composer, so the pane has no cutoff line and rules see all of it.
-  # Anchoring to the pane end keeps a spinner frozen in the scrollback of a
-  # resumed conversation from reading as live work.
-  { state = "working", pattern = "(?ms)^\\p{Braille} [^\\n]*(?:\\n[ \\t]*)*\\z" },
-  { state = "errored", pattern = "(?im)^\\s*error:" },
+  # selection dialogs (trust, tool approval, pickers) number their options
+  # behind the prompt marker
+  { state = "waiting", pattern = "(?m)^\\s*❯ \\d+\\. " },
+  # the dialog footer below the options opens the match scope up so the
+  # numbered rows above the marker stay visible to the rules; the trust
+  # dialog spells it "↑/↓ to navigate" and the approvals "↑/↓ navigate"
+  { state = "waiting", pattern = "↑/↓ (?:to )?navigate" },
+  # the busy footer under a streaming turn; at narrow widths the esc hint
+  # drops and only the tick counter remains
+  { state = "working", pattern = "(?m)^ [·○◇☆✧⌘] \\S+.*(?:esc to interrupt| \\d+)$" },
+  { state = "errored", pattern = "(?im)^\\s*(?:⚠ )?Error:" },
 ]
 `
