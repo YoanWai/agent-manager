@@ -55,18 +55,23 @@ func (m *Model) cursorCell(paneLines int) (row, col int, ok bool) {
 	return row, cursor.x, true
 }
 
-// paneRowOffset is how many captured rows the panel dropped off the top.
-// A capture taller than the box is painted from its bottom, so a painted
-// row and the pane's own row differ by exactly that many lines.
+// paneRowOffset is how many captured rows the panel dropped off the top,
+// which is exactly what separates a painted row from the pane's own row.
+// It reads the same crop window the renderer paints, so caret and mouse
+// coordinates can never drift from what the user sees.
 func (m *Model) paneRowOffset(paneLines int) int {
-	if paneLines <= 0 {
-		return 0
+	_, start := paneWindow(m.preview, paneLines, m.paneCaretRow())
+	return start
+}
+
+// paneCaretRow is the capture row the live caret sits on, or -1 when no
+// caret is in play. The crop keeps this row painted whatever the blank
+// rows around it look like: it is where typing lands.
+func (m *Model) paneCaretRow() int {
+	if m.mode == modeFocus && m.pane.cursor.ok && !m.scrolledBack() {
+		return m.pane.cursor.y
 	}
-	captured := len(strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n"))
-	if captured <= paneLines {
-		return 0
-	}
-	return captured - paneLines
+	return -1
 }
 
 // focusSelection is a text selection drawn over the focused pane. anchor
@@ -108,7 +113,7 @@ func (m *Model) paneCell(x, y int) (row, col int, ok bool) {
 // same slice the renderer paints, so selection indices line up with what
 // is on screen.
 func (m *Model) paneTextLines() []string {
-	rows := paneExact(m.preview, m.pane.box.height, m.pane.box.width)
+	rows := paneExact(m.preview, m.pane.box.height, m.pane.box.width, m.paneCaretRow())
 	out := make([]string, len(rows))
 	for i, row := range rows {
 		out[i] = ansi.Strip(previewDangerSeqs.ReplaceAllString(row, ""))

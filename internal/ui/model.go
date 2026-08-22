@@ -977,9 +977,14 @@ func (m *Model) refreshCmd() tea.Cmd {
 }
 
 // resizeSessions syncs every live session's tmux window to the preview
-// panel's pixel box so a capture fills the preview 1:1. No-op when the
-// size already matches; otherwise resizes in parallel so a fleet of
-// sessions does not serialize N tmux round-trips on the UI path.
+// panel's pixel box so a capture fills the preview 1:1, resizing in
+// parallel so a fleet of sessions does not serialize N tmux round-trips
+// on the UI path. Width changes and height growth pin eagerly; a box that
+// lost rows, to transient chrome or a shorter terminal, leaves the pane
+// tall and lets paneWindow crop the view instead, because a height shrink
+// makes Codex clear the pane's entire scrollback (#369). The one crop this
+// leaves, a too-tall alt-screen TUI missing its top rows, heals on attach,
+// which sizes the window to the terminal and re-pins on detach.
 func (m *Model) resizeSessions() {
 	width, height := m.previewPaneWidth(), m.previewPaneHeight()
 	if width <= 0 || height <= 0 {
@@ -988,13 +993,16 @@ func (m *Model) resizeSessions() {
 	if m.pane.geom == nil {
 		m.pane.geom = map[string][2]int{}
 	}
+	m.seedPaneGeom()
 	var todo []string
 	for _, sess := range m.sessions {
 		if sess.Archived {
 			continue
 		}
-		if last, ok := m.pane.geom[sess.ID]; ok && last[0] == width && last[1] == height {
-			continue
+		if last, ok := m.pane.geom[sess.ID]; ok {
+			if last[0] == width && last[1] >= height {
+				continue
+			}
 		}
 		todo = append(todo, sess.ID)
 	}
@@ -1023,6 +1031,44 @@ func (m *Model) resizeSessions() {
 	})
 }
 
+// markFreshPane queues one exact size pin for a session whose window this
+// run just created. Its launch size came from pre-selection geometry, and
+// with nothing in its scrollback yet the one re-pin is free, unlike the
+// panes adopted from a previous run, which seedPaneGeom protects.
+func (m *Model) markFreshPane(id string) {
+	if m.pane.geom == nil {
+		m.pane.geom = map[string][2]int{}
+	}
+	m.pane.geom[id] = [2]int{0, 0}
+}
+
+// seedPaneGeom fills the geometry cache from tmux for sessions this run
+// has not sized yet, so a pane adopted from a previous run is not shrunk
+// (and its Codex scrollback cleared) just to match a box it already
+// exceeds. A failed listing leaves the entries missing and the next pass
+// pins those sessions to the box; the poll surfaces the tmux failure.
+func (m *Model) seedPaneGeom() {
+	needed := false
+	for _, sess := range m.sessions {
+		if _, sized := m.pane.geom[sess.ID]; !sized && !sess.Archived {
+			needed = true
+			break
+		}
+	}
+	if !needed {
+		return
+	}
+	sizes, err := m.tmux.WindowSizes()
+	if err != nil {
+		return
+	}
+	for id, size := range sizes {
+		if _, sized := m.pane.geom[id]; !sized {
+			m.pane.geom[id] = size
+		}
+	}
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -1037,8 +1083,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Re-assert the terminal backdrop: a reattach or a fresh outer
 		// terminal delivers a size message and may carry stale colors.
 		SyncTerminalBackground()
-		// Geometry cache is stale for every session after a real resize.
-		m.pane.geom = nil
 		m.resizeSessions()
 		if m.mode == modeForm {
 			m.syncFormFieldWidths()
@@ -1104,17 +1148,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.snap = msg.snap
 			m.updateNetRates(msg.snap)
 		}
+		// Sessions left from a previous run carry that run's window size,
+		// which the cache knows nothing about; seedPaneGeom adopts their
+		// real geometry on the first pass, so nothing resets the cache here.
 		if !m.sessionsSized && m.width > 0 && len(m.sessions) > 0 {
 			m.sessionsSized = true
-			// Sessions left from a previous run carry that run's window
-			// size, which our cache knows nothing about, so the first pass
-			// re-asserts geometry for every one of them.
-			m.pane.geom = nil
 		}
 		// The preview box changes height for more reasons than a terminal
 		// resize: the quick bar opening, the status line appearing, a new
-		// badge in the header. A pane left at the old height paints a dead
-		// band under its output, so every pass re-asserts the geometry.
+		// badge in the header. A pane shorter than the box paints a dead
+		// band under its output, so every pass grows what falls short.
 		// The call is free when nothing moved: it diffs against paneGeom.
 		if m.sessionsSized && m.width > 0 {
 			m.resizeSessions()

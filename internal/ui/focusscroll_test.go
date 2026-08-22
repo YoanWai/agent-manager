@@ -195,7 +195,7 @@ func TestFocusScrollRecapturesAfterPreviewResize(t *testing.T) {
 	}
 	updated, _ = m.Update(recapture())
 	m = updated.(*Model)
-	if got, want := len(paneExact(m.preview, m.previewPaneHeight(), m.previewPaneWidth())), m.previewPaneHeight(); got != want {
+	if got, want := len(paneExact(m.preview, m.previewPaneHeight(), m.previewPaneWidth(), -1)), m.previewPaneHeight(); got != want {
 		t.Fatalf("scroll frame has %d rows, want %d", got, want)
 	}
 	if !strings.Contains(m.preview, "history-line-") {
@@ -238,7 +238,7 @@ func TestFocusScrollKeepsDeepHistoryFrame(t *testing.T) {
 	}
 	updated, _ := m.Update(msg)
 	m = updated.(*Model)
-	if got, want := len(paneExact(m.preview, m.previewPaneHeight(), m.previewPaneWidth())), m.previewPaneHeight(); got != want {
+	if got, want := len(paneExact(m.preview, m.previewPaneHeight(), m.previewPaneWidth(), -1)), m.previewPaneHeight(); got != want {
 		t.Fatalf("deep frame has %d rows, want %d", got, want)
 	}
 	if !strings.Contains(m.preview, "history-line-") {
@@ -306,32 +306,85 @@ func TestNoCaretWhileScrolled(t *testing.T) {
 }
 
 // The preview box changes height for reasons other than a terminal
-// resize; a pane left at the old height paints a dead band under its
-// output, so a refresh has to re-assert the geometry.
-func TestRefreshReassertsPaneHeight(t *testing.T) {
+// resize; a pane shorter than the box paints a dead band under its
+// output, so a refresh grows it. A box that lost rows to transient
+// chrome must not shrink the pane back: Codex answers any height shrink
+// by clearing the pane's entire scrollback (#369), so the render crops
+// the taller capture instead.
+func TestRefreshGrowsPaneHeightButNeverShrinksIt(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sizer", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
 	sess := m.rows[m.cursor].sess
 
-	if got, want := windowHeight(t, sess.ID), m.previewPaneHeight(); got != want {
-		t.Fatalf("initial pane height = %d, want %d", got, want)
+	pinned := m.previewPaneHeight()
+	if got := windowHeight(t, sess.ID); got != pinned {
+		t.Fatalf("initial pane height = %d, want %d", got, pinned)
 	}
 
 	// A shorter frame with no size message: the header or the status line
 	// taking a row moves the box the same way.
 	m.height -= 4
-	shrunk := m.previewPaneHeight()
+	if m.previewPaneHeight() >= pinned {
+		t.Fatal("test setup did not shrink the preview box")
+	}
 	m.applyCmd(t, m.refreshCmd())
-	if got := windowHeight(t, sess.ID); got != shrunk {
-		t.Fatalf("pane height after the box shrank = %d, want %d", got, shrunk)
+	if got := windowHeight(t, sess.ID); got != pinned {
+		t.Fatalf("pane height after the box shrank = %d, want it kept at %d", got, pinned)
 	}
 
-	m.height += 4
+	m.height += 8
 	grown := m.previewPaneHeight()
+	if grown <= pinned {
+		t.Fatal("test setup did not grow the preview box past the pane")
+	}
 	m.applyCmd(t, m.refreshCmd())
 	if got := windowHeight(t, sess.ID); got != grown {
 		t.Fatalf("pane height after the box grew = %d, want %d", got, grown)
+	}
+}
+
+// A shorter terminal is the issue's headline trigger: the height-only
+// shrink must not reach the pane either: the render crops it, and the
+// pane's scrollback survives. Growing the terminal back re-pins.
+func TestTerminalShrinkLeavesPaneTall(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "shrunk", t.TempDir(), "")
+	m.applyCmd(t, m.refreshCmd())
+	sess := m.rows[m.cursor].sess
+	pinned := windowHeight(t, sess.ID)
+
+	m.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height - 6})
+	if got := windowHeight(t, sess.ID); got != pinned {
+		t.Fatalf("pane height after a terminal shrink = %d, want it kept at %d", got, pinned)
+	}
+
+	m.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height + 12})
+	if got, want := windowHeight(t, sess.ID), m.previewPaneHeight(); got != want {
+		t.Fatalf("pane height after the terminal grew = %d, want %d", got, want)
+	}
+}
+
+// A session left over from a previous run can sit taller than today's
+// box. The first pass adopts its real geometry rather than shrinking it,
+// which would cost a Codex pane its scrollback before anything happened.
+func TestAdoptedTallerPaneIsNotShrunk(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "adopted", t.TempDir(), "")
+	m.applyCmd(t, m.refreshCmd())
+	sess := m.rows[m.cursor].sess
+
+	width := m.previewPaneWidth()
+	taller := m.previewPaneHeight() + 10
+	out, err := tmuxCmd("resize-window", "-t", "am_"+sess.ID,
+		"-x", strconv.Itoa(width), "-y", strconv.Itoa(taller)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("resize-window: %v: %s", err, out)
+	}
+	m.pane.geom = nil
+	m.applyCmd(t, m.refreshCmd())
+	if got := windowHeight(t, sess.ID); got != taller {
+		t.Fatalf("adopted pane height = %d, want it kept at %d", got, taller)
 	}
 }
 

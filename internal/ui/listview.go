@@ -775,7 +775,7 @@ func ringLoader(width, height int, label string, phase int) []string {
 func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	var lines []contentLine
 	loader := m.startupLoader(width, height)
-	pane := paneExact(m.preview, height, width)
+	pane := paneExact(m.preview, height, width, m.paneCaretRow())
 	if len(pane) == 0 {
 		// No rows painted means nothing to hit-test: a box left over from
 		// the previous session would catch clicks on empty space.

@@ -897,7 +897,7 @@ func TestPreviewShowsLoaderWhileSessionStarts(t *testing.T) {
 	if got := previewText(m); !strings.Contains(got, "starting up") {
 		t.Fatalf("preview should carry the launch loader, got %q", got)
 	}
-	if !m.pane.box.ok || m.pane.box.height != len(paneExact(blankCapture, 12, 80)) {
+	if !m.pane.box.ok || m.pane.box.height != len(paneExact(blankCapture, 12, 80, -1)) {
 		t.Fatalf("the loader must not cost the pane its geometry, box = %+v", m.pane.box)
 	}
 }
