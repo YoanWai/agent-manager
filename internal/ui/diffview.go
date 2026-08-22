@@ -1668,6 +1668,10 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 		m.errBar.text = "review round is already being sent"
 		return m, nil
 	}
+	if m.store == nil {
+		m.errBar.text = "review state is unavailable"
+		return m, nil
+	}
 	sess, ok := m.diffSession()
 	if !ok {
 		m.errBar.text = "session is gone"

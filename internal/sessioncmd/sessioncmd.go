@@ -146,7 +146,6 @@ func ReviewScope(configDir, sessionID, scope string) (string, error) {
 	return "review scope set to " + scope, nil
 }
 
-// Status changes leave the review history intact.
 func ReviewComment(configDir, sessionID, commentID string, handled bool) (string, error) {
 	if err := validSession(sessionID); err != nil {
 		return "", err
