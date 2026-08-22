@@ -680,3 +680,33 @@ func TestTabbedRowSharesItsColumns(t *testing.T) {
 		t.Fatalf("dragging over the painted columns copied %q", text)
 	}
 }
+
+// A click somewhere else ends the previous selection, in a pane that tracks
+// the mouse and forwards the press as much as in one that selects on it: a
+// highlight left standing reads as text still selected, and the copy
+// confirmation belongs to the highlight it counted.
+func TestClickElsewhereClearsSelection(t *testing.T) {
+	for _, tracksMouse := range []bool{false, true} {
+		m := paneAt(t, "alpha beta", "gamma delta")
+		m.pane.mouse = tracksMouse
+		press(m, 10, 5)
+		drag(m, 14, 5)
+		m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 14, Y: 5})
+		if got := m.selectionText(); got != "alph" {
+			t.Fatalf("mouse=%v: drag selected %q", tracksMouse, got)
+		}
+		m.copied = 4
+
+		press(m, 12, 6)
+		if got := m.selectionText(); got != "" {
+			t.Fatalf("mouse=%v: click elsewhere still selects %q", tracksMouse, got)
+		}
+		if m.copied != 0 {
+			t.Fatalf("mouse=%v: click elsewhere kept the copy confirmation: %d", tracksMouse, m.copied)
+		}
+		m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 12, Y: 6})
+		if got := m.selectionText(); got != "" {
+			t.Fatalf("mouse=%v: releasing the click restored the selection %q", tracksMouse, got)
+		}
+	}
+}

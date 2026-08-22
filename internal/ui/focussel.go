@@ -146,7 +146,7 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.Action == tea.MouseActionPress && msg.Alt && m.pane.mouse {
 		if row, col, inside := m.paneCell(msg.X, msg.Y); inside {
-			m.sel = focusSelection{}
+			m.clearSelection()
 			m.pending = pendingClick{}
 			m.forwardingMouse = true
 			m.forwardingButton = mouseButton(msg.Button)
@@ -167,7 +167,7 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		row, col, ok := m.paneCell(msg.X, msg.Y)
 		if !ok {
-			m.sel = focusSelection{}
+			m.clearSelection()
 			return m, nil
 		}
 		// A repeated press at the same cell is the user asking for a word or
@@ -226,11 +226,21 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 // deferClick parks a press until motion or release resolves the gesture,
-// recording it as the start of a possible double or triple click run.
+// recording it as the start of a possible double or triple click run. The
+// press drops the earlier selection whichever way it resolves: a highlight
+// left standing under a click elsewhere reads as still selected.
 func (m *Model) deferClick(button, row, col int) {
+	m.clearSelection()
 	m.pending = pendingClick{active: true, button: button, row: row, col: col}
 	m.sel.lastClick, m.sel.lastRow, m.sel.lastCol = time.Now(), row, col
 	m.sel.clickCount = 1
+}
+
+// clearSelection drops the highlight along with the copy confirmation that
+// belongs to it.
+func (m *Model) clearSelection() {
+	m.sel = focusSelection{}
+	m.copied = 0
 }
 
 // clickRunContinues reports whether a press at this cell extends the click
