@@ -2771,7 +2771,7 @@ func TestReviewProgressAndDraftsRestoreFromStore(t *testing.T) {
 	m.applyCmd(t, m.saveAnnotation())
 	path := m.currentFileDiff().File.Path
 	m.drainCmds(t, m.toggleReviewed())
-	wantHash := m.diff.reviewed[m.reviewKey()][path]
+	wantHash := m.diff.reviewed[m.reviewKey()][m.reviewedMarkKey(path)]
 	if wantHash == 0 {
 		t.Fatal("reviewed hash was not recorded")
 	}
@@ -2788,7 +2788,7 @@ func TestReviewProgressAndDraftsRestoreFromStore(t *testing.T) {
 	if !m.restoreReviewState(state) {
 		t.Fatal("review state was not restored")
 	}
-	if got := m.diff.reviewed[key][path]; got != wantHash {
+	if got := m.diff.reviewed[key][m.reviewedMarkKey(path)]; got != wantHash {
 		t.Fatalf("restored reviewed hash = %d, want %d", got, wantHash)
 	}
 	notes := m.diff.annotations[key]
@@ -3154,6 +3154,60 @@ func TestAScopeMissingAFileKeepsItsReviewedMark(t *testing.T) {
 	}
 }
 
+// One trip around the scope cycle must not destroy a saved reviewed mark:
+// the same file renders different diff lines - so a different content hash -
+// under another scope, and only the scope a mark was taken in may judge it
+// stale.
+func TestScopeCycleKeepsReviewedMark(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	dir := gitTestRepo(t)
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	// Stage the current edit and add another on top, so the staged and
+	// uncommitted scopes both list main.go with different rendered diffs.
+	runGit("add", "main.go")
+	if err := os.WriteFile(filepath.Join(dir, "main.go"),
+		[]byte("package main\n\nfunc main() { println(2) }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	openReviewOn(t, m, "scopecycle", dir)
+	target := -1
+	for i, fd := range m.diff.set.Files {
+		if fd.File.Path == "main.go" {
+			target = i
+		}
+	}
+	if target < 0 {
+		t.Fatalf("main.go missing from the uncommitted scope: %+v", m.diff.set.Files)
+	}
+	m.drainCmds(t, m.switchDiffFile(target-m.diff.fileIdx))
+	m.drainCmds(t, m.toggleReviewed())
+	if !m.fileReviewed("main.go") {
+		t.Fatal("main.go was not marked reviewed")
+	}
+
+	for cycle := 0; cycle < 4; cycle++ {
+		m.drainCmds(t, m.cycleDiffScope())
+		if m.diff.scope != git.ScopeUncommitted && m.fileReviewed("main.go") {
+			t.Fatalf("a mark taken under uncommitted read as reviewed under %q", m.diff.scope)
+		}
+	}
+	if m.diff.scope != git.ScopeUncommitted {
+		t.Fatalf("four cycles should return to uncommitted, got %q", m.diff.scope)
+	}
+	if !m.fileReviewed("main.go") {
+		t.Fatal("cycling scopes destroyed the reviewed mark")
+	}
+}
+
 func TestNarrowReviewKeepsBothPanesMeasurable(t *testing.T) {
 	m := buildModel(t)
 	if m.gitDrv == nil {
@@ -3199,6 +3253,56 @@ func TestAnotherScopeDoesNotOutdateARoundsComments(t *testing.T) {
 	}
 	if m.diff.annotations[key][0].outdated {
 		t.Fatal("the comment was labelled outdated by a scope it was not sent in")
+	}
+}
+
+// Each round's comments are judged against the scope that round was sent in:
+// an older round from another scope stays untouched even when the latest
+// round was sent in the current scope.
+func TestOlderRoundFromAnotherScopeIsNotOutdated(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "roundscopes", gitRepoWithTwoChangedFiles(t))
+	key := m.reviewKey()
+	m.diff.annotations[key] = []annotation{
+		{id: "aaaaaaaaaaaaaaa1", file: "gone-from-this-scope.go", line: 1,
+			text: "older round", round: 1, point: 1, scope: m.diff.scope.Next().String()},
+		{id: "aaaaaaaaaaaaaaa2", file: "also-gone.go", line: 1,
+			text: "latest round", round: 2, point: 1, scope: m.diff.scope.String()},
+	}
+	m.diff.rounds[key] = store.ReviewRound{Number: 2, Scope: m.diff.scope.String()}
+
+	if !m.markMissingRoundCommentsOutdated() {
+		t.Fatal("the current scope's round comment on a missing file should read outdated")
+	}
+	notes := m.diff.annotations[key]
+	if notes[0].outdated {
+		t.Fatal("a round sent in another scope was outdated by this scope's file list")
+	}
+	if !notes[1].outdated {
+		t.Fatal("the current scope's round comment kept its standing")
+	}
+}
+
+// Marks persisted before marks were scope-keyed carry a bare path; they can
+// never match a scoped lookup, so restore drops them and the next save
+// clears them from the row.
+func TestRestoreDropsPreScopeReviewedMarks(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "baremarks", gitTestRepo(t))
+	key := m.reviewKey()
+	delete(m.diff.reviewed, key)
+	delete(m.diff.stateLoaded, key)
+	if !m.restoreReviewState(store.ReviewState{Reviewed: map[string]uint64{"main.go": 42}}) {
+		t.Fatal("review state was not restored")
+	}
+	if len(m.diff.reviewed[key]) != 0 {
+		t.Fatalf("a bare-path mark survived restore: %v", m.diff.reviewed[key])
 	}
 }
 
