@@ -115,7 +115,7 @@ Deleting (`d`) a session that holds a worktree removes the worktree and its bran
 
 ![ending every session under a group for the RAM, then reviving the whole subtree on its own conversations](demo-revive.gif)
 
-`v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`, `gemini --resume {id}`, `pi --session {id}`, `hermes --cli --resume {id}`.
+`v` relaunches a dead session under its old id, keeping its name, group, and history. When the manager holds that session's own conversation id, revive resumes **that exact conversation** through the tool's `resume_by_id_command`: `claude --resume {id}`, `codex resume {id}`, `opencode --session {id}`, `grok --resume {id}`, `gemini --resume {id}`, `pi --session {id}`, `hermes --cli --resume {id}`, `cmd --session {id}`.
 
 Quitting the agent inside a session leaves the window alive on a shell, and `v` brings it back there: the manager types the launch command into that shell, so the agent returns in the pane it left, carrying the session id, the MCP registration and the hook settings a launch gives it. The pane names that key the moment the agent exits. Those values stay exported in the shell as well, so `agent-manager rename` and the rest of the subcommands keep working from it, and so does an agent you start there by hand.
 
@@ -155,7 +155,7 @@ Agents usually work in git worktrees, one branch per worktree, and those worktre
 
 ## MCP: how agents discover these commands
 
-Every session of an MCP-capable tool carries the agent-manager MCP server on spawn and revive, so its agent sees the whole workspace as native tools with descriptions telling it when to call each: its own session, the other agent sessions running beside it, the groups they are filed under, and the managed terminals. No per-project setup. Pi is the one tool without an MCP client, so its sessions rely on the subcommands alone. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
+Every session of an MCP-capable tool carries the agent-manager MCP server on spawn and revive, so its agent sees the whole workspace as native tools with descriptions telling it when to call each: its own session, the other agent sessions running beside it, the groups they are filed under, and the managed terminals. No per-project setup. Pi and Command Code are the tools without an MCP client, so their sessions rely on the subcommands alone. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
 
 | Tool | Action |
 |------|--------|
@@ -224,7 +224,7 @@ Every one of these tools acts on the user's machine. Agents should treat `send_t
 
 Registration is per tool. Claude gets a generated `--mcp-config` file. Codex gets `-c mcp_servers...` overrides. OpenCode gets an `OPENCODE_CONFIG` merge file. Grok and Gemini each get a one-time `mcp add --scope user` entry on their first launch. Hermes gets its own one-time `mcp add` flow, which needs the MCP SDK its installer treats as optional: a Hermes still missing it refuses the spawn with a dialog pointing at `hermes setup`, so a Hermes session always carries these tools. A spawn whose CLI is not on PATH is refused the same way, with the vendor's portable installer for a built-in agent, or the package manager on this machine for anything else.
 
-Pi does not include an MCP client. Its sessions reach the same workspace through the subcommands: `agent-manager --help` lists them, from `sessions`, `spawn`, `send` and `wait` to the shared task list, file reservations, terminals and the review declarations.
+Pi and Command Code do not include an MCP client. Their sessions reach the same workspace through the subcommands: `agent-manager --help` lists them, from `sessions`, `spawn`, `send` and `wait` to the shared task list, file reservations, terminals and the review declarations.
 
 A custom tool opts in with `mcp = "<style>"` in its config section. Set `mcp = "none"` to disable registration.
 

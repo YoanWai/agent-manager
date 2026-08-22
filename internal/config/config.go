@@ -39,7 +39,7 @@ type Tool struct {
 	ForkCommand string `toml:"fork_command"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex", "opencode",
-	// "gemini" or "hermes").
+	// "gemini", "hermes" or "command-code").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
@@ -522,5 +522,28 @@ rules = [
   { state = "errored", pattern = "(?ms)^[ \\t]*[^\\n]*rate limit reached[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
   { state = "waiting", pattern = "(?ms)\\?[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
   { state = "working", pattern = "(?ms)^[ \\t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
+]
+
+[tools.command-code]
+command = "cmd"
+# command-code mints its own session id; capture it after launch and resume it
+session_store = "command-code"
+resume_by_id_command = "cmd --session {id}"
+# fallback: resumes the most recent conversation for the directory
+revive_command = "cmd --continue"
+default_status = "idle"
+activity_cutoff = "(?m)^❯"
+turn_end = "^\\s*✻ Worked for [\\dhms. ]+$"
+chrome_line = "^\\s*[─]{4,}\\s*$|^# .*$|^[ \\t█]*$|^\\s*\\? for shortcuts.*$"
+rules = [
+  # the trust and selection dialogs block on the user's answer
+  { state = "waiting", pattern = "(?m)^\\s*(Yes, proceed|No, exit)\\s*$" },
+  { state = "waiting", pattern = "Do you trust the files in this folder" },
+  # the response streams behind a braille spinner; a turn in flight hides
+  # the composer, so the pane has no cutoff line and rules see all of it.
+  # Anchoring to the pane end keeps a spinner frozen in the scrollback of a
+  # resumed conversation from reading as live work.
+  { state = "working", pattern = "(?ms)^\\p{Braille} [^\\n]*(?:\\n[ \\t]*)*\\z" },
+  { state = "errored", pattern = "(?im)^\\s*error:" },
 ]
 `

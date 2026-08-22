@@ -490,6 +490,37 @@ func TestPiPanes(t *testing.T) {
 	}
 }
 
+// Command Code v1.32.1 fixtures cover its resting composer, trust dialog,
+// in-flight streaming, and finished turn. The composer hides while a turn
+// runs, so an in-flight pane carries no cutoff line at all and the rules
+// read the whole pane.
+func TestCommandCodePanes(t *testing.T) {
+	engine := defaultEngine(t)
+	border := "────────────────────────────────────────────────────────────────────────────────────"
+	composer := border + "\n❯ Ask your question..."
+	header := "# Command Code v1.32.1\n# models: deepseek-v4-flash-(latest) with max effort · taste-1\n# /tmp/amcmd-proj\n"
+	cases := []struct {
+		name string
+		pane string
+		want string
+	}{
+		{"resting composer", header + composer, Idle},
+		{"trust dialog", "Do you trust the files in this folder?\n/tmp/amcmd-proj\n\nCommand Code may read files in this folder. Reading untrusted files may lead Command Code to behave in unexpected ways.\n\nWith your permission Command Code may execute files in this folder. Executing untrusted code is unsafe.\n\n❯ 1. Yes, proceed\n  2. No, exit\n\n↑/↓ to navigate · enter to select · esc to exit", Waiting},
+		{"streaming response", "  hi\n✻ Thought for 1 second [ctrl+o to expand]\n⠶ Hey! What are we working on today?", Working},
+		{"finished turn", "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\nHey! I can dig into code, build something, debug issues, or explore the repo.\n ✻ Worked for 3s\n" + composer, Finished},
+		{"finished turn with trailing blanks", "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\nHey! I can dig into code, build something, debug issues, or explore the repo.\n ✻ Worked for 3s\n" + composer + "\n\n", Finished},
+		{"resumed conversation", "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\n⠶ Hey! What are we working on today? I can dig into code, build something, debug issues, or explore the repo.\n" + composer + "\n  ? for shortcuts · taste on", Idle},
+		{"question turn", "❯ hi\nWhich file should I edit, A or B?\n ✻ Worked for 3s\n" + composer, Waiting},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, _ := engine.Match("command-code", tc.pane); got != tc.want {
+				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
 // Gemini closes turns without a summary line, so resting status comes from
 // TurnEndedState over the quiet region. The "? for shortcuts" hint and the
 // approval-mode banner sit above the composer; both must count as chrome
