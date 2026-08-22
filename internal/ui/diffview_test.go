@@ -3286,6 +3286,29 @@ func TestOlderRoundFromAnotherScopeIsNotOutdated(t *testing.T) {
 	}
 }
 
+// A scope cycle re-judges the arriving scope's comments even without a
+// refresh: a comment whose file that scope no longer lists reads outdated.
+func TestScopeCycleOutdatesTheArrivingScopesComments(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "cycleoutdate", gitTestRepo(t))
+	key := m.reviewKey()
+	m.diff.annotations[key] = []annotation{{
+		id: "aaaaaaaaaaaaaaa1", file: "gone.go", line: 1,
+		text: "from staged", round: 1, point: 1, scope: git.ScopeStaged.String(),
+	}}
+	m.diff.rounds[key] = store.ReviewRound{Number: 1, Scope: git.ScopeStaged.String()}
+
+	for m.diff.scope != git.ScopeStaged {
+		m.drainCmds(t, m.cycleDiffScope())
+	}
+	if !m.diff.annotations[key][0].outdated {
+		t.Fatal("arriving at staged should outdate its round comment on a missing file")
+	}
+}
+
 // Marks persisted before marks were scope-keyed carry a bare path; they can
 // never match a scoped lookup, so restore drops them and the next save
 // clears them from the row.

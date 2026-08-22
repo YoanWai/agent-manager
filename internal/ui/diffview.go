@@ -753,10 +753,11 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 		previousPath = fd.File.Path
 	}
 	m.diff.set = msg.set
+	// Every accepted load re-judges the arriving scope's comments: a scope
+	// cycle is neither a refresh nor a restore, but the file list it brings
+	// in still decides which of its own comments read outdated.
 	stateChanged := clearStaleReviewedMarks(m)
-	if msg.refresh || restoredState {
-		stateChanged = m.markMissingRoundCommentsOutdated() || stateChanged
-	}
+	stateChanged = m.markMissingRoundCommentsOutdated() || stateChanged
 	// Re-anchor only on a silent same-scope refresh. A scope cycle or session
 	// switch loads a different file set, where matching a comment by excerpt
 	// would rewrite its line against content it was never made against.
@@ -1339,6 +1340,10 @@ func (m *Model) closeDiff() tea.Cmd {
 func (m *Model) toggleReviewed() tea.Cmd {
 	fd := m.currentFileDiff()
 	if fd == nil || !fd.Loaded() || m.diffFileHidden(fd) {
+		return nil
+	}
+	if m.store == nil {
+		m.errBar.text = "review state is unavailable"
 		return nil
 	}
 	marks := m.diff.reviewed[m.reviewKey()]
