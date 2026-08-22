@@ -272,7 +272,7 @@ func (m *Model) requestFocusRegion(sessID string) tea.Cmd {
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
 	rows := m.previewPaneHeight()
 	command := fmt.Sprintf(`capture-pane -p -e -t %s -S %d -E -`,
-		tmux.SessionName(sessID), -(offset+rows))
+		tmux.SessionName(sessID), -(offset + rows))
 	watch := m.focus
 	return func() tea.Msg {
 		if watch == nil {
