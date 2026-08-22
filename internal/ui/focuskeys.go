@@ -265,6 +265,11 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.KeyLeft && !msg.Alt && m.arrowStep && m.caretAtInputStart(sess.ID, sess.Tool) {
 		return m, m.leaveFocus()
 	}
+	// Enter is how a drafted prompt leaves the composer, so the draft is
+	// snapshotted on its way in; alt+enter only breaks the line.
+	if msg.Type == tea.KeyEnter && !msg.Alt {
+		m.stashTypedPrompt(sess)
+	}
 	// Typing puts the cursor back on: a caret that blinks out mid-keystroke
 	// reads as a dropped character.
 	m.cursorOn = true

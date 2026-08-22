@@ -61,6 +61,13 @@ type Tool struct {
 	// turn is errored even when a turn-end summary or a limit dialog would
 	// otherwise settle the turn.
 	LimitLine string `toml:"limit_line"`
+	// MessageStart marks the first line of a message the tool prints, so a
+	// caller quoting the last reply starts at its beginning rather than
+	// its tail. Tools without one quote the newest content line instead.
+	MessageStart string `toml:"message_start"`
+	// InputPlaceholder is the hint a composer paints on its empty input
+	// row; a draft matching it is the tool's wording, not the user's.
+	InputPlaceholder string `toml:"input_placeholder"`
 	// InputPrefix locates the composer's input row for the arrow-step pair
 	// (Left leaving focus at the prompt head). It replaces the reuse of
 	// activity_cutoff for that check, for tools whose input line carries no
@@ -198,6 +205,8 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.ChromeLine, def.ChromeLine)
 	fill(&user.BlockedLine, def.BlockedLine)
 	fill(&user.TrailingNote, def.TrailingNote)
+	fill(&user.MessageStart, def.MessageStart)
+	fill(&user.InputPlaceholder, def.InputPlaceholder)
 	fill(&user.BusyLine, def.BusyLine)
 	fill(&user.LimitLine, def.LimitLine)
 	fill(&user.InputPrefix, def.InputPrefix)
@@ -333,6 +342,8 @@ trailing_note = "^※"
 busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for \\d+ background agents? to finish|.*· \\d+ shells? still running)"
 # a usage/rate-limit banner sits above the turn-end summary
 limit_line = "(?m)You've hit your .+limit"
+# every message and tool call opens on a "● " bullet at the left edge
+message_start = "^● "
 rules = [
   # selection dialogs (trust prompt, permission asks, questions) block on the user
   { state = "waiting", pattern = "Enter to confirm" },
@@ -366,6 +377,7 @@ activity_cutoff = "(?m)^\\s*╹"
 input_prefix = "(?m)^\\s*┃"
 turn_end = "^\\s*▣ +.+· [\\dhms. ]+\\s*$"
 chrome_line = "^\\s*(┃.*)?$"
+input_placeholder = "^Ask anything\\.\\.\\."
 limit_line = "(?i)requires more credits|(?:Usage|Free|Go) limit reached"
 rules = [
   { state = "errored", pattern = "(?i)requires more credits" },
@@ -391,6 +403,9 @@ activity_cutoff = "(?m)^›"
 # through the quiet-region fallback instead
 turn_end = "(?m)^─+ Worked for [\\dhms. ]+─"
 chrome_line = "^\\s*─*\\s*$"
+# every message and tool call opens on a "• " bullet
+message_start = "^• "
+input_placeholder = "^Ask Codex to do anything"
 limit_line = "(?m)You've hit your usage limit"
 rules = [
   # bottom-pane dialogs (command approval, choice prompts, first-run trust)
@@ -455,6 +470,9 @@ activity_cutoff = "(?m)^\\s*[>!*] "
 # shift+tab to manual", ...) are all chrome above the composer
 chrome_line = "^\\s*[╭╮╰╯│─▄▀█]*\\s*$|^\\s*\\? for shortcuts\\s*$|^\\s*press tab twice for more\\s*$|^\\s*Press Ctrl\\+O to show more lines.*$|(?i)^\\s*(auto-accept edits |plan |yolo )?\\S*tab\\S* to (accept edits|manual|plan|auto-accept edits)\\s*$"
 limit_line = "Usage limit reached"
+# model replies open on a "✦ " glyph
+message_start = "^\\s*✦ "
+input_placeholder = "^Type your message or @path/to/file"
 rules = [
   # selected row of an approval/trust dialog, inside its bordered box:
   # "│ ● 1. Allow once"

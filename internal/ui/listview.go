@@ -756,19 +756,18 @@ func typedPrompt(text string) string {
 	return text
 }
 
-// stateLine is what a full screen row's second line quotes: the question a
-// waiting session is blocked on in its state color, the agent's last
-// output line while working, the result line once finished. A working
-// session with nothing quotable yet animates a loader instead, and the
-// other states have nothing worth quoting, so a dim dash holds the line.
+// stateLine is what a full screen row's second line quotes: the start of
+// the agent's last message whatever the state, tinted in the state color
+// when the session waits on the user. A working session with nothing
+// quotable yet animates a loader instead, and a row with nothing to quote
+// holds the line with a dim dash.
 func (m *Model) stateLine(sess store.Session, quiet lipgloss.Style, room int) string {
 	line := m.paneLines[sess.ID]
 	if sess.Status == status.Working && line == "" {
 		frame := startupFrames[m.startupPhase%len(startupFrames)]
 		return lipgloss.NewStyle().Foreground(statusColor(status.Working)).Render(frame + " working")
 	}
-	quoting := sess.Status == status.Waiting || sess.Status == status.Working || sess.Status == status.Finished
-	if line == "" || !quoting {
+	if line == "" {
 		return quiet.Render("-")
 	}
 	line = ansi.Truncate(line, max(room, 1), "…")

@@ -90,15 +90,24 @@ func paneBooted(pane string) bool {
 	return strings.TrimSpace(ansi.Strip(pane)) != ""
 }
 
+// rowQuoteCap bounds what a row quote stores; a row shows far less, and
+// a flattened message can span a whole pane.
+const rowQuoteCap = 400
+
 // lastResponseLine is what a full screen row quotes for a session: the
-// agent's newest output line above its input box when the tool's rules
-// can find the box, else the newest pane line with a word on it.
+// agent's last message, flattened to one line from its beginning, when
+// the tool's rules can find its input box, else the newest pane line
+// with a word on it.
 func (p *poller) lastResponseLine(tool, pane string) string {
 	clean := ansi.Strip(pane)
-	if line, ok := p.engine.LastContentLine(tool, clean); ok {
-		return line
+	line, ok := p.engine.LastMessage(tool, clean)
+	if !ok {
+		line = lastMeaningfulPaneLine(clean)
 	}
-	return lastMeaningfulPaneLine(clean)
+	if runes := []rune(line); len(runes) > rowQuoteCap {
+		line = string(runes[:rowQuoteCap])
+	}
+	return line
 }
 
 // lastMeaningfulPaneLine is the newest pane line with a word on it. The

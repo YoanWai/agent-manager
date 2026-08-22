@@ -24,6 +24,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/update"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type mode int
@@ -206,6 +207,7 @@ type Model struct {
 
 	startupPhase     int
 	startupAnimating bool
+	pendingTyped     *typedPromptCandidate
 
 	update updateInfo
 
@@ -516,6 +518,63 @@ func (m *Model) previewTick() tea.Cmd {
 
 func (m *Model) needsLoaderTick() bool {
 	return m.hasStartingRow() || m.reviewNeedsLoader() || m.hasWorkingLoaderRow()
+}
+
+// typedPromptCandidate is a composer draft snapshotted as enter went into
+// a focused pane, held until the session shows the send went through.
+type typedPromptCandidate struct {
+	id   string
+	text string
+	at   time.Time
+}
+
+// typedPromptGrace is how long a candidate waits for its session to turn
+// working before it is judged a menu enter and dropped.
+const typedPromptGrace = 5 * time.Second
+
+// stashTypedPrompt snapshots the composer draft as enter goes into the
+// focused pane, from a fresh capture so the newest keystrokes are in it.
+func (m *Model) stashTypedPrompt(sess store.Session) {
+	if m.engine == nil || m.tmux == nil {
+		return
+	}
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		return
+	}
+	if draft, ok := m.engine.InputDraft(sess.Tool, ansi.Strip(pane)); ok {
+		m.pendingTyped = &typedPromptCandidate{id: sess.ID, text: draft, at: time.Now()}
+	}
+}
+
+// commitTypedPrompt records a stashed draft as the session's last prompt
+// once the session runs with it: an enter that opened a menu or answered
+// a dialog never turns the session working while its draft is fresh, so
+// that candidate just expires.
+func (m *Model) commitTypedPrompt() {
+	cand := m.pendingTyped
+	if cand == nil {
+		return
+	}
+	if time.Since(cand.at) > typedPromptGrace {
+		m.pendingTyped = nil
+		return
+	}
+	for i := range m.sessions {
+		if m.sessions[i].ID != cand.id {
+			continue
+		}
+		if m.sessions[i].Status != status.Working {
+			return
+		}
+		if err := ignoreDeletedSession(m.store.SetLastPrompt(cand.id, cand.text)); err != nil {
+			m.errBar.text = err.Error()
+		}
+		m.sessions[i].LastPrompt = cand.text
+		m.pendingTyped = nil
+		return
+	}
+	m.pendingTyped = nil
 }
 
 // hasWorkingLoaderRow reports whether a full screen row is animating the
@@ -1232,6 +1291,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for id, line := range msg.paneLines {
 			m.paneLines[id] = line
 		}
+		m.commitTypedPrompt()
 		if msg.snapOK {
 			m.snap = msg.snap
 			m.updateNetRates(msg.snap)

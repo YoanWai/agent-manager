@@ -201,13 +201,18 @@ func TestFullRowWaitingLineWearsTheStateColor(t *testing.T) {
 	}
 }
 
-func TestFullRowRestingStatesHoldADash(t *testing.T) {
+func TestFullRowQuotesEveryStateAndDashesWhenSilent(t *testing.T) {
 	m := shotModel()
 	m.fullLayout = true
-	m.paneLines = map[string]string{"notes": "❯ some resting prompt line"}
+	m.paneLines = map[string]string{"notes": "All quiet, nothing queued."}
 	lines := splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
+	if second := strings.TrimSpace(ansi.Strip(lines[1])); second != "All quiet, nothing queued." {
+		t.Fatalf("idle row second line = %q, want the last message", second)
+	}
+	m.paneLines = nil
+	lines = splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
 	if second := strings.TrimSpace(ansi.Strip(lines[1])); second != "-" {
-		t.Fatalf("idle row second line = %q, want a dash", second)
+		t.Fatalf("silent idle row second line = %q, want a dash", second)
 	}
 }
 

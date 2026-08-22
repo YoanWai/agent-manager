@@ -725,34 +725,64 @@ func TestTypingHold(t *testing.T) {
 	}
 }
 
-// LastContentLine quotes the agent's newest output, not its frame: the
-// input box, shortcut hints, spinner rows and turn summaries are all
-// stepped over. A pane that is nothing but frame yields an empty quote,
-// and a tool without box rules reports it cannot tell at all.
-func TestLastContentLine(t *testing.T) {
+// LastMessage quotes the agent's last message from its beginning, not its
+// frame or its tail: the message_start marker finds where the reply began,
+// its lines flatten into one, and the input box, shortcut hints, spinner
+// rows and turn summaries are all stepped over. A pane that is nothing but
+// frame yields an empty quote, and a tool without box rules reports it
+// cannot tell at all.
+func TestLastMessage(t *testing.T) {
 	engine := defaultEngine(t)
-	pane := "● Done. The fix is in auth.go.\n" +
+	pane := "● Ran the suite.\n" +
+		"\n" +
+		"● Done. The fix is in auth.go.\n" +
+		"  Two tests were touched.\n" +
 		"\n" +
 		"✻ Cerebrating… (4s · esc to interrupt)\n" +
 		"\n" +
 		"❯ \n" +
 		"  ? for shortcuts"
-	line, ok := engine.LastContentLine("claude", pane)
+	line, ok := engine.LastMessage("claude", pane)
 	if !ok {
 		t.Fatal("claude has an activity cutoff, ok should be true")
 	}
-	if line != "● Done. The fix is in auth.go." {
-		t.Fatalf("LastContentLine = %q, want the response line", line)
+	if line != "Done. The fix is in auth.go. Two tests were touched." {
+		t.Fatalf("LastMessage = %q, want the last message from its start", line)
 	}
 
-	if line, ok = engine.LastContentLine("claude", "✻ Musing… (2s · esc to interrupt)\n\n❯ "); !ok || line != "" {
+	if line, ok = engine.LastMessage("claude", "✻ Musing… (2s · esc to interrupt)\n\n❯ "); !ok || line != "" {
 		t.Fatalf("frame-only pane: line=%q ok=%v, want empty and true", line, ok)
 	}
 
-	if _, ok = engine.LastContentLine("no-such-tool", pane); ok {
+	// opencode has no message_start, so its newest content line is the quote.
+	line, ok = engine.LastMessage("opencode",
+		"     hey. what need?\n     ▣  Build · GLM-5.2 · 22.0s\n  ┃\n  ╹▀▀▀▀")
+	if !ok || line != "hey. what need?" {
+		t.Fatalf("opencode fallback quote = %q ok=%v", line, ok)
+	}
+
+	if _, ok = engine.LastMessage("no-such-tool", pane); ok {
 		t.Fatal("unknown tool should report it cannot tell")
 	}
-	if _, ok = engine.LastContentLine("claude", "just text, no input box"); ok {
+	if _, ok = engine.LastMessage("claude", "just text, no input box"); ok {
 		t.Fatal("pane without the cutoff should report it cannot tell")
+	}
+}
+
+// InputDraft reads what the user has typed after the composer marker, and
+// refuses the placeholder wording a composer paints on its empty row.
+func TestInputDraft(t *testing.T) {
+	engine := defaultEngine(t)
+	if draft, ok := engine.InputDraft("claude", "● Done.\n\n❯ fix the flaky test"); !ok || draft != "fix the flaky test" {
+		t.Fatalf("claude draft = %q ok=%v", draft, ok)
+	}
+	if _, ok := engine.InputDraft("claude", "● Done.\n\n❯ "); ok {
+		t.Fatal("empty composer should carry no draft")
+	}
+	if _, ok := engine.InputDraft("codex", "› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev"); ok {
+		t.Fatal("codex placeholder should not read as a draft")
+	}
+	if draft, ok := engine.InputDraft("codex", "› rename the flag\n  gpt-5.6-terra medium · /home/dev"); !ok || draft != "rename the flag" {
+		t.Fatalf("codex draft = %q ok=%v", draft, ok)
 	}
 }

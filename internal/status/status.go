@@ -39,6 +39,8 @@ type toolRules struct {
 	trailingNote   *regexp.Regexp
 	busyLine       *regexp.Regexp
 	limitLine      *regexp.Regexp
+	messageStart   *regexp.Regexp
+	placeholder    *regexp.Regexp
 	rules          []rule
 }
 
@@ -70,6 +72,8 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.TrailingNote, &tr.trailingNote},
 			{tool.BusyLine, &tr.busyLine},
 			{tool.LimitLine, &tr.limitLine},
+			{tool.MessageStart, &tr.messageStart},
+			{tool.InputPlaceholder, &tr.placeholder},
 		}
 		for _, opt := range optional {
 			if opt.pattern == "" {
@@ -291,12 +295,15 @@ func (e *Engine) ActivityRegion(tool, pane string) (string, bool) {
 	return tr.activityRegion(pane)
 }
 
-// LastContentLine is the newest line of real output above the tool's
-// input box: chrome, busy spinners and turn_end markers are stepped over,
-// so a caller quoting the agent's last words does not quote its frame.
-// ok is false when the tool has no activity_cutoff to find the box with,
-// or the cutoff is absent from the pane.
-func (e *Engine) LastContentLine(tool, pane string) (string, bool) {
+// LastMessage is the tool's newest message, flattened to one line: the
+// content lines above the input box, from the last message_start marker
+// on, joined in order — so a caller quoting the reply starts at its
+// beginning and fits as much of it as the row can hold. Chrome, busy
+// spinners and turn_end markers are stepped over, and a tool without a
+// marker yields its newest content line alone. ok is false when the tool
+// has no activity_cutoff to find the box with, or the cutoff is absent
+// from the pane.
+func (e *Engine) LastMessage(tool, pane string) (string, bool) {
 	tr, ok := e.tools[tool]
 	if !ok {
 		return "", false
@@ -305,9 +312,9 @@ func (e *Engine) LastContentLine(tool, pane string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	lines := strings.Split(region, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimRight(lines[i], " \t")
+	var content []string
+	for _, raw := range strings.Split(region, "\n") {
+		line := strings.TrimRight(raw, " \t")
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -323,9 +330,59 @@ func (e *Engine) LastContentLine(tool, pane string) (string, bool) {
 		if tr.matchesWorkingRule(line) {
 			continue
 		}
-		return strings.TrimSpace(line), true
+		content = append(content, line)
 	}
-	return "", true
+	if len(content) == 0 {
+		return "", true
+	}
+	start := len(content) - 1
+	if tr.messageStart != nil {
+		for i := len(content) - 1; i >= 0; i-- {
+			if tr.messageStart.MatchString(content[i]) {
+				start = i
+				break
+			}
+		}
+	}
+	first := content[start]
+	if tr.messageStart != nil {
+		if loc := tr.messageStart.FindStringIndex(first); loc != nil {
+			first = first[loc[1]:]
+		}
+	}
+	parts := []string{strings.TrimSpace(first)}
+	for _, line := range content[start+1:] {
+		parts = append(parts, strings.TrimSpace(line))
+	}
+	return strings.TrimSpace(strings.Join(parts, " ")), true
+}
+
+// InputDraft is the text typed into the tool's composer: what follows the
+// last activity_cutoff match on its own row. A placeholder the composer
+// paints on the empty row is the tool's wording, not a draft, and a tool
+// whose composer sits above its cutoff (opencode, pi) cannot be read this
+// way; ok is false for all of those.
+func (e *Engine) InputDraft(tool, pane string) (string, bool) {
+	tr, ok := e.tools[tool]
+	if !ok || tr.activityCutoff == nil {
+		return "", false
+	}
+	locs := tr.activityCutoff.FindAllStringIndex(pane, -1)
+	if len(locs) == 0 {
+		return "", false
+	}
+	rest := pane[locs[len(locs)-1][1]:]
+	if lineEnd := strings.IndexByte(rest, '\n'); lineEnd >= 0 {
+		rest = rest[:lineEnd]
+	}
+	draft := strings.TrimSpace(rest)
+	if draft == "" {
+		return "", false
+	}
+	if tr.placeholder != nil && tr.placeholder.MatchString(draft) {
+		return "", false
+	}
+	return draft, true
 }
 
 // matchesWorkingRule reports whether a line is one of the tool's working
