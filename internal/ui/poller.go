@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/git"
@@ -87,6 +88,22 @@ const startingGrace = 30 * time.Second
 // which marks the end of the launch state.
 func paneBooted(pane string) bool {
 	return strings.TrimSpace(ansi.Strip(pane)) != ""
+}
+
+// lastMeaningfulPaneLine is the newest pane line with a word on it. The
+// full screen row quotes it, so pure chrome — blank rows, borders, bare
+// spinners — is skipped until a line carrying a letter or digit turns up.
+func lastMeaningfulPaneLine(pane string) string {
+	lines := strings.Split(ansi.Strip(pane), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if strings.ContainsFunc(line, func(r rune) bool {
+			return unicode.IsLetter(r) || unicode.IsDigit(r)
+		}) {
+			return line
+		}
+	}
+	return ""
 }
 
 func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores, mcpStyles map[string]string, binaries toolBinaries, interval time.Duration) *poller {
@@ -254,6 +271,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	var agents agentStats
 	var cpuSecDelta float64
 	paneHashes := make(map[string]uint64, len(sessions))
+	paneLastLines := make(map[string]string, len(sessions))
 	for i, sess := range sessions {
 		if sess.Archived {
 			continue
@@ -310,11 +328,18 @@ func (p *poller) refreshOnce() tea.Msg {
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
+				paneLastLines[sess.ID] = lastMeaningfulPaneLine(pane)
 				sent, err := p.maybeSendPendingInput(sess, pane, agentAlive)
 				if err != nil {
 					return errMsg{err}
 				}
 				if sent {
+					if prompt := typedPrompt(sess.PendingInputs[0]); prompt != "" {
+						if err := ignoreDeletedSession(p.store.SetLastPrompt(sess.ID, prompt)); err != nil {
+							return errMsg{err}
+						}
+						sessions[i].LastPrompt = prompt
+					}
 					sessions[i].PendingInputs = sessions[i].PendingInputs[1:]
 				}
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
@@ -424,6 +449,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		preview:        preview,
 		agents:         agents,
 		queuedMessages: queued,
+		paneLines:      paneLastLines,
 	}
 	if sampleStats {
 		msg.snap = sysstat.Sample("/")
@@ -637,6 +663,9 @@ func (p *poller) maybeDeliverInbox(sess store.Session, pane, derived string, age
 		return errors.Join(
 			fmt.Errorf("dropped a message to %s from %s: %w", sess.Name, msg.SenderName, err),
 			p.store.MarkDropped(msg.ID, time.Now()))
+	}
+	if err := ignoreDeletedSession(p.store.SetLastPrompt(sess.ID, msg.Body)); err != nil {
+		return err
 	}
 	return p.store.MarkDelivered(msg.ID, time.Now())
 }

@@ -89,6 +89,10 @@ type Model struct {
 	// queuedMessages is replaced whole on every refresh rather than merged,
 	// so a delivered message's badge clears itself.
 	queuedMessages map[string]int
+	// paneLines holds each session's last meaningful pane line, which the
+	// full screen row's second line quotes. Merged rather than replaced, so
+	// a session that lost its window keeps its last words.
+	paneLines map[string]string
 
 	net netStats
 
@@ -432,6 +436,7 @@ type refreshMsg struct {
 	preview        string
 	agents         agentStats
 	queuedMessages map[string]int
+	paneLines      map[string]string
 }
 
 type previewMsg struct {
@@ -1154,6 +1159,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.archivedGroups = msg.archivedGroups
 		m.agents = msg.agents
 		m.queuedMessages = msg.queuedMessages
+		if m.paneLines == nil {
+			m.paneLines = map[string]string{}
+		}
+		for id, line := range msg.paneLines {
+			m.paneLines[id] = line
+		}
 		if msg.snapOK {
 			m.snap = msg.snap
 			m.updateNetRates(msg.snap)

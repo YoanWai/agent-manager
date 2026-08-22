@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -29,7 +30,7 @@ const shellGlyph = "❯"
 // viewListFrame is the sessions rail beside the session content, both
 // painted surfaces rather than drawn panels.
 func (m *Model) viewListFrame() string {
-	if m.fullLayout && m.mode != modeFocus {
+	if m.fullRows() {
 		return m.viewFullListFrame()
 	}
 	leftWidth, rightWidth := m.splitWidths()
@@ -83,6 +84,13 @@ func (m *Model) viewListFrame() string {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
+}
+
+// fullRows reports whether the list is on the full screen layout, whose
+// rows and frame both differ from the split's. Focus mode still renders
+// the split frame, so it reads as split rows too.
+func (m *Model) fullRows() bool {
+	return m.fullLayout && m.mode != modeFocus
 }
 
 // viewFullListFrame is the full screen layout: the rail owns the whole
@@ -298,9 +306,13 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 
 // entryHeight is how many lines an entry paints: one in the compact list,
 // two once the comfortable density unstacks the meta onto its own line.
-// Groups match sessions either way, since a ragged list of one- and
-// two-line rows reads as gaps rather than as rhythm.
-func (m *Model) entryHeight(treeRow) int {
+// The full screen layout gives every session two lines at any density,
+// since the second line is what the width is for; groups have no state
+// line to carry, so they keep the density's height.
+func (m *Model) entryHeight(entry treeRow) int {
+	if m.fullRows() && !entry.isGroup {
+		return 2
+	}
 	if m.comfortableRows {
 		return 2
 	}
@@ -473,7 +485,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 	if m.renamingRow(entry) {
 		line := pad + guides + m.renameRowInput(entry, width-railGutter-ansi.StringWidth(guides))
 		row := paint(line, width, selectedHex())
-		if m.comfortableRows {
+		if m.entryHeight(entry) == 2 {
 			row += "\n" + paint(pad+trail, width, selectedHex())
 		}
 		return row
@@ -593,10 +605,75 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	meta := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
 		metaStyle.Render(" · "+sess.Tool+" · "+relSince(lastActivity(sess)))
 
+	if m.fullRows() {
+		return m.fullSessionRow(sess, head, meta, metaIndent(pad, trail), selected, width, bg)
+	}
 	if m.comfortableRows {
 		return stackedRow(head, metaIndent(pad, trail)+meta, width, bg)
 	}
 	return paint(rowColumns(head, meta, width-railGutter), width, bg)
+}
+
+// rowPromptFloor is the narrowest slot worth printing a prompt into: any
+// tighter and the row shows an ellipsis where a task should be.
+const rowPromptFloor = 8
+
+// fullSessionRow is the two-line entry the full screen width affords: the
+// last prompt sent to the session rides between the name and the meta, and
+// the second line quotes what the state makes worth reading.
+func (m *Model) fullSessionRow(sess store.Session, head, meta, indent string, selected bool, width int, bg string) string {
+	quiet := subtleStyle
+	if selected {
+		quiet = mutedStyle
+	}
+	const gap = 2
+	room := width - railGutter - ansi.StringWidth(head) - ansi.StringWidth(meta) - 2*gap
+	if prompt := oneLine(m.rowPrompt(sess)); prompt != "" && room >= rowPromptFloor {
+		head += strings.Repeat(" ", gap) + quiet.Render(ansi.Truncate(prompt, room, "…"))
+	}
+	top := rowColumns(head, meta, width-railGutter)
+	state := m.stateLine(sess, quiet, width-railGutter-ansi.StringWidth(indent))
+	return stackedRow(top, indent+state, width, bg)
+}
+
+// rowPrompt is the prompt a full screen row carries beside the name: the
+// last one delivered through the manager, else the one the session
+// launched with, stripped of the notes launch prepends.
+func (m *Model) rowPrompt(sess store.Session) string {
+	if sess.LastPrompt != "" {
+		return sess.LastPrompt
+	}
+	return typedPrompt(sess.LaunchPrompt)
+}
+
+// typedPrompt is a delivered prompt with the launch notes peeled off: the
+// rename directives and the coordination note are the manager's words, not
+// a task, and a note delivered on its own leaves nothing typed at all.
+func typedPrompt(text string) string {
+	if text == launch.DeferredRenameDirective || text == launch.CoordinationNote {
+		return ""
+	}
+	text = strings.TrimPrefix(text, launch.CoordinationNote+"\n\n")
+	text = strings.TrimPrefix(text, launch.RenameDirective+"\n\n")
+	text = strings.TrimPrefix(text, launch.RenameAvailableNote+"\n\n")
+	return text
+}
+
+// stateLine is what a full screen row's second line quotes: the question a
+// waiting session is blocked on in its state color, the last meaningful
+// pane line while working, the result line once finished. The other states
+// have nothing worth quoting, so a dim dash holds the line.
+func (m *Model) stateLine(sess store.Session, quiet lipgloss.Style, room int) string {
+	line := m.paneLines[sess.ID]
+	quoting := sess.Status == status.Waiting || sess.Status == status.Working || sess.Status == status.Finished
+	if line == "" || !quoting {
+		return quiet.Render("-")
+	}
+	line = ansi.Truncate(line, max(room, 1), "…")
+	if sess.Status == status.Waiting {
+		return lipgloss.NewStyle().Foreground(statusColor(status.Waiting)).Render(line)
+	}
+	return quiet.Render(line)
 }
 
 // metaIndent lines a second row line up under the name on the first, past

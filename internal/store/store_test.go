@@ -653,6 +653,28 @@ func TestSetAcked(t *testing.T) {
 	}
 }
 
+func TestLastPromptRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	st.CreateSession(sample("a", "g1"))
+	if err := st.SetLastPrompt("a", "carry on with the plan"); err != nil {
+		t.Fatalf("set last prompt: %v", err)
+	}
+	got, _ := st.Get("a")
+	if got.LastPrompt != "carry on with the plan" {
+		t.Fatalf("last prompt = %q", got.LastPrompt)
+	}
+	listed, err := st.ListSessions(false)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if listed[0].LastPrompt != "carry on with the plan" {
+		t.Fatalf("listed last prompt = %q", listed[0].LastPrompt)
+	}
+	if err := st.SetLastPrompt("missing", "x"); !errors.Is(err, ErrSessionGone) {
+		t.Fatalf("want ErrSessionGone, got %v", err)
+	}
+}
+
 func TestAgentSessionIDRoundTrip(t *testing.T) {
 	st := newTestStore(t)
 	sess := sample("a", "g1")

@@ -53,6 +53,11 @@ type Session struct {
 	// Pending input waits for it to show in the pane, because an agent
 	// taking it clears the composer and anything pasted there.
 	LaunchPrompt string
+	// LastPrompt is the most recent text delivered to the session through
+	// the manager: a quick bar send, a launch input the poller typed in, or
+	// a queued message from another agent. The full screen row wears it,
+	// falling back to LaunchPrompt for sessions nothing was sent to since.
+	LastPrompt string
 }
 
 // LaunchTime is when the agent now in the pane started: the last restart
@@ -160,6 +165,7 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN pending_claimed INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN launch_prompt TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN last_prompt TEXT NOT NULL DEFAULT ''`,
 		`CREATE TABLE IF NOT EXISTS session_inbox (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			session_id   TEXT    NOT NULL,
@@ -433,7 +439,7 @@ func (s *Store) AddGroup(name, path, worktree string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed, parent_id, launch_prompt
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -454,7 +460,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
-			&agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt); err != nil {
+			&agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(pendingInputs), &sess.PendingInputs); err != nil {
@@ -477,11 +483,11 @@ func (s *Store) Get(id string) (Session, error) {
 	var created, lastStatus, agentLaunched int64
 	var pendingInputs string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed, parent_id, launch_prompt
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
-		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt)
+		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt)
 	if err != nil {
 		return Session{}, err
 	}
@@ -621,6 +627,17 @@ func (s *Store) AcknowledgeFinished(id string) error {
 func (s *Store) SetAcked(id string, acked bool) error {
 	res, err := s.db.Exec(
 		`UPDATE sessions SET acked = ? WHERE id = ?`, boolToInt(acked), id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
+}
+
+// SetLastPrompt records the text a delivery just put in front of the
+// session, which the full screen row shows beside its name.
+func (s *Store) SetLastPrompt(id, prompt string) error {
+	res, err := s.db.Exec(
+		`UPDATE sessions SET last_prompt = ? WHERE id = ?`, prompt, id)
 	if err != nil {
 		return err
 	}
