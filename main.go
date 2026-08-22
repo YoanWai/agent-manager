@@ -93,7 +93,7 @@ func main() {
 }
 
 func printHelp(w io.Writer) error {
-	_, err := fmt.Fprintln(w, cli.Help())
+	_, err := fmt.Fprintln(w, cli.Help(version))
 	return err
 }
 
@@ -103,7 +103,7 @@ func subcommands() map[string]func(args []string) error {
 			return mcpserver.Run(configDir, sessionID, version)
 		}),
 	}
-	for name, command := range cli.Commands() {
+	for name, command := range cli.Commands(version) {
 		table[name] = withConfigDir(command)
 	}
 	return table

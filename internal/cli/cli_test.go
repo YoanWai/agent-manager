@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/update"
 )
 
 // fakeSessions records what a subcommand asked the layer for, so the tests
@@ -396,9 +397,9 @@ func TestOperandTextMayStartWithADash(t *testing.T) {
 // Help must not promise a flag a command refuses: an agent that believes a
 // blanket promise gets "flag provided but not defined" instead of a record.
 func TestJSONIsPromisedOnlyWhereTheCommandTakesIt(t *testing.T) {
-	preamble, _, found := strings.Cut(Help(), "\n"+sessionSection().title)
+	preamble, _, found := strings.Cut(Help("dev"), "\n"+sessionSection().title)
 	if !found {
-		t.Fatalf("help has no sections:\n%s", Help())
+		t.Fatalf("help has no sections:\n%s", Help("dev"))
 	}
 	if strings.Contains(preamble, "--json") {
 		t.Fatalf("the preamble promises --json for every command, and several refuse it:\n%s", preamble)
@@ -422,6 +423,11 @@ func TestJSONIsPromisedOnlyWhereTheCommandTakesIt(t *testing.T) {
 		}},
 		{usageReviewMode, func(out *bytes.Buffer, args []string) error {
 			return runReviewMode(out, append([]string{"staged"}, args...), "cafe0001", t.TempDir())
+		}},
+		{usageUpdate, func(out *bytes.Buffer, args []string) error {
+			swapUpdateSeams(t, "agent-manager", update.Manager{},
+				update.Result{Releases: []update.Release{{Version: "v0.31.0"}}}, nil)
+			return runUpdate("0.31.0")(out, args, "", t.TempDir())
 		}},
 	}
 	for _, testCase := range cases {
@@ -458,11 +464,11 @@ func TestAFrontReportsWhatTheLayerDecided(t *testing.T) {
 }
 
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
-	table := Commands()
+	table := Commands("dev")
 	registered := []string{
 		"sessions", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
-		"rename", "review-repo", "review-base", "review-mode", "review-comment",
+		"rename", "review-repo", "review-base", "review-mode", "review-comment", "update",
 	}
 	for _, name := range registered {
 		if table[name] == nil {
@@ -473,8 +479,8 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 		t.Fatalf("the command table holds %d entries, not the %d named here: %v", len(table), len(registered), table)
 	}
 
-	help := Help()
-	for _, line := range []string{usageSessions, usageReserve, usageTerminalSend, usageRename, usageReviewComment, "task <list|create|claim|finish|release|delete>"} {
+	help := Help("dev")
+	for _, line := range []string{usageSessions, usageReserve, usageTerminalSend, usageRename, usageReviewComment, usageUpdate, "task <list|create|claim|finish|release|delete>"} {
 		if !strings.Contains(help, line) {
 			t.Fatalf("help is missing %q:\n%s", line, help)
 		}

@@ -61,3 +61,5 @@ curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.
 mise upgrade --bump ubi:YoanWai/agent-manager                                             # mise
 go install github.com/YoanWai/agent-manager@latest                                        # Go
 ```
+
+Later, `agent-manager update` brings the binary to the newest release without re-running any of these: it hands the update to the package manager that installed it, or downloads and swaps the binary itself.
