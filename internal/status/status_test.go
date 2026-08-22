@@ -750,6 +750,23 @@ func TestLastMessage(t *testing.T) {
 		t.Fatalf("LastMessage = %q, want the last message from its start", line)
 	}
 
+	// Current Claude Code bullets replies with ⏺, and prints notices (a
+	// plugin banner) after the turn summary; the quote starts at the
+	// bullet and stops at the summary, from a real v2.1.240 pane shape.
+	realPane := "❯ Reply with exactly this sentence and nothing else: The quick banana ate seventeen kayaks today.\n" +
+		"\n" +
+		"⏺ The quick banana ate seventeen kayaks today.\n" +
+		"\n" +
+		"✻ Crunched for 3s\n" +
+		"──────────────────────────────\n" +
+		"Plugins updated: 7 plugins · Run /reload-plugins to apply\n" +
+		"❯ \n" +
+		"──────────────────────────────"
+	line, ok = engine.LastMessage("claude", realPane)
+	if !ok || line != "The quick banana ate seventeen kayaks today." {
+		t.Fatalf("real pane quote = %q ok=%v, want the reply alone", line, ok)
+	}
+
 	if line, ok = engine.LastMessage("claude", "✻ Musing… (2s · esc to interrupt)\n\n❯ "); !ok || line != "" {
 		t.Fatalf("frame-only pane: line=%q ok=%v, want empty and true", line, ok)
 	}

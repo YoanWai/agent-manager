@@ -342,8 +342,9 @@ trailing_note = "^※"
 busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for \\d+ background agents? to finish|.*· \\d+ shells? still running)"
 # a usage/rate-limit banner sits above the turn-end summary
 limit_line = "(?m)You've hit your .+limit"
-# every message and tool call opens on a "● " bullet at the left edge
-message_start = "^● "
+# every message and tool call opens on a bullet at the left edge; the
+# glyph is ⏺ on current Claude Code and ● on older releases
+message_start = "^[●⏺] "
 rules = [
   # selection dialogs (trust prompt, permission asks, questions) block on the user
   { state = "waiting", pattern = "Enter to confirm" },

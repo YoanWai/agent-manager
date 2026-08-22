@@ -312,46 +312,52 @@ func (e *Engine) LastMessage(tool, pane string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	var content []string
-	for _, raw := range strings.Split(region, "\n") {
+	lines := strings.Split(region, "\n")
+	structural := func(line string) bool {
+		if tr.chromeLine != nil && tr.chromeLine.MatchString(line) {
+			return true
+		}
+		if tr.busyLine != nil && tr.busyLine.MatchString(line) {
+			return true
+		}
+		if tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
+			return true
+		}
+		return tr.matchesWorkingRule(line)
+	}
+	start, lastContent := -1, -1
+	for i, raw := range lines {
+		line := strings.TrimRight(raw, " \t")
+		if strings.TrimSpace(line) == "" || structural(line) {
+			continue
+		}
+		lastContent = i
+		if tr.messageStart != nil && tr.messageStart.MatchString(line) {
+			start = i
+		}
+	}
+	if lastContent == -1 {
+		return "", true
+	}
+	if start == -1 {
+		return strings.TrimSpace(lines[lastContent]), true
+	}
+	// The message runs from its marker until the next structural line: a
+	// turn summary or a rule closes it, so a notice printed after the
+	// turn (a plugin banner, a warning) is not glued onto the reply.
+	first := strings.TrimRight(lines[start], " \t")
+	if loc := tr.messageStart.FindStringIndex(first); loc != nil {
+		first = first[loc[1]:]
+	}
+	parts := []string{strings.TrimSpace(first)}
+	for _, raw := range lines[start+1:] {
 		line := strings.TrimRight(raw, " \t")
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if tr.chromeLine != nil && tr.chromeLine.MatchString(line) {
-			continue
+		if structural(line) {
+			break
 		}
-		if tr.busyLine != nil && tr.busyLine.MatchString(line) {
-			continue
-		}
-		if tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
-			continue
-		}
-		if tr.matchesWorkingRule(line) {
-			continue
-		}
-		content = append(content, line)
-	}
-	if len(content) == 0 {
-		return "", true
-	}
-	start := len(content) - 1
-	if tr.messageStart != nil {
-		for i := len(content) - 1; i >= 0; i-- {
-			if tr.messageStart.MatchString(content[i]) {
-				start = i
-				break
-			}
-		}
-	}
-	first := content[start]
-	if tr.messageStart != nil {
-		if loc := tr.messageStart.FindStringIndex(first); loc != nil {
-			first = first[loc[1]:]
-		}
-	}
-	parts := []string{strings.TrimSpace(first)}
-	for _, line := range content[start+1:] {
 		parts = append(parts, strings.TrimSpace(line))
 	}
 	return strings.TrimSpace(strings.Join(parts, " ")), true
