@@ -47,6 +47,15 @@ func buildModel(t *testing.T) *Model {
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^›",
 			},
+			// Composes on a bare blank row between rules, marking the caret
+			// cell with a reverse-video space, the way pi does;
+			// input_prefix declares that markerless line.
+			"pi-tool": {
+				Command:        "cat",
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: `(?ms)\A.*^─{8,}[ \t]*$`,
+				InputPrefix:    "^",
+			},
 			// Draws a fresh prompt for every line it reads, so the prompt
 			// stays on the pane however long an inbox envelope is. Left to
 			// `cat`, a long envelope scrolls it off and TypingHold never

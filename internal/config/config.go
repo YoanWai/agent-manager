@@ -61,7 +61,16 @@ type Tool struct {
 	// turn is errored even when a turn-end summary or a limit dialog would
 	// otherwise settle the turn.
 	LimitLine string `toml:"limit_line"`
-	Rules     []Rule `toml:"rules"`
+	// InputPrefix locates the composer's input row for the arrow-step pair
+	// (Left leaving focus at the prompt head). It replaces the reuse of
+	// activity_cutoff for that check, for tools whose input line carries no
+	// marker the cutoff would find: pi composes on a bare blank row it
+	// marks only with its own block cursor, and opencode on one of its
+	// blank gutter rows whose blanks a draft replaces. Whether a caret on
+	// such a row really sits at the prompt head also reads one row of
+	// context above; see caretRowEndsAPromptHead.
+	InputPrefix string `toml:"input_prefix"`
+	Rules       []Rule `toml:"rules"`
 }
 
 type Config struct {
@@ -191,6 +200,7 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.TrailingNote, def.TrailingNote)
 	fill(&user.BusyLine, def.BusyLine)
 	fill(&user.LimitLine, def.LimitLine)
+	fill(&user.InputPrefix, def.InputPrefix)
 	if name == "claude" && user.BusyLine == busyLineAgentsOnly {
 		user.BusyLine = def.BusyLine
 	}
@@ -495,6 +505,12 @@ revive_command = "pi --continue"
 # Pi shows a spinner for active work. A resting pane is a finished turn until
 # the user acknowledges it; a resumed conversation is already acknowledged.
 default_status = "finished"
+# The composer is a bare blank row between rules with no marker of its own;
+# pi draws its block cursor as a reverse-video space there and parks the
+# terminal caret on that cell. Zero width on purpose: any caret position on
+# the row is the prompt head, and text before the caret is what rules a
+# draft out.
+input_prefix = "^"
 # Start the activity region at the pane origin. Pane reflow then cannot look
 # like streaming output when Agent Manager attaches or detaches.
 activity_cutoff = "(?ms)\\A.*^─{8,}[ \\t]*$"
