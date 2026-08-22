@@ -22,6 +22,7 @@ type ReviewComment struct {
 	Text        string `json:"text"`
 	ContentHash uint64 `json:"content_hash,omitempty"`
 	Round       int    `json:"round,omitempty"`
+	Scope       string `json:"scope,omitempty"`
 	Point       int    `json:"point,omitempty"`
 	Resolved    bool   `json:"resolved,omitempty"`
 	Outdated    bool   `json:"outdated,omitempty"`

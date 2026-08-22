@@ -34,6 +34,7 @@ type annotation struct {
 	text     string
 	hash     uint64
 	round    int
+	scope    string
 	point    int
 	handled  bool
 	outdated bool
@@ -429,6 +430,13 @@ func (m *Model) reviewKey() string {
 	return m.diff.sessID + "\x00" + m.diff.repoSel
 }
 
+// reviewedMarkKey scopes a reviewed mark to the diff scope it was taken in:
+// the same file renders different lines - and so a different content hash -
+// under each scope, so only its own scope can read or judge the mark.
+func (m *Model) reviewedMarkKey(path string) string {
+	return m.diff.scope.String() + "\x00" + path
+}
+
 func readReviewState(stor *store.Store, sessID, repoRoot string) (store.ReviewState, error) {
 	state, err := stor.ReviewState(sessID, repoRoot)
 	if err != nil {
@@ -471,9 +479,12 @@ func (m *Model) restoreReviewState(state store.ReviewState) bool {
 		return false
 	}
 	marks := make(map[string]uint64, len(state.Reviewed))
-	for path, hash := range state.Reviewed {
-		if hash != 0 {
-			marks[path] = hash
+	for markKey, hash := range state.Reviewed {
+		// A mark saved before marks were scope-keyed carries a bare path; it
+		// can never match a scoped lookup, so dropping it here lets the next
+		// save clear it from the row.
+		if hash != 0 && strings.Contains(markKey, "\x00") {
+			marks[markKey] = hash
 		}
 	}
 	notes := make([]annotation, 0, len(state.Comments))
@@ -482,7 +493,7 @@ func (m *Model) restoreReviewState(state store.ReviewState) bool {
 		notes = append(notes, annotation{
 			id: note.ID, file: note.File, line: note.Line, deleted: note.Deleted,
 			excerpt: withoutControlBytes(note.Excerpt), text: withoutControlBytes(note.Text), hash: note.ContentHash,
-			round: note.Round, point: note.Point, handled: note.Resolved, outdated: note.Outdated,
+			round: note.Round, scope: note.Scope, point: note.Point, handled: note.Resolved, outdated: note.Outdated,
 		})
 	}
 	m.diff.reviewed[key] = marks
@@ -548,7 +559,7 @@ func (m *Model) reviewStateSnapshot(key string) store.ReviewState {
 		notes = append(notes, store.ReviewComment{
 			ID: note.id, File: note.file, Line: note.line, Deleted: note.deleted,
 			Excerpt: note.excerpt, Text: note.text, ContentHash: note.hash,
-			Round: note.round, Point: note.point, Resolved: note.handled, Outdated: note.outdated,
+			Round: note.round, Scope: note.scope, Point: note.point, Resolved: note.handled, Outdated: note.outdated,
 		})
 	}
 	return store.ReviewState{
@@ -742,10 +753,11 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 		previousPath = fd.File.Path
 	}
 	m.diff.set = msg.set
+	// Every accepted load re-judges the arriving scope's comments: a scope
+	// cycle is neither a refresh nor a restore, but the file list it brings
+	// in still decides which of its own comments read outdated.
 	stateChanged := clearStaleReviewedMarks(m)
-	if msg.refresh || restoredState {
-		stateChanged = m.markMissingRoundCommentsOutdated() || stateChanged
-	}
+	stateChanged = m.markMissingRoundCommentsOutdated() || stateChanged
 	// Re-anchor only on a silent same-scope refresh. A scope cycle or session
 	// switch loads a different file set, where matching a comment by excerpt
 	// would rewrite its line against content it was never made against.
@@ -771,8 +783,9 @@ func (m *Model) handleDiffLoaded(msg diffLoadedMsg) tea.Cmd {
 	var statefulLoads []tea.Cmd
 	if msg.refresh || restoredState {
 		stateful := map[string]bool{}
-		for path, hash := range m.diff.reviewed[m.reviewKey()] {
-			if hash != 0 {
+		for markKey, hash := range m.diff.reviewed[m.reviewKey()] {
+			scope, path, _ := strings.Cut(markKey, "\x00")
+			if hash != 0 && scope == m.diff.scope.String() {
 				stateful[path] = true
 			}
 		}
@@ -1329,23 +1342,28 @@ func (m *Model) toggleReviewed() tea.Cmd {
 	if fd == nil || !fd.Loaded() || m.diffFileHidden(fd) {
 		return nil
 	}
+	if m.store == nil {
+		m.errBar.text = "review state is unavailable"
+		return nil
+	}
 	marks := m.diff.reviewed[m.reviewKey()]
 	if marks == nil {
 		marks = map[string]uint64{}
 		m.diff.reviewed[m.reviewKey()] = marks
 	}
-	if marks[fd.File.Path] != 0 {
-		delete(marks, fd.File.Path)
+	markKey := m.reviewedMarkKey(fd.File.Path)
+	if marks[markKey] != 0 {
+		delete(marks, markKey)
 		return m.saveReviewStateCmd()
 	}
-	marks[fd.File.Path] = contentHash(fd)
+	marks[markKey] = contentHash(fd)
 	stateSave := m.saveReviewStateCmd()
 	// Advance to the next unreviewed file, review-queue style. The switch
 	// returns the highlight command for the newly shown file; dropping it
 	// would leave that file unhighlighted.
 	for step := 1; step < len(m.diff.set.Files); step++ {
 		next := (m.diff.fileIdx + step) % len(m.diff.set.Files)
-		if marks[m.diff.set.Files[next].File.Path] == 0 && !m.diffFileHidden(&m.diff.set.Files[next]) {
+		if marks[m.reviewedMarkKey(m.diff.set.Files[next].File.Path)] == 0 && !m.diffFileHidden(&m.diff.set.Files[next]) {
 			return tea.Batch(stateSave, m.switchDiffFile(next-m.diff.fileIdx))
 		}
 	}
@@ -1353,7 +1371,7 @@ func (m *Model) toggleReviewed() tea.Cmd {
 }
 
 func (m *Model) fileReviewed(path string) bool {
-	return m.diff.reviewed[m.reviewKey()][path] != 0
+	return m.diff.reviewed[m.reviewKey()][m.reviewedMarkKey(path)] != 0
 }
 
 func clearStaleReviewedMarks(m *Model) bool {
@@ -1362,15 +1380,20 @@ func clearStaleReviewedMarks(m *Model) bool {
 		return false
 	}
 	changed := false
-	for path, stored := range marks {
+	for markKey, stored := range marks {
 		if stored == 0 {
 			continue
 		}
-		// A scope that does not list the file says nothing about whether it
-		// changed since it was marked, and the mark outlives the scope.
+		// A mark hashes the rendering of the scope it was taken in, so only
+		// that scope can judge it stale. A scope that does not list the file
+		// says nothing about it either, and the mark outlives the scope.
+		scope, path, _ := strings.Cut(markKey, "\x00")
+		if scope != m.diff.scope.String() {
+			continue
+		}
 		fd := m.fileDiffByPath(path)
 		if fd != nil && fd.Loaded() && contentHash(fd) != stored {
-			delete(marks, path)
+			delete(marks, markKey)
 			changed = true
 		}
 	}
@@ -1379,13 +1402,14 @@ func clearStaleReviewedMarks(m *Model) bool {
 
 func clearStaleReviewedMark(m *Model, path string) bool {
 	marks := m.diff.reviewed[m.reviewKey()]
-	stored := marks[path]
+	markKey := m.reviewedMarkKey(path)
+	stored := marks[markKey]
 	if stored == 0 {
 		return false
 	}
 	fd := m.fileDiffByPath(path)
 	if fd != nil && fd.Loaded() && contentHash(fd) != stored {
-		delete(marks, path)
+		delete(marks, markKey)
 		return true
 	}
 	return false
@@ -1393,10 +1417,12 @@ func clearStaleReviewedMark(m *Model, path string) bool {
 
 // A round sent under another scope listed other files, so this scope's file
 // list says nothing about whether those comments still sit on their code.
+// Each comment is judged against the scope its own round was sent in.
 func (m *Model) markMissingRoundCommentsOutdated() bool {
-	if round := m.diff.rounds[m.reviewKey()]; round.Scope != "" && round.Scope != m.diff.scope.String() {
-		return false
-	}
+	current := m.diff.scope.String()
+	// Comments saved before they carried a scope fall back to the latest
+	// round's scope, the only one recorded then.
+	fallback := m.diff.rounds[m.reviewKey()].Scope
 	paths := make(map[string]bool, len(m.diff.set.Files))
 	for i := range m.diff.set.Files {
 		paths[m.diff.set.Files[i].File.Path] = true
@@ -1404,10 +1430,18 @@ func (m *Model) markMissingRoundCommentsOutdated() bool {
 	notes := m.diff.annotations[m.reviewKey()]
 	changed := false
 	for i := range notes {
-		if notes[i].round > 0 && !paths[notes[i].file] && !notes[i].outdated {
-			notes[i].outdated = true
-			changed = true
+		if notes[i].round == 0 || notes[i].outdated || paths[notes[i].file] {
+			continue
 		}
+		scope := notes[i].scope
+		if scope == "" {
+			scope = fallback
+		}
+		if scope != "" && scope != current {
+			continue
+		}
+		notes[i].outdated = true
+		changed = true
 	}
 	return changed
 }
@@ -1491,6 +1525,17 @@ func (m *Model) reanchorAnnotationsFor(path string) bool {
 	for i := range notes {
 		note := &notes[i]
 		if path != "" && note.file != path {
+			continue
+		}
+		// A comment's line and hash track the rendering of its own scope;
+		// another scope's rendering would move it onto lines it was never
+		// made against. Comments saved before they carried a scope fall
+		// back to the latest round's scope, the only one recorded then.
+		scope := note.scope
+		if scope == "" && note.round > 0 {
+			scope = m.diff.rounds[m.reviewKey()].Scope
+		}
+		if scope != "" && scope != m.diff.scope.String() {
 			continue
 		}
 		fd := m.fileDiffByPath(note.file)
@@ -1596,6 +1641,7 @@ func (m *Model) saveAnnotation() tea.Cmd {
 		}
 		existing.text = text
 		existing.hash = contentHash(fd)
+		existing.scope = m.diff.scope.String()
 		return m.saveReviewStateCmd()
 	}
 	if text == "" {
@@ -1609,6 +1655,7 @@ func (m *Model) saveAnnotation() tea.Cmd {
 		excerpt: excerptOf(line.Text),
 		text:    text,
 		hash:    contentHash(fd),
+		scope:   m.diff.scope.String(),
 	})
 	return m.saveReviewStateCmd()
 }
@@ -1717,6 +1764,7 @@ func (m *Model) sendAnnotations() (tea.Model, tea.Cmd) {
 	m.diff.rounds[key] = round
 	for _, i := range draftIndexes {
 		notes[i].round = round.Number
+		notes[i].scope = round.Scope
 		notes[i].handled = false
 		notes[i].outdated = false
 	}
