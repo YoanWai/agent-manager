@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 )
@@ -14,6 +15,9 @@ import (
 // nothing but SGR colour sequences, so any other control byte in a painted
 // frame is the repo driving the terminal.
 func strayControl(frame string) string {
+	if !utf8.ValidString(frame) {
+		return "malformed UTF-8, where a raw 8-bit CSI or OSC would hide"
+	}
 	for i := 0; i < len(frame); i++ {
 		c := frame[i]
 		if c == '\n' || !isControlByte(c) {
@@ -55,10 +59,25 @@ func TestEscapeControlsShowsBytesAndKeepsUTF8(t *testing.T) {
 		"nul\x00":          "nul^@",
 		"שלום ok":          "שלום ok",
 		"plain":            "plain",
+		// A lone 0x9b/0x9d is the 8-bit CSI/OSC and is malformed UTF-8.
+		"x\x9b31mred":  `x\x9B31mred`,
+		"x\x9d0;P\x9c": `x\x9D0;P\x9C`,
+		// The same code points encoded properly are ordinary text.
+		"x31m": "x31m",
 	}
 	for in, want := range cases {
 		if got := escapeControls(in); got != want {
 			t.Errorf("escapeControls(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// Hebrew encodes continuation bytes in the 0x80-0x9f range, so a byte-range
+// check for C1 would mangle it. Escaping keys off malformed UTF-8 instead.
+func TestEscapeControlsKeepsTextWhoseBytesLookLikeC1(t *testing.T) {
+	for _, text := range []string{"שלום", "מה קורה", "日本語", "café"} {
+		if got := escapeControls(text); got != text {
+			t.Errorf("escapeControls(%q) = %q, want it untouched", text, got)
 		}
 	}
 }
