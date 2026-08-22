@@ -275,7 +275,7 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, resume
 	}
-	command, ok := focusKeyCommand(tmux.SessionName(sess.ID), msg)
+	command, ok := focusKeyCommand(tmux.PaneTarget(sess.ID), msg)
 	if !ok {
 		return m, resume
 	}

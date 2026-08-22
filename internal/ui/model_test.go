@@ -510,3 +510,40 @@ func TestSearchMatchingArchivedChildDoesNotHoistLiveParent(t *testing.T) {
 		t.Fatalf("search hoisted live parent into archive view: %v", names)
 	}
 }
+
+// An agent that splits its own window takes columns from the pane the
+// preview draws, and no manager action precedes it for the geometry cache
+// to follow. A later refresh has to notice and pin that pane back.
+func TestRefreshRepinsAnAgentSplitPane(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "split", t.TempDir(), "")
+	id := m.sessionRows()[0].ID
+	m.applyCmd(t, m.refreshCmd())
+
+	if out, err := tmuxCmd("split-window", "-h", "-t", "am_"+id, "--", "sh", "-c", "sleep 30").CombinedOutput(); err != nil {
+		t.Fatalf("split-window: %v: %s", err, out)
+	}
+	if width := agentPaneWidth(t, id); width == m.previewPaneWidth() {
+		t.Fatalf("the split should have taken columns from the agent pane, width = %d", width)
+	}
+
+	m.applyCmd(t, m.refreshCmd())
+
+	if width := agentPaneWidth(t, id); width != m.previewPaneWidth() {
+		t.Fatalf("after refresh, agent pane width = %d, want the preview box %d", width, m.previewPaneWidth())
+	}
+}
+
+// agentPaneWidth reports the columns a session's agent pane holds.
+func agentPaneWidth(t *testing.T, id string) int {
+	t.Helper()
+	out, err := tmuxCmd("list-panes", "-t", "am_"+id, "-f", "#{==:#{pane_index},0}", "-F", "#{pane_width}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("list-panes: %v: %s", err, out)
+	}
+	width, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		t.Fatalf("pane width %q: %v", out, err)
+	}
+	return width
+}

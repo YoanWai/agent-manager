@@ -993,6 +993,9 @@ func (m *Model) resizeSessions() {
 	if width <= 0 || height <= 0 {
 		return
 	}
+	if len(m.sessions) == 0 {
+		return
+	}
 	if m.pane.geom == nil {
 		m.pane.geom = map[string][2]int{}
 	}
@@ -1048,27 +1051,28 @@ func (m *Model) markFreshPane(id string) {
 // seedPaneGeom fills the geometry cache from tmux for sessions this run
 // has not sized yet, so a pane adopted from a previous run is not shrunk
 // (and its Codex scrollback cleared) just to match a box it already
-// exceeds. A failed listing leaves the entries missing and the next pass
-// pins those sessions to the box; the poll surfaces the tmux failure.
+// exceeds. A split window is re-read every pass instead: the agent opened
+// those panes out of its own window, taking columns from the pane the
+// preview draws, and no manager action precedes that for the cache to
+// follow. Drift the manager did not cause otherwise stays, so a window
+// someone resized from another client is left where they put it. A failed
+// listing leaves the cache as it was; the poll surfaces the tmux failure.
 func (m *Model) seedPaneGeom() {
-	needed := false
-	for _, sess := range m.sessions {
-		if _, sized := m.pane.geom[sess.ID]; !sized && !sess.Archived {
-			needed = true
-			break
-		}
-	}
-	if !needed {
-		return
-	}
-	sizes, err := m.tmux.WindowSizes()
+	geoms, err := m.tmux.PaneGeoms()
 	if err != nil {
 		return
 	}
-	for id, size := range sizes {
-		if _, sized := m.pane.geom[id]; !sized {
-			m.pane.geom[id] = size
+	for id, geom := range geoms {
+		last, sized := m.pane.geom[id]
+		// markFreshPane's pin is still owed: a session created this run
+		// carries its pre-selection launch size, not the box.
+		if sized && last == [2]int{0, 0} {
+			continue
 		}
+		if sized && geom.Panes < 2 {
+			continue
+		}
+		m.pane.geom[id] = [2]int{geom.Width, geom.Height}
 	}
 }
 
