@@ -1050,41 +1050,51 @@ func TestEnsureBindingsPinsPaneNumbering(t *testing.T) {
 // A window an agent split shares its geometry with the teammate panes, so
 // pinning the window alone leaves the agent's own pane -- the one the
 // preview draws -- at a fraction of the panel it is drawn in. Either split
-// axis takes that room, and the teammate must keep what it had: a pane that
-// loses height clears a Codex scrollback (#369), and one that loses width
-// reflows every line it holds.
+// axis takes that room, and a preview box that grew or shrank has to leave
+// the teammate its share of the axis the split divides, since that is the
+// room the fit could otherwise take: a pane that loses width reflows every
+// line it holds, and one that loses height clears a Codex scrollback
+// (#369). The other axis is the window's own and every pane follows it.
 func TestResizeFitsTheAgentPaneInASplitWindow(t *testing.T) {
 	for _, split := range []struct {
 		axis string
 		flag string
-	}{{"horizontal", "-h"}, {"vertical", "-v"}} {
-		t.Run(split.axis, func(t *testing.T) {
-			driver := requireTmux(t)
-			id := "fit" + split.axis[:1] + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-			if err := driver.Create(id, "/tmp", "cat", nil, 80, 24); err != nil {
-				t.Fatalf("Create: %v", err)
-			}
-			t.Cleanup(func() { driver.Kill(id) })
-			if out, err := tmuxCmd("split-window", split.flag, "-t", "am_"+id, "--", "sh", "-c", "sleep 30").CombinedOutput(); err != nil {
-				t.Fatalf("split-window: %v: %s", err, out)
-			}
-			teammate := teammateSize(t, id)
+		// divided indexes the dimension the split cuts, the one the panes
+		// share out between them rather than take whole from the window.
+		divided int
+	}{{"horizontal", "-h", 0}, {"vertical", "-v", 1}} {
+		for _, box := range []struct {
+			name          string
+			width, height int
+		}{{"grown", 100, 30}, {"shrunk", 60, 20}} {
+			t.Run(split.axis+"/"+box.name, func(t *testing.T) {
+				driver := requireTmux(t)
+				id := "fit" + split.axis[:1] + box.name[:1] + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+				if err := driver.Create(id, "/tmp", "cat", nil, 80, 24); err != nil {
+					t.Fatalf("Create: %v", err)
+				}
+				t.Cleanup(func() { driver.Kill(id) })
+				if out, err := tmuxCmd("split-window", split.flag, "-t", "am_"+id, "--", "sh", "-c", "sleep 30").CombinedOutput(); err != nil {
+					t.Fatalf("split-window: %v: %s", err, out)
+				}
+				teammate := teammateSize(t, id)
 
-			if err := driver.Resize(id, 100, 30); err != nil {
-				t.Fatalf("Resize: %v", err)
-			}
+				if err := driver.Resize(id, box.width, box.height); err != nil {
+					t.Fatalf("Resize: %v", err)
+				}
 
-			panes, err := driver.Panes()
-			if err != nil {
-				t.Fatalf("Panes: %v", err)
-			}
-			if got := panes[id]; got.Width != 100 || got.Height != 30 {
-				t.Fatalf("agent pane = %dx%d, want the preview box 100x30", got.Width, got.Height)
-			}
-			if after := teammateSize(t, id); after[0] < teammate[0] || after[1] < teammate[1] {
-				t.Fatalf("teammate pane = %v, want no less than the %v it had", after, teammate)
-			}
-		})
+				panes, err := driver.Panes()
+				if err != nil {
+					t.Fatalf("Panes: %v", err)
+				}
+				if got := panes[id]; got.Width != box.width || got.Height != box.height {
+					t.Fatalf("agent pane = %dx%d, want the preview box %dx%d", got.Width, got.Height, box.width, box.height)
+				}
+				if after := teammateSize(t, id); after[split.divided] < teammate[split.divided] {
+					t.Fatalf("teammate pane = %v, want no less than the %v it had across the split", after, teammate)
+				}
+			})
+		}
 	}
 }
 
