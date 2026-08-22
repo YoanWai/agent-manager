@@ -129,6 +129,10 @@ type Model struct {
 	// their meta on a second line instead of alongside the name. Every
 	// rail frame reads it, so it lives here instead of the store.
 	comfortableRows bool
+	// fullLayout mirrors the persisted sessions layout: the rail owns the
+	// whole width, with no preview column beside it. Every list frame
+	// reads it, so it lives here instead of the store.
+	fullLayout bool
 	// watchedGen is previewGen as of the last poll pass, so a selection
 	// that has not moved since can be recognised as at rest.
 	watchedGen        uint64
@@ -367,6 +371,7 @@ type settingsState struct {
 	enterFocuses    bool
 	arrowStep       bool
 	comfortableRows bool
+	fullLayout      bool
 	worktreeDefault bool
 	notifications   bool
 	notifyFinished  bool
@@ -387,6 +392,7 @@ const (
 	settingsFieldTheme
 	settingsFieldThemeAuto
 	settingsFieldDensity
+	settingsFieldSessionLayout
 	settingsFieldLayout
 	settingsFieldQuickClose
 	settingsFieldFocusKey
@@ -564,6 +570,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		focusOnEnter:        storedFocusOnEnter(st),
 		arrowStep:           storedArrowStep(st),
 		comfortableRows:     storedComfortableRows(st),
+		fullLayout:          storedFullLayout(st),
 		mode:                modeList,
 		update:              updateInfo{version: version},
 		dismissed:           loadDismissed(st),

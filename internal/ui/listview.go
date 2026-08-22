@@ -29,6 +29,9 @@ const shellGlyph = "❯"
 // viewListFrame is the sessions rail beside the session content, both
 // painted surfaces rather than drawn panels.
 func (m *Model) viewListFrame() string {
+	if m.fullLayout && m.mode != modeFocus {
+		return m.viewFullListFrame()
+	}
 	leftWidth, rightWidth := m.splitWidths()
 	footer := m.viewFooter()
 	bodyHeight := m.listBodyHeight()
@@ -76,6 +79,41 @@ func (m *Model) viewListFrame() string {
 		bottom = m.focusBottomRule(leftWidth+1, m.width)
 	}
 	frame = append(frame, bottom)
+	for _, line := range splitLines(footer) {
+		frame = append(frame, paint(line, m.width, backdropHex()))
+	}
+	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
+}
+
+// viewFullListFrame is the full screen layout: the rail owns the whole
+// width, so there is no seam, no bleed and no content column beside it.
+// The detail head and the preview belong to the split alone; the fill's
+// soft top and bottom edges run to the terminal's right edge instead of
+// to a seam.
+func (m *Model) viewFullListFrame() string {
+	footer := m.viewFooter()
+	bodyHeight := m.listBodyHeight()
+	railWidth := m.width - 1
+
+	frame := []string{}
+	for _, line := range m.viewHeaderRows() {
+		frame = append(frame, paint(line, m.width, backdropHex()))
+	}
+	railRows := m.railLines(railWidth, bodyHeight)
+	edge := make([]string, bodyHeight)
+	for i := range edge {
+		tone := panelHex()
+		if i < len(railRows) && railRows[i].tone != "" {
+			tone = railRows[i].tone
+		}
+		edge[i] = railEdgeCell(tone)
+	}
+	frame = append(frame, m.railTopRow(railWidth, m.width))
+	frame = append(frame, joinColumns(
+		edge,
+		paintContent(railRows, railWidth, bodyHeight, panelHex()),
+	)...)
+	frame = append(frame, m.boundedRuleRow(railWidth, m.width, "▄"))
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}

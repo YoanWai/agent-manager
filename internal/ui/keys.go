@@ -147,6 +147,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.cycleStatusFilter()
 	case "s":
 		m.openSettings()
+	case "z":
+		m.toggleSessionLayout()
 	case "|":
 		return m.enterResizeMode()
 	case "t":
@@ -441,6 +443,10 @@ type reattachPreparedMsg struct {
 var captureClipboardImage = clipboard.SaveImage
 
 const diffLayoutSetting = "diff_layout"
+
+// sessionLayoutSetting is the list's shape: "full" gives the rail the whole
+// width, anything else keeps the split with the preview beside it.
+const sessionLayoutSetting = "layout"
 
 const listDensitySetting = "list_density"
 
