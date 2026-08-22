@@ -710,3 +710,31 @@ func TestClickElsewhereClearsSelection(t *testing.T) {
 		}
 	}
 }
+
+// The clipboard writer runs off the update loop, so its confirmation can
+// land after a click elsewhere has already dropped the highlight it counted.
+// Re-arming the banner there would put "copied N chars" under no selection,
+// which is the state this file exists to prevent.
+func TestLateCopyConfirmationIsDroppedAfterTheSelectionGoes(t *testing.T) {
+	m := paneAt(t, "alpha beta", "gamma delta")
+	press(m, 10, 5)
+	drag(m, 14, 5)
+	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 14, Y: 5})
+	inFlight := focusCopiedMsg{chars: 4, gen: m.copyGen}
+
+	press(m, 12, 6)
+	m.Update(inFlight)
+	if m.copied != 0 {
+		t.Fatalf("a write that landed after the click re-armed the count: %d", m.copied)
+	}
+
+	// The same confirmation still counts while its own selection stands.
+	m2 := paneAt(t, "alpha beta", "gamma delta")
+	press(m2, 10, 5)
+	drag(m2, 14, 5)
+	m2.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 14, Y: 5})
+	m2.Update(focusCopiedMsg{chars: 4, gen: m2.copyGen})
+	if m2.copied != 4 {
+		t.Fatalf("the write for the standing selection was dropped: %d", m2.copied)
+	}
+}

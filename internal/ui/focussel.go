@@ -241,6 +241,7 @@ func (m *Model) deferClick(button, row, col int) {
 func (m *Model) clearSelection() {
 	m.sel = focusSelection{}
 	m.copied = 0
+	m.copyGen++
 }
 
 // clickRunContinues reports whether a press at this cell extends the click
@@ -289,6 +290,7 @@ func (m *Model) startSelection(row, col int) {
 // motion turned into a drag anchors here without widening the run.
 func (m *Model) beginSelection(row, col int) {
 	m.copied = 0
+	m.copyGen++
 	m.sel.active = true
 	m.sel.dragging = true
 	m.sel.anchorRow, m.sel.anchorCol = row, col
@@ -480,17 +482,21 @@ func (m *Model) copySelectionCmd() tea.Cmd {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
+	gen := m.copyGen
 	return func() tea.Msg {
 		if err := clipboard.WriteText(text); err != nil {
 			return errMsg{err}
 		}
-		return focusCopiedMsg{chars: len([]rune(text))}
+		return focusCopiedMsg{chars: len([]rune(text)), gen: gen}
 	}
 }
 
 // focusCopiedMsg reports a finished clipboard write so the status line can
 // confirm it.
-type focusCopiedMsg struct{ chars int }
+type focusCopiedMsg struct {
+	chars int
+	gen   int
+}
 
 // renderPaneRow draws one captured pane row, overlaying the selection when
 // it covers part of it. The agent's own styling survives on both sides of
