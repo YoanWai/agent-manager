@@ -30,6 +30,9 @@ const shellGlyph = "❯"
 // viewListFrame is the sessions rail beside the session content, both
 // painted surfaces rather than drawn panels.
 func (m *Model) viewListFrame() string {
+	if m.fullFocus() {
+		return m.viewFullFocusFrame()
+	}
 	if m.fullRows() {
 		return m.viewFullListFrame()
 	}
@@ -87,8 +90,8 @@ func (m *Model) viewListFrame() string {
 }
 
 // fullRows reports whether the list is on the full screen layout, whose
-// rows and frame both differ from the split's. Focus mode still renders
-// the split frame, so it reads as split rows too.
+// rows and frame both differ from the split's. Focused, the list is not
+// on screen at all: the session owns the body through viewFullFocusFrame.
 func (m *Model) fullRows() bool {
 	return m.fullLayout && m.mode != modeFocus
 }
@@ -107,7 +110,9 @@ func (m *Model) viewFullListFrame() string {
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
-	railRows := m.railLines(railWidth, bodyHeight)
+	quickRows := m.fullQuickLines(railWidth, bodyHeight)
+	railRows := m.railLines(railWidth, bodyHeight-len(quickRows))
+	railRows = append(railRows, quickRows...)
 	edge := make([]string, bodyHeight)
 	for i := range edge {
 		tone := panelHex()
@@ -126,6 +131,95 @@ func (m *Model) viewFullListFrame() string {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
+}
+
+// viewFullFocusFrame is a session opened from the full screen list: the
+// captured pane owns the whole terminal body and the list waits behind
+// it. The focus rules cap and close the pane the way they do in the
+// split, stretched to the terminal's edges.
+func (m *Model) viewFullFocusFrame() string {
+	footer := m.viewFooter()
+	bodyHeight := m.listBodyHeight()
+	m.pane.columnX = 0
+	frame := []string{}
+	for _, line := range m.viewHeaderRows() {
+		frame = append(frame, paint(line, m.width, backdropHex()))
+	}
+	frame = append(frame, paint(focusTopRule(m.width), m.width, backdropHex()))
+	m.previewBodyOffset = 0
+	paneRows := m.previewLines(m.width, bodyHeight, strings.Repeat(" ", contentGutter))
+	frame = append(frame, paintContent(paneRows, m.width, bodyHeight, backdropHex())...)
+	bottom := paint(hrule(m.width), m.width, backdropHex())
+	if m.pane.box.ok {
+		bottom = paint(focusEdgeStyle.Render(strings.Repeat("─", m.width)), m.width, backdropHex())
+	}
+	frame = append(frame, bottom)
+	for _, line := range splitLines(footer) {
+		frame = append(frame, paint(line, m.width, backdropHex()))
+	}
+	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
+}
+
+// peekPaneRows is how many captured lines the peek lifts above the quick
+// bar: enough to read the question a waiting session is asking without
+// the slice swallowing the list over it.
+const peekPaneRows = 5
+
+// fullQuickLines docks the open quick bar at the full screen frame's
+// foot, a peek of the selected session lifted above it: where the session
+// lives, then the tail of its captured pane. This is the reveal for
+// whatever a two-line row clips. A group target spawns rather than
+// answers, so it keeps the bar alone. Empty while the bar is closed.
+func (m *Model) fullQuickLines(width, height int) []contentLine {
+	if !m.quick.active {
+		return nil
+	}
+	gutter := strings.Repeat(" ", contentGutter)
+	inner := width - 2*contentGutter
+	if inner < 1 {
+		inner = 1
+	}
+	inset := func(block []string) []contentLine {
+		out := make([]contentLine, len(block))
+		for i, line := range block {
+			out[i] = contentLine{text: gutter + line}
+		}
+		return out
+	}
+	bar := append([]contentLine{{rule: true}}, inset(splitLines(m.viewQuickBar(inner)))...)
+	var peek []contentLine
+	if entry, ok := m.selectedRow(); ok && !entry.isGroup {
+		peek = inset(m.peekLines(entry.sess, inner))
+	}
+	// The list above the bar keeps the rows the rail floor guarantees:
+	// the peek is dropped first, then the bar keeps its tail, which is
+	// where the caret is.
+	const listFloor = 3
+	if height-len(bar)-len(peek) < listFloor {
+		peek = nil
+	}
+	lines := append(peek, bar...)
+	if len(lines) > height {
+		lines = lines[len(lines)-height:]
+	}
+	return lines
+}
+
+// peekLines is the lifted slice itself: one quiet line placing the
+// session (its directory, and the worktree branch when it has one), then
+// the last lines its pane painted, from the capture the preview already
+// holds. The capture follows the cursor, so switching the bar's target
+// swaps the slice with it.
+func (m *Model) peekLines(sess store.Session, width int) []string {
+	place := sess.Cwd
+	if sess.WorktreeBranch != "" {
+		place += "  ⑂ " + sess.WorktreeBranch
+	}
+	lines := []string{subtleStyle.Render(truncateTail(place, width))}
+	for _, row := range paneExact(m.preview, peekPaneRows, width, -1) {
+		lines = append(lines, previewLine(row, width))
+	}
+	return lines
 }
 
 // searchFieldLine is the live filter at the head of the rail: the typed

@@ -270,7 +270,7 @@ func (m *Model) requestFocusRegion(sessID string) tea.Cmd {
 // end, which needs no pane height at all. tmux clamps the start to the
 // history top, so a shallow history just yields a shorter frame.
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
-	rows := m.previewPaneHeight()
+	rows := m.focusPaneRows()
 	command := fmt.Sprintf(`capture-pane -p -e -t %s -S %d -E -`,
 		tmux.SessionName(sessID), -(offset + rows))
 	watch := m.focus

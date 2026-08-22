@@ -118,6 +118,11 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.mode = modeFocus
+	// The full screen layout opens the session across the whole body, so
+	// its pane grows to fill the frame before the first capture paints.
+	if m.fullLayout {
+		m.pinFullFocusPane(sess.ID)
+	}
 	// Focusing is deliberate, so the client opens now rather than waiting
 	// for the cursor to settle, and any failure backoff is lifted.
 	if m.focus != nil {

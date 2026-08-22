@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -267,5 +268,155 @@ func TestLastMeaningfulPaneLineSkipsChrome(t *testing.T) {
 	}
 	if got := lastMeaningfulPaneLine("\n╭──╮\n│  │\n╰──╯\n"); got != "" {
 		t.Fatalf("a pane of borders should yield nothing, got %q", got)
+	}
+}
+
+// In the full screen layout, right opens the selected session as a full
+// width focus: the pane grows to the whole terminal body and the frame
+// paints it edge to edge, with the list hidden behind it.
+func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "wide-open", t.TempDir(), "")
+	m.selectSessionRow(t, "wide-open")
+	m.fullLayout = true
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	sess := m.rows[m.cursor].sess
+	want := [2]int{m.width, m.listBodyHeight()}
+	if got := m.pane.geom[sess.ID]; got != want {
+		t.Fatalf("focused pane pinned to %v, want %v", got, want)
+	}
+	sizes, err := m.tmux.WindowSizes()
+	if err != nil {
+		t.Fatalf("window sizes: %v", err)
+	}
+	if got := sizes[sess.ID]; got != want {
+		t.Fatalf("tmux window is %v, want %v", got, want)
+	}
+
+	m.preview = "❯ hello from the pane\n"
+	frame := ansi.Strip(m.View())
+	if !strings.Contains(frame, "focused · ctrl+q back") {
+		t.Fatalf("full width focus frame misses the focus rule:\n%s", frame)
+	}
+	if !m.pane.box.ok || m.pane.box.x != 0 || m.pane.box.width != m.width {
+		t.Fatalf("pane box = %+v, want the whole width at column 0", m.pane.box)
+	}
+	if m.pane.box.y != m.listChromeRows() {
+		t.Fatalf("pane box starts at row %d, want right under the focus rule at %d", m.pane.box.y, m.listChromeRows())
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	*m = *updated.(*Model)
+	if m.mode != modeList || !m.fullRows() {
+		t.Fatalf("ctrl+q should return to the full screen list, mode = %v", m.mode)
+	}
+}
+
+// Left returns to the full screen list under the same guard the split's
+// focus uses: only with the caret at the head of an empty prompt. The
+// pane keeps its full size on the way out, since shrinking it would cost
+// the agent its scrollback.
+func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "wide-left", t.TempDir(), "")
+	m.selectSessionRow(t, "wide-left")
+	m.fullLayout = true
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	sess := m.rows[m.cursor].sess
+	pinned := m.pane.geom[sess.ID]
+	m.rows[m.cursor].sess.Tool = "claude-hooked"
+	m.pane.forID = sess.ID
+	m.pane.cursor = paneCursor{x: 4, y: 0, ok: true}
+	m.preview = "❯ hi\n"
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("left inside a typed prompt left focus, mode = %v", m.mode)
+	}
+
+	m.pane.cursor = paneCursor{x: 2, y: 0, ok: true}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("left at the prompt head did not return, mode = %v", m.mode)
+	}
+	if !m.fullRows() {
+		t.Fatal("returning should land on the full screen list")
+	}
+	if got := m.pane.geom[sess.ID]; got != pinned {
+		t.Fatalf("returning resized the pane to %v, want %v kept", got, pinned)
+	}
+}
+
+// While the quick bar is open on a session row, the full screen frame
+// lifts a peek above it: where the session lives, then the tail of its
+// captured pane. A group target spawns rather than answers, so it keeps
+// the bar alone, and closing the bar drops the slice with it.
+func TestFullLayoutQuickBarLiftsThePeek(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "peeked", dir, "")
+	m.selectSessionRow(t, "peeked")
+	m.fullLayout = true
+	m.rows[m.cursor].sess.WorktreeBranch = "am/peek"
+	m.preview = "❯ run the flaky suite\n● Running the flaky suite…\n"
+
+	m.openQuickMode()
+	frame := ansi.Strip(m.View())
+	if !strings.Contains(frame, filepath.Base(dir)) {
+		t.Fatalf("peek misses the session's directory:\n%s", frame)
+	}
+	if !strings.Contains(frame, "⑂ am/peek") {
+		t.Fatalf("peek misses the worktree branch:\n%s", frame)
+	}
+	if !strings.Contains(frame, "Running the flaky suite") {
+		t.Fatalf("peek misses the captured pane tail:\n%s", frame)
+	}
+	if !strings.Contains(frame, "type and press enter") {
+		t.Fatalf("the bar itself should dock under the peek:\n%s", frame)
+	}
+
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+	frame = ansi.Strip(m.View())
+	if strings.Contains(frame, "Running the flaky suite") {
+		t.Fatalf("closing the bar should drop the peek:\n%s", frame)
+	}
+
+	m.selectGroupRow(t, "")
+	m.openQuickMode()
+	frame = ansi.Strip(m.View())
+	if strings.Contains(frame, "Running the flaky suite") {
+		t.Fatalf("a group target should keep the bar alone:\n%s", frame)
+	}
+	if !strings.Contains(frame, "type and press enter") {
+		t.Fatalf("a group target still docks the bar:\n%s", frame)
+	}
+}
+
+// A does a real tmux attach from the full screen list, unchanged.
+func TestFullLayoutAStillAttaches(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "handover", t.TempDir(), "")
+	m.selectSessionRow(t, "handover")
+	m.fullLayout = true
+
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
+	*m = *updated.(*Model)
+	if m.mode == modeFocus {
+		t.Fatal("A should attach, not focus")
+	}
+	if cmd == nil {
+		t.Fatalf("attach did not start, err = %q", m.errBar.text)
 	}
 }

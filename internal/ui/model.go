@@ -1009,9 +1009,18 @@ func (m *Model) resizeSessions() {
 		m.pane.geom = map[string][2]int{}
 	}
 	m.seedPaneGeom()
+	// The session open full screen is pinned to the whole body by
+	// pinFullFocusPane, not to the preview box; matching it to the box
+	// here would shrink its height and clear its scrollback mid-focus.
+	fullFocusID := ""
+	if m.fullFocus() {
+		if sess, ok := m.selected(); ok {
+			fullFocusID = sess.ID
+		}
+	}
 	var todo []string
 	for _, sess := range m.sessions {
-		if sess.Archived {
+		if sess.Archived || sess.ID == fullFocusID {
 			continue
 		}
 		if last, ok := m.pane.geom[sess.ID]; ok {
@@ -1044,6 +1053,31 @@ func (m *Model) resizeSessions() {
 			}
 		}
 	})
+}
+
+// pinFullFocusPane sizes a session opened full screen to the whole
+// terminal body, the reflow an attach performs, so the capture fills the
+// full width frame 1:1. Returning to the list leaves the pane this size:
+// shrinking it back would cost a Codex agent its scrollback (#369), and
+// paneWindow already crops a taller pane from its bottom.
+func (m *Model) pinFullFocusPane(id string) {
+	width, height := m.width, m.listBodyHeight()
+	if width <= 0 || height <= 0 {
+		return
+	}
+	if m.pane.geom == nil {
+		m.pane.geom = map[string][2]int{}
+	}
+	if last, ok := m.pane.geom[id]; ok && last[0] == width && last[1] >= height {
+		return
+	}
+	var resizeErr error
+	m.poller.reflowSessions([]string{id}, func() {
+		resizeErr = m.tmux.Resize(id, width, height)
+	})
+	if resizeErr == nil {
+		m.pane.geom[id] = [2]int{width, height}
+	}
 }
 
 // markFreshPane queues one exact size pin for a session whose window this
@@ -1099,6 +1133,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// terminal delivers a size message and may carry stale colors.
 		SyncTerminalBackground()
 		m.resizeSessions()
+		if m.fullFocus() {
+			if sess, ok := m.selected(); ok {
+				m.pinFullFocusPane(sess.ID)
+			}
+		}
 		if m.mode == modeForm {
 			m.syncFormFieldWidths()
 		} else if m.mode == modeGroupForm {
@@ -1316,7 +1355,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !ok || sess.ID != msg.sessID {
 			return m, nil
 		}
-		if msg.offset != m.focusScroll || msg.rows != m.previewPaneHeight() {
+		if msg.offset != m.focusScroll || msg.rows != m.focusPaneRows() {
 			// The wheel or a resize moved the target while this capture was
 			// in flight. Fetch just that final viewport.
 			return m, m.focusRegionCmd(sess.ID, m.focusScroll)

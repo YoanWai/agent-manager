@@ -123,6 +123,22 @@ func (m *Model) previewPaneHeight() int {
 	return rest
 }
 
+// fullFocus reports whether the focused session owns the whole terminal
+// body, which is how the full screen layout opens a session.
+func (m *Model) fullFocus() bool {
+	return m.fullLayout && m.mode == modeFocus
+}
+
+// focusPaneRows is the rows of pane content the focused view paints: the
+// whole body when the session is open full screen, the preview panel's
+// rows in the split.
+func (m *Model) focusPaneRows() int {
+	if m.fullFocus() {
+		return m.listBodyHeight()
+	}
+	return m.previewPaneHeight()
+}
+
 // statusLine is the transient message: prompts, search, and self-dismissing
 // errors. It floats in a card over the frame rather than taking a row, so the
 // body keeps its height whether or not a notice is up.
