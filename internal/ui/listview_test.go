@@ -1039,4 +1039,10 @@ func TestRingLoaderWrapsThePhaseRoundTheRing(t *testing.T) {
 	if slices.Equal(lit, ringLoader(width, height, "starting up", 1)) {
 		t.Fatal("neighbouring phases render the same ring, so the comparison proves nothing")
 	}
+
+	const label = "reviving"
+	rendered := ansi.Strip(strings.Join(ringLoader(width, height, label, 0), "\n"))
+	if !strings.Contains(rendered, label) {
+		t.Fatalf("the ring dropped the label it was given:\n%s", rendered)
+	}
 }
