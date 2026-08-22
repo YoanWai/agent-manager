@@ -101,8 +101,10 @@ func (m *Model) markGone(id string, archived bool) {
 // took them off the list itself: without it, a pass in flight across a
 // delete or an archive delivers its pre-change listing afterwards and the
 // row blinks back for one more frame. A poll whose listing postdates the
-// removal is the authority on the new state and retires the record; an
-// archived row reported as archived belongs in the archived view and stays.
+// removal is the authority on the new state and retires every record it
+// postdates, including ones for rows the listing no longer carries at
+// all; an archived row reported as archived belongs in the archived view
+// and stays.
 func (m *Model) dropRecentlyRemoved(polled []store.Session, listedAt time.Time) []store.Session {
 	if len(m.gone) == 0 {
 		return polled
@@ -111,11 +113,12 @@ func (m *Model) dropRecentlyRemoved(polled []store.Session, listedAt time.Time) 
 	for _, sess := range polled {
 		mark, gone := m.gone[sess.ID]
 		if !gone || listedAt.After(mark.at) || (mark.archived && sess.Archived) {
-			if gone {
-				delete(m.gone, sess.ID)
-			}
 			kept = append(kept, sess)
-			continue
+		}
+	}
+	for id, mark := range m.gone {
+		if listedAt.After(mark.at) {
+			delete(m.gone, id)
 		}
 	}
 	return kept

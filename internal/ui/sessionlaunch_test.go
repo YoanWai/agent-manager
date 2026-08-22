@@ -5,6 +5,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 func TestAStaleRefreshKeepsASessionLaunchedAfterItWasListed(t *testing.T) {
@@ -117,5 +120,65 @@ func TestAStaleRefreshDoesNotBringBackASessionJustArchived(t *testing.T) {
 		if row.ID == sess.ID {
 			t.Fatalf("an archived session came back on the live tree as %q", row.Status)
 		}
+	}
+}
+
+// A poll that listed the store before the delete delivers its full list
+// afterwards; that stale copy must not put the row back on screen.
+func TestAStalePollCannotResurrectADeletedRow(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "doomed", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	listedAt := time.Now()
+
+	deleteSession(t, m, "doomed")
+
+	stale := sess
+	stale.Status = status.Dead
+	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
+	*m = *updated.(*Model)
+
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("a stale poll brought the deleted row back as %q", row.Status)
+		}
+	}
+}
+
+func TestAStalePollCannotBringAnArchivedRowBackLive(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "shelved", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	listedAt := time.Now()
+
+	m.selectSessionRow(t, "shelved")
+	m.archiveSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	stale := sess
+	stale.Status = status.Dead
+	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
+	*m = *updated.(*Model)
+
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("a stale poll brought the archived row back on the live tree")
+		}
+	}
+}
+
+func TestAFreshListingRetiresDeletionMarkers(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "doomed", t.TempDir(), "")
+	listedAt := time.Now()
+
+	deleteSession(t, m, "doomed")
+
+	fresh := refreshMsg{listedAt: listedAt.Add(time.Second)}
+	updated, _ := m.Update(fresh)
+	*m = *updated.(*Model)
+
+	if len(m.gone) != 0 {
+		t.Fatalf("deletion markers outlived a listing that postdates them: %v", m.gone)
 	}
 }

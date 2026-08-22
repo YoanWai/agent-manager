@@ -768,6 +768,41 @@ func (m *Model) markArchivedLocally(sessions []store.Session) {
 	}
 }
 
+// markRestoredLocally mirrors a completed restore in the loaded rows and
+// group flags, so what came back changes views on this frame rather than
+// waiting for the next poll. A group restore unarchives the subtree; a
+// single restore also clears its group's ancestors, which is what the
+// store write just did to keep a restored session under a live home.
+func (m *Model) markRestoredLocally(restored []store.Session, groupPath string) {
+	byID := make(map[string]bool, len(restored))
+	for _, sess := range restored {
+		byID[sess.ID] = true
+	}
+	for i := range m.sessions {
+		if !m.sessions[i].Archived {
+			continue
+		}
+		if byID[m.sessions[i].ID] || (groupPath != "" && inGroupSubtree(m.sessions[i].Group, groupPath)) {
+			m.sessions[i].Archived = false
+		}
+	}
+	if groupPath != "" {
+		delete(m.archivedGroups, groupPath)
+		for name := range m.archivedGroups {
+			if strings.HasPrefix(name, groupPath+"/") {
+				delete(m.archivedGroups, name)
+			}
+		}
+	} else {
+		for _, sess := range restored {
+			for path := sess.Group; path != ""; path = parentGroup(path) {
+				delete(m.archivedGroups, path)
+			}
+		}
+	}
+	m.rebuildRows()
+}
+
 // pruneGroupsLocally drops the removed group paths from the loaded tree,
 // so a deleted group's header goes with its sessions instead of hanging
 // around empty until the next poll.
@@ -962,6 +997,9 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				for _, sess := range m.confirm.sessions {
 					m.unmarkGone(sess.ID)
 				}
+				m.markRestoredLocally(nil, m.confirm.path)
+			} else {
+				m.markRestoredLocally(m.confirm.sessions, "")
 			}
 			m.errBar.text = ""
 		case actionKill:

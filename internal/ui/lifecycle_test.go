@@ -1777,50 +1777,6 @@ func TestConfirmedArchiveLeavesTheActiveViewAtOnce(t *testing.T) {
 	}
 }
 
-// A poll that listed the store before the delete delivers its full list
-// afterwards; that stale copy must not put the row back on screen.
-func TestAStalePollCannotResurrectADeletedRow(t *testing.T) {
-	m := buildModel(t)
-	createSession(t, m, "doomed", t.TempDir(), "")
-	sess := m.sessionRows()[0]
-	listedAt := time.Now()
-
-	deleteSession(t, m, "doomed")
-
-	stale := sess
-	stale.Status = status.Dead
-	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
-	*m = *updated.(*Model)
-
-	for _, row := range m.sessionRows() {
-		if row.ID == sess.ID {
-			t.Fatalf("a stale poll brought the deleted row back as %q", row.Status)
-		}
-	}
-}
-
-func TestAStalePollCannotBringAnArchivedRowBackLive(t *testing.T) {
-	m := buildModel(t)
-	createSession(t, m, "shelved", t.TempDir(), "")
-	sess := m.sessionRows()[0]
-	listedAt := time.Now()
-
-	m.selectSessionRow(t, "shelved")
-	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-
-	stale := sess
-	stale.Status = status.Dead
-	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
-	*m = *updated.(*Model)
-
-	for _, row := range m.sessionRows() {
-		if row.ID == sess.ID {
-			t.Fatalf("a stale poll brought the archived row back on the live tree")
-		}
-	}
-}
-
 func TestConfirmedGroupDeleteDropsTheGroupRowAtOnce(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
@@ -1838,5 +1794,71 @@ func TestConfirmedGroupDeleteDropsTheGroupRowAtOnce(t *testing.T) {
 		if r.isGroup && r.group == "zone" {
 			t.Fatalf("deleted group still on screen before the next poll")
 		}
+	}
+}
+
+func TestConfirmedRestoreLeavesTheArchivedViewAtOnce(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "returning", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+
+	m.selectSessionRow(t, "returning")
+	m.archiveSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "returning")
+	m.restoreSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("restored session stayed in the archived view before the next poll")
+		}
+	}
+	if _, err := m.store.Get(sess.ID); err != nil {
+		t.Fatalf("restore did not reach the store: %v", err)
+	}
+
+	// The active view takes it back without waiting for a poll.
+	m.showArchived = false
+	if got := m.visibleSessions(); len(got) != 1 || got[0].ID != sess.ID {
+		t.Fatalf("active view after restore = %v", got)
+	}
+}
+
+func TestConfirmedGroupRestoreShowsTheSubtreeAtOnce(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("zone", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "in-zone", dir, "zone")
+	sess := m.sessionRows()[0]
+
+	m.selectGroupRow(t, "zone")
+	m.archiveSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "zone")
+	m.restoreSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("restored session stayed in the archived view before the next poll")
+		}
+	}
+	m.showArchived = false
+	if m.groupEffectivelyArchived("zone") {
+		t.Fatal("restored group still reads as archived before the next poll")
+	}
+	got := m.visibleSessions()
+	if len(got) != 1 || got[0].ID != sess.ID {
+		t.Fatalf("active view after group restore = %v", got)
 	}
 }
