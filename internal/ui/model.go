@@ -515,7 +515,21 @@ func (m *Model) previewTick() tea.Cmd {
 }
 
 func (m *Model) needsLoaderTick() bool {
-	return m.hasStartingRow() || m.reviewNeedsLoader()
+	return m.hasStartingRow() || m.reviewNeedsLoader() || m.hasWorkingLoaderRow()
+}
+
+// hasWorkingLoaderRow reports whether a full screen row is animating the
+// working loader: a working session with no quotable pane line yet.
+func (m *Model) hasWorkingLoaderRow() bool {
+	if !m.fullRows() {
+		return false
+	}
+	for _, row := range m.rows {
+		if !row.isGroup && row.sess.Status == status.Working && m.paneLines[row.sess.ID] == "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) reviewNeedsLoader() bool {
@@ -1001,7 +1015,7 @@ func (m *Model) refreshCmd() tea.Cmd {
 // leaves, a too-tall alt-screen TUI missing its top rows, heals on attach,
 // which sizes the window to the terminal and re-pins on detach.
 func (m *Model) resizeSessions() {
-	width, height := m.previewPaneWidth(), m.previewPaneHeight()
+	width, height := m.paneTargetSize()
 	if width <= 0 || height <= 0 {
 		return
 	}
@@ -1018,38 +1032,52 @@ func (m *Model) resizeSessions() {
 			fullFocusID = sess.ID
 		}
 	}
-	var todo []string
+	type target struct {
+		id     string
+		height int
+	}
+	var todo []target
+	var ids []string
 	for _, sess := range m.sessions {
 		if sess.Archived || sess.ID == fullFocusID {
 			continue
 		}
+		wanted := height
 		if last, ok := m.pane.geom[sess.ID]; ok {
 			if last[0] == width && last[1] >= height {
 				continue
 			}
+			// A width re-pin of a taller pane keeps its height: shrinking
+			// it would clear a Codex scrollback (#369); the painted view
+			// crops instead.
+			if last[1] > wanted {
+				wanted = last[1]
+			}
 		}
-		todo = append(todo, sess.ID)
+		todo = append(todo, target{id: sess.ID, height: wanted})
+		ids = append(ids, sess.ID)
 	}
 	if len(todo) == 0 {
 		return
 	}
 	type result struct {
-		id  string
-		err error
+		id     string
+		height int
+		err    error
 	}
 	// Pause polling for the whole clear+resize window so a mid-reflow
 	// capture cannot compare against a pre-resize hash.
-	m.poller.reflowSessions(todo, func() {
+	m.poller.reflowSessions(ids, func() {
 		results := make(chan result, len(todo))
-		for _, id := range todo {
-			go func(id string) {
-				results <- result{id: id, err: m.tmux.Resize(id, width, height)}
-			}(id)
+		for _, t := range todo {
+			go func(t target) {
+				results <- result{id: t.id, height: t.height, err: m.tmux.Resize(t.id, width, t.height)}
+			}(t)
 		}
 		for range todo {
 			r := <-results
 			if r.err == nil {
-				m.pane.geom[r.id] = [2]int{width, height}
+				m.pane.geom[r.id] = [2]int{width, r.height}
 			}
 		}
 	})
@@ -1454,12 +1482,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// size is unchanged, so the detach restores the theme's here.
 		SyncTerminalBackground()
 		// The attach client sized the window to the full terminal and tmux
-		// keeps that size on detach; shrink it back to the preview panel so
-		// the capture is not clipped on the right.
+		// keeps that size on detach; pin it back to the current layout's
+		// box so the capture is not clipped on the right.
 		if m.pane.geom != nil {
 			delete(m.pane.geom, msg.sessID)
 		}
-		width, height := m.previewPaneWidth(), m.previewPaneHeight()
+		width, height := m.paneTargetSize()
 		m.poller.reflowSessions([]string{msg.sessID}, func() {
 			_ = m.tmux.Resize(msg.sessID, width, height)
 		})

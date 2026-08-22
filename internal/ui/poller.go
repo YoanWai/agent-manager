@@ -90,9 +90,21 @@ func paneBooted(pane string) bool {
 	return strings.TrimSpace(ansi.Strip(pane)) != ""
 }
 
+// lastResponseLine is what a full screen row quotes for a session: the
+// agent's newest output line above its input box when the tool's rules
+// can find the box, else the newest pane line with a word on it.
+func (p *poller) lastResponseLine(tool, pane string) string {
+	clean := ansi.Strip(pane)
+	if line, ok := p.engine.LastContentLine(tool, clean); ok {
+		return line
+	}
+	return lastMeaningfulPaneLine(clean)
+}
+
 // lastMeaningfulPaneLine is the newest pane line with a word on it. The
-// full screen row quotes it, so pure chrome — blank rows, borders, bare
-// spinners — is skipped until a line carrying a letter or digit turns up.
+// fallback for tools without box rules, so pure chrome — blank rows,
+// borders, bare spinners — is skipped until a line carrying a letter or
+// digit turns up.
 func lastMeaningfulPaneLine(pane string) string {
 	lines := strings.Split(ansi.Strip(pane), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -328,7 +340,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
-				paneLastLines[sess.ID] = lastMeaningfulPaneLine(pane)
+				paneLastLines[sess.ID] = p.lastResponseLine(sess.Tool, pane)
 				sent, err := p.maybeSendPendingInput(sess, pane, agentAlive)
 				if err != nil {
 					return errMsg{err}

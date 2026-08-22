@@ -95,6 +95,23 @@ func (m *Model) previewPaneWidth() int {
 	return w
 }
 
+// paneTargetSize is the tmux window size sessions are pinned to: the
+// preview panel's box in the split, the whole terminal body in the full
+// screen layout, which paints captures across the full width.
+func (m *Model) paneTargetSize() (int, int) {
+	if m.fullLayout {
+		width, height := m.width, m.listBodyHeight()
+		if width < 1 {
+			width = 1
+		}
+		if height < 3 {
+			height = 3
+		}
+		return width, height
+	}
+	return m.previewPaneWidth(), m.previewPaneHeight()
+}
+
 // previewPaneHeight is the rows of session pane content the Preview
 // section can show with nothing transient over it, which is what tmux is
 // pinned to: the painted view crops a taller pane, where resizing it for

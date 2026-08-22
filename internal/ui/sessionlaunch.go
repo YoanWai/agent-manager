@@ -28,7 +28,8 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 		discardWorktree()
 		return err
 	}
-	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
+	paneWidth, paneHeight := m.paneTargetSize()
+	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, paneWidth, paneHeight); err != nil {
 		discardWorktree()
 		return err
 	}

@@ -291,6 +291,55 @@ func (e *Engine) ActivityRegion(tool, pane string) (string, bool) {
 	return tr.activityRegion(pane)
 }
 
+// LastContentLine is the newest line of real output above the tool's
+// input box: chrome, busy spinners and turn_end markers are stepped over,
+// so a caller quoting the agent's last words does not quote its frame.
+// ok is false when the tool has no activity_cutoff to find the box with,
+// or the cutoff is absent from the pane.
+func (e *Engine) LastContentLine(tool, pane string) (string, bool) {
+	tr, ok := e.tools[tool]
+	if !ok {
+		return "", false
+	}
+	region, ok := tr.activityRegion(pane)
+	if !ok {
+		return "", false
+	}
+	lines := strings.Split(region, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimRight(lines[i], " \t")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if tr.chromeLine != nil && tr.chromeLine.MatchString(line) {
+			continue
+		}
+		if tr.busyLine != nil && tr.busyLine.MatchString(line) {
+			continue
+		}
+		if tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
+			continue
+		}
+		if tr.matchesWorkingRule(line) {
+			continue
+		}
+		return strings.TrimSpace(line), true
+	}
+	return "", true
+}
+
+// matchesWorkingRule reports whether a line is one of the tool's working
+// signals — a spinner row, an interrupt hint — which narrate the turn
+// rather than say anything, so a caller quoting output steps over them.
+func (tr toolRules) matchesWorkingRule(line string) bool {
+	for _, r := range tr.rules {
+		if r.state == Working && r.re.MatchString(line) {
+			return true
+		}
+	}
+	return false
+}
+
 // InputPrefix returns the prompt marker a tool draws at the start of its
 // input line, when row is that line. A tool may declare its own marker with
 // input_prefix, which replaces the reuse of activity_cutoff here; one

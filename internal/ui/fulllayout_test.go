@@ -140,8 +140,9 @@ func TestFullLayoutFooterNamesZ(t *testing.T) {
 
 // A full screen session row is two lines at any density: the last prompt
 // beside the name with the meta still right aligned, and the state-picked
-// line under it. Groups have no state line, so they keep the density's
-// height.
+// line under it. Groups have no state line, so they stay one line at any
+// density: the layout has its own rhythm and the density setting only
+// shapes the split list.
 func TestFullRowsAreTwoLinesAtCompactDensity(t *testing.T) {
 	m := shotModel()
 	m.fullLayout = true
@@ -157,6 +158,14 @@ func TestFullRowsAreTwoLinesAtCompactDensity(t *testing.T) {
 	if got := m.entryHeight(m.rows[2]); got != 1 {
 		t.Fatalf("full screen group entry height = %d, want 1", got)
 	}
+	m.comfortableRows = true
+	if got := m.entryHeight(m.rows[2]); got != 1 {
+		t.Fatalf("comfortable full screen group entry height = %d, want 1", got)
+	}
+	if got := m.entryHeight(row); got != 2 {
+		t.Fatalf("comfortable full screen session entry height = %d, want 2", got)
+	}
+	m.comfortableRows = false
 	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
 	if len(lines) != 2 {
 		t.Fatalf("full screen row painted %d lines, want 2", len(lines))
@@ -418,5 +427,77 @@ func TestFullLayoutAStillAttaches(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatalf("attach did not start, err = %q", m.errBar.text)
+	}
+}
+
+// A working session with nothing quotable yet animates a loader on its
+// state line rather than holding a dash, and that loader keeps the
+// startup tick alive so the frames actually advance.
+func TestFullRowWorkingWithoutPaneLineAnimatesLoader(t *testing.T) {
+	m := shotModel()
+	m.fullLayout = true
+	m.paneLines = nil
+	row := m.rows[4]
+	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	if len(lines) != 2 {
+		t.Fatalf("full screen row painted %d lines, want 2", len(lines))
+	}
+	frame := startupFrames[m.startupPhase%len(startupFrames)]
+	state := ansi.Strip(lines[1])
+	if !strings.Contains(state, frame+" working") {
+		t.Fatalf("working row without a pane line should animate a loader, got %q", state)
+	}
+	if !m.needsLoaderTick() {
+		t.Fatal("a loader row should keep the startup tick alive")
+	}
+	m.paneLines = map[string]string{"add-rate-limiting": "Running tests…", "ui-polish": "Compiling…"}
+	if m.hasWorkingLoaderRow() {
+		t.Fatal("a quotable pane line should retire the loader")
+	}
+}
+
+// The full screen layout pins sessions to the whole terminal body; the
+// split pins them to the preview panel's box.
+func TestPaneTargetSizeFollowsLayout(t *testing.T) {
+	m := shotModel()
+	splitW, splitH := m.paneTargetSize()
+	if wantW, wantH := m.previewPaneWidth(), m.previewPaneHeight(); splitW != wantW || splitH != wantH {
+		t.Fatalf("split target = %dx%d, want the preview box %dx%d", splitW, splitH, wantW, wantH)
+	}
+	m.fullLayout = true
+	fullW, fullH := m.paneTargetSize()
+	if fullW != m.width {
+		t.Fatalf("full layout target width = %d, want the terminal's %d", fullW, m.width)
+	}
+	if fullH != m.listBodyHeight() {
+		t.Fatalf("full layout target height = %d, want the body's %d", fullH, m.listBodyHeight())
+	}
+	if fullW <= splitW {
+		t.Fatalf("full layout width %d should exceed the split's %d", fullW, splitW)
+	}
+}
+
+// Toggling back to the split re-pins the width but never shrinks a pane
+// that grew taller in the full layout: the painted view crops instead,
+// because a height shrink clears a Codex scrollback (#369).
+func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "tall", t.TempDir(), "")
+	id := m.sessionRows()[0].ID
+
+	m.fullLayout = true
+	m.sessionsSized = false
+	m.pane.geom = nil
+	m.applyCmd(t, m.refreshCmd())
+	fullW, fullH := m.paneTargetSize()
+	if w, h := windowSize(t, id); w != fullW || h < fullH {
+		t.Fatalf("full layout pinned session to %dx%d, want %dx%d", w, h, fullW, fullH)
+	}
+
+	m.fullLayout = false
+	m.resizeSessions()
+	splitW, _ := m.paneTargetSize()
+	if w, h := windowSize(t, id); w != splitW || h < fullH {
+		t.Fatalf("split re-pin sized session to %dx%d, want %dx%d with the height kept", w, h, splitW, fullH)
 	}
 }

@@ -400,11 +400,14 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 
 // entryHeight is how many lines an entry paints: one in the compact list,
 // two once the comfortable density unstacks the meta onto its own line.
-// The full screen layout gives every session two lines at any density,
-// since the second line is what the width is for; groups have no state
-// line to carry, so they keep the density's height.
+// The full screen layout has its own fixed rhythm at any density: every
+// session is two lines, since the second line is what the width is for,
+// and a group is one, having no state line to carry.
 func (m *Model) entryHeight(entry treeRow) int {
-	if m.fullRows() && !entry.isGroup {
+	if m.fullRows() {
+		if entry.isGroup {
+			return 1
+		}
 		return 2
 	}
 	if m.comfortableRows {
@@ -754,11 +757,16 @@ func typedPrompt(text string) string {
 }
 
 // stateLine is what a full screen row's second line quotes: the question a
-// waiting session is blocked on in its state color, the last meaningful
-// pane line while working, the result line once finished. The other states
-// have nothing worth quoting, so a dim dash holds the line.
+// waiting session is blocked on in its state color, the agent's last
+// output line while working, the result line once finished. A working
+// session with nothing quotable yet animates a loader instead, and the
+// other states have nothing worth quoting, so a dim dash holds the line.
 func (m *Model) stateLine(sess store.Session, quiet lipgloss.Style, room int) string {
 	line := m.paneLines[sess.ID]
+	if sess.Status == status.Working && line == "" {
+		frame := startupFrames[m.startupPhase%len(startupFrames)]
+		return lipgloss.NewStyle().Foreground(statusColor(status.Working)).Render(frame + " working")
+	}
 	quoting := sess.Status == status.Waiting || sess.Status == status.Working || sess.Status == status.Finished
 	if line == "" || !quoting {
 		return quiet.Render("-")

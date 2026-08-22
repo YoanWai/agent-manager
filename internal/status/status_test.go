@@ -724,3 +724,35 @@ func TestTypingHold(t *testing.T) {
 		})
 	}
 }
+
+// LastContentLine quotes the agent's newest output, not its frame: the
+// input box, shortcut hints, spinner rows and turn summaries are all
+// stepped over. A pane that is nothing but frame yields an empty quote,
+// and a tool without box rules reports it cannot tell at all.
+func TestLastContentLine(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "● Done. The fix is in auth.go.\n" +
+		"\n" +
+		"✻ Cerebrating… (4s · esc to interrupt)\n" +
+		"\n" +
+		"❯ \n" +
+		"  ? for shortcuts"
+	line, ok := engine.LastContentLine("claude", pane)
+	if !ok {
+		t.Fatal("claude has an activity cutoff, ok should be true")
+	}
+	if line != "● Done. The fix is in auth.go." {
+		t.Fatalf("LastContentLine = %q, want the response line", line)
+	}
+
+	if line, ok = engine.LastContentLine("claude", "✻ Musing… (2s · esc to interrupt)\n\n❯ "); !ok || line != "" {
+		t.Fatalf("frame-only pane: line=%q ok=%v, want empty and true", line, ok)
+	}
+
+	if _, ok = engine.LastContentLine("no-such-tool", pane); ok {
+		t.Fatal("unknown tool should report it cannot tell")
+	}
+	if _, ok = engine.LastContentLine("claude", "just text, no input box"); ok {
+		t.Fatal("pane without the cutoff should report it cannot tell")
+	}
+}

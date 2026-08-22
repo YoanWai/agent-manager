@@ -272,7 +272,8 @@ func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseComman
 	if err != nil {
 		return err
 	}
-	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
+	paneWidth, paneHeight := m.paneTargetSize()
+	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, paneWidth, paneHeight); err != nil {
 		return err
 	}
 	m.markFreshPane(sess.ID)
