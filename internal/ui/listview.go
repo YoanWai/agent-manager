@@ -734,9 +734,13 @@ func (m *Model) fullSessionRow(sess store.Session, head, meta, indent string, se
 }
 
 // rowPrompt is the prompt a full screen row carries beside the name: the
-// last one delivered through the manager, else the one the session
-// launched with, stripped of the notes launch prepends.
+// last one the session's own transcript echoes, whoever typed it and from
+// wherever; else the last one delivered through the manager, else the one
+// the session launched with, stripped of the notes launch prepends.
 func (m *Model) rowPrompt(sess store.Session) string {
+	if prompt := m.panePrompts[sess.ID]; prompt != "" {
+		return prompt
+	}
 	if sess.LastPrompt != "" {
 		return sess.LastPrompt
 	}

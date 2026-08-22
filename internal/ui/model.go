@@ -94,6 +94,9 @@ type Model struct {
 	// full screen row's second line quotes. Merged rather than replaced, so
 	// a session that lost its window keeps its last words.
 	paneLines map[string]string
+	// panePrompts holds the last prompt each session's transcript echoes,
+	// which the full screen row shows as the task it is on.
+	panePrompts map[string]string
 
 	net netStats
 
@@ -439,6 +442,7 @@ type refreshMsg struct {
 	agents         agentStats
 	queuedMessages map[string]int
 	paneLines      map[string]string
+	panePrompts    map[string]string
 }
 
 type previewMsg struct {
@@ -1290,6 +1294,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		for id, line := range msg.paneLines {
 			m.paneLines[id] = line
+		}
+		if m.panePrompts == nil {
+			m.panePrompts = map[string]string{}
+		}
+		for id, prompt := range msg.panePrompts {
+			if prompt != "" {
+				m.panePrompts[id] = prompt
+			}
 		}
 		m.commitTypedPrompt()
 		if msg.snapOK {

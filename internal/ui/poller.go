@@ -12,6 +12,8 @@ import (
 	"time"
 	"unicode"
 
+	"os"
+
 	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -38,6 +40,7 @@ type poller struct {
 	gitDrv        *git.Driver
 	statusSources map[string]string
 	sessionStores map[string]string
+	claudeTails   map[string]claudeTailCache
 	mcpStyles     map[string]string
 	binaries      toolBinaries
 	interval      time.Duration
@@ -94,20 +97,116 @@ func paneBooted(pane string) bool {
 // a flattened message can span a whole pane.
 const rowQuoteCap = 400
 
-// lastResponseLine is what a full screen row quotes for a session: the
-// agent's last message, flattened to one line from its beginning, when
-// the tool's rules can find its input box, else the newest pane line
-// with a word on it.
-func (p *poller) lastResponseLine(tool, pane string) string {
+// quoteHistoryLines is how far above the visible pane the second capture
+// reaches when a quote's anchor — the message bullet, the prompt echo —
+// scrolled off the screen.
+const quoteHistoryLines = 300
+
+// managerEchoOpenings open the lines the manager itself types into a
+// session — rename directives, the coordination note, an inbox envelope —
+// which echo back exactly like a user prompt and must not read as one.
+var managerEchoOpenings = []string{
+	"Run this exact shell command once,",
+	"First, run this exact shell command once,",
+	"This session is already named.",
+	"Other agent sessions may be running beside you",
+	"[agent-manager] ",
+}
+
+func isManagerEcho(line string) bool {
+	for _, opening := range managerEchoOpenings {
+		if strings.HasPrefix(line, opening) {
+			return true
+		}
+	}
+	return false
+}
+
+// rowLines is what a full screen row shows for a session: the agent's
+// last message flattened to one line from its beginning, and the last
+// prompt sent to it. The visible pane is the first source; when an
+// anchor scrolled off it, the recovery is the tool's own transcript for
+// Claude Code (which repaints in place, so tmux holds no history for
+// it), and a deeper pane capture for everything else.
+func (p *poller) rowLines(sess store.Session, pane string) (quote, prompt string) {
 	clean := ansi.Strip(pane)
-	line, ok := p.engine.LastMessage(tool, clean)
+	quote, anchored, ok := p.engine.LastMessage(sess.Tool, clean)
 	if !ok {
-		line = lastMeaningfulPaneLine(clean)
+		quote = lastMeaningfulPaneLine(clean)
 	}
-	if runes := []rune(line); len(runes) > rowQuoteCap {
-		line = string(runes[:rowQuoteCap])
+	prompt, echoOK := p.engine.LastUserEcho(sess.Tool, clean)
+	if isManagerEcho(prompt) {
+		prompt = ""
 	}
-	return line
+	quoteAdrift := ok && !anchored && p.engine.HasMessageStart(sess.Tool)
+	promptAdrift := echoOK && prompt == ""
+	if (quoteAdrift || promptAdrift) && p.mcpStyles[sess.Tool] == "claude" && sess.AgentSessionID != "" {
+		tailPrompt, tailReply := p.claudeTail(sess)
+		if quoteAdrift && tailReply != "" {
+			quote = tailReply
+		}
+		if promptAdrift && tailPrompt != "" {
+			prompt = tailPrompt
+		}
+	} else if quoteAdrift || promptAdrift {
+		if deep, err := p.tmux.CapturePaneHistory(sess.ID, quoteHistoryLines); err == nil {
+			cleanDeep := ansi.Strip(deep)
+			if line, anchored, ok := p.engine.LastMessage(sess.Tool, cleanDeep); ok && anchored {
+				quote = line
+			}
+			if echoed, ok := p.engine.LastUserEcho(sess.Tool, cleanDeep); ok && echoed != "" && !isManagerEcho(echoed) {
+				prompt = echoed
+			}
+		}
+	}
+	return capRunes(quote, rowQuoteCap), capRunes(prompt, rowQuoteCap)
+}
+
+// claudeTailCache keeps one transcript's extraction keyed to its file
+// stats, so an unchanged transcript is not re-read every tick.
+type claudeTailCache struct {
+	size    int64
+	modTime time.Time
+	prompt  string
+	reply   string
+}
+
+// claudeTail is the newest prompt and reply in a Claude Code session's
+// own transcript, flattened to single lines.
+func (p *poller) claudeTail(sess store.Session) (prompt, reply string) {
+	path, err := agentsession.ClaudeTranscriptPath(sess.Cwd, sess.AgentSessionID)
+	if err != nil {
+		return "", ""
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", ""
+	}
+	if cached, ok := p.claudeTails[sess.ID]; ok && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
+		return cached.prompt, cached.reply
+	}
+	cleanUser := func(text string) string {
+		cleaned := typedPrompt(text)
+		if cleaned == "" || isManagerEcho(cleaned) {
+			return ""
+		}
+		return cleaned
+	}
+	tailPrompt, tailReply, ok := agentsession.ClaudeTranscriptTail(sess.Cwd, sess.AgentSessionID, cleanUser)
+	if !ok {
+		return "", ""
+	}
+	prompt = oneLine(tailPrompt)
+	reply = oneLine(tailReply)
+	p.claudeTails[sess.ID] = claudeTailCache{size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
+	return prompt, reply
+}
+
+func capRunes(text string, cap int) string {
+	if runes := []rune(text); len(runes) > cap {
+		return string(runes[:cap])
+	}
+	return text
 }
 
 // lastMeaningfulPaneLine is the newest pane line with a word on it. The
@@ -141,6 +240,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		interval:      interval,
 		poke:          make(chan struct{}, 1),
 		paneHashes:    map[string]uint64{},
+		claudeTails:   map[string]claudeTailCache{},
 		quietSince:    map[string]time.Time{},
 		notifyFn:      notify.Notify,
 	}
@@ -293,6 +393,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	var cpuSecDelta float64
 	paneHashes := make(map[string]uint64, len(sessions))
 	paneLastLines := make(map[string]string, len(sessions))
+	panePrompts := make(map[string]string, len(sessions))
 	for i, sess := range sessions {
 		if sess.Archived {
 			continue
@@ -349,7 +450,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
-				paneLastLines[sess.ID] = p.lastResponseLine(sess.Tool, pane)
+				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(sess, pane)
 				sent, err := p.maybeSendPendingInput(sess, pane, agentAlive)
 				if err != nil {
 					return errMsg{err}
@@ -471,6 +572,7 @@ func (p *poller) refreshOnce() tea.Msg {
 		agents:         agents,
 		queuedMessages: queued,
 		paneLines:      paneLastLines,
+		panePrompts:    panePrompts,
 	}
 	if sampleStats {
 		msg.snap = sysstat.Sample("/")

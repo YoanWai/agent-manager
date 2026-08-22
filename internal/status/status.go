@@ -41,6 +41,7 @@ type toolRules struct {
 	limitLine      *regexp.Regexp
 	messageStart   *regexp.Regexp
 	placeholder    *regexp.Regexp
+	userEcho       *regexp.Regexp
 	rules          []rule
 }
 
@@ -74,6 +75,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.LimitLine, &tr.limitLine},
 			{tool.MessageStart, &tr.messageStart},
 			{tool.InputPlaceholder, &tr.placeholder},
+			{tool.UserEcho, &tr.userEcho},
 		}
 		for _, opt := range optional {
 			if opt.pattern == "" {
@@ -300,17 +302,19 @@ func (e *Engine) ActivityRegion(tool, pane string) (string, bool) {
 // on, joined in order — so a caller quoting the reply starts at its
 // beginning and fits as much of it as the row can hold. Chrome, busy
 // spinners and turn_end markers are stepped over, and a tool without a
-// marker yields its newest content line alone. ok is false when the tool
-// has no activity_cutoff to find the box with, or the cutoff is absent
-// from the pane.
-func (e *Engine) LastMessage(tool, pane string) (string, bool) {
+// marker yields its newest content line alone. anchored reports that a
+// marker was found — false means the quote is the newest content line,
+// which for a marker tool is the sign the message start scrolled out of
+// the captured text. ok is false when the tool has no activity_cutoff to
+// find the box with, or the cutoff is absent from the pane.
+func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool) {
 	tr, ok := e.tools[tool]
 	if !ok {
-		return "", false
+		return "", false, false
 	}
 	region, ok := tr.activityRegion(pane)
 	if !ok {
-		return "", false
+		return "", false, false
 	}
 	lines := strings.Split(region, "\n")
 	structural := func(line string) bool {
@@ -337,10 +341,10 @@ func (e *Engine) LastMessage(tool, pane string) (string, bool) {
 		}
 	}
 	if lastContent == -1 {
-		return "", true
+		return "", false, true
 	}
 	if start == -1 {
-		return strings.TrimSpace(lines[lastContent]), true
+		return strings.TrimSpace(lines[lastContent]), false, true
 	}
 	// The message runs from its marker until the next structural line: a
 	// turn summary or a rule closes it, so a notice printed after the
@@ -360,7 +364,50 @@ func (e *Engine) LastMessage(tool, pane string) (string, bool) {
 		}
 		parts = append(parts, strings.TrimSpace(line))
 	}
-	return strings.TrimSpace(strings.Join(parts, " ")), true
+	return strings.TrimSpace(strings.Join(parts, " ")), true, true
+}
+
+// HasMessageStart reports whether the tool declared a message_start
+// marker, i.e. whether an unanchored LastMessage means the marker
+// scrolled away rather than never existing.
+func (e *Engine) HasMessageStart(tool string) bool {
+	tr, ok := e.tools[tool]
+	return ok && tr.messageStart != nil
+}
+
+// HasUserEcho reports whether the tool echoes submitted prompts into its
+// transcript in a recognisable shape.
+func (e *Engine) HasUserEcho(tool string) bool {
+	tr, ok := e.tools[tool]
+	return ok && tr.userEcho != nil
+}
+
+// LastUserEcho is the newest prompt the tool echoed into its transcript,
+// past the echo marker: the last thing sent to the session, whoever sent
+// it and from wherever it was typed. Empty means no echo is in the
+// captured text; ok is false when the tool has no user_echo or no
+// activity_cutoff to bound the transcript with.
+func (e *Engine) LastUserEcho(tool, pane string) (string, bool) {
+	tr, ok := e.tools[tool]
+	if !ok || tr.userEcho == nil {
+		return "", false
+	}
+	region, ok := tr.activityRegion(pane)
+	if !ok {
+		return "", false
+	}
+	lines := strings.Split(region, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimRight(lines[i], " \t")
+		loc := tr.userEcho.FindStringIndex(line)
+		if loc == nil {
+			continue
+		}
+		if echoed := strings.TrimSpace(line[loc[1]:]); echoed != "" {
+			return echoed, true
+		}
+	}
+	return "", true
 }
 
 // InputDraft is the text typed into the tool's composer: what follows the

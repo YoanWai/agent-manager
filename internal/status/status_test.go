@@ -742,8 +742,8 @@ func TestLastMessage(t *testing.T) {
 		"\n" +
 		"❯ \n" +
 		"  ? for shortcuts"
-	line, ok := engine.LastMessage("claude", pane)
-	if !ok {
+	line, anchored, ok := engine.LastMessage("claude", pane)
+	if !ok || !anchored {
 		t.Fatal("claude has an activity cutoff, ok should be true")
 	}
 	if line != "Done. The fix is in auth.go. Two tests were touched." {
@@ -762,26 +762,26 @@ func TestLastMessage(t *testing.T) {
 		"Plugins updated: 7 plugins · Run /reload-plugins to apply\n" +
 		"❯ \n" +
 		"──────────────────────────────"
-	line, ok = engine.LastMessage("claude", realPane)
-	if !ok || line != "The quick banana ate seventeen kayaks today." {
+	line, anchored, ok = engine.LastMessage("claude", realPane)
+	if !ok || !anchored || line != "The quick banana ate seventeen kayaks today." {
 		t.Fatalf("real pane quote = %q ok=%v, want the reply alone", line, ok)
 	}
 
-	if line, ok = engine.LastMessage("claude", "✻ Musing… (2s · esc to interrupt)\n\n❯ "); !ok || line != "" {
+	if line, _, ok = engine.LastMessage("claude", "✻ Musing… (2s · esc to interrupt)\n\n❯ "); !ok || line != "" {
 		t.Fatalf("frame-only pane: line=%q ok=%v, want empty and true", line, ok)
 	}
 
 	// opencode has no message_start, so its newest content line is the quote.
-	line, ok = engine.LastMessage("opencode",
+	line, anchored, ok = engine.LastMessage("opencode",
 		"     hey. what need?\n     ▣  Build · GLM-5.2 · 22.0s\n  ┃\n  ╹▀▀▀▀")
-	if !ok || line != "hey. what need?" {
+	if !ok || anchored || line != "hey. what need?" {
 		t.Fatalf("opencode fallback quote = %q ok=%v", line, ok)
 	}
 
-	if _, ok = engine.LastMessage("no-such-tool", pane); ok {
+	if _, _, ok = engine.LastMessage("no-such-tool", pane); ok {
 		t.Fatal("unknown tool should report it cannot tell")
 	}
-	if _, ok = engine.LastMessage("claude", "just text, no input box"); ok {
+	if _, _, ok = engine.LastMessage("claude", "just text, no input box"); ok {
 		t.Fatal("pane without the cutoff should report it cannot tell")
 	}
 }
@@ -801,5 +801,36 @@ func TestInputDraft(t *testing.T) {
 	}
 	if draft, ok := engine.InputDraft("codex", "› rename the flag\n  gpt-5.6-terra medium · /home/dev"); !ok || draft != "rename the flag" {
 		t.Fatalf("codex draft = %q ok=%v", draft, ok)
+	}
+}
+
+// LastUserEcho reads the newest prompt the transcript echoes; a pane whose
+// reply scrolled the bullet away reports an unanchored LastMessage, which
+// is the caller's cue to capture deeper.
+func TestLastUserEchoAndScrolledMarker(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "❯ first prompt\n" +
+		"⏺ First reply.\n" +
+		"❯ second prompt goes here\n" +
+		"⏺ Second reply.\n" +
+		"❯ "
+	echoed, ok := engine.LastUserEcho("claude", pane)
+	if !ok || echoed != "second prompt goes here" {
+		t.Fatalf("LastUserEcho = %q ok=%v, want the newest echoed prompt", echoed, ok)
+	}
+
+	scrolled := "tail of a reply that scrolled its bullet away.\n\n❯ "
+	line, anchored, ok := engine.LastMessage("claude", scrolled)
+	if !ok || anchored {
+		t.Fatalf("scrolled pane: anchored=%v ok=%v, want unanchored", anchored, ok)
+	}
+	if line != "tail of a reply that scrolled its bullet away." {
+		t.Fatalf("scrolled fallback = %q", line)
+	}
+	if !engine.HasMessageStart("claude") || engine.HasMessageStart("opencode") {
+		t.Fatal("HasMessageStart should be true for claude, false for opencode")
+	}
+	if echoed, ok := engine.LastUserEcho("claude", "⏺ Only replies here.\n❯ "); !ok || echoed != "" {
+		t.Fatalf("echoless pane: echo=%q ok=%v, want empty and true", echoed, ok)
 	}
 }

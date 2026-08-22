@@ -68,6 +68,10 @@ type Tool struct {
 	// InputPlaceholder is the hint a composer paints on its empty input
 	// row; a draft matching it is the tool's wording, not the user's.
 	InputPlaceholder string `toml:"input_placeholder"`
+	// UserEcho marks a line where the tool echoes a submitted prompt into
+	// its transcript, which is how the last thing sent to a session is
+	// read back regardless of who typed it or from where.
+	UserEcho string `toml:"user_echo"`
 	// InputPrefix locates the composer's input row for the arrow-step pair
 	// (Left leaving focus at the prompt head). It replaces the reuse of
 	// activity_cutoff for that check, for tools whose input line carries no
@@ -207,6 +211,7 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.TrailingNote, def.TrailingNote)
 	fill(&user.MessageStart, def.MessageStart)
 	fill(&user.InputPlaceholder, def.InputPlaceholder)
+	fill(&user.UserEcho, def.UserEcho)
 	fill(&user.BusyLine, def.BusyLine)
 	fill(&user.LimitLine, def.LimitLine)
 	fill(&user.InputPrefix, def.InputPrefix)
@@ -345,6 +350,8 @@ limit_line = "(?m)You've hit your .+limit"
 # every message and tool call opens on a bullet at the left edge; the
 # glyph is ⏺ on current Claude Code and ● on older releases
 message_start = "^[●⏺] "
+# a submitted prompt echoes into the transcript on its own ❯ line
+user_echo = "^❯ "
 rules = [
   # selection dialogs (trust prompt, permission asks, questions) block on the user
   { state = "waiting", pattern = "Enter to confirm" },
@@ -474,6 +481,8 @@ limit_line = "Usage limit reached"
 # model replies open on a "✦ " glyph
 message_start = "^\\s*✦ "
 input_placeholder = "^Type your message or @path/to/file"
+# a submitted prompt echoes into the transcript on its own "> " line
+user_echo = "^\\s*> "
 rules = [
   # selected row of an approval/trust dialog, inside its bordered box:
   # "│ ● 1. Allow once"
