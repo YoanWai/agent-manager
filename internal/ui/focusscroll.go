@@ -261,21 +261,42 @@ func (m *Model) requestFocusRegion(sessID string) tea.Cmd {
 }
 
 // focusRegionCmd captures the pane region that sits offset lines above the
-// live bottom. tmux numbers the visible screen from 0 down, and history
-// above it with negative lines, so a scrolled window is just a shifted
-// start and end.
+// live bottom. The pane's height rarely matches the panel — resizeSessions
+// leaves a pane taller rather than costing Codex its scrollback, and the
+// session's status line makes the visible pane one row shorter than the
+// pinned window — so the pane's bottom, not tmux's visible row zero,
+// anchors the window: the capture reaches rows+offset lines into history
+// and runs to the visible end ("-E -"), and the window is cut from its
+// end, which needs no pane height at all. tmux clamps the start to the
+// history top, so a shallow history just yields a shorter frame.
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
 	rows := m.previewPaneHeight()
-	command := fmt.Sprintf(`capture-pane -p -e -t %s -S %d -E %d`,
-		tmux.SessionName(sessID), -offset, rows-1-offset)
+	command := fmt.Sprintf(`capture-pane -p -e -t %s -S %d -E -`,
+		tmux.SessionName(sessID), -(offset + rows))
 	watch := m.focus
 	return func() tea.Msg {
 		if watch == nil {
 			return focusScrollMsg{sessID: sessID, offset: offset, rows: rows}
 		}
 		out, ok := watch.query(command)
-		return focusScrollMsg{sessID: sessID, offset: offset, rows: rows, preview: matchExecShape(out), ok: ok}
+		return focusScrollMsg{sessID: sessID, offset: offset, rows: rows,
+			preview: bottomWindow(matchExecShape(out), rows, offset), ok: ok}
 	}
+}
+
+// bottomWindow cuts the rows lines that end offset lines above the
+// capture's last row.
+func bottomWindow(capture string, rows, offset int) string {
+	lines := strings.Split(strings.TrimSuffix(capture, "\n"), "\n")
+	end := len(lines) - offset
+	if end < 0 {
+		end = 0
+	}
+	start := end - rows
+	if start < 0 {
+		start = 0
+	}
+	return strings.Join(lines[start:end], "\n") + "\n"
 }
 
 // scrolledBack reports whether the focused pane is showing history rather

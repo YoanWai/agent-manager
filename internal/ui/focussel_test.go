@@ -23,6 +23,20 @@ func paneAt(t *testing.T, lines ...string) *Model {
 	return m
 }
 
+// A pane held taller than the panel crops at its content and never at the
+// caret, which can sit below the content on an empty prompt row; the caret
+// must land on the painted row the crop gave it.
+func TestCaretRowSurvivesTallPaneCrop(t *testing.T) {
+	rows := append([]string{"one", "two"}, make([]string, 38)...)
+	m := paneAt(t, rows...)
+	m.pane.box.height = 10
+	m.pane.cursor = paneCursor{x: 0, y: 25, ok: true}
+	row, col, ok := m.cursorCell(m.pane.box.height)
+	if !ok || row != 9 || col != 0 {
+		t.Fatalf("caret at pane row 25 = (%d,%d,%v), want painted row 9", row, col, ok)
+	}
+}
+
 func press(m *Model, x, y int) {
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
 }
@@ -643,7 +657,7 @@ func TestTabbedRowSharesItsColumns(t *testing.T) {
 	const width = 30
 	m := paneAt(t, "ok  \tgithub.com/x/y\t1.5s")
 	m.pane.box.width = width
-	rows := paneExact(m.preview, m.pane.box.height, width)
+	rows := paneExact(m.preview, m.pane.box.height, width, -1)
 
 	// Column 8 is where the pane paints the package name's first letter.
 	m.pane.cursor = paneCursor{x: 8, y: 0, ok: true}

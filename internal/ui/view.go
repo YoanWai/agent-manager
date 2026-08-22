@@ -379,23 +379,52 @@ func expandPaneTabs(line string, width int) string {
 	return out.String()
 }
 
-// paneExact returns up to n lines of pane text as the pane painted them,
-// preserving blank rows so a full-screen agent TUI looks the same in the
-// preview. When the capture is taller than the panel (stale size), the
-// bottom n lines are kept — the visible end of the pane. Rows arrive here
-// before anything measures them, so this is where a tab becomes the cells
-// it covers and the frame, the caret and the selection all count one set
-// of columns.
-func paneExact(pane string, n, width int) []string {
+// paneWindow picks the half-open row range of a capture the panel shows.
+// A pane is left taller than the panel on purpose, since shrinking it
+// costs agents like Codex their whole scrollback (#369), so a plain crop
+// would show the blank tail such a pane leaves under short output and drop
+// the output itself. The window instead ends at the last painted row, but
+// never retreats past the panel's own row count (short output keeps its
+// top anchor, and a not-yet-painted pane keeps its blank rows hit-testable)
+// or past the caret's row, which is the cell someone is typing into.
+func paneWindow(pane string, n, caretRow int) (lines []string, start int) {
 	if n <= 0 || pane == "" {
-		return nil
+		return nil, 0
 	}
 	// capture-pane often ends with a trailing newline; drop only that.
-	pane = strings.TrimSuffix(pane, "\n")
-	lines := strings.Split(pane, "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
+	lines = strings.Split(strings.TrimSuffix(pane, "\n"), "\n")
+	end := len(lines)
+	for end > 0 && blankPaneRow(lines[end-1]) {
+		end--
 	}
+	if end < n {
+		end = n
+	}
+	if caretRow+1 > end {
+		end = caretRow + 1
+	}
+	if end > len(lines) {
+		end = len(lines)
+	}
+	start = end - n
+	if start < 0 {
+		start = 0
+	}
+	return lines[start:end], start
+}
+
+func blankPaneRow(line string) bool {
+	return strings.TrimSpace(ansi.Strip(line)) == ""
+}
+
+// paneExact returns up to n lines of pane text as the pane painted them,
+// preserving blank rows so a full-screen agent TUI looks the same in the
+// preview. caretRow is the capture row the live caret sits on, or -1 when
+// none is in play. Rows arrive here before anything measures them, so this
+// is where a tab becomes the cells it covers and the frame, the caret and
+// the selection all count one set of columns.
+func paneExact(pane string, n, width, caretRow int) []string {
+	lines, _ := paneWindow(pane, n, caretRow)
 	for i, line := range lines {
 		lines[i] = expandPaneTabs(line, width)
 	}

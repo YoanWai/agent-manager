@@ -275,6 +275,7 @@ func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseComman
 	if err := m.tmux.Create(sess.ID, sess.Cwd, command, env, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
 		return err
 	}
+	m.markFreshPane(sess.ID)
 	if bindConversation != nil {
 		if err := bindConversation(); err != nil {
 			_ = m.tmux.Kill(sess.ID)

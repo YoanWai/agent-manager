@@ -185,19 +185,21 @@ func windowSize(t *testing.T, id string) (int, int) {
 }
 
 // Sessions left over from a previous manager run keep that run's window
-// size; the first refresh after startup must shrink them to the preview
-// panel so their captures fit without a terminal resize.
+// size; the first refresh after startup must bring a wrong-width window to
+// the preview panel so its captures fit without a terminal resize.
 func TestFirstRefreshResizesExistingSessions(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "leftover", t.TempDir(), "")
 	id := m.sessionRows()[0].ID
 
-	// Drift the window as if an older manager had sized it to the terminal.
+	// Drift the window as if an older manager had sized it to the terminal;
+	// a fresh manager also starts with no geometry cached for it.
 	if _, err := tmuxCmd("resize-window", "-t", "am_"+id, "-x", "191", "-y", "55").CombinedOutput(); err != nil {
 		t.Fatalf("resize-window: %v", err)
 	}
 
 	m.sessionsSized = false
+	m.pane.geom = nil
 	m.applyCmd(t, m.refreshCmd())
 	if w, _ := windowSize(t, id); w != m.previewPaneWidth() {
 		t.Fatalf("after first refresh, window width = %d, want %d", w, m.previewPaneWidth())

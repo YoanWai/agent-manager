@@ -679,6 +679,36 @@ func noServer(out string) bool {
 		strings.Contains(out, "error connecting to")
 }
 
+// WindowSizes returns every managed session's window width×height in a
+// single tmux call, so sessions adopted from a previous run resize from
+// their real geometry rather than from nothing.
+func (d *Driver) WindowSizes() (map[string][2]int, error) {
+	out, err := exec.Command(d.bin, d.args("list-windows", "-a", "-F", "#{session_name} #{window_width} #{window_height}")...).CombinedOutput()
+	if err != nil {
+		if noServer(string(out)) {
+			return map[string][2]int{}, nil
+		}
+		return nil, fmt.Errorf("tmux list-windows: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	sizes := map[string][2]int{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 || !strings.HasPrefix(fields[0], prefix) {
+			continue
+		}
+		id := strings.TrimPrefix(fields[0], prefix)
+		if _, taken := sizes[id]; taken {
+			continue
+		}
+		width, widthErr := strconv.Atoi(fields[1])
+		height, heightErr := strconv.Atoi(fields[2])
+		if widthErr == nil && heightErr == nil {
+			sizes[id] = [2]int{width, height}
+		}
+	}
+	return sizes, nil
+}
+
 // Panes returns every managed session's pane pid in a single tmux call,
 // which doubles as a liveness check: a session absent from the map is gone.
 func (d *Driver) Panes() (map[string]int, error) {
