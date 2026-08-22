@@ -124,8 +124,7 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 		m.focus.retryNow()
 	}
 	m.watchSelection()
-	m.sel = focusSelection{}
-	m.copied = 0
+	m.clearSelection()
 	m.cursorOn = true
 	m.focusScroll = 0
 	// Pane state from a previously watched session must not route this
@@ -224,10 +223,9 @@ func textBeforeCaret(engine *status.Engine, tool, row string, caretX int) bool {
 // view, so the list swallows the wheel instead.
 func (m *Model) leaveFocus() tea.Cmd {
 	m.mode = modeList
-	m.sel = focusSelection{}
+	m.clearSelection()
 	m.pending = pendingClick{}
 	m.clearForwardingMouse()
-	m.copied = 0
 	return nil
 }
 
@@ -252,8 +250,7 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Ctrl+R opens the review, matching the binding a real attach gets;
 	// closing it focuses the session again rather than landing in the list.
 	if msg.String() == "ctrl+r" {
-		m.sel = focusSelection{}
-		m.copied = 0
+		m.clearSelection()
 		cmd := m.openDiff()
 		if m.mode == modeDiff {
 			m.diff.refocus = true

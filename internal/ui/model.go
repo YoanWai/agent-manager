@@ -97,9 +97,12 @@ type Model struct {
 	// sel is the focused-pane selection, written during paint so clicks
 	// resolve against the current frame. copied is the size of the last
 	// clipboard write, shown once in the status line and cleared on the
-	// next selection.
-	copied int
-	sel    focusSelection
+	// next selection. copyGen rises whenever the selection behind a write
+	// stops being the one on screen, so a write that lands late is dropped
+	// instead of re-arming the count under nothing.
+	copied  int
+	copyGen int
+	sel     focusSelection
 	// forwardingMouse holds an Alt-initiated in-pane click lifecycle until
 	// its release. The button and last in-pane cell keep an X10 release
 	// paired with its press when it reports MouseButtonNone outside the pane.
@@ -1280,6 +1283,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.cursorBlink()
 
 	case focusCopiedMsg:
+		// The clipboard writer runs off the update loop and can take
+		// hundreds of milliseconds, long enough for a click elsewhere to
+		// drop the highlight this count belongs to.
+		if msg.gen != m.copyGen {
+			return m, nil
+		}
 		m.errBar.text = ""
 		m.copied = msg.chars
 		return m, nil
