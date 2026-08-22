@@ -812,7 +812,7 @@ func TestLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Panes: %v", err)
 	}
-	if panes[id] <= 0 {
+	if panes[id].PID <= 0 {
 		t.Fatalf("Panes should map %q to a pane pid, got %v", id, panes)
 	}
 
@@ -980,14 +980,26 @@ func TestManagerStaysOnTheAgentPaneAfterASplit(t *testing.T) {
 	}
 
 	// No -d: the split leaves the teammate pane active, which is what a
-	// session-wide target would follow.
-	if out, err := tmuxCmd("split-window", "-t", "am_"+id, "--",
+	// session-wide target would follow. Its own directory is what tells the
+	// two panes apart in what the manager reads back.
+	teammateDir := t.TempDir()
+	if out, err := tmuxCmd("split-window", "-t", "am_"+id, "-c", teammateDir, "--",
 		"sh", "-c", "printf teammate-pane; sleep 30").CombinedOutput(); err != nil {
 		t.Fatalf("split-window: %v: %s", err, out)
 	}
 
 	if pid, err := driver.PanePID(id); err != nil || pid != agentPID {
 		t.Fatalf("PanePID after split = %d, %v, want the agent pane %d", pid, err, agentPID)
+	}
+	panes, err := driver.Panes()
+	if err != nil {
+		t.Fatalf("Panes: %v", err)
+	}
+	if panes[id].PID != agentPID {
+		t.Fatalf("Panes reports pid %d, want the agent pane %d", panes[id].PID, agentPID)
+	}
+	if path, err := driver.PaneCurrentPath(id); err != nil || path == teammateDir {
+		t.Fatalf("PaneCurrentPath = %q, %v, want the agent pane's own directory", path, err)
 	}
 	if err := driver.SendText(id, "hello world"); err != nil {
 		t.Fatalf("SendText: %v", err)
@@ -1035,54 +1047,62 @@ func TestEnsureBindingsPinsPaneNumbering(t *testing.T) {
 	}
 }
 
-// A window an agent split shares its columns with the teammate panes, so
+// A window an agent split shares its geometry with the teammate panes, so
 // pinning the window alone leaves the agent's own pane -- the one the
-// preview draws -- at a fraction of the panel it is drawn in.
+// preview draws -- at a fraction of the panel it is drawn in. Either split
+// axis takes that room, and the teammate must keep what it had: a pane that
+// loses height clears a Codex scrollback (#369), and one that loses width
+// reflows every line it holds.
 func TestResizeFitsTheAgentPaneInASplitWindow(t *testing.T) {
-	driver := requireTmux(t)
-	id := "fit" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "cat", nil, 80, 24); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	t.Cleanup(func() { driver.Kill(id) })
-	if out, err := tmuxCmd("split-window", "-h", "-t", "am_"+id, "--", "sh", "-c", "sleep 30").CombinedOutput(); err != nil {
-		t.Fatalf("split-window: %v: %s", err, out)
-	}
+	for _, split := range []struct {
+		axis string
+		flag string
+	}{{"horizontal", "-h"}, {"vertical", "-v"}} {
+		t.Run(split.axis, func(t *testing.T) {
+			driver := requireTmux(t)
+			id := "fit" + split.axis[:1] + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+			if err := driver.Create(id, "/tmp", "cat", nil, 80, 24); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			t.Cleanup(func() { driver.Kill(id) })
+			if out, err := tmuxCmd("split-window", split.flag, "-t", "am_"+id, "--", "sh", "-c", "sleep 30").CombinedOutput(); err != nil {
+				t.Fatalf("split-window: %v: %s", err, out)
+			}
+			teammate := teammateSize(t, id)
 
-	if err := driver.Resize(id, 100, 30); err != nil {
-		t.Fatalf("Resize: %v", err)
-	}
+			if err := driver.Resize(id, 100, 30); err != nil {
+				t.Fatalf("Resize: %v", err)
+			}
 
-	geoms, err := driver.PaneGeoms()
-	if err != nil {
-		t.Fatalf("PaneGeoms: %v", err)
-	}
-	if got := geoms[id]; got.Width != 100 || got.Height != 30 {
-		t.Fatalf("agent pane = %dx%d, want the preview box 100x30", got.Width, got.Height)
+			panes, err := driver.Panes()
+			if err != nil {
+				t.Fatalf("Panes: %v", err)
+			}
+			if got := panes[id]; got.Width != 100 || got.Height != 30 {
+				t.Fatalf("agent pane = %dx%d, want the preview box 100x30", got.Width, got.Height)
+			}
+			if after := teammateSize(t, id); after[0] < teammate[0] || after[1] < teammate[1] {
+				t.Fatalf("teammate pane = %v, want no less than the %v it had", after, teammate)
+			}
+		})
 	}
 }
 
-// Fitting the agent pane never costs a teammate the room it had: a pane
-// that loses height clears a Codex scrollback (#369), and one that loses
-// width reflows every line it holds.
-func TestResizeNeverShrinksATeammatePane(t *testing.T) {
-	driver := requireTmux(t)
-	id := "keep" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
-	if err := driver.Create(id, "/tmp", "cat", nil, 80, 24); err != nil {
-		t.Fatalf("Create: %v", err)
+// A geometry line tmux did not answer in numbers leaves the agent pane at
+// whatever the split gave it, so the resize reports rather than returns.
+func TestResizeReportsUnreadableGeometry(t *testing.T) {
+	dir := t.TempDir()
+	stub := dir + "/tmux"
+	script := "#!/bin/sh\ncase \"$*\" in *display-message*) echo 'no geometry here';; esac\nexit 0\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
 	}
-	t.Cleanup(func() { driver.Kill(id) })
-	if out, err := tmuxCmd("split-window", "-h", "-t", "am_"+id, "--", "sh", "-c", "sleep 30").CombinedOutput(); err != nil {
-		t.Fatalf("split-window: %v: %s", err, out)
-	}
-	before := teammateSize(t, id)
+	driver := &Driver{bin: stub, socket: testSocket}
 
-	if err := driver.Resize(id, 100, 24); err != nil {
-		t.Fatalf("Resize: %v", err)
-	}
+	err := driver.Resize("x1", 100, 30)
 
-	if after := teammateSize(t, id); after[0] < before[0] || after[1] < before[1] {
-		t.Fatalf("teammate pane = %v, want no less than the %v it had", after, before)
+	if err == nil || !strings.Contains(err.Error(), "geometry") {
+		t.Fatalf("Resize error = %v, want the unreadable geometry reported", err)
 	}
 }
 

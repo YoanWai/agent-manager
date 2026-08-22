@@ -627,19 +627,11 @@ func (d *Driver) fitAgentPane(id string, width, height int) error {
 	if err != nil {
 		return err
 	}
-	fields := strings.Fields(out)
-	if len(fields) != 5 {
-		return fmt.Errorf("tmux reported no geometry for session %s: %q", id, out)
+	var panes, windowWidth, windowHeight, paneWidth, paneHeight int
+	if _, err := fmt.Sscanf(strings.TrimSpace(out), "%d %d %d %d %d",
+		&panes, &windowWidth, &windowHeight, &paneWidth, &paneHeight); err != nil {
+		return fmt.Errorf("tmux geometry %q for session %s: %w", strings.TrimSpace(out), id, err)
 	}
-	geometry := make([]int, len(fields))
-	for i, field := range fields {
-		value, err := strconv.Atoi(field)
-		if err != nil {
-			return fmt.Errorf("tmux geometry %q for session %s: %w", field, id, err)
-		}
-		geometry[i] = value
-	}
-	panes, windowWidth, windowHeight, paneWidth, paneHeight := geometry[0], geometry[1], geometry[2], geometry[3], geometry[4]
 	if panes < 2 {
 		return nil
 	}
@@ -736,63 +728,33 @@ func noServer(out string) bool {
 		strings.Contains(out, "error connecting to")
 }
 
-// PaneGeom is a session's agent pane size and how many panes share its
-// window. The size is what the preview draws, and a count above one means
-// the agent split the window itself, leaving its own pane a fraction of
-// the geometry the manager pinned.
-type PaneGeom struct {
+// Pane is a managed session's agent pane: the process running in it, the
+// size the preview draws it at, and how many panes share its window. A
+// count above one means the agent split the window itself, leaving its own
+// pane a fraction of the geometry the manager pinned.
+type Pane struct {
+	PID    int
 	Width  int
 	Height int
 	Panes  int
 }
 
-// PaneGeoms returns every managed session's agent pane geometry in a single
-// tmux call, so a session adopted from a previous run resizes from its real
-// size rather than from nothing, and a window an agent has split is known
-// as split without a call per session.
-func (d *Driver) PaneGeoms() (map[string]PaneGeom, error) {
-	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_width} #{pane_height} #{window_panes}")...).CombinedOutput()
-	if err != nil {
-		if noServer(string(out)) {
-			return map[string]PaneGeom{}, nil
-		}
-		return nil, fmt.Errorf("tmux list-panes: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	geoms := map[string]PaneGeom{}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 4 || !strings.HasPrefix(fields[0], prefix) {
-			continue
-		}
-		id := strings.TrimPrefix(fields[0], prefix)
-		if _, taken := geoms[id]; taken {
-			continue
-		}
-		width, widthErr := strconv.Atoi(fields[1])
-		height, heightErr := strconv.Atoi(fields[2])
-		panes, panesErr := strconv.Atoi(fields[3])
-		if widthErr == nil && heightErr == nil && panesErr == nil {
-			geoms[id] = PaneGeom{Width: width, Height: height, Panes: panes}
-		}
-	}
-	return geoms, nil
-}
-
-// Panes returns every managed session's pane pid in a single tmux call,
+// Panes returns every managed session's agent pane in a single tmux call,
 // which doubles as a liveness check: a session absent from the map is gone.
-// The filter keeps the agent's own pane, the one PaneTarget addresses, so
-// a session whose agent split the window still reports the agent's pid.
-func (d *Driver) Panes() (map[string]int, error) {
-	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_pid}")...).CombinedOutput()
+// The filter keeps the agent's own pane, the one PaneTarget addresses, so a
+// session whose agent split the window reports the agent's own process and
+// the size the preview draws, never a teammate's.
+func (d *Driver) Panes() (map[string]Pane, error) {
+	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_pid} #{pane_width} #{pane_height} #{window_panes}")...).CombinedOutput()
 	if err != nil {
 		if noServer(string(out)) {
-			return map[string]int{}, nil
+			return map[string]Pane{}, nil
 		}
 		return nil, fmt.Errorf("tmux list-panes: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	panes := map[string]int{}
+	panes := map[string]Pane{}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		name, pidText, ok := strings.Cut(line, " ")
+		name, geometry, ok := strings.Cut(line, " ")
 		if !ok || !strings.HasPrefix(name, prefix) {
 			continue
 		}
@@ -800,8 +762,9 @@ func (d *Driver) Panes() (map[string]int, error) {
 		if _, taken := panes[id]; taken {
 			continue
 		}
-		if pid, err := strconv.Atoi(pidText); err == nil {
-			panes[id] = pid
+		var pane Pane
+		if _, err := fmt.Sscanf(geometry, "%d %d %d %d", &pane.PID, &pane.Width, &pane.Height, &pane.Panes); err == nil {
+			panes[id] = pane
 		}
 	}
 	return panes, nil

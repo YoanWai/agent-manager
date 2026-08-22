@@ -511,39 +511,54 @@ func TestSearchMatchingArchivedChildDoesNotHoistLiveParent(t *testing.T) {
 	}
 }
 
-// An agent that splits its own window takes columns from the pane the
-// preview draws, and no manager action precedes it for the geometry cache
-// to follow. A later refresh has to notice and pin that pane back.
+// An agent that splits its own window takes room from the pane the preview
+// draws, on whichever axis it split, and no manager action precedes it for
+// the geometry cache to follow. A later refresh has to notice and pin that
+// pane back to the box.
 func TestRefreshRepinsAnAgentSplitPane(t *testing.T) {
-	m := buildModel(t)
-	createSession(t, m, "split", t.TempDir(), "")
-	id := m.sessionRows()[0].ID
-	m.applyCmd(t, m.refreshCmd())
+	for _, split := range []struct {
+		axis string
+		flag string
+	}{{"horizontal", "-h"}, {"vertical", "-v"}} {
+		t.Run(split.axis, func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "split", t.TempDir(), "")
+			id := m.sessionRows()[0].ID
+			m.applyCmd(t, m.refreshCmd())
 
-	if out, err := tmuxCmd("split-window", "-h", "-t", "am_"+id, "--", "sh", "-c", "sleep 30").CombinedOutput(); err != nil {
-		t.Fatalf("split-window: %v: %s", err, out)
-	}
-	if width := agentPaneWidth(t, id); width == m.previewPaneWidth() {
-		t.Fatalf("the split should have taken columns from the agent pane, width = %d", width)
-	}
+			if out, err := tmuxCmd("split-window", split.flag, "-t", "am_"+id, "--", "sh", "-c", "sleep 30").CombinedOutput(); err != nil {
+				t.Fatalf("split-window: %v: %s", err, out)
+			}
+			if width, height := agentPaneSize(t, id); width == m.previewPaneWidth() && height == m.previewPaneHeight() {
+				t.Fatalf("the split should have taken room from the agent pane, pane = %dx%d", width, height)
+			}
 
-	m.applyCmd(t, m.refreshCmd())
+			m.applyCmd(t, m.refreshCmd())
 
-	if width := agentPaneWidth(t, id); width != m.previewPaneWidth() {
-		t.Fatalf("after refresh, agent pane width = %d, want the preview box %d", width, m.previewPaneWidth())
+			width, height := agentPaneSize(t, id)
+			if width != m.previewPaneWidth() || height != m.previewPaneHeight() {
+				t.Fatalf("after refresh, agent pane = %dx%d, want the preview box %dx%d",
+					width, height, m.previewPaneWidth(), m.previewPaneHeight())
+			}
+		})
 	}
 }
 
-// agentPaneWidth reports the columns a session's agent pane holds.
-func agentPaneWidth(t *testing.T, id string) int {
+// agentPaneSize reports the cells a session's agent pane holds.
+func agentPaneSize(t *testing.T, id string) (int, int) {
 	t.Helper()
-	out, err := tmuxCmd("list-panes", "-t", "am_"+id, "-f", "#{==:#{pane_index},0}", "-F", "#{pane_width}").CombinedOutput()
+	out, err := tmuxCmd("list-panes", "-t", "am_"+id, "-f", "#{==:#{pane_index},0}", "-F", "#{pane_width} #{pane_height}").CombinedOutput()
 	if err != nil {
 		t.Fatalf("list-panes: %v: %s", err, out)
 	}
-	width, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err != nil {
-		t.Fatalf("pane width %q: %v", out, err)
+	fields := strings.Fields(string(out))
+	if len(fields) != 2 {
+		t.Fatalf("pane size %q", out)
 	}
-	return width
+	width, widthErr := strconv.Atoi(fields[0])
+	height, heightErr := strconv.Atoi(fields[1])
+	if widthErr != nil || heightErr != nil {
+		t.Fatalf("pane size %q: %v %v", out, widthErr, heightErr)
+	}
+	return width, height
 }

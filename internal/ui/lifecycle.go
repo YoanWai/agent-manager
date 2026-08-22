@@ -578,7 +578,7 @@ func (m *Model) liveSessions(sessions []store.Session) ([]store.Session, error) 
 	}
 	var live []store.Session
 	for _, sess := range sessions {
-		if panes[sess.ID] > 0 {
+		if panes[sess.ID].PID > 0 {
 			live = append(live, sess)
 		}
 	}
