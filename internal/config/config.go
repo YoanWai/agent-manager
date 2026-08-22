@@ -356,6 +356,14 @@ revive_command = "opencode --continue"
 prompt_flag = "--prompt"
 default_status = "idle"
 activity_cutoff = "(?m)^\\s*╹"
+# The composer is the gutter row the caret sits on: opencode keeps the caret
+# on the draft's own text row (live-verified, caret tracking every keystroke),
+# and parks it at the text-start column of a blank gutter row when the
+# composer is empty. The prefix stops at the bar on purpose, since captured
+# rows keep their trailing blanks; the blank-continuation and wrapped-line
+# rows a multi-line draft adds are told apart by the row above them, which
+# carries the same bar with text past it.
+input_prefix = "(?m)^\\s*┃"
 turn_end = "^\\s*▣ +.+· [\\dhms. ]+\\s*$"
 chrome_line = "^\\s*(┃.*)?$"
 limit_line = "(?i)requires more credits|(?:Usage|Free|Go) limit reached"
