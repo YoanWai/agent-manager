@@ -4,8 +4,11 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/shirou/gopsutil/v4/sensors"
 )
@@ -403,5 +406,52 @@ func TestScaleToHost(t *testing.T) {
 func TestLogicalCPUs(t *testing.T) {
 	if n := LogicalCPUs(); n < 1 {
 		t.Fatalf("LogicalCPUs = %d, want >= 1", n)
+	}
+}
+
+// The poller identifies the CLI a pane is running from the pane shell's own
+// children, so a tree sample has to name them.
+func TestTreesNamesDirectChildren(t *testing.T) {
+	// sh forks for a two-command script rather than exec'ing over itself,
+	// so sleep lands a level below and proves only children are reported.
+	child := exec.Command("sh", "-c", "sleep 5; true")
+	if err := child.Start(); err != nil {
+		t.Fatalf("start child: %v", err)
+	}
+	t.Cleanup(func() {
+		child.Process.Kill()
+		child.Wait()
+	})
+
+	var children []string
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		stat, sampled := Trees([]int{os.Getpid()})[os.Getpid()]
+		if !sampled || !stat.OK {
+			t.Fatal("no tree sample for the test process")
+		}
+		children = stat.Children
+		if slices.ContainsFunc(children, func(c string) bool { return filepath.Base(c) == "sh" }) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !slices.ContainsFunc(children, func(c string) bool { return filepath.Base(c) == "sh" }) {
+		t.Fatalf("children = %v, want one named sh", children)
+	}
+	if slices.ContainsFunc(children, func(c string) bool { return filepath.Base(c) == "sleep" }) {
+		t.Fatalf("children = %v, want no grandchild in it", children)
+	}
+}
+
+// A child that exits between the two ps passes frees its pid, and a pid the
+// kernel hands to something unrelated must not be read as this pane's agent.
+func TestChildNamesRequireTheSampledParent(t *testing.T) {
+	stats := map[int]ProcStat{100: {OK: true}}
+	children := map[int][]int{100: {101, 102}}
+	applyChildNames(stats, children, "  101   100 /opt/homebrew/bin/codex --resume 7\n  102   999 /usr/bin/vim notes.txt\n")
+	want := []string{"/opt/homebrew/bin/codex"}
+	if got := stats[100].Children; !slices.Equal(got, want) {
+		t.Fatalf("children = %v, want %v", got, want)
 	}
 }

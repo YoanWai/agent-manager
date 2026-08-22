@@ -10,6 +10,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/sysstat"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 )
@@ -142,6 +144,17 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeConfirmDelete
 		return m, nil
+	}
+	// A pane the user quit the agent in is still a live window sitting at a
+	// shell; the agent alone is gone, and it comes back inside that shell.
+	if m.tmux.Exists(entry.sess.ID) {
+		cmd, err := m.relaunchInPane(entry.sess)
+		if err != nil {
+			m.reportLaunchError(err)
+			return m, nil
+		}
+		m.errBar.text = m.degradedResumeNotice(entry.sess)
+		return m, cmd
 	}
 	if err := m.reviveSession(entry.sess); err != nil {
 		m.reportLaunchError(err)
@@ -282,6 +295,100 @@ func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseComman
 	// A leftover ack from the previous life must not swallow the relaunched
 	// agent's first finished alert.
 	return m.store.SetAcked(sess.ID, false)
+}
+
+// relaunchedMsg carries the result of starting an agent in a pane that was
+// left on its shell.
+type relaunchedMsg struct {
+	sessID     string
+	launchedAt time.Time
+	err        error
+}
+
+// relaunchInPane builds the command that starts a session's tool again
+// inside the shell its pane already holds, for a session whose window is
+// alive because only the agent exited. The command is typed into that
+// shell rather than launched over a fresh window, so nothing about the
+// pane is lost and the agent comes back as the shell's child, the shape
+// every other session has. It carries the session environment inline as
+// well, since a pane opened by an older manager holds a shell that was
+// never given it. The probe and the send run off the update path, where a
+// pane that answers slowly would hold up the whole UI.
+func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
+	tool, ok := m.cfg.Tools[sess.Tool]
+	if !ok {
+		return nil, fmt.Errorf("tool %s is no longer configured", sess.Tool)
+	}
+	if tool.Shell {
+		return nil, fmt.Errorf("%s is a shell; its pane is already open", sess.Name)
+	}
+	if !isDir(sess.Cwd) {
+		return nil, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
+	}
+	driver, stor, hookManager := m.tmux, m.store, m.hooks
+	base := launch.ReviveCommand(tool, sess.AgentSessionID)
+	return func() tea.Msg {
+		failed := func(err error) tea.Msg {
+			return relaunchedMsg{sessID: sess.ID, err: err}
+		}
+		running, err := agentRunning(driver, sess.ID)
+		if err != nil {
+			return failed(err)
+		}
+		if running {
+			return failed(fmt.Errorf("session %s is still running; revive brings back an agent that exited", sess.Name))
+		}
+		command, env, err := launch.Environment(hookManager, sess.Tool, tool, base, sess.ID)
+		if err != nil {
+			return failed(err)
+		}
+		if err := driver.SendKeys(sess.ID, tmux.ExportEnv(env, command), "Enter"); err != nil {
+			return failed(err)
+		}
+		launchedAt := time.Now()
+		if err := stor.SetAgentLaunchedAt(sess.ID, launchedAt); err != nil {
+			return failed(err)
+		}
+		if err := stor.UpdateStatus(sess.ID, status.Starting); err != nil {
+			return failed(err)
+		}
+		// A leftover ack from the agent that exited must not swallow the
+		// first finished alert of the one taking its place.
+		if err := stor.SetAcked(sess.ID, false); err != nil {
+			return failed(err)
+		}
+		return relaunchedMsg{sessID: sess.ID, launchedAt: launchedAt}
+	}, nil
+}
+
+// paneSettle is how long a busy pane is given to come back empty. A shell
+// forks for its own startup work, and one sample cannot tell that apart
+// from an agent.
+const paneSettle = 250 * time.Millisecond
+
+// agentRunning reports whether a live pane still holds an agent: the pane's
+// own pid is its shell, so anything under it is the agent. A sample that
+// could not be read counts as running, because typing a command into a pane
+// that turns out to hold an agent puts the text in its composer.
+func agentRunning(driver *tmux.Driver, sessID string) (bool, error) {
+	busy, err := paneBusy(driver, sessID)
+	if err != nil || !busy {
+		return busy, err
+	}
+	time.Sleep(paneSettle)
+	return paneBusy(driver, sessID)
+}
+
+func paneBusy(driver *tmux.Driver, sessID string) (bool, error) {
+	pid, err := driver.PanePID(sessID)
+	if err != nil {
+		return true, err
+	}
+	stat, sampled := sysstat.Trees([]int{pid})[pid]
+	if !sampled || !stat.OK {
+		return true, fmt.Errorf("cannot read what session %s is running", sessID)
+	}
+	return stat.Procs > 1, nil
 }
 
 // restartSelected asks to relaunch the selected session with an empty

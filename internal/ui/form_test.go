@@ -621,7 +621,7 @@ func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
 	}
 	old := m.poller
 	m.poller = newPoller(m.store, m.tmux, m.engine, m.hooks, m.gitDrv,
-		old.statusSources, old.sessionStores, old.mcpStyles, old.interval)
+		old.statusSources, old.sessionStores, old.mcpStyles, old.binaries, old.interval)
 	m.applyCmd(t, m.refreshCmd())
 	deadline := time.Now().Add(5 * time.Second)
 	for len(sessionPendingInputs(t, m, sess.ID)) > 0 {
@@ -653,7 +653,7 @@ func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
 	}
 	old := m.poller
 	m.poller = newPoller(m.store, m.tmux, m.engine, m.hooks, m.gitDrv,
-		old.statusSources, old.sessionStores, old.mcpStyles, old.interval)
+		old.statusSources, old.sessionStores, old.mcpStyles, old.binaries, old.interval)
 	msg := m.poller.refreshOnce()
 	gotErr, ok := msg.(errMsg)
 	if !ok || !strings.Contains(gotErr.err.Error(), "ambiguous pending input") {

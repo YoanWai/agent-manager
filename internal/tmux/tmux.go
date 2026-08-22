@@ -192,7 +192,7 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 	var scriptPath string
 	if command != "" {
 		var err error
-		scriptPath, err = writeLaunchScript(id, envCommand(env, command), colorFgBg)
+		scriptPath, err = writeLaunchScript(id, env, command, colorFgBg)
 		if err != nil {
 			d.paneThemePush.Unlock()
 			return err
@@ -220,25 +220,50 @@ func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-func envCommand(env map[string]string, command string) string {
+// ExportEnv prefixes a command with exports of the session environment, for
+// a command typed into a pane whose shell does not carry it: a session
+// launched before the manager started exporting these values still holds a
+// shell that never received them, and it keeps them once this agent exits
+// too.
+func ExportEnv(env map[string]string, command string) string {
+	var line strings.Builder
+	for _, key := range sortedKeys(env) {
+		line.WriteString("export " + key + "=" + ShellQuote(env[key]) + "; ")
+	}
+	line.WriteString(command)
+	return line.String()
+}
+
+// exportLines exports the session environment into the pane's shell, so it
+// outlives the launch command. Quitting the agent leaves a shell that still
+// knows which managed session it belongs to, and an agent started again
+// from that shell is the same session to every manager subcommand.
+func exportLines(env map[string]string) string {
+	var lines strings.Builder
+	for _, key := range sortedKeys(env) {
+		lines.WriteString("export " + key + "=" + ShellQuote(env[key]) + "\n")
+	}
+	return lines.String()
+}
+
+func sortedKeys(env map[string]string) []string {
 	keys := make([]string, 0, len(env))
 	for key := range env {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	var line strings.Builder
-	for _, key := range keys {
-		line.WriteString(key + "=" + ShellQuote(env[key]) + " ")
-	}
-	line.WriteString(command)
-	return line.String()
+	return keys
 }
 
 func launchScriptPath(id string) string {
 	return filepath.Join(os.TempDir(), "am-launch-"+id+".sh")
 }
 
-func writeLaunchScript(id, line, colorFgBg string) (string, error) {
+// relaunchHint lands in the pane the moment the agent exits, which is where
+// the user is looking when they wonder how to get it back.
+const relaunchHint = "agent-manager: agent exited - press v in Agent Manager to relaunch it here."
+
+func writeLaunchScript(id string, env map[string]string, command, colorFgBg string) (string, error) {
 	path := launchScriptPath(id)
 	shell := os.Getenv("SHELL")
 	if shell == "" {
@@ -253,7 +278,9 @@ func writeLaunchScript(id, line, colorFgBg string) (string, error) {
 	if colorFgBg != "" {
 		header = "export COLORFGBG=" + ShellQuote(colorFgBg) + "\n"
 	}
-	body := "#!/bin/sh\n" + header + line + "\nexec " + ShellQuote(shell) + "\n"
+	body := "#!/bin/sh\n" + header + exportLines(env) + command + "\n" +
+		"printf '%s\\n' " + ShellQuote(relaunchHint) + "\n" +
+		"exec " + ShellQuote(shell) + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
 		return "", fmt.Errorf("launch script: %w", err)
 	}

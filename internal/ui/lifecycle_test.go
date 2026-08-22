@@ -779,11 +779,16 @@ func TestReviveAllRecreatesEveryDeadSession(t *testing.T) {
 
 func TestReviveRefusesLiveSession(t *testing.T) {
 	m := buildModel(t)
-	createSession(t, m, "alive", t.TempDir(), "")
+	// A tool whose process stays up: revive leaves a pane alone only while
+	// something is running in it.
+	createSessionOn(t, m, "alive", "quietchat", t.TempDir())
+	waitForAgent(t, m, m.sessionRows()[0].ID, true)
 	m.selectSessionRow(t, "alive")
 
-	if _, _ = m.reviveSelected(); m.errBar.text == "" {
-		t.Fatal("revive on a live session should error")
+	_, cmd := m.reviveSelected()
+	m.applyCmd(t, cmd)
+	if !strings.Contains(m.errBar.text, "still running") {
+		t.Fatalf("revive said %q, want it to refuse a pane that still holds its agent", m.errBar.text)
 	}
 	if !m.tmux.Exists(m.sessionRows()[0].ID) {
 		t.Fatal("live session must keep running")
@@ -1650,5 +1655,84 @@ func TestKillAgentConfirmNamesExtraTerminals(t *testing.T) {
 	want := "kill coder and 2 terminals? frees their RAM, v revives them."
 	if m.confirm.label != want {
 		t.Fatalf("label = %q, want %q", m.confirm.label, want)
+	}
+}
+
+// Quitting the agent leaves the window alive on a shell, and v is what
+// brings the agent back there: launched by the manager, so it carries the
+// session identity, the MCP registration and the hook settings that a CLI
+// started by hand from that shell has no way to pick up.
+func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
+	m := buildModel(t)
+	createSessionOn(t, m, "quit-and-back", "quietchat", t.TempDir())
+	sess := m.sessionRows()[0]
+	// Hooks give the session a status file beside its id, so the relaunch
+	// has both to carry. The command runs through a shell, which is what
+	// survives the settings flag a hooked tool launches with.
+	hooked := m.cfg.Tools[sess.Tool]
+	hooked.Command = "sh -c 'cat'"
+	hooked.StatusSource = "claude-hooks"
+	m.cfg.Tools[sess.Tool] = hooked
+	quitAgent(t, m, sess.ID)
+	if err := m.store.SetAcked(sess.ID, true); err != nil {
+		t.Fatalf("set acked: %v", err)
+	}
+	m.selectSessionRow(t, "quit-and-back")
+
+	_, cmd := m.reviveSelected()
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
+		t.Fatalf("revive: %q", m.errBar.text)
+	}
+	waitForAgent(t, m, sess.ID, true)
+	if !m.tmux.Exists(sess.ID) {
+		t.Fatal("revive must keep the window it relaunched in")
+	}
+
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	// The pane wraps the line it was sent at its own width.
+	typed := strings.ReplaceAll(pane, "\n", "")
+	if !strings.Contains(typed, "AGENT_MANAGER_SESSION_ID='"+sess.ID+"'") {
+		t.Fatalf("relaunch did not carry the session identity; pane:\n%s", pane)
+	}
+	if !strings.Contains(typed, "AGENT_MANAGER_STATUS_FILE='"+m.hooks.StatusFile(sess.ID)+"'") {
+		t.Fatalf("relaunch did not carry the hook status file; pane:\n%s", pane)
+	}
+	got, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != status.Starting {
+		t.Fatalf("status after revive = %q, want %q", got.Status, status.Starting)
+	}
+	if got.Acked {
+		t.Fatal("revive must clear the ack of the agent that exited")
+	}
+
+	// The relaunch exports rather than prefixes, so the shell it lands in
+	// keeps the session identity once this agent exits as well.
+	if err := m.tmux.SendKeys(sess.ID, "C-d"); err != nil {
+		t.Fatalf("send ctrl-d: %v", err)
+	}
+	waitForAgent(t, m, sess.ID, false)
+	marker := filepath.Join(t.TempDir(), "env")
+	report := `printf '%s %s\n' "$AGENT_MANAGER_SESSION_ID" "$AGENT_MANAGER_STATUS_FILE" > ` + marker + `.part && mv ` + marker + `.part ` + marker
+	if err := m.tmux.SendKeys(sess.ID, report, "Enter"); err != nil {
+		t.Fatalf("read the shell environment: %v", err)
+	}
+	want := sess.ID + " " + m.hooks.StatusFile(sess.ID)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if data, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(data)) == want {
+			break
+		}
+		if time.Now().After(deadline) {
+			pane, _ := m.tmux.CapturePane(sess.ID)
+			t.Fatalf("the shell lost the session environment after the relaunched agent exited; pane:\n%s", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

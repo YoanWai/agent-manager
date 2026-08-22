@@ -38,6 +38,7 @@ type poller struct {
 	statusSources map[string]string
 	sessionStores map[string]string
 	mcpStyles     map[string]string
+	binaries      toolBinaries
 	interval      time.Duration
 	poke          chan struct{}
 
@@ -88,7 +89,7 @@ func paneBooted(pane string) bool {
 	return strings.TrimSpace(ansi.Strip(pane)) != ""
 }
 
-func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores, mcpStyles map[string]string, interval time.Duration) *poller {
+func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores, mcpStyles map[string]string, binaries toolBinaries, interval time.Duration) *poller {
 	return &poller{
 		store:         st,
 		tmux:          driver,
@@ -98,6 +99,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		statusSources: statusSources,
 		sessionStores: sessionStores,
 		mcpStyles:     mcpStyles,
+		binaries:      binaries,
 		interval:      interval,
 		poke:          make(chan struct{}, 1),
 		paneHashes:    map[string]uint64{},
@@ -187,9 +189,9 @@ func storedPreview(st *store.Store, driver *tmux.Driver, sessID string) (string,
 
 // refreshOnce polls every live session's pane, derives and stores status,
 // and samples system stats. Liveness and pane pids come from one tmux
-// call, and every process tree from one ps call, so the poll cost stays
-// flat as sessions are added. runMu serializes the loop with one-off
-// refreshes issued as tea commands.
+// call, and every process tree from one ps pass with a second scoped to
+// the pane children, so the poll cost stays flat as sessions are added.
+// runMu serializes the loop with one-off refreshes issued as tea commands.
 func (p *poller) refreshOnce() tea.Msg {
 	p.runMu.Lock()
 	defer p.runMu.Unlock()
@@ -295,6 +297,13 @@ func (p *poller) refreshOnce() tea.Msg {
 				if sess.ID == selectedID {
 					proc = stat
 				}
+				if err := p.applyRelaunchedTool(&sessions[i], stat.Children); err != nil {
+					return errMsg{err}
+				}
+				// The rest of this pass reads its own copy of the row, so a
+				// retyped session derives its status under the new tool's
+				// rules this tick rather than the next one.
+				sess.Tool, sess.AgentSessionID = sessions[i].Tool, sessions[i].AgentSessionID
 			}
 			// The pane pid is the shell; the agent runs as its child. A
 			// tree of one process means the agent is gone. A failed ps

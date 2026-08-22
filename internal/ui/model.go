@@ -555,7 +555,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		gitDrv:              gitDriver,
 		engine:              engine,
 		setSnapshot:         st.SetSnapshot,
-		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, cfg.PollInterval.Duration),
+		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, newToolBinaries(cfg), cfg.PollInterval.Duration),
 		collapsed:           loadCollapsed(st),
 		split:               splitState{ratio: loadSplitRatio(st)},
 		focusOnEnter:        storedFocusOnEnter(st),
@@ -1441,6 +1441,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(resume, m.reattach(id, m.diff.gen))
 		}
 		return m, resume
+
+	case relaunchedMsg:
+		if msg.err != nil {
+			m.reportLaunchError(msg.err)
+			return m, nil
+		}
+		m.bindReviveLocally(msg.sessID, msg.launchedAt)
+		m.rebuildRows()
+		m.requestRefresh()
+		return m, nil
 
 	case reattachPreparedMsg:
 		if msg.diffGen != m.diff.gen || m.diff.active {

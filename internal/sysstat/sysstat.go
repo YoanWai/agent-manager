@@ -57,6 +57,10 @@ type ProcStat struct {
 	PCPU  float64
 	Procs int
 	OK    bool
+	// Children names what the root pid runs directly, one entry per child
+	// process, as the program was invoked. A tmux pane's root is its shell,
+	// so this is the agent that shell is running right now.
+	Children []string
 }
 
 func Sample(diskPath string) Snapshot {
@@ -397,10 +401,19 @@ func parsePSTime(s string) (float64, error) {
 	}
 }
 
+func nextField(line string) (string, string) {
+	line = strings.TrimLeft(line, " ")
+	if i := strings.IndexByte(line, ' '); i >= 0 {
+		return line[:i], line[i+1:]
+	}
+	return line, ""
+}
+
 // Trees reports the combined CPU and resident memory of each requested
-// process and all of its descendants, from a single ps invocation. tmux
-// pane pids are shells whose real work happens in child processes, so a
-// tree sum is the only honest number.
+// process and all of its descendants, from one ps pass over the machine
+// and a second limited to the roots' own children. tmux pane pids are
+// shells whose real work happens in child processes, so a tree sum is the
+// only honest number.
 //
 // CPUSeconds is cumulative CPU time for interval host-share math. PCPU is
 // the raw ps %cpu sum (fallback). Callers convert to host % via
@@ -463,5 +476,61 @@ func Trees(rootPIDs []int) map[int]ProcStat {
 		// Leave CPUPercent 0 until the caller applies interval or fallback.
 		stats[root] = stat
 	}
+	nameChildren(stats, children)
 	return stats
+}
+
+// nameChildren fills in what each root runs directly. The programs come
+// from a second ps limited to those pids: arguments cost the kernel a
+// lookup per process, which is worth paying for a pane's own children and
+// not for every process on the machine.
+func nameChildren(stats map[int]ProcStat, children map[int][]int) {
+	var wanted []string
+	for root := range stats {
+		for _, child := range children[root] {
+			wanted = append(wanted, strconv.Itoa(child))
+		}
+	}
+	if len(wanted) == 0 {
+		return
+	}
+	// ps exits non-zero when every pid it was given has gone, which is a
+	// child that ended between the two calls rather than a failure: there is
+	// nothing left to name and the next sample sees whatever replaced it.
+	out, err := exec.Command("ps", "-o", "pid=,ppid=,args=", "-p", strings.Join(wanted, ",")).Output()
+	if err != nil {
+		return
+	}
+	applyChildNames(stats, children, string(out))
+}
+
+// applyChildNames matches the second ps pass back to the tree the first one
+// built. The parent has to still be the root it was sampled under: a child
+// that exited between the two calls leaves its pid free for a process that
+// is nothing to do with this pane.
+func applyChildNames(stats map[int]ProcStat, children map[int][]int, psOutput string) {
+	type child struct {
+		ppid    int
+		command string
+	}
+	named := map[int]child{}
+	for _, line := range strings.Split(strings.TrimSpace(psOutput), "\n") {
+		pidText, rest := nextField(line)
+		ppidText, rest := nextField(rest)
+		command, _ := nextField(rest)
+		pid, err1 := strconv.Atoi(pidText)
+		ppid, err2 := strconv.Atoi(ppidText)
+		if err1 != nil || err2 != nil || command == "" {
+			continue
+		}
+		named[pid] = child{ppid: ppid, command: command}
+	}
+	for root, stat := range stats {
+		for _, pid := range children[root] {
+			if named[pid].ppid == root {
+				stat.Children = append(stat.Children, named[pid].command)
+			}
+		}
+		stats[root] = stat
+	}
 }
