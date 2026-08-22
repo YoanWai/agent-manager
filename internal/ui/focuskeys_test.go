@@ -621,6 +621,44 @@ func TestCaretAtInputStartMeasuresMarkerInCells(t *testing.T) {
 	}
 }
 
+// pi composes on a bare row between rules and marks the caret cell with a
+// reverse-video space, so the captured row strips to one blank at column
+// zero (shapes taken from a live pane). Its zero-width prefix reads that as
+// the prompt head; text before the caret, or a wrapped line continuing from
+// above, keeps Left with the agent.
+func TestCaretOnPisBareComposerRow(t *testing.T) {
+	engine, err := status.NewEngine(config.Config{Tools: map[string]config.Tool{
+		"pi": {
+			ActivityCutoff: `(?ms)\A.*^─{8,}[ \t]*$`,
+			InputPrefix:    "^",
+		},
+	}})
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	build := func(x int, y int, rows ...string) *Model {
+		m := &Model{engine: engine, mode: modeFocus}
+		m.preview = strings.Join(rows, "\n") + "\n"
+		m.pane.forID = "s1"
+		m.pane.cursor = paneCursor{x: x, y: y, ok: true}
+		return m
+	}
+
+	rest := []string{"output", "────────", " ", "────────", "~/dir", "$0.000"}
+	m := build(0, 2, rest...)
+	if !m.caretAtInputStart("s1", "pi") {
+		t.Fatal("the caret cell pi draws on an empty composer row was not recognised")
+	}
+	m = build(2, 2, "output", "────────", "zz ", "────────", "~/dir")
+	if m.caretAtInputStart("s1", "pi") {
+		t.Fatal("a composer holding a draft was read as input start")
+	}
+	m = build(0, 3, "output", "────────", "a very long draft line that wraps", "", "────────")
+	if m.caretAtInputStart("s1", "pi") {
+		t.Fatal("the head of a wrapped draft line was read as input start")
+	}
+}
+
 // The mirror belongs to whichever session pushed it, and a scrolled-back
 // pane's rows no longer line up with the live caret: neither can decide.
 func TestCaretAtInputStartNeedsCurrentPane(t *testing.T) {
@@ -728,5 +766,39 @@ func TestFocusAltLeftStaysWithTheAgent(t *testing.T) {
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("alt+left left focus, mode = %v", m.mode)
+	}
+}
+
+// pi composes on a bare blank row between rules. Its declared input_prefix
+// is zero-width, so the caret sitting anywhere on that blank row counts as
+// the prompt head, while typed text still belongs to the agent.
+func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "pileft", t.TempDir(), "")
+	m.selectSessionRow(t, "pileft")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	sess := m.rows[m.cursor].sess
+	m.rows[m.cursor].sess.Tool = "pi-tool"
+	m.pane.forID = sess.ID
+	m.pane.cursor = paneCursor{x: 2, y: 1, ok: true}
+	m.preview = "────────────\nxy\n────────────\n"
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("left inside typed pi input left focus, mode = %v", m.mode)
+	}
+
+	m.preview = "────────────\n\n────────────\n"
+	m.pane.cursor = paneCursor{x: 0, y: 1, ok: true}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("left on pi's blank composer row did not unfocus, mode = %v", m.mode)
 	}
 }

@@ -32,6 +32,7 @@ type Engine struct {
 type toolRules struct {
 	defaultStatus  string
 	activityCutoff *regexp.Regexp
+	inputPrefix    *regexp.Regexp
 	turnEnd        *regexp.Regexp
 	chromeLine     *regexp.Regexp
 	blockedLine    *regexp.Regexp
@@ -62,6 +63,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			target  **regexp.Regexp
 		}{
 			{tool.ActivityCutoff, &tr.activityCutoff},
+			{tool.InputPrefix, &tr.inputPrefix},
 			{tool.TurnEnd, &tr.turnEnd},
 			{tool.ChromeLine, &tr.chromeLine},
 			{tool.BlockedLine, &tr.blockedLine},
@@ -290,20 +292,45 @@ func (e *Engine) ActivityRegion(tool, pane string) (string, bool) {
 }
 
 // InputPrefix returns the prompt marker a tool draws at the start of its
-// input line, when row is that line. It reuses activity_cutoff, matched
-// against a single row and anchored at its start, so a marker quoted
-// further along the row cannot pass. A zero-width match is no marker: a
-// degenerate cutoff like ^ would otherwise stamp every row as a prompt.
+// input line, when row is that line. A tool may declare its own marker with
+// input_prefix, which replaces the reuse of activity_cutoff here; one
+// written on purpose may be zero-width, since a markerless composer (pi's
+// blank row) still needs to be recognisable. Without that override the
+// check reuses activity_cutoff, matched against a single row and anchored
+// at its start, so a marker quoted further along the row cannot pass. A
+// zero-width fallback match is no marker: a degenerate cutoff like ^ would
+// otherwise stamp every row as a prompt.
 func (e *Engine) InputPrefix(tool, row string) (string, bool) {
 	tr, ok := e.tools[tool]
-	if !ok || tr.activityCutoff == nil {
+	if !ok {
 		return "", false
 	}
-	loc := tr.activityCutoff.FindStringIndex(row)
-	if loc == nil || loc[0] != 0 || loc[1] == 0 {
+	override := tr.inputPrefix != nil
+	cut := tr.inputPrefix
+	if cut == nil {
+		cut = tr.activityCutoff
+		if cut == nil {
+			return "", false
+		}
+	}
+	loc := cut.FindStringIndex(row)
+	if loc == nil || loc[0] != 0 || (loc[1] == 0 && !override) {
 		return "", false
 	}
 	return row[:loc[1]], true
+}
+
+// MatchesActivityCutoff reports whether a single row opens with the tool's
+// activity cutoff, i.e. is one of the rows that bound its input box. The
+// arrow-step head check skips such rows when reading context above the
+// caret, so a composer bounded by a rule (pi) reads cleanly.
+func (e *Engine) MatchesActivityCutoff(tool, row string) bool {
+	tr, ok := e.tools[tool]
+	if !ok || tr.activityCutoff == nil {
+		return false
+	}
+	loc := tr.activityCutoff.FindStringIndex(row)
+	return loc != nil && loc[0] == 0
 }
 
 func (tr toolRules) activityRegion(pane string) (string, bool) {

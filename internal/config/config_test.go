@@ -74,6 +74,12 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["pi"].PromptFlag; got != "" {
 		t.Fatalf("pi prompt_flag = %q want empty (positional prompt)", got)
 	}
+	if got := cfg.Tools["pi"].InputPrefix; got != "^" {
+		t.Fatalf("pi input_prefix = %q want ^ (blank composer row)", got)
+	}
+	if got := cfg.Tools["opencode"].InputPrefix; got != "" {
+		t.Fatalf("opencode input_prefix = %q want empty (its caret parks off the composer)", got)
+	}
 	if cfg.Tools["claude"].Command != "claude" {
 		t.Fatalf("claude command = %q", cfg.Tools["claude"].Command)
 	}
@@ -306,6 +312,26 @@ func TestBackfillToolDefaults(t *testing.T) {
 	}
 	if _, ok := cfg.Tools["claude"]; !ok {
 		t.Fatal("expected claude tool added from built-in defaults")
+	}
+}
+
+// The arrow-unfocus fix needs per-tool input-line knowledge: pi declares
+// its blank composer row. Older configs written before the field existed
+// gain it on load, and a value the user wrote is kept.
+func TestBackfillArrowUnfocusFields(t *testing.T) {
+	user := `^\s*┃\s+mine`
+	cfg := Config{Tools: map[string]Tool{
+		"pi":       {Command: "pi"},
+		"opencode": {Command: "opencode", InputPrefix: user},
+	}}
+	if err := cfg.backfillToolDefaults(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if got := cfg.Tools["pi"].InputPrefix; got != "^" {
+		t.Fatalf("pi input_prefix = %q want ^ (backfilled)", got)
+	}
+	if got := cfg.Tools["opencode"].InputPrefix; got != user {
+		t.Fatalf("opencode input_prefix = %q want user value kept", got)
 	}
 }
 

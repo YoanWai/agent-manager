@@ -168,8 +168,29 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 	if !ok {
 		return false
 	}
-	return !textBeforeCaret(m.engine, tool, row, m.pane.cursor.x) &&
-		m.pane.cursor.x >= ansi.StringWidth(prefix)
+	if !textBeforeCaret(m.engine, tool, row, m.pane.cursor.x) &&
+		m.pane.cursor.x >= ansi.StringWidth(prefix) {
+		return m.caretRowEndsAPromptHead(tool, rows, m.pane.cursor.y)
+	}
+	return false
+}
+
+// caretRowEndsAPromptHead rejects the row when a draft continues onto it:
+// a multi-line prompt's blank continuation line looks exactly like an empty
+// composer, and Left there belongs to the agent. The row above tells them
+// apart when it carries the same marker with text past it. A wrapped line
+// is rejected the same way; the rule that bounds the input box (pi's rule)
+// is not draft text and does not reject.
+func (m *Model) caretRowEndsAPromptHead(tool string, rows []string, y int) bool {
+	if y == 0 {
+		return true
+	}
+	above := ansi.Strip(rows[y-1])
+	abovePrefix, ok := m.engine.InputPrefix(tool, above)
+	if !ok || m.engine.MatchesActivityCutoff(tool, above) {
+		return true
+	}
+	return strings.TrimSpace(above[len(abovePrefix):]) == ""
 }
 
 // textBeforeCaret reports whether anything but blanks sits between a tool's
