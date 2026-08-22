@@ -604,7 +604,10 @@ func TestThePollLoopDeliversQueuedMessagesOldestFirst(t *testing.T) {
 			t.Fatalf("message %d never reached the pane: %+v", id, state)
 		}
 	}
-	settledPane(t, m, sess.ID, "rebase on main", "then push the branch")
+	// The tool keeps its input line drawn, so two envelopes overflow the
+	// pane and the first body scrolls off; its delivery is what the store
+	// recorded above.
+	settledPane(t, m, sess.ID, "then push the branch")
 }
 
 // A message typed a second time runs the same instruction twice, so the
