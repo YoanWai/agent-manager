@@ -40,8 +40,9 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
-| `s` | Settings (default tool, theme, theme follows OS, list density, review layout, after quick send, session keys, ←→ step in/out, spawn in worktree, notifications, notify on finish, CLIs, report a bug, suggest a change, and the version row that updates in place) |
+| `s` | Settings (default tool, theme, theme follows OS, list density, sessions layout, review layout, after quick send, session keys, ←→ step in/out, spawn in worktree, notifications, notify on finish, CLIs, report a bug, suggest a change, and the version row that updates in place) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
+| `z` | Toggle the [full screen layout](#full-screen-sessions): the list alone across the whole terminal, or the split with the preview beside it |
 | `t` | Toggle archived view |
 | `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
 | `M` | Messages (updates, tips; `x` dismisses one for good). The welcome message points at Settings for a bug or an idea. |
@@ -66,6 +67,16 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 The new-session form's optional `prompt` field launches an agent the same way. It takes `ctrl+v` and its chips too, since a first task is often the screenshot that explains it: paste the design to match or the crash to read, and the agent opens the file on its first turn. Leaving the form without creating the session releases the images it was holding, the way closing the bar does. Tools whose CLI takes the prompt behind a flag declare it with `prompt_flag`, while a persistent CLI with no startup-prompt argument uses `prompt_mode = "send"` (see [Configuration](configuration.md)).
 
 ![answering a working Claude Code session from the prompt bar, without attaching](demo-space.gif)
+
+## Full screen sessions
+
+`z` hands the session list the whole terminal: the preview column steps aside and every row takes the full width. Press it again for the split. The choice is persisted like the split ratio, and the "sessions layout" row in Settings (`s`) sets the same thing.
+
+At full width a session row is two lines at any density. The first carries the mark, name and badges, then the last prompt the manager delivered to the session (a quick prompt answer, a message from another agent, or the prompt it launched on), with `state · tool · age` against the right edge. The second quotes what the state makes worth reading: a `waiting` session shows the pane line it is blocked on, tinted in its state color; `working` and `finished` show the last meaningful line the pane painted; the rest hold the line with a dash. Group rows keep the density's height, and the meters and messages condense to one line above the key legend: cpu, mem and net inline, plus a messages count that `M` opens.
+
+The quick prompt is the reveal for whatever a row clips: in this layout the open bar lifts a peek of the selected session above it, the directory and worktree branch on one line, then the tail of its captured pane, with the question a `waiting` agent asked in it. The peek follows the bar's target as `↑↓` move, closes with the bar on send or `esc`, and yields to the list when only a few rows remain.
+
+Opening a session (`enter`, or `→`) takes the whole body too, through the same pipeline focus mode uses in the split: keys go to the agent, `ctrl+r`, `F3` and the footer stay alive, and `ctrl+q`, or `←` with the caret at the start of the agent's prompt, returns to the list. `A` still hands the terminal over with a real tmux attach.
 
 ## Which CLIs you get offered
 
