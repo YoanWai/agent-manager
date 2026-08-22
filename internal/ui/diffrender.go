@@ -553,7 +553,7 @@ func (m *Model) viewDiffFull() string {
 	// application rather than a second one.
 	fileLines := append([]string{"", strings.Repeat(" ", railInset) + subtleStyle.Render("files")},
 		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railInset)...)
-	codeLines := append([]string{"", "  " + subtleStyle.Render(escapeControls(m.diffCodeTitle()))},
+	codeLines := append([]string{"", "  " + subtleStyle.Render(escapeControlsInline(m.diffCodeTitle()))},
 		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
 	// The column seam tees into the rules that open and close the body,
@@ -599,7 +599,7 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	if m.diff.sideBySide {
 		layout = "split"
 	}
-	left := "  " + lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("review · "+sessName) + "  " +
+	left := "  " + lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("review · "+escapeControlsInline(sessName)) + "  " +
 		keyPill("s", m.diff.scope.String(), colorAccent2) + "  " +
 		keyPill("u", layout, colorAccent)
 	if m.diff.codeOnly {
@@ -610,14 +610,14 @@ func (m *Model) viewDiffHeader(sessName string) string {
 		if name == "" || name == "." {
 			name = filepath.Base(root)
 		}
-		name = escapeControls(name)
+		name = escapeControlsInline(name)
 		if len(m.diff.repoRoots) > 1 {
 			name = fmt.Sprintf("%s · %d repos", name, len(m.diff.repoRoots))
 		}
 		left += "  " + keyPill("r", name, colorAccent)
-		branch := escapeControls(m.diff.set.Repo.Branch)
+		branch := escapeControlsInline(m.diff.set.Repo.Branch)
 		if m.diff.scope == git.ScopeBranch && m.diff.set.BaseDesc != "" && branch != "" {
-			target := escapeControls(stripBaseHash(m.diff.set.BaseDesc))
+			target := escapeControlsInline(stripBaseHash(m.diff.set.BaseDesc))
 			summary := target + " → " + branch
 			if m.diff.set.BaseOverride == "" {
 				summary += " " + subtleStyle.Render("(auto)")
@@ -743,7 +743,7 @@ func (m *Model) viewDiffFileList(width, height int) string {
 		if nameBudget < 4 {
 			nameBudget = 4
 		}
-		name := truncatePath(escapeControls(fd.File.Path), nameBudget)
+		name := truncatePath(escapeControlsInline(fd.File.Path), nameBudget)
 		left := bar + glyph + " " + valueStyle.Render(name)
 		gap := width - ansi.StringWidth(left) - ansi.StringWidth(counts)
 		if gap < 1 {
@@ -782,7 +782,7 @@ func (m *Model) viewDiffCode(width, height int) string {
 		num, _ := annotationLine(fdLine)
 		m.diff.annInput.SetWidth(width)
 		m.diff.annInput.SetHeight(m.annotationInputHeight(width))
-		bar = divider(fmt.Sprintf("Comment · %s:%d", escapeControls(fd.File.Path), num), width) + "\n" + m.diff.annInput.View()
+		bar = divider(fmt.Sprintf("Comment · %s:%d", escapeControlsInline(fd.File.Path), num), width) + "\n" + m.diff.annInput.View()
 		height -= lipgloss.Height(bar) + 1
 		if height < 3 {
 			height = 3
@@ -980,7 +980,7 @@ func (m *Model) viewDiffStatus() string {
 		return padRight(m.statusMessage(" ✖", " ✔"), m.width)
 	}
 	if m.diff.notice != "" {
-		return padRight(doneStyle.Render(" ✔ "+m.diff.notice), m.width)
+		return padRight(doneStyle.Render(" ✔ "+escapeControlsInline(m.diff.notice)), m.width)
 	}
 	if m.diff.sendConfirm {
 		count := m.draftAnnotationCount()
@@ -998,7 +998,7 @@ func (m *Model) viewDiffFooter() string {
 	}
 	repo := "repo"
 	if len(m.diff.repoRoots) > 0 {
-		repo = "repo: " + escapeControls(filepath.Base(m.diff.repoSel))
+		repo = "repo: " + escapeControlsInline(filepath.Base(m.diff.repoSel))
 	}
 	send := "send"
 	if count := m.draftAnnotationCount(); count > 0 {

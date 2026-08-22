@@ -147,7 +147,7 @@ func (m *Model) statusLine() string {
 	case m.errBar.text != "":
 		return m.statusMessage("✕", "●")
 	case m.diff.notice != "":
-		return doneStyle.Render("● " + m.diff.notice)
+		return doneStyle.Render("● " + escapeControlsInline(m.diff.notice))
 	default:
 		return ""
 	}
@@ -157,7 +157,7 @@ func (m *Model) statusLine() string {
 // through reads as an outcome, everything else as a failure, in the glyphs
 // the calling surface marks the two with.
 func (m *Model) statusMessage(fail, done string) string {
-	text := escapeControls(m.errBar.text)
+	text := escapeControlsInline(m.errBar.text)
 	if m.errBar.worked() {
 		return doneStyle.Render(done + " " + text)
 	}

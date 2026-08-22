@@ -62,13 +62,36 @@ func TestEscapeControlsShowsBytesAndKeepsUTF8(t *testing.T) {
 		// A lone 0x9b/0x9d is the 8-bit CSI/OSC and is malformed UTF-8.
 		"x\x9b31mred":  `x\x9B31mred`,
 		"x\x9d0;P\x9c": `x\x9D0;P\x9C`,
-		// The same code points encoded properly are ordinary text.
-		"x\u009b31m": "x\u009b31m",
+		// The same code points encoded properly are C1 controls all the
+		// same: a terminal that reads them obeys them, and ansi.StringWidth
+		// counts them as nothing while they take a cell.
+		"x\u009b31m": `x\u009B31m`,
+		"x\u009d0;P": `x\u009D0;P`,
 	}
 	for in, want := range cases {
 		if got := escapeControls(in); got != want {
 			t.Errorf("escapeControls(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A git error arrives from CombinedOutput with its lines intact, and the hint
+// under the first line is the half that says what to do. Only a surface owning
+// exactly one row folds them together.
+func TestEscapeControlsKeepsNewlinesAndInlineDropsThem(t *testing.T) {
+	const gitErr = "fatal: ambiguous argument 'x'\nUse '--' to separate paths from revisions"
+	if got := escapeControls(gitErr); got != gitErr {
+		t.Errorf("escapeControls(%q) = %q, want it untouched", gitErr, got)
+	}
+	if got := escapeControls("a\n\x1bb"); got != "a\n^[b" {
+		t.Errorf(`escapeControls("a\n\x1bb") = %q, want "a\n^[b"`, got)
+	}
+	want := "fatal: ambiguous argument 'x' Use '--' to separate paths from revisions"
+	if got := escapeControlsInline(gitErr); got != want {
+		t.Errorf("escapeControlsInline(%q) = %q, want %q", gitErr, got, want)
+	}
+	if got := escapeControlsInline("a\n\x1bb"); got != "a ^[b" {
+		t.Errorf(`escapeControlsInline("a\n\x1bb") = %q, want "a ^[b"`, got)
 	}
 }
 
@@ -96,9 +119,65 @@ func TestEscapeSpansFollowTheEscapedText(t *testing.T) {
 		t.Fatalf("malformed-byte spans = %+v, want [{5 7}]", spans)
 	}
 
+	// "a\u009bbc": the C1 rune is two bytes raw and six escaped, so the span
+	// over "bc" moves from byte 3 to byte 7.
+	spans = escapeSpans("a\u009bbc", []diff.Span{{Start: 3, End: 5}})
+	if len(spans) != 1 || spans[0] != (diff.Span{Start: 7, End: 9}) {
+		t.Fatalf("C1 spans = %+v, want [{7 9}]", spans)
+	}
+
 	clean := []diff.Span{{Start: 1, End: 2}}
 	if got := escapeSpans("abc", clean); &got[0] != &clean[0] {
 		t.Fatal("a line with no control bytes should keep its spans untouched")
+	}
+}
+
+// The agent in the pane runs `agent-manager rename` itself, so the session
+// name is content the review header paints, not something the user typed.
+func TestSessionNameCannotDriveTheTerminal(t *testing.T) {
+	m := buildModel(t)
+	if m.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "named", gitRepoWithTwoChangedFiles(t))
+	m.width, m.height = 120, 40
+	for i := range m.sessions {
+		if m.sessions[i].ID == m.diff.sessID {
+			m.sessions[i].Name = "rev\x1b]0;PWNED\x07iew"
+		}
+	}
+
+	frame := m.viewDiffFull()
+	if !strings.Contains(frame, "rev^[]0;PWNED^Giew") {
+		t.Fatal("the session name should read as caret notation in the header")
+	}
+	if stray := strayControl(frame); stray != "" {
+		t.Errorf("a session name leaks a control byte near %q", stray)
+	}
+
+	m.diff.notice = "sent review round 1 to rev\x1b]0;PWNED\x07iew"
+	if stray := strayControl(m.viewDiffFooter()); stray != "" {
+		t.Errorf("the review notice leaks a control byte near %q", stray)
+	}
+	m.diff.notice = ""
+	m.errBar.text = "rename failed for rev\x1b]0;PWNED\x07iew"
+	if stray := strayControl(m.statusMessage("✕", "●")); stray != "" {
+		t.Errorf("the status bar leaks a control byte near %q", stray)
+	}
+}
+
+// git.Driver.run embeds CombinedOutput, and the second line of an ambiguous
+// -argument error is the one that says what to do about it. The review's empty
+// state owns the rows to show it; paint would truncate a folded single row.
+func TestMultiLineGitErrorKeepsItsLines(t *testing.T) {
+	m := buildModel(t)
+	m.diff.errText = "fatal: ambiguous argument 'x'\nUse '--' to separate paths from revisions"
+	rows := strings.Split(m.diffEmptyText(), "\n")
+	if len(rows) != 2 {
+		t.Fatalf("a two-line git error rendered %d rows: %q", len(rows), rows)
+	}
+	if !strings.Contains(rows[1], "separate paths from revisions") {
+		t.Fatalf("the hint line was lost, rows = %q", rows)
 	}
 }
 
