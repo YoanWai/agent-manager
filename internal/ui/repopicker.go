@@ -268,11 +268,11 @@ func (m *Model) repoPickRow(row pickRow, selected bool) string {
 		nameStyle = nameStyle.Foreground(colorAccent).Bold(true)
 	}
 	inner := m.cardWidth() - 2*cardPaddingX
-	name := truncateTail(row.label, inner-lipgloss.Width(marker))
+	name := truncateTail(escapeControlsInline(row.label), inner-lipgloss.Width(marker))
 	budget := inner - lipgloss.Width(marker) - lipgloss.Width(name) - 2
 	dir := ""
 	if budget > 1 {
-		dir = subtleStyle.Render("  " + truncateTail(filepath.Dir(row.root), budget))
+		dir = subtleStyle.Render("  " + truncateTail(escapeControlsInline(filepath.Dir(row.root)), budget))
 	}
 	return marker + nameStyle.Render(name) + dir
 }
