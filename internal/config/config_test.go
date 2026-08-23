@@ -80,6 +80,25 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["opencode"].InputPrefix; got != `(?m)^\s*┃` {
 		t.Fatalf("opencode input_prefix = %q want the gutter bar", got)
 	}
+	commandCode := cfg.Tools["command-code"]
+	if commandCode.Command != "cmd" {
+		t.Fatalf("command-code command = %q want cmd", commandCode.Command)
+	}
+	if got := commandCode.ReviveCommand; got != "cmd --continue" {
+		t.Fatalf("command-code revive_command = %q want \"cmd --continue\"", got)
+	}
+	if commandCode.SessionStore != "command-code" || commandCode.ResumeByIDCommand != "cmd --session {id}" {
+		t.Fatalf("command-code resume config = %+v", commandCode)
+	}
+	if got := commandCode.PromptFlag; got != "" {
+		t.Fatalf("command-code prompt_flag = %q want empty (positional prompt)", got)
+	}
+	if got := commandCode.ActivityCutoff; got == "" {
+		t.Fatalf("command-code activity_cutoff is empty; prompt delivery needs it")
+	}
+	if got := commandCode.MCP; got != "" {
+		t.Fatalf("command-code mcp = %q want empty (no MCP client, like pi)", got)
+	}
 	if cfg.Tools["claude"].Command != "claude" {
 		t.Fatalf("claude command = %q", cfg.Tools["claude"].Command)
 	}
@@ -397,7 +416,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		t.Fatalf("pi resume_by_id_command = %q want \"pi --session {id}\"", got)
 	}
 	// Tools that mint their own id declare a store to capture it from.
-	for _, name := range []string{"codex", "opencode", "hermes"} {
+	for _, name := range []string{"codex", "opencode", "hermes", "command-code"} {
 		tool := cfg.Tools[name]
 		if tool.SessionStore != name {
 			t.Fatalf("%s session_store = %q want %q", name, tool.SessionStore, name)

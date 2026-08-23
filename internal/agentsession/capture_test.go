@@ -102,6 +102,76 @@ func TestCaptureCodexNoMatch(t *testing.T) {
 	}
 }
 
+func commandCodeSession(sessionID, cwd string) string {
+	return `{"type":"session","id":"` + sessionID + `","cwd":"` + cwd +
+		`","timestamp":"2026-08-22T19:22:37.338Z","version":3}` + "\n" +
+		`{"role":"user","content":[{"type":"text","text":"hi"}]}` + "\n"
+}
+
+func TestCaptureCommandCodePicksSessionAfterLaunchInCwd(t *testing.T) {
+	root := t.TempDir()
+	launch := time.Now()
+	// An older conversation in the same cwd predates the launch: not ours.
+	writeFile(t, filepath.Join(root, "old-project", "old.jsonl"),
+		commandCodeSession("old-uuid", "/repo"), launch.Add(-time.Hour))
+	// A conversation in a different cwd started after launch: not ours.
+	writeFile(t, filepath.Join(root, "other-project", "other.jsonl"),
+		commandCodeSession("other-uuid", "/elsewhere"), launch.Add(time.Second))
+	// Ours: same cwd, written just after launch.
+	writeFile(t, filepath.Join(root, "repo-project", "ours.jsonl"),
+		commandCodeSession("ours-uuid", "/repo"), launch.Add(2*time.Second))
+
+	id, ok := captureCommandCode(root, "/repo", launch, map[string]bool{})
+	if !ok || id != "ours-uuid" {
+		t.Fatalf("got id=%q ok=%v, want ours-uuid true", id, ok)
+	}
+}
+
+func TestCaptureCommandCodeSkipsClaimed(t *testing.T) {
+	root := t.TempDir()
+	launch := time.Now()
+	writeFile(t, filepath.Join(root, "a", "1.jsonl"),
+		commandCodeSession("first-uuid", "/repo"), launch.Add(time.Second))
+	writeFile(t, filepath.Join(root, "a", "2.jsonl"),
+		commandCodeSession("second-uuid", "/repo"), launch.Add(2*time.Second))
+
+	// first-uuid already belongs to another session, so the earliest
+	// unclaimed match wins instead.
+	id, ok := captureCommandCode(root, "/repo", launch, map[string]bool{"first-uuid": true})
+	if !ok || id != "second-uuid" {
+		t.Fatalf("got id=%q ok=%v, want second-uuid true", id, ok)
+	}
+}
+
+func TestCaptureCommandCodeNoMatch(t *testing.T) {
+	root := t.TempDir()
+	launch := time.Now()
+	writeFile(t, filepath.Join(root, "a", "1.jsonl"),
+		commandCodeSession("x", "/other"), launch.Add(time.Second))
+	if id, ok := captureCommandCode(root, "/repo", launch, map[string]bool{}); ok {
+		t.Fatalf("expected no match, got %q", id)
+	}
+}
+
+func TestCaptureCommandCodeSkipsMalformedTranscripts(t *testing.T) {
+	root := t.TempDir()
+	launch := time.Now()
+	// A corrupt first line does not parse: not ours.
+	writeFile(t, filepath.Join(root, "a", "broken.jsonl"),
+		`{"type":"session","id":`+"\n", launch.Add(time.Second))
+	// A record that is not a session header does not count either.
+	writeFile(t, filepath.Join(root, "a", "legacy.jsonl"),
+		`{"type":"message","id":"legacy-uuid","cwd":"/repo"}`+"\n", launch.Add(2*time.Second))
+	// Ours: a valid session record written after launch.
+	writeFile(t, filepath.Join(root, "a", "ours.jsonl"),
+		commandCodeSession("ours-uuid", "/repo"), launch.Add(3*time.Second))
+
+	id, ok := captureCommandCode(root, "/repo", launch, map[string]bool{})
+	if !ok || id != "ours-uuid" {
+		t.Fatalf("got id=%q ok=%v, want ours-uuid true", id, ok)
+	}
+}
+
 type ocMeta struct {
 	dir     string
 	created time.Time
