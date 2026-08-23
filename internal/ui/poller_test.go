@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -436,6 +437,26 @@ func disableQuietEndGrace(t *testing.T) {
 	t.Cleanup(func() { quietEndGrace = prev })
 }
 
+func disableStuckEndGrace(t *testing.T) {
+	t.Helper()
+	prev := stuckEndGrace
+	stuckEndGrace = 0
+	t.Cleanup(func() { stuckEndGrace = prev })
+}
+
+func defaultEngine(t *testing.T, m *Model) {
+	t.Helper()
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatalf("default config: %v", err)
+	}
+	engine, err := status.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("status engine: %v", err)
+	}
+	m.poller.engine = engine
+}
+
 func TestQuietPaneAfterWorkingDerivesFinished(t *testing.T) {
 	disableQuietEndGrace(t)
 	m := buildModel(t)
@@ -450,14 +471,7 @@ func TestQuietPaneAfterWorkingDerivesFinished(t *testing.T) {
 func TestQuietCodexPaneQuotingInterruptHintDerivesFinished(t *testing.T) {
 	disableQuietEndGrace(t)
 	m := buildModel(t)
-	cfg, err := config.Default()
-	if err != nil {
-		t.Fatalf("default config: %v", err)
-	}
-	m.poller.engine, err = status.NewEngine(cfg)
-	if err != nil {
-		t.Fatalf("status engine: %v", err)
-	}
+	defaultEngine(t, m)
 	sess := store.Session{ID: "quiet-codex", Tool: "codex", Status: status.Working}
 	pane := "Output:\n\ntool: mytool\nresult: working\npattern: esc to interrupt\ndefault: idle\n\n› Summarize recent commits\n"
 	seedRegionHash(t, m, sess, pane)
@@ -497,6 +511,93 @@ func TestQuietPaneAfterIdleStaysIdle(t *testing.T) {
 	seedRegionHash(t, m, sess, pane)
 	if got := deriveStatus(t, m, sess, pane, true); got != status.Idle {
 		t.Fatalf("quiet pane after idle should stay idle, got %q", got)
+	}
+}
+
+// An opencode turn that dies before its header row gains a duration leaves
+// a bare spinner row behind, which keeps matching the working rule forever.
+// Once the region stops changing for the stuck grace the quiet-region path
+// settles it from the region's own last content line.
+func TestStuckOpencodeSpinnerSettlesFinished(t *testing.T) {
+	disableStuckEndGrace(t)
+	m := buildModel(t)
+	defaultEngine(t, m)
+	sess := store.Session{ID: "stuck-oc", Tool: "opencode", Status: status.Working}
+	pane := "▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
+		t.Fatalf("stuck spinner past the grace should settle finished, got %q", got)
+	}
+}
+
+func TestStuckSpinnerHoldsWorkingUntilGrace(t *testing.T) {
+	prev := stuckEndGrace
+	stuckEndGrace = time.Hour
+	t.Cleanup(func() { stuckEndGrace = prev })
+	m := buildModel(t)
+	defaultEngine(t, m)
+	sess := store.Session{ID: "stuck-hold", Tool: "opencode", Status: status.Working}
+	pane := "▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Working {
+		t.Fatalf("matched spinner within the grace should stay working, got %q", got)
+	}
+}
+
+// A rule-matched working verdict wins over a resting stored status: a
+// session that already read finished or waiting but whose newest turn now
+// matches a working rule is working again, on the first stable observation.
+func TestMatchedWorkingWinsOverRestingStatus(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	pane := "▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n"
+	for i, stored := range []string{status.Finished, status.Waiting} {
+		sess := store.Session{ID: fmt.Sprintf("win-%d", i), Tool: "opencode", Status: stored}
+		seedRegionHash(t, m, sess, pane)
+		if got := deriveStatus(t, m, sess, pane, true); got != status.Working {
+			t.Fatalf("stored %s with a matched working pane should read working, got %q", stored, got)
+		}
+	}
+}
+
+// A tool without turn_end matches its rules over the whole pane, so a pane
+// can flip from unmatched to rule-matched working while the activity-region
+// hash stays put (the change lives below the cutoff, as gemini's status line
+// does). The stuck grace must start fresh rather than inherit the unmatched
+// quiet timer.
+func TestMatchedWorkingAfterQuietRestartsGrace(t *testing.T) {
+	prevQuiet, prevStuck := quietEndGrace, stuckEndGrace
+	quietEndGrace = time.Hour
+	stuckEndGrace = time.Nanosecond
+	t.Cleanup(func() {
+		quietEndGrace = prevQuiet
+		stuckEndGrace = prevStuck
+	})
+	m := buildModel(t)
+	defaultEngine(t, m)
+	sess := store.Session{ID: "flip-gemini", Tool: "gemini", Status: status.Working}
+	quietPane := "completed output\n> \n"
+	spinnerPane := "completed output\n> \nesc to cancel\n"
+	seedRegionHash(t, m, sess, quietPane)
+	if got := deriveStatus(t, m, sess, quietPane, true); got != status.Working {
+		t.Fatalf("quiet unmatched pane within its grace should stay working, got %q", got)
+	}
+	if got := deriveStatus(t, m, sess, spinnerPane, true); got != status.Working {
+		t.Fatalf("a fresh stuck grace should hold working, got %q", got)
+	}
+}
+
+// A live agent animates its pane every poll or two; a changing region must
+// keep a rule-matched working verdict working no matter how long it runs.
+func TestAnimatedMatchedWorkingStaysWorking(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	sess := store.Session{ID: "anim-oc", Tool: "opencode", Status: status.Working}
+	still := "⠋ listing files\n▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n"
+	moved := "⠙ listing files\n▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n"
+	seedRegionHash(t, m, sess, still)
+	if got := deriveStatus(t, m, sess, moved, true); got != status.Working {
+		t.Fatalf("an animating matched-working pane should stay working, got %q", got)
 	}
 }
 
