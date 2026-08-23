@@ -97,6 +97,9 @@ type Model struct {
 	// panePrompts holds the last prompt each session's transcript echoes,
 	// which the full screen row shows as the task it is on.
 	panePrompts map[string]string
+	// panes is the last pass's agent pane geometry, which the poller reads
+	// off the UI loop alongside its liveness listing.
+	panes map[string]tmux.Pane
 
 	net netStats
 
@@ -198,6 +201,14 @@ type Model struct {
 	// launched is when this run recorded each session it spawned. A poll
 	// that listed the store before that has nothing to say about the row.
 	launched map[string]time.Time
+	// gone is when this run took each session off the loaded list itself,
+	// by deleting or archiving it, so a poll that listed the store before
+	// that moment cannot put the row back on screen for a frame.
+	gone map[string]goneMark
+	// goneGroups is the group-path counterpart of gone: when this run
+	// archived, restored, or deleted a group, a poll that listed the store
+	// before that moment must not put the old state back on the tree.
+	goneGroups map[string]goneMark
 	// terminalKeyAt is when the last T finished being handled. Held down it
 	// autorepeats into a burst of keystrokes, and T is the only key that
 	// spawns on the keystroke itself rather than opening a form that would
@@ -443,6 +454,9 @@ type refreshMsg struct {
 	queuedMessages map[string]int
 	paneLines      map[string]string
 	panePrompts    map[string]string
+	// panes is the pass's agent pane geometry, read off the UI loop with
+	// the liveness listing the poller already makes.
+	panes map[string]tmux.Pane
 }
 
 type previewMsg struct {
@@ -1179,30 +1193,26 @@ func (m *Model) markFreshPane(id string) {
 	m.pane.geom[id] = [2]int{0, 0}
 }
 
-// seedPaneGeom fills the geometry cache from tmux for sessions this run
-// has not sized yet, so a pane adopted from a previous run is not shrunk
-// (and its Codex scrollback cleared) just to match a box it already
-// exceeds. A failed listing leaves the entries missing and the next pass
-// pins those sessions to the box; the poll surfaces the tmux failure.
+// seedPaneGeom fills the geometry cache from the pass's pane listing for
+// sessions this run has not sized yet, so a pane adopted from a previous
+// run is not shrunk (and its Codex scrollback cleared) just to match a box
+// it already exceeds. A split window is taken every pass instead: the agent
+// opened those panes out of its own window, taking room from the pane the
+// preview draws, and no manager action precedes that for the cache to
+// follow. Drift the manager did not cause otherwise stays, so a window
+// someone resized from another client is left where they put it.
 func (m *Model) seedPaneGeom() {
-	needed := false
-	for _, sess := range m.sessions {
-		if _, sized := m.pane.geom[sess.ID]; !sized && !sess.Archived {
-			needed = true
-			break
+	for id, geom := range m.panes {
+		last, sized := m.pane.geom[id]
+		// markFreshPane's pin is still owed: a session created this run
+		// carries its pre-selection launch size, not the box.
+		if sized && last == [2]int{0, 0} {
+			continue
 		}
-	}
-	if !needed {
-		return
-	}
-	sizes, err := m.tmux.WindowSizes()
-	if err != nil {
-		return
-	}
-	for id, size := range sizes {
-		if _, sized := m.pane.geom[id]; !sized {
-			m.pane.geom[id] = size
+		if sized && geom.Panes < 2 {
+			continue
 		}
+		m.pane.geom[id] = [2]int{geom.Width, geom.Height}
 	}
 }
 
@@ -1272,7 +1282,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ageError()
 		// The focused session can die or vanish under us; fall back to the
 		// list rather than typing into nothing.
-		sessions := m.keepPendingLaunches(msg.sessions, msg.listedAt)
+		sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
+		stripDeletedGroups(&msg, m.goneGroups)
 		var focusExit tea.Cmd
 		if m.mode == modeFocus {
 			if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
@@ -1280,6 +1291,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.sessions = sessions
+		m.panes = msg.panes
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths
 		m.groupWorktrees = msg.groupWorktrees

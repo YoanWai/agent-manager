@@ -85,7 +85,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 // pipe, standing in for the pushed capture that normally caches it.
 func paneHistorySize(t *testing.T, m *Model, sessID string) int {
 	t.Helper()
-	out, ok := m.focus.query(`display-message -p -t ` + tmux.SessionName(sessID) + ` "#{history_size}"`)
+	out, ok := m.focus.query(`display-message -p -t ` + tmux.PaneTarget(sessID) + ` "#{history_size}"`)
 	if !ok {
 		t.Fatal("history query failed over the control pipe")
 	}

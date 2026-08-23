@@ -510,3 +510,54 @@ func TestSearchMatchingArchivedChildDoesNotHoistLiveParent(t *testing.T) {
 		t.Fatalf("search hoisted live parent into archive view: %v", names)
 	}
 }
+
+// An agent that splits its own window takes room from the pane the preview
+// draws, on whichever axis it split, and no manager action precedes it for
+// the geometry cache to follow. A later refresh has to notice and pin that
+// pane back to the box.
+func TestRefreshRepinsAnAgentSplitPane(t *testing.T) {
+	for _, split := range []struct {
+		axis string
+		flag string
+	}{{"horizontal", "-h"}, {"vertical", "-v"}} {
+		t.Run(split.axis, func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "split", t.TempDir(), "")
+			id := m.sessionRows()[0].ID
+			m.applyCmd(t, m.refreshCmd())
+
+			if out, err := tmuxCmd("split-window", split.flag, "-t", "am_"+id, "--", "sh", "-c", "sleep 30").CombinedOutput(); err != nil {
+				t.Fatalf("split-window: %v: %s", err, out)
+			}
+			if width, height := agentPaneSize(t, id); width == m.previewPaneWidth() && height == m.previewPaneHeight() {
+				t.Fatalf("the split should have taken room from the agent pane, pane = %dx%d", width, height)
+			}
+
+			m.applyCmd(t, m.refreshCmd())
+
+			width, height := agentPaneSize(t, id)
+			if width != m.previewPaneWidth() || height != m.previewPaneHeight() {
+				t.Fatalf("after refresh, agent pane = %dx%d, want the preview box %dx%d",
+					width, height, m.previewPaneWidth(), m.previewPaneHeight())
+			}
+		})
+	}
+}
+
+func agentPaneSize(t *testing.T, id string) (int, int) {
+	t.Helper()
+	out, err := tmuxCmd("list-panes", "-t", "am_"+id, "-f", "#{==:#{pane_index},0}", "-F", "#{pane_width} #{pane_height}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("list-panes: %v: %s", err, out)
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) != 2 {
+		t.Fatalf("pane size %q", out)
+	}
+	width, widthErr := strconv.Atoi(fields[0])
+	height, heightErr := strconv.Atoi(fields[1])
+	if widthErr != nil || heightErr != nil {
+		t.Fatalf("pane size %q: %v %v", out, widthErr, heightErr)
+	}
+	return width, height
+}

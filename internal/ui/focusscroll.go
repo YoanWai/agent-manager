@@ -122,7 +122,7 @@ func (m *Model) mouseReport(button int, release bool, col, row int) (string, boo
 // printed on its input line instead. mouse_any_flag covers every mode, so
 // the per-mode flags would only repeat it.
 func guardedMouseCommand(sessID, report string) (string, []string) {
-	target := tmux.SessionName(sessID)
+	target := tmux.PaneTarget(sessID)
 	const condition = "#{mouse_any_flag}"
 	send := "send-keys -t " + target + " -H " + hexBytes(report)
 	command := "if-shell -F -t " + target + " '" + condition + "' '" + send + "'"
@@ -272,7 +272,7 @@ func (m *Model) requestFocusRegion(sessID string) tea.Cmd {
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
 	rows := m.focusPaneRows()
 	command := fmt.Sprintf(`capture-pane -p -e -t %s -S %d -E -`,
-		tmux.SessionName(sessID), -(offset + rows))
+		tmux.PaneTarget(sessID), -(offset + rows))
 	watch := m.focus
 	return func() tea.Msg {
 		if watch == nil {

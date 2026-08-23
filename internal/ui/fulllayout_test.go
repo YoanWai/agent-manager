@@ -333,12 +333,12 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	if got := m.pane.geom[sess.ID]; got != want {
 		t.Fatalf("focused pane pinned to %v, want %v", got, want)
 	}
-	sizes, err := m.tmux.WindowSizes()
+	panes, err := m.tmux.Panes()
 	if err != nil {
-		t.Fatalf("window sizes: %v", err)
+		t.Fatalf("panes: %v", err)
 	}
-	if got := sizes[sess.ID]; got != want {
-		t.Fatalf("tmux window is %v, want %v", got, want)
+	if got := [2]int{panes[sess.ID].Width, panes[sess.ID].Height}; got != want {
+		t.Fatalf("tmux pane is %v, want %v", got, want)
 	}
 
 	m.preview = "❯ hello from the pane\n"

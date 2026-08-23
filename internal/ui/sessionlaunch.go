@@ -81,3 +81,94 @@ func (m *Model) keepPendingLaunches(polled []store.Session, listedAt time.Time) 
 	}
 	return polled
 }
+
+// goneMark is the list state this run most recently gave a row, and when
+// it gave it. deleted means the row must not appear at all; otherwise
+// archived is the value the row's Archived flag should carry.
+type goneMark struct {
+	at       time.Time
+	archived bool
+	deleted  bool
+}
+
+// markSession records the loaded-list state this run just gave a session,
+// so stale polls predating the change are reconciled on arrival instead
+// of undoing it for a frame.
+func (m *Model) markSession(id string, mark goneMark) {
+	if m.gone == nil {
+		m.gone = map[string]goneMark{}
+	}
+	mark.at = time.Now()
+	m.gone[id] = mark
+}
+
+// dropRecentlyRemoved reconciles the rows a poll lists against what this
+// run has just done to them: without it, a pass in flight across a delete,
+// an archive, or a restore delivers its pre-change listing afterwards and
+// blinks the old state back for one more frame. A stale copy of a deleted
+// row is dropped; a stale copy of an archive or restore has its flag
+// corrected to what the store was just written to say. A listing that
+// postdates every recorded change retires those records instead.
+func (m *Model) dropRecentlyRemoved(polled []store.Session, listedAt time.Time) []store.Session {
+	if len(m.gone) == 0 {
+		return polled
+	}
+	kept := make([]store.Session, 0, len(polled))
+	for _, sess := range polled {
+		mark, known := m.gone[sess.ID]
+		switch {
+		case !known || listedAt.After(mark.at):
+			if known {
+				delete(m.gone, sess.ID)
+			}
+			kept = append(kept, sess)
+		case mark.deleted:
+		default:
+			sess.Archived = mark.archived
+			kept = append(kept, sess)
+		}
+	}
+	for id, mark := range m.gone {
+		if listedAt.After(mark.at) {
+			delete(m.gone, id)
+		}
+	}
+	return kept
+}
+
+// stripDeletedGroups reconciles a stale listing's group rows, metadata,
+// and archive flags against what this run has just done: a deleted group's
+// header cannot hang back onto the tree, and an archive or restore of a
+// group keeps its flag until a newer listing confirms it. A listing that
+// postdates a change retires its marker instead.
+func stripDeletedGroups(msg *refreshMsg, gone map[string]goneMark) {
+	removed := make(map[string]bool, len(gone))
+	for path, mark := range gone {
+		switch {
+		case msg.listedAt.After(mark.at):
+			delete(gone, path)
+		case mark.deleted:
+			removed[path] = true
+		default:
+			if msg.archivedGroups == nil {
+				msg.archivedGroups = map[string]bool{}
+			}
+			msg.archivedGroups[path] = mark.archived
+		}
+	}
+	if len(removed) == 0 {
+		return
+	}
+	groups := make([]string, 0, len(msg.groups))
+	for _, group := range msg.groups {
+		if !removed[group] {
+			groups = append(groups, group)
+		}
+	}
+	msg.groups = groups
+	for path := range removed {
+		delete(msg.groupPaths, path)
+		delete(msg.groupWorktrees, path)
+		delete(msg.archivedGroups, path)
+	}
+}

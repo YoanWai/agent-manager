@@ -11,7 +11,7 @@ import (
 
 func TestGuardedMouseCommandWrapsTheSend(t *testing.T) {
 	command, args := guardedMouseCommand("abc", "\x1b[<64;3;2M")
-	if !strings.HasPrefix(command, "if-shell -F -t "+tmux.SessionName("abc")+" '#{mouse_any_flag}' 'send-keys") {
+	if !strings.HasPrefix(command, "if-shell -F -t "+tmux.PaneTarget("abc")+" '#{mouse_any_flag}' 'send-keys") {
 		t.Fatalf("control-pipe command = %q", command)
 	}
 	if len(args) != 6 || args[0] != "if-shell" || args[4] != "#{mouse_any_flag}" {
@@ -52,7 +52,7 @@ func TestGuardedMouseCommandFollowsTheLiveFlag(t *testing.T) {
 
 	// cat holds the line until a newline arrives, and only what it echoes
 	// reaches the pane's terminal to turn mouse reporting off.
-	if err := driver.SendRaw("send-keys -t " + tmux.SessionName(sessID) +
+	if err := driver.SendRaw("send-keys -t " + tmux.PaneTarget(sessID) +
 		" -H 1b 5b 3f 31 30 30 33 6c 1b 5b 3f 31 30 30 36 6c 0a"); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
@@ -73,7 +73,7 @@ func waitForMouseFlag(t *testing.T, driver *tmux.Driver, sessID, want string) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		out, err := exec.Command("tmux", "-L", driver.SocketName(),
-			"display-message", "-p", "-t", tmux.SessionName(sessID), "#{mouse_any_flag}").Output()
+			"display-message", "-p", "-t", tmux.PaneTarget(sessID), "#{mouse_any_flag}").Output()
 		if err == nil && strings.TrimSpace(string(out)) == want {
 			return
 		}

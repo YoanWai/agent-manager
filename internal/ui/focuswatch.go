@@ -209,7 +209,7 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		}
 		w.mu.Unlock()
 	}()
-	target := tmux.SessionName(id)
+	target := tmux.PaneTarget(id)
 	capture := func() bool {
 		pane, err := control.Command("capture-pane -p -e -t " + target)
 		if err != nil {
