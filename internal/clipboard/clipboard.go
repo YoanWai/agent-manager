@@ -19,6 +19,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/YoanWai/agent-manager/internal/termseq"
+	"github.com/YoanWai/agent-manager/internal/wsl"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -46,7 +47,7 @@ var (
 	}
 	// wslProbe reports whether we are running under WSL (Windows clipboard
 	// bridge needed when Linux tools cannot see the host clipboard).
-	wslProbe = detectWSL
+	wslProbe = wsl.Detect
 	getenv   = os.Getenv
 	// emitSeq writes a control sequence to the terminal drawing the app.
 	emitSeq = termseq.Emit
@@ -289,19 +290,6 @@ func saveWSLWindowsImage() (string, error) {
 		return "", ErrNoImage
 	}
 	return path, nil
-}
-
-// detectWSL reports WSL via env or the kernel release string.
-func detectWSL() bool {
-	if os.Getenv("WSL_DISTRO_NAME") != "" || os.Getenv("WSL_INTEROP") != "" {
-		return true
-	}
-	data, err := os.ReadFile("/proc/sys/kernel/osrelease")
-	if err != nil {
-		return false
-	}
-	release := strings.ToLower(string(data))
-	return strings.Contains(release, "microsoft") || strings.Contains(release, "wsl")
 }
 
 // newPasteFile creates an empty paste-* file under pastesDir and returns

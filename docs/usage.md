@@ -314,6 +314,8 @@ The Computer block in the sessions panel shows machine gauges:
 - **Network**: up/down rates on real NICs only (loopback, utun, bridges, and similar virtual interfaces are excluded)
 - **Temperature**: `cpu`, `gpu` and `soc` readings in °C, each the hottest sensor in its category, sampled every 5s. Apple Silicon draws no CPU/GPU line, so its dies report as one `soc` figure. A reading appears when the machine exposes that sensor.
 
+On Windows under WSL2, agent-manager runs inside the Linux guest, whose `/proc` describes the VM rather than the machine. There the CPU, memory, disk, and agent-percentage figures come from the Windows host instead, sampled through PowerShell interop every 30 seconds; swap, network, and temperatures remain the guest's own. If interop is unavailable, the guest numbers show unchanged.
+
 ## Themes
 
 `s` opens Settings, where `↑↓` move between fields and `←→` change the focused one.
