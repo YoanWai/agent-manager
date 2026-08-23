@@ -14,6 +14,7 @@ import (
 )
 
 func TestSample(t *testing.T) {
+	disableHostSampling(t)
 	snap := Sample("/")
 	if snap.MemOK && snap.MemTotal == 0 {
 		t.Fatal("mem reported OK but total is zero")

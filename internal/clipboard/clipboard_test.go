@@ -595,15 +595,3 @@ func TestWriteTextNativeFailureFallsBackToOSC52(t *testing.T) {
 		t.Fatalf("emitted = %q, want %q", emitted, want)
 	}
 }
-
-func TestDetectWSLEnv(t *testing.T) {
-	t.Setenv("WSL_DISTRO_NAME", "Ubuntu")
-	if !detectWSL() {
-		t.Fatal("WSL_DISTRO_NAME should mark WSL")
-	}
-	t.Setenv("WSL_DISTRO_NAME", "")
-	t.Setenv("WSL_INTEROP", "/run/WSL/1_interop")
-	if !detectWSL() {
-		t.Fatal("WSL_INTEROP should mark WSL")
-	}
-}

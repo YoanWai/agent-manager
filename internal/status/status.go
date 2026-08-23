@@ -3,6 +3,7 @@ package status
 import (
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 )
@@ -42,6 +43,7 @@ type toolRules struct {
 	messageStart   *regexp.Regexp
 	placeholder    *regexp.Regexp
 	userEcho       *regexp.Regexp
+	dialogFooter   *regexp.Regexp
 	rules          []rule
 }
 
@@ -76,6 +78,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.MessageStart, &tr.messageStart},
 			{tool.InputPlaceholder, &tr.placeholder},
 			{tool.UserEcho, &tr.userEcho},
+			{tool.DialogFooter, &tr.dialogFooter},
 		}
 		for _, opt := range optional {
 			if opt.pattern == "" {
@@ -244,7 +247,7 @@ func (tr toolRules) matchScope(pane string) string {
 	hasWaitingFooter := tr.hasWaitingFooter(cutoffTail)
 	lines := strings.Split(region, "\n")
 	if lastEnd := tr.lastTurnEndIndex(lines); lastEnd >= 0 {
-		scope := strings.Join(lines[lastEnd+1:], "\n")
+		scope := tr.withoutInputRows(lines[lastEnd+1:])
 		if hasWaitingFooter {
 			return scope + cutoffTail
 		}
@@ -253,12 +256,44 @@ func (tr toolRules) matchScope(pane string) string {
 	// Some selection dialogs reuse the prompt marker as their first option.
 	// Keep treating ordinary typed input as outside the match scope, but include
 	// the full pane when a separate waiting signal appears below that marker.
-	// Codex overlays render such a footer; the selected option line alone is
-	// indistinguishable from a numbered draft and must not expand the scope.
+	// Codex overlays render such a footer, and claude's question dialog names
+	// it in dialog_footer; the selected option line alone is indistinguishable
+	// from a numbered draft and must not expand the scope.
 	if hasWaitingFooter {
 		return pane
 	}
-	return region
+	return tr.withoutInputRows(lines)
+}
+
+// withoutInputRows joins region rows, dropping the messages the user
+// already sent. The tool replays them above its composer wearing the same
+// marker, so a numbered list they typed is otherwise indistinguishable
+// from a dialog's selected option, and text they quoted from another pane
+// reads as that pane's live signal. A replayed message runs from its
+// marker row until a row opens a block of its own.
+func (tr toolRules) withoutInputRows(lines []string) string {
+	kept := make([]string, 0, len(lines))
+	sent := false
+	for _, line := range lines {
+		if tr.inputRow(line) {
+			sent = true
+			continue
+		}
+		if sent && wrapsAbove(line) {
+			continue
+		}
+		sent = false
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
+// wrapsAbove reports whether a row belongs to the block above it rather
+// than starting one: tools indent what wraps and leave the blank rows
+// between blocks empty.
+func wrapsAbove(row string) bool {
+	body := strings.TrimLeftFunc(row, unicode.IsSpace)
+	return body == "" || len(body) < len(row)
 }
 
 func (tr toolRules) hasWaitingFooter(cutoffTail string) bool {
@@ -267,6 +302,9 @@ func (tr toolRules) hasWaitingFooter(cutoffTail string) bool {
 		return false
 	}
 	footer := cutoffTail[lineEnd+1:]
+	if tr.dialogFooter != nil && tr.dialogFooter.MatchString(footer) {
+		return true
+	}
 	for _, r := range tr.rules {
 		if r.state == Waiting && r.re.MatchString(footer) {
 			return true
@@ -518,11 +556,21 @@ func (e *Engine) InputPrefix(tool, row string) (string, bool) {
 // caret, so a composer bounded by a rule (pi) reads cleanly.
 func (e *Engine) MatchesActivityCutoff(tool, row string) bool {
 	tr, ok := e.tools[tool]
-	if !ok || tr.activityCutoff == nil {
+	if !ok {
+		return false
+	}
+	return tr.inputRow(row)
+}
+
+// inputRow reports whether a row opens with the tool's activity cutoff. A
+// zero-width match is no marker, the same way InputPrefix reads one: a
+// degenerate cutoff like ^ would otherwise stamp every row as input.
+func (tr toolRules) inputRow(row string) bool {
+	if tr.activityCutoff == nil {
 		return false
 	}
 	loc := tr.activityCutoff.FindStringIndex(row)
-	return loc != nil && loc[0] == 0
+	return loc != nil && loc[0] == 0 && loc[1] > 0
 }
 
 func (tr toolRules) activityRegion(pane string) (string, bool) {

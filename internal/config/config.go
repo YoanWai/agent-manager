@@ -72,6 +72,11 @@ type Tool struct {
 	// its transcript, which is how the last thing sent to a session is
 	// read back regardless of who typed it or from where.
 	UserEcho string `toml:"user_echo"`
+	// DialogFooter is a line the tool draws under its input marker while a
+	// dialog owns the input box. It tells a dialog that reuses that marker
+	// for its selected option from a draft typed at a resting composer, so
+	// the rows below the marker join what the rules read.
+	DialogFooter string `toml:"dialog_footer"`
 	// InputPrefix locates the composer's input row for the arrow-step pair
 	// (Left leaving focus at the prompt head). It replaces the reuse of
 	// activity_cutoff for that check, for tools whose input line carries no
@@ -214,6 +219,7 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.UserEcho, def.UserEcho)
 	fill(&user.BusyLine, def.BusyLine)
 	fill(&user.LimitLine, def.LimitLine)
+	fill(&user.DialogFooter, def.DialogFooter)
 	fill(&user.InputPrefix, def.InputPrefix)
 	if name == "claude" && user.BusyLine == busyLineAgentsOnly {
 		user.BusyLine = def.BusyLine
@@ -340,6 +346,10 @@ chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$"
 blocked_line = "Interrupted ·"
 # recap blocks ("※ recap: …") render below the turn-end summary
 trailing_note = "^※"
+# a question dialog draws its selected option on the composer's own row
+# ("❯ 1. Spaces"), where a numbered draft would sit; this footer under it
+# is what tells the two apart
+dialog_footer = "(?m)^\\s*Enter to select\\b"
 # background agents and shells keep running after the turn that spawned them
 # ends, and the line saying so carries the same shape as a turn-end summary:
 # "✻ Waiting for 2 background agents to finish" / "✻ Cooked for 4s · 2 shells

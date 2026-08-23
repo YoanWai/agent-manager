@@ -234,6 +234,21 @@ func TestLoadDirBackfillsLimitLine(t *testing.T) {
 	}
 }
 
+func TestLoadDirBackfillsDialogFooter(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[tools.claude]\ncommand = \"claude\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if !strings.Contains(cfg.Tools["claude"].DialogFooter, "Enter to select") {
+		t.Fatalf("claude dialog_footer was not backfilled: %q", cfg.Tools["claude"].DialogFooter)
+	}
+}
+
 func TestLoadDirPreservesCustomClaudeBusyLine(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
