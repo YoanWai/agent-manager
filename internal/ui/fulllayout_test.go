@@ -344,8 +344,11 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 
 	m.preview = "❯ hello from the pane\n"
 	frame := ansi.Strip(m.View())
-	if !strings.Contains(frame, "focused · ctrl+q back") {
-		t.Fatalf("full width focus frame misses the focus rule:\n%s", frame)
+	if rule := ansi.Strip(m.focusFactsRule(m.width)); !strings.Contains(frame, rule) {
+		t.Fatalf("full width focus frame misses the focus rule %q:\n%s", rule, frame)
+	}
+	if !strings.Contains(frame, sess.Name) {
+		t.Fatalf("the focus rule should name the session %q:\n%s", sess.Name, frame)
 	}
 	if !m.pane.box.ok || m.pane.box.x != 0 || m.pane.box.width != m.width {
 		t.Fatalf("pane box = %+v, want the whole width at column 0", m.pane.box)
@@ -680,5 +683,42 @@ func TestFullLayoutTransientFootersAreOneRow(t *testing.T) {
 	m.quick.active = false
 	if resting := m.listBodyHeight(); body <= resting {
 		t.Fatalf("quick prompt body = %d rows, want more than the resting %d", body, resting)
+	}
+}
+
+func TestFullFocusRuleNamesTheSession(t *testing.T) {
+	m := shotModel()
+	m.fullLayout = true
+	m.mode = modeFocus
+	m.queuedMessages = map[string]int{"add-rate-limiting": 2}
+	rule := ansi.Strip(m.focusFactsRule(m.width))
+	for _, want := range []string{"add-rate-limiting", "claude", "working", "dev/api", "cpu 4.2%", "ram ", "2 queued", "─"} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("full screen focus rule misses %q:\n%s", want, rule)
+		}
+	}
+	if strings.Contains(rule, "ctrl+q") {
+		t.Errorf("the keys belong to the footer, not the rule:\n%s", rule)
+	}
+	if got := ansi.StringWidth(rule); got != m.width {
+		t.Fatalf("rule is %d wide, terminal is %d", got, m.width)
+	}
+	if got := len(splitLines(m.focusFactsRule(m.width))); got != 1 {
+		t.Fatalf("rule painted %d lines, want 1", got)
+	}
+
+	// Too narrow for both sides, the name survives and the readings go.
+	narrow := ansi.Strip(m.focusFactsRule(52))
+	if !strings.Contains(narrow, "add-rate-limiting") || strings.Contains(narrow, "cpu ") {
+		t.Fatalf("a narrow rule keeps the name and drops the readings:\n%s", narrow)
+	}
+	if got := ansi.StringWidth(narrow); got > 52 {
+		t.Fatalf("narrow rule is %d wide, want at most 52", got)
+	}
+
+	// The split's own rule still names the keys: its detail head above the
+	// pane already says which session this is.
+	if split := ansi.Strip(focusTopRule(m.width)); !strings.Contains(split, "ctrl+q back") {
+		t.Fatalf("split focus rule lost its keys:\n%s", split)
 	}
 }

@@ -145,7 +145,7 @@ func (m *Model) viewFullFocusFrame() string {
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
-	frame = append(frame, paint(focusTopRule(m.width), m.width, backdropHex()))
+	frame = append(frame, paint(m.focusFactsRule(m.width), m.width, backdropHex()))
 	m.previewBodyOffset = 0
 	paneRows := m.previewLines(m.width, bodyHeight, strings.Repeat(" ", contentGutter))
 	frame = append(frame, paintContent(paneRows, m.width, bodyHeight, backdropHex())...)
@@ -1011,8 +1011,56 @@ func (m *Model) contentLines(width, height int) []contentLine {
 	return append(body[:max(height-len(bar), 0)], bar...)
 }
 
-// focusTopRule is the hairline that caps the focused pane, titled so the
-// mode names itself where the eye already is.
+// focusFactsRule caps the pane a session opens into full screen, where
+// nothing else on the frame says which session it is: the state dot and
+// the name on the left, where it runs and what it costs on the right, the
+// hairline stretched between them. The keys the split's rule names are in
+// the footer under the pane, so they stay there.
+func (m *Model) focusFactsRule(width int) string {
+	sess, ok := m.selected()
+	if !ok {
+		return focusEdgeStyle.Render(strings.Repeat("─", max(width, 0)))
+	}
+	sep := subtleStyle.Render(" · ")
+	left := " " + m.sessionGlyph(sess) + " " + valueStyle.Render(m.displayName(sess)) +
+		sep + valueStyle.Render(sess.Tool) +
+		sep + lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
+		sep + subtleStyle.Render(relSince(lastActivity(sess))) + " "
+	right := " " + valueStyle.Render(truncateTail(sess.Cwd, focusRuleDirCap))
+	if sess.WorktreeBranch != "" {
+		right += subtleStyle.Render("  ⑂ ") + valueStyle.Render(sess.WorktreeBranch)
+	}
+	if m.procFor == sess.ID && m.proc.OK {
+		right += sep + labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.1f%%", m.proc.CPUPercent)) +
+			sep + labelStyle.Render("ram ") + valueStyle.Render(humanBytes(m.proc.RSS))
+	}
+	if queued := m.queuedMessages[sess.ID]; queued > 0 {
+		right += sep + valueStyle.Render(fmt.Sprintf("%d queued", queued))
+	}
+	right += " "
+
+	// A rule too short to hold both sides keeps the name and drops what the
+	// session costs, which the list itself still carries.
+	span := width - ansi.StringWidth(left) - ansi.StringWidth(right)
+	if span < focusRuleMinSpan {
+		right, span = "", width-ansi.StringWidth(left)
+	}
+	if span < 0 {
+		return ansi.Truncate(left, max(width, 0), "…")
+	}
+	return left + focusEdgeStyle.Render(strings.Repeat("─", span)) + right
+}
+
+// focusRuleDirCap keeps a deep path from crowding the readings beside it,
+// and focusRuleMinSpan is the shortest hairline still reading as one.
+const (
+	focusRuleDirCap  = 40
+	focusRuleMinSpan = 4
+)
+
+// focusTopRule is the hairline that caps the focused pane in the split,
+// where the detail head above it already names the session, so the rule
+// spends its title on the keys instead.
 func focusTopRule(width int) string {
 	title := " focused · ctrl+q back · ctrl+r review · f3 editor "
 	rule := annotationStyle.Render(title)
