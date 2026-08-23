@@ -64,8 +64,11 @@ type poller struct {
 	runMu      sync.Mutex
 	paneHashes map[string]uint64
 	// quietSince is when each session's activity region last stopped
-	// changing while unmatched; used to debounce marker-less turn ends.
-	quietSince map[string]time.Time
+	// changing while the pane read as working; used to debounce both
+	// marker-less turn ends and spinner rows that never resolve. The stuck
+	// flag travels with the timer so a rule classification change restarts
+	// the grace instead of inheriting the previous one.
+	quietSince map[string]quietTimer
 	// heartbeatAt is when this manager last stamped its liveness row.
 	heartbeatAt time.Time
 	tick        int
@@ -81,6 +84,21 @@ type poller struct {
 // One poll is not enough: agents pause between tools (and a fast poll
 // interval would flap working/finished every few ticks).
 var quietEndGrace = time.Second
+
+// stuckEndGrace is the longer stability a rule-matched working pane needs
+// before the same quiet path may settle it. A live agent animates its pane
+// (spinner frames, ticking timers) within a poll or two, so a spinner row
+// that sits unchanged this long belongs to a turn that died without ever
+// printing its end marker.
+var stuckEndGrace = 15 * time.Second
+
+// quietTimer pairs the quiet timestamp with the rule classification it
+// started under, so an unmatched-to-working flip cannot spend the previous
+// classification's grace.
+type quietTimer struct {
+	since time.Time
+	stuck bool
+}
 
 // startingGrace caps how long a session may show the launch state before the
 // poll derives its real status regardless, so a tool that never paints its
@@ -241,7 +259,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		poke:          make(chan struct{}, 1),
 		paneHashes:    map[string]uint64{},
 		claudeTails:   map[string]claudeTailCache{},
-		quietSince:    map[string]time.Time{},
+		quietSince:    map[string]quietTimer{},
 		notifyFn:      notify.Notify,
 	}
 }
@@ -1004,9 +1022,11 @@ func (p *poller) reflowSessions(ids []string, reflow func()) {
 // transition closes marker-less turns: a session that was mid-turn whose
 // region stopped changing has ended its turn even when the tool printed
 // no turn_end line, so the region's last content line decides finished
-// versus waiting. Finished is an alert: entering the session acknowledges
-// it (acked), and the pane keeps deriving finished until the next turn,
-// so acked maps it back to idle.
+// versus waiting. A matched working verdict gets the same treatment after
+// a longer stability window, since a spinner row can outlive its turn
+// when the turn died before printing any end marker. Finished is an
+// alert: entering the session acknowledges it (acked), and the pane keeps
+// deriving finished until the next turn, so acked maps it back to idle.
 //
 // A missing prior hash (first observation, or post-resize rebaseline)
 // never invents working and never collapses finished/waiting to the tool
@@ -1031,25 +1051,35 @@ func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 		}
 	}
 	newStatus, matched := p.engine.Match(sess.Tool, text)
-	if hasRegion && !matched {
+	stuck := matched && newStatus == status.Working
+	if hasRegion && (!matched || stuck) {
 		if previous, seen := p.paneHashes[sess.ID]; seen {
 			if previous != regionHash {
-				newStatus = status.Working
+				if !matched {
+					newStatus = status.Working
+				}
 				delete(p.quietSince, sess.ID)
 			} else if turnInFlight(sess.Status) {
-				// Already resting: re-infer finished vs waiting without delay.
 				if sess.Status != status.Working {
-					newStatus = p.engine.TurnEndedState(sess.Tool, region)
+					// Already resting: re-infer finished vs waiting without
+					// delay, unless the rules now read the pane as working.
+					if !stuck {
+						newStatus = p.engine.TurnEndedState(sess.Tool, region)
+					}
 				} else {
 					// Mid-turn pauses (thinking, between tools) look quiet for
 					// a poll or two; wait before treating that as turn end.
-					now := time.Now()
-					since, ok := p.quietSince[sess.ID]
-					if !ok {
-						p.quietSince[sess.ID] = now
-						since = now
+					grace := quietEndGrace
+					if stuck {
+						grace = stuckEndGrace
 					}
-					if now.Sub(since) >= quietEndGrace {
+					now := time.Now()
+					timer, ok := p.quietSince[sess.ID]
+					if !ok || timer.stuck != stuck {
+						timer = quietTimer{since: now, stuck: stuck}
+						p.quietSince[sess.ID] = timer
+					}
+					if now.Sub(timer.since) >= grace {
 						newStatus = p.engine.TurnEndedState(sess.Tool, region)
 						if newStatus != status.Working {
 							delete(p.quietSince, sess.ID)
@@ -1059,7 +1089,7 @@ func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 					}
 				}
 			}
-		} else if turnInFlight(sess.Status) {
+		} else if turnInFlight(sess.Status) && !stuck {
 			newStatus = sess.Status
 		}
 	} else {

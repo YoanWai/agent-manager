@@ -1,5 +1,20 @@
 [
   {
+    "id": "command-code-joins-built-in-tools",
+    "banner": "new: Command Code joins the built-in tools",
+    "title": "Command Code gets live status and exact revival out of the box",
+    "body": [
+      "Command Code sessions now run as a built-in tool: status rules captured from its real TUI, prompt delivery, approvals.",
+      "`revive` resumes the exact conversation through Command Code's own session store, reading the id from its transcript.",
+      "Deleting or archiving a session clears its row on the same frame instead of lingering until the next poll.",
+      "A working pane whose turn died without an end marker settles after a quiet window instead of showing working forever.",
+      "Thanks to @dolutech: asked for Command Code (#380), then built it (#385); #388 on reboot recovery is next.",
+      "Update with `agent-manager update`, `brew upgrade yoanwai/tap/agent-manager`, or your package manager."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.33.0",
+    "max_version": "0.33.0"
+  },
+  {
     "id": "agent-teams-split-the-window",
     "banner": "fix: previews follow the agent, not its teammates",
     "title": "An agent that splits its own window keeps the preview on itself",
