@@ -520,14 +520,6 @@ func (m *Model) viewFooter() string {
 		if m.pane.mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}
-		// Full screen focus drops the padding the other transients keep:
-		// opening a session there pins its pane to the whole body anyway,
-		// so the two extra rows ride the same resize instead of forcing
-		// one, and the pane gets them. The split keeps the padded height,
-		// where a moving box would resize every pane just for the legend.
-		if m.fullFocus() {
-			return legendBar([]legendSection{{title: "Focused", pairs: pairs}}, m.width)
-		}
 		return m.transientFooter(legendSection{title: "Focused", pairs: pairs})
 	}
 	return m.listFooter()
@@ -540,8 +532,14 @@ func (m *Model) listFooter() string {
 // transientFooter renders one tier at the list footer's height: the footer
 // sets the preview box, and a box that moves resizes every session's pane,
 // which costs an agent drawing on the normal screen a full transcript redraw.
+// The full screen layout has no preview box to hold still, so a tier there
+// takes the one row it needs and hands the rest to the body.
 func (m *Model) transientFooter(section legendSection) string {
-	return padToHeight(legendBar([]legendSection{section}, m.width), lipgloss.Height(m.listFooter()))
+	bar := legendBar([]legendSection{section}, m.width)
+	if m.fullLayout {
+		return bar
+	}
+	return padToHeight(bar, lipgloss.Height(m.listFooter()))
 }
 
 // rowLegend is the tier for the entry under the cursor: what this session or

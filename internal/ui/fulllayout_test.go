@@ -654,3 +654,31 @@ func TestShellRowSkipsThePromptLine(t *testing.T) {
 		t.Fatalf("compact shell entry height = %d, want 1", got)
 	}
 }
+
+func TestFullLayoutTransientFootersAreOneRow(t *testing.T) {
+	m := shotModel()
+	m.cfg = config.Config{Tools: map[string]config.Tool{"claude": {}}}
+	m.fullLayout = true
+	m.quick.active = true
+	if got := lipgloss.Height(m.viewFooter()); got != 1 {
+		t.Fatalf("full screen quick prompt footer = %d rows, want 1", got)
+	}
+	body := m.listBodyHeight()
+
+	m.fullLayout = false
+	listed := lipgloss.Height(m.listFooter())
+	if listed < 2 {
+		t.Fatalf("this test needs a list footer taller than a tier, got %d rows", listed)
+	}
+	if got := lipgloss.Height(m.viewFooter()); got != listed {
+		t.Fatalf("split quick prompt footer = %d rows, want the padded %d", got, listed)
+	}
+
+	// The rows the tier gives up go to the list body, which is what the
+	// full screen pane is pinned to.
+	m.fullLayout = true
+	m.quick.active = false
+	if resting := m.listBodyHeight(); body <= resting {
+		t.Fatalf("quick prompt body = %d rows, want more than the resting %d", body, resting)
+	}
+}
