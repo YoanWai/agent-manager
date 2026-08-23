@@ -97,6 +97,13 @@ func parseHostSample(line string) (HostSample, error) {
 	if err != nil {
 		return HostSample{}, errors.New("bad disk free field")
 	}
+	// A free figure above its total would underflow the used math below.
+	if memFree > memTotal {
+		return HostSample{}, errors.New("mem free exceeds total")
+	}
+	if diskFree > diskTotal {
+		return HostSample{}, errors.New("disk free exceeds total")
+	}
 	return HostSample{
 		CPUPercent: cpu,
 		NCPU:       ncpu,

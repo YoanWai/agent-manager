@@ -56,16 +56,18 @@ func TestParseHostSample(t *testing.T) {
 	}
 
 	for name, line := range map[string]string{
-		"too few fields":    "5 12 34301874176 17150937088",
-		"too many fields":   "1 2 3 4 5 6 7",
-		"non-numeric cpu":   "x 2 3 4 5 6",
-		"negative cpu":      "-1 2 3 4 5 6",
-		"zero ncpu":         "5 0 3 4 5 6",
-		"non-numeric ncpu":  "5 x 3 4 5 6",
-		"non-numeric memT":  "5 12 x 4 5 6",
-		"non-numeric memF":  "5 12 3 x 5 6",
-		"non-numeric diskT": "5 12 3 4 x 6",
-		"non-numeric diskF": "5 12 3 4 5 x",
+		"too few fields":       "5 12 34301874176 17150937088",
+		"too many fields":      "1 2 3 4 5 6 7",
+		"non-numeric cpu":      "x 2 3 4 5 6",
+		"negative cpu":         "-1 2 3 4 5 6",
+		"zero ncpu":            "5 0 3 4 5 6",
+		"non-numeric ncpu":     "5 x 3 4 5 6",
+		"non-numeric memT":     "5 12 x 4 5 6",
+		"non-numeric memF":     "5 12 3 x 5 6",
+		"non-numeric diskT":    "5 12 3 4 x 6",
+		"non-numeric diskF":    "5 12 3 4 5 x",
+		"mem free over total":  "5 12 100 200 500 100",
+		"disk free over total": "5 12 300 100 500 900",
 	} {
 		if _, err := parseHostSample(line); err == nil {
 			t.Errorf("%s: want error, got nil (%q)", name, line)
