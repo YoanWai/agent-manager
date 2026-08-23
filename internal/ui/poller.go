@@ -908,9 +908,12 @@ func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 				}
 				delete(p.quietSince, sess.ID)
 			} else if turnInFlight(sess.Status) {
-				// Already resting: re-infer finished vs waiting without delay.
 				if sess.Status != status.Working {
-					newStatus = p.engine.TurnEndedState(sess.Tool, region)
+					// Already resting: re-infer finished vs waiting without
+					// delay, unless the rules now read the pane as working.
+					if !stuck {
+						newStatus = p.engine.TurnEndedState(sess.Tool, region)
+					}
 				} else {
 					// Mid-turn pauses (thinking, between tools) look quiet for
 					// a poll or two; wait before treating that as turn end.
@@ -934,7 +937,7 @@ func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 					}
 				}
 			}
-		} else if turnInFlight(sess.Status) {
+		} else if turnInFlight(sess.Status) && !stuck {
 			newStatus = sess.Status
 		}
 	} else {

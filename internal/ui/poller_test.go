@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -540,6 +541,22 @@ func TestStuckSpinnerHoldsWorkingUntilGrace(t *testing.T) {
 	seedRegionHash(t, m, sess, pane)
 	if got := deriveStatus(t, m, sess, pane, true); got != status.Working {
 		t.Fatalf("matched spinner within the grace should stay working, got %q", got)
+	}
+}
+
+// A rule-matched working verdict wins over a resting stored status: a
+// session that already read finished or waiting but whose newest turn now
+// matches a working rule is working again, on the first stable observation.
+func TestMatchedWorkingWinsOverRestingStatus(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	pane := "▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n"
+	for i, stored := range []string{status.Finished, status.Waiting} {
+		sess := store.Session{ID: fmt.Sprintf("win-%d", i), Tool: "opencode", Status: stored}
+		seedRegionHash(t, m, sess, pane)
+		if got := deriveStatus(t, m, sess, pane, true); got != status.Working {
+			t.Fatalf("stored %s with a matched working pane should read working, got %q", stored, got)
+		}
 	}
 }
 
