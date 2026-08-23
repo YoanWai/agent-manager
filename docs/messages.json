@@ -1,5 +1,18 @@
 [
   {
+    "id": "agent-teams-split-the-window",
+    "banner": "fix: previews follow the agent, not its teammates",
+    "title": "An agent that splits its own window keeps the preview on itself",
+    "body": [
+      "Claude Code's agent teams run each teammate as a full CLI in a pane beside the leader, splitting the session's window.",
+      "The preview, your keystrokes and the pane stats now address the agent's own pane, wherever the agent moves focus.",
+      "A split window is sized from the room its teammates already hold, so the agent's pane fills the preview panel again.",
+      "Update with `agent-manager update`, `brew upgrade yoanwai/tap/agent-manager`, or your package manager."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.32.2",
+    "max_version": "0.32.2"
+  },
+  {
     "id": "update-itself-and-review-that-remembers",
     "banner": "new: agent-manager updates itself",
     "title": "One command updates the binary, and review remembers every round",
