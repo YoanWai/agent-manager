@@ -218,3 +218,69 @@ func TestAStalePollCannotRestoreADeletedGroupHeader(t *testing.T) {
 		}
 	}
 }
+
+// A poll that listed the store before a restore still says the row is
+// archived; that stale copy must not undo the restore for a frame.
+func TestAStalePollCannotUndoARestore(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "returning", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+
+	m.selectSessionRow(t, "returning")
+	m.archiveSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	listedAt := time.Now()
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "returning")
+	m.restoreSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	stale := sess
+	stale.Archived = true
+	updated, _ := m.Update(refreshMsg{sessions: []store.Session{stale}, listedAt: listedAt})
+	*m = *updated.(*Model)
+
+	for _, row := range m.sessionRows() {
+		if row.ID == sess.ID {
+			t.Fatalf("a stale poll put the restored session back in the archived view")
+		}
+	}
+	m.showArchived = false
+	if got := m.visibleSessions(); len(got) != 1 || got[0].Archived {
+		t.Fatalf("restored session should read live after a stale listing, got %+v", got)
+	}
+}
+
+func TestAStalePollCannotBringAnArchivedGroupBackLive(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("zone", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "in-zone", dir, "zone")
+	sess := m.sessionRows()[0]
+	listedAt := time.Now()
+
+	m.selectGroupRow(t, "zone")
+	m.archiveSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	stale := refreshMsg{
+		sessions:   []store.Session{sess},
+		listedAt:   listedAt,
+		groups:     []string{"zone"},
+		groupPaths: map[string]string{"zone": dir},
+	}
+	updated, _ := m.Update(stale)
+	*m = *updated.(*Model)
+
+	if !m.groupEffectivelyArchived("zone") {
+		t.Fatal("a stale poll brought the archived group back on the active tree")
+	}
+	if got := m.visibleSessions(); len(got) != 0 {
+		t.Fatalf("archived subtree should stay out of the active view, got %v", got)
+	}
+}

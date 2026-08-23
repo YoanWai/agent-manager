@@ -191,9 +191,9 @@ type Model struct {
 	// that moment cannot put the row back on screen for a frame.
 	gone map[string]goneMark
 	// goneGroups is the group-path counterpart of gone: when this run
-	// deleted a group, a poll that listed the store before that moment
-	// must not hang the group's header back onto the tree.
-	goneGroups map[string]time.Time
+	// archived, restored, or deleted a group, a poll that listed the store
+	// before that moment must not put the old state back on the tree.
+	goneGroups map[string]goneMark
 	// terminalKeyAt is when the last T finished being handled. Held down it
 	// autorepeats into a burst of keystrokes, and T is the only key that
 	// spawns on the keystroke itself rather than opening a form that would

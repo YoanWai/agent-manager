@@ -81,38 +81,49 @@ func (m *Model) keepPendingLaunches(polled []store.Session, listedAt time.Time) 
 	return polled
 }
 
-// goneMark records how a session left the loaded list: deleted outright,
-// or archived out of the active view while the archived view keeps it.
+// goneMark is the list state this run most recently gave a row, and when
+// it gave it. deleted means the row must not appear at all; otherwise
+// archived is the value the row's Archived flag should carry.
 type goneMark struct {
 	at       time.Time
 	archived bool
+	deleted  bool
 }
 
-// markGone records that this run just removed a row from the list, so
-// stale polls predating the removal are dropped on arrival.
-func (m *Model) markGone(id string, archived bool) {
+// markSession records the loaded-list state this run just gave a session,
+// so stale polls predating the change are reconciled on arrival instead
+// of undoing it for a frame.
+func (m *Model) markSession(id string, mark goneMark) {
 	if m.gone == nil {
 		m.gone = map[string]goneMark{}
 	}
-	m.gone[id] = goneMark{at: time.Now(), archived: archived}
+	mark.at = time.Now()
+	m.gone[id] = mark
 }
 
-// dropRecentlyRemoved filters out the rows a poll listed before this run
-// took them off the list itself: without it, a pass in flight across a
-// delete or an archive delivers its pre-change listing afterwards and the
-// row blinks back for one more frame. A poll whose listing postdates the
-// removal is the authority on the new state and retires every record it
-// postdates, including ones for rows the listing no longer carries at
-// all; an archived row reported as archived belongs in the archived view
-// and stays.
+// dropRecentlyRemoved reconciles the rows a poll lists against what this
+// run has just done to them: without it, a pass in flight across a delete,
+// an archive, or a restore delivers its pre-change listing afterwards and
+// blinks the old state back for one more frame. A stale copy of a deleted
+// row is dropped; a stale copy of an archive or restore has its flag
+// corrected to what the store was just written to say. A listing that
+// postdates every recorded change retires those records instead.
 func (m *Model) dropRecentlyRemoved(polled []store.Session, listedAt time.Time) []store.Session {
 	if len(m.gone) == 0 {
 		return polled
 	}
 	kept := make([]store.Session, 0, len(polled))
 	for _, sess := range polled {
-		mark, gone := m.gone[sess.ID]
-		if !gone || listedAt.After(mark.at) || (mark.archived && sess.Archived) {
+		mark, known := m.gone[sess.ID]
+		switch {
+		case !known || listedAt.After(mark.at):
+			if known {
+				delete(m.gone, sess.ID)
+			}
+			kept = append(kept, sess)
+		case mark.deleted:
+		default:
+			sess.Archived = mark.archived
 			kept = append(kept, sess)
 		}
 	}
@@ -124,24 +135,25 @@ func (m *Model) dropRecentlyRemoved(polled []store.Session, listedAt time.Time) 
 	return kept
 }
 
-// unmarkGone forgets a removal record, for a session brought back before
-// any poll has had the chance to retire it.
-func (m *Model) unmarkGone(id string) {
-	delete(m.gone, id)
-}
-
-// stripDeletedGroups drops a stale listing's group rows and metadata for
-// groups this run deleted after the listing was taken, so the deleted
-// header cannot hang back onto the tree for a frame. A listing that
-// postdates a deletion retires its marker instead.
-func stripDeletedGroups(msg *refreshMsg, gone map[string]time.Time) {
+// stripDeletedGroups reconciles a stale listing's group rows, metadata,
+// and archive flags against what this run has just done: a deleted group's
+// header cannot hang back onto the tree, and an archive or restore of a
+// group keeps its flag until a newer listing confirms it. A listing that
+// postdates a change retires its marker instead.
+func stripDeletedGroups(msg *refreshMsg, gone map[string]goneMark) {
 	removed := make(map[string]bool, len(gone))
-	for path, at := range gone {
-		if msg.listedAt.After(at) {
+	for path, mark := range gone {
+		switch {
+		case msg.listedAt.After(mark.at):
 			delete(gone, path)
-			continue
+		case mark.deleted:
+			removed[path] = true
+		default:
+			if msg.archivedGroups == nil {
+				msg.archivedGroups = map[string]bool{}
+			}
+			msg.archivedGroups[path] = mark.archived
 		}
-		removed[path] = true
 	}
 	if len(removed) == 0 {
 		return

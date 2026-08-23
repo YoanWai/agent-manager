@@ -740,14 +740,15 @@ func (m *Model) removeSessionLocally(id string) {
 			break
 		}
 	}
-	m.markGone(id, false)
+	m.markSession(id, goneMark{deleted: true})
 	m.rebuildRows()
 }
 
 // markArchivedLocally flags the confirmed archive in the loaded rows, so
 // they leave the active view on this frame instead of first showing the
 // dead state their kill just gave them. A group archive also flags the
-// group itself, which is what hides the whole subtree from the active view.
+// group itself and every group under it, which is what hides the whole
+// subtree from the active view.
 func (m *Model) markArchivedLocally(sessions []store.Session, groupPath string) {
 	changed := false
 	for i := range m.sessions {
@@ -759,21 +760,36 @@ func (m *Model) markArchivedLocally(sessions []store.Session, groupPath string) 
 				continue
 			}
 			m.sessions[i].Archived = true
-			m.markGone(sess.ID, true)
+			m.markSession(sess.ID, goneMark{archived: true})
 			changed = true
 			break
 		}
 	}
 	if groupPath != "" {
-		if m.archivedGroups == nil {
-			m.archivedGroups = map[string]bool{}
+		for _, path := range append([]string{groupPath}, m.subgroupPaths(groupPath)...) {
+			if m.archivedGroups == nil {
+				m.archivedGroups = map[string]bool{}
+			}
+			m.archivedGroups[path] = true
+			m.markGroup(path, goneMark{archived: true})
 		}
-		m.archivedGroups[groupPath] = true
 		changed = true
 	}
 	if changed {
 		m.rebuildRows()
 	}
+}
+
+// subgroupPaths lists the stored groups nested under a path.
+func (m *Model) subgroupPaths(path string) []string {
+	var out []string
+	prefix := path + "/"
+	for _, group := range m.groups {
+		if strings.HasPrefix(group, prefix) {
+			out = append(out, group)
+		}
+	}
+	return out
 }
 
 // markRestoredLocally mirrors a completed restore in the loaded rows and
@@ -792,23 +808,34 @@ func (m *Model) markRestoredLocally(restored []store.Session, groupPath string) 
 		}
 		if byID[m.sessions[i].ID] || (groupPath != "" && inGroupSubtree(m.sessions[i].Group, groupPath)) {
 			m.sessions[i].Archived = false
+			m.markSession(m.sessions[i].ID, goneMark{archived: false})
 		}
 	}
 	if groupPath != "" {
-		delete(m.archivedGroups, groupPath)
-		for name := range m.archivedGroups {
-			if strings.HasPrefix(name, groupPath+"/") {
-				delete(m.archivedGroups, name)
-			}
+		for _, path := range append([]string{groupPath}, m.subgroupPaths(groupPath)...) {
+			delete(m.archivedGroups, path)
+			m.markGroup(path, goneMark{archived: false})
 		}
 	} else {
 		for _, sess := range restored {
 			for path := sess.Group; path != ""; path = parentGroup(path) {
 				delete(m.archivedGroups, path)
+				m.markGroup(path, goneMark{archived: false})
 			}
 		}
 	}
 	m.rebuildRows()
+}
+
+// markGroup records the archive state this run just gave a group path,
+// so stale polls predating the change are reconciled on arrival instead
+// of undoing it for a frame.
+func (m *Model) markGroup(path string, mark goneMark) {
+	if m.goneGroups == nil {
+		m.goneGroups = map[string]goneMark{}
+	}
+	mark.at = time.Now()
+	m.goneGroups[path] = mark
 }
 
 // pruneGroupsLocally drops the removed group paths from the loaded tree,
@@ -819,10 +846,7 @@ func (m *Model) pruneGroupsLocally(removed []string) {
 	gone := make(map[string]bool, len(removed))
 	for _, path := range removed {
 		gone[path] = true
-		if m.goneGroups == nil {
-			m.goneGroups = map[string]time.Time{}
-		}
-		m.goneGroups[path] = time.Now()
+		m.markGroup(path, goneMark{deleted: true})
 	}
 	groups := make([]string, 0, len(m.groups))
 	for _, group := range m.groups {
@@ -1009,20 +1033,15 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
-				m.unmarkGone(sess.ID)
+				m.markSession(sess.ID, goneMark{archived: false})
 			}
 			if m.confirm.isGroup {
 				if err := m.applyConfirmedArchived(false); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
-				for _, sess := range m.confirm.sessions {
-					m.unmarkGone(sess.ID)
-				}
-				m.markRestoredLocally(nil, m.confirm.path)
-			} else {
-				m.markRestoredLocally(m.confirm.sessions, "")
 			}
+			m.markRestoredLocally(m.confirm.sessions, groupPath(m.confirm))
 			m.errBar.text = ""
 		case actionKill:
 			for _, sess := range m.confirm.sessions {
