@@ -205,17 +205,33 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 	return lines
 }
 
-// peekLines is the lifted slice itself: one quiet line placing the
-// session (its directory, and the worktree branch when it has one), then
-// the last lines its pane painted, from the capture the preview already
-// holds. The capture follows the cursor, so switching the bar's target
-// swaps the slice with it.
+// peekLines is the lifted slice itself: a line placing the session (its
+// directory, and the worktree branch when it has one), a line saying how
+// it is doing — state, tool, its process usage when sampled, when it was
+// started and last heard from — then the last lines its pane painted,
+// from the capture the preview already holds. The capture follows the
+// cursor, so switching the bar's target swaps the slice with it.
 func (m *Model) peekLines(sess store.Session, width int) []string {
-	place := sess.Cwd
+	place := valueStyle.Render(truncateTail(sess.Cwd, width))
 	if sess.WorktreeBranch != "" {
-		place += "  ⑂ " + sess.WorktreeBranch
+		place += subtleStyle.Render("  ⑂ ") + valueStyle.Render(sess.WorktreeBranch)
 	}
-	lines := []string{subtleStyle.Render(truncateTail(place, width))}
+	sep := subtleStyle.Render(" · ")
+	facts := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
+		sep + valueStyle.Render(sess.Tool)
+	if m.procFor == sess.ID && m.proc.OK {
+		facts += sep + labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.1f%%", m.proc.CPUPercent)) +
+			sep + labelStyle.Render("ram ") + valueStyle.Render(humanBytes(m.proc.RSS))
+	}
+	facts += sep + labelStyle.Render("started ") + valueStyle.Render(relSince(sess.CreatedAt)) +
+		sep + labelStyle.Render("active ") + valueStyle.Render(relSince(lastActivity(sess)))
+	if queued := m.queuedMessages[sess.ID]; queued > 0 {
+		facts += sep + valueStyle.Render(fmt.Sprintf("%d queued", queued))
+	}
+	lines := []string{
+		ansi.Truncate(place, width, "…"),
+		ansi.Truncate(facts, width, "…"),
+	}
 	for _, row := range paneExact(m.preview, peekPaneRows, width, -1) {
 		lines = append(lines, previewLine(row, width))
 	}
