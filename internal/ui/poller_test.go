@@ -543,6 +543,33 @@ func TestStuckSpinnerHoldsWorkingUntilGrace(t *testing.T) {
 	}
 }
 
+// A tool without turn_end matches its rules over the whole pane, so a pane
+// can flip from unmatched to rule-matched working while the activity-region
+// hash stays put (the change lives below the cutoff, as gemini's status line
+// does). The stuck grace must start fresh rather than inherit the unmatched
+// quiet timer.
+func TestMatchedWorkingAfterQuietRestartsGrace(t *testing.T) {
+	prevQuiet, prevStuck := quietEndGrace, stuckEndGrace
+	quietEndGrace = time.Hour
+	stuckEndGrace = time.Nanosecond
+	t.Cleanup(func() {
+		quietEndGrace = prevQuiet
+		stuckEndGrace = prevStuck
+	})
+	m := buildModel(t)
+	defaultEngine(t, m)
+	sess := store.Session{ID: "flip-gemini", Tool: "gemini", Status: status.Working}
+	quietPane := "completed output\n> \n"
+	spinnerPane := "completed output\n> \nesc to cancel\n"
+	seedRegionHash(t, m, sess, quietPane)
+	if got := deriveStatus(t, m, sess, quietPane, true); got != status.Working {
+		t.Fatalf("quiet unmatched pane within its grace should stay working, got %q", got)
+	}
+	if got := deriveStatus(t, m, sess, spinnerPane, true); got != status.Working {
+		t.Fatalf("a fresh stuck grace should hold working, got %q", got)
+	}
+}
+
 // A live agent animates its pane every poll or two; a changing region must
 // keep a rule-matched working verdict working no matter how long it runs.
 func TestAnimatedMatchedWorkingStaysWorking(t *testing.T) {

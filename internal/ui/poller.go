@@ -61,8 +61,10 @@ type poller struct {
 	paneHashes map[string]uint64
 	// quietSince is when each session's activity region last stopped
 	// changing while the pane read as working; used to debounce both
-	// marker-less turn ends and spinner rows that never resolve.
-	quietSince map[string]time.Time
+	// marker-less turn ends and spinner rows that never resolve. The stuck
+	// flag travels with the timer so a rule classification change restarts
+	// the grace instead of inheriting the previous one.
+	quietSince map[string]quietTimer
 	// heartbeatAt is when this manager last stamped its liveness row.
 	heartbeatAt time.Time
 	tick        int
@@ -85,6 +87,14 @@ var quietEndGrace = time.Second
 // that sits unchanged this long belongs to a turn that died without ever
 // printing its end marker.
 var stuckEndGrace = 15 * time.Second
+
+// quietTimer pairs the quiet timestamp with the rule classification it
+// started under, so an unmatched-to-working flip cannot spend the previous
+// classification's grace.
+type quietTimer struct {
+	since time.Time
+	stuck bool
+}
 
 // startingGrace caps how long a session may show the launch state before the
 // poll derives its real status regardless, so a tool that never paints its
@@ -111,7 +121,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		interval:      interval,
 		poke:          make(chan struct{}, 1),
 		paneHashes:    map[string]uint64{},
-		quietSince:    map[string]time.Time{},
+		quietSince:    map[string]quietTimer{},
 		notifyFn:      notify.Notify,
 	}
 }
@@ -909,12 +919,12 @@ func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 						grace = stuckEndGrace
 					}
 					now := time.Now()
-					since, ok := p.quietSince[sess.ID]
-					if !ok {
-						p.quietSince[sess.ID] = now
-						since = now
+					timer, ok := p.quietSince[sess.ID]
+					if !ok || timer.stuck != stuck {
+						timer = quietTimer{since: now, stuck: stuck}
+						p.quietSince[sess.ID] = timer
 					}
-					if now.Sub(since) >= grace {
+					if now.Sub(timer.since) >= grace {
 						newStatus = p.engine.TurnEndedState(sess.Tool, region)
 						if newStatus != status.Working {
 							delete(p.quietSince, sess.ID)
