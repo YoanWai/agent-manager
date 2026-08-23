@@ -415,8 +415,20 @@ func TestFullLayoutQuickBarLiftsThePeek(t *testing.T) {
 	m.rows[m.cursor].sess.WorktreeBranch = "am/peek"
 	m.preview = "❯ run the flaky suite\n● Running the flaky suite…\n"
 
+	// Off by default: the bar docks alone until the setting opts in.
 	m.openQuickMode()
 	frame := ansi.Strip(m.View())
+	if strings.Contains(frame, "⑂ am/peek") {
+		t.Fatalf("the peek should stay down until opted into:\n%s", frame)
+	}
+	if !strings.Contains(frame, "type and press enter") {
+		t.Fatalf("the bar should dock without the peek:\n%s", frame)
+	}
+	m.quick.active = false
+
+	m.quickPeek = true
+	m.openQuickMode()
+	frame = ansi.Strip(m.View())
 	if !strings.Contains(frame, filepath.Base(dir)) {
 		t.Fatalf("peek misses the session's directory:\n%s", frame)
 	}

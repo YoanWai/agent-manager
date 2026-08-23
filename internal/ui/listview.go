@@ -188,8 +188,11 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 	}
 	bar := append([]contentLine{{rule: true}}, inset(splitLines(m.viewQuickBar(inner)))...)
 	var peek []contentLine
-	if entry, ok := m.selectedRow(); ok && !entry.isGroup {
-		peek = append(inset(m.peekInfoLines(entry.sess, inner)), contentLine{rule: true})
+	if entry, ok := m.selectedRow(); ok && !entry.isGroup && m.quickPeek {
+		// The leading rule closes the rail's meters off from the peek the
+		// same way the bar closes the peek off below.
+		peek = append([]contentLine{{rule: true}}, inset(m.peekInfoLines(entry.sess, inner))...)
+		peek = append(peek, contentLine{rule: true})
 		peek = append(peek, inset(m.peekPaneSlice(inner))...)
 	}
 	// The list above the bar keeps the rows the rail floor guarantees:

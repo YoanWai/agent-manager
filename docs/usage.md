@@ -40,7 +40,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
-| `s` | Settings (default tool, theme, theme follows OS, list density, sessions layout, review layout, after quick send, session keys, ←→ step in/out, spawn in worktree, notifications, notify on finish, CLIs, report a bug, suggest a change, and the version row that updates in place) |
+| `s` | Settings (default tool, theme, theme follows OS, list density, sessions layout, quick prompt peek, review layout, after quick send, session keys, ←→ step in/out, spawn in worktree, notifications, notify on finish, CLIs, report a bug, suggest a change, and the version row that updates in place) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `z` | Toggle the [full screen layout](#full-screen-sessions): the list alone across the whole terminal, or the split with the preview beside it |
 | `t` | Toggle archived view |
@@ -76,7 +76,7 @@ Session rows read the same way in either layout, and the list density setting pi
 
 Sessions size themselves to the layout that shows them: the full screen pins their tmux windows to the whole terminal body, so an opened or attached session spans the full width, and switching back to the split re-pins the width while a pane that grew taller keeps its height and is cropped on screen instead.
 
-The quick prompt is the reveal for whatever a row clips: in this layout the open bar lifts a peek of the selected session above it, the directory and worktree branch on one line, then the tail of its captured pane, with the question a `waiting` agent asked in it. The peek follows the bar's target as `↑↓` move, closes with the bar on send or `esc`, and yields to the list when only a few rows remain.
+The quick prompt is the reveal for whatever a row clips: with the "quick prompt peek" setting on (off by default), the open bar lifts a peek of the selected session above it, the directory and worktree branch on one line, then the tail of its captured pane, with the question a `waiting` agent asked in it. The peek follows the bar's target as `↑↓` move, closes with the bar on send or `esc`, and yields to the list when only a few rows remain.
 
 Opening a session (`enter`, or `→`) takes the whole body too, through the same pipeline focus mode uses in the split: keys go to the agent, `ctrl+r`, `F3` and the footer stay alive, and `ctrl+q`, or `←` with the caret at the start of the agent's prompt, returns to the list. `A` still hands the terminal over with a real tmux attach.
 

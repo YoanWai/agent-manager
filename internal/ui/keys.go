@@ -448,6 +448,10 @@ const diffLayoutSetting = "diff_layout"
 // width, anything else keeps the split with the preview beside it.
 const sessionLayoutSetting = "layout"
 
+// quickPeekSetting lifts a peek of the target session above the full
+// screen quick bar: "on" opts in.
+const quickPeekSetting = "quick_peek"
+
 const listDensitySetting = "list_density"
 
 const focusKeySetting = "focus_key"
