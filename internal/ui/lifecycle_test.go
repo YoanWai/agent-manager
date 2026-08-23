@@ -1862,3 +1862,27 @@ func TestConfirmedGroupRestoreShowsTheSubtreeAtOnce(t *testing.T) {
 		t.Fatalf("active view after group restore = %v", got)
 	}
 }
+
+func TestConfirmedGroupArchiveHidesTheSubtreeAtOnce(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("zone", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "in-zone", dir, "zone")
+	sess := m.sessionRows()[0]
+
+	m.selectGroupRow(t, "zone")
+	m.archiveSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	if !m.groupEffectivelyArchived("zone") {
+		t.Fatal("archived group still reads as active before the next poll")
+	}
+	for _, got := range m.visibleSessions() {
+		if got.ID == sess.ID {
+			t.Fatalf("archived session still on the active tree before the next poll")
+		}
+	}
+}

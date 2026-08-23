@@ -182,3 +182,39 @@ func TestAFreshListingRetiresDeletionMarkers(t *testing.T) {
 		t.Fatalf("deletion markers outlived a listing that postdates them: %v", m.gone)
 	}
 }
+
+func TestAStalePollCannotRestoreADeletedGroupHeader(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("zone", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "in-zone", dir, "zone")
+	sess := m.sessionRows()[0]
+	listedAt := time.Now()
+
+	m.selectGroupRow(t, "zone")
+	m.prepareDelete()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	stale := refreshMsg{
+		sessions:   []store.Session{sess},
+		listedAt:   listedAt,
+		groups:     []string{"zone"},
+		groupPaths: map[string]string{"zone": dir},
+	}
+	updated, _ := m.Update(stale)
+	*m = *updated.(*Model)
+
+	for _, r := range m.rows {
+		if r.isGroup && r.group == "zone" {
+			t.Fatalf("a stale poll brought the deleted group header back")
+		}
+	}
+	for _, g := range m.groups {
+		if g == "zone" {
+			t.Fatal("a stale poll restored the deleted group path")
+		}
+	}
+}

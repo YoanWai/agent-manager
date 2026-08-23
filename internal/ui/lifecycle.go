@@ -744,10 +744,11 @@ func (m *Model) removeSessionLocally(id string) {
 	m.rebuildRows()
 }
 
-// markArchivedLocally flags the confirmed sessions archived in the loaded
-// rows, so they leave the active view on this frame instead of first
-// showing the dead state their kill just gave them.
-func (m *Model) markArchivedLocally(sessions []store.Session) {
+// markArchivedLocally flags the confirmed archive in the loaded rows, so
+// they leave the active view on this frame instead of first showing the
+// dead state their kill just gave them. A group archive also flags the
+// group itself, which is what hides the whole subtree from the active view.
+func (m *Model) markArchivedLocally(sessions []store.Session, groupPath string) {
 	changed := false
 	for i := range m.sessions {
 		if m.sessions[i].Archived {
@@ -762,6 +763,13 @@ func (m *Model) markArchivedLocally(sessions []store.Session) {
 			changed = true
 			break
 		}
+	}
+	if groupPath != "" {
+		if m.archivedGroups == nil {
+			m.archivedGroups = map[string]bool{}
+		}
+		m.archivedGroups[groupPath] = true
+		changed = true
 	}
 	if changed {
 		m.rebuildRows()
@@ -805,11 +813,16 @@ func (m *Model) markRestoredLocally(restored []store.Session, groupPath string) 
 
 // pruneGroupsLocally drops the removed group paths from the loaded tree,
 // so a deleted group's header goes with its sessions instead of hanging
-// around empty until the next poll.
+// around empty until the next poll. Each path is recorded for the stale
+// listing filter, which is what keeps an in-flight poll from restoring it.
 func (m *Model) pruneGroupsLocally(removed []string) {
 	gone := make(map[string]bool, len(removed))
 	for _, path := range removed {
 		gone[path] = true
+		if m.goneGroups == nil {
+			m.goneGroups = map[string]time.Time{}
+		}
+		m.goneGroups[path] = time.Now()
 	}
 	groups := make([]string, 0, len(m.groups))
 	for _, group := range m.groups {
@@ -863,6 +876,15 @@ func followConfirmLabel(verb, name string, extra int, one, many string) string {
 		unit = "terminals"
 	}
 	return fmt.Sprintf("%s %s and %d %s? %s", verb, name, extra, unit, many)
+}
+
+// groupPath is the subtree path a confirmed archive or delete targets,
+// empty when the confirmation names sessions rather than a group.
+func groupPath(confirm confirmTarget) string {
+	if confirm.isGroup {
+		return confirm.path
+	}
+	return ""
 }
 
 func (m *Model) prepareDelete() {
@@ -968,7 +990,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.errBar.text = err.Error()
 				return m, nil
 			}
-			m.markArchivedLocally(m.confirm.sessions)
+			m.markArchivedLocally(m.confirm.sessions, groupPath(m.confirm))
 			m.errBar.text = ""
 		case actionRestore:
 			// Each session leaves the archive as it comes back, so a later

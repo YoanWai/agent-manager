@@ -129,3 +129,33 @@ func (m *Model) dropRecentlyRemoved(polled []store.Session, listedAt time.Time) 
 func (m *Model) unmarkGone(id string) {
 	delete(m.gone, id)
 }
+
+// stripDeletedGroups drops a stale listing's group rows and metadata for
+// groups this run deleted after the listing was taken, so the deleted
+// header cannot hang back onto the tree for a frame. A listing that
+// postdates a deletion retires its marker instead.
+func stripDeletedGroups(msg *refreshMsg, gone map[string]time.Time) {
+	removed := make(map[string]bool, len(gone))
+	for path, at := range gone {
+		if msg.listedAt.After(at) {
+			delete(gone, path)
+			continue
+		}
+		removed[path] = true
+	}
+	if len(removed) == 0 {
+		return
+	}
+	groups := make([]string, 0, len(msg.groups))
+	for _, group := range msg.groups {
+		if !removed[group] {
+			groups = append(groups, group)
+		}
+	}
+	msg.groups = groups
+	for path := range removed {
+		delete(msg.groupPaths, path)
+		delete(msg.groupWorktrees, path)
+		delete(msg.archivedGroups, path)
+	}
+}

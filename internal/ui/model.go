@@ -190,6 +190,10 @@ type Model struct {
 	// by deleting or archiving it, so a poll that listed the store before
 	// that moment cannot put the row back on screen for a frame.
 	gone map[string]goneMark
+	// goneGroups is the group-path counterpart of gone: when this run
+	// deleted a group, a poll that listed the store before that moment
+	// must not hang the group's header back onto the tree.
+	goneGroups map[string]time.Time
 	// terminalKeyAt is when the last T finished being handled. Held down it
 	// autorepeats into a burst of keystrokes, and T is the only key that
 	// spawns on the keystroke itself rather than opening a form that would
@@ -1138,6 +1142,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The focused session can die or vanish under us; fall back to the
 		// list rather than typing into nothing.
 		sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
+		stripDeletedGroups(&msg, m.goneGroups)
 		var focusExit tea.Cmd
 		if m.mode == modeFocus {
 			if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
