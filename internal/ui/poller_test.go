@@ -436,6 +436,26 @@ func disableQuietEndGrace(t *testing.T) {
 	t.Cleanup(func() { quietEndGrace = prev })
 }
 
+func disableStuckEndGrace(t *testing.T) {
+	t.Helper()
+	prev := stuckEndGrace
+	stuckEndGrace = 0
+	t.Cleanup(func() { stuckEndGrace = prev })
+}
+
+func defaultEngine(t *testing.T, m *Model) {
+	t.Helper()
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatalf("default config: %v", err)
+	}
+	engine, err := status.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("status engine: %v", err)
+	}
+	m.poller.engine = engine
+}
+
 func TestQuietPaneAfterWorkingDerivesFinished(t *testing.T) {
 	disableQuietEndGrace(t)
 	m := buildModel(t)
@@ -450,14 +470,7 @@ func TestQuietPaneAfterWorkingDerivesFinished(t *testing.T) {
 func TestQuietCodexPaneQuotingInterruptHintDerivesFinished(t *testing.T) {
 	disableQuietEndGrace(t)
 	m := buildModel(t)
-	cfg, err := config.Default()
-	if err != nil {
-		t.Fatalf("default config: %v", err)
-	}
-	m.poller.engine, err = status.NewEngine(cfg)
-	if err != nil {
-		t.Fatalf("status engine: %v", err)
-	}
+	defaultEngine(t, m)
 	sess := store.Session{ID: "quiet-codex", Tool: "codex", Status: status.Working}
 	pane := "Output:\n\ntool: mytool\nresult: working\npattern: esc to interrupt\ndefault: idle\n\n› Summarize recent commits\n"
 	seedRegionHash(t, m, sess, pane)
@@ -497,6 +510,50 @@ func TestQuietPaneAfterIdleStaysIdle(t *testing.T) {
 	seedRegionHash(t, m, sess, pane)
 	if got := deriveStatus(t, m, sess, pane, true); got != status.Idle {
 		t.Fatalf("quiet pane after idle should stay idle, got %q", got)
+	}
+}
+
+// An opencode turn that dies before its header row gains a duration leaves
+// a bare spinner row behind, which keeps matching the working rule forever.
+// Once the region stops changing for the stuck grace the quiet-region path
+// settles it from the region's own last content line.
+func TestStuckOpencodeSpinnerSettlesFinished(t *testing.T) {
+	disableStuckEndGrace(t)
+	m := buildModel(t)
+	defaultEngine(t, m)
+	sess := store.Session{ID: "stuck-oc", Tool: "opencode", Status: status.Working}
+	pane := "▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
+		t.Fatalf("stuck spinner past the grace should settle finished, got %q", got)
+	}
+}
+
+func TestStuckSpinnerHoldsWorkingUntilGrace(t *testing.T) {
+	prev := stuckEndGrace
+	stuckEndGrace = time.Hour
+	t.Cleanup(func() { stuckEndGrace = prev })
+	m := buildModel(t)
+	defaultEngine(t, m)
+	sess := store.Session{ID: "stuck-hold", Tool: "opencode", Status: status.Working}
+	pane := "▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n"
+	seedRegionHash(t, m, sess, pane)
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Working {
+		t.Fatalf("matched spinner within the grace should stay working, got %q", got)
+	}
+}
+
+// A live agent animates its pane every poll or two; a changing region must
+// keep a rule-matched working verdict working no matter how long it runs.
+func TestAnimatedMatchedWorkingStaysWorking(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	sess := store.Session{ID: "anim-oc", Tool: "opencode", Status: status.Working}
+	still := "⠋ listing files\n▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n"
+	moved := "⠙ listing files\n▣  Build · Ox Alpha Free (Unlimited)\n┃\n╹▀▀▀▀\n"
+	seedRegionHash(t, m, sess, still)
+	if got := deriveStatus(t, m, sess, moved, true); got != status.Working {
+		t.Fatalf("an animating matched-working pane should stay working, got %q", got)
 	}
 }
 
