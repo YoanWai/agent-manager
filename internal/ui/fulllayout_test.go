@@ -344,7 +344,7 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 
 	m.preview = "❯ hello from the pane\n"
 	frame := ansi.Strip(m.View())
-	if rule := ansi.Strip(m.focusFactsRule(m.width)); !strings.Contains(frame, rule) {
+	if rule := ansi.Strip(m.focusFactsLine(m.width)); !strings.Contains(frame, rule) {
 		t.Fatalf("full width focus frame misses the focus rule %q:\n%s", rule, frame)
 	}
 	if !strings.Contains(frame, sess.Name) {
@@ -691,29 +691,51 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 	m.fullLayout = true
 	m.mode = modeFocus
 	m.queuedMessages = map[string]int{"add-rate-limiting": 2}
-	rule := ansi.Strip(m.focusFactsRule(m.width))
-	for _, want := range []string{"add-rate-limiting", "claude", "working", "dev/api", "cpu 4.2%", "ram ", "2 queued", "─"} {
-		if !strings.Contains(rule, want) {
-			t.Errorf("full screen focus rule misses %q:\n%s", want, rule)
+	// A wide terminal holds every reading.
+	if wide := ansi.Strip(m.focusFactsLine(200)); !strings.Contains(wide, "started ") {
+		t.Errorf("a wide focus line should carry every reading:\n%s", wide)
+	}
+	facts := ansi.Strip(m.focusFactsLine(m.width))
+	if strings.Contains(facts, "started ") {
+		t.Errorf("the sparest reading should go first as the line narrows:\n%s", facts)
+	}
+	for _, want := range []string{"add-rate-limiting", "claude", "working", "dev/api", "cpu 4.2%", "ram ", "2 queued"} {
+		if !strings.Contains(facts, want) {
+			t.Errorf("full screen focus line misses %q:\n%s", want, facts)
 		}
 	}
-	if strings.Contains(rule, "ctrl+q") {
-		t.Errorf("the keys belong to the footer, not the rule:\n%s", rule)
+	if strings.Contains(facts, "ctrl+q") {
+		t.Errorf("the keys belong to the footer, not this line:\n%s", facts)
 	}
-	if got := ansi.StringWidth(rule); got != m.width {
-		t.Fatalf("rule is %d wide, terminal is %d", got, m.width)
+	// The line is the facts alone; the hairline under it is its own row.
+	if strings.Contains(facts, "─") {
+		t.Errorf("no rule should run through the facts:\n%s", facts)
 	}
-	if got := len(splitLines(m.focusFactsRule(m.width))); got != 1 {
-		t.Fatalf("rule painted %d lines, want 1", got)
+	if got := ansi.StringWidth(facts); got != m.width {
+		t.Fatalf("facts line is %d wide, terminal is %d", got, m.width)
+	}
+	if got := len(splitLines(m.focusFactsLine(m.width))); got != 1 {
+		t.Fatalf("facts painted %d lines, want 1", got)
+	}
+
+	// The frame puts the facts under the band and a rule between them and
+	// the pane.
+	rows := splitLines(ansi.Strip(m.View()))
+	head := m.headerRows()
+	if got := rows[head]; !strings.Contains(got, "add-rate-limiting") {
+		t.Fatalf("row %d should carry the facts, got:\n%s", head, got)
+	}
+	if got := strings.TrimSpace(rows[head+1]); got == "" || strings.Trim(got, "─") != "" {
+		t.Fatalf("row %d should be the rule under the facts, got:\n%s", head+1, got)
 	}
 
 	// Too narrow for both sides, the name survives and the readings go.
-	narrow := ansi.Strip(m.focusFactsRule(52))
+	narrow := ansi.Strip(m.focusFactsLine(52))
 	if !strings.Contains(narrow, "add-rate-limiting") || strings.Contains(narrow, "cpu ") {
-		t.Fatalf("a narrow rule keeps the name and drops the readings:\n%s", narrow)
+		t.Fatalf("a narrow line keeps the name and drops the readings:\n%s", narrow)
 	}
 	if got := ansi.StringWidth(narrow); got > 52 {
-		t.Fatalf("narrow rule is %d wide, want at most 52", got)
+		t.Fatalf("narrow line is %d wide, want at most 52", got)
 	}
 
 	// The split's own rule still names the keys: its detail head above the

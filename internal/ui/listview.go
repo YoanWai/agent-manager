@@ -145,15 +145,12 @@ func (m *Model) viewFullFocusFrame() string {
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
-	frame = append(frame, paint(m.focusFactsRule(m.width), m.width, backdropHex()))
+	frame = append(frame, paint(m.focusFactsLine(m.width), m.width, backdropHex()))
+	frame = append(frame, paint(m.focusEdge(m.width), m.width, backdropHex()))
 	m.previewBodyOffset = 0
 	paneRows := m.previewLines(m.width, bodyHeight, strings.Repeat(" ", contentGutter))
 	frame = append(frame, paintContent(paneRows, m.width, bodyHeight, backdropHex())...)
-	bottom := paint(hrule(m.width), m.width, backdropHex())
-	if m.pane.box.ok {
-		bottom = paint(focusEdgeStyle.Render(strings.Repeat("─", m.width)), m.width, backdropHex())
-	}
-	frame = append(frame, bottom)
+	frame = append(frame, paint(m.focusEdge(m.width), m.width, backdropHex()))
 	for _, line := range splitLines(footer) {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
@@ -1011,51 +1008,91 @@ func (m *Model) contentLines(width, height int) []contentLine {
 	return append(body[:max(height-len(bar), 0)], bar...)
 }
 
-// focusFactsRule caps the pane a session opens into full screen, where
-// nothing else on the frame says which session it is: the state dot and
-// the name on the left, where it runs and what it costs on the right, the
-// hairline stretched between them. The keys the split's rule names are in
-// the footer under the pane, so they stay there.
-func (m *Model) focusFactsRule(width int) string {
+// focusFactsLine says which session a full screen frame is showing, where
+// nothing else on it does: the state dot and the name on the left, then
+// where it runs and what it costs against the right edge, with the whole
+// width to itself and a rule under it holding it off the pane. The keys
+// the split's rule names are in the footer, so they stay there.
+func (m *Model) focusFactsLine(width int) string {
 	sess, ok := m.selected()
 	if !ok {
-		return focusEdgeStyle.Render(strings.Repeat("─", max(width, 0)))
+		return ""
 	}
 	sep := subtleStyle.Render(" · ")
 	left := " " + m.sessionGlyph(sess) + " " + valueStyle.Render(m.displayName(sess)) +
 		sep + valueStyle.Render(sess.Tool) +
 		sep + lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
-		sep + subtleStyle.Render(relSince(lastActivity(sess))) + " "
-	right := " " + valueStyle.Render(truncateTail(sess.Cwd, focusRuleDirCap))
+		sep + subtleStyle.Render(relSince(lastActivity(sess)))
+	// The facts give way one at a time as the terminal narrows, the least
+	// telling first, so a tight line still carries what it has room for
+	// rather than dropping the lot.
+	facts := []focusFact{{text: valueStyle.Render(truncateTail(sess.Cwd, focusFactsDirCap)), spare: 3}}
 	if sess.WorktreeBranch != "" {
-		right += subtleStyle.Render("  ⑂ ") + valueStyle.Render(sess.WorktreeBranch)
+		facts = append(facts, focusFact{text: subtleStyle.Render("⑂ ") + valueStyle.Render(sess.WorktreeBranch), spare: 2})
 	}
 	if m.procFor == sess.ID && m.proc.OK {
-		right += sep + labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.1f%%", m.proc.CPUPercent)) +
-			sep + labelStyle.Render("ram ") + valueStyle.Render(humanBytes(m.proc.RSS))
+		facts = append(facts,
+			focusFact{text: labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.1f%%", m.proc.CPUPercent)), spare: 1},
+			focusFact{text: labelStyle.Render("ram ") + valueStyle.Render(humanBytes(m.proc.RSS)), spare: 1})
 	}
+	facts = append(facts, focusFact{text: labelStyle.Render("started ") + valueStyle.Render(relSince(sess.CreatedAt)), spare: 4})
 	if queued := m.queuedMessages[sess.ID]; queued > 0 {
-		right += sep + valueStyle.Render(fmt.Sprintf("%d queued", queued))
+		facts = append(facts, focusFact{text: valueStyle.Render(fmt.Sprintf("%d queued", queued)), spare: 0})
 	}
-	right += " "
 
-	// A rule too short to hold both sides keeps the name and drops what the
-	// session costs, which the list itself still carries.
-	span := width - ansi.StringWidth(left) - ansi.StringWidth(right)
-	if span < focusRuleMinSpan {
-		right, span = "", width-ansi.StringWidth(left)
+	right := joinFacts(facts, sep)
+	for len(facts) > 0 && ansi.StringWidth(left)+focusFactsGap+ansi.StringWidth(right) > width {
+		facts = dropSparest(facts)
+		right = joinFacts(facts, sep)
 	}
-	if span < 0 {
+	if ansi.StringWidth(left) > width {
 		return ansi.Truncate(left, max(width, 0), "…")
 	}
-	return left + focusEdgeStyle.Render(strings.Repeat("─", span)) + right
+	return rowColumns(left, right, width)
 }
 
-// focusRuleDirCap keeps a deep path from crowding the readings beside it,
-// and focusRuleMinSpan is the shortest hairline still reading as one.
+// focusFact is one reading on the full screen focus line, spare ranking
+// how readily it gives up its room: the higher, the sooner it goes.
+type focusFact struct {
+	text  string
+	spare int
+}
+
+func joinFacts(facts []focusFact, sep string) string {
+	if len(facts) == 0 {
+		return ""
+	}
+	parts := make([]string, len(facts))
+	for i, fact := range facts {
+		parts[i] = fact.text
+	}
+	return strings.Join(parts, sep) + " "
+}
+
+func dropSparest(facts []focusFact) []focusFact {
+	sparest := 0
+	for i, fact := range facts {
+		if fact.spare >= facts[sparest].spare {
+			sparest = i
+		}
+	}
+	return append(facts[:sparest], facts[sparest+1:]...)
+}
+
+// focusEdge is the hairline holding the full screen pane off what sits
+// above and below it, in the pane's own tone once it has a box to trace.
+func (m *Model) focusEdge(width int) string {
+	if m.pane.box.ok {
+		return focusEdgeStyle.Render(strings.Repeat("─", max(width, 0)))
+	}
+	return hrule(width)
+}
+
+// focusFactsDirCap keeps a deep path from crowding the readings beside it,
+// and focusFactsGap is the least space kept between the name and them.
 const (
-	focusRuleDirCap  = 40
-	focusRuleMinSpan = 4
+	focusFactsDirCap = 40
+	focusFactsGap    = 2
 )
 
 // focusTopRule is the hairline that caps the focused pane in the split,

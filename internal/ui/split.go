@@ -129,7 +129,14 @@ func (m *Model) nudgeSplit(delta int) {
 // listChromeRows is the number of rows above the sessions/content body:
 // the full-width header band and the rule that closes it. Shared by View
 // and bodyYRange so hit-testing cannot drift from paint.
-func (m *Model) listChromeRows() int { return m.headerRows() + 1 }
+func (m *Model) listChromeRows() int {
+	// A session open full screen names itself on a line of its own between
+	// the band and the rule that caps its pane.
+	if m.fullFocus() {
+		return m.headerRows() + 2
+	}
+	return m.headerRows() + 1
+}
 
 // listBodyHeight is the vertical budget for the sessions/sidebar panels.
 // Matches View: height - (header, seam, footer). Notices float over the body
