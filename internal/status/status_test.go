@@ -142,6 +142,44 @@ func TestClaudeNumberedInputDoesNotLookLikeDialog(t *testing.T) {
 	}
 }
 
+// 2026-08-23 real capture: a numbered message the user already sent stays
+// on screen above the composer wearing the same ❯ marker a dialog puts on
+// its selected option, while the turn answering it is still running.
+func TestClaudeSentNumberedMessageDoesNotLookLikeDialog(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "⏺ Say go on 1 and 2 and I will build the project.\n" +
+		"✻ Brewed for 6m 49s · 9 messages hidden (/focus to show)\n\n" +
+		"❯ 1. I think we should make a space for marketing & sales right? 2. lets\n" +
+		"  create a local git? the other pane showed:\n\n" +
+		"   ❯ 1. Yes\n     2. No\n   Enter to confirm · Esc to cancel\n\n" +
+		"⏺ User message cut off mid-sentence; awaiting clarification\n" +
+		"  ⎿  $ source ~/.profile 2>/dev/null\n\n" +
+		"· Razzle-dazzling… (12m 25s · ↓ 30.1k tokens)\n\n" +
+		"────\n❯ \n────\n  ⏵⏵ auto mode on (shift+tab to cycle)"
+	if got, matched := engine.Match("claude", pane); got != Working || !matched {
+		t.Fatalf("Match() = (%q, %t) want (%q, true)", got, matched, Working)
+	}
+	if hold := engine.TypingHold("claude", pane); hold != Working {
+		t.Fatalf("TypingHold() = %q want %q", hold, Working)
+	}
+}
+
+// 2026-08-23 real capture: codex replays a sent message under the same ›
+// marker its composer carries, and indents what wrapped, so a numbered
+// message reads as its approval dialog the way claude's does.
+func TestCodexSentNumberedMessageDoesNotLookLikeDialog(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "  This deserves a dedicated CV, not the generic version.\n\n" +
+		"─ Worked for 2m 39s ──────────────────────────────────────────\n\n" +
+		"› 1. should I use my regular cv or 2. match it to them?\n" +
+		"  keep the tone hands-on rather than managerial\n\n" +
+		"• Working (12s • esc to interrupt)\n\n" +
+		"› Ask Codex to do anything\n"
+	if got, matched := engine.Match("codex", pane); got != Working || !matched {
+		t.Fatalf("Match() = (%q, %t) want (%q, true)", got, matched, Working)
+	}
+}
+
 // Fixtures below are captured from real claude/opencode panes (2026-07-16).
 func defaultEngine(t *testing.T) *Engine {
 	t.Helper()
