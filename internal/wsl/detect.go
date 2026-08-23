@@ -8,8 +8,6 @@ import (
 
 var osReleaseFile = "/proc/sys/kernel/osrelease"
 
-// Detect reports whether the process runs under WSL (env markers or a
-// Microsoft kernel release string).
 func Detect() bool {
 	if os.Getenv("WSL_DISTRO_NAME") != "" || os.Getenv("WSL_INTEROP") != "" {
 		return true

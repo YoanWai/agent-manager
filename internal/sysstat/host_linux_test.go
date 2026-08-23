@@ -74,6 +74,8 @@ func TestParseHostSample(t *testing.T) {
 		"non-numeric memA":     "5 12 3 x 5 6",
 		"non-numeric diskT":    "5 12 3 4 x 6",
 		"non-numeric diskF":    "5 12 3 4 5 x",
+		"zero mem total":       "5 12 0 0 500 100",
+		"zero disk total":      "5 12 300 100 0 0",
 		"mem avail over total": "5 12 100 200 500 100",
 		"disk free over total": "5 12 300 100 500 900",
 	} {

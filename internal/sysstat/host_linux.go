@@ -88,7 +88,7 @@ func parseHostSample(line string) (HostSample, error) {
 		return HostSample{}, errors.New("bad ncpu field")
 	}
 	memTotal, err := strconv.ParseUint(fields[2], 10, 64)
-	if err != nil {
+	if err != nil || memTotal == 0 {
 		return HostSample{}, errors.New("bad mem total field")
 	}
 	memAvail, err := strconv.ParseUint(fields[3], 10, 64)
@@ -96,7 +96,7 @@ func parseHostSample(line string) (HostSample, error) {
 		return HostSample{}, errors.New("bad mem available field")
 	}
 	diskTotal, err := strconv.ParseUint(fields[4], 10, 64)
-	if err != nil {
+	if err != nil || diskTotal == 0 {
 		return HostSample{}, errors.New("bad disk total field")
 	}
 	diskFree, err := strconv.ParseUint(fields[5], 10, 64)
