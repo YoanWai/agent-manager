@@ -39,6 +39,7 @@ var darwinManagers = []manager{
 // that would guess `brew install claude`.
 var official = map[string]string{
 	"claude":   "curl -fsSL https://claude.ai/install.sh | bash",
+	"cmd":      "npm install -g command-code",
 	"codex":    "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
 	"grok":     "curl -fsSL https://x.ai/cli/install.sh | bash",
 	"gemini":   "npm install -g @google/gemini-cli",

@@ -490,6 +490,44 @@ func TestPiPanes(t *testing.T) {
 	}
 }
 
+// Command Code v1.32.1 fixtures are captures of the real TUI: the resting
+// composer, the trust dialog, a live streamed turn (wide and narrow), the
+// finished turn, the ⚠ error banner, and the insufficient-credits banner.
+// The composer stays visible during a turn, with the busy footer sitting
+// above it.
+func TestCommandCodePanes(t *testing.T) {
+	engine := defaultEngine(t)
+	border := "────────────────────────────────────────────────────────────────────────────────────"
+	footer := border + "\n❯ Ask your question...\n" + border + "\n  ? for shortcuts · taste on"
+	header := "# Command Code v1.32.1\n# models: deepseek-v4-flash-(latest) with max effort · taste-1\n# /tmp/amcmd-proj\n"
+	streaming := "⠶ Paragraph 0 adds a little more of the streaming story so the reply keeps growing past the viewport.\n\n ◇ Ready...  esc to interrupt • 4s • ↓ 0\n"
+	cases := []struct {
+		name string
+		pane string
+		want string
+	}{
+		{"resting composer", header + footer, Idle},
+		{"trust dialog", "Do you trust the files in this folder?\n/tmp/amcmd-proj2\n\nCommand Code may read files in this folder. Reading untrusted files may lead Command Code to behave in unexpected ways.\n\nWith your permission Command Code may execute files in this folder. Executing untrusted code is unsafe.\n\n❯ 1. Yes, proceed\n  2. No, exit\n\n↑/↓ to navigate · enter to select · esc to exit", Waiting},
+		{"approval dialog", "Execute Shell Command\nCommand Code needs to execute echo \"hi\" > hello.txt.\n❯ 1. Yes\n  2. Yes, don't ask again for this exact command in this project\n  3. No, tell Command Code what to do differently\n\n↑/↓ navigate · enter select", Waiting},
+		{"streaming turn", header + streaming + footer, Working},
+		{"streaming turn narrow", "⠶ Paragraph 0 adds a little more of the streaming story\n   so the reply keeps growing past the viewport.\n\n ◇ Ready...  0\n" + footer, Working},
+		{"finished turn", header + "⠶ Paragraph 0 adds a little more of the streaming story so the reply keeps growing past the viewport.\n\n  Paragraph 1 adds a little more of the streaming story so the reply keeps growing past the viewport.\n\n ✻ Worked for 3s\n" + footer, Finished},
+		{"fast turn with no worked line", "⠶ Sure, which file should I edit?\n" + footer, Idle},
+		{"resumed conversation", "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\n⠶ Hey! What are we working on today? I can dig into code, build something, debug issues, or explore the repo.\n" + footer, Idle},
+		{"current error", "⚠ Error: request failed\n" + footer, Errored},
+		{"failed shell command", "❯ run this shell command and report its output: sh -c \"exit 1\"\n✻ Thought for 1 second [ctrl+o to expand]\n SHELL  [sh -c \"exit 1\"]\n └ Exit code: 1\n✻ Thought for 1 second [ctrl+o to expand]\n⠶ The command exited with code 1, as expected. No stdout or stderr output was produced.\n ✻ Worked for 2s\n" + footer, Finished},
+		{"insufficient credits", "⚠ You have insufficient credits to make this request. Please purchase more credits to continue using Command Code here: https://example.com\n" + footer, Errored},
+		{"question turn", "❯ hi\nWhich file should I edit, A or B?\n ✻ Worked for 3s\n" + footer, Waiting},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, _ := engine.Match("command-code", tc.pane); got != tc.want {
+				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
 // Gemini closes turns without a summary line, so resting status comes from
 // TurnEndedState over the quiet region. The "? for shortcuts" hint and the
 // approval-mode banner sit above the composer; both must count as chrome

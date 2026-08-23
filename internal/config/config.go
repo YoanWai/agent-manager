@@ -39,7 +39,7 @@ type Tool struct {
 	ForkCommand string `toml:"fork_command"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex", "opencode",
-	// "gemini" or "hermes").
+	// "gemini", "hermes" or "command-code").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
@@ -564,5 +564,31 @@ rules = [
   { state = "errored", pattern = "(?ms)^[ \\t]*[^\\n]*rate limit reached[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
   { state = "waiting", pattern = "(?ms)\\?[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
   { state = "working", pattern = "(?ms)^[ \\t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
+]
+
+[tools.command-code]
+command = "cmd"
+# command-code mints its own session id; capture it after launch and resume it
+session_store = "command-code"
+resume_by_id_command = "cmd --session {id}"
+# fallback: resumes the most recent conversation for the directory
+revive_command = "cmd --continue"
+default_status = "idle"
+activity_cutoff = "(?m)^❯"
+turn_end = "^\\s*✻ Worked for [\\dhms. ]+$"
+limit_line = "^\\s*⚠ You have insufficient credits"
+chrome_line = "^\\s*[─]{4,}\\s*$|^# .*$|^[ \\t█]*$|^\\s*\\? for shortcuts.*$"
+rules = [
+  # selection dialogs (trust, tool approval, pickers) number their options
+  # behind the prompt marker
+  { state = "waiting", pattern = "(?m)^\\s*❯ \\d+\\. " },
+  # the dialog footer below the options opens the match scope up so the
+  # numbered rows above the marker stay visible to the rules; the trust
+  # dialog spells it "↑/↓ to navigate" and the approvals "↑/↓ navigate"
+  { state = "waiting", pattern = "↑/↓ (?:to )?navigate" },
+  # the busy footer under a streaming turn; at narrow widths the esc hint
+  # drops and only the tick counter remains
+  { state = "working", pattern = "(?m)^ [·○◇☆✧⌘] \\S+.*(?:esc to interrupt| \\d+)$" },
+  { state = "errored", pattern = "(?im)^\\s*(?:⚠ )?Error:" },
 ]
 `

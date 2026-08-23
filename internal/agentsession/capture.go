@@ -60,7 +60,7 @@ func resolvePath(p string) string {
 
 // Capture returns the conversation id a tool wrote for a session launched
 // in cwd at or after launchedAt. sessionStore selects the on-disk format
-// ("codex", "opencode", "gemini" or "hermes"). claimed holds ids already
+// ("codex", "opencode", "gemini", "hermes" or "command-code"). claimed holds ids already
 // bound to other sessions, so two sessions started in one directory do not
 // capture the same conversation. It returns ok=false when no confident match
 // exists yet; the caller retries on the next poll.
@@ -74,9 +74,77 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 		return captureGemini(geminiRoot(), cwd, launchedAt, claimed)
 	case "hermes":
 		return captureHermes(hermesStateDB(), cwd, launchedAt, claimed)
+	case "command-code":
+		return captureCommandCode(commandCodeRoot(), cwd, launchedAt, claimed)
 	default:
 		return "", false
 	}
+}
+
+func commandCodeRoot() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".commandcode", "projects")
+}
+
+// captureCommandCode finds the conversation Command Code minted for a session
+// launched in cwd. Each transcript's first line is a session record carrying
+// the id and the working directory, so capture walks the per-project folders
+// instead of guessing cmd's project folder naming.
+func captureCommandCode(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
+	if root == "" {
+		return "", false
+	}
+	cutoff := launchedAt.Add(-clockSlack)
+	wantCwd := resolvePath(cwd)
+	var cands []candidate
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasSuffix(name, ".jsonl") || strings.Contains(name, ".checkpoints.") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil || info.ModTime().Before(cutoff) {
+			return nil
+		}
+		id, sessionCwd, ok := commandCodeMeta(path)
+		if !ok || resolvePath(sessionCwd) != wantCwd || claimed[id] {
+			return nil
+		}
+		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
+		return nil
+	})
+	return pickEarliest(cands)
+}
+
+func commandCodeMeta(path string) (id, cwd string, ok bool) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", "", false
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	if !scanner.Scan() {
+		return "", "", false
+	}
+	var line struct {
+		Type string `json:"type"`
+		ID   string `json:"id"`
+		Cwd  string `json:"cwd"`
+	}
+	if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
+		return "", "", false
+	}
+	if line.Type != "session" || !sessionIDPattern.MatchString(line.ID) {
+		return "", "", false
+	}
+	return line.ID, line.Cwd, true
 }
 
 func hermesStateDB() string {

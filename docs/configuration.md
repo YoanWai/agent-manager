@@ -1,6 +1,6 @@
 # Configuration
 
-Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux, with `XDG_CONFIG_HOME` honored when set) and is created on first run with defaults for Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Pi, and Hermes Agent.
+Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux, with `XDG_CONFIG_HOME` honored when set) and is created on first run with defaults for Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Pi, Command Code, and Hermes Agent.
 
 The Pi defaults require Pi 0.76.0 or later because they use `--session-id`.
 
@@ -26,7 +26,7 @@ Rules match top-down against the visible pane text; first match wins, and `defau
 
 **Status detection.** Optional per-tool fields refine it: `activity_cutoff` (regex locating the tool's input box, everything above it is turn content), `turn_end` (a turn-summary line marking the turn as over), `busy_line` (work that outlives its turn, such as background agents and shells), `limit_line` (a usage or rate-limit banner; the session is `errored`), `chrome_line`, `blocked_line`, and `trailing_note`. One field serves the focus view's arrow step (`left` leaving focus at the prompt head): `input_prefix` declares the composer's own row for tools the cutoff cannot serve there: pi composes on a bare blank row between rules, and opencode on a gutter row whose bar its cutoff does not match. `status_source = "claude-hooks"` switches status to Claude Code hook events (see [Status](usage.md#status)). The generated config's `claude` and `opencode` blocks show all of them in use.
 
-**Revive.** `resume_by_id_command` resumes one exact conversation, with `{id}` replaced by the session's captured agent id. That id comes either from launching under an id the manager mints (`session_id_flag`, e.g. `--session-id`) or from reading back an id the tool minted itself (`session_store = "codex" | "opencode" | "gemini" | "hermes"`). `revive_command` is what `v` falls back to when no id is available, e.g. `claude --continue`. Agent Manager shell-quotes `{id}`, as it does for a fork, so write the placeholder bare: `codex resume {id}`.
+**Revive.** `resume_by_id_command` resumes one exact conversation, with `{id}` replaced by the session's captured agent id. That id comes either from launching under an id the manager mints (`session_id_flag`, e.g. `--session-id`) or from reading back an id the tool minted itself (`session_store = "codex" | "opencode" | "gemini" | "hermes" | "command-code"`). `revive_command` is what `v` falls back to when no id is available, e.g. `claude --continue`. Agent Manager shell-quotes `{id}`, as it does for a fork, so write the placeholder bare: `codex resume {id}`.
 
 **Forks.** `fork_command` creates a conversation from an existing session. Agent Manager replaces and shell-quotes these placeholders:
 
