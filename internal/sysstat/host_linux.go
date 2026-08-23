@@ -31,9 +31,11 @@ type HostSample struct {
 	CPUPercent float64
 	NCPU       int
 	MemTotal   uint64
-	MemFree    uint64
-	DiskTotal  uint64
-	DiskFree   uint64
+	// MemAvailable is what Windows calls available: free plus standby.
+	// Task Manager's "in use" is total minus this figure.
+	MemAvailable uint64
+	DiskTotal    uint64
+	DiskFree     uint64
 }
 
 var hostProbed = wsl.Detect
@@ -63,10 +65,16 @@ var hostProbe = func(path string, timeout time.Duration) (string, error) {
 const hostProbeCommand = `[System.Threading.Thread]::CurrentThread.CurrentCulture=[cultureinfo]::InvariantCulture;` +
 	`$cs=Get-CimInstance Win32_ComputerSystem;` +
 	`$os=Get-CimInstance Win32_OperatingSystem;` +
-	`$p=Get-CimInstance Win32_Processor|Measure-Object -Property LoadPercentage -Average;` +
+	`$p=(Get-CimInstance Win32_Processor|Measure-Object -Property LoadPercentage -Average).Average;` +
+	`$c=Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter "Name='_Total'";` +
+	`$m=Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory;` +
 	`$d=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'";` +
-	`"{0} {1} {2} {3} {4} {5}" -f $(if($null -ne $p.Average){$p.Average}else{0}),` +
-	`$cs.NumberOfLogicalProcessors,$cs.TotalPhysicalMemory,($os.FreePhysicalMemory*1KB),$d.Size,$d.FreeSpace`
+	// PercentProcessorTime is the perf-counter figure behind Task Manager's
+	// CPU dial; LoadPercentage is a coarse WMI estimate that lags real load.
+	`"{0} {1} {2} {3} {4} {5}" -f ` +
+	`$(if($null -ne $c){$c.PercentProcessorTime}elseif($null -ne $p){$p}else{0}),` +
+	`$cs.NumberOfLogicalProcessors,$cs.TotalPhysicalMemory,` +
+	`$(if($null -ne $m){$m.AvailableBytes}else{($os.FreePhysicalMemory*1KB)}),$d.Size,$d.FreeSpace`
 
 func parseHostSample(line string) (HostSample, error) {
 	fields := strings.Fields(line)
@@ -85,9 +93,9 @@ func parseHostSample(line string) (HostSample, error) {
 	if err != nil {
 		return HostSample{}, errors.New("bad mem total field")
 	}
-	memFree, err := strconv.ParseUint(fields[3], 10, 64)
+	memAvail, err := strconv.ParseUint(fields[3], 10, 64)
 	if err != nil {
-		return HostSample{}, errors.New("bad mem free field")
+		return HostSample{}, errors.New("bad mem available field")
 	}
 	diskTotal, err := strconv.ParseUint(fields[4], 10, 64)
 	if err != nil {
@@ -97,20 +105,20 @@ func parseHostSample(line string) (HostSample, error) {
 	if err != nil {
 		return HostSample{}, errors.New("bad disk free field")
 	}
-	// A free figure above its total would underflow the used math below.
-	if memFree > memTotal {
-		return HostSample{}, errors.New("mem free exceeds total")
+	// An available figure above its total would underflow the used math below.
+	if memAvail > memTotal {
+		return HostSample{}, errors.New("mem available exceeds total")
 	}
 	if diskFree > diskTotal {
 		return HostSample{}, errors.New("disk free exceeds total")
 	}
 	return HostSample{
-		CPUPercent: cpu,
-		NCPU:       ncpu,
-		MemTotal:   memTotal,
-		MemFree:    memFree,
-		DiskTotal:  diskTotal,
-		DiskFree:   diskFree,
+		CPUPercent:   clampPct(cpu),
+		NCPU:         ncpu,
+		MemTotal:     memTotal,
+		MemAvailable: memAvail,
+		DiskTotal:    diskTotal,
+		DiskFree:     diskFree,
 	}, nil
 }
 
@@ -179,7 +187,7 @@ func overlayHost(snap *Snapshot) {
 	snap.CPUPercent = s.CPUPercent
 	snap.CPUOK = true
 	snap.MemTotal = s.MemTotal
-	snap.MemUsed = s.MemTotal - s.MemFree
+	snap.MemUsed = s.MemTotal - s.MemAvailable
 	snap.MemPercent = usedPercent(snap.MemUsed, s.MemTotal)
 	snap.MemOK = true
 	snap.DiskTotal = s.DiskTotal

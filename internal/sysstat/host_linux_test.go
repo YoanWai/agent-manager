@@ -48,11 +48,19 @@ func TestParseHostSample(t *testing.T) {
 	if s.CPUPercent != 5 || s.NCPU != 12 {
 		t.Fatalf("cpu/ncpu = %v %v", s.CPUPercent, s.NCPU)
 	}
-	if s.MemTotal != 34301874176 || s.MemFree != 17150937088 {
-		t.Fatalf("mem = %v %v", s.MemTotal, s.MemFree)
+	if s.MemTotal != 34301874176 || s.MemAvailable != 17150937088 {
+		t.Fatalf("mem = %v %v", s.MemTotal, s.MemAvailable)
 	}
 	if s.DiskTotal != 500203874304 || s.DiskFree != 250101936128 {
 		t.Fatalf("disk = %v %v", s.DiskTotal, s.DiskFree)
+	}
+
+	s, err = parseHostSample("150 12 300 100 500 100")
+	if err != nil {
+		t.Fatalf("over-100 cpu should clamp, got %v", err)
+	}
+	if s.CPUPercent != 100 {
+		t.Fatalf("cpu clamp: got %v, want 100", s.CPUPercent)
 	}
 
 	for name, line := range map[string]string{
@@ -63,10 +71,10 @@ func TestParseHostSample(t *testing.T) {
 		"zero ncpu":            "5 0 3 4 5 6",
 		"non-numeric ncpu":     "5 x 3 4 5 6",
 		"non-numeric memT":     "5 12 x 4 5 6",
-		"non-numeric memF":     "5 12 3 x 5 6",
+		"non-numeric memA":     "5 12 3 x 5 6",
 		"non-numeric diskT":    "5 12 3 4 x 6",
 		"non-numeric diskF":    "5 12 3 4 5 x",
-		"mem free over total":  "5 12 100 200 500 100",
+		"mem avail over total": "5 12 100 200 500 100",
 		"disk free over total": "5 12 300 100 500 900",
 	} {
 		if _, err := parseHostSample(line); err == nil {
@@ -77,12 +85,12 @@ func TestParseHostSample(t *testing.T) {
 
 func TestOverlayHostFresh(t *testing.T) {
 	seedHost(t, HostSample{
-		CPUPercent: 7,
-		NCPU:       12,
-		MemTotal:   32000,
-		MemFree:    12000,
-		DiskTotal:  500000,
-		DiskFree:   100000,
+		CPUPercent:   7,
+		NCPU:         12,
+		MemTotal:     32000,
+		MemAvailable: 12000,
+		DiskTotal:    500000,
+		DiskFree:     100000,
 	}, 0)
 
 	var snap Snapshot
@@ -105,7 +113,7 @@ func TestOverlayHostFresh(t *testing.T) {
 }
 
 func TestOverlayHostStaleFallsBackToGuest(t *testing.T) {
-	seedHost(t, HostSample{CPUPercent: 99, NCPU: 12, MemTotal: 32000, MemFree: 0, DiskTotal: 500000, DiskFree: 0}, 31*time.Second)
+	seedHost(t, HostSample{CPUPercent: 99, NCPU: 12, MemTotal: 32000, MemAvailable: 0, DiskTotal: 500000, DiskFree: 0}, 31*time.Second)
 
 	var snap Snapshot
 	snap.CPUPercent, snap.CPUOK = 11, true
@@ -126,7 +134,7 @@ func TestHostAccessors(t *testing.T) {
 		t.Fatal("empty cache should report not-ok")
 	}
 
-	seedHost(t, HostSample{CPUPercent: 1, NCPU: 12, MemTotal: 32000, MemFree: 100}, 0)
+	seedHost(t, HostSample{CPUPercent: 1, NCPU: 12, MemTotal: 32000, MemAvailable: 100}, 0)
 	total, ok := hostMemTotal()
 	if !ok || total != 32000 {
 		t.Fatalf("hostMemTotal = %v %v", total, ok)
@@ -188,8 +196,8 @@ func TestEnsureHostSamplerGating(t *testing.T) {
 func TestStoreHostReplacesPreviousSample(t *testing.T) {
 	resetHostState(t)
 
-	storeHost(HostSample{CPUPercent: 1, NCPU: 4, MemTotal: 8, MemFree: 4})
-	storeHost(HostSample{CPUPercent: 2, NCPU: 8, MemTotal: 32, MemFree: 16})
+	storeHost(HostSample{CPUPercent: 1, NCPU: 4, MemTotal: 8, MemAvailable: 4})
+	storeHost(HostSample{CPUPercent: 2, NCPU: 8, MemTotal: 32, MemAvailable: 16})
 
 	hostState.mu.Lock()
 	defer hostState.mu.Unlock()
