@@ -596,3 +596,20 @@ func TestArchivedRowReadsDead(t *testing.T) {
 		t.Fatalf("archived row still claims its frozen state:\n%s", line)
 	}
 }
+
+// Full screen focus drops the footer padding the other transients keep:
+// the pane is pinned on the way in anyway, so the freed rows join the
+// body instead of holding blank space under the legend.
+func TestFullFocusFooterIsOneRow(t *testing.T) {
+	m := shotModel()
+	m.fullLayout = true
+	m.mode = modeFocus
+	if got := lipgloss.Height(m.viewFooter()); got != 1 {
+		t.Fatalf("full focus footer = %d rows, want 1", got)
+	}
+	m.fullLayout = false
+	listed := lipgloss.Height(m.listFooter())
+	if got := lipgloss.Height(m.viewFooter()); got != listed {
+		t.Fatalf("split focus footer = %d rows, want the padded %d", got, listed)
+	}
+}

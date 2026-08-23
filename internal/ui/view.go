@@ -520,6 +520,14 @@ func (m *Model) viewFooter() string {
 		if m.pane.mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}
+		// Full screen focus drops the padding the other transients keep:
+		// opening a session there pins its pane to the whole body anyway,
+		// so the two extra rows ride the same resize instead of forcing
+		// one, and the pane gets them. The split keeps the padded height,
+		// where a moving box would resize every pane just for the legend.
+		if m.fullFocus() {
+			return legendBar([]legendSection{{title: "Focused", pairs: pairs}}, m.width)
+		}
 		return m.transientFooter(legendSection{title: "Focused", pairs: pairs})
 	}
 	return m.listFooter()
