@@ -76,6 +76,8 @@ func Sample(diskPath string) Snapshot {
 	sampleDisk(&snap, diskPath)
 	sampleNet(&snap)
 	sampleTemps(&snap)
+	startHostSampler()
+	overlayHost(&snap)
 
 	return snap
 }
@@ -279,6 +281,9 @@ func isDieSensor(key string) bool {
 // LogicalCPUs is the number of logical processors used as the denominator
 // when converting process-style pcpu into a share of the machine.
 func LogicalCPUs() int {
+	if n, ok := hostNCPU(); ok {
+		return n
+	}
 	if n, err := cpu.Counts(true); err == nil && n > 0 {
 		return n
 	}
@@ -290,6 +295,9 @@ func LogicalCPUs() int {
 
 // MemTotalBytes is installed RAM, used as the denominator for agent RAM %.
 func MemTotalBytes() (uint64, bool) {
+	if t, ok := hostMemTotal(); ok {
+		return t, true
+	}
 	vm, err := mem.VirtualMemory()
 	if err != nil || vm.Total == 0 {
 		return 0, false
