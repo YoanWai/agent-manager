@@ -188,8 +188,8 @@ func TestRowHeightsFollowDensity(t *testing.T) {
 	if prompt := ansi.Strip(lines[1]); !strings.Contains(prompt, "❯ add a token bucket limiter") {
 		t.Fatalf("line 2 should carry the last prompt behind ❯:\n%s", prompt)
 	}
-	if reply := ansi.Strip(lines[2]); !strings.Contains(reply, "⏺ Running tests") {
-		t.Fatalf("line 3 should carry the reply behind ⏺:\n%s", reply)
+	if reply := ansi.Strip(lines[2]); !strings.Contains(reply, "↳ Running tests") {
+		t.Fatalf("line 3 should carry the reply behind ↳:\n%s", reply)
 	}
 
 	// The same rhythm holds in the split layout.
@@ -234,7 +234,7 @@ func TestRowQuotesEveryStateAndDashesWhenSilent(t *testing.T) {
 	m.comfortableRows = true
 	m.paneLines = map[string]string{"notes": "All quiet, nothing queued."}
 	lines := splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
-	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "⏺ All quiet, nothing queued." {
+	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "↳ All quiet, nothing queued." {
 		t.Fatalf("idle reply line = %q, want the last message", reply)
 	}
 	m.paneLines = nil
@@ -558,12 +558,28 @@ func TestCompactCellIsStatePicked(t *testing.T) {
 	}
 
 	line = ansi.Strip(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
-	if !strings.Contains(line, "⏺ All quiet, nothing queued.") {
+	if !strings.Contains(line, "↳ All quiet, nothing queued.") {
 		t.Fatalf("promptless idle row should fall back to the reply:\n%s", line)
 	}
 
 	line = ansi.Strip(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()))
-	if !strings.Contains(line, "⏺ Allow edits to router.go?") {
+	if !strings.Contains(line, "↳ Allow edits to router.go?") {
 		t.Fatalf("waiting compact row should quote its question:\n%s", line)
+	}
+}
+
+// A status frozen before the archive (an older build's "working") must
+// not read as alive from inside the archive.
+func TestArchivedRowReadsDead(t *testing.T) {
+	m := shotModel()
+	m.fullLayout = true
+	row := m.rows[4]
+	row.sess.Archived = true
+	line := ansi.Strip(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	if !strings.Contains(line, statusLabel(status.Dead)) {
+		t.Fatalf("archived row should read dead:\n%s", line)
+	}
+	if strings.Contains(line, statusLabel(status.Working)) {
+		t.Fatalf("archived row still claims its frozen state:\n%s", line)
 	}
 }

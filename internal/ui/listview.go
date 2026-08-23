@@ -675,6 +675,12 @@ func promptPreview(prompt string) string {
 
 func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
 	sess := entry.sess
+	// An archived session's pane was killed on its way in; a status frozen
+	// by an older build (a "working" from before the kill recorded dead)
+	// must not read as alive from inside the archive.
+	if sess.Archived {
+		sess.Status = status.Dead
+	}
 	dot := m.sessionGlyph(sess)
 	nameStyle := valueStyle
 	if selected {
@@ -808,11 +814,12 @@ func typedPrompt(text string) string {
 	return text
 }
 
-// replyCell quotes the start of the agent's last message behind a ⏺ in
-// the state's color, with the text washed in the same hue so states read
-// apart at a glance; waiting keeps full strength because it needs the
-// user. A working session with nothing quotable yet animates a loader,
-// and a silent one holds the cell with a dim dash.
+// replyCell quotes the start of the agent's last message behind a static
+// ↳, with the text washed in the state's hue so states read apart at a
+// glance — the name's own dot already says the state, so the glyph does
+// not repeat it; waiting keeps full strength because it needs the user.
+// A working session with nothing quotable yet animates a loader, and a
+// silent one holds the cell with a dim dash.
 func (m *Model) replyCell(sess store.Session, quiet lipgloss.Style, room int) string {
 	line := m.paneLines[sess.ID]
 	if sess.Status == status.Working && line == "" {
@@ -823,7 +830,7 @@ func (m *Model) replyCell(sess store.Session, quiet lipgloss.Style, room int) st
 		return quiet.Render("-")
 	}
 	line = ansi.Truncate(line, max(room-2, 1), "…")
-	return rowGlyphStyle(string(statusColor(sess.Status))).Render("⏺ ") + rowReplyStyle(sess.Status).Render(line)
+	return subtleStyle.Render("↳ ") + rowReplyStyle(sess.Status).Render(line)
 }
 
 // metaIndent lines a second row line up under the name on the first, past
