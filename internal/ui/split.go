@@ -130,10 +130,10 @@ func (m *Model) nudgeSplit(delta int) {
 // the full-width header band and the rule that closes it. Shared by View
 // and bodyYRange so hit-testing cannot drift from paint.
 func (m *Model) listChromeRows() int {
-	// A session open full screen names itself on a line of its own between
-	// the band and the rule that caps its pane.
+	// A session open full screen names itself on a line of its own, held
+	// off the band above it and the pane below it by a rule each.
 	if m.fullFocus() {
-		return m.headerRows() + 2
+		return m.headerRows() + 3
 	}
 	return m.headerRows() + 1
 }

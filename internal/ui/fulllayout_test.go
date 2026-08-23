@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -722,11 +723,18 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 	// the pane.
 	rows := splitLines(ansi.Strip(m.View()))
 	head := m.headerRows()
-	if got := rows[head]; !strings.Contains(got, "add-rate-limiting") {
-		t.Fatalf("row %d should carry the facts, got:\n%s", head, got)
+	isRule := func(row string) bool {
+		trimmed := strings.TrimSpace(row)
+		return trimmed != "" && strings.Trim(trimmed, "\u2500") == ""
 	}
-	if got := strings.TrimSpace(rows[head+1]); got == "" || strings.Trim(got, "─") != "" {
-		t.Fatalf("row %d should be the rule under the facts, got:\n%s", head+1, got)
+	if got := rows[head]; !isRule(got) {
+		t.Fatalf("row %d should be the rule under the band, got:\n%s", head, got)
+	}
+	if got := rows[head+1]; !strings.Contains(got, "add-rate-limiting") {
+		t.Fatalf("row %d should carry the facts, got:\n%s", head+1, got)
+	}
+	if got := rows[head+2]; !isRule(got) {
+		t.Fatalf("row %d should be the rule under the facts, got:\n%s", head+2, got)
 	}
 
 	// Too narrow for both sides, the name survives and the readings go.
@@ -742,5 +750,28 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 	// pane already says which session this is.
 	if split := ansi.Strip(focusTopRule(m.width)); !strings.Contains(split, "ctrl+q back") {
 		t.Fatalf("split focus rule lost its keys:\n%s", split)
+	}
+}
+
+func TestFocusFactsWriteHomeAsTilde(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("no home directory to shorten")
+	}
+	m := shotModel()
+	m.fullLayout = true
+	m.mode = modeFocus
+	m.rows[m.cursor].sess.Cwd = filepath.Join(home, "dev", "api")
+	for i := range m.sessions {
+		if m.sessions[i].ID == m.rows[m.cursor].sess.ID {
+			m.sessions[i].Cwd = m.rows[m.cursor].sess.Cwd
+		}
+	}
+	facts := ansi.Strip(m.focusFactsLine(200))
+	if !strings.Contains(facts, "~/dev/api") {
+		t.Fatalf("a path under home should read from ~:\n%s", facts)
+	}
+	if strings.Contains(facts, home) {
+		t.Fatalf("the home prefix should not survive:\n%s", facts)
 	}
 }

@@ -145,6 +145,7 @@ func (m *Model) viewFullFocusFrame() string {
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
+	frame = append(frame, paint(hrule(m.width), m.width, backdropHex()))
 	frame = append(frame, paint(m.focusFactsLine(m.width), m.width, backdropHex()))
 	frame = append(frame, paint(m.focusEdge(m.width), m.width, backdropHex()))
 	m.previewBodyOffset = 0
@@ -1026,7 +1027,7 @@ func (m *Model) focusFactsLine(width int) string {
 	// The facts give way one at a time as the terminal narrows, the least
 	// telling first, so a tight line still carries what it has room for
 	// rather than dropping the lot.
-	facts := []focusFact{{text: valueStyle.Render(truncateTail(sess.Cwd, focusFactsDirCap)), spare: 3}}
+	facts := []focusFact{{text: valueStyle.Render(truncateTail(shortHome(sess.Cwd), focusFactsDirCap)), spare: 3}}
 	if sess.WorktreeBranch != "" {
 		facts = append(facts, focusFact{text: subtleStyle.Render("⑂ ") + valueStyle.Render(sess.WorktreeBranch), spare: 2})
 	}
