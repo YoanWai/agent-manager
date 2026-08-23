@@ -708,9 +708,9 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 // tighter and the row shows an ellipsis where a task should be.
 const rowPromptFloor = 8
 
-// compactRow is the one-line session entry: the last reply rides between
-// the name and the meta, the way Claude's agent view tells a fleet apart
-// at a glance.
+// compactRow is the one-line session entry: the state picks the value
+// riding between the name and the meta, the way Claude's agent view
+// tells a fleet apart at a glance.
 func (m *Model) compactRow(sess store.Session, head, meta string, selected bool, width int, bg string) string {
 	quiet := subtleStyle
 	if selected {
@@ -718,10 +718,30 @@ func (m *Model) compactRow(sess store.Session, head, meta string, selected bool,
 	}
 	const gap = 2
 	room := width - railGutter - ansi.StringWidth(head) - ansi.StringWidth(meta) - 2*gap
-	if room >= rowPromptFloor && (m.paneLines[sess.ID] != "" || sess.Status == status.Working) {
-		head += strings.Repeat(" ", gap) + m.replyCell(sess, quiet, room)
+	if room >= rowPromptFloor {
+		if cell := m.compactCell(sess, quiet, room); cell != "" {
+			head += strings.Repeat(" ", gap) + cell
+		}
 	}
 	return paint(rowColumns(head, meta, width-railGutter), width, bg)
+}
+
+// compactCell is what the one-line row quotes: a waiting session its
+// question, a working one its progress, a finished one its result — the
+// agent's last message covers all three — while an idle session, whose
+// last exchange is over, names the task it was given. A session with
+// neither says nothing rather than holding a dash mid-row.
+func (m *Model) compactCell(sess store.Session, quiet lipgloss.Style, room int) string {
+	if sess.Status == status.Idle {
+		if prompt := oneLine(m.rowPrompt(sess)); prompt != "" {
+			return rowGlyphStyle(current.Accent).Render("❯ ") +
+				rowPromptStyle().Render(ansi.Truncate(prompt, max(room-2, 1), "…"))
+		}
+	}
+	if m.paneLines[sess.ID] == "" && sess.Status != status.Working {
+		return ""
+	}
+	return m.replyCell(sess, quiet, room)
 }
 
 // tripleRow is the comfortable session entry: the name and meta alone on

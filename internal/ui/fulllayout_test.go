@@ -536,3 +536,34 @@ func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
 		t.Fatalf("split re-pin sized session to %dx%d, want %dx%d with the height kept", w, h, splitW, fullH)
 	}
 }
+
+// The compact cell is state-picked: an idle session names its task, a
+// waiting one quotes its question, and an idle session that was never
+// given a task falls back to the agent's last words.
+func TestCompactCellIsStatePicked(t *testing.T) {
+	m := shotModel()
+	m.fullLayout = true
+	m.paneLines = map[string]string{
+		"notes":         "All quiet, nothing queued.",
+		"db-migrations": "Allow edits to router.go?",
+	}
+	idle := m.rows[1]
+	idle.sess.LastPrompt = "verify the staging deploy is healthy"
+	line := ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()))
+	if !strings.Contains(line, "❯ verify the staging deploy is healthy") {
+		t.Fatalf("idle compact row should name its task:\n%s", line)
+	}
+	if strings.Contains(line, "All quiet") {
+		t.Fatalf("idle compact row should not quote the reply beside the task:\n%s", line)
+	}
+
+	line = ansi.Strip(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
+	if !strings.Contains(line, "⏺ All quiet, nothing queued.") {
+		t.Fatalf("promptless idle row should fall back to the reply:\n%s", line)
+	}
+
+	line = ansi.Strip(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()))
+	if !strings.Contains(line, "⏺ Allow edits to router.go?") {
+		t.Fatalf("waiting compact row should quote its question:\n%s", line)
+	}
+}
