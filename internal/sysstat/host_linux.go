@@ -18,13 +18,15 @@ import (
 // On WSL2 /proc describes the guest VM (half the Windows RAM by default,
 // fewer cores, a virtual disk), while the Computer block is labeled as the
 // machine. These probes read the real figures through PowerShell interop;
-// each call costs about a second, so a background loop samples slowly and
-// Sample() overlays the freshest reading onto the guest numbers.
+// each call spawns a Windows process and costs about a second, so a
+// background loop samples slowly and Sample() overlays the freshest
+// reading onto the guest numbers.
 
 const (
-	probeTimeout    = 15 * time.Second
-	hostInterval    = 10 * time.Second
-	hostFreshWindow = 30 * time.Second
+	probeTimeout = 15 * time.Second
+	hostInterval = 30 * time.Second
+	// Two missed probes still show host figures; past that, guest ones.
+	hostFreshWindow = 3 * hostInterval
 )
 
 type HostSample struct {
@@ -64,17 +66,13 @@ var hostProbe = func(path string, timeout time.Duration) (string, error) {
 
 const hostProbeCommand = `[System.Threading.Thread]::CurrentThread.CurrentCulture=[cultureinfo]::InvariantCulture;` +
 	`$cs=Get-CimInstance Win32_ComputerSystem;` +
-	`$os=Get-CimInstance Win32_OperatingSystem;` +
-	`$p=(Get-CimInstance Win32_Processor|Measure-Object -Property LoadPercentage -Average).Average;` +
-	`$c=Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter "Name='_Total'";` +
+	`$u=Get-CimInstance Win32_PerfFormattedData_Counters_ProcessorInformation -Filter "Name='_Total'";` +
+	// Task Manager reads % Processor Utility; % Processor Time is the older busy-time counter, kept as a stand-in.
+	`$cpu=if($null -ne $u){$u.PercentProcessorUtility}else{(Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter "Name='_Total'").PercentProcessorTime};` +
 	`$m=Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory;` +
-	`$d=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'";` +
-	// PercentProcessorTime is the perf-counter figure behind Task Manager's
-	// CPU dial; LoadPercentage is a coarse WMI estimate that lags real load.
-	`"{0} {1} {2} {3} {4} {5}" -f ` +
-	`$(if($null -ne $c){$c.PercentProcessorTime}elseif($null -ne $p){$p}else{0}),` +
-	`$cs.NumberOfLogicalProcessors,$cs.TotalPhysicalMemory,` +
-	`$(if($null -ne $m){$m.AvailableBytes}else{($os.FreePhysicalMemory*1KB)}),$d.Size,$d.FreeSpace`
+	`$d=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$env:SystemDrive'";` +
+	`"{0} {1} {2} {3} {4} {5}" -f $cpu,$cs.NumberOfLogicalProcessors,$cs.TotalPhysicalMemory,` +
+	`$m.AvailableBytes,$d.Size,$d.FreeSpace`
 
 func parseHostSample(line string) (HostSample, error) {
 	fields := strings.Fields(line)
@@ -153,29 +151,31 @@ func startHostSampler() {
 		if !hostProbed() {
 			return
 		}
-		path, ok := hostLookupPowerShell()
-		if !ok {
-			return
-		}
-		go runHostSampler(path, hostProbe)
+		go runHostSampler(hostProbe)
 	})
 }
 
-func runHostSampler(path string, probe func(string, time.Duration) (string, error)) {
-	tick := func() {
-		out, err := probe(path, probeTimeout)
-		if err != nil {
-			return
-		}
-		if s, err := parseHostSample(out); err == nil {
-			storeHost(s)
-		}
-	}
-	tick()
+func runHostSampler(probe func(string, time.Duration) (string, error)) {
+	sampleHostOnce(probe)
 	ticker := time.NewTicker(hostInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		tick()
+		sampleHostOnce(probe)
+	}
+}
+
+// PowerShell is resolved every pass, so interop that appears later still counts.
+func sampleHostOnce(probe func(string, time.Duration) (string, error)) {
+	path, ok := hostLookupPowerShell()
+	if !ok {
+		return
+	}
+	out, err := probe(path, probeTimeout)
+	if err != nil {
+		return
+	}
+	if s, err := parseHostSample(out); err == nil {
+		storeHost(s)
 	}
 }
 
@@ -193,7 +193,7 @@ func overlayHost(snap *Snapshot) {
 	snap.DiskTotal = s.DiskTotal
 	snap.DiskUsed = s.DiskTotal - s.DiskFree
 	snap.DiskFree = s.DiskFree
-	snap.DiskPercent = usedPercent(snap.DiskUsed, snap.DiskUsed+snap.DiskFree)
+	snap.DiskPercent = usedPercent(snap.DiskUsed, s.DiskTotal)
 	snap.DiskOK = true
 }
 

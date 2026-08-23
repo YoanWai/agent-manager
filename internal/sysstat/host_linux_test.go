@@ -113,7 +113,7 @@ func TestOverlayHostFresh(t *testing.T) {
 }
 
 func TestOverlayHostStaleFallsBackToGuest(t *testing.T) {
-	seedHost(t, HostSample{CPUPercent: 99, NCPU: 12, MemTotal: 32000, MemAvailable: 0, DiskTotal: 500000, DiskFree: 0}, 31*time.Second)
+	seedHost(t, HostSample{CPUPercent: 99, NCPU: 12, MemTotal: 32000, MemAvailable: 0, DiskTotal: 500000, DiskFree: 0}, hostFreshWindow+time.Second)
 
 	var snap Snapshot
 	snap.CPUPercent, snap.CPUOK = 11, true
@@ -145,15 +145,20 @@ func TestHostAccessors(t *testing.T) {
 	}
 }
 
-func TestEnsureHostSamplerGating(t *testing.T) {
+func TestStartHostSamplerGating(t *testing.T) {
 	origProbed, origLookup, origProbe := hostProbed, hostLookupPowerShell, hostProbe
 	defer func() { hostProbed, hostLookupPowerShell, hostProbe = origProbed, origLookup, origProbe }()
 
-	probeCalled := make(chan string, 4)
+	probeCalled := make(chan string, 1)
 	hostProbe = func(path string, timeout time.Duration) (string, error) {
-		probeCalled <- path
+		// The sampler goroutine outlives the test, so a blocking send would wedge it.
+		select {
+		case probeCalled <- path:
+		default:
+		}
 		return "", errors.New("unused")
 	}
+	hostLookupPowerShell = func() (string, bool) { return "/fake/powershell.exe", true }
 
 	t.Run("no wsl means no probe", func(t *testing.T) {
 		resetHostState(t)
@@ -166,21 +171,9 @@ func TestEnsureHostSamplerGating(t *testing.T) {
 		}
 	})
 
-	t.Run("no powershell means no probe", func(t *testing.T) {
+	t.Run("wsl probes immediately", func(t *testing.T) {
 		resetHostState(t)
 		hostProbed = func() bool { return true }
-		hostLookupPowerShell = func() (string, bool) { return "", false }
-		startHostSampler()
-		select {
-		case p := <-probeCalled:
-			t.Fatalf("probed without powershell via %q", p)
-		case <-time.After(150 * time.Millisecond):
-		}
-	})
-
-	t.Run("found powershell probes immediately", func(t *testing.T) {
-		resetHostState(t)
-		hostLookupPowerShell = func() (string, bool) { return "/fake/powershell.exe", true }
 		startHostSampler()
 		select {
 		case p := <-probeCalled:
@@ -191,6 +184,33 @@ func TestEnsureHostSamplerGating(t *testing.T) {
 			t.Fatal("probe never ran")
 		}
 	})
+}
+
+func TestSampleHostOnceRetriesAfterMissingPowerShell(t *testing.T) {
+	origLookup, origProbe := hostLookupPowerShell, hostProbe
+	defer func() { hostLookupPowerShell, hostProbe = origLookup, origProbe }()
+	resetHostState(t)
+
+	probes := 0
+	hostProbe = func(string, time.Duration) (string, error) {
+		probes++
+		return "5 12 32000 12000 500000 100000", nil
+	}
+
+	hostLookupPowerShell = func() (string, bool) { return "", false }
+	sampleHostOnce(hostProbe)
+	if probes != 0 {
+		t.Fatalf("probed without powershell %d times", probes)
+	}
+
+	hostLookupPowerShell = func() (string, bool) { return "/fake/powershell.exe", true }
+	sampleHostOnce(hostProbe)
+	if probes != 1 {
+		t.Fatalf("probes once powershell appeared = %d, want 1", probes)
+	}
+	if _, ok := freshHostSample(); !ok {
+		t.Fatal("a successful probe should land in the cache")
+	}
 }
 
 func TestStoreHostReplacesPreviousSample(t *testing.T) {
