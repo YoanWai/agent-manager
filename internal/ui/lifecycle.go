@@ -780,7 +780,6 @@ func (m *Model) markArchivedLocally(sessions []store.Session, groupPath string) 
 	}
 }
 
-// subgroupPaths lists the stored groups nested under a path.
 func (m *Model) subgroupPaths(path string) []string {
 	var out []string
 	prefix := path + "/"
@@ -902,8 +901,6 @@ func followConfirmLabel(verb, name string, extra int, one, many string) string {
 	return fmt.Sprintf("%s %s and %d %s? %s", verb, name, extra, unit, many)
 }
 
-// groupPath is the subtree path a confirmed archive or delete targets,
-// empty when the confirmation names sessions rather than a group.
 func groupPath(confirm confirmTarget) string {
 	if confirm.isGroup {
 		return confirm.path
