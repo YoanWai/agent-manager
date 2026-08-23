@@ -180,6 +180,27 @@ func TestCodexSentNumberedMessageDoesNotLookLikeDialog(t *testing.T) {
 	}
 }
 
+// 2026-08-23 real capture: claude's question dialog draws its selected
+// option on the composer's own row, so the option sits at the cutoff and
+// only the footer under it separates a dialog from a numbered draft.
+func TestClaudeQuestionDialogWaits(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "✻ Churned for 38s\n\n" +
+		"❯ use the AskUserQuestion tool to ask me tabs vs spaces\n\n" +
+		"⏺ Tabs or spaces for indentation?\n" +
+		"────\n ☐ Indent\n\nTabs or spaces for indentation?\n\n" +
+		"❯ 1. Spaces\n     Fixed-width indent. Renders identical everywhere.\n" +
+		"  2. Tabs\n     One tab per level.\n  3. Type something.\n" +
+		"────\n  4. Chat about this\n\n" +
+		"Enter to select · ↑/↓ to navigate · Esc to cancel\n"
+	if got, matched := engine.Match("claude", pane); got != Waiting || !matched {
+		t.Fatalf("Match() = (%q, %t) want (%q, true)", got, matched, Waiting)
+	}
+	if hold := engine.TypingHold("claude", pane); hold != Waiting {
+		t.Fatalf("TypingHold() = %q want %q", hold, Waiting)
+	}
+}
+
 // Fixtures below are captured from real claude/opencode panes (2026-07-16).
 func defaultEngine(t *testing.T) *Engine {
 	t.Helper()

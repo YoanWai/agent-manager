@@ -40,6 +40,7 @@ type toolRules struct {
 	trailingNote   *regexp.Regexp
 	busyLine       *regexp.Regexp
 	limitLine      *regexp.Regexp
+	dialogFooter   *regexp.Regexp
 	rules          []rule
 }
 
@@ -71,6 +72,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.TrailingNote, &tr.trailingNote},
 			{tool.BusyLine, &tr.busyLine},
 			{tool.LimitLine, &tr.limitLine},
+			{tool.DialogFooter, &tr.dialogFooter},
 		}
 		for _, opt := range optional {
 			if opt.pattern == "" {
@@ -248,8 +250,9 @@ func (tr toolRules) matchScope(pane string) string {
 	// Some selection dialogs reuse the prompt marker as their first option.
 	// Keep treating ordinary typed input as outside the match scope, but include
 	// the full pane when a separate waiting signal appears below that marker.
-	// Codex overlays render such a footer; the selected option line alone is
-	// indistinguishable from a numbered draft and must not expand the scope.
+	// Codex overlays render such a footer, and claude's question dialog names
+	// it in dialog_footer; the selected option line alone is indistinguishable
+	// from a numbered draft and must not expand the scope.
 	if hasWaitingFooter {
 		return pane
 	}
@@ -293,6 +296,9 @@ func (tr toolRules) hasWaitingFooter(cutoffTail string) bool {
 		return false
 	}
 	footer := cutoffTail[lineEnd+1:]
+	if tr.dialogFooter != nil && tr.dialogFooter.MatchString(footer) {
+		return true
+	}
 	for _, r := range tr.rules {
 		if r.state == Waiting && r.re.MatchString(footer) {
 			return true
