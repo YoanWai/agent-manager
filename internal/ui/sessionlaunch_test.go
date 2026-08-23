@@ -199,10 +199,12 @@ func TestAStalePollCannotRestoreADeletedGroupHeader(t *testing.T) {
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 
 	stale := refreshMsg{
-		sessions:   []store.Session{sess},
-		listedAt:   listedAt,
-		groups:     []string{"zone"},
-		groupPaths: map[string]string{"zone": dir},
+		sessions:       []store.Session{sess},
+		listedAt:       listedAt,
+		groups:         []string{"zone"},
+		groupPaths:     map[string]string{"zone": dir},
+		groupWorktrees: map[string]string{"zone": dir},
+		archivedGroups: map[string]bool{"zone": true},
 	}
 	updated, _ := m.Update(stale)
 	*m = *updated.(*Model)
@@ -216,6 +218,14 @@ func TestAStalePollCannotRestoreADeletedGroupHeader(t *testing.T) {
 		if g == "zone" {
 			t.Fatal("a stale poll restored the deleted group path")
 		}
+	}
+	for _, meta := range []map[string]string{m.groupPaths, m.groupWorktrees} {
+		if _, ok := meta["zone"]; ok {
+			t.Fatal("a stale poll restored deleted group metadata")
+		}
+	}
+	if _, ok := m.archivedGroups["zone"]; ok {
+		t.Fatal("a stale poll restored the deleted group's archive flag")
 	}
 }
 
