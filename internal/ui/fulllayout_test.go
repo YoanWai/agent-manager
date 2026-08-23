@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	tea "github.com/charmbracelet/bubbletea"
@@ -611,5 +612,45 @@ func TestFullFocusFooterIsOneRow(t *testing.T) {
 	listed := lipgloss.Height(m.listFooter())
 	if got := lipgloss.Height(m.viewFooter()); got != listed {
 		t.Fatalf("split focus footer = %d rows, want the padded %d", got, listed)
+	}
+}
+
+func TestShellRowSkipsThePromptLine(t *testing.T) {
+	m := shotModel()
+	m.cfg = config.Config{Tools: map[string]config.Tool{"terminal": {Shell: true}, "claude": {}}}
+	m.comfortableRows = true
+	shell := m.rows[4]
+	shell.sess.Tool = "terminal"
+	shell.sess.Status = status.Idle
+	shell.sess.LastPrompt = "this never rode a shell row"
+	m.paneLines = map[string]string{shell.sess.ID: "~/dev/api $ go test ./..."}
+
+	if got := m.entryHeight(shell); got != 2 {
+		t.Fatalf("comfortable shell entry height = %d, want 2", got)
+	}
+	lines := splitLines(m.renderTreeRow(shell, false, m.width-1, 4, panelHex()))
+	if len(lines) != 2 {
+		t.Fatalf("comfortable shell row painted %d lines, want 2:\n%s", len(lines), strings.Join(lines, "\n"))
+	}
+	if reply := ansi.Strip(lines[1]); !strings.Contains(reply, "↳ ~/dev/api $ go test") {
+		t.Fatalf("line 2 should carry the shell's own last line behind ↳:\n%s", reply)
+	}
+	if body := ansi.Strip(strings.Join(lines, "\n")); strings.Contains(body, "this never rode a shell row") {
+		t.Fatalf("a shell row has no prompt line to paint:\n%s", body)
+	}
+
+	// An agent beside it keeps all three.
+	agent := m.rows[4]
+	if got := m.entryHeight(agent); got != 3 {
+		t.Fatalf("comfortable agent entry height = %d, want 3", got)
+	}
+	if got := len(splitLines(m.renderTreeRow(agent, false, m.width-1, 4, panelHex()))); got != 3 {
+		t.Fatalf("comfortable agent row painted %d lines, want 3", got)
+	}
+
+	// Compact keeps every session on one row, shell included.
+	m.comfortableRows = false
+	if got := m.entryHeight(shell); got != 1 {
+		t.Fatalf("compact shell entry height = %d, want 1", got)
 	}
 }

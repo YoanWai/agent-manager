@@ -426,13 +426,17 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 
 // entryHeight is how many lines an entry paints, in either layout: a
 // compact session is one row wearing the reply inline, a comfortable one
-// is three — name, the last prompt, the last reply — and a group is
-// always one, having neither line to carry.
+// is three, name, the last prompt, the last reply, and a group is always
+// one, having neither line to carry. A shell drops to two: nobody is
+// prompting it, so the prompt line would only ever hold a dash.
 func (m *Model) entryHeight(entry treeRow) int {
 	if entry.isGroup {
 		return 1
 	}
 	if m.comfortableRows {
+		if m.isShell(entry.sess.Tool) {
+			return 2
+		}
 		return 3
 	}
 	return 1
@@ -604,7 +608,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 	if m.renamingRow(entry) {
 		line := pad + guides + m.renameRowInput(entry, width-railGutter-ansi.StringWidth(guides))
 		row := paint(line, width, selectedHex())
-		if m.entryHeight(entry) == 2 {
+		for held := m.entryHeight(entry); held > 1; held-- {
 			row += "\n" + paint(pad+trail, width, selectedHex())
 		}
 		return row
@@ -731,7 +735,7 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 		metaStyle.Render(" · "+sess.Tool+" · "+relSince(lastActivity(sess)))
 
 	if m.comfortableRows {
-		return m.tripleRow(sess, head, meta, metaIndent(pad, trail), selected, width, bg)
+		return m.tallRow(sess, head, meta, metaIndent(pad, trail), selected, width, bg)
 	}
 	return m.compactRow(sess, head, meta, selected, width, bg)
 }
@@ -774,22 +778,28 @@ func (m *Model) compactCell(sess store.Session, quiet lipgloss.Style, room int) 
 	return ""
 }
 
-// tripleRow is the comfortable session entry: the name and meta alone on
-// top, your last prompt under it, the agent's last reply under that.
-func (m *Model) tripleRow(sess store.Session, head, meta, indent string, selected bool, width int, bg string) string {
+// tallRow is the comfortable session entry: the name and meta alone on
+// top, your last prompt under it, the agent's last reply under that. A
+// shell keeps the name and its last output and skips the prompt line in
+// between, having no one on the other side of it to quote.
+func (m *Model) tallRow(sess store.Session, head, meta, indent string, selected bool, width int, bg string) string {
 	quiet := subtleStyle
 	if selected {
 		quiet = mutedStyle
 	}
 	top := rowColumns(head, meta, width-railGutter)
 	room := width - railGutter - ansi.StringWidth(indent) - 2
-	promptLine := indent + quiet.Render("-")
-	if prompt := oneLine(m.rowPrompt(sess)); prompt != "" && room >= rowPromptFloor {
-		promptLine = indent + rowGlyphStyle(current.Accent).Render("❯ ") +
-			rowPromptStyle().Render(ansi.Truncate(prompt, room, "…"))
+	lines := []string{paint(top, width, bg)}
+	if !m.isShell(sess.Tool) {
+		promptLine := indent + quiet.Render("-")
+		if prompt := oneLine(m.rowPrompt(sess)); prompt != "" && room >= rowPromptFloor {
+			promptLine = indent + rowGlyphStyle(current.Accent).Render("❯ ") +
+				rowPromptStyle().Render(ansi.Truncate(prompt, room, "…"))
+		}
+		lines = append(lines, paint(promptLine, width, bg))
 	}
-	replyLine := indent + m.replyCell(sess, quiet, room+2)
-	return paint(top, width, bg) + "\n" + paint(promptLine, width, bg) + "\n" + paint(replyLine, width, bg)
+	lines = append(lines, paint(indent+m.replyCell(sess, quiet, room+2), width, bg))
+	return strings.Join(lines, "\n")
 }
 
 func rowGlyphStyle(hex string) lipgloss.Style {
