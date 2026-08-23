@@ -138,87 +138,116 @@ func TestFullLayoutFooterNamesZ(t *testing.T) {
 	}
 }
 
-// A full screen session row is two lines at any density: the last prompt
-// beside the name with the meta still right aligned, and the state-picked
-// line under it. Groups have no state line, so they stay one line at any
-// density: the layout has its own rhythm and the density setting only
-// shapes the split list.
-func TestFullRowsAreTwoLinesAtCompactDensity(t *testing.T) {
+// A compact session row is one line wearing the reply inline; the
+// comfortable density unfolds it to three — name, the last prompt, the
+// last reply — and a group is one line at either density, in either
+// layout.
+func TestRowHeightsFollowDensity(t *testing.T) {
 	m := shotModel()
 	m.fullLayout = true
 	m.paneLines = map[string]string{"add-rate-limiting": "Running tests… (14s · esc to interrupt)"}
 	row := m.rows[4]
 	row.sess.LastPrompt = "add a token bucket limiter to the public api"
 	if m.comfortableRows {
-		t.Fatal("this test exercises the compact density")
+		t.Fatal("this test starts at the compact density")
 	}
-	if got := m.entryHeight(row); got != 2 {
-		t.Fatalf("full screen session entry height = %d, want 2", got)
+	if got := m.entryHeight(row); got != 1 {
+		t.Fatalf("compact session entry height = %d, want 1", got)
 	}
 	if got := m.entryHeight(m.rows[2]); got != 1 {
-		t.Fatalf("full screen group entry height = %d, want 1", got)
+		t.Fatalf("group entry height = %d, want 1", got)
 	}
-	m.comfortableRows = true
-	if got := m.entryHeight(m.rows[2]); got != 1 {
-		t.Fatalf("comfortable full screen group entry height = %d, want 1", got)
-	}
-	if got := m.entryHeight(row); got != 2 {
-		t.Fatalf("comfortable full screen session entry height = %d, want 2", got)
-	}
-	m.comfortableRows = false
 	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
-	if len(lines) != 2 {
-		t.Fatalf("full screen row painted %d lines, want 2", len(lines))
+	if len(lines) != 1 {
+		t.Fatalf("compact row painted %d lines, want 1", len(lines))
 	}
 	top := ansi.Strip(lines[0])
-	for _, want := range []string{"add-rate-limiting", "token bucket limiter", "working", "claude"} {
+	for _, want := range []string{"add-rate-limiting", "Running tests", "working", "claude"} {
 		if !strings.Contains(top, want) {
-			t.Errorf("row line 1 misses %q:\n%s", want, top)
+			t.Errorf("compact row misses %q:\n%s", want, top)
 		}
 	}
-	if second := ansi.Strip(lines[1]); !strings.Contains(second, "Running tests") {
-		t.Fatalf("working row should quote the last pane line:\n%s", second)
+
+	m.comfortableRows = true
+	if got := m.entryHeight(m.rows[2]); got != 1 {
+		t.Fatalf("comfortable group entry height = %d, want 1", got)
+	}
+	if got := m.entryHeight(row); got != 3 {
+		t.Fatalf("comfortable session entry height = %d, want 3", got)
+	}
+	lines = splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	if len(lines) != 3 {
+		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
+	}
+	top = ansi.Strip(lines[0])
+	for _, want := range []string{"add-rate-limiting", "working", "claude"} {
+		if !strings.Contains(top, want) {
+			t.Errorf("comfortable row line 1 misses %q:\n%s", want, top)
+		}
+	}
+	if prompt := ansi.Strip(lines[1]); !strings.Contains(prompt, "❯ add a token bucket limiter") {
+		t.Fatalf("line 2 should carry the last prompt behind ❯:\n%s", prompt)
+	}
+	if reply := ansi.Strip(lines[2]); !strings.Contains(reply, "⏺ Running tests") {
+		t.Fatalf("line 3 should carry the reply behind ⏺:\n%s", reply)
+	}
+
+	// The same rhythm holds in the split layout.
+	m.fullLayout = false
+	if got := m.entryHeight(row); got != 3 {
+		t.Fatalf("split comfortable session entry height = %d, want 3", got)
+	}
+	m.comfortableRows = false
+	if got := m.entryHeight(row); got != 1 {
+		t.Fatalf("split compact session entry height = %d, want 1", got)
+	}
+	narrow := splitLines(m.renderTreeRow(row, false, 60, 4, panelHex()))
+	if len(narrow) != 1 {
+		t.Fatalf("split compact row painted %d lines, want 1", len(narrow))
 	}
 }
 
-func TestFullRowWaitingLineWearsTheStateColor(t *testing.T) {
+func TestRowWaitingReplyWearsTheStateColor(t *testing.T) {
 	prev := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := shotModel()
 	m.fullLayout = true
+	m.comfortableRows = true
 	question := "Allow edits to router.go?"
 	m.paneLines = map[string]string{"db-migrations": question}
 	lines := splitLines(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()))
-	if len(lines) != 2 {
-		t.Fatalf("waiting row painted %d lines, want 2", len(lines))
+	if len(lines) != 3 {
+		t.Fatalf("waiting row painted %d lines, want 3", len(lines))
 	}
 	tinted := strings.TrimSuffix(
 		lipgloss.NewStyle().Foreground(statusColor(status.Waiting)).Render(question), "\x1b[0m")
-	if !strings.Contains(lines[1], tinted) {
-		t.Fatalf("waiting question should wear the waiting color:\n%q", lines[1])
+	if !strings.Contains(lines[2], tinted) {
+		t.Fatalf("waiting question should wear the waiting color:\n%q", lines[2])
 	}
 }
 
-func TestFullRowQuotesEveryStateAndDashesWhenSilent(t *testing.T) {
+func TestRowQuotesEveryStateAndDashesWhenSilent(t *testing.T) {
 	m := shotModel()
 	m.fullLayout = true
+	m.comfortableRows = true
 	m.paneLines = map[string]string{"notes": "All quiet, nothing queued."}
 	lines := splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
-	if second := strings.TrimSpace(ansi.Strip(lines[1])); second != "All quiet, nothing queued." {
-		t.Fatalf("idle row second line = %q, want the last message", second)
+	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "⏺ All quiet, nothing queued." {
+		t.Fatalf("idle reply line = %q, want the last message", reply)
 	}
 	m.paneLines = nil
 	lines = splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
-	if second := strings.TrimSpace(ansi.Strip(lines[1])); second != "-" {
-		t.Fatalf("silent idle row second line = %q, want a dash", second)
+	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "-" {
+		t.Fatalf("silent idle reply line = %q, want a dash", reply)
 	}
 }
 
-func TestFullRowLongPromptTruncates(t *testing.T) {
+func TestRowLongPromptTruncates(t *testing.T) {
 	m := shotModel()
 	m.fullLayout = true
+	m.comfortableRows = true
 	width := 80
 	row := m.rows[1]
 	row.sess.LastPrompt = strings.Repeat("triage the flaky integration suite and report ", 10)
@@ -228,13 +257,13 @@ func TestFullRowLongPromptTruncates(t *testing.T) {
 			t.Fatalf("row line is %d wide, row is %d:\n%s", got, width, ansi.Strip(line))
 		}
 	}
-	top := ansi.Strip(splitLines(rendered)[0])
-	if !strings.Contains(top, "…") {
-		t.Fatalf("long prompt should truncate with an ellipsis:\n%s", top)
+	lines := splitLines(rendered)
+	if prompt := ansi.Strip(lines[1]); !strings.Contains(prompt, "…") {
+		t.Fatalf("long prompt should truncate with an ellipsis:\n%s", prompt)
 	}
 	for _, want := range []string{"idle", "grok"} {
-		if !strings.Contains(top, want) {
-			t.Errorf("meta should survive a long prompt, misses %q:\n%s", want, top)
+		if !strings.Contains(ansi.Strip(lines[0]), want) {
+			t.Errorf("meta should survive, misses %q:\n%s", want, ansi.Strip(lines[0]))
 		}
 	}
 }
@@ -441,14 +470,15 @@ func TestFullLayoutAStillAttaches(t *testing.T) {
 func TestFullRowWorkingWithoutPaneLineAnimatesLoader(t *testing.T) {
 	m := shotModel()
 	m.fullLayout = true
+	m.comfortableRows = true
 	m.paneLines = nil
 	row := m.rows[4]
 	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
-	if len(lines) != 2 {
-		t.Fatalf("full screen row painted %d lines, want 2", len(lines))
+	if len(lines) != 3 {
+		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
 	}
 	frame := startupFrames[m.startupPhase%len(startupFrames)]
-	state := ansi.Strip(lines[1])
+	state := ansi.Strip(lines[2])
 	if !strings.Contains(state, frame+" working") {
 		t.Fatalf("working row without a pane line should animate a loader, got %q", state)
 	}

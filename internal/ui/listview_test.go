@@ -210,28 +210,35 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 	if !storedComfortableRows(m.store) {
 		t.Fatal("comfortable density did not persist")
 	}
-	if got := m.entryHeight(m.rows[0]); got != 2 {
-		t.Fatalf("comfortable entry height = %d want 2", got)
+	sessionRow := m.rows[0]
+	for _, row := range m.rows {
+		if !row.isGroup {
+			sessionRow = row
+			break
+		}
+	}
+	if got := m.entryHeight(sessionRow); got != 3 {
+		t.Fatalf("comfortable entry height = %d want 3", got)
 	}
 
 	lines = railText(t, m)
 	head = lineWith(t, lines, "alpha")
-	if strings.Contains(lines[head], "claude") {
-		t.Fatalf("comfortable name line should not carry meta: %q", lines[head])
+	if !strings.Contains(lines[head], "claude") {
+		t.Fatalf("comfortable name line should carry the meta: %q", lines[head])
 	}
-	if head+1 >= len(lines) {
-		t.Fatalf("comfortable row has no meta line:\n%s", strings.Join(lines, "\n"))
+	if head+2 >= len(lines) {
+		t.Fatalf("comfortable row has no prompt and reply lines:\n%s", strings.Join(lines, "\n"))
 	}
-	meta := lines[head+1]
-	if !strings.Contains(meta, "claude") || !strings.Contains(meta, statusLabel(m.rows[0].sess.Status)) {
-		t.Fatalf("meta line = %q", meta)
+	if prompt := strings.TrimSpace(lines[head+1]); prompt == "" {
+		t.Fatalf("comfortable row prompt line is blank:\n%s", strings.Join(lines, "\n"))
 	}
-	if indent := len(meta) - len(strings.TrimLeft(meta, " ")); indent < railInset+2 {
-		t.Fatalf("meta line should sit under the name, indent = %d: %q", indent, meta)
+	if reply := strings.TrimSpace(lines[head+2]); reply == "" {
+		t.Fatalf("comfortable row reply line is blank:\n%s", strings.Join(lines, "\n"))
 	}
 }
 
-// Groups follow the same density so the list keeps one rhythm.
+// A group stays one line at any density: it has neither a prompt nor a
+// reply to carry.
 func TestComfortableGroupRowStacks(t *testing.T) {
 	m := buildModel(t)
 	m.comfortableRows = true
@@ -245,13 +252,14 @@ func TestComfortableGroupRowStacks(t *testing.T) {
 
 	lines := railText(t, m)
 	head := lineWith(t, lines, "fleet")
-	if head+1 >= len(lines) || strings.TrimSpace(lines[head+1]) == "" {
-		t.Fatalf("group row has no meta line:\n%s", strings.Join(lines, "\n"))
+	if !strings.Contains(lines[head], "●") && !strings.Contains(lines[head], "○") && !strings.Contains(lines[head], "◐") {
+		t.Fatalf("group row should carry its dots inline: %q", lines[head])
 	}
 }
 
 // A rail too short for the counters keeps the selected entry whole: a
-// two-line row trimmed to one reads as a compact row that lost its meta.
+// three-line row trimmed to one reads as a compact row that lost its
+// message lines.
 func TestComfortableRowSurvivesShortRail(t *testing.T) {
 	m := buildModel(t)
 	m.comfortableRows = true
@@ -268,9 +276,8 @@ func TestComfortableRowSurvivesShortRail(t *testing.T) {
 	if head != 0 {
 		t.Fatalf("selected entry should start the window, got line %d", head)
 	}
-	meta := ansi.Strip(lines[1].text)
-	if !strings.Contains(meta, "claude") {
-		t.Fatalf("selected entry lost its meta line: %q", meta)
+	if prompt := strings.TrimSpace(ansi.Strip(lines[1].text)); prompt == "" {
+		t.Fatalf("selected entry lost its prompt line: %q", ansi.Strip(lines[1].text))
 	}
 }
 

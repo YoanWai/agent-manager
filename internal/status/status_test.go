@@ -834,3 +834,58 @@ func TestLastUserEchoAndScrolledMarker(t *testing.T) {
 		t.Fatalf("echoless pane: echo=%q ok=%v, want empty and true", echoed, ok)
 	}
 }
+
+// Echo shapes verified live on 2026-08-23: codex v0.56 (trust dialog and
+// composer share the › marker), gemini v0.53 (> echo, ✦ reply), opencode
+// v1.18.21 (┃ gutter echo above the reply, composer block on the cutoff).
+func TestLastUserEchoPerTool(t *testing.T) {
+	engine := defaultEngine(t)
+
+	codexPane := "> You are in /private/tmp/work\n" +
+		"  Do you trust the contents of this directory?\n" +
+		"› 1. Yes, continue\n" +
+		"  2. No, quit\n" +
+		"  Press enter to continue\n" +
+		"› Reply with exactly: CODEX ECHO TEST DONE.\n" +
+		"• CODEX ECHO TEST DONE.\n" +
+		"› Ask Codex to do anything\n" +
+		"  gpt-5.6-luna medium · /private/tmp/work"
+	if echoed, ok := engine.LastUserEcho("codex", codexPane); !ok || echoed != "Reply with exactly: CODEX ECHO TEST DONE." {
+		t.Fatalf("codex echo = %q ok=%v", echoed, ok)
+	}
+	if line, anchored, ok := engine.LastMessage("codex", codexPane); !ok || !anchored || line != "CODEX ECHO TEST DONE." {
+		t.Fatalf("codex reply = %q anchored=%v ok=%v", line, anchored, ok)
+	}
+
+	geminiPane := " > Reply with exactly: GEMINI ECHO TEST DONE.\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀\n" +
+		"✦ GEMINI ECHO TEST DONE.\n" +
+		"                  ? for shortcuts\n" +
+		"────────────\n" +
+		" Shift+Tab to accept edits\n" +
+		"▄▄▄▄▄▄▄▄▄▄▄▄\n" +
+		" >   Type your message or @path/to/file\n" +
+		"▀▀▀▀▀▀▀▀▀▀▀▀"
+	if echoed, ok := engine.LastUserEcho("gemini", geminiPane); !ok || echoed != "Reply with exactly: GEMINI ECHO TEST DONE." {
+		t.Fatalf("gemini echo = %q ok=%v", echoed, ok)
+	}
+	if line, anchored, ok := engine.LastMessage("gemini", geminiPane); !ok || !anchored || line != "GEMINI ECHO TEST DONE." {
+		t.Fatalf("gemini reply = %q anchored=%v ok=%v", line, anchored, ok)
+	}
+
+	opencodePane := "  ┃\n" +
+		"  ┃  Reply with exactly: OPENCODE ECHO TEST DONE.\n" +
+		"  ┃\n" +
+		"     OPENCODE ECHO TEST DONE.\n" +
+		"     ▣  Build · Gemini 3.6 Flash · 2.6s\n" +
+		"  ┃\n" +
+		"  ┃\n" +
+		"  ┃  Build · Gemini 3.6 Flash Google\n" +
+		"  ╹▀▀▀▀▀▀▀▀▀▀▀▀"
+	if echoed, ok := engine.LastUserEcho("opencode", opencodePane); !ok || echoed != "Reply with exactly: OPENCODE ECHO TEST DONE." {
+		t.Fatalf("opencode echo = %q ok=%v", echoed, ok)
+	}
+	if line, _, ok := engine.LastMessage("opencode", opencodePane); !ok || line != "OPENCODE ECHO TEST DONE." {
+		t.Fatalf("opencode reply = %q ok=%v", line, ok)
+	}
+}

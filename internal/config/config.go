@@ -386,6 +386,10 @@ input_prefix = "(?m)^\\s*┃"
 turn_end = "^\\s*▣ +.+· [\\dhms. ]+\\s*$"
 chrome_line = "^\\s*(┃.*)?$"
 input_placeholder = "^Ask anything\\.\\.\\."
+# a submitted prompt echoes into the transcript inside the same ┃ gutter
+# the composer draws; the composer's own block hugs the cutoff and is
+# trimmed before the echo is read
+user_echo = "^\\s*┃\\s{2,}"
 limit_line = "(?i)requires more credits|(?:Usage|Free|Go) limit reached"
 rules = [
   { state = "errored", pattern = "(?i)requires more credits" },
@@ -414,6 +418,8 @@ chrome_line = "^\\s*─*\\s*$"
 # every message and tool call opens on a "• " bullet
 message_start = "^• "
 input_placeholder = "^Ask Codex to do anything"
+# a submitted prompt echoes into the transcript on its own › line
+user_echo = "^› "
 limit_line = "(?m)You've hit your usage limit"
 rules = [
   # bottom-pane dialogs (command approval, choice prompts, first-run trust)

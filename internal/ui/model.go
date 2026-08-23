@@ -581,12 +581,9 @@ func (m *Model) commitTypedPrompt() {
 	m.pendingTyped = nil
 }
 
-// hasWorkingLoaderRow reports whether a full screen row is animating the
-// working loader: a working session with no quotable pane line yet.
+// hasWorkingLoaderRow reports whether a row is animating the working
+// loader: a working session with no quotable pane line yet.
 func (m *Model) hasWorkingLoaderRow() bool {
-	if !m.fullRows() {
-		return false
-	}
 	for _, row := range m.rows {
 		if !row.isGroup && row.sess.Status == status.Working && m.paneLines[row.sess.ID] == "" {
 			return true

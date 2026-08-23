@@ -397,17 +397,50 @@ func (e *Engine) LastUserEcho(tool, pane string) (string, bool) {
 		return "", false
 	}
 	lines := strings.Split(region, "\n")
+	// A composer drawn above the cutoff (opencode's ┃ gutter) is a run of
+	// input_prefix rows hugging the region's end; the echoes live higher,
+	// so the trailing run is the composer's, not a message.
+	if tr.inputPrefix != nil {
+		for len(lines) > 0 {
+			last := lines[len(lines)-1]
+			if strings.TrimSpace(last) == "" || tr.inputPrefix.MatchString(last) {
+				lines = lines[:len(lines)-1]
+				continue
+			}
+			break
+		}
+	}
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimRight(lines[i], " \t")
 		loc := tr.userEcho.FindStringIndex(line)
 		if loc == nil {
 			continue
 		}
-		if echoed := strings.TrimSpace(line[loc[1]:]); echoed != "" {
-			return echoed, true
+		// A dialog draws its option rows behind the same marker the
+		// composer uses (codex's "› 1. Yes, continue"), so a line any
+		// status rule recognises is the tool's frame, not an echo.
+		if tr.matchesAnyRule(line) {
+			continue
 		}
+		echoed := strings.TrimSpace(line[loc[1]:])
+		if echoed == "" {
+			continue
+		}
+		if tr.placeholder != nil && tr.placeholder.MatchString(echoed) {
+			continue
+		}
+		return echoed, true
 	}
 	return "", true
+}
+
+func (tr toolRules) matchesAnyRule(line string) bool {
+	for _, r := range tr.rules {
+		if r.re.MatchString(line) {
+			return true
+		}
+	}
+	return false
 }
 
 // InputDraft is the text typed into the tool's composer: what follows the

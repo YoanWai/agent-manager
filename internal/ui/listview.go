@@ -398,20 +398,16 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 	return lines
 }
 
-// entryHeight is how many lines an entry paints: one in the compact list,
-// two once the comfortable density unstacks the meta onto its own line.
-// The full screen layout has its own fixed rhythm at any density: every
-// session is two lines, since the second line is what the width is for,
-// and a group is one, having no state line to carry.
+// entryHeight is how many lines an entry paints, in either layout: a
+// compact session is one row wearing the reply inline, a comfortable one
+// is three — name, the last prompt, the last reply — and a group is
+// always one, having neither line to carry.
 func (m *Model) entryHeight(entry treeRow) int {
-	if m.fullRows() {
-		if entry.isGroup {
-			return 1
-		}
-		return 2
+	if entry.isGroup {
+		return 1
 	}
 	if m.comfortableRows {
-		return 2
+		return 3
 	}
 	return 1
 }
@@ -702,35 +698,67 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	meta := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
 		metaStyle.Render(" · "+sess.Tool+" · "+relSince(lastActivity(sess)))
 
-	if m.fullRows() {
-		return m.fullSessionRow(sess, head, meta, metaIndent(pad, trail), selected, width, bg)
-	}
 	if m.comfortableRows {
-		return stackedRow(head, metaIndent(pad, trail)+meta, width, bg)
+		return m.tripleRow(sess, head, meta, metaIndent(pad, trail), selected, width, bg)
 	}
-	return paint(rowColumns(head, meta, width-railGutter), width, bg)
+	return m.compactRow(sess, head, meta, selected, width, bg)
 }
 
 // rowPromptFloor is the narrowest slot worth printing a prompt into: any
 // tighter and the row shows an ellipsis where a task should be.
 const rowPromptFloor = 8
 
-// fullSessionRow is the two-line entry the full screen width affords: the
-// last prompt sent to the session rides between the name and the meta, and
-// the second line quotes what the state makes worth reading.
-func (m *Model) fullSessionRow(sess store.Session, head, meta, indent string, selected bool, width int, bg string) string {
+// compactRow is the one-line session entry: the last reply rides between
+// the name and the meta, the way Claude's agent view tells a fleet apart
+// at a glance.
+func (m *Model) compactRow(sess store.Session, head, meta string, selected bool, width int, bg string) string {
 	quiet := subtleStyle
 	if selected {
 		quiet = mutedStyle
 	}
 	const gap = 2
 	room := width - railGutter - ansi.StringWidth(head) - ansi.StringWidth(meta) - 2*gap
-	if prompt := oneLine(m.rowPrompt(sess)); prompt != "" && room >= rowPromptFloor {
-		head += strings.Repeat(" ", gap) + quiet.Render(ansi.Truncate(prompt, room, "…"))
+	if room >= rowPromptFloor && (m.paneLines[sess.ID] != "" || sess.Status == status.Working) {
+		head += strings.Repeat(" ", gap) + m.replyCell(sess, quiet, room)
+	}
+	return paint(rowColumns(head, meta, width-railGutter), width, bg)
+}
+
+// tripleRow is the comfortable session entry: the name and meta alone on
+// top, your last prompt under it, the agent's last reply under that.
+func (m *Model) tripleRow(sess store.Session, head, meta, indent string, selected bool, width int, bg string) string {
+	quiet := subtleStyle
+	if selected {
+		quiet = mutedStyle
 	}
 	top := rowColumns(head, meta, width-railGutter)
-	state := m.stateLine(sess, quiet, width-railGutter-ansi.StringWidth(indent))
-	return stackedRow(top, indent+state, width, bg)
+	room := width - railGutter - ansi.StringWidth(indent) - 2
+	promptLine := indent + quiet.Render("-")
+	if prompt := oneLine(m.rowPrompt(sess)); prompt != "" && room >= rowPromptFloor {
+		promptLine = indent + rowGlyphStyle(current.Accent).Render("❯ ") +
+			rowPromptStyle().Render(ansi.Truncate(prompt, room, "…"))
+	}
+	replyLine := indent + m.replyCell(sess, quiet, room+2)
+	return paint(top, width, bg) + "\n" + paint(promptLine, width, bg) + "\n" + paint(replyLine, width, bg)
+}
+
+func rowGlyphStyle(hex string) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(hex))
+}
+
+// rowReplyStyle washes the reply in its state's color at half strength;
+// waiting stays at full strength because it needs the user.
+func rowReplyStyle(state string) lipgloss.Style {
+	if state == status.Waiting {
+		return lipgloss.NewStyle().Foreground(statusColor(state))
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(string(statusColor(state)), current.Subtle, 0.5)))
+}
+
+// rowPromptStyle leans the prompt toward the accent: visibly not chrome,
+// visibly not the reply under it.
+func rowPromptStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Accent, current.Dim, 0.5)))
 }
 
 // rowPrompt is the prompt a full screen row carries beside the name: the
@@ -760,12 +788,12 @@ func typedPrompt(text string) string {
 	return text
 }
 
-// stateLine is what a full screen row's second line quotes: the start of
-// the agent's last message whatever the state, tinted in the state color
-// when the session waits on the user. A working session with nothing
-// quotable yet animates a loader instead, and a row with nothing to quote
-// holds the line with a dim dash.
-func (m *Model) stateLine(sess store.Session, quiet lipgloss.Style, room int) string {
+// replyCell quotes the start of the agent's last message behind a ⏺ in
+// the state's color, with the text washed in the same hue so states read
+// apart at a glance; waiting keeps full strength because it needs the
+// user. A working session with nothing quotable yet animates a loader,
+// and a silent one holds the cell with a dim dash.
+func (m *Model) replyCell(sess store.Session, quiet lipgloss.Style, room int) string {
 	line := m.paneLines[sess.ID]
 	if sess.Status == status.Working && line == "" {
 		frame := startupFrames[m.startupPhase%len(startupFrames)]
@@ -774,21 +802,14 @@ func (m *Model) stateLine(sess store.Session, quiet lipgloss.Style, room int) st
 	if line == "" {
 		return quiet.Render("-")
 	}
-	line = ansi.Truncate(line, max(room, 1), "…")
-	if sess.Status == status.Waiting {
-		return lipgloss.NewStyle().Foreground(statusColor(status.Waiting)).Render(line)
-	}
-	return quiet.Render(line)
+	line = ansi.Truncate(line, max(room-2, 1), "…")
+	return rowGlyphStyle(string(statusColor(sess.Status))).Render("⏺ ") + rowReplyStyle(sess.Status).Render(line)
 }
 
 // metaIndent lines a second row line up under the name on the first, past
 // the entry's guides and the glyph column ahead of it.
 func metaIndent(pad, trail string) string {
 	return pad + trail + "  "
-}
-
-func stackedRow(head, meta string, width int, bg string) string {
-	return paint(head, width, bg) + "\n" + paint(meta, width, bg)
 }
 
 func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
@@ -818,9 +839,6 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, g
 		meta = subtleStyle.Render("no agents yet")
 	}
 
-	if m.comfortableRows {
-		return stackedRow(head, metaIndent(pad, trail)+meta, width, bg)
-	}
 	return paint(rowColumns(head, meta, width-railGutter), width, bg)
 }
 
