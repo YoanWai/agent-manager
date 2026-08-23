@@ -189,7 +189,8 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 	bar := append([]contentLine{{rule: true}}, inset(splitLines(m.viewQuickBar(inner)))...)
 	var peek []contentLine
 	if entry, ok := m.selectedRow(); ok && !entry.isGroup {
-		peek = inset(m.peekLines(entry.sess, inner))
+		peek = append(inset(m.peekInfoLines(entry.sess, inner)), contentLine{rule: true})
+		peek = append(peek, inset(m.peekPaneSlice(inner))...)
 	}
 	// The list above the bar keeps the rows the rail floor guarantees:
 	// the peek is dropped first, then the bar keeps its tail, which is
@@ -205,13 +206,13 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 	return lines
 }
 
-// peekLines is the lifted slice itself: a line placing the session (its
-// directory, and the worktree branch when it has one), a line saying how
-// it is doing — state, tool, its process usage when sampled, when it was
-// started and last heard from — then the last lines its pane painted,
-// from the capture the preview already holds. The capture follows the
-// cursor, so switching the bar's target swaps the slice with it.
-func (m *Model) peekLines(sess store.Session, width int) []string {
+// peekInfoLines is the head of the lifted peek: a line placing the
+// session (its directory, and the worktree branch when it has one), and
+// a line saying how it is doing — state, tool, its process usage when
+// sampled, when it was started and last heard from. The pane slice
+// follows under the frame's own rule; the capture follows the cursor, so
+// switching the bar's target swaps the slice with it.
+func (m *Model) peekInfoLines(sess store.Session, width int) []string {
 	place := valueStyle.Render(truncateTail(sess.Cwd, width))
 	if sess.WorktreeBranch != "" {
 		place += subtleStyle.Render("  ⑂ ") + valueStyle.Render(sess.WorktreeBranch)
@@ -228,12 +229,16 @@ func (m *Model) peekLines(sess store.Session, width int) []string {
 	if queued := m.queuedMessages[sess.ID]; queued > 0 {
 		facts += sep + valueStyle.Render(fmt.Sprintf("%d queued", queued))
 	}
-	rule := subtleStyle.Render(strings.Repeat("┄", max(width, 1)))
-	lines := []string{
+	return []string{
 		ansi.Truncate(place, width, "…"),
 		ansi.Truncate(facts, width, "…"),
-		rule,
 	}
+}
+
+// peekPaneSlice is the peek's tail of captured pane rows, under the rule
+// that closes the info lines off.
+func (m *Model) peekPaneSlice(width int) []string {
+	var lines []string
 	for _, row := range paneExact(m.preview, peekPaneRows, width, -1) {
 		lines = append(lines, previewLine(row, width))
 	}
