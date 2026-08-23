@@ -576,6 +576,11 @@ revive_command = "cmd --continue"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 turn_end = "^\\s*✻ Worked for [\\dhms. ]+$"
+# the assistant message opens on a static ⠶ first-row marker
+message_start = "^⠶ "
+# a submitted prompt echoes into the transcript on its own ❯ line
+user_echo = "^❯ "
+input_placeholder = "^Ask your question"
 limit_line = "^\\s*⚠ You have insufficient credits"
 chrome_line = "^\\s*[─]{4,}\\s*$|^# .*$|^[ \\t█]*$|^\\s*\\? for shortcuts.*$"
 rules = [

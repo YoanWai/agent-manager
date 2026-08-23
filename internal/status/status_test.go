@@ -927,3 +927,28 @@ func TestLastUserEchoPerTool(t *testing.T) {
 		t.Fatalf("opencode reply = %q ok=%v", line, ok)
 	}
 }
+
+// Command Code shapes, verified accountless on v1.32.1 with the inject
+// stream: replies open on a static ⠶ row, prompts echo on ❯ like claude,
+// and the composer paints "Ask your question..." on its empty row.
+func TestCommandCodeRowShapes(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "# Command Code v1.32.1\n" +
+		"❯ Reply with exactly: CMD ECHO TEST DONE.\n" +
+		"⠶ CMD ECHO TEST DONE.\n" +
+		"  And a second line of the reply.\n" +
+		"────────────────────────\n" +
+		"❯ Ask your question...\n" +
+		"────────────────────────\n" +
+		"  ? for shortcuts · taste on"
+	if echoed, ok := engine.LastUserEcho("command-code", pane); !ok || echoed != "Reply with exactly: CMD ECHO TEST DONE." {
+		t.Fatalf("command-code echo = %q ok=%v", echoed, ok)
+	}
+	line, anchored, ok := engine.LastMessage("command-code", pane)
+	if !ok || !anchored || line != "CMD ECHO TEST DONE. And a second line of the reply." {
+		t.Fatalf("command-code reply = %q anchored=%v ok=%v", line, anchored, ok)
+	}
+	if _, ok := engine.InputDraft("command-code", "⠶ Done.\n❯ Ask your question..."); ok {
+		t.Fatal("the composer placeholder should not read as a draft")
+	}
+}
