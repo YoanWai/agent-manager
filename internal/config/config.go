@@ -547,6 +547,7 @@ command = "cmd"
 # command-code mints its own session id; capture it after launch and resume it
 session_store = "command-code"
 resume_by_id_command = "cmd --session {id}"
+fork_command = "cmd --session {id} --fork-session --name {name}"
 # fallback: resumes the most recent conversation for the directory
 revive_command = "cmd --continue"
 default_status = "idle"

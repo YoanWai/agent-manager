@@ -90,6 +90,9 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if commandCode.SessionStore != "command-code" || commandCode.ResumeByIDCommand != "cmd --session {id}" {
 		t.Fatalf("command-code resume config = %+v", commandCode)
 	}
+	if got := commandCode.ForkCommand; got != "cmd --session {id} --fork-session --name {name}" {
+		t.Fatalf("command-code fork_command = %q want \"cmd --session {id} --fork-session --name {name}\"", got)
+	}
 	if got := commandCode.PromptFlag; got != "" {
 		t.Fatalf("command-code prompt_flag = %q want empty (positional prompt)", got)
 	}
@@ -447,7 +450,8 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 
 func TestBackfillFillsResumeFields(t *testing.T) {
 	cfg := Config{Tools: map[string]Tool{
-		"claude": {Command: "claude", ReviveCommand: "claude --continue"},
+		"claude":       {Command: "claude", ReviveCommand: "claude --continue"},
+		"command-code": {Command: "cmd"},
 	}}
 	if err := cfg.backfillToolDefaults(); err != nil {
 		t.Fatalf("backfill: %v", err)
@@ -461,5 +465,8 @@ func TestBackfillFillsResumeFields(t *testing.T) {
 	}
 	if tool.ForkCommand == "" {
 		t.Fatal("claude fork_command was not backfilled")
+	}
+	if got := cfg.Tools["command-code"].ForkCommand; got != "cmd --session {id} --fork-session --name {name}" {
+		t.Fatalf("command-code fork_command = %q want backfilled", got)
 	}
 }

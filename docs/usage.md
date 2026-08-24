@@ -135,7 +135,7 @@ It asks to confirm first, and it works on a live session too: the running agent 
 
 The fork uses the source session's tool, group, working directory, and conversation history.
 
-Claude Code, OpenCode, Codex, Grok, Gemini CLI, and Pi include default fork commands. A custom tool needs a `fork_command` in its configuration. The source session must have a captured conversation ID.
+Claude Code, OpenCode, Codex, Grok, Gemini CLI, Pi, and Command Code include default fork commands. A custom tool needs a `fork_command` in its configuration. The source session must have a captured conversation ID.
 
 A fork shares its source session's managed worktree. Agent Manager keeps the worktree until you delete the last session that uses it. You cannot rename the worktree while another session uses it.
 
