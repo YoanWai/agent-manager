@@ -204,6 +204,12 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.pending = pendingClick{}
 			row, col, ok := m.paneCell(msg.X, msg.Y)
 			if ok && row == pending.row && col == pending.col {
+				// A click on a link opens it here: the terminal's own
+				// opener cannot reach through the mouse claim, and the
+				// application under the pane has no opener of its own.
+				if url := m.linkAt(pending.row, pending.col); url != "" {
+					return m, openLinkCmd(url)
+				}
 				m.forwardClick(pending.button, pending.row, pending.col)
 				return m, nil
 			}
@@ -220,6 +226,14 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.sel.dragging = false
+		// A press that never moved is a click, not a copy: on a link it
+		// opens the link, the same answer either kind of pane gives.
+		if m.sel.clickCount == 1 && m.sel.anchorRow == m.sel.headRow && m.sel.anchorCol == m.sel.headCol {
+			if url := m.linkAt(m.sel.anchorRow, m.sel.anchorCol); url != "" {
+				m.clearSelection()
+				return m, openLinkCmd(url)
+			}
+		}
 		return m, m.copySelectionCmd()
 	}
 	return m, nil

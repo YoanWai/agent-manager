@@ -1454,6 +1454,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cursorOn = !m.cursorOn
 		return m, m.cursorBlink()
 
+	case linkOpenErrMsg:
+		m.errBar.text = msg.err.Error()
+		return m, nil
+
 	case focusCopiedMsg:
 		// The clipboard writer runs off the update loop and can take
 		// hundreds of milliseconds, long enough for a click elsewhere to
