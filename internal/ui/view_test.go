@@ -479,7 +479,7 @@ func TestFooterInFocusMode(t *testing.T) {
 	if !strings.Contains(footer, "Focused") {
 		t.Fatalf("the tier should name the mode it describes:\n%s", footer)
 	}
-	if !strings.Contains(footer, "back to manager") || !strings.Contains(footer, "goes to the agent") {
+	if !strings.Contains(footer, "ctrl+q / ctrl+\\ back") || !strings.Contains(footer, "typing to agent") {
 		t.Fatalf("focus footer should carry the reserved keys:\n%s", footer)
 	}
 	if strings.Contains(footer, "navigate") || strings.Contains(footer, "View") {
@@ -497,6 +497,33 @@ func TestFooterInFocusMode(t *testing.T) {
 	m.pane.mouse = true
 	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "click / alt+drag") || !strings.Contains(footer, "agent UI") {
 		t.Fatalf("a mouse-tracking pane should advertise pass-through:\n%s", footer)
+	}
+}
+
+func TestArrowStepFooterHintsFollowSetting(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.CreateGroup("arrow-group", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "arrow-hints", t.TempDir(), "")
+	assertHint := func(context, hint string, enabled bool) {
+		t.Helper()
+		footer := ansi.Strip(m.viewFooter())
+		if got := strings.Contains(footer, hint); got != enabled {
+			t.Fatalf("arrow step enabled = %v: %s hint %q = %v:\n%s", enabled, context, hint, got, footer)
+		}
+	}
+
+	for _, enabled := range []bool{true, false} {
+		m.arrowStep = enabled
+		m.mode = modeList
+		m.selectSessionRow(t, "arrow-hints")
+		assertHint("session", "→ focus", enabled)
+		m.selectGroupRow(t, "arrow-group")
+		assertHint("group", "←→ close / open", enabled)
+		m.mode = modeFocus
+		assertHint("focus", "← prompt start: back", enabled)
 	}
 }
 
