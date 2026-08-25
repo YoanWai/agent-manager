@@ -41,7 +41,10 @@ type toolRules struct {
 	busyLine       *regexp.Regexp
 	limitLine      *regexp.Regexp
 	dialogFooter   *regexp.Regexp
-	rules          []rule
+	// composerPlaceholder is the literal text a tool paints inside its
+	// empty composer; a draft replaces it. Searched in a stripped row.
+	composerPlaceholder string
+	rules               []rule
 }
 
 func NewEngine(cfg config.Config) (*Engine, error) {
@@ -59,7 +62,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 		if def == "" {
 			def = Idle
 		}
-		tr := toolRules{defaultStatus: def, rules: compiled}
+		tr := toolRules{defaultStatus: def, composerPlaceholder: tool.ComposerPlaceholder, rules: compiled}
 		optional := []struct {
 			pattern string
 			target  **regexp.Regexp
@@ -378,7 +381,19 @@ func (tr toolRules) inputRow(row string) bool {
 		return false
 	}
 	loc := tr.activityCutoff.FindStringIndex(row)
-	return loc != nil && loc[0] == 0 && loc[1] > 0
+	return loc != nil && loc[0] == 0
+}
+
+// ComposerShowsPlaceholder reports whether the tool paints its placeholder
+// inside this composer row, which is how an empty composer is told from a
+// draft for tools whose terminal cursor never enters the composer. ok is
+// false when the tool declares no placeholder.
+func (e *Engine) ComposerShowsPlaceholder(tool, row string) bool {
+	tr, ok := e.tools[tool]
+	if !ok || tr.composerPlaceholder == "" {
+		return false
+	}
+	return strings.Contains(row, tr.composerPlaceholder)
 }
 
 func (tr toolRules) activityRegion(pane string) (string, bool) {

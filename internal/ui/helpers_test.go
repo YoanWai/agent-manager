@@ -26,6 +26,15 @@ func buildModel(t *testing.T) *Model {
 	cfg := config.Config{
 		Tools: map[string]config.Tool{
 			"claude": {Command: "cat", DefaultStatus: status.Idle},
+			// Parks the terminal cursor below its footer and paints the
+			// composer's caret itself, so the arrow step reads the
+			// placeholder instead of the cursor cell.
+			"command-code": {
+				Command:             "cat",
+				DefaultStatus:       status.Idle,
+				ActivityCutoff:      "(?m)^❯",
+				ComposerPlaceholder: "Ask your question...",
+			},
 			"claude-hooked": {
 				Command:        "cat",
 				StatusSource:   "claude-hooks",

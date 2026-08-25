@@ -93,6 +93,9 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := commandCode.PromptFlag; got != "" {
 		t.Fatalf("command-code prompt_flag = %q want empty (positional prompt)", got)
 	}
+	if got := commandCode.ComposerPlaceholder; got != "Ask your question..." {
+		t.Fatalf("command-code composer_placeholder = %q want the placeholder", got)
+	}
 	if got := commandCode.ActivityCutoff; got == "" {
 		t.Fatalf("command-code activity_cutoff is empty; prompt delivery needs it")
 	}
@@ -374,6 +377,25 @@ func TestBackfillArrowUnfocusFields(t *testing.T) {
 	}
 	if got := plain.Tools["opencode"].InputPrefix; got != `(?m)^\s*┃` {
 		t.Fatalf("opencode input_prefix = %q want the gutter bar (backfilled)", got)
+	}
+}
+
+// command-code's composer_placeholder rides the same backfill: a config
+// written before the field existed gains it, and one the user wrote stays.
+func TestBackfillComposerPlaceholder(t *testing.T) {
+	plain := Config{Tools: map[string]Tool{"command-code": {Command: "cmd"}}}
+	if err := plain.backfillToolDefaults(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if got := plain.Tools["command-code"].ComposerPlaceholder; got != "Ask your question..." {
+		t.Fatalf("composer_placeholder = %q want backfilled", got)
+	}
+	mine := Config{Tools: map[string]Tool{"command-code": {Command: "cmd", ComposerPlaceholder: "Type here"}}}
+	if err := mine.backfillToolDefaults(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if got := mine.Tools["command-code"].ComposerPlaceholder; got != "Type here" {
+		t.Fatalf("composer_placeholder = %q want user value kept", got)
 	}
 }
 
