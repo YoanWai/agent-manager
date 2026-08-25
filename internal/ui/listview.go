@@ -680,7 +680,8 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	// whose row rolls several states together, is left to its dots.
 	meta := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
 		metaStyle.Render(" · "+sess.Tool)
-	if sess.AgentSessionID != "" {
+	// The id only fits the roomy layout; the compact meta is already crowded.
+	if sess.AgentSessionID != "" && m.comfortableRows {
 		meta += metaStyle.Render(" · " + sess.AgentSessionID)
 	}
 	meta += metaStyle.Render(" · " + relSince(lastActivity(sess)) + m.elsewhereNote(sess))
