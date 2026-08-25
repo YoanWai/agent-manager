@@ -134,14 +134,24 @@ func commandCodeMeta(path string) (id, cwd string, ok bool) {
 		return "", "", false
 	}
 	var line struct {
-		Type string `json:"type"`
-		ID   string `json:"id"`
-		Cwd  string `json:"cwd"`
+		Type      string `json:"type"`
+		ID        string `json:"id"`
+		SessionID string `json:"sessionId"`
+		Cwd       string `json:"cwd"`
 	}
 	if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
 		return "", "", false
 	}
-	if line.Type != "session" || !sessionIDPattern.MatchString(line.ID) {
+	if line.Type != "session" {
+		return "", "", false
+	}
+	// A forked transcript keeps the parent's id in "id" and mints its own in
+	// "sessionId" (cmd 1.32.2); prefer it so a fork is never mistaken for its
+	// parent, whose id is already claimed.
+	if sessionIDPattern.MatchString(line.SessionID) {
+		return line.SessionID, line.Cwd, true
+	}
+	if !sessionIDPattern.MatchString(line.ID) {
 		return "", "", false
 	}
 	return line.ID, line.Cwd, true

@@ -35,7 +35,7 @@ Rules match top-down against the visible pane text; first match wins, and `defau
 - `{new_id}`: A new UUID that Agent Manager records for exact revival.
 - `{name}`: The new Agent Manager session name.
 
-A `fork_command` references its source through `{id}` or `{session_file}`, so one of those two is required. Claude Code, OpenCode, Codex, Grok, Gemini CLI, and Pi include default fork commands. A custom tool can omit `{new_id}` when its `session_store` captures the generated ID.
+A `fork_command` references its source through `{id}` or `{session_file}`, so one of those two is required. Claude Code, OpenCode, Codex, Grok, Gemini CLI, Pi, and Command Code include default fork commands. A custom tool can omit `{new_id}` when its `session_store` captures the generated ID.
 
 **Prompts.** `prompt_flag` controls how the new-session form's optional prompt is embedded into the launch command. Tools that take the prompt as a positional argument (Claude Code: `claude 'the prompt'`) leave it empty; tools whose positional argument means something else declare the flag (OpenCode: `prompt_flag = "--prompt"`, since its positional argument is the project path). `prompt_mode = "send"` handles a persistent CLI that accepts no startup prompt: Agent Manager waits until `activity_cutoff` finds its input box, then submits the prompt there (Hermes uses this). Set it to `"argument"` if a custom Hermes wrapper accepts a launch argument instead. The prompt setting only affects a new launch; revive (`v`) uses the revive commands untouched.
 
