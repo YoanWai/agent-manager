@@ -128,8 +128,6 @@ func captureCommandCode(root, cwd string, launchedAt time.Time, claimed map[stri
 	return pickEarliest(commandCodeCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
 }
 
-// commandCodeCandidates returns the Command Code conversations written for
-// cwd at or after cutoff and not claimed by another session.
 func commandCodeCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) []candidate {
 	if root == "" {
 		return nil
@@ -334,9 +332,7 @@ var opencodeListIDs = func(cwd string) ([]string, bool) {
 	return dedupeOrdered(opencodeIDPattern.FindAllString(string(out), -1)), true
 }
 
-// opencodeSessionMeta returns a session's working directory plus creation
-// and update times from `opencode export <id>` run in cwd. A package
-// variable so tests substitute canned output.
+// A package variable so tests substitute canned output.
 var opencodeSessionMeta = func(cwd, id string) (directory string, created, updated time.Time, ok bool) {
 	out, err := runOpencodeHead(cwd, "export", id)
 	if err != nil {
@@ -359,11 +355,9 @@ func dedupeOrdered(items []string) []string {
 	return out
 }
 
-// parseOpencodeExport reads directory and creation and update times from
-// the info block of an `opencode export` payload. The output leads with a
-// human preamble and is read only as a prefix, so it extracts just the info
-// object by brace matching rather than decoding the whole (possibly
-// truncated) document.
+// The export leads with a human preamble and is read only as a prefix, so
+// the info object is extracted by brace matching rather than decoding the
+// whole (possibly truncated) document.
 func parseOpencodeExport(out []byte) (directory string, created, updated time.Time, ok bool) {
 	obj, found := extractInfoObject(out)
 	if !found {
@@ -453,8 +447,6 @@ func captureCodex(root, cwd string, launchedAt time.Time, claimed map[string]boo
 	return pickEarliest(codexCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
 }
 
-// codexCandidates returns the rollout conversations written for cwd at or
-// after cutoff and not claimed by another session.
 func codexCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) []candidate {
 	if root == "" {
 		return nil
@@ -540,10 +532,9 @@ func captureOpencode(cwd string, launchedAt time.Time, claimed map[string]bool) 
 	return pickEarliest(cands)
 }
 
-// recaptureOpencode finds the conversation a resumed opencode session
-// touched again. The write signal is info.time.updated, which advances each
-// time the conversation is reopened, so a resumed conversation is the one
-// whose update time falls at or after the restart.
+// The write signal is info.time.updated, which advances each time the
+// conversation is reopened, so a resumed conversation is the one whose
+// update time falls at or after the restart.
 func recaptureOpencode(cwd string, cutoff time.Time, claimed map[string]bool) (string, bool) {
 	ids, ok := opencodeListIDs(cwd)
 	if !ok {
@@ -621,8 +612,6 @@ func captureGemini(root, cwd string, launchedAt time.Time, claimed map[string]bo
 	return pickEarliest(geminiCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
 }
 
-// geminiCandidates returns the gemini conversations written for cwd's
-// project at or after cutoff and not claimed by another session.
 func geminiCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) []candidate {
 	if root == "" {
 		return nil
