@@ -714,7 +714,16 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 	captured := 0
 	for _, i := range pending {
 		sess := sessions[i]
-		agentID, ok := agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed)
+		// A resumed session cannot use the earliest-write tie-break: in a
+		// shared cwd it would bind the wrong conversation, so only one
+		// exact candidate counts.
+		var agentID string
+		var ok bool
+		if sess.AgentLaunchedAt.IsZero() {
+			agentID, ok = agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed)
+		} else {
+			agentID, ok = agentsession.Recapture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed)
+		}
 		if !ok {
 			continue
 		}

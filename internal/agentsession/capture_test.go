@@ -196,6 +196,7 @@ func TestCaptureCommandCodeSkipsMalformedTranscripts(t *testing.T) {
 type ocMeta struct {
 	dir     string
 	created time.Time
+	updated time.Time
 }
 
 // stubOpencode replaces the opencode CLI seams with in-memory data for the
@@ -204,9 +205,14 @@ func stubOpencode(t *testing.T, ids []string, metas map[string]ocMeta) {
 	t.Helper()
 	listSaved, metaSaved := opencodeListIDs, opencodeSessionMeta
 	opencodeListIDs = func(string) ([]string, bool) { return ids, true }
-	opencodeSessionMeta = func(_, id string) (string, time.Time, bool) {
+	opencodeSessionMeta = func(_, id string) (string, time.Time, time.Time, bool) {
 		m, ok := metas[id]
-		return m.dir, m.created, ok
+		// A conversation never reopened keeps its creation time as its
+		// update time, so capture tests need no updated field.
+		if m.updated.IsZero() {
+			m.updated = m.created
+		}
+		return m.dir, m.created, m.updated, ok
 	}
 	t.Cleanup(func() { opencodeListIDs, opencodeSessionMeta = listSaved, metaSaved })
 }
@@ -215,11 +221,11 @@ func TestCaptureOpencodePicksSessionAfterLaunchInCwd(t *testing.T) {
 	launch := time.Now()
 	stubOpencode(t, []string{"ses_ours", "ses_other", "ses_old"}, map[string]ocMeta{
 		// An older conversation in the same cwd predates the launch: not ours.
-		"ses_old": {"/repo", launch.Add(-time.Hour)},
+		"ses_old": {dir: "/repo", created: launch.Add(-time.Hour)},
 		// A conversation in a different cwd started after launch: not ours.
-		"ses_other": {"/elsewhere", launch.Add(time.Second)},
+		"ses_other": {dir: "/elsewhere", created: launch.Add(time.Second)},
 		// Ours: same cwd, created just after launch.
-		"ses_ours": {"/repo", launch.Add(2 * time.Second)},
+		"ses_ours": {dir: "/repo", created: launch.Add(2 * time.Second)},
 	})
 
 	id, ok := captureOpencode("/repo", launch, map[string]bool{})
@@ -231,8 +237,8 @@ func TestCaptureOpencodePicksSessionAfterLaunchInCwd(t *testing.T) {
 func TestCaptureOpencodeSkipsClaimed(t *testing.T) {
 	launch := time.Now()
 	stubOpencode(t, []string{"ses_1", "ses_2"}, map[string]ocMeta{
-		"ses_1": {"/repo", launch.Add(time.Second)},
-		"ses_2": {"/repo", launch.Add(2 * time.Second)},
+		"ses_1": {dir: "/repo", created: launch.Add(time.Second)},
+		"ses_2": {dir: "/repo", created: launch.Add(2 * time.Second)},
 	})
 
 	// ses_1 already belongs to another session, so the earliest unclaimed
@@ -245,10 +251,10 @@ func TestCaptureOpencodeSkipsClaimed(t *testing.T) {
 
 func TestParseOpencodeExportReadsDirectoryAndTime(t *testing.T) {
 	out := []byte("Exporting session: ses_x\n" +
-		`{"info":{"id":"ses_x","directory":"/repo","time":{"created":1784385368000}}}`)
-	dir, created, ok := parseOpencodeExport(out)
-	if !ok || dir != "/repo" || created.UnixMilli() != 1784385368000 {
-		t.Fatalf("got dir=%q created=%v ok=%v", dir, created, ok)
+		`{"info":{"id":"ses_x","directory":"/repo","time":{"created":1784385368000,"updated":1784388968000}}}`)
+	dir, created, updated, ok := parseOpencodeExport(out)
+	if !ok || dir != "/repo" || created.UnixMilli() != 1784385368000 || updated.UnixMilli() != 1784388968000 {
+		t.Fatalf("got dir=%q created=%v updated=%v ok=%v", dir, created, updated, ok)
 	}
 }
 
@@ -357,6 +363,194 @@ func TestCaptureGeminiSkipsClaimed(t *testing.T) {
 	id, ok := captureGemini(root, "/repo", launch, map[string]bool{"first-uuid": true})
 	if !ok || id != "second-uuid" {
 		t.Fatalf("got id=%q ok=%v, want second-uuid true", id, ok)
+	}
+}
+
+// Recapture returns the conversation a resumed session picked, and only
+// when exactly one store entry answers the relaunch: a resumed session
+// replays an existing conversation rather than minting one, so a shared cwd
+// can hold several touched entries and none of them may be guessed from.
+
+func TestRecaptureCodexSingleCandidate(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CODEX_HOME", root)
+	launch := time.Now()
+	// An older conversation in the same cwd predates the relaunch: not ours.
+	writeFile(t, filepath.Join(root, "sessions", "2026/07/18/rollout-old.jsonl"),
+		codexRollout("old-uuid", "/repo"), launch.Add(-time.Hour))
+	// Ours: same cwd, touched just after the relaunch.
+	writeFile(t, filepath.Join(root, "sessions", "2026/07/18/rollout-ours.jsonl"),
+		codexRollout("ours-uuid", "/repo"), launch.Add(time.Second))
+
+	id, ok := Recapture("codex", "/repo", launch, map[string]bool{})
+	if !ok || id != "ours-uuid" {
+		t.Fatalf("got id=%q ok=%v, want ours-uuid true", id, ok)
+	}
+}
+
+func TestRecaptureCodexRefusesTwoCandidates(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CODEX_HOME", root)
+	launch := time.Now()
+	writeFile(t, filepath.Join(root, "sessions", "a/rollout-1.jsonl"),
+		codexRollout("first-uuid", "/repo"), launch.Add(time.Second))
+	writeFile(t, filepath.Join(root, "sessions", "a/rollout-2.jsonl"),
+		codexRollout("second-uuid", "/repo"), launch.Add(2*time.Second))
+
+	if id, ok := Recapture("codex", "/repo", launch, map[string]bool{}); ok {
+		t.Fatalf("expected no match for two candidates, got %q", id)
+	}
+}
+
+func TestRecaptureCodexNoCandidate(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CODEX_HOME", root)
+	launch := time.Now()
+	writeFile(t, filepath.Join(root, "sessions", "a/rollout-1.jsonl"),
+		codexRollout("old-uuid", "/repo"), launch.Add(-time.Hour))
+
+	if id, ok := Recapture("codex", "/repo", launch, map[string]bool{}); ok {
+		t.Fatalf("expected no match, got %q", id)
+	}
+}
+
+func TestRecaptureCodexWrongCwd(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CODEX_HOME", root)
+	launch := time.Now()
+	writeFile(t, filepath.Join(root, "sessions", "a/rollout-1.jsonl"),
+		codexRollout("x", "/other"), launch.Add(time.Second))
+
+	if id, ok := Recapture("codex", "/repo", launch, map[string]bool{}); ok {
+		t.Fatalf("expected no match, got %q", id)
+	}
+}
+
+func TestRecaptureCommandCodeSingleCandidate(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := commandCodeRoot()
+	launch := time.Now()
+	// An older conversation in the same cwd predates the relaunch: not ours.
+	writeFile(t, filepath.Join(root, "old-project", "old.jsonl"),
+		commandCodeSession("old-uuid", "/repo"), launch.Add(-time.Hour))
+	// Ours: same cwd, touched just after the relaunch.
+	writeFile(t, filepath.Join(root, "repo-project", "ours.jsonl"),
+		commandCodeSession("ours-uuid", "/repo"), launch.Add(2*time.Second))
+
+	id, ok := Recapture("command-code", "/repo", launch, map[string]bool{})
+	if !ok || id != "ours-uuid" {
+		t.Fatalf("got id=%q ok=%v, want ours-uuid true", id, ok)
+	}
+}
+
+func TestRecaptureCommandCodeRefusesTwoCandidates(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := commandCodeRoot()
+	launch := time.Now()
+	writeFile(t, filepath.Join(root, "a", "1.jsonl"),
+		commandCodeSession("first-uuid", "/repo"), launch.Add(time.Second))
+	writeFile(t, filepath.Join(root, "a", "2.jsonl"),
+		commandCodeSession("second-uuid", "/repo"), launch.Add(2*time.Second))
+
+	if id, ok := Recapture("command-code", "/repo", launch, map[string]bool{}); ok {
+		t.Fatalf("expected no match for two candidates, got %q", id)
+	}
+}
+
+func TestRecaptureGeminiSingleCandidate(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := geminiRoot()
+	launch := time.Now()
+	oursHash := geminiProjectHash("/repo")
+	otherHash := geminiProjectHash("/elsewhere")
+	// An older conversation in the same project predates the relaunch: not ours.
+	writeFile(t, filepath.Join(root, "proj/chats/session-1-old.jsonl"),
+		geminiSessionFixture("old-uuid", oursHash), launch.Add(-time.Hour))
+	// A conversation in a different project touched after launch: not ours.
+	writeFile(t, filepath.Join(root, "proj/chats/session-2-other.jsonl"),
+		geminiSessionFixture("other-uuid", otherHash), launch.Add(time.Second))
+	// Ours: matching project hash, touched just after the relaunch.
+	writeFile(t, filepath.Join(root, "proj/chats/session-3-ours.jsonl"),
+		geminiSessionFixture("ours-uuid", oursHash), launch.Add(2*time.Second))
+
+	id, ok := Recapture("gemini", "/repo", launch, map[string]bool{})
+	if !ok || id != "ours-uuid" {
+		t.Fatalf("got id=%q ok=%v, want ours-uuid true", id, ok)
+	}
+}
+
+func TestRecaptureGeminiRefusesTwoCandidates(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := geminiRoot()
+	launch := time.Now()
+	hash := geminiProjectHash("/repo")
+	writeFile(t, filepath.Join(root, "p/chats/session-1.jsonl"),
+		geminiSessionFixture("first-uuid", hash), launch.Add(time.Second))
+	writeFile(t, filepath.Join(root, "p/chats/session-2.jsonl"),
+		geminiSessionFixture("second-uuid", hash), launch.Add(2*time.Second))
+
+	if id, ok := Recapture("gemini", "/repo", launch, map[string]bool{}); ok {
+		t.Fatalf("expected no match for two candidates, got %q", id)
+	}
+}
+
+func TestRecaptureOpencodePicksTheResumedConversation(t *testing.T) {
+	launch := time.Now()
+	stubOpencode(t, []string{"ses_ours", "ses_other", "ses_untouched"}, map[string]ocMeta{
+		// Created before the relaunch and not touched since: not ours.
+		"ses_untouched": {dir: "/repo", created: launch.Add(-time.Hour), updated: launch.Add(-time.Minute)},
+		// Touched after the relaunch, but in a different directory: not ours.
+		"ses_other": {dir: "/elsewhere", created: launch.Add(-time.Hour), updated: launch.Add(time.Second)},
+		// Ours: an old conversation reopened after the relaunch.
+		"ses_ours": {dir: "/repo", created: launch.Add(-time.Hour), updated: launch.Add(2 * time.Second)},
+	})
+
+	id, ok := Recapture("opencode", "/repo", launch, map[string]bool{})
+	if !ok || id != "ses_ours" {
+		t.Fatalf("got id=%q ok=%v, want ses_ours true", id, ok)
+	}
+}
+
+func TestRecaptureOpencodeRefusesTwoResumedConversations(t *testing.T) {
+	launch := time.Now()
+	stubOpencode(t, []string{"ses_1", "ses_2"}, map[string]ocMeta{
+		"ses_1": {dir: "/repo", created: launch.Add(-time.Hour), updated: launch.Add(time.Second)},
+		"ses_2": {dir: "/repo", created: launch.Add(-time.Hour), updated: launch.Add(2 * time.Second)},
+	})
+
+	if id, ok := Recapture("opencode", "/repo", launch, map[string]bool{}); ok {
+		t.Fatalf("expected no match for two resumed conversations, got %q", id)
+	}
+}
+
+func TestRecaptureOpencodeNoResumedConversation(t *testing.T) {
+	launch := time.Now()
+	stubOpencode(t, []string{"ses_old"}, map[string]ocMeta{
+		"ses_old": {dir: "/repo", created: launch.Add(-time.Hour), updated: launch.Add(-time.Minute)},
+	})
+
+	if id, ok := Recapture("opencode", "/repo", launch, map[string]bool{}); ok {
+		t.Fatalf("expected no match, got %q", id)
+	}
+}
+
+// Hermes keeps no write signal to tell a resumed conversation apart, so
+// Recapture falls through to the same launch-fresh capture as a spawn.
+func TestRecaptureHermesDelegatesToCapture(t *testing.T) {
+	launch := time.Now()
+	path := writeHermesStore(t,
+		hermesRow{"old", "cli", "/repo", launch.Add(-time.Hour)},
+		hermesRow{"ours", "cli", "/repo", launch.Add(2 * time.Second)},
+	)
+	t.Setenv("HERMES_HOME", filepath.Dir(path))
+
+	id, ok := Recapture("hermes", "/repo", launch, map[string]bool{})
+	if !ok || id != "ours" {
+		t.Fatalf("got id=%q ok=%v, want ours true", id, ok)
 	}
 }
 

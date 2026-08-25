@@ -81,6 +81,37 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 	}
 }
 
+// Recapture returns the conversation a resumed session picked, without the
+// earliest-write tie-break Capture applies: a resumed session replays an
+// existing conversation rather than minting one, so the store holds a
+// single conversation touched at or after the relaunch at best, and a
+// shared cwd can hold several. When the candidates for cwd and time do not
+// come to exactly one, the row is left without an id rather than guessing.
+// hermes keeps no write signal to tell a resumed conversation apart, so it
+// falls through to captureHermes and its launch-fresh sessions only.
+func Recapture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
+	cutoff := launchedAt.Add(-clockSlack)
+	var cands []candidate
+	switch sessionStore {
+	case "codex":
+		cands = codexCandidates(codexRoot(), cwd, cutoff, claimed)
+	case "gemini":
+		cands = geminiCandidates(geminiRoot(), cwd, cutoff, claimed)
+	case "command-code":
+		cands = commandCodeCandidates(commandCodeRoot(), cwd, cutoff, claimed)
+	case "opencode":
+		return recaptureOpencode(cwd, cutoff, claimed)
+	case "hermes":
+		return captureHermes(hermesStateDB(), cwd, launchedAt, claimed)
+	default:
+		return "", false
+	}
+	if len(cands) != 1 {
+		return "", false
+	}
+	return cands[0].id, true
+}
+
 func commandCodeRoot() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -94,10 +125,15 @@ func commandCodeRoot() string {
 // the id and the working directory, so capture walks the per-project folders
 // instead of guessing cmd's project folder naming.
 func captureCommandCode(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
+	return pickEarliest(commandCodeCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
+}
+
+// commandCodeCandidates returns the Command Code conversations written for
+// cwd at or after cutoff and not claimed by another session.
+func commandCodeCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) []candidate {
 	if root == "" {
-		return "", false
+		return nil
 	}
-	cutoff := launchedAt.Add(-clockSlack)
 	wantCwd := resolvePath(cwd)
 	var cands []candidate
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -119,7 +155,7 @@ func captureCommandCode(root, cwd string, launchedAt time.Time, claimed map[stri
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
 		return nil
 	})
-	return pickEarliest(cands)
+	return cands
 }
 
 func commandCodeMeta(path string) (id, cwd string, ok bool) {
@@ -298,13 +334,13 @@ var opencodeListIDs = func(cwd string) ([]string, bool) {
 	return dedupeOrdered(opencodeIDPattern.FindAllString(string(out), -1)), true
 }
 
-// opencodeSessionMeta returns a session's working directory and creation
-// time from `opencode export <id>` run in cwd. A package variable so tests
-// substitute canned output.
-var opencodeSessionMeta = func(cwd, id string) (directory string, created time.Time, ok bool) {
+// opencodeSessionMeta returns a session's working directory plus creation
+// and update times from `opencode export <id>` run in cwd. A package
+// variable so tests substitute canned output.
+var opencodeSessionMeta = func(cwd, id string) (directory string, created, updated time.Time, ok bool) {
 	out, err := runOpencodeHead(cwd, "export", id)
 	if err != nil {
-		return "", time.Time{}, false
+		return "", time.Time{}, time.Time{}, false
 	}
 	return parseOpencodeExport(out)
 }
@@ -323,25 +359,27 @@ func dedupeOrdered(items []string) []string {
 	return out
 }
 
-// parseOpencodeExport reads directory and creation time from the info block
-// of an `opencode export` payload. The output leads with a human preamble
-// and is read only as a prefix, so it extracts just the info object by brace
-// matching rather than decoding the whole (possibly truncated) document.
-func parseOpencodeExport(out []byte) (directory string, created time.Time, ok bool) {
+// parseOpencodeExport reads directory and creation and update times from
+// the info block of an `opencode export` payload. The output leads with a
+// human preamble and is read only as a prefix, so it extracts just the info
+// object by brace matching rather than decoding the whole (possibly
+// truncated) document.
+func parseOpencodeExport(out []byte) (directory string, created, updated time.Time, ok bool) {
 	obj, found := extractInfoObject(out)
 	if !found {
-		return "", time.Time{}, false
+		return "", time.Time{}, time.Time{}, false
 	}
 	var info struct {
 		Directory string `json:"directory"`
 		Time      struct {
 			Created int64 `json:"created"`
+			Updated int64 `json:"updated"`
 		} `json:"time"`
 	}
 	if err := json.Unmarshal(obj, &info); err != nil || info.Directory == "" {
-		return "", time.Time{}, false
+		return "", time.Time{}, time.Time{}, false
 	}
-	return info.Directory, time.UnixMilli(info.Time.Created), true
+	return info.Directory, time.UnixMilli(info.Time.Created), time.UnixMilli(info.Time.Updated), true
 }
 
 // extractInfoObject returns the JSON object that follows the "info" key,
@@ -412,10 +450,15 @@ func pickEarliest(cands []candidate) (string, bool) {
 // session_meta record carrying the session id and the directory it ran
 // in. A file older than the launch cannot be this session's.
 func captureCodex(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
+	return pickEarliest(codexCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
+}
+
+// codexCandidates returns the rollout conversations written for cwd at or
+// after cutoff and not claimed by another session.
+func codexCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) []candidate {
 	if root == "" {
-		return "", false
+		return nil
 	}
-	cutoff := launchedAt.Add(-clockSlack)
 	wantCwd := resolvePath(cwd)
 	var cands []candidate
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -437,7 +480,7 @@ func captureCodex(root, cwd string, launchedAt time.Time, claimed map[string]boo
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
 		return nil
 	})
-	return pickEarliest(cands)
+	return cands
 }
 
 // codexMeta reads the session id and cwd from a rollout's first line.
@@ -488,13 +531,43 @@ func captureOpencode(cwd string, launchedAt time.Time, claimed map[string]bool) 
 		if claimed[id] {
 			continue
 		}
-		dir, created, ok := opencodeSessionMeta(cwd, id)
+		dir, created, _, ok := opencodeSessionMeta(cwd, id)
 		if !ok || resolvePath(dir) != wantCwd || created.Before(cutoff) {
 			continue
 		}
 		cands = append(cands, candidate{id: id, modTime: created})
 	}
 	return pickEarliest(cands)
+}
+
+// recaptureOpencode finds the conversation a resumed opencode session
+// touched again. The write signal is info.time.updated, which advances each
+// time the conversation is reopened, so a resumed conversation is the one
+// whose update time falls at or after the restart.
+func recaptureOpencode(cwd string, cutoff time.Time, claimed map[string]bool) (string, bool) {
+	ids, ok := opencodeListIDs(cwd)
+	if !ok {
+		return "", false
+	}
+	wantCwd := resolvePath(cwd)
+	var cands []candidate
+	for i, id := range ids {
+		if i >= opencodeScanLimit {
+			break
+		}
+		if claimed[id] {
+			continue
+		}
+		dir, _, updated, ok := opencodeSessionMeta(cwd, id)
+		if !ok || resolvePath(dir) != wantCwd || updated.Before(cutoff) {
+			continue
+		}
+		cands = append(cands, candidate{id: id, modTime: updated})
+	}
+	if len(cands) != 1 {
+		return "", false
+	}
+	return cands[0].id, true
 }
 
 func geminiRoot() string {
@@ -545,10 +618,15 @@ func geminiSessionMeta(path string) (id, projectHash string, ok bool) {
 // is located by matching the project hash gemini records for cwd among
 // session files written at or after launch.
 func captureGemini(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
+	return pickEarliest(geminiCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
+}
+
+// geminiCandidates returns the gemini conversations written for cwd's
+// project at or after cutoff and not claimed by another session.
+func geminiCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) []candidate {
 	if root == "" {
-		return "", false
+		return nil
 	}
-	cutoff := launchedAt.Add(-clockSlack)
 	wantHash := geminiProjectHash(cwd)
 	var cands []candidate
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -570,7 +648,7 @@ func captureGemini(root, cwd string, launchedAt time.Time, claimed map[string]bo
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
 		return nil
 	})
-	return pickEarliest(cands)
+	return cands
 }
 
 // SupportsSessionFile reports whether a session store keeps conversations in

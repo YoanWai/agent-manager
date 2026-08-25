@@ -1009,6 +1009,145 @@ func TestCaptureAgentSessionIDsDropsAnAnswerARestartOutran(t *testing.T) {
 	}
 }
 
+// A revived session resumes whatever conversation its picker opened, so the
+// relaunch cannot use the earliest-write tie-break: several conversations
+// touched after it means several candidates, and binding one anyway would
+// gamble on the wrong context.
+func TestCaptureAgentSessionIDsRefusesAnAmbiguousResume(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	created := time.Now().Add(-time.Hour)
+	relaunched := time.Now().Add(-time.Second)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-1.jsonl"), "id-1", cwd, relaunched.Add(time.Second))
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-2.jsonl"), "id-2", cwd, relaunched.Add(2*time.Second))
+
+	if err := st.CreateSession(store.Session{ID: "sess", Name: "s", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: created}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAgentLaunchedAt("sess", relaunched); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if captured != 0 {
+		t.Fatalf("captured %d, want the ambiguous resume refused", captured)
+	}
+	got, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "" {
+		t.Fatalf("session bound to %q, want it left for the next pass", got.AgentSessionID)
+	}
+}
+
+// With a single conversation touched after the relaunch the resumed session
+// has exactly one answer, and it binds.
+func TestCaptureAgentSessionIDsBindsTheSingleResumedConversation(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	created := time.Now().Add(-time.Hour)
+	relaunched := time.Now().Add(-time.Second)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-1.jsonl"), "resumed-id", cwd, relaunched.Add(time.Second))
+
+	if err := st.CreateSession(store.Session{ID: "sess", Name: "s", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: created}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAgentLaunchedAt("sess", relaunched); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if captured != 1 {
+		t.Fatalf("captured %d, want 1", captured)
+	}
+	got, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "resumed-id" {
+		t.Fatalf("captured %q, want resumed-id", got.AgentSessionID)
+	}
+}
+
+// A spawn keeps the normal capture path: the exact-one guard answers resumed
+// sessions only, so an old conversation whose rollout was touched after the
+// launch still binds by earliest write, unchanged.
+func TestCaptureAgentSessionIDsKeepsTheEarliestWriteForASpawn(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	launch := time.Now().Add(-time.Second)
+	// The old conversation's rollout was touched just after the launch, a
+	// fresh one a moment later: the spawn binds the earliest write, which is
+	// the old conversation here.
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-old.jsonl"), "old-id", cwd, launch.Add(time.Second))
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-new.jsonl"), "new-id", cwd, launch.Add(2*time.Second))
+
+	if err := st.CreateSession(store.Session{ID: "sess", Name: "s", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: launch}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if captured != 1 {
+		t.Fatalf("captured %d, want 1", captured)
+	}
+	got, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "old-id" {
+		t.Fatalf("captured %q, want old-id", got.AgentSessionID)
+	}
+}
+
 // The heartbeat is what tells a sender whether a manager is home, and it
 // rides every poll pass. Stamping it on each one is a write transaction
 // every couple of seconds for as long as the manager stays open, so it is
