@@ -551,9 +551,14 @@ resume_by_id_command = "cmd --session {id}"
 revive_command = "cmd --continue"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
-turn_end = "^\\s*✻ Worked for [\\dhms. ]+$"
+# A turn closes with "✻ Thought for 7 seconds [ctrl+o to expand]" or, for
+# shell-running turns, "✻ Worked for 12s"; the expand hint rides the same row.
+turn_end = "^\\s*✻ (?:Thought|Worked) for [\\dhms. ]+.*$"
+# recap blocks (TASTE, SHELL, TODOS, SEARCH) render below the turn-end
+# summary, their continuation rows indented under a └
+trailing_note = "^\\s*[A-Z][A-Z]+ {2,}"
 limit_line = "^\\s*⚠ You have insufficient credits"
-chrome_line = "^\\s*[─]{4,}\\s*$|^# .*$|^[ \\t█]*$|^\\s*\\? for shortcuts.*$"
+chrome_line = "^\\s*[─]{4,}\\s*$|^# .*$|^[ \\t█]*$|^\\s*\\? for shortcuts.*$|^\\s*» .*$"
 rules = [
   # selection dialogs (trust, tool approval, pickers) number their options
   # behind the prompt marker
@@ -562,9 +567,11 @@ rules = [
   # numbered rows above the marker stay visible to the rules; the trust
   # dialog spells it "↑/↓ to navigate" and the approvals "↑/↓ navigate"
   { state = "waiting", pattern = "↑/↓ (?:to )?navigate" },
-  # the busy footer under a streaming turn; at narrow widths the esc hint
-  # drops and only the tick counter remains
-  { state = "working", pattern = "(?m)^ [·○◇☆✧⌘] \\S+.*(?:esc to interrupt| \\d+)$" },
+  # the busy footer under a streaming turn: "○ Channeling…  esc to
+  # interrupt • 116m 57s • ↓ 41.1k". The esc hint can drop at narrow
+  # widths, and the tail is a duration or a duration plus a token count,
+  # never bare digits.
+  { state = "working", pattern = "(?m)^ [·○◇☆✧⌘] [^\\n]*?(?:esc to interrupt[ \\t]*•[ \\t]*[\\dhms. ]*[\\ds]| [\\dhms. ]*[\\ds])([ \\t]*•[ \\t]*[↓↑] [\\d.]+k?)?$" },
   { state = "errored", pattern = "(?im)^\\s*(?:⚠ )?Error:" },
 ]
 `

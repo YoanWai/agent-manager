@@ -93,6 +93,9 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := commandCode.PromptFlag; got != "" {
 		t.Fatalf("command-code prompt_flag = %q want empty (positional prompt)", got)
 	}
+	if got := commandCode.TurnEnd; got != `^\s*✻ (?:Thought|Worked) for [\dhms. ]+.*$` {
+		t.Fatalf("command-code turn_end = %q want the Thought/Worked shape", got)
+	}
 	if got := commandCode.ActivityCutoff; got == "" {
 		t.Fatalf("command-code activity_cutoff is empty; prompt delivery needs it")
 	}
