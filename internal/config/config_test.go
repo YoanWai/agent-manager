@@ -100,7 +100,7 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 		t.Fatalf("command-code activity_cutoff is empty; prompt delivery needs it")
 	}
 	if got := commandCode.MCP; got != "" {
-		t.Fatalf("command-code mcp = %q want empty (no MCP client, like pi)", got)
+		t.Fatalf("command-code mcp = %q want empty (style inferred from the tool key)", got)
 	}
 	if cfg.Tools["claude"].Command != "claude" {
 		t.Fatalf("claude command = %q", cfg.Tools["claude"].Command)

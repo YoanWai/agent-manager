@@ -43,7 +43,7 @@ type Tool struct {
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
-	// "hermes" or "none".
+	// "hermes", "command-code" or "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP            string `toml:"mcp"`
 	StatusSource   string `toml:"status_source"`
