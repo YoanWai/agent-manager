@@ -604,7 +604,7 @@ func (d *Driver) CapturePane(id string) (string, error) {
 // above the visible ones, for extractions whose anchor — a message
 // bullet, a prompt echo — can scroll off the visible screen.
 func (d *Driver) CapturePaneHistory(id string, lines int) (string, error) {
-	return d.run("capture-pane", "-p", "-e", "-S", "-"+strconv.Itoa(lines), "-t", sessionName(id))
+	return d.run("capture-pane", "-p", "-e", "-S", "-"+strconv.Itoa(lines), "-t", PaneTarget(id))
 }
 
 // capturePlain drops the escapes CapturePane keeps, which an application is

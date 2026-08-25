@@ -899,6 +899,16 @@ func TestInputDraft(t *testing.T) {
 	if draft, ok := engine.InputDraft("codex", "› rename the flag\n  gpt-5.6-terra medium · /home/dev"); !ok || draft != "rename the flag" {
 		t.Fatalf("codex draft = %q ok=%v", draft, ok)
 	}
+	// A gutter composer sits above its cutoff, so the text after the
+	// cutoff match is the box's border fill, not what was typed — even
+	// when a typed line is sitting right there in the gutter.
+	opencode := "┃\n" +
+		"┃ fix the flaky test\n" +
+		"╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n" +
+		" ■⬝⬝⬝⬝⬝⬝  esc interrupt"
+	if _, ok := engine.InputDraft("opencode", opencode); ok {
+		t.Fatal("a gutter composer's border fill must not read as a draft")
+	}
 }
 
 // LastUserEcho reads the newest prompt the transcript echoes; a pane whose

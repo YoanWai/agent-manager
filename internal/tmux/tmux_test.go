@@ -1159,3 +1159,27 @@ func TestResizePinsTheAgentWindowNotTheCurrentOne(t *testing.T) {
 		t.Fatalf("agent pane = %dx%d, want the preview box 100x30", got.Width, got.Height)
 	}
 }
+
+// History captures feed quote recovery, so they must read the agent's own
+// pane: a bare session target resolves to whichever pane is active, and an
+// agent that split its window would have its quotes read off the teammate.
+func TestCapturePaneHistoryTargetsTheAgentPane(t *testing.T) {
+	dir := t.TempDir()
+	callLog := dir + "/calls"
+	stub := dir + "/tmux"
+	script := "#!/bin/sh\necho \"$@\" >> " + callLog + "\necho pane\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+	if _, err := driver.CapturePaneHistory("x1", 300); err != nil {
+		t.Fatalf("CapturePaneHistory: %v", err)
+	}
+	logged, err := os.ReadFile(callLog)
+	if err != nil {
+		t.Fatalf("read call log: %v", err)
+	}
+	if !strings.Contains(string(logged), "-S -300 -t "+PaneTarget("x1")) {
+		t.Fatalf("history capture went to the wrong target, calls:\n%s", logged)
+	}
+}

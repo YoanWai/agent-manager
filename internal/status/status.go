@@ -491,6 +491,12 @@ func (e *Engine) InputDraft(tool, pane string) (string, bool) {
 	if !ok || tr.activityCutoff == nil {
 		return "", false
 	}
+	// An input_prefix declares a composer drawn above the cutoff
+	// (opencode's ┃ box over ╹), so the text after a cutoff match is the
+	// composer's frame, never a draft.
+	if tr.inputPrefix != nil {
+		return "", false
+	}
 	locs := tr.activityCutoff.FindAllStringIndex(pane, -1)
 	if len(locs) == 0 {
 		return "", false
