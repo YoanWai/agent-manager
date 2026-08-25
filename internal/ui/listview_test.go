@@ -621,6 +621,31 @@ func TestSelectedRowMetaUsesBrightNotSubtle(t *testing.T) {
 	}
 }
 
+// A row whose conversation id was captured names it in the meta, since
+// that id is what a revive resumes; a row with nothing captured must not
+// show an id at all.
+func TestSessionRowCarriesTheCapturedConversationIDInMeta(t *testing.T) {
+	const conversation = "conv-abc-123"
+	m := &Model{}
+	withID := treeRow{sess: store.Session{
+		ID: "s1", Name: "with-conversation", Tool: "claude", Status: status.Finished,
+		CreatedAt: time.Now().Add(-3 * time.Hour), AgentSessionID: conversation,
+	}}
+	withoutID := treeRow{sess: store.Session{
+		ID: "s2", Name: "without-conversation", Tool: "claude", Status: status.Finished,
+		CreatedAt: time.Now().Add(-3 * time.Hour),
+	}}
+
+	row := ansi.Strip(m.renderTreeRow(withID, false, 120, 0, panelHex()))
+	if !strings.Contains(row, conversation) {
+		t.Fatalf("row should carry the captured id in its meta:\n%s", row)
+	}
+	row = ansi.Strip(m.renderTreeRow(withoutID, false, 120, 0, panelHex()))
+	if strings.Contains(row, conversation) {
+		t.Fatalf("a session with no captured id must not show one:\n%s", row)
+	}
+}
+
 // A spawn hands its agent the rename directive, so the row stands in for
 // the generated name until the agent answers, and settles on the generated
 // one as soon as that answer can no longer come.

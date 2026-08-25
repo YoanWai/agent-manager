@@ -150,6 +150,9 @@ func ReviveCommand(tool config.Tool, agentSessionID string) string {
 	if agentSessionID != "" && tool.ResumeByIDCommand != "" {
 		return strings.ReplaceAll(tool.ResumeByIDCommand, "{id}", tmux.ShellQuote(agentSessionID))
 	}
+	if tool.ResumePickerCommand != "" {
+		return tool.ResumePickerCommand
+	}
 	if tool.ReviveCommand != "" {
 		return tool.ReviveCommand
 	}

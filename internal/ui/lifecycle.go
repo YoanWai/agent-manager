@@ -223,7 +223,7 @@ func (m *Model) sessionsInGroup(path string) []store.Session {
 // sessions share a directory.
 func (m *Model) degradedResumeNotice(sess store.Session) string {
 	tool, ok := m.cfg.Tools[sess.Tool]
-	if !ok || sess.AgentSessionID != "" || tool.ResumeByIDCommand == "" {
+	if !ok || sess.AgentSessionID != "" || tool.ResumeByIDCommand == "" || tool.ResumePickerCommand != "" {
 		return ""
 	}
 	return fmt.Sprintf("revived %s with --continue: no conversation id captured, may resume the wrong conversation", sess.Name)

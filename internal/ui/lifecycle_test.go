@@ -551,6 +551,46 @@ func TestRevivedLaunchTimeSitsInsideStartingGrace(t *testing.T) {
 	}
 }
 
+// degradedResumeNotice exists for the revive that came back blind: a tool
+// whose picker opened, or a session whose own conversation id was captured,
+// resumes the right conversation, and only the blind revive_command
+// fallback warrants the warning.
+func TestDegradedResumeNoticeWarnsOnlyForBlindFallbacks(t *testing.T) {
+	base := config.Tool{
+		Command:           "claude",
+		ReviveCommand:     "claude --continue",
+		ResumeByIDCommand: "claude --resume {id}",
+	}
+	picker := base
+	picker.ResumePickerCommand = "claude --resume"
+
+	for _, tc := range []struct {
+		name string
+		tool config.Tool
+		id   string
+		want string
+	}{
+		{"a picker revive is not degraded", picker, "", ""},
+		{"a captured id is not degraded", base, "abc-123", ""},
+		{"a blind continue fallback warns", base, "", "revived reviveme with --continue"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			m.cfg.Tools["claude"] = tc.tool
+			got := m.degradedResumeNotice(store.Session{Tool: "claude", Name: "reviveme", AgentSessionID: tc.id})
+			if tc.want == "" {
+				if got != "" {
+					t.Fatalf("degradedResumeNotice = %q, want empty", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("degradedResumeNotice = %q, want it to contain %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // argCaptureCommand builds a launch command that records the arguments the
 // manager appended to it and then holds the pane open, so a test can prove
 // which flags a launch carried.

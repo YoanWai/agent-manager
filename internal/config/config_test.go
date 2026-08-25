@@ -491,6 +491,22 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 			t.Fatalf("%s resume_by_id_command = %q want an {id} template", name, tool.ResumeByIDCommand)
 		}
 	}
+	// The picker replaces the blind revive_command fallback for the tools
+	// whose native picker is validated; the rest keep the fallback.
+	for _, tc := range []struct{ name, want string }{
+		{"claude", "claude --resume"},
+		{"codex", "codex resume"},
+		{"command-code", "cmd --resume"},
+	} {
+		if got := cfg.Tools[tc.name].ResumePickerCommand; got != tc.want {
+			t.Fatalf("%s resume_picker_command = %q want %q", tc.name, got, tc.want)
+		}
+	}
+	for _, name := range []string{"opencode", "grok", "gemini", "hermes", "pi"} {
+		if got := cfg.Tools[name].ResumePickerCommand; got != "" {
+			t.Fatalf("%s resume_picker_command = %q want empty (no default picker)", name, got)
+		}
+	}
 }
 
 func TestBackfillFillsResumeFields(t *testing.T) {
@@ -507,6 +523,9 @@ func TestBackfillFillsResumeFields(t *testing.T) {
 	}
 	if tool.ResumeByIDCommand != "claude --resume {id}" {
 		t.Fatalf("claude resume_by_id_command = %q want backfilled", tool.ResumeByIDCommand)
+	}
+	if tool.ResumePickerCommand != "claude --resume" {
+		t.Fatalf("claude resume_picker_command = %q want backfilled \"claude --resume\"", tool.ResumePickerCommand)
 	}
 	if tool.ForkCommand == "" {
 		t.Fatal("claude fork_command was not backfilled")

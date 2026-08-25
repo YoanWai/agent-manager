@@ -213,6 +213,9 @@ func TestSessionsListCoversAgentsOnlyAndMarksTheCaller(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+	if err := h.store.SetAgentSessionID(created.ID, "conv-42"); err != nil {
+		t.Fatalf("set agent session id: %v", err)
+	}
 	listed, err := h.sessions.List(h.caller.ID)
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -229,6 +232,9 @@ func TestSessionsListCoversAgentsOnlyAndMarksTheCaller(t *testing.T) {
 	}
 	if !seen[created.ID].Running || seen[created.ID].Name != "worker" {
 		t.Fatalf("listed spawn = %+v", seen[created.ID])
+	}
+	if seen[created.ID].AgentSessionID != "conv-42" {
+		t.Fatalf("listed spawn should carry the captured conversation id, got %+v", seen[created.ID])
 	}
 }
 
@@ -892,5 +898,20 @@ func TestReviveRefusesWhileTheAgentIsStillRunning(t *testing.T) {
 	if _, err := h.sessions.Revive(h.caller.ID, created.ID); err == nil ||
 		!strings.Contains(err.Error(), "still running") {
 		t.Fatalf("reviving a session whose agent is up = %v", err)
+	}
+}
+
+// FormatSession names the conversation a captured id resumes. A line that
+// omits it reads like one that names none, so an agent told to revive
+// "the conversation this session held" has to see it on the line.
+func TestFormatSessionCarriesTheCapturedConversationID(t *testing.T) {
+	withID := Session{Name: "worker", ID: "abcd1234", Tool: "claude", Directory: "/repo", AgentSessionID: "conv-42"}
+	if got := FormatSession(withID); !strings.Contains(got, "(conversation conv-42)") {
+		t.Fatalf("a captured id should name its conversation, got %q", got)
+	}
+	withoutID := withID
+	withoutID.AgentSessionID = ""
+	if got := FormatSession(withoutID); strings.Contains(got, "(conversation") {
+		t.Fatalf("a session with no captured id must not name a conversation, got %q", got)
 	}
 }

@@ -33,7 +33,11 @@ type Session struct {
 	Running   bool   `json:"running" jsonschema:"whether the session currently has a live tmux pane"`
 	Archived  bool   `json:"archived" jsonschema:"whether the session is archived out of the active list"`
 	Branch    string `json:"branch,omitempty" jsonschema:"branch of the worktree Agent Manager created for this session, when it has one"`
-	Self      bool   `json:"self" jsonschema:"whether this row is the calling session itself"`
+	// AgentSessionID is the agent CLI's own conversation id, when the manager
+	// captured one. Revive resumes exactly this conversation through the
+	// tool's resume_by_id_command.
+	AgentSessionID string `json:"agent_session_id,omitempty" jsonschema:"the agent CLI's own conversation id, when captured; revive resumes it exactly"`
+	Self           bool   `json:"self" jsonschema:"whether this row is the calling session itself"`
 }
 
 type SessionScreen struct {
@@ -123,16 +127,17 @@ func (r *runtime) sessionInfo(sess store.Session, running, self bool) Session {
 		}
 	}
 	return Session{
-		ID:        sess.ID,
-		Name:      sess.Name,
-		Tool:      sess.Tool,
-		Group:     sess.Group,
-		Directory: dir,
-		Status:    sess.Status,
-		Running:   running,
-		Archived:  sess.Archived,
-		Branch:    sess.WorktreeBranch,
-		Self:      self,
+		ID:             sess.ID,
+		Name:           sess.Name,
+		Tool:           sess.Tool,
+		Group:          sess.Group,
+		Directory:      dir,
+		Status:         sess.Status,
+		Running:        running,
+		Archived:       sess.Archived,
+		Branch:         sess.WorktreeBranch,
+		AgentSessionID: sess.AgentSessionID,
+		Self:           self,
 	}
 }
 

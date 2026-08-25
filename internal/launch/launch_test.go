@@ -129,6 +129,8 @@ func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
 		ReviveCommand:     "claude --continue",
 		ResumeByIDCommand: "claude --resume {id}",
 	}
+	picker := full
+	picker.ResumePickerCommand = "claude --resume"
 	for _, tc := range []struct {
 		name           string
 		tool           config.Tool
@@ -137,6 +139,8 @@ func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
 	}{
 		{"a captured id resumes that conversation", full, "abc-123", "claude --resume 'abc-123'"},
 		{"no captured id falls back to the newest one", full, "", "claude --continue"},
+		{"no captured id with a picker opens it", picker, "", "claude --resume"},
+		{"a captured id wins over the picker", picker, "abc-123", "claude --resume 'abc-123'"},
 		{"a tool with no revive of its own starts fresh", config.Tool{Command: "pi"}, "abc-123", "pi"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -43,6 +43,9 @@ func FormatTerminalScreen(screen TerminalScreen) string {
 
 func FormatSession(session Session) string {
 	line := fmt.Sprintf("%s (id %s) running %s in %s at %s", session.Name, session.ID, session.Tool, groupLabel(session.Group), session.Directory)
+	if session.AgentSessionID != "" {
+		line += " (conversation " + session.AgentSessionID + ")"
+	}
 	if session.Branch != "" {
 		line += " on branch " + session.Branch
 	}

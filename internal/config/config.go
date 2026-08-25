@@ -34,6 +34,10 @@ type Tool struct {
 	// with the session's agent id. Preferred over ReviveCommand, which only
 	// resumes the working directory's most recent conversation.
 	ResumeByIDCommand string `toml:"resume_by_id_command"`
+	// ResumePickerCommand launches the tool's own session picker when revive
+	// has no captured conversation id, instead of the blind revive_command
+	// fallback, which resumes the directory's newest conversation.
+	ResumePickerCommand string `toml:"resume_picker_command"`
 	// ForkCommand creates a new conversation from an existing one. Templates
 	// can use {id}, {session_file}, {new_id}, and {name}; Agent Manager quotes
 	// each value. {session_file} needs SessionStore to keep one ("gemini").
@@ -239,6 +243,7 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.PromptMode, def.PromptMode)
 	fill(&user.SessionIDFlag, def.SessionIDFlag)
 	fill(&user.ResumeByIDCommand, def.ResumeByIDCommand)
+	fill(&user.ResumePickerCommand, def.ResumePickerCommand)
 	fill(&user.ForkCommand, def.ForkCommand)
 	fill(&user.SessionStore, def.SessionStore)
 	fill(&user.MCP, def.MCP)
@@ -397,6 +402,7 @@ command = "claude"
 # that exact conversation regardless of what else ran in the directory
 session_id_flag = "--session-id"
 resume_by_id_command = "claude --resume {id}"
+resume_picker_command = "claude --resume"
 fork_command = "claude --resume {id} --fork-session --session-id {new_id} --name {name}"
 # fallback when a session predates id tracking: resumes the last conversation there
 revive_command = "claude --continue"
@@ -478,6 +484,7 @@ command = "codex"
 # codex mints its own session id; capture it after launch and resume it
 session_store = "codex"
 resume_by_id_command = "codex resume {id}"
+resume_picker_command = "codex resume"
 fork_command = "codex fork {id}"
 # fallback: resumes the most recent session in the working directory
 revive_command = "codex resume --last"
@@ -650,6 +657,7 @@ command = "cmd"
 session_store = "command-code"
 resume_by_id_command = "cmd --session {id}"
 fork_command = "cmd --session {id} --fork-session --name {name}"
+resume_picker_command = "cmd --resume"
 # fallback: resumes the most recent conversation for the directory
 revive_command = "cmd --continue"
 default_status = "idle"

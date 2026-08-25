@@ -679,7 +679,11 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	// A session names its state in words as well as in its dot; a group,
 	// whose row rolls several states together, is left to its dots.
 	meta := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
-		metaStyle.Render(" · "+sess.Tool+" · "+relSince(lastActivity(sess))+m.elsewhereNote(sess))
+		metaStyle.Render(" · "+sess.Tool)
+	if sess.AgentSessionID != "" {
+		meta += metaStyle.Render(" · " + sess.AgentSessionID)
+	}
+	meta += metaStyle.Render(" · " + relSince(lastActivity(sess)) + m.elsewhereNote(sess))
 
 	if m.comfortableRows {
 		return m.tallRow(sess, head, meta, metaIndent(pad, trail), selected, width, bg)
