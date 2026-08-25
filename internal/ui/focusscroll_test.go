@@ -169,6 +169,17 @@ func TestFocusWheelScrollsHistory(t *testing.T) {
 	}
 }
 
+// The wheel entry point, not just scrollFocus, has to walk tmux history
+// on a plain pane: this is the path a real wheel notch takes.
+func TestWheelFocusWalksTmuxHistory(t *testing.T) {
+	m, _ := focusedWithHistory(t, "wheel-walk")
+
+	m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
+	if m.focusScroll == 0 {
+		t.Fatal("wheel did not walk tmux history")
+	}
+}
+
 // A capture scheduled before the preview reflows must not blank the bottom
 // of the resized viewport when its reply arrives afterwards.
 func TestFocusScrollRecapturesAfterPreviewResize(t *testing.T) {
@@ -612,6 +623,36 @@ func TestAppMouseClearsScrollback(t *testing.T) {
 	}
 	if m.preview != "LIVE-FRAME\n" {
 		t.Fatalf("preview = %q, want the live frame", m.preview)
+	}
+}
+
+// The wheel claim a pushed capture carries can be stale: the cached flag
+// trails an app that left mouse mode by a debounce, and the pane's own
+// history is the tell, since a genuine wheel owner keeps none. A user
+// scrolled into that history must keep their place until the fresh flags
+// arrive.
+func TestStaleMouseClaimDoesNotClearHistoryScroll(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "stale-hold", t.TempDir(), "")
+	m.selectSessionRow(t, "stale-hold")
+	sess := m.rows[m.cursor].sess
+	m.mode = modeFocus
+	m.preview = "SCROLLED-FRAME\n"
+	m.focusScroll = 9
+	m.pane.history = 80
+
+	updated, _ := m.Update(focusPreviewMsg{
+		sessID:      sess.ID,
+		preview:     "LIVE-FRAME\n",
+		paneMouse:   true,
+		historySize: 80,
+	})
+	m = updated.(*Model)
+	if m.focusScroll != 9 {
+		t.Fatalf("focusScroll = %d, want the history offset kept", m.focusScroll)
+	}
+	if m.preview != "SCROLLED-FRAME\n" {
+		t.Fatalf("preview = %q, want the scrolled frame held", m.preview)
 	}
 }
 
