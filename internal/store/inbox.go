@@ -61,11 +61,61 @@ const (
 	PollerHeartbeatStale = 30 * time.Second
 )
 
+// ClaimPoller stamps this manager's socket beside a fresh heartbeat when
+// the store is unclaimed, already this manager's, or held by a manager
+// whose heartbeat has aged past stale, and reports who holds it after the
+// attempt. Read and write share one immediate transaction, so two managers
+// starting against the same store cannot both come away believing they
+// hold it and speak for the same unclaimed sessions.
+func (s *Store) ClaimPoller(socket string, now time.Time, pollInterval time.Duration) (string, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	var holder string
+	err = tx.QueryRow(`SELECT value FROM settings WHERE key = ?`, PollerSocketKey).Scan(&holder)
+	if err != nil && err != sql.ErrNoRows {
+		return "", err
+	}
+	if holder != "" && holder != socket {
+		awake, err := heartbeatAwake(tx, now, pollInterval)
+		if err != nil {
+			return "", err
+		}
+		if awake {
+			return holder, tx.Commit()
+		}
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO settings (key, value) VALUES (?, ?), (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		PollerSocketKey, socket,
+		PollerHeartbeatKey, strconv.FormatInt(now.UnixNano(), 10)); err != nil {
+		return "", err
+	}
+	return socket, tx.Commit()
+}
+
 // ManagerAwake reports whether a manager stamped the heartbeat recently
 // enough to still be polling. Queued messages only move while it runs.
 func (s *Store) ManagerAwake(now time.Time, pollInterval time.Duration) (bool, error) {
-	raw, err := s.Setting(PollerHeartbeatKey)
-	if err != nil || raw == "" {
+	return heartbeatAwake(s.db, now, pollInterval)
+}
+
+// rowQuerier is the part of a database or transaction heartbeatAwake needs,
+// so the claim can read the stamp inside its own transaction.
+type rowQuerier interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+func heartbeatAwake(q rowQuerier, now time.Time, pollInterval time.Duration) (bool, error) {
+	var raw string
+	err := q.QueryRow(`SELECT value FROM settings WHERE key = ?`, PollerHeartbeatKey).Scan(&raw)
+	if err == sql.ErrNoRows || raw == "" {
+		return false, nil
+	}
+	if err != nil {
 		return false, err
 	}
 	stamp, err := strconv.ParseInt(raw, 10, 64)

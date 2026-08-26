@@ -247,3 +247,43 @@ func TestMarkDroppedRetiresTheMessageForGood(t *testing.T) {
 		t.Fatalf("an ack reached a dropped message: %+v err %v", state, err)
 	}
 }
+
+// Two managers starting against one store must not both come away holding
+// it: the loser would speak for the same unclaimed sessions from a tmux
+// server that cannot see their panes.
+func TestClaimPollerHoldsForOneManagerAtATime(t *testing.T) {
+	st := newTestStore(t)
+	now := time.Now()
+	const first, second = "/tmp/first/agentmgr", "/tmp/second/agentmgr"
+
+	holder, err := st.ClaimPoller(first, now, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if holder != first {
+		t.Fatalf("holder of an unclaimed store = %q, want %q", holder, first)
+	}
+
+	holder, err = st.ClaimPoller(second, now, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if holder != first {
+		t.Fatalf("holder = %q, want the awake %q to keep it", holder, first)
+	}
+
+	holder, err = st.ClaimPoller(second, now.Add(2*PollerHeartbeatStale), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if holder != second {
+		t.Fatalf("holder = %q, want %q once the first stopped stamping", holder, second)
+	}
+	stamp, err := st.Setting(PollerHeartbeatKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stamp == "" {
+		t.Fatal("a claim should stamp the heartbeat its readers wait on")
+	}
+}

@@ -112,6 +112,7 @@ func TestUnstampedSessionsFollowTheLeadingManager(t *testing.T) {
 		t.Fatal(err)
 	}
 	stampHeartbeat(t, m.store, time.Now())
+	m.poller.heartbeatAt = time.Time{}
 	m.poller.refreshOnce()
 
 	got, err := m.store.Get(sess.ID)
@@ -122,7 +123,10 @@ func TestUnstampedSessionsFollowTheLeadingManager(t *testing.T) {
 		t.Fatalf("status = %q, want the leading manager's %q left alone", got.Status, status.Working)
 	}
 
+	// The claim runs on the heartbeat's cadence, so age this manager's own
+	// stamp as well to reach the poll that takes the store over.
 	stampHeartbeat(t, m.store, time.Now().Add(-2*store.PollerHeartbeatStale))
+	m.poller.heartbeatAt = time.Time{}
 	m.poller.refreshOnce()
 
 	got, err = m.store.Get(sess.ID)

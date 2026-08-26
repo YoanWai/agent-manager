@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -65,9 +64,13 @@ type poller struct {
 	// flag travels with the timer so a rule classification change restarts
 	// the grace instead of inheriting the previous one.
 	quietSince map[string]quietTimer
-	// heartbeatAt is when this manager last stamped its liveness row.
+	// heartbeatAt is when this manager last tried to claim the store and
+	// stamp its liveness row.
 	heartbeatAt time.Time
-	tick        int
+	// leading records whether the last claim left this manager holding the
+	// store, which decides who speaks for sessions no socket has claimed.
+	leading bool
+	tick    int
 	// prevTreeCPU / prevTreeAt drive interval agent CPU: cumulative
 	// CPU-seconds per pane root from the last poll, so host share uses
 	// the same "over this window" idea as the computer gauge.
@@ -227,23 +230,20 @@ func (p *poller) refreshOnce() tea.Msg {
 	socket := p.tmux.SocketPath()
 	// Delivering a queued message needs this process, so stamp a heartbeat
 	// the session tools can read to tell a sender whether anyone is home.
-	// Stamping every poll would be a write transaction every couple of
-	// seconds for as long as the manager is open; its readers allow the
-	// stamp to age instead.
-	leading, err := p.leadingManager(socket)
-	if err != nil {
-		return errMsg{err}
-	}
-	if leading && time.Since(p.heartbeatAt) >= store.PollerHeartbeatPeriod {
-		stamped := time.Now()
-		if err := p.store.SetSetting(store.PollerHeartbeatKey, strconv.FormatInt(stamped.UnixNano(), 10)); err != nil {
+	// The same write claims the store for this manager's tmux server, which
+	// decides who speaks for sessions no server has claimed yet. Claiming
+	// every poll would be a write transaction every couple of seconds for as
+	// long as the manager is open; its readers allow the stamp to age instead.
+	if time.Since(p.heartbeatAt) >= store.PollerHeartbeatPeriod {
+		claimed := time.Now()
+		holder, err := p.store.ClaimPoller(socket, claimed, p.interval)
+		if err != nil {
 			return errMsg{err}
 		}
-		if err := p.store.SetSetting(store.PollerSocketKey, socket); err != nil {
-			return errMsg{err}
-		}
-		p.heartbeatAt = stamped
+		p.leading = holder == socket
+		p.heartbeatAt = claimed
 	}
+	leading := p.leading
 	if p.tick%inboxPruneEvery == 0 {
 		if err := p.store.PruneInbox(time.Now().Add(-inboxRetention)); err != nil {
 			return errMsg{err}
@@ -1060,26 +1060,6 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	// Delivery can wait on an external process (osascript, notify-send),
 	// so it must never run inside refreshOnce, which holds runMu.
 	go p.notifyFn(notify.Event{Session: sess.Name, Tool: sess.Tool, Kind: kind})
-}
-
-// leadingManager reports whether this manager is the one the store's
-// unclaimed sessions belong to. The manager holding the heartbeat names
-// its tmux server beside it; another manager, on another server, sees
-// panes it has no way to observe and leaves those rows alone until the
-// heartbeat goes stale and the store is nobody's.
-func (p *poller) leadingManager(socket string) (bool, error) {
-	leader, err := p.store.Setting(store.PollerSocketKey)
-	if err != nil {
-		return false, err
-	}
-	if leader == "" || leader == socket {
-		return true, nil
-	}
-	awake, err := p.store.ManagerAwake(time.Now(), p.interval)
-	if err != nil {
-		return false, err
-	}
-	return !awake, nil
 }
 
 func (p *poller) notificationsOn() bool {
