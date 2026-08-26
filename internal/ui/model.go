@@ -130,6 +130,12 @@ type Model struct {
 	// focusScroll is how many lines the focused pane is scrolled back into
 	// its history; zero is live at the bottom.
 	focusScroll int
+	// focusFetchInFlight guards the scroll-region pipeline: one capture
+	// rides the control pipe at a time, and a wheel that moved the target
+	// meanwhile is served by the reply's own follow-up fetch. Without it a
+	// fast wheel queues a full history capture per notch plus a catch-up
+	// per stale reply, and the pipe answers them for half a minute.
+	focusFetchInFlight bool
 	// focusOnEnter mirrors the persisted focus-key setting; the footer
 	// reads it every frame, so it lives here instead of the store.
 	focusOnEnter bool
@@ -1472,13 +1478,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case focusScrollMsg:
 		sess, ok := m.selected()
 		if !ok || sess.ID != msg.sessID {
+			m.focusFetchInFlight = false
 			return m, nil
 		}
 		if msg.offset != m.focusScroll || msg.rows != m.focusPaneRows() {
 			// The wheel or a resize moved the target while this capture was
-			// in flight. Fetch just that final viewport.
+			// in flight. Fetch just that final viewport; the in-flight guard
+			// stays up so the notches that keep arriving ride this fetch.
 			return m, m.focusRegionCmd(sess.ID, m.focusScroll)
 		}
+		m.focusFetchInFlight = false
 		if msg.ok {
 			m.preview = msg.preview
 		}

@@ -289,8 +289,12 @@ func TestScrollStopsAtHistoryTop(t *testing.T) {
 	if limit == 0 {
 		t.Skip("pane reported no history")
 	}
+	// One capture rides the pipe at a time, so notches past the first
+	// return no command; the offset is what a notch always moves.
 	for i := 0; i < 500; i++ {
-		if cmd := m.scrollFocus(-1); cmd == nil {
+		before := m.focusScroll
+		m.scrollFocus(-1)
+		if m.focusScroll == before {
 			break
 		}
 	}
@@ -299,6 +303,44 @@ func TestScrollStopsAtHistoryTop(t *testing.T) {
 	}
 	if m.focusScroll != limit {
 		t.Fatalf("scrolling stopped at %d, want the history top %d", m.focusScroll, limit)
+	}
+}
+
+// A wheel burst keeps one capture in flight: the first notch issues the
+// fetch, the rest only move the offset, and the reply for a target the
+// wheel has already left issues the single catch-up instead of the burst
+// queueing a full history capture per notch.
+func TestWheelBurstKeepsOneCaptureInFlight(t *testing.T) {
+	m, sessID := focusedWithHistory(t, "burst")
+	if m.pane.history == 0 {
+		t.Skip("pane reported no history")
+	}
+	if cmd := m.scrollFocus(-1); cmd == nil {
+		t.Fatal("the first notch should issue the fetch")
+	}
+	for i := 0; i < 5; i++ {
+		if cmd := m.scrollFocus(-1); cmd != nil {
+			t.Fatal("a notch behind an in-flight capture issued its own fetch")
+		}
+	}
+	moved := m.focusScroll
+	if moved != 6*focusScrollStep && moved != m.pane.history {
+		t.Fatalf("offset = %d after 6 notches, want %d", moved, 6*focusScrollStep)
+	}
+	// The reply for the stale first target fetches the final viewport once.
+	updated, cmd := m.Update(focusScrollMsg{sessID: sessID, offset: focusScrollStep, rows: m.focusPaneRows(), ok: true})
+	*m = *updated.(*Model)
+	if cmd == nil {
+		t.Fatal("the stale reply should issue the catch-up fetch")
+	}
+	// The catch-up's own reply lands on the live target and frees the pipe.
+	updated, _ = m.Update(focusScrollMsg{sessID: sessID, offset: m.focusScroll, rows: m.focusPaneRows(), preview: "frame\n", ok: true})
+	*m = *updated.(*Model)
+	if m.focusFetchInFlight {
+		t.Fatal("a reply at the live target should clear the in-flight guard")
+	}
+	if cmd := m.scrollFocus(-1); cmd == nil && m.focusScroll < m.pane.history {
+		t.Fatal("the next notch after settling should fetch again")
 	}
 }
 
