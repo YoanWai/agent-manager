@@ -189,8 +189,8 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 // caretParksAndComposerIsEmpty serves tools that park the terminal cursor
 // below their footer and paint the composer's caret themselves. The parked
 // cell sits on a blank row, so the composer is found by searching up for
-// the marker row; the placeholder on screen is what proves the composer
-// empty, since a draft replaces it and Left there belongs to the agent.
+// the nearest marker row, and an empty composer there is what proves Left
+// costs the agent nothing: a draft holds the key instead.
 // A caret cell that is not parked on a blank row is none of this path's
 // business: the marker rules decide it as usual.
 func (m *Model) caretParksAndComposerIsEmpty(tool string, rows []string) bool {
@@ -205,7 +205,7 @@ func (m *Model) caretParksAndComposerIsEmpty(tool string, rows []string) bool {
 		if _, ok := m.engine.InputPrefix(tool, row); !ok {
 			continue
 		}
-		return m.engine.ComposerShowsPlaceholder(tool, row)
+		return m.engine.ComposerIsEmpty(tool, row)
 	}
 	return false
 }

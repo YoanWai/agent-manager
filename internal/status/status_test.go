@@ -1050,9 +1050,12 @@ func TestDegenerateCutoffStampsNothing(t *testing.T) {
 	}
 }
 
-// The placeholder closes the composer row, so a draft that merely quotes
-// it mid-text stays a draft.
-func TestComposerPlaceholderIsASuffix(t *testing.T) {
+// An empty composer is the pristine placeholder or a bare marker, and the
+// placeholder closes the row, so a draft that merely quotes it mid-text
+// stays a draft. Row shapes measured live on command-code v1.33.0: the
+// placeholder shows until the first prompt is typed, and a composer cleared
+// afterwards paints "❯" with nothing after it for the rest of the session.
+func TestComposerIsEmpty(t *testing.T) {
 	engine, err := NewEngine(config.Config{Tools: map[string]config.Tool{
 		"command-code": {
 			ActivityCutoff:      `(?m)^❯`,
@@ -1062,13 +1065,29 @@ func TestComposerPlaceholderIsASuffix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("engine: %v", err)
 	}
-	if !engine.ComposerShowsPlaceholder("command-code", "❯ Ask your question...") {
-		t.Fatal("the empty composer's placeholder was not recognised")
+	if !engine.ComposerIsEmpty("command-code", "❯ Ask your question...") {
+		t.Fatal("the pristine composer's placeholder was not recognised")
 	}
-	if engine.ComposerShowsPlaceholder("command-code", "❯ fix the Ask your question... bug") {
-		t.Fatal("a draft quoting the placeholder read as the placeholder")
+	for _, row := range []string{"❯", "❯ ", "❯   "} {
+		if !engine.ComposerIsEmpty("command-code", row) {
+			t.Fatalf("a cleared composer %q did not read as empty", row)
+		}
 	}
-	if engine.ComposerShowsPlaceholder("command-code", "❯ retry Ask your question...") {
-		t.Fatal("a draft ending with the placeholder read as the placeholder")
+	if engine.ComposerIsEmpty("command-code", "❯ fix the Ask your question... bug") {
+		t.Fatal("a draft quoting the placeholder read as empty")
+	}
+	if engine.ComposerIsEmpty("command-code", "❯ retry Ask your question...") {
+		t.Fatal("a draft ending with the placeholder read as empty")
+	}
+	// A tool that declares no placeholder never takes the parked-caret
+	// path, so a bare marker of its own is not empty for this purpose.
+	plain, err := NewEngine(config.Config{Tools: map[string]config.Tool{
+		"claude": {ActivityCutoff: `(?m)^❯`},
+	}})
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	if plain.ComposerIsEmpty("claude", "❯ ") {
+		t.Fatal("a tool without a declared placeholder took the parked-caret path")
 	}
 }

@@ -639,6 +639,8 @@ chrome_line = "^\\s*[─]{4,}\\s*$|^# .*$|^[ \\t█]*$|^\\s*\\? for shortcuts.*$
 # The composer paints its own block cursor inside the placeholder when empty;
 # the terminal cursor parks below the footer the whole time. The placeholder
 # is how the arrow step knows the caret sits at the head of an empty prompt.
+# It shows on a pristine prompt only: once a prompt has been typed the
+# composer clears to a bare marker, which reads as empty just the same.
 composer_placeholder = "Ask your question..."
 rules = [
   # selection dialogs (trust, tool approval, pickers) number their options

@@ -584,13 +584,16 @@ func (tr toolRules) inputRow(row string) bool {
 	return loc != nil && loc[0] == 0 && loc[1] > 0
 }
 
-// ComposerShowsPlaceholder reports whether the tool paints its placeholder
-// inside this composer row, which is how an empty composer is told from a
-// draft for tools whose terminal cursor never enters the composer. The
-// whole value after the input marker must be the placeholder: a draft
-// merely containing or ending with it stays a draft. ok is false when the
-// tool declares no placeholder.
-func (e *Engine) ComposerShowsPlaceholder(tool, row string) bool {
+// ComposerIsEmpty reports whether this composer row holds nothing to edit,
+// which is how an empty composer is told from a draft for tools whose
+// terminal cursor never enters the composer. Empty is either the
+// placeholder a tool paints on a pristine prompt or nothing after the
+// marker at all: command-code paints its placeholder until the first prompt
+// is typed and never again, so the bare marker a cleared composer leaves
+// behind is just as empty. A draft merely containing or ending with the
+// placeholder stays a draft. False for a tool that declares no placeholder,
+// which keeps every other tool on the marker rules.
+func (e *Engine) ComposerIsEmpty(tool, row string) bool {
 	tr, ok := e.tools[tool]
 	if !ok || tr.composerPlaceholder == "" {
 		return false
@@ -599,7 +602,8 @@ func (e *Engine) ComposerShowsPlaceholder(tool, row string) bool {
 	if !ok {
 		return false
 	}
-	return strings.TrimSpace(row[len(prefix):]) == tr.composerPlaceholder
+	rest := strings.TrimSpace(row[len(prefix):])
+	return rest == "" || rest == tr.composerPlaceholder
 }
 
 func (tr toolRules) activityRegion(pane string) (string, bool) {
