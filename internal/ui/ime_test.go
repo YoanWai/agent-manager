@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -385,7 +386,7 @@ func TestCursorOutputDisablesAnchoringAfterWriteFailure(t *testing.T) {
 	out := &scriptedWriter{failOn: 1}
 	w := &cursorOutputWriter{out: out, anchor: anchor, altScreen: true}
 
-	if _, err := w.Write([]byte("frame")); err != io.ErrClosedPipe {
+	if _, err := w.Write([]byte("frame")); !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatalf("write error = %v, want %v", err, io.ErrClosedPipe)
 	}
 	if w.altScreen || len(w.altScreenPrefix) != 0 {
@@ -399,10 +400,13 @@ func TestCursorOutputReturnsCursorPositionWriteFailure(t *testing.T) {
 	out := &scriptedWriter{failOn: 2}
 	w := &cursorOutputWriter{out: out, anchor: anchor, altScreen: true}
 
-	if _, err := w.Write([]byte("frame")); err != io.ErrClosedPipe {
+	if _, err := w.Write([]byte("frame")); !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatalf("cursor position error = %v, want %v", err, io.ErrClosedPipe)
 	}
 	if len(out.writes) != 2 {
 		t.Fatalf("writes = %d, want initial frame and cursor position", len(out.writes))
+	}
+	if w.altScreen || len(w.altScreenPrefix) != 0 {
+		t.Fatalf("cursor position failure left terminal state active: alt=%v prefix=%q", w.altScreen, w.altScreenPrefix)
 	}
 }
