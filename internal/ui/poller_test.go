@@ -1231,3 +1231,41 @@ func stampHeartbeat(t *testing.T, st *store.Store, at time.Time) {
 		t.Fatal(err)
 	}
 }
+
+// Claiming a row is also the moment to write its status: until the claim
+// the row was anyone's, so a manager that cannot see this pane may have
+// stamped it since this pass read the list. The write goes out even when
+// the derived status matches what this pass listed.
+func TestClaimingASessionWritesItsStatus(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "claimed-back", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	m.poller.refreshOnce()
+
+	// Back to how a row that predates the column looks, with its pane still
+	// running here.
+	if err := m.store.SetTmuxSocket(sess.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	before, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m.poller.refreshOnce()
+
+	after, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.TmuxSocket != m.tmux.SocketPath() {
+		t.Fatalf("socket = %q, want the claim on %q", after.TmuxSocket, m.tmux.SocketPath())
+	}
+	if !after.LastStatusAt.After(before.LastStatusAt) {
+		t.Fatalf("status was not rewritten on the claiming pass: %s then %s",
+			before.LastStatusAt, after.LastStatusAt)
+	}
+	if after.Status == status.Dead {
+		t.Fatal("a session whose pane runs here must not be left dead")
+	}
+}

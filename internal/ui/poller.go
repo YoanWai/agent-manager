@@ -292,6 +292,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			continue
 		}
 		live := panes[sess.ID].PID > 0
+		claimed := false
 		if sess.TmuxSocket == "" {
 			// Sessions that predate the column are the leading manager's to
 			// speak for until one of them shows a pane here to claim.
@@ -303,6 +304,7 @@ func (p *poller) refreshOnce() tea.Msg {
 					return errMsg{err}
 				}
 				sessions[i].TmuxSocket = socket
+				claimed = true
 			}
 		}
 		if err := p.applyPendingRename(&sessions[i]); err != nil {
@@ -400,7 +402,11 @@ func (p *poller) refreshOnce() tea.Msg {
 				}
 			}
 		}
-		if newStatus != sess.Status {
+		// A row claimed on this pass is written even when the status did not
+		// move, because the row was anyone's until the claim: a manager that
+		// cannot see this pane may have stamped it dead since this pass read
+		// the list, and that stamp is corrected here rather than a poll later.
+		if newStatus != sess.Status || claimed {
 			// The row can be claimed by the manager that can see its pane
 			// between this pass listing it and reaching here, and a status
 			// derived without that pane must not land on top of the claim.
@@ -408,7 +414,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			if err != nil {
 				return errMsg{err}
 			}
-			if written {
+			if written && newStatus != sess.Status {
 				sessions[i].Status = newStatus
 				p.notifyTransition(sess, newStatus)
 			}
