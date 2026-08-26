@@ -914,6 +914,13 @@ func TestCaretParkedBelowCommandCodesComposer(t *testing.T) {
 		t.Fatal("a caret parked off the left edge was read as input start")
 	}
 
+	// Column zero over a painted row is a cursor on content, not the
+	// blank corner the park promises, so the scan never starts.
+	m = build(0, 6, "⠶ Working on it.", "", composer, "✻ Thought for 2 seconds [ctrl+o to expand]", "", "")
+	if m.caretAtInputStart("s1", "command-code") {
+		t.Fatal("a column-zero cursor on a footer row was read as the parked caret")
+	}
+
 	// A tool that declares no placeholder never takes the parked path, so
 	// its own marker rules keep deciding.
 	m = build(0, 7, "⠶ Working on it.", "", composer, "", "", "")
@@ -938,7 +945,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	sess := m.rows[m.cursor].sess
 	m.rows[m.cursor].sess.Tool = "command-code"
 	m.pane.forID = sess.ID
-	m.pane.cursor = paneCursor{x: 0, y: 5, ok: true}
+	m.pane.cursor = paneCursor{x: 0, y: 6, ok: true}
 	m.preview = "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ Ask your question...\n────────────\n  ? for shortcuts\n\n\n\n"
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
@@ -952,7 +959,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("after re-enter, mode = %v", m.mode)
 	}
-	m.pane.cursor = paneCursor{x: 0, y: 5, ok: true}
+	m.pane.cursor = paneCursor{x: 0, y: 6, ok: true}
 	m.preview = "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ z\n────────────\n  ? for shortcuts\n\n\n\n"
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)

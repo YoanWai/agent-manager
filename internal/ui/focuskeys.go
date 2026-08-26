@@ -189,7 +189,10 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 // A caret cell that is not parked on a blank row is none of this path's
 // business: the marker rules decide it as usual.
 func (m *Model) caretParksAndComposerIsEmpty(tool string, rows []string) bool {
-	if m.pane.cursor.x != 0 {
+	// The parking spot is a blank corner cell: column zero on a row with
+	// nothing painted on it. A cursor at column zero over any other
+	// content is not the park, whatever sits above it.
+	if m.pane.cursor.x != 0 || strings.TrimSpace(ansi.Strip(rows[m.pane.cursor.y])) != "" {
 		return false
 	}
 	for y := m.pane.cursor.y - 1; y >= 0; y-- {
