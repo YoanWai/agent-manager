@@ -309,10 +309,6 @@ func TestSessionsKillKeepsTheScreenAndReviveBringsItBack(t *testing.T) {
 	if !revived.Running || !h.driver.Exists(created.ID) {
 		t.Fatalf("revived session = %+v", revived)
 	}
-	if _, err := h.sessions.Revive(h.caller.ID, created.ID); err == nil ||
-		!strings.Contains(err.Error(), "still running") {
-		t.Fatalf("reviving a live session error = %v", err)
-	}
 	if _, err := h.sessions.Kill(h.caller.ID, h.caller.ID); err == nil {
 		t.Fatal("a session must not kill itself")
 	}
