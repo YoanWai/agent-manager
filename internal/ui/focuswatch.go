@@ -270,12 +270,13 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 }
 
 // matchExecShape gives the control-pipe capture the same shape the exec
-// CapturePane path produces. Only the terminating newline comes off:
-// trailing blank rows are pane content, and dropping them shifts every
-// line up, so the pushed and polled captures would disagree about where
-// the agent's output sits.
+// CapturePane path produces. The control client joins the reply's lines
+// with newlines and never appends a terminator, so the terminator is added
+// here and nothing is ever trimmed: a trailing newline in the join IS a
+// blank pane row, and trimming it drops the very row the caret parks on
+// when a tool rests its cursor at the pane's bottom edge.
 func matchExecShape(pane string) string {
-	return strings.TrimSuffix(pane, "\n") + "\n"
+	return pane + "\n"
 }
 
 // applyPaneState reads "x,y,mouseflags,history,allmotion,sgr" from

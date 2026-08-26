@@ -504,14 +504,50 @@ func TestPollPreviewResumesAfterWatcherStops(t *testing.T) {
 }
 
 // Trailing blank pane rows are content: dropping them shifts every line
-// up, which is what made the pushed and polled captures disagree.
+// up, which is what made the pushed and polled captures disagree. The
+// input is shaped like the control client's reply, a newline JOIN of the
+// captured rows with no terminator, so a 3-row pane whose last two rows
+// are blank arrives as "top line\n\n"; the old trim ate the final blank
+// row, and a caret parked on the pane's bottom row pointed past the rows.
 func TestControlCaptureKeepsTrailingBlankRows(t *testing.T) {
-	pane := "top line\n\n\n"
+	pane := "top line\n\n"
 	if got, want := matchExecShape(pane), "top line\n\n\n"; got != want {
 		t.Fatalf("matchExecShape(%q) = %q, want %q", pane, got, want)
 	}
 	if got := len(strings.Split(strings.TrimSuffix(matchExecShape(pane), "\n"), "\n")); got != 3 {
 		t.Fatalf("kept %d rows, want 3", got)
+	}
+	// A pane whose last row carries text gains only the terminator.
+	if got, want := matchExecShape("a\nb"), "a\nb\n"; got != want {
+		t.Fatalf("matchExecShape(%q) = %q, want %q", "a\nb", got, want)
+	}
+}
+
+// The caret command-code parks on the pane's bottom row lives on the very
+// blank row the old trim dropped: the pushed capture then held one row
+// fewer than the caret's y, the bounds check bailed, and Left went dead on
+// exactly the sessions whose caret rests at the bottom edge. Rows and
+// caret copied from a live 182x47 pane (debug capture, 2026-08-26).
+func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
+	m := buildModel(t)
+	rows := make([]string, 47)
+	rows[36] = " TODOS  [4 items · 2 done] Sending Tier 3 messages… (paused) [ctrl+x to expand]"
+	rows[38] = strings.Repeat("─", 60)
+	rows[39] = "❯ Ask your question..."
+	rows[40] = strings.Repeat("─", 60)
+	rows[41] = "  » permission bypass on [shift+tab]"
+	rows[42] = "  ? for shortcuts · PR #390 · taste on"
+	controlJoin := strings.Join(rows, "\n")
+
+	m.mode = modeFocus
+	m.preview = matchExecShape(controlJoin)
+	m.pane.forID = "s1"
+	m.pane.cursor = paneCursor{x: 0, y: 46, ok: true}
+	if got := len(strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n")); got != 47 {
+		t.Fatalf("preview kept %d rows, want all 47", got)
+	}
+	if !m.caretAtInputStart("s1", "command-code") {
+		t.Fatal("the bottom-parked caret over an empty composer was not recognised")
 	}
 }
 
