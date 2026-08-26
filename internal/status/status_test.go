@@ -830,3 +830,45 @@ func TestTypingHold(t *testing.T) {
 		})
 	}
 }
+
+// A degenerate cutoff like ^ matches every row at zero width. InputPrefix
+// refuses it for tools that did not declare a prefix, and the row-matcher
+// behind MatchesActivityCutoff refuses it just the same, so neither door
+// can stamp arbitrary rows as composer rows.
+func TestDegenerateCutoffStampsNothing(t *testing.T) {
+	engine, err := NewEngine(config.Config{Tools: map[string]config.Tool{
+		"degenerate": {Command: "x", ActivityCutoff: "^"},
+	}})
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	if _, ok := engine.InputPrefix("degenerate", "any row at all"); ok {
+		t.Fatal("a zero-width cutoff read as an input prefix")
+	}
+	if engine.MatchesActivityCutoff("degenerate", "any row at all") {
+		t.Fatal("a zero-width cutoff read as a composer boundary")
+	}
+}
+
+// The placeholder closes the composer row, so a draft that merely quotes
+// it mid-text stays a draft.
+func TestComposerPlaceholderIsASuffix(t *testing.T) {
+	engine, err := NewEngine(config.Config{Tools: map[string]config.Tool{
+		"command-code": {
+			ActivityCutoff:      `(?m)^❯`,
+			ComposerPlaceholder: "Ask your question...",
+		},
+	}})
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	if !engine.ComposerShowsPlaceholder("command-code", "❯ Ask your question...") {
+		t.Fatal("the empty composer's placeholder was not recognised")
+	}
+	if engine.ComposerShowsPlaceholder("command-code", "❯ fix the Ask your question... bug") {
+		t.Fatal("a draft quoting the placeholder read as the placeholder")
+	}
+	if engine.ComposerShowsPlaceholder("command-code", "❯ retry Ask your question...") {
+		t.Fatal("a draft ending with the placeholder read as the placeholder")
+	}
+}

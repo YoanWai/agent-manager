@@ -75,7 +75,14 @@ type Tool struct {
 	// such a row really sits at the prompt head also reads one row of
 	// context above; see caretRowEndsAPromptHead.
 	InputPrefix string `toml:"input_prefix"`
-	Rules       []Rule `toml:"rules"`
+	// ComposerPlaceholder is the placeholder text a tool paints inside its
+	// empty composer, and a draft replaces. It serves the arrow-step pair
+	// for tools whose terminal cursor never enters the composer: the real
+	// caret cell cannot say where the composer's caret is, so the visible
+	// placeholder is the evidence that it sits at the head of an empty
+	// prompt. Left unfocuses only while the placeholder is on screen.
+	ComposerPlaceholder string `toml:"composer_placeholder"`
+	Rules               []Rule `toml:"rules"`
 }
 
 type Config struct {
@@ -217,6 +224,7 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.LimitLine, def.LimitLine)
 	fill(&user.DialogFooter, def.DialogFooter)
 	fill(&user.InputPrefix, def.InputPrefix)
+	fill(&user.ComposerPlaceholder, def.ComposerPlaceholder)
 	if name == "claude" && user.BusyLine == busyLineAgentsOnly {
 		user.BusyLine = def.BusyLine
 	}
@@ -589,6 +597,10 @@ turn_end = "^\\s*✻ (?:Thought|Worked) for [\\dhms. ]+.*$"
 trailing_note = "^\\s*[A-Z][A-Z]+ {2,}"
 limit_line = "^\\s*⚠ You have insufficient credits"
 chrome_line = "^\\s*[─]{4,}\\s*$|^# .*$|^[ \\t█]*$|^\\s*\\? for shortcuts.*$|^\\s*» .*$"
+# The composer paints its own block cursor inside the placeholder when empty;
+# the terminal cursor parks below the footer the whole time. The placeholder
+# is how the arrow step knows the caret sits at the head of an empty prompt.
+composer_placeholder = "Ask your question..."
 rules = [
   # selection dialogs (trust, tool approval, pickers) number their options
   # behind the prompt marker
