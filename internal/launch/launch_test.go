@@ -100,6 +100,11 @@ func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
 		t.Fatalf("a tool whose MCP tool descriptions say this already must not repeat it, got %q", plan.Command)
 	}
 
+	commandCode := Assemble("command-code", config.Tool{Command: "cmd"}, "build the api", false)
+	if strings.Contains(commandCode.Command, CoordinationNote) {
+		t.Fatalf("command-code registers MCP on spawn, so it must not get the subcommand note, got %q", commandCode.Command)
+	}
+
 	// A slash command carries neither, so both queue, and the order is what
 	// the agent reads: the directive ends on "Then continue.", and the note
 	// is what it continues into.

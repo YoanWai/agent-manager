@@ -1331,8 +1331,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pane.sgr = msg.paneSGR
 		m.pane.history = msg.historySize
 		// Once the app owns the wheel, nothing can walk a leftover offset
-		// back down, and holding it would freeze the view for good.
-		if m.pane.mouse && m.focusScroll != 0 {
+		// back down, and holding it would freeze the view for good. A
+		// mouse-tracking agent keeps no tmux history, though, so history
+		// beside a wheel claim is the cached flag trailing an app that
+		// just left mouse mode, and the offset stays reachable.
+		if m.pane.mouse && m.focusScroll != 0 && m.pane.history == 0 {
 			m.focusScroll = 0
 		}
 		// A scrolled-back pane holds still: live frames would yank the

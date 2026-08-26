@@ -3,6 +3,9 @@
 package clipboard
 
 import (
+	"context"
+	"errors"
+
 	designclip "golang.design/x/clipboard"
 )
 
@@ -13,9 +16,12 @@ func init() {
 		if err := designclip.Init(); err != nil {
 			return nil, err
 		}
-		data := designclip.Read(designclip.FmtImage)
-		if len(data) == 0 {
+		data, err := designclip.Read(context.Background(), designclip.FmtImage)
+		if errors.Is(err, designclip.ErrNoData) {
 			return nil, ErrNoImage
+		}
+		if err != nil {
+			return nil, err
 		}
 		return data, nil
 	}

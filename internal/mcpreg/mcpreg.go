@@ -28,13 +28,14 @@ const StyleNone = "none"
 var ErrHermesMCPUnavailable = errors.New("hermes is missing MCP support: run hermes setup, then spawn again")
 
 var knownStyles = map[string]bool{
-	"claude":   true,
-	"codex":    true,
-	"opencode": true,
-	"grok":     true,
-	"gemini":   true,
-	"hermes":   true,
-	StyleNone:  true,
+	"claude":       true,
+	"codex":        true,
+	"opencode":     true,
+	"grok":         true,
+	"gemini":       true,
+	"hermes":       true,
+	"command-code": true,
+	StyleNone:      true,
 }
 
 // Style resolves a tool's registration style: the explicit `mcp` config
@@ -97,6 +98,11 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 			return "", err
 		}
 		return command, nil
+	case "command-code":
+		if err := ensureCommandCodeRegistered(exe, hooksDir); err != nil {
+			return "", err
+		}
+		return command, nil
 	default:
 		return command, nil
 	}
@@ -150,6 +156,14 @@ func writeConfig(dir, name string, content []byte) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+// Command Code overlays stored env onto process.env without expanding ${VAR}.
+func ensureCommandCodeRegistered(exe, hooksDir string) error {
+	cmd := exec.Command("cmd", "mcp", "add",
+		"--scope", "user",
+		serverName, "--", exe, "mcp")
+	return ensureRegisteredOnce("command-code", exe, hooksDir, cmd)
 }
 
 // ensureGrokRegistered adds the server to grok's user-scope config once

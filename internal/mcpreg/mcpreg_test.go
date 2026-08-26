@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 )
 
@@ -23,7 +24,10 @@ func TestStyleResolution(t *testing.T) {
 		{"grok", "", "grok"},
 		{"gemini", "", "gemini"},
 		{"hermes", "", "hermes"},
+		{"command-code", "", "command-code"},
+		{"pi", "", "none"},
 		{"aider", "", "none"},
+		{"command-code", "none", "none"},
 		{"my-claude", "claude", "claude"},
 		{"claude", "none", "none"},
 		{"claude", "bogus", "none"},
@@ -32,6 +36,19 @@ func TestStyleResolution(t *testing.T) {
 		if got := Style(c.tool, c.explicit); got != c.want {
 			t.Fatalf("Style(%q, %q) = %q, want %q", c.tool, c.explicit, got, c.want)
 		}
+	}
+}
+
+func TestDefaultCommandCodeStyleRegisters(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Style("command-code", cfg.Tools["command-code"].MCP); got != "command-code" {
+		t.Fatalf("default command-code style = %q, want command-code", got)
+	}
+	if got := Style("pi", cfg.Tools["pi"].MCP); got != StyleNone {
+		t.Fatalf("default pi style = %q, want %q", got, StyleNone)
 	}
 }
 
@@ -138,6 +155,24 @@ func TestApplyGeminiSkipsWhenMarkerMatches(t *testing.T) {
 	}
 	if command != "gemini" {
 		t.Fatalf("command = %q", command)
+	}
+}
+
+func TestApplyCommandCodeSkipsWhenMarkerMatches(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mcp-command-code-registered"), []byte("/opt/bin/agent-manager"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{hooks.EnvSessionID: "sess-abcd"}
+	command, err := Apply("command-code", "/opt/bin/agent-manager", dir, "cmd", env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != "cmd" {
+		t.Fatalf("command = %q", command)
+	}
+	if env[hooks.EnvSessionID] != "sess-abcd" {
+		t.Fatalf("env = %v, want the per-session id left on the launch environment", env)
 	}
 }
 
@@ -295,6 +330,59 @@ exit 7
 	}
 	if exitErr.ExitCode() != 7 {
 		t.Fatalf("exit code = %d, want 7", exitErr.ExitCode())
+	}
+}
+
+func TestApplyCommandCodeRegistersWithoutEnvOverlay(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Command Code executable is a shell script")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+if [ "$1" = "mcp" ] && [ "$2" = "add" ]; then
+  printf '%s\n' "$@" > "$FAKE_CMD_ARGS"
+  exit 0
+fi
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(bin, "cmd"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	argsPath := filepath.Join(dir, "args")
+	exe := "/opt/bin/agent-manager"
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_CMD_ARGS", argsPath)
+	t.Setenv(hooks.EnvSessionID, "parent-session")
+
+	env := map[string]string{hooks.EnvSessionID: "sess-abcd"}
+	command, err := Apply("command-code", exe, dir, "cmd", env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != "cmd" {
+		t.Fatalf("command = %q", command)
+	}
+	if env[hooks.EnvSessionID] != "sess-abcd" || len(env) != 1 {
+		t.Fatalf("env = %v, want the per-session id left on the launch environment", env)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantArgs := "mcp\nadd\n--scope\nuser\nagent-manager\n--\n/opt/bin/agent-manager\nmcp\n"
+	if string(args) != wantArgs {
+		t.Fatalf("cmd args = %q want %q", args, wantArgs)
+	}
+	if strings.Contains(string(args), hooks.EnvSessionID) || strings.Contains(string(args), "parent-session") {
+		t.Fatalf("cmd mcp add overlaid an env placeholder: %q", args)
+	}
+	marker, err := os.ReadFile(filepath.Join(dir, "mcp-command-code-registered"))
+	if err != nil || string(marker) != exe {
+		t.Fatalf("marker = %q err=%v", marker, err)
 	}
 }
 

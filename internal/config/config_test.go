@@ -90,8 +90,14 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if commandCode.SessionStore != "command-code" || commandCode.ResumeByIDCommand != "cmd --session {id}" {
 		t.Fatalf("command-code resume config = %+v", commandCode)
 	}
+	if got := commandCode.ForkCommand; got != "cmd --session {id} --fork-session --name {name}" {
+		t.Fatalf("command-code fork_command = %q want \"cmd --session {id} --fork-session --name {name}\"", got)
+	}
 	if got := commandCode.PromptFlag; got != "" {
 		t.Fatalf("command-code prompt_flag = %q want empty (positional prompt)", got)
+	}
+	if got := commandCode.TurnEnd; got != `^\s*✻ (?:Thought|Worked) for [\dhms. ]+.*$` {
+		t.Fatalf("command-code turn_end = %q want the Thought/Worked shape", got)
 	}
 	if got := commandCode.ComposerPlaceholder; got != "Ask your question..." {
 		t.Fatalf("command-code composer_placeholder = %q want the placeholder", got)
@@ -100,7 +106,7 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 		t.Fatalf("command-code activity_cutoff is empty; prompt delivery needs it")
 	}
 	if got := commandCode.MCP; got != "" {
-		t.Fatalf("command-code mcp = %q want empty (no MCP client, like pi)", got)
+		t.Fatalf("command-code mcp = %q want empty (style inferred from the tool key)", got)
 	}
 	if cfg.Tools["claude"].Command != "claude" {
 		t.Fatalf("claude command = %q", cfg.Tools["claude"].Command)
@@ -467,7 +473,8 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 
 func TestBackfillFillsResumeFields(t *testing.T) {
 	cfg := Config{Tools: map[string]Tool{
-		"claude": {Command: "claude", ReviveCommand: "claude --continue"},
+		"claude":       {Command: "claude", ReviveCommand: "claude --continue"},
+		"command-code": {Command: "cmd"},
 	}}
 	if err := cfg.backfillToolDefaults(); err != nil {
 		t.Fatalf("backfill: %v", err)
@@ -481,5 +488,44 @@ func TestBackfillFillsResumeFields(t *testing.T) {
 	}
 	if tool.ForkCommand == "" {
 		t.Fatal("claude fork_command was not backfilled")
+	}
+	if got := cfg.Tools["command-code"].ForkCommand; got != "cmd --session {id} --fork-session --name {name}" {
+		t.Fatalf("command-code fork_command = %q want backfilled", got)
+	}
+}
+
+// A config.toml a #385-era release wrote carries the command-code patterns
+// of its day verbatim, and backfill only touches zero fields. The stale
+// shapes are rewritten to the current defaults, so the status fix reaches
+// existing installations instead of only fresh files.
+func TestMigratesStaleCommandCodePatterns(t *testing.T) {
+	cfg := Config{Tools: map[string]Tool{
+		"command-code": {
+			Command:    "cmd",
+			TurnEnd:    oldCmdTurnEnd,
+			ChromeLine: oldCmdChromeLine,
+			Rules:      []Rule{{State: "working", Pattern: oldCmdWorking}},
+		},
+	}}
+	if err := cfg.backfillToolDefaults(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	tool := cfg.Tools["command-code"]
+	if tool.TurnEnd == oldCmdTurnEnd {
+		t.Fatal("stale turn_end was not migrated")
+	}
+	if !strings.Contains(tool.TurnEnd, "Thought") {
+		t.Fatalf("migrated turn_end = %q, want the Thought/Worked shape", tool.TurnEnd)
+	}
+	if tool.ChromeLine == oldCmdChromeLine {
+		t.Fatal("stale chrome_line was not migrated")
+	}
+	if !strings.Contains(tool.ChromeLine, "»") {
+		t.Fatalf("migrated chrome_line = %q, want the » hint covered", tool.ChromeLine)
+	}
+	for _, rule := range tool.Rules {
+		if rule.State == "working" && rule.Pattern == oldCmdWorking {
+			t.Fatal("stale working rule was not migrated")
+		}
 	}
 }
