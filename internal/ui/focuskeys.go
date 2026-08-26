@@ -159,6 +159,13 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 // A wrapped prompt's continuation rows carry no marker, so a caret at the
 // head of one of them forwards Left as usual and reaches the end of the
 // row above.
+//
+// A tool may park the terminal cursor below its footer and paint its own
+// block cursor inside the composer instead (command-code does). For one
+// declaring composer_placeholder, a caret on a blank row reads the
+// composer row instead: the placeholder being on screen is the evidence
+// the composer is empty and its caret at the head of the prompt; a draft
+// replaces the placeholder and Left belongs to the agent.
 func (m *Model) caretAtInputStart(sessID, tool string) bool {
 	if m.engine == nil || !m.pane.cursor.ok || m.pane.forID != sessID || m.scrolledBack() {
 		return false
@@ -170,11 +177,35 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 	row := ansi.Strip(rows[m.pane.cursor.y])
 	prefix, ok := m.engine.InputPrefix(tool, row)
 	if !ok {
-		return false
+		return m.caretParksAndComposerIsEmpty(tool, rows)
 	}
 	if !textBeforeCaret(m.engine, tool, row, m.pane.cursor.x) &&
 		m.pane.cursor.x >= ansi.StringWidth(prefix) {
 		return m.caretRowEndsAPromptHead(tool, rows, m.pane.cursor.y)
+	}
+	return false
+}
+
+// caretParksAndComposerIsEmpty serves tools that park the terminal cursor
+// below their footer and paint the composer's caret themselves. The parked
+// cell sits on a blank row, so the composer is found by searching up for
+// the marker row; the placeholder on screen is what proves the composer
+// empty, since a draft replaces it and Left there belongs to the agent.
+// A caret cell that is not parked on a blank row is none of this path's
+// business: the marker rules decide it as usual.
+func (m *Model) caretParksAndComposerIsEmpty(tool string, rows []string) bool {
+	// The parking spot is a blank corner cell: column zero on a row with
+	// nothing painted on it. A cursor at column zero over any other
+	// content is not the park, whatever sits above it.
+	if m.pane.cursor.x != 0 || strings.TrimSpace(ansi.Strip(rows[m.pane.cursor.y])) != "" {
+		return false
+	}
+	for y := m.pane.cursor.y - 1; y >= 0; y-- {
+		row := ansi.Strip(rows[y])
+		if _, ok := m.engine.InputPrefix(tool, row); !ok {
+			continue
+		}
+		return m.engine.ComposerShowsPlaceholder(tool, row)
 	}
 	return false
 }

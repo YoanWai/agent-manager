@@ -864,3 +864,106 @@ func TestCaretOnOpencodesGutterComposer(t *testing.T) {
 		t.Fatal("the home screen's empty composer was not recognised")
 	}
 }
+
+// command-code never moves the terminal cursor: it parks at the bottom-left
+// corner below its footer for the whole session and paints the composer's
+// caret as reverse video inside the pane instead (live capture, cursor at
+// 0,54 with the composer six rows up). The composer_placeholder declares
+// that shape, so the parked cell reads the composer row above: the
+// placeholder on screen proves the composer empty and Left free to leave,
+// while a draft replaces the placeholder and keeps Left with the agent.
+func TestCaretParkedBelowCommandCodesComposer(t *testing.T) {
+	engine, err := status.NewEngine(config.Config{Tools: map[string]config.Tool{
+		"command-code": {
+			ActivityCutoff:      `(?m)^❯`,
+			ComposerPlaceholder: "Ask your question...",
+		},
+		// A tool without a placeholder declaration never takes the parked
+		// path, whatever its pane looks like.
+		"claude": {ActivityCutoff: `(?m)^❯`},
+	}})
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	build := func(x int, y int, rows ...string) *Model {
+		m := &Model{engine: engine, mode: modeFocus}
+		m.preview = strings.Join(rows, "\n") + "\n"
+		m.pane.forID = "s1"
+		m.pane.cursor = paneCursor{x: x, y: y, ok: true}
+		return m
+	}
+	footer := "  » accept edits on [shift+tab]\n  ? for shortcuts · taste on"
+	composer := "────────────\n❯ Ask your question...\n────────────\n" + footer
+
+	// The resting pane: the parked cell sits on a blank row below the
+	// footer while the empty composer shows its placeholder.
+	m := build(0, 7, "⠶ Working on it.", "", composer, "", "", "")
+	if !m.caretAtInputStart("s1", "command-code") {
+		t.Fatal("the parked caret over an empty composer was not recognised")
+	}
+
+	// A draft replaces the placeholder, so Left belongs to the agent.
+	m = build(0, 7, "⠶ Working on it.", "", "────────────\n❯ z\n────────────\n"+footer, "", "", "")
+	if m.caretAtInputStart("s1", "command-code") {
+		t.Fatal("the parked caret over a draft was read as input start")
+	}
+
+	// A parked cell that is not at the left edge is not the parking spot.
+	m = build(4, 7, "⠶ Working on it.", "", composer, "", "", "")
+	if m.caretAtInputStart("s1", "command-code") {
+		t.Fatal("a caret parked off the left edge was read as input start")
+	}
+
+	// Column zero over a painted row is a cursor on content, not the
+	// blank corner the park promises, so the scan never starts.
+	m = build(0, 6, "⠶ Working on it.", "", composer, "✻ Thought for 2 seconds [ctrl+o to expand]", "", "")
+	if m.caretAtInputStart("s1", "command-code") {
+		t.Fatal("a column-zero cursor on a footer row was read as the parked caret")
+	}
+
+	// A tool that declares no placeholder never takes the parked path, so
+	// its own marker rules keep deciding.
+	m = build(0, 7, "⠶ Working on it.", "", composer, "", "", "")
+	if m.caretAtInputStart("s1", "claude") {
+		t.Fatal("a tool without a declared placeholder took the parked path")
+	}
+}
+
+// The full key path: Left over a parked caret above command-code's empty
+// composer leaves focus, and the same press over a draft forwards into the
+// pane instead.
+func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "ccleft", t.TempDir(), "")
+	m.selectSessionRow(t, "ccleft")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	sess := m.rows[m.cursor].sess
+	m.rows[m.cursor].sess.Tool = "command-code"
+	m.pane.forID = sess.ID
+	m.pane.cursor = paneCursor{x: 0, y: 6, ok: true}
+	m.preview = "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ Ask your question...\n────────────\n  ? for shortcuts\n\n\n\n"
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("left over the parked caret did not unfocus, mode = %v", m.mode)
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after re-enter, mode = %v", m.mode)
+	}
+	m.pane.cursor = paneCursor{x: 0, y: 6, ok: true}
+	m.preview = "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ z\n────────────\n  ? for shortcuts\n\n\n\n"
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("left over a draft left focus, mode = %v", m.mode)
+	}
+}

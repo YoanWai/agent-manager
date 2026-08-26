@@ -44,7 +44,10 @@ type toolRules struct {
 	placeholder    *regexp.Regexp
 	userEcho       *regexp.Regexp
 	dialogFooter   *regexp.Regexp
-	rules          []rule
+	// composerPlaceholder is the literal text a tool paints inside its
+	// empty composer; a draft replaces it. Searched in a stripped row.
+	composerPlaceholder string
+	rules               []rule
 }
 
 func NewEngine(cfg config.Config) (*Engine, error) {
@@ -62,7 +65,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 		if def == "" {
 			def = Idle
 		}
-		tr := toolRules{defaultStatus: def, rules: compiled}
+		tr := toolRules{defaultStatus: def, composerPlaceholder: tool.ComposerPlaceholder, rules: compiled}
 		optional := []struct {
 			pattern string
 			target  **regexp.Regexp
@@ -571,12 +574,32 @@ func (e *Engine) MatchesActivityCutoff(tool, row string) bool {
 // inputRow reports whether a row opens with the tool's activity cutoff. A
 // zero-width match is no marker, the same way InputPrefix reads one: a
 // degenerate cutoff like ^ would otherwise stamp every row as input.
+// InputPrefix's zero-width escape hatch is for an explicitly declared
+// prefix (pi's ^); a cutoff never earns it.
 func (tr toolRules) inputRow(row string) bool {
 	if tr.activityCutoff == nil {
 		return false
 	}
 	loc := tr.activityCutoff.FindStringIndex(row)
 	return loc != nil && loc[0] == 0 && loc[1] > 0
+}
+
+// ComposerShowsPlaceholder reports whether the tool paints its placeholder
+// inside this composer row, which is how an empty composer is told from a
+// draft for tools whose terminal cursor never enters the composer. The
+// whole value after the input marker must be the placeholder: a draft
+// merely containing or ending with it stays a draft. ok is false when the
+// tool declares no placeholder.
+func (e *Engine) ComposerShowsPlaceholder(tool, row string) bool {
+	tr, ok := e.tools[tool]
+	if !ok || tr.composerPlaceholder == "" {
+		return false
+	}
+	prefix, ok := e.InputPrefix(tool, row)
+	if !ok {
+		return false
+	}
+	return strings.TrimSpace(row[len(prefix):]) == tr.composerPlaceholder
 }
 
 func (tr toolRules) activityRegion(pane string) (string, bool) {
