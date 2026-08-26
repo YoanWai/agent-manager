@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -285,5 +286,57 @@ func TestClaimPollerHoldsForOneManagerAtATime(t *testing.T) {
 	}
 	if stamp == "" {
 		t.Fatal("a claim should stamp the heartbeat its readers wait on")
+	}
+}
+
+// Two managers starting at the same instant reach the empty store together,
+// which is what a read followed by a separate write cannot survive: both
+// would read "unclaimed" and both would write themselves in.
+func TestClaimPollerSettlesOneHolderUnderARace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "race.db")
+	first, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+
+	now := time.Now()
+	start := make(chan struct{})
+	holders := make(chan string, 2)
+	errs := make(chan error, 2)
+	for _, claim := range []struct {
+		store  *Store
+		socket string
+	}{{first, "/tmp/first/agentmgr"}, {second, "/tmp/second/agentmgr"}} {
+		go func() {
+			<-start
+			holder, err := claim.store.ClaimPoller(claim.socket, now, time.Second)
+			holders <- holder
+			errs <- err
+		}()
+	}
+	close(start)
+
+	seen := make([]string, 0, 2)
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+		seen = append(seen, <-holders)
+	}
+	if seen[0] != seen[1] {
+		t.Fatalf("the two managers came away with different holders: %q and %q", seen[0], seen[1])
+	}
+	stored, err := first.Setting(PollerSocketKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored != seen[0] {
+		t.Fatalf("stored holder = %q, want the one both managers read, %q", stored, seen[0])
 	}
 }
