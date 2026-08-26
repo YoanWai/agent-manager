@@ -40,6 +40,7 @@ type Driver struct {
 	attachSizeLargest atomic.Bool
 	paneTheme         atomic.Pointer[PaneTheme]
 	paneThemePush     sync.Mutex
+	socketPath        atomic.Pointer[string]
 }
 
 // PaneTheme is the background agent panes are rendered on. The manager
@@ -116,6 +117,41 @@ func NewWithSocket(socket string) (*Driver, error) {
 
 func (d *Driver) SocketName() string {
 	return d.socket
+}
+
+// SocketPath is the file the server this driver talks to listens on. The
+// -L name does not identify a server on its own: tmux resolves it under
+// TMUX_TMPDIR, so two managers started with different values of that
+// variable drive different servers under one socket name, each blind to
+// the other's sessions.
+func (d *Driver) SocketPath() string {
+	if cached := d.socketPath.Load(); cached != nil {
+		return *cached
+	}
+	out, err := d.run("display-message", "-p", "#{socket_path}")
+	if err != nil {
+		return socketPathFromEnv(d.socket)
+	}
+	path := strings.TrimSpace(out)
+	if path == "" {
+		return socketPathFromEnv(d.socket)
+	}
+	d.socketPath.Store(&path)
+	return path
+}
+
+// socketPathFromEnv rebuilds what tmux resolves -L to while no server is
+// running to answer for itself. tmux reports the path with its symlinks
+// resolved, so this does too and the two agree once a server exists.
+func socketPathFromEnv(socket string) string {
+	dir := os.Getenv("TMUX_TMPDIR")
+	if dir == "" {
+		dir = "/tmp"
+	}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	return filepath.Join(dir, fmt.Sprintf("tmux-%d", os.Getuid()), socket)
 }
 
 func sessionName(id string) string {

@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -366,6 +365,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		discard()
 		return Session{}, err
 	}
+	sess.TmuxSocket = runtime.driver.SocketPath()
 	if err := runtime.store.CreateSession(sess); err != nil {
 		_ = runtime.driver.Kill(sess.ID)
 		discard()
@@ -621,15 +621,7 @@ type MessageState struct {
 // managerAwake reports whether a manager has polled recently enough to
 // still be delivering. Queued messages only move while it runs.
 func (r *runtime) managerAwake(now time.Time) (bool, error) {
-	raw, err := r.store.Setting(store.PollerHeartbeatKey)
-	if err != nil || raw == "" {
-		return false, err
-	}
-	stamp, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil {
-		return false, fmt.Errorf("poller heartbeat %q is not a timestamp: %w", raw, err)
-	}
-	return now.Sub(time.Unix(0, stamp)) < max(3*r.cfg.PollInterval.Duration, store.PollerHeartbeatStale), nil
+	return r.store.ManagerAwake(now, r.cfg.PollInterval.Duration)
 }
 
 // fingerprint collapses whitespace before hashing so a retry that only
@@ -748,6 +740,10 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 		return Session{}, err
 	}
 	if err := runtime.driver.Create(target.ID, target.Cwd, command, env, 0, 0); err != nil {
+		return Session{}, err
+	}
+	// The row now lives on this manager's server, wherever it ran before.
+	if err := runtime.store.SetTmuxSocket(target.ID, runtime.driver.SocketPath()); err != nil {
 		return Session{}, err
 	}
 	_ = runtime.driver.SetLabel(target.ID, sessionLabel(target.Group, target.Name))

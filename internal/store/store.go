@@ -53,6 +53,10 @@ type Session struct {
 	// Pending input waits for it to show in the pane, because an agent
 	// taking it clears the composer and anything pasted there.
 	LaunchPrompt string
+	// TmuxSocket is the tmux server the session's pane runs on. A manager
+	// only derives status for the sessions on its own server: a pane it
+	// cannot see belongs to another manager, not to a dead agent.
+	TmuxSocket string
 }
 
 // LaunchTime is when the agent now in the pane started: the last restart
@@ -160,6 +164,7 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN pending_claimed INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN launch_prompt TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN tmux_socket TEXT NOT NULL DEFAULT ''`,
 		`CREATE TABLE IF NOT EXISTS session_inbox (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			session_id   TEXT    NOT NULL,
@@ -363,12 +368,12 @@ func (s *Store) createSession(sess Session, anchorID string) error {
 		sess.Group = parentGroup
 	}
 	_, err = tx.Exec(
-		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, launch_prompt, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, launch_prompt, tmux_socket, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
 		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID,
-		sess.WorktreeRepo, sess.WorktreeBranch, pendingInputs, sess.ParentID, sess.LaunchPrompt,
+		sess.WorktreeRepo, sess.WorktreeBranch, pendingInputs, sess.ParentID, sess.LaunchPrompt, sess.TmuxSocket,
 		sess.Group, sess.ParentID,
 	)
 	if err != nil {
@@ -433,7 +438,7 @@ func (s *Store) AddGroup(name, path, worktree string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed, parent_id, launch_prompt
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed, parent_id, launch_prompt, tmux_socket
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -454,7 +459,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
-			&agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt); err != nil {
+			&agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.TmuxSocket); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(pendingInputs), &sess.PendingInputs); err != nil {
@@ -477,11 +482,11 @@ func (s *Store) Get(id string) (Session, error) {
 	var created, lastStatus, agentLaunched int64
 	var pendingInputs string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed, parent_id, launch_prompt
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed, parent_id, launch_prompt, tmux_socket
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
-		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt)
+		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.TmuxSocket)
 	if err != nil {
 		return Session{}, err
 	}
@@ -683,6 +688,17 @@ func (s *Store) SetAgentLaunchedAt(id string, launchedAt time.Time) error {
 	res, err := s.db.Exec(
 		`UPDATE sessions SET agent_launched_at = ? WHERE id = ?`,
 		encodeTime(launchedAt), id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
+}
+
+// SetTmuxSocket records the tmux server a session's pane was found on,
+// which is how a later manager tells a session it cannot drive from one
+// whose agent has died.
+func (s *Store) SetTmuxSocket(id, socket string) error {
+	res, err := s.db.Exec(`UPDATE sessions SET tmux_socket = ? WHERE id = ?`, socket, id)
 	if err != nil {
 		return err
 	}

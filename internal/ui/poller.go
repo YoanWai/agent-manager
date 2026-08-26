@@ -224,14 +224,22 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	// Machine gauges change slowly; sample them every other poll.
 	sampleStats := p.tick%2 == 0
+	socket := p.tmux.SocketPath()
 	// Delivering a queued message needs this process, so stamp a heartbeat
 	// the session tools can read to tell a sender whether anyone is home.
 	// Stamping every poll would be a write transaction every couple of
 	// seconds for as long as the manager is open; its readers allow the
 	// stamp to age instead.
-	if time.Since(p.heartbeatAt) >= store.PollerHeartbeatPeriod {
+	leading, err := p.leadingManager(socket)
+	if err != nil {
+		return errMsg{err}
+	}
+	if leading && time.Since(p.heartbeatAt) >= store.PollerHeartbeatPeriod {
 		stamped := time.Now()
 		if err := p.store.SetSetting(store.PollerHeartbeatKey, strconv.FormatInt(stamped.UnixNano(), 10)); err != nil {
+			return errMsg{err}
+		}
+		if err := p.store.SetSetting(store.PollerSocketKey, socket); err != nil {
 			return errMsg{err}
 		}
 		p.heartbeatAt = stamped
@@ -275,6 +283,27 @@ func (p *poller) refreshOnce() tea.Msg {
 	for i, sess := range sessions {
 		if sess.Archived {
 			continue
+		}
+		// A session belongs to the tmux server its pane runs on. Panes on
+		// another server are invisible from here, and reading that silence
+		// as a dead agent is how a second manager stamps dead over sessions
+		// that are alive and alerts their owner's user for every flip back.
+		if sess.TmuxSocket != "" && sess.TmuxSocket != socket {
+			continue
+		}
+		live := panes[sess.ID].PID > 0
+		if sess.TmuxSocket == "" {
+			// Sessions that predate the column are the leading manager's to
+			// speak for until one of them shows a pane here to claim.
+			if !live && !leading {
+				continue
+			}
+			if live {
+				if err := ignoreDeletedSession(p.store.SetTmuxSocket(sess.ID, socket)); err != nil {
+					return errMsg{err}
+				}
+				sessions[i].TmuxSocket = socket
+			}
 		}
 		if err := p.applyPendingRename(&sessions[i]); err != nil {
 			return errMsg{err}
@@ -431,6 +460,7 @@ func (p *poller) refreshOnce() tea.Msg {
 	p.prevTreeAt = now
 
 	msg := refreshMsg{
+		tmuxSocket:     socket,
 		sessions:       sessions,
 		listedAt:       listedAt,
 		groups:         names,
@@ -1030,6 +1060,26 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	// Delivery can wait on an external process (osascript, notify-send),
 	// so it must never run inside refreshOnce, which holds runMu.
 	go p.notifyFn(notify.Event{Session: sess.Name, Tool: sess.Tool, Kind: kind})
+}
+
+// leadingManager reports whether this manager is the one the store's
+// unclaimed sessions belong to. The manager holding the heartbeat names
+// its tmux server beside it; another manager, on another server, sees
+// panes it has no way to observe and leaves those rows alone until the
+// heartbeat goes stale and the store is nobody's.
+func (p *poller) leadingManager(socket string) (bool, error) {
+	leader, err := p.store.Setting(store.PollerSocketKey)
+	if err != nil {
+		return false, err
+	}
+	if leader == "" || leader == socket {
+		return true, nil
+	}
+	awake, err := p.store.ManagerAwake(time.Now(), p.interval)
+	if err != nil {
+		return false, err
+	}
+	return !awake, nil
 }
 
 func (p *poller) notificationsOn() bool {

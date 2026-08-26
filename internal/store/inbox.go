@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -45,6 +47,12 @@ var DefaultInboxLimits = InboxLimits{
 // what it queues.
 const PollerHeartbeatKey = "poller_heartbeat"
 
+// PollerSocketKey names the tmux server the manager holding the heartbeat
+// polls. Sessions created before a manager recorded their own server are
+// that manager's to speak for, so a second manager on another server
+// leaves them to it rather than reading their invisible panes as dead.
+const PollerSocketKey = "poller_socket"
+
 const (
 	// PollerHeartbeatPeriod is how often the manager restamps that row.
 	PollerHeartbeatPeriod = 10 * time.Second
@@ -52,6 +60,20 @@ const (
 	// one period, plus room for a poll that ran long.
 	PollerHeartbeatStale = 30 * time.Second
 )
+
+// ManagerAwake reports whether a manager stamped the heartbeat recently
+// enough to still be polling. Queued messages only move while it runs.
+func (s *Store) ManagerAwake(now time.Time, pollInterval time.Duration) (bool, error) {
+	raw, err := s.Setting(PollerHeartbeatKey)
+	if err != nil || raw == "" {
+		return false, err
+	}
+	stamp, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return false, fmt.Errorf("poller heartbeat %q is not a timestamp: %w", raw, err)
+	}
+	return now.Sub(time.Unix(0, stamp)) < max(3*pollInterval, PollerHeartbeatStale), nil
+}
 
 var (
 	ErrInboxFull        = errors.New("the recipient's queue is full; wait for it to read what is already queued")
