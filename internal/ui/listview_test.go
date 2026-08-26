@@ -1049,3 +1049,25 @@ func TestRingLoaderWrapsThePhaseRoundTheRing(t *testing.T) {
 		t.Fatalf("the ring dropped the label it was given:\n%s", rendered)
 	}
 }
+
+func TestRowMarksSessionsOnAnotherServer(t *testing.T) {
+	now := time.Now()
+	sess := store.Session{
+		ID: "away-1", Name: "away", Tool: "claude", Status: status.Working,
+		CreatedAt: now, LastStatusAt: now, TmuxSocket: "/tmp/another-manager/agentmgr",
+	}
+	m := &Model{
+		width: 120, height: 40, mode: modeList,
+		sessions: []store.Session{sess}, rows: []treeRow{{sess: sess}},
+		collapsed: map[string]bool{}, split: splitState{ratio: defaultSplitRatio},
+		tmuxSocket: "/tmp/tmux-501/agentmgr",
+	}
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "elsewhere") {
+		t.Fatalf("a session on another server should say so:\n%s", view)
+	}
+
+	m.tmuxSocket = sess.TmuxSocket
+	if view := ansi.Strip(m.View()); strings.Contains(view, "elsewhere") {
+		t.Fatalf("a session on this server should not be marked:\n%s", view)
+	}
+}

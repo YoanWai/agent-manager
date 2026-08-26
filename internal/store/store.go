@@ -608,6 +608,26 @@ func (s *Store) UpdateStatus(id, newStatus string) error {
 	return requireRow(res, id)
 }
 
+// UpdateStatusOnSocket writes a status only while the row is still this
+// manager's to speak for: claimed by this tmux server, or claimed by none.
+// It reports whether the write landed, so a manager whose listing predates
+// another one claiming the row leaves that row's status alone rather than
+// announcing what it derived from a pane it cannot see.
+func (s *Store) UpdateStatusOnSocket(id, newStatus, socket string) (bool, error) {
+	res, err := s.db.Exec(
+		`UPDATE sessions SET status = ?, last_status_at = ?
+		 WHERE id = ? AND tmux_socket IN ('', ?)`,
+		newStatus, encodeTime(time.Now()), id, socket)
+	if err != nil {
+		return false, err
+	}
+	changed, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return changed > 0, nil
+}
+
 // AcknowledgeFinished atomically marks a session idle and acked if its stored
 // status is still finished. A newer status makes the operation a no-op.
 func (s *Store) AcknowledgeFinished(id string) error {

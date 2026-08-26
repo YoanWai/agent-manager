@@ -401,11 +401,17 @@ func (p *poller) refreshOnce() tea.Msg {
 			}
 		}
 		if newStatus != sess.Status {
-			if err := ignoreDeletedSession(p.store.UpdateStatus(sess.ID, newStatus)); err != nil {
+			// The row can be claimed by the manager that can see its pane
+			// between this pass listing it and reaching here, and a status
+			// derived without that pane must not land on top of the claim.
+			written, err := p.store.UpdateStatusOnSocket(sess.ID, newStatus, socket)
+			if err != nil {
 				return errMsg{err}
 			}
-			sessions[i].Status = newStatus
-			p.notifyTransition(sess, newStatus)
+			if written {
+				sessions[i].Status = newStatus
+				p.notifyTransition(sess, newStatus)
+			}
 		}
 	}
 	if preview == "" && selectedID != "" {
