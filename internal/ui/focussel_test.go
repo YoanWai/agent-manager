@@ -549,6 +549,23 @@ func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
 	if !m.caretAtInputStart("s1", "command-code") {
 		t.Fatal("the bottom-parked caret over an empty composer was not recognised")
 	}
+
+	// The same parked caret must not stretch the crop down to itself: the
+	// rows between the footer and the caret are blank, and dragging them
+	// into view floats the composer above a band of dead space.
+	if got := m.paneCaretRow(); got != -1 {
+		t.Fatalf("paneCaretRow = %d for a parked caret, want -1", got)
+	}
+	window, start := paneWindow(m.preview, 30, m.paneCaretRow())
+	if last := window[len(window)-1]; strings.TrimSpace(last) != "? for shortcuts · PR #390 · taste on" {
+		t.Fatalf("crop bottom = %q, want the footer, not blank fill (start=%d)", last, start)
+	}
+
+	// A caret inside the content keeps the crop pinned to it.
+	m.pane.cursor = paneCursor{x: 2, y: 39, ok: true}
+	if got := m.paneCaretRow(); got != 39 {
+		t.Fatalf("paneCaretRow = %d for an in-content caret, want 39", got)
+	}
 }
 
 func TestApplyPaneState(t *testing.T) {

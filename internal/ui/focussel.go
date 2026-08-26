@@ -66,12 +66,41 @@ func (m *Model) paneRowOffset(paneLines int) int {
 
 // paneCaretRow is the capture row the live caret sits on, or -1 when no
 // caret is in play. The crop keeps this row painted whatever the blank
-// rows around it look like: it is where typing lands.
+// rows around it look like: it is where typing lands. A caret parked
+// below the pane's last content row is the exception: tools that paint
+// their own composer cursor (command-code) rest the terminal caret on a
+// blank bottom row where typing never lands, and extending the crop to it
+// would only drag those blank rows into view above it.
 func (m *Model) paneCaretRow() int {
-	if m.mode == modeFocus && m.pane.cursor.ok && !m.scrolledBack() {
-		return m.pane.cursor.y
+	if m.mode != modeFocus || !m.pane.cursor.ok || m.scrolledBack() {
+		return -1
 	}
-	return -1
+	caret := m.pane.cursor.y
+	rows := strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n")
+	if caret < len(rows) && caretParkedBelowContent(rows, caret, m.pane.cursor.x) {
+		return -1
+	}
+	return caret
+}
+
+// caretParkedBelowContent reports whether the caret rests at column zero
+// on a blank row with nothing but blank rows beneath the pane's content,
+// which is the parking spot of a tool that paints its own composer cursor.
+func caretParkedBelowContent(rows []string, caret, column int) bool {
+	if column != 0 {
+		return false
+	}
+	for y := caret; y < len(rows); y++ {
+		if strings.TrimSpace(ansi.Strip(rows[y])) != "" {
+			return false
+		}
+	}
+	for y := caret - 1; y >= 0; y-- {
+		if strings.TrimSpace(ansi.Strip(rows[y])) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // focusSelection is a text selection drawn over the focused pane. anchor
