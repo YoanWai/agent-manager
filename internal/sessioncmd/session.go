@@ -743,7 +743,10 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 		return Session{}, err
 	}
 	// The row now lives on this manager's server, wherever it ran before.
+	// A row that cannot take the stamp is gone, and its fresh pane goes with
+	// it rather than outliving the session it was opened for.
 	if err := runtime.store.SetTmuxSocket(target.ID, runtime.driver.SocketPath()); err != nil {
+		_ = runtime.driver.Kill(target.ID)
 		return Session{}, err
 	}
 	_ = runtime.driver.SetLabel(target.ID, sessionLabel(target.Group, target.Name))

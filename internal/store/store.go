@@ -164,7 +164,6 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE sessions ADD COLUMN pending_claimed INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN launch_prompt TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE sessions ADD COLUMN tmux_socket TEXT NOT NULL DEFAULT ''`,
 		`CREATE TABLE IF NOT EXISTS session_inbox (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			session_id   TEXT    NOT NULL,
@@ -213,6 +212,7 @@ CREATE TABLE IF NOT EXISTS settings (
 			state      TEXT NOT NULL,
 			PRIMARY KEY (session_id, repo_root)
 		)`,
+		`ALTER TABLE sessions ADD COLUMN tmux_socket TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {
