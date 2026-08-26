@@ -376,12 +376,14 @@ func (e *Engine) MatchesActivityCutoff(tool, row string) bool {
 // inputRow reports whether a row opens with the tool's activity cutoff. A
 // zero-width match is no marker, the same way InputPrefix reads one: a
 // degenerate cutoff like ^ would otherwise stamp every row as input.
+// InputPrefix's zero-width escape hatch is for an explicitly declared
+// prefix (pi's ^); a cutoff never earns it.
 func (tr toolRules) inputRow(row string) bool {
 	if tr.activityCutoff == nil {
 		return false
 	}
 	loc := tr.activityCutoff.FindStringIndex(row)
-	return loc != nil && loc[0] == 0
+	return loc != nil && loc[0] == 0 && loc[1] > 0
 }
 
 // ComposerShowsPlaceholder reports whether the tool paints its placeholder

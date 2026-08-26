@@ -821,3 +821,22 @@ func TestTypingHold(t *testing.T) {
 		})
 	}
 }
+
+// A degenerate cutoff like ^ matches every row at zero width. InputPrefix
+// refuses it for tools that did not declare a prefix, and the row-matcher
+// behind MatchesActivityCutoff refuses it just the same, so neither door
+// can stamp arbitrary rows as composer rows.
+func TestDegenerateCutoffStampsNothing(t *testing.T) {
+	engine, err := NewEngine(config.Config{Tools: map[string]config.Tool{
+		"degenerate": {Command: "x", ActivityCutoff: "^"},
+	}})
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	if _, ok := engine.InputPrefix("degenerate", "any row at all"); ok {
+		t.Fatal("a zero-width cutoff read as an input prefix")
+	}
+	if engine.MatchesActivityCutoff("degenerate", "any row at all") {
+		t.Fatal("a zero-width cutoff read as a composer boundary")
+	}
+}
