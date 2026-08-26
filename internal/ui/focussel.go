@@ -66,19 +66,22 @@ func (m *Model) paneRowOffset(paneLines int) int {
 
 // paneCaretRow is the capture row the live caret sits on, or -1 when no
 // caret is in play. The crop keeps this row painted whatever the blank
-// rows around it look like: it is where typing lands. A caret parked
-// below the pane's last content row is the exception: tools that paint
-// their own composer cursor (command-code) rest the terminal caret on a
-// blank bottom row where typing never lands, and extending the crop to it
-// would only drag those blank rows into view above it.
+// rows around it look like: it is where typing lands. A tool that paints
+// its own composer cursor (command-code) is the exception: it rests the
+// terminal caret on a blank row below its content where typing never
+// lands, and extending the crop to it would only drag those blank rows
+// into view above it. For every other tool a caret on a blank row IS the
+// typing point - a shell waiting below its output - and stays pinned.
 func (m *Model) paneCaretRow() int {
 	if m.mode != modeFocus || !m.pane.cursor.ok || m.scrolledBack() {
 		return -1
 	}
 	caret := m.pane.cursor.y
-	rows := strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n")
-	if caret < len(rows) && caretParkedBelowContent(rows, caret, m.pane.cursor.x) {
-		return -1
+	if sess, ok := m.selected(); ok && m.engine != nil && m.engine.ParksItsCaret(sess.Tool) {
+		rows := strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n")
+		if caret < len(rows) && caretParkedBelowContent(rows, caret, m.pane.cursor.x) {
+			return -1
+		}
 	}
 	return caret
 }

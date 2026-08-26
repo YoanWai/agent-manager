@@ -530,6 +530,9 @@ func TestControlCaptureKeepsTrailingBlankRows(t *testing.T) {
 // caret copied from a live 182x47 pane (debug capture, 2026-08-26).
 func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
 	m := buildModel(t)
+	createSession(t, m, "ccpark", t.TempDir(), "")
+	m.selectSessionRow(t, "ccpark")
+	m.rows[m.cursor].sess.Tool = "command-code"
 	rows := make([]string, 47)
 	rows[36] = " TODOS  [4 items · 2 done] Sending Tier 3 messages… (paused) [ctrl+x to expand]"
 	rows[38] = strings.Repeat("─", 60)

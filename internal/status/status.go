@@ -606,6 +606,16 @@ func (e *Engine) ComposerIsEmpty(tool, row string) bool {
 	return rest == "" || rest == tr.composerPlaceholder
 }
 
+// ParksItsCaret reports whether the tool paints its own composer cursor
+// and rests the terminal caret away from where typing lands, which is
+// what declaring composer_placeholder means. The focus crop treats such a
+// tool's caret on a blank bottom row as furniture rather than a typing
+// point.
+func (e *Engine) ParksItsCaret(tool string) bool {
+	tr, ok := e.tools[tool]
+	return ok && tr.composerPlaceholder != ""
+}
+
 func (tr toolRules) activityRegion(pane string) (string, bool) {
 	if tr.activityCutoff == nil {
 		return "", false
