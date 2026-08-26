@@ -372,7 +372,7 @@ func TestCursorOutputDisablesAnchoringAfterShortWrite(t *testing.T) {
 	out := &scriptedWriter{shortOn: 1}
 	w := &cursorOutputWriter{out: out, anchor: anchor, altScreen: true}
 
-	if _, err := w.Write([]byte("frame")); err != io.ErrShortWrite {
+	if _, err := w.Write([]byte("frame")); !errors.Is(err, io.ErrShortWrite) {
 		t.Fatalf("short write error = %v, want %v", err, io.ErrShortWrite)
 	}
 	if w.altScreen || len(w.altScreenPrefix) != 0 {

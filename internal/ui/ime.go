@@ -22,6 +22,11 @@ const (
 	cursorAnchorMarker = "\x1b]1337;agent-manager-ime-cursor\x07"
 )
 
+var (
+	altScreenEnter = []byte(ansi.SetModeAltScreenSaveCursor)
+	altScreenExit  = []byte(ansi.ResetModeAltScreenSaveCursor)
+)
+
 // cursorAnchor is the real terminal cell an input method should open beside.
 // Bubble Tea v1 finishes every alternate-screen render at the bottom-left,
 // while focus mode paints a pane caret elsewhere, so an IME otherwise follows
@@ -132,7 +137,7 @@ func insertMarkerAtCursor(view, markedView string) string {
 		return view
 	}
 	line := lines[row]
-	cell, state := 0, byte(ansi.NormalState)
+	cell, state := 0, ansi.NormalState
 	for index := 0; index < len(line); {
 		_, width, n, nextState := ansi.GraphemeWidth.DecodeSequenceInString(line[index:], state, nil)
 		if n <= 0 {
@@ -219,16 +224,14 @@ func (w *cursorOutputWriter) trackAltScreen(p []byte) bool {
 		copy(data, w.altScreenPrefix)
 		copy(data[len(w.altScreenPrefix):], p)
 	}
-	enterSequence := []byte(ansi.SetModeAltScreenSaveCursor)
-	exitSequence := []byte(ansi.ResetModeAltScreenSaveCursor)
-	enter := bytes.LastIndex(data, enterSequence)
-	exit := bytes.LastIndex(data, exitSequence)
+	enter := bytes.LastIndex(data, altScreenEnter)
+	exit := bytes.LastIndex(data, altScreenExit)
 	if enter < 0 && exit < 0 {
-		w.altScreenPrefix = trailingAltScreenPrefix(data, enterSequence, exitSequence)
+		w.altScreenPrefix = trailingAltScreenPrefix(data, altScreenEnter, altScreenExit)
 		return len(w.altScreenPrefix) > 0
 	}
 	w.altScreen = enter > exit
-	w.altScreenPrefix = trailingAltScreenPrefix(data, enterSequence, exitSequence)
+	w.altScreenPrefix = trailingAltScreenPrefix(data, altScreenEnter, altScreenExit)
 	return len(w.altScreenPrefix) > 0
 }
 
