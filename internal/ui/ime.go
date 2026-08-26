@@ -187,6 +187,10 @@ func (w *cursorOutputWriter) Write(p []byte) (int, error) {
 
 	n, err := w.out.Write(p)
 	if err != nil || n != len(p) {
+		w.resetTerminalState()
+		if err == nil {
+			err = io.ErrShortWrite
+		}
 		return n, err
 	}
 	if incomplete := w.trackAltScreen(p); !w.altScreen || incomplete {
@@ -197,7 +201,15 @@ func (w *cursorOutputWriter) Write(p []byte) (int, error) {
 		return n, nil
 	}
 	_, err = io.WriteString(w.out, ansi.CursorPosition(col, row))
+	if err != nil {
+		w.resetTerminalState()
+	}
 	return n, err
+}
+
+func (w *cursorOutputWriter) resetTerminalState() {
+	w.altScreen = false
+	w.altScreenPrefix = nil
 }
 
 func (w *cursorOutputWriter) trackAltScreen(p []byte) bool {

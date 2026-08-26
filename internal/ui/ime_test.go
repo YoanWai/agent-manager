@@ -122,6 +122,7 @@ func TestTextAreaCursorMarkerTracksWrappedWideText(t *testing.T) {
 	input.SetCursor(3)
 	input.Focus()
 
+	var position [2]int
 	for _, blink := range []bool{false, true} {
 		input.Cursor.Blink = blink
 		view := textAreaView(input)
@@ -129,9 +130,13 @@ func TestTextAreaCursorMarkerTracksWrappedWideText(t *testing.T) {
 		if !ok {
 			t.Fatalf("blink=%v: textarea view has no cursor marker", blink)
 		}
-		if row < 1 || col < 1 {
-			t.Fatalf("blink=%v: invalid textarea cursor = (%d, %d)", blink, col, row)
+		if col != 4 || row != 2 {
+			t.Fatalf("blink=%v: textarea cursor = (%d, %d), want (4, 2)", blink, col, row)
 		}
+		if blink && position != [2]int{col, row} {
+			t.Fatalf("blink-off textarea cursor moved from %v to (%d, %d)", position, col, row)
+		}
+		position = [2]int{col, row}
 	}
 }
 
@@ -338,5 +343,66 @@ func TestCursorOutputStopsWhenAnchorClears(t *testing.T) {
 	}
 	if want := "focused" + ansi.CursorPosition(4, 3) + "list"; out.String() != want {
 		t.Fatalf("output = %q, want %q", out.String(), want)
+	}
+}
+
+type scriptedWriter struct {
+	writes  [][]byte
+	failOn  int
+	shortOn int
+	call    int
+}
+
+func (w *scriptedWriter) Write(p []byte) (int, error) {
+	w.call++
+	w.writes = append(w.writes, append([]byte(nil), p...))
+	if w.call == w.failOn {
+		return 0, io.ErrClosedPipe
+	}
+	if w.call == w.shortOn {
+		return len(p) - 1, io.ErrShortWrite
+	}
+	return len(p), nil
+}
+
+func TestCursorOutputDisablesAnchoringAfterShortWrite(t *testing.T) {
+	anchor := &cursorAnchor{}
+	anchor.set(4, 3, true)
+	out := &scriptedWriter{shortOn: 1}
+	w := &cursorOutputWriter{out: out, anchor: anchor, altScreen: true}
+
+	if _, err := w.Write([]byte("frame")); err != io.ErrShortWrite {
+		t.Fatalf("short write error = %v, want %v", err, io.ErrShortWrite)
+	}
+	if w.altScreen || len(w.altScreenPrefix) != 0 {
+		t.Fatalf("short write left terminal state active: alt=%v prefix=%q", w.altScreen, w.altScreenPrefix)
+	}
+}
+
+func TestCursorOutputDisablesAnchoringAfterWriteFailure(t *testing.T) {
+	anchor := &cursorAnchor{}
+	anchor.set(4, 3, true)
+	out := &scriptedWriter{failOn: 1}
+	w := &cursorOutputWriter{out: out, anchor: anchor, altScreen: true}
+
+	if _, err := w.Write([]byte("frame")); err != io.ErrClosedPipe {
+		t.Fatalf("write error = %v, want %v", err, io.ErrClosedPipe)
+	}
+	if w.altScreen || len(w.altScreenPrefix) != 0 {
+		t.Fatalf("write failure left terminal state active: alt=%v prefix=%q", w.altScreen, w.altScreenPrefix)
+	}
+}
+
+func TestCursorOutputReturnsCursorPositionWriteFailure(t *testing.T) {
+	anchor := &cursorAnchor{}
+	anchor.set(4, 3, true)
+	out := &scriptedWriter{failOn: 2}
+	w := &cursorOutputWriter{out: out, anchor: anchor, altScreen: true}
+
+	if _, err := w.Write([]byte("frame")); err != io.ErrClosedPipe {
+		t.Fatalf("cursor position error = %v, want %v", err, io.ErrClosedPipe)
+	}
+	if len(out.writes) != 2 {
+		t.Fatalf("writes = %d, want initial frame and cursor position", len(out.writes))
 	}
 }
