@@ -380,8 +380,6 @@ func TestBackfillArrowUnfocusFields(t *testing.T) {
 	}
 }
 
-// command-code's composer_placeholder rides the same backfill: a config
-// written before the field existed gains it, and one the user wrote stays.
 func TestBackfillComposerPlaceholder(t *testing.T) {
 	plain := Config{Tools: map[string]Tool{"command-code": {Command: "cmd"}}}
 	if err := plain.backfillToolDefaults(); err != nil {
