@@ -840,3 +840,23 @@ func TestDegenerateCutoffStampsNothing(t *testing.T) {
 		t.Fatal("a zero-width cutoff read as a composer boundary")
 	}
 }
+
+// The placeholder closes the composer row, so a draft that merely quotes
+// it mid-text stays a draft.
+func TestComposerPlaceholderIsASuffix(t *testing.T) {
+	engine, err := NewEngine(config.Config{Tools: map[string]config.Tool{
+		"command-code": {
+			ActivityCutoff:      `(?m)^❯`,
+			ComposerPlaceholder: "Ask your question...",
+		},
+	}})
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	if !engine.ComposerShowsPlaceholder("command-code", "❯ Ask your question...") {
+		t.Fatal("the empty composer's placeholder was not recognised")
+	}
+	if engine.ComposerShowsPlaceholder("command-code", "❯ fix the Ask your question... bug") {
+		t.Fatal("a draft quoting the placeholder read as the placeholder")
+	}
+}
