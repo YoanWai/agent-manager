@@ -859,4 +859,7 @@ func TestComposerPlaceholderIsASuffix(t *testing.T) {
 	if engine.ComposerShowsPlaceholder("command-code", "❯ fix the Ask your question... bug") {
 		t.Fatal("a draft quoting the placeholder read as the placeholder")
 	}
+	if engine.ComposerShowsPlaceholder("command-code", "❯ retry Ask your question...") {
+		t.Fatal("a draft ending with the placeholder read as the placeholder")
+	}
 }

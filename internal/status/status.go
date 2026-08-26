@@ -389,14 +389,19 @@ func (tr toolRules) inputRow(row string) bool {
 // ComposerShowsPlaceholder reports whether the tool paints its placeholder
 // inside this composer row, which is how an empty composer is told from a
 // draft for tools whose terminal cursor never enters the composer. The
-// placeholder closes the row, so a draft merely quoting it reads as a
-// draft. ok is false when the tool declares no placeholder.
+// whole value after the input marker must be the placeholder: a draft
+// merely containing or ending with it stays a draft. ok is false when the
+// tool declares no placeholder.
 func (e *Engine) ComposerShowsPlaceholder(tool, row string) bool {
 	tr, ok := e.tools[tool]
 	if !ok || tr.composerPlaceholder == "" {
 		return false
 	}
-	return strings.HasSuffix(strings.TrimSpace(row), tr.composerPlaceholder)
+	prefix, ok := e.InputPrefix(tool, row)
+	if !ok {
+		return false
+	}
+	return strings.TrimSpace(row[len(prefix):]) == tr.composerPlaceholder
 }
 
 func (tr toolRules) activityRegion(pane string) (string, bool) {
