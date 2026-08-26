@@ -43,7 +43,7 @@ type Tool struct {
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
-	// "hermes" or "none".
+	// "hermes", "command-code" or "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP            string `toml:"mcp"`
 	StatusSource   string `toml:"status_source"`
@@ -186,6 +186,16 @@ func (c *Config) backfillToolDefaults() error {
 // pattern; one edited by hand keeps what its author wrote.
 const busyLineAgentsOnly = `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ background agents? to finish`
 
+// The command-code matching rules #385 shipped, which no longer match the
+// shapes current Command Code draws. A stored config.toml carries these
+// verbatim and keeps them over any new default, so mergeTool rewrites
+// exactly these stale values the way claude's busy line is rewritten.
+const (
+	oldCmdTurnEnd    = `^\s*✻ Worked for [\dhms. ]+$`
+	oldCmdWorking    = `(?m)^ [·○◇☆✧⌘] \S+.*(?:esc to interrupt| \d+)$`
+	oldCmdChromeLine = `^\s*[─]{4,}\s*$|^# .*$|^[ \t█]*$|^\s*\? for shortcuts.*$`
+)
+
 // mergeTool returns user with any zero-value field filled from def.
 //
 // Shell is deliberately not among them. "terminal" is a plausible name for
@@ -223,6 +233,25 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.InputPrefix, def.InputPrefix)
 	if name == "claude" && user.BusyLine == busyLineAgentsOnly {
 		user.BusyLine = def.BusyLine
+	}
+	if name == "command-code" {
+		if user.TurnEnd == oldCmdTurnEnd {
+			user.TurnEnd = def.TurnEnd
+		}
+		if user.ChromeLine == oldCmdChromeLine {
+			user.ChromeLine = def.ChromeLine
+		}
+		for i, rule := range user.Rules {
+			if rule.State != "working" || rule.Pattern != oldCmdWorking {
+				continue
+			}
+			for _, current := range def.Rules {
+				if current.State == "working" {
+					user.Rules[i] = current
+					break
+				}
+			}
+		}
 	}
 	if len(user.Rules) == 0 {
 		user.Rules = def.Rules
@@ -581,18 +610,24 @@ command = "cmd"
 # command-code mints its own session id; capture it after launch and resume it
 session_store = "command-code"
 resume_by_id_command = "cmd --session {id}"
+fork_command = "cmd --session {id} --fork-session --name {name}"
 # fallback: resumes the most recent conversation for the directory
 revive_command = "cmd --continue"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
-turn_end = "^\\s*✻ Worked for [\\dhms. ]+$"
+# A turn closes with "✻ Thought for 7 seconds [ctrl+o to expand]" or, for
+# shell-running turns, "✻ Worked for 12s"; the expand hint rides the same row.
+turn_end = "^\\s*✻ (?:Thought|Worked) for [\\dhms. ]+.*$"
+# recap blocks (TASTE, SHELL, TODOS, SEARCH) render below the turn-end
+# summary, their continuation rows indented under a └
+trailing_note = "^\\s*[A-Z][A-Z]+ {2,}"
 # the assistant message opens on a static ⠶ first-row marker
 message_start = "^⠶ "
 # a submitted prompt echoes into the transcript on its own ❯ line
 user_echo = "^❯ "
 input_placeholder = "^Ask your question"
 limit_line = "^\\s*⚠ You have insufficient credits"
-chrome_line = "^\\s*[─]{4,}\\s*$|^# .*$|^[ \\t█]*$|^\\s*\\? for shortcuts.*$"
+chrome_line = "^\\s*[─]{4,}\\s*$|^# .*$|^[ \\t█]*$|^\\s*\\? for shortcuts.*$|^\\s*» .*$"
 rules = [
   # selection dialogs (trust, tool approval, pickers) number their options
   # behind the prompt marker
@@ -601,9 +636,11 @@ rules = [
   # numbered rows above the marker stay visible to the rules; the trust
   # dialog spells it "↑/↓ to navigate" and the approvals "↑/↓ navigate"
   { state = "waiting", pattern = "↑/↓ (?:to )?navigate" },
-  # the busy footer under a streaming turn; at narrow widths the esc hint
-  # drops and only the tick counter remains
-  { state = "working", pattern = "(?m)^ [·○◇☆✧⌘] \\S+.*(?:esc to interrupt| \\d+)$" },
+  # the busy footer under a streaming turn: "○ Channeling…  esc to
+  # interrupt • 116m 57s • ↓ 41.1k". The esc hint can drop at narrow
+  # widths, and the tail is a duration or a duration plus a token count,
+  # never bare digits.
+  { state = "working", pattern = "(?m)^ [·○◇☆✧⌘] [^\\n]*?(?:esc to interrupt[ \\t]*•[ \\t]*[\\dhms. ]*[\\ds]| [\\dhms. ]*[\\ds])([ \\t]*•[ \\t]*[↓↑] [\\d.]+k?)?$" },
   { state = "errored", pattern = "(?im)^\\s*(?:⚠ )?Error:" },
 ]
 `

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -186,10 +187,19 @@ func reviewHelpSection() helpSection {
 }
 
 func (m *Model) visibleHelpSections() []helpSection {
-	if m.help.returnMode != modeDiff {
-		return helpSections()
+	if m.help.returnMode == modeDiff {
+		return []helpSection{reviewHelpSection()}
 	}
-	return []helpSection{reviewHelpSection()}
+	sections := helpSections()
+	if m.arrowStep {
+		return sections
+	}
+	for i := range sections {
+		sections[i].rows = slices.DeleteFunc(sections[i].rows, func(row [2]string) bool {
+			return row[0] == "→" || row[0] == "←"
+		})
+	}
+	return sections
 }
 
 // matchHelp narrows the catalog to the rows whose key or description

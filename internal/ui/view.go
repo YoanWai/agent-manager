@@ -510,14 +510,19 @@ func (m *Model) viewFooter() string {
 	// tier, which would name keys the agent receives.
 	if m.mode == modeFocus {
 		pairs := [][2]string{
-			{"typing", "goes to the agent"},
-			{"ctrl+q / ctrl+\\", "back to manager"},
+			{"typing", "to agent"},
+			{"ctrl+q / ctrl+\\", "back"},
+		}
+		if m.arrowStep {
+			pairs = append(pairs, [2]string{"←", "prompt start: back"})
+		}
+		pairs = append(pairs, [][2]string{
 			{"ctrl+r", "review"},
 			{"f3", "editor"},
 			// The footer holds one row: the word and line gestures are in
 			// the key map, where there is room to name all three.
 			{"drag / click", "copy"},
-		}
+		}...)
 		if m.pane.mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}
@@ -559,11 +564,16 @@ func (m *Model) rowLegend() legendSection {
 		if m.collapsed[row.group] {
 			foldAction = "unfold"
 		}
-		return legendSection{title: "Group", pairs: [][2]string{
-			{"↵", foldAction}, {"o", "editor"}, {"r", "rename"}, {"m", "move"},
+		pairs := [][2]string{{"↵", foldAction}}
+		if m.arrowStep {
+			pairs = append(pairs, [2]string{"←→", "close / open"})
+		}
+		pairs = append(pairs, [][2]string{
+			{"o", "editor"}, {"r", "rename"}, {"m", "move"},
 			{"x/X", "kill / all"}, {"v/V", "revive / all"},
 			{"a/u", "archive / restore"}, {"d", "delete"},
-		}}
+		}...)
+		return legendSection{title: "Group", pairs: pairs}
 	}
 	title := "Session"
 	conversation := [][2]string{{"space", "prompt"}, {"ctrl+r", "review"}, {"f", "fork"}}
@@ -573,6 +583,9 @@ func (m *Model) rowLegend() legendSection {
 		title, conversation = "Shell", nil
 	}
 	pairs := [][2]string{{"↵", enterHint}, {"A", attachHint}}
+	if m.arrowStep {
+		pairs = append(pairs, [2]string{"→", "focus"})
+	}
 	if row.sess.Status == status.Finished && !row.sess.Archived {
 		pairs = append(pairs, [2]string{".", "mark idle"})
 	}

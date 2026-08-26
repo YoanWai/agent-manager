@@ -210,8 +210,37 @@ func TestGlobalHelpShowsAgentManagementGuidance(t *testing.T) {
 	}
 }
 
+func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
+	hasRow := func(sections []helpSection, title, key string) bool {
+		for _, section := range sections {
+			if section.title != title {
+				continue
+			}
+			for _, row := range section.rows {
+				if row[0] == key {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	for _, enabled := range []bool{true, false} {
+		sections := (&Model{arrowStep: enabled}).visibleHelpSections()
+		for _, row := range []struct{ title, key string }{
+			{"list", "→"},
+			{"list", "←"},
+			{"inside a session (attached or focused)", "←"},
+		} {
+			if got := hasRow(sections, row.title, row.key); got != enabled {
+				t.Errorf("arrow step enabled = %v: %q in %q = %v", enabled, row.key, row.title, got)
+			}
+		}
+	}
+}
+
 func helpModel() *Model {
-	return &Model{width: 120, height: 30, mode: modeHelp}
+	return &Model{width: 120, height: 30, mode: modeHelp, arrowStep: true}
 }
 
 func TestHelpScrollClampsToContent(t *testing.T) {

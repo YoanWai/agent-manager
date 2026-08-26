@@ -108,6 +108,27 @@ func commandCodeSession(sessionID, cwd string) string {
 		`{"role":"user","content":[{"type":"text","text":"hi"}]}` + "\n"
 }
 
+// A forked transcript keeps the parent's id and mints its own under
+// sessionId, the shape cmd 1.32.2 writes for `--fork-session`.
+func commandCodeForkSession(parentID, sessionID, cwd string) string {
+	return `{"type":"session","version":3,"id":"` + parentID +
+		`","timestamp":"2026-08-25T17:03:30.026Z","cwd":"` + cwd +
+		`","sessionId":"` + sessionID + `"}` + "\n" +
+		`{"role":"user","content":[{"type":"text","text":"hi"}]}` + "\n"
+}
+
+func TestCaptureCommandCodeForkPrefersSessionID(t *testing.T) {
+	root := t.TempDir()
+	launch := time.Now()
+	writeFile(t, filepath.Join(root, "a", "fork.jsonl"),
+		commandCodeForkSession("parent-uuid", "fork-uuid", "/repo"), launch.Add(time.Second))
+
+	id, ok := captureCommandCode(root, "/repo", launch, map[string]bool{"parent-uuid": true})
+	if !ok || id != "fork-uuid" {
+		t.Fatalf("got id=%q ok=%v, want fork-uuid true", id, ok)
+	}
+}
+
 func TestCaptureCommandCodePicksSessionAfterLaunchInCwd(t *testing.T) {
 	root := t.TempDir()
 	launch := time.Now()
