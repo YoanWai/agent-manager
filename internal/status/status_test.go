@@ -570,7 +570,16 @@ func TestCommandCodePanes(t *testing.T) {
 		{"approval dialog", "Execute Shell Command\nCommand Code needs to execute echo \"hi\" > hello.txt.\n❯ 1. Yes\n  2. Yes, don't ask again for this exact command in this project\n  3. No, tell Command Code what to do differently\n\n↑/↓ navigate · enter select", Waiting},
 		{"streaming turn", header + streaming + footer, Working},
 		{"streaming turn narrow", "⠶ Paragraph 0 adds a little more of the streaming story\n   so the reply keeps growing past the viewport.\n\n ◇ Ready...  0\n" + footer, Working},
+		{"streaming footer with long duration and tokens", header + "⠶ Paragraph 0 adds a little more of the streaming story so the reply keeps growing past the viewport.\n\n ○ Channeling…  esc to interrupt • 116m 57s • ↓ 41.1k\n" + footer, Working},
+		{"streaming footer with permission note", header + "⠶ Paragraph 0 adds a little more of the streaming story so the reply keeps growing past the viewport.\n\n ⌘ Shell command allowed  esc to interrupt • 35m 8s • ↓ 22.0k\n" + footer, Working},
+		{"streaming footer, tick counter only", header + "⠶ Paragraph 0 adds a little more of the streaming story so the reply keeps growing past the viewport.\n\n ○ Channeling…  116m 57s\n" + footer, Working},
 		{"finished turn", header + "⠶ Paragraph 0 adds a little more of the streaming story so the reply keeps growing past the viewport.\n\n  Paragraph 1 adds a little more of the streaming story so the reply keeps growing past the viewport.\n\n ✻ Worked for 3s\n" + footer, Finished},
+		{"thought-for turn end with expand hint", header + "⠶ Paragraph 0 adds a little more of the streaming story so the reply keeps growing past the viewport.\n\n✻ Thought for 2 seconds [ctrl+o to expand]\n" + footer, Finished},
+		{"thought-for turn end, plural second", header + "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\n⠶ Sure.\n✻ Thought for 7 seconds [ctrl+o to expand]\n" + footer, Finished},
+		{"thought-for end above a trailing recap", header + "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\n⠶ Sure.\n✻ Thought for 7 seconds [ctrl+o to expand]\n\nTASTE  Learned\n└ Keep the composer clean.\n" + footer, Finished},
+		// the » hint row is chrome, so a turn-end marker above it still
+		// reads as the newest summary rather than hiding behind the hint
+		{"accept-edits hint under a thought-for end", header + "❯ hi\n✻ Thought for 2 seconds [ctrl+o to expand]\n» accept edits on [shift+tab]\n" + footer, Finished},
 		{"fast turn with no worked line", "⠶ Sure, which file should I edit?\n" + footer, Idle},
 		{"resumed conversation", "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\n⠶ Hey! What are we working on today? I can dig into code, build something, debug issues, or explore the repo.\n" + footer, Idle},
 		{"current error", "⚠ Error: request failed\n" + footer, Errored},
