@@ -175,6 +175,16 @@ func (c *Config) backfillToolDefaults() error {
 // pattern; one edited by hand keeps what its author wrote.
 const busyLineAgentsOnly = `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ background agents? to finish`
 
+// The command-code matching rules #385 shipped, which no longer match the
+// shapes current Command Code draws. A stored config.toml carries these
+// verbatim and keeps them over any new default, so mergeTool rewrites
+// exactly these stale values the way claude's busy line is rewritten.
+const (
+	oldCmdTurnEnd    = `^\s*✻ Worked for [\dhms. ]+$`
+	oldCmdWorking    = `(?m)^ [·○◇☆✧⌘] \S+.*(?:esc to interrupt| \d+)$`
+	oldCmdChromeLine = `^\s*[─]{4,}\s*$|^# .*$|^[ \t█]*$|^\s*\? for shortcuts.*$`
+)
+
 // mergeTool returns user with any zero-value field filled from def.
 //
 // Shell is deliberately not among them. "terminal" is a plausible name for
@@ -209,6 +219,25 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.InputPrefix, def.InputPrefix)
 	if name == "claude" && user.BusyLine == busyLineAgentsOnly {
 		user.BusyLine = def.BusyLine
+	}
+	if name == "command-code" {
+		if user.TurnEnd == oldCmdTurnEnd {
+			user.TurnEnd = def.TurnEnd
+		}
+		if user.ChromeLine == oldCmdChromeLine {
+			user.ChromeLine = def.ChromeLine
+		}
+		for i, rule := range user.Rules {
+			if rule.State != "working" || rule.Pattern != oldCmdWorking {
+				continue
+			}
+			for _, current := range def.Rules {
+				if current.State == "working" {
+					user.Rules[i] = current
+					break
+				}
+			}
+		}
 	}
 	if len(user.Rules) == 0 {
 		user.Rules = def.Rules

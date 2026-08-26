@@ -577,6 +577,9 @@ func TestCommandCodePanes(t *testing.T) {
 		{"thought-for turn end with expand hint", header + "⠶ Paragraph 0 adds a little more of the streaming story so the reply keeps growing past the viewport.\n\n✻ Thought for 2 seconds [ctrl+o to expand]\n" + footer, Finished},
 		{"thought-for turn end, plural second", header + "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\n⠶ Sure.\n✻ Thought for 7 seconds [ctrl+o to expand]\n" + footer, Finished},
 		{"thought-for end above a trailing recap", header + "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\n⠶ Sure.\n✻ Thought for 7 seconds [ctrl+o to expand]\n\nTASTE  Learned\n└ Keep the composer clean.\n" + footer, Finished},
+		// the » hint row is chrome, so a turn-end marker above it still
+		// reads as the newest summary rather than hiding behind the hint
+		{"accept-edits hint under a thought-for end", header + "❯ hi\n✻ Thought for 2 seconds [ctrl+o to expand]\n» accept edits on [shift+tab]\n" + footer, Finished},
 		{"fast turn with no worked line", "⠶ Sure, which file should I edit?\n" + footer, Idle},
 		{"resumed conversation", "❯ hi\n✻ Thought for 1 second [ctrl+o to expand]\n⠶ Hey! What are we working on today? I can dig into code, build something, debug issues, or explore the repo.\n" + footer, Idle},
 		{"current error", "⚠ Error: request failed\n" + footer, Errored},
