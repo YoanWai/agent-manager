@@ -1271,3 +1271,13 @@ func TestClaimingASessionWritesItsStatus(t *testing.T) {
 		t.Fatal("a session whose pane runs here must not be left dead")
 	}
 }
+
+func TestLastMeaningfulPaneLineSkipsChrome(t *testing.T) {
+	pane := "❯ Add a limiter\n\n\x1b[38;5;240m● Running tests\x1b[0m\n╰────────╯\n   ✶ \n\n"
+	if got := lastMeaningfulPaneLine(pane); got != "● Running tests" {
+		t.Fatalf("last meaningful line = %q", got)
+	}
+	if got := lastMeaningfulPaneLine("\n╭──╮\n│  │\n╰──╯\n"); got != "" {
+		t.Fatalf("a pane of borders should yield nothing, got %q", got)
+	}
+}

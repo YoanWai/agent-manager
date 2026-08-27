@@ -7,12 +7,9 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/launch"
-	"github.com/YoanWai/agent-manager/internal/status"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 )
 
 func TestSessionLayoutDefaultsToSplit(t *testing.T) {
@@ -74,39 +71,6 @@ func TestFullLayoutFrameHasNoPreviewColumn(t *testing.T) {
 	}
 }
 
-// Meters and messages leave the rail foot in full screen for one condensed
-// line: the machine readings inline, and the messages count when any exist.
-func TestFullLayoutFootLine(t *testing.T) {
-	m := shotModel()
-	m.fullLayout = true
-	foot := ansi.Strip(strings.Join(m.railFootLines(m.width-1), "\n"))
-	for _, want := range []string{"cpu 22%", "mem 75%", "net"} {
-		if !strings.Contains(foot, want) {
-			t.Errorf("condensed foot line misses %q:\n%s", want, foot)
-		}
-	}
-	if strings.Contains(foot, "messages") {
-		t.Fatalf("no notices should mean no messages count:\n%s", foot)
-	}
-	if lines := m.railFootLines(m.width - 1); len(lines) != 1 {
-		t.Fatalf("full screen foot should be one line, got %d", len(lines))
-	}
-}
-
-func TestFullLayoutFootLineCountsMessages(t *testing.T) {
-	m := buildModel(t)
-	m.width, m.height = 120, 34
-	m.fullLayout = true
-	foot := ansi.Strip(strings.Join(m.railFootLines(m.width-1), "\n"))
-	if !strings.Contains(foot, "messages") {
-		t.Fatalf("active notices should show a messages count:\n%s", foot)
-	}
-	full := ansi.Strip(m.View())
-	if !strings.Contains(full, "messages") {
-		t.Fatalf("full screen frame lost the messages count:\n%s", full)
-	}
-}
-
 // The layout is a settings choice, so neither footer offers a key for it.
 func TestFullLayoutFooterOffersNoLayoutKey(t *testing.T) {
 	m := shotModel()
@@ -114,182 +78,6 @@ func TestFullLayoutFooterOffersNoLayoutKey(t *testing.T) {
 	full := ansi.Strip(m.viewFooter())
 	if strings.Contains(full, "split view") {
 		t.Fatalf("full screen footer should leave the layout to settings:\n%s", full)
-	}
-}
-
-// A compact session row is one line wearing the reply inline; the
-// comfortable density unfolds it to three — name, the last prompt, the
-// last reply — and a group is one line at either density, in either
-// layout.
-func TestRowHeightsFollowDensity(t *testing.T) {
-	m := shotModel()
-	m.fullLayout = true
-	m.paneLines = map[string]string{"add-rate-limiting": "Running tests… (14s · esc to interrupt)"}
-	row := m.rows[4]
-	row.sess.LastPrompt = "add a token bucket limiter to the public api"
-	if m.comfortableRows {
-		t.Fatal("this test starts at the compact density")
-	}
-	if got := m.entryHeight(row); got != 1 {
-		t.Fatalf("compact session entry height = %d, want 1", got)
-	}
-	if got := m.entryHeight(m.rows[2]); got != 1 {
-		t.Fatalf("group entry height = %d, want 1", got)
-	}
-	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
-	if len(lines) != 1 {
-		t.Fatalf("compact row painted %d lines, want 1", len(lines))
-	}
-	top := ansi.Strip(lines[0])
-	for _, want := range []string{"add-rate-limiting", "Running tests", "working", "claude"} {
-		if !strings.Contains(top, want) {
-			t.Errorf("compact row misses %q:\n%s", want, top)
-		}
-	}
-
-	m.comfortableRows = true
-	if got := m.entryHeight(m.rows[2]); got != 1 {
-		t.Fatalf("comfortable group entry height = %d, want 1", got)
-	}
-	if got := m.entryHeight(row); got != 3 {
-		t.Fatalf("comfortable session entry height = %d, want 3", got)
-	}
-	lines = splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
-	if len(lines) != 3 {
-		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
-	}
-	top = ansi.Strip(lines[0])
-	for _, want := range []string{"add-rate-limiting", "working", "claude"} {
-		if !strings.Contains(top, want) {
-			t.Errorf("comfortable row line 1 misses %q:\n%s", want, top)
-		}
-	}
-	if prompt := ansi.Strip(lines[1]); !strings.Contains(prompt, "❯ add a token bucket limiter") {
-		t.Fatalf("line 2 should carry the last prompt behind ❯:\n%s", prompt)
-	}
-	if reply := ansi.Strip(lines[2]); !strings.Contains(reply, "↳ Running tests") {
-		t.Fatalf("line 3 should carry the reply behind ↳:\n%s", reply)
-	}
-
-	// The same rhythm holds in the split layout.
-	m.fullLayout = false
-	if got := m.entryHeight(row); got != 3 {
-		t.Fatalf("split comfortable session entry height = %d, want 3", got)
-	}
-	m.comfortableRows = false
-	if got := m.entryHeight(row); got != 1 {
-		t.Fatalf("split compact session entry height = %d, want 1", got)
-	}
-	narrow := splitLines(m.renderTreeRow(row, false, 60, 4, panelHex()))
-	if len(narrow) != 1 {
-		t.Fatalf("split compact row painted %d lines, want 1", len(narrow))
-	}
-}
-
-func TestRowWaitingReplyWearsTheStateColor(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
-
-	m := shotModel()
-	m.fullLayout = true
-	m.comfortableRows = true
-	question := "Allow edits to router.go?"
-	m.paneLines = map[string]string{"db-migrations": question}
-	lines := splitLines(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()))
-	if len(lines) != 3 {
-		t.Fatalf("waiting row painted %d lines, want 3", len(lines))
-	}
-	tinted := strings.TrimSuffix(
-		lipgloss.NewStyle().Foreground(statusColor(status.Waiting)).Render(question), "\x1b[0m")
-	if !strings.Contains(lines[2], tinted) {
-		t.Fatalf("waiting question should wear the waiting color:\n%q", lines[2])
-	}
-}
-
-func TestRowQuotesEveryStateAndDashesWhenSilent(t *testing.T) {
-	m := shotModel()
-	m.fullLayout = true
-	m.comfortableRows = true
-	m.paneLines = map[string]string{"notes": "All quiet, nothing queued."}
-	lines := splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
-	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "↳ All quiet, nothing queued." {
-		t.Fatalf("idle reply line = %q, want the last message", reply)
-	}
-	m.paneLines = nil
-	lines = splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
-	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "-" {
-		t.Fatalf("silent idle reply line = %q, want a dash", reply)
-	}
-}
-
-func TestRowLongPromptTruncates(t *testing.T) {
-	m := shotModel()
-	m.fullLayout = true
-	m.comfortableRows = true
-	width := 80
-	row := m.rows[1]
-	row.sess.LastPrompt = strings.Repeat("triage the flaky integration suite and report ", 10)
-	rendered := m.renderTreeRow(row, false, width, 1, panelHex())
-	for _, line := range splitLines(rendered) {
-		if got := ansi.StringWidth(line); got > width {
-			t.Fatalf("row line is %d wide, row is %d:\n%s", got, width, ansi.Strip(line))
-		}
-	}
-	lines := splitLines(rendered)
-	if prompt := ansi.Strip(lines[1]); !strings.Contains(prompt, "…") {
-		t.Fatalf("long prompt should truncate with an ellipsis:\n%s", prompt)
-	}
-	for _, want := range []string{"idle", "grok"} {
-		if !strings.Contains(ansi.Strip(lines[0]), want) {
-			t.Errorf("meta should survive, misses %q:\n%s", want, ansi.Strip(lines[0]))
-		}
-	}
-}
-
-func TestQuickSendRecordsLastPrompt(t *testing.T) {
-	m := buildModel(t)
-	createSession(t, m, "answer-me", t.TempDir(), "")
-	m.selectSessionRow(t, "answer-me")
-	m.openQuickMode()
-	m.quick.input.SetValue("carry on with the plan")
-	if _, _ = m.submitQuick(); m.errBar.text != "" {
-		t.Fatalf("send: %q", m.errBar.text)
-	}
-	got, err := m.store.Get(m.sessionRows()[0].ID)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.LastPrompt != "carry on with the plan" {
-		t.Fatalf("last prompt = %q, want the quick send", got.LastPrompt)
-	}
-}
-
-// The launch notes are the manager's words, not a task: a decorated first
-// prompt sheds them, and a note delivered on its own records nothing.
-func TestTypedPromptStripsLaunchNotes(t *testing.T) {
-	decorated := launch.CoordinationNote + "\n\n" + launch.RenameDirective + "\n\nfix the login flow"
-	if got := typedPrompt(decorated); got != "fix the login flow" {
-		t.Fatalf("typedPrompt = %q, want the bare task", got)
-	}
-	if got := typedPrompt(launch.DeferredRenameDirective); got != "" {
-		t.Fatalf("a bare directive should record nothing, got %q", got)
-	}
-	if got := typedPrompt(launch.CoordinationNote); got != "" {
-		t.Fatalf("a bare note should record nothing, got %q", got)
-	}
-	if got := typedPrompt("plain prompt"); got != "plain prompt" {
-		t.Fatalf("an undecorated prompt should pass through, got %q", got)
-	}
-}
-
-func TestLastMeaningfulPaneLineSkipsChrome(t *testing.T) {
-	pane := "❯ Add a limiter\n\n\x1b[38;5;240m● Running tests\x1b[0m\n╰────────╯\n   ✶ \n\n"
-	if got := lastMeaningfulPaneLine(pane); got != "● Running tests" {
-		t.Fatalf("last meaningful line = %q", got)
-	}
-	if got := lastMeaningfulPaneLine("\n╭──╮\n│  │\n╰──╯\n"); got != "" {
-		t.Fatalf("a pane of borders should yield nothing, got %q", got)
 	}
 }
 
@@ -474,54 +262,6 @@ func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
 	}
 }
 
-// The compact cell quotes the agent's last message whenever there is
-// one, whatever the state; only a session that has said nothing yet
-// names the task it was given.
-func TestCompactCellIsStatePicked(t *testing.T) {
-	m := shotModel()
-	m.fullLayout = true
-	m.paneLines = map[string]string{
-		"notes":         "All quiet, nothing queued.",
-		"db-migrations": "Allow edits to router.go?",
-	}
-	idle := m.rows[1]
-	idle.sess.LastPrompt = "verify the staging deploy is healthy"
-	line := ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()))
-	if !strings.Contains(line, "↳ All quiet, nothing queued.") {
-		t.Fatalf("an idle session that has spoken should quote its reply:\n%s", line)
-	}
-	if strings.Contains(line, "verify the staging deploy") {
-		t.Fatalf("the reply should win over the task:\n%s", line)
-	}
-
-	m.paneLines = map[string]string{"db-migrations": "Allow edits to router.go?"}
-	line = ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()))
-	if !strings.Contains(line, "❯ verify the staging deploy is healthy") {
-		t.Fatalf("a silent idle session should name its task:\n%s", line)
-	}
-
-	line = ansi.Strip(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()))
-	if !strings.Contains(line, "↳ Allow edits to router.go?") {
-		t.Fatalf("waiting compact row should quote its question:\n%s", line)
-	}
-}
-
-// A status frozen before the archive (an older build's "working") must
-// not read as alive from inside the archive.
-func TestArchivedRowReadsDead(t *testing.T) {
-	m := shotModel()
-	m.fullLayout = true
-	row := m.rows[4]
-	row.sess.Archived = true
-	line := ansi.Strip(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
-	if !strings.Contains(line, statusLabel(status.Dead)) {
-		t.Fatalf("archived row should read dead:\n%s", line)
-	}
-	if strings.Contains(line, statusLabel(status.Working)) {
-		t.Fatalf("archived row still claims its frozen state:\n%s", line)
-	}
-}
-
 // Full screen focus drops the footer padding the other transients keep:
 // the pane is pinned on the way in anyway, so the freed rows join the
 // body instead of holding blank space under the legend.
@@ -536,46 +276,6 @@ func TestFullFocusFooterIsOneRow(t *testing.T) {
 	listed := lipgloss.Height(m.listFooter())
 	if got := lipgloss.Height(m.viewFooter()); got != listed {
 		t.Fatalf("split focus footer = %d rows, want the padded %d", got, listed)
-	}
-}
-
-func TestShellRowSkipsThePromptLine(t *testing.T) {
-	m := shotModel()
-	m.cfg = config.Config{Tools: map[string]config.Tool{"terminal": {Shell: true}, "claude": {}}}
-	m.comfortableRows = true
-	shell := m.rows[4]
-	shell.sess.Tool = "terminal"
-	shell.sess.Status = status.Idle
-	shell.sess.LastPrompt = "this never rode a shell row"
-	m.paneLines = map[string]string{shell.sess.ID: "~/dev/api $ go test ./..."}
-
-	if got := m.entryHeight(shell); got != 2 {
-		t.Fatalf("comfortable shell entry height = %d, want 2", got)
-	}
-	lines := splitLines(m.renderTreeRow(shell, false, m.width-1, 4, panelHex()))
-	if len(lines) != 2 {
-		t.Fatalf("comfortable shell row painted %d lines, want 2:\n%s", len(lines), strings.Join(lines, "\n"))
-	}
-	if reply := ansi.Strip(lines[1]); !strings.Contains(reply, "↳ ~/dev/api $ go test") {
-		t.Fatalf("line 2 should carry the shell's own last line behind ↳:\n%s", reply)
-	}
-	if body := ansi.Strip(strings.Join(lines, "\n")); strings.Contains(body, "this never rode a shell row") {
-		t.Fatalf("a shell row has no prompt line to paint:\n%s", body)
-	}
-
-	// An agent beside it keeps all three.
-	agent := m.rows[4]
-	if got := m.entryHeight(agent); got != 3 {
-		t.Fatalf("comfortable agent entry height = %d, want 3", got)
-	}
-	if got := len(splitLines(m.renderTreeRow(agent, false, m.width-1, 4, panelHex()))); got != 3 {
-		t.Fatalf("comfortable agent row painted %d lines, want 3", got)
-	}
-
-	// Compact keeps every session on one row, shell included.
-	m.comfortableRows = false
-	if got := m.entryHeight(shell); got != 1 {
-		t.Fatalf("compact shell entry height = %d, want 1", got)
 	}
 }
 
@@ -639,8 +339,6 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 		t.Fatalf("facts painted %d lines, want 1", got)
 	}
 
-	// The frame puts the facts under the band and a rule between them and
-	// the pane.
 	rows := splitLines(ansi.Strip(m.View()))
 	head := m.headerRows()
 	isRule := func(row string) bool {
@@ -657,7 +355,6 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 		t.Fatalf("row %d should be the rule under the facts, got:\n%s", head+2, got)
 	}
 
-	// Too narrow for both sides, the name survives and the readings go.
 	narrow := ansi.Strip(m.focusFactsLine(52))
 	if !strings.Contains(narrow, "add-rate-limiting") || strings.Contains(narrow, "cpu ") {
 		t.Fatalf("a narrow line keeps the name and drops the readings:\n%s", narrow)

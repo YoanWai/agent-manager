@@ -1143,3 +1143,36 @@ func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
 		}
 	}
 }
+
+// Meters and messages leave the rail foot in full screen for one condensed
+// line: the machine readings inline, and the messages count when any exist.
+func TestFullLayoutFootLine(t *testing.T) {
+	m := shotModel()
+	m.fullLayout = true
+	foot := ansi.Strip(strings.Join(m.railFootLines(m.width-1), "\n"))
+	for _, want := range []string{"cpu 22%", "mem 75%", "net"} {
+		if !strings.Contains(foot, want) {
+			t.Errorf("condensed foot line misses %q:\n%s", want, foot)
+		}
+	}
+	if strings.Contains(foot, "messages") {
+		t.Fatalf("no notices should mean no messages count:\n%s", foot)
+	}
+	if lines := m.railFootLines(m.width - 1); len(lines) != 1 {
+		t.Fatalf("full screen foot should be one line, got %d", len(lines))
+	}
+}
+
+func TestFullLayoutFootLineCountsMessages(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 120, 34
+	m.fullLayout = true
+	foot := ansi.Strip(strings.Join(m.railFootLines(m.width-1), "\n"))
+	if !strings.Contains(foot, "messages") {
+		t.Fatalf("active notices should show a messages count:\n%s", foot)
+	}
+	full := ansi.Strip(m.View())
+	if !strings.Contains(full, "messages") {
+		t.Fatalf("full screen frame lost the messages count:\n%s", full)
+	}
+}
