@@ -1123,7 +1123,9 @@ func TestGuestManagerLeavesAnotherServersSessionsAlone(t *testing.T) {
 	}
 
 	guest := guestPoller(t, m.store)
-	guest.refreshOnce()
+	if msg, failed := guest.refreshOnce().(errMsg); failed {
+		t.Fatalf("the guest poll has to run for this to prove anything: %v", msg.err)
+	}
 
 	after, err := m.store.Get(sess.ID)
 	if err != nil {
