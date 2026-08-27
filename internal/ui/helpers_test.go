@@ -11,6 +11,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -358,7 +359,7 @@ func waitForAgent(t *testing.T, m *Model, sessID string, want bool) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if running, err := agentRunning(m.tmux, sessID); err == nil && running == want {
+		if running, err := sessioncmd.AgentRunning(m.tmux, sessID); err == nil && running == want {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)

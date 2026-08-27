@@ -374,6 +374,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "revive_session",
 		Description: "Bring a dead session back on its old row, resuming the conversation it held where its CLI supports that. " +
+			"An agent that quit while its window stayed open comes back inside that same pane. " +
 			"Call when list_sessions or send_session reports a session is not running and its work should continue.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sessionTargetArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
