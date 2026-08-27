@@ -111,7 +111,12 @@ func newSessionHarness(t *testing.T) *sessionHarness {
 		for _, sess := range sessions {
 			_ = driver.Kill(sess.ID)
 		}
-		if out, err := exec.Command("tmux", "-L", driver.SocketName(), "kill-server").CombinedOutput(); err != nil && !strings.Contains(string(out), "no server running") {
+		// Killing the last session lets the server exit on its own; a
+		// kill-server that lands mid-exit reports "server exited
+		// unexpectedly", which is the outcome this cleanup wants.
+		if out, err := exec.Command("tmux", "-L", driver.SocketName(), "kill-server").CombinedOutput(); err != nil &&
+			!strings.Contains(string(out), "no server running") &&
+			!strings.Contains(string(out), "server exited unexpectedly") {
 			t.Errorf("kill test tmux server: %v: %s", err, strings.TrimSpace(string(out)))
 		}
 		_ = st.Close()
