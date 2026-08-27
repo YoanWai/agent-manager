@@ -622,11 +622,6 @@ func (m *Model) viewLegend() legendSection {
 	// Ordered by what a narrow terminal must keep: moving around, making
 	// something, the filters, then the keys a user already knows to look for.
 	pairs := [][2]string{{"↑↓/jk", "navigate"}}
-	// Full screen names its way back early: the tier's tail is what a
-	// narrow terminal cuts, and z is the key that undoes the whole view.
-	if m.fullLayout {
-		pairs = append(pairs, [2]string{"z", "split view"})
-	}
 	pairs = append(pairs, [][2]string{
 		{"n", "new"}, {"T", "terminal"}, {"g", "group"}, {"/", "search"},
 		{"t", archivedAction}, {"w", statusFilterAction}, {"e", emptyGroupsAction},

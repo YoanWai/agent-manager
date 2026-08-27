@@ -68,7 +68,6 @@ func helpSections() []helpSection {
 			{"e", "hide / show empty groups"},
 			{"F", "fold / unfold every group"},
 			{"|", "resize the split (←→ or hl, or drag; ↵ commits, esc cancels)"},
-			{"z", "full screen / split: the list alone, or the preview beside it"},
 			{"s", "settings"},
 			{"M", "messages"},
 			{"?", "this key map"},

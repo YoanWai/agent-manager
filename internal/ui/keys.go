@@ -147,8 +147,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.cycleStatusFilter()
 	case "s":
 		m.openSettings()
-	case "z":
-		m.toggleSessionLayout()
 	case "|":
 		return m.enterResizeMode()
 	case "t":

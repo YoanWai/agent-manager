@@ -94,7 +94,6 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `ctrl+r` | Review the session's changes as full-file diffs; `c` comments a line, `C` sends a numbered review round, and sent comments stay visible as open or handled |
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |
 | `R` | Restart a session on an empty context: same name, group, directory and tool, fresh conversation |
-| `z` | Full screen list: two-line session rows across the whole width; press again for the split |
 | `s` | Settings (default tool, theme or follow the OS light/dark mode, list density, review layout, desktop notifications) |
 | `?` | The key map for the current screen; review shows only review bindings |
 

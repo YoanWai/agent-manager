@@ -42,7 +42,6 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `F` | Fold / unfold every group |
 | `s` | Settings (default tool, theme, theme follows OS, list density, sessions layout, review layout, after quick send, session keys, ←→ step in/out, spawn in worktree, notifications, notify on finish, CLIs, report a bug, suggest a change, and the version row that updates in place) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
-| `z` | Toggle the [full screen layout](#full-screen-sessions): the list alone across the whole terminal, or the split with the preview beside it |
 | `t` | Toggle archived view |
 | `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
 | `M` | Messages (updates, tips; `x` dismisses one for good). The welcome message points at Settings for a bug or an idea. |
@@ -70,7 +69,7 @@ The new-session form's optional `prompt` field launches an agent the same way. I
 
 ## Full screen sessions
 
-`z` hands the session list the whole terminal: the preview column steps aside and every row takes the full width. Press it again for the split. The choice is persisted like the split ratio, and the "sessions layout" row in Settings (`s`) sets the same thing.
+The "sessions layout" row in Settings (`s`) hands the session list the whole terminal: the preview column steps aside and every row takes the full width. The same row returns to the split, and the choice is persisted like the split ratio.
 
 Session rows read the same way in either layout, and the list density setting picks their rhythm. Compact keeps a session to one line: mark, name and badges, then a state-picked value riding to the right of the name with `state · tool · age` against the right edge. That value is the agent's last message whenever it has said anything (the question it waits on, its progress, its result) behind a static `↳` washed in the state color, and the task it was given behind the accent's `❯` only while it has not. Comfortable unfolds each session to three lines: the name line, your last message behind a `❯` in the accent, and the agent's last message under it. A terminal keeps two of them, its name line and its last output, since no one is prompting a shell. Both messages come from the session's own record: the prompt echoed into its transcript (typed in an attach, the focus view, or the quick prompt, all the same) and the reply read from above its input box, recovered from the tool's session store when it scrolled away. A `waiting` session's message wears its state color at full strength, the other states at a wash of theirs; a `working` session that has not said anything yet animates a loader. Groups stay one line at any density. In the full screen layout the meters condense to one labeled line above the key legend: cpu, mem, swap, disk, temperatures and net, plus a messages count that `M` opens.
 

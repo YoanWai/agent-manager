@@ -165,17 +165,6 @@ func storedFullLayout(st *store.Store) bool {
 	return chosen == "full"
 }
 
-// toggleSessionLayout flips the list between the split and the full screen
-// layout and persists the choice. Pane geometry is left alone: a resize
-// costs a running agent its scrollback, so widths only change where they
-// already do today.
-func (m *Model) toggleSessionLayout() {
-	m.fullLayout = !m.fullLayout
-	if err := m.store.SetSetting(sessionLayoutSetting, sessionLayoutValue(m.fullLayout)); err != nil {
-		m.errBar.text = err.Error()
-	}
-}
-
 func sessionLayoutValue(full bool) string {
 	if full {
 		return "full"

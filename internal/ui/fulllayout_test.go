@@ -28,24 +28,6 @@ func TestSessionLayoutDefaultsToSplit(t *testing.T) {
 	}
 }
 
-func TestZTogglesSessionLayout(t *testing.T) {
-	m := buildModel(t)
-	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")})
-	if !m.fullLayout {
-		t.Fatal("z should turn the full layout on")
-	}
-	if chosen, err := m.store.Setting(sessionLayoutSetting); err != nil || chosen != "full" {
-		t.Fatalf("want stored full, got %q err %v", chosen, err)
-	}
-	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")})
-	if m.fullLayout {
-		t.Fatal("a second z should return to the split layout")
-	}
-	if chosen, err := m.store.Setting(sessionLayoutSetting); err != nil || chosen != "split" {
-		t.Fatalf("want stored split, got %q err %v", chosen, err)
-	}
-}
-
 func TestSettingsTogglesSessionLayout(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
@@ -125,18 +107,13 @@ func TestFullLayoutFootLineCountsMessages(t *testing.T) {
 	}
 }
 
-// The full screen footer keeps the split's tiers and adds the key that
-// returns to the split.
-func TestFullLayoutFooterNamesZ(t *testing.T) {
+// The layout is a settings choice, so neither footer offers a key for it.
+func TestFullLayoutFooterOffersNoLayoutKey(t *testing.T) {
 	m := shotModel()
-	split := ansi.Strip(m.viewFooter())
-	if strings.Contains(split, "split view") {
-		t.Fatalf("split footer should not offer the split it is in:\n%s", split)
-	}
 	m.fullLayout = true
 	full := ansi.Strip(m.viewFooter())
-	if !strings.Contains(full, "z split view") {
-		t.Fatalf("full screen footer misses z:\n%s", full)
+	if strings.Contains(full, "split view") {
+		t.Fatalf("full screen footer should leave the layout to settings:\n%s", full)
 	}
 }
 
