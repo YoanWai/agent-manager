@@ -1,5 +1,18 @@
 [
   {
+    "id": "full-screen-sessions",
+    "banner": "new: the session list can take the whole terminal",
+    "title": "Full-screen sessions, with rows that read as a conversation",
+    "body": [
+      "Settings (`s`) holds a `sessions layout` row; `←` or `→` swaps it to full screen, and the preview column steps aside.",
+      "Rows carry the agent's last message beside the name, with your last prompt above it at the comfortable density.",
+      "@pandysp asked for this in #357, then reviewed it against his own sessions until it was right. Thank you.",
+      "The update message in this panel takes `u`, which updates through whatever installed you."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.34.0",
+    "max_version": "0.34.0"
+  },
+  {
     "id": "command-code-joins-built-in-tools",
     "banner": "new: Command Code joins the built-in tools",
     "title": "Command Code gets live status and exact revival out of the box",
