@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -1187,5 +1188,30 @@ func TestSocketPathSeparatesServersUnderOneName(t *testing.T) {
 	}
 	if !strings.HasSuffix(elsewhere.SocketPath(), "/"+testSocket) {
 		t.Fatalf("path %q does not end in the socket name", elsewhere.SocketPath())
+	}
+}
+
+// tmux resolves a relative TMUX_TMPDIR from its own working directory, so
+// the path a session is stamped with has to be the absolute one or a later
+// poll reads its own sessions as another server's.
+func TestSocketPathFromRelativeTmpdirIsAbsolute(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.MkdirAll("sockets", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMUX_TMPDIR", "sockets")
+
+	got := socketPathFromEnv(testSocket)
+	if !filepath.IsAbs(got) {
+		t.Fatalf("socket path %q is not absolute", got)
+	}
+	resolved, err := filepath.EvalSymlinks(filepath.Join(root, "sockets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(resolved, fmt.Sprintf("tmux-%d", os.Getuid()), testSocket)
+	if got != want {
+		t.Fatalf("socket path = %q, want %q", got, want)
 	}
 }

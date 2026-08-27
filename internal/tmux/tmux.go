@@ -148,6 +148,12 @@ func socketPathFromEnv(socket string) string {
 	if dir == "" {
 		dir = "/tmp"
 	}
+	// tmux takes a relative TMUX_TMPDIR from its own working directory and
+	// reports the resolved path, so the same absolute form is what a session
+	// has to be stamped with for a later poll to recognise it.
+	if absolute, err := filepath.Abs(dir); err == nil {
+		dir = absolute
+	}
 	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = resolved
 	}

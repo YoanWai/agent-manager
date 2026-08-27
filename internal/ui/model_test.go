@@ -561,3 +561,15 @@ func agentPaneSize(t *testing.T, id string) (int, int) {
 	}
 	return width, height
 }
+
+// The rows are marked against the server the poll read panes from, so the
+// refresh has to hand that socket to the model it renders from.
+func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
+	for _, socket := range []string{"/tmp/first/agentmgr", "/tmp/second/agentmgr", ""} {
+		m := &Model{collapsed: map[string]bool{}, tmuxSocket: "/tmp/stale/agentmgr"}
+		m.Update(refreshMsg{tmuxSocket: socket, listedAt: time.Now()})
+		if m.tmuxSocket != socket {
+			t.Fatalf("model socket = %q, want the poll's %q", m.tmuxSocket, socket)
+		}
+	}
+}
