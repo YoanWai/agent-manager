@@ -567,9 +567,12 @@ func agentPaneSize(t *testing.T, id string) (int, int) {
 func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 	for _, socket := range []string{"/tmp/first/agentmgr", "/tmp/second/agentmgr", ""} {
 		m := &Model{collapsed: map[string]bool{}, tmuxSocket: "/tmp/stale/agentmgr"}
-		m.Update(refreshMsg{tmuxSocket: socket, listedAt: time.Now()})
+		m.Update(refreshMsg{tmuxSocket: socket, leadingManager: true, listedAt: time.Now()})
 		if m.tmuxSocket != socket {
 			t.Fatalf("model socket = %q, want the poll's %q", m.tmuxSocket, socket)
+		}
+		if !m.leadingManager {
+			t.Fatal("the poll's hold on the store should reach the model")
 		}
 	}
 }

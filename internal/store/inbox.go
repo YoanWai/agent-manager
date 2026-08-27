@@ -48,9 +48,8 @@ var DefaultInboxLimits = InboxLimits{
 const PollerHeartbeatKey = "poller_heartbeat"
 
 // PollerSocketKey names the tmux server the manager holding the heartbeat
-// polls. Sessions created before a manager recorded their own server are
-// that manager's to speak for, so a second manager on another server
-// leaves them to it rather than reading their invisible panes as dead.
+// polls. Sessions no server has claimed are that manager's to speak for,
+// which keeps a manager elsewhere from reading their panes as dead.
 const PollerSocketKey = "poller_socket"
 
 const (
@@ -61,12 +60,11 @@ const (
 	PollerHeartbeatStale = 30 * time.Second
 )
 
-// ClaimPoller stamps this manager's socket beside a fresh heartbeat when
-// the store is unclaimed, already this manager's, or held by a manager
-// whose heartbeat has aged past stale, and reports who holds it after the
-// attempt. Read and write share one immediate transaction, so two managers
-// starting against the same store cannot both come away believing they
-// hold it and speak for the same unclaimed sessions.
+// ClaimPoller takes the store for this manager's server while it is
+// unclaimed or its holder has stopped stamping, and reports who holds it.
+// Read and write share one immediate transaction: two managers starting
+// together would otherwise both read an empty holder and both speak for
+// the sessions no server has claimed.
 func (s *Store) ClaimPoller(socket string, now time.Time, pollInterval time.Duration) (string, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -103,8 +101,7 @@ func (s *Store) ManagerAwake(now time.Time, pollInterval time.Duration) (bool, e
 	return heartbeatAwake(s.db, now, pollInterval)
 }
 
-// rowQuerier is the part of a database or transaction heartbeatAwake needs,
-// so the claim can read the stamp inside its own transaction.
+// rowQuerier lets the claim read the stamp inside its own transaction.
 type rowQuerier interface {
 	QueryRow(query string, args ...any) *sql.Row
 }

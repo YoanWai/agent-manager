@@ -473,6 +473,7 @@ func (p *poller) refreshOnce() tea.Msg {
 
 	msg := refreshMsg{
 		tmuxSocket:     socket,
+		leadingManager: leading,
 		sessions:       sessions,
 		listedAt:       listedAt,
 		groups:         names,

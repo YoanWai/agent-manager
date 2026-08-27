@@ -1179,11 +1179,18 @@ func (m *Model) headerAgents() string {
 		subtleStyle.Render(" · ") + valueStyle.Render(humanBytes(m.agents.rss))
 }
 
-// elsewhereNote marks a session whose pane runs on a tmux server this
-// manager does not talk to. Its status is the last one the manager that
-// owns it wrote, and nothing here refreshes or drives it.
+// elsewhereNote marks a session this manager does not speak for: its pane
+// runs on a tmux server this one does not talk to, or no server has claimed
+// it and the store belongs to another manager. Its status is the last one
+// that manager wrote, and nothing here refreshes or drives it.
 func (m *Model) elsewhereNote(sess store.Session) string {
-	if sess.TmuxSocket == "" || m.tmuxSocket == "" || sess.TmuxSocket == m.tmuxSocket {
+	if m.tmuxSocket == "" {
+		return ""
+	}
+	if sess.TmuxSocket == "" && !m.leadingManager {
+		return " · elsewhere"
+	}
+	if sess.TmuxSocket == "" || sess.TmuxSocket == m.tmuxSocket {
 		return ""
 	}
 	return " · elsewhere"
