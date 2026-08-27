@@ -747,3 +747,21 @@ func TestQuickPromptNeverRunsWhatIsTypedAtAShell(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+func TestQuickSendRecordsLastPrompt(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "answer-me", t.TempDir(), "")
+	m.selectSessionRow(t, "answer-me")
+	m.openQuickMode()
+	m.quick.input.SetValue("carry on with the plan")
+	if _, _ = m.submitQuick(); m.errBar.text != "" {
+		t.Fatalf("send: %q", m.errBar.text)
+	}
+	got, err := m.store.Get(m.sessionRows()[0].ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.LastPrompt != "carry on with the plan" {
+		t.Fatalf("last prompt = %q, want the quick send", got.LastPrompt)
+	}
+}

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -95,6 +96,23 @@ func (m *Model) previewPaneWidth() int {
 	return w
 }
 
+// paneTargetSize is the tmux window size sessions are pinned to: the
+// preview panel's box in the split, the whole terminal body in the full
+// screen layout, which paints captures across the full width.
+func (m *Model) paneTargetSize() (int, int) {
+	if m.fullLayout {
+		width, height := m.width, m.listBodyHeight()
+		if width < 1 {
+			width = 1
+		}
+		if height < 3 {
+			height = 3
+		}
+		return width, height
+	}
+	return m.previewPaneWidth(), m.previewPaneHeight()
+}
+
 // previewPaneHeight is the rows of session pane content the Preview
 // section can show with nothing transient over it, which is what tmux is
 // pinned to: the painted view crops a taller pane, where resizing it for
@@ -121,6 +139,22 @@ func (m *Model) previewPaneHeight() int {
 		return 3
 	}
 	return rest
+}
+
+// fullFocus reports whether the focused session owns the whole terminal
+// body, which is how the full screen layout opens a session.
+func (m *Model) fullFocus() bool {
+	return m.fullLayout && m.mode == modeFocus
+}
+
+// focusPaneRows is the rows of pane content the focused view paints: the
+// whole body when the session is open full screen, the preview panel's
+// rows in the split.
+func (m *Model) focusPaneRows() int {
+	if m.fullFocus() {
+		return m.listBodyHeight()
+	}
+	return m.previewPaneHeight()
 }
 
 // statusLine is the transient message: prompts, search, and self-dismissing
@@ -504,8 +538,14 @@ func (m *Model) listFooter() string {
 // transientFooter renders one tier at the list footer's height: the footer
 // sets the preview box, and a box that moves resizes every session's pane,
 // which costs an agent drawing on the normal screen a full transcript redraw.
+// The full screen layout has no preview box to hold still, so a tier there
+// takes the one row it needs and hands the rest to the body.
 func (m *Model) transientFooter(section legendSection) string {
-	return padToHeight(legendBar([]legendSection{section}, m.width), lipgloss.Height(m.listFooter()))
+	bar := legendBar([]legendSection{section}, m.width)
+	if m.fullLayout {
+		return bar
+	}
+	return padToHeight(bar, lipgloss.Height(m.listFooter()))
 }
 
 // rowLegend is the tier for the entry under the cursor: what this session or
@@ -581,12 +621,14 @@ func (m *Model) viewLegend() legendSection {
 	}
 	// Ordered by what a narrow terminal must keep: moving around, making
 	// something, the filters, then the keys a user already knows to look for.
-	return legendSection{title: "View", quiet: true, pairs: [][2]string{
-		{"↑↓/jk", "navigate"}, {"n", "new"}, {"T", "terminal"}, {"g", "group"}, {"/", "search"},
+	pairs := [][2]string{{"↑↓/jk", "navigate"}}
+	pairs = append(pairs, [][2]string{
+		{"n", "new"}, {"T", "terminal"}, {"g", "group"}, {"/", "search"},
 		{"t", archivedAction}, {"w", statusFilterAction}, {"e", emptyGroupsAction},
 		{"?", "keys"}, {"q", "quit"},
 		{"K/J", "reorder"}, {"F", foldAllAction}, {"|", "resize"}, {"s", "settings"},
-	}}
+	}...)
+	return legendSection{title: "View", quiet: true, pairs: pairs}
 }
 
 func displayGroup(path string) string {
@@ -629,6 +671,23 @@ func humanBytes(b uint64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f%cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// shortHome writes a path under the home directory the way a shell prompt
+// does, so a narrow slot spends its room on the part that tells the
+// directories apart rather than on the same prefix every session shares.
+func shortHome(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" || path == "" {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	if strings.HasPrefix(path, home+string(os.PathSeparator)) {
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	return path
 }
 
 // truncateTail keeps the end of the string (best for paths).

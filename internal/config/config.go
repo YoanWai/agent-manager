@@ -62,6 +62,17 @@ type Tool struct {
 	// turn is errored even when a turn-end summary or a limit dialog would
 	// otherwise settle the turn.
 	LimitLine string `toml:"limit_line"`
+	// MessageStart marks the first line of a message the tool prints, so a
+	// caller quoting the last reply starts at its beginning rather than
+	// its tail. Tools without one quote the newest content line instead.
+	MessageStart string `toml:"message_start"`
+	// InputPlaceholder is the hint a composer paints on its empty input
+	// row; a draft matching it is the tool's wording, not the user's.
+	InputPlaceholder string `toml:"input_placeholder"`
+	// UserEcho marks a line where the tool echoes a submitted prompt into
+	// its transcript, which is how the last thing sent to a session is
+	// read back regardless of who typed it or from where.
+	UserEcho string `toml:"user_echo"`
 	// DialogFooter is a line the tool draws under its input marker while a
 	// dialog owns the input box. It tells a dialog that reuses that marker
 	// for its selected option from a draft typed at a resting composer, so
@@ -238,6 +249,9 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.ChromeLine, def.ChromeLine)
 	fill(&user.BlockedLine, def.BlockedLine)
 	fill(&user.TrailingNote, def.TrailingNote)
+	fill(&user.MessageStart, def.MessageStart)
+	fill(&user.InputPlaceholder, def.InputPlaceholder)
+	fill(&user.UserEcho, def.UserEcho)
 	fill(&user.BusyLine, def.BusyLine)
 	fill(&user.LimitLine, def.LimitLine)
 	fill(&user.DialogFooter, def.DialogFooter)
@@ -406,6 +420,11 @@ dialog_footer = "(?m)^\\s*Enter to select\\b"
 busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for \\d+ background agents? to finish|.*· \\d+ shells? still running)"
 # a usage/rate-limit banner sits above the turn-end summary
 limit_line = "(?m)You've hit your .+limit"
+# every message and tool call opens on a bullet at the left edge; the
+# glyph is ⏺ on current Claude Code and ● on older releases
+message_start = "^[●⏺] "
+# a submitted prompt echoes into the transcript on its own ❯ line
+user_echo = "^❯ "
 rules = [
   # selection dialogs (trust prompt, permission asks, questions) block on the user
   { state = "waiting", pattern = "Enter to confirm" },
@@ -439,6 +458,11 @@ activity_cutoff = "(?m)^\\s*╹"
 input_prefix = "(?m)^\\s*┃"
 turn_end = "^\\s*▣ +.+· [\\dhms. ]+\\s*$"
 chrome_line = "^\\s*(┃.*)?$"
+input_placeholder = "^Ask anything\\.\\.\\."
+# a submitted prompt echoes into the transcript inside the same ┃ gutter
+# the composer draws; the composer's own block hugs the cutoff and is
+# trimmed before the echo is read
+user_echo = "^\\s*┃\\s{2,}"
 limit_line = "(?i)requires more credits|(?:Usage|Free|Go) limit reached"
 rules = [
   { state = "errored", pattern = "(?i)requires more credits" },
@@ -464,6 +488,11 @@ activity_cutoff = "(?m)^›"
 # through the quiet-region fallback instead
 turn_end = "(?m)^─+ Worked for [\\dhms. ]+─"
 chrome_line = "^\\s*─*\\s*$"
+# every message and tool call opens on a "• " bullet
+message_start = "^• "
+input_placeholder = "^Ask Codex to do anything"
+# a submitted prompt echoes into the transcript on its own › line
+user_echo = "^› "
 limit_line = "(?m)You've hit your usage limit"
 rules = [
   # bottom-pane dialogs (command approval, choice prompts, first-run trust)
@@ -528,6 +557,11 @@ activity_cutoff = "(?m)^\\s*[>!*] "
 # shift+tab to manual", ...) are all chrome above the composer
 chrome_line = "^\\s*[╭╮╰╯│─▄▀█]*\\s*$|^\\s*\\? for shortcuts\\s*$|^\\s*press tab twice for more\\s*$|^\\s*Press Ctrl\\+O to show more lines.*$|(?i)^\\s*(auto-accept edits |plan |yolo )?\\S*tab\\S* to (accept edits|manual|plan|auto-accept edits)\\s*$"
 limit_line = "Usage limit reached"
+# model replies open on a "✦ " glyph
+message_start = "^\\s*✦ "
+input_placeholder = "^Type your message or @path/to/file"
+# a submitted prompt echoes into the transcript on its own "> " line
+user_echo = "^\\s*> "
 rules = [
   # selected row of an approval/trust dialog, inside its bordered box:
   # "│ ● 1. Allow once"
@@ -576,6 +610,11 @@ rules = [
 command = ""
 shell = true
 default_status = "idle"
+# A generic prompt row (a bare marker, or "yoan@mac ~ %") is where ← can
+# hand focus back to the list without costing the shell a keystroke. Up to
+# three leading tokens cover user@host-and-path prompts; % and ➜ cover
+# stock zsh and oh-my-zsh.
+input_prefix = "(?m)^\\s*(?:\\S+\\s+){0,3}[❯>$#›»→%➜]\\s"
 
 [tools.pi]
 command = "pi"
@@ -621,11 +660,18 @@ turn_end = "^\\s*✻ (?:Thought|Worked) for [\\dhms. ]+.*$"
 # recap blocks (TASTE, SHELL, TODOS, SEARCH) render below the turn-end
 # summary, their continuation rows indented under a └
 trailing_note = "^\\s*[A-Z][A-Z]+ {2,}"
+# the assistant message opens on a static ⠶ first-row marker
+message_start = "^⠶ "
+# a submitted prompt echoes into the transcript on its own ❯ line
+user_echo = "^❯ "
+input_placeholder = "^Ask your question"
 limit_line = "^\\s*⚠ You have insufficient credits"
 chrome_line = "^\\s*[─]{4,}\\s*$|^# .*$|^[ \\t█]*$|^\\s*\\? for shortcuts.*$|^\\s*» .*$"
 # The composer paints its own block cursor inside the placeholder when empty;
 # the terminal cursor parks below the footer the whole time. The placeholder
 # is how the arrow step knows the caret sits at the head of an empty prompt.
+# It shows on a pristine prompt only: once a prompt has been typed the
+# composer clears to a bare marker, which reads as empty just the same.
 composer_placeholder = "Ask your question..."
 rules = [
   # selection dialogs (trust, tool approval, pickers) number their options

@@ -252,11 +252,16 @@ func (m *Model) scrollFocus(delta int) tea.Cmd {
 	return m.requestFocusRegion(sess.ID)
 }
 
-// requestFocusRegion fetches the current scroll target. Every notch gets
-// its own command: callers (including tests) rely on a non-nil command
-// per notch, and stale replies are discarded by the offset guard in
-// Update, so a burst costs extra captures but never a wrong frame.
+// requestFocusRegion fetches the current scroll target, one capture in
+// flight at a time. A notch that lands while a capture rides the pipe
+// only moves focusScroll: the reply notices the target moved and issues
+// the one catch-up fetch, so a fast wheel costs a handful of captures
+// instead of one per notch.
 func (m *Model) requestFocusRegion(sessID string) tea.Cmd {
+	if m.focusFetchInFlight {
+		return nil
+	}
+	m.focusFetchInFlight = true
 	return m.focusRegionCmd(sessID, m.focusScroll)
 }
 
@@ -270,7 +275,7 @@ func (m *Model) requestFocusRegion(sessID string) tea.Cmd {
 // end, which needs no pane height at all. tmux clamps the start to the
 // history top, so a shallow history just yields a shorter frame.
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
-	rows := m.previewPaneHeight()
+	rows := m.focusPaneRows()
 	command := fmt.Sprintf(`capture-pane -p -e -t %s -S %d -E -`,
 		tmux.PaneTarget(sessID), -(offset + rows))
 	watch := m.focus

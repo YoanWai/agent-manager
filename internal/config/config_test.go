@@ -386,6 +386,28 @@ func TestBackfillArrowUnfocusFields(t *testing.T) {
 	}
 }
 
+// Left could never leave a focused terminal: the shell block declared no
+// input marker, so the prompt head was unrecognisable. Older configs
+// written before the field existed gain the generic prompt matcher on
+// load, and a value the user wrote is kept.
+func TestBackfillTerminalInputPrefix(t *testing.T) {
+	cfg := Config{Tools: map[string]Tool{"terminal": {Shell: true}}}
+	if err := cfg.backfillToolDefaults(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if got := cfg.Tools["terminal"].InputPrefix; got != `(?m)^\s*(?:\S+\s+){0,3}[❯>$#›»→%➜]\s` {
+		t.Fatalf("terminal input_prefix = %q want the generic prompt matcher (backfilled)", got)
+	}
+	user := `^\$ `
+	kept := Config{Tools: map[string]Tool{"terminal": {Shell: true, InputPrefix: user}}}
+	if err := kept.backfillToolDefaults(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if got := kept.Tools["terminal"].InputPrefix; got != user {
+		t.Fatalf("terminal input_prefix = %q want user value kept", got)
+	}
+}
+
 func TestBackfillComposerPlaceholder(t *testing.T) {
 	plain := Config{Tools: map[string]Tool{"command-code": {Command: "cmd"}}}
 	if err := plain.backfillToolDefaults(); err != nil {

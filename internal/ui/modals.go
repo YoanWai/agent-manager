@@ -277,6 +277,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.comfortableRows {
 		density = "comfortable"
 	}
+	sessionLayout := "split"
+	if m.settings.fullLayout {
+		sessionLayout = "full screen"
+	}
 	quickClose := "stay open"
 	if m.settings.quickCloseSend {
 		quickClose = "close"
@@ -348,6 +352,7 @@ func (m *Model) viewSettings() string {
 		themeSwatch(themes[m.settings.themeIndex]) + "\n" +
 		row(settingsFieldThemeAuto, "theme follows OS", themeAuto) + "\n" +
 		row(settingsFieldDensity, "list density", density) + "\n" +
+		row(settingsFieldSessionLayout, "sessions layout", sessionLayout) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +

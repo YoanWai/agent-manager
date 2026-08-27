@@ -134,6 +134,9 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 	if err := m.store.SetAcked(entry.sess.ID, false); err != nil {
 		m.errBar.text = "prompt sent, but clearing the alert ack failed: " + err.Error()
 	}
+	if err := m.store.SetLastPrompt(entry.sess.ID, text); err != nil {
+		m.errBar.text = "prompt sent, but recording it for the row failed: " + err.Error()
+	}
 	m.requestRefresh()
 	return m, nil
 }

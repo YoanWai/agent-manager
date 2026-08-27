@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -29,6 +30,12 @@ const shellGlyph = "❯"
 // viewListFrame is the sessions rail beside the session content, both
 // painted surfaces rather than drawn panels.
 func (m *Model) viewListFrame() string {
+	if m.fullFocus() {
+		return m.viewFullFocusFrame()
+	}
+	if m.fullRows() {
+		return m.viewFullListFrame()
+	}
 	leftWidth, rightWidth := m.splitWidths()
 	footer := m.viewFooter()
 	bodyHeight := m.listBodyHeight()
@@ -80,6 +87,101 @@ func (m *Model) viewListFrame() string {
 		frame = append(frame, paint(line, m.width, backdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
+}
+
+// fullRows reports whether the list is on the full screen layout, whose
+// rows and frame both differ from the split's. Focused, the list is not
+// on screen at all: the session owns the body through viewFullFocusFrame.
+func (m *Model) fullRows() bool {
+	return m.fullLayout && m.mode != modeFocus
+}
+
+// viewFullListFrame is the full screen layout: the rail owns the whole
+// width, so there is no seam, no bleed and no content column beside it.
+// The detail head and the preview belong to the split alone; the fill's
+// soft top and bottom edges run to the terminal's right edge instead of
+// to a seam.
+func (m *Model) viewFullListFrame() string {
+	footer := m.viewFooter()
+	bodyHeight := m.listBodyHeight()
+	railWidth := m.width - 1
+
+	frame := []string{}
+	for _, line := range m.viewHeaderRows() {
+		frame = append(frame, paint(line, m.width, backdropHex()))
+	}
+	quickRows := m.fullQuickLines(railWidth, bodyHeight)
+	railRows := m.railLines(railWidth, bodyHeight-len(quickRows))
+	railRows = append(railRows, quickRows...)
+	edge := make([]string, bodyHeight)
+	for i := range edge {
+		tone := panelHex()
+		if i < len(railRows) && railRows[i].tone != "" {
+			tone = railRows[i].tone
+		}
+		edge[i] = railEdgeCell(tone)
+	}
+	frame = append(frame, m.railTopRow(railWidth, m.width))
+	frame = append(frame, joinColumns(
+		edge,
+		paintContent(railRows, railWidth, bodyHeight, panelHex()),
+	)...)
+	frame = append(frame, m.boundedRuleRow(railWidth, m.width, "▄"))
+	for _, line := range splitLines(footer) {
+		frame = append(frame, paint(line, m.width, backdropHex()))
+	}
+	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
+}
+
+// viewFullFocusFrame is a session opened from the full screen list: the
+// captured pane owns the whole terminal body and the list waits behind
+// it. The focus rules cap and close the pane the way they do in the
+// split, stretched to the terminal's edges.
+func (m *Model) viewFullFocusFrame() string {
+	footer := m.viewFooter()
+	bodyHeight := m.listBodyHeight()
+	m.pane.columnX = 0
+	frame := []string{}
+	for _, line := range m.viewHeaderRows() {
+		frame = append(frame, paint(line, m.width, backdropHex()))
+	}
+	frame = append(frame, paint(hrule(m.width), m.width, backdropHex()))
+	frame = append(frame, paint(m.focusFactsLine(m.width), m.width, backdropHex()))
+	frame = append(frame, paint(m.focusEdge(m.width), m.width, backdropHex()))
+	m.previewBodyOffset = 0
+	paneRows := m.previewLines(m.width, bodyHeight, strings.Repeat(" ", contentGutter))
+	frame = append(frame, paintContent(paneRows, m.width, bodyHeight, backdropHex())...)
+	frame = append(frame, paint(m.focusEdge(m.width), m.width, backdropHex()))
+	for _, line := range splitLines(footer) {
+		frame = append(frame, paint(line, m.width, backdropHex()))
+	}
+	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
+}
+
+// fullQuickLines docks the open quick bar at the full screen frame's
+// foot, its tail kept when the frame runs out of rows, which is where
+// the caret is. Empty while the bar is closed.
+func (m *Model) fullQuickLines(width, height int) []contentLine {
+	if !m.quick.active {
+		return nil
+	}
+	gutter := strings.Repeat(" ", contentGutter)
+	inner := width - 2*contentGutter
+	if inner < 1 {
+		inner = 1
+	}
+	inset := func(block []string) []contentLine {
+		out := make([]contentLine, len(block))
+		for i, line := range block {
+			out[i] = contentLine{text: gutter + line}
+		}
+		return out
+	}
+	lines := append([]contentLine{{rule: true}}, inset(splitLines(m.viewQuickBar(inner)))...)
+	if len(lines) > height {
+		lines = lines[len(lines)-height:]
+	}
+	return lines
 }
 
 // searchFieldLine is the live filter at the head of the rail: the typed
@@ -227,7 +329,8 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 	for i := range heights {
 		heights[i] = m.entryHeight(rows[i])
 	}
-	start, end := lineWindow(heights, m.cursor-offset, height)
+	start, end := railWindow(heights, m.cursor-offset, height, m.railTop)
+	m.railTop = start
 
 	var lines []contentLine
 	for i := start; i < end; i++ {
@@ -241,9 +344,8 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 			lines = append(lines, contentLine{text: line, tone: tone})
 		}
 	}
-	// The counters ride in whatever room the entries leave. Claiming a line
-	// they do not have would trim an entry's last line away, and half a
-	// two-line entry reads as a whole one that lost its meta.
+	// The window already held a row back for each counter, so the checks
+	// below only catch an entry that painted taller than entryHeight said.
 	spare := height - len(lines)
 	if start > 0 && spare > 0 {
 		lines = append([]contentLine{{text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↑ %d more", start))}}, lines...)
@@ -258,29 +360,34 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 	return lines
 }
 
-// entryHeight is how many lines an entry paints: one in the compact list,
-// two once the comfortable density unstacks the meta onto its own line.
-// Groups match sessions either way, since a ragged list of one- and
-// two-line rows reads as gaps rather than as rhythm.
-func (m *Model) entryHeight(treeRow) int {
+// entryHeight is how many lines an entry paints, in either layout: a
+// compact session is one row wearing the reply inline, a comfortable one
+// is three, name, the last prompt, the last reply, and a group is always
+// one, having neither line to carry. A shell drops to two: nobody is
+// prompting it, so the prompt line would only ever hold a dash.
+func (m *Model) entryHeight(entry treeRow) int {
+	if entry.isGroup {
+		return 1
+	}
 	if m.comfortableRows {
-		return 2
+		if m.isShell(entry.sess.Tool) {
+			return 2
+		}
+		return 3
 	}
 	return 1
 }
 
-// lineWindow keeps the cursor's entry fully visible inside a line budget,
-// scrolling by whole entries so an entry is never cut in half.
-func lineWindow(heights []int, cursor, budget int) (int, int) {
+// railWindow is the slice of entries the rail paints, keeping the cursor's
+// entry whole on screen while moving the top by as little as the step
+// needs. top comes from the previous frame: a list of uneven rows has no
+// stable window that a cursor position alone can name, so the one already
+// on screen is the answer until the cursor walks off its edge.
+func railWindow(heights []int, cursor, budget, top int) (int, int) {
 	if len(heights) == 0 || budget <= 0 {
 		return 0, 0
 	}
-	if cursor < 0 {
-		cursor = 0
-	}
-	if cursor >= len(heights) {
-		cursor = len(heights) - 1
-	}
+	cursor = min(max(cursor, 0), len(heights)-1)
 	total := 0
 	for _, h := range heights {
 		total += h
@@ -288,26 +395,39 @@ func lineWindow(heights []int, cursor, budget int) (int, int) {
 	if total <= budget {
 		return 0, len(heights)
 	}
-	// Grow a window around the cursor, preferring to keep entries above it
-	// on screen so the list does not jump when stepping down.
-	start, end, used := cursor, cursor+1, heights[cursor]
-	for {
-		grew := false
-		if end < len(heights) && used+heights[end] <= budget-1 {
-			used += heights[end]
-			end++
-			grew = true
-		}
-		if start > 0 && used+heights[start-1] <= budget-1 {
-			start--
-			used += heights[start]
-			grew = true
-		}
-		if !grew {
-			break
+	top = min(max(top, 0), len(heights)-1)
+	if cursor < top {
+		top = cursor
+	}
+	for ; top <= cursor; top++ {
+		if end := windowEnd(heights, top, budget); end > cursor {
+			return top, end
 		}
 	}
-	return start, end
+	// Taller than the whole budget: paint it and let the caller crop.
+	return cursor, cursor + 1
+}
+
+// windowEnd is where the entries starting at top stop fitting, counting
+// the rows the "more" counters take at either edge.
+func windowEnd(heights []int, top, budget int) int {
+	room := budget
+	if top > 0 {
+		room--
+	}
+	end, used := top, 0
+	for end < len(heights) {
+		left := room
+		if end+1 < len(heights) {
+			left--
+		}
+		if used+heights[end] > left {
+			break
+		}
+		used += heights[end]
+		end++
+	}
+	return end
 }
 
 func (m *Model) emptyRailLines(width, height int) []string {
@@ -435,7 +555,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, index int, bg
 	if m.renamingRow(entry) {
 		line := pad + guides + m.renameRowInput(entry, width-railGutter-ansi.StringWidth(guides))
 		row := paint(line, width, selectedHex())
-		if m.comfortableRows {
+		for held := m.entryHeight(entry); held > 1; held-- {
 			row += "\n" + paint(pad+trail, width, selectedHex())
 		}
 		return row
@@ -532,6 +652,12 @@ func promptPreview(prompt string) string {
 
 func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
 	sess := entry.sess
+	// An archived session's pane was killed on its way in; a status frozen
+	// by an older build (a "working" from before the kill recorded dead)
+	// must not read as alive from inside the archive.
+	if sess.Archived {
+		sess.Status = status.Dead
+	}
 	dot := m.sessionGlyph(sess)
 	nameStyle := valueStyle
 	if selected {
@@ -556,19 +682,142 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 		metaStyle.Render(" · "+sess.Tool+" · "+relSince(lastActivity(sess))+m.elsewhereNote(sess))
 
 	if m.comfortableRows {
-		return stackedRow(head, metaIndent(pad, trail)+meta, width, bg)
+		return m.tallRow(sess, head, meta, metaIndent(pad, trail), selected, width, bg)
+	}
+	return m.compactRow(sess, head, meta, selected, width, bg)
+}
+
+// rowPromptFloor is the narrowest slot worth printing a prompt into: any
+// tighter and the row shows an ellipsis where a task should be.
+const rowPromptFloor = 8
+
+// compactRow is the one-line session entry: the state picks the value
+// riding between the name and the meta, the way Claude's agent view
+// tells a fleet apart at a glance.
+func (m *Model) compactRow(sess store.Session, head, meta string, selected bool, width int, bg string) string {
+	quiet := subtleStyle
+	if selected {
+		quiet = mutedStyle
+	}
+	const gap = 2
+	room := width - railGutter - ansi.StringWidth(head) - ansi.StringWidth(meta) - 2*gap
+	if room >= rowPromptFloor {
+		if cell := m.compactCell(sess, quiet, room); cell != "" {
+			head += strings.Repeat(" ", gap) + cell
+		}
 	}
 	return paint(rowColumns(head, meta, width-railGutter), width, bg)
+}
+
+// compactCell is what the one-line row quotes: the agent's last message
+// whenever it has said anything — the question it waits on, its
+// progress, its result — and the task it was given only while it has
+// not. A session with neither says nothing rather than holding a dash
+// mid-row.
+func (m *Model) compactCell(sess store.Session, quiet lipgloss.Style, room int) string {
+	if m.paneLines[sess.ID] != "" || sess.Status == status.Working {
+		return m.replyCell(sess, quiet, room)
+	}
+	if prompt := oneLine(m.rowPrompt(sess)); prompt != "" {
+		return rowGlyphStyle(current.Accent).Render("❯ ") +
+			rowPromptStyle().Render(ansi.Truncate(prompt, max(room-2, 1), "…"))
+	}
+	return ""
+}
+
+// tallRow is the comfortable session entry: the name and meta alone on
+// top, your last prompt under it, the agent's last reply under that. A
+// shell keeps the name and its last output and skips the prompt line in
+// between, having no one on the other side of it to quote.
+func (m *Model) tallRow(sess store.Session, head, meta, indent string, selected bool, width int, bg string) string {
+	quiet := subtleStyle
+	if selected {
+		quiet = mutedStyle
+	}
+	top := rowColumns(head, meta, width-railGutter)
+	room := width - railGutter - ansi.StringWidth(indent) - 2
+	lines := []string{paint(top, width, bg)}
+	if !m.isShell(sess.Tool) {
+		promptLine := indent + quiet.Render("-")
+		if prompt := oneLine(m.rowPrompt(sess)); prompt != "" && room >= rowPromptFloor {
+			promptLine = indent + rowGlyphStyle(current.Accent).Render("❯ ") +
+				rowPromptStyle().Render(ansi.Truncate(prompt, room, "…"))
+		}
+		lines = append(lines, paint(promptLine, width, bg))
+	}
+	lines = append(lines, paint(indent+m.replyCell(sess, quiet, room+2), width, bg))
+	return strings.Join(lines, "\n")
+}
+
+func rowGlyphStyle(hex string) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(hex))
+}
+
+// rowReplyStyle washes the reply in its state's color at half strength;
+// waiting stays at full strength because it needs the user.
+func rowReplyStyle(state string) lipgloss.Style {
+	if state == status.Waiting {
+		return lipgloss.NewStyle().Foreground(statusColor(state))
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(string(statusColor(state)), current.Subtle, 0.5)))
+}
+
+// rowPromptStyle leans the prompt toward the accent: visibly not chrome,
+// visibly not the reply under it.
+func rowPromptStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Accent, current.Dim, 0.5)))
+}
+
+// rowPrompt is the prompt a full screen row carries beside the name: the
+// last one the session's own transcript echoes, whoever typed it and from
+// wherever; else the last one delivered through the manager, else the one
+// the session launched with, stripped of the notes launch prepends.
+func (m *Model) rowPrompt(sess store.Session) string {
+	if prompt := m.panePrompts[sess.ID]; prompt != "" {
+		return prompt
+	}
+	if sess.LastPrompt != "" {
+		return sess.LastPrompt
+	}
+	return typedPrompt(sess.LaunchPrompt)
+}
+
+// typedPrompt is a delivered prompt with the launch notes peeled off: the
+// rename directives and the coordination note are the manager's words, not
+// a task, and a note delivered on its own leaves nothing typed at all.
+func typedPrompt(text string) string {
+	if text == launch.DeferredRenameDirective || text == launch.CoordinationNote {
+		return ""
+	}
+	text = strings.TrimPrefix(text, launch.CoordinationNote+"\n\n")
+	text = strings.TrimPrefix(text, launch.RenameDirective+"\n\n")
+	text = strings.TrimPrefix(text, launch.RenameAvailableNote+"\n\n")
+	return text
+}
+
+// replyCell quotes the start of the agent's last message behind a static
+// ↳, with the text washed in the state's hue so states read apart at a
+// glance — the name's own dot already says the state, so the glyph does
+// not repeat it; waiting keeps full strength because it needs the user.
+// A working session with nothing quotable yet animates a loader, and a
+// silent one holds the cell with a dim dash.
+func (m *Model) replyCell(sess store.Session, quiet lipgloss.Style, room int) string {
+	line := m.paneLines[sess.ID]
+	if sess.Status == status.Working && line == "" {
+		frame := startupFrames[m.startupPhase%len(startupFrames)]
+		return lipgloss.NewStyle().Foreground(statusColor(status.Working)).Render(frame + " working")
+	}
+	if line == "" {
+		return quiet.Render("-")
+	}
+	line = ansi.Truncate(line, max(room-2, 1), "…")
+	return subtleStyle.Render("↳ ") + rowReplyStyle(sess.Status).Render(line)
 }
 
 // metaIndent lines a second row line up under the name on the first, past
 // the entry's guides and the glyph column ahead of it.
 func metaIndent(pad, trail string) string {
 	return pad + trail + "  "
-}
-
-func stackedRow(head, meta string, width int, bg string) string {
-	return paint(head, width, bg) + "\n" + paint(meta, width, bg)
 }
 
 func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, guides, trail, bg string) string {
@@ -598,9 +847,6 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, g
 		meta = subtleStyle.Render("no agents yet")
 	}
 
-	if m.comfortableRows {
-		return stackedRow(head, metaIndent(pad, trail)+meta, width, bg)
-	}
 	return paint(rowColumns(head, meta, width-railGutter), width, bg)
 }
 
@@ -712,8 +958,96 @@ func (m *Model) contentLines(width, height int) []contentLine {
 	return append(body[:max(height-len(bar), 0)], bar...)
 }
 
-// focusTopRule is the hairline that caps the focused pane, titled so the
-// mode names itself where the eye already is.
+// focusFactsLine says which session a full screen frame is showing, where
+// nothing else on it does: the state dot and the name on the left, then
+// where it runs and what it costs against the right edge, with the whole
+// width to itself and a rule under it holding it off the pane. The keys
+// the split's rule names are in the footer, so they stay there.
+func (m *Model) focusFactsLine(width int) string {
+	sess, ok := m.selected()
+	if !ok {
+		return ""
+	}
+	sep := subtleStyle.Render(" · ")
+	left := " " + m.sessionGlyph(sess) + " " + valueStyle.Render(m.displayName(sess)) +
+		sep + valueStyle.Render(sess.Tool) +
+		sep + lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
+		sep + subtleStyle.Render(relSince(lastActivity(sess)))
+	// The facts give way one at a time as the terminal narrows, the least
+	// telling first, so a tight line still carries what it has room for
+	// rather than dropping the lot.
+	facts := []focusFact{{text: valueStyle.Render(truncateTail(shortHome(sess.Cwd), focusFactsDirCap)), spare: 3}}
+	if sess.WorktreeBranch != "" {
+		facts = append(facts, focusFact{text: subtleStyle.Render("⑂ ") + valueStyle.Render(sess.WorktreeBranch), spare: 2})
+	}
+	if m.procFor == sess.ID && m.proc.OK {
+		facts = append(facts,
+			focusFact{text: labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.1f%%", m.proc.CPUPercent)), spare: 1},
+			focusFact{text: labelStyle.Render("ram ") + valueStyle.Render(humanBytes(m.proc.RSS)), spare: 1})
+	}
+	facts = append(facts, focusFact{text: labelStyle.Render("started ") + valueStyle.Render(relSince(sess.CreatedAt)), spare: 4})
+	if queued := m.queuedMessages[sess.ID]; queued > 0 {
+		facts = append(facts, focusFact{text: valueStyle.Render(fmt.Sprintf("%d queued", queued)), spare: 0})
+	}
+
+	right := joinFacts(facts, sep)
+	for len(facts) > 0 && ansi.StringWidth(left)+focusFactsGap+ansi.StringWidth(right) > width {
+		facts = dropSparest(facts)
+		right = joinFacts(facts, sep)
+	}
+	if ansi.StringWidth(left) > width {
+		return ansi.Truncate(left, max(width, 0), "…")
+	}
+	return rowColumns(left, right, width)
+}
+
+// focusFact is one reading on the full screen focus line, spare ranking
+// how readily it gives up its room: the higher, the sooner it goes.
+type focusFact struct {
+	text  string
+	spare int
+}
+
+func joinFacts(facts []focusFact, sep string) string {
+	if len(facts) == 0 {
+		return ""
+	}
+	parts := make([]string, len(facts))
+	for i, fact := range facts {
+		parts[i] = fact.text
+	}
+	return strings.Join(parts, sep) + " "
+}
+
+func dropSparest(facts []focusFact) []focusFact {
+	sparest := 0
+	for i, fact := range facts {
+		if fact.spare >= facts[sparest].spare {
+			sparest = i
+		}
+	}
+	return append(facts[:sparest], facts[sparest+1:]...)
+}
+
+// focusEdge is the hairline holding the full screen pane off what sits
+// above and below it, in the pane's own tone once it has a box to trace.
+func (m *Model) focusEdge(width int) string {
+	if m.pane.box.ok {
+		return focusEdgeStyle.Render(strings.Repeat("─", max(width, 0)))
+	}
+	return hrule(width)
+}
+
+// focusFactsDirCap keeps a deep path from crowding the readings beside it,
+// and focusFactsGap is the least space kept between the name and them.
+const (
+	focusFactsDirCap = 40
+	focusFactsGap    = 2
+)
+
+// focusTopRule is the hairline that caps the focused pane in the split,
+// where the detail head above it already names the session, so the rule
+// spends its title on the keys instead.
 func focusTopRule(width int) string {
 	title := " focused · ctrl+q back · ctrl+r review · f3 editor "
 	rule := annotationStyle.Render(title)

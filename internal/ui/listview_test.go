@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -210,28 +211,35 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 	if !storedComfortableRows(m.store) {
 		t.Fatal("comfortable density did not persist")
 	}
-	if got := m.entryHeight(m.rows[0]); got != 2 {
-		t.Fatalf("comfortable entry height = %d want 2", got)
+	sessionRow := m.rows[0]
+	for _, row := range m.rows {
+		if !row.isGroup {
+			sessionRow = row
+			break
+		}
+	}
+	if got := m.entryHeight(sessionRow); got != 3 {
+		t.Fatalf("comfortable entry height = %d want 3", got)
 	}
 
 	lines = railText(t, m)
 	head = lineWith(t, lines, "alpha")
-	if strings.Contains(lines[head], "claude") {
-		t.Fatalf("comfortable name line should not carry meta: %q", lines[head])
+	if !strings.Contains(lines[head], "claude") {
+		t.Fatalf("comfortable name line should carry the meta: %q", lines[head])
 	}
-	if head+1 >= len(lines) {
-		t.Fatalf("comfortable row has no meta line:\n%s", strings.Join(lines, "\n"))
+	if head+2 >= len(lines) {
+		t.Fatalf("comfortable row has no prompt and reply lines:\n%s", strings.Join(lines, "\n"))
 	}
-	meta := lines[head+1]
-	if !strings.Contains(meta, "claude") || !strings.Contains(meta, statusLabel(m.rows[0].sess.Status)) {
-		t.Fatalf("meta line = %q", meta)
+	if prompt := strings.TrimSpace(lines[head+1]); prompt == "" {
+		t.Fatalf("comfortable row prompt line is blank:\n%s", strings.Join(lines, "\n"))
 	}
-	if indent := len(meta) - len(strings.TrimLeft(meta, " ")); indent < railInset+2 {
-		t.Fatalf("meta line should sit under the name, indent = %d: %q", indent, meta)
+	if reply := strings.TrimSpace(lines[head+2]); reply == "" {
+		t.Fatalf("comfortable row reply line is blank:\n%s", strings.Join(lines, "\n"))
 	}
 }
 
-// Groups follow the same density so the list keeps one rhythm.
+// A group stays one line at any density: it has neither a prompt nor a
+// reply to carry.
 func TestComfortableGroupRowStacks(t *testing.T) {
 	m := buildModel(t)
 	m.comfortableRows = true
@@ -245,13 +253,14 @@ func TestComfortableGroupRowStacks(t *testing.T) {
 
 	lines := railText(t, m)
 	head := lineWith(t, lines, "fleet")
-	if head+1 >= len(lines) || strings.TrimSpace(lines[head+1]) == "" {
-		t.Fatalf("group row has no meta line:\n%s", strings.Join(lines, "\n"))
+	if !strings.Contains(lines[head], "●") && !strings.Contains(lines[head], "○") && !strings.Contains(lines[head], "◐") {
+		t.Fatalf("group row should carry its dots inline: %q", lines[head])
 	}
 }
 
 // A rail too short for the counters keeps the selected entry whole: a
-// two-line row trimmed to one reads as a compact row that lost its meta.
+// three-line row trimmed to one reads as a compact row that lost its
+// message lines.
 func TestComfortableRowSurvivesShortRail(t *testing.T) {
 	m := buildModel(t)
 	m.comfortableRows = true
@@ -268,9 +277,8 @@ func TestComfortableRowSurvivesShortRail(t *testing.T) {
 	if head != 0 {
 		t.Fatalf("selected entry should start the window, got line %d", head)
 	}
-	meta := ansi.Strip(lines[1].text)
-	if !strings.Contains(meta, "claude") {
-		t.Fatalf("selected entry lost its meta line: %q", meta)
+	if prompt := strings.TrimSpace(ansi.Strip(lines[1].text)); prompt == "" {
+		t.Fatalf("selected entry lost its prompt line: %q", ansi.Strip(lines[1].text))
 	}
 }
 
@@ -1098,5 +1106,363 @@ func TestRowsAreUnmarkedBeforeTheFirstPoll(t *testing.T) {
 	}
 	if view := ansi.Strip(m.View()); strings.Contains(view, "elsewhere") {
 		t.Fatalf("nothing to compare against should mark nothing:\n%s", view)
+	}
+}
+
+// A compact session row is one line wearing the reply inline; the
+// comfortable density unfolds it to three — name, the last prompt, the
+// last reply — and a group is one line at either density, in either
+// layout.
+func TestRowHeightsFollowDensity(t *testing.T) {
+	m := shotModel()
+	m.fullLayout = true
+	m.paneLines = map[string]string{"add-rate-limiting": "Running tests… (14s · esc to interrupt)"}
+	row := m.rows[4]
+	row.sess.LastPrompt = "add a token bucket limiter to the public api"
+	if m.comfortableRows {
+		t.Fatal("this test starts at the compact density")
+	}
+	if got := m.entryHeight(row); got != 1 {
+		t.Fatalf("compact session entry height = %d, want 1", got)
+	}
+	if got := m.entryHeight(m.rows[2]); got != 1 {
+		t.Fatalf("group entry height = %d, want 1", got)
+	}
+	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	if len(lines) != 1 {
+		t.Fatalf("compact row painted %d lines, want 1", len(lines))
+	}
+	top := ansi.Strip(lines[0])
+	for _, want := range []string{"add-rate-limiting", "Running tests", "working", "claude"} {
+		if !strings.Contains(top, want) {
+			t.Errorf("compact row misses %q:\n%s", want, top)
+		}
+	}
+
+	m.comfortableRows = true
+	if got := m.entryHeight(m.rows[2]); got != 1 {
+		t.Fatalf("comfortable group entry height = %d, want 1", got)
+	}
+	if got := m.entryHeight(row); got != 3 {
+		t.Fatalf("comfortable session entry height = %d, want 3", got)
+	}
+	lines = splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	if len(lines) != 3 {
+		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
+	}
+	top = ansi.Strip(lines[0])
+	for _, want := range []string{"add-rate-limiting", "working", "claude"} {
+		if !strings.Contains(top, want) {
+			t.Errorf("comfortable row line 1 misses %q:\n%s", want, top)
+		}
+	}
+	if prompt := ansi.Strip(lines[1]); !strings.Contains(prompt, "❯ add a token bucket limiter") {
+		t.Fatalf("line 2 should carry the last prompt behind ❯:\n%s", prompt)
+	}
+	if reply := ansi.Strip(lines[2]); !strings.Contains(reply, "↳ Running tests") {
+		t.Fatalf("line 3 should carry the reply behind ↳:\n%s", reply)
+	}
+
+	// The same rhythm holds in the split layout.
+	m.fullLayout = false
+	if got := m.entryHeight(row); got != 3 {
+		t.Fatalf("split comfortable session entry height = %d, want 3", got)
+	}
+	m.comfortableRows = false
+	if got := m.entryHeight(row); got != 1 {
+		t.Fatalf("split compact session entry height = %d, want 1", got)
+	}
+	narrow := splitLines(m.renderTreeRow(row, false, 60, 4, panelHex()))
+	if len(narrow) != 1 {
+		t.Fatalf("split compact row painted %d lines, want 1", len(narrow))
+	}
+}
+
+func TestRowWaitingReplyWearsTheStateColor(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	m := shotModel()
+	m.fullLayout = true
+	m.comfortableRows = true
+	question := "Allow edits to router.go?"
+	m.paneLines = map[string]string{"db-migrations": question}
+	lines := splitLines(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()))
+	if len(lines) != 3 {
+		t.Fatalf("waiting row painted %d lines, want 3", len(lines))
+	}
+	tinted := strings.TrimSuffix(
+		lipgloss.NewStyle().Foreground(statusColor(status.Waiting)).Render(question), "\x1b[0m")
+	if !strings.Contains(lines[2], tinted) {
+		t.Fatalf("waiting question should wear the waiting color:\n%q", lines[2])
+	}
+}
+
+func TestRowQuotesEveryStateAndDashesWhenSilent(t *testing.T) {
+	m := shotModel()
+	m.fullLayout = true
+	m.comfortableRows = true
+	m.paneLines = map[string]string{"notes": "All quiet, nothing queued."}
+	lines := splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
+	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "↳ All quiet, nothing queued." {
+		t.Fatalf("idle reply line = %q, want the last message", reply)
+	}
+	m.paneLines = nil
+	lines = splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
+	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "-" {
+		t.Fatalf("silent idle reply line = %q, want a dash", reply)
+	}
+}
+
+func TestRowLongPromptTruncates(t *testing.T) {
+	m := shotModel()
+	m.fullLayout = true
+	m.comfortableRows = true
+	width := 80
+	row := m.rows[1]
+	row.sess.LastPrompt = strings.Repeat("triage the flaky integration suite and report ", 10)
+	rendered := m.renderTreeRow(row, false, width, 1, panelHex())
+	for _, line := range splitLines(rendered) {
+		if got := ansi.StringWidth(line); got > width {
+			t.Fatalf("row line is %d wide, row is %d:\n%s", got, width, ansi.Strip(line))
+		}
+	}
+	lines := splitLines(rendered)
+	if prompt := ansi.Strip(lines[1]); !strings.Contains(prompt, "…") {
+		t.Fatalf("long prompt should truncate with an ellipsis:\n%s", prompt)
+	}
+	for _, want := range []string{"idle", "grok"} {
+		if !strings.Contains(ansi.Strip(lines[0]), want) {
+			t.Errorf("meta should survive, misses %q:\n%s", want, ansi.Strip(lines[0]))
+		}
+	}
+}
+
+// The launch notes are the manager's words, not a task: a decorated first
+// prompt sheds them, and a note delivered on its own records nothing.
+func TestTypedPromptStripsLaunchNotes(t *testing.T) {
+	decorated := launch.CoordinationNote + "\n\n" + launch.RenameDirective + "\n\nfix the login flow"
+	if got := typedPrompt(decorated); got != "fix the login flow" {
+		t.Fatalf("typedPrompt = %q, want the bare task", got)
+	}
+	if got := typedPrompt(launch.DeferredRenameDirective); got != "" {
+		t.Fatalf("a bare directive should record nothing, got %q", got)
+	}
+	if got := typedPrompt(launch.CoordinationNote); got != "" {
+		t.Fatalf("a bare note should record nothing, got %q", got)
+	}
+	if got := typedPrompt("plain prompt"); got != "plain prompt" {
+		t.Fatalf("an undecorated prompt should pass through, got %q", got)
+	}
+}
+
+// The compact cell quotes the agent's last message whenever there is
+// one, whatever the state; only a session that has said nothing yet
+// names the task it was given.
+func TestCompactCellIsStatePicked(t *testing.T) {
+	m := shotModel()
+	m.fullLayout = true
+	m.paneLines = map[string]string{
+		"notes":         "All quiet, nothing queued.",
+		"db-migrations": "Allow edits to router.go?",
+	}
+	idle := m.rows[1]
+	idle.sess.LastPrompt = "verify the staging deploy is healthy"
+	line := ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()))
+	if !strings.Contains(line, "↳ All quiet, nothing queued.") {
+		t.Fatalf("an idle session that has spoken should quote its reply:\n%s", line)
+	}
+	if strings.Contains(line, "verify the staging deploy") {
+		t.Fatalf("the reply should win over the task:\n%s", line)
+	}
+
+	m.paneLines = map[string]string{"db-migrations": "Allow edits to router.go?"}
+	line = ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()))
+	if !strings.Contains(line, "❯ verify the staging deploy is healthy") {
+		t.Fatalf("a silent idle session should name its task:\n%s", line)
+	}
+
+	line = ansi.Strip(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()))
+	if !strings.Contains(line, "↳ Allow edits to router.go?") {
+		t.Fatalf("waiting compact row should quote its question:\n%s", line)
+	}
+}
+
+// A status frozen before the archive (an older build's "working") must
+// not read as alive from inside the archive.
+func TestArchivedRowReadsDead(t *testing.T) {
+	m := shotModel()
+	m.fullLayout = true
+	row := m.rows[4]
+	row.sess.Archived = true
+	line := ansi.Strip(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	if !strings.Contains(line, statusLabel(status.Dead)) {
+		t.Fatalf("archived row should read dead:\n%s", line)
+	}
+	if strings.Contains(line, statusLabel(status.Working)) {
+		t.Fatalf("archived row still claims its frozen state:\n%s", line)
+	}
+}
+
+func TestShellRowSkipsThePromptLine(t *testing.T) {
+	m := shotModel()
+	m.cfg = config.Config{Tools: map[string]config.Tool{"terminal": {Shell: true}, "claude": {}}}
+	m.comfortableRows = true
+	shell := m.rows[4]
+	shell.sess.Tool = "terminal"
+	shell.sess.Status = status.Idle
+	shell.sess.LastPrompt = "this never rode a shell row"
+	m.paneLines = map[string]string{shell.sess.ID: "~/dev/api $ go test ./..."}
+
+	if got := m.entryHeight(shell); got != 2 {
+		t.Fatalf("comfortable shell entry height = %d, want 2", got)
+	}
+	lines := splitLines(m.renderTreeRow(shell, false, m.width-1, 4, panelHex()))
+	if len(lines) != 2 {
+		t.Fatalf("comfortable shell row painted %d lines, want 2:\n%s", len(lines), strings.Join(lines, "\n"))
+	}
+	if reply := ansi.Strip(lines[1]); !strings.Contains(reply, "↳ ~/dev/api $ go test") {
+		t.Fatalf("line 2 should carry the shell's own last line behind ↳:\n%s", reply)
+	}
+	if body := ansi.Strip(strings.Join(lines, "\n")); strings.Contains(body, "this never rode a shell row") {
+		t.Fatalf("a shell row has no prompt line to paint:\n%s", body)
+	}
+
+	// An agent beside it keeps all three.
+	agent := m.rows[4]
+	if got := m.entryHeight(agent); got != 3 {
+		t.Fatalf("comfortable agent entry height = %d, want 3", got)
+	}
+	if got := len(splitLines(m.renderTreeRow(agent, false, m.width-1, 4, panelHex()))); got != 3 {
+		t.Fatalf("comfortable agent row painted %d lines, want 3", got)
+	}
+
+	// Compact keeps every session on one row, shell included.
+	m.comfortableRows = false
+	if got := m.entryHeight(shell); got != 1 {
+		t.Fatalf("compact shell entry height = %d, want 1", got)
+	}
+}
+
+// railTestHeights is a comfortable list: groups on one line, a shell on
+// two, sessions on three.
+var railTestHeights = []int{1, 3, 3, 3, 3, 1, 3, 3, 2, 3, 1, 3, 3, 3, 3, 3, 1, 3, 3}
+
+func railWalk(n int) []int {
+	var seq []int
+	for i := 0; i < n; i++ {
+		seq = append(seq, i)
+	}
+	for i := n - 2; i >= 0; i-- {
+		seq = append(seq, i)
+	}
+	return seq
+}
+
+func TestRailWindowHoldsStillWhileTheCursorIsOnScreen(t *testing.T) {
+	for _, budget := range []int{20, 30, 40} {
+		top, prevStart, prevEnd := 0, -1, -1
+		for _, cursor := range railWalk(len(railTestHeights)) {
+			start, end := railWindow(railTestHeights, cursor, budget, top)
+			if prevStart >= 0 && cursor >= prevStart && cursor < prevEnd && start != prevStart {
+				t.Fatalf("budget %d: cursor %d already sat in [%d,%d) and the list scrolled to %d",
+					budget, cursor, prevStart, prevEnd, start)
+			}
+			top, prevStart, prevEnd = start, start, end
+		}
+	}
+}
+
+func TestRailWindowKeepsTheCursorsEntryWhole(t *testing.T) {
+	for _, budget := range []int{6, 20, 30, 40} {
+		top := 0
+		for _, cursor := range railWalk(len(railTestHeights)) {
+			start, end := railWindow(railTestHeights, cursor, budget, top)
+			if cursor < start || cursor >= end {
+				t.Fatalf("budget %d: cursor %d fell outside [%d,%d)", budget, cursor, start, end)
+			}
+			top = start
+		}
+	}
+}
+
+func TestRailWindowScrollsNoFurtherThanItMust(t *testing.T) {
+	top := 0
+	for cursor := 0; cursor < len(railTestHeights); cursor++ {
+		start, _ := railWindow(railTestHeights, cursor, 20, top)
+		if start > top {
+			if end := windowEnd(railTestHeights, start-1, 20); end > cursor {
+				t.Fatalf("cursor %d scrolled to %d, but %d still held it through %d",
+					cursor, start, start-1, end)
+			}
+		}
+		top = start
+	}
+}
+
+func TestRailWindowFollowsTheCursorBackAboveTheTop(t *testing.T) {
+	start, end := railWindow(railTestHeights, 2, 20, 11)
+	if start != 2 {
+		t.Fatalf("window starts at %d, want the cursor's own entry", start)
+	}
+	if end <= 2 {
+		t.Fatalf("window [%d,%d) holds nothing", start, end)
+	}
+}
+
+func TestRailWindowShowsAListThatFits(t *testing.T) {
+	heights := []int{1, 3, 3}
+	start, end := railWindow(heights, 2, 20, 1)
+	if start != 0 || end != len(heights) {
+		t.Fatalf("window = [%d,%d), want the whole list", start, end)
+	}
+}
+
+func TestRailTopCarriesBetweenFrames(t *testing.T) {
+	m := shotModel()
+	m.comfortableRows = true
+	m.fullLayout = true
+	m.rows = nil
+	for i := 0; i < 30; i++ {
+		name := fmt.Sprintf("session-%02d", i)
+		m.rows = append(m.rows, treeRow{sess: store.Session{ID: name, Name: name, Tool: "claude", Status: status.Idle}})
+	}
+
+	heights := make([]int, len(m.rows))
+	for i := range m.rows {
+		heights[i] = m.entryHeight(m.rows[i])
+	}
+
+	const height = 20
+	tops := make([]int, len(m.rows))
+	for i := range m.rows {
+		prev, prevEnd := m.railTop, windowEnd(heights, m.railTop, height)
+		m.cursor = i
+		m.entryLines(m.rows, 0, m.width-1, height)
+		tops[i] = m.railTop
+		if m.railTop > i {
+			t.Fatalf("cursor %d: rail starts below it at %d", i, m.railTop)
+		}
+		if i >= prev && i < prevEnd && m.railTop != prev {
+			t.Fatalf("cursor %d already sat in [%d,%d) and the rail scrolled to %d", i, prev, prevEnd, m.railTop)
+		}
+	}
+	if tops[0] != 0 || tops[1] != 0 {
+		t.Fatalf("the rail scrolled off the first entry immediately: %v", tops[:3])
+	}
+	if tops[len(tops)-1] == 0 {
+		t.Fatal("the rail never scrolled across 30 comfortable entries")
+	}
+
+	for i := len(m.rows) - 1; i >= 0; i-- {
+		m.cursor = i
+		m.entryLines(m.rows, 0, m.width-1, height)
+		if m.railTop > i {
+			t.Fatalf("cursor %d: rail starts below it at %d", i, m.railTop)
+		}
+	}
+	if m.railTop != 0 {
+		t.Fatalf("stepping back to the first entry left the rail at %d", m.railTop)
 	}
 }

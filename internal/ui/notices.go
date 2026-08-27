@@ -294,6 +294,9 @@ func noticeLegend() string {
 // card docked to their right when both notices and width exist. The card
 // hugs its content behind a rule that separates the two blocks.
 func (m *Model) railFootLines(width int) []string {
+	if m.fullLayout {
+		return m.fullFootLine(width)
+	}
 	meters := m.computerLines(width)
 	notices := m.activeNotices()
 	metersWidth := maxLineWidth(meters)
@@ -313,6 +316,55 @@ func (m *Model) railFootLines(width int) []string {
 		lines[i] = padRight(meters[i], metersWidth) + " " + separator + " " + row
 	}
 	return lines
+}
+
+// fullFootLine is the rail foot the full screen layout keeps: the meter
+// block and the messages card condensed to one line, machine readings
+// inline on the left and the messages count against the right edge.
+func (m *Model) fullFootLine(width int) []string {
+	reading := func(label, value string, ok bool) string {
+		if !ok {
+			return labelStyle.Render(label+" ") + subtleStyle.Render("n/a")
+		}
+		return labelStyle.Render(label+" ") + valueStyle.Render(value)
+	}
+	snap := m.snap
+	parts := []string{
+		reading("cpu", fmt.Sprintf("%.0f%%", snap.CPUPercent), snap.CPUOK),
+		reading("mem", fmt.Sprintf("%.0f%% %s/%s", snap.MemPercent, humanBytes(snap.MemUsed), humanBytes(snap.MemTotal)), snap.MemOK),
+	}
+	if snap.SwapOK && snap.SwapTotal > 0 {
+		parts = append(parts, reading("swap", fmt.Sprintf("%.0f%% %s/%s", snap.SwapPercent, humanBytes(snap.SwapUsed), humanBytes(snap.SwapTotal)), true))
+	}
+	parts = append(parts, reading("disk", fmt.Sprintf("%.0f%% %s free", snap.DiskPercent, humanBytes(snap.DiskFree)), snap.DiskOK))
+	if temps := tempReadings(snap); temps != "" {
+		parts = append(parts, labelStyle.Render("temp ")+temps)
+	}
+	if m.net.rates {
+		parts = append(parts, reading("net", "↓ "+humanBytes(m.net.down)+"/s ↑ "+humanBytes(m.net.up)+"/s", true))
+	}
+	line := strings.Repeat(" ", railInset) + strings.Join(parts, "  ")
+	badge := ""
+	if count := len(m.activeNotices()); count > 0 {
+		badge = valueStyle.Render(fmt.Sprintf("messages %d", count)) + "  " + keyCap("M", "open")
+	}
+	// The readings yield to the badge and the badge to the width: a
+	// narrow terminal trims values from the right rather than wrapping
+	// the one-line foot into the list.
+	room := width - railInset
+	if badge != "" {
+		room -= ansi.StringWidth(badge) + 2
+	}
+	if room > 0 && ansi.StringWidth(line) > room {
+		line = ansi.Truncate(line, room, "…")
+	}
+	if badge != "" {
+		gap := width - railInset - ansi.StringWidth(line) - ansi.StringWidth(badge)
+		if gap >= 2 {
+			line += strings.Repeat(" ", gap) + badge
+		}
+	}
+	return []string{line}
 }
 
 // noticeCardLines is the messages card: a fieldset — the messages legend

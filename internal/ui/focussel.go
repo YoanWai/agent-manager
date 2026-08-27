@@ -66,12 +66,44 @@ func (m *Model) paneRowOffset(paneLines int) int {
 
 // paneCaretRow is the capture row the live caret sits on, or -1 when no
 // caret is in play. The crop keeps this row painted whatever the blank
-// rows around it look like: it is where typing lands.
+// rows around it look like: it is where typing lands. A tool that paints
+// its own composer cursor (command-code) is the exception: it rests the
+// terminal caret on a blank row below its content where typing never
+// lands, and extending the crop to it would only drag those blank rows
+// into view above it. For every other tool a caret on a blank row IS the
+// typing point - a shell waiting below its output - and stays pinned.
 func (m *Model) paneCaretRow() int {
-	if m.mode == modeFocus && m.pane.cursor.ok && !m.scrolledBack() {
-		return m.pane.cursor.y
+	if m.mode != modeFocus || !m.pane.cursor.ok || m.scrolledBack() {
+		return -1
 	}
-	return -1
+	caret := m.pane.cursor.y
+	if sess, ok := m.selected(); ok && m.engine != nil && m.engine.ParksItsCaret(sess.Tool) {
+		rows := strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n")
+		if caret < len(rows) && caretParkedBelowContent(rows, caret, m.pane.cursor.x) {
+			return -1
+		}
+	}
+	return caret
+}
+
+// caretParkedBelowContent reports whether the caret rests at column zero
+// on a blank row with nothing but blank rows beneath the pane's content,
+// which is the parking spot of a tool that paints its own composer cursor.
+func caretParkedBelowContent(rows []string, caret, column int) bool {
+	if column != 0 {
+		return false
+	}
+	for y := caret; y < len(rows); y++ {
+		if strings.TrimSpace(ansi.Strip(rows[y])) != "" {
+			return false
+		}
+	}
+	for y := caret - 1; y >= 0; y-- {
+		if strings.TrimSpace(ansi.Strip(rows[y])) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // focusSelection is a text selection drawn over the focused pane. anchor
@@ -204,6 +236,12 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.pending = pendingClick{}
 			row, col, ok := m.paneCell(msg.X, msg.Y)
 			if ok && row == pending.row && col == pending.col {
+				// A click on a link opens it here: the terminal's own
+				// opener cannot reach through the mouse claim, and the
+				// application under the pane has no opener of its own.
+				if url := m.linkAt(pending.row, pending.col); url != "" {
+					return m, openLinkCmd(url)
+				}
 				m.forwardClick(pending.button, pending.row, pending.col)
 				return m, nil
 			}
@@ -220,6 +258,14 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.sel.dragging = false
+		// A press that never moved is a click, not a copy: on a link it
+		// opens the link, the same answer either kind of pane gives.
+		if m.sel.clickCount == 1 && m.sel.anchorRow == m.sel.headRow && m.sel.anchorCol == m.sel.headCol {
+			if url := m.linkAt(m.sel.anchorRow, m.sel.anchorCol); url != "" {
+				m.clearSelection()
+				return m, openLinkCmd(url)
+			}
+		}
 		return m, m.copySelectionCmd()
 	}
 	return m, nil

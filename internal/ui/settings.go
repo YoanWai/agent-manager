@@ -155,6 +155,23 @@ func storedComfortableRows(st *store.Store) bool {
 	return chosen == "comfortable"
 }
 
+// storedFullLayout reads the persisted sessions layout. Split is the
+// default; a stored "full" choice gives the rail the whole width.
+func storedFullLayout(st *store.Store) bool {
+	chosen, err := st.Setting(sessionLayoutSetting)
+	if err != nil {
+		return false
+	}
+	return chosen == "full"
+}
+
+func sessionLayoutValue(full bool) string {
+	if full {
+		return "full"
+	}
+	return "split"
+}
+
 // enterFocuses reports which key opens a session where. Enter focuses the
 // preview and A attaches full screen by default; a stored "attach" choice
 // swaps the pair. Cached on the model because the footer reads it every
@@ -216,6 +233,7 @@ func (m *Model) openSettings() {
 		arrowStep:      m.arrowStep,
 
 		comfortableRows: m.comfortableRows,
+		fullLayout:      m.fullLayout,
 		worktreeDefault: m.defaultWorktree(),
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
@@ -331,6 +349,9 @@ func (m *Model) persistSettings() {
 	if err := m.store.SetSetting(listDensitySetting, density); err != nil {
 		m.errBar.text = err.Error()
 	}
+	if err := m.store.SetSetting(sessionLayoutSetting, sessionLayoutValue(m.settings.fullLayout)); err != nil {
+		m.errBar.text = err.Error()
+	}
 	worktreeChoice := "off"
 	if m.settings.worktreeDefault {
 		worktreeChoice = "on"
@@ -355,6 +376,7 @@ func (m *Model) persistSettings() {
 	m.focusOnEnter = m.settings.enterFocuses
 	m.arrowStep = m.settings.arrowStep
 	m.comfortableRows = m.settings.comfortableRows
+	m.fullLayout = m.settings.fullLayout
 }
 
 func (m *Model) openCLIPicker() {
@@ -474,6 +496,8 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		return m.syncPaneTheme()
 	case settingsFieldDensity:
 		m.settings.comfortableRows = !m.settings.comfortableRows
+	case settingsFieldSessionLayout:
+		m.settings.fullLayout = !m.settings.fullLayout
 	case settingsFieldLayout:
 		m.settings.layoutSplit = !m.settings.layoutSplit
 	case settingsFieldQuickClose:

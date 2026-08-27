@@ -40,6 +40,9 @@ type toolRules struct {
 	trailingNote   *regexp.Regexp
 	busyLine       *regexp.Regexp
 	limitLine      *regexp.Regexp
+	messageStart   *regexp.Regexp
+	placeholder    *regexp.Regexp
+	userEcho       *regexp.Regexp
 	dialogFooter   *regexp.Regexp
 	// composerPlaceholder is the literal text a tool paints inside its
 	// empty composer; a draft replaces it. Searched in a stripped row.
@@ -75,6 +78,9 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.TrailingNote, &tr.trailingNote},
 			{tool.BusyLine, &tr.busyLine},
 			{tool.LimitLine, &tr.limitLine},
+			{tool.MessageStart, &tr.messageStart},
+			{tool.InputPlaceholder, &tr.placeholder},
+			{tool.UserEcho, &tr.userEcho},
 			{tool.DialogFooter, &tr.dialogFooter},
 		}
 		for _, opt := range optional {
@@ -332,6 +338,197 @@ func (e *Engine) ActivityRegion(tool, pane string) (string, bool) {
 	return tr.activityRegion(pane)
 }
 
+// LastMessage is the tool's newest message, flattened to one line: the
+// content lines above the input box, from the last message_start marker
+// on, joined in order — so a caller quoting the reply starts at its
+// beginning and fits as much of it as the row can hold. Chrome, busy
+// spinners and turn_end markers are stepped over, and a tool without a
+// marker yields its newest content line alone. anchored reports that a
+// marker was found — false means the quote is the newest content line,
+// which for a marker tool is the sign the message start scrolled out of
+// the captured text. ok is false when the tool has no activity_cutoff to
+// find the box with, or the cutoff is absent from the pane.
+func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool) {
+	tr, ok := e.tools[tool]
+	if !ok {
+		return "", false, false
+	}
+	region, ok := tr.activityRegion(pane)
+	if !ok {
+		return "", false, false
+	}
+	lines := strings.Split(region, "\n")
+	structural := func(line string) bool {
+		if tr.chromeLine != nil && tr.chromeLine.MatchString(line) {
+			return true
+		}
+		if tr.busyLine != nil && tr.busyLine.MatchString(line) {
+			return true
+		}
+		if tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
+			return true
+		}
+		return tr.matchesWorkingRule(line)
+	}
+	start, lastContent := -1, -1
+	for i, raw := range lines {
+		line := strings.TrimRight(raw, " \t")
+		if strings.TrimSpace(line) == "" || structural(line) {
+			continue
+		}
+		lastContent = i
+		if tr.messageStart != nil && tr.messageStart.MatchString(line) {
+			start = i
+		}
+	}
+	if lastContent == -1 {
+		return "", false, true
+	}
+	if start == -1 {
+		return strings.TrimSpace(lines[lastContent]), false, true
+	}
+	// The message runs from its marker until the next structural line: a
+	// turn summary or a rule closes it, so a notice printed after the
+	// turn (a plugin banner, a warning) is not glued onto the reply.
+	first := strings.TrimRight(lines[start], " \t")
+	marker := tr.messageStart.FindStringIndex(first)
+	first = first[marker[1]:]
+	parts := []string{strings.TrimSpace(first)}
+	for _, raw := range lines[start+1:] {
+		line := strings.TrimRight(raw, " \t")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if structural(line) {
+			break
+		}
+		parts = append(parts, strings.TrimSpace(line))
+	}
+	return strings.TrimSpace(strings.Join(parts, " ")), true, true
+}
+
+// HasMessageStart reports whether the tool declared a message_start
+// marker, i.e. whether an unanchored LastMessage means the marker
+// scrolled away rather than never existing.
+func (e *Engine) HasMessageStart(tool string) bool {
+	tr, ok := e.tools[tool]
+	return ok && tr.messageStart != nil
+}
+
+// HasUserEcho reports whether the tool echoes submitted prompts into its
+// transcript in a recognisable shape.
+func (e *Engine) HasUserEcho(tool string) bool {
+	tr, ok := e.tools[tool]
+	return ok && tr.userEcho != nil
+}
+
+// LastUserEcho is the newest prompt the tool echoed into its transcript,
+// past the echo marker: the last thing sent to the session, whoever sent
+// it and from wherever it was typed. Empty means no echo is in the
+// captured text; ok is false when the tool has no user_echo or no
+// activity_cutoff to bound the transcript with.
+func (e *Engine) LastUserEcho(tool, pane string) (string, bool) {
+	tr, ok := e.tools[tool]
+	if !ok || tr.userEcho == nil {
+		return "", false
+	}
+	region, ok := tr.activityRegion(pane)
+	if !ok {
+		return "", false
+	}
+	lines := strings.Split(region, "\n")
+	// A composer drawn above the cutoff (opencode's ┃ gutter) is a run of
+	// input_prefix rows hugging the region's end; the echoes live higher,
+	// so the trailing run is the composer's, not a message.
+	if tr.inputPrefix != nil {
+		for len(lines) > 0 {
+			last := lines[len(lines)-1]
+			if strings.TrimSpace(last) == "" || tr.inputPrefix.MatchString(last) {
+				lines = lines[:len(lines)-1]
+				continue
+			}
+			break
+		}
+	}
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimRight(lines[i], " \t")
+		loc := tr.userEcho.FindStringIndex(line)
+		if loc == nil {
+			continue
+		}
+		// A dialog draws its option rows behind the same marker the
+		// composer uses (codex's "› 1. Yes, continue"), so a line any
+		// status rule recognises is the tool's frame, not an echo.
+		if tr.matchesAnyRule(line) {
+			continue
+		}
+		echoed := strings.TrimSpace(line[loc[1]:])
+		if echoed == "" {
+			continue
+		}
+		if tr.placeholder != nil && tr.placeholder.MatchString(echoed) {
+			continue
+		}
+		return echoed, true
+	}
+	return "", true
+}
+
+func (tr toolRules) matchesAnyRule(line string) bool {
+	for _, r := range tr.rules {
+		if r.re.MatchString(line) {
+			return true
+		}
+	}
+	return false
+}
+
+// InputDraft is the text typed into the tool's composer: what follows the
+// last activity_cutoff match on its own row. A placeholder the composer
+// paints on the empty row is the tool's wording, not a draft, and a tool
+// whose composer sits above its cutoff (opencode, pi) cannot be read this
+// way; ok is false for all of those.
+func (e *Engine) InputDraft(tool, pane string) (string, bool) {
+	tr, ok := e.tools[tool]
+	if !ok || tr.activityCutoff == nil {
+		return "", false
+	}
+	// An input_prefix declares a composer drawn above the cutoff
+	// (opencode's ┃ box over ╹), so the text after a cutoff match is the
+	// composer's frame, never a draft.
+	if tr.inputPrefix != nil {
+		return "", false
+	}
+	locs := tr.activityCutoff.FindAllStringIndex(pane, -1)
+	if len(locs) == 0 {
+		return "", false
+	}
+	rest := pane[locs[len(locs)-1][1]:]
+	if lineEnd := strings.IndexByte(rest, '\n'); lineEnd >= 0 {
+		rest = rest[:lineEnd]
+	}
+	draft := strings.TrimSpace(rest)
+	if draft == "" {
+		return "", false
+	}
+	if tr.placeholder != nil && tr.placeholder.MatchString(draft) {
+		return "", false
+	}
+	return draft, true
+}
+
+// matchesWorkingRule reports whether a line is one of the tool's working
+// signals — a spinner row, an interrupt hint — which narrate the turn
+// rather than say anything, so a caller quoting output steps over them.
+func (tr toolRules) matchesWorkingRule(line string) bool {
+	for _, r := range tr.rules {
+		if r.state == Working && r.re.MatchString(line) {
+			return true
+		}
+	}
+	return false
+}
+
 // InputPrefix returns the prompt marker a tool draws at the start of its
 // input line, when row is that line. A tool may declare its own marker with
 // input_prefix, which replaces the reuse of activity_cutoff here; one
@@ -386,13 +583,16 @@ func (tr toolRules) inputRow(row string) bool {
 	return loc != nil && loc[0] == 0 && loc[1] > 0
 }
 
-// ComposerShowsPlaceholder reports whether the tool paints its placeholder
-// inside this composer row, which is how an empty composer is told from a
-// draft for tools whose terminal cursor never enters the composer. The
-// whole value after the input marker must be the placeholder: a draft
-// merely containing or ending with it stays a draft. ok is false when the
-// tool declares no placeholder.
-func (e *Engine) ComposerShowsPlaceholder(tool, row string) bool {
+// ComposerIsEmpty reports whether this composer row holds nothing to edit,
+// which is how an empty composer is told from a draft for tools whose
+// terminal cursor never enters the composer. Empty is either the
+// placeholder a tool paints on a pristine prompt or nothing after the
+// marker at all: command-code paints its placeholder until the first prompt
+// is typed and never again, so the bare marker a cleared composer leaves
+// behind is just as empty. A draft merely containing or ending with the
+// placeholder stays a draft. False for a tool that declares no placeholder,
+// which keeps every other tool on the marker rules.
+func (e *Engine) ComposerIsEmpty(tool, row string) bool {
 	tr, ok := e.tools[tool]
 	if !ok || tr.composerPlaceholder == "" {
 		return false
@@ -401,7 +601,18 @@ func (e *Engine) ComposerShowsPlaceholder(tool, row string) bool {
 	if !ok {
 		return false
 	}
-	return strings.TrimSpace(row[len(prefix):]) == tr.composerPlaceholder
+	rest := strings.TrimSpace(row[len(prefix):])
+	return rest == "" || rest == tr.composerPlaceholder
+}
+
+// ParksItsCaret reports whether the tool paints its own composer cursor
+// and rests the terminal caret away from where typing lands, which is
+// what declaring composer_placeholder means. The focus crop treats such a
+// tool's caret on a blank bottom row as furniture rather than a typing
+// point.
+func (e *Engine) ParksItsCaret(tool string) bool {
+	tr, ok := e.tools[tool]
+	return ok && tr.composerPlaceholder != ""
 }
 
 func (tr toolRules) activityRegion(pane string) (string, bool) {

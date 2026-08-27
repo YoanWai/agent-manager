@@ -24,6 +24,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/update"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type mode int
@@ -94,6 +95,13 @@ type Model struct {
 	// queuedMessages is replaced whole on every refresh rather than merged,
 	// so a delivered message's badge clears itself.
 	queuedMessages map[string]int
+	// paneLines holds each session's last meaningful pane line, which the
+	// full screen row's second line quotes. Merged rather than replaced, so
+	// a session that lost its window keeps its last words.
+	paneLines map[string]string
+	// panePrompts holds the last prompt each session's transcript echoes,
+	// which the full screen row shows as the task it is on.
+	panePrompts map[string]string
 	// panes is the last pass's agent pane geometry, which the poller reads
 	// off the UI loop alongside its liveness listing.
 	panes map[string]tmux.Pane
@@ -127,6 +135,12 @@ type Model struct {
 	// focusScroll is how many lines the focused pane is scrolled back into
 	// its history; zero is live at the bottom.
 	focusScroll int
+	// focusFetchInFlight guards the scroll-region pipeline: one capture
+	// rides the control pipe at a time, and a wheel that moved the target
+	// meanwhile is served by the reply's own follow-up fetch. Without it a
+	// fast wheel queues a full history capture per notch plus a catch-up
+	// per stale reply, and the pipe answers them for half a minute.
+	focusFetchInFlight bool
 	// focusOnEnter mirrors the persisted focus-key setting; the footer
 	// reads it every frame, so it lives here instead of the store.
 	focusOnEnter bool
@@ -137,18 +151,27 @@ type Model struct {
 	// their meta on a second line instead of alongside the name. Every
 	// rail frame reads it, so it lives here instead of the store.
 	comfortableRows bool
+	// fullLayout mirrors the persisted sessions layout: the rail owns the
+	// whole width, with no preview column beside it. Every list frame
+	// reads it, so it lives here instead of the store.
+	fullLayout bool
 	// watchedGen is previewGen as of the last poll pass, so a selection
 	// that has not moved since can be recognised as at rest.
 	watchedGen        uint64
 	previewBodyOffset int
 	cursor            int
-	mode              mode
-	showArchived      bool
-	hideEmptyGroups   bool
-	statusFilter      statusFilter
-	collapsed         map[string]bool
-	search            string
-	searching         bool
+	// railTop is the entry the rail paints first, carried between frames.
+	// Deriving it from the cursor alone cannot hold still: rows are of
+	// uneven height, so every step would re-solve the window and slide the
+	// list under a highlight that should have simply moved down.
+	railTop         int
+	mode            mode
+	showArchived    bool
+	hideEmptyGroups bool
+	statusFilter    statusFilter
+	collapsed       map[string]bool
+	search          string
+	searching       bool
 
 	diff       diffState
 	form       form
@@ -214,6 +237,7 @@ type Model struct {
 
 	startupPhase     int
 	startupAnimating bool
+	pendingTyped     *typedPromptCandidate
 
 	update updateInfo
 
@@ -383,6 +407,7 @@ type settingsState struct {
 	enterFocuses    bool
 	arrowStep       bool
 	comfortableRows bool
+	fullLayout      bool
 	worktreeDefault bool
 	notifications   bool
 	notifyFinished  bool
@@ -403,6 +428,7 @@ const (
 	settingsFieldTheme
 	settingsFieldThemeAuto
 	settingsFieldDensity
+	settingsFieldSessionLayout
 	settingsFieldLayout
 	settingsFieldQuickClose
 	settingsFieldFocusKey
@@ -442,6 +468,8 @@ type refreshMsg struct {
 	preview        string
 	agents         agentStats
 	queuedMessages map[string]int
+	paneLines      map[string]string
+	panePrompts    map[string]string
 	// panes is the pass's agent pane geometry, read off the UI loop with
 	// the liveness listing the poller already makes.
 	panes map[string]tmux.Pane
@@ -530,7 +558,75 @@ func (m *Model) previewTick() tea.Cmd {
 }
 
 func (m *Model) needsLoaderTick() bool {
-	return m.hasStartingRow() || m.reviewNeedsLoader()
+	return m.hasStartingRow() || m.reviewNeedsLoader() || m.hasWorkingLoaderRow()
+}
+
+// typedPromptCandidate is a composer draft snapshotted as enter went into
+// a focused pane, held until the session shows the send went through.
+type typedPromptCandidate struct {
+	id   string
+	text string
+	at   time.Time
+}
+
+// typedPromptGrace is how long a candidate waits for its session to turn
+// working before it is judged a menu enter and dropped.
+const typedPromptGrace = 5 * time.Second
+
+// stashTypedPrompt snapshots the composer draft as enter goes into the
+// focused pane, from a fresh capture so the newest keystrokes are in it.
+func (m *Model) stashTypedPrompt(sess store.Session) {
+	if m.engine == nil || m.tmux == nil {
+		return
+	}
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		return
+	}
+	if draft, ok := m.engine.InputDraft(sess.Tool, ansi.Strip(pane)); ok {
+		m.pendingTyped = &typedPromptCandidate{id: sess.ID, text: draft, at: time.Now()}
+	}
+}
+
+// commitTypedPrompt records a stashed draft as the session's last prompt
+// once the session runs with it: an enter that opened a menu or answered
+// a dialog never turns the session working while its draft is fresh, so
+// that candidate just expires.
+func (m *Model) commitTypedPrompt() {
+	cand := m.pendingTyped
+	if cand == nil {
+		return
+	}
+	if time.Since(cand.at) > typedPromptGrace {
+		m.pendingTyped = nil
+		return
+	}
+	for i := range m.sessions {
+		if m.sessions[i].ID != cand.id {
+			continue
+		}
+		if m.sessions[i].Status != status.Working {
+			return
+		}
+		if err := ignoreDeletedSession(m.store.SetLastPrompt(cand.id, cand.text)); err != nil {
+			m.errBar.text = err.Error()
+		}
+		m.sessions[i].LastPrompt = cand.text
+		m.pendingTyped = nil
+		return
+	}
+	m.pendingTyped = nil
+}
+
+// hasWorkingLoaderRow reports whether a row is animating the working
+// loader: a working session with no quotable pane line yet.
+func (m *Model) hasWorkingLoaderRow() bool {
+	for _, row := range m.rows {
+		if !row.isGroup && row.sess.Status == status.Working && m.paneLines[row.sess.ID] == "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) reviewNeedsLoader() bool {
@@ -590,6 +686,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		focusOnEnter:        storedFocusOnEnter(st),
 		arrowStep:           storedArrowStep(st),
 		comfortableRows:     storedComfortableRows(st),
+		fullLayout:          storedFullLayout(st),
 		mode:                modeList,
 		update:              updateInfo{version: version},
 		dismissed:           loadDismissed(st),
@@ -1015,7 +1112,7 @@ func (m *Model) refreshCmd() tea.Cmd {
 // leaves, a too-tall alt-screen TUI missing its top rows, heals on attach,
 // which sizes the window to the terminal and re-pins on detach.
 func (m *Model) resizeSessions() {
-	width, height := m.previewPaneWidth(), m.previewPaneHeight()
+	width, height := m.paneTargetSize()
 	if width <= 0 || height <= 0 {
 		return
 	}
@@ -1023,41 +1120,89 @@ func (m *Model) resizeSessions() {
 		m.pane.geom = map[string][2]int{}
 	}
 	m.seedPaneGeom()
-	var todo []string
+	// The session open full screen is pinned to the whole body by
+	// pinFullFocusPane, not to the preview box; matching it to the box
+	// here would shrink its height and clear its scrollback mid-focus.
+	fullFocusID := ""
+	if m.fullFocus() {
+		if sess, ok := m.selected(); ok {
+			fullFocusID = sess.ID
+		}
+	}
+	type target struct {
+		id     string
+		height int
+	}
+	var todo []target
+	var ids []string
 	for _, sess := range m.sessions {
-		if sess.Archived {
+		if sess.Archived || sess.ID == fullFocusID {
 			continue
 		}
+		wanted := height
 		if last, ok := m.pane.geom[sess.ID]; ok {
 			if last[0] == width && last[1] >= height {
 				continue
 			}
+			// A width re-pin of a taller pane keeps its height: shrinking
+			// it would clear a Codex scrollback (#369); the painted view
+			// crops instead.
+			if last[1] > wanted {
+				wanted = last[1]
+			}
 		}
-		todo = append(todo, sess.ID)
+		todo = append(todo, target{id: sess.ID, height: wanted})
+		ids = append(ids, sess.ID)
 	}
 	if len(todo) == 0 {
 		return
 	}
 	type result struct {
-		id  string
-		err error
+		id     string
+		height int
+		err    error
 	}
 	// Pause polling for the whole clear+resize window so a mid-reflow
 	// capture cannot compare against a pre-resize hash.
-	m.poller.reflowSessions(todo, func() {
+	m.poller.reflowSessions(ids, func() {
 		results := make(chan result, len(todo))
-		for _, id := range todo {
-			go func(id string) {
-				results <- result{id: id, err: m.tmux.Resize(id, width, height)}
-			}(id)
+		for _, t := range todo {
+			go func(t target) {
+				results <- result{id: t.id, height: t.height, err: m.tmux.Resize(t.id, width, t.height)}
+			}(t)
 		}
 		for range todo {
 			r := <-results
 			if r.err == nil {
-				m.pane.geom[r.id] = [2]int{width, height}
+				m.pane.geom[r.id] = [2]int{width, r.height}
 			}
 		}
 	})
+}
+
+// pinFullFocusPane sizes a session opened full screen to the whole
+// terminal body, the reflow an attach performs, so the capture fills the
+// full width frame 1:1. Returning to the list leaves the pane this size:
+// shrinking it back would cost a Codex agent its scrollback (#369), and
+// paneWindow already crops a taller pane from its bottom.
+func (m *Model) pinFullFocusPane(id string) {
+	width, height := m.width, m.listBodyHeight()
+	if width <= 0 || height <= 0 {
+		return
+	}
+	if m.pane.geom == nil {
+		m.pane.geom = map[string][2]int{}
+	}
+	if last, ok := m.pane.geom[id]; ok && last[0] == width && last[1] >= height {
+		return
+	}
+	var resizeErr error
+	m.poller.reflowSessions([]string{id}, func() {
+		resizeErr = m.tmux.Resize(id, width, height)
+	})
+	if resizeErr == nil {
+		m.pane.geom[id] = [2]int{width, height}
+	}
 }
 
 // markFreshPane queues one exact size pin for a session whose window this
@@ -1109,6 +1254,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// terminal delivers a size message and may carry stale colors.
 		SyncTerminalBackground()
 		m.resizeSessions()
+		if m.fullFocus() {
+			if sess, ok := m.selected(); ok {
+				m.pinFullFocusPane(sess.ID)
+			}
+		}
 		if m.mode == modeForm {
 			m.syncFormFieldWidths()
 		} else if m.mode == modeGroupForm {
@@ -1173,6 +1323,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.archivedGroups = msg.archivedGroups
 		m.agents = msg.agents
 		m.queuedMessages = msg.queuedMessages
+		if m.paneLines == nil {
+			m.paneLines = map[string]string{}
+		}
+		for id, line := range msg.paneLines {
+			m.paneLines[id] = line
+		}
+		if m.panePrompts == nil {
+			m.panePrompts = map[string]string{}
+		}
+		for id, prompt := range msg.panePrompts {
+			if prompt != "" {
+				m.panePrompts[id] = prompt
+			}
+		}
+		m.commitTypedPrompt()
 		if msg.snapOK {
 			m.snap = msg.snap
 			m.updateNetRates(msg.snap)
@@ -1308,6 +1473,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cursorOn = !m.cursorOn
 		return m, m.cursorBlink()
 
+	case linkOpenErrMsg:
+		m.errBar.text = msg.err.Error()
+		return m, nil
+
 	case focusCopiedMsg:
 		// The clipboard writer runs off the update loop and can take
 		// hundreds of milliseconds, long enough for a click elsewhere to
@@ -1322,13 +1491,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case focusScrollMsg:
 		sess, ok := m.selected()
 		if !ok || sess.ID != msg.sessID {
+			m.focusFetchInFlight = false
 			return m, nil
 		}
-		if msg.offset != m.focusScroll || msg.rows != m.previewPaneHeight() {
+		if msg.offset != m.focusScroll || msg.rows != m.focusPaneRows() {
 			// The wheel or a resize moved the target while this capture was
-			// in flight. Fetch just that final viewport.
+			// in flight. Fetch just that final viewport; the in-flight guard
+			// stays up so the notches that keep arriving ride this fetch.
 			return m, m.focusRegionCmd(sess.ID, m.focusScroll)
 		}
+		m.focusFetchInFlight = false
 		if msg.ok {
 			m.preview = msg.preview
 		}
@@ -1426,12 +1598,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// size is unchanged, so the detach restores the theme's here.
 		SyncTerminalBackground()
 		// The attach client sized the window to the full terminal and tmux
-		// keeps that size on detach; shrink it back to the preview panel so
-		// the capture is not clipped on the right.
+		// keeps that size on detach; pin it back to the current layout's
+		// box so the capture is not clipped on the right.
 		if m.pane.geom != nil {
 			delete(m.pane.geom, msg.sessID)
 		}
-		width, height := m.previewPaneWidth(), m.previewPaneHeight()
+		width, height := m.paneTargetSize()
 		m.poller.reflowSessions([]string{msg.sessID}, func() {
 			_ = m.tmux.Resize(msg.sessID, width, height)
 		})

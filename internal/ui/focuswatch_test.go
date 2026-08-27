@@ -249,3 +249,23 @@ func TestFocusWatchReportsCursor(t *testing.T) {
 		}
 	}
 }
+
+// Trailing blank pane rows are content: dropping them shifts every line
+// up, which is what made the pushed and polled captures disagree. The
+// input is shaped like the control client's reply, a newline JOIN of the
+// captured rows with no terminator, so a 3-row pane whose last two rows
+// are blank arrives as "top line\n\n"; the old trim ate the final blank
+// row, and a caret parked on the pane's bottom row pointed past the rows.
+func TestControlCaptureKeepsTrailingBlankRows(t *testing.T) {
+	pane := "top line\n\n"
+	if got, want := matchExecShape(pane), "top line\n\n\n"; got != want {
+		t.Fatalf("matchExecShape(%q) = %q, want %q", pane, got, want)
+	}
+	if got := len(strings.Split(strings.TrimSuffix(matchExecShape(pane), "\n"), "\n")); got != 3 {
+		t.Fatalf("kept %d rows, want 3", got)
+	}
+	// A pane whose last row carries text gains only the terminator.
+	if got, want := matchExecShape("a\nb"), "a\nb\n"; got != want {
+		t.Fatalf("matchExecShape(%q) = %q, want %q", "a\nb", got, want)
+	}
+}

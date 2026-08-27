@@ -503,15 +503,51 @@ func TestPollPreviewResumesAfterWatcherStops(t *testing.T) {
 	}
 }
 
-// Trailing blank pane rows are content: dropping them shifts every line
-// up, which is what made the pushed and polled captures disagree.
-func TestControlCaptureKeepsTrailingBlankRows(t *testing.T) {
-	pane := "top line\n\n\n"
-	if got, want := matchExecShape(pane), "top line\n\n\n"; got != want {
-		t.Fatalf("matchExecShape(%q) = %q, want %q", pane, got, want)
+// The caret command-code parks on the pane's bottom row lives on the very
+// blank row the old trim dropped: the pushed capture then held one row
+// fewer than the caret's y, the bounds check bailed, and Left went dead on
+// exactly the sessions whose caret rests at the bottom edge. Rows and
+// caret copied from a live 182x47 pane (debug capture, 2026-08-26).
+func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "ccpark", t.TempDir(), "")
+	m.selectSessionRow(t, "ccpark")
+	m.rows[m.cursor].sess.Tool = "command-code"
+	rows := make([]string, 47)
+	rows[36] = " TODOS  [4 items · 2 done] Sending Tier 3 messages… (paused) [ctrl+x to expand]"
+	rows[38] = strings.Repeat("─", 60)
+	rows[39] = "❯ Ask your question..."
+	rows[40] = strings.Repeat("─", 60)
+	rows[41] = "  » permission bypass on [shift+tab]"
+	rows[42] = "  ? for shortcuts · PR #390 · taste on"
+	controlJoin := strings.Join(rows, "\n")
+
+	m.mode = modeFocus
+	m.preview = matchExecShape(controlJoin)
+	m.pane.forID = "s1"
+	m.pane.cursor = paneCursor{x: 0, y: 46, ok: true}
+	if got := len(strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n")); got != 47 {
+		t.Fatalf("preview kept %d rows, want all 47", got)
 	}
-	if got := len(strings.Split(strings.TrimSuffix(matchExecShape(pane), "\n"), "\n")); got != 3 {
-		t.Fatalf("kept %d rows, want 3", got)
+	if !m.caretAtInputStart("s1", "command-code") {
+		t.Fatal("the bottom-parked caret over an empty composer was not recognised")
+	}
+
+	// The same parked caret must not stretch the crop down to itself: the
+	// rows between the footer and the caret are blank, and dragging them
+	// into view floats the composer above a band of dead space.
+	if got := m.paneCaretRow(); got != -1 {
+		t.Fatalf("paneCaretRow = %d for a parked caret, want -1", got)
+	}
+	window, start := paneWindow(m.preview, 30, m.paneCaretRow())
+	if last := window[len(window)-1]; strings.TrimSpace(last) != "? for shortcuts · PR #390 · taste on" {
+		t.Fatalf("crop bottom = %q, want the footer, not blank fill (start=%d)", last, start)
+	}
+
+	// A caret inside the content keeps the crop pinned to it.
+	m.pane.cursor = paneCursor{x: 2, y: 39, ok: true}
+	if got := m.paneCaretRow(); got != 39 {
+		t.Fatalf("paneCaretRow = %d for an in-content caret, want 39", got)
 	}
 }
 

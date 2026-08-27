@@ -442,6 +442,10 @@ var captureClipboardImage = clipboard.SaveImage
 
 const diffLayoutSetting = "diff_layout"
 
+// sessionLayoutSetting is the list's shape: "full" gives the rail the whole
+// width, anything else keeps the split with the preview beside it.
+const sessionLayoutSetting = "layout"
+
 const listDensitySetting = "list_density"
 
 const focusKeySetting = "focus_key"

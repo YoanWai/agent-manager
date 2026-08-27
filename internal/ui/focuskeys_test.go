@@ -707,6 +707,51 @@ func TestFocusLeftUnfocusesAtPromptHead(t *testing.T) {
 	}
 }
 
+// A focused terminal reads the same way: Left leaves at the head of a
+// bare shell prompt and reaches the shell while a command is being typed.
+func TestFocusLeftUnfocusesTerminalAtPromptHead(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "shellie", t.TempDir(), "")
+	m.selectSessionRow(t, "shellie")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	sess := m.rows[m.cursor].sess
+	m.rows[m.cursor].sess.Tool = "terminal"
+	m.pane.forID = sess.ID
+	m.preview = "$ make test\n"
+	m.pane.cursor = paneCursor{x: 11, y: 0, ok: true}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("left inside a typed command left focus, mode = %v", m.mode)
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("forwarding left set err: %q", m.errBar.text)
+	}
+
+	// Stock zsh ("yoan@mac ~ %"), bash, and bare markers all read as a
+	// prompt head with the caret right behind the marker.
+	for _, prompt := range []string{"$ ", "% ", "❯ ", "yoan@mac ~ % "} {
+		// Focus is re-entered directly: going through the key path would
+		// restart the live watcher, whose pushed capture races the fixture
+		// pane set below.
+		m.mode = modeFocus
+		m.pane.forID = sess.ID
+		m.preview = prompt + "\n"
+		m.pane.cursor = paneCursor{x: len([]rune(prompt)), y: 0, ok: true}
+		updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+		*m = *updated.(*Model)
+		if m.mode != modeList {
+			t.Fatalf("left at the head of %q did not unfocus, mode = %v", prompt, m.mode)
+		}
+	}
+}
+
 // The beta setting turns the whole pair off: right no longer focuses,
 // and left at the prompt head forwards to the agent instead of leaving.
 func TestArrowStepSettingDisablesThePair(t *testing.T) {
@@ -908,6 +953,17 @@ func TestCaretParkedBelowCommandCodesComposer(t *testing.T) {
 		t.Fatal("the parked caret over a draft was read as input start")
 	}
 
+	// The placeholder is painted on a pristine prompt only: command-code
+	// drops it for good once a prompt has been typed, so a composer
+	// cleared afterwards is a bare marker and just as empty. Measured on
+	// v1.33.0, where twenty captures of a cleared composer all read "❯".
+	for _, cleared := range []string{"❯", "❯ "} {
+		m = build(0, 7, "⠶ Working on it.", "", "────────────\n"+cleared+"\n────────────\n"+footer, "", "", "")
+		if !m.caretAtInputStart("s1", "command-code") {
+			t.Fatalf("the parked caret over a cleared composer %q was not recognised", cleared)
+		}
+	}
+
 	// A parked cell that is not at the left edge is not the parking spot.
 	m = build(4, 7, "⠶ Working on it.", "", composer, "", "", "")
 	if m.caretAtInputStart("s1", "command-code") {
@@ -965,5 +1021,31 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("left over a draft left focus, mode = %v", m.mode)
+	}
+
+	// A session that has been typed in: the placeholder is gone for good
+	// and the composer clears to a bare marker, with the prompts already
+	// sent echoed above it on rows carrying that same marker. Pane and
+	// caret copied from a live command-code v1.33.0 session, where the
+	// caret parks on the last row and the footers sit between.
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after re-enter, mode = %v", m.mode)
+	}
+	m.pane.cursor = paneCursor{x: 0, y: 9, ok: true}
+	m.preview = "❯ did you forget about peerlist?\n" +
+		"⠶ No, it is queued.\n" +
+		" ✻ Worked for 19m 16s\n" +
+		"────────────\n" +
+		"❯\n" +
+		"────────────\n" +
+		"  » permission bypass on [shift+tab]\n" +
+		"  ? for shortcuts · taste on\n" +
+		"\n\n"
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("left over a cleared composer did not unfocus, mode = %v", m.mode)
 	}
 }

@@ -118,6 +118,11 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.mode = modeFocus
+	// The full screen layout opens the session across the whole body, so
+	// its pane grows to fill the frame before the first capture paints.
+	if m.fullLayout {
+		m.pinFullFocusPane(sess.ID)
+	}
 	// Focusing is deliberate, so the client opens now rather than waiting
 	// for the cursor to settle, and any failure backoff is lifted.
 	if m.focus != nil {
@@ -127,6 +132,7 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	m.clearSelection()
 	m.cursorOn = true
 	m.focusScroll = 0
+	m.focusFetchInFlight = false
 	// Pane state from a previously watched session must not route this
 	// one's wheel; a fresh watcher's first pushed capture reports the real
 	// values. When the watcher is already streaming this session and the
@@ -184,8 +190,8 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 // caretParksAndComposerIsEmpty serves tools that park the terminal cursor
 // below their footer and paint the composer's caret themselves. The parked
 // cell sits on a blank row, so the composer is found by searching up for
-// the marker row; the placeholder on screen is what proves the composer
-// empty, since a draft replaces it and Left there belongs to the agent.
+// the nearest marker row, and an empty composer there is what proves Left
+// costs the agent nothing: a draft holds the key instead.
 // A caret cell that is not parked on a blank row is none of this path's
 // business: the marker rules decide it as usual.
 func (m *Model) caretParksAndComposerIsEmpty(tool string, rows []string) bool {
@@ -200,7 +206,7 @@ func (m *Model) caretParksAndComposerIsEmpty(tool string, rows []string) bool {
 		if _, ok := m.engine.InputPrefix(tool, row); !ok {
 			continue
 		}
-		return m.engine.ComposerShowsPlaceholder(tool, row)
+		return m.engine.ComposerIsEmpty(tool, row)
 	}
 	return false
 }
@@ -290,6 +296,11 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.Type == tea.KeyLeft && !msg.Alt && m.arrowStep && m.caretAtInputStart(sess.ID, sess.Tool) {
 		return m, m.leaveFocus()
+	}
+	// Enter is how a drafted prompt leaves the composer, so the draft is
+	// snapshotted on its way in; alt+enter only breaks the line.
+	if msg.Type == tea.KeyEnter && !msg.Alt {
+		m.stashTypedPrompt(sess)
 	}
 	// Typing puts the cursor back on: a caret that blinks out mid-keystroke
 	// reads as a dropped character.
