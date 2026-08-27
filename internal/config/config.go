@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -192,6 +193,23 @@ const (
 	oldCmdChromeLine = `^\s*[─]{4,}\s*$|^# .*$|^[ \t█]*$|^\s*\? for shortcuts.*$`
 )
 
+// The pi matching rules used to pin the pane tail at exactly two footer
+// lines under the composer, so a pi extension drawing a taller footer kept
+// every rule from matching in every state. A stored config.toml
+// carries these old strings verbatim and keeps them over any new default,
+// so mergeTool rewrites exactly these stale values the way the command-code
+// rules are rewritten.
+const (
+	oldPiIdleRule      = `(?ms)^[ \t]*Resumed session[ \t]*\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + oldPiFooterTail
+	oldPiErrorRule     = `(?ms)^[ \t]*Error:[^\n]*(?:\n[ \t]+[^ \t\n][^\n]*){0,8}\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + oldPiFooterTail
+	oldPiRateLimitRule = `(?ms)^[ \t]*[^\n]*rate limit reached[^\n]*\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + oldPiFooterTail
+	oldPiQuestionRule  = `(?ms)\?[ \t]*\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + oldPiFooterTail
+	oldPiWorkingRule   = `(?ms)^[ \t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\b[^\n]*\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + oldPiFooterTail
+
+	oldPiFooterTail = `\n[^\n]*\n[^\n]*[ \t]*(?:\n[ \t]*)*\z`
+	newPiFooterTail = `(?:\n[^\n]*){2,5}[ \t]*(?:\n[ \t]*)*\z`
+)
+
 // mergeTool returns user with any zero-value field filled from def.
 //
 // Shell is deliberately not among them. "terminal" is a plausible name for
@@ -244,6 +262,14 @@ func mergeTool(name string, user, def Tool) Tool {
 					user.Rules[i] = current
 					break
 				}
+			}
+		}
+	}
+	if name == "pi" {
+		for i, rule := range user.Rules {
+			switch rule.Pattern {
+			case oldPiIdleRule, oldPiErrorRule, oldPiRateLimitRule, oldPiQuestionRule, oldPiWorkingRule:
+				user.Rules[i].Pattern = strings.Replace(rule.Pattern, oldPiFooterTail, newPiFooterTail, 1)
 			}
 		}
 	}
@@ -571,12 +597,12 @@ input_prefix = "^"
 activity_cutoff = "(?ms)\\A.*^─{8,}[ \\t]*$"
 chrome_line = "^[ \\t]*─{8,}[ \\t]*$"
 rules = [
-  { state = "idle", pattern = "(?ms)^[ \\t]*Resumed session[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
+  { state = "idle", pattern = "(?ms)^[ \\t]*Resumed session[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
   { state = "waiting", pattern = "(?ms)^[ \\t]*Project trust[ \\t]*\\n.*\\n─{8,}[ \\t]*(?:\\n[ \\t]*)*\\z" },
-  { state = "errored", pattern = "(?ms)^[ \\t]*Error:[^\\n]*(?:\\n[ \\t]+[^ \\t\\n][^\\n]*){0,8}\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
-  { state = "errored", pattern = "(?ms)^[ \\t]*[^\\n]*rate limit reached[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
-  { state = "waiting", pattern = "(?ms)\\?[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
-  { state = "working", pattern = "(?ms)^[ \\t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*\\n[^\\n]*\\n[^\\n]*[ \\t]*(?:\\n[ \\t]*)*\\z" },
+  { state = "errored", pattern = "(?ms)^[ \\t]*Error:[^\\n]*(?:\\n[ \\t]+[^ \\t\\n][^\\n]*){0,8}\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
+  { state = "errored", pattern = "(?ms)^[ \\t]*[^\\n]*rate limit reached[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
+  { state = "waiting", pattern = "(?ms)\\?[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
+  { state = "working", pattern = "(?ms)^[ \\t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
 ]
 
 [tools.command-code]

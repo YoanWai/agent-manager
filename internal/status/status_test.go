@@ -539,6 +539,12 @@ func TestPiPanes(t *testing.T) {
 		{"error with trailing blanks", "Error: request failed" + editor + "\n\n", Errored},
 		{"old error", "Error: first attempt failed\n\nRetry completed." + editor, Finished},
 		{"historical error frame", "Error: request failed" + editor + "\n\nImplementation complete." + editor, Finished},
+		{"active turn behind a 3-line extension footer",
+			" ⠴ Working...\n\n─────────────────────────────────\n \n─────────────────────────────────\n~/scratch/2026-08-26-agent-man...\n↑12 ↓7.7k R77k W16k CH99.2% $0...\nhydra:navigator hit 89.0% (las...", Working},
+		{"active turn behind a 2-line footer stays covered",
+			" ⠴ Working...\n\n─────────────────────────────────\n \n─────────────────────────────────\n~/scratch/2026-08-26-agent-man...\n↑12 ↓7.7k R77k W16k CH99.2% $0...", Working},
+		{"resting turn behind a 3-line extension footer",
+			"Implementation complete." + editor + "\nhydra:navigator hit 89.0% (last hour)", Finished},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
