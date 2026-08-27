@@ -934,8 +934,9 @@ func TestCaptureAgentSessionIDsSkipsARetiredConversation(t *testing.T) {
 	created := time.Now().Add(-time.Hour)
 	restarted := time.Now().Add(-time.Second)
 	// The retired rollout's last write lands two seconds before the restart,
-	// inside the clock slack the capture window allows.
-	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-old.jsonl"), "old-id", cwd, restarted.Add(-2*time.Second))
+	// inside the clock slack a plain capture window would allow.
+	oldMtime := restarted.Add(-2 * time.Second)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-old.jsonl"), "old-id", cwd, oldMtime)
 	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-new.jsonl"), "new-id", cwd, restarted.Add(time.Second))
 
 	if err := st.CreateSession(store.Session{ID: "sess", Name: "s", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: created, AgentSessionID: "old-id"}); err != nil {
@@ -944,14 +945,24 @@ func TestCaptureAgentSessionIDsSkipsARetiredConversation(t *testing.T) {
 	if err := st.RestartAgent("sess", "", restarted); err != nil {
 		t.Fatal(err)
 	}
+	// The pre-launch snapshot holds what the store had before the restart;
+	// the fresh rollout is unseen, so it qualifies.
+	if err := st.SetRelaunchSnapshot("sess", map[string]int64{"old-id": oldMtime.UnixNano()}); err != nil {
+		t.Fatal(err)
+	}
 	sess, err := st.Get("sess")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}}
-	if _, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil {
-		t.Fatal(err)
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]string{}}
+	// First sighting stores the candidate without binding.
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
+		t.Fatalf("first pass captured %d err=%v, want 0 without a bind", captured, err)
+	}
+	// The second consecutive pass agrees and binds.
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 1 {
+		t.Fatalf("second pass captured %d err=%v, want 1", captured, err)
 	}
 	got, err := st.Get("sess")
 	if err != nil {
@@ -959,6 +970,9 @@ func TestCaptureAgentSessionIDsSkipsARetiredConversation(t *testing.T) {
 	}
 	if got.AgentSessionID != "new-id" {
 		t.Fatalf("captured %q, want new-id", got.AgentSessionID)
+	}
+	if len(got.RelaunchSnapshot) != 0 {
+		t.Fatalf("a bound conversation must clear the snapshot, still holds %v", got.RelaunchSnapshot)
 	}
 }
 
@@ -1035,12 +1049,17 @@ func TestCaptureAgentSessionIDsRefusesAnAmbiguousResume(t *testing.T) {
 	if err := st.SetAgentLaunchedAt("sess", relaunched); err != nil {
 		t.Fatal(err)
 	}
+	// The snapshot holds an empty pre-launch state, so both conversations
+	// written after it qualify and neither may win.
+	if err := st.SetRelaunchSnapshot("sess", map[string]int64{}); err != nil {
+		t.Fatal(err)
+	}
 	sess, err := st.Get("sess")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]string{}}
 	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}})
 	if err != nil {
 		t.Fatal(err)
@@ -1057,8 +1076,8 @@ func TestCaptureAgentSessionIDsRefusesAnAmbiguousResume(t *testing.T) {
 	}
 }
 
-// With a single conversation touched after the relaunch the resumed session
-// has exactly one answer, and it binds.
+// With a single conversation whose activity outran the pre-launch snapshot
+// the resumed session has exactly one answer, and two agreeing passes bind.
 func TestCaptureAgentSessionIDsBindsTheSingleResumedConversation(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -1072,7 +1091,119 @@ func TestCaptureAgentSessionIDsBindsTheSingleResumedConversation(t *testing.T) {
 
 	created := time.Now().Add(-time.Hour)
 	relaunched := time.Now().Add(-time.Second)
+	// The conversation sits untouched through the pre-launch snapshot, then
+	// turns again after the relaunch: the snapshot's value is what the
+	// resumed write must outrun.
+	preMtime := relaunched.Add(-time.Hour)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-1.jsonl"), "resumed-id", cwd, preMtime)
+
+	if err := st.CreateSession(store.Session{ID: "sess", Name: "s", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: created}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAgentLaunchedAt("sess", relaunched); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRelaunchSnapshot("sess", map[string]int64{"resumed-id": preMtime.UnixNano()}); err != nil {
+		t.Fatal(err)
+	}
 	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-1.jsonl"), "resumed-id", cwd, relaunched.Add(time.Second))
+	sess, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]string{}}
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
+		t.Fatalf("first pass captured %d err=%v, want 0 without a bind", captured, err)
+	}
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 1 {
+		t.Fatalf("second pass captured %d err=%v, want 1", captured, err)
+	}
+	got, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "resumed-id" {
+		t.Fatalf("captured %q, want resumed-id", got.AgentSessionID)
+	}
+}
+
+// A sighting is only the first of two agreeing passes: when the next pass
+// finds ambiguity instead, the sighting is dropped rather than letting the
+// earlier candidate slide through on a stale vote.
+func TestCaptureAgentSessionIDsClearsTheSightingWhenAmbiguityFollows(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	created := time.Now().Add(-time.Hour)
+	relaunched := time.Now().Add(-time.Second)
+	preMtime := relaunched.Add(-time.Hour)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-1.jsonl"), "id-1", cwd, preMtime)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-2.jsonl"), "id-2", cwd, preMtime)
+
+	if err := st.CreateSession(store.Session{ID: "sess", Name: "s", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: created}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAgentLaunchedAt("sess", relaunched); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRelaunchSnapshot("sess", map[string]int64{"id-1": preMtime.UnixNano(), "id-2": preMtime.UnixNano()}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]string{}}
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-1.jsonl"), "id-1", cwd, relaunched.Add(time.Second))
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
+		t.Fatalf("first pass captured %d err=%v, want 0 without a bind", captured, err)
+	}
+	if p.recaptureSeen["sess"] != "id-1" {
+		t.Fatalf("first pass must store the id-1 sighting, got %q", p.recaptureSeen["sess"])
+	}
+	// The second conversation turns too: the pass now sees two candidates
+	// and must drop the stored sighting instead of honoring it.
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-2.jsonl"), "id-2", cwd, relaunched.Add(2*time.Second))
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
+		t.Fatalf("ambiguous pass captured %d err=%v, want 0", captured, err)
+	}
+	if _, still := p.recaptureSeen["sess"]; still {
+		t.Fatal("an ambiguous pass must clear the stored sighting")
+	}
+	got, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "" {
+		t.Fatalf("session bound to %q, want it left for the next pass", got.AgentSessionID)
+	}
+}
+
+// A relaunched session with no pre-launch snapshot predates snapshot
+// capture, and recapture must refuse rather than guess from a bare cutoff.
+func TestCaptureAgentSessionIDsRefusesARelaunchWithoutASnapshot(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	created := time.Now().Add(-time.Hour)
+	relaunched := time.Now().Add(-time.Second)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-1.jsonl"), "some-id", cwd, relaunched.Add(time.Second))
 
 	if err := st.CreateSession(store.Session{ID: "sess", Name: "s", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: created}); err != nil {
 		t.Fatal(err)
@@ -1085,20 +1216,16 @@ func TestCaptureAgentSessionIDsBindsTheSingleResumedConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}}
-	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if captured != 1 {
-		t.Fatalf("captured %d, want 1", captured)
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]string{}}
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
+		t.Fatalf("captured %d err=%v, want 0 without a snapshot", captured, err)
 	}
 	got, err := st.Get("sess")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.AgentSessionID != "resumed-id" {
-		t.Fatalf("captured %q, want resumed-id", got.AgentSessionID)
+	if got.AgentSessionID != "" {
+		t.Fatalf("session bound to %q, want it refused", got.AgentSessionID)
 	}
 }
 

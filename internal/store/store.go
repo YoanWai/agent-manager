@@ -41,6 +41,12 @@ type Session struct {
 	// RetiredAgentSessionID is the conversation a restart left behind, kept so
 	// id capture never binds the fresh run back to the context it dropped.
 	RetiredAgentSessionID string
+	// RelaunchSnapshot is the tool's store state taken right before the
+	// relaunch pane started: each conversation the directory held with its
+	// last activity time. Recapture binds only conversations whose activity
+	// outruns this, which tells the conversation the picker selected apart
+	// from ones that merely predate the launch.
+	RelaunchSnapshot map[string]int64
 	// WorktreeRepo and WorktreeBranch are set for sessions running in a
 	// worktree Agent Manager created. Forks share these values so the last
 	// session to leave can clean up the worktree and its am/ branch.
@@ -165,6 +171,7 @@ CREATE TABLE IF NOT EXISTS settings (
 		`ALTER TABLE groups ADD COLUMN worktree TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN agent_launched_at INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN retired_agent_session_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN relaunch_snapshot TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN pending_inputs TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE sessions ADD COLUMN pending_claimed INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`,
@@ -444,7 +451,7 @@ func (s *Store) AddGroup(name, path, worktree string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -461,11 +468,14 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 		var sess Session
 		var archived, acked, pendingClaimed int
 		var created, lastStatus, agentLaunched int64
-		var pendingInputs string
+		var pendingInputs, relaunchSnapshot string
 		if err := rows.Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd,
 			&sess.Group, &sess.Status, &archived, &acked, &created, &lastStatus,
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
-			&agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket); err != nil {
+			&agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket); err != nil {
+			return nil, err
+		}
+		if err := decodeRelaunchSnapshot(relaunchSnapshot, &sess); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(pendingInputs), &sess.PendingInputs); err != nil {
@@ -486,14 +496,17 @@ func (s *Store) Get(id string) (Session, error) {
 	var sess Session
 	var archived, acked, pendingClaimed int
 	var created, lastStatus, agentLaunched int64
-	var pendingInputs string
+	var pendingInputs, relaunchSnapshot string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
-		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket)
+		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed, &sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket)
 	if err != nil {
+		return Session{}, err
+	}
+	if err := decodeRelaunchSnapshot(relaunchSnapshot, &sess); err != nil {
 		return Session{}, err
 	}
 	if err := json.Unmarshal([]byte(pendingInputs), &sess.PendingInputs); err != nil {
@@ -602,6 +615,40 @@ func encodePendingInputs(inputs []string) (string, error) {
 	}
 	encoded, err := json.Marshal(inputs)
 	return string(encoded), err
+}
+
+// decodeRelaunchSnapshot fills the session's snapshot map from the stored
+// JSON. An empty column means the relaunch predates snapshot capture, which
+// recapture treats as "nothing known" and refuses to guess from.
+func decodeRelaunchSnapshot(encoded string, sess *Session) error {
+	if encoded == "" {
+		sess.RelaunchSnapshot = nil
+		return nil
+	}
+	if err := json.Unmarshal([]byte(encoded), &sess.RelaunchSnapshot); err != nil {
+		return fmt.Errorf("decode relaunch snapshot for session %s: %w", sess.ID, err)
+	}
+	return nil
+}
+
+// SetRelaunchSnapshot stores the tool-store state taken right before a
+// relaunch, and clears it once the conversation has bound or the launch is
+// over. Written before the pane starts, so it never races the launch itself.
+func (s *Store) SetRelaunchSnapshot(id string, snapshot map[string]int64) error {
+	encoded := ""
+	if len(snapshot) > 0 {
+		data, err := json.Marshal(snapshot)
+		if err != nil {
+			return err
+		}
+		encoded = string(data)
+	}
+	res, err := s.db.Exec(
+		`UPDATE sessions SET relaunch_snapshot = ? WHERE id = ?`, encoded, id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res, id)
 }
 
 func (s *Store) UpdateStatus(id, newStatus string) error {

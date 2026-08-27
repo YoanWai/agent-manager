@@ -81,32 +81,377 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 	}
 }
 
-// Recapture returns the conversation a resumed session picked, without the
-// earliest-write tie-break Capture applies: a resumed session replays an
-// existing conversation rather than minting one, so the store holds a
-// single conversation touched at or after the relaunch at best, and a
-// shared cwd can hold several. When the candidates for cwd and time do not
-// come to exactly one, the row is left without an id rather than guessing.
-// hermes keeps no write signal to tell a resumed conversation apart, so it
-// falls through to captureHermes and its launch-fresh sessions only.
-func Recapture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	cutoff := launchedAt.Add(-clockSlack)
+// Snapshot records every conversation the store currently holds for cwd
+// with its last activity time, taken just before a relaunch pane starts.
+// Recapture then admits only conversations whose activity outruns what this
+// saw, which tells the conversation the picker selected apart from ones that
+// merely predate the launch. ok=false when the store cannot be read; the
+// relaunch proceeds without a snapshot and recapture refuses to guess.
+func Snapshot(sessionStore, cwd string) (map[string]int64, bool) {
+	switch sessionStore {
+	case "codex":
+		return snapshotCodex(codexRoot(), cwd)
+	case "opencode":
+		return snapshotOpencode(cwd)
+	case "gemini":
+		return snapshotGemini(geminiRoot(), cwd)
+	case "hermes":
+		return snapshotHermes(hermesStateDB(), cwd)
+	case "command-code":
+		return snapshotCommandCode(commandCodeRoot(), cwd)
+	default:
+		return nil, false
+	}
+}
+
+// Recapture returns the conversation a resumed session picked, admitting
+// only conversations whose activity outruns the pre-launch snapshot: picking
+// an existing conversation shows as activity after the snapshot, where a
+// plain launch cutoff would also admit conversations merely predating the
+// launch. A nil snapshot or several qualifying conversations refuses rather
+// than guess. hermes carries no file mtime to touch, so its signal is the
+// activity columns in state.db.
+func Recapture(sessionStore, cwd string, snapshot map[string]int64, claimed map[string]bool) (string, bool) {
+	if snapshot == nil {
+		return "", false
+	}
 	var cands []candidate
 	switch sessionStore {
 	case "codex":
-		cands = codexCandidates(codexRoot(), cwd, cutoff, claimed)
+		cands = recaptureCodex(codexRoot(), cwd, snapshot, claimed)
 	case "gemini":
-		cands = geminiCandidates(geminiRoot(), cwd, cutoff, claimed)
+		cands = recaptureGemini(geminiRoot(), cwd, snapshot, claimed)
 	case "command-code":
-		cands = commandCodeCandidates(commandCodeRoot(), cwd, cutoff, claimed)
+		cands = recaptureCommandCode(commandCodeRoot(), cwd, snapshot, claimed)
 	case "opencode":
-		return recaptureOpencode(cwd, cutoff, claimed)
+		cands = recaptureOpencode(cwd, snapshot, claimed)
 	case "hermes":
-		return captureHermes(hermesStateDB(), cwd, launchedAt, claimed)
+		return recaptureHermes(hermesStateDB(), cwd, snapshot, claimed)
 	default:
 		return "", false
 	}
 	if len(cands) != 1 {
+		return "", false
+	}
+	return cands[0].id, true
+}
+
+// afterSnapshot reports whether the conversation's activity postdates what
+// the pre-launch snapshot recorded: a conversation the snapshot never saw
+// was minted since, and a seen one must have moved since it was recorded.
+func afterSnapshot(snapshot map[string]int64, id string, activity int64) bool {
+	prev, seen := snapshot[id]
+	return !seen || activity > prev
+}
+
+func snapshotCodex(root, cwd string) (map[string]int64, bool) {
+	if root == "" {
+		return nil, false
+	}
+	wantCwd := resolvePath(cwd)
+	snapshot := map[string]int64{}
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasPrefix(name, "rollout-") || !strings.HasSuffix(name, ".jsonl") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		id, metaCwd, ok := codexMeta(path)
+		if !ok || resolvePath(metaCwd) != wantCwd {
+			return nil
+		}
+		snapshot[id] = info.ModTime().UnixNano()
+		return nil
+	})
+	return snapshot, true
+}
+
+func recaptureCodex(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
+	if root == "" {
+		return nil
+	}
+	wantCwd := resolvePath(cwd)
+	var cands []candidate
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasPrefix(name, "rollout-") || !strings.HasSuffix(name, ".jsonl") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		id, metaCwd, ok := codexMeta(path)
+		if !ok || resolvePath(metaCwd) != wantCwd || claimed[id] {
+			return nil
+		}
+		if !afterSnapshot(snapshot, id, info.ModTime().UnixNano()) {
+			return nil
+		}
+		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
+		return nil
+	})
+	return cands
+}
+
+func snapshotCommandCode(root, cwd string) (map[string]int64, bool) {
+	if root == "" {
+		return nil, false
+	}
+	wantCwd := resolvePath(cwd)
+	snapshot := map[string]int64{}
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasSuffix(name, ".jsonl") || strings.Contains(name, ".checkpoints.") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		id, sessionCwd, ok := commandCodeMeta(path)
+		if !ok || resolvePath(sessionCwd) != wantCwd {
+			return nil
+		}
+		snapshot[id] = info.ModTime().UnixNano()
+		return nil
+	})
+	return snapshot, true
+}
+
+func recaptureCommandCode(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
+	if root == "" {
+		return nil
+	}
+	wantCwd := resolvePath(cwd)
+	var cands []candidate
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasSuffix(name, ".jsonl") || strings.Contains(name, ".checkpoints.") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		id, sessionCwd, ok := commandCodeMeta(path)
+		if !ok || resolvePath(sessionCwd) != wantCwd || claimed[id] {
+			return nil
+		}
+		if !afterSnapshot(snapshot, id, info.ModTime().UnixNano()) {
+			return nil
+		}
+		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
+		return nil
+	})
+	return cands
+}
+
+func snapshotGemini(root, cwd string) (map[string]int64, bool) {
+	if root == "" {
+		return nil, false
+	}
+	wantHash := geminiProjectHash(cwd)
+	snapshot := map[string]int64{}
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".jsonl") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		id, hash, ok := geminiSessionMeta(path)
+		if !ok || hash != wantHash {
+			return nil
+		}
+		snapshot[id] = info.ModTime().UnixNano()
+		return nil
+	})
+	return snapshot, true
+}
+
+func recaptureGemini(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
+	if root == "" {
+		return nil
+	}
+	wantHash := geminiProjectHash(cwd)
+	var cands []candidate
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".jsonl") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		id, hash, ok := geminiSessionMeta(path)
+		if !ok || hash != wantHash || claimed[id] {
+			return nil
+		}
+		if !afterSnapshot(snapshot, id, info.ModTime().UnixNano()) {
+			return nil
+		}
+		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
+		return nil
+	})
+	return cands
+}
+
+func snapshotOpencode(cwd string) (map[string]int64, bool) {
+	entries, ok := opencodeSessionListJSON(cwd)
+	if !ok {
+		return nil, false
+	}
+	wantCwd := resolvePath(cwd)
+	snapshot := map[string]int64{}
+	for _, e := range entries {
+		if e.ID == "" || resolvePath(e.Directory) != wantCwd {
+			continue
+		}
+		snapshot[e.ID] = e.Updated * int64(time.Millisecond)
+	}
+	return snapshot, true
+}
+
+// recaptureOpencode is the snapshot's counterpart: the same one-subprocess
+// list, admitting the conversation whose update time outran the snapshot.
+func recaptureOpencode(cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
+	entries, ok := opencodeSessionListJSON(cwd)
+	if !ok {
+		return nil
+	}
+	wantCwd := resolvePath(cwd)
+	var cands []candidate
+	for _, e := range entries {
+		if e.ID == "" || claimed[e.ID] || resolvePath(e.Directory) != wantCwd {
+			continue
+		}
+		updated := e.Updated * int64(time.Millisecond)
+		if !afterSnapshot(snapshot, e.ID, updated) {
+			continue
+		}
+		cands = append(cands, candidate{id: e.ID, modTime: time.Unix(0, updated)})
+	}
+	return cands
+}
+
+// openHermesRO opens the hermes state database read-only, so the manager's
+// reads never contend with the tool's own writers.
+func openHermesRO(path string) (*sql.DB, error) {
+	if path == "" {
+		return nil, fmt.Errorf("no hermes state database path")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return nil, err
+	}
+	dsn := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
+	query := dsn.Query()
+	query.Set("mode", "ro")
+	dsn.RawQuery = query.Encode()
+	return sql.Open("sqlite", dsn.String())
+}
+
+// hermesActivitySQL is the freshest activity hermes itself computes: the
+// mid-turn heartbeat, then the newest message timestamp, then the session
+// start. A resumed conversation's first turn pushes one of the first two.
+const hermesActivitySQL = `COALESCE(s.last_activity_at, (SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id), s.started_at)`
+
+func queryHermesActivity(db *sql.DB, ctx context.Context, cwd string, add func(id string, sessionCwd sql.NullString, activity float64) bool) error {
+	rows, err := db.QueryContext(ctx, `
+		SELECT s.id, s.cwd, `+hermesActivitySQL+`
+		FROM sessions s
+		WHERE s.source = 'cli'`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var sessionCwd sql.NullString
+		var activity float64
+		if err := rows.Scan(&id, &sessionCwd, &activity); err != nil {
+			return err
+		}
+		if !add(id, sessionCwd, activity) {
+			return nil
+		}
+	}
+	return rows.Err()
+}
+
+func snapshotHermes(path, cwd string) (map[string]int64, bool) {
+	db, err := openHermesRO(path)
+	if err != nil {
+		return nil, false
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	wantCwd := resolvePath(cwd)
+	snapshot := map[string]int64{}
+	err = queryHermesActivity(db, ctx, cwd, func(id string, sessionCwd sql.NullString, activity float64) bool {
+		if !sessionIDPattern.MatchString(id) || !sessionCwd.Valid || resolvePath(sessionCwd.String) != wantCwd {
+			return true
+		}
+		snapshot[id] = int64(activity * float64(time.Second))
+		return true
+	})
+	if err != nil {
+		return nil, false
+	}
+	return snapshot, true
+}
+
+// recaptureHermes admits the cwd's conversations whose activity columns
+// outran the snapshot: the resumed session is the one that turned again.
+func recaptureHermes(path, cwd string, snapshot map[string]int64, claimed map[string]bool) (string, bool) {
+	db, err := openHermesRO(path)
+	if err != nil {
+		return "", false
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	wantCwd := resolvePath(cwd)
+	var cands []candidate
+	err = queryHermesActivity(db, ctx, cwd, func(id string, sessionCwd sql.NullString, activity float64) bool {
+		if !sessionIDPattern.MatchString(id) || claimed[id] || !sessionCwd.Valid || resolvePath(sessionCwd.String) != wantCwd {
+			return true
+		}
+		activityNs := int64(activity * float64(time.Second))
+		if !afterSnapshot(snapshot, id, activityNs) {
+			return true
+		}
+		cands = append(cands, candidate{id: id, modTime: time.Unix(0, activityNs)})
+		return true
+	})
+	if err != nil || len(cands) != 1 {
 		return "", false
 	}
 	return cands[0].id, true
@@ -332,6 +677,29 @@ var opencodeListIDs = func(cwd string) ([]string, bool) {
 	return dedupeOrdered(opencodeIDPattern.FindAllString(string(out), -1)), true
 }
 
+// opencodeListEntry is one row of `opencode session list --format json`,
+// which carries the update time snapshot and recapture compare against in
+// one subprocess, where the table output keeps only the id. Updated is a
+// Unix timestamp in milliseconds, verified against the real CLI.
+type opencodeListEntry struct {
+	ID        string `json:"id"`
+	Directory string `json:"directory"`
+	Updated   int64  `json:"updated"`
+}
+
+// A package variable so tests substitute canned output.
+var opencodeSessionListJSON = func(cwd string) ([]opencodeListEntry, bool) {
+	out, err := runOpencode(cwd, "session", "list", "--format", "json")
+	if err != nil {
+		return nil, false
+	}
+	var entries []opencodeListEntry
+	if err := json.Unmarshal(out, &entries); err != nil {
+		return nil, false
+	}
+	return entries, true
+}
+
 // A package variable so tests substitute canned output.
 var opencodeSessionMeta = func(cwd, id string) (directory string, created, updated time.Time, ok bool) {
 	out, err := runOpencodeHead(cwd, "export", id)
@@ -530,35 +898,6 @@ func captureOpencode(cwd string, launchedAt time.Time, claimed map[string]bool) 
 		cands = append(cands, candidate{id: id, modTime: created})
 	}
 	return pickEarliest(cands)
-}
-
-// The write signal is info.time.updated, which advances each time the
-// conversation is reopened, so a resumed conversation is the one whose
-// update time falls at or after the restart.
-func recaptureOpencode(cwd string, cutoff time.Time, claimed map[string]bool) (string, bool) {
-	ids, ok := opencodeListIDs(cwd)
-	if !ok {
-		return "", false
-	}
-	wantCwd := resolvePath(cwd)
-	var cands []candidate
-	for i, id := range ids {
-		if i >= opencodeScanLimit {
-			break
-		}
-		if claimed[id] {
-			continue
-		}
-		dir, _, updated, ok := opencodeSessionMeta(cwd, id)
-		if !ok || resolvePath(dir) != wantCwd || updated.Before(cutoff) {
-			continue
-		}
-		cands = append(cands, candidate{id: id, modTime: updated})
-	}
-	if len(cands) != 1 {
-		return "", false
-	}
-	return cands[0].id, true
 }
 
 func geminiRoot() string {

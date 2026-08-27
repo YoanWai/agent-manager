@@ -11,6 +11,9 @@ import (
 type hermesRow struct {
 	id, source, cwd string
 	started         time.Time
+	// activity is last_activity_at; zero leaves it NULL, so the activity
+	// reads as the session start until its first heartbeat.
+	activity time.Time
 }
 
 func writeHermesStore(t *testing.T, rows ...hermesRow) string {
@@ -25,17 +28,57 @@ func writeHermesStore(t *testing.T, rows ...hermesRow) string {
 		id TEXT PRIMARY KEY,
 		source TEXT NOT NULL,
 		cwd TEXT,
-		started_at REAL NOT NULL
+		started_at REAL NOT NULL,
+		last_activity_at REAL
+	);
+	CREATE TABLE messages (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT NOT NULL,
+		timestamp REAL NOT NULL
 	)`); err != nil {
 		t.Fatal(err)
 	}
 	for _, row := range rows {
-		if _, err := db.Exec(`INSERT INTO sessions (id, source, cwd, started_at) VALUES (?, ?, ?, ?)`,
-			row.id, row.source, row.cwd, float64(row.started.UnixNano())/float64(time.Second)); err != nil {
+		var activity any
+		if !row.activity.IsZero() {
+			activity = float64(row.activity.UnixNano()) / float64(time.Second)
+		}
+		if _, err := db.Exec(`INSERT INTO sessions (id, source, cwd, started_at, last_activity_at) VALUES (?, ?, ?, ?, ?)`,
+			row.id, row.source, row.cwd, float64(row.started.UnixNano())/float64(time.Second), activity); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return path
+}
+
+// setHermesActivity stamps a session's activity heartbeat, as a resumed
+// session's first turn does.
+func setHermesActivity(t *testing.T, path, id string, at time.Time) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`UPDATE sessions SET last_activity_at = ? WHERE id = ?`,
+		float64(at.UnixNano())/float64(time.Second), id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// addHermesMessage appends a message row, the other half of hermes's
+// activity signal for a session whose heartbeat has not stamped yet.
+func addHermesMessage(t *testing.T, path, sessionID string, at time.Time) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO messages (session_id, timestamp) VALUES (?, ?)`,
+		sessionID, float64(at.UnixNano())/float64(time.Second)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeFile(t *testing.T, path, content string, modTime time.Time) {
@@ -217,6 +260,15 @@ func stubOpencode(t *testing.T, ids []string, metas map[string]ocMeta) {
 	t.Cleanup(func() { opencodeListIDs, opencodeSessionMeta = listSaved, metaSaved })
 }
 
+// stubOpencodeJSON substitutes the `session list --format json` output
+// snapshot and recapture read.
+func stubOpencodeJSON(t *testing.T, entries []opencodeListEntry) {
+	t.Helper()
+	saved := opencodeSessionListJSON
+	opencodeSessionListJSON = func(string) ([]opencodeListEntry, bool) { return entries, true }
+	t.Cleanup(func() { opencodeSessionListJSON = saved })
+}
+
 func TestCaptureOpencodePicksSessionAfterLaunchInCwd(t *testing.T) {
 	launch := time.Now()
 	stubOpencode(t, []string{"ses_ours", "ses_other", "ses_old"}, map[string]ocMeta{
@@ -267,11 +319,11 @@ func TestCaptureUnknownStore(t *testing.T) {
 func TestCaptureHermesPicksSessionAfterLaunchInCwd(t *testing.T) {
 	launch := time.Now()
 	path := writeHermesStore(t,
-		hermesRow{"old", "cli", "/repo", launch.Add(-time.Hour)},
-		hermesRow{"just-before", "cli", "/repo", launch.Add(-time.Second)},
-		hermesRow{"other", "cli", "/elsewhere", launch.Add(time.Second)},
-		hermesRow{"tui", "tui", "/repo", launch.Add(time.Second)},
-		hermesRow{"ours", "cli", "/repo", launch.Add(2 * time.Second)},
+		hermesRow{id: "old", source: "cli", cwd: "/repo", started: launch.Add(-time.Hour)},
+		hermesRow{id: "just-before", source: "cli", cwd: "/repo", started: launch.Add(-time.Second)},
+		hermesRow{id: "other", source: "cli", cwd: "/elsewhere", started: launch.Add(time.Second)},
+		hermesRow{id: "tui", source: "tui", cwd: "/repo", started: launch.Add(time.Second)},
+		hermesRow{id: "ours", source: "cli", cwd: "/repo", started: launch.Add(2 * time.Second)},
 	)
 
 	id, ok := captureHermes(path, "/repo", launch, map[string]bool{})
@@ -283,8 +335,8 @@ func TestCaptureHermesPicksSessionAfterLaunchInCwd(t *testing.T) {
 func TestCaptureHermesSkipsClaimed(t *testing.T) {
 	launch := time.Now()
 	path := writeHermesStore(t,
-		hermesRow{"first", "cli", "/repo", launch.Add(time.Second)},
-		hermesRow{"second", "cli", "/repo", launch.Add(2 * time.Second)},
+		hermesRow{id: "first", source: "cli", cwd: "/repo", started: launch.Add(time.Second)},
+		hermesRow{id: "second", source: "cli", cwd: "/repo", started: launch.Add(2 * time.Second)},
 	)
 
 	id, ok := captureHermes(path, "/repo", launch, map[string]bool{"first": true})
@@ -371,186 +423,313 @@ func TestCaptureGeminiSkipsClaimed(t *testing.T) {
 // replays an existing conversation rather than minting one, so a shared cwd
 // can hold several touched entries and none of them may be guessed from.
 
-func TestRecaptureCodexSingleCandidate(t *testing.T) {
+func TestRecaptureCodexBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CODEX_HOME", root)
-	launch := time.Now()
-	// An older conversation in the same cwd predates the relaunch: not ours.
-	writeFile(t, filepath.Join(root, "sessions", "2026/07/18/rollout-old.jsonl"),
-		codexRollout("old-uuid", "/repo"), launch.Add(-time.Hour))
-	// Ours: same cwd, touched just after the relaunch.
-	writeFile(t, filepath.Join(root, "sessions", "2026/07/18/rollout-ours.jsonl"),
-		codexRollout("ours-uuid", "/repo"), launch.Add(time.Second))
-
-	id, ok := Recapture("codex", "/repo", launch, map[string]bool{})
-	if !ok || id != "ours-uuid" {
-		t.Fatalf("got id=%q ok=%v, want ours-uuid true", id, ok)
+	base := time.Now().Add(-time.Hour)
+	// Written one second before the relaunch: what the snapshot sees, and
+	// the exact shape of the stale-binding bug — it must not bind untouched.
+	writeFile(t, filepath.Join(root, "sessions", "2026/07/18/rollout-pre.jsonl"),
+		codexRollout("pre-uuid", "/repo"), base)
+	snapshot, ok := Snapshot("codex", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	if id, ok := Recapture("codex", "/repo", snapshot, map[string]bool{}); ok {
+		t.Fatalf("a conversation that merely predates the relaunch must not bind, got %q", id)
+	}
+	// The picker's choice turns again: its rollout outruns the snapshot.
+	writeFile(t, filepath.Join(root, "sessions", "2026/07/18/rollout-pre.jsonl"),
+		codexRollout("pre-uuid", "/repo"), base.Add(10*time.Second))
+	id, ok := Recapture("codex", "/repo", snapshot, map[string]bool{})
+	if !ok || id != "pre-uuid" {
+		t.Fatalf("got id=%q ok=%v, want pre-uuid true", id, ok)
 	}
 }
 
-func TestRecaptureCodexRefusesTwoCandidates(t *testing.T) {
+func TestRecaptureCodexMintedAfterSnapshotBinds(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CODEX_HOME", root)
-	launch := time.Now()
+	base := time.Now().Add(-time.Hour)
+	writeFile(t, filepath.Join(root, "sessions", "a/rollout-old.jsonl"),
+		codexRollout("old-uuid", "/repo"), base)
+	snapshot, ok := Snapshot("codex", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	// A restart mints a fresh conversation: unseen by the snapshot, it
+	// qualifies without needing an advance.
+	writeFile(t, filepath.Join(root, "sessions", "a/rollout-new.jsonl"),
+		codexRollout("new-uuid", "/repo"), base.Add(time.Second))
+	id, ok := Recapture("codex", "/repo", snapshot, map[string]bool{})
+	if !ok || id != "new-uuid" {
+		t.Fatalf("got id=%q ok=%v, want new-uuid true", id, ok)
+	}
+}
+
+func TestRecaptureCodexRefusesTwoThatOutranTheSnapshot(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CODEX_HOME", root)
+	base := time.Now().Add(-time.Hour)
 	writeFile(t, filepath.Join(root, "sessions", "a/rollout-1.jsonl"),
-		codexRollout("first-uuid", "/repo"), launch.Add(time.Second))
+		codexRollout("first-uuid", "/repo"), base)
 	writeFile(t, filepath.Join(root, "sessions", "a/rollout-2.jsonl"),
-		codexRollout("second-uuid", "/repo"), launch.Add(2*time.Second))
+		codexRollout("second-uuid", "/repo"), base)
+	snapshot, ok := Snapshot("codex", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	writeFile(t, filepath.Join(root, "sessions", "a/rollout-1.jsonl"),
+		codexRollout("first-uuid", "/repo"), base.Add(10*time.Second))
+	writeFile(t, filepath.Join(root, "sessions", "a/rollout-2.jsonl"),
+		codexRollout("second-uuid", "/repo"), base.Add(20*time.Second))
 
-	if id, ok := Recapture("codex", "/repo", launch, map[string]bool{}); ok {
+	if id, ok := Recapture("codex", "/repo", snapshot, map[string]bool{}); ok {
 		t.Fatalf("expected no match for two candidates, got %q", id)
 	}
 }
 
-func TestRecaptureCodexNoCandidate(t *testing.T) {
+func TestRecaptureRefusesWithoutSnapshot(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CODEX_HOME", root)
-	launch := time.Now()
 	writeFile(t, filepath.Join(root, "sessions", "a/rollout-1.jsonl"),
-		codexRollout("old-uuid", "/repo"), launch.Add(-time.Hour))
-
-	if id, ok := Recapture("codex", "/repo", launch, map[string]bool{}); ok {
-		t.Fatalf("expected no match, got %q", id)
+		codexRollout("some-uuid", "/repo"), time.Now())
+	// A nil snapshot means the relaunch predates snapshot capture; recapture
+	// must refuse rather than guess from a bare cutoff.
+	if id, ok := Recapture("codex", "/repo", nil, map[string]bool{}); ok {
+		t.Fatalf("expected no match without a snapshot, got %q", id)
 	}
 }
 
-func TestRecaptureCodexWrongCwd(t *testing.T) {
+func TestSnapshotCodexRecordsEachCwdConversation(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CODEX_HOME", root)
-	launch := time.Now()
+	base := time.Now().Add(-time.Hour)
 	writeFile(t, filepath.Join(root, "sessions", "a/rollout-1.jsonl"),
-		codexRollout("x", "/other"), launch.Add(time.Second))
+		codexRollout("first-uuid", "/repo"), base)
+	writeFile(t, filepath.Join(root, "sessions", "a/rollout-2.jsonl"),
+		codexRollout("second-uuid", "/other"), base.Add(time.Second))
 
-	if id, ok := Recapture("codex", "/repo", launch, map[string]bool{}); ok {
-		t.Fatalf("expected no match, got %q", id)
+	snapshot, ok := Snapshot("codex", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	if len(snapshot) != 1 || snapshot["first-uuid"] != base.UnixNano() {
+		t.Fatalf("got %v, want only first-uuid at %d", snapshot, base.UnixNano())
 	}
 }
 
-func TestRecaptureCommandCodeSingleCandidate(t *testing.T) {
+func TestRecaptureCommandCodeBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	root := commandCodeRoot()
-	launch := time.Now()
-	// An older conversation in the same cwd predates the relaunch: not ours.
+	base := time.Now().Add(-time.Hour)
 	writeFile(t, filepath.Join(root, "old-project", "old.jsonl"),
-		commandCodeSession("old-uuid", "/repo"), launch.Add(-time.Hour))
-	// Ours: same cwd, touched just after the relaunch.
-	writeFile(t, filepath.Join(root, "repo-project", "ours.jsonl"),
-		commandCodeSession("ours-uuid", "/repo"), launch.Add(2*time.Second))
-
-	id, ok := Recapture("command-code", "/repo", launch, map[string]bool{})
-	if !ok || id != "ours-uuid" {
-		t.Fatalf("got id=%q ok=%v, want ours-uuid true", id, ok)
+		commandCodeSession("old-uuid", "/repo"), base)
+	snapshot, ok := Snapshot("command-code", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	if id, ok := Recapture("command-code", "/repo", snapshot, map[string]bool{}); ok {
+		t.Fatalf("a conversation that merely predates the relaunch must not bind, got %q", id)
+	}
+	// The picked conversation's transcript appends on the resumed turn.
+	writeFile(t, filepath.Join(root, "old-project", "old.jsonl"),
+		commandCodeSession("old-uuid", "/repo"), base.Add(10*time.Second))
+	id, ok := Recapture("command-code", "/repo", snapshot, map[string]bool{})
+	if !ok || id != "old-uuid" {
+		t.Fatalf("got id=%q ok=%v, want old-uuid true", id, ok)
 	}
 }
 
-func TestRecaptureCommandCodeRefusesTwoCandidates(t *testing.T) {
+func TestRecaptureCommandCodeRefusesTwoThatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	root := commandCodeRoot()
-	launch := time.Now()
+	base := time.Now().Add(-time.Hour)
 	writeFile(t, filepath.Join(root, "a", "1.jsonl"),
-		commandCodeSession("first-uuid", "/repo"), launch.Add(time.Second))
+		commandCodeSession("first-uuid", "/repo"), base)
 	writeFile(t, filepath.Join(root, "a", "2.jsonl"),
-		commandCodeSession("second-uuid", "/repo"), launch.Add(2*time.Second))
+		commandCodeSession("second-uuid", "/repo"), base)
+	snapshot, ok := Snapshot("command-code", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	writeFile(t, filepath.Join(root, "a", "1.jsonl"),
+		commandCodeSession("first-uuid", "/repo"), base.Add(10*time.Second))
+	writeFile(t, filepath.Join(root, "a", "2.jsonl"),
+		commandCodeSession("second-uuid", "/repo"), base.Add(20*time.Second))
 
-	if id, ok := Recapture("command-code", "/repo", launch, map[string]bool{}); ok {
+	if id, ok := Recapture("command-code", "/repo", snapshot, map[string]bool{}); ok {
 		t.Fatalf("expected no match for two candidates, got %q", id)
 	}
 }
 
-func TestRecaptureGeminiSingleCandidate(t *testing.T) {
+func TestRecaptureGeminiBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	root := geminiRoot()
-	launch := time.Now()
+	base := time.Now().Add(-time.Hour)
 	oursHash := geminiProjectHash("/repo")
 	otherHash := geminiProjectHash("/elsewhere")
-	// An older conversation in the same project predates the relaunch: not ours.
 	writeFile(t, filepath.Join(root, "proj/chats/session-1-old.jsonl"),
-		geminiSessionFixture("old-uuid", oursHash), launch.Add(-time.Hour))
-	// A conversation in a different project touched after launch: not ours.
+		geminiSessionFixture("old-uuid", oursHash), base)
 	writeFile(t, filepath.Join(root, "proj/chats/session-2-other.jsonl"),
-		geminiSessionFixture("other-uuid", otherHash), launch.Add(time.Second))
-	// Ours: matching project hash, touched just after the relaunch.
-	writeFile(t, filepath.Join(root, "proj/chats/session-3-ours.jsonl"),
-		geminiSessionFixture("ours-uuid", oursHash), launch.Add(2*time.Second))
-
-	id, ok := Recapture("gemini", "/repo", launch, map[string]bool{})
-	if !ok || id != "ours-uuid" {
-		t.Fatalf("got id=%q ok=%v, want ours-uuid true", id, ok)
+		geminiSessionFixture("other-uuid", otherHash), base)
+	snapshot, ok := Snapshot("gemini", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	if id, ok := Recapture("gemini", "/repo", snapshot, map[string]bool{}); ok {
+		t.Fatalf("a conversation that merely predates the relaunch must not bind, got %q", id)
+	}
+	writeFile(t, filepath.Join(root, "proj/chats/session-1-old.jsonl"),
+		geminiSessionFixture("old-uuid", oursHash), base.Add(10*time.Second))
+	id, ok := Recapture("gemini", "/repo", snapshot, map[string]bool{})
+	if !ok || id != "old-uuid" {
+		t.Fatalf("got id=%q ok=%v, want old-uuid true", id, ok)
 	}
 }
 
-func TestRecaptureGeminiRefusesTwoCandidates(t *testing.T) {
+func TestRecaptureGeminiRefusesTwoThatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	root := geminiRoot()
-	launch := time.Now()
+	base := time.Now().Add(-time.Hour)
 	hash := geminiProjectHash("/repo")
 	writeFile(t, filepath.Join(root, "p/chats/session-1.jsonl"),
-		geminiSessionFixture("first-uuid", hash), launch.Add(time.Second))
+		geminiSessionFixture("first-uuid", hash), base)
 	writeFile(t, filepath.Join(root, "p/chats/session-2.jsonl"),
-		geminiSessionFixture("second-uuid", hash), launch.Add(2*time.Second))
+		geminiSessionFixture("second-uuid", hash), base)
+	snapshot, ok := Snapshot("gemini", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	writeFile(t, filepath.Join(root, "p/chats/session-1.jsonl"),
+		geminiSessionFixture("first-uuid", hash), base.Add(10*time.Second))
+	writeFile(t, filepath.Join(root, "p/chats/session-2.jsonl"),
+		geminiSessionFixture("second-uuid", hash), base.Add(20*time.Second))
 
-	if id, ok := Recapture("gemini", "/repo", launch, map[string]bool{}); ok {
+	if id, ok := Recapture("gemini", "/repo", snapshot, map[string]bool{}); ok {
 		t.Fatalf("expected no match for two candidates, got %q", id)
 	}
 }
 
-func TestRecaptureOpencodePicksTheResumedConversation(t *testing.T) {
-	launch := time.Now()
-	stubOpencode(t, []string{"ses_ours", "ses_other", "ses_untouched"}, map[string]ocMeta{
-		// Created before the relaunch and not touched since: not ours.
-		"ses_untouched": {dir: "/repo", created: launch.Add(-time.Hour), updated: launch.Add(-time.Minute)},
-		// Touched after the relaunch, but in a different directory: not ours.
-		"ses_other": {dir: "/elsewhere", created: launch.Add(-time.Hour), updated: launch.Add(time.Second)},
-		// Ours: an old conversation reopened after the relaunch.
-		"ses_ours": {dir: "/repo", created: launch.Add(-time.Hour), updated: launch.Add(2 * time.Second)},
+func TestSnapshotOpencodeRecordsTheListUpdateTimes(t *testing.T) {
+	stubOpencodeJSON(t, []opencodeListEntry{
+		{ID: "ses_ours", Directory: "/repo", Updated: 3000},
+		{ID: "ses_other", Directory: "/elsewhere", Updated: 2000},
 	})
+	snapshot, ok := Snapshot("opencode", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	if len(snapshot) != 1 || snapshot["ses_ours"] != 3000*int64(time.Millisecond) {
+		t.Fatalf("got %v, want only ses_ours at %d", snapshot, 3000*int64(time.Millisecond))
+	}
+}
 
-	id, ok := Recapture("opencode", "/repo", launch, map[string]bool{})
+func TestRecaptureOpencodeBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
+	stubOpencodeJSON(t, []opencodeListEntry{
+		{ID: "ses_ours", Directory: "/repo", Updated: 1000},
+		{ID: "ses_other", Directory: "/elsewhere", Updated: 2000},
+	})
+	snapshot, ok := Snapshot("opencode", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	if id, ok := Recapture("opencode", "/repo", snapshot, map[string]bool{}); ok {
+		t.Fatalf("a conversation that merely predates the relaunch must not bind, got %q", id)
+	}
+	// Picking the conversation reopens it: info.time.updated advances.
+	stubOpencodeJSON(t, []opencodeListEntry{
+		{ID: "ses_ours", Directory: "/repo", Updated: 3000},
+		{ID: "ses_other", Directory: "/elsewhere", Updated: 2000},
+	})
+	id, ok := Recapture("opencode", "/repo", snapshot, map[string]bool{})
 	if !ok || id != "ses_ours" {
 		t.Fatalf("got id=%q ok=%v, want ses_ours true", id, ok)
 	}
 }
 
-func TestRecaptureOpencodeRefusesTwoResumedConversations(t *testing.T) {
-	launch := time.Now()
-	stubOpencode(t, []string{"ses_1", "ses_2"}, map[string]ocMeta{
-		"ses_1": {dir: "/repo", created: launch.Add(-time.Hour), updated: launch.Add(time.Second)},
-		"ses_2": {dir: "/repo", created: launch.Add(-time.Hour), updated: launch.Add(2 * time.Second)},
+func TestRecaptureOpencodeRefusesTwoThatOutranTheSnapshot(t *testing.T) {
+	stubOpencodeJSON(t, []opencodeListEntry{
+		{ID: "ses_1", Directory: "/repo", Updated: 1000},
+		{ID: "ses_2", Directory: "/repo", Updated: 1000},
 	})
-
-	if id, ok := Recapture("opencode", "/repo", launch, map[string]bool{}); ok {
+	snapshot, ok := Snapshot("opencode", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	stubOpencodeJSON(t, []opencodeListEntry{
+		{ID: "ses_1", Directory: "/repo", Updated: 3000},
+		{ID: "ses_2", Directory: "/repo", Updated: 4000},
+	})
+	if id, ok := Recapture("opencode", "/repo", snapshot, map[string]bool{}); ok {
 		t.Fatalf("expected no match for two resumed conversations, got %q", id)
 	}
 }
 
-func TestRecaptureOpencodeNoResumedConversation(t *testing.T) {
-	launch := time.Now()
-	stubOpencode(t, []string{"ses_old"}, map[string]ocMeta{
-		"ses_old": {dir: "/repo", created: launch.Add(-time.Hour), updated: launch.Add(-time.Minute)},
-	})
-
-	if id, ok := Recapture("opencode", "/repo", launch, map[string]bool{}); ok {
-		t.Fatalf("expected no match, got %q", id)
+// hermes's post-resume signal is its activity columns, not a file mtime.
+func TestRecaptureHermesBindsTheConversationThatTurnedAgain(t *testing.T) {
+	base := time.Now().Add(-time.Hour)
+	path := writeHermesStore(t,
+		hermesRow{id: "old", source: "cli", cwd: "/repo", started: base},
+	)
+	t.Setenv("HERMES_HOME", filepath.Dir(path))
+	snapshot, ok := Snapshot("hermes", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	if id, ok := Recapture("hermes", "/repo", snapshot, map[string]bool{}); ok {
+		t.Fatalf("an untouched conversation must not bind, got %q", id)
+	}
+	// The resumed session's first turn stamps the activity heartbeat.
+	setHermesActivity(t, path, "old", base.Add(10*time.Second))
+	id, ok := Recapture("hermes", "/repo", snapshot, map[string]bool{})
+	if !ok || id != "old" {
+		t.Fatalf("got id=%q ok=%v, want old true", id, ok)
 	}
 }
 
-// Hermes keeps no write signal to tell a resumed conversation apart, so
-// Recapture falls through to the same launch-fresh capture as a spawn.
-func TestRecaptureHermesDelegatesToCapture(t *testing.T) {
-	launch := time.Now()
+func TestRecaptureHermesRefusesTwoThatTurnedAgain(t *testing.T) {
+	base := time.Now().Add(-time.Hour)
 	path := writeHermesStore(t,
-		hermesRow{"old", "cli", "/repo", launch.Add(-time.Hour)},
-		hermesRow{"ours", "cli", "/repo", launch.Add(2 * time.Second)},
+		hermesRow{id: "first", source: "cli", cwd: "/repo", started: base},
+		hermesRow{id: "second", source: "cli", cwd: "/repo", started: base},
 	)
 	t.Setenv("HERMES_HOME", filepath.Dir(path))
+	snapshot, ok := Snapshot("hermes", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	setHermesActivity(t, path, "first", base.Add(10*time.Second))
+	setHermesActivity(t, path, "second", base.Add(20*time.Second))
 
-	id, ok := Recapture("hermes", "/repo", launch, map[string]bool{})
-	if !ok || id != "ours" {
-		t.Fatalf("got id=%q ok=%v, want ours true", id, ok)
+	if id, ok := Recapture("hermes", "/repo", snapshot, map[string]bool{}); ok {
+		t.Fatalf("expected no match for two candidates, got %q", id)
+	}
+}
+
+// A session whose heartbeat never stamped still signals its resumed turn
+// through a fresh message row, which the COALESCE picks over started_at.
+func TestRecaptureHermesBindsOnANewMessageWithoutAHeartbeat(t *testing.T) {
+	base := time.Now().Add(-time.Hour)
+	path := writeHermesStore(t,
+		hermesRow{id: "old", source: "cli", cwd: "/repo", started: base},
+	)
+	t.Setenv("HERMES_HOME", filepath.Dir(path))
+	snapshot, ok := Snapshot("hermes", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	if id, ok := Recapture("hermes", "/repo", snapshot, map[string]bool{}); ok {
+		t.Fatalf("an untouched conversation must not bind, got %q", id)
+	}
+	addHermesMessage(t, path, "old", base.Add(10*time.Second))
+	id, ok := Recapture("hermes", "/repo", snapshot, map[string]bool{})
+	if !ok || id != "old" {
+		t.Fatalf("got id=%q ok=%v, want old true", id, ok)
 	}
 }
 
