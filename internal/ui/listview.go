@@ -329,7 +329,8 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 	for i := range heights {
 		heights[i] = m.entryHeight(rows[i])
 	}
-	start, end := lineWindow(heights, m.cursor-offset, height)
+	start, end := railWindow(heights, m.cursor-offset, height, m.railTop)
+	m.railTop = start
 
 	var lines []contentLine
 	for i := start; i < end; i++ {
@@ -343,9 +344,8 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 			lines = append(lines, contentLine{text: line, tone: tone})
 		}
 	}
-	// The counters ride in whatever room the entries leave. Claiming a line
-	// they do not have would trim an entry's last line away, and half a
-	// two-line entry reads as a whole one that lost its meta.
+	// The window already held a row back for each counter, so the checks
+	// below only catch an entry that painted taller than entryHeight said.
 	spare := height - len(lines)
 	if start > 0 && spare > 0 {
 		lines = append([]contentLine{{text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↑ %d more", start))}}, lines...)
@@ -378,18 +378,16 @@ func (m *Model) entryHeight(entry treeRow) int {
 	return 1
 }
 
-// lineWindow keeps the cursor's entry fully visible inside a line budget,
-// scrolling by whole entries so an entry is never cut in half.
-func lineWindow(heights []int, cursor, budget int) (int, int) {
+// railWindow is the slice of entries the rail paints, keeping the cursor's
+// entry whole on screen while moving the top by as little as the step
+// needs. top comes from the previous frame: a list of uneven rows has no
+// stable window that a cursor position alone can name, so the one already
+// on screen is the answer until the cursor walks off its edge.
+func railWindow(heights []int, cursor, budget, top int) (int, int) {
 	if len(heights) == 0 || budget <= 0 {
 		return 0, 0
 	}
-	if cursor < 0 {
-		cursor = 0
-	}
-	if cursor >= len(heights) {
-		cursor = len(heights) - 1
-	}
+	cursor = min(max(cursor, 0), len(heights)-1)
 	total := 0
 	for _, h := range heights {
 		total += h
@@ -397,26 +395,39 @@ func lineWindow(heights []int, cursor, budget int) (int, int) {
 	if total <= budget {
 		return 0, len(heights)
 	}
-	// Grow a window around the cursor, preferring to keep entries above it
-	// on screen so the list does not jump when stepping down.
-	start, end, used := cursor, cursor+1, heights[cursor]
-	for {
-		grew := false
-		if end < len(heights) && used+heights[end] <= budget-1 {
-			used += heights[end]
-			end++
-			grew = true
-		}
-		if start > 0 && used+heights[start-1] <= budget-1 {
-			start--
-			used += heights[start]
-			grew = true
-		}
-		if !grew {
-			break
+	top = min(max(top, 0), len(heights)-1)
+	if cursor < top {
+		top = cursor
+	}
+	for ; top <= cursor; top++ {
+		if end := windowEnd(heights, top, budget); end > cursor {
+			return top, end
 		}
 	}
-	return start, end
+	// Taller than the whole budget: paint it and let the caller crop.
+	return cursor, cursor + 1
+}
+
+// windowEnd is where the entries starting at top stop fitting, counting
+// the rows the "more" counters take at either edge.
+func windowEnd(heights []int, top, budget int) int {
+	room := budget
+	if top > 0 {
+		room--
+	}
+	end, used := top, 0
+	for end < len(heights) {
+		left := room
+		if end+1 < len(heights) {
+			left--
+		}
+		if used+heights[end] > left {
+			break
+		}
+		used += heights[end]
+		end++
+	}
+	return end
 }
 
 func (m *Model) emptyRailLines(width, height int) []string {

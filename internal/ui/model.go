@@ -160,13 +160,18 @@ type Model struct {
 	watchedGen        uint64
 	previewBodyOffset int
 	cursor            int
-	mode              mode
-	showArchived      bool
-	hideEmptyGroups   bool
-	statusFilter      statusFilter
-	collapsed         map[string]bool
-	search            string
-	searching         bool
+	// railTop is the entry the rail paints first, carried between frames.
+	// Deriving it from the cursor alone cannot hold still: rows are of
+	// uneven height, so every step would re-solve the window and slide the
+	// list under a highlight that should have simply moved down.
+	railTop         int
+	mode            mode
+	showArchived    bool
+	hideEmptyGroups bool
+	statusFilter    statusFilter
+	collapsed       map[string]bool
+	search          string
+	searching       bool
 
 	diff       diffState
 	form       form

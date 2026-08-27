@@ -1344,3 +1344,125 @@ func TestShellRowSkipsThePromptLine(t *testing.T) {
 		t.Fatalf("compact shell entry height = %d, want 1", got)
 	}
 }
+
+// railTestHeights is a comfortable list: groups on one line, a shell on
+// two, sessions on three.
+var railTestHeights = []int{1, 3, 3, 3, 3, 1, 3, 3, 2, 3, 1, 3, 3, 3, 3, 3, 1, 3, 3}
+
+func railWalk(n int) []int {
+	var seq []int
+	for i := 0; i < n; i++ {
+		seq = append(seq, i)
+	}
+	for i := n - 2; i >= 0; i-- {
+		seq = append(seq, i)
+	}
+	return seq
+}
+
+func TestRailWindowHoldsStillWhileTheCursorIsOnScreen(t *testing.T) {
+	for _, budget := range []int{20, 30, 40} {
+		top, prevStart, prevEnd := 0, -1, -1
+		for _, cursor := range railWalk(len(railTestHeights)) {
+			start, end := railWindow(railTestHeights, cursor, budget, top)
+			if prevStart >= 0 && cursor >= prevStart && cursor < prevEnd && start != prevStart {
+				t.Fatalf("budget %d: cursor %d already sat in [%d,%d) and the list scrolled to %d",
+					budget, cursor, prevStart, prevEnd, start)
+			}
+			top, prevStart, prevEnd = start, start, end
+		}
+	}
+}
+
+func TestRailWindowKeepsTheCursorsEntryWhole(t *testing.T) {
+	for _, budget := range []int{6, 20, 30, 40} {
+		top := 0
+		for _, cursor := range railWalk(len(railTestHeights)) {
+			start, end := railWindow(railTestHeights, cursor, budget, top)
+			if cursor < start || cursor >= end {
+				t.Fatalf("budget %d: cursor %d fell outside [%d,%d)", budget, cursor, start, end)
+			}
+			top = start
+		}
+	}
+}
+
+func TestRailWindowScrollsNoFurtherThanItMust(t *testing.T) {
+	top := 0
+	for cursor := 0; cursor < len(railTestHeights); cursor++ {
+		start, _ := railWindow(railTestHeights, cursor, 20, top)
+		if start > top {
+			if end := windowEnd(railTestHeights, start-1, 20); end > cursor {
+				t.Fatalf("cursor %d scrolled to %d, but %d still held it through %d",
+					cursor, start, start-1, end)
+			}
+		}
+		top = start
+	}
+}
+
+func TestRailWindowFollowsTheCursorBackAboveTheTop(t *testing.T) {
+	start, end := railWindow(railTestHeights, 2, 20, 11)
+	if start != 2 {
+		t.Fatalf("window starts at %d, want the cursor's own entry", start)
+	}
+	if end <= 2 {
+		t.Fatalf("window [%d,%d) holds nothing", start, end)
+	}
+}
+
+func TestRailWindowShowsAListThatFits(t *testing.T) {
+	heights := []int{1, 3, 3}
+	start, end := railWindow(heights, 2, 20, 1)
+	if start != 0 || end != len(heights) {
+		t.Fatalf("window = [%d,%d), want the whole list", start, end)
+	}
+}
+
+func TestRailTopCarriesBetweenFrames(t *testing.T) {
+	m := shotModel()
+	m.comfortableRows = true
+	m.fullLayout = true
+	m.rows = nil
+	for i := 0; i < 30; i++ {
+		name := fmt.Sprintf("session-%02d", i)
+		m.rows = append(m.rows, treeRow{sess: store.Session{ID: name, Name: name, Tool: "claude", Status: status.Idle}})
+	}
+
+	heights := make([]int, len(m.rows))
+	for i := range m.rows {
+		heights[i] = m.entryHeight(m.rows[i])
+	}
+
+	const height = 20
+	tops := make([]int, len(m.rows))
+	for i := range m.rows {
+		prev, prevEnd := m.railTop, windowEnd(heights, m.railTop, height)
+		m.cursor = i
+		m.entryLines(m.rows, 0, m.width-1, height)
+		tops[i] = m.railTop
+		if m.railTop > i {
+			t.Fatalf("cursor %d: rail starts below it at %d", i, m.railTop)
+		}
+		if i >= prev && i < prevEnd && m.railTop != prev {
+			t.Fatalf("cursor %d already sat in [%d,%d) and the rail scrolled to %d", i, prev, prevEnd, m.railTop)
+		}
+	}
+	if tops[0] != 0 || tops[1] != 0 {
+		t.Fatalf("the rail scrolled off the first entry immediately: %v", tops[:3])
+	}
+	if tops[len(tops)-1] == 0 {
+		t.Fatal("the rail never scrolled across 30 comfortable entries")
+	}
+
+	for i := len(m.rows) - 1; i >= 0; i-- {
+		m.cursor = i
+		m.entryLines(m.rows, 0, m.width-1, height)
+		if m.railTop > i {
+			t.Fatalf("cursor %d: rail starts below it at %d", i, m.railTop)
+		}
+	}
+	if m.railTop != 0 {
+		t.Fatalf("stepping back to the first entry left the rail at %d", m.railTop)
+	}
+}
