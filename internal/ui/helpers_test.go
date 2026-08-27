@@ -53,7 +53,7 @@ func buildModel(t *testing.T) *Model {
 			"terminal": {
 				Shell:         true,
 				DefaultStatus: status.Idle,
-				InputPrefix:   `(?m)^\s*(?:\S+\s+)?[❯>$#›»→]\s`,
+				InputPrefix:   `(?m)^\s*(?:\S+\s+){0,3}[❯>$#›»→%➜]\s`,
 			},
 			"quietchat": {
 				Command:        "cat",

@@ -734,12 +734,21 @@ func TestFocusLeftUnfocusesTerminalAtPromptHead(t *testing.T) {
 		t.Fatalf("forwarding left set err: %q", m.errBar.text)
 	}
 
-	m.preview = "$ \n"
-	m.pane.cursor = paneCursor{x: 2, y: 0, ok: true}
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
-	*m = *updated.(*Model)
-	if m.mode != modeList {
-		t.Fatalf("left at the prompt head did not unfocus, mode = %v", m.mode)
+	// Stock zsh ("yoan@mac ~ %"), bash, and bare markers all read as a
+	// prompt head with the caret right behind the marker.
+	for _, prompt := range []string{"$ ", "% ", "❯ ", "yoan@mac ~ % "} {
+		// Focus is re-entered directly: going through the key path would
+		// restart the live watcher, whose pushed capture races the fixture
+		// pane set below.
+		m.mode = modeFocus
+		m.pane.forID = sess.ID
+		m.preview = prompt + "\n"
+		m.pane.cursor = paneCursor{x: len([]rune(prompt)), y: 0, ok: true}
+		updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+		*m = *updated.(*Model)
+		if m.mode != modeList {
+			t.Fatalf("left at the head of %q did not unfocus, mode = %v", prompt, m.mode)
+		}
 	}
 }
 

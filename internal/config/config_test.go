@@ -395,7 +395,7 @@ func TestBackfillTerminalInputPrefix(t *testing.T) {
 	if err := cfg.backfillToolDefaults(); err != nil {
 		t.Fatalf("backfill: %v", err)
 	}
-	if got := cfg.Tools["terminal"].InputPrefix; got != `(?m)^\s*(?:\S+\s+)?[❯>$#›»→]\s` {
+	if got := cfg.Tools["terminal"].InputPrefix; got != `(?m)^\s*(?:\S+\s+){0,3}[❯>$#›»→%➜]\s` {
 		t.Fatalf("terminal input_prefix = %q want the generic prompt matcher (backfilled)", got)
 	}
 	user := `^\$ `

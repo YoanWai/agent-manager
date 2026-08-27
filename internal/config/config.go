@@ -584,9 +584,11 @@ rules = [
 command = ""
 shell = true
 default_status = "idle"
-# A generic prompt row (a bare marker, or "user@host ❯") is where ← can
-# hand focus back to the list without costing the shell a keystroke.
-input_prefix = "(?m)^\\s*(?:\\S+\\s+)?[❯>$#›»→]\\s"
+# A generic prompt row (a bare marker, or "yoan@mac ~ %") is where ← can
+# hand focus back to the list without costing the shell a keystroke. Up to
+# three leading tokens cover user@host-and-path prompts; % and ➜ cover
+# stock zsh and oh-my-zsh.
+input_prefix = "(?m)^\\s*(?:\\S+\\s+){0,3}[❯>$#›»→%➜]\\s"
 
 [tools.pi]
 command = "pi"
