@@ -655,11 +655,16 @@ func TestSetAcked(t *testing.T) {
 
 func TestLastPromptRoundTrip(t *testing.T) {
 	st := newTestStore(t)
-	st.CreateSession(sample("a", "g1"))
+	if err := st.CreateSession(sample("a", "g1")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	if err := st.SetLastPrompt("a", "carry on with the plan"); err != nil {
 		t.Fatalf("set last prompt: %v", err)
 	}
-	got, _ := st.Get("a")
+	got, err := st.Get("a")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
 	if got.LastPrompt != "carry on with the plan" {
 		t.Fatalf("last prompt = %q", got.LastPrompt)
 	}

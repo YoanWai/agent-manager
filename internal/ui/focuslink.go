@@ -85,7 +85,7 @@ type linkOpenErrMsg struct{ err error }
 func openLinkCmd(url string) tea.Cmd {
 	return func() tea.Msg {
 		if err := openURL(url); err != nil {
-			return linkOpenErrMsg{err: fmt.Errorf("open %s: %w", url, err)}
+			return linkOpenErrMsg{err: fmt.Errorf("open link: %w", err)}
 		}
 		return nil
 	}

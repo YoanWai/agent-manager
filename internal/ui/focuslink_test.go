@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -123,5 +124,31 @@ func TestFocusClickOpensTheLink(t *testing.T) {
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 1, Y: 0})
 	if opened != "" {
 		t.Fatalf("a linkless click opened %q", opened)
+	}
+}
+
+func TestLinkOpenFailureReachesTheErrorBar(t *testing.T) {
+	prev := openURL
+	openURL = func(string) error { return errors.New("no opener") }
+	t.Cleanup(func() { openURL = prev })
+
+	msg := openLinkCmd("https://example.com/docs?token=secret")()
+	failure, ok := msg.(linkOpenErrMsg)
+	if !ok {
+		t.Fatalf("openLinkCmd returned %T, want linkOpenErrMsg", msg)
+	}
+	if !strings.Contains(failure.err.Error(), "no opener") {
+		t.Fatalf("the opener's reason was dropped: %v", failure.err)
+	}
+	// The pane's own URLs carry query tokens, so the bar names the failure
+	// without repeating the link.
+	if strings.Contains(failure.err.Error(), "token=secret") {
+		t.Fatalf("the error repeats the URL: %v", failure.err)
+	}
+
+	m := linkModel([]string{"read https://example.com/docs now"}, 80)
+	m.Update(failure)
+	if !strings.Contains(m.errBar.text, "no opener") {
+		t.Fatalf("error bar = %q, want the opener's failure", m.errBar.text)
 	}
 }

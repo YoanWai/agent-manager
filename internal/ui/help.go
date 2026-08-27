@@ -130,7 +130,7 @@ func helpSections() []helpSection {
 			{"drag", "focused: select pane text and copy it"},
 			{"double click", "focused: copy the word"},
 			{"triple click", "focused: copy the line"},
-			{"click", "focused: open the link under it, else the agent UI gets it"},
+			{"click", "focused: open the link under it, else a tracking agent gets it"},
 			{"alt+drag", "focused: pass a whole drag to that agent UI"},
 		}},
 		reviewHelpSection(),

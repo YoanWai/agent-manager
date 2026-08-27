@@ -223,9 +223,9 @@ func (p *poller) claudeTail(sess store.Session) (prompt, reply string) {
 	return prompt, reply
 }
 
-func capRunes(text string, cap int) string {
-	if runes := []rune(text); len(runes) > cap {
-		return string(runes[:cap])
+func capRunes(text string, limit int) string {
+	if runes := []rune(text); len(runes) > limit {
+		return string(runes[:limit])
 	}
 	return text
 }

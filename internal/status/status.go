@@ -391,9 +391,8 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 	// turn summary or a rule closes it, so a notice printed after the
 	// turn (a plugin banner, a warning) is not glued onto the reply.
 	first := strings.TrimRight(lines[start], " \t")
-	if loc := tr.messageStart.FindStringIndex(first); loc != nil {
-		first = first[loc[1]:]
-	}
+	marker := tr.messageStart.FindStringIndex(first)
+	first = first[marker[1]:]
 	parts := []string{strings.TrimSpace(first)}
 	for _, raw := range lines[start+1:] {
 		line := strings.TrimRight(raw, " \t")
