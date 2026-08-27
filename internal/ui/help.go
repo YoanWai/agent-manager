@@ -120,7 +120,6 @@ func helpSections() []helpSection {
 			{"⌫", "next to a chip, delete the whole chip"},
 			{"←→", "step over a chip as one token"},
 			{"esc", "close"},
-			{"", "full screen layout: a peek of the target's pane lifts above the bar"},
 		}},
 		{title: "inside a session (attached or focused)", rows: [][2]string{
 			{"typing", "goes straight to the agent, q included"},

@@ -407,63 +407,6 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	}
 }
 
-// While the quick bar is open on a session row, the full screen frame
-// lifts a peek above it: where the session lives, then the tail of its
-// captured pane. A group target spawns rather than answers, so it keeps
-// the bar alone, and closing the bar drops the slice with it.
-func TestFullLayoutQuickBarLiftsThePeek(t *testing.T) {
-	m := buildModel(t)
-	dir := t.TempDir()
-	createSession(t, m, "peeked", dir, "")
-	m.selectSessionRow(t, "peeked")
-	m.fullLayout = true
-	m.rows[m.cursor].sess.WorktreeBranch = "am/peek"
-	m.preview = "❯ run the flaky suite\n● Running the flaky suite…\n"
-
-	// Off by default: the bar docks alone until the setting opts in.
-	m.openQuickMode()
-	frame := ansi.Strip(m.View())
-	if strings.Contains(frame, "⑂ am/peek") {
-		t.Fatalf("the peek should stay down until opted into:\n%s", frame)
-	}
-	if !strings.Contains(frame, "type and press enter") {
-		t.Fatalf("the bar should dock without the peek:\n%s", frame)
-	}
-	m.quick.active = false
-
-	m.quickPeek = true
-	m.openQuickMode()
-	frame = ansi.Strip(m.View())
-	if !strings.Contains(frame, filepath.Base(dir)) {
-		t.Fatalf("peek misses the session's directory:\n%s", frame)
-	}
-	if !strings.Contains(frame, "⑂ am/peek") {
-		t.Fatalf("peek misses the worktree branch:\n%s", frame)
-	}
-	if !strings.Contains(frame, "Running the flaky suite") {
-		t.Fatalf("peek misses the captured pane tail:\n%s", frame)
-	}
-	if !strings.Contains(frame, "type and press enter") {
-		t.Fatalf("the bar itself should dock under the peek:\n%s", frame)
-	}
-
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
-	frame = ansi.Strip(m.View())
-	if strings.Contains(frame, "Running the flaky suite") {
-		t.Fatalf("closing the bar should drop the peek:\n%s", frame)
-	}
-
-	m.selectGroupRow(t, "")
-	m.openQuickMode()
-	frame = ansi.Strip(m.View())
-	if strings.Contains(frame, "Running the flaky suite") {
-		t.Fatalf("a group target should keep the bar alone:\n%s", frame)
-	}
-	if !strings.Contains(frame, "type and press enter") {
-		t.Fatalf("a group target still docks the bar:\n%s", frame)
-	}
-}
-
 // A does a real tmux attach from the full screen list, unchanged.
 func TestFullLayoutAStillAttaches(t *testing.T) {
 	m := buildModel(t)

@@ -150,9 +150,6 @@ type Model struct {
 	// whole width, with no preview column beside it. Every list frame
 	// reads it, so it lives here instead of the store.
 	fullLayout bool
-	// quickPeek lifts a slice of the target session above the quick bar
-	// in the full screen layout; off unless opted into.
-	quickPeek bool
 	// watchedGen is previewGen as of the last poll pass, so a selection
 	// that has not moved since can be recognised as at rest.
 	watchedGen        uint64
@@ -401,7 +398,6 @@ type settingsState struct {
 	arrowStep       bool
 	comfortableRows bool
 	fullLayout      bool
-	quickPeek       bool
 	worktreeDefault bool
 	notifications   bool
 	notifyFinished  bool
@@ -423,7 +419,6 @@ const (
 	settingsFieldThemeAuto
 	settingsFieldDensity
 	settingsFieldSessionLayout
-	settingsFieldQuickPeek
 	settingsFieldLayout
 	settingsFieldQuickClose
 	settingsFieldFocusKey
@@ -675,7 +670,6 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		arrowStep:           storedArrowStep(st),
 		comfortableRows:     storedComfortableRows(st),
 		fullLayout:          storedFullLayout(st),
-		quickPeek:           storedQuickPeek(st),
 		mode:                modeList,
 		update:              updateInfo{version: version},
 		dismissed:           loadDismissed(st),

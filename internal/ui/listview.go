@@ -158,16 +158,9 @@ func (m *Model) viewFullFocusFrame() string {
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
 }
 
-// peekPaneRows is how many captured lines the peek lifts above the quick
-// bar: enough to read the question a waiting session is asking without
-// the slice swallowing the list over it.
-const peekPaneRows = 5
-
 // fullQuickLines docks the open quick bar at the full screen frame's
-// foot, a peek of the selected session lifted above it: where the session
-// lives, then the tail of its captured pane. This is the reveal for
-// whatever a two-line row clips. A group target spawns rather than
-// answers, so it keeps the bar alone. Empty while the bar is closed.
+// foot, its tail kept when the frame runs out of rows, which is where
+// the caret is. Empty while the bar is closed.
 func (m *Model) fullQuickLines(width, height int) []contentLine {
 	if !m.quick.active {
 		return nil
@@ -184,64 +177,9 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 		}
 		return out
 	}
-	bar := append([]contentLine{{rule: true}}, inset(splitLines(m.viewQuickBar(inner)))...)
-	var peek []contentLine
-	if entry, ok := m.selectedRow(); ok && !entry.isGroup && m.quickPeek {
-		// The leading rule closes the rail's meters off from the peek the
-		// same way the bar closes the peek off below.
-		peek = append([]contentLine{{rule: true}}, inset(m.peekInfoLines(entry.sess, inner))...)
-		peek = append(peek, contentLine{rule: true})
-		peek = append(peek, inset(m.peekPaneSlice(inner))...)
-	}
-	// The list above the bar keeps the rows the rail floor guarantees:
-	// the peek is dropped first, then the bar keeps its tail, which is
-	// where the caret is.
-	const listFloor = 3
-	if height-len(bar)-len(peek) < listFloor {
-		peek = nil
-	}
-	lines := append(peek, bar...)
+	lines := append([]contentLine{{rule: true}}, inset(splitLines(m.viewQuickBar(inner)))...)
 	if len(lines) > height {
 		lines = lines[len(lines)-height:]
-	}
-	return lines
-}
-
-// peekInfoLines is the head of the lifted peek: a line placing the
-// session (its directory, and the worktree branch when it has one), and
-// a line saying how it is doing — state, tool, its process usage when
-// sampled, when it was started and last heard from. The pane slice
-// follows under the frame's own rule; the capture follows the cursor, so
-// switching the bar's target swaps the slice with it.
-func (m *Model) peekInfoLines(sess store.Session, width int) []string {
-	place := valueStyle.Render(truncateTail(sess.Cwd, width))
-	if sess.WorktreeBranch != "" {
-		place += subtleStyle.Render("  ⑂ ") + valueStyle.Render(sess.WorktreeBranch)
-	}
-	sep := subtleStyle.Render(" · ")
-	facts := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).Render(statusLabel(sess.Status)) +
-		sep + valueStyle.Render(sess.Tool)
-	if m.procFor == sess.ID && m.proc.OK {
-		facts += sep + labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.1f%%", m.proc.CPUPercent)) +
-			sep + labelStyle.Render("ram ") + valueStyle.Render(humanBytes(m.proc.RSS))
-	}
-	facts += sep + labelStyle.Render("started ") + valueStyle.Render(relSince(sess.CreatedAt)) +
-		sep + labelStyle.Render("active ") + valueStyle.Render(relSince(lastActivity(sess)))
-	if queued := m.queuedMessages[sess.ID]; queued > 0 {
-		facts += sep + valueStyle.Render(fmt.Sprintf("%d queued", queued))
-	}
-	return []string{
-		ansi.Truncate(place, width, "…"),
-		ansi.Truncate(facts, width, "…"),
-	}
-}
-
-// peekPaneSlice is the peek's tail of captured pane rows, under the rule
-// that closes the info lines off.
-func (m *Model) peekPaneSlice(width int) []string {
-	var lines []string
-	for _, row := range paneExact(m.preview, peekPaneRows, width, -1) {
-		lines = append(lines, previewLine(row, width))
 	}
 	return lines
 }

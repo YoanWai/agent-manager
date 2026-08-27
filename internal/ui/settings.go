@@ -165,16 +165,6 @@ func storedFullLayout(st *store.Store) bool {
 	return chosen == "full"
 }
 
-// storedQuickPeek reads the persisted quick peek choice; off is the
-// default, a stored "on" lifts the peek above the full screen quick bar.
-func storedQuickPeek(st *store.Store) bool {
-	chosen, err := st.Setting(quickPeekSetting)
-	if err != nil {
-		return false
-	}
-	return chosen == "on"
-}
-
 // toggleSessionLayout flips the list between the split and the full screen
 // layout and persists the choice. Pane geometry is left alone: a resize
 // costs a running agent its scrollback, so widths only change where they
@@ -255,7 +245,6 @@ func (m *Model) openSettings() {
 
 		comfortableRows: m.comfortableRows,
 		fullLayout:      m.fullLayout,
-		quickPeek:       m.quickPeek,
 		worktreeDefault: m.defaultWorktree(),
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
@@ -374,13 +363,6 @@ func (m *Model) persistSettings() {
 	if err := m.store.SetSetting(sessionLayoutSetting, sessionLayoutValue(m.settings.fullLayout)); err != nil {
 		m.errBar.text = err.Error()
 	}
-	quickPeek := "off"
-	if m.settings.quickPeek {
-		quickPeek = "on"
-	}
-	if err := m.store.SetSetting(quickPeekSetting, quickPeek); err != nil {
-		m.errBar.text = err.Error()
-	}
 	worktreeChoice := "off"
 	if m.settings.worktreeDefault {
 		worktreeChoice = "on"
@@ -406,7 +388,6 @@ func (m *Model) persistSettings() {
 	m.arrowStep = m.settings.arrowStep
 	m.comfortableRows = m.settings.comfortableRows
 	m.fullLayout = m.settings.fullLayout
-	m.quickPeek = m.settings.quickPeek
 }
 
 func (m *Model) openCLIPicker() {
@@ -528,8 +509,6 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.comfortableRows = !m.settings.comfortableRows
 	case settingsFieldSessionLayout:
 		m.settings.fullLayout = !m.settings.fullLayout
-	case settingsFieldQuickPeek:
-		m.settings.quickPeek = !m.settings.quickPeek
 	case settingsFieldLayout:
 		m.settings.layoutSplit = !m.settings.layoutSplit
 	case settingsFieldQuickClose:
