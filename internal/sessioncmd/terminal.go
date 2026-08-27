@@ -253,6 +253,7 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if err := runtime.driver.Create(sess.ID, sess.Cwd, tool.Command, nil, 0, 0); err != nil {
 		return Terminal{}, err
 	}
+	sess.TmuxSocket = runtime.driver.SocketPath()
 	create := runtime.store.CreateSession
 	if nest {
 		if callerIsShell {

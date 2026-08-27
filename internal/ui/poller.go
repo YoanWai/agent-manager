@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -65,9 +64,13 @@ type poller struct {
 	// flag travels with the timer so a rule classification change restarts
 	// the grace instead of inheriting the previous one.
 	quietSince map[string]quietTimer
-	// heartbeatAt is when this manager last stamped its liveness row.
+	// heartbeatAt is when this manager last tried to claim the store and
+	// stamp its liveness row.
 	heartbeatAt time.Time
-	tick        int
+	// leading records whether the last claim left this manager holding the
+	// store, which decides who speaks for sessions no socket has claimed.
+	leading bool
+	tick    int
 	// prevTreeCPU / prevTreeAt drive interval agent CPU: cumulative
 	// CPU-seconds per pane root from the last poll, so host share uses
 	// the same "over this window" idea as the computer gauge.
@@ -224,18 +227,23 @@ func (p *poller) refreshOnce() tea.Msg {
 	}
 	// Machine gauges change slowly; sample them every other poll.
 	sampleStats := p.tick%2 == 0
+	socket := p.tmux.SocketPath()
 	// Delivering a queued message needs this process, so stamp a heartbeat
 	// the session tools can read to tell a sender whether anyone is home.
-	// Stamping every poll would be a write transaction every couple of
-	// seconds for as long as the manager is open; its readers allow the
-	// stamp to age instead.
+	// The same write claims the store for this manager's tmux server, which
+	// decides who speaks for sessions no server has claimed yet. Claiming
+	// every poll would be a write transaction every couple of seconds for as
+	// long as the manager is open; its readers allow the stamp to age instead.
 	if time.Since(p.heartbeatAt) >= store.PollerHeartbeatPeriod {
-		stamped := time.Now()
-		if err := p.store.SetSetting(store.PollerHeartbeatKey, strconv.FormatInt(stamped.UnixNano(), 10)); err != nil {
+		claimed := time.Now()
+		holder, err := p.store.ClaimPoller(socket, claimed, p.interval)
+		if err != nil {
 			return errMsg{err}
 		}
-		p.heartbeatAt = stamped
+		p.leading = holder == socket
+		p.heartbeatAt = claimed
 	}
+	leading := p.leading
 	if p.tick%inboxPruneEvery == 0 {
 		if err := p.store.PruneInbox(time.Now().Add(-inboxRetention)); err != nil {
 			return errMsg{err}
@@ -275,6 +283,29 @@ func (p *poller) refreshOnce() tea.Msg {
 	for i, sess := range sessions {
 		if sess.Archived {
 			continue
+		}
+		// A session belongs to the tmux server its pane runs on. Panes on
+		// another server are invisible from here, and reading that silence
+		// as a dead agent is how a second manager stamps dead over sessions
+		// that are alive and alerts their owner's user for every flip back.
+		if sess.TmuxSocket != "" && sess.TmuxSocket != socket {
+			continue
+		}
+		live := panes[sess.ID].PID > 0
+		claimed := false
+		if sess.TmuxSocket == "" {
+			// Sessions that predate the column are the leading manager's to
+			// speak for until one of them shows a pane here to claim.
+			if !live && !leading {
+				continue
+			}
+			if live {
+				if err := ignoreDeletedSession(p.store.SetTmuxSocket(sess.ID, socket)); err != nil {
+					return errMsg{err}
+				}
+				sessions[i].TmuxSocket = socket
+				claimed = true
+			}
 		}
 		if err := p.applyPendingRename(&sessions[i]); err != nil {
 			return errMsg{err}
@@ -371,12 +402,22 @@ func (p *poller) refreshOnce() tea.Msg {
 				}
 			}
 		}
-		if newStatus != sess.Status {
-			if err := ignoreDeletedSession(p.store.UpdateStatus(sess.ID, newStatus)); err != nil {
+		// A row claimed on this pass is written even when the status did not
+		// move, because the row was anyone's until the claim: a manager that
+		// cannot see this pane may have stamped it dead since this pass read
+		// the list, and that stamp is corrected here rather than a poll later.
+		if newStatus != sess.Status || claimed {
+			// The row can be claimed by the manager that can see its pane
+			// between this pass listing it and reaching here, and a status
+			// derived without that pane must not land on top of the claim.
+			written, err := p.store.UpdateStatusOnSocket(sess.ID, newStatus, socket)
+			if err != nil {
 				return errMsg{err}
 			}
-			sessions[i].Status = newStatus
-			p.notifyTransition(sess, newStatus)
+			if written && newStatus != sess.Status {
+				sessions[i].Status = newStatus
+				p.notifyTransition(sess, newStatus)
+			}
 		}
 	}
 	if preview == "" && selectedID != "" {
@@ -431,6 +472,8 @@ func (p *poller) refreshOnce() tea.Msg {
 	p.prevTreeAt = now
 
 	msg := refreshMsg{
+		tmuxSocket:     socket,
+		leadingManager: leading,
 		sessions:       sessions,
 		listedAt:       listedAt,
 		groups:         names,

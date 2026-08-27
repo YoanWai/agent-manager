@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -1157,5 +1158,60 @@ func TestResizePinsTheAgentWindowNotTheCurrentOne(t *testing.T) {
 	}
 	if got := panes[id]; got.Width != 100 || got.Height != 30 {
 		t.Fatalf("agent pane = %dx%d, want the preview box 100x30", got.Width, got.Height)
+	}
+}
+
+func TestSocketPathNamesTheRunningServer(t *testing.T) {
+	driver := requireTmux(t)
+	out, err := tmuxCmd("display-message", "-p", "#{socket_path}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	want := strings.TrimSpace(string(out))
+	if got := driver.SocketPath(); got != want {
+		t.Fatalf("SocketPath = %q, want tmux's own %q", got, want)
+	}
+}
+
+// The -L name is shared by every manager; only the path tells two servers
+// apart, and it is the path a session is stamped with.
+func TestSocketPathSeparatesServersUnderOneName(t *testing.T) {
+	here := requireTmux(t)
+	herePath := here.SocketPath()
+	t.Setenv("TMUX_TMPDIR", t.TempDir())
+	elsewhere, err := NewWithSocket(testSocket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if herePath == elsewhere.SocketPath() {
+		t.Fatalf("both servers resolved to %q", herePath)
+	}
+	if !strings.HasSuffix(elsewhere.SocketPath(), "/"+testSocket) {
+		t.Fatalf("path %q does not end in the socket name", elsewhere.SocketPath())
+	}
+}
+
+// tmux resolves a relative TMUX_TMPDIR from its own working directory, so
+// the path a session is stamped with has to be the absolute one or a later
+// poll reads its own sessions as another server's.
+func TestSocketPathFromRelativeTmpdirIsAbsolute(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.MkdirAll("sockets", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMUX_TMPDIR", "sockets")
+
+	got := socketPathFromEnv(testSocket)
+	if !filepath.IsAbs(got) {
+		t.Fatalf("socket path %q is not absolute", got)
+	}
+	resolved, err := filepath.EvalSymlinks(filepath.Join(root, "sockets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(resolved, fmt.Sprintf("tmux-%d", os.Getuid()), testSocket)
+	if got != want {
+		t.Fatalf("socket path = %q, want %q", got, want)
 	}
 }

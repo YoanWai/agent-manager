@@ -282,6 +282,14 @@ func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseComman
 			return err
 		}
 	}
+	// The row now lives on this manager's server, wherever it ran before.
+	// Stamped after the launch has taken, so a row that never came back is
+	// not left pointing at a server that holds no pane for it, and a row
+	// that cannot take the stamp is gone and its fresh pane goes with it.
+	if err := m.store.SetTmuxSocket(sess.ID, m.tmux.SocketPath()); err != nil {
+		_ = m.tmux.Kill(sess.ID)
+		return err
+	}
 	if err := m.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, sess.Name)); err != nil {
 		return err
 	}
