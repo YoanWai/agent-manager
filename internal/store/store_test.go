@@ -1757,3 +1757,48 @@ func TestRemoveGroupMatchesWildcardNamesLiterally(t *testing.T) {
 		t.Fatalf("removed = %v", removed)
 	}
 }
+
+// A row claimed by the manager that can see its pane is not this manager's
+// to write, however recent its own listing is.
+func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
+	st := newTestStore(t)
+	const mine, theirs = "/tmp/mine/agentmgr", "/tmp/theirs/agentmgr"
+	sess := Session{ID: "sess-1", Name: "one", Tool: "claude", Cwd: "/tmp", Status: "working"}
+	if err := st.CreateSession(sess); err != nil {
+		t.Fatal(err)
+	}
+
+	written, err := st.UpdateStatusOnSocket(sess.ID, "idle", mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !written {
+		t.Fatal("an unclaimed row is the polling manager's to write")
+	}
+
+	if err := st.SetTmuxSocket(sess.ID, theirs); err != nil {
+		t.Fatal(err)
+	}
+	written, err = st.UpdateStatusOnSocket(sess.ID, "dead", mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if written {
+		t.Fatal("a row claimed by another server must keep its status")
+	}
+	got, err := st.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "idle" {
+		t.Fatalf("status = %q, want the claim to have held it at idle", got.Status)
+	}
+
+	written, err = st.UpdateStatusOnSocket(sess.ID, "dead", theirs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !written {
+		t.Fatal("the server holding the row writes it")
+	}
+}

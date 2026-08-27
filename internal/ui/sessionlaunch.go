@@ -34,6 +34,7 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 		return err
 	}
 	m.markFreshPane(sess.ID)
+	sess.TmuxSocket = m.tmux.SocketPath()
 	if err := m.store.CreateSession(sess); err != nil {
 		_ = m.tmux.Kill(sess.ID)
 		_ = m.hooks.Remove(sess.ID)

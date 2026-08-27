@@ -1056,3 +1056,54 @@ func TestRingLoaderWrapsThePhaseRoundTheRing(t *testing.T) {
 		t.Fatalf("the ring dropped the label it was given:\n%s", rendered)
 	}
 }
+
+func TestRowMarksSessionsOnAnotherServer(t *testing.T) {
+	const here, there = "/tmp/tmux-501/agentmgr", "/tmp/another-manager/agentmgr"
+	for _, tc := range []struct {
+		name     string
+		socket   string
+		leading  bool
+		elsewise bool
+	}{
+		{name: "another server", socket: there, elsewise: true},
+		{name: "this server", socket: here},
+		{name: "unclaimed under this manager", socket: "", leading: true},
+		{name: "unclaimed under another manager", socket: "", elsewise: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			now := time.Now()
+			sess := store.Session{
+				ID: "away-1", Name: "away", Tool: "claude", Status: status.Working,
+				CreatedAt: now, LastStatusAt: now, TmuxSocket: tc.socket,
+			}
+			m := &Model{
+				width: 120, height: 40, mode: modeList,
+				sessions: []store.Session{sess}, rows: []treeRow{{sess: sess}},
+				collapsed: map[string]bool{}, split: splitState{ratio: defaultSplitRatio},
+				tmuxSocket: here, leadingManager: tc.leading,
+			}
+			view := ansi.Strip(m.View())
+			if strings.Contains(view, "elsewhere") != tc.elsewise {
+				t.Fatalf("elsewhere marker = %v, want %v:\n%s", !tc.elsewise, tc.elsewise, view)
+			}
+		})
+	}
+}
+
+// A manager that has not polled yet knows no server to compare against, so
+// it marks nothing.
+func TestRowsAreUnmarkedBeforeTheFirstPoll(t *testing.T) {
+	now := time.Now()
+	sess := store.Session{
+		ID: "away-1", Name: "away", Tool: "claude", Status: status.Working,
+		CreatedAt: now, LastStatusAt: now, TmuxSocket: "/tmp/another-manager/agentmgr",
+	}
+	m := &Model{
+		width: 120, height: 40, mode: modeList,
+		sessions: []store.Session{sess}, rows: []treeRow{{sess: sess}},
+		collapsed: map[string]bool{}, split: splitState{ratio: defaultSplitRatio},
+	}
+	if view := ansi.Strip(m.View()); strings.Contains(view, "elsewhere") {
+		t.Fatalf("nothing to compare against should mark nothing:\n%s", view)
+	}
+}

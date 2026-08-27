@@ -72,6 +72,11 @@ type Model struct {
 
 	sessions []store.Session
 	rows     []treeRow
+	// tmuxSocket is the server the last poll read panes from; rows stamped
+	// with another server belong to a manager running against it, and rows
+	// stamped by none belong to whichever manager holds the store.
+	tmuxSocket     string
+	leadingManager bool
 
 	groups         []string
 	groupPaths     map[string]string
@@ -463,6 +468,13 @@ type refreshMsg struct {
 	// panes is the pass's agent pane geometry, read off the UI loop with
 	// the liveness listing the poller already makes.
 	panes map[string]tmux.Pane
+	// tmuxSocket is the server this pass read panes from, which tells the
+	// rows apart from ones another manager's server holds.
+	tmuxSocket string
+	// leadingManager is whether this pass held the store, which decides
+	// whether the rows no server has claimed are this manager's to show as
+	// current.
+	leadingManager bool
 }
 
 type previewMsg struct {
@@ -1297,6 +1309,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.sessions = sessions
+		m.tmuxSocket = msg.tmuxSocket
+		m.leadingManager = msg.leadingManager
 		m.panes = msg.panes
 		m.groups = msg.groups
 		m.groupPaths = msg.groupPaths

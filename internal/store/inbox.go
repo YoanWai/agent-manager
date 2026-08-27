@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -45,6 +47,11 @@ var DefaultInboxLimits = InboxLimits{
 // what it queues.
 const PollerHeartbeatKey = "poller_heartbeat"
 
+// PollerSocketKey names the tmux server the manager holding the heartbeat
+// polls. Sessions no server has claimed are that manager's to speak for,
+// which keeps a manager elsewhere from reading their panes as dead.
+const PollerSocketKey = "poller_socket"
+
 const (
 	// PollerHeartbeatPeriod is how often the manager restamps that row.
 	PollerHeartbeatPeriod = 10 * time.Second
@@ -52,6 +59,68 @@ const (
 	// one period, plus room for a poll that ran long.
 	PollerHeartbeatStale = 30 * time.Second
 )
+
+// ClaimPoller takes the store for this manager's server while it is
+// unclaimed or its holder has stopped stamping, and reports who holds it.
+// Read and write share one immediate transaction: two managers starting
+// together would otherwise both read an empty holder and both speak for
+// the sessions no server has claimed.
+func (s *Store) ClaimPoller(socket string, now time.Time, pollInterval time.Duration) (string, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	var holder string
+	err = tx.QueryRow(`SELECT value FROM settings WHERE key = ?`, PollerSocketKey).Scan(&holder)
+	if err != nil && err != sql.ErrNoRows {
+		return "", err
+	}
+	if holder != "" && holder != socket {
+		awake, err := heartbeatAwake(tx, now, pollInterval)
+		if err != nil {
+			return "", err
+		}
+		if awake {
+			return holder, tx.Commit()
+		}
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO settings (key, value) VALUES (?, ?), (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		PollerSocketKey, socket,
+		PollerHeartbeatKey, strconv.FormatInt(now.UnixNano(), 10)); err != nil {
+		return "", err
+	}
+	return socket, tx.Commit()
+}
+
+// ManagerAwake reports whether a manager stamped the heartbeat recently
+// enough to still be polling. Queued messages only move while it runs.
+func (s *Store) ManagerAwake(now time.Time, pollInterval time.Duration) (bool, error) {
+	return heartbeatAwake(s.db, now, pollInterval)
+}
+
+// rowQuerier lets the claim read the stamp inside its own transaction.
+type rowQuerier interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+func heartbeatAwake(q rowQuerier, now time.Time, pollInterval time.Duration) (bool, error) {
+	var raw string
+	err := q.QueryRow(`SELECT value FROM settings WHERE key = ?`, PollerHeartbeatKey).Scan(&raw)
+	if err == sql.ErrNoRows || raw == "" {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	stamp, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return false, fmt.Errorf("poller heartbeat %q is not a timestamp: %w", raw, err)
+	}
+	return now.Sub(time.Unix(0, stamp)) < max(3*pollInterval, PollerHeartbeatStale), nil
+}
 
 var (
 	ErrInboxFull        = errors.New("the recipient's queue is full; wait for it to read what is already queued")
