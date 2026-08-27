@@ -529,3 +529,44 @@ func TestMigratesStaleCommandCodePatterns(t *testing.T) {
 		}
 	}
 }
+
+// A config.toml written before the pi footer widened carries rules that pin
+// exactly two footer lines, so a pi extension drawing more keeps every rule
+// from matching. The stale strings are rewritten to the current defaults;
+// a rule the user edited by hand is kept as written.
+func TestMigratesStalePiFooterRules(t *testing.T) {
+	handEdited := `(?ms)my own waiting rule\z`
+	cfg := Config{Tools: map[string]Tool{
+		"pi": {
+			Command: "pi",
+			Rules: []Rule{
+				{State: "idle", Pattern: oldPiIdleRule},
+				{State: "errored", Pattern: oldPiErrorRule},
+				{State: "errored", Pattern: oldPiRateLimitRule},
+				{State: "waiting", Pattern: oldPiQuestionRule},
+				{State: "working", Pattern: oldPiWorkingRule},
+				{State: "waiting", Pattern: handEdited},
+			},
+		},
+	}}
+	if err := cfg.backfillToolDefaults(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	def, err := Default()
+	if err != nil {
+		t.Fatalf("default: %v", err)
+	}
+	defaults := make(map[string]bool)
+	for _, rule := range def.Tools["pi"].Rules {
+		defaults[rule.Pattern] = true
+	}
+	tool := cfg.Tools["pi"]
+	for _, rule := range tool.Rules[:5] {
+		if !defaults[rule.Pattern] {
+			t.Fatalf("stale %s rule was not rewritten to the current default: %q", rule.State, rule.Pattern)
+		}
+	}
+	if got := tool.Rules[5].Pattern; got != handEdited {
+		t.Fatalf("hand-edited rule = %q, want kept as written", got)
+	}
+}
