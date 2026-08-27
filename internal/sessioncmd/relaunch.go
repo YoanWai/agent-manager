@@ -14,11 +14,8 @@ import (
 )
 
 // RelaunchInPane starts a session's tool again inside the shell its pane
-// already holds, for a session whose window is alive because only the agent
-// exited. The command is typed into that shell rather than launched over a
-// fresh window, so nothing about the pane is lost and the agent comes back
-// as the shell's child, the shape every other session has. It carries the
-// session environment inline as well, since a pane opened by an older
+// already holds, so the pane keeps everything its last life left there. The
+// session environment rides along inline because a pane opened by an older
 // manager holds a shell that was never given it.
 func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Manager, sess store.Session, tool config.Tool) (time.Time, error) {
 	running, err := AgentRunning(driver, sess.ID)

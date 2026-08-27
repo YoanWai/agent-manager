@@ -731,9 +731,8 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 	if _, err := resolveTerminalDirectory(target.Cwd); err != nil {
 		return Session{}, fmt.Errorf("working directory no longer exists: %s", target.Cwd)
 	}
-	// A window whose agent exited is still open on its shell, so the tool
-	// comes back inside that pane and the row keeps the scrollback its last
-	// life left there.
+	// Reviving inside the surviving pane keeps the scrollback its last life
+	// left there.
 	if runtime.driver.Exists(target.ID) {
 		if _, err := RelaunchInPane(runtime.driver, runtime.store, hooks.NewManager(s.configDir), target, tool); err != nil {
 			return Session{}, err
