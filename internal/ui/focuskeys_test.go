@@ -707,6 +707,42 @@ func TestFocusLeftUnfocusesAtPromptHead(t *testing.T) {
 	}
 }
 
+// A focused terminal reads the same way: Left leaves at the head of a
+// bare shell prompt and reaches the shell while a command is being typed.
+func TestFocusLeftUnfocusesTerminalAtPromptHead(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "shellie", t.TempDir(), "")
+	m.selectSessionRow(t, "shellie")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	sess := m.rows[m.cursor].sess
+	m.rows[m.cursor].sess.Tool = "terminal"
+	m.pane.forID = sess.ID
+	m.preview = "$ make test\n"
+	m.pane.cursor = paneCursor{x: 11, y: 0, ok: true}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("left inside a typed command left focus, mode = %v", m.mode)
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("forwarding left set err: %q", m.errBar.text)
+	}
+
+	m.preview = "$ \n"
+	m.pane.cursor = paneCursor{x: 2, y: 0, ok: true}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("left at the prompt head did not unfocus, mode = %v", m.mode)
+	}
+}
+
 // The beta setting turns the whole pair off: right no longer focuses,
 // and left at the prompt head forwards to the agent instead of leaving.
 func TestArrowStepSettingDisablesThePair(t *testing.T) {

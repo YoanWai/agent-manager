@@ -50,7 +50,11 @@ func buildModel(t *testing.T) *Model {
 			},
 			// The terminal tab, carrying no command and the shell flag, the
 			// way the generated config ships it.
-			"terminal": {Shell: true, DefaultStatus: status.Idle},
+			"terminal": {
+				Shell:         true,
+				DefaultStatus: status.Idle,
+				InputPrefix:   `(?m)^\s*(?:\S+\s+)?[❯>$#›»→]\s`,
+			},
 			"quietchat": {
 				Command:        "cat",
 				DefaultStatus:  status.Idle,

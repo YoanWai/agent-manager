@@ -584,6 +584,9 @@ rules = [
 command = ""
 shell = true
 default_status = "idle"
+# A generic prompt row (a bare marker, or "user@host ❯") is where ← can
+# hand focus back to the list without costing the shell a keystroke.
+input_prefix = "(?m)^\\s*(?:\\S+\\s+)?[❯>$#›»→]\\s"
 
 [tools.pi]
 command = "pi"
