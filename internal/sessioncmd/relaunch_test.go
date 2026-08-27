@@ -23,6 +23,7 @@ func waitForAgentGone(t *testing.T, driver *tmux.Driver, sessID string) {
 			if quiet == 2 {
 				return
 			}
+			time.Sleep(25 * time.Millisecond)
 			continue
 		}
 		quiet = 0
