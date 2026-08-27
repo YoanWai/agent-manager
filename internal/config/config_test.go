@@ -497,14 +497,27 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		{"claude", "claude --resume"},
 		{"codex", "codex resume"},
 		{"command-code", "cmd --resume"},
+		{"grok", "grok"},
+		{"gemini", "gemini -i /resume"},
+		{"hermes", "hermes --cli sessions browse"},
+		{"pi", "pi --resume"},
 	} {
 		if got := cfg.Tools[tc.name].ResumePickerCommand; got != tc.want {
 			t.Fatalf("%s resume_picker_command = %q want %q", tc.name, got, tc.want)
 		}
 	}
-	for _, name := range []string{"opencode", "grok", "gemini", "hermes", "pi"} {
-		if got := cfg.Tools[name].ResumePickerCommand; got != "" {
-			t.Fatalf("%s resume_picker_command = %q want empty (no default picker)", name, got)
+	// opencode's picker only exists inside the running TUI, so its default
+	// pairs the bare launch with the shortcut the manager types at the
+	// composer instead of a command-line picker.
+	if got := cfg.Tools["opencode"].ResumePickerCommand; got != "opencode" {
+		t.Fatalf("opencode resume_picker_command = %q want \"opencode\"", got)
+	}
+	if got := cfg.Tools["opencode"].ResumePickerKeys; got != "/sessions" {
+		t.Fatalf("opencode resume_picker_keys = %q want \"/sessions\"", got)
+	}
+	for _, name := range []string{"claude", "codex", "command-code", "grok", "gemini", "hermes", "pi"} {
+		if got := cfg.Tools[name].ResumePickerKeys; got != "" {
+			t.Fatalf("%s resume_picker_keys = %q want empty", name, got)
 		}
 	}
 }

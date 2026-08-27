@@ -38,6 +38,11 @@ type Tool struct {
 	// has no captured conversation id, instead of the blind revive_command
 	// fallback, which resumes the directory's newest conversation.
 	ResumePickerCommand string `toml:"resume_picker_command"`
+	// ResumePickerKeys is typed into the pane once the tool's composer shows,
+	// for a picker that only exists inside the running TUI (opencode's
+	// /sessions). Passing it as a prompt flag would submit it to the model
+	// instead of opening the picker.
+	ResumePickerKeys string `toml:"resume_picker_keys"`
 	// ForkCommand creates a new conversation from an existing one. Templates
 	// can use {id}, {session_file}, {new_id}, and {name}; Agent Manager quotes
 	// each value. {session_file} needs SessionStore to keep one ("gemini").
@@ -244,6 +249,7 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.SessionIDFlag, def.SessionIDFlag)
 	fill(&user.ResumeByIDCommand, def.ResumeByIDCommand)
 	fill(&user.ResumePickerCommand, def.ResumePickerCommand)
+	fill(&user.ResumePickerKeys, def.ResumePickerKeys)
 	fill(&user.ForkCommand, def.ForkCommand)
 	fill(&user.SessionStore, def.SessionStore)
 	fill(&user.MCP, def.MCP)
@@ -448,6 +454,11 @@ command = "opencode"
 session_store = "opencode"
 resume_by_id_command = "opencode --session {id}"
 fork_command = "opencode --session {id} --fork"
+# opencode's session picker exists only inside the running TUI: /sessions.
+# Passing it via the prompt flag would submit it to the model, so revive
+# launches bare opencode and the manager types the shortcut at its composer.
+resume_picker_command = "opencode"
+resume_picker_keys = "/sessions"
 revive_command = "opencode --continue"
 # opencode's positional argument is the project path, so the optional
 # session prompt travels behind this flag
@@ -518,6 +529,9 @@ command = "grok"
 session_id_flag = "--session-id"
 resume_by_id_command = "grok --resume {id}"
 fork_command = "grok --resume {id} --fork-session --session-id {new_id}"
+# bare grok opens its startup screen, whose "Resume session" picker lets the
+# user choose; grok --resume alone would resume the latest instead
+resume_picker_command = "grok"
 # fallback: resumes the most recent session for the working directory
 revive_command = "grok --continue"
 default_status = "idle"
@@ -552,6 +566,8 @@ resume_by_id_command = "gemini --resume {id}"
 # forked id is captured back via the gemini session store.
 fork_command = "gemini --session-file {session_file}"
 session_store = "gemini"
+# /resume in interactive mode opens gemini's saved-conversation picker
+resume_picker_command = "gemini -i /resume"
 # fallback when a session predates id tracking: resumes the project's most
 # recent session
 revive_command = "gemini --resume latest"
@@ -587,6 +603,8 @@ command = "hermes --cli"
 # Hermes creates its session id on first input and records it in state.db.
 session_store = "hermes"
 resume_by_id_command = "hermes --cli --resume {id}"
+# the interactive session browser; Enter on a row resumes it
+resume_picker_command = "hermes --cli sessions browse"
 revive_command = "hermes --cli --continue"
 # Hermes only accepts startup text through chat -q, which is one-shot and
 # exits. Start the real REPL, then submit the prompt when its composer appears.
@@ -628,6 +646,7 @@ command = "pi"
 session_id_flag = "--session-id"
 resume_by_id_command = "pi --session {id}"
 fork_command = "pi --fork {id} --session-id {new_id}"
+resume_picker_command = "pi --resume"
 revive_command = "pi --continue"
 # Pi shows a spinner for active work. A resting pane is a finished turn until
 # the user acknowledges it; a resumed conversation is already acknowledged.
