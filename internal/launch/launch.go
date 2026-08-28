@@ -46,7 +46,21 @@ func coordinationNote(toolName string, tool config.Tool) string {
 // session's first prompt; otherwise auto-named sessions get the rename
 // directive later as its own message.
 func DirectiveEmbeddable(prompt string) bool {
-	return prompt != "" && !strings.HasPrefix(prompt, "/")
+	return prompt != "" && !opensWithSlashCommand(prompt)
+}
+
+// opensWithSlashCommand separates a prompt the agent reads as a command,
+// which has to open the message, from one that merely starts with an
+// absolute path, as a prompt led by a pasted image does. A command name
+// is a single segment; a path carries further separators.
+func opensWithSlashCommand(prompt string) bool {
+	if !strings.HasPrefix(prompt, "/") {
+		return false
+	}
+	name := strings.TrimPrefix(prompt, "/")
+	name, _, _ = strings.Cut(name, " ")
+	name, _, _ = strings.Cut(name, "\n")
+	return name != "" && !strings.Contains(name, "/")
 }
 
 // Prompt prepends the short agent notes a first prompt can carry: auto-named

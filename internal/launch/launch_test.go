@@ -238,3 +238,18 @@ func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 		t.Fatalf("hooked command = %q", command)
 	}
 }
+
+func TestAssembleCarriesTheDirectiveOverAPastedImagePath(t *testing.T) {
+	flagged := config.Tool{Command: "claude", PromptFlag: "-p"}
+	prompt := "/var/folders/_b/T/agent-manager-pastes/paste-268.png why is this session working?"
+	plan := Assemble("claude", flagged, prompt, true)
+	if len(plan.PendingInputs) != 0 {
+		t.Fatalf("a prompt led by an image path is no slash command, got %v", plan.PendingInputs)
+	}
+	if !strings.Contains(plan.Command, RenameDirective) || !strings.Contains(plan.Command, prompt) {
+		t.Fatalf("directive should ride the prompt, got %q", plan.Command)
+	}
+	if DirectiveEmbeddable("/compact") || DirectiveEmbeddable("/land-pr now") {
+		t.Fatal("a slash command must still open its own message")
+	}
+}
