@@ -32,10 +32,25 @@ const (
 	maxReleases          = 100
 	maxChangesPerRelease = 12
 	maxChangeLength      = 120
+	maxHighlights        = 6
+)
+
+const (
+	// highlightsHeading is the section the maintainer writes for this panel:
+	// short bullets naming what the release gives someone. The generated
+	// list says which branches merged, which is not the same question.
+	highlightsHeading = "## Highlights"
+	changesHeading    = "## What's Changed"
 )
 
 // releasesURL is a var so tests can point the fetch at a local server.
 var releasesURL = "https://api.github.com/repos/YoanWai/agent-manager/releases?per_page=100"
+
+// userFacingTypes are the conventional commit types that change what the
+// program does for the person reading the digest. The rest are real work
+// that leaves the running program identical, and every row one of them
+// takes is a row a feature or a fix does not get.
+var userFacingTypes = map[string]bool{"feat": true, "fix": true, "perf": true}
 
 var (
 	conventionalTitle = regexp.MustCompile(`(?i)^(feat|fix|docs|refactor|perf|test|build|ci|chore|style)(?:\(([^)]+)\))?!?:\s*(.+)$`)
@@ -44,10 +59,12 @@ var (
 )
 
 // Release is one stable GitHub release with a compact, terminal-safe summary.
-// TotalChanges may exceed len(Changes) when a large release was bounded.
+// Highlights stand in for Changes when the notes carry them. TotalChanges may
+// exceed len(Changes) when a large release was bounded.
 type Release struct {
 	Version      string   `json:"version"`
 	URL          string   `json:"url"`
+	Highlights   []string `json:"highlights,omitempty"`
 	Changes      []string `json:"changes"`
 	TotalChanges int      `json:"total_changes"`
 }
@@ -232,6 +249,7 @@ func fetchReleases(ctx context.Context, etag string, budget time.Duration) ([]Re
 		releases = append(releases, Release{
 			Version:      item.TagName,
 			URL:          item.HTMLURL,
+			Highlights:   extractHighlights(item.Body),
 			Changes:      changes,
 			TotalChanges: total,
 		})
@@ -250,27 +268,67 @@ func safeReleaseURL(raw string) bool {
 	return err == nil && parsed.Scheme == "https" && parsed.Host == "github.com"
 }
 
-func extractChanges(body string) ([]string, int) {
-	var changes []string
-	total := 0
-	inChanges := false
+func sectionLines(body, heading string) []string {
+	var lines []string
+	inside := false
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.EqualFold(trimmed, "## What's Changed") {
-			inChanges = true
+		if strings.EqualFold(trimmed, heading) {
+			inside = true
 			continue
 		}
-		if !inChanges {
+		if !inside {
 			continue
 		}
 		if strings.HasPrefix(trimmed, "## ") || strings.HasPrefix(trimmed, "**Full Changelog**") {
 			break
 		}
-		if !strings.HasPrefix(trimmed, "* ") && !strings.HasPrefix(trimmed, "- ") {
+		lines = append(lines, trimmed)
+	}
+	return lines
+}
+
+func bulletText(line string) (string, bool) {
+	if !strings.HasPrefix(line, "* ") && !strings.HasPrefix(line, "- ") {
+		return "", false
+	}
+	return strings.TrimSpace(line[2:]), true
+}
+
+// Prose under the highlights heading is the release page's own copy,
+// written for a browser rather than a modal, so only bullets travel.
+func extractHighlights(body string) []string {
+	var highlights []string
+	for _, line := range sectionLines(body, highlightsHeading) {
+		text, ok := bulletText(line)
+		if !ok {
 			continue
 		}
-		change := cleanChange(strings.TrimSpace(trimmed[2:]))
+		if text = plainText(text); text == "" {
+			continue
+		}
+		highlights = append(highlights, sentenceCase(truncateChange(text)))
+		if len(highlights) == maxHighlights {
+			break
+		}
+	}
+	return highlights
+}
+
+func extractChanges(body string) ([]string, int) {
+	var changes []string
+	total := 0
+	for _, line := range sectionLines(body, changesHeading) {
+		bullet, ok := bulletText(line)
+		if !ok {
+			continue
+		}
+		change, kind := cleanChange(bullet)
 		if change == "" {
+			continue
+		}
+		// A bullet that names no type cannot be judged, so it stays.
+		if kind != "" && !userFacingTypes[kind] {
 			continue
 		}
 		total++
@@ -281,7 +339,7 @@ func extractChanges(body string) ([]string, int) {
 	return changes, total
 }
 
-func cleanChange(change string) string {
+func cleanChange(change string) (row, kind string) {
 	// Credit outside contributors on their digest lines; the maintainer's
 	// own handle and bot handles would be noise on every row.
 	author := ""
@@ -290,28 +348,37 @@ func cleanChange(change string) string {
 			author = handle
 		}
 	}
-	change = pullSuffix.ReplaceAllString(change, "")
-	change = markdownLink.ReplaceAllString(change, "$1")
-	change = strings.ReplaceAll(change, "`", "")
-	change = cleanText(change)
-	if match := conventionalTitle.FindStringSubmatch(change); match != nil {
+	row = plainText(pullSuffix.ReplaceAllString(change, ""))
+	if match := conventionalTitle.FindStringSubmatch(row); match != nil {
+		kind = strings.ToLower(match[1])
 		description := sentenceCase(match[3])
 		if scope := labelCase(match[2]); scope != "" {
-			change = scope + ": " + description
+			row = scope + ": " + description
 		} else {
-			change = description
+			row = description
 		}
 	} else {
-		change = sentenceCase(change)
+		row = sentenceCase(row)
 	}
-	runes := []rune(change)
-	if len(runes) > maxChangeLength {
-		change = strings.TrimSpace(string(runes[:maxChangeLength-1])) + "…"
-	}
+	row = truncateChange(row)
 	if author != "" {
-		change += " · " + author
+		row += " · " + author
 	}
-	return change
+	return row, kind
+}
+
+func plainText(text string) string {
+	text = markdownLink.ReplaceAllString(text, "$1")
+	text = strings.ReplaceAll(text, "`", "")
+	return cleanText(text)
+}
+
+func truncateChange(text string) string {
+	runes := []rune(text)
+	if len(runes) <= maxChangeLength {
+		return text
+	}
+	return strings.TrimSpace(string(runes[:maxChangeLength-1])) + "…"
 }
 
 func cleanText(text string) string {

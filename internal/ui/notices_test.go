@@ -1176,3 +1176,58 @@ func TestFullLayoutFootLineCountsMessages(t *testing.T) {
 		t.Fatalf("full screen frame lost the messages count:\n%s", full)
 	}
 }
+
+func TestReleaseSummaryPrefersAuthoredHighlights(t *testing.T) {
+	release := uiReleaseWithTotal("v0.34.0", 17, "UI: Full screen sessions mode")
+	release.Highlights = []string{"The session list can take the whole terminal"}
+	body := ansi.Strip(strings.Join(renderNoticeBody(notice{releases: []update.Release{release}, rangeComplete: true}, noticeModalInner), "\n"))
+
+	if !strings.Contains(body, "• The session list can take the whole terminal") {
+		t.Fatalf("highlights missing:\n%s", body)
+	}
+	for _, unwanted := range []string{"Full screen sessions mode", "17 changes", "more in the full notes"} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("highlights should stand alone, found %q:\n%s", unwanted, body)
+		}
+	}
+}
+
+func TestReleaseSummaryFallsBackToTheGeneratedList(t *testing.T) {
+	body := ansi.Strip(strings.Join(renderNoticeBody(notice{
+		releases:      []update.Release{uiRelease("v0.33.0", "UI: A change")},
+		rangeComplete: true,
+	}, noticeModalInner), "\n"))
+	if !strings.Contains(body, "v0.33.0 · 1 change") || !strings.Contains(body, "• UI: A change") {
+		t.Fatalf("release without highlights lost its generated list:\n%s", body)
+	}
+}
+
+func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
+	m := footModel(t)
+	m.width, m.height = 100, 34
+	m.mode = modeList
+	for _, n := range m.activeNotices() {
+		m.dismissNotice(n.id)
+	}
+	if len(m.activeNotices()) != 0 {
+		t.Fatal("test needs an empty panel")
+	}
+
+	m.handleKey(key("M"))
+	if m.mode != modeNotices {
+		t.Fatalf("M should open an empty panel, mode=%v", m.mode)
+	}
+	frame := ansi.Strip(m.View())
+	for _, want := range []string{"nothing new", "r refresh"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("empty panel missing %q:\n%s", want, frame)
+		}
+	}
+
+	if _, cmd := m.handleNoticesKey(key("r")); cmd == nil || !m.update.refreshing {
+		t.Fatalf("r unreachable on an empty panel: refreshing=%v", m.update.refreshing)
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "refreshing releases and messages") {
+		t.Fatalf("empty panel hides the refresh it started:\n%s", ansi.Strip(m.View()))
+	}
+}
