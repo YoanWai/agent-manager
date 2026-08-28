@@ -50,6 +50,13 @@ The notes carry more than the generated list of pull requests:
   someone who installs it. Two or three sentences, the change first and the
   mechanism second. The generated list says which pull requests landed; it
   does not say what is different now.
+- **A `## Highlights` section above `## What's Changed`**, holding short
+  bullets, one per thing the release gives someone. The manager reads
+  exactly those bullets into its messages panel, so write them for a modal:
+  a sentence each, feature and fix language, no pull request numbers. Prose
+  in that section stays on the web page; only bullets travel. A release
+  without the section falls back to the generated list, filtered to
+  `feat`, `fix` and `perf`.
 - **Thanks to every contributor in the range, by handle.** Read the merged
   pull requests, not only the generated list, and name what each one did.
 - **Thanks to whoever reported what got fixed, by handle.** A bug someone
@@ -64,9 +71,9 @@ write the summary and leave it at that rather than manufacturing one.
 rather than sitting above it, so a file passed that way has to carry the
 list itself. Publishing first and then editing is the simpler order: take
 what goreleaser published with `gh release view <tag> --json body -q .body`,
-put the summary and thanks above its `## What's Changed`, and send it back
-with `gh release edit <tag> --notes-file notes.md`. The header and footer
-from `.goreleaser.yaml` come along either way.
+put the summary, the highlights and the thanks above its `## What's Changed`,
+and send it back with `gh release edit <tag> --notes-file notes.md`. The
+header and footer from `.goreleaser.yaml` come along either way.
 
 ## Layout
 

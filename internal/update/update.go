@@ -32,6 +32,15 @@ const (
 	maxReleases          = 100
 	maxChangesPerRelease = 12
 	maxChangeLength      = 120
+	maxHighlights        = 6
+)
+
+const (
+	// highlightsHeading is the section the maintainer writes for this panel:
+	// short bullets naming what the release gives someone. The generated
+	// list says which branches merged, which is not the same question.
+	highlightsHeading = "## Highlights"
+	changesHeading    = "## What's Changed"
 )
 
 // releasesURL is a var so tests can point the fetch at a local server.
@@ -52,8 +61,11 @@ var (
 // Release is one stable GitHub release with a compact, terminal-safe summary.
 // TotalChanges may exceed len(Changes) when a large release was bounded.
 type Release struct {
-	Version      string   `json:"version"`
-	URL          string   `json:"url"`
+	Version string `json:"version"`
+	URL     string `json:"url"`
+	// Highlights are the maintainer's own bullets for this release, empty
+	// when the notes carry none. They stand in for Changes when present.
+	Highlights   []string `json:"highlights,omitempty"`
 	Changes      []string `json:"changes"`
 	TotalChanges int      `json:"total_changes"`
 }
@@ -238,6 +250,7 @@ func fetchReleases(ctx context.Context, etag string, budget time.Duration) ([]Re
 		releases = append(releases, Release{
 			Version:      item.TagName,
 			URL:          item.HTMLURL,
+			Highlights:   extractHighlights(item.Body),
 			Changes:      changes,
 			TotalChanges: total,
 		})
@@ -256,26 +269,67 @@ func safeReleaseURL(raw string) bool {
 	return err == nil && parsed.Scheme == "https" && parsed.Host == "github.com"
 }
 
-func extractChanges(body string) ([]string, int) {
-	var changes []string
-	total := 0
-	inChanges := false
+// sectionLines returns the trimmed lines under a level-two heading. It
+// stops at the next heading or at the generated changelog footer, so a
+// section never bleeds into the install instructions below it.
+func sectionLines(body, heading string) []string {
+	var lines []string
+	inside := false
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.EqualFold(trimmed, "## What's Changed") {
-			inChanges = true
+		if strings.EqualFold(trimmed, heading) {
+			inside = true
 			continue
 		}
-		if !inChanges {
+		if !inside {
 			continue
 		}
 		if strings.HasPrefix(trimmed, "## ") || strings.HasPrefix(trimmed, "**Full Changelog**") {
 			break
 		}
-		if !strings.HasPrefix(trimmed, "* ") && !strings.HasPrefix(trimmed, "- ") {
+		lines = append(lines, trimmed)
+	}
+	return lines
+}
+
+// bulletText returns the text of a markdown bullet; any other line is not one.
+func bulletText(line string) (string, bool) {
+	if !strings.HasPrefix(line, "* ") && !strings.HasPrefix(line, "- ") {
+		return "", false
+	}
+	return strings.TrimSpace(line[2:]), true
+}
+
+// extractHighlights reads the authored bullets. Prose in that section is
+// the release page's own copy, written for a browser rather than for a
+// modal, so only bullets reach the panel.
+func extractHighlights(body string) []string {
+	var highlights []string
+	for _, line := range sectionLines(body, highlightsHeading) {
+		text, ok := bulletText(line)
+		if !ok {
 			continue
 		}
-		change, kind := cleanChange(strings.TrimSpace(trimmed[2:]))
+		if text = plainText(text); text == "" {
+			continue
+		}
+		highlights = append(highlights, sentenceCase(truncateChange(text)))
+		if len(highlights) == maxHighlights {
+			break
+		}
+	}
+	return highlights
+}
+
+func extractChanges(body string) ([]string, int) {
+	var changes []string
+	total := 0
+	for _, line := range sectionLines(body, changesHeading) {
+		bullet, ok := bulletText(line)
+		if !ok {
+			continue
+		}
+		change, kind := cleanChange(bullet)
 		if change == "" {
 			continue
 		}
@@ -302,10 +356,7 @@ func cleanChange(change string) (string, string) {
 			author = handle
 		}
 	}
-	change = pullSuffix.ReplaceAllString(change, "")
-	change = markdownLink.ReplaceAllString(change, "$1")
-	change = strings.ReplaceAll(change, "`", "")
-	change = cleanText(change)
+	change = plainText(pullSuffix.ReplaceAllString(change, ""))
 	kind := ""
 	if match := conventionalTitle.FindStringSubmatch(change); match != nil {
 		kind = strings.ToLower(match[1])
@@ -318,14 +369,28 @@ func cleanChange(change string) (string, string) {
 	} else {
 		change = sentenceCase(change)
 	}
-	runes := []rune(change)
-	if len(runes) > maxChangeLength {
-		change = strings.TrimSpace(string(runes[:maxChangeLength-1])) + "…"
-	}
+	change = truncateChange(change)
 	if author != "" {
 		change += " · " + author
 	}
 	return change, kind
+}
+
+// plainText renders a markdown fragment as the text the panel paints: a
+// link becomes its label, a code span loses its fences, and any control
+// sequence the notes carried is dropped.
+func plainText(text string) string {
+	text = markdownLink.ReplaceAllString(text, "$1")
+	text = strings.ReplaceAll(text, "`", "")
+	return cleanText(text)
+}
+
+func truncateChange(text string) string {
+	runes := []rune(text)
+	if len(runes) <= maxChangeLength {
+		return text
+	}
+	return strings.TrimSpace(string(runes[:maxChangeLength-1])) + "…"
 }
 
 func cleanText(text string) string {

@@ -410,3 +410,74 @@ func TestExtractChangesKeepsWhatAReaderCanAct(t *testing.T) {
 		t.Fatalf("extractChanges() = %q total %d, want %q", changes, total, want)
 	}
 }
+
+func TestExtractHighlightsReadsTheAuthoredBullets(t *testing.T) {
+	body := strings.Join([]string{
+		"A one line pitch nobody put a heading on.",
+		"",
+		"## Highlights",
+		"",
+		"The panel takes bullets, so this paragraph stays on the web page.",
+		"",
+		"- the session list can take the whole terminal",
+		"* rows carry the agent's `last message` beside the name",
+		"- [Full notes](https://example.com/notes) explain the rest",
+		"",
+		"## What's Changed",
+		"* feat(ui): full screen sessions mode",
+		"",
+		"**Full Changelog**: https://example.com/compare",
+	}, "\n")
+
+	want := []string{
+		"The session list can take the whole terminal",
+		"Rows carry the agent's last message beside the name",
+		"Full notes explain the rest",
+	}
+	if got := extractHighlights(body); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("extractHighlights() = %q, want %q", got, want)
+	}
+}
+
+func TestExtractHighlightsIsEmptyWithoutTheSection(t *testing.T) {
+	body := "## What's Changed\n* feat(ui): a feature\n"
+	if got := extractHighlights(body); len(got) != 0 {
+		t.Fatalf("extractHighlights() = %q, want none", got)
+	}
+}
+
+func TestExtractHighlightsStopsAtTheCap(t *testing.T) {
+	lines := []string{"## Highlights"}
+	for i := 0; i < maxHighlights+3; i++ {
+		lines = append(lines, fmt.Sprintf("- highlight %d", i))
+	}
+	got := extractHighlights(strings.Join(lines, "\n"))
+	if len(got) != maxHighlights {
+		t.Fatalf("extractHighlights() kept %d, want %d", len(got), maxHighlights)
+	}
+	if got[maxHighlights-1] != fmt.Sprintf("Highlight %d", maxHighlights-1) {
+		t.Fatalf("extractHighlights() last = %q", got[maxHighlights-1])
+	}
+}
+
+func TestCatalogCarriesHighlightsThroughTheCache(t *testing.T) {
+	body := `## Highlights\n- the list can take the whole terminal\n\n## What's Changed\n* feat(ui): full screen sessions mode`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `[{"tag_name":"v0.34.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.34.0","body":"%s","draft":false,"prerelease":false}]`, body)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	dir := t.TempDir()
+	want := []string{"The list can take the whole terminal"}
+	fetched, err := Check(context.Background(), dir, "v0.33.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fetched.Releases[0].Highlights; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("fetched highlights = %q, want %q", got, want)
+	}
+	if got := Cached(dir, "v0.33.0").Releases[0].Highlights; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("cached highlights = %q, want %q", got, want)
+	}
+}
