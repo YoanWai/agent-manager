@@ -59,12 +59,11 @@ var (
 )
 
 // Release is one stable GitHub release with a compact, terminal-safe summary.
-// TotalChanges may exceed len(Changes) when a large release was bounded.
+// Highlights stand in for Changes when the notes carry them. TotalChanges may
+// exceed len(Changes) when a large release was bounded.
 type Release struct {
-	Version string `json:"version"`
-	URL     string `json:"url"`
-	// Highlights are the maintainer's own bullets for this release, empty
-	// when the notes carry none. They stand in for Changes when present.
+	Version      string   `json:"version"`
+	URL          string   `json:"url"`
 	Highlights   []string `json:"highlights,omitempty"`
 	Changes      []string `json:"changes"`
 	TotalChanges int      `json:"total_changes"`
@@ -269,9 +268,6 @@ func safeReleaseURL(raw string) bool {
 	return err == nil && parsed.Scheme == "https" && parsed.Host == "github.com"
 }
 
-// sectionLines returns the trimmed lines under a level-two heading. It
-// stops at the next heading or at the generated changelog footer, so a
-// section never bleeds into the install instructions below it.
 func sectionLines(body, heading string) []string {
 	var lines []string
 	inside := false
@@ -292,7 +288,6 @@ func sectionLines(body, heading string) []string {
 	return lines
 }
 
-// bulletText returns the text of a markdown bullet; any other line is not one.
 func bulletText(line string) (string, bool) {
 	if !strings.HasPrefix(line, "* ") && !strings.HasPrefix(line, "- ") {
 		return "", false
@@ -300,9 +295,8 @@ func bulletText(line string) (string, bool) {
 	return strings.TrimSpace(line[2:]), true
 }
 
-// extractHighlights reads the authored bullets. Prose in that section is
-// the release page's own copy, written for a browser rather than for a
-// modal, so only bullets reach the panel.
+// Prose under the highlights heading is the release page's own copy,
+// written for a browser rather than a modal, so only bullets travel.
 func extractHighlights(body string) []string {
 	var highlights []string
 	for _, line := range sectionLines(body, highlightsHeading) {
@@ -345,9 +339,7 @@ func extractChanges(body string) ([]string, int) {
 	return changes, total
 }
 
-// cleanChange returns the digest row for a generated bullet and the
-// conventional type it declared, empty when it declared none.
-func cleanChange(change string) (string, string) {
+func cleanChange(change string) (row, kind string) {
 	// Credit outside contributors on their digest lines; the maintainer's
 	// own handle and bot handles would be noise on every row.
 	author := ""
@@ -356,29 +348,25 @@ func cleanChange(change string) (string, string) {
 			author = handle
 		}
 	}
-	change = plainText(pullSuffix.ReplaceAllString(change, ""))
-	kind := ""
-	if match := conventionalTitle.FindStringSubmatch(change); match != nil {
+	row = plainText(pullSuffix.ReplaceAllString(change, ""))
+	if match := conventionalTitle.FindStringSubmatch(row); match != nil {
 		kind = strings.ToLower(match[1])
 		description := sentenceCase(match[3])
 		if scope := labelCase(match[2]); scope != "" {
-			change = scope + ": " + description
+			row = scope + ": " + description
 		} else {
-			change = description
+			row = description
 		}
 	} else {
-		change = sentenceCase(change)
+		row = sentenceCase(row)
 	}
-	change = truncateChange(change)
+	row = truncateChange(row)
 	if author != "" {
-		change += " · " + author
+		row += " · " + author
 	}
-	return change, kind
+	return row, kind
 }
 
-// plainText renders a markdown fragment as the text the panel paints: a
-// link becomes its label, a code span loses its fences, and any control
-// sequence the notes carried is dropped.
 func plainText(text string) string {
 	text = markdownLink.ReplaceAllString(text, "$1")
 	text = strings.ReplaceAll(text, "`", "")

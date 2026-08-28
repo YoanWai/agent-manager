@@ -708,8 +708,6 @@ func noticeBodyRoom(height, noticeCount, tailRows int) int {
 	return max(1, height-2-(noticeCount+2)-tailRows)
 }
 
-// noticeTail is what sits under the body: where the selected notice leads,
-// and whatever the panel is doing or failed to do.
 func (m *Model) noticeTail(notices []notice, inner int) []string {
 	var tail []string
 	if m.noticeCursor < len(notices) {
