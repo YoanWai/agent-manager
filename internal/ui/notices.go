@@ -507,11 +507,11 @@ func (m *Model) handleBrowserOpen(msg browserOpenMsg) {
 	m.errBar.text = fmt.Sprintf("could not open %s: %v; copying URL: %v", msg.target, msg.err, msg.copyErr)
 }
 
+// openNotices shows the panel even with nothing in it: a fresh install and
+// the first run after an update both retire every message, and that is
+// exactly when someone reaches for r to look again.
 func (m *Model) openNotices(selectID string) {
 	notices := m.activeNotices()
-	if len(notices) == 0 {
-		return
-	}
 	m.noticeCursor = 0
 	m.noticeScroll = 0
 	for i, n := range notices {
@@ -698,22 +698,9 @@ func (m *Model) noticeScrollLimit(notices []notice) int {
 	if m.noticeCursor >= len(notices) {
 		return 0
 	}
-	selected := notices[m.noticeCursor]
-	bodyRows := len(renderNoticeBody(selected, noticeInnerWidth(notices, m.width)))
-	tailRows := 1
-	if selected.url != "" {
-		tailRows++
-	}
-	if m.update.refreshing {
-		tailRows++
-	}
-	if m.update.applying {
-		tailRows++
-	}
-	if m.errBar.text != "" {
-		tailRows++
-	}
-	bodyRoom := noticeBodyRoom(m.height, len(notices), tailRows)
+	inner := noticeInnerWidth(notices, m.width)
+	bodyRows := len(renderNoticeBody(notices[m.noticeCursor], inner))
+	bodyRoom := noticeBodyRoom(m.height, len(notices), len(m.noticeTail(notices, inner))+1)
 	return max(0, bodyRows-bodyRoom)
 }
 
@@ -721,12 +708,35 @@ func noticeBodyRoom(height, noticeCount, tailRows int) int {
 	return max(1, height-2-(noticeCount+2)-tailRows)
 }
 
+// noticeTail is what sits under the body: where the selected notice leads,
+// and whatever the panel is doing or failed to do.
+func (m *Model) noticeTail(notices []notice, inner int) []string {
+	var tail []string
+	if m.noticeCursor < len(notices) {
+		if url := notices[m.noticeCursor].url; url != "" {
+			tail = append(tail, subtleStyle.Render("↗ "+truncateTail(strings.TrimPrefix(url, "https://"), inner-2)))
+		}
+	}
+	if m.update.refreshing {
+		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent2).Render("↻ refreshing releases and messages…"))
+	}
+	if m.update.applying {
+		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+m.update.latest+"…"))
+	}
+	if m.errBar.text != "" {
+		tail = append(tail, m.statusMessage("✕", "●"))
+	}
+	return tail
+}
+
 func (m *Model) viewNotices() string {
 	notices := m.activeNotices()
 	inner := noticeInnerWidth(notices, m.width)
 	if len(notices) == 0 {
-		frame := noticeFrame([]string{subtleStyle.Render("nothing new")}, inner,
-			noticeLegend(), keyCap("esc", "close"))
+		rows := []string{subtleStyle.Render("nothing new")}
+		rows = append(rows, m.noticeTail(notices, inner)...)
+		frame := noticeFrame(rows, inner, noticeLegend(),
+			mutedStyle.Render("r refresh · esc "))
 		return m.centerOnBackdrop(frame)
 	}
 	var rows []string
@@ -744,19 +754,7 @@ func (m *Model) viewNotices() string {
 	rows = append(rows, noticeBorderStyle().Render(strings.Repeat("┄", inner)))
 
 	body := renderNoticeBody(selected, inner)
-	var tail []string
-	if selected.url != "" {
-		tail = append(tail, subtleStyle.Render("↗ "+truncateTail(strings.TrimPrefix(selected.url, "https://"), inner-2)))
-	}
-	if m.update.refreshing {
-		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent2).Render("↻ refreshing releases and messages…"))
-	}
-	if m.update.applying {
-		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+m.update.latest+"…"))
-	}
-	if m.errBar.text != "" {
-		tail = append(tail, m.statusMessage("✕", "●"))
-	}
+	tail := m.noticeTail(notices, inner)
 	tail = append(tail, "")
 
 	rows = append(rows, fitBody(body, noticeBodyRoom(m.height, len(notices), len(tail)), m.noticeScroll)...)
@@ -778,6 +776,9 @@ func noticeInnerWidth(notices []notice, terminalWidth int) int {
 		lines := append(append([]string{}, n.body...), n.after...)
 		for _, release := range n.releases {
 			lines = append(lines, release.Version)
+			for _, change := range release.Highlights {
+				lines = append(lines, "• "+change)
+			}
 			for _, change := range release.Changes {
 				lines = append(lines, "• "+change)
 			}
@@ -806,6 +807,13 @@ func renderNoticeBody(n notice, width int) []string {
 		if i > 0 {
 			body = append(body, "")
 		}
+		// Authored bullets are the release in its own words, so they
+		// replace the generated list rather than being counted against it.
+		if len(release.Highlights) > 0 {
+			body = append(body, lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(release.Version))
+			body = appendNoticeBullets(body, release.Highlights, width)
+			continue
+		}
 		count := release.TotalChanges
 		label := "change"
 		if count != 1 {
@@ -819,16 +827,7 @@ func renderNoticeBody(n notice, width int) []string {
 		if len(release.Changes) == 0 {
 			body = append(body, subtleStyle.Render("  No summarized changes."))
 		}
-		for _, change := range release.Changes {
-			wrapped := strings.Split(ansi.Wordwrap(change, max(width-2, 1), "-"), "\n")
-			for lineIndex, line := range wrapped {
-				prefix := "  "
-				if lineIndex == 0 {
-					prefix = "• "
-				}
-				body = append(body, mutedStyle.Render(prefix+line))
-			}
-		}
+		body = appendNoticeBullets(body, release.Changes, width)
 		if omitted := release.TotalChanges - len(release.Changes); omitted > 0 {
 			body = append(body, subtleStyle.Render(fmt.Sprintf("  +%d more in the full notes", omitted)))
 		}
@@ -843,6 +842,20 @@ func renderNoticeBody(n notice, width int) []string {
 		}
 	}
 	return body
+}
+
+func appendNoticeBullets(lines []string, items []string, width int) []string {
+	for _, item := range items {
+		wrapped := strings.Split(ansi.Wordwrap(item, max(width-2, 1), "-"), "\n")
+		for lineIndex, line := range wrapped {
+			prefix := "  "
+			if lineIndex == 0 {
+				prefix = "• "
+			}
+			lines = append(lines, mutedStyle.Render(prefix+line))
+		}
+	}
+	return lines
 }
 
 func appendStyledWrap(lines []string, text string, width int, style lipgloss.Style) []string {
