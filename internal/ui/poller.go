@@ -761,9 +761,6 @@ cands:
 		}
 		claimed[agentID] = true
 		captured++
-		if err := ignoreDeletedSession(p.store.SetRelaunchSnapshot(sess.ID, nil)); err != nil {
-			return captured, err
-		}
 	}
 	return captured, nil
 }

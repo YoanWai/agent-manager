@@ -1,6 +1,7 @@
 package agentsession
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -24,7 +25,7 @@ func writeHermesStore(t *testing.T, rows ...hermesRow) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	if _, err := db.Exec(`CREATE TABLE sessions (
+	if _, err := db.ExecContext(context.Background(), `CREATE TABLE sessions (
 		id TEXT PRIMARY KEY,
 		source TEXT NOT NULL,
 		cwd TEXT,
@@ -43,7 +44,7 @@ func writeHermesStore(t *testing.T, rows ...hermesRow) string {
 		if !row.activity.IsZero() {
 			activity = float64(row.activity.UnixNano()) / float64(time.Second)
 		}
-		if _, err := db.Exec(`INSERT INTO sessions (id, source, cwd, started_at, last_activity_at) VALUES (?, ?, ?, ?, ?)`,
+		if _, err := db.ExecContext(context.Background(), `INSERT INTO sessions (id, source, cwd, started_at, last_activity_at) VALUES (?, ?, ?, ?, ?)`,
 			row.id, row.source, row.cwd, float64(row.started.UnixNano())/float64(time.Second), activity); err != nil {
 			t.Fatal(err)
 		}
@@ -60,7 +61,7 @@ func setHermesActivity(t *testing.T, path, id string, at time.Time) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.Exec(`UPDATE sessions SET last_activity_at = ? WHERE id = ?`,
+	if _, err := db.ExecContext(context.Background(), `UPDATE sessions SET last_activity_at = ? WHERE id = ?`,
 		float64(at.UnixNano())/float64(time.Second), id); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +76,7 @@ func addHermesMessage(t *testing.T, path, sessionID string, at time.Time) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.Exec(`INSERT INTO messages (session_id, timestamp) VALUES (?, ?)`,
+	if _, err := db.ExecContext(context.Background(), `INSERT INTO messages (session_id, timestamp) VALUES (?, ?)`,
 		sessionID, float64(at.UnixNano())/float64(time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -504,7 +505,9 @@ func TestRecaptureRefusesWithoutSnapshot(t *testing.T) {
 func TestSnapshotCodexRecordsEachCwdConversation(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CODEX_HOME", root)
-	base := time.Now().Add(-time.Hour)
+	// Whole-second base, so the filesystem's own mtime granularity cannot
+	// round the value the assertion compares against.
+	base := time.Now().Add(-time.Hour).Truncate(time.Second)
 	writeFile(t, filepath.Join(root, "sessions", "a/rollout-1.jsonl"),
 		codexRollout("first-uuid", "/repo"), base)
 	writeFile(t, filepath.Join(root, "sessions", "a/rollout-2.jsonl"),
@@ -516,6 +519,21 @@ func TestSnapshotCodexRecordsEachCwdConversation(t *testing.T) {
 	}
 	if len(snapshot) != 1 || snapshot["first-uuid"] != base.UnixNano() {
 		t.Fatalf("got %v, want only first-uuid at %d", snapshot, base.UnixNano())
+	}
+}
+
+// An empty store is a real pre-launch state, not a failure: any conversation
+// that appears after it qualifies.
+func TestRecaptureBindsAfterAnEmptySnapshot(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CODEX_HOME", root)
+	snapshot := map[string]int64{}
+	writeFile(t, filepath.Join(root, "sessions", "a/rollout-1.jsonl"),
+		codexRollout("fresh-uuid", "/repo"), time.Now())
+
+	id, ok := Recapture("codex", "/repo", snapshot, map[string]bool{})
+	if !ok || id != "fresh-uuid" {
+		t.Fatalf("got id=%q ok=%v, want fresh-uuid true", id, ok)
 	}
 }
 

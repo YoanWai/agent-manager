@@ -1807,3 +1807,74 @@ func TestUpdateStatusOnSocketWritesOnlyWhatThisServerOwns(t *testing.T) {
 		t.Fatal("the server holding the row writes it")
 	}
 }
+
+// An empty store is a real pre-launch state: it must persist as {} and come
+// back as a non-nil map, where nil clears the column for good.
+func TestRelaunchSnapshotRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	sess := sample("sess", "g")
+	if err := st.CreateSession(sess); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRelaunchSnapshot("sess", map[string]int64{}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RelaunchSnapshot == nil || len(got.RelaunchSnapshot) != 0 {
+		t.Fatalf("empty snapshot decoded to %v, want a non-nil empty map", got.RelaunchSnapshot)
+	}
+	if err := st.SetRelaunchSnapshot("sess", map[string]int64{"conv-1": 123}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.RelaunchSnapshot) != 1 || got.RelaunchSnapshot["conv-1"] != 123 {
+		t.Fatalf("snapshot = %v, want conv-1 at 123", got.RelaunchSnapshot)
+	}
+	if err := st.SetRelaunchSnapshot("sess", nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err = st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RelaunchSnapshot != nil {
+		t.Fatalf("nil snapshot cleared to %v, want nil", got.RelaunchSnapshot)
+	}
+}
+
+// Binding an id clears the snapshot in the same statement, so a relaunch
+// landing between the two never loses its fresh snapshot.
+func TestBindAgentSessionIDClearsTheSnapshot(t *testing.T) {
+	st := newTestStore(t)
+	sess := sample("sess", "g")
+	if err := st.CreateSession(sess); err != nil {
+		t.Fatal(err)
+	}
+	launch := time.Now()
+	if err := st.SetAgentLaunchedAt("sess", launch); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRelaunchSnapshot("sess", map[string]int64{"conv-1": 123}); err != nil {
+		t.Fatal(err)
+	}
+	bound, err := st.BindAgentSessionID("sess", "conv-1", launch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bound {
+		t.Fatal("bind refused")
+	}
+	got, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "conv-1" || got.RelaunchSnapshot != nil {
+		t.Fatalf("after bind: id=%q snapshot=%v, want conv-1 and nil", got.AgentSessionID, got.RelaunchSnapshot)
+	}
+}

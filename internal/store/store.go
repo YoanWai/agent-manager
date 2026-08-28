@@ -636,7 +636,9 @@ func decodeRelaunchSnapshot(encoded string, sess *Session) error {
 // over. Written before the pane starts, so it never races the launch itself.
 func (s *Store) SetRelaunchSnapshot(id string, snapshot map[string]int64) error {
 	encoded := ""
-	if len(snapshot) > 0 {
+	if snapshot != nil {
+		// An empty non-nil map is a real pre-launch state ("the store held
+		// nothing"), so it persists as {} where nil clears the column.
 		data, err := json.Marshal(snapshot)
 		if err != nil {
 			return err
@@ -736,8 +738,11 @@ func (s *Store) SetAgentSessionID(id, agentSessionID string) error {
 // enough for a restart to clear the id and move the launch on underneath it,
 // and that stale answer names the conversation the restart just dropped.
 func (s *Store) BindAgentSessionID(id, agentSessionID string, launchedAt time.Time) (bool, error) {
+	// The snapshot clears in the same statement as the bind, so a relaunch
+	// landing between the two can never have its fresh snapshot wiped by a
+	// bind that answered the previous launch.
 	res, err := s.db.Exec(
-		`UPDATE sessions SET agent_session_id = ?
+		`UPDATE sessions SET agent_session_id = ?, relaunch_snapshot = ''
 		 WHERE id = ? AND agent_session_id = '' AND agent_launched_at = ?`,
 		agentSessionID, id, encodeTime(launchedAt))
 	if err != nil {

@@ -329,7 +329,9 @@ func (m *Model) snapshotRelaunch(sess store.Session, tool config.Tool, agentSess
 	m.poller.clearRecaptureSeen(sess.ID)
 	snapshot, ok := agentsession.Snapshot(tool.SessionStore, sess.Cwd)
 	if !ok {
-		return nil
+		// A snapshot the store refuses to hand over must not leave the
+		// previous launch's baseline in place for recapture to bind against.
+		return m.store.SetRelaunchSnapshot(sess.ID, nil)
 	}
 	return m.store.SetRelaunchSnapshot(sess.ID, snapshot)
 }
