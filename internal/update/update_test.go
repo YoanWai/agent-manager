@@ -63,6 +63,7 @@ func TestExtractChangesHumanizesGeneratedNotes(t *testing.T) {
 		"* fix(groups): make group creation immediate and reliable by @YoanWai in https://github.com/YoanWai/agent-manager/pull/191",
 		"* feat(config): add Pi as a built-in tool by @steveprentice in https://github.com/YoanWai/agent-manager/pull/201",
 		"* chore(deps): bump gopsutil by @dependabot[bot] in https://github.com/YoanWai/agent-manager/pull/210",
+		"* docs(readme): add a badge by @YoanWai in https://github.com/YoanWai/agent-manager/pull/211",
 		"- feat(ui): add a [message browser](https://example.com) with `scrolling`",
 		"- feat(mcp-editor): expose tool capabilities",
 		"",
@@ -74,7 +75,6 @@ func TestExtractChangesHumanizesGeneratedNotes(t *testing.T) {
 	want := []string{
 		"Groups: Make group creation immediate and reliable",
 		"Config: Add Pi as a built-in tool · @steveprentice",
-		"Deps: Bump gopsutil",
 		"UI: Add a message browser with scrolling",
 		"MCP editor: Expose tool capabilities",
 	}
@@ -381,4 +381,32 @@ func swapReleasesURL(url string) func() {
 	previous := releasesURL
 	releasesURL = url
 	return func() { releasesURL = previous }
+}
+
+func TestExtractChangesKeepsWhatAReaderCanAct(t *testing.T) {
+	body := strings.Join([]string{
+		"## What's Changed",
+		"* feat(ui): a feature",
+		"* fix(ui): a fix",
+		"* perf(ui): a speedup",
+		"* docs(readme): a badge",
+		"* chore(deps): a bump",
+		"* ci: a workflow tweak",
+		"* build: a build tweak",
+		"* style: a reformat",
+		"* test: a case",
+		"* refactor(ui): a rename",
+		"* Ship the two agent skills for install via skills.sh",
+	}, "\n")
+
+	changes, total := extractChanges(body)
+	want := []string{
+		"UI: A feature",
+		"UI: A fix",
+		"UI: A speedup",
+		"Ship the two agent skills for install via skills.sh",
+	}
+	if total != len(want) || fmt.Sprint(changes) != fmt.Sprint(want) {
+		t.Fatalf("extractChanges() = %q total %d, want %q", changes, total, want)
+	}
 }

@@ -37,6 +37,12 @@ const (
 // releasesURL is a var so tests can point the fetch at a local server.
 var releasesURL = "https://api.github.com/repos/YoanWai/agent-manager/releases?per_page=100"
 
+// userFacingTypes are the conventional commit types that change what the
+// program does for the person reading the digest. The rest are real work
+// that leaves the running program identical, and every row one of them
+// takes is a row a feature or a fix does not get.
+var userFacingTypes = map[string]bool{"feat": true, "fix": true, "perf": true}
+
 var (
 	conventionalTitle = regexp.MustCompile(`(?i)^(feat|fix|docs|refactor|perf|test|build|ci|chore|style)(?:\(([^)]+)\))?!?:\s*(.+)$`)
 	pullSuffix        = regexp.MustCompile(`\s+by\s+(@[A-Za-z0-9-]+(?:\[bot])?)\s+in\s+https://github\.com/\S+\s*$`)
@@ -269,8 +275,12 @@ func extractChanges(body string) ([]string, int) {
 		if !strings.HasPrefix(trimmed, "* ") && !strings.HasPrefix(trimmed, "- ") {
 			continue
 		}
-		change := cleanChange(strings.TrimSpace(trimmed[2:]))
+		change, kind := cleanChange(strings.TrimSpace(trimmed[2:]))
 		if change == "" {
+			continue
+		}
+		// A bullet that names no type cannot be judged, so it stays.
+		if kind != "" && !userFacingTypes[kind] {
 			continue
 		}
 		total++
@@ -281,7 +291,9 @@ func extractChanges(body string) ([]string, int) {
 	return changes, total
 }
 
-func cleanChange(change string) string {
+// cleanChange returns the digest row for a generated bullet and the
+// conventional type it declared, empty when it declared none.
+func cleanChange(change string) (string, string) {
 	// Credit outside contributors on their digest lines; the maintainer's
 	// own handle and bot handles would be noise on every row.
 	author := ""
@@ -294,7 +306,9 @@ func cleanChange(change string) string {
 	change = markdownLink.ReplaceAllString(change, "$1")
 	change = strings.ReplaceAll(change, "`", "")
 	change = cleanText(change)
+	kind := ""
 	if match := conventionalTitle.FindStringSubmatch(change); match != nil {
+		kind = strings.ToLower(match[1])
 		description := sentenceCase(match[3])
 		if scope := labelCase(match[2]); scope != "" {
 			change = scope + ": " + description
@@ -311,7 +325,7 @@ func cleanChange(change string) string {
 	if author != "" {
 		change += " · " + author
 	}
-	return change
+	return change, kind
 }
 
 func cleanText(text string) string {
