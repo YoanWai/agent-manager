@@ -372,7 +372,12 @@ func openHermesRO(path string) (*sql.DB, error) {
 	query := dsn.Query()
 	query.Set("mode", "ro")
 	dsn.RawQuery = query.Encode()
-	return sql.Open("sqlite", dsn.String())
+	db, err := sql.Open("sqlite", dsn.String())
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	return db, nil
 }
 
 // hermesActivitySQL is the freshest activity hermes itself computes: the
@@ -380,7 +385,7 @@ func openHermesRO(path string) (*sql.DB, error) {
 // start. A resumed conversation's first turn pushes one of the first two.
 const hermesActivitySQL = `COALESCE(s.last_activity_at, (SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id), s.started_at)`
 
-func queryHermesActivity(db *sql.DB, ctx context.Context, cwd string, add func(id string, sessionCwd sql.NullString, activity float64) bool) error {
+func queryHermesActivity(ctx context.Context, db *sql.DB, add func(id string, sessionCwd sql.NullString, activity float64)) error {
 	rows, err := db.QueryContext(ctx, `
 		SELECT s.id, s.cwd, `+hermesActivitySQL+`
 		FROM sessions s
@@ -388,7 +393,7 @@ func queryHermesActivity(db *sql.DB, ctx context.Context, cwd string, add func(i
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var id string
 		var sessionCwd sql.NullString
@@ -396,9 +401,7 @@ func queryHermesActivity(db *sql.DB, ctx context.Context, cwd string, add func(i
 		if err := rows.Scan(&id, &sessionCwd, &activity); err != nil {
 			return err
 		}
-		if !add(id, sessionCwd, activity) {
-			return nil
-		}
+		add(id, sessionCwd, activity)
 	}
 	return rows.Err()
 }
@@ -408,18 +411,16 @@ func snapshotHermes(path, cwd string) (map[string]int64, bool) {
 	if err != nil {
 		return nil, false
 	}
-	defer db.Close()
-	db.SetMaxOpenConns(1)
+	defer func() { _ = db.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	wantCwd := resolvePath(cwd)
 	snapshot := map[string]int64{}
-	err = queryHermesActivity(db, ctx, cwd, func(id string, sessionCwd sql.NullString, activity float64) bool {
+	err = queryHermesActivity(ctx, db, func(id string, sessionCwd sql.NullString, activity float64) {
 		if !sessionIDPattern.MatchString(id) || !sessionCwd.Valid || resolvePath(sessionCwd.String) != wantCwd {
-			return true
+			return
 		}
 		snapshot[id] = int64(activity * float64(time.Second))
-		return true
 	})
 	if err != nil {
 		return nil, false
@@ -434,22 +435,20 @@ func recaptureHermes(path, cwd string, snapshot map[string]int64, claimed map[st
 	if err != nil {
 		return "", false
 	}
-	defer db.Close()
-	db.SetMaxOpenConns(1)
+	defer func() { _ = db.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	wantCwd := resolvePath(cwd)
 	var cands []candidate
-	err = queryHermesActivity(db, ctx, cwd, func(id string, sessionCwd sql.NullString, activity float64) bool {
+	err = queryHermesActivity(ctx, db, func(id string, sessionCwd sql.NullString, activity float64) {
 		if !sessionIDPattern.MatchString(id) || claimed[id] || !sessionCwd.Valid || resolvePath(sessionCwd.String) != wantCwd {
-			return true
+			return
 		}
 		activityNs := int64(activity * float64(time.Second))
 		if !afterSnapshot(snapshot, id, activityNs) {
-			return true
+			return
 		}
 		cands = append(cands, candidate{id: id, modTime: time.Unix(0, activityNs)})
-		return true
 	})
 	if err != nil || len(cands) != 1 {
 		return "", false
@@ -561,22 +560,11 @@ func hermesStateDB() string {
 // Hermes records exact cwd and Unix creation time in state.db, which
 // distinguishes parallel sessions in the same project.
 func captureHermes(path, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	if path == "" {
-		return "", false
-	}
-	if _, err := os.Stat(path); err != nil {
-		return "", false
-	}
-	dsn := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
-	query := dsn.Query()
-	query.Set("mode", "ro")
-	dsn.RawQuery = query.Encode()
-	db, err := sql.Open("sqlite", dsn.String())
+	db, err := openHermesRO(path)
 	if err != nil {
 		return "", false
 	}
 	defer db.Close()
-	db.SetMaxOpenConns(1)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	rows, err := db.QueryContext(ctx, `
