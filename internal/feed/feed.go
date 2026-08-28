@@ -24,8 +24,12 @@ import (
 )
 
 const (
-	cacheFile     = "message-feed.json"
-	checkInterval = 6 * time.Hour
+	cacheFile = "message-feed.json"
+	// checkInterval matches the release check. The feed exists to reach
+	// installs that are already running, so a floor longer than that one
+	// lets a release notice arrive hours before the message announcing it,
+	// and a known-issue warning arrive long after it was needed.
+	checkInterval = 10 * time.Minute
 	requestBudget = 4 * time.Second
 
 	maxPayload    = 64 << 10
