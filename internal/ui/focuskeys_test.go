@@ -347,7 +347,7 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 		if err != nil {
 			t.Fatalf("capture: %v", err)
 		}
-		if strings.Contains(pane, "1b  5b  41  1b  5b  42  0a") {
+		if strings.Contains(strings.Join(strings.Fields(pane), " "), "1b 5b 41 1b 5b 42 0a") {
 			return
 		}
 		if time.Now().After(deadline) {
