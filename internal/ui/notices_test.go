@@ -1177,6 +1177,79 @@ func TestFullLayoutFootLineCountsMessages(t *testing.T) {
 	}
 }
 
+func TestLayoutsCanHideStats(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		full  bool
+		width int
+	}{
+		{name: "split", width: 36},
+		{name: "full", full: true, width: 119},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := shotModel()
+			m.fullLayout = tc.full
+			m.hideStats = true
+			if foot := m.railFootLines(tc.width); len(foot) > 0 {
+				t.Fatalf("hidden stats still paint %d lines:\n%s", len(foot), ansi.Strip(strings.Join(foot, "\n")))
+			}
+			rail := m.railLines(tc.width, m.listBodyHeight())
+			if len(rail) != m.listBodyHeight() {
+				t.Fatalf("footerless rail = %d rows, body is %d", len(rail), m.listBodyHeight())
+			}
+			for _, line := range rail {
+				if line.rule {
+					t.Fatal("hidden stats left their separator behind")
+				}
+			}
+		})
+	}
+}
+
+func TestHiddenStatsStillShowMessages(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		full  bool
+		width int
+	}{
+		{name: "split", width: 36},
+		{name: "full", full: true, width: 119},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			m.width, m.height = 120, 34
+			m.fullLayout = tc.full
+			m.hideStats = true
+			foot := ansi.Strip(strings.Join(m.railFootLines(tc.width), "\n"))
+			if !strings.Contains(foot, "messages") {
+				t.Fatalf("hidden stats lost active messages:\n%s", foot)
+			}
+			for _, hidden := range []string{"cpu", "mem", "disk", "net"} {
+				if strings.Contains(foot, hidden) {
+					t.Fatalf("message-only foot still contains %q:\n%s", hidden, foot)
+				}
+			}
+		})
+	}
+}
+
+func TestHiddenStatsMessageBadgeFitsNarrowWidth(t *testing.T) {
+	m := buildModel(t)
+	m.fullLayout = true
+	m.hideStats = true
+	const width = 8
+	lines := m.railFootLines(width)
+	if len(lines) != 1 {
+		t.Fatalf("narrow message foot has %d lines, want 1", len(lines))
+	}
+	if got := ansi.StringWidth(lines[0]); got > width {
+		t.Fatalf("narrow message foot is %d columns, want at most %d", got, width)
+	}
+	if lines := m.railFootLines(railInset); len(lines) != 0 {
+		t.Fatalf("message foot without usable width has %d lines, want 0", len(lines))
+	}
+}
+
 func TestReleaseSummaryPrefersAuthoredHighlights(t *testing.T) {
 	release := uiReleaseWithTotal("v0.34.0", 17, "UI: Full screen sessions mode")
 	release.Highlights = []string{"The session list can take the whole terminal"}

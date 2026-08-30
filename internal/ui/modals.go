@@ -281,6 +281,14 @@ func (m *Model) viewSettings() string {
 	if m.settings.fullLayout {
 		sessionLayout = "full screen"
 	}
+	header := "show"
+	if m.settings.hideHeader {
+		header = "hide"
+	}
+	stats := "show"
+	if m.settings.hideStats {
+		stats = "hide"
+	}
 	quickClose := "stay open"
 	if m.settings.quickCloseSend {
 		quickClose = "close"
@@ -353,6 +361,8 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldThemeAuto, "theme follows OS", themeAuto) + "\n" +
 		row(settingsFieldDensity, "list density", density) + "\n" +
 		row(settingsFieldSessionLayout, "sessions layout", sessionLayout) + "\n" +
+		row(settingsFieldHeader, "header", header) + "\n" +
+		row(settingsFieldStats, "computer stats", stats) + "\n" +
 		row(settingsFieldLayout, "review layout", layout) + "\n" +
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +

@@ -172,6 +172,22 @@ func sessionLayoutValue(full bool) string {
 	return "split"
 }
 
+func storedHideHeader(st *store.Store) bool {
+	chosen, err := st.Setting(hideHeaderSetting)
+	if err != nil {
+		return false
+	}
+	return chosen == "on"
+}
+
+func storedHideStats(st *store.Store) bool {
+	chosen, err := st.Setting(hideStatsSetting)
+	if err != nil {
+		return false
+	}
+	return chosen == "on"
+}
+
 // enterFocuses reports which key opens a session where. Enter focuses the
 // preview and A attaches full screen by default; a stored "attach" choice
 // swaps the pair. Cached on the model because the footer reads it every
@@ -234,6 +250,8 @@ func (m *Model) openSettings() {
 
 		comfortableRows: m.comfortableRows,
 		fullLayout:      m.fullLayout,
+		hideHeader:      m.hideHeader,
+		hideStats:       m.hideStats,
 		worktreeDefault: m.defaultWorktree(),
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
@@ -352,6 +370,20 @@ func (m *Model) persistSettings() {
 	if err := m.store.SetSetting(sessionLayoutSetting, sessionLayoutValue(m.settings.fullLayout)); err != nil {
 		m.errBar.text = err.Error()
 	}
+	hideHeader := "off"
+	if m.settings.hideHeader {
+		hideHeader = "on"
+	}
+	if err := m.store.SetSetting(hideHeaderSetting, hideHeader); err != nil {
+		m.errBar.text = err.Error()
+	}
+	hideStats := "off"
+	if m.settings.hideStats {
+		hideStats = "on"
+	}
+	if err := m.store.SetSetting(hideStatsSetting, hideStats); err != nil {
+		m.errBar.text = err.Error()
+	}
 	worktreeChoice := "off"
 	if m.settings.worktreeDefault {
 		worktreeChoice = "on"
@@ -377,6 +409,8 @@ func (m *Model) persistSettings() {
 	m.arrowStep = m.settings.arrowStep
 	m.comfortableRows = m.settings.comfortableRows
 	m.fullLayout = m.settings.fullLayout
+	m.hideHeader = m.settings.hideHeader
+	m.hideStats = m.settings.hideStats
 }
 
 func (m *Model) openCLIPicker() {
@@ -498,6 +532,10 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.comfortableRows = !m.settings.comfortableRows
 	case settingsFieldSessionLayout:
 		m.settings.fullLayout = !m.settings.fullLayout
+	case settingsFieldHeader:
+		m.settings.hideHeader = !m.settings.hideHeader
+	case settingsFieldStats:
+		m.settings.hideStats = !m.settings.hideStats
 	case settingsFieldLayout:
 		m.settings.layoutSplit = !m.settings.layoutSplit
 	case settingsFieldQuickClose:

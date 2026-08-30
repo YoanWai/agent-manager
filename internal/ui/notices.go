@@ -299,6 +299,12 @@ func (m *Model) railFootLines(width int) []string {
 	}
 	meters := m.computerLines(width)
 	notices := m.activeNotices()
+	if m.hideStats {
+		if len(notices) == 0 {
+			return nil
+		}
+		return m.noticeCardLines(notices, width, len(meters))
+	}
 	metersWidth := maxLineWidth(meters)
 	room := width - metersWidth - 3
 	if len(notices) == 0 || room < noticePanelMin {
@@ -322,6 +328,22 @@ func (m *Model) railFootLines(width int) []string {
 // block and the messages card condensed to one line, machine readings
 // inline on the left and the messages count against the right edge.
 func (m *Model) fullFootLine(width int) []string {
+	badge := ""
+	if count := len(m.activeNotices()); count > 0 {
+		badge = valueStyle.Render(fmt.Sprintf("messages %d", count)) + "  " + keyCap("M", "open")
+	}
+	if m.hideStats {
+		if badge == "" {
+			return nil
+		}
+		available := width - railInset
+		if available <= 0 {
+			return nil
+		}
+		badge = ansi.Truncate(badge, available, "…")
+		indent := max(width-railInset-ansi.StringWidth(badge), railInset)
+		return []string{strings.Repeat(" ", indent) + badge}
+	}
 	reading := func(label, value string, ok bool) string {
 		if !ok {
 			return labelStyle.Render(label+" ") + subtleStyle.Render("n/a")
@@ -344,10 +366,6 @@ func (m *Model) fullFootLine(width int) []string {
 		parts = append(parts, reading("net", "↓ "+humanBytes(m.net.down)+"/s ↑ "+humanBytes(m.net.up)+"/s", true))
 	}
 	line := strings.Repeat(" ", railInset) + strings.Join(parts, "  ")
-	badge := ""
-	if count := len(m.activeNotices()); count > 0 {
-		badge = valueStyle.Render(fmt.Sprintf("messages %d", count)) + "  " + keyCap("M", "open")
-	}
 	// The readings yield to the badge and the badge to the width: a
 	// narrow terminal trims values from the right rather than wrapping
 	// the one-line foot into the list.

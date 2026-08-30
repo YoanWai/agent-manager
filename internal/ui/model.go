@@ -155,6 +155,10 @@ type Model struct {
 	// whole width, with no preview column beside it. Every list frame
 	// reads it, so it lives here instead of the store.
 	fullLayout bool
+	// Header and stats visibility stay cached because rendering and sizing
+	// read them every frame.
+	hideHeader bool
+	hideStats  bool
 	// watchedGen is previewGen as of the last poll pass, so a selection
 	// that has not moved since can be recognised as at rest.
 	watchedGen        uint64
@@ -408,6 +412,8 @@ type settingsState struct {
 	arrowStep       bool
 	comfortableRows bool
 	fullLayout      bool
+	hideHeader      bool
+	hideStats       bool
 	worktreeDefault bool
 	notifications   bool
 	notifyFinished  bool
@@ -429,6 +435,8 @@ const (
 	settingsFieldThemeAuto
 	settingsFieldDensity
 	settingsFieldSessionLayout
+	settingsFieldHeader
+	settingsFieldStats
 	settingsFieldLayout
 	settingsFieldQuickClose
 	settingsFieldFocusKey
@@ -687,6 +695,8 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		arrowStep:           storedArrowStep(st),
 		comfortableRows:     storedComfortableRows(st),
 		fullLayout:          storedFullLayout(st),
+		hideHeader:          storedHideHeader(st),
+		hideStats:           storedHideStats(st),
 		mode:                modeList,
 		update:              updateInfo{version: version},
 		dismissed:           loadDismissed(st),

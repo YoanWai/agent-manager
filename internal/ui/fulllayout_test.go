@@ -44,6 +44,109 @@ func TestSettingsTogglesSessionLayout(t *testing.T) {
 	}
 }
 
+func TestSettingsToggleChromeIndependently(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		field      int
+		hideHeader bool
+		hideStats  bool
+	}{
+		{name: "header only", field: settingsFieldHeader, hideHeader: true},
+		{name: "stats only", field: settingsFieldStats, hideStats: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			m.openSettings()
+			if m.settings.hideHeader || m.settings.hideStats {
+				t.Fatal("header and stats should show by default")
+			}
+			settings := ansi.Strip(m.viewSettings())
+			for _, want := range []string{"header", "computer stats"} {
+				if !strings.Contains(settings, want) {
+					t.Fatalf("settings missing %q:\n%s", want, settings)
+				}
+			}
+
+			for m.settings.field != tc.field {
+				m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+			}
+			m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+			settings = ansi.Strip(m.viewSettings())
+			headerValue, statsValue := "show", "show"
+			if tc.hideHeader {
+				headerValue = "hide"
+			}
+			if tc.hideStats {
+				statsValue = "hide"
+			}
+			for _, row := range []struct {
+				label string
+				value string
+			}{
+				{label: "header", value: headerValue},
+				{label: "computer stats", value: statsValue},
+			} {
+				found := false
+				for _, line := range strings.Split(settings, "\n") {
+					if !strings.Contains(line, row.label) {
+						continue
+					}
+					found = true
+					if !strings.Contains(line, row.value) {
+						t.Fatalf("%s row missing %q:\n%s", row.label, row.value, line)
+					}
+				}
+				if !found {
+					t.Fatalf("settings missing %s row:\n%s", row.label, settings)
+				}
+			}
+			m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+			if m.hideHeader != tc.hideHeader || m.hideStats != tc.hideStats {
+				t.Fatalf("model visibility = header %t stats %t, want header %t stats %t",
+					m.hideHeader, m.hideStats, tc.hideHeader, tc.hideStats)
+			}
+			if storedHideHeader(m.store) != tc.hideHeader || storedHideStats(m.store) != tc.hideStats {
+				t.Fatalf("reloaded visibility = header %t stats %t, want header %t stats %t",
+					storedHideHeader(m.store), storedHideStats(m.store), tc.hideHeader, tc.hideStats)
+			}
+		})
+	}
+}
+
+func TestLayoutsCanHideHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		full bool
+	}{
+		{name: "split"},
+		{name: "full", full: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := shotModel()
+			m.fullLayout = tc.full
+			shownBody := m.listBodyHeight()
+			if got := m.headerRows(); got != 1 {
+				t.Fatalf("shown header = %d rows, want 1", got)
+			}
+
+			m.hideHeader = true
+			if got := m.headerRows(); got != 0 {
+				t.Fatalf("hidden header = %d rows, want 0", got)
+			}
+			if rows := m.viewHeaderRows(); len(rows) != 0 {
+				t.Fatalf("hidden header still paints %d rows", len(rows))
+			}
+			if got := m.listBodyHeight(); got != shownBody+1 {
+				t.Fatalf("hidden header body = %d rows, want %d", got, shownBody+1)
+			}
+			if rows := strings.Split(m.View(), "\n"); len(rows) != m.height {
+				t.Fatalf("headerless frame = %d rows, terminal is %d", len(rows), m.height)
+			}
+		})
+	}
+}
+
 // The full screen frame is the rail alone: no preview column, so the
 // captured pane and the detail head stay with the split layout.
 func TestFullLayoutFrameHasNoPreviewColumn(t *testing.T) {
