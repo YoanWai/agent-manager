@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -290,6 +292,68 @@ func TestFocusModeForwardsKeys(t *testing.T) {
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("ctrl+q left mode = %v", m.mode)
+	}
+}
+
+func TestFocusModeForwardsArrowKeys(t *testing.T) {
+	m := buildModel(t)
+	createSessionOn(t, m, "focus-arrows", "quietchat", t.TempDir())
+	m.selectSessionRow(t, "focus-arrows")
+	sess := m.rows[m.cursor].sess
+	quitAgent(t, m, sess.ID)
+	m.focus = newFocusWatch(m.tmux, func(tea.Msg) {})
+	t.Cleanup(m.focus.Close)
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !m.focus.serving(sess.ID) {
+		if time.Now().After(deadline) {
+			t.Fatal("focus control client never became ready")
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+
+	ready := filepath.Join(t.TempDir(), "ready")
+	reader := "touch " + tmux.ShellQuote(ready) + "; od -An -tx1 -N7"
+	command := "sh -c " + tmux.ShellQuote(reader)
+	if err := m.tmux.SendKeys(sess.ID, command, "Enter"); err != nil {
+		t.Fatalf("start key reader: %v", err)
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("check key reader: %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("key reader never became ready")
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+
+	for _, key := range []tea.KeyType{tea.KeyUp, tea.KeyDown, tea.KeyEnter} {
+		updated, _ = m.handleKey(tea.KeyMsg{Type: key})
+		*m = *updated.(*Model)
+	}
+
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil {
+			t.Fatalf("capture: %v", err)
+		}
+		if strings.Contains(strings.Join(strings.Fields(pane), " "), "1b 5b 41 1b 5b 42 0a") {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("arrow bytes never reached pane: %q", pane)
+		}
+		time.Sleep(30 * time.Millisecond)
 	}
 }
 
