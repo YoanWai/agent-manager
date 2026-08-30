@@ -336,6 +336,11 @@ func (m *Model) fullFootLine(width int) []string {
 		if badge == "" {
 			return nil
 		}
+		available := width - railInset
+		if available <= 0 {
+			return nil
+		}
+		badge = ansi.Truncate(badge, available, "…")
 		indent := max(width-railInset-ansi.StringWidth(badge), railInset)
 		return []string{strings.Repeat(" ", indent) + badge}
 	}

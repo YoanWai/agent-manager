@@ -1233,6 +1233,20 @@ func TestHiddenStatsStillShowMessages(t *testing.T) {
 	}
 }
 
+func TestHiddenStatsMessageBadgeFitsNarrowWidth(t *testing.T) {
+	m := buildModel(t)
+	m.fullLayout = true
+	m.hideStats = true
+	const width = 8
+	lines := m.railFootLines(width)
+	if len(lines) != 1 {
+		t.Fatalf("narrow message foot has %d lines, want 1", len(lines))
+	}
+	if got := ansi.StringWidth(lines[0]); got > width {
+		t.Fatalf("narrow message foot is %d columns, want at most %d", got, width)
+	}
+}
+
 func TestReleaseSummaryPrefersAuthoredHighlights(t *testing.T) {
 	release := uiReleaseWithTotal("v0.34.0", 17, "UI: Full screen sessions mode")
 	release.Highlights = []string{"The session list can take the whole terminal"}
