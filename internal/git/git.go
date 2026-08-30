@@ -714,46 +714,36 @@ func (d *Driver) AddWorktree(root, sessionName string) (string, string, error) {
 	return path, branch, nil
 }
 
-// MoveWorktree renames a session's worktree and its branch to the ones a
-// session of newName would have been given at spawn, and reports where
-// they ended up. The recorded pair is returned untouched when there is
-// nothing to do: a name that lands on the same directory, or a worktree
-// git no longer has under the recorded path and branch, which is what a
-// worktree renamed or deleted by hand looks like. A destination already
-// taken is an error, so a session's name, directory and branch never
-// drift apart.
-func (d *Driver) MoveWorktree(root, path, branch, newName string) (string, string, error) {
+// RenameWorktreeBranch gives a managed worktree the branch a session of
+// newName would have received at spawn without moving its live directory.
+// The recorded branch is returned untouched when the worktree directory or
+// branch no longer exists, which is what a worktree renamed or removed by
+// hand looks like.
+func (d *Driver) RenameWorktreeBranch(root, path, branch, newName string) (string, error) {
 	name := sanitizeWorktreeName(newName)
 	if name == "" {
-		return "", "", fmt.Errorf("session name %q leaves nothing usable for a worktree directory", newName)
+		return "", fmt.Errorf("session name %q leaves nothing usable for a worktree branch", newName)
 	}
-	newPath, newBranch := worktreePlacement(root, name)
-	if newPath == path && newBranch == branch {
-		return path, branch, nil
+	newBranch := "am/" + name
+	if newBranch == branch {
+		return branch, nil
 	}
 	if _, err := os.Stat(path); err != nil {
 		if !os.IsNotExist(err) {
-			return "", "", err
+			return "", err
 		}
-		return path, branch, nil
+		return branch, nil
 	}
 	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
-		return path, branch, nil
-	}
-	if _, err := os.Stat(newPath); err == nil {
-		return "", "", fmt.Errorf("worktree path already exists: %s", newPath)
+		return branch, nil
 	}
 	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+newBranch); err == nil {
-		return "", "", fmt.Errorf("branch already exists: %s", newBranch)
-	}
-	if _, err := d.run(root, "worktree", "move", path, newPath); err != nil {
-		return "", "", err
+		return "", fmt.Errorf("branch already exists: %s", newBranch)
 	}
 	if _, err := d.run(root, "branch", "-m", branch, newBranch); err != nil {
-		_, _ = d.run(root, "worktree", "move", newPath, path)
-		return "", "", err
+		return "", err
 	}
-	return newPath, newBranch, nil
+	return newBranch, nil
 }
 
 // RemoveWorktreeIfClean removes a session's worktree and its am/ branch

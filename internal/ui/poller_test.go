@@ -165,7 +165,7 @@ func TestPendingRenameForADeletedSessionDoesNotFailThePoll(t *testing.T) {
 	}
 }
 
-func TestPendingRenameMovesTheWorktree(t *testing.T) {
+func TestPendingRenameKeepsTheWorktreeDirectory(t *testing.T) {
 	m := buildModel(t)
 	repo := seedRepo(t)
 	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
@@ -176,9 +176,8 @@ func TestPendingRenameMovesTheWorktree(t *testing.T) {
 		t.Fatalf("rename: %v", err)
 	}
 
-	wantDir := filepath.Join(filepath.Dir(spawned.Cwd), "audit-the-poller")
-	if sess.Cwd != wantDir || sess.WorktreeBranch != "am/audit-the-poller" {
-		t.Fatalf("session did not follow the name: %+v", sess)
+	if sess.Cwd != spawned.Cwd || sess.WorktreeBranch != "am/audit-the-poller" {
+		t.Fatalf("session did not keep its path and follow the branch: %+v", sess)
 	}
 	if sess.Name != "audit the poller" {
 		t.Fatalf("name = %q", sess.Name)
@@ -187,15 +186,16 @@ func TestPendingRenameMovesTheWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if stored.Cwd != wantDir || stored.WorktreeBranch != "am/audit-the-poller" || stored.Name != "audit the poller" {
-		t.Fatalf("store did not follow the name: %+v", stored)
+	if stored.Cwd != spawned.Cwd || stored.WorktreeBranch != "am/audit-the-poller" || stored.Name != "audit the poller" {
+		t.Fatalf("store did not keep the path and follow the name: %+v", stored)
 	}
-	if _, err := os.Stat(wantDir); err != nil {
-		t.Fatalf("worktree directory did not follow: %v", err)
+	if _, err := os.Stat(spawned.Cwd); err != nil {
+		t.Fatalf("worktree directory moved: %v", err)
 	}
 	if _, found := m.hooks.ReadName(spawned.ID); found {
 		t.Fatal("the name file should be consumed")
 	}
+	assertPaneStayedOnSpawnPath(t, m, spawned.ID, spawned.Cwd)
 }
 
 func TestPendingRenameOnATakenWorktreeNameStopsAfterOneReport(t *testing.T) {

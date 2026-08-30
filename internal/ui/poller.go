@@ -1051,8 +1051,9 @@ func launchPromptTaken(sess store.Session, region string) bool {
 // keeping the manager the sole database writer. The file is consumed
 // even when the name is unchanged so it never lingers. A dead tmux
 // session cannot take a label, which is fine; the label is rewritten on
-// revive. A worktree session's directory and branch follow the new name,
-// and a name git cannot give them keeps the session on the one it has:
+// revive. A worktree session's branch follows the new name while its live
+// directory stays fixed, and a name git cannot give the branch keeps the
+// session on the one it has:
 // the file is consumed either way, so the reason is reported once rather
 // than on every poll from here on.
 func (p *poller) applyPendingRename(sess *store.Session) error {
@@ -1061,7 +1062,7 @@ func (p *poller) applyPendingRename(sess *store.Session) error {
 		return nil
 	}
 	if name != "" && name != sess.Name {
-		if err := renameSessionWorktree(p.gitDrv, p.store, sess, name); err != nil {
+		if err := renameSessionWorktreeBranch(p.gitDrv, p.store, sess, name); err != nil {
 			_ = p.hooks.RemoveName(sess.ID)
 			return fmt.Errorf("worktree rename: %w", err)
 		}
