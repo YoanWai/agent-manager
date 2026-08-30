@@ -754,7 +754,7 @@ func TestRecaptureHermesRefusesTwoThatTurnedAgain(t *testing.T) {
 }
 
 // A session whose heartbeat never stamped still signals its resumed turn
-// through a fresh message row, which the COALESCE picks over started_at.
+// through a fresh message row, which outruns started_at.
 func TestRecaptureHermesBindsOnANewMessageWithoutAHeartbeat(t *testing.T) {
 	base := time.Now().Add(-time.Hour)
 	path := writeHermesStore(t,
