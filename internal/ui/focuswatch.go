@@ -14,11 +14,12 @@ import (
 // with the pane's cursor cell so the focused view can show where typing
 // will land. Process stats stay on the poller cadence.
 type focusPreviewMsg struct {
-	sessID   string
-	preview  string
-	cursorX  int
-	cursorY  int
-	cursorOK bool
+	sessID      string
+	preview     string
+	cursorX     int
+	cursorY     int
+	cursorOK    bool
+	paneStateOK bool
 	// paneMouse and historySize let the wheel route without asking tmux
 	// mid-Update: whether the pane's application owns the mouse, and how
 	// far back its history goes. paneMotion narrows that to the apps that
@@ -279,9 +280,8 @@ func matchExecShape(pane string) string {
 	return pane + "\n"
 }
 
-// applyPaneState reads "x,y,cursor,mouseflags,history,allmotion,sgr" from
-// display-message into the preview message. A malformed reply leaves the
-// zero values: no cursor, no mouse claim, no history.
+// applyPaneState ignores malformed replies because tmux can substitute its
+// default status text when it does not receive the format expression.
 func applyPaneState(msg *focusPreviewMsg, reply string) {
 	parts := strings.Split(strings.TrimSpace(reply), ",")
 	if len(parts) != 7 {
@@ -289,12 +289,17 @@ func applyPaneState(msg *focusPreviewMsg, reply string) {
 	}
 	x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
 	y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if errX == nil && errY == nil && strings.TrimSpace(parts[2]) == "1" {
+	historySize, errHistory := strconv.Atoi(strings.TrimSpace(parts[4]))
+	if errX != nil || errY != nil || errHistory != nil {
+		return
+	}
+	msg.paneStateOK = true
+	if strings.TrimSpace(parts[2]) == "1" {
 		msg.cursorX, msg.cursorY, msg.cursorOK = x, y, true
 	}
 	msg.paneMouse = strings.Contains(parts[3], "1")
-	if size, err := strconv.Atoi(strings.TrimSpace(parts[4])); err == nil && size > 0 {
-		msg.historySize = size
+	if historySize > 0 {
+		msg.historySize = historySize
 	}
 	msg.paneMotion = strings.TrimSpace(parts[5]) == "1"
 	msg.paneSGR = strings.TrimSpace(parts[6]) == "1"

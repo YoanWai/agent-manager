@@ -272,13 +272,62 @@ func TestFocusWatchHonorsHiddenCursor(t *testing.T) {
 			if !ok || preview.sessID != id || !strings.Contains(preview.preview, "hidden-cursor") {
 				continue
 			}
-			if preview.cursorOK {
+			if !preview.paneStateOK || preview.cursorOK {
 				continue
 			}
 			return
 		case <-deadline:
 			t.Fatal("no hidden-cursor preview reported the cursor hidden")
 		}
+	}
+}
+
+func TestApplyPaneState(t *testing.T) {
+	var msg focusPreviewMsg
+	applyPaneState(&msg, "12,34,1,010,250,0,1\n")
+	if !msg.paneStateOK || !msg.cursorOK || msg.cursorX != 12 || msg.cursorY != 34 {
+		t.Fatalf("pane state = %+v", msg)
+	}
+	if !msg.paneMouse {
+		t.Fatal("mouse flag 1 not read as pane-owned mouse")
+	}
+	if msg.historySize != 250 {
+		t.Fatalf("historySize = %d, want 250", msg.historySize)
+	}
+	if msg.paneMotion {
+		t.Fatal("a button-tracking pane read as tracking all motion")
+	}
+
+	// tmux reports 1003 in mouse_all_flag, the apps that want a pointer
+	// move with every event.
+	var motion focusPreviewMsg
+	applyPaneState(&motion, "0,0,1,100,0,1,1")
+	if !motion.paneStateOK || !motion.paneMouse || !motion.paneMotion {
+		t.Fatalf("all-motion pane state = %+v", motion)
+	}
+
+	var plain focusPreviewMsg
+	applyPaneState(&plain, "0,0,1,000,0,0,0")
+	if !plain.paneStateOK || plain.paneMouse || plain.paneMotion || plain.historySize != 0 || !plain.cursorOK {
+		t.Fatalf("plain pane state = %+v", plain)
+	}
+
+	var hidden focusPreviewMsg
+	applyPaneState(&hidden, "7,8,0,000,0,0,0")
+	if !hidden.paneStateOK || hidden.cursorOK {
+		t.Fatalf("hidden cursor pane state = %+v", hidden)
+	}
+
+	// tmux answers an unquoted format with its default status message;
+	// that must never read as pane state.
+	var bogus focusPreviewMsg
+	applyPaneState(&bogus, "[am_x] 0:zsh, current pane 0 - (00:43)")
+	if bogus.paneStateOK || bogus.cursorOK || bogus.paneMouse || bogus.historySize != 0 {
+		t.Fatal("applyPaneState accepted tmux's default message")
+	}
+	applyPaneState(&bogus, "nonsense")
+	if bogus.paneStateOK || bogus.cursorOK {
+		t.Fatal("applyPaneState accepted junk")
 	}
 }
 
