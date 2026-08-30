@@ -730,7 +730,10 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 	}
 	recaptureCounts := map[string]int{}
 	for _, i := range pending {
-		if !sessions[i].AgentLaunchedAt.IsZero() {
+		// The persisted snapshot marks a relaunch even while AgentLaunchedAt
+		// is still in flight, so the shared-scope refusal covers the
+		// stamping window too.
+		if !sessions[i].AgentLaunchedAt.IsZero() || sessions[i].RelaunchSnapshot != nil {
 			recaptureCounts[recaptureScope(sessions[i])]++
 		}
 	}
@@ -743,7 +746,7 @@ cands:
 		// exact candidate counts.
 		var agentID string
 		var ok bool
-		if sess.AgentLaunchedAt.IsZero() {
+		if sess.AgentLaunchedAt.IsZero() && sess.RelaunchSnapshot == nil {
 			agentID, ok = agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed)
 		} else {
 			if recaptureCounts[recaptureScope(sess)] > 1 {
@@ -786,7 +789,6 @@ cands:
 	return captured, nil
 }
 
-// stableRecapture requires the same candidate on two passes of one launch.
 func (p *poller) stableRecapture(sessID string, launchedAt time.Time, agentID string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -799,8 +801,7 @@ func (p *poller) stableRecapture(sessID string, launchedAt time.Time, agentID st
 	return false
 }
 
-// clearRecaptureSeen drops the stored sighting when a pass finds no single
-// candidate, so a later sighting starts its two-pass count fresh.
+// A later sighting starts its two-pass count fresh.
 func (p *poller) clearRecaptureSeen(sessID string) {
 	p.mu.Lock()
 	delete(p.recaptureSeen, sessID)

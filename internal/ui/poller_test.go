@@ -1182,6 +1182,52 @@ func TestCaptureAgentSessionIDsRefusesSharedRelaunchScope(t *testing.T) {
 	}
 }
 
+// The relaunch snapshot lands before the launch timestamp, and a poll in
+// that window must not fall back to normal capture: the snapshot already
+// marks the relaunch, so a conversation merely predating it stays refused.
+func TestCaptureAgentSessionIDsRefusesCaptureInTheStampingWindow(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	created := time.Now().Add(-time.Hour)
+	// Written a second before the row's birth: inside the slack a plain
+	// capture window admits, so the stale path would bind it.
+	oldMtime := created.Add(-time.Second)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-old.jsonl"), "old-id", cwd, oldMtime)
+
+	if err := st.CreateSession(store.Session{ID: "sess", Name: "s", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: created}); err != nil {
+		t.Fatal(err)
+	}
+	// The snapshot is persisted but the launch timestamp is not yet: the
+	// pane-creation window the poll can observe.
+	if err := st.SetRelaunchSnapshot("sess", map[string]int64{"old-id": oldMtime.UnixNano()}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]recaptureSighting{}}
+	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
+		t.Fatalf("captured %d err=%v, want the stamping window refused", captured, err)
+	}
+	got, err := st.Get("sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionID != "" {
+		t.Fatalf("session bound %q, want no id before the launch stamp", got.AgentSessionID)
+	}
+}
+
 func TestStableRecaptureDoesNotReuseASightingFromAnOlderLaunch(t *testing.T) {
 	p := &poller{recaptureSeen: map[string]recaptureSighting{}}
 	firstLaunch := time.Now()
