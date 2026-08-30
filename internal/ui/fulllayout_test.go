@@ -45,40 +45,43 @@ func TestSettingsTogglesSessionLayout(t *testing.T) {
 }
 
 func TestSettingsToggleChromeIndependently(t *testing.T) {
-	m := buildModel(t)
-	m.openSettings()
-	if m.settings.hideHeader || m.settings.hideStats {
-		t.Fatal("header and stats should show by default")
-	}
-	settings := ansi.Strip(m.viewSettings())
-	for _, want := range []string{"header", "computer stats"} {
-		if !strings.Contains(settings, want) {
-			t.Fatalf("settings missing %q:\n%s", want, settings)
-		}
-	}
+	for _, tc := range []struct {
+		name       string
+		field      int
+		hideHeader bool
+		hideStats  bool
+	}{
+		{name: "header only", field: settingsFieldHeader, hideHeader: true},
+		{name: "stats only", field: settingsFieldStats, hideStats: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			m.openSettings()
+			if m.settings.hideHeader || m.settings.hideStats {
+				t.Fatal("header and stats should show by default")
+			}
+			settings := ansi.Strip(m.viewSettings())
+			for _, want := range []string{"header", "computer stats"} {
+				if !strings.Contains(settings, want) {
+					t.Fatalf("settings missing %q:\n%s", want, settings)
+				}
+			}
 
-	for m.settings.field != settingsFieldHeader {
-		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
-	}
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.settings.field != settingsFieldStats {
-		t.Fatalf("computer stats should follow the header, got field %d", m.settings.field)
-	}
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+			for m.settings.field != tc.field {
+				m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+			}
+			m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+			m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 
-	if chosen, err := m.store.Setting(hideHeaderSetting); err != nil || chosen != "on" {
-		t.Fatalf("stored header choice = %q err %v, want on", chosen, err)
-	}
-	if chosen, err := m.store.Setting(hideStatsSetting); err != nil || chosen != "on" {
-		t.Fatalf("stored stats choice = %q err %v, want on", chosen, err)
-	}
-	if !m.hideHeader || !m.hideStats {
-		t.Fatal("the model should mirror both saved visibility choices")
-	}
-	if !storedHideHeader(m.store) || !storedHideStats(m.store) {
-		t.Fatal("saved visibility choices should load on startup")
+			if m.hideHeader != tc.hideHeader || m.hideStats != tc.hideStats {
+				t.Fatalf("model visibility = header %t stats %t, want header %t stats %t",
+					m.hideHeader, m.hideStats, tc.hideHeader, tc.hideStats)
+			}
+			if storedHideHeader(m.store) != tc.hideHeader || storedHideStats(m.store) != tc.hideStats {
+				t.Fatalf("reloaded visibility = header %t stats %t, want header %t stats %t",
+					storedHideHeader(m.store), storedHideStats(m.store), tc.hideHeader, tc.hideStats)
+			}
+		})
 	}
 }
 
