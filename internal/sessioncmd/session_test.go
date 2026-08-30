@@ -56,6 +56,22 @@ command = "printf '❯ ' && cat"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 
+[tools.picker]
+command = "printf 'COMPOSER\\n' && cat"
+session_store = "codex"
+resume_picker_command = "printf 'COMPOSER\\n' && cat"
+resume_picker_keys = "/sessions"
+input_prefix = "COMPOSER"
+default_status = "idle"
+
+[tools.picker-exit]
+command = "echo initial"
+session_store = "codex"
+resume_picker_command = "printf 'COMPOSER\\n' && cat"
+resume_picker_keys = "/sessions"
+input_prefix = "COMPOSER"
+default_status = "idle"
+
 [tools.terminal]
 command = ""
 shell = true
@@ -878,6 +894,54 @@ func TestReviveRestartsTheAgentInsideItsLivePane(t *testing.T) {
 	}
 	if !h.driver.Exists(created.ID) {
 		t.Fatal("revive should have left the window running")
+	}
+}
+
+func TestRevivePickerRecoveryCoversBothPanePaths(t *testing.T) {
+	tests := []struct {
+		name string
+		tool string
+		kill bool
+	}{
+		{"create pane", "picker", true},
+		{"surviving pane", "picker-exit", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newSessionHarness(t)
+			codexHome := t.TempDir()
+			t.Setenv("CODEX_HOME", codexHome)
+			if err := os.MkdirAll(filepath.Join(codexHome, "sessions"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "picker-worker", Tool: tc.tool})
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if tc.kill {
+				if _, err := h.sessions.Kill(h.caller.ID, created.ID); err != nil {
+					t.Fatalf("Kill: %v", err)
+				}
+			} else {
+				waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "initial")
+				waitForAgentGone(t, h.driver, created.ID)
+			}
+
+			if _, err := h.sessions.Revive(h.caller.ID, created.ID); err != nil {
+				t.Fatalf("Revive: %v", err)
+			}
+			waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "/sessions")
+			stored, err := h.store.Get(created.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored.AgentLaunchedAt.IsZero() {
+				t.Fatal("revive did not stamp its launch")
+			}
+			if stored.RelaunchSnapshot == nil || len(stored.RelaunchSnapshot) != 0 {
+				t.Fatalf("relaunch snapshot = %v, want non-nil empty", stored.RelaunchSnapshot)
+			}
+		})
 	}
 }
 

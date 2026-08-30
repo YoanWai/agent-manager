@@ -223,7 +223,7 @@ func (m *Model) sessionsInGroup(path string) []store.Session {
 // sessions share a directory.
 func (m *Model) degradedResumeNotice(sess store.Session) string {
 	tool, ok := m.cfg.Tools[sess.Tool]
-	if !ok || sess.AgentSessionID != "" || tool.ResumeByIDCommand == "" {
+	if !ok || sess.AgentSessionID != "" || tool.ResumeByIDCommand == "" || tool.ResumePickerCommand != "" {
 		return ""
 	}
 	return fmt.Sprintf("revived %s with --continue: no conversation id captured, may resume the wrong conversation", sess.Name)
@@ -253,8 +253,14 @@ func (m *Model) reviveSession(sess store.Session) error {
 		m.bindReviveLocally(sess.ID, launchedAt)
 		return nil
 	}
+	if err := sessioncmd.SnapshotRelaunch(m.store, sess, tool, sess.AgentSessionID); err != nil {
+		return err
+	}
 	if err := m.relaunchSession(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), status.Starting, bind); err != nil {
 		return err
+	}
+	if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
+		sessioncmd.InjectPickerKeys(m.tmux, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
 	}
 	m.rebuildRows()
 	return nil
@@ -340,6 +346,9 @@ func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
 		if err != nil {
 			return relaunchedMsg{sessID: sess.ID, err: err}
 		}
+		if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
+			sessioncmd.InjectPickerKeys(driver, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
+		}
 		return relaunchedMsg{sessID: sess.ID, launchedAt: launchedAt}
 	}, nil
 }
@@ -384,6 +393,9 @@ func (m *Model) restartSession(sess store.Session) error {
 		return err
 	}
 	baseCommand, agentSessionID := restartLaunch(tool)
+	if err := sessioncmd.SnapshotRelaunch(m.store, sess, tool, agentSessionID); err != nil {
+		return err
+	}
 	bind := func() error {
 		launchedAt := time.Now()
 		if err := m.store.RestartAgent(sess.ID, agentSessionID, launchedAt); err != nil {

@@ -81,6 +81,260 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 	}
 }
 
+// Snapshot records every conversation the store currently holds for cwd
+// with its last activity time, taken just before a relaunch pane starts.
+// Recapture then admits only conversations whose activity outruns what this
+// saw, which tells the conversation the picker selected apart from ones that
+// merely predate the launch. ok=false when the store cannot be read; the
+// relaunch proceeds without a snapshot and recapture refuses to guess.
+func Snapshot(sessionStore, cwd string) (map[string]int64, bool) {
+	switch sessionStore {
+	case "codex":
+		return snapshotCodex(codexRoot(), cwd)
+	case "opencode":
+		return snapshotOpencode(cwd)
+	case "gemini":
+		return snapshotGemini(geminiRoot(), cwd)
+	case "hermes":
+		return snapshotHermes(hermesStateDB(), cwd)
+	case "command-code":
+		return snapshotCommandCode(commandCodeRoot(), cwd)
+	default:
+		return nil, false
+	}
+}
+
+// Recapture returns the conversation a resumed session picked, admitting
+// only conversations whose activity outruns the pre-launch snapshot: picking
+// an existing conversation shows as activity after the snapshot, where a
+// plain launch cutoff would also admit conversations merely predating the
+// launch. A nil snapshot or several qualifying conversations refuses rather
+// than guess. hermes carries no file mtime to touch, so its signal is the
+// activity columns in state.db.
+func Recapture(sessionStore, cwd string, snapshot map[string]int64, claimed map[string]bool) (string, bool) {
+	if snapshot == nil {
+		return "", false
+	}
+	var cands []candidate
+	switch sessionStore {
+	case "codex":
+		cands = recaptureCodex(codexRoot(), cwd, snapshot, claimed)
+	case "gemini":
+		cands = recaptureGemini(geminiRoot(), cwd, snapshot, claimed)
+	case "command-code":
+		cands = recaptureCommandCode(commandCodeRoot(), cwd, snapshot, claimed)
+	case "opencode":
+		cands = recaptureOpencode(cwd, snapshot, claimed)
+	case "hermes":
+		return recaptureHermes(hermesStateDB(), cwd, snapshot, claimed)
+	default:
+		return "", false
+	}
+	if len(cands) != 1 {
+		return "", false
+	}
+	return cands[0].id, true
+}
+
+// afterSnapshot reports whether the conversation's activity postdates what
+// the pre-launch snapshot recorded: a conversation the snapshot never saw
+// was minted since, and a seen one must have moved since it was recorded.
+func afterSnapshot(snapshot map[string]int64, id string, activity int64) bool {
+	prev, seen := snapshot[id]
+	return !seen || activity > prev
+}
+
+func snapshotCandidates(cands []candidate, err error) (map[string]int64, bool) {
+	if err != nil {
+		return nil, false
+	}
+	snapshot := make(map[string]int64, len(cands))
+	for _, cand := range cands {
+		snapshot[cand.id] = cand.modTime.UnixNano()
+	}
+	return snapshot, true
+}
+
+func recaptureCandidates(cands []candidate, err error, snapshot map[string]int64) []candidate {
+	if err != nil {
+		return nil
+	}
+	matched := cands[:0]
+	for _, cand := range cands {
+		if afterSnapshot(snapshot, cand.id, cand.modTime.UnixNano()) {
+			matched = append(matched, cand)
+		}
+	}
+	return matched
+}
+
+func snapshotCodex(root, cwd string) (map[string]int64, bool) {
+	return snapshotCandidates(codexCandidates(root, cwd, time.Time{}, nil))
+}
+
+func recaptureCodex(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
+	cands, err := codexCandidates(root, cwd, time.Time{}, claimed)
+	return recaptureCandidates(cands, err, snapshot)
+}
+
+func snapshotCommandCode(root, cwd string) (map[string]int64, bool) {
+	return snapshotCandidates(commandCodeCandidates(root, cwd, time.Time{}, nil))
+}
+
+func recaptureCommandCode(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
+	cands, err := commandCodeCandidates(root, cwd, time.Time{}, claimed)
+	return recaptureCandidates(cands, err, snapshot)
+}
+
+func snapshotGemini(root, cwd string) (map[string]int64, bool) {
+	return snapshotCandidates(geminiCandidates(root, cwd, time.Time{}, nil))
+}
+
+func recaptureGemini(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
+	cands, err := geminiCandidates(root, cwd, time.Time{}, claimed)
+	return recaptureCandidates(cands, err, snapshot)
+}
+
+func snapshotOpencode(cwd string) (map[string]int64, bool) {
+	entries, ok := opencodeSessionListJSON(cwd)
+	if !ok {
+		return nil, false
+	}
+	wantCwd := resolvePath(cwd)
+	snapshot := map[string]int64{}
+	for _, e := range entries {
+		if e.ID == "" || resolvePath(e.Directory) != wantCwd {
+			continue
+		}
+		snapshot[e.ID] = e.Updated * int64(time.Millisecond)
+	}
+	return snapshot, true
+}
+
+// recaptureOpencode is the snapshot's counterpart: the same one-subprocess
+// list, admitting the conversation whose update time outran the snapshot.
+func recaptureOpencode(cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
+	entries, ok := opencodeSessionListJSON(cwd)
+	if !ok {
+		return nil
+	}
+	wantCwd := resolvePath(cwd)
+	var cands []candidate
+	for _, e := range entries {
+		if e.ID == "" || claimed[e.ID] || resolvePath(e.Directory) != wantCwd {
+			continue
+		}
+		updated := e.Updated * int64(time.Millisecond)
+		if !afterSnapshot(snapshot, e.ID, updated) {
+			continue
+		}
+		cands = append(cands, candidate{id: e.ID, modTime: time.Unix(0, updated)})
+	}
+	return cands
+}
+
+// openHermesRO opens the hermes state database read-only, so the manager's
+// reads never contend with the tool's own writers.
+func openHermesRO(path string) (*sql.DB, error) {
+	if path == "" {
+		return nil, fmt.Errorf("no hermes state database path")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return nil, err
+	}
+	dsn := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
+	query := dsn.Query()
+	query.Set("mode", "ro")
+	dsn.RawQuery = query.Encode()
+	db, err := sql.Open("sqlite", dsn.String())
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	return db, nil
+}
+
+// hermesActivitySQL is the freshest activity hermes itself computes: the
+// mid-turn heartbeat and the newest message timestamp, either lagging the
+// other, floored by the session start. A resumed conversation's first turn
+// pushes one of the first two.
+const hermesActivitySQL = `MAX(
+	COALESCE(s.last_activity_at, s.started_at),
+	COALESCE((SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id), s.started_at),
+	s.started_at
+)`
+
+func queryHermesActivity(ctx context.Context, db *sql.DB, add func(id string, sessionCwd sql.NullString, activity float64)) error {
+	rows, err := db.QueryContext(ctx, `
+		SELECT s.id, s.cwd, `+hermesActivitySQL+`
+		FROM sessions s
+		WHERE s.source = 'cli'`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id string
+		var sessionCwd sql.NullString
+		var activity float64
+		if err := rows.Scan(&id, &sessionCwd, &activity); err != nil {
+			return err
+		}
+		add(id, sessionCwd, activity)
+	}
+	return rows.Err()
+}
+
+func snapshotHermes(path, cwd string) (map[string]int64, bool) {
+	db, err := openHermesRO(path)
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = db.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	wantCwd := resolvePath(cwd)
+	snapshot := map[string]int64{}
+	err = queryHermesActivity(ctx, db, func(id string, sessionCwd sql.NullString, activity float64) {
+		if !sessionIDPattern.MatchString(id) || !sessionCwd.Valid || resolvePath(sessionCwd.String) != wantCwd {
+			return
+		}
+		snapshot[id] = int64(activity * float64(time.Second))
+	})
+	if err != nil {
+		return nil, false
+	}
+	return snapshot, true
+}
+
+// recaptureHermes admits the cwd's conversations whose activity columns
+// outran the snapshot: the resumed session is the one that turned again.
+func recaptureHermes(path, cwd string, snapshot map[string]int64, claimed map[string]bool) (string, bool) {
+	db, err := openHermesRO(path)
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = db.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	wantCwd := resolvePath(cwd)
+	var cands []candidate
+	err = queryHermesActivity(ctx, db, func(id string, sessionCwd sql.NullString, activity float64) {
+		if !sessionIDPattern.MatchString(id) || claimed[id] || !sessionCwd.Valid || resolvePath(sessionCwd.String) != wantCwd {
+			return
+		}
+		activityNs := int64(activity * float64(time.Second))
+		if !afterSnapshot(snapshot, id, activityNs) {
+			return
+		}
+		cands = append(cands, candidate{id: id, modTime: time.Unix(0, activityNs)})
+	})
+	if err != nil || len(cands) != 1 {
+		return "", false
+	}
+	return cands[0].id, true
+}
+
 func commandCodeRoot() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -94,14 +348,21 @@ func commandCodeRoot() string {
 // the id and the working directory, so capture walks the per-project folders
 // instead of guessing cmd's project folder naming.
 func captureCommandCode(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
+	cands, _ := commandCodeCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed)
+	return pickEarliest(cands)
+}
+
+func commandCodeCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) ([]candidate, error) {
 	if root == "" {
-		return "", false
+		return nil, os.ErrNotExist
 	}
-	cutoff := launchedAt.Add(-clockSlack)
 	wantCwd := resolvePath(cwd)
 	var cands []candidate
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
 			return nil
 		}
 		name := d.Name()
@@ -109,7 +370,10 @@ func captureCommandCode(root, cwd string, launchedAt time.Time, claimed map[stri
 			return nil
 		}
 		info, err := d.Info()
-		if err != nil || info.ModTime().Before(cutoff) {
+		if err != nil {
+			return err
+		}
+		if info.ModTime().Before(cutoff) {
 			return nil
 		}
 		id, sessionCwd, ok := commandCodeMeta(path)
@@ -119,7 +383,7 @@ func captureCommandCode(root, cwd string, launchedAt time.Time, claimed map[stri
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
 		return nil
 	})
-	return pickEarliest(cands)
+	return cands, err
 }
 
 func commandCodeMeta(path string) (id, cwd string, ok bool) {
@@ -182,22 +446,11 @@ func hermesStateDB() string {
 // Hermes records exact cwd and Unix creation time in state.db, which
 // distinguishes parallel sessions in the same project.
 func captureHermes(path, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	if path == "" {
-		return "", false
-	}
-	if _, err := os.Stat(path); err != nil {
-		return "", false
-	}
-	dsn := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
-	query := dsn.Query()
-	query.Set("mode", "ro")
-	dsn.RawQuery = query.Encode()
-	db, err := sql.Open("sqlite", dsn.String())
+	db, err := openHermesRO(path)
 	if err != nil {
 		return "", false
 	}
 	defer db.Close()
-	db.SetMaxOpenConns(1)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	rows, err := db.QueryContext(ctx, `
@@ -298,13 +551,34 @@ var opencodeListIDs = func(cwd string) ([]string, bool) {
 	return dedupeOrdered(opencodeIDPattern.FindAllString(string(out), -1)), true
 }
 
-// opencodeSessionMeta returns a session's working directory and creation
-// time from `opencode export <id>` run in cwd. A package variable so tests
-// substitute canned output.
-var opencodeSessionMeta = func(cwd, id string) (directory string, created time.Time, ok bool) {
+// opencodeListEntry is one row of `opencode session list --format json`,
+// which carries the update time snapshot and recapture compare against in
+// one subprocess, where the table output keeps only the id. Updated is a
+// Unix timestamp in milliseconds, verified against the real CLI.
+type opencodeListEntry struct {
+	ID        string `json:"id"`
+	Directory string `json:"directory"`
+	Updated   int64  `json:"updated"`
+}
+
+// A package variable so tests substitute canned output.
+var opencodeSessionListJSON = func(cwd string) ([]opencodeListEntry, bool) {
+	out, err := runOpencode(cwd, "session", "list", "--format", "json")
+	if err != nil {
+		return nil, false
+	}
+	var entries []opencodeListEntry
+	if err := json.Unmarshal(out, &entries); err != nil {
+		return nil, false
+	}
+	return entries, true
+}
+
+// A package variable so tests substitute canned output.
+var opencodeSessionMeta = func(cwd, id string) (directory string, created, updated time.Time, ok bool) {
 	out, err := runOpencodeHead(cwd, "export", id)
 	if err != nil {
-		return "", time.Time{}, false
+		return "", time.Time{}, time.Time{}, false
 	}
 	return parseOpencodeExport(out)
 }
@@ -323,25 +597,25 @@ func dedupeOrdered(items []string) []string {
 	return out
 }
 
-// parseOpencodeExport reads directory and creation time from the info block
-// of an `opencode export` payload. The output leads with a human preamble
-// and is read only as a prefix, so it extracts just the info object by brace
-// matching rather than decoding the whole (possibly truncated) document.
-func parseOpencodeExport(out []byte) (directory string, created time.Time, ok bool) {
+// The export leads with a human preamble and is read only as a prefix, so
+// the info object is extracted by brace matching rather than decoding the
+// whole (possibly truncated) document.
+func parseOpencodeExport(out []byte) (directory string, created, updated time.Time, ok bool) {
 	obj, found := extractInfoObject(out)
 	if !found {
-		return "", time.Time{}, false
+		return "", time.Time{}, time.Time{}, false
 	}
 	var info struct {
 		Directory string `json:"directory"`
 		Time      struct {
 			Created int64 `json:"created"`
+			Updated int64 `json:"updated"`
 		} `json:"time"`
 	}
 	if err := json.Unmarshal(obj, &info); err != nil || info.Directory == "" {
-		return "", time.Time{}, false
+		return "", time.Time{}, time.Time{}, false
 	}
-	return info.Directory, time.UnixMilli(info.Time.Created), true
+	return info.Directory, time.UnixMilli(info.Time.Created), time.UnixMilli(info.Time.Updated), true
 }
 
 // extractInfoObject returns the JSON object that follows the "info" key,
@@ -412,14 +686,21 @@ func pickEarliest(cands []candidate) (string, bool) {
 // session_meta record carrying the session id and the directory it ran
 // in. A file older than the launch cannot be this session's.
 func captureCodex(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
+	cands, _ := codexCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed)
+	return pickEarliest(cands)
+}
+
+func codexCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) ([]candidate, error) {
 	if root == "" {
-		return "", false
+		return nil, os.ErrNotExist
 	}
-	cutoff := launchedAt.Add(-clockSlack)
 	wantCwd := resolvePath(cwd)
 	var cands []candidate
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
 			return nil
 		}
 		name := d.Name()
@@ -427,7 +708,10 @@ func captureCodex(root, cwd string, launchedAt time.Time, claimed map[string]boo
 			return nil
 		}
 		info, err := d.Info()
-		if err != nil || info.ModTime().Before(cutoff) {
+		if err != nil {
+			return err
+		}
+		if info.ModTime().Before(cutoff) {
 			return nil
 		}
 		id, metaCwd, ok := codexMeta(path)
@@ -437,7 +721,7 @@ func captureCodex(root, cwd string, launchedAt time.Time, claimed map[string]boo
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
 		return nil
 	})
-	return pickEarliest(cands)
+	return cands, err
 }
 
 // codexMeta reads the session id and cwd from a rollout's first line.
@@ -488,7 +772,7 @@ func captureOpencode(cwd string, launchedAt time.Time, claimed map[string]bool) 
 		if claimed[id] {
 			continue
 		}
-		dir, created, ok := opencodeSessionMeta(cwd, id)
+		dir, created, _, ok := opencodeSessionMeta(cwd, id)
 		if !ok || resolvePath(dir) != wantCwd || created.Before(cutoff) {
 			continue
 		}
@@ -545,14 +829,21 @@ func geminiSessionMeta(path string) (id, projectHash string, ok bool) {
 // is located by matching the project hash gemini records for cwd among
 // session files written at or after launch.
 func captureGemini(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
+	cands, _ := geminiCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed)
+	return pickEarliest(cands)
+}
+
+func geminiCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) ([]candidate, error) {
 	if root == "" {
-		return "", false
+		return nil, os.ErrNotExist
 	}
-	cutoff := launchedAt.Add(-clockSlack)
 	wantHash := geminiProjectHash(cwd)
 	var cands []candidate
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
 			return nil
 		}
 		name := d.Name()
@@ -560,7 +851,10 @@ func captureGemini(root, cwd string, launchedAt time.Time, claimed map[string]bo
 			return nil
 		}
 		info, err := d.Info()
-		if err != nil || info.ModTime().Before(cutoff) {
+		if err != nil {
+			return err
+		}
+		if info.ModTime().Before(cutoff) {
 			return nil
 		}
 		id, hash, ok := geminiSessionMeta(path)
@@ -570,7 +864,7 @@ func captureGemini(root, cwd string, launchedAt time.Time, claimed map[string]bo
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
 		return nil
 	})
-	return pickEarliest(cands)
+	return cands, err
 }
 
 // SupportsSessionFile reports whether a session store keeps conversations in

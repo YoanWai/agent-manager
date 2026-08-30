@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -80,6 +81,14 @@ type poller struct {
 	// the same "over this window" idea as the computer gauge.
 	prevTreeCPU map[int]float64
 	prevTreeAt  time.Time
+	// recaptureSeen holds the last single candidate for each launch, so a
+	// transient store update cannot bind on its first appearance.
+	recaptureSeen map[string]recaptureSighting
+}
+
+type recaptureSighting struct {
+	agentID    string
+	launchedAt time.Time
 }
 
 // quietEndGrace is how long a working pane must stay region-stable and
@@ -263,6 +272,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		paneHashes:    map[string]uint64{},
 		claudeTails:   map[string]claudeTailCache{},
 		quietSince:    map[string]quietTimer{},
+		recaptureSeen: map[string]recaptureSighting{},
 		notifyFn:      notify.Notify,
 	}
 }
@@ -711,11 +721,53 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 	sort.SliceStable(pending, func(a, b int) bool {
 		return sessions[pending[a]].LaunchTime().Before(sessions[pending[b]].LaunchTime())
 	})
+	recaptureScope := func(sess store.Session) string {
+		cwd := sess.Cwd
+		if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
+			cwd = resolved
+		}
+		return p.sessionStores[sess.Tool] + "\x00" + cwd
+	}
+	recaptureCounts := map[string]int{}
+	for _, i := range pending {
+		// The persisted snapshot marks a relaunch even while AgentLaunchedAt
+		// is still in flight, so the shared-scope refusal covers the
+		// stamping window too.
+		if !sessions[i].AgentLaunchedAt.IsZero() || sessions[i].RelaunchSnapshot != nil {
+			recaptureCounts[recaptureScope(sessions[i])]++
+		}
+	}
 	captured := 0
+cands:
 	for _, i := range pending {
 		sess := sessions[i]
-		agentID, ok := agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed)
+		// A resumed session cannot use the earliest-write tie-break: in a
+		// shared cwd it would bind the wrong conversation, so only one
+		// exact candidate counts.
+		var agentID string
+		var ok bool
+		if sess.AgentLaunchedAt.IsZero() && sess.RelaunchSnapshot == nil {
+			agentID, ok = agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed)
+		} else {
+			if recaptureCounts[recaptureScope(sess)] > 1 {
+				p.clearRecaptureSeen(sess.ID)
+				continue
+			}
+			if sess.RelaunchSnapshot == nil {
+				// No pre-launch snapshot means the relaunch predates snapshot
+				// capture; recapture refuses rather than guess.
+				continue
+			}
+			agentID, ok = agentsession.Recapture(p.sessionStores[sess.Tool], sess.Cwd, sess.RelaunchSnapshot, claimed)
+			if ok && !p.stableRecapture(sess.ID, sess.AgentLaunchedAt, agentID) {
+				// First sighting: bind once the next pass sees it again, so
+				// a picker still settling is not mistaken for the resumed
+				// conversation.
+				continue cands
+			}
+		}
 		if !ok {
+			p.clearRecaptureSeen(sess.ID)
 			continue
 		}
 		// The raw field, never LaunchTime(): the compare-and-set matches the
@@ -735,6 +787,25 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 		captured++
 	}
 	return captured, nil
+}
+
+func (p *poller) stableRecapture(sessID string, launchedAt time.Time, agentID string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	want := recaptureSighting{agentID: agentID, launchedAt: launchedAt}
+	if p.recaptureSeen[sessID] == want {
+		delete(p.recaptureSeen, sessID)
+		return true
+	}
+	p.recaptureSeen[sessID] = want
+	return false
+}
+
+// A later sighting starts its two-pass count fresh.
+func (p *poller) clearRecaptureSeen(sessID string) {
+	p.mu.Lock()
+	delete(p.recaptureSeen, sessID)
+	p.mu.Unlock()
 }
 
 // A durable claim makes automatic delivery at-most-once: after a process or

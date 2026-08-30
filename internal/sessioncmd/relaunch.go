@@ -2,8 +2,10 @@ package sessioncmd
 
 import (
 	"fmt"
+	"regexp"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -11,7 +13,50 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/charmbracelet/x/ansi"
 )
+
+func SnapshotRelaunch(st *store.Store, sess store.Session, tool config.Tool, agentSessionID string) error {
+	if agentSessionID != "" || tool.SessionStore == "" {
+		return nil
+	}
+	snapshot, ok := agentsession.Snapshot(tool.SessionStore, sess.Cwd)
+	if !ok {
+		snapshot = nil
+	}
+	return st.SetRelaunchSnapshot(sess.ID, snapshot)
+}
+
+const pickerInjectionTimeout = 45 * time.Second
+
+// InjectPickerKeys opens a picker that exists only inside a running TUI.
+func InjectPickerKeys(driver *tmux.Driver, sessID, composerPattern, keys string) {
+	if composerPattern == "" || keys == "" {
+		return
+	}
+	re, err := regexp.Compile(composerPattern)
+	if err != nil {
+		return
+	}
+	go func() {
+		deadline := time.Now().Add(pickerInjectionTimeout)
+		for time.Now().Before(deadline) {
+			if !driver.Exists(sessID) {
+				return
+			}
+			pane, err := driver.CapturePane(sessID)
+			if err == nil && re.MatchString(ansi.Strip(pane)) {
+				if err := driver.SendKeys(sessID, keys, "Enter"); err != nil {
+					return
+				}
+				time.Sleep(500 * time.Millisecond)
+				_ = driver.SendKeys(sessID, "Enter")
+				return
+			}
+			time.Sleep(300 * time.Millisecond)
+		}
+	}()
+}
 
 // RelaunchInPane starts a session's tool again inside the shell its pane
 // already holds, so the pane keeps everything its last life left there. The
@@ -24,6 +69,9 @@ func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Man
 	}
 	if running {
 		return time.Time{}, fmt.Errorf("session %s is still running; revive brings back an agent that exited", sess.Name)
+	}
+	if err := SnapshotRelaunch(st, sess, tool, sess.AgentSessionID); err != nil {
+		return time.Time{}, err
 	}
 	base := launch.ReviveCommand(tool, sess.AgentSessionID)
 	command, env, err := launch.Environment(hookManager, sess.Tool, tool, base, sess.ID)

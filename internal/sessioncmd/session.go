@@ -737,8 +737,14 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 		if _, err := RelaunchInPane(runtime.driver, runtime.store, hooks.NewManager(s.configDir), target, tool); err != nil {
 			return Session{}, err
 		}
+		if target.AgentSessionID == "" && tool.ResumePickerKeys != "" {
+			InjectPickerKeys(runtime.driver, target.ID, tool.InputPrefix, tool.ResumePickerKeys)
+		}
 		target.Status = status.Starting
 		return runtime.sessionInfo(target, true, false), nil
+	}
+	if err := SnapshotRelaunch(runtime.store, target, tool, target.AgentSessionID); err != nil {
+		return Session{}, err
 	}
 	base := launch.ReviveCommand(tool, target.AgentSessionID)
 	command, env, err := launch.Environment(hooks.NewManager(s.configDir), target.Tool, tool, base, target.ID)
@@ -746,6 +752,11 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 		return Session{}, err
 	}
 	if err := runtime.driver.Create(target.ID, target.Cwd, command, env, 0, 0); err != nil {
+		return Session{}, err
+	}
+	launchedAt := time.Now()
+	if err := runtime.store.SetAgentLaunchedAt(target.ID, launchedAt); err != nil {
+		_ = runtime.driver.Kill(target.ID)
 		return Session{}, err
 	}
 	// The row now lives on this manager's server, wherever it ran before.
@@ -756,13 +767,17 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 		return Session{}, err
 	}
 	_ = runtime.driver.SetLabel(target.ID, sessionLabel(target.Group, target.Name))
-	if err := runtime.store.UpdateStatus(target.ID, tool.DefaultStatus); err != nil {
+	if err := runtime.store.UpdateStatus(target.ID, status.Starting); err != nil {
 		return Session{}, err
 	}
 	if err := runtime.store.SetAcked(target.ID, false); err != nil {
 		return Session{}, err
 	}
-	target.Status = tool.DefaultStatus
+	if target.AgentSessionID == "" && tool.ResumePickerKeys != "" {
+		InjectPickerKeys(runtime.driver, target.ID, tool.InputPrefix, tool.ResumePickerKeys)
+	}
+	target.Status = status.Starting
+	target.AgentLaunchedAt = launchedAt
 	return runtime.sessionInfo(target, true, false), nil
 }
 
