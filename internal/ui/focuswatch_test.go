@@ -329,6 +329,17 @@ func TestApplyPaneState(t *testing.T) {
 	if bogus.paneStateOK || bogus.cursorOK {
 		t.Fatal("applyPaneState accepted junk")
 	}
+
+	var badCursor focusPreviewMsg
+	applyPaneState(&badCursor, "12,y,1,010,250,0,1")
+	if badCursor.paneStateOK || badCursor.cursorOK {
+		t.Fatal("applyPaneState accepted a non-numeric cursor")
+	}
+	var badHistory focusPreviewMsg
+	applyPaneState(&badHistory, "12,34,1,010,n,0,1")
+	if badHistory.paneStateOK || badHistory.historySize != 0 {
+		t.Fatal("applyPaneState accepted a non-numeric history size")
+	}
 }
 
 // Trailing blank pane rows are content: dropping them shifts every line
