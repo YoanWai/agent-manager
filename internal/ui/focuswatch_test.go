@@ -250,6 +250,38 @@ func TestFocusWatchReportsCursor(t *testing.T) {
 	}
 }
 
+func TestFocusWatchHonorsHiddenCursor(t *testing.T) {
+	driver := requireFocusDriver(t)
+	id := "hidecur" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	command := "printf '\\033[?25lhidden-cursor'; exec sleep 10"
+	if err := driver.Create(id, "/tmp", command, nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	msgs := make(chan tea.Msg, 64)
+	watch := newFocusWatch(driver, func(msg tea.Msg) { msgs <- msg })
+	t.Cleanup(watch.Close)
+	watch.setFocus(id)
+
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case msg := <-msgs:
+			preview, ok := msg.(focusPreviewMsg)
+			if !ok || preview.sessID != id || !strings.Contains(preview.preview, "hidden-cursor") {
+				continue
+			}
+			if preview.cursorOK {
+				continue
+			}
+			return
+		case <-deadline:
+			t.Fatal("no hidden-cursor preview reported the cursor hidden")
+		}
+	}
+}
+
 // Trailing blank pane rows are content: dropping them shifts every line
 // up, which is what made the pushed and polled captures disagree. The
 // input is shaped like the control client's reply, a newline JOIN of the

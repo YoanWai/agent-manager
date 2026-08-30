@@ -225,7 +225,7 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 		// back as its default status message instead of coordinates.
 		if state, err := control.Command(
 			`display-message -p -t ` + target +
-				` "#{cursor_x},#{cursor_y},#{mouse_any_flag}#{mouse_button_flag}#{mouse_standard_flag},#{history_size},#{mouse_all_flag},#{mouse_sgr_flag}"`); err == nil {
+				` "#{cursor_x},#{cursor_y},#{cursor_flag},#{mouse_any_flag}#{mouse_button_flag}#{mouse_standard_flag},#{history_size},#{mouse_all_flag},#{mouse_sgr_flag}"`); err == nil {
 			applyPaneState(&msg, state)
 		}
 		// Skip the send once stopped: it could block on the UI loop for
@@ -279,23 +279,23 @@ func matchExecShape(pane string) string {
 	return pane + "\n"
 }
 
-// applyPaneState reads "x,y,mouseflags,history,allmotion,sgr" from
+// applyPaneState reads "x,y,cursor,mouseflags,history,allmotion,sgr" from
 // display-message into the preview message. A malformed reply leaves the
 // zero values: no cursor, no mouse claim, no history.
 func applyPaneState(msg *focusPreviewMsg, reply string) {
 	parts := strings.Split(strings.TrimSpace(reply), ",")
-	if len(parts) != 6 {
+	if len(parts) != 7 {
 		return
 	}
 	x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
 	y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if errX == nil && errY == nil {
+	if errX == nil && errY == nil && strings.TrimSpace(parts[2]) == "1" {
 		msg.cursorX, msg.cursorY, msg.cursorOK = x, y, true
 	}
-	msg.paneMouse = strings.Contains(parts[2], "1")
-	if size, err := strconv.Atoi(strings.TrimSpace(parts[3])); err == nil && size > 0 {
+	msg.paneMouse = strings.Contains(parts[3], "1")
+	if size, err := strconv.Atoi(strings.TrimSpace(parts[4])); err == nil && size > 0 {
 		msg.historySize = size
 	}
-	msg.paneMotion = strings.TrimSpace(parts[4]) == "1"
-	msg.paneSGR = strings.TrimSpace(parts[5]) == "1"
+	msg.paneMotion = strings.TrimSpace(parts[5]) == "1"
+	msg.paneSGR = strings.TrimSpace(parts[6]) == "1"
 }
