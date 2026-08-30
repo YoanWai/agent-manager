@@ -228,7 +228,10 @@ func (m *Model) searchFieldLine(width int) string {
 // meters and the messages card docked at the bottom behind their seam.
 func (m *Model) railLines(width, height int) []contentLine {
 	meters := m.railFootLines(width)
-	listHeight := height - len(meters) - 1
+	listHeight := height
+	if len(meters) > 0 {
+		listHeight -= len(meters) + 1
+	}
 	if listHeight < 3 {
 		listHeight, meters = height, nil
 	}
@@ -274,7 +277,7 @@ func (m *Model) railLines(width, height int) []contentLine {
 		rows = append(rows, contentLine{})
 	}
 	rows = rows[:listHeight]
-	if meters != nil {
+	if len(meters) > 0 {
 		rows = append(rows, contentLine{rule: true})
 		for _, line := range meters {
 			rows = append(rows, contentLine{text: line})
@@ -1452,6 +1455,9 @@ func (m *Model) viewQuickBar(width int) string {
 // the right edge (scope and rollup, then a compact rollup, then the scope
 // alone).
 func (m *Model) viewHeaderRows() []string {
+	if m.headerRows() == 0 {
+		return nil
+	}
 	left := m.viewBanner()[0]
 	if m.update.latest != "" {
 		left += subtleStyle.Render("  ") +

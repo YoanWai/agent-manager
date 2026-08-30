@@ -448,6 +448,10 @@ const sessionLayoutSetting = "layout"
 
 const listDensitySetting = "list_density"
 
+const hideHeaderSetting = "hide_header"
+
+const hideStatsSetting = "hide_stats"
+
 const focusKeySetting = "focus_key"
 
 // arrowStepSetting is the beta ←→ pair: "off" turns it off, anything else

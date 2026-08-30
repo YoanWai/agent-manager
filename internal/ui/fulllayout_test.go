@@ -44,6 +44,77 @@ func TestSettingsTogglesSessionLayout(t *testing.T) {
 	}
 }
 
+func TestSettingsToggleChromeIndependently(t *testing.T) {
+	m := buildModel(t)
+	m.openSettings()
+	if m.settings.hideHeader || m.settings.hideStats {
+		t.Fatal("header and stats should show by default")
+	}
+	settings := ansi.Strip(m.viewSettings())
+	for _, want := range []string{"header", "computer stats"} {
+		if !strings.Contains(settings, want) {
+			t.Fatalf("settings missing %q:\n%s", want, settings)
+		}
+	}
+
+	for m.settings.field != settingsFieldHeader {
+		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.settings.field != settingsFieldStats {
+		t.Fatalf("computer stats should follow the header, got field %d", m.settings.field)
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if chosen, err := m.store.Setting(hideHeaderSetting); err != nil || chosen != "on" {
+		t.Fatalf("stored header choice = %q err %v, want on", chosen, err)
+	}
+	if chosen, err := m.store.Setting(hideStatsSetting); err != nil || chosen != "on" {
+		t.Fatalf("stored stats choice = %q err %v, want on", chosen, err)
+	}
+	if !m.hideHeader || !m.hideStats {
+		t.Fatal("the model should mirror both saved visibility choices")
+	}
+	if !storedHideHeader(m.store) || !storedHideStats(m.store) {
+		t.Fatal("saved visibility choices should load on startup")
+	}
+}
+
+func TestLayoutsCanHideHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		full bool
+	}{
+		{name: "split"},
+		{name: "full", full: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := shotModel()
+			m.fullLayout = tc.full
+			shownBody := m.listBodyHeight()
+			if got := m.headerRows(); got != 1 {
+				t.Fatalf("shown header = %d rows, want 1", got)
+			}
+
+			m.hideHeader = true
+			if got := m.headerRows(); got != 0 {
+				t.Fatalf("hidden header = %d rows, want 0", got)
+			}
+			if rows := m.viewHeaderRows(); len(rows) != 0 {
+				t.Fatalf("hidden header still paints %d rows", len(rows))
+			}
+			if got := m.listBodyHeight(); got != shownBody+1 {
+				t.Fatalf("hidden header body = %d rows, want %d", got, shownBody+1)
+			}
+			if rows := strings.Split(m.View(), "\n"); len(rows) != m.height {
+				t.Fatalf("headerless frame = %d rows, terminal is %d", len(rows), m.height)
+			}
+		})
+	}
+}
+
 // The full screen frame is the rail alone: no preview column, so the
 // captured pane and the detail head stay with the split layout.
 func TestFullLayoutFrameHasNoPreviewColumn(t *testing.T) {

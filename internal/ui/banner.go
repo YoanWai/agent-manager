@@ -57,7 +57,12 @@ func (m *Model) showBanner() bool {
 
 // headerRows is how many rows the header occupies, which the body height
 // and every mouse hit-test are measured against.
-func (m *Model) headerRows() int { return bannerRows }
+func (m *Model) headerRows() int {
+	if m.hideHeader {
+		return 0
+	}
+	return bannerRows
+}
 
 // viewBanner draws the wordmark, lit by a highlight that sweeps left to
 // right during the intro and then rests just past the end of the word.
