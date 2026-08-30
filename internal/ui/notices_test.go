@@ -1245,6 +1245,9 @@ func TestHiddenStatsMessageBadgeFitsNarrowWidth(t *testing.T) {
 	if got := ansi.StringWidth(lines[0]); got > width {
 		t.Fatalf("narrow message foot is %d columns, want at most %d", got, width)
 	}
+	if lines := m.railFootLines(railInset); len(lines) != 0 {
+		t.Fatalf("message foot without usable width has %d lines, want 0", len(lines))
+	}
 }
 
 func TestReleaseSummaryPrefersAuthoredHighlights(t *testing.T) {

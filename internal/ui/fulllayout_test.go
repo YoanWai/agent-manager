@@ -71,6 +71,35 @@ func TestSettingsToggleChromeIndependently(t *testing.T) {
 				m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
 			}
 			m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+			settings = ansi.Strip(m.viewSettings())
+			headerValue, statsValue := "show", "show"
+			if tc.hideHeader {
+				headerValue = "hide"
+			}
+			if tc.hideStats {
+				statsValue = "hide"
+			}
+			for _, row := range []struct {
+				label string
+				value string
+			}{
+				{label: "header", value: headerValue},
+				{label: "computer stats", value: statsValue},
+			} {
+				found := false
+				for _, line := range strings.Split(settings, "\n") {
+					if !strings.Contains(line, row.label) {
+						continue
+					}
+					found = true
+					if !strings.Contains(line, row.value) {
+						t.Fatalf("%s row missing %q:\n%s", row.label, row.value, line)
+					}
+				}
+				if !found {
+					t.Fatalf("settings missing %s row:\n%s", row.label, settings)
+				}
+			}
 			m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
 
 			if m.hideHeader != tc.hideHeader || m.hideStats != tc.hideStats {
