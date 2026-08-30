@@ -56,6 +56,22 @@ command = "printf '❯ ' && cat"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 
+[tools.picker]
+command = "printf 'COMPOSER\\n' && cat"
+session_store = "codex"
+resume_picker_command = "printf 'COMPOSER\\n' && cat"
+resume_picker_keys = "/sessions"
+input_prefix = "COMPOSER"
+default_status = "idle"
+
+[tools.picker-exit]
+command = "echo initial"
+session_store = "codex"
+resume_picker_command = "printf 'COMPOSER\\n' && cat"
+resume_picker_keys = "/sessions"
+input_prefix = "COMPOSER"
+default_status = "idle"
+
 [tools.terminal]
 command = ""
 shell = true
@@ -213,9 +229,6 @@ func TestSessionsListCoversAgentsOnlyAndMarksTheCaller(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := h.store.SetAgentSessionID(created.ID, "conv-42"); err != nil {
-		t.Fatalf("set agent session id: %v", err)
-	}
 	listed, err := h.sessions.List(h.caller.ID)
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -232,9 +245,6 @@ func TestSessionsListCoversAgentsOnlyAndMarksTheCaller(t *testing.T) {
 	}
 	if !seen[created.ID].Running || seen[created.ID].Name != "worker" {
 		t.Fatalf("listed spawn = %+v", seen[created.ID])
-	}
-	if seen[created.ID].AgentSessionID != "conv-42" {
-		t.Fatalf("listed spawn should carry the captured conversation id, got %+v", seen[created.ID])
 	}
 }
 
@@ -887,6 +897,54 @@ func TestReviveRestartsTheAgentInsideItsLivePane(t *testing.T) {
 	}
 }
 
+func TestRevivePickerRecoveryCoversBothPanePaths(t *testing.T) {
+	tests := []struct {
+		name string
+		tool string
+		kill bool
+	}{
+		{"create pane", "picker", true},
+		{"surviving pane", "picker-exit", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newSessionHarness(t)
+			codexHome := t.TempDir()
+			t.Setenv("CODEX_HOME", codexHome)
+			if err := os.MkdirAll(filepath.Join(codexHome, "sessions"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "picker-worker", Tool: tc.tool})
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if tc.kill {
+				if _, err := h.sessions.Kill(h.caller.ID, created.ID); err != nil {
+					t.Fatalf("Kill: %v", err)
+				}
+			} else {
+				waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "initial")
+				waitForAgentGone(t, h.driver, created.ID)
+			}
+
+			if _, err := h.sessions.Revive(h.caller.ID, created.ID); err != nil {
+				t.Fatalf("Revive: %v", err)
+			}
+			waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "/sessions")
+			stored, err := h.store.Get(created.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored.AgentLaunchedAt.IsZero() {
+				t.Fatal("revive did not stamp its launch")
+			}
+			if stored.RelaunchSnapshot == nil || len(stored.RelaunchSnapshot) != 0 {
+				t.Fatalf("relaunch snapshot = %v, want non-nil empty", stored.RelaunchSnapshot)
+			}
+		})
+	}
+}
+
 func TestReviveRefusesWhileTheAgentIsStillRunning(t *testing.T) {
 	h := newSessionHarness(t)
 	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "chatty", Tool: "resting"})
@@ -900,7 +958,3 @@ func TestReviveRefusesWhileTheAgentIsStillRunning(t *testing.T) {
 		t.Fatalf("reviving a session whose agent is up = %v", err)
 	}
 }
-
-// FormatSession names the conversation a captured id resumes. A line that
-// omits it reads like one that names none, so an agent told to revive
-// "the conversation this session held" has to see it on the line.

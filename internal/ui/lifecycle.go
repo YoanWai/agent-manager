@@ -3,18 +3,15 @@ package ui
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
 )
 
@@ -256,14 +253,14 @@ func (m *Model) reviveSession(sess store.Session) error {
 		m.bindReviveLocally(sess.ID, launchedAt)
 		return nil
 	}
-	if err := m.snapshotRelaunch(sess, tool, sess.AgentSessionID); err != nil {
+	if err := sessioncmd.SnapshotRelaunch(m.store, sess, tool, sess.AgentSessionID); err != nil {
 		return err
 	}
 	if err := m.relaunchSession(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), status.Starting, bind); err != nil {
 		return err
 	}
 	if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-		m.injectPickerKeys(sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
+		sessioncmd.InjectPickerKeys(m.tmux, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
 	}
 	m.rebuildRows()
 	return nil
@@ -315,62 +312,6 @@ func (m *Model) relaunchSession(sess store.Session, tool config.Tool, baseComman
 	return m.store.SetAcked(sess.ID, false)
 }
 
-// snapshotRelaunch records what the tool's store holds right before the
-// relaunch pane starts, so the poller's recapture can tell the conversation
-// the picker selected apart from ones that merely predate the launch. Only
-// relaunches that come back without an id on a tool with a session store
-// need one; a snapshot that cannot be read leaves recapture to refuse.
-func (m *Model) snapshotRelaunch(sess store.Session, tool config.Tool, agentSessionID string) error {
-	if agentSessionID != "" || tool.SessionStore == "" {
-		return nil
-	}
-	// A sighting stored for the previous launch answers that launch, not
-	// this one.
-	m.poller.clearRecaptureSeen(sess.ID)
-	snapshot, ok := agentsession.Snapshot(tool.SessionStore, sess.Cwd)
-	if !ok {
-		// A snapshot the store refuses to hand over must not leave the
-		// previous launch's baseline in place for recapture to bind against.
-		return m.store.SetRelaunchSnapshot(sess.ID, nil)
-	}
-	return m.store.SetRelaunchSnapshot(sess.ID, snapshot)
-}
-
-// pickerInjectionTimeout is how long injectPickerKeys waits for the tool's
-// composer before giving up on the in-TUI picker.
-const pickerInjectionTimeout = 45 * time.Second
-
-// injectPickerKeys types a tool's resume-picker shortcut into its pane once
-// the composer shows, for tools whose picker exists only inside the running
-// TUI (opencode's /sessions). Handing the shortcut to the CLI as a prompt
-// would submit it to the model instead of opening the picker, so the manager
-// launches the bare tool and presses the keys itself. The first Enter opens
-// the slash-command palette with the shortcut filtered; the second runs it
-// once the palette has rendered. One shot per relaunch, and it stops if the
-// pane disappears first.
-func (m *Model) injectPickerKeys(sessID, composerPattern, keys string) {
-	re, err := regexp.Compile(composerPattern)
-	if err != nil {
-		return
-	}
-	go func() {
-		deadline := time.Now().Add(pickerInjectionTimeout)
-		for time.Now().Before(deadline) {
-			if !m.tmux.Exists(sessID) {
-				return
-			}
-			pane, err := m.tmux.CapturePane(sessID)
-			if err == nil && re.MatchString(ansi.Strip(pane)) {
-				_ = m.tmux.SendKeys(sessID, keys, "Enter")
-				time.Sleep(500 * time.Millisecond)
-				_ = m.tmux.SendKeys(sessID, "Enter")
-				return
-			}
-			time.Sleep(300 * time.Millisecond)
-		}
-	}()
-}
-
 // relaunchedMsg carries the result of starting an agent in a pane that was
 // left on its shell.
 type relaunchedMsg struct {
@@ -401,15 +342,12 @@ func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
 	}
 	driver, stor, hookManager := m.tmux, m.store, m.hooks
 	return func() tea.Msg {
-		if err := m.snapshotRelaunch(sess, tool, sess.AgentSessionID); err != nil {
-			return relaunchedMsg{sessID: sess.ID, err: err}
-		}
 		launchedAt, err := sessioncmd.RelaunchInPane(driver, stor, hookManager, sess, tool)
 		if err != nil {
 			return relaunchedMsg{sessID: sess.ID, err: err}
 		}
 		if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-			m.injectPickerKeys(sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
+			sessioncmd.InjectPickerKeys(driver, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
 		}
 		return relaunchedMsg{sessID: sess.ID, launchedAt: launchedAt}
 	}, nil
@@ -455,7 +393,7 @@ func (m *Model) restartSession(sess store.Session) error {
 		return err
 	}
 	baseCommand, agentSessionID := restartLaunch(tool)
-	if err := m.snapshotRelaunch(sess, tool, agentSessionID); err != nil {
+	if err := sessioncmd.SnapshotRelaunch(m.store, sess, tool, agentSessionID); err != nil {
 		return err
 	}
 	bind := func() error {

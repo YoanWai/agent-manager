@@ -522,6 +522,30 @@ func TestSnapshotCodexRecordsEachCwdConversation(t *testing.T) {
 	}
 }
 
+func TestFileStoreSnapshotsDistinguishEmptyFromUnavailable(t *testing.T) {
+	tests := []struct {
+		name     string
+		snapshot func(string, string) (map[string]int64, bool)
+	}{
+		{"codex", snapshotCodex},
+		{"command-code", snapshotCommandCode},
+		{"gemini", snapshotGemini},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			got, ok := tc.snapshot(root, t.TempDir())
+			if !ok || got == nil || len(got) != 0 {
+				t.Fatalf("empty store snapshot = %v, %v; want non-nil empty, true", got, ok)
+			}
+			got, ok = tc.snapshot(filepath.Join(root, "missing"), t.TempDir())
+			if ok || got != nil {
+				t.Fatalf("unavailable store snapshot = %v, %v; want nil, false", got, ok)
+			}
+		})
+	}
+}
+
 // An empty store is a real pre-launch state, not a failure: any conversation
 // that appears after it qualifies.
 func TestRecaptureBindsAfterAnEmptySnapshot(t *testing.T) {

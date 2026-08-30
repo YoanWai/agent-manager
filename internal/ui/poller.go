@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -80,11 +81,14 @@ type poller struct {
 	// the same "over this window" idea as the computer gauge.
 	prevTreeCPU map[int]float64
 	prevTreeAt  time.Time
-	// recaptureSeen holds the last single candidate each relaunched session
-	// produced, so a conversation binds only once two consecutive capture
-	// passes agree on it: a picker still settling on its choice must not be
-	// mistaken for the resumed conversation.
-	recaptureSeen map[string]string
+	// recaptureSeen holds the last single candidate for each launch, so a
+	// transient store update cannot bind on its first appearance.
+	recaptureSeen map[string]recaptureSighting
+}
+
+type recaptureSighting struct {
+	agentID    string
+	launchedAt time.Time
 }
 
 // quietEndGrace is how long a working pane must stay region-stable and
@@ -268,7 +272,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		paneHashes:    map[string]uint64{},
 		claudeTails:   map[string]claudeTailCache{},
 		quietSince:    map[string]quietTimer{},
-		recaptureSeen: map[string]string{},
+		recaptureSeen: map[string]recaptureSighting{},
 		notifyFn:      notify.Notify,
 	}
 }
@@ -717,6 +721,19 @@ func (p *poller) captureAgentSessionIDs(sessions []store.Session, panes map[stri
 	sort.SliceStable(pending, func(a, b int) bool {
 		return sessions[pending[a]].LaunchTime().Before(sessions[pending[b]].LaunchTime())
 	})
+	recaptureScope := func(sess store.Session) string {
+		cwd := sess.Cwd
+		if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
+			cwd = resolved
+		}
+		return p.sessionStores[sess.Tool] + "\x00" + cwd
+	}
+	recaptureCounts := map[string]int{}
+	for _, i := range pending {
+		if !sessions[i].AgentLaunchedAt.IsZero() {
+			recaptureCounts[recaptureScope(sessions[i])]++
+		}
+	}
 	captured := 0
 cands:
 	for _, i := range pending {
@@ -729,13 +746,17 @@ cands:
 		if sess.AgentLaunchedAt.IsZero() {
 			agentID, ok = agentsession.Capture(p.sessionStores[sess.Tool], sess.Cwd, sess.LaunchTime(), claimed)
 		} else {
+			if recaptureCounts[recaptureScope(sess)] > 1 {
+				p.clearRecaptureSeen(sess.ID)
+				continue
+			}
 			if sess.RelaunchSnapshot == nil {
 				// No pre-launch snapshot means the relaunch predates snapshot
 				// capture; recapture refuses rather than guess.
 				continue
 			}
 			agentID, ok = agentsession.Recapture(p.sessionStores[sess.Tool], sess.Cwd, sess.RelaunchSnapshot, claimed)
-			if ok && !p.stableRecapture(sess.ID, agentID) {
+			if ok && !p.stableRecapture(sess.ID, sess.AgentLaunchedAt, agentID) {
 				// First sighting: bind once the next pass sees it again, so
 				// a picker still settling is not mistaken for the resumed
 				// conversation.
@@ -765,18 +786,16 @@ cands:
 	return captured, nil
 }
 
-// stableRecapture requires the same single candidate on two consecutive
-// passes before a relaunched session binds it. The first sighting is stored;
-// the second returns true and clears the memory. Any pass with no candidate
-// or a different one clears it, so a picker still settling is never bound.
-func (p *poller) stableRecapture(sessID, agentID string) bool {
+// stableRecapture requires the same candidate on two passes of one launch.
+func (p *poller) stableRecapture(sessID string, launchedAt time.Time, agentID string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.recaptureSeen[sessID] == agentID {
+	want := recaptureSighting{agentID: agentID, launchedAt: launchedAt}
+	if p.recaptureSeen[sessID] == want {
 		delete(p.recaptureSeen, sessID)
 		return true
 	}
-	p.recaptureSeen[sessID] = agentID
+	p.recaptureSeen[sessID] = want
 	return false
 }
 

@@ -955,7 +955,7 @@ func TestCaptureAgentSessionIDsSkipsARetiredConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]string{}}
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]recaptureSighting{}}
 	// First sighting stores the candidate without binding.
 	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
 		t.Fatalf("first pass captured %d err=%v, want 0 without a bind", captured, err)
@@ -1059,7 +1059,7 @@ func TestCaptureAgentSessionIDsRefusesAnAmbiguousResume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]string{}}
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]recaptureSighting{}}
 	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}})
 	if err != nil {
 		t.Fatal(err)
@@ -1112,7 +1112,7 @@ func TestCaptureAgentSessionIDsBindsTheSingleResumedConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]string{}}
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]recaptureSighting{}}
 	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
 		t.Fatalf("first pass captured %d err=%v, want 0 without a bind", captured, err)
 	}
@@ -1125,6 +1125,71 @@ func TestCaptureAgentSessionIDsBindsTheSingleResumedConversation(t *testing.T) {
 	}
 	if got.AgentSessionID != "resumed-id" {
 		t.Fatalf("captured %q, want resumed-id", got.AgentSessionID)
+	}
+}
+
+// Two picker relaunches in one store and directory have indistinguishable
+// activity. A choice made in the second pane must not bind to the first row.
+func TestCaptureAgentSessionIDsRefusesSharedRelaunchScope(t *testing.T) {
+	p, first := newTestPollerWithSession(t)
+	p.sessionStores = map[string]string{"codex": "codex"}
+	p.recaptureSeen = map[string]recaptureSighting{}
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+
+	firstLaunch := time.Now().Add(-time.Second)
+	secondLaunch := firstLaunch.Add(time.Millisecond)
+	if err := p.store.SetAgentLaunchedAt(first.ID, firstLaunch); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.store.SetRelaunchSnapshot(first.ID, map[string]int64{}); err != nil {
+		t.Fatal(err)
+	}
+	second := store.Session{ID: "sess-2", Name: "two", Tool: "codex", Cwd: first.Cwd, Group: "g", Status: "idle"}
+	if err := p.store.CreateSession(second); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.store.SetAgentLaunchedAt(second.ID, secondLaunch); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.store.SetRelaunchSnapshot(second.ID, map[string]int64{}); err != nil {
+		t.Fatal(err)
+	}
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-selected.jsonl"), "selected-in-second", first.Cwd, secondLaunch.Add(time.Second))
+
+	first, err := p.store.Get(first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err = p.store.Get(second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	panes := map[string]tmux.Pane{first.ID: {PID: 41}, second.ID: {PID: 42}}
+	for pass := 0; pass < 2; pass++ {
+		if captured, err := p.captureAgentSessionIDs([]store.Session{first, second}, panes); err != nil || captured != 0 {
+			t.Fatalf("pass %d captured %d err=%v, want no bind", pass+1, captured, err)
+		}
+	}
+	for _, id := range []string{first.ID, second.ID} {
+		got, err := p.store.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.AgentSessionID != "" {
+			t.Fatalf("session %s bound %q, want no id", id, got.AgentSessionID)
+		}
+	}
+}
+
+func TestStableRecaptureDoesNotReuseASightingFromAnOlderLaunch(t *testing.T) {
+	p := &poller{recaptureSeen: map[string]recaptureSighting{}}
+	firstLaunch := time.Now()
+	if p.stableRecapture("sess", firstLaunch, "candidate") {
+		t.Fatal("first sighting should not bind")
+	}
+	if p.stableRecapture("sess", firstLaunch.Add(time.Second), "candidate") {
+		t.Fatal("a new launch must start its own stability check")
 	}
 }
 
@@ -1162,13 +1227,13 @@ func TestCaptureAgentSessionIDsClearsTheSightingWhenAmbiguityFollows(t *testing.
 		t.Fatal(err)
 	}
 
-	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]string{}}
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]recaptureSighting{}}
 	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-1.jsonl"), "id-1", cwd, relaunched.Add(time.Second))
 	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
 		t.Fatalf("first pass captured %d err=%v, want 0 without a bind", captured, err)
 	}
-	if p.recaptureSeen["sess"] != "id-1" {
-		t.Fatalf("first pass must store the id-1 sighting, got %q", p.recaptureSeen["sess"])
+	if p.recaptureSeen["sess"].agentID != "id-1" {
+		t.Fatalf("first pass must store the id-1 sighting, got %+v", p.recaptureSeen["sess"])
 	}
 	// The second conversation turns too: the pass now sees two candidates
 	// and must drop the stored sighting instead of honoring it.
@@ -1216,7 +1281,7 @@ func TestCaptureAgentSessionIDsRefusesARelaunchWithoutASnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]string{}}
+	p := &poller{store: st, sessionStores: map[string]string{"codex": "codex"}, recaptureSeen: map[string]recaptureSighting{}}
 	if captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess": {PID: 42}}); err != nil || captured != 0 {
 		t.Fatalf("captured %d err=%v, want 0 without a snapshot", captured, err)
 	}

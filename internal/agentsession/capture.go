@@ -144,181 +144,55 @@ func afterSnapshot(snapshot map[string]int64, id string, activity int64) bool {
 	return !seen || activity > prev
 }
 
-func snapshotCodex(root, cwd string) (map[string]int64, bool) {
-	if root == "" {
+func snapshotCandidates(cands []candidate, err error) (map[string]int64, bool) {
+	if err != nil {
 		return nil, false
 	}
-	wantCwd := resolvePath(cwd)
-	snapshot := map[string]int64{}
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		name := d.Name()
-		if !strings.HasPrefix(name, "rollout-") || !strings.HasSuffix(name, ".jsonl") {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		id, metaCwd, ok := codexMeta(path)
-		if !ok || resolvePath(metaCwd) != wantCwd {
-			return nil
-		}
-		snapshot[id] = info.ModTime().UnixNano()
-		return nil
-	})
+	snapshot := make(map[string]int64, len(cands))
+	for _, cand := range cands {
+		snapshot[cand.id] = cand.modTime.UnixNano()
+	}
 	return snapshot, true
+}
+
+func recaptureCandidates(cands []candidate, err error, snapshot map[string]int64) []candidate {
+	if err != nil {
+		return nil
+	}
+	matched := cands[:0]
+	for _, cand := range cands {
+		if afterSnapshot(snapshot, cand.id, cand.modTime.UnixNano()) {
+			matched = append(matched, cand)
+		}
+	}
+	return matched
+}
+
+func snapshotCodex(root, cwd string) (map[string]int64, bool) {
+	return snapshotCandidates(codexCandidates(root, cwd, time.Time{}, nil))
 }
 
 func recaptureCodex(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
-	if root == "" {
-		return nil
-	}
-	wantCwd := resolvePath(cwd)
-	var cands []candidate
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		name := d.Name()
-		if !strings.HasPrefix(name, "rollout-") || !strings.HasSuffix(name, ".jsonl") {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		id, metaCwd, ok := codexMeta(path)
-		if !ok || resolvePath(metaCwd) != wantCwd || claimed[id] {
-			return nil
-		}
-		if !afterSnapshot(snapshot, id, info.ModTime().UnixNano()) {
-			return nil
-		}
-		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
-		return nil
-	})
-	return cands
+	cands, err := codexCandidates(root, cwd, time.Time{}, claimed)
+	return recaptureCandidates(cands, err, snapshot)
 }
 
 func snapshotCommandCode(root, cwd string) (map[string]int64, bool) {
-	if root == "" {
-		return nil, false
-	}
-	wantCwd := resolvePath(cwd)
-	snapshot := map[string]int64{}
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		name := d.Name()
-		if !strings.HasSuffix(name, ".jsonl") || strings.Contains(name, ".checkpoints.") {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		id, sessionCwd, ok := commandCodeMeta(path)
-		if !ok || resolvePath(sessionCwd) != wantCwd {
-			return nil
-		}
-		snapshot[id] = info.ModTime().UnixNano()
-		return nil
-	})
-	return snapshot, true
+	return snapshotCandidates(commandCodeCandidates(root, cwd, time.Time{}, nil))
 }
 
 func recaptureCommandCode(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
-	if root == "" {
-		return nil
-	}
-	wantCwd := resolvePath(cwd)
-	var cands []candidate
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		name := d.Name()
-		if !strings.HasSuffix(name, ".jsonl") || strings.Contains(name, ".checkpoints.") {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		id, sessionCwd, ok := commandCodeMeta(path)
-		if !ok || resolvePath(sessionCwd) != wantCwd || claimed[id] {
-			return nil
-		}
-		if !afterSnapshot(snapshot, id, info.ModTime().UnixNano()) {
-			return nil
-		}
-		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
-		return nil
-	})
-	return cands
+	cands, err := commandCodeCandidates(root, cwd, time.Time{}, claimed)
+	return recaptureCandidates(cands, err, snapshot)
 }
 
 func snapshotGemini(root, cwd string) (map[string]int64, bool) {
-	if root == "" {
-		return nil, false
-	}
-	wantHash := geminiProjectHash(cwd)
-	snapshot := map[string]int64{}
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		name := d.Name()
-		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".jsonl") {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		id, hash, ok := geminiSessionMeta(path)
-		if !ok || hash != wantHash {
-			return nil
-		}
-		snapshot[id] = info.ModTime().UnixNano()
-		return nil
-	})
-	return snapshot, true
+	return snapshotCandidates(geminiCandidates(root, cwd, time.Time{}, nil))
 }
 
 func recaptureGemini(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
-	if root == "" {
-		return nil
-	}
-	wantHash := geminiProjectHash(cwd)
-	var cands []candidate
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		name := d.Name()
-		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".jsonl") {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		id, hash, ok := geminiSessionMeta(path)
-		if !ok || hash != wantHash || claimed[id] {
-			return nil
-		}
-		if !afterSnapshot(snapshot, id, info.ModTime().UnixNano()) {
-			return nil
-		}
-		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
-		return nil
-	})
-	return cands
+	cands, err := geminiCandidates(root, cwd, time.Time{}, claimed)
+	return recaptureCandidates(cands, err, snapshot)
 }
 
 func snapshotOpencode(cwd string) (map[string]int64, bool) {
@@ -469,17 +343,21 @@ func commandCodeRoot() string {
 // the id and the working directory, so capture walks the per-project folders
 // instead of guessing cmd's project folder naming.
 func captureCommandCode(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	return pickEarliest(commandCodeCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
+	cands, _ := commandCodeCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed)
+	return pickEarliest(cands)
 }
 
-func commandCodeCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) []candidate {
+func commandCodeCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) ([]candidate, error) {
 	if root == "" {
-		return nil
+		return nil, os.ErrNotExist
 	}
 	wantCwd := resolvePath(cwd)
 	var cands []candidate
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
 			return nil
 		}
 		name := d.Name()
@@ -487,7 +365,10 @@ func commandCodeCandidates(root, cwd string, cutoff time.Time, claimed map[strin
 			return nil
 		}
 		info, err := d.Info()
-		if err != nil || info.ModTime().Before(cutoff) {
+		if err != nil {
+			return err
+		}
+		if info.ModTime().Before(cutoff) {
 			return nil
 		}
 		id, sessionCwd, ok := commandCodeMeta(path)
@@ -497,7 +378,7 @@ func commandCodeCandidates(root, cwd string, cutoff time.Time, claimed map[strin
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
 		return nil
 	})
-	return cands
+	return cands, err
 }
 
 func commandCodeMeta(path string) (id, cwd string, ok bool) {
@@ -800,17 +681,21 @@ func pickEarliest(cands []candidate) (string, bool) {
 // session_meta record carrying the session id and the directory it ran
 // in. A file older than the launch cannot be this session's.
 func captureCodex(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	return pickEarliest(codexCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
+	cands, _ := codexCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed)
+	return pickEarliest(cands)
 }
 
-func codexCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) []candidate {
+func codexCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) ([]candidate, error) {
 	if root == "" {
-		return nil
+		return nil, os.ErrNotExist
 	}
 	wantCwd := resolvePath(cwd)
 	var cands []candidate
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
 			return nil
 		}
 		name := d.Name()
@@ -818,7 +703,10 @@ func codexCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool
 			return nil
 		}
 		info, err := d.Info()
-		if err != nil || info.ModTime().Before(cutoff) {
+		if err != nil {
+			return err
+		}
+		if info.ModTime().Before(cutoff) {
 			return nil
 		}
 		id, metaCwd, ok := codexMeta(path)
@@ -828,7 +716,7 @@ func codexCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
 		return nil
 	})
-	return cands
+	return cands, err
 }
 
 // codexMeta reads the session id and cwd from a rollout's first line.
@@ -936,17 +824,21 @@ func geminiSessionMeta(path string) (id, projectHash string, ok bool) {
 // is located by matching the project hash gemini records for cwd among
 // session files written at or after launch.
 func captureGemini(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	return pickEarliest(geminiCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
+	cands, _ := geminiCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed)
+	return pickEarliest(cands)
 }
 
-func geminiCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) []candidate {
+func geminiCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) ([]candidate, error) {
 	if root == "" {
-		return nil
+		return nil, os.ErrNotExist
 	}
 	wantHash := geminiProjectHash(cwd)
 	var cands []candidate
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
 			return nil
 		}
 		name := d.Name()
@@ -954,7 +846,10 @@ func geminiCandidates(root, cwd string, cutoff time.Time, claimed map[string]boo
 			return nil
 		}
 		info, err := d.Info()
-		if err != nil || info.ModTime().Before(cutoff) {
+		if err != nil {
+			return err
+		}
+		if info.ModTime().Before(cutoff) {
 			return nil
 		}
 		id, hash, ok := geminiSessionMeta(path)
@@ -964,7 +859,7 @@ func geminiCandidates(root, cwd string, cutoff time.Time, claimed map[string]boo
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
 		return nil
 	})
-	return cands
+	return cands, err
 }
 
 // SupportsSessionFile reports whether a session store keeps conversations in
