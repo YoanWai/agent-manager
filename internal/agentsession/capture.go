@@ -255,9 +255,14 @@ func openHermesRO(path string) (*sql.DB, error) {
 }
 
 // hermesActivitySQL is the freshest activity hermes itself computes: the
-// mid-turn heartbeat, then the newest message timestamp, then the session
-// start. A resumed conversation's first turn pushes one of the first two.
-const hermesActivitySQL = `COALESCE(s.last_activity_at, (SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id), s.started_at)`
+// mid-turn heartbeat and the newest message timestamp, either lagging the
+// other, floored by the session start. A resumed conversation's first turn
+// pushes one of the first two.
+const hermesActivitySQL = `MAX(
+	COALESCE(s.last_activity_at, s.started_at),
+	COALESCE((SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id), s.started_at),
+	s.started_at
+)`
 
 func queryHermesActivity(ctx context.Context, db *sql.DB, add func(id string, sessionCwd sql.NullString, activity float64)) error {
 	rows, err := db.QueryContext(ctx, `

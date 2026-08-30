@@ -775,6 +775,28 @@ func TestRecaptureHermesBindsOnANewMessageWithoutAHeartbeat(t *testing.T) {
 	}
 }
 
+// A heartbeat the snapshot already saw must not hide a newer message: the
+// activity is the newest of the two, so the resumed turn still binds.
+func TestRecaptureHermesBindsOnANewerMessageAfterAHeartbeat(t *testing.T) {
+	base := time.Now().Add(-time.Hour)
+	path := writeHermesStore(t,
+		hermesRow{id: "old", source: "cli", cwd: "/repo", started: base, activity: base.Add(time.Second)},
+	)
+	t.Setenv("HERMES_HOME", filepath.Dir(path))
+	snapshot, ok := Snapshot("hermes", "/repo")
+	if !ok {
+		t.Fatal("snapshot failed")
+	}
+	if id, ok := Recapture("hermes", "/repo", snapshot, map[string]bool{}); ok {
+		t.Fatalf("an untouched conversation must not bind, got %q", id)
+	}
+	addHermesMessage(t, path, "old", base.Add(10*time.Second))
+	id, ok := Recapture("hermes", "/repo", snapshot, map[string]bool{})
+	if !ok || id != "old" {
+		t.Fatalf("got id=%q ok=%v, want old true", id, ok)
+	}
+}
+
 func TestGeminiSessionFileInResolvesByID(t *testing.T) {
 	root := t.TempDir()
 	id := "aaaa1111-2222-3333-4444-555566667777"
