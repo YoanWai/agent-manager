@@ -328,6 +328,21 @@ func TestHookWorkingReconcilesToFinishedOnEndedTurn(t *testing.T) {
 	}
 }
 
+func TestHookWorkingReconcilesPastClaudeUpdateBanner(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	m.poller.statusSources["claude"] = hooks.StatusSourceClaude
+	sess := store.Session{ID: "hooked-update", Tool: "claude", Status: status.Working}
+	writeHookStatus(t, m, sess.ID, status.Working)
+
+	pane := "done\n\n✻ Sautéed for 2m 58s · done 23:03\n" +
+		"✔ Update installed · Restart to update\n" +
+		"────\n❯\u00a0\n────\n  ⏵⏵ auto mode on (shift+tab to cycle)"
+	if got := deriveStatus(t, m, sess, pane, true); got != status.Finished {
+		t.Fatalf("update banner left stale working hook at %q, want finished", got)
+	}
+}
+
 // Claude fires Stop when the main agent stops responding, so a turn that
 // leaves background agents running reports finished while they work. The
 // pane still shows the wait, and that verdict has to win.

@@ -193,13 +193,14 @@ rules = [
 	}
 }
 
-func TestLoadDirUpgradesLegacyClaudeBusyLine(t *testing.T) {
+func TestLoadDirUpgradesLegacyClaudeStatusPatterns(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	legacy := `
 [tools.claude]
 command = "claude"
 busy_line = '` + busyLineAgentsOnly + `'
+chrome_line = '` + oldClaudeChromeLine + `'
 `
 	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
@@ -210,6 +211,9 @@ busy_line = '` + busyLineAgentsOnly + `'
 	}
 	if !strings.Contains(cfg.Tools["claude"].BusyLine, "shells? still running") {
 		t.Fatalf("legacy claude busy_line was not upgraded: %q", cfg.Tools["claude"].BusyLine)
+	}
+	if !strings.Contains(cfg.Tools["claude"].ChromeLine, "Update installed") {
+		t.Fatalf("legacy claude chrome_line was not upgraded: %q", cfg.Tools["claude"].ChromeLine)
 	}
 }
 
@@ -258,13 +262,14 @@ func TestLoadDirBackfillsDialogFooter(t *testing.T) {
 	}
 }
 
-func TestLoadDirPreservesCustomClaudeBusyLine(t *testing.T) {
+func TestLoadDirPreservesCustomClaudeStatusPatterns(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	custom := `
 [tools.claude]
 command = "claude"
 busy_line = "my own busy signal"
+chrome_line = "my own chrome signal"
 `
 	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
 		t.Fatal(err)
@@ -275,6 +280,9 @@ busy_line = "my own busy signal"
 	}
 	if got := cfg.Tools["claude"].BusyLine; got != "my own busy signal" {
 		t.Fatalf("claude busy_line = %q want the user's own pattern", got)
+	}
+	if got := cfg.Tools["claude"].ChromeLine; got != "my own chrome signal" {
+		t.Fatalf("claude chrome_line = %q want the user's own pattern", got)
 	}
 }
 

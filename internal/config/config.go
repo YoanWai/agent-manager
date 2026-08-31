@@ -203,6 +203,10 @@ func (c *Config) backfillToolDefaults() error {
 // pattern; one edited by hand keeps what its author wrote.
 const busyLineAgentsOnly = `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ background agents? to finish`
 
+// This exact chrome pattern was written before Claude added its updater
+// banner beneath completed turns. Hand-edited patterns remain untouched.
+const oldClaudeChromeLine = `^\s*[─q]{4,}.*$|^[\s─q]*$`
+
 // The command-code matching rules #385 shipped, which no longer match the
 // shapes current Command Code draws. A stored config.toml carries these
 // verbatim and keeps them over any new default, so mergeTool rewrites
@@ -268,8 +272,13 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.DialogFooter, def.DialogFooter)
 	fill(&user.InputPrefix, def.InputPrefix)
 	fill(&user.ComposerPlaceholder, def.ComposerPlaceholder)
-	if name == "claude" && user.BusyLine == busyLineAgentsOnly {
-		user.BusyLine = def.BusyLine
+	if name == "claude" {
+		if user.BusyLine == busyLineAgentsOnly {
+			user.BusyLine = def.BusyLine
+		}
+		if user.ChromeLine == oldClaudeChromeLine {
+			user.ChromeLine = def.ChromeLine
+		}
 	}
 	if name == "command-code" {
 		if user.TurnEnd == oldCmdTurnEnd {
@@ -417,7 +426,7 @@ status_source = "claude-hooks"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 turn_end = "^[✻✳✶✽✢·✦✧+*] \\S+ for \\d.*$"
-chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$"
+chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$|^\\s*✔ Update installed · Restart to update\\s*$"
 blocked_line = "Interrupted ·"
 # recap blocks ("※ recap: …") render below the turn-end summary
 trailing_note = "^※"
