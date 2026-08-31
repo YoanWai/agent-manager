@@ -611,13 +611,13 @@ func assertPaneStayedOnSpawnPath(t *testing.T, m *Model, id, want string) {
 	if err != nil {
 		t.Fatalf("pane path: %v", err)
 	}
-	wantRes, errWant := filepath.EvalSymlinks(want)
-	gotRes, errGot := filepath.EvalSymlinks(got)
-	if errWant != nil || errGot != nil {
-		if got != want {
-			t.Fatalf("pane cwd = %q, want spawn path %q", got, want)
-		}
-		return
+	wantRes, err := filepath.EvalSymlinks(want)
+	if err != nil {
+		t.Fatalf("resolve spawn path %q: %v", want, err)
+	}
+	gotRes, err := filepath.EvalSymlinks(got)
+	if err != nil {
+		t.Fatalf("resolve pane cwd %q: %v", got, err)
 	}
 	if gotRes != wantRes {
 		t.Fatalf("pane cwd = %q, want spawn path %q", got, want)

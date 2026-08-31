@@ -1089,8 +1089,6 @@ func (s *Store) RenameSession(id, name string) error {
 	return requireRow(res, id)
 }
 
-// RenameSessionWorktreeBranch records the branch that followed a session's
-// new name without changing the directory its process runs in.
 func (s *Store) RenameSessionWorktreeBranch(id, branch string) error {
 	res, err := s.db.Exec(`UPDATE sessions SET worktree_branch = ? WHERE id = ?`, branch, id)
 	if err != nil {

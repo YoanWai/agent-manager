@@ -1132,10 +1132,13 @@ func TestRenameWorktreeBranchThenRemoveIfClean(t *testing.T) {
 
 func sameResolvedPath(t *testing.T, a, b string) bool {
 	t.Helper()
-	ra, errA := filepath.EvalSymlinks(a)
-	rb, errB := filepath.EvalSymlinks(b)
-	if errA != nil || errB != nil {
-		return a == b
+	ra, err := filepath.EvalSymlinks(a)
+	if err != nil {
+		t.Fatalf("resolve %q: %v", a, err)
+	}
+	rb, err := filepath.EvalSymlinks(b)
+	if err != nil {
+		t.Fatalf("resolve %q: %v", b, err)
 	}
 	return ra == rb
 }

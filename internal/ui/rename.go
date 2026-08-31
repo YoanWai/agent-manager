@@ -34,7 +34,9 @@ func renameSessionWorktreeBranch(gitDrv *git.Driver, st *store.Store, sess *stor
 		return nil
 	}
 	if err := st.RenameSessionWorktreeBranch(sess.ID, branch); err != nil {
-		_, _ = gitDrv.RenameWorktreeBranch(sess.WorktreeRepo, sess.Cwd, branch, sess.Name)
+		if _, rollbackErr := gitDrv.RenameWorktreeBranch(sess.WorktreeRepo, sess.Cwd, branch, sess.Name); rollbackErr != nil {
+			return fmt.Errorf("%w (git still on %s: %v)", err, branch, rollbackErr)
+		}
 		return err
 	}
 	sess.WorktreeBranch = branch
