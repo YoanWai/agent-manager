@@ -795,6 +795,24 @@ func TestRenameWorktreeBranchLeavesUnrecognizedWorktreeAlone(t *testing.T) {
 	}
 }
 
+func TestRenameWorktreeBranchPropagatesGitErrors(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "claude-7a72")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	notRepo := t.TempDir()
+	if _, err := driver.RenameWorktreeBranch(notRepo, path, branch, "renamed"); err == nil {
+		t.Fatal("a root that is not a repo should fail the rename, not pass as a missing branch")
+	}
+	head, err := driver.run(path, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil || head != branch {
+		t.Fatalf("failed rename disturbed HEAD: %q err=%v", head, err)
+	}
+}
+
 func TestRenameWorktreeBranchUnreadableDirFails(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads through a stripped directory")

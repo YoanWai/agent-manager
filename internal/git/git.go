@@ -735,6 +735,11 @@ func (d *Driver) RenameWorktreeBranch(root, path, branch, newName string) (strin
 		return branch, nil
 	}
 	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
+		// --verify --quiet exits 1 when the ref is absent; anything else is a real failure.
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+			return "", err
+		}
 		return branch, nil
 	}
 	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+newBranch); err == nil {
