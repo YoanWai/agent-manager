@@ -59,6 +59,58 @@ func TestNotifyDarwinGhosttyUsesOSC777(t *testing.T) {
 	}
 }
 
+// iTerm2 names itself in TERM_PROGRAM at the local shell; through tmux and
+// over SSH only LC_TERMINAL survives, so both markers must reach OSC 9.
+func TestNotifyITermUsesOSC9(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		goos string
+		env  map[string]string
+	}{
+		{"local", "darwin", map[string]string{"TERM_PROGRAM": "iTerm.app", "LC_TERMINAL": "iTerm2"}},
+		{"tmux", "darwin", map[string]string{"TERM_PROGRAM": "tmux", "LC_TERMINAL": "iTerm2"}},
+		{"ssh", "linux", map[string]string{"TERM": "xterm-256color", "LC_TERMINAL": "iTerm2"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			defer restore()()
+			goos = test.goos
+			getenv = func(key string) string { return test.env[key] }
+			rec := &cmdRecorder{known: map[string]bool{"notify-send": true}}
+			rec.install()
+			var emitted []string
+			emitSeq = func(seq string) error {
+				emitted = append(emitted, seq)
+				return nil
+			}
+			Notify(Event{Session: "deploy", Tool: "claude", Kind: Finished})
+			if len(emitted) != 1 || emitted[0] != "\x1b]9;● Finished — deploy · claude\a" {
+				t.Fatalf("want one OSC 9 sequence, got %q", emitted)
+			}
+			if len(rec.called) != 0 {
+				t.Fatalf("no desktop command should run inside iTerm2, got %v", rec.called)
+			}
+		})
+	}
+}
+
+func TestNotifyITermFailureFallsBackToNative(t *testing.T) {
+	defer restore()()
+	goos = "darwin"
+	getenv = func(key string) string {
+		if key == "TERM_PROGRAM" {
+			return "iTerm.app"
+		}
+		return ""
+	}
+	rec := &cmdRecorder{known: map[string]bool{}}
+	rec.install()
+	emitSeq = func(string) error { return errors.New("closed terminal") }
+	Notify(Event{Session: "deploy", Tool: "claude", Kind: Waiting})
+	if len(rec.called) != 1 || rec.called[0][0] != "osascript" {
+		t.Fatalf("failed terminal delivery should fall back to the OS, got %v", rec.called)
+	}
+}
+
 func TestNotifyGhosttyFailureFallsBackToNative(t *testing.T) {
 	defer restore()()
 	goos = "darwin"

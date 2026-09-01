@@ -2,13 +2,13 @@
 // managed session's status flips into a state that needs the user.
 //
 // Delivery is best-path. Inside Ghostty (cmux included) an OSC 777 escape
-// goes to the drawing terminal, which turns it into a native notification
-// attributed to that window and workspace — and since the escape rides the
-// terminal connection, it reaches the user even when the manager runs on
-// a remote host over SSH. Without such a terminal, macOS posts via
-// osascript and Linux via notify-send. With nothing better available the
-// terminal bell is the floor, so headless and WSL setups still get an
-// audible cue.
+// and inside iTerm2 an OSC 9 escape go to the drawing terminal, which turns
+// them into a native notification attributed to that window and workspace,
+// so a click lands on the terminal. Since the escape rides the terminal
+// connection, it reaches the user even when the manager runs on a remote
+// host over SSH. Without such a terminal, macOS posts via osascript and
+// Linux via notify-send. With nothing better available the terminal bell
+// is the floor, so headless and WSL setups still get an audible cue.
 package notify
 
 import (
@@ -122,6 +122,9 @@ func Notify(event Event) {
 	if ghostty() && emitSeq(osc777("agent-manager", terminalBody)) == nil {
 		return
 	}
+	if iterm() && emitSeq(osc9(terminalBody)) == nil {
+		return
+	}
 	switch goos {
 	case "darwin":
 		// The argv form keeps content out of the script source, so
@@ -156,11 +159,24 @@ func ghostty() bool {
 		getenv("TERM") == "xterm-ghostty"
 }
 
+// iterm reports whether the drawing terminal is iTerm2. TERM_PROGRAM names
+// it at the local shell; tmux overwrites that, and only LC_* crosses SSH,
+// so LC_TERMINAL is the marker inside tmux and on a remote host.
+func iterm() bool {
+	return getenv("TERM_PROGRAM") == "iTerm.app" ||
+		getenv("LC_TERMINAL") == "iTerm2"
+}
+
 // osc777 builds the Ghostty notification sequence. Semicolons would read
 // as field separators in the payload, so they cannot survive.
 func osc777(title, body string) string {
 	return "\x1b]777;notify;" + strings.ReplaceAll(title, ";", ",") + ";" +
 		strings.ReplaceAll(body, ";", ",") + "\a"
+}
+
+// osc9 builds the iTerm2 notification sequence: one message, no title.
+func osc9(body string) string {
+	return "\x1b]9;" + body + "\a"
 }
 
 // sanitize squashes a title or body to one line with no control
