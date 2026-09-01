@@ -38,11 +38,11 @@ func TestCaretRowSurvivesTallPaneCrop(t *testing.T) {
 }
 
 func press(m *Model, x, y int) {
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
+	m.handleFocusMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: x, Y: y})
 }
 
 func drag(m *Model, x, y int) {
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft, X: x, Y: y})
+	m.handleFocusMouse(tea.MouseMotionMsg{Button: tea.MouseLeft, X: x, Y: y})
 }
 
 // A click outside the pane selects nothing: that region belongs to the
@@ -194,7 +194,7 @@ func TestDoubleClickStillSelectsInMousePane(t *testing.T) {
 func TestDeferredClickForwardsPressReleasePair(t *testing.T) {
 	m, sess := focusedMouseApp(t, "mouse-tool", "deferred-click")
 	x, y := m.pane.box.x+2, m.pane.box.y+1
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
+	m.handleFocusMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: x, Y: y})
 	if m.sel.active {
 		t.Fatal("press in a mouse pane should not open a selection")
 	}

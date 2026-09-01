@@ -455,18 +455,20 @@ func TestRailFootLinesFitWidth(t *testing.T) {
 	}
 }
 
-func key(s string) tea.KeyMsg {
+func key(s string) tea.KeyPressMsg {
 	switch s {
 	case "enter":
-		return tea.KeyMsg{Type: tea.KeyEnter}
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
 	case "esc":
-		return tea.KeyMsg{Type: tea.KeyEscape}
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
 	case "down":
-		return tea.KeyMsg{Type: tea.KeyDown}
+		return tea.KeyPressMsg{Code: tea.KeyDown}
 	case "up":
-		return tea.KeyMsg{Type: tea.KeyUp}
+		return tea.KeyPressMsg{Code: tea.KeyUp}
+	case "pgdown":
+		return tea.KeyPressMsg{Code: tea.KeyPgDown}
 	}
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+	return tea.KeyPressMsg{Code: []rune(s)[0], Text: s}
 }
 
 func modalModel(t *testing.T) *Model {

@@ -11,11 +11,11 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-func runeKey(s string) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+func runeKey(s string) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: []rune(s)[0], Text: s}
 }
 
-func namedKey(t tea.KeyType) tea.KeyMsg { return tea.KeyMsg{Type: t} }
+func namedKey(code rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: code} }
 
 // helpKeyTokens is every key the catalog spells out, split on the " / "
 // that separates alternatives inside one row.

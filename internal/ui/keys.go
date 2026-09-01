@@ -139,7 +139,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.restoreSelected()
 	case "d":
 		m.prepareDelete()
-	case " ", "space":
+	case "space":
 		m.openQuickMode()
 	case "F", "shift+f":
 		m.toggleCollapseAll()
@@ -525,8 +525,8 @@ func (m *Model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.rebuildRows()
 	default:
-		if len(msg.String()) == 1 {
-			m.search += msg.String()
+		if len(msg.Text) == 1 {
+			m.search += msg.Text
 			m.rebuildRows()
 		}
 	}

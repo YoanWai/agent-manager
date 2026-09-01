@@ -1284,7 +1284,7 @@ func (m *Model) handleDiffKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.setCursorDiffLine(lineIdx)
 	case "f":
 		return m, m.toggleCodeOnly()
-	case " ", "space":
+	case "space":
 		return m, m.toggleReviewed()
 	case "c":
 		m.openAnnotate()

@@ -440,7 +440,7 @@ func (m *Model) handleCLIPickerKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.settings.cliCursor = (m.settings.cliCursor + count - 1) % count
 	case "down", "j":
 		m.settings.cliCursor = (m.settings.cliCursor + 1) % count
-	case " ", "space":
+	case "space":
 		if m.settings.cliCursor < len(m.settings.cliNames) {
 			m.toggleCLIHidden(m.settings.cliNames[m.settings.cliCursor])
 		}
