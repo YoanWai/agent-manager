@@ -460,8 +460,56 @@ func TestExtractHighlightsStopsAtTheCap(t *testing.T) {
 	}
 }
 
+func TestExtractThanksReadsTheAuthoredBullets(t *testing.T) {
+	body := strings.Join([]string{
+		"## Highlights",
+		"- the session list can take the whole terminal",
+		"",
+		"## Thank you",
+		"",
+		"A closing paragraph stays on the web page.",
+		"",
+		"- @dolutech asked for reboot recovery in #388 and then built the picker (#400)",
+		"* @pandysp asked to hide the stats foot and the header in #408 and #409",
+		"- [@fruch](https://github.com/fruch) reported that a live rename moved the worktree (#418)",
+		"",
+		"## What's Changed",
+		"* feat(config): revive without an id opens the tool's session picker",
+	}, "\n")
+
+	want := []string{
+		"@dolutech asked for reboot recovery in #388 and then built the picker (#400)",
+		"@pandysp asked to hide the stats foot and the header in #408 and #409",
+		"@fruch reported that a live rename moved the worktree (#418)",
+	}
+	if got := extractThanks(body); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("extractThanks() = %q, want %q", got, want)
+	}
+	if got := extractHighlights(body); len(got) != 1 {
+		t.Fatalf("highlights leaked thanks: %q", got)
+	}
+}
+
+func TestExtractThanksIsEmptyWithoutTheSection(t *testing.T) {
+	body := "## Highlights\n- a feature\n\n## What's Changed\n* feat(ui): a feature\n"
+	if got := extractThanks(body); len(got) != 0 {
+		t.Fatalf("extractThanks() = %q, want none", got)
+	}
+}
+
+func TestExtractThanksStopsAtTheCap(t *testing.T) {
+	lines := []string{"## Thank you"}
+	for i := 0; i < maxThanks+3; i++ {
+		lines = append(lines, fmt.Sprintf("- @someone%d filed #%d", i, i))
+	}
+	got := extractThanks(strings.Join(lines, "\n"))
+	if len(got) != maxThanks {
+		t.Fatalf("extractThanks() kept %d, want %d", len(got), maxThanks)
+	}
+}
+
 func TestCatalogCarriesHighlightsThroughTheCache(t *testing.T) {
-	body := `## Highlights\n- the list can take the whole terminal\n\n## What's Changed\n* feat(ui): full screen sessions mode`
+	body := `## Highlights\n- the list can take the whole terminal\n\n## Thank you\n- @pandysp asked for full screen in #357\n\n## What's Changed\n* feat(ui): full screen sessions mode`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, `[{"tag_name":"v0.34.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.34.0","body":"%s","draft":false,"prerelease":false}]`, body)
 	}))
@@ -469,15 +517,23 @@ func TestCatalogCarriesHighlightsThroughTheCache(t *testing.T) {
 	defer swapReleasesURL(server.URL)()
 
 	dir := t.TempDir()
-	want := []string{"The list can take the whole terminal"}
+	wantHighlights := []string{"The list can take the whole terminal"}
+	wantThanks := []string{"@pandysp asked for full screen in #357"}
 	fetched, err := Check(context.Background(), dir, "v0.33.0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fetched.Releases[0].Highlights; fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("fetched highlights = %q, want %q", got, want)
+	if got := fetched.Releases[0].Highlights; fmt.Sprint(got) != fmt.Sprint(wantHighlights) {
+		t.Fatalf("fetched highlights = %q, want %q", got, wantHighlights)
 	}
-	if got := Cached(dir, "v0.33.0").Releases[0].Highlights; fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("cached highlights = %q, want %q", got, want)
+	if got := fetched.Releases[0].Thanks; fmt.Sprint(got) != fmt.Sprint(wantThanks) {
+		t.Fatalf("fetched thanks = %q, want %q", got, wantThanks)
+	}
+	cached := Cached(dir, "v0.33.0")
+	if got := cached.Releases[0].Highlights; fmt.Sprint(got) != fmt.Sprint(wantHighlights) {
+		t.Fatalf("cached highlights = %q, want %q", got, wantHighlights)
+	}
+	if got := cached.Releases[0].Thanks; fmt.Sprint(got) != fmt.Sprint(wantThanks) {
+		t.Fatalf("cached thanks = %q, want %q", got, wantThanks)
 	}
 }

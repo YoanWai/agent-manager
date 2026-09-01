@@ -798,6 +798,12 @@ func noticeInnerWidth(notices []notice, terminalWidth int) int {
 			for _, change := range release.Changes {
 				lines = append(lines, "• "+change)
 			}
+			if len(release.Thanks) > 0 {
+				lines = append(lines, "Thank you")
+			}
+			for _, change := range release.Thanks {
+				lines = append(lines, "• "+change)
+			}
 		}
 		for _, line := range lines {
 			if w := lipgloss.Width(line); w > inner {
@@ -828,24 +834,28 @@ func renderNoticeBody(n notice, width int) []string {
 		if len(release.Highlights) > 0 {
 			body = append(body, lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(release.Version))
 			body = appendNoticeBullets(body, release.Highlights, width)
-			continue
+		} else {
+			count := release.TotalChanges
+			label := "change"
+			if count != 1 {
+				label = "changes"
+			}
+			heading := release.Version
+			if count > 0 {
+				heading += fmt.Sprintf(" · %d %s", count, label)
+			}
+			body = append(body, lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(heading))
+			if len(release.Changes) == 0 {
+				body = append(body, subtleStyle.Render("  No summarized changes."))
+			}
+			body = appendNoticeBullets(body, release.Changes, width)
+			if omitted := release.TotalChanges - len(release.Changes); omitted > 0 {
+				body = append(body, subtleStyle.Render(fmt.Sprintf("  +%d more in the full notes", omitted)))
+			}
 		}
-		count := release.TotalChanges
-		label := "change"
-		if count != 1 {
-			label = "changes"
-		}
-		heading := release.Version
-		if count > 0 {
-			heading += fmt.Sprintf(" · %d %s", count, label)
-		}
-		body = append(body, lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(heading))
-		if len(release.Changes) == 0 {
-			body = append(body, subtleStyle.Render("  No summarized changes."))
-		}
-		body = appendNoticeBullets(body, release.Changes, width)
-		if omitted := release.TotalChanges - len(release.Changes); omitted > 0 {
-			body = append(body, subtleStyle.Render(fmt.Sprintf("  +%d more in the full notes", omitted)))
+		if len(release.Thanks) > 0 {
+			body = append(body, "", subtleStyle.Render("Thank you"))
+			body = appendNoticeBullets(body, release.Thanks, width)
 		}
 	}
 	if len(n.releases) > 0 && !n.rangeComplete {
