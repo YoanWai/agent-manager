@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/store"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 type memSettings map[string]string

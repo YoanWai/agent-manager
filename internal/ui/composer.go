@@ -9,9 +9,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/clipboard"
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // composer is a prompt box that can hold pasted images. A paste lands at
@@ -205,7 +205,7 @@ func (c *composer) cursorOffset() int {
 }
 
 // cursorColumn is the caret's rune offset into its own logical row, which
-// is what textarea.SetCursor takes.
+// is what textarea.SetCursorColumn takes.
 func (c *composer) cursorColumn() int {
 	info := c.input.LineInfo()
 	return info.StartColumn + info.ColumnOffset
@@ -259,7 +259,7 @@ func (c *composer) setValue(value string, cursor int) tea.Cmd {
 	runes := []rune(value)
 	cursor = max(0, min(cursor, len(runes)))
 	c.input.SetValue(string(runes[cursor:]))
-	cmd := c.updateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'<'}, Alt: true})
+	cmd := c.updateInput(tea.KeyPressMsg{Code: '<', Mod: tea.ModAlt})
 	c.input.InsertString(string(runes[:cursor]))
 	return cmd
 }
@@ -335,9 +335,9 @@ func (c *composer) snapCursorOutOfToken() {
 		}
 		column := c.cursorColumn()
 		if offset-span.start <= span.end-offset {
-			c.input.SetCursor(column - (offset - span.start))
+			c.input.SetCursorColumn(column - (offset - span.start))
 		} else {
-			c.input.SetCursor(column + (span.end - offset))
+			c.input.SetCursorColumn(column + (span.end - offset))
 		}
 		return
 	}
@@ -379,7 +379,7 @@ func (c *composer) renderChips(view string) string {
 // typeKey sends an ordinary keystroke to the input, then repairs what the
 // edit did to the chips around the caret: one that got swallowed releases
 // its image, and the caret never rests inside a chip.
-func (c *composer) typeKey(msg tea.KeyMsg) tea.Cmd {
+func (c *composer) typeKey(msg tea.Msg) tea.Cmd {
 	c.input.SetHeight(c.maxRows)
 	var cmd tea.Cmd
 	c.input, cmd = c.input.Update(msg)
@@ -445,7 +445,7 @@ func (m *Model) composerOpen(target composerID) bool {
 // composerKey handles the keys a prompt box with chips owns: pasting an
 // image, stepping over a chip, and deleting one whole. The false return is
 // every other key, which the caller types into the input itself.
-func (m *Model) composerKey(target composerID, msg tea.KeyMsg) (tea.Cmd, bool) {
+func (m *Model) composerKey(target composerID, msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	c := m.composerFor(target)
 	switch msg.String() {
 	case "ctrl+v":
@@ -461,12 +461,12 @@ func (m *Model) composerKey(target composerID, msg tea.KeyMsg) (tea.Cmd, bool) {
 		return cmd, true
 	case "left":
 		if span, ok := c.tokenEndingAt(c.cursorOffset()); ok {
-			c.input.SetCursor(c.cursorColumn() - span.length())
+			c.input.SetCursorColumn(c.cursorColumn() - span.length())
 			return nil, true
 		}
 	case "right":
 		if span, ok := c.tokenStartingAt(c.cursorOffset()); ok {
-			c.input.SetCursor(c.cursorColumn() + span.length())
+			c.input.SetCursorColumn(c.cursorColumn() + span.length())
 			return nil, true
 		}
 	case "backspace", "ctrl+h":

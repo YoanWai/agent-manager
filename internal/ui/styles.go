@@ -1,34 +1,35 @@
 package ui
 
 import (
+	"image/color"
 	"strconv"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
 // Colors are resolved from the active Theme by applyTheme; nothing here
 // hardcodes a palette. See theme.go for the token meanings.
 var (
-	colorBg      lipgloss.Color
-	colorSurface lipgloss.Color
-	colorOverlay lipgloss.Color
-	colorBorder  lipgloss.Color
-	colorBright  lipgloss.Color
-	colorText    lipgloss.Color
-	colorDim     lipgloss.Color
-	colorSubtle  lipgloss.Color
-	colorAccent  lipgloss.Color
-	colorAccent2 lipgloss.Color
-	colorSelBg   lipgloss.Color
+	colorBg      color.Color
+	colorSurface color.Color
+	colorOverlay color.Color
+	colorBorder  color.Color
+	colorBright  color.Color
+	colorText    color.Color
+	colorDim     color.Color
+	colorSubtle  color.Color
+	colorAccent  color.Color
+	colorAccent2 color.Color
+	colorSelBg   color.Color
 
-	colorWorking  lipgloss.Color
-	colorWaiting  lipgloss.Color
-	colorFinished lipgloss.Color
-	colorErrored  lipgloss.Color
-	colorIdle     lipgloss.Color
+	colorWorking  color.Color
+	colorWaiting  color.Color
+	colorFinished color.Color
+	colorErrored  color.Color
+	colorIdle     color.Color
 )
 
 var (
@@ -117,18 +118,23 @@ func handledAnnotationBg() string {
 	return bgSeq(mix(current.Bg, current.Finished, 0.14))
 }
 
-func statusColor(s string) lipgloss.Color {
+func statusColor(s string) color.Color {
+	return lipgloss.Color(statusHex(s))
+}
+
+// statusHex is a state's theme hex, for the spots that mix it with another.
+func statusHex(s string) string {
 	switch s {
 	case status.Working, status.Starting:
-		return colorWorking
+		return current.Working
 	case status.Waiting:
-		return colorWaiting
+		return current.Waiting
 	case status.Finished:
-		return colorFinished
+		return current.Finished
 	case status.Errored, status.Dead:
-		return colorErrored
+		return current.Errored
 	default:
-		return colorIdle
+		return current.Idle
 	}
 }
 
@@ -228,7 +234,7 @@ func gaugeRamp(percent float64) string {
 
 // pill renders a small label chip: tinted text on the surface fill, so a
 // row of them reads as tokens rather than as more prose.
-func pill(text string, fg lipgloss.Color) string {
+func pill(text string, fg color.Color) string {
 	return chipStyle.Foreground(fg).Render(text)
 }
 
@@ -242,7 +248,7 @@ func inboxBadge(count int) string {
 // the header doubles as a key legend: each changeable value wears its
 // shortcut. The key is dim enough to lose to the value at a glance but
 // reads clearly when hunted.
-func keyPill(key, text string, fg lipgloss.Color) string {
+func keyPill(key, text string, fg color.Color) string {
 	return subtleStyle.Render(key+" ") + pill(text, fg)
 }
 

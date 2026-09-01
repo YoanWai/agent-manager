@@ -5,12 +5,12 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -767,7 +767,7 @@ func rowReplyStyle(state string) lipgloss.Style {
 	if state == status.Waiting {
 		return lipgloss.NewStyle().Foreground(statusColor(state))
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(string(statusColor(state)), current.Subtle, 0.5)))
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(statusHex(state), current.Subtle, 0.5)))
 }
 
 // rowPromptStyle leans the prompt toward the accent: visibly not chrome,
@@ -1276,7 +1276,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 			worktreeLabel = lipgloss.NewStyle().Foreground(colorAccent)
 		}
 		if fieldWidth := width - 12; fieldWidth >= 10 {
-			m.rename.dir.Width = fieldWidth
+			m.rename.dir.SetWidth(fieldWidth)
 		}
 		out := head + "\n" + pathLabel.Width(10).Render("path") + m.rename.dir.View()
 		if m.rename.focus == 1 && m.pathSugg.active() {

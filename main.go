@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -20,7 +21,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui"
 	"github.com/YoanWai/agent-manager/internal/update"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 const devVersion = "dev"
@@ -149,11 +149,10 @@ func run() error {
 	defer st.Close()
 
 	model := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
-	// Mouse reporting claims the wheel for the app, so a notch neither
-	// scrolls the host's scrollback out from under the manager nor arrives
-	// as an arrow key that walks the session cursor. Alternate scroll is
-	// cleared too: a crashed earlier run can leave it set.
-	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	program := tea.NewProgram(model)
+	// Alternate scroll is cleared before the first frame: a crashed earlier
+	// run can leave it set, and with it on a wheel notch would arrive as an
+	// arrow key that walks the session cursor.
 	if err := ui.DisableAlternateScroll(); err != nil {
 		return err
 	}

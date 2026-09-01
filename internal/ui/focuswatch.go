@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/tmux"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // focusPreviewMsg carries a pane snapshot pushed by the focus watcher,

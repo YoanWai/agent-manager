@@ -7,14 +7,14 @@ import (
 	"sort"
 	"strings"
 
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 const (
@@ -122,6 +122,25 @@ func textField(placeholder string, limit int) textinput.Model {
 	in := textinput.New()
 	in.Placeholder = placeholder
 	in.CharLimit = limit
+	styles := in.Styles()
+	styles.Cursor.Color = nil
+	in.SetStyles(styles)
+	return in
+}
+
+// promptArea is a one-row textarea that grows as the prompt wraps. The
+// caret paints in the terminal's own foreground, and the cursor-line fill
+// is dropped: on a single row it would band the whole field.
+func promptArea(placeholder string, limit int) textarea.Model {
+	in := textarea.New()
+	in.CharLimit = limit
+	in.Placeholder = placeholder
+	in.ShowLineNumbers = false
+	styles := in.Styles()
+	styles.Focused.CursorLine = lipgloss.NewStyle()
+	styles.Cursor.Color = nil
+	in.SetStyles(styles)
+	in.SetHeight(1)
 	return in
 }
 
@@ -133,18 +152,13 @@ const (
 )
 
 func promptField() composer {
-	in := textarea.New()
-	in.CharLimit = 2000
-	in.Placeholder = "first task (optional)"
-	in.ShowLineNumbers = false
-	in.SetPromptFunc(2, func(lineIndex int) string {
-		if lineIndex == 0 {
+	in := promptArea("first task (optional)", 2000)
+	in.SetPromptFunc(2, func(info textarea.PromptInfo) string {
+		if info.LineNumber == 0 {
 			return "> "
 		}
 		return "  "
 	})
-	in.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	in.SetHeight(1)
 	return composer{input: in, maxRows: formPromptMaxRows}
 }
 
@@ -159,8 +173,8 @@ func (m *Model) formValueWidth() int {
 // renders past the last character.
 func (m *Model) syncFormFieldWidths() {
 	inner := m.formValueWidth()
-	m.form.name.Width = inner - 3
-	m.form.dir.Width = inner - 3
+	m.form.name.SetWidth(inner - 3)
+	m.form.dir.SetWidth(inner - 3)
 	// textinput recomputes its scroll window only inside Update/SetValue/
 	// SetCursor, so a width change alone would render a stale window until
 	// the next keystroke.
@@ -171,8 +185,8 @@ func (m *Model) syncFormFieldWidths() {
 
 func (m *Model) syncGroupFormFieldWidths() {
 	width := m.formValueWidth() - 3
-	m.groupForm.name.Width = width
-	m.groupForm.path.Width = width
+	m.groupForm.name.SetWidth(width)
+	m.groupForm.path.SetWidth(width)
 	m.groupForm.name.SetCursor(m.groupForm.name.Position())
 	m.groupForm.path.SetCursor(m.groupForm.path.Position())
 }
@@ -338,7 +352,7 @@ func (m *Model) rebuildGroupOptions(selectPath string) {
 	}
 }
 
-func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	dirSuggesting := m.form.focus == fieldDir && m.pathSugg.active()
 	switch msg.String() {
 	case "esc":
@@ -418,7 +432,11 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	}
+	return m, m.updateFormField(msg)
+}
 
+// updateFormField types a key or paste into the field the caret is in.
+func (m *Model) updateFormField(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	switch m.form.focus {
 	case fieldName:
@@ -430,7 +448,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case fieldPrompt:
 		cmd = m.form.prompt.typeKey(msg)
 	}
-	return m, cmd
+	return cmd
 }
 
 // moveGroupCursor moves within the expanded group picker, wrapping at the
@@ -635,7 +653,7 @@ func (m *Model) openGroupForm() {
 	m.errBar.text = ""
 }
 
-func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleGroupFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	pathSuggesting := m.groupForm.focus == gfPath && m.pathSugg.active()
 	switch msg.String() {
 	case "esc":
@@ -700,6 +718,10 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.submitGroupForm()
 	}
 
+	return m, m.updateGroupFormField(msg)
+}
+
+func (m *Model) updateGroupFormField(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	switch m.groupForm.focus {
 	case gfName:
@@ -709,7 +731,7 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.groupForm.pathAuto = false
 		m.pathSugg.recompute(m.groupForm.path.Value())
 	}
-	return m, cmd
+	return cmd
 }
 
 func (m *Model) groupFormFocus(delta int) {

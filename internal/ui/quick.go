@@ -3,9 +3,8 @@ package ui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func (m *Model) openQuickMode() {
@@ -14,18 +13,13 @@ func (m *Model) openQuickMode() {
 		m.errBar.text = "no CLIs enabled: open settings (s), then CLIs, to turn some on"
 		return
 	}
-	input := textarea.New()
-	input.CharLimit = 2000
-	input.Placeholder = "type and press enter"
-	input.ShowLineNumbers = false
-	input.SetPromptFunc(2, func(lineIndex int) string {
-		if lineIndex == 0 {
+	input := promptArea("type and press enter", 2000)
+	input.SetPromptFunc(2, func(info textarea.PromptInfo) string {
+		if info.LineNumber == 0 {
 			return keyStyle.Render("❯ ")
 		}
 		return "  "
 	})
-	input.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	input.SetHeight(1)
 	input.Focus()
 	m.errBar.text = ""
 	m.forgetWorktreeCapability()
@@ -56,7 +50,7 @@ func (m *Model) defaultToolSelection() ([]string, int) {
 // handleQuickKey runs while the quick bar is docked in the sidebar: arrows
 // keep moving the selection (the target follows the cursor), enter submits
 // against whatever is selected, and every other key is typed text.
-func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleQuickKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.quick.active = false

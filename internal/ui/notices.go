@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/color"
 	"net/url"
 	"os"
 	"os/exec"
@@ -12,8 +13,8 @@ import (
 	"sort"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
@@ -42,7 +43,7 @@ const (
 type notice struct {
 	id            string
 	glyph         string
-	tint          lipgloss.Color
+	tint          color.Color
 	title         string
 	body          []string
 	releases      []update.Release
@@ -651,7 +652,7 @@ func delegatedUpdateResult(manager update.Manager, execPath string, err error) u
 	return updateAppliedMsg{path: update.RestartTarget(execPath)}
 }
 
-func (m *Model) handleNoticesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleNoticesKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	notices := m.activeNotices()
 	switch msg.String() {
 	case "r":

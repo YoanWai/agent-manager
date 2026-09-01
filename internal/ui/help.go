@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -396,7 +396,7 @@ func (m *Model) helpPage() int {
 	return max(m.helpBodyRoom()-1, 1)
 }
 
-func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleHelpKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		return m, tea.Quit
 	}
@@ -436,7 +436,7 @@ func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleHelpSearchKey types into the search. Scrolling stays live while it
 // is up, so a query with more hits than the card can show is still readable
 // without leaving the field.
-func (m *Model) handleHelpSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleHelpSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		m.help.searching = false
@@ -458,14 +458,14 @@ func (m *Model) handleHelpSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "pgdown":
 		m.scrollHelp(m.helpPage())
 	default:
-		switch msg.Type {
-		case tea.KeyRunes:
-			m.help.query += string(msg.Runes)
-			m.help.scroll = 0
-		case tea.KeySpace:
-			m.help.query += " "
-			m.help.scroll = 0
+		if msg.Text != "" {
+			m.typeHelpQuery(msg.Text)
 		}
 	}
 	return m, nil
+}
+
+func (m *Model) typeHelpQuery(text string) {
+	m.help.query += text
+	m.help.scroll = 0
 }

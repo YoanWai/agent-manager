@@ -3,13 +3,13 @@ package ui
 import (
 	"fmt"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
-func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Resize mode owns the keyboard until the drag commits or the user
 	// cancels: other bindings would fight the mouse-gated session.
 	if m.split.resizeMode {
@@ -375,6 +375,48 @@ func (m *Model) allGroupsCollapsed() bool {
 	return any
 }
 
+// handlePaste routes a bracketed paste to whatever is taking typed text:
+// the focused pane, or the field the open screen has its caret in.
+func (m *Model) handlePaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
+	if m.split.resizeMode {
+		return m, nil
+	}
+	switch m.mode {
+	case modeFocus:
+		return m.handleFocusPaste(msg)
+	case modeForm:
+		return m, m.updateFormField(msg)
+	case modeGroupForm:
+		return m, m.updateGroupFormField(msg)
+	case modeRename:
+		return m, m.updateRenameField(msg)
+	case modeFork:
+		var cmd tea.Cmd
+		m.fork.name, cmd = m.fork.name.Update(msg)
+		return m, cmd
+	case modeRepoPick:
+		m.typeRepoPickFilter(msg.Content)
+		return m, nil
+	case modeDiff:
+		if !m.diff.annotating {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.diff.annInput, cmd = m.diff.annInput.Update(msg)
+		return m, cmd
+	case modeHelp:
+		if m.help.searching {
+			m.typeHelpQuery(msg.Content)
+		}
+		return m, nil
+	case modeList:
+		if m.quick.active && !m.searching {
+			return m, m.quick.typeKey(msg)
+		}
+	}
+	return m, nil
+}
+
 // pasteFocused is the seam tests swap to observe pastes into the pane.
 var pasteFocused = func(driver *tmux.Driver, id, text string) error {
 	return driver.Paste(id, text)
@@ -470,7 +512,7 @@ const notifyFinishedSetting = "notify_finished"
 // (comma-separated names). Empty means every configured tool is shown.
 const hiddenToolsSetting = "hidden_tools"
 
-func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		m.searching = false

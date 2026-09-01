@@ -5,81 +5,53 @@ import (
 	"strings"
 	"unicode"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
-// focusNamedKeys maps bubbletea key types to tmux send-keys key names.
-// Populated in init: the Ctrl+letter block is generated, then the keys
-// whose byte values double as named keys (Tab is Ctrl+I, Enter is Ctrl+M)
-// get their proper names.
-var focusNamedKeys = map[tea.KeyType]string{}
-
-func init() {
-	for i := 1; i <= 26; i++ {
-		focusNamedKeys[tea.KeyType(i)] = "C-" + string(rune('a'+i-1))
-	}
-	for keyType, name := range map[tea.KeyType]string{
-		tea.KeyEnter:      "Enter",
-		tea.KeyTab:        "Tab",
-		tea.KeyShiftTab:   "BTab",
-		tea.KeyBackspace:  "BSpace",
-		tea.KeyEsc:        "Escape",
-		tea.KeyUp:         "Up",
-		tea.KeyDown:       "Down",
-		tea.KeyLeft:       "Left",
-		tea.KeyRight:      "Right",
-		tea.KeyShiftUp:    "S-Up",
-		tea.KeyShiftDown:  "S-Down",
-		tea.KeyShiftLeft:  "S-Left",
-		tea.KeyShiftRight: "S-Right",
-		tea.KeyCtrlUp:     "C-Up",
-		tea.KeyCtrlDown:   "C-Down",
-		tea.KeyCtrlLeft:   "C-Left",
-		tea.KeyCtrlRight:  "C-Right",
-		tea.KeyHome:       "Home",
-		tea.KeyEnd:        "End",
-		tea.KeyPgUp:       "PPage",
-		tea.KeyPgDown:     "NPage",
-		tea.KeyDelete:     "DC",
-		tea.KeyInsert:     "IC",
-		tea.KeyF1:         "F1",
-		tea.KeyF2:         "F2",
-		tea.KeyF3:         "F3",
-		tea.KeyF4:         "F4",
-		tea.KeyF5:         "F5",
-		tea.KeyF6:         "F6",
-		tea.KeyF7:         "F7",
-		tea.KeyF8:         "F8",
-		tea.KeyF9:         "F9",
-		tea.KeyF10:        "F10",
-		tea.KeyF11:        "F11",
-		tea.KeyF12:        "F12",
-	} {
-		focusNamedKeys[keyType] = name
-	}
+// focusNamedKeys maps special key codes to tmux send-keys key names.
+// Modifiers go on as prefixes: C- for ctrl, S- for shift, M- for alt.
+var focusNamedKeys = map[rune]string{
+	tea.KeyEnter:     "Enter",
+	tea.KeyTab:       "Tab",
+	tea.KeyBackspace: "BSpace",
+	tea.KeyEscape:    "Escape",
+	tea.KeyUp:        "Up",
+	tea.KeyDown:      "Down",
+	tea.KeyLeft:      "Left",
+	tea.KeyRight:     "Right",
+	tea.KeyHome:      "Home",
+	tea.KeyEnd:       "End",
+	tea.KeyPgUp:      "PPage",
+	tea.KeyPgDown:    "NPage",
+	tea.KeyDelete:    "DC",
+	tea.KeyInsert:    "IC",
+	tea.KeyF1:        "F1",
+	tea.KeyF2:        "F2",
+	tea.KeyF3:        "F3",
+	tea.KeyF4:        "F4",
+	tea.KeyF5:        "F5",
+	tea.KeyF6:        "F6",
+	tea.KeyF7:        "F7",
+	tea.KeyF8:        "F8",
+	tea.KeyF9:        "F9",
+	tea.KeyF10:       "F10",
+	tea.KeyF11:       "F11",
+	tea.KeyF12:       "F12",
 }
 
 // focusKeyCommand encodes one key press as a tmux send-keys command for
 // the focused session. Text goes as hex byte codes (-H), which sidesteps
 // tmux command-line quoting entirely; special keys go by tmux key name.
 // ok is false for keys tmux cannot represent, which are dropped.
-func focusKeyCommand(target string, msg tea.KeyMsg) (string, bool) {
-	// Pastes go through the tmux buffer path: as raw bytes their newlines
-	// would land as Enter presses and submit the agent's prompt.
-	if msg.Paste {
-		return "", false
-	}
-	if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
-		runes := msg.Runes
-		if msg.Type == tea.KeySpace {
-			runes = []rune{' '}
-		}
-		raw := []byte(string(runes))
+func focusKeyCommand(target string, msg tea.KeyPressMsg) (string, bool) {
+	alt := msg.Mod.Contains(tea.ModAlt)
+	if text := focusKeyText(msg); text != "" {
+		raw := []byte(text)
 		codes := make([]string, 0, len(raw)+1)
-		if msg.Alt {
+		if alt {
 			// Alt arrives as an ESC prefix on the wire; replay it as one.
 			codes = append(codes, "1b")
 		}
@@ -88,14 +60,51 @@ func focusKeyCommand(target string, msg tea.KeyMsg) (string, bool) {
 		}
 		return "send-keys -t " + target + " -H " + strings.Join(codes, " "), true
 	}
-	name, ok := focusNamedKeys[msg.Type]
+	name, ok := focusKeyName(msg)
 	if !ok {
 		return "", false
 	}
-	if msg.Alt {
+	if alt {
 		name = "M-" + name
 	}
 	return "send-keys -t " + target + " " + name, true
+}
+
+// focusKeyText is the text a press types: the characters the terminal
+// reported, or the bare key code when an alt prefix stripped them.
+func focusKeyText(msg tea.KeyPressMsg) string {
+	if msg.Text != "" {
+		return msg.Text
+	}
+	if msg.Mod&^(tea.ModAlt|tea.ModShift) != 0 || !unicode.IsPrint(msg.Code) {
+		return ""
+	}
+	if msg.Mod.Contains(tea.ModShift) {
+		return string(unicode.ToUpper(msg.Code))
+	}
+	return string(msg.Code)
+}
+
+// focusKeyName is the tmux name of a special key or a ctrl chord.
+func focusKeyName(msg tea.KeyPressMsg) (string, bool) {
+	ctrl := msg.Mod.Contains(tea.ModCtrl)
+	shift := msg.Mod.Contains(tea.ModShift)
+	name, named := focusNamedKeys[msg.Code]
+	switch {
+	case named && shift && msg.Code == tea.KeyTab:
+		return "BTab", true
+	case named:
+		if shift {
+			name = "S-" + name
+		}
+		if ctrl {
+			name = "C-" + name
+		}
+		return name, true
+	case ctrl && msg.Code >= 'a' && msg.Code <= 'z':
+		return "C-" + string(msg.Code), true
+	}
+	return "", false
 }
 
 // focusSelected enters focus mode: keys go to the selected session's pane
@@ -145,10 +154,7 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 		m.pane.sgr = false
 		m.pane.history = 0
 	}
-	// Mouse reporting makes the pane a closed window: clicks land here
-	// instead of the host terminal, so a drag selects pane text alone and
-	// never the rail beside it.
-	return m, tea.Batch(tea.EnableMouseCellMotion, m.cursorBlink())
+	return m, m.cursorBlink()
 }
 
 // caretAtInputStart reports whether the agent's caret sits at the head of
@@ -270,7 +276,7 @@ func (m *Model) leaveFocus() tea.Cmd {
 // ctrl+\ return to the list, Ctrl+R opens the review and F3 the editor,
 // mirroring the bindings a real attach gets, and every plain character - q
 // included - reaches the agent.
-func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleFocusKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+q" || msg.String() == `ctrl+\` {
 		return m, m.leaveFocus()
 	}
@@ -294,29 +300,15 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	}
-	if msg.Type == tea.KeyLeft && !msg.Alt && m.arrowStep && m.caretAtInputStart(sess.ID, sess.Tool) {
+	if msg.Code == tea.KeyLeft && msg.Mod == 0 && m.arrowStep && m.caretAtInputStart(sess.ID, sess.Tool) {
 		return m, m.leaveFocus()
 	}
 	// Enter is how a drafted prompt leaves the composer, so the draft is
 	// snapshotted on its way in; alt+enter only breaks the line.
-	if msg.Type == tea.KeyEnter && !msg.Alt {
+	if msg.Code == tea.KeyEnter && !msg.Mod.Contains(tea.ModAlt) {
 		m.stashTypedPrompt(sess)
 	}
-	// Typing puts the cursor back on: a caret that blinks out mid-keystroke
-	// reads as a dropped character.
-	m.cursorOn = true
-	// Keystrokes land at the live bottom, so the view follows them there.
-	var resume tea.Cmd
-	if m.scrolledBack() {
-		m.focusScroll = 0
-		resume = m.requestFocusRegion(sess.ID)
-	}
-	if msg.Paste {
-		if err := pasteFocused(m.tmux, sess.ID, string(msg.Runes)); err != nil {
-			m.errBar.text = err.Error()
-		}
-		return m, resume
-	}
+	resume := m.wakeFocusInput(sess.ID)
 	command, ok := focusKeyCommand(tmux.PaneTarget(sess.ID), msg)
 	if !ok {
 		return m, resume
@@ -329,4 +321,32 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, resume
+}
+
+// handleFocusPaste hands a bracketed paste to the focused pane through the
+// tmux buffer path: as raw keystrokes its newlines would land as Enter
+// presses and submit the agent's prompt.
+func (m *Model) handleFocusPaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
+	sess, ok := m.selected()
+	if !ok {
+		return m, m.leaveFocus()
+	}
+	resume := m.wakeFocusInput(sess.ID)
+	if err := pasteFocused(m.tmux, sess.ID, msg.Content); err != nil {
+		m.errBar.text = err.Error()
+	}
+	return m, resume
+}
+
+// wakeFocusInput is what every keystroke and paste does before reaching
+// the pane. The cursor comes back on, since a caret that blinks out
+// mid-keystroke reads as a dropped character, and a scrolled-back view
+// follows the input to the live bottom.
+func (m *Model) wakeFocusInput(sessID string) tea.Cmd {
+	m.cursorOn = true
+	if !m.scrolledBack() {
+		return nil
+	}
+	m.focusScroll = 0
+	return m.requestFocusRegion(sessID)
 }
