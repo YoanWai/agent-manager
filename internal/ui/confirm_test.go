@@ -19,7 +19,7 @@ func TestConfirmRendersAsADialog(t *testing.T) {
 		label:    "kill builder? frees its RAM, v revives it.",
 	}
 
-	out := ansi.Strip(m.View())
+	out := ansi.Strip(m.viewFrame())
 	for _, want := range []string{"Kill session", "kill builder?", "frees its RAM", "cancel"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("confirm dialog missing %q:\n%s", want, out)

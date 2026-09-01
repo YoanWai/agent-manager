@@ -17,6 +17,14 @@ func runeKey(s string) tea.KeyPressMsg {
 
 func namedKey(code rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: code} }
 
+func typedKeys(text string, trailing ...tea.KeyPressMsg) []tea.KeyPressMsg {
+	keys := make([]tea.KeyPressMsg, 0, len(text)+len(trailing))
+	for _, r := range text {
+		keys = append(keys, tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	return append(keys, trailing...)
+}
+
 // helpKeyTokens is every key the catalog spells out, split on the " / "
 // that separates alternatives inside one row.
 func helpKeyTokens() map[string]bool {
@@ -190,7 +198,7 @@ func TestReviewHelpOnlyShowsReviewBindingsAndSetupGuidance(t *testing.T) {
 	if len(sections) != 1 || !strings.HasPrefix(sections[0].title, "review") {
 		t.Fatalf("review help sections = %+v", sections)
 	}
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(m.viewFrame())
 	for _, want := range []string{"Review keys", "Tell your agent what to review", "comment on the line"} {
 		if !strings.Contains(frame, want) {
 			t.Errorf("review help missing %q:\n%s", want, frame)
@@ -204,7 +212,7 @@ func TestReviewHelpOnlyShowsReviewBindingsAndSetupGuidance(t *testing.T) {
 }
 
 func TestGlobalHelpShowsAgentManagementGuidance(t *testing.T) {
-	frame := ansi.Strip(helpModel().View())
+	frame := ansi.Strip(helpModel().viewFrame())
 	if !strings.Contains(frame, "Tell your agent to manage sessions and terminals in Agent Manager") {
 		t.Fatalf("global help is missing agent-management guidance:\n%s", frame)
 	}
@@ -329,7 +337,7 @@ func TestHelpFramePaintsInsideTheTerminal(t *testing.T) {
 			m := &Model{width: width, height: height, mode: modeHelp}
 			for _, query := range []string{"", "revive"} {
 				m.help.query = query
-				lines := strings.Split(m.View(), "\n")
+				lines := strings.Split(m.viewFrame(), "\n")
 				if len(lines) != height {
 					t.Errorf("%dx%d query %q: %d rows painted", width, height, query, len(lines))
 				}
@@ -345,12 +353,12 @@ func TestHelpFramePaintsInsideTheTerminal(t *testing.T) {
 
 func TestHelpBodyShowsMoreMarkersWhenItOverflows(t *testing.T) {
 	m := helpModel()
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(m.viewFrame())
 	if !strings.Contains(frame, "more below") {
 		t.Fatal("an overflowing map should say there is more below")
 	}
 	m.help.scroll = m.helpScrollLimit()
-	frame = ansi.Strip(m.View())
+	frame = ansi.Strip(m.viewFrame())
 	if !strings.Contains(frame, "more above") {
 		t.Fatal("a map scrolled to the end should say there is more above")
 	}
@@ -359,7 +367,7 @@ func TestHelpBodyShowsMoreMarkersWhenItOverflows(t *testing.T) {
 func TestHelpReportsWhenNothingMatches(t *testing.T) {
 	m := helpModel()
 	m.help.query = "zzzz"
-	if frame := ansi.Strip(m.View()); !strings.Contains(frame, "no key matches that") {
+	if frame := ansi.Strip(m.viewFrame()); !strings.Contains(frame, "no key matches that") {
 		t.Fatal("a query nothing answers should say so")
 	}
 }

@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 )
 
 func lipglossWidth(s string) int { return lipgloss.Width(s) }
@@ -263,9 +263,6 @@ func TestZZShot(t *testing.T) {
 		applyTheme(themes[themeIndex(name)])
 		t.Cleanup(func() { applyTheme(themes[0]) })
 	}
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := shotModel()
 	switch os.Getenv("AM_SHOT_MODE") {
@@ -286,8 +283,21 @@ func TestZZShot(t *testing.T) {
 		}
 		m.bannerPhase = n
 	}
-	if err := os.WriteFile(out, []byte(m.View()), 0o644); err != nil {
+	if err := os.WriteFile(out, []byte(m.viewFrame()), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Without mouse reporting the terminal keeps the wheel and scrolls the
+// manager out of view, which is what alternate scroll used to prevent; the
+// view declares it from the first frame, alongside the alternate screen.
+func TestViewClaimsMouseAndAltScreen(t *testing.T) {
+	view := shotModel().View()
+	if view.MouseMode != tea.MouseModeCellMotion {
+		t.Fatalf("first frame mouse mode = %v, want cell motion", view.MouseMode)
+	}
+	if !view.AltScreen {
+		t.Fatal("first frame leaves the alternate screen off")
 	}
 }
 
@@ -367,7 +377,7 @@ func TestFrameFitsTerminal(t *testing.T) {
 			if len(raw) != height {
 				t.Errorf("%dx%d: frame paints %d rows", width, height, len(raw))
 			}
-			lines := strings.Split(m.View(), "\n")
+			lines := strings.Split(m.viewFrame(), "\n")
 			for i, line := range lines {
 				if got := ansi.StringWidth(line); got > width {
 					t.Errorf("%dx%d: line %d is %d wide: %q", width, height, i, got, ansi.Strip(line))
@@ -387,7 +397,7 @@ func TestFrameFitsTerminal(t *testing.T) {
 // also a sextant, which is what keeps its edge level with the run beside it.
 func TestPaneSoftEdges(t *testing.T) {
 	m := shotModel()
-	rows := strings.Split(m.View(), "\n")
+	rows := strings.Split(m.viewFrame(), "\n")
 	leftWidth, _ := m.splitWidths()
 
 	top := []rune(ansi.Strip(rows[m.headerRows()]))

@@ -60,7 +60,7 @@ func TestEnterKeepsTheQueryAndEscClearsIt(t *testing.T) {
 	m.rebuildRows()
 	filtered := len(m.rows)
 
-	m.handleSearchKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.handleSearchKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.searching || m.search != "api" || len(m.rows) != filtered {
 		t.Fatalf("enter should close the field and keep the filter, got searching=%v query=%q rows=%d",
 			m.searching, m.search, len(m.rows))
@@ -68,7 +68,7 @@ func TestEnterKeepsTheQueryAndEscClearsIt(t *testing.T) {
 
 	// Through handleKey rather than clearSearch: the binding is half of what
 	// this covers, so a test that skips it would pass with esc unbound.
-	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.handleKey(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.search != "" {
 		t.Fatalf("esc should clear the query, got %q", m.search)
 	}
@@ -81,7 +81,7 @@ func TestEscInTheFieldClearsIt(t *testing.T) {
 	m := searchModel()
 	m.searching, m.search = true, "api"
 	m.rebuildRows()
-	m.handleSearchKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.handleSearchKey(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.searching || m.search != "" {
 		t.Fatalf("esc should close and clear, got searching=%v query=%q", m.searching, m.search)
 	}

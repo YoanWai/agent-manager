@@ -39,7 +39,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	t.Cleanup(m.focus.Close)
 	m.focus.setFocus(sess.ID)
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("did not enter focus: %q", m.errBar.text)
@@ -72,7 +72,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	m.View()
+	m.viewFrame()
 	// Tests discard the watcher's pushes, so seed the live frame the same
 	// way the scroll path fetches one, and the history depth the wheel
 	// clamps against.
@@ -271,7 +271,7 @@ func TestTypingResumesLiveView(t *testing.T) {
 		t.Skip("pane had no history to scroll")
 	}
 
-	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")})
+	updated, cmd := m.handleKey(tea.KeyPressMsg{Code: 'z', Text: "z"})
 	*m = *updated.(*Model)
 	if m.scrolledBack() {
 		t.Fatal("typing left the view scrolled back")
@@ -508,9 +508,9 @@ func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 	m.focus = newFocusWatch(m.tmux, func(msg tea.Msg) { msgs <- msg })
 	t.Cleanup(m.focus.Close)
 	m.focus.setFocus(sess.ID)
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	*m = *updated.(*Model)
-	m.View()
+	m.viewFrame()
 
 	deadline := time.Now().Add(5 * time.Second)
 	for !m.focus.serving(sess.ID) {
@@ -540,8 +540,8 @@ func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 func TestAltClickReachesMouseTrackingApp(t *testing.T) {
 	m, sess := focusedMouseApp(t, "mouse-tool", "clickapp")
 
-	m.handleFocusMouse(tea.MouseMsg{
-		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true,
+	m.handleFocusMouse(tea.MouseClickMsg{
+		Button: tea.MouseLeft, Mod: tea.ModAlt,
 		X: m.pane.box.x + 2, Y: m.pane.box.y + 1,
 	})
 	if m.sel.active {
@@ -570,13 +570,13 @@ func TestAltClickReachesMouseTrackingApp(t *testing.T) {
 
 func TestAltClickReleaseOutsidePaneReachesMouseTrackingApp(t *testing.T) {
 	m, sess := focusedMouseApp(t, "mouse-tool", "outside-release")
-	m.handleFocusMouse(tea.MouseMsg{
-		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true,
+	m.handleFocusMouse(tea.MouseClickMsg{
+		Button: tea.MouseLeft, Mod: tea.ModAlt,
 		X: m.pane.box.x + 2, Y: m.pane.box.y + 1,
 	})
-	m.handleFocusMouse(tea.MouseMsg{
-		Action: tea.MouseActionRelease, Button: tea.MouseButtonNone,
-		X: m.pane.box.x + m.pane.box.width, Y: m.pane.box.y + 1,
+	m.handleFocusMouse(tea.MouseReleaseMsg{
+		Button: tea.MouseNone,
+		X:      m.pane.box.x + m.pane.box.width, Y: m.pane.box.y + 1,
 	})
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -793,7 +793,7 @@ func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
 	// Out to the list and back in, with the pane painting nothing in
 	// between — checking on an agent whose turn has ended.
 	m.leaveFocus()
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("did not re-enter focus: %q", m.errBar.text)
@@ -805,7 +805,7 @@ func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
 	if !m.pane.sgr {
 		t.Fatal("re-entering focus dropped the pane's SGR encoding")
 	}
-	m.View()
+	m.viewFrame()
 
 	// The wheel still reaches the app, with no pushed capture in between.
 	m.wheelFocus(true, m.pane.box.x+2, m.pane.box.y+1)
@@ -828,7 +828,7 @@ func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
 	// client or not: this session's first capture may not have landed.
 	m.leaveFocus()
 	m.pane.forID = "someone-else"
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	*m = *updated.(*Model)
 	if m.pane.mouse {
 		t.Fatal("another session's cached flags survived focus entry")

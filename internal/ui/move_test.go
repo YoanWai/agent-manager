@@ -21,7 +21,7 @@ func TestMoveSession(t *testing.T) {
 		t.Fatal("openMove should enter move mode")
 	}
 	pickGroup(t, m, "target/deep")
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.handleMoveKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 
 	sessions := m.sessionRows()
@@ -53,7 +53,7 @@ func TestMoveGroupRow(t *testing.T) {
 		}
 	}
 	pickGroup(t, m, "beta")
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.handleMoveKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 
 	sessions := m.sessionRows()
@@ -103,7 +103,7 @@ func TestMoveTerminalOntoAgentNests(t *testing.T) {
 	if m.form.groups[m.form.groupIndex].sessID != agent.ID {
 		t.Fatal("picker must list the agent")
 	}
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.handleMoveKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	got, err := m.store.Get(shell.ID)
 	if err != nil || got.ParentID != agent.ID {
@@ -127,7 +127,7 @@ func TestMoveTerminalOntoGroupUnnests(t *testing.T) {
 	m.selectSessionRow(t, shell.Name)
 	m.openMove()
 	pickGroup(t, m, "other")
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.handleMoveKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	got, _ := m.store.Get(shell.ID)
 	if got.ParentID != "" || got.Group != "other" {
@@ -158,7 +158,7 @@ func TestMoveReportsPlacementFailure(t *testing.T) {
 	if err := m.store.Delete(agent.ID); err != nil {
 		t.Fatalf("delete agent: %v", err)
 	}
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.handleMoveKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	if m.errBar.text == "" {
 		t.Fatal("failed placement reported nothing")
@@ -187,7 +187,7 @@ func TestMoveReportsMissingSource(t *testing.T) {
 	if err := m.store.Delete(shell.ID); err != nil {
 		t.Fatalf("delete shell: %v", err)
 	}
-	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.handleMoveKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	if m.errBar.text == "" {
 		t.Fatal("missing source reported nothing")

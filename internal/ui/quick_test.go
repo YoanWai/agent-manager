@@ -12,7 +12,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 )
 
 // pasteQuickImage runs a full ctrl+v paste against a fake clipboard that
@@ -23,7 +22,7 @@ func pasteQuickImage(t *testing.T, m *Model, path string) int {
 	defer func() { captureClipboardImage = orig }()
 	captureClipboardImage = func() (string, error) { return path, nil }
 
-	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	_, cmd := m.handleQuickKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
 	if cmd == nil {
 		t.Fatal("ctrl+v should start an async clipboard read")
 	}
@@ -121,7 +120,7 @@ func TestQuickPasteInsertsChipAtCursor(t *testing.T) {
 	m.openQuickMode()
 
 	m.quick.input.SetValue("fix header and footer")
-	m.quick.input.SetCursor(len("fix header"))
+	m.quick.input.SetCursorColumn(len("fix header"))
 	path := tempImage(t, "paste-test.png")
 	id := pasteQuickImage(t, m, path)
 
@@ -134,7 +133,7 @@ func TestQuickPasteInsertsChipAtCursor(t *testing.T) {
 	}
 	// Typing continues after the chip, leaving the text around it intact.
 	for _, r := range " now" {
-		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		_, _ = m.handleQuickKey(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 	if got := m.quick.input.Value(); got != "fix header "+imageToken(id)+" now and footer" {
 		t.Fatalf("typing after the chip disturbed the text: %q", got)
@@ -142,9 +141,6 @@ func TestQuickPasteInsertsChipAtCursor(t *testing.T) {
 }
 
 func TestQuickChipRendersInlineInTheInput(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := buildModel(t)
 	m.openQuickMode()
@@ -206,9 +202,9 @@ func TestQuickBackspaceDeletesTheWholeChipAtTheCaret(t *testing.T) {
 	m.quick.lastImageID = 2
 	m.quick.attachments = []imageAttachment{{id: 1, path: first}, {id: 2, path: second}}
 	m.quick.input.SetValue("this " + imageToken(1) + " and that " + imageToken(2))
-	m.quick.input.SetCursor(quickOffsetOf(t, m, imageToken(1)) + utf8.RuneCountInString(imageToken(1)))
+	m.quick.input.SetCursorColumn(quickOffsetOf(t, m, imageToken(1)) + utf8.RuneCountInString(imageToken(1)))
 
-	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	_, _ = m.handleQuickKey(tea.KeyPressMsg{Code: tea.KeyBackspace})
 	if got := m.quick.input.Value(); got != "this  and that "+imageToken(2) {
 		t.Fatalf("backspace beside a chip should remove it whole, got %q", got)
 	}
@@ -224,8 +220,8 @@ func TestQuickBackspaceDeletesTheWholeChipAtTheCaret(t *testing.T) {
 
 	// Away from a chip, backspace is ordinary text editing.
 	m.quick.input.CursorEnd()
-	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
-	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	_, _ = m.handleQuickKey(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	_, _ = m.handleQuickKey(tea.KeyPressMsg{Code: tea.KeyBackspace})
 	if len(m.quick.attachments) != 1 {
 		t.Fatalf("plain backspace should leave chips alone: %+v", m.quick.attachments)
 	}
@@ -238,9 +234,9 @@ func TestQuickDeleteRemovesTheChipInFront(t *testing.T) {
 	m.quick.lastImageID = 1
 	m.quick.attachments = []imageAttachment{{id: 1, path: path}}
 	m.quick.input.SetValue("head " + imageToken(1) + " tail")
-	m.quick.input.SetCursor(quickOffsetOf(t, m, imageToken(1)))
+	m.quick.input.SetCursorColumn(quickOffsetOf(t, m, imageToken(1)))
 
-	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDelete})
+	_, _ = m.handleQuickKey(tea.KeyPressMsg{Code: tea.KeyDelete})
 	if got := m.quick.input.Value(); got != "head  tail" {
 		t.Fatalf("delete in front of a chip should remove it whole, got %q", got)
 	}
@@ -257,13 +253,13 @@ func TestQuickArrowsStepOverAChip(t *testing.T) {
 	m.quick.input.SetValue("a " + imageToken(1) + " b")
 	start := quickOffsetOf(t, m, imageToken(1))
 	end := start + utf8.RuneCountInString(imageToken(1))
-	m.quick.input.SetCursor(end)
+	m.quick.input.SetCursorColumn(end)
 
-	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyLeft})
+	_, _ = m.handleQuickKey(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if got := m.quick.cursorOffset(); got != start {
 		t.Fatalf("left should clear the chip in one step: offset %d, want %d", got, start)
 	}
-	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRight})
+	_, _ = m.handleQuickKey(tea.KeyPressMsg{Code: tea.KeyRight})
 	if got := m.quick.cursorOffset(); got != end {
 		t.Fatalf("right should clear the chip in one step: offset %d, want %d", got, end)
 	}
@@ -298,7 +294,7 @@ func TestQuickBulkDeleteReleasesTheImage(t *testing.T) {
 	m.quick.input.CursorEnd()
 
 	// ctrl+u wipes the line without going through the chip-aware keys.
-	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlU})
+	_, _ = m.handleQuickKey(tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
 	if len(m.quick.attachments) != 0 {
 		t.Fatalf("a chip cut by a bulk delete should release its image: %+v", m.quick.attachments)
 	}
@@ -313,7 +309,7 @@ func TestQuickPasteReservesTheChipUntilTheReadLands(t *testing.T) {
 	m.selectSessionRow(t, "answer-me")
 	m.openQuickMode()
 
-	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	_, cmd := m.handleQuickKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
 	if cmd == nil {
 		t.Fatal("ctrl+v should start an async clipboard read")
 	}
@@ -326,7 +322,7 @@ func TestQuickPasteReservesTheChipUntilTheReadLands(t *testing.T) {
 	}
 	// The caret sits after the chip, so typing keeps flowing.
 	for _, r := range "later" {
-		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		_, _ = m.handleQuickKey(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 	if got := m.quick.input.Value(); got != imageToken(id)+" later" {
 		t.Fatalf("typing during a paste = %q", got)
@@ -361,12 +357,12 @@ func TestQuickChipRemovalKeepsAMultiLinePrompt(t *testing.T) {
 	m.quick.attachments = []imageAttachment{{id: 1, path: "/tmp/a.png"}}
 	m.quick.input.SetValue("first line\nsecond " + imageToken(1) + " line\nthird line")
 	m.quick.input.CursorUp()
-	m.quick.input.SetCursor(len("second ") + utf8.RuneCountInString(imageToken(1)))
+	m.quick.input.SetCursorColumn(len("second ") + utf8.RuneCountInString(imageToken(1)))
 	if m.quick.input.Line() != 1 {
 		t.Fatalf("test setup: caret on row %d", m.quick.input.Line())
 	}
 
-	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	_, _ = m.handleQuickKey(tea.KeyPressMsg{Code: tea.KeyBackspace})
 	if got := m.quick.input.Value(); got != "first line\nsecond  line\nthird line" {
 		t.Fatalf("removing a chip should leave the other rows alone, got %q", got)
 	}
@@ -381,7 +377,7 @@ func TestQuickPasteRefusedWhenThePromptIsFull(t *testing.T) {
 	m.quick.input.SetValue(strings.Repeat("x", m.quick.input.CharLimit))
 	m.quick.input.CursorEnd()
 
-	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	_, cmd := m.handleQuickKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
 	if cmd != nil {
 		t.Fatal("a full prompt should not start a clipboard read")
 	}
@@ -403,7 +399,7 @@ func TestQuickEscReleasesPastedImages(t *testing.T) {
 	m.quick.attachments = []imageAttachment{{id: 1, path: path}}
 	m.quick.input.SetValue("never mind " + imageToken(1))
 
-	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+	_, _ = m.handleQuickKey(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if len(m.quick.attachments) != 0 {
 		t.Fatalf("closing the bar should release its images: %+v", m.quick.attachments)
 	}
@@ -420,7 +416,7 @@ func TestQuickImageMsgNoImageReachesTextPaste(t *testing.T) {
 	m.quick.input.SetValue("keep this")
 	m.quick.input.CursorEnd()
 
-	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	_, _ = m.handleQuickKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
 	id := m.quick.lastImageID
 	updated, cmd := m.Update(pasteImageMsg{target: composerQuick, gen: m.quick.gen, id: id, noImage: true})
 	m = updated.(*Model)
@@ -448,7 +444,7 @@ func TestQuickAttachImageRealErrorSurfaces(t *testing.T) {
 		return "", errors.New("install wl-clipboard or xclip to paste images")
 	}
 
-	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	_, cmd := m.handleQuickKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
 	msg := cmd().(pasteImageMsg)
 	updated, _ := m.Update(msg)
 	m = updated.(*Model)
@@ -520,7 +516,7 @@ func TestQuickSpawnUsesTabCycledTool(t *testing.T) {
 	if m.quickTool() != "claude" {
 		t.Fatalf("quick tool starts at %q want claude", m.quickTool())
 	}
-	if _, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyTab}); m.quickTool() != "claude-hooked" {
+	if _, _ = m.handleQuickKey(tea.KeyPressMsg{Code: tea.KeyTab}); m.quickTool() != "claude-hooked" {
 		t.Fatalf("after tab, quick tool = %q want claude-hooked", m.quickTool())
 	}
 
@@ -577,11 +573,11 @@ func TestQuickWorktreeToggle(t *testing.T) {
 	if m.quick.worktree {
 		t.Fatal("worktree should default off")
 	}
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}, Alt: true})
+	m.handleQuickKey(tea.KeyPressMsg{Code: 'w', Mod: tea.ModAlt})
 	if !m.quick.worktree {
 		t.Fatal("alt+w should toggle worktree on")
 	}
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}, Alt: true})
+	m.handleQuickKey(tea.KeyPressMsg{Code: 'w', Mod: tea.ModAlt})
 	if m.quick.worktree {
 		t.Fatal("alt+w should toggle worktree back off")
 	}
@@ -622,7 +618,7 @@ func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
 	if m.quickWorktreeOn() {
 		t.Fatal("a non-repo group dir cannot host a worktree, even with the group default on")
 	}
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.handleQuickKey(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	if m.quickWorktreeOn() {
 		t.Fatal("shift+tab must not turn worktree on for a non-repo dir")
 	}
@@ -695,7 +691,7 @@ func TestQuickWorktreeToggleOverridesGroupDefault(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.handleQuickKey(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	if m.quickWorktreeOn() {
 		t.Fatal("shift+tab should override the group default off")
 	}

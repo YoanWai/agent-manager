@@ -93,8 +93,8 @@ func TestFocusClickOpensTheLink(t *testing.T) {
 	openURL = func(url string) error { opened = url; return nil }
 	t.Cleanup(func() { openURL = prev })
 
-	press := tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 8, Y: 0}
-	release := tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 8, Y: 0}
+	press := tea.MouseClickMsg{Button: tea.MouseLeft, X: 8, Y: 0}
+	release := tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 8, Y: 0}
 
 	for _, tracking := range []bool{true, false} {
 		opened = ""
@@ -120,8 +120,8 @@ func TestFocusClickOpensTheLink(t *testing.T) {
 	opened = ""
 	m := linkModel([]string{"read https://example.com/docs now"}, 80)
 	m.pane.mouse = false
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: 0})
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 1, Y: 0})
+	m.handleFocusMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 0})
+	m.handleFocusMouse(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 1, Y: 0})
 	if opened != "" {
 		t.Fatalf("a linkless click opened %q", opened)
 	}

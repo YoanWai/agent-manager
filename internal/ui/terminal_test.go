@@ -30,7 +30,7 @@ func shellCount(m *Model) int {
 
 func pressTerminalKey(t *testing.T, m *Model) {
 	t.Helper()
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'T'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'T', Text: "T"})
 	m.applyCmd(t, cmd)
 }
 

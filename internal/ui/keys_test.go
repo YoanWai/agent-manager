@@ -62,7 +62,7 @@ func TestNestedGroupsTree(t *testing.T) {
 	m.search = ""
 	m.rebuildRows()
 
-	if m.View() == "" {
+	if m.viewFrame() == "" {
 		t.Fatal("View should render non-empty")
 	}
 }
@@ -82,7 +82,7 @@ func TestPortableReorderKeysSwapVisibleSessions(t *testing.T) {
 	loadStoredRows(t, m)
 	m.selectSessionRow(t, "keep-charlie")
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: 'K', Text: "K"})
 	m = updated.(*Model)
 	if got, want := []string{m.sessionRows()[0].ID, m.sessionRows()[1].ID}, []string{"c", "a"}; !slices.Equal(got, want) {
 		t.Fatalf("visible order after K = %v want %v", got, want)
@@ -91,13 +91,13 @@ func TestPortableReorderKeysSwapVisibleSessions(t *testing.T) {
 		t.Fatalf("stored order after K = %v want %v", got, want)
 	}
 
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'J'}})
+	updated, _ = m.handleKey(tea.KeyPressMsg{Code: 'J', Text: "J"})
 	m = updated.(*Model)
 	if got, want := listSessionIDs(t, m.store), []string{"a", "hidden", "c"}; !slices.Equal(got, want) {
 		t.Fatalf("stored order after J = %v want %v", got, want)
 	}
 
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
+	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModShift})
 	m = updated.(*Model)
 	if got, want := listSessionIDs(t, m.store), []string{"c", "hidden", "a"}; !slices.Equal(got, want) {
 		t.Fatalf("stored order after shift+up = %v want %v", got, want)
@@ -124,7 +124,7 @@ func TestReorderGroupSkipsFilteredSibling(t *testing.T) {
 	loadStoredRows(t, m)
 	m.selectGroupRow(t, "gamma")
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: 'K', Text: "K"})
 	m = updated.(*Model)
 	if got, want := m.groupRowPaths(), []string{"gamma", "alpha"}; !slices.Equal(got, want) {
 		t.Fatalf("visible group order after K = %v want %v", got, want)
@@ -152,7 +152,7 @@ func TestReorderSyntheticGroupUpdatesImmediately(t *testing.T) {
 	loadStoredRows(t, m)
 	m.selectGroupRow(t, "gamma")
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: 'K', Text: "K"})
 	m = updated.(*Model)
 	var roots []string
 	for _, group := range m.groupRowPaths() {
@@ -176,7 +176,7 @@ func TestToggleEmptyGroupsFiltersTreeWithoutDeletingGroups(t *testing.T) {
 	createSession(t, m, "nested", t.TempDir(), "work/leaf")
 
 	m.selectGroupRow(t, "empty")
-	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	_, cmd := m.handleKey(tea.KeyPressMsg{Code: 'e', Text: "e"})
 	if cmd != nil {
 		m.applyCmd(t, cmd)
 	}
@@ -196,7 +196,7 @@ func TestToggleEmptyGroupsFiltersTreeWithoutDeletingGroups(t *testing.T) {
 		t.Fatalf("visual filter changed stored groups: got %d want 4", len(groups))
 	}
 
-	_, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	_, cmd = m.handleKey(tea.KeyPressMsg{Code: 'e', Text: "e"})
 	if cmd != nil {
 		m.applyCmd(t, cmd)
 	}
@@ -221,7 +221,7 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 
 	m.selectSessionRow(t, "alpha")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 
 	m.collapsed["work"] = true
@@ -234,7 +234,7 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 
 	m.selectSessionRow(t, "alpha")
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 
 	active, err := m.store.ListSessions(false)
@@ -329,24 +329,24 @@ func TestRightStepsIntoTheRow(t *testing.T) {
 	createSession(t, m, "stepin", t.TempDir(), "grouped")
 	m.selectGroupRow(t, "grouped")
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyLeft})
 	*m = *updated.(*Model)
 	if !m.collapsed["grouped"] {
 		t.Fatal("left did not close the group")
 	}
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyRight})
 	*m = *updated.(*Model)
 	if m.collapsed["grouped"] {
 		t.Fatal("right did not open the group")
 	}
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyRight})
 	*m = *updated.(*Model)
 	if m.collapsed["grouped"] {
 		t.Fatal("a second right closed the group it had opened")
 	}
 
 	m.selectSessionRow(t, "stepin")
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyRight})
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("right did not focus the session, mode = %v, err = %q", m.mode, m.errBar.text)

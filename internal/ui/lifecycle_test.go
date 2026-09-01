@@ -35,7 +35,7 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 
 	m.selectSessionRow(t, "alpha")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	if len(m.sessionRows()) != 0 {
 		t.Fatalf("after archive, active sessions = %d want 0", len(m.sessionRows()))
@@ -52,7 +52,7 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 
 	m.selectSessionRow(t, "alpha")
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	got, err := m.store.Get(sess.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -78,7 +78,7 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 	if m.mode != modeConfirmDelete {
 		t.Fatal("prepareDelete should enter confirm mode")
 	}
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	if m.tmux.Exists(sess.ID) {
 		t.Fatal("tmux session should be killed after delete")
 	}
@@ -124,7 +124,7 @@ func TestDeleteGroupSubtree(t *testing.T) {
 	for _, s := range m.confirm.sessions {
 		tmuxIDs = append(tmuxIDs, s.ID)
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 
 	for _, id := range tmuxIDs {
@@ -161,7 +161,7 @@ func TestDeleteGroupInArchivedViewSparesLiveSessions(t *testing.T) {
 
 	m.selectSessionRow(t, "old")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 
 	m.showArchived = true
@@ -172,7 +172,7 @@ func TestDeleteGroupInArchivedViewSparesLiveSessions(t *testing.T) {
 		t.Fatalf("confirm should target only the archived session, got %+v", m.confirm.sessions)
 	}
 	archivedID := m.confirm.sessions[0].ID
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 
 	m.showArchived = false
@@ -201,14 +201,14 @@ func TestDeleteArchivedGroupInArchivedViewRemovesIt(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "empty")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 
 	m.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "empty")
 	m.prepareDelete()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 
 	if paths := m.groupRowPaths(); len(paths) != 0 {
@@ -323,7 +323,7 @@ func TestDotAcknowledgesOnlyCurrentFinishedStatus(t *testing.T) {
 				t.Fatalf("dot footer offered = %v, want %v", offered, tc.wantOffer)
 			}
 
-			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+			m.handleKey(tea.KeyPressMsg{Code: '.', Text: "."})
 			got, err := m.store.Get(sess.ID)
 			if err != nil {
 				t.Fatalf("get: %v", err)
@@ -357,7 +357,7 @@ func TestDotKeepsArchivedFinishedStatus(t *testing.T) {
 		t.Fatal("dot offered on an archived session")
 	}
 
-	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}})
+	m.handleKey(tea.KeyPressMsg{Code: '.', Text: "."})
 	got, err := m.store.Get(sess.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -643,7 +643,7 @@ func TestRestartLaunchesAFreshConversation(t *testing.T) {
 	if _, _ = m.restartSelected(); m.mode != modeConfirmDelete {
 		t.Fatalf("restart should ask first, mode = %v err = %q", m.mode, m.errBar.text)
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("restart: %q", m.errBar.text)
@@ -704,7 +704,7 @@ func TestRestartClearsCapturedConversationID(t *testing.T) {
 	m.selectSessionRow(t, "codexish")
 
 	m.restartSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("restart: %q", m.errBar.text)
@@ -739,7 +739,7 @@ func TestRestartEndsALiveAgentFirst(t *testing.T) {
 	if !strings.Contains(m.confirm.label, "ends the running agent") {
 		t.Fatalf("confirm label = %q", m.confirm.label)
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("restart: %q", m.errBar.text)
@@ -862,7 +862,7 @@ func TestArchiveRestoreClearStaleError(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	m.errBar.text = "stale failure from an earlier action"
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("archive should clear the stale error, err = %q", m.errBar.text)
@@ -873,7 +873,7 @@ func TestArchiveRestoreClearStaleError(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	m.errBar.text = "stale failure from an earlier action"
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("restore should clear the stale error, err = %q", m.errBar.text)
@@ -888,7 +888,7 @@ func TestRestoreKeepsArchiveWhenReviveFails(t *testing.T) {
 
 	m.selectSessionRow(t, "homeless")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatalf("remove dir: %v", err)
@@ -898,7 +898,7 @@ func TestRestoreKeepsArchiveWhenReviveFails(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "homeless")
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	if m.errBar.text == "" {
 		t.Fatal("restore without a working directory should error")
@@ -925,7 +925,7 @@ func TestArchiveAbortsWhenSnapshotFails(t *testing.T) {
 
 	m.selectSessionRow(t, "alpha")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 
 	if m.errBar.text != "disk full" {
@@ -961,7 +961,7 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 
 	m.selectGroupRow(t, "proj")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 
 	if paths := m.groupRowPaths(); len(paths) != 0 {
@@ -989,7 +989,7 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 	m.selectGroupRow(t, "proj")
 	archived := m.sessionRows()
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	for _, sess := range archived {
 		stored, err := m.store.Get(sess.ID)
 		if err != nil {
@@ -1027,7 +1027,7 @@ func TestArchiveGroupKeepsEmptyGroupInArchivedView(t *testing.T) {
 
 	m.selectGroupRow(t, "empty")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 
 	if paths := m.groupRowPaths(); len(paths) != 0 {
@@ -1065,7 +1065,7 @@ func TestArchivedSessionKeepsPaneSnapshot(t *testing.T) {
 	}
 
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 
 	snapshot, err := m.store.Snapshot(sess.ID)
@@ -1130,7 +1130,7 @@ func confirmKill(t *testing.T, m *Model) {
 	if m.mode != modeConfirmDelete {
 		t.Fatalf("kill should ask before acting, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
 		t.Fatalf("kill: %q", m.errBar.text)
@@ -1247,7 +1247,7 @@ func TestKillAllEndsEveryLiveSessionInView(t *testing.T) {
 	createSession(t, m, "alpha", dir, "work")
 	createSession(t, m, "outside", dir, "")
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: 'X', Text: "X"})
 	m = updated.(*Model)
 	confirmKill(t, m)
 
@@ -1292,7 +1292,7 @@ func deleteSession(t *testing.T, m *Model, name string) {
 	t.Helper()
 	m.selectSessionRow(t, name)
 	m.prepareDelete()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 }
 
 func TestDeleteRemovesCleanWorktree(t *testing.T) {
@@ -1489,7 +1489,7 @@ func TestArchiveAgentPersistsEveryChild(t *testing.T) {
 	shell := spawnTerminal(t, m)
 	m.selectSessionRow(t, "coder")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	child, err := m.store.Get(shell.ID)
 	if err != nil || !child.Archived {
@@ -1526,7 +1526,7 @@ func TestKillDeadAgentStillKillsItsLiveChild(t *testing.T) {
 	if m.mode != modeConfirmDelete {
 		t.Fatalf("mode = %v, want the kill confirm (errBar %q)", m.mode, m.errBar.text)
 	}
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd = m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	if m.tmux.Exists(shell.ID) {
 		t.Fatal("live child survived the kill")
@@ -1552,7 +1552,7 @@ func TestReviveRunningAgentRevivesDeadChild(t *testing.T) {
 	if m.mode != modeConfirmDelete {
 		t.Fatalf("mode = %v, want the revive confirm", m.mode)
 	}
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd = m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	if !m.tmux.Exists(shell.ID) {
 		t.Fatal("child still dead")
@@ -1572,13 +1572,13 @@ func TestRestoreAgentUnarchivesEveryChild(t *testing.T) {
 	agent := m.sessionRows()[0]
 	m.selectSessionRow(t, "coder")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	m.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "coder")
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd = m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	for _, id := range []string{agent.ID, shell.ID} {
 		got, err := m.store.Get(id)
@@ -1611,7 +1611,7 @@ func TestDeleteAgentIncludesChildren(t *testing.T) {
 		t.Fatal("delete confirm omitted the child")
 	}
 	agent := m.sessionRows()[0]
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	for _, id := range []string{shell.ID, agent.ID} {
 		if _, err := m.store.Get(id); err == nil {
@@ -1654,7 +1654,7 @@ func TestReviveAgentIncludesDeadChildren(t *testing.T) {
 	if !ids[shell.ID] {
 		t.Fatal("revive confirm omitted the child")
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 	if !m.tmux.Exists(coder.ID) || !m.tmux.Exists(shell.ID) {
 		t.Fatal("confirm should revive the agent and its dead children")
@@ -1798,7 +1798,7 @@ func TestConfirmedArchiveLeavesTheActiveViewAtOnce(t *testing.T) {
 
 	m.selectSessionRow(t, "shelved")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	if _, err := m.store.Get(sess.ID); err != nil {
 		t.Fatalf("archive did not reach the store: %v", err)
@@ -1828,7 +1828,7 @@ func TestConfirmedGroupDeleteDropsTheGroupRowAtOnce(t *testing.T) {
 
 	m.selectGroupRow(t, "zone")
 	m.prepareDelete()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	for _, r := range m.rows {
 		if r.isGroup && r.group == "zone" {
@@ -1844,13 +1844,13 @@ func TestConfirmedRestoreLeavesTheArchivedViewAtOnce(t *testing.T) {
 
 	m.selectSessionRow(t, "returning")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	m.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "returning")
 	m.restoreSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	for _, row := range m.sessionRows() {
 		if row.ID == sess.ID {
@@ -1880,13 +1880,13 @@ func TestConfirmedGroupRestoreShowsTheSubtreeAtOnce(t *testing.T) {
 
 	m.selectGroupRow(t, "zone")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	m.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "zone")
 	m.restoreSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	for _, row := range m.sessionRows() {
 		if row.ID == sess.ID {
@@ -1915,7 +1915,7 @@ func TestConfirmedGroupArchiveHidesTheSubtreeAtOnce(t *testing.T) {
 
 	m.selectGroupRow(t, "zone")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	if !m.groupEffectivelyArchived("zone") {
 		t.Fatal("archived group still reads as active before the next poll")

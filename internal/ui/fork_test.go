@@ -50,13 +50,13 @@ func TestForkSelectedSessionCreatesNamedSibling(t *testing.T) {
 	tool.ForkCommand = "printf '%s\\n' {id} {new_id} {name} > " + tmux.ShellQuote(argsFile) + "; cat"
 	m.cfg.Tools[source.Tool] = tool
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: 'f', Text: "f"})
 	m = updated.(*Model)
 	if m.mode != modeFork || m.fork.source.ID != source.ID {
 		t.Fatalf("fork mode = %v, source = %q", m.mode, m.fork.source.ID)
 	}
 	m.fork.name.SetValue("child fork")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.handleForkKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 	if m.mode != modeList || m.errBar.text != "" {
@@ -132,7 +132,7 @@ func TestForkCopiesManagedWorktreeReference(t *testing.T) {
 
 	m.openFork()
 	m.fork.name.SetValue("forked")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.handleForkKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 
@@ -333,7 +333,7 @@ func TestForkAgentSessionIDFollowsNewIDPlaceholder(t *testing.T) {
 				t.Fatalf("openFork error = %q", m.errBar.text)
 			}
 			m.fork.name.SetValue("forked")
-			updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+			updated, cmd := m.handleForkKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 			m = updated.(*Model)
 			m.applyCmd(t, cmd)
 			if m.mode != modeList || m.errBar.text != "" {
@@ -406,7 +406,7 @@ func TestForkGeminiResolvesSessionFile(t *testing.T) {
 		t.Fatalf("openFork error = %q", m.errBar.text)
 	}
 	m.fork.name.SetValue("forked")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.handleForkKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 	if m.mode != modeList || m.errBar.text != "" {
@@ -478,7 +478,7 @@ func TestForkGeminiResolverFailureReportsError(t *testing.T) {
 	before := len(m.sessionRows())
 	m.openFork()
 	m.fork.name.SetValue("forked")
-	updated, _ := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.handleForkKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(*Model)
 	if !strings.Contains(m.errBar.text, "no gemini session file") {
 		t.Fatalf("resolver error = %q", m.errBar.text)

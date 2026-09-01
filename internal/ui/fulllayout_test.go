@@ -32,10 +32,10 @@ func TestSettingsTogglesSessionLayout(t *testing.T) {
 		t.Fatal("settings should open on split by default")
 	}
 	for m.settings.field != settingsFieldSessionLayout {
-		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+		m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if chosen, err := m.store.Setting(sessionLayoutSetting); err != nil || chosen != "full" {
 		t.Fatalf("want stored full, got %q err %v", chosen, err)
 	}
@@ -68,9 +68,9 @@ func TestSettingsToggleChromeIndependently(t *testing.T) {
 			}
 
 			for m.settings.field != tc.field {
-				m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+				m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyDown})
 			}
-			m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+			m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyRight})
 			settings = ansi.Strip(m.viewSettings())
 			headerValue, statsValue := "show", "show"
 			if tc.hideHeader {
@@ -100,7 +100,7 @@ func TestSettingsToggleChromeIndependently(t *testing.T) {
 					t.Fatalf("settings missing %s row:\n%s", row.label, settings)
 				}
 			}
-			m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+			m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 			if m.hideHeader != tc.hideHeader || m.hideStats != tc.hideStats {
 				t.Fatalf("model visibility = header %t stats %t, want header %t stats %t",
@@ -140,7 +140,7 @@ func TestLayoutsCanHideHeader(t *testing.T) {
 			if got := m.listBodyHeight(); got != shownBody+1 {
 				t.Fatalf("hidden header body = %d rows, want %d", got, shownBody+1)
 			}
-			if rows := strings.Split(m.View(), "\n"); len(rows) != m.height {
+			if rows := strings.Split(m.viewFrame(), "\n"); len(rows) != m.height {
 				t.Fatalf("headerless frame = %d rows, terminal is %d", len(rows), m.height)
 			}
 		})
@@ -151,19 +151,19 @@ func TestLayoutsCanHideHeader(t *testing.T) {
 // captured pane and the detail head stay with the split layout.
 func TestFullLayoutFrameHasNoPreviewColumn(t *testing.T) {
 	m := shotModel()
-	split := ansi.Strip(m.View())
+	split := ansi.Strip(m.viewFrame())
 	if !strings.Contains(split, "token bucket limiter") {
 		t.Fatalf("split frame lost its preview:\n%s", split)
 	}
 	m.fullLayout = true
-	full := ansi.Strip(m.View())
+	full := ansi.Strip(m.viewFrame())
 	if strings.Contains(full, "token bucket limiter") {
 		t.Fatalf("full screen frame still paints the preview:\n%s", full)
 	}
 	if !strings.Contains(full, "add-rate-limiting") {
 		t.Fatalf("full screen frame lost the session tree:\n%s", full)
 	}
-	rows := strings.Split(m.View(), "\n")
+	rows := strings.Split(m.viewFrame(), "\n")
 	if len(rows) != m.height {
 		t.Fatalf("full screen frame is %d rows, terminal is %d", len(rows), m.height)
 	}
@@ -193,7 +193,7 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	m.selectSessionRow(t, "wide-open")
 	m.fullLayout = true
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyRight})
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -212,7 +212,7 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	}
 
 	m.preview = "❯ hello from the pane\n"
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(m.viewFrame())
 	if rule := ansi.Strip(m.focusFactsLine(m.width)); !strings.Contains(frame, rule) {
 		t.Fatalf("full width focus frame misses the focus rule %q:\n%s", rule, frame)
 	}
@@ -226,7 +226,7 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 		t.Fatalf("pane box starts at row %d, want right under the focus rule at %d", m.pane.box.y, m.listChromeRows())
 	}
 
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	updated, _ = m.handleKey(tea.KeyPressMsg{Code: 'q', Mod: tea.ModCtrl})
 	*m = *updated.(*Model)
 	if m.mode != modeList || !m.fullRows() {
 		t.Fatalf("ctrl+q should return to the full screen list, mode = %v", m.mode)
@@ -243,7 +243,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	m.selectSessionRow(t, "wide-left")
 	m.fullLayout = true
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyRight})
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
@@ -255,14 +255,14 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	m.pane.cursor = paneCursor{x: 4, y: 0, ok: true}
 	m.preview = "❯ hi\n"
 
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyLeft})
 	*m = *updated.(*Model)
 	if m.mode != modeFocus {
 		t.Fatalf("left inside a typed prompt left focus, mode = %v", m.mode)
 	}
 
 	m.pane.cursor = paneCursor{x: 2, y: 0, ok: true}
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyLeft})
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("left at the prompt head did not return, mode = %v", m.mode)
@@ -282,7 +282,7 @@ func TestFullLayoutAStillAttaches(t *testing.T) {
 	m.selectSessionRow(t, "handover")
 	m.fullLayout = true
 
-	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A")})
+	updated, cmd := m.handleKey(tea.KeyPressMsg{Code: 'A', Text: "A"})
 	*m = *updated.(*Model)
 	if m.mode == modeFocus {
 		t.Fatal("A should attach, not focus")
@@ -442,7 +442,7 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 		t.Fatalf("facts painted %d lines, want 1", got)
 	}
 
-	rows := splitLines(ansi.Strip(m.View()))
+	rows := splitLines(ansi.Strip(m.viewFrame()))
 	head := m.headerRows()
 	isRule := func(row string) bool {
 		trimmed := strings.TrimSpace(row)

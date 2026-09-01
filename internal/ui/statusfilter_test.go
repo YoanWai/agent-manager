@@ -65,7 +65,7 @@ func TestStatusFilterKeyKeepsAttentionSessions(t *testing.T) {
 	}
 	loadStoredRows(t, m)
 
-	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	updated, cmd := m.handleKey(tea.KeyPressMsg{Code: 'w', Text: "w"})
 	m = updated.(*Model)
 	if cmd != nil {
 		m.applyCmd(t, cmd)
@@ -98,7 +98,7 @@ func TestStatusFilterKeyKeepsAttentionSessions(t *testing.T) {
 		t.Fatalf("footer should offer clearing the filter:\n%s", footer)
 	}
 
-	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	updated, cmd = m.handleKey(tea.KeyPressMsg{Code: 'w', Text: "w"})
 	m = updated.(*Model)
 	if cmd != nil {
 		m.applyCmd(t, cmd)
@@ -310,7 +310,7 @@ func TestForkClearsStatusFilter(t *testing.T) {
 
 	m.openFork()
 	m.fork.name.SetValue("fork-under-filter")
-	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.handleForkKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 

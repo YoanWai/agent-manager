@@ -15,14 +15,12 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 )
 
 func gitTestRepo(t *testing.T) string {
@@ -69,7 +67,7 @@ func TestDiffReviewShowsWholeFile(t *testing.T) {
 		t.Fatalf("files = %+v", m.diff.set.Files)
 	}
 
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(m.viewFrame())
 	if !strings.Contains(view, "review · coder") || !strings.Contains(view, "files") {
 		t.Fatalf("fullscreen review layout missing:\n%s", view)
 	}
@@ -94,7 +92,7 @@ func TestDiffScopeCycleAndLayout(t *testing.T) {
 	}
 
 	m.diff.sideBySide = true
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "split") {
+	if view := ansi.Strip(m.viewFrame()); !strings.Contains(view, "split") {
 		t.Fatalf("split pill missing:\n%s", view)
 	}
 }
@@ -249,19 +247,16 @@ func TestDiffCommentVisibleInBothLayouts(t *testing.T) {
 	m.applyCmd(t, m.saveAnnotation())
 
 	m.diff.sideBySide = false
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
+	if view := ansi.Strip(m.viewFrame()); !strings.Contains(view, "use fmt.Println here") {
 		t.Fatalf("comment missing in unified layout:\n%s", view)
 	}
 	m.diff.sideBySide = true
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
+	if view := ansi.Strip(m.viewFrame()); !strings.Contains(view, "use fmt.Println here") {
 		t.Fatalf("comment missing in split layout:\n%s", view)
 	}
 }
 
 func TestHandledCommentsStayVisibleWithAMutedColor(t *testing.T) {
-	previous := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
 	m := &Model{diff: diffState{
 		sessID: "abc123", repoSel: "/repo",
 		annotations: map[string][]annotation{
@@ -429,15 +424,15 @@ func TestDiffReviewReachesLastLine(t *testing.T) {
 			m.diff.sideBySide = layout.split
 
 			last := fmt.Sprintf("line-%03d", lines)
-			view := ansi.Strip(m.View())
+			view := ansi.Strip(m.viewFrame())
 			if strings.Contains(view, last) {
 				t.Fatalf("the file's end should start off screen, got:\n%s", view)
 			}
 
 			// G jumps to the end; the final line must be painted, not merely
 			// selected, and the cursor must sit on it.
-			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
-			view = ansi.Strip(m.View())
+			m.handleDiffKey(tea.KeyPressMsg{Code: 'G', Text: "G"})
+			view = ansi.Strip(m.viewFrame())
 			if !strings.Contains(view, last) {
 				t.Fatalf("G should paint the last line %q, got:\n%s", last, view)
 			}
@@ -468,10 +463,10 @@ func TestDiffReviewStepsDownToTheEnd(t *testing.T) {
 	}
 
 	for i := 0; i < lines*2; i++ {
-		m.handleDiffKey(tea.KeyMsg{Type: tea.KeyDown})
+		m.handleDiffKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	last := fmt.Sprintf("line-%03d", lines)
-	if view := ansi.Strip(m.View()); !strings.Contains(view, last) {
+	if view := ansi.Strip(m.viewFrame()); !strings.Contains(view, last) {
 		t.Fatalf("stepping down should reach the last line %q, got:\n%s", last, view)
 	}
 }
@@ -533,23 +528,23 @@ func TestDiffReviewReachesEndWithWrappedLines(t *testing.T) {
 			m.width, m.height = 120, 34
 			m.diff.sideBySide = layout.split
 
-			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+			m.handleDiffKey(tea.KeyPressMsg{Code: 'G', Text: "G"})
 			last := fmt.Sprintf("wide-%03d", lines)
-			if view := ansi.Strip(m.View()); !strings.Contains(view, last) {
+			if view := ansi.Strip(m.viewFrame()); !strings.Contains(view, last) {
 				t.Fatalf("G should paint the last line %q, got:\n%s", last, view)
 			}
 
 			// Stepping down must keep the cursor painted the whole way.
-			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+			m.handleDiffKey(tea.KeyPressMsg{Code: 'g', Text: "g"})
 			for i := 0; i < lines+5; i++ {
-				m.handleDiffKey(tea.KeyMsg{Type: tea.KeyDown})
+				m.handleDiffKey(tea.KeyPressMsg{Code: tea.KeyDown})
 				fd := m.currentFileDiff()
 				lineIdx := m.cursorDiffLine()
 				if fd == nil || lineIdx >= len(fd.Lines) {
 					t.Fatal("cursor out of range")
 				}
 				marker := strings.Fields(fd.Lines[lineIdx].Text)[0]
-				if view := ansi.Strip(m.View()); !strings.Contains(view, marker) {
+				if view := ansi.Strip(m.viewFrame()); !strings.Contains(view, marker) {
 					t.Fatalf("step %d: cursor on %q but the frame never paints it:\n%s", i, marker, view)
 				}
 			}
@@ -586,7 +581,7 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	}
 
 	// esc leaves review; the live origin session re-attaches.
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("esc should leave review, mode = %v", m.mode)
@@ -617,7 +612,7 @@ func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
 		t.Fatalf("list review should not set a reattach origin, got %q", m.diff.reattachID)
 	}
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("esc should return to list, mode = %v", m.mode)
@@ -654,7 +649,7 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 		t.Fatalf("expected review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	*m = *updated.(*Model)
 	if cmd == nil {
 		t.Fatalf("esc should re-attach, err = %q", m.errBar.text)
@@ -798,12 +793,12 @@ func TestRepoPickerFiltersAndSelects(t *testing.T) {
 		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
 	}
 	for _, r := range "alph" {
-		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 	if got := m.filteredRows(); len(got) != 1 || got[0].label != "alpha" {
 		t.Fatalf("filter should narrow to alpha, got %v", got)
 	}
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 	if m.mode != modeDiff {
@@ -824,7 +819,7 @@ func TestRepoPickerEscapeKeepsRepo(t *testing.T) {
 	before := m.diff.repoSel
 
 	m.pressDiffKey(t, 'r')
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	*m = *updated.(*Model)
 	if m.mode != modeDiff {
 		t.Fatalf("esc should return to review, mode = %v", m.mode)
@@ -859,9 +854,9 @@ func TestBranchPickerListsWorktreesAndSwitches(t *testing.T) {
 		t.Fatalf("picker should show the worktree branch, got:\n%s", rendered)
 	}
 	for _, r := range "pick-me" {
-		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
-	updated, cmdSel := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmdSel := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmdSel)
 	resolved, _ := filepath.EvalSymlinks(outside)
@@ -1028,14 +1023,14 @@ func (m *Model) drainCmds(t *testing.T, cmd tea.Cmd) {
 
 func (m *Model) pressDiffKey(t *testing.T, key rune) {
 	t.Helper()
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: key, Text: string(key)})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 }
 
 func (m *Model) pressFilterKey(t *testing.T) {
 	t.Helper()
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 }
@@ -1049,10 +1044,10 @@ func (m *Model) pickRepo(t *testing.T, name string) {
 		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
 	}
 	for _, r := range name {
-		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		updated, _ := m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 		*m = *updated.(*Model)
 	}
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 	if m.mode != modeDiff {
@@ -1197,7 +1192,7 @@ func TestScrollDoesNotLeakAcrossSessions(t *testing.T) {
 	m.diff.scroll = 2
 	m.drainCmds(t, m.switchDiffFile(1)) // persists scroll for file one
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	*m = *updated.(*Model)
 	openReviewOn(t, m, "two", dir)
 	m.drainCmds(t, m.switchDiffFile(1))
@@ -1319,7 +1314,7 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 	if !notes[0].outdated {
 		t.Fatalf("changed comment should be outdated: %+v", notes[0])
 	}
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "Review round 1 · point 1 · open · outdated") {
+	if view := ansi.Strip(m.viewFrame()); !strings.Contains(view, "Review round 1 · point 1 · open · outdated") {
 		t.Fatalf("outdated round comment is not visible:\n%s", view)
 	}
 
@@ -1486,18 +1481,18 @@ func TestReviewCtrlCQuitsFromSubmodes(t *testing.T) {
 	}
 	openReviewOn(t, m, "subquit", gitRepoWithTwoChangedFiles(t))
 	m.openAnnotate()
-	if _, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+	if _, cmd := m.handleDiffKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd == nil {
 		t.Fatal("ctrl+c should quit while annotating")
 	}
 	m.diff.annotating = false
 	m.diff.sendConfirm = true
-	if _, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+	if _, cmd := m.handleDiffKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd == nil {
 		t.Fatal("ctrl+c should quit from the send-confirm prompt")
 	}
 	m.diff.sendConfirm = false
 	m.diff.repoRoots = []string{"/tmp/one", "/tmp/two"}
 	m.openRepoPick()
-	if _, cmd := m.handleRepoPickKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+	if _, cmd := m.handleRepoPickKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd == nil {
 		t.Fatal("ctrl+c should quit while the repo picker is open")
 	}
 }
@@ -1532,7 +1527,7 @@ func TestReviewCtrlCQuits(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "quitter", gitRepoWithTwoChangedFiles(t))
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if cmd == nil {
 		t.Fatal("ctrl+c in review should return a command")
 	}
@@ -2101,7 +2096,7 @@ func TestHandPickedRepoOutlivesReopen(t *testing.T) {
 		t.Fatalf("picking bravo should load it, got %q", got)
 	}
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 	if m.mode != modeList {
@@ -2154,7 +2149,7 @@ func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 		t.Fatal("the dead pick must be forgotten so the declaration can take over")
 	}
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 	m.drainCmds(t, m.openDiff())
@@ -2280,12 +2275,12 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
 	}
 	for _, r := range "alph" {
-		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		updated, _ := m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 		*m = *updated.(*Model)
 	}
 	m.sessions = nil
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	*m = *updated.(*Model)
 	if cmd != nil {
 		t.Fatal("a missing session must not kick off a diff load")
@@ -2326,7 +2321,7 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 		t.Fatalf("r should open the repo picker, mode = %v", m.mode)
 	}
 	for m.repoPick.cursor != 1 {
-		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		*m = *updated.(*Model)
 	}
 	onScreen := m.filteredRows()[m.repoPick.cursor].root
@@ -2334,7 +2329,7 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	// A reload lands carrying only the repos that still exist, re-ranked.
 	m.diff.repoRoots = []string{realRoots[1], realRoots[0]}
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 
@@ -2374,7 +2369,7 @@ func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 		t.Fatalf("hidden count should match the %d rows actually rendered, want %q in view", shown, want)
 	}
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	*m = *updated.(*Model)
 	if m.repoPick.cursor != len(m.diff.repoRoots)-1 {
 		t.Fatalf("up from the top should wrap to the last repo, cursor = %d", m.repoPick.cursor)
@@ -2396,7 +2391,7 @@ func TestCtrlRFromListOpensReview(t *testing.T) {
 	createSession(t, m, "ctrlr", gitRepoWithTwoChangedFiles(t), "")
 	m.selectSessionRow(t, "ctrlr")
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 	if m.mode != modeDiff {
@@ -2439,10 +2434,10 @@ func gitRepoWithSecondBranch(t *testing.T) string {
 func (m *Model) typeAndEnter(t *testing.T, text string) {
 	t.Helper()
 	for _, r := range text {
-		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		updated, _ := m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 		*m = *updated.(*Model)
 	}
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 }
@@ -2835,14 +2830,14 @@ func TestDiffSendConfirmIgnoresMotionKeys(t *testing.T) {
 			},
 		},
 	}
-	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m.handleDiffKey(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	if !m.diff.sendConfirm {
 		t.Fatal("j should leave the send prompt up")
 	}
 	if len(m.diff.annotations[m.reviewKey()]) != 1 {
 		t.Fatal("j must not send or drop comments")
 	}
-	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.handleDiffKey(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.diff.sendConfirm {
 		t.Fatal("esc should cancel the send prompt")
 	}
@@ -2856,11 +2851,11 @@ func TestDiffPageKeysMoveAViewport(t *testing.T) {
 	dir := gitRepoWithLongFile(t, 80)
 	openReviewOn(t, m, "pager", dir)
 	before := m.diff.cursorLine
-	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyPgDown})
+	m.handleDiffKey(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	if m.diff.cursorLine <= before {
 		t.Fatalf("pgdown left cursor at %d", m.diff.cursorLine)
 	}
-	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyPgUp})
+	m.handleDiffKey(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	if m.diff.cursorLine != before {
 		t.Fatalf("pgup should return to %d, got %d", before, m.diff.cursorLine)
 	}
@@ -2870,14 +2865,14 @@ func TestDiffHelpReturnsToReview(t *testing.T) {
 	m := buildModel(t)
 	dir := gitTestRepo(t)
 	openReviewOn(t, m, "helper", dir)
-	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m.handleDiffKey(tea.KeyPressMsg{Code: '?', Text: "?"})
 	if m.mode != modeHelp {
 		t.Fatalf("? should open the key map, mode = %v", m.mode)
 	}
 	if !m.diff.active {
 		t.Fatal("opening help must not close the review")
 	}
-	m.handleHelpKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.handleHelpKey(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.mode != modeDiff || !m.diff.active {
 		t.Fatalf("esc should return to review, mode = %v active = %v", m.mode, m.diff.active)
 	}
@@ -2893,7 +2888,7 @@ func TestDiffHelpRestartsLoaderOnReturn(t *testing.T) {
 	if m.startupAnimating {
 		t.Fatal("loader should stop while help covers the review")
 	}
-	_, cmd := m.handleHelpKey(tea.KeyMsg{Type: tea.KeyEsc})
+	_, cmd := m.handleHelpKey(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if cmd == nil || !m.startupAnimating {
 		t.Fatal("returning to a loading review should restart the loader")
 	}
@@ -3223,7 +3218,7 @@ func TestNarrowReviewKeepsBothPanesMeasurable(t *testing.T) {
 		if fileWidth+codeWidth > width {
 			t.Fatalf("width %d gave panes wider than the screen: %d and %d", width, fileWidth, codeWidth)
 		}
-		if lines := splitLines(m.View()); len(lines) == 0 {
+		if lines := splitLines(m.viewFrame()); len(lines) == 0 {
 			t.Fatalf("width %d rendered nothing", width)
 		}
 	}

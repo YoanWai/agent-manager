@@ -27,7 +27,7 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 	if !strings.Contains(m.launchHint, "hermes setup") {
 		t.Fatalf("hint %q should name the install command", m.launchHint)
 	}
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("after esc, mode = %v, want modeList", m.mode)
@@ -175,7 +175,7 @@ func TestRestartHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 	m.confirm = confirmTarget{action: actionRestart, sessions: []store.Session{sess}}
 	m.mode = modeConfirmDelete
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m = updated.(*Model)
 
 	if m.mode != modeLaunchHint {

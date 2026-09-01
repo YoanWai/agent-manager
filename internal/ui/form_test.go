@@ -10,12 +10,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 )
 
 func TestNewSessionFormUsesSettingsDefaultTool(t *testing.T) {
@@ -199,14 +197,14 @@ func TestGroupFormFieldsTrackCardWidth(t *testing.T) {
 	m := buildModel(t)
 	m.openGroupForm()
 	want := m.formValueWidth() - 3
-	if m.groupForm.name.Width != want || m.groupForm.path.Width != want {
-		t.Fatalf("initial widths = name %d path %d, want %d", m.groupForm.name.Width, m.groupForm.path.Width, want)
+	if m.groupForm.name.Width() != want || m.groupForm.path.Width() != want {
+		t.Fatalf("initial widths = name %d path %d, want %d", m.groupForm.name.Width(), m.groupForm.path.Width(), want)
 	}
 
 	m.Update(tea.WindowSizeMsg{Width: 72, Height: m.height})
 	want = m.formValueWidth() - 3
-	if m.groupForm.name.Width != want || m.groupForm.path.Width != want {
-		t.Fatalf("resized widths = name %d path %d, want %d", m.groupForm.name.Width, m.groupForm.path.Width, want)
+	if m.groupForm.name.Width() != want || m.groupForm.path.Width() != want {
+		t.Fatalf("resized widths = name %d path %d, want %d", m.groupForm.name.Width(), m.groupForm.path.Width(), want)
 	}
 }
 
@@ -269,7 +267,7 @@ func pasteFormImage(t *testing.T, m *Model, path string) int {
 	defer func() { captureClipboardImage = orig }()
 	captureClipboardImage = func() (string, error) { return path, nil }
 
-	_, cmd := m.handleFormKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	_, cmd := m.handleFormKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
 	if cmd == nil {
 		t.Fatal("ctrl+v should start an async clipboard read")
 	}
@@ -291,7 +289,7 @@ func TestFormPasteSendsTheImagePathWithTheFirstTask(t *testing.T) {
 	m.openForm()
 	focusFormPrompt(t, m)
 	for _, r := range "match this" {
-		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m.handleFormKey(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 
 	path := tempImage(t, "mock.png")
@@ -313,8 +311,8 @@ func TestFormPasteChipDeletesAsOneAndReleasesItsImage(t *testing.T) {
 	path := tempImage(t, "mock.png")
 	pasteFormImage(t, m, path)
 
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	m.handleFormKey(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m.handleFormKey(tea.KeyPressMsg{Code: tea.KeyBackspace})
 	if got := m.form.prompt.input.Value(); got != "" {
 		t.Fatalf("backspace next to a chip should take the whole chip: %q", got)
 	}
@@ -334,7 +332,7 @@ func TestFormCancelReleasesPastedImages(t *testing.T) {
 	path := tempImage(t, "mock.png")
 	pasteFormImage(t, m, path)
 
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.handleFormKey(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if m.mode != modeList {
 		t.Fatalf("esc should close the form, mode = %v", m.mode)
 	}
@@ -375,9 +373,6 @@ func TestFormSubmitKeepsThePastedImage(t *testing.T) {
 }
 
 func TestFormChipRendersInTheCard(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := buildModel(t)
 	m.openForm()
@@ -455,7 +450,7 @@ func TestFormGroupArrowsMoveFocusNotSelection(t *testing.T) {
 	}
 
 	initial := m.form.groupIndex
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	m.handleFormKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	if m.form.groupIndex != initial {
 		t.Fatalf("down must not change the group selection, index = %d, want %d", m.form.groupIndex, initial)
 	}
@@ -465,19 +460,19 @@ func TestFormGroupArrowsMoveFocusNotSelection(t *testing.T) {
 
 	m.form.focus = fieldGroup
 	m.form.groupIndex = 0
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleFormKey(tea.KeyPressMsg{Code: tea.KeyRight})
 	if m.form.groupIndex != 1 {
 		t.Fatalf("right should cycle the group selection, index = %d", m.form.groupIndex)
 	}
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.handleFormKey(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if m.form.groupIndex != 0 {
 		t.Fatalf("left should cycle back, index = %d", m.form.groupIndex)
 	}
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.handleFormKey(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if m.form.groupIndex != len(m.form.groups)-1 {
 		t.Fatalf("left at the first group should wrap to the last, index = %d", m.form.groupIndex)
 	}
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleFormKey(tea.KeyPressMsg{Code: tea.KeyRight})
 	if m.form.groupIndex != 0 {
 		t.Fatalf("right at the last group should wrap to the first, index = %d", m.form.groupIndex)
 	}
@@ -493,7 +488,7 @@ func TestGroupFormParentArrowsMoveFocusNotSelection(t *testing.T) {
 	m.groupForm.focus = gfParent
 
 	initial := m.form.groupIndex
-	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	m.handleGroupFormKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	if m.form.groupIndex != initial {
 		t.Fatalf("down must not change the parent selection, index = %d, want %d", m.form.groupIndex, initial)
 	}
@@ -503,7 +498,7 @@ func TestGroupFormParentArrowsMoveFocusNotSelection(t *testing.T) {
 
 	m.groupForm.focus = gfParent
 	m.form.groupIndex = 0
-	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleGroupFormKey(tea.KeyPressMsg{Code: tea.KeyRight})
 	if m.form.groupIndex != 1 {
 		t.Fatalf("right should cycle the parent selection, index = %d", m.form.groupIndex)
 	}
@@ -808,7 +803,7 @@ func TestFormWorktreeGatedInNonRepoDir(t *testing.T) {
 		t.Fatalf("form should mark worktree unavailable, got %q", view)
 	}
 	m.form.focus = fieldWorktree
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleFormKey(tea.KeyPressMsg{Code: tea.KeyRight})
 	if m.formWorktreeOn() {
 		t.Fatal("toggling must not turn worktree on for a non-repo dir")
 	}
@@ -865,7 +860,7 @@ func TestFormWorktreeStaysOnInRepoDir(t *testing.T) {
 		t.Fatal("a repo dir should keep the worktree default on")
 	}
 	m.form.focus = fieldWorktree
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleFormKey(tea.KeyPressMsg{Code: tea.KeyRight})
 	if m.formWorktreeOn() {
 		t.Fatal("toggle should turn worktree off in a repo dir")
 	}
@@ -968,8 +963,8 @@ func TestGroupFormStoresWorktreeChoice(t *testing.T) {
 	m.groupForm.name.SetValue("wtgrp")
 	m.groupForm.path.SetValue(t.TempDir())
 	m.groupForm.focus = gfWorktree
-	m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyRight})
-	_, cmd := m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.handleGroupFormKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	_, cmd := m.handleGroupFormKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	groups, err := m.store.Groups()
 	if err != nil {

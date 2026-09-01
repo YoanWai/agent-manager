@@ -18,7 +18,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 )
 
 func TestComputerLinesTemperatures(t *testing.T) {
@@ -67,8 +66,6 @@ func TestComputerLinesTemperatures(t *testing.T) {
 
 // The separator carries its own reset, so a reading cannot inherit color.
 func TestTemperatureReadingsEachKeepTheirColor(t *testing.T) {
-	forceANSI256(t)
-
 	row := tempReadings(sysstat.Snapshot{CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55})
 	want := sgrOf(valueStyle.Render("x"))
 	for _, reading := range []string{"cpu 61°C", "gpu 55°C"} {
@@ -132,7 +129,7 @@ func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
 
 	m.selectSessionRow(t, "old-one")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m.applyCmd(t, cmd)
 
 	if names := sessionNames(m); len(names) != 1 || names[0] != "live-one" {
@@ -191,7 +188,7 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 		t.Fatal("settings should open on compact by default")
 	}
 	for i := 0; i < settingsFieldDensity; i++ {
-		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+		m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	if m.settings.field != settingsFieldDensity {
 		t.Fatalf("stepping down should reach the density field, got %d", m.settings.field)
@@ -199,11 +196,11 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 	if card := ansi.Strip(m.viewSettings()); !strings.Contains(card, "list density") {
 		t.Fatalf("settings card has no density row:\n%s", card)
 	}
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyRight})
 	if card := ansi.Strip(m.viewSettings()); !strings.Contains(card, "comfortable") {
 		t.Fatalf("toggled card does not read comfortable:\n%s", card)
 	}
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	if !m.comfortableRows {
 		t.Fatal("model did not pick up the comfortable density")
@@ -415,7 +412,7 @@ func TestRootRowLeadsTheList(t *testing.T) {
 			t.Fatalf("ungrouped session %q nested at depth %d", row.sess.Name, row.depth)
 		}
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "root") {
+	if !strings.Contains(ansi.Strip(m.viewFrame()), "root") {
 		t.Fatal("root row is not painted")
 	}
 }
@@ -490,10 +487,6 @@ func TestCursorSkipsRootOnFirstBuild(t *testing.T) {
 
 // Root reads quieter than the groups the user named.
 func TestRootRowIsDimmerThanNamedGroups(t *testing.T) {
-	// The suite's default Ascii profile strips every color sequence.
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := shotModel()
 	m.rebuildRows()
@@ -568,15 +561,8 @@ func TestReorderSkipsRootAsSibling(t *testing.T) {
 	}
 }
 
-func forceANSI256(t *testing.T) {
-	t.Helper()
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
-}
-
-// sgrOf returns the color sequence a style emits under the active profile,
-// so contrast assertions track the live theme instead of a hardcoded index.
+// sgrOf returns the color sequence a style emits, so contrast assertions
+// track the live theme instead of a hardcoded index.
 func sgrOf(rendered string) string {
 	_, seq, found := strings.Cut(rendered, "\x1b[")
 	if !found {
@@ -587,8 +573,6 @@ func sgrOf(rendered string) string {
 }
 
 func TestSelectedRowMetaUsesBrightNotSubtle(t *testing.T) {
-	forceANSI256(t)
-
 	m := &Model{}
 	entry := treeRow{
 		sess: store.Session{
@@ -758,7 +742,7 @@ func TestEveryReadingOfASessionStandsInForAnAwaitedName(t *testing.T) {
 func TestContentRuleStopsAtSeam(t *testing.T) {
 	m := shotModel()
 	leftWidth, _ := m.splitWidths()
-	rows := strings.Split(m.View(), "\n")
+	rows := strings.Split(m.viewFrame(), "\n")
 	start, end := m.bodyYRange()
 
 	crossings := 0
@@ -802,7 +786,7 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 				sessions: sessions, rows: rows, cursor: cursor,
 				collapsed: map[string]bool{}, split: splitState{ratio: defaultSplitRatio},
 			}
-			view := ansi.Strip(m.View())
+			view := ansi.Strip(m.viewFrame())
 			if !strings.Contains(view, sessions[cursor].Name) {
 				t.Errorf("%dx%d cursor=%d: %q is selected but never painted:\n%s",
 					size.w, size.h, cursor, sessions[cursor].Name, view)
@@ -1050,9 +1034,6 @@ func TestPreviewLoaderFramesAreNotStatusMarks(t *testing.T) {
 // A focused pane is the screen the user types on, so it keeps its own first
 // row and the caret drawn there rather than the loader.
 func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := previewModel(status.Starting, blankCapture)
 	m.mode = modeFocus
@@ -1113,7 +1094,7 @@ func TestRowMarksSessionsOnAnotherServer(t *testing.T) {
 				collapsed: map[string]bool{}, split: splitState{ratio: defaultSplitRatio},
 				tmuxSocket: here, leadingManager: tc.leading,
 			}
-			view := ansi.Strip(m.View())
+			view := ansi.Strip(m.viewFrame())
 			if strings.Contains(view, "elsewhere") != tc.elsewise {
 				t.Fatalf("elsewhere marker = %v, want %v:\n%s", !tc.elsewise, tc.elsewise, view)
 			}
@@ -1134,7 +1115,7 @@ func TestRowsAreUnmarkedBeforeTheFirstPoll(t *testing.T) {
 		sessions: []store.Session{sess}, rows: []treeRow{{sess: sess}},
 		collapsed: map[string]bool{}, split: splitState{ratio: defaultSplitRatio},
 	}
-	if view := ansi.Strip(m.View()); strings.Contains(view, "elsewhere") {
+	if view := ansi.Strip(m.viewFrame()); strings.Contains(view, "elsewhere") {
 		t.Fatalf("nothing to compare against should mark nothing:\n%s", view)
 	}
 }
@@ -1209,9 +1190,6 @@ func TestRowHeightsFollowDensity(t *testing.T) {
 }
 
 func TestRowWaitingReplyWearsTheStateColor(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := shotModel()
 	m.fullLayout = true
