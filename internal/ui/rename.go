@@ -11,9 +11,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+type worktreeRenameStore interface {
+	ListSessions(bool) ([]store.Session, error)
+	RenameSessionWorktreeBranch(string, string) error
+}
+
 // renameSessionWorktreeBranch keeps a managed branch aligned with its
 // session's display name without moving the directory of a live process.
-func renameSessionWorktreeBranch(gitDrv *git.Driver, st *store.Store, sess *store.Session, name string) error {
+func renameSessionWorktreeBranch(gitDrv *git.Driver, st worktreeRenameStore, sess *store.Session, name string) error {
 	if gitDrv == nil || sess.WorktreeRepo == "" || sess.WorktreeBranch == "" {
 		return nil
 	}
@@ -34,8 +39,12 @@ func renameSessionWorktreeBranch(gitDrv *git.Driver, st *store.Store, sess *stor
 		return nil
 	}
 	if err := st.RenameSessionWorktreeBranch(sess.ID, branch); err != nil {
-		if _, rollbackErr := gitDrv.RenameWorktreeBranch(sess.WorktreeRepo, sess.Cwd, branch, sess.Name); rollbackErr != nil {
-			return fmt.Errorf("%w (git still on %s: %v)", err, branch, rollbackErr)
+		rollbackBranch, rollbackErr := gitDrv.RenameWorktreeBranch(sess.WorktreeRepo, sess.Cwd, branch, sess.Name)
+		if rollbackErr != nil {
+			return fmt.Errorf("%w; could not restore git branch %s: %w", err, sess.WorktreeBranch, rollbackErr)
+		}
+		if rollbackBranch != sess.WorktreeBranch {
+			return fmt.Errorf("%w; git branch rollback returned %s instead of %s", err, rollbackBranch, sess.WorktreeBranch)
 		}
 		return err
 	}

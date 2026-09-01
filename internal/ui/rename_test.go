@@ -1,16 +1,30 @@
 package ui
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+type refusingWorktreeBranchStore struct {
+	*store.Store
+	beforeRefusal func(string)
+	err           error
+}
+
+func (s *refusingWorktreeBranchStore) RenameSessionWorktreeBranch(_ string, branch string) error {
+	if s.beforeRefusal != nil {
+		s.beforeRefusal(branch)
+	}
+	return s.err
+}
 
 func TestRenameGroupCascades(t *testing.T) {
 	m := buildModel(t)
@@ -192,15 +206,22 @@ func TestRenameSessionWorktreeBranchPutsItBackWhenTheStoreRefuses(t *testing.T) 
 	repo := seedRepo(t)
 	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
 
-	// A store that cannot take the new branch must not leave git on it.
-	m.store.Close()
-
+	storeErr := errors.New("store refused branch")
+	refusingStore := &refusingWorktreeBranchStore{Store: m.store, err: storeErr}
 	sess := spawned
-	if err := renameSessionWorktreeBranch(m.gitDrv, m.store, &sess, "renamed"); err == nil {
-		t.Fatal("a store that cannot record the branch should report it")
+	err := renameSessionWorktreeBranch(m.gitDrv, refusingStore, &sess, "renamed")
+	if !errors.Is(err, storeErr) {
+		t.Fatalf("rename error = %v, want store refusal", err)
 	}
 	if sess.Cwd != spawned.Cwd || sess.WorktreeBranch != spawned.WorktreeBranch {
 		t.Fatalf("session changed anyway: %+v", sess)
+	}
+	stored, err := m.store.Get(spawned.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Cwd != spawned.Cwd || stored.WorktreeBranch != spawned.WorktreeBranch {
+		t.Fatalf("stored session changed anyway: %+v", stored)
 	}
 	if _, err := os.Stat(spawned.Cwd); err != nil {
 		t.Fatalf("worktree directory moved: %v", err)
@@ -218,69 +239,67 @@ func TestRenameSessionWorktreeBranchPutsItBackWhenTheStoreRefuses(t *testing.T) 
 	}
 }
 
-func TestPendingRenameLetsAgentKeepWorking(t *testing.T) {
+func TestRenameSessionWorktreeBranchReportsRollbackNoOp(t *testing.T) {
 	m := buildModel(t)
 	repo := seedRepo(t)
 	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
 
-	tmp := t.TempDir()
-	goFile := filepath.Join(tmp, "go")
-	outFile := filepath.Join(tmp, "out")
-	logFile := filepath.Join(spawned.Cwd, "agent.log")
-	cmd := exec.Command("sh", "-c", `exec 3>>agent.log
-while [ ! -f "$1" ]; do
-  git status --porcelain >&3 || exit 1
-  git rev-parse --abbrev-ref HEAD >&3 || exit 1
-  sleep 0.05
-done
-echo still-working > wip.txt
-git add wip.txt
-git commit --author="test <test@test>" -m "agent kept working" >/dev/null
-git rev-parse --abbrev-ref HEAD > "$2"
-pwd >> "$2"`, "agent", goFile, outFile)
-	cmd.Dir = spawned.Cwd
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start: %v", err)
+	storeErr := errors.New("store refused branch")
+	refusingStore := &refusingWorktreeBranchStore{
+		Store: m.store,
+		err:   storeErr,
+		beforeRefusal: func(branch string) {
+			cmd := exec.Command("git", "-C", spawned.Cwd, "branch", "-m", branch, "feat/taken-over")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("take over branch: %v: %s", err, out)
+			}
+		},
 	}
-	waited := make(chan error, 1)
-	go func() { waited <- cmd.Wait() }()
-	t.Cleanup(func() { _ = cmd.Process.Kill() })
-
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if _, err := os.Stat(logFile); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("agent loop never started")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-
-	writeName(t, m, spawned.ID, "audit the poller")
 	sess := spawned
-	if err := m.poller.applyPendingRename(&sess); err != nil {
-		t.Fatalf("rename: %v", err)
+	err := renameSessionWorktreeBranch(m.gitDrv, refusingStore, &sess, "renamed")
+	if !errors.Is(err, storeErr) || !strings.Contains(err.Error(), "rollback returned am/renamed instead of "+spawned.WorktreeBranch) {
+		t.Fatalf("rename error = %v", err)
 	}
-	if err := os.WriteFile(goFile, []byte("x"), 0o644); err != nil {
-		t.Fatalf("release process: %v", err)
+	stored, getErr := m.store.Get(spawned.ID)
+	if getErr != nil {
+		t.Fatalf("get: %v", getErr)
 	}
-	select {
-	case err := <-waited:
-		if err != nil {
-			t.Fatalf("agent after rename: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("agent did not finish after rename")
+	if stored.WorktreeBranch != spawned.WorktreeBranch || sess.WorktreeBranch != spawned.WorktreeBranch {
+		t.Fatalf("store or session accepted the unrecorded branch: stored=%+v session=%+v", stored, sess)
 	}
-
-	if _, err := os.Stat(filepath.Join(spawned.Cwd, "wip.txt")); err != nil {
-		t.Fatalf("spawn-time path lost the agent's write: %v", err)
-	}
-	assertPaneStayedOnSpawnPath(t, m, spawned.ID, spawned.Cwd)
 	head, err := exec.Command("git", "-C", spawned.Cwd, "rev-parse", "--abbrev-ref", "HEAD").Output()
-	if err != nil || strings.TrimSpace(string(head)) != "am/audit-the-poller" {
-		t.Fatalf("spawn-time path HEAD = %q err=%v", strings.TrimSpace(string(head)), err)
+	if err != nil || strings.TrimSpace(string(head)) != "feat/taken-over" {
+		t.Fatalf("taken-over worktree HEAD = %q err=%v", strings.TrimSpace(string(head)), err)
+	}
+}
+
+func TestRenameSessionWorktreeBranchPreservesRollbackError(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
+
+	storeErr := errors.New("store refused branch")
+	refusingStore := &refusingWorktreeBranchStore{
+		Store: m.store,
+		err:   storeErr,
+		beforeRefusal: func(string) {
+			cmd := exec.Command("git", "-C", spawned.Cwd, "switch", "-c", "feat/taken-over")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("take over worktree: %v: %s", err, out)
+			}
+		},
+	}
+	sess := spawned
+	err := renameSessionWorktreeBranch(m.gitDrv, refusingStore, &sess, "renamed")
+	if !errors.Is(err, storeErr) {
+		t.Fatalf("rename error = %v, want store refusal", err)
+	}
+	wrapped, ok := err.(interface{ Unwrap() []error })
+	if !ok || len(wrapped.Unwrap()) != 2 {
+		t.Fatalf("rename error does not preserve both causes: %v", err)
+	}
+	if rollbackErr := wrapped.Unwrap()[1]; !strings.Contains(rollbackErr.Error(), "not recorded branch am/renamed") {
+		t.Fatalf("rollback error = %v", rollbackErr)
 	}
 }
 

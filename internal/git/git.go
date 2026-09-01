@@ -742,6 +742,13 @@ func (d *Driver) RenameWorktreeBranch(root, path, branch, newName string) (strin
 		}
 		return branch, nil
 	}
+	currentBranch, err := d.run(path, "symbolic-ref", "--short", "-q", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("read worktree branch: %w", err)
+	}
+	if currentBranch != branch {
+		return "", fmt.Errorf("worktree is on branch %s, not recorded branch %s", currentBranch, branch)
+	}
 	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+newBranch); err == nil {
 		return "", fmt.Errorf("branch already exists: %s", newBranch)
 	}

@@ -795,6 +795,32 @@ func TestRenameWorktreeBranchLeavesUnrecognizedWorktreeAlone(t *testing.T) {
 	}
 }
 
+func TestRenameWorktreeBranchRefusesSwitchedWorktree(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "managed")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if _, err := driver.run(path, "switch", "-c", "feat/mine"); err != nil {
+		t.Fatalf("switch: %v", err)
+	}
+
+	if _, err := driver.RenameWorktreeBranch(dir, path, branch, "renamed"); err == nil {
+		t.Fatal("a worktree switched to another branch should fail the rename")
+	}
+	if head, err := driver.run(path, "rev-parse", "--abbrev-ref", "HEAD"); err != nil || head != "feat/mine" {
+		t.Fatalf("switched branch was disturbed: %q err=%v", head, err)
+	}
+	if _, err := driver.run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
+		t.Fatalf("recorded branch was disturbed: %v", err)
+	}
+	if _, err := driver.run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/am/renamed"); err == nil {
+		t.Fatal("refused rename created the destination branch")
+	}
+}
+
 func TestRenameWorktreeBranchPropagatesGitErrors(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "a.txt", "x")
