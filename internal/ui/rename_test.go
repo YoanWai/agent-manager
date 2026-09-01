@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,8 +9,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+type refusingWorktreeBranchStore struct {
+	*store.Store
+	beforeRefusal func(string)
+	err           error
+}
+
+func (s *refusingWorktreeBranchStore) RenameSessionWorktreeBranch(_ string, branch string) error {
+	if s.beforeRefusal != nil {
+		s.beforeRefusal(branch)
+	}
+	return s.err
+}
 
 func TestRenameGroupCascades(t *testing.T) {
 	m := buildModel(t)
@@ -85,7 +100,7 @@ func TestRenameSession(t *testing.T) {
 	}
 }
 
-func TestRenameSessionMovesItsWorktree(t *testing.T) {
+func TestRenameSessionKeepsItsWorktreeDirectory(t *testing.T) {
 	m := buildModel(t)
 	repo := seedRepo(t)
 	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
@@ -99,15 +114,12 @@ func TestRenameSessionMovesItsWorktree(t *testing.T) {
 		t.Fatalf("rename reported: %s", m.errBar.text)
 	}
 
-	// The spawn path is the one git resolved, which on macOS differs from
-	// the temp path by the /private prefix.
-	wantDir := filepath.Join(filepath.Dir(spawned.Cwd), "release-the-version")
 	stored, err := m.store.Get(spawned.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if stored.Cwd != wantDir {
-		t.Fatalf("stored cwd = %q, want %q", stored.Cwd, wantDir)
+	if stored.Cwd != spawned.Cwd {
+		t.Fatalf("stored cwd = %q, want spawn path %q", stored.Cwd, spawned.Cwd)
 	}
 	if stored.WorktreeBranch != "am/release-the-version" {
 		t.Fatalf("stored branch = %q", stored.WorktreeBranch)
@@ -115,14 +127,20 @@ func TestRenameSessionMovesItsWorktree(t *testing.T) {
 	if stored.WorktreeRepo != spawned.WorktreeRepo {
 		t.Fatalf("repo root moved: %q want %q", stored.WorktreeRepo, spawned.WorktreeRepo)
 	}
-	if _, err := os.Stat(wantDir); err != nil {
-		t.Fatalf("worktree directory did not follow the name: %v", err)
+	if _, err := os.Stat(spawned.Cwd); err != nil {
+		t.Fatalf("spawn-time worktree directory moved: %v", err)
 	}
-	if _, err := os.Stat(spawned.Cwd); !os.IsNotExist(err) {
-		t.Fatalf("old worktree directory survived: %v", err)
+	moved := filepath.Join(filepath.Dir(spawned.Cwd), "release-the-version")
+	if _, err := os.Stat(moved); !os.IsNotExist(err) {
+		t.Fatalf("rename created a new worktree directory: %v", err)
 	}
-	if row := m.sessionRows()[0]; row.Cwd != wantDir || row.WorktreeBranch != "am/release-the-version" {
-		t.Fatalf("row still points at the old worktree: %+v", row)
+	if row := m.sessionRows()[0]; row.Cwd != spawned.Cwd || row.WorktreeBranch != "am/release-the-version" {
+		t.Fatalf("row did not keep its path and follow the branch: %+v", row)
+	}
+	assertPaneStayedOnSpawnPath(t, m, spawned.ID, spawned.Cwd)
+	head, err := exec.Command("git", "-C", spawned.Cwd, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil || strings.TrimSpace(string(head)) != "am/release-the-version" {
+		t.Fatalf("spawn-time path HEAD = %q err=%v", strings.TrimSpace(string(head)), err)
 	}
 }
 
@@ -183,28 +201,30 @@ func TestRenameSessionRefusesAWorktreeNameAlreadyTaken(t *testing.T) {
 	}
 }
 
-func TestRenameSessionWorktreePutsItBackWhenTheStoreRefuses(t *testing.T) {
+func TestRenameSessionWorktreeBranchPutsItBackWhenTheStoreRefuses(t *testing.T) {
 	m := buildModel(t)
 	repo := seedRepo(t)
 	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
 
-	// A store that cannot take the new location must not leave the session
-	// recorded in a directory that has already moved away.
-	m.store.Close()
-
+	storeErr := errors.New("store refused branch")
+	refusingStore := &refusingWorktreeBranchStore{Store: m.store, err: storeErr}
 	sess := spawned
-	if err := renameSessionWorktree(m.gitDrv, m.store, &sess, "renamed"); err == nil {
-		t.Fatal("a store that cannot record the move should report it")
+	err := renameSessionWorktreeBranch(m.gitDrv, refusingStore, &sess, "renamed")
+	if !errors.Is(err, storeErr) {
+		t.Fatalf("rename error = %v, want store refusal", err)
 	}
 	if sess.Cwd != spawned.Cwd || sess.WorktreeBranch != spawned.WorktreeBranch {
-		t.Fatalf("session moved anyway: %+v", sess)
+		t.Fatalf("session changed anyway: %+v", sess)
+	}
+	stored, err := m.store.Get(spawned.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Cwd != spawned.Cwd || stored.WorktreeBranch != spawned.WorktreeBranch {
+		t.Fatalf("stored session changed anyway: %+v", stored)
 	}
 	if _, err := os.Stat(spawned.Cwd); err != nil {
-		t.Fatalf("worktree was not put back: %v", err)
-	}
-	moved := filepath.Join(filepath.Dir(spawned.Cwd), "renamed")
-	if _, err := os.Stat(moved); !os.IsNotExist(err) {
-		t.Fatalf("worktree left behind at the new path: %v", err)
+		t.Fatalf("worktree directory moved: %v", err)
 	}
 	out, err := exec.Command("git", "-C", repo, "branch", "--format=%(refname:short)").Output()
 	if err != nil {
@@ -216,6 +236,175 @@ func TestRenameSessionWorktreePutsItBackWhenTheStoreRefuses(t *testing.T) {
 	}
 	if slices.Contains(branches, "am/renamed") {
 		t.Fatalf("rollback left the new branch behind, have: %v", branches)
+	}
+}
+
+func TestRenameSessionWorktreeBranchReportsRollbackNoOp(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
+
+	storeErr := errors.New("store refused branch")
+	refusingStore := &refusingWorktreeBranchStore{
+		Store: m.store,
+		err:   storeErr,
+		beforeRefusal: func(branch string) {
+			cmd := exec.Command("git", "-C", spawned.Cwd, "branch", "-m", branch, "feat/taken-over")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("take over branch: %v: %s", err, out)
+			}
+		},
+	}
+	sess := spawned
+	err := renameSessionWorktreeBranch(m.gitDrv, refusingStore, &sess, "renamed")
+	if !errors.Is(err, storeErr) || !strings.Contains(err.Error(), "rollback returned am/renamed instead of "+spawned.WorktreeBranch) {
+		t.Fatalf("rename error = %v", err)
+	}
+	stored, getErr := m.store.Get(spawned.ID)
+	if getErr != nil {
+		t.Fatalf("get: %v", getErr)
+	}
+	if stored.WorktreeBranch != spawned.WorktreeBranch || sess.WorktreeBranch != spawned.WorktreeBranch {
+		t.Fatalf("store or session accepted the unrecorded branch: stored=%+v session=%+v", stored, sess)
+	}
+	head, err := exec.Command("git", "-C", spawned.Cwd, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil || strings.TrimSpace(string(head)) != "feat/taken-over" {
+		t.Fatalf("taken-over worktree HEAD = %q err=%v", strings.TrimSpace(string(head)), err)
+	}
+}
+
+func TestRenameSessionWorktreeBranchPreservesRollbackError(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
+
+	storeErr := errors.New("store refused branch")
+	refusingStore := &refusingWorktreeBranchStore{
+		Store: m.store,
+		err:   storeErr,
+		beforeRefusal: func(string) {
+			cmd := exec.Command("git", "-C", spawned.Cwd, "switch", "-c", "feat/taken-over")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("take over worktree: %v: %s", err, out)
+			}
+		},
+	}
+	sess := spawned
+	err := renameSessionWorktreeBranch(m.gitDrv, refusingStore, &sess, "renamed")
+	if !errors.Is(err, storeErr) {
+		t.Fatalf("rename error = %v, want store refusal", err)
+	}
+	wrapped, ok := err.(interface{ Unwrap() []error })
+	if !ok || len(wrapped.Unwrap()) != 2 {
+		t.Fatalf("rename error does not preserve both causes: %v", err)
+	}
+	if rollbackErr := wrapped.Unwrap()[1]; !strings.Contains(rollbackErr.Error(), "not recorded branch am/renamed") {
+		t.Fatalf("rollback error = %v", rollbackErr)
+	}
+}
+
+func TestRenameDirtyWorktreeThenDeleteKeepsDirectory(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
+
+	m.selectSessionRow(t, "claude-7a72")
+	m.openRename()
+	m.rename.input.SetValue("dirty after")
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
+		t.Fatalf("rename reported: %s", m.errBar.text)
+	}
+	if err := os.WriteFile(filepath.Join(spawned.Cwd, "wip.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	deleteSession(t, m, "dirty after")
+	if _, err := os.Stat(spawned.Cwd); err != nil {
+		t.Fatalf("dirty spawn-time worktree was removed: %v", err)
+	}
+	if !strings.Contains(m.errBar.text, spawned.Cwd) {
+		t.Fatalf("error bar should name the kept path, got %q", m.errBar.text)
+	}
+}
+
+func TestRenameThenSharedSessionKeepsSpawnPath(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
+
+	m.selectSessionRow(t, "claude-7a72")
+	m.openRename()
+	m.rename.input.SetValue("shared source")
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
+		t.Fatalf("rename reported: %s", m.errBar.text)
+	}
+
+	stored, err := m.store.Get(spawned.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Cwd != spawned.Cwd || stored.WorktreeBranch != "am/shared-source" {
+		t.Fatalf("renamed session = %+v", stored)
+	}
+
+	forked := stored
+	forked.ID = "shared-fork"
+	forked.Name = "child fork"
+	if err := m.tmux.Create(forked.ID, forked.Cwd, "cat", nil, m.previewPaneWidth(), m.previewPaneHeight()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.CreateSession(forked); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.selectSessionRow(t, "shared source")
+	m.openRename()
+	m.rename.input.SetValue("should fail")
+	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if !strings.Contains(m.errBar.text, "shared with session \"child fork\"") {
+		t.Fatalf("shared worktree error = %q", m.errBar.text)
+	}
+	if _, err := os.Stat(spawned.Cwd); err != nil {
+		t.Fatalf("shared spawn-time directory moved: %v", err)
+	}
+	child, err := m.store.Get("shared-fork")
+	if err != nil {
+		t.Fatalf("get fork: %v", err)
+	}
+	if child.Cwd != spawned.Cwd || child.WorktreeBranch != "am/shared-source" {
+		t.Fatalf("shared sibling lost the renamed worktree: %+v", child)
+	}
+}
+
+func TestRenameThenDeleteRemovesTheSpawnWorktree(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
+
+	m.selectSessionRow(t, "claude-7a72")
+	m.openRename()
+	m.rename.input.SetValue("release the version")
+	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
+		t.Fatalf("rename reported: %s", m.errBar.text)
+	}
+
+	deleteSession(t, m, "release the version")
+	if _, err := os.Stat(spawned.Cwd); !os.IsNotExist(err) {
+		t.Fatal("clean spawn-time worktree should be removed after rename+delete")
+	}
+	out, err := exec.Command("git", "-C", repo, "branch", "--list", "am/release-the-version").Output()
+	if err != nil {
+		t.Fatalf("branch: %v", err)
+	}
+	if strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("renamed branch survived delete: %q", out)
 	}
 }
 
@@ -432,5 +621,24 @@ func TestGroupEditPersistsWorktreeChoice(t *testing.T) {
 	}
 	if !m.groupWorktree("grp/child") {
 		t.Fatal("child group should inherit the parent's worktree choice")
+	}
+}
+
+func assertPaneStayedOnSpawnPath(t *testing.T, m *Model, id, want string) {
+	t.Helper()
+	got, err := m.tmux.PaneCurrentPath(id)
+	if err != nil {
+		t.Fatalf("pane path: %v", err)
+	}
+	wantRes, err := filepath.EvalSymlinks(want)
+	if err != nil {
+		t.Fatalf("resolve spawn path %q: %v", want, err)
+	}
+	gotRes, err := filepath.EvalSymlinks(got)
+	if err != nil {
+		t.Fatalf("resolve pane cwd %q: %v", got, err)
+	}
+	if gotRes != wantRes {
+		t.Fatalf("pane cwd = %q, want spawn path %q", got, want)
 	}
 }

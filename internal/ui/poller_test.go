@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -165,7 +166,7 @@ func TestPendingRenameForADeletedSessionDoesNotFailThePoll(t *testing.T) {
 	}
 }
 
-func TestPendingRenameMovesTheWorktree(t *testing.T) {
+func TestPendingRenameKeepsTheWorktreeDirectory(t *testing.T) {
 	m := buildModel(t)
 	repo := seedRepo(t)
 	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
@@ -176,9 +177,8 @@ func TestPendingRenameMovesTheWorktree(t *testing.T) {
 		t.Fatalf("rename: %v", err)
 	}
 
-	wantDir := filepath.Join(filepath.Dir(spawned.Cwd), "audit-the-poller")
-	if sess.Cwd != wantDir || sess.WorktreeBranch != "am/audit-the-poller" {
-		t.Fatalf("session did not follow the name: %+v", sess)
+	if sess.Cwd != spawned.Cwd || sess.WorktreeBranch != "am/audit-the-poller" {
+		t.Fatalf("session did not keep its path and follow the branch: %+v", sess)
 	}
 	if sess.Name != "audit the poller" {
 		t.Fatalf("name = %q", sess.Name)
@@ -187,14 +187,81 @@ func TestPendingRenameMovesTheWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if stored.Cwd != wantDir || stored.WorktreeBranch != "am/audit-the-poller" || stored.Name != "audit the poller" {
-		t.Fatalf("store did not follow the name: %+v", stored)
+	if stored.Cwd != spawned.Cwd || stored.WorktreeBranch != "am/audit-the-poller" || stored.Name != "audit the poller" {
+		t.Fatalf("store did not keep the path and follow the name: %+v", stored)
 	}
-	if _, err := os.Stat(wantDir); err != nil {
-		t.Fatalf("worktree directory did not follow: %v", err)
+	if _, err := os.Stat(spawned.Cwd); err != nil {
+		t.Fatalf("worktree directory moved: %v", err)
 	}
 	if _, found := m.hooks.ReadName(spawned.ID); found {
 		t.Fatal("the name file should be consumed")
+	}
+	assertPaneStayedOnSpawnPath(t, m, spawned.ID, spawned.Cwd)
+}
+
+func TestPendingRenameLetsAgentKeepWorking(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
+
+	tmp := t.TempDir()
+	goFile := filepath.Join(tmp, "go")
+	outFile := filepath.Join(tmp, "out")
+	logFile := filepath.Join(spawned.Cwd, "agent.log")
+	cmd := exec.Command("sh", "-c", `exec 3>>agent.log
+while [ ! -f "$1" ]; do
+  git status --porcelain >&3 || exit 1
+  git rev-parse --abbrev-ref HEAD >&3 || exit 1
+  sleep 0.05
+done
+echo still-working > wip.txt
+git add wip.txt
+git commit --author="test <test@test>" -m "agent kept working" >/dev/null
+git rev-parse --abbrev-ref HEAD > "$2"
+pwd >> "$2"`, "agent", goFile, outFile)
+	cmd.Dir = spawned.Cwd
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(logFile); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("agent loop never started")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	writeName(t, m, spawned.ID, "audit the poller")
+	sess := spawned
+	if err := m.poller.applyPendingRename(&sess); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if err := os.WriteFile(goFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("release process: %v", err)
+	}
+	select {
+	case err := <-waited:
+		if err != nil {
+			t.Fatalf("agent after rename: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("agent did not finish after rename")
+	}
+
+	if _, err := os.Stat(filepath.Join(spawned.Cwd, "wip.txt")); err != nil {
+		t.Fatalf("spawn-time path lost the agent's write: %v", err)
+	}
+	assertPaneStayedOnSpawnPath(t, m, spawned.ID, spawned.Cwd)
+	head, err := exec.Command("git", "-C", spawned.Cwd, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil || strings.TrimSpace(string(head)) != "am/audit-the-poller" {
+		t.Fatalf("spawn-time path HEAD = %q err=%v", strings.TrimSpace(string(head)), err)
 	}
 }
 

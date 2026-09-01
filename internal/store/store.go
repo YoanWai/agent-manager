@@ -1089,11 +1089,8 @@ func (s *Store) RenameSession(id, name string) error {
 	return requireRow(res, id)
 }
 
-// MoveSessionWorktree records a worktree that followed its session's new
-// name: the directory the session now runs in and the branch checked out
-// there. The repo root the worktree hangs off stays as it was.
-func (s *Store) MoveSessionWorktree(id, cwd, branch string) error {
-	res, err := s.db.Exec(`UPDATE sessions SET cwd = ?, worktree_branch = ? WHERE id = ?`, cwd, branch, id)
+func (s *Store) RenameSessionWorktreeBranch(id, branch string) error {
+	res, err := s.db.Exec(`UPDATE sessions SET worktree_branch = ? WHERE id = ?`, branch, id)
 	if err != nil {
 		return err
 	}
