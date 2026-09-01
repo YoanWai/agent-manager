@@ -123,7 +123,7 @@ func (m *Model) launchEditor(path string) (tea.Model, tea.Cmd) {
 	}
 	m.errBar.text = ""
 	if !detachedEditors[editorName(line)] {
-		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return m, execTerminalProcess(cmd, func(err error) tea.Msg {
 			return editorDoneMsg{err: err, tookScreen: true}
 		})
 	}

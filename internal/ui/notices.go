@@ -639,7 +639,7 @@ func (m *Model) applyUpdateCmd() tea.Cmd {
 // prompt work as in a plain shell.
 func delegatedUpdateCmd(manager update.Manager, execPath string) tea.Cmd {
 	command := exec.Command(manager.Command[0], manager.Command[1:]...)
-	return tea.ExecProcess(command, func(err error) tea.Msg {
+	return execTerminalProcess(command, func(err error) tea.Msg {
 		return delegatedUpdateResult(manager, execPath, err)
 	})
 }
