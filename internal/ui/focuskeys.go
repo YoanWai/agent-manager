@@ -11,35 +11,31 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// focusNamedKeys maps special key codes to tmux send-keys key names.
-// Modifiers go on as prefixes: C- for ctrl, S- for shift, M- for alt.
 var focusNamedKeys = map[rune]string{
-	tea.KeyEnter:     "Enter",
-	tea.KeyTab:       "Tab",
-	tea.KeyBackspace: "BSpace",
-	tea.KeyEscape:    "Escape",
-	tea.KeyUp:        "Up",
-	tea.KeyDown:      "Down",
-	tea.KeyLeft:      "Left",
-	tea.KeyRight:     "Right",
-	tea.KeyHome:      "Home",
-	tea.KeyEnd:       "End",
-	tea.KeyPgUp:      "PPage",
-	tea.KeyPgDown:    "NPage",
-	tea.KeyDelete:    "DC",
-	tea.KeyInsert:    "IC",
-	tea.KeyF1:        "F1",
-	tea.KeyF2:        "F2",
-	tea.KeyF3:        "F3",
-	tea.KeyF4:        "F4",
-	tea.KeyF5:        "F5",
-	tea.KeyF6:        "F6",
-	tea.KeyF7:        "F7",
-	tea.KeyF8:        "F8",
-	tea.KeyF9:        "F9",
-	tea.KeyF10:       "F10",
-	tea.KeyF11:       "F11",
-	tea.KeyF12:       "F12",
+	tea.KeyEnter:  "Enter",
+	tea.KeyTab:    "Tab",
+	tea.KeyUp:     "Up",
+	tea.KeyDown:   "Down",
+	tea.KeyLeft:   "Left",
+	tea.KeyRight:  "Right",
+	tea.KeyHome:   "Home",
+	tea.KeyEnd:    "End",
+	tea.KeyPgUp:   "PPage",
+	tea.KeyPgDown: "NPage",
+	tea.KeyDelete: "DC",
+	tea.KeyInsert: "IC",
+	tea.KeyF1:     "F1",
+	tea.KeyF2:     "F2",
+	tea.KeyF3:     "F3",
+	tea.KeyF4:     "F4",
+	tea.KeyF5:     "F5",
+	tea.KeyF6:     "F6",
+	tea.KeyF7:     "F7",
+	tea.KeyF8:     "F8",
+	tea.KeyF9:     "F9",
+	tea.KeyF10:    "F10",
+	tea.KeyF11:    "F11",
+	tea.KeyF12:    "F12",
 }
 
 // focusKeyCommand encodes one key press as a tmux send-keys command for
@@ -70,8 +66,6 @@ func focusKeyCommand(target string, msg tea.KeyPressMsg) (string, bool) {
 	return "send-keys -t " + target + " " + name, true
 }
 
-// focusKeyText is the text a press types: the characters the terminal
-// reported, or the bare key code when an alt prefix stripped them.
 func focusKeyText(msg tea.KeyPressMsg) string {
 	if msg.Text != "" {
 		return msg.Text
@@ -85,26 +79,39 @@ func focusKeyText(msg tea.KeyPressMsg) string {
 	return string(msg.Code)
 }
 
-// focusKeyName is the tmux name of a special key or a ctrl chord.
 func focusKeyName(msg tea.KeyPressMsg) (string, bool) {
 	ctrl := msg.Mod.Contains(tea.ModCtrl)
 	shift := msg.Mod.Contains(tea.ModShift)
-	name, named := focusNamedKeys[msg.Code]
 	switch {
-	case named && shift && msg.Code == tea.KeyTab:
-		return "BTab", true
-	case named:
-		if shift {
-			name = "S-" + name
-		}
-		if ctrl {
-			name = "C-" + name
-		}
-		return name, true
+	case msg.Code == tea.KeyBackspace && ctrl:
+		// tmux has no modified BSpace or Escape names and types them as
+		// text; 0x08 is the byte a legacy terminal reports for ctrl+backspace.
+		return "C-h", true
+	case msg.Code == tea.KeyBackspace:
+		return "BSpace", true
+	case msg.Code == tea.KeyEscape, ctrl && msg.Code == '[':
+		return "Escape", true
+	case ctrl && (msg.Code == tea.KeySpace || msg.Code == '@'):
+		return "C-Space", true
+	case ctrl && strings.ContainsRune(`\]^_`, msg.Code):
+		return "C-" + string(msg.Code), true
 	case ctrl && msg.Code >= 'a' && msg.Code <= 'z':
 		return "C-" + string(msg.Code), true
 	}
-	return "", false
+	name, named := focusNamedKeys[msg.Code]
+	if !named {
+		return "", false
+	}
+	if shift && msg.Code == tea.KeyTab {
+		return "BTab", true
+	}
+	if shift {
+		name = "S-" + name
+	}
+	if ctrl {
+		name = "C-" + name
+	}
+	return name, true
 }
 
 // focusSelected enters focus mode: keys go to the selected session's pane

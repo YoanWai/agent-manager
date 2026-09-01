@@ -9,12 +9,36 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/charmbracelet/x/ansi"
 )
+
+// The fields' blurred text follows the theme's backdrop, so a light theme
+// gets ink that reads on a light field instead of the dark defaults.
+func TestFormFieldsFollowThemeBackdrop(t *testing.T) {
+	t.Cleanup(func() { applyTheme(themes[0]) })
+	for _, name := range []string{"classic", "paper"} {
+		theme := themes[themeIndex(name)]
+		applyTheme(theme)
+		isDark := !theme.lightBackdrop()
+		wantInput := textinput.DefaultStyles(isDark).Blurred.Text.GetForeground()
+		if got := textField("", 10).Styles().Blurred.Text.GetForeground(); got != wantInput {
+			t.Errorf("%s: text field blurred ink = %v, want %v", name, got, wantInput)
+		}
+		wantArea := textarea.DefaultStyles(isDark).Blurred.Text.GetForeground()
+		if got := promptArea("", 10).Styles().Blurred.Text.GetForeground(); got != wantArea {
+			t.Errorf("%s: prompt area blurred ink = %v, want %v", name, got, wantArea)
+		}
+	}
+	if textinput.DefaultStyles(true).Blurred.Text.GetForeground() == textinput.DefaultStyles(false).Blurred.Text.GetForeground() {
+		t.Fatal("the dark and light defaults must differ for this test to prove anything")
+	}
+}
 
 func TestNewSessionFormUsesSettingsDefaultTool(t *testing.T) {
 	m := buildModel(t)

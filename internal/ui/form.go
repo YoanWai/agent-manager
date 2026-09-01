@@ -122,7 +122,7 @@ func textField(placeholder string, limit int) textinput.Model {
 	in := textinput.New()
 	in.Placeholder = placeholder
 	in.CharLimit = limit
-	styles := in.Styles()
+	styles := textinput.DefaultStyles(!current.lightBackdrop())
 	styles.Cursor.Color = nil
 	in.SetStyles(styles)
 	return in
@@ -136,7 +136,7 @@ func promptArea(placeholder string, limit int) textarea.Model {
 	in.CharLimit = limit
 	in.Placeholder = placeholder
 	in.ShowLineNumbers = false
-	styles := in.Styles()
+	styles := textarea.DefaultStyles(!current.lightBackdrop())
 	styles.Focused.CursorLine = lipgloss.NewStyle()
 	styles.Cursor.Color = nil
 	in.SetStyles(styles)
@@ -435,7 +435,6 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, m.updateFormField(msg)
 }
 
-// updateFormField types a key or paste into the field the caret is in.
 func (m *Model) updateFormField(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	switch m.form.focus {

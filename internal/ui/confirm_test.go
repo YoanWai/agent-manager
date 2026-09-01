@@ -4,9 +4,35 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/x/ansi"
 )
+
+// A paste is read the way every answer but yes is read: as no.
+func TestPasteClosesConfirmWithoutConfirming(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "keeper", t.TempDir(), "")
+	m.selectSessionRow(t, "keeper")
+	sess, _ := m.selected()
+	m.prepareDelete()
+	if m.mode != modeConfirmDelete {
+		t.Fatalf("mode = %v, want modeConfirmDelete", m.mode)
+	}
+
+	updated, _ := m.Update(tea.PasteMsg{Content: "y\n"})
+	m = updated.(*Model)
+
+	if m.mode != modeList {
+		t.Fatalf("after paste, mode = %v, want modeList", m.mode)
+	}
+	if !m.tmux.Exists(sess.ID) {
+		t.Fatal("a pasted y must not kill the session")
+	}
+	if _, err := m.store.Get(sess.ID); err != nil {
+		t.Fatalf("a pasted y must not delete the session: %v", err)
+	}
+}
 
 // A destructive answer is asked in a dialog, not on the status line, so a
 // busy frame cannot hide the question.

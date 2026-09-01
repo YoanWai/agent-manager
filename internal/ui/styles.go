@@ -122,7 +122,6 @@ func statusColor(s string) color.Color {
 	return lipgloss.Color(statusHex(s))
 }
 
-// statusHex is a state's theme hex, for the spots that mix it with another.
 func statusHex(s string) string {
 	switch s {
 	case status.Working, status.Starting:

@@ -37,6 +37,24 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 	}
 }
 
+func TestPasteClosesLaunchHint(t *testing.T) {
+	m := buildModel(t)
+	m.reportLaunchError(config.MissingToolError{Binary: "claude"})
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+	}
+
+	updated, _ := m.Update(tea.PasteMsg{Content: "claude"})
+	m = updated.(*Model)
+
+	if m.mode != modeList {
+		t.Fatalf("after paste, mode = %v, want modeList", m.mode)
+	}
+	if m.launchHint != "" {
+		t.Fatalf("paste should clear the hint, got %q", m.launchHint)
+	}
+}
+
 func TestReportLaunchErrorOpensInstallHintForMissingCLI(t *testing.T) {
 	m := buildModel(t)
 

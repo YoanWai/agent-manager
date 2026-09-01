@@ -40,12 +40,105 @@ func TestFocusKeyCommand(t *testing.T) {
 		{"alt-up", tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModAlt}, "send-keys -t am_x M-Up", true},
 		{"pgup", tea.KeyPressMsg{Code: tea.KeyPgUp}, "send-keys -t am_x PPage", true},
 		{"backspace", tea.KeyPressMsg{Code: tea.KeyBackspace}, "send-keys -t am_x BSpace", true},
+		{"shift-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModShift}, "send-keys -t am_x BSpace", true},
+		{"alt-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt}, "send-keys -t am_x M-BSpace", true},
+		{"ctrl-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModCtrl}, "send-keys -t am_x C-h", true},
+		{"ctrl-shift-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModCtrl | tea.ModShift}, "send-keys -t am_x C-h", true},
+		{"alt-ctrl-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt | tea.ModCtrl}, "send-keys -t am_x M-C-h", true},
+		{"ctrl-escape", tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModCtrl}, "send-keys -t am_x Escape", true},
+		{"ctrl-shift-escape", tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModCtrl | tea.ModShift}, "send-keys -t am_x Escape", true},
+		{"alt-escape", tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModAlt}, "send-keys -t am_x M-Escape", true},
+		{"ctrl-open-bracket", tea.KeyPressMsg{Code: '[', Mod: tea.ModCtrl}, "send-keys -t am_x Escape", true},
+		{"ctrl-close-bracket", tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl}, "send-keys -t am_x C-]", true},
+		{"ctrl-backslash", tea.KeyPressMsg{Code: '\\', Mod: tea.ModCtrl}, `send-keys -t am_x C-\`, true},
+		{"ctrl-caret", tea.KeyPressMsg{Code: '^', Mod: tea.ModCtrl}, "send-keys -t am_x C-^", true},
+		{"ctrl-underscore", tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl}, "send-keys -t am_x C-_", true},
+		{"ctrl-space", tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModCtrl}, "send-keys -t am_x C-Space", true},
+		{"ctrl-at", tea.KeyPressMsg{Code: '@', Mod: tea.ModCtrl}, "send-keys -t am_x C-Space", true},
+		{"alt-ctrl-close-bracket", tea.KeyPressMsg{Code: ']', Mod: tea.ModAlt | tea.ModCtrl}, "send-keys -t am_x M-C-]", true},
+		{"ctrl-up", tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModCtrl}, "send-keys -t am_x C-Up", true},
+		{"ctrl-shift-up", tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModCtrl | tea.ModShift}, "send-keys -t am_x C-S-Up", true},
+		{"ctrl-enter", tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl}, "send-keys -t am_x C-Enter", true},
+		{"shift-f5", tea.KeyPressMsg{Code: tea.KeyF5, Mod: tea.ModShift}, "send-keys -t am_x S-F5", true},
 	}
 	for _, c := range cases {
 		got, ok := focusKeyCommand("am_x", c.msg)
 		if ok != c.ok || got != c.want {
 			t.Errorf("%s: got (%q, %v), want (%q, %v)", c.name, got, ok, c.want, c.ok)
 		}
+	}
+}
+
+// tmux types a key name it does not know into the pane as literal text, so
+// every name the forwarder emits for a control chord is checked against a
+// live pane that echoes each byte it receives in hex.
+func TestFocusControlChordsReachThePaneAsBytes(t *testing.T) {
+	m := buildModel(t)
+	const id = "keybytes"
+	reader := `sh -c 'stty raw -echo; printf "ready\r\n"; while :; do dd bs=1 count=1 2>/dev/null | od -An -tx1 | tr -d "\n"; printf "\r\n"; done'`
+	if err := m.tmux.Create(id, t.TempDir(), reader, nil, 80, 40); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { m.tmux.Kill(id) })
+	// A byte sent before the reader has switched the tty to raw mode is
+	// echoed and read by the line discipline instead.
+	waitForPaneBytes(t, m, id, 0)
+
+	cases := []struct {
+		name string
+		msg  tea.KeyPressMsg
+		want []string
+	}{
+		{"ctrl-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModCtrl}, []string{"08"}},
+		{"ctrl-shift-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModCtrl | tea.ModShift}, []string{"08"}},
+		{"alt-ctrl-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt | tea.ModCtrl}, []string{"1b", "08"}},
+		{"shift-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModShift}, []string{"7f"}},
+		{"ctrl-escape", tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModCtrl}, []string{"1b"}},
+		{"ctrl-shift-escape", tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModCtrl | tea.ModShift}, []string{"1b"}},
+		{"ctrl-open-bracket", tea.KeyPressMsg{Code: '[', Mod: tea.ModCtrl}, []string{"1b"}},
+		{"ctrl-space", tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModCtrl}, []string{"00"}},
+		{"ctrl-at", tea.KeyPressMsg{Code: '@', Mod: tea.ModCtrl}, []string{"00"}},
+		{"ctrl-backslash", tea.KeyPressMsg{Code: '\\', Mod: tea.ModCtrl}, []string{"1c"}},
+		{"ctrl-close-bracket", tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl}, []string{"1d"}},
+		{"ctrl-caret", tea.KeyPressMsg{Code: '^', Mod: tea.ModCtrl}, []string{"1e"}},
+		{"ctrl-underscore", tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl}, []string{"1f"}},
+	}
+	var want []string
+	for _, c := range cases {
+		command, ok := focusKeyCommand(tmux.PaneTarget(id), c.msg)
+		if !ok {
+			t.Fatalf("%s: dropped", c.name)
+		}
+		if err := m.tmux.SendRaw(command); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		want = append(want, c.want...)
+		got := waitForPaneBytes(t, m, id, len(want))
+		if !slices.Equal(got, want) {
+			t.Fatalf("%s: pane received %v, want %v", c.name, got, want)
+		}
+	}
+}
+
+// waitForPaneBytes reads the hex reader's output, one byte per row, until
+// the reader has announced itself and count bytes follow.
+func waitForPaneBytes(t *testing.T, m *Model, id string, count int) []string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(id)
+		if err != nil {
+			t.Fatalf("capture: %v", err)
+		}
+		fields := strings.Fields(pane)
+		ready := len(fields) > 0 && fields[0] == "ready"
+		if ready && len(fields)-1 >= count {
+			return fields[1:]
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pane never showed %d bytes after ready, last capture: %q", count, pane)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

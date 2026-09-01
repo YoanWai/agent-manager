@@ -375,8 +375,6 @@ func (m *Model) allGroupsCollapsed() bool {
 	return any
 }
 
-// handlePaste routes a bracketed paste to whatever is taking typed text:
-// the focused pane, or the field the open screen has its caret in.
 func (m *Model) handlePaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 	if m.split.resizeMode {
 		return m, nil
@@ -384,6 +382,12 @@ func (m *Model) handlePaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeFocus:
 		return m.handleFocusPaste(msg)
+	case modeConfirmDelete:
+		m.mode = modeList
+		return m, nil
+	case modeLaunchHint:
+		m.closeLaunchHint()
+		return m, nil
 	case modeForm:
 		return m, m.updateFormField(msg)
 	case modeGroupForm:
