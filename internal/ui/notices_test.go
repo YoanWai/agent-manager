@@ -1265,6 +1265,49 @@ func TestReleaseSummaryPrefersAuthoredHighlights(t *testing.T) {
 	}
 }
 
+func TestReleaseSummaryShowsThanksUnderHighlights(t *testing.T) {
+	release := uiReleaseWithTotal("v0.35.0", 7, "UI: Add header and stats visibility settings")
+	release.Highlights = []string{"Revive without a captured id opens the tool's own picker"}
+	release.Thanks = []string{
+		"@dolutech asked in #388 and built the picker (#400)",
+		"@fruch reported that a live rename moved the worktree (#418)",
+	}
+	body := ansi.Strip(strings.Join(renderNoticeBody(notice{releases: []update.Release{release}, rangeComplete: true}, noticeModalInner), "\n"))
+
+	for _, want := range []string{
+		"• Revive without a captured id opens the tool's own picker",
+		"Thank you",
+		"• @dolutech asked in #388 and built the picker (#400)",
+		"• @fruch reported that a live rename moved the worktree (#418)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("thanks under highlights missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "Add header and stats visibility settings") {
+		t.Fatalf("generated list should stay hidden when highlights exist:\n%s", body)
+	}
+}
+
+func TestReleaseSummaryShowsThanksUnderGeneratedList(t *testing.T) {
+	release := uiRelease("v0.33.0", "UI: A change")
+	release.Thanks = []string{"@pandysp asked for a way to put the preview away in #357"}
+	body := ansi.Strip(strings.Join(renderNoticeBody(notice{
+		releases:      []update.Release{release},
+		rangeComplete: true,
+	}, noticeModalInner), "\n"))
+	for _, want := range []string{
+		"v0.33.0 · 1 change",
+		"• UI: A change",
+		"Thank you",
+		"• @pandysp asked for a way to put the preview away in #357",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("thanks under generated list missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestReleaseSummaryFallsBackToTheGeneratedList(t *testing.T) {
 	body := ansi.Strip(strings.Join(renderNoticeBody(notice{
 		releases:      []update.Release{uiRelease("v0.33.0", "UI: A change")},

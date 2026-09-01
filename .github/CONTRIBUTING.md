@@ -58,8 +58,8 @@ docs: document the review-base subcommand
 
 Release notes are generated from merged pull request titles, so give the PR the title you want readers to see in the changelog.
 
-The TUI turns those generated notes into cumulative update summaries
-automatically. Do not duplicate feature and fix notes in the maintainer message
+The TUI reads **Highlights** and **Thank you** from the GitHub release notes
+into the messages panel. Do not duplicate those notes in the maintainer message
 feed; see [Release summaries and messages](../docs/notifications.md) for the two
 publishing paths.
 

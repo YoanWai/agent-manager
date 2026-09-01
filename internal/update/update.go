@@ -33,6 +33,7 @@ const (
 	maxChangesPerRelease = 12
 	maxChangeLength      = 120
 	maxHighlights        = 6
+	maxThanks            = 8
 )
 
 const (
@@ -40,6 +41,7 @@ const (
 	// short bullets naming what the release gives someone. The generated
 	// list says which branches merged, which is not the same question.
 	highlightsHeading = "## Highlights"
+	thanksHeading     = "## Thank you"
 	changesHeading    = "## What's Changed"
 )
 
@@ -65,6 +67,7 @@ type Release struct {
 	Version      string   `json:"version"`
 	URL          string   `json:"url"`
 	Highlights   []string `json:"highlights,omitempty"`
+	Thanks       []string `json:"thanks,omitempty"`
 	Changes      []string `json:"changes"`
 	TotalChanges int      `json:"total_changes"`
 }
@@ -250,6 +253,7 @@ func fetchReleases(ctx context.Context, etag string, budget time.Duration) ([]Re
 			Version:      item.TagName,
 			URL:          item.HTMLURL,
 			Highlights:   extractHighlights(item.Body),
+			Thanks:       extractThanks(item.Body),
 			Changes:      changes,
 			TotalChanges: total,
 		})
@@ -295,11 +299,11 @@ func bulletText(line string) (string, bool) {
 	return strings.TrimSpace(line[2:]), true
 }
 
-// Prose under the highlights heading is the release page's own copy,
-// written for a browser rather than a modal, so only bullets travel.
-func extractHighlights(body string) []string {
-	var highlights []string
-	for _, line := range sectionLines(body, highlightsHeading) {
+// Prose under an authored heading is the release page's own copy, written
+// for a browser rather than a modal, so only bullets travel.
+func extractSectionBullets(body, heading string, limit int) []string {
+	var bullets []string
+	for _, line := range sectionLines(body, heading) {
 		text, ok := bulletText(line)
 		if !ok {
 			continue
@@ -307,12 +311,20 @@ func extractHighlights(body string) []string {
 		if text = plainText(text); text == "" {
 			continue
 		}
-		highlights = append(highlights, sentenceCase(truncateChange(text)))
-		if len(highlights) == maxHighlights {
+		bullets = append(bullets, sentenceCase(truncateChange(text)))
+		if len(bullets) == limit {
 			break
 		}
 	}
-	return highlights
+	return bullets
+}
+
+func extractHighlights(body string) []string {
+	return extractSectionBullets(body, highlightsHeading, maxHighlights)
+}
+
+func extractThanks(body string) []string {
+	return extractSectionBullets(body, thanksHeading, maxThanks)
 }
 
 func extractChanges(body string) ([]string, int) {

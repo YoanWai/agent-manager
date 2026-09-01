@@ -57,15 +57,14 @@ The notes carry more than the generated list of pull requests:
   in that section stays on the web page; only bullets travel. A release
   without the section falls back to the generated list, filtered to
   `feat`, `fix` and `perf`.
-- **Thanks to every contributor in the range, by handle.** Read the merged
-  pull requests, not only the generated list, and name what each one did.
-- **Thanks to whoever reported what got fixed, by handle.** A bug someone
-  took the time to write up is why the fix exists, and the reporter is
-  usually not the author. Credit the release a feature builds on, too, when
-  it extends someone else's work.
-
-A range with nobody outside the maintainer in it carries no thanks line;
-write the summary and leave it at that rather than manufacturing one.
+- **A `## Thank you` section**, one bullet per person: handle, what they
+  did, PR or issue number. The manager reads those bullets into the
+  messages panel under the highlights, labelled Thank you. Prose in that
+  section stays on the web page; only bullets travel. Cover PR authors and
+  issue reporters: the generated changelog names authors only, and a fix
+  exists because someone wrote the bug up. Credit the release a feature
+  builds on, too, when it extends someone else's work. A range with nobody
+  outside the maintainer omits the section.
 
 `--release-notes=notes.md` replaces the generated list of pull requests
 rather than sitting above it, so a file passed that way has to carry the

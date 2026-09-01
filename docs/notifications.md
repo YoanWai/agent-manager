@@ -13,9 +13,18 @@ fix(groups): make group creation immediate and reliable
 ```
 
 GitHub adds merged pull request titles to the release's generated **What's
-Changed** section. agent-manager reads that section, removes the commit prefix,
-author, and pull request URL, then shows the result in the messages modal. There
-is no second changelog or message entry to maintain.
+Changed** section.
+
+The messages panel prefers two authored sections from the same notes:
+
+- **Highlights**: short bullets naming what the release gives someone. A
+  sentence each, feature and fix language, no pull request numbers.
+- **Thank you**: one bullet per contributor or reporter, with handle and the
+  PR or issue. The panel paints these under a Thank you label.
+
+A release without Highlights falls back to What's Changed, filtered to `feat`,
+`fix`, and `perf`. There is no second changelog in `docs/messages.json` to
+maintain.
 
 When an install skips releases, the modal groups the intervening releases in the
 retained catalog into one summary. If the installed version is older than that
@@ -24,9 +33,9 @@ Updating remains one operation straight to the latest version. After restart,
 the same cached catalog explains what was installed.
 
 The client bounds remote data to keep rendering predictable: 100 stable
-releases, 12 summarized changes per release, and 120 characters per change.
-The full release page remains one keypress away when a release exceeds those
-limits.
+releases, 6 highlights and 8 thanks per release, 12 summarized changes per
+release, and 120 characters per line. The full release page remains one
+keypress away when a release exceeds those limits.
 
 ## Publishing an editorial message
 
@@ -68,6 +77,6 @@ Rules:
 
 Pressing `r` in the messages modal bypasses both local cache ages and refreshes
 the release catalog and editorial feed from GitHub. Normal background checks do
-no network or parsing work on the render path. The release catalog checks every
-10 minutes with an HTTP ETag, while the editorial feed's cache lasts 6 hours;
-both schedules are independent of the installed version.
+no network or parsing work on the render path. The release catalog and the
+editorial feed both check every 10 minutes with an HTTP ETag, independent of
+the installed version.
