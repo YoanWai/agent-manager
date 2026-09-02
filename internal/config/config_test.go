@@ -632,3 +632,68 @@ func TestMigratesStalePiFooterRules(t *testing.T) {
 		t.Fatalf("hand-edited rule = %q, want kept as written", got)
 	}
 }
+
+func writeConfigText(t *testing.T, text string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(text), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return dir
+}
+
+func TestLoadDirReadsTheSessionKeyTable(t *testing.T) {
+	dir := writeConfigText(t, `
+[keybindings.session]
+detach = ["f9", "alt+q"]
+review = "none"
+`)
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	keys := cfg.Keybindings.Session
+	if got := keys.Detach.Label(); got != "f9 / alt+q" {
+		t.Errorf("detach = %q", got)
+	}
+	if got := keys.Review.Label(); got != "" {
+		t.Errorf("review none should be off, got %q", got)
+	}
+	if got := keys.Editor.Label(); got != "f3" {
+		t.Errorf("editor left out should take the default, got %q", got)
+	}
+}
+
+// A config that names no keys, the generated one included, binds what the
+// manager always bound.
+func TestKeyTableDefaultsWhenTheFileNamesNone(t *testing.T) {
+	cfg, err := LoadDir(t.TempDir())
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	def, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	for name, keys := range map[string]Config{"generated": cfg, "built-in": def} {
+		session := keys.Keybindings.Session
+		if session.Detach.Label() != `ctrl+q / ctrl+\` || session.Review.Label() != "ctrl+r" || session.Editor.Label() != "f3" {
+			t.Errorf("%s: session keys = %q / %q / %q", name, session.Detach.Label(), session.Review.Label(), session.Editor.Label())
+		}
+	}
+}
+
+func TestLoadDirRefusesAKeyTableThatCannotWork(t *testing.T) {
+	for _, tc := range []struct{ text, reason string }{
+		{`editor = "ctrl+i"`, "ctrl+i is tab"},
+		{`editor = "o"`, "a plain key reaches the agent"},
+		{`detach = "none"`, "detach needs at least one key"},
+		{`review = "f3"`, "f3 is bound to both review and editor"},
+	} {
+		dir := writeConfigText(t, "[keybindings.session]\n"+tc.text+"\n")
+		_, err := LoadDir(dir)
+		if err == nil || !strings.Contains(err.Error(), tc.reason) {
+			t.Errorf("%s: err = %v, want %q", tc.text, err, tc.reason)
+		}
+	}
+}

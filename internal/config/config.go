@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 )
 
 type Rule struct {
@@ -111,8 +112,14 @@ type Config struct {
 	// Editor is the command the o key opens a directory in, arguments
 	// included. Empty falls back to $AGENT_MANAGER_EDITOR, then a GUI
 	// editor found on PATH, then $VISUAL / $EDITOR.
-	Editor string          `toml:"editor"`
-	Tools  map[string]Tool `toml:"tools"`
+	Editor      string          `toml:"editor"`
+	Tools       map[string]Tool `toml:"tools"`
+	Keybindings Keybindings     `toml:"keybindings"`
+}
+
+// Keybindings holds the key tables, one per place a key is read.
+type Keybindings struct {
+	Session keybind.Session `toml:"session"`
 }
 
 type Duration struct {
@@ -170,6 +177,9 @@ func LoadDir(dir string) (Config, error) {
 		return Config{}, err
 	}
 	cfg.applyDefaults()
+	if err := cfg.Keybindings.Session.Validate(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
 	return cfg, nil
 }
 
@@ -353,6 +363,7 @@ func (c *Config) applyDefaults() {
 			c.Tools[name] = tool
 		}
 	}
+	c.Keybindings.Session = c.Keybindings.Session.WithDefaults()
 }
 
 func (c Config) ToolNames() []string {
@@ -393,6 +404,14 @@ const defaultConfig = `poll_interval = "2s"
 # Agent Manager takes $AGENT_MANAGER_EDITOR, then the first GUI editor on
 # PATH (code, cursor, windsurf, zed, subl, idea), then $VISUAL or $EDITOR.
 # editor = "code"
+
+# The keys the manager keeps for itself inside a session; every other key
+# reaches the agent. An action takes one key or a list, written as
+# ctrl+<key>, alt+<key> or f1..f12, and "none" hands its key to the agent.
+# [keybindings.session]
+# detach = ["ctrl+q", "ctrl+\\"]
+# review = "ctrl+r"
+# editor = "f3"
 
 # Rules are matched top-down against the visible pane text (ANSI stripped);
 # first match wins, except a matching waiting rule outranks a working match.

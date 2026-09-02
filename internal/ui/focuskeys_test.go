@@ -1113,3 +1113,95 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 		t.Fatalf("left over a cleared composer did not unfocus, mode = %v", m.mode)
 	}
 }
+
+// A remapped table changes what focus keeps: the new detach key leaves,
+// while the keys it no longer holds, the old detach and a review turned
+// off, reach the agent as keystrokes.
+func TestFocusModeReadsTheSessionKeyTable(t *testing.T) {
+	m := buildModel(t)
+	useSessionKeys(t, m, []string{"f9"}, nil, []string{"f3"})
+	createSessionOn(t, m, "remapped", "control-echo", t.TempDir())
+	m.selectSessionRow(t, "remapped")
+	sess := m.rows[m.cursor].sess
+	waitForPaneChild(t, m, sess.ID, "cat")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	for _, msg := range []tea.KeyMsg{
+		{Type: tea.KeyCtrlQ},
+		{Type: tea.KeyCtrlR},
+		{Type: tea.KeyEnter},
+	} {
+		updated, _ := m.handleKey(msg)
+		*m = *updated.(*Model)
+		if m.mode != modeFocus {
+			t.Fatalf("%s is off the table and should stay in focus, mode = %v", msg, m.mode)
+		}
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("forwarding set err: %q", m.errBar.text)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pane, err := m.tmux.CapturePane(sess.ID)
+		if err != nil {
+			t.Fatalf("capture: %v", err)
+		}
+		if strings.Contains(pane, "^Q^R") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("ctrl+q and ctrl+r never reached the pane: %q", pane)
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyF9})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("f9 is the detach key and should leave focus, mode = %v", m.mode)
+	}
+}
+
+// The review and editor actions answer to their configured keys in focus,
+// an alt combination included, the way ctrl+r and f3 do by default.
+func TestFocusModeRemappedReviewAndEditorKeys(t *testing.T) {
+	m := buildModel(t)
+	launched := captureEditor(t, "code")
+	useSessionKeys(t, m, []string{"ctrl+q"}, []string{"alt+g"}, []string{"ctrl+e"})
+	dir := gitTestRepo(t)
+	createSession(t, m, "remapped", dir, "")
+	m.selectSessionRow(t, "remapped")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlE})
+	*m = *updated.(*Model)
+	if cmd == nil {
+		t.Fatalf("ctrl+e should launch the editor, err = %q", m.errBar.text)
+	}
+	if done, ok := cmd().(editorDoneMsg); !ok || done.err != nil {
+		t.Fatalf("editor launch reported %#v", done)
+	}
+	if want := []string{"code", resolved(t, dir)}; !slices.Equal(*launched, want) {
+		t.Fatalf("launched %v, want %v", *launched, want)
+	}
+
+	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g"), Alt: true})
+	*m = *updated.(*Model)
+	m.drainCmds(t, cmd)
+	if m.mode != modeDiff || !m.diff.active {
+		t.Fatalf("alt+g should open review, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("closing review should return to focus, mode = %v", m.mode)
+	}
+}

@@ -511,18 +511,20 @@ func (m *Model) viewFooter() string {
 	if m.mode == modeFocus {
 		pairs := [][2]string{
 			{"typing", "to agent"},
-			{"ctrl+q / ctrl+\\", "back"},
+			{m.keys.Detach.Label(), "back"},
 		}
 		if m.arrowStep {
 			pairs = append(pairs, [2]string{"←", "prompt start: back"})
 		}
-		pairs = append(pairs, [][2]string{
-			{"ctrl+r", "review"},
-			{"f3", "editor"},
-			// The footer holds one row: the word and line gestures are in
-			// the key map, where there is room to name all three.
-			{"drag / click", "copy"},
-		}...)
+		if label := m.keys.Review.Label(); label != "" {
+			pairs = append(pairs, [2]string{label, "review"})
+		}
+		if label := m.keys.Editor.Label(); label != "" {
+			pairs = append(pairs, [2]string{label, "editor"})
+		}
+		// The footer holds one row: the word and line gestures are in the
+		// key map, where there is room to name all three.
+		pairs = append(pairs, [2]string{"drag / click", "copy"})
 		if m.pane.mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}

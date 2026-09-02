@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -953,7 +954,7 @@ func (m *Model) contentLines(width, height int) []contentLine {
 		} else {
 			separator := contentLine{rule: true}
 			if m.mode == modeFocus {
-				separator = contentLine{text: focusTopRule(width), raw: true}
+				separator = contentLine{text: focusTopRule(width, m.keys), raw: true}
 			}
 			body = append(body, separator)
 			m.previewBodyOffset = len(body)
@@ -1056,8 +1057,15 @@ const (
 // focusTopRule is the hairline that caps the focused pane in the split,
 // where the detail head above it already names the session, so the rule
 // spends its title on the keys instead.
-func focusTopRule(width int) string {
-	title := " focused · ctrl+q back · ctrl+r review · f3 editor "
+func focusTopRule(width int, keys keybind.Session) string {
+	hints := []string{"focused", keys.Detach.Label() + " back"}
+	if label := keys.Review.Label(); label != "" {
+		hints = append(hints, label+" review")
+	}
+	if label := keys.Editor.Label(); label != "" {
+		hints = append(hints, label+" editor")
+	}
+	title := " " + strings.Join(hints, " · ") + " "
 	rule := annotationStyle.Render(title)
 	rest := width - lipgloss.Width(title)
 	if rest > 0 {

@@ -45,6 +45,21 @@ A `fork_command` references its source through `{id}` or `{session_file}`, so on
 
 **When a status looks wrong.** Delete the `rules` array from that tool's block (or the whole `[tools.<name>]` block) and relaunch: the block comes back on the current built-in rules. To see what the rules are being matched against, read the pane the way the poller does — `tmux -L agentmgr capture-pane -p -t am_<id>` — and compare it with the patterns in your block. A CLI that changed its output in a new version is worth [an issue](https://github.com/YoanWai/agent-manager/issues/new/choose) with that pane text and the CLI's version, since the built-in rules then need updating for everyone.
 
+## Key bindings
+
+Inside a session, attached or focused, the manager keeps a few keys for itself and hands every other key to the agent. A `[keybindings.session]` table moves those keys, so one that collides with a key your agent uses can go elsewhere or be given back:
+
+```toml
+[keybindings.session]
+detach = ["ctrl+q", "f9"]   # back to the manager; one key or a list
+review = "alt+r"            # open the session's diff review
+editor = "none"             # f3 reaches the agent instead
+```
+
+The actions are `detach` (default `["ctrl+q", "ctrl+\\"]`), `review` (default `"ctrl+r"`) and `editor` (default `"f3"`). Each takes one key or a list of keys, and `"none"` turns the action off: the key it held reaches the agent like any other. An action left out keeps its default. Keys are written as `ctrl+<letter>` (the symbols `@ \ ] ^ _` too), `alt+<letter or digit>`, or `f1` to `f12`. A key with no modifier is refused, since it would take a character away from the agent, as are `ctrl+i`, `ctrl+m` and `ctrl+[`, which the terminal sends as tab, enter and escape. Bubble Tea, the framework the manager is built on, cannot read `ctrl+shift` combinations yet, so those are out for now. One key serves one action, and `detach` always keeps at least one key: it is the way back from a focused session.
+
+The same table drives a full-screen attach, where the keys are tmux bindings on the `agentmgr` server, and focus mode, where the manager reads them itself; the session footer, the focus footer and the `?` key map all name whatever the table says. The bindings are reinstalled on every launch and every session create, so a change to the table takes effect when the manager next starts, running sessions included.
+
 State is stored next to the config in `state.db` (SQLite).
 
 ## Right-to-left text

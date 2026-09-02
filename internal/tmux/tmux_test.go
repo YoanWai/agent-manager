@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/keybind"
 )
 
 // testSocket is an isolated tmux server for this package's tests, so they
@@ -423,7 +425,9 @@ func TestDetachRequestRoundTrip(t *testing.T) {
 // binding, so EnsureBindings has to drop it as well as install F3.
 func TestEnsureBindingsMovesTheEditorKeyToF3(t *testing.T) {
 	driver := requireTmux(t)
-	if out, err := tmuxCmd("bind-key", "-n", "C-o", "display-message", "stale").CombinedOutput(); err != nil {
+	stale := []string{"bind-key", "-n", "C-o", "if-shell", "-F", ownedBindingTest,
+		"set-option -g " + requestOption + " " + RequestEditor + " ; detach-client", "send-keys C-o"}
+	if out, err := tmuxCmd(stale...).CombinedOutput(); err != nil {
 		t.Fatalf("seed the old binding: %v: %s", err, out)
 	}
 
@@ -576,8 +580,8 @@ func TestRefreshChromeKeepsLabelAndAddsSessionHints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prefix-free status-right: %v", err)
 	}
-	if strings.Contains(string(right), "None d") || !strings.Contains(string(right), "Ctrl+q = back") {
-		t.Fatalf("footer should retain only the direct escape without prefixes, got %q", right)
+	if strings.Contains(string(right), "None d") || !strings.Contains(string(right), `Ctrl+q / Ctrl+\ = back`) {
+		t.Fatalf("footer should retain only the direct escapes without prefixes, got %q", right)
 	}
 	length, err := tmuxCmd("show-option", "-t", "am_"+id, "-v", "status-right-length").CombinedOutput()
 	if err != nil {
@@ -1237,5 +1241,169 @@ func TestSocketPathFromRelativeTmpdirIsAbsolute(t *testing.T) {
 	want := filepath.Join(resolved, fmt.Sprintf("tmux-%d", os.Getuid()), testSocket)
 	if got != want {
 		t.Fatalf("socket path = %q, want %q", got, want)
+	}
+}
+
+func bindingOf(t *testing.T, specs ...string) keybind.Binding {
+	t.Helper()
+	keys := make([]keybind.Key, 0, len(specs))
+	for _, spec := range specs {
+		key, err := keybind.Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		keys = append(keys, key)
+	}
+	return keybind.Keys(keys...)
+}
+
+// ownedRootLines reads the root-table bindings the manager owns, keyed by
+// the key name as unbind-key takes it.
+func ownedRootLines(t *testing.T) map[string]string {
+	t.Helper()
+	bound, err := tmuxCmd("list-keys", "-T", "root").CombinedOutput()
+	if err != nil {
+		t.Fatalf("list root keys: %v: %s", err, bound)
+	}
+	owned := map[string]string{}
+	for _, line := range strings.Split(string(bound), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 || !strings.Contains(line, ownedBindingTest) {
+			continue
+		}
+		owned[strings.ReplaceAll(fields[3], `\\`, `\`)] = line
+	}
+	return owned
+}
+
+func restoreDefaultKeys(t *testing.T, driver *Driver) {
+	t.Helper()
+	t.Cleanup(func() {
+		driver.SetSessionKeys(keybind.DefaultSession())
+		if err := driver.EnsureBindings(); err != nil {
+			t.Errorf("restore default bindings: %v", err)
+		}
+	})
+}
+
+// The server outlives a config change, so the bindings the manager installs
+// are the table's and nothing older: a key moved or turned off comes off
+// the server, and moving back drops the keys it had moved to.
+func TestEnsureBindingsFollowsTheKeyTable(t *testing.T) {
+	driver := requireTmux(t)
+	restoreDefaultKeys(t, driver)
+	custom := keybind.Session{
+		Detach: bindingOf(t, "f9", "alt+q"),
+		Review: bindingOf(t, "ctrl+g"),
+		Editor: bindingOf(t),
+	}
+	driver.SetSessionKeys(custom)
+	if err := driver.EnsureBindings(); err != nil {
+		t.Fatalf("EnsureBindings: %v", err)
+	}
+	owned := ownedRootLines(t)
+	for _, key := range []string{"F9", "M-q"} {
+		if line := owned[key]; !strings.Contains(line, "detach-client") || !strings.Contains(line, "send-keys "+key) {
+			t.Errorf("%s should detach inside a session and pass through elsewhere, got %q", key, line)
+		}
+	}
+	if line := owned["C-g"]; !strings.Contains(line, RequestReview) {
+		t.Errorf("C-g should request the review, got %q", line)
+	}
+	for _, key := range []string{"C-q", `C-\`, "C-r", "F3"} {
+		if line, bound := owned[key]; bound {
+			t.Errorf("%s is off the table and should be unbound, got %q", key, line)
+		}
+	}
+
+	driver.SetSessionKeys(keybind.DefaultSession())
+	if err := driver.EnsureBindings(); err != nil {
+		t.Fatalf("EnsureBindings with defaults: %v", err)
+	}
+	owned = ownedRootLines(t)
+	for _, key := range []string{"F9", "M-q", "C-g"} {
+		if line, bound := owned[key]; bound {
+			t.Errorf("%s should come off with the table that bound it, got %q", key, line)
+		}
+	}
+	if line := owned[`C-\`]; !strings.Contains(line, "detach-client") || !strings.Contains(line, `send-keys C-\\\\`) {
+		t.Errorf(`C-\ should detach and pass itself through, got %q`, line)
+	}
+	if line := owned["C-q"]; !strings.Contains(line, "detach-client") {
+		t.Errorf("C-q should detach, got %q", line)
+	}
+	if line := owned["C-r"]; !strings.Contains(line, RequestReview) {
+		t.Errorf("C-r should request the review, got %q", line)
+	}
+	if line := owned["F3"]; !strings.Contains(line, RequestEditor) {
+		t.Errorf("F3 should request the editor, got %q", line)
+	}
+}
+
+// Rebinding drops only what the manager put there: the user's own
+// tmux.conf loads on this server too, and its bindings are not ours to
+// remove.
+func TestEnsureBindingsLeavesTheUsersOwnBindingsAlone(t *testing.T) {
+	driver := requireTmux(t)
+	if out, err := tmuxCmd("bind-key", "-n", "F9", "display-message", "mine").CombinedOutput(); err != nil {
+		t.Fatalf("seed the user binding: %v: %s", err, out)
+	}
+	t.Cleanup(func() { tmuxCmd("unbind-key", "-n", "F9").Run() })
+
+	if err := driver.EnsureBindings(); err != nil {
+		t.Fatalf("EnsureBindings: %v", err)
+	}
+	bound, err := tmuxCmd("list-keys", "-T", "root").CombinedOutput()
+	if err != nil {
+		t.Fatalf("list root keys: %v: %s", err, bound)
+	}
+	if !strings.Contains(string(bound), "display-message mine") {
+		t.Fatalf("the user's F9 binding should survive, got:\n%s", bound)
+	}
+}
+
+func TestAttachStatusRightNamesTheKeyTable(t *testing.T) {
+	custom := keybind.Session{
+		Detach: bindingOf(t, "f9", "alt+q"),
+		Review: bindingOf(t, "ctrl+g"),
+		Editor: bindingOf(t),
+	}
+	for _, tc := range []struct {
+		name, primary, secondary string
+		keys                     keybind.Session
+		want                     string
+	}{
+		{"defaults", "C-b", "None", keybind.DefaultSession(), ` agent-manager · Ctrl+r = review · F3 = editor · Ctrl+q / Ctrl+\ / C-b d = back `},
+		{"no prefix", "None", "None", keybind.DefaultSession(), ` agent-manager · Ctrl+r = review · F3 = editor · Ctrl+q / Ctrl+\ = back `},
+		{"custom", "C-b", "None", custom, " agent-manager · Ctrl+g = review · F9 / Alt+q / C-b d = back "},
+		{"prefix shadows a custom key", "M-q", "None", custom, " agent-manager · Ctrl+g = review · F9 / M-q d = back "},
+	} {
+		if got := attachStatusRight(tc.primary, tc.secondary, tc.keys); got != tc.want {
+			t.Errorf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// A session created under a custom table carries that table in its footer.
+func TestSessionFooterNamesTheConfiguredKeys(t *testing.T) {
+	driver := requireTmux(t)
+	restoreDefaultKeys(t, driver)
+	driver.SetSessionKeys(keybind.Session{
+		Detach: bindingOf(t, "f9"),
+		Review: bindingOf(t, "ctrl+g"),
+		Editor: bindingOf(t),
+	})
+	id := "footerkeys"
+	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	right, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("status-right: %v", err)
+	}
+	footer := string(right)
+	if !strings.Contains(footer, "Ctrl+g = review") || !strings.Contains(footer, "F9") || strings.Contains(footer, "editor") || strings.Contains(footer, "Ctrl+q") {
+		t.Fatalf("footer should name the configured keys only, got %q", footer)
 	}
 }

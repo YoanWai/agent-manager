@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/deps"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 )
 
 const prefix = "am_"
@@ -41,6 +42,20 @@ type Driver struct {
 	paneTheme         atomic.Pointer[PaneTheme]
 	paneThemePush     sync.Mutex
 	socketPath        atomic.Pointer[string]
+	sessionKeys       atomic.Pointer[keybind.Session]
+}
+
+// SetSessionKeys is the key table EnsureBindings installs and the session
+// footer names. Unset, the driver binds the defaults.
+func (d *Driver) SetSessionKeys(keys keybind.Session) {
+	d.sessionKeys.Store(&keys)
+}
+
+func (d *Driver) currentSessionKeys() keybind.Session {
+	if keys := d.sessionKeys.Load(); keys != nil {
+		return *keys
+	}
+	return keybind.DefaultSession()
 }
 
 // PaneTheme is the background agent panes are rendered on. The manager
@@ -371,7 +386,7 @@ func (d *Driver) styleStatusBar(name string) error {
 		// The default status-right-length of 40 truncates the hints, so widen it
 		// to fit the whole footer, including the configured-prefix fallback.
 		{"set-option", "-t", name, "status-right-length", "100"},
-		{"set-option", "-t", name, "status-right", attachStatusRight(strings.TrimSpace(primary), strings.TrimSpace(secondary))},
+		{"set-option", "-t", name, "status-right", attachStatusRight(strings.TrimSpace(primary), strings.TrimSpace(secondary), d.currentSessionKeys())},
 		{"set-option", "-t", name, "status-style", "bg=colour236,fg=colour249"},
 		// hide the "0:windowname*" window list; it reads as noise here
 		{"set-option", "-t", name, "window-status-format", ""},
@@ -384,10 +399,22 @@ func (d *Driver) styleStatusBar(name string) error {
 	return err
 }
 
-func attachStatusRight(primary, secondary string) string {
-	exits := make([]string, 0, 2)
-	if primary != "C-q" && secondary != "C-q" {
-		exits = append(exits, "Ctrl+q")
+// attachStatusRight is the session footer: the keys the manager keeps,
+// and every way back. A detach key the inner prefix shadows is left off,
+// since the prefix takes it first, and the prefix itself follows with d.
+func attachStatusRight(primary, secondary string, keys keybind.Session) string {
+	parts := []string{"agent-manager"}
+	if label := titledLabel(keys.Review); label != "" {
+		parts = append(parts, label+" = review")
+	}
+	if label := titledLabel(keys.Editor); label != "" {
+		parts = append(parts, label+" = editor")
+	}
+	var exits []string
+	for _, key := range keys.Detach.Keys() {
+		if key.Tmux() != primary && key.Tmux() != secondary {
+			exits = append(exits, titled(key))
+		}
 	}
 	for _, candidate := range []string{primary, secondary} {
 		if candidate != "" && candidate != "None" {
@@ -395,8 +422,28 @@ func attachStatusRight(primary, secondary string) string {
 			break
 		}
 	}
-	return " agent-manager · Ctrl+r = review · F3 = editor · " + strings.Join(exits, " / ") + " = back "
+	parts = append(parts, strings.Join(exits, " / ")+" = back")
+	return " " + strings.Join(parts, " · ") + " "
 }
+
+func titledLabel(binding keybind.Binding) string {
+	names := make([]string, 0, len(binding.Keys()))
+	for _, key := range binding.Keys() {
+		names = append(names, titled(key))
+	}
+	return strings.Join(names, " / ")
+}
+
+// titled spells a key the way the footer always has: Ctrl+q, F3.
+func titled(key keybind.Key) string {
+	name := key.Tea()
+	return strings.ToUpper(name[:1]) + name[1:]
+}
+
+// ownedBindingTest is the session-name check every root binding the
+// manager installs carries, so that on the next run its own bindings can
+// be told from the ones the user's tmux.conf put on this server.
+const ownedBindingTest = "#{m:" + prefix + "*,#{session_name}}"
 
 // EnsureBindings installs the server-wide setup every managed session
 // relies on: the in-session key bindings, and the pane numbering
@@ -404,26 +451,69 @@ func attachStatusRight(primary, secondary string) string {
 // dangerous case for the numbering, because tmux answers a target whose
 // index does not exist with the active pane rather than an error, so
 // every capture and keystroke would silently follow the focused pane.
+//
+// The bindings an earlier run installed come off first, whatever keys
+// that run was configured with: a key the user moved or turned off would
+// otherwise stay bound until the server restarts.
 func (d *Driver) EnsureBindings() error {
-	inSession := "#{m:" + prefix + "*,#{session_name}}"
+	stale, err := d.ownedRootBindings()
+	if err != nil {
+		return err
+	}
+	keys := d.currentSessionKeys()
 	request := func(name string) string {
 		return "set-option -g " + requestOption + " " + name + " ; detach-client"
 	}
 	commands := [][]string{
 		{"set-window-option", "-g", "pane-base-index", "0"},
-		{"bind-key", "-n", "C-q", "if-shell", "-F", inSession, "detach-client", "send-keys C-q"},
-		{"bind-key", "-n", `C-\`, "if-shell", "-F", inSession, "detach-client", `send-keys C-\\`},
-		{"bind-key", "-n", "C-r", "if-shell", "-F", inSession, request(RequestReview), "send-keys C-r"},
-		{"bind-key", "-n", "F3", "if-shell", "-F", inSession, request(RequestEditor), "send-keys F3"},
-		// The editor used to sit on C-o, which Claude Code, Gemini CLI and
-		// readline all bind; a server that outlives the update still carries
-		// that binding until it is dropped.
-		{"unbind-key", "-n", "C-o"},
-		// Restore the standard fallback when the prefix shadows a direct binding.
-		{"bind-key", "-T", "prefix", "d", "detach-client"},
 	}
-	_, err := d.run(commandList(commands...)...)
+	for _, key := range stale {
+		commands = append(commands, []string{"unbind-key", "-T", "root", key})
+	}
+	for _, key := range keys.Detach.Keys() {
+		commands = append(commands, rootBinding(key, "detach-client"))
+	}
+	for _, key := range keys.Review.Keys() {
+		commands = append(commands, rootBinding(key, request(RequestReview)))
+	}
+	for _, key := range keys.Editor.Keys() {
+		commands = append(commands, rootBinding(key, request(RequestEditor)))
+	}
+	// Restore the standard fallback when the prefix shadows a direct binding.
+	commands = append(commands, []string{"bind-key", "-T", "prefix", "d", "detach-client"})
+	_, err = d.run(commandList(commands...)...)
 	return err
+}
+
+// rootBinding binds a key inside managed sessions only; anywhere else on
+// the server the key goes through to the pane as itself. That branch is a
+// command string tmux parses, so a backslash in the key name is doubled.
+func rootBinding(key keybind.Key, action string) []string {
+	passThrough := "send-keys " + strings.ReplaceAll(key.Tmux(), `\`, `\\`)
+	return []string{"bind-key", "-n", key.Tmux(), "if-shell", "-F", ownedBindingTest, action, passThrough}
+}
+
+// ownedRootBindings lists the root-table keys carrying the manager's own
+// session test. list-keys prints a key the way its parser reads it back,
+// so a backslash comes doubled and is undone here for unbind-key, which
+// takes the name as is.
+func (d *Driver) ownedRootBindings() ([]string, error) {
+	out, err := d.run("list-keys", "-T", "root")
+	if err != nil {
+		return nil, err
+	}
+	var keys []string
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 || fields[0] != "bind-key" || fields[1] != "-T" || fields[2] != "root" {
+			continue
+		}
+		if !strings.Contains(line, ownedBindingTest) {
+			continue
+		}
+		keys = append(keys, strings.ReplaceAll(fields[3], `\\`, `\`))
+	}
+	return keys, nil
 }
 
 // RefreshChrome re-applies the status bar chrome to a live session so a

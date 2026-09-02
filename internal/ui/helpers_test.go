@@ -11,6 +11,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -55,6 +56,13 @@ func buildModel(t *testing.T) *Model {
 				Shell:         true,
 				DefaultStatus: status.Idle,
 				InputPrefix:   `(?m)^\s*(?:\S+\s+){0,3}[❯>$#›»→%➜]\s`,
+			},
+			// Shows every control character it is sent as ^X, with the tty
+			// flow and line-editing keys turned off so ctrl+q and ctrl+r
+			// reach it as bytes rather than as XON or a reprint.
+			"control-echo": {
+				Command:       "sh -c 'stty -ixon -iexten; exec cat -v'",
+				DefaultStatus: status.Idle,
 			},
 			"quietchat": {
 				Command:        "cat",
@@ -426,4 +434,29 @@ func quitAgent(t *testing.T, m *Model, sessID string) {
 		t.Fatalf("send ctrl-d: %v", err)
 	}
 	waitForAgent(t, m, sessID, false)
+}
+
+// useSessionKeys swaps the session key table the model and its driver
+// read, the way a config.toml with a [keybindings.session] block would.
+func useSessionKeys(t *testing.T, m *Model, detach, review, editor []string) {
+	t.Helper()
+	m.keys = keybind.Session{
+		Detach: bindingOf(t, detach...),
+		Review: bindingOf(t, review...),
+		Editor: bindingOf(t, editor...),
+	}
+	m.tmux.SetSessionKeys(m.keys)
+}
+
+func bindingOf(t *testing.T, specs ...string) keybind.Binding {
+	t.Helper()
+	keys := make([]keybind.Key, 0, len(specs))
+	for _, spec := range specs {
+		key, err := keybind.Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		keys = append(keys, key)
+	}
+	return keybind.Keys(keys...)
 }

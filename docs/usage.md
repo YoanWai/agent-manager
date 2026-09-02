@@ -22,7 +22,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
 | `A` | Attach session full screen (Settings can swap it with `enter`) |
 | `.` | Mark a finished session idle without entering it |
-| `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available |
+| `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available. `ctrl+r`, `F3` and this pair move with `[keybindings.session]` in config.toml (see [Key bindings](configuration.md#key-bindings)) |
 | tmux prefix, then `d` | Inside a full-screen attach: back to the manager when the prefix reaches the inner tmux |
 | `F3` | Inside a session: open its directory in your editor |
 | `→` | Step into the row: focus the session, or open the group. In beta; Settings (`s`) can turn the pair off |
@@ -103,7 +103,7 @@ The line is run directly, never through a shell, so nothing in it is expanded an
 
 Inside a session, attached or focused, `F3` opens that session's directory the same way. It costs an attach its client, so the manager steps back into the session once a windowed editor is running, or once one that draws in the terminal exits. An editor that fails to start keeps the manager on screen, where you can read why.
 
-Like `ctrl+q` and `ctrl+r`, the manager keeps `F3` for itself inside a session, so a program running in there stops seeing it. Every `ctrl` combination reaches the program instead, `ctrl+o` included: Claude Code shows more lines with it, Gemini CLI toggles copy mode, and in a [terminal tab](#terminal-tabs) `nano` writes the file out.
+Like `ctrl+q` and `ctrl+r`, the manager keeps `F3` for itself inside a session, so a program running in there stops seeing it. Every `ctrl` combination reaches the program instead, `ctrl+o` included: Claude Code shows more lines with it, Gemini CLI toggles copy mode, and in a [terminal tab](#terminal-tabs) `nano` writes the file out. A `[keybindings.session]` table in config.toml moves any of the three keys, or sets one to `none` so the agent gets it (see [Key bindings](configuration.md#key-bindings)).
 
 A known windowed editor (the six above, plus `open` and `xdg-open`) starts detached and the manager stays on screen, with the status line naming what opened. Everything else takes the terminal over the way an attach does and hands it back on exit — that way round because a terminal editor started detached would have nowhere to draw, while a windowed one launched this way only costs a repaint.
 

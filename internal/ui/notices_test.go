@@ -13,6 +13,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/feed"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/update"
@@ -1345,5 +1346,18 @@ func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	}
 	if !strings.Contains(ansi.Strip(m.View()), "refreshing releases and messages") {
 		t.Fatalf("empty panel hides the refresh it started:\n%s", ansi.Strip(m.View()))
+	}
+}
+
+// The welcome card's session-key row is laid out on the card's columns and
+// follows the table, so a first run under a remapped config reads right.
+func TestWelcomeSessionKeysLineFollowsTheKeyTable(t *testing.T) {
+	m := &Model{keys: keybind.DefaultSession()}
+	if got := m.welcomeSessionKeysLine(); got != "ctrl+q back to the manager   ctrl+r review its diff" {
+		t.Errorf("default line = %q", got)
+	}
+	m.keys = keybind.Session{Detach: bindingOf(t, "f9"), Review: bindingOf(t), Editor: bindingOf(t, "f3")}
+	if got := m.welcomeSessionKeysLine(); got != "f9     back to the manager" {
+		t.Errorf("review off line = %q", got)
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -64,6 +65,9 @@ type Model struct {
 	hooks  *hooks.Manager
 	gitDrv *git.Driver
 	engine *status.Engine
+	// keys is the table of keys the manager keeps inside a session; the
+	// driver binds the same table for a full-screen attach.
+	keys keybind.Session
 
 	// setSnapshot writes a session's pane capture before archive or kill
 	// takes the window; a seam so snapshot failures can be exercised
@@ -680,10 +684,13 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
 	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
+	keys := cfg.Keybindings.Session.WithDefaults()
+	driver.SetSessionKeys(keys)
 	model := &Model{
 		cfg:                 cfg,
 		store:               st,
 		tmux:                driver,
+		keys:                keys,
 		hooks:               hookManager,
 		gitDrv:              gitDriver,
 		engine:              engine,

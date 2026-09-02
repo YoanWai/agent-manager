@@ -266,27 +266,26 @@ func (m *Model) leaveFocus() tea.Cmd {
 	return nil
 }
 
-// handleFocusKey forwards every key into the focused pane. Ctrl+Q and
-// ctrl+\ return to the list, Ctrl+R opens the review and F3 the editor,
-// mirroring the bindings a real attach gets, and every plain character - q
-// included - reaches the agent.
+// handleFocusKey forwards every key into the focused pane. The session key
+// table holds the exceptions, the same ones a real attach gets: detach
+// returns to the list, review opens the diff and editor the directory.
+// Every plain character - q included - reaches the agent.
 func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+q" || msg.String() == `ctrl+\` {
+	if m.keys.Detach.Has(msg.String()) {
 		return m, m.leaveFocus()
 	}
 	sess, ok := m.selected()
 	if !ok {
 		return m, m.leaveFocus()
 	}
-	// F3 opens the session's directory in an editor, matching the binding a
-	// real attach gets. A windowed editor leaves the focus where it is; one
-	// that draws in the terminal takes it back on exit.
-	if msg.String() == "f3" {
+	// A windowed editor leaves the focus where it is; one that draws in the
+	// terminal takes it back on exit.
+	if m.keys.Editor.Has(msg.String()) {
 		return m.openEditor()
 	}
-	// Ctrl+R opens the review, matching the binding a real attach gets;
-	// closing it focuses the session again rather than landing in the list.
-	if msg.String() == "ctrl+r" {
+	// Closing the review focuses the session again rather than landing in
+	// the list.
+	if m.keys.Review.Has(msg.String()) {
 		m.clearSelection()
 		cmd := m.openDiff()
 		if m.mode == modeDiff {

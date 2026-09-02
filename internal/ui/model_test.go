@@ -8,6 +8,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -574,5 +575,30 @@ func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 		if !m.leadingManager {
 			t.Fatal("the poll's hold on the store should reach the model")
 		}
+	}
+}
+
+// New hands the config's key table to the tmux driver, so a session the
+// manager creates is bound and labelled the same way focus reads its keys.
+func TestNewHandsTheKeyTableToTmux(t *testing.T) {
+	m := buildModel(t)
+	cfg := m.cfg
+	cfg.Keybindings.Session = keybind.Session{Detach: bindingOf(t, "f9"), Review: bindingOf(t, "ctrl+g")}
+	loaded := New(cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
+	loaded.width, loaded.height = 120, 40
+	t.Cleanup(func() { m.tmux.SetSessionKeys(keybind.DefaultSession()) })
+	if got := loaded.keys.Editor.Label(); got != "f3" {
+		t.Fatalf("editor left out should take the default, got %q", got)
+	}
+	createSession(t, loaded, "tablebound", t.TempDir(), "")
+	loaded.selectSessionRow(t, "tablebound")
+	sess := loaded.rows[loaded.cursor].sess
+	t.Cleanup(func() { m.tmux.Kill(sess.ID) })
+	right, err := tmuxCmd("display-message", "-p", "-t", "am_"+sess.ID, "#{T:status-right}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("status-right: %v", err)
+	}
+	if !strings.Contains(string(right), "Ctrl+g = review") || !strings.Contains(string(right), "F9") {
+		t.Fatalf("session footer should carry the config's keys, got %q", right)
 	}
 }
