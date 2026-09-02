@@ -235,8 +235,8 @@ func notifySend(sessionID, body string, detail presentation) error {
 	return nil
 }
 
-// notifySendReportsActions probes once whether notify-send accepts
-// --action, which libnotify added in 0.7.9.
+// notifySendReportsActions reports whether the installed notify-send
+// accepts --action, which libnotify added in 0.7.9.
 func notifySendReportsActions() bool {
 	out, err := runOutput(cmdTimeout, "notify-send", "--help")
 	return err == nil && strings.Contains(out, "--action")

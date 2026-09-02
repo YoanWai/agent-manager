@@ -37,7 +37,6 @@ const (
 	helperBundle     = "Agent Manager.app"
 	helperExecutable = "agent-manager"
 	helperBundleID   = "dev.agent-manager.notifier"
-	helperCommand    = "notify-helper"
 	// helperTimeout leaves room for the first-run permission prompt,
 	// which the helper waits on before it can post anything.
 	helperTimeout = 90 * time.Second
@@ -62,7 +61,7 @@ func postThroughHelper(sessionID, subtitle, body, sound string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), helperTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, helper, helperCommand, "post",
+	cmd := exec.CommandContext(ctx, helper, "post",
 		"agent-manager", subtitle, body, sound+".aiff", getenv("__CFBundleIdentifier"), sessionID)
 	err = cmd.Run()
 	var exit *exec.ExitError
@@ -198,9 +197,6 @@ func copyFile(from, to string, mode os.FileMode) error {
 // exit code is the result, since the caller is the manager itself.
 func HelperMain(args []string) int {
 	runtime.LockOSThread()
-	if len(args) > 0 && args[0] == helperCommand {
-		args = args[1:]
-	}
 	for _, lib := range []string{
 		"/System/Library/Frameworks/AppKit.framework/AppKit",
 		"/System/Library/Frameworks/UserNotifications.framework/UserNotifications",
