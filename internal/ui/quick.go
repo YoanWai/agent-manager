@@ -157,13 +157,16 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	name := toolName + "-" + newID()[:4]
-	if err := m.spawnSession(toolName, name, dir, group, prompt, true, m.quickWorktreeOn()); err != nil {
-		m.reportLaunchError(err)
+	worktree := m.quickWorktreeOn()
+	if err := m.spawnSession(toolName, name, dir, group, prompt, true, worktree); err != nil {
+		m.reportLaunchError(err, func() error {
+			return m.spawnSession(toolName, name, dir, group, prompt, true, worktree)
+		})
 		// A spawn the hint dialog refused leaves nothing to send, so the
-		// bar closes instead of swallowing the list keys behind the dialog.
+		// bar closes instead of swallowing the list keys behind the dialog;
+		// the dialog releases its images once no install can still spawn it.
 		if m.mode == modeLaunchHint {
 			m.quick.active = false
-			m.quick.release()
 		}
 		return m, nil
 	}

@@ -123,6 +123,16 @@ func (m *Manager) StatusFile(id string) string {
 	return filepath.Join(m.dir, id+".status")
 }
 
+// InstallExitFile is the mailbox an install started from the setup dialog
+// writes its exit status to. The shell redirect writing it cannot create
+// the directory, so this does.
+func (m *Manager) InstallExitFile(id string) (string, error) {
+	if err := os.MkdirAll(m.dir, 0o755); err != nil {
+		return "", err
+	}
+	return filepath.Join(m.dir, id+".install"), nil
+}
+
 // Read returns the hook-reported status for a session. The file is
 // written by shell hooks, so anything but a known status is rejected.
 func (m *Manager) Read(id string) (string, bool) {

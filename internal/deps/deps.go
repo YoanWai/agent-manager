@@ -52,14 +52,24 @@ func Hint(tool string) string {
 	return hint(runtime.GOOS, tool)
 }
 
+// Command is the shell command that installs a tool on this machine, or
+// empty when no installer or package manager is known for it.
+func Command(tool string) string {
+	return command(runtime.GOOS, tool)
+}
+
 func hint(goos, tool string) string {
-	if command := official[tool]; command != "" {
-		return "install it with: " + command
-	}
-	if command := installCommand(goos, tool); command != "" {
+	if command := command(goos, tool); command != "" {
 		return "install it with: " + command
 	}
 	return "install " + tool + " with your package manager"
+}
+
+func command(goos, tool string) string {
+	if command := official[tool]; command != "" {
+		return command
+	}
+	return installCommand(goos, tool)
 }
 
 func installCommand(goos, tool string) string {

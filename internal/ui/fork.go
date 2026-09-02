@@ -118,7 +118,9 @@ func (m *Model) submitFork() (tea.Model, tea.Cmd) {
 		WorktreeBranch: source.WorktreeBranch,
 	}
 	if err := m.launchNewSession(forked, tool, baseCommand, launchOptions{}); err != nil {
-		m.reportLaunchError(err)
+		m.reportLaunchError(err, func() error {
+			return m.launchNewSession(forked, tool, baseCommand, launchOptions{})
+		})
 		return m, nil
 	}
 	// Forks start as starting, which attention excludes; clear so the row

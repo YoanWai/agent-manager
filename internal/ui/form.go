@@ -534,14 +534,15 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, m.formWorktreeOn()); err != nil {
-		m.reportLaunchError(err)
-		// A spawn the hint dialog refused takes the form off screen with it,
-		// so its images go the way esc sends them. An error reported in the
-		// bar leaves the form up, and the prompt still names them.
-		if m.mode == modeLaunchHint {
-			m.form.prompt.release()
-		}
+	worktree := m.formWorktreeOn()
+	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree); err != nil {
+		// A spawn the hint dialog refused takes the form off screen with
+		// it; the dialog releases its images once no install can still
+		// spawn it. An error reported in the bar leaves the form up, and
+		// the prompt still names them.
+		m.reportLaunchError(err, func() error {
+			return m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree)
+		})
 		return m, nil
 	}
 	// New sessions start as starting, which attention excludes; clear so

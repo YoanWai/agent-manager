@@ -149,14 +149,14 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	if m.tmux.Exists(entry.sess.ID) {
 		cmd, err := m.relaunchInPane(entry.sess)
 		if err != nil {
-			m.reportLaunchError(err)
+			m.reportLaunchError(err, nil)
 			return m, nil
 		}
 		m.errBar.text = m.degradedResumeNotice(entry.sess)
 		return m, cmd
 	}
 	if err := m.reviveSession(entry.sess); err != nil {
-		m.reportLaunchError(err)
+		m.reportLaunchError(err, func() error { return m.reviveSession(entry.sess) })
 		return m, nil
 	}
 	m.errBar.text = m.degradedResumeNotice(entry.sess)
@@ -983,7 +983,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			for _, sess := range m.confirm.sessions {
 				if !m.tmux.Exists(sess.ID) {
 					if err := m.reviveSession(sess); err != nil {
-						m.reportLaunchError(err)
+						m.reportLaunchError(err, func() error { return m.reviveSession(sess) })
 						return m, nil
 					}
 				}
@@ -1016,7 +1016,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case actionRestart:
 			for _, sess := range m.confirm.sessions {
 				if err := m.restartSession(sess); err != nil {
-					m.reportLaunchError(err)
+					m.reportLaunchError(err, func() error { return m.restartSession(sess) })
 					return m, nil
 				}
 			}
@@ -1028,7 +1028,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				if err := m.reviveSession(sess); err != nil {
-					m.reportLaunchError(err)
+					m.reportLaunchError(err, func() error { return m.reviveSession(sess) })
 					return m, nil
 				}
 			}

@@ -120,3 +120,21 @@ func TestOfficialInstallIsPortable(t *testing.T) {
 		}
 	}
 }
+
+func TestCommandIsTheBareInstallLine(t *testing.T) {
+	stubUID(t, 1)
+	stubPath(t, "pacman", "sudo")
+	if got, want := command("linux", "tmux"), "sudo pacman -S --needed tmux"; got != want {
+		t.Fatalf("command = %q, want %q", got, want)
+	}
+	if got := command("linux", "claude"); got != official["claude"] {
+		t.Fatalf("command = %q, want the official installer", got)
+	}
+}
+
+func TestCommandIsEmptyWithoutAKnownManager(t *testing.T) {
+	stubPath(t)
+	if got := command("linux", "acme"); got != "" {
+		t.Fatalf("command = %q, want none", got)
+	}
+}
