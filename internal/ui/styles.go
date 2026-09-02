@@ -104,8 +104,7 @@ func rebuildStyles() {
 // Re-applying the selected bg+fg after every reset keeps the row tinted
 // end-to-end.
 func renderSelectedRow(s string) string {
-	reapply := "\x1b[0m" + bgSeq(current.Surface) + fgSeq(current.Bright)
-	return selectedRowStyle.Render(strings.ReplaceAll(s, "\x1b[0m", reapply))
+	return selectedRowStyle.Render(reapplyAfterResets(s, bgSeq(current.Surface)+fgSeq(current.Bright)))
 }
 
 // The accent lift separates reviewer notes from the diff itself. Resolve it
