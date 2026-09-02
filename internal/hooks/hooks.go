@@ -170,6 +170,47 @@ func (m *Manager) RemoveName(id string) error {
 	return removeIfExists(m.NameFile(id))
 }
 
+// NameResultFile is where the poller reports what became of a pending
+// rename, so the subcommand that queued it can tell the agent the truth
+// instead of assuming success. The first line is "renamed" or "refused";
+// the rest is the applied name or the reason.
+func (m *Manager) NameResultFile(id string) string {
+	return filepath.Join(m.dir, id+".renamed")
+}
+
+// The waiting subcommand polls for this file, so it lands whole: a
+// half-written verdict would read as a rename that never happened.
+func (m *Manager) WriteNameResult(id, name string, refusal error) error {
+	content := "renamed\n" + name
+	if refusal != nil {
+		content = "refused\n" + refusal.Error()
+	}
+	path := m.NameResultFile(id)
+	partial := path + ".part"
+	if err := os.WriteFile(partial, []byte(content), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(partial, path)
+}
+
+// ReadNameResult returns the applied name, or the refusal as an error.
+// found reports whether the poller has answered yet.
+func (m *Manager) ReadNameResult(id string) (name string, refusal error, found bool) {
+	raw, err := os.ReadFile(m.NameResultFile(id))
+	if err != nil {
+		return "", nil, false
+	}
+	verdict, detail, _ := strings.Cut(string(raw), "\n")
+	if verdict == "refused" {
+		return "", errors.New(detail), true
+	}
+	return detail, nil, true
+}
+
+func (m *Manager) RemoveNameResult(id string) error {
+	return removeIfExists(m.NameResultFile(id))
+}
+
 // ReviewRepoFile is the mailbox the review-repo subcommand writes the repo
 // a session is working in into; the poller applies and deletes it.
 func (m *Manager) ReviewRepoFile(id string) string {

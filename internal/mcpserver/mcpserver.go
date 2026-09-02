@@ -209,7 +209,8 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		Description: "Rename this session to a short 2-4 word kebab-case name for the broad feature it is about. " +
 			"Call once at the start only when the session still has a placeholder name (e.g. claude-a1b2). " +
 			"If the session already has a real name, leave it unless the user asks to rename. " +
-			"Prefer a broad feature name over a single subtask.",
+			"Prefer a broad feature name over a single subtask. " +
+			"The result reports the name Agent Manager applied, or why the session keeps its current one.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args renameArgs) (*mcp.CallToolResult, any, error) {
 		return textResult(sessioncmd.Rename(configDir, sessionID, args.Name))
 	})

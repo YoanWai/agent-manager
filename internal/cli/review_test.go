@@ -22,7 +22,8 @@ func TestRenameWritesNameFile(t *testing.T) {
 	if err := runRename(out, []string{"fix auth bug"}, "abcd1234", dir); err != nil {
 		t.Fatalf("runRename: %v", err)
 	}
-	if out.String() != "session renamed to fix auth bug\n" {
+	// No manager runs in this test, so the answer is that the name waits.
+	if !strings.Contains(out.String(), `rename to "fix auth bug" is queued`) {
 		t.Fatalf("rename output = %q", out.String())
 	}
 	raw, err := os.ReadFile(hooks.NewManager(dir).NameFile("abcd1234"))

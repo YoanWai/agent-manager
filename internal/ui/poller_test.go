@@ -286,10 +286,64 @@ func TestPendingRenameOnATakenWorktreeNameStopsAfterOneReport(t *testing.T) {
 	if stored.Name != "mover" || stored.Cwd != spawned.Cwd || stored.WorktreeBranch != spawned.WorktreeBranch {
 		t.Fatalf("refused rename still moved something: %+v", stored)
 	}
+	if _, refusal, found := m.hooks.ReadNameResult(spawned.ID); !found || refusal == nil || !strings.Contains(refusal.Error(), "branch already exists") {
+		t.Fatalf("the agent that asked must hear the refusal: found=%v refusal=%v", found, refusal)
+	}
 
 	// The next poll runs clean, so one bad name does not stall the loop.
 	if err := m.poller.applyPendingRename(&sess); err != nil {
 		t.Fatalf("second pass: %v", err)
+	}
+}
+
+func TestPendingRenameReportsTheAppliedName(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "claude-7a72", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	writeName(t, m, sess.ID, "audit   the poller")
+
+	if err := m.poller.applyPendingRename(&sess); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	name, refusal, found := m.hooks.ReadNameResult(sess.ID)
+	if !found || refusal != nil || name != "audit the poller" {
+		t.Fatalf("result = %q, %v, %v; want the name as applied", name, refusal, found)
+	}
+}
+
+// A session whose agent has checked out another branch, or sits detached
+// mid-rebase, still takes its new name: the am/ branch is left as it is,
+// the way a hand-renamed one is.
+func TestPendingRenameOnASwitchedWorktreeTakesTheName(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "pr-11442-rebase", repo)
+	for _, args := range [][]string{{"switch", "-c", "pr-11442"}, {"checkout", "--detach"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = spawned.Cwd
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	writeName(t, m, spawned.ID, "SCT-11-cpu-perf")
+
+	sess := spawned
+	if err := m.poller.applyPendingRename(&sess); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	stored, err := m.store.Get(spawned.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Name != "SCT-11-cpu-perf" {
+		t.Fatalf("name = %q, want the new name", stored.Name)
+	}
+	if stored.WorktreeBranch != spawned.WorktreeBranch || stored.Cwd != spawned.Cwd {
+		t.Fatalf("a worktree off its branch must be left alone: %+v", stored)
+	}
+	name, refusal, found := m.hooks.ReadNameResult(spawned.ID)
+	if !found || refusal != nil || name != "SCT-11-cpu-perf" {
+		t.Fatalf("result = %q, %v, %v", name, refusal, found)
 	}
 }
 

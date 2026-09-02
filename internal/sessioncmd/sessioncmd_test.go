@@ -1,10 +1,15 @@
 package sessioncmd
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
@@ -121,5 +126,84 @@ func TestReviewCommentRefusesAnIDTwoReposShare(t *testing.T) {
 		if reviewCommentResolved(t, configDir, repoRoot) {
 			t.Fatalf("the refused call still marked %s handled", repoRoot)
 		}
+	}
+}
+
+func stampManagerHeartbeat(t *testing.T, configDir string) {
+	t.Helper()
+	st, err := store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.SetSetting(store.PollerHeartbeatKey, strconv.FormatInt(time.Now().UnixNano(), 10)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRenameWithoutAManagerReportsItQueued(t *testing.T) {
+	configDir := t.TempDir()
+	message, err := Rename(configDir, "abc123", "fix auth bug")
+	if err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if !strings.Contains(message, "queued") || strings.Contains(message, "renamed to") {
+		t.Fatalf("with no manager running the answer must not claim the rename happened: %q", message)
+	}
+	if name, found := hooks.NewManager(configDir).ReadName("abc123"); !found || name != "fix auth bug" {
+		t.Fatalf("name file = %q, %v; the rename must still wait for a manager", name, found)
+	}
+}
+
+// The subcommand answers with what the poller did, so an agent that
+// names itself reasons about the name it actually has.
+func TestRenameWaitsForTheManagerAndReportsItsAnswer(t *testing.T) {
+	configDir := t.TempDir()
+	stampManagerHeartbeat(t, configDir)
+	mailbox := hooks.NewManager(configDir)
+	answer := func(t *testing.T, name string, refusal error) {
+		t.Helper()
+		go func() {
+			for {
+				if pending, found := mailbox.ReadName("abc123"); found && pending == name {
+					_ = mailbox.WriteNameResult("abc123", name, refusal)
+					_ = mailbox.RemoveName("abc123")
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}()
+	}
+
+	answer(t, "fix auth bug", nil)
+	message, err := Rename(configDir, "abc123", "fix auth bug")
+	if err != nil || message != "session renamed to fix auth bug" {
+		t.Fatalf("Rename = %q, %v", message, err)
+	}
+	if _, _, found := mailbox.ReadNameResult("abc123"); found {
+		t.Fatal("a read answer must be consumed")
+	}
+
+	answer(t, "taken", errors.New("worktree rename: branch already exists: am/taken"))
+	if _, err := Rename(configDir, "abc123", "taken"); err == nil || !strings.Contains(err.Error(), "branch already exists: am/taken") {
+		t.Fatalf("a refusal must reach the caller with its reason, got %v", err)
+	}
+}
+
+func TestRenameDiscardsAStaleAnswer(t *testing.T) {
+	configDir := t.TempDir()
+	mailbox := hooks.NewManager(configDir)
+	if err := os.MkdirAll(mailbox.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := mailbox.WriteNameResult("abc123", "old name", nil); err != nil {
+		t.Fatal(err)
+	}
+	message, err := Rename(configDir, "abc123", "new name")
+	if err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if strings.Contains(message, "old name") || strings.Contains(message, "renamed to") {
+		t.Fatalf("an answer left over from an earlier rename must not be read as this one: %q", message)
 	}
 }

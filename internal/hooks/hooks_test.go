@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -268,5 +269,41 @@ func TestRemoveIdempotent(t *testing.T) {
 	}
 	if err := manager.Remove("x"); err != nil {
 		t.Fatalf("second Remove should be a no-op: %v", err)
+	}
+}
+
+func TestNameResultRoundTrips(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if _, _, found := manager.ReadNameResult("x"); found {
+		t.Fatal("no result should be found before the poller answers")
+	}
+
+	if err := manager.WriteNameResult("x", "fix auth bug", nil); err != nil {
+		t.Fatalf("WriteNameResult: %v", err)
+	}
+	name, refusal, found := manager.ReadNameResult("x")
+	if !found || refusal != nil || name != "fix auth bug" {
+		t.Fatalf("ReadNameResult = %q, %v, %v; want the applied name", name, refusal, found)
+	}
+
+	if err := manager.WriteNameResult("x", "taken", errors.New("branch already exists: am/taken")); err != nil {
+		t.Fatalf("WriteNameResult refusal: %v", err)
+	}
+	name, refusal, found = manager.ReadNameResult("x")
+	if !found || refusal == nil || refusal.Error() != "branch already exists: am/taken" || name != "" {
+		t.Fatalf("ReadNameResult = %q, %v, %v; want the refusal", name, refusal, found)
+	}
+
+	if err := manager.RemoveNameResult("x"); err != nil {
+		t.Fatalf("RemoveNameResult: %v", err)
+	}
+	if _, _, found := manager.ReadNameResult("x"); found {
+		t.Fatal("removed result should not be found")
+	}
+	if err := manager.RemoveNameResult("x"); err != nil {
+		t.Fatalf("second RemoveNameResult should be a no-op: %v", err)
 	}
 }

@@ -795,7 +795,7 @@ func TestRenameWorktreeBranchLeavesUnrecognizedWorktreeAlone(t *testing.T) {
 	}
 }
 
-func TestRenameWorktreeBranchRefusesSwitchedWorktree(t *testing.T) {
+func TestRenameWorktreeBranchLeavesSwitchedWorktreeAlone(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "a.txt", "x")
 	commit(t, dir, "seed")
@@ -807,8 +807,12 @@ func TestRenameWorktreeBranchRefusesSwitchedWorktree(t *testing.T) {
 		t.Fatalf("switch: %v", err)
 	}
 
-	if _, err := driver.RenameWorktreeBranch(dir, path, branch, "renamed"); err == nil {
-		t.Fatal("a worktree switched to another branch should fail the rename")
+	got, err := driver.RenameWorktreeBranch(dir, path, branch, "renamed")
+	if err != nil {
+		t.Fatalf("a worktree switched to another branch is left alone, not refused: %v", err)
+	}
+	if got != branch {
+		t.Fatalf("returned %q, want the recorded %q", got, branch)
 	}
 	if head, err := driver.run(path, "rev-parse", "--abbrev-ref", "HEAD"); err != nil || head != "feat/mine" {
 		t.Fatalf("switched branch was disturbed: %q err=%v", head, err)
@@ -817,7 +821,35 @@ func TestRenameWorktreeBranchRefusesSwitchedWorktree(t *testing.T) {
 		t.Fatalf("recorded branch was disturbed: %v", err)
 	}
 	if _, err := driver.run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/am/renamed"); err == nil {
-		t.Fatal("refused rename created the destination branch")
+		t.Fatal("a left-alone worktree must not gain the destination branch")
+	}
+}
+
+func TestRenameWorktreeBranchLeavesDetachedWorktreeAlone(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "managed")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	// A rebase in progress is the common way a worktree ends up detached.
+	if _, err := driver.run(path, "checkout", "--detach"); err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+
+	got, err := driver.RenameWorktreeBranch(dir, path, branch, "renamed")
+	if err != nil {
+		t.Fatalf("a detached worktree is left alone, not refused: %v", err)
+	}
+	if got != branch {
+		t.Fatalf("returned %q, want the recorded %q", got, branch)
+	}
+	if _, err := driver.run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
+		t.Fatalf("recorded branch was disturbed: %v", err)
+	}
+	if _, err := driver.run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/am/renamed"); err == nil {
+		t.Fatal("a left-alone worktree must not gain the destination branch")
 	}
 }
 

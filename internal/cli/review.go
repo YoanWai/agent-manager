@@ -20,7 +20,7 @@ func reviewSection() section {
 	return section{
 		title: "Your own session",
 		commands: []command{
-			{name: "rename", usage: usageRename, about: "name this session for the broad feature it is about, once, while it still carries a placeholder name", run: configCommand(runRename)},
+			{name: "rename", usage: usageRename, about: "name this session for the broad feature it is about, once, while it still carries a placeholder name; the answer says whether the manager applied it", run: configCommand(runRename)},
 			{name: "review-repo", usage: usageReviewRepo, about: "declare the repo or worktree you are working in, so the user's review screen opens on it", run: configCommand(runReviewRepo)},
 			{name: "review-base", usage: usageReviewBase, about: "declare the ref your branch merges into, which review diffs against; --clear returns to auto-detection", run: configCommand(runReviewBase)},
 			{name: "review-mode", usage: usageReviewMode, about: "point the user's review screen at the diff scope you want them to see", run: configCommand(runReviewMode)},

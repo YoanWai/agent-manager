@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -37,9 +39,18 @@ func writeMailbox(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
+// A rename is applied by the manager's poll, so the answer arrives one
+// interval later. The floor covers a poll that ran long.
+const (
+	renameWaitFloor  = 10 * time.Second
+	renameResultPoll = 100 * time.Millisecond
+)
+
 // Rename records a session's self-chosen name for the running manager to
-// apply on its next poll. It only writes the name file; the manager owns
-// the database and the tmux label.
+// apply on its next poll, then waits for that poll to say what it did.
+// The manager owns the database and the tmux label: a name it cannot
+// give the session comes back as the reason, and a name no manager is
+// running to apply is reported as queued rather than as done.
 func Rename(configDir, sessionID, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -48,10 +59,50 @@ func Rename(configDir, sessionID, name string) (string, error) {
 	if err := validSession(sessionID); err != nil {
 		return "", err
 	}
-	if err := writeMailbox(hooks.NewManager(configDir).NameFile(sessionID), name); err != nil {
+	mailbox := hooks.NewManager(configDir)
+	if err := mailbox.RemoveNameResult(sessionID); err != nil {
 		return "", err
 	}
-	return "session renamed to " + name, nil
+	if err := writeMailbox(mailbox.NameFile(sessionID), name); err != nil {
+		return "", err
+	}
+	awake, pollInterval, err := managerAwake(configDir)
+	if err != nil {
+		return "", err
+	}
+	if !awake {
+		return fmt.Sprintf("rename to %q is queued: no Agent Manager is running to apply it; it takes effect when one opens", name), nil
+	}
+	deadline := time.Now().Add(max(3*pollInterval, renameWaitFloor))
+	for time.Now().Before(deadline) {
+		applied, refusal, found := mailbox.ReadNameResult(sessionID)
+		if !found {
+			time.Sleep(renameResultPoll)
+			continue
+		}
+		if err := mailbox.RemoveNameResult(sessionID); err != nil {
+			return "", err
+		}
+		if refusal != nil {
+			return "", fmt.Errorf("session keeps its name: %w", refusal)
+		}
+		return "session renamed to " + applied, nil
+	}
+	return fmt.Sprintf("rename to %q is queued: Agent Manager is running but has not applied it yet", name), nil
+}
+
+func managerAwake(configDir string) (bool, time.Duration, error) {
+	cfg, err := config.LoadDir(configDir)
+	if err != nil {
+		return false, 0, err
+	}
+	st, err := store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		return false, 0, err
+	}
+	defer st.Close()
+	awake, err := st.ManagerAwake(time.Now(), cfg.PollInterval.Duration)
+	return awake, cfg.PollInterval.Duration, err
 }
 
 // ReviewRepo records the repo a session is working in, so review opens

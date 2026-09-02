@@ -171,6 +171,9 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	if err := manager.RemoveName(id); err != nil {
 		return "", nil, err
 	}
+	if err := manager.RemoveNameResult(id); err != nil {
+		return "", nil, err
+	}
 	env := map[string]string{hooks.EnvSessionID: id}
 	command, err := mcpreg.Apply(mcpreg.Style(toolName, tool.MCP), Executable(), manager.Dir(), baseCommand, env)
 	if err != nil {
