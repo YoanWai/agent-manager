@@ -47,6 +47,8 @@ Download from [Releases](https://github.com/YoanWai/agent-manager/releases) (mac
 
 Run inside [WSL2](https://learn.microsoft.com/windows/wsl/install): agent-manager lives on tmux, which is a Linux/macOS tool. In a WSL shell, install with the install script, with Homebrew, or grab the Linux binary from Releases.
 
+The agent CLIs belong in the distro too. WSL appends the Windows `PATH` to the distro's, so a CLI installed on the Windows side is visible in a WSL shell, and running it there starts a Windows process or fails for want of a Linux runtime. A spawn finding only that copy stops on the setup dialog, which names where the Windows copy is and the command that installs the CLI in the distro.
+
 ## Updating
 
 The manager checks GitHub Releases every ten minutes and shows a `↑ vX.Y.Z available` badge in the header when a newer version is out. Press `u` on the update message (or `enter` on the version row in Settings) and what happens next follows the install. A Homebrew, mise, or AUR install hands the terminal to that package manager's own upgrade command, so its progress and any password prompt behave as they would in a shell. An install-script, `go install`, or manual download is updated in place, by downloading the release and swapping the binary. Either way the manager restarts into the new build with every session still running.
