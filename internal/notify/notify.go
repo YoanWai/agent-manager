@@ -67,9 +67,8 @@ func runBounded(name string, args ...string) error {
 	return exec.CommandContext(ctx, name, args...).Run()
 }
 
-// runBoundedEnv runs a notifier that takes its content from the
-// environment, which keeps the text clear of the command line and of any
-// quoting the notifier applies to arguments.
+// runBoundedEnv passes the content through the environment, which keeps
+// it clear of the command line and of the notifier's own quoting.
 func runBoundedEnv(env map[string]string, name string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), helperStartTimeout)
 	defer cancel()
@@ -206,10 +205,9 @@ func Notify(event Event) {
 	_ = emitSeq("\a")
 }
 
-// notifySend posts through the desktop's notification daemon. When the
-// installed notify-send can report actions, the call carries the default
-// action and stays up until the banner closes, so a click on it can raise
-// the terminal and select the session.
+// notifySend keeps the call open for the banner's lifetime when the
+// installed notify-send can report actions, since that reply is the only
+// way the click reaches the manager.
 func notifySend(sessionID, body string, detail presentation) error {
 	args := []string{
 		"--app-name=agent-manager",

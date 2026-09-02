@@ -29,8 +29,6 @@ $toast = New-Object Windows.UI.Notifications.ToastNotification $xml
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($env:AM_TOAST_APPID).Show($toast)
 `
 
-// windowsToast posts a native Windows notification from inside WSL through
-// the interop PowerShell.
 func windowsToast(subtitle, body, sound string) error {
 	shell, err := lookPath("powershell.exe")
 	if err != nil {
@@ -45,8 +43,8 @@ func windowsToast(subtitle, body, sound string) error {
 	}, shell, "-NoProfile", "-NonInteractive", "-EncodedCommand", encodedCommand(toastScript))
 }
 
-// encodedCommand packs a script the way PowerShell's -EncodedCommand
-// expects it: UTF-16LE, then base64.
+// encodedCommand renders a script as -EncodedCommand takes it: UTF-16LE,
+// then base64.
 func encodedCommand(script string) string {
 	units := utf16.Encode([]rune(script))
 	raw := make([]byte, 0, len(units)*2)

@@ -18,10 +18,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TestHelperPostsLiveBanner builds the notifier bundle from this test
-// binary and posts one banner through Notification Center. It needs a
-// logged-in Mac and, on first run, the user allowing "Agent Manager" in
-// the permission prompt, so it only runs when asked for by name.
+// Needs a logged-in Mac and, on first run, the user allowing "Agent
+// Manager" in the permission prompt, so it only runs when asked for.
 func TestHelperPostsLiveBanner(t *testing.T) {
 	if os.Getenv("AM_NOTIFY_LIVE") == "" {
 		t.Skip("set AM_NOTIFY_LIVE=1 to post a real banner")

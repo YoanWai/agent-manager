@@ -40,6 +40,9 @@ const (
 	// helperTimeout leaves room for the first-run permission prompt,
 	// which the helper waits on before it can post anything.
 	helperTimeout = 90 * time.Second
+	// codesignTimeout bounds the signing step, which runs under
+	// materializeMu and would otherwise hold every banner behind it.
+	codesignTimeout = 30 * time.Second
 	// exitDenied is how the helper reports a refused permission.
 	exitDenied = 2
 )
@@ -48,8 +51,6 @@ var helperSounds = []string{"Funk", "Hero", "Basso"}
 
 var materializeMu sync.Mutex
 
-// postThroughHelper hands one banner to the helper bundle, building or
-// refreshing the bundle first when the running binary has changed.
 func postThroughHelper(sessionID, subtitle, body, sound string) error {
 	dir, err := configDir()
 	if err != nil {
@@ -83,10 +84,9 @@ func LaunchedAsHelper() bool {
 	return err == nil && strings.HasSuffix(exe, filepath.Join(helperBundle, "Contents", "MacOS", helperExecutable))
 }
 
-// materializeHelper makes sure the bundle holds the running binary, and
-// returns the path of its executable. The stamp records which binary was
-// copied, so a release upgrade rebuilds once and every later banner
-// reuses the bundle.
+// materializeHelper returns the path of the bundle's executable. The
+// stamp records which binary was copied, so a release upgrade rebuilds
+// once and every later banner reuses the bundle.
 func materializeHelper(configDir string) (string, error) {
 	materializeMu.Lock()
 	defer materializeMu.Unlock()
@@ -142,7 +142,9 @@ func buildHelper(bundle, source string) error {
 	if err := os.WriteFile(filepath.Join(bundle, "Contents", "Info.plist"), []byte(helperInfoPlist), 0o644); err != nil {
 		return err
 	}
-	return exec.Command("codesign", "-s", "-", "--force", bundle).Run()
+	ctx, cancel := context.WithTimeout(context.Background(), codesignTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, "codesign", "-s", "-", "--force", bundle).Run()
 }
 
 const helperInfoPlist = `<?xml version="1.0" encoding="UTF-8"?>

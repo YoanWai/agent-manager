@@ -1,9 +1,9 @@
 package notify
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -13,20 +13,31 @@ import (
 // through the config directory, which every manager on the machine polls.
 const focusFile = "notify-focus"
 
-// RequestFocus records that the user clicked the banner for sessionID.
+// RequestFocus publishes the click through a rename, so a manager polling
+// mid-write can never read half an id.
 func RequestFocus(configDir, sessionID string) error {
-	return os.WriteFile(filepath.Join(configDir, focusFile), []byte(sessionID+"\n"), 0o600)
+	pending := filepath.Join(configDir, focusFile+".pending."+strconv.Itoa(os.Getpid()))
+	if err := os.WriteFile(pending, []byte(sessionID+"\n"), 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(pending, filepath.Join(configDir, focusFile)); err != nil {
+		os.Remove(pending)
+		return err
+	}
+	return nil
 }
 
-// TakeFocus returns the session id of a pending click and clears it, so
-// the first manager to poll acts on it and no other does.
+// TakeFocus returns the session id of a pending click. The rename is the
+// claim: only one manager can win it, and a click published after it lands
+// in a new file rather than under the winner's read.
 func TakeFocus(configDir string) (string, bool) {
-	path := filepath.Join(configDir, focusFile)
-	data, err := os.ReadFile(path)
-	if err != nil {
+	claimed := filepath.Join(configDir, focusFile+".claimed."+strconv.Itoa(os.Getpid()))
+	if err := os.Rename(filepath.Join(configDir, focusFile), claimed); err != nil {
 		return "", false
 	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	defer os.Remove(claimed)
+	data, err := os.ReadFile(claimed)
+	if err != nil {
 		return "", false
 	}
 	id := strings.TrimSpace(string(data))

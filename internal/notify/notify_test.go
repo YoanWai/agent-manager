@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -19,15 +21,12 @@ func restore() func() {
 	}
 }
 
-// cmdRecorder answers lookPath, runCmd, runOutput and runEnv while logging
-// every command.
 type cmdRecorder struct {
-	known  map[string]bool
-	called [][]string
-	envs   []map[string]string
-	runErr error
-	// outputs answers runOutput by command name and first argument.
-	outputs map[string]string
+	known           map[string]bool
+	called          [][]string
+	envs            []map[string]string
+	runErr          error
+	outputByCommand map[string]string
 }
 
 func (r *cmdRecorder) install() {
@@ -47,7 +46,7 @@ func (r *cmdRecorder) install() {
 		if len(args) > 0 {
 			key += " " + args[0]
 		}
-		if out, ok := r.outputs[key]; ok {
+		if out, ok := r.outputByCommand[key]; ok {
 			return out, nil
 		}
 		return "", r.runErr
@@ -184,7 +183,7 @@ func linuxDesktop(t *testing.T) *cmdRecorder {
 	goos = "linux"
 	getenv = func(string) string { return "" }
 	isWSL = func() bool { return false }
-	rec := &cmdRecorder{known: map[string]bool{"notify-send": true}, outputs: map[string]string{}}
+	rec := &cmdRecorder{known: map[string]bool{"notify-send": true}, outputByCommand: map[string]string{}}
 	rec.install()
 	return rec
 }
@@ -206,7 +205,7 @@ func TestNotifyLinuxUsesPortableStatusHints(t *testing.T) {
 		t.Run(test.urgency, func(t *testing.T) {
 			defer restore()()
 			rec := linuxDesktop(t)
-			rec.outputs["notify-send --help"] = "Usage: notify-send [OPTION…] <SUMMARY> [BODY]"
+			rec.outputByCommand["notify-send --help"] = "Usage: notify-send [OPTION…] <SUMMARY> [BODY]"
 			emitSeq = func(string) error { return nil }
 			Notify(Event{Session: "--help", Tool: "claude", Kind: test.kind})
 			if len(rec.called) != 2 {
@@ -234,8 +233,8 @@ func TestNotifyLinuxClickRaisesTerminalAndSelectsSession(t *testing.T) {
 	defer restore()()
 	rec := linuxDesktop(t)
 	rec.known["xdotool"] = true
-	rec.outputs["notify-send --help"] = "  -A, --action=[NAME=]Text  Specifies the actions to display"
-	rec.outputs["notify-send --app-name=agent-manager"] = "default\n"
+	rec.outputByCommand["notify-send --help"] = "  -A, --action=[NAME=]Text  Specifies the actions to display"
+	rec.outputByCommand["notify-send --app-name=agent-manager"] = "default\n"
 	getenv = func(key string) string {
 		if key == "WINDOWID" {
 			return "4194305"
@@ -469,5 +468,63 @@ func TestOsc777StripsSemicolons(t *testing.T) {
 	got := osc777("a;b", "c;d")
 	if got != "\x1b]777;notify;a,b;c,d\a" {
 		t.Fatalf("unexpected sequence %q", got)
+	}
+}
+
+// Two managers polling the same directory must never both act on one
+// click. A click published while another is still pending replaces it,
+// which is the intent: the newest click is the one the user meant.
+func TestTakeFocusClaimsEachRequestOnce(t *testing.T) {
+	dir := t.TempDir()
+	if err := RequestFocus(dir, "sess-first"); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	taken := map[string]int{}
+	var writes, reads sync.WaitGroup
+	writes.Add(1)
+	go func() {
+		defer writes.Done()
+		for i := 0; i < 50; i++ {
+			if err := RequestFocus(dir, "sess-"+strconv.Itoa(i)); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	for reader := 0; reader < 4; reader++ {
+		reads.Add(1)
+		go func() {
+			defer reads.Done()
+			for i := 0; i < 200; i++ {
+				if id, ok := TakeFocus(dir); ok {
+					mu.Lock()
+					taken[id]++
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	writes.Wait()
+	reads.Wait()
+	if len(taken) == 0 {
+		t.Fatal("no click was ever claimed")
+	}
+	for id, count := range taken {
+		if id == "" {
+			t.Fatal("a claim returned an empty session")
+		}
+		if count != 1 {
+			t.Fatalf("%s was claimed %d times, want once", id, count)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != focusFile {
+			t.Fatalf("temporary file left behind: %s", entry.Name())
+		}
 	}
 }
