@@ -436,3 +436,24 @@ func TestReorderAgentSkipsChildren(t *testing.T) {
 		t.Fatalf("terminal left its parent: %+v err %v", got, err)
 	}
 }
+
+// A Hebrew letter is two bytes wide: a field that takes one byte at a time
+// refuses it, and a backspace that drops one byte leaves half of it behind.
+func TestSearchFieldTakesAndTrimsMultiByteRunes(t *testing.T) {
+	m := searchModel()
+	m.searching = true
+
+	for _, key := range []tea.KeyPressMsg{{Code: 'ש', Text: "ש"}, {Code: 'ל', Text: "ל"}} {
+		updated, _ := m.handleKey(key)
+		m = updated.(*Model)
+	}
+	if m.search != "של" {
+		t.Fatalf("typed query = %q, want %q", m.search, "של")
+	}
+
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	m = updated.(*Model)
+	if m.search != "ש" {
+		t.Fatalf("query after backspace = %q, want %q", m.search, "ש")
+	}
+}

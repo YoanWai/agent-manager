@@ -174,7 +174,9 @@ func (m *Model) handleRepoPickKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.selectRepo(row.root)
 	}
-	if msg.Text != "" {
+	// Space carries a text of its own now, and the picker takes no phrases:
+	// one typed at the head of the filter matches nothing.
+	if msg.Text != "" && msg.Code != tea.KeySpace {
 		m.typeRepoPickFilter(msg.Text)
 	}
 	return m, nil

@@ -21,7 +21,11 @@ func TestPasteClosesConfirmWithoutConfirming(t *testing.T) {
 	}
 
 	updated, _ := m.Update(tea.PasteMsg{Content: "y\n"})
-	m = updated.(*Model)
+	next, ok := updated.(*Model)
+	if !ok {
+		t.Fatalf("Update returned %T, want *Model", updated)
+	}
+	m = next
 
 	if m.mode != modeList {
 		t.Fatalf("after paste, mode = %v, want modeList", m.mode)

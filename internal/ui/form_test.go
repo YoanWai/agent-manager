@@ -12,30 +12,52 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/charmbracelet/x/ansi"
 )
 
-// The fields' blurred text follows the theme's backdrop, so a light theme
-// gets ink that reads on a light field instead of the dark defaults.
+// A text field's prompt marker and blurred value paint in the terminal's
+// own foreground, the way they did before v2 gave them a fixed grey.
+func TestTextFieldLeavesPromptAndBlurredTextUncolored(t *testing.T) {
+	active := current
+	t.Cleanup(func() { applyTheme(active) })
+	for _, name := range []string{"classic", "paper"} {
+		applyTheme(themes[themeIndex(name)])
+		styles := textField("", 10).Styles()
+		for label, style := range map[string]lipgloss.Style{
+			"focused prompt": styles.Focused.Prompt,
+			"blurred prompt": styles.Blurred.Prompt,
+			"blurred text":   styles.Blurred.Text,
+		} {
+			if got := style.GetForeground(); got != (lipgloss.NoColor{}) {
+				t.Errorf("%s: %s ink = %v, want the terminal's own", name, label, got)
+			}
+		}
+	}
+}
+
+// The placeholder still follows the theme's backdrop, so a light theme gets
+// a hint that reads on a light field instead of the dark default.
 func TestFormFieldsFollowThemeBackdrop(t *testing.T) {
-	t.Cleanup(func() { applyTheme(themes[0]) })
+	active := current
+	t.Cleanup(func() { applyTheme(active) })
 	for _, name := range []string{"classic", "paper"} {
 		theme := themes[themeIndex(name)]
 		applyTheme(theme)
 		isDark := !theme.lightBackdrop()
-		wantInput := textinput.DefaultStyles(isDark).Blurred.Text.GetForeground()
-		if got := textField("", 10).Styles().Blurred.Text.GetForeground(); got != wantInput {
-			t.Errorf("%s: text field blurred ink = %v, want %v", name, got, wantInput)
+		wantInput := textinput.DefaultStyles(isDark).Blurred.Placeholder.GetForeground()
+		if got := textField("", 10).Styles().Blurred.Placeholder.GetForeground(); got != wantInput {
+			t.Errorf("%s: text field placeholder ink = %v, want %v", name, got, wantInput)
 		}
 		wantArea := textarea.DefaultStyles(isDark).Blurred.Text.GetForeground()
 		if got := promptArea("", 10).Styles().Blurred.Text.GetForeground(); got != wantArea {
 			t.Errorf("%s: prompt area blurred ink = %v, want %v", name, got, wantArea)
 		}
 	}
-	if textinput.DefaultStyles(true).Blurred.Text.GetForeground() == textinput.DefaultStyles(false).Blurred.Text.GetForeground() {
+	if textarea.DefaultStyles(true).Blurred.Text.GetForeground() == textarea.DefaultStyles(false).Blurred.Text.GetForeground() {
 		t.Fatal("the dark and light defaults must differ for this test to prove anything")
 	}
 }

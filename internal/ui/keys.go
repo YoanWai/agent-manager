@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/clipboard"
@@ -524,12 +525,13 @@ func (m *Model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.searching = false
 		return m, m.clearSearch()
 	case "backspace":
-		if len(m.search) > 0 {
-			m.search = m.search[:len(m.search)-1]
+		if m.search != "" {
+			_, width := utf8.DecodeLastRuneInString(m.search)
+			m.search = m.search[:len(m.search)-width]
 		}
 		m.rebuildRows()
 	default:
-		if len(msg.Text) == 1 {
+		if msg.Text != "" {
 			m.search += msg.Text
 			m.rebuildRows()
 		}

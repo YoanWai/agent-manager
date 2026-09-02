@@ -118,12 +118,18 @@ func isDir(path string) bool {
 	return err == nil && info.IsDir()
 }
 
+// textField is a one-line input. The caret paints in the terminal's own
+// foreground, and so do the prompt marker and a blurred value: the fixed
+// grey v2 gives them is ink the card already carries.
 func textField(placeholder string, limit int) textinput.Model {
 	in := textinput.New()
 	in.Placeholder = placeholder
 	in.CharLimit = limit
 	styles := textinput.DefaultStyles(!current.lightBackdrop())
 	styles.Cursor.Color = nil
+	styles.Focused.Prompt = lipgloss.NewStyle()
+	styles.Blurred.Prompt = lipgloss.NewStyle()
+	styles.Blurred.Text = lipgloss.NewStyle()
 	in.SetStyles(styles)
 	return in
 }
