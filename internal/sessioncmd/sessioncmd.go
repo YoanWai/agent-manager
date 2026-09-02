@@ -5,6 +5,7 @@
 package sessioncmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -32,17 +33,25 @@ func validSession(sessionID string) error {
 	return nil
 }
 
+// The manager polls these files, so one lands complete or not at all: a
+// half-written name reads as a rename to nothing.
 func writeMailbox(path, content string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(content), 0o644)
+	partial := path + ".part"
+	if err := os.WriteFile(partial, []byte(content), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(partial, path)
 }
 
 // A rename is applied by the manager's poll, so the answer arrives one
-// interval later. The floor covers a poll that ran long.
+// interval later. The floor covers a poll that ran long, and the ceiling
+// keeps a generous poll_interval from parking the agent's tool call.
 const (
 	renameWaitFloor  = 10 * time.Second
+	renameWaitCap    = 30 * time.Second
 	renameResultPoll = 100 * time.Millisecond
 )
 
@@ -51,12 +60,19 @@ const (
 // The manager owns the database and the tmux label: a name it cannot
 // give the session comes back as the reason, and a name no manager is
 // running to apply is reported as queued rather than as done.
-func Rename(configDir, sessionID, name string) (string, error) {
+func Rename(ctx context.Context, configDir, sessionID, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", errors.New("name is empty")
 	}
 	if err := validSession(sessionID); err != nil {
+		return "", err
+	}
+	// Whether anyone is home is read before the name is queued, so a
+	// manager that cannot be reached at all is reported instead of a name
+	// left pending behind an error.
+	awake, pollInterval, err := managerAwake(configDir)
+	if err != nil {
 		return "", err
 	}
 	mailbox := hooks.NewManager(configDir)
@@ -66,18 +82,22 @@ func Rename(configDir, sessionID, name string) (string, error) {
 	if err := writeMailbox(mailbox.NameFile(sessionID), name); err != nil {
 		return "", err
 	}
-	awake, pollInterval, err := managerAwake(configDir)
-	if err != nil {
-		return "", err
-	}
 	if !awake {
 		return fmt.Sprintf("rename to %q is queued: no Agent Manager is running to apply it; it takes effect when one opens", name), nil
 	}
-	deadline := time.Now().Add(max(3*pollInterval, renameWaitFloor))
+	// The manager answers the name as it will take it, so the wait
+	// recognizes its own answer by that name rather than the typed one.
+	asked := hooks.NormalizeName(name)
+	deadline := time.Now().Add(min(max(3*pollInterval, renameWaitFloor), renameWaitCap))
 	for time.Now().Before(deadline) {
-		applied, refusal, found := mailbox.ReadNameResult(sessionID)
-		if !found {
-			time.Sleep(renameResultPoll)
+		requested, applied, refusal, found := mailbox.ReadNameResult(sessionID)
+		if !found || requested != asked {
+			// A verdict for another rename belongs to whoever asked for it.
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(renameResultPoll):
+			}
 			continue
 		}
 		if err := mailbox.RemoveNameResult(sessionID); err != nil {

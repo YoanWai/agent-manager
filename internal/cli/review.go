@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -39,7 +40,7 @@ func runRename(out io.Writer, args []string, sessionID, configDir string) error 
 	if err != nil {
 		return err
 	}
-	message, err := sessioncmd.Rename(configDir, sessionID, name)
+	message, err := sessioncmd.Rename(context.Background(), configDir, sessionID, name)
 	return printMessage(out, message, err)
 }
 

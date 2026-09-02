@@ -1,6 +1,7 @@
 package sessioncmd
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -143,7 +144,7 @@ func stampManagerHeartbeat(t *testing.T, configDir string) {
 
 func TestRenameWithoutAManagerReportsItQueued(t *testing.T) {
 	configDir := t.TempDir()
-	message, err := Rename(configDir, "abc123", "fix auth bug")
+	message, err := Rename(t.Context(), configDir, "abc123", "fix auth bug")
 	if err != nil {
 		t.Fatalf("Rename: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestRenameWaitsForTheManagerAndReportsItsAnswer(t *testing.T) {
 		go func() {
 			for {
 				if pending, found := mailbox.ReadName("abc123"); found && pending == name {
-					_ = mailbox.WriteNameResult("abc123", name, refusal)
+					_ = mailbox.WriteNameResult("abc123", name, name, refusal)
 					_ = mailbox.RemoveName("abc123")
 					return
 				}
@@ -176,17 +177,60 @@ func TestRenameWaitsForTheManagerAndReportsItsAnswer(t *testing.T) {
 	}
 
 	answer(t, "fix auth bug", nil)
-	message, err := Rename(configDir, "abc123", "fix auth bug")
+	// The typed name carries whitespace the manager squashes out, so the
+	// wait has to recognize the answer by the squashed name.
+	message, err := Rename(t.Context(), configDir, "abc123", "fix   auth bug")
 	if err != nil || message != "session renamed to fix auth bug" {
 		t.Fatalf("Rename = %q, %v", message, err)
 	}
-	if _, _, found := mailbox.ReadNameResult("abc123"); found {
+	if _, _, _, found := mailbox.ReadNameResult("abc123"); found {
 		t.Fatal("a read answer must be consumed")
 	}
 
 	answer(t, "taken", errors.New("worktree rename: branch already exists: am/taken"))
-	if _, err := Rename(configDir, "abc123", "taken"); err == nil || !strings.Contains(err.Error(), "branch already exists: am/taken") {
+	if _, err := Rename(t.Context(), configDir, "abc123", "taken"); err == nil || !strings.Contains(err.Error(), "branch already exists: am/taken") {
 		t.Fatalf("a refusal must reach the caller with its reason, got %v", err)
+	}
+}
+
+// Two renames can be in flight at once, so an answer is matched to the
+// name that asked for it rather than to whoever is waiting.
+func TestRenameIgnoresAnAnswerForAnotherName(t *testing.T) {
+	configDir := t.TempDir()
+	stampManagerHeartbeat(t, configDir)
+	mailbox := hooks.NewManager(configDir)
+	if err := os.MkdirAll(mailbox.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for {
+			if pending, found := mailbox.ReadName("abc123"); found && pending == "mine" {
+				_ = mailbox.WriteNameResult("abc123", "someone else", "someone else", nil)
+				time.Sleep(50 * time.Millisecond)
+				_ = mailbox.WriteNameResult("abc123", "mine", "mine", nil)
+				_ = mailbox.RemoveName("abc123")
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
+	message, err := Rename(t.Context(), configDir, "abc123", "mine")
+	if err != nil || message != "session renamed to mine" {
+		t.Fatalf("Rename = %q, %v; want the answer to its own name", message, err)
+	}
+}
+
+func TestRenameStopsWhenItsCallerGivesUp(t *testing.T) {
+	configDir := t.TempDir()
+	stampManagerHeartbeat(t, configDir)
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	if _, err := Rename(ctx, configDir, "abc123", "abandoned"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Rename = %v, want the cancellation", err)
 	}
 }
 
@@ -196,10 +240,10 @@ func TestRenameDiscardsAStaleAnswer(t *testing.T) {
 	if err := os.MkdirAll(mailbox.Dir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := mailbox.WriteNameResult("abc123", "old name", nil); err != nil {
+	if err := mailbox.WriteNameResult("abc123", "old name", "old name", nil); err != nil {
 		t.Fatal(err)
 	}
-	message, err := Rename(configDir, "abc123", "new name")
+	message, err := Rename(t.Context(), configDir, "abc123", "new name")
 	if err != nil {
 		t.Fatalf("Rename: %v", err)
 	}

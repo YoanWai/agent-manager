@@ -277,33 +277,77 @@ func TestNameResultRoundTrips(t *testing.T) {
 	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if _, _, found := manager.ReadNameResult("x"); found {
+	if _, _, _, found := manager.ReadNameResult("x"); found {
 		t.Fatal("no result should be found before the poller answers")
 	}
 
-	if err := manager.WriteNameResult("x", "fix auth bug", nil); err != nil {
+	if err := manager.WriteNameResult("x", "fix auth  bug", "fix auth bug", nil); err != nil {
 		t.Fatalf("WriteNameResult: %v", err)
 	}
-	name, refusal, found := manager.ReadNameResult("x")
-	if !found || refusal != nil || name != "fix auth bug" {
-		t.Fatalf("ReadNameResult = %q, %v, %v; want the applied name", name, refusal, found)
+	requested, applied, refusal, found := manager.ReadNameResult("x")
+	if !found || refusal != nil || requested != "fix auth  bug" || applied != "fix auth bug" {
+		t.Fatalf("ReadNameResult = %q, %q, %v, %v; want the asked and applied names", requested, applied, refusal, found)
 	}
 
-	if err := manager.WriteNameResult("x", "taken", errors.New("branch already exists: am/taken")); err != nil {
+	if err := manager.WriteNameResult("x", "taken", "", errors.New("branch already exists: am/taken")); err != nil {
 		t.Fatalf("WriteNameResult refusal: %v", err)
 	}
-	name, refusal, found = manager.ReadNameResult("x")
-	if !found || refusal == nil || refusal.Error() != "branch already exists: am/taken" || name != "" {
-		t.Fatalf("ReadNameResult = %q, %v, %v; want the refusal", name, refusal, found)
+	requested, applied, refusal, found = manager.ReadNameResult("x")
+	if !found || refusal == nil || refusal.Error() != "branch already exists: am/taken" || requested != "taken" || applied != "" {
+		t.Fatalf("ReadNameResult = %q, %q, %v, %v; want the refusal", requested, applied, refusal, found)
 	}
 
 	if err := manager.RemoveNameResult("x"); err != nil {
 		t.Fatalf("RemoveNameResult: %v", err)
 	}
-	if _, _, found := manager.ReadNameResult("x"); found {
+	if _, _, _, found := manager.ReadNameResult("x"); found {
 		t.Fatal("removed result should not be found")
 	}
 	if err := manager.RemoveNameResult("x"); err != nil {
 		t.Fatalf("second RemoveNameResult should be a no-op: %v", err)
+	}
+}
+
+// A file this package did not write is no answer: reading one as a
+// rename that happened is the false success this mailbox exists to stop.
+func TestReadNameResultRejectsAForeignFile(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for _, content := range []string{"", "renam", "fix auth bug", "ok\nfix auth bug\nfix auth bug"} {
+		if err := os.WriteFile(manager.NameResultFile("x"), []byte(content), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if requested, applied, refusal, found := manager.ReadNameResult("x"); found {
+			t.Fatalf("content %q read as an answer: %q, %q, %v", content, requested, applied, refusal)
+		}
+	}
+}
+
+// The poller consumes the rename it applied, and leaves one written
+// while it was working for its next pass.
+func TestRemoveNameIfUnchanged(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(manager.NameFile("x"), []byte("second name"), 0o644); err != nil {
+		t.Fatalf("write name: %v", err)
+	}
+	if err := manager.RemoveNameIfUnchanged("x", "first name"); err != nil {
+		t.Fatalf("RemoveNameIfUnchanged: %v", err)
+	}
+	if name, found := manager.ReadName("x"); !found || name != "second name" {
+		t.Fatalf("a newer name was consumed by the older rename: %q, %v", name, found)
+	}
+	if err := manager.RemoveNameIfUnchanged("x", "second name"); err != nil {
+		t.Fatalf("RemoveNameIfUnchanged: %v", err)
+	}
+	if _, found := manager.ReadName("x"); found {
+		t.Fatal("the applied name should be consumed")
+	}
+	if err := manager.RemoveNameIfUnchanged("x", "second name"); err != nil {
+		t.Fatalf("removing a name that is gone should be a no-op: %v", err)
 	}
 }

@@ -152,59 +152,78 @@ const maxNameLength = 80
 
 // ReadName returns the pending rename for a session. found reports that
 // the file exists, so the caller can consume it even when the content
-// normalizes to nothing. The file is written by agents, so the name is
-// squashed to one bounded line.
+// normalizes to nothing.
 func (m *Manager) ReadName(id string) (name string, found bool) {
 	raw, err := os.ReadFile(m.NameFile(id))
 	if err != nil {
 		return "", false
 	}
-	name = strings.Join(strings.Fields(string(raw)), " ")
+	return NormalizeName(string(raw)), true
+}
+
+// NormalizeName is the name a session actually takes: written by agents,
+// so squashed to one bounded line. Whoever asks for a rename normalizes
+// its own name the same way to recognize the answer it gets back.
+func NormalizeName(raw string) string {
+	name := strings.Join(strings.Fields(raw), " ")
 	if runes := []rune(name); len(runes) > maxNameLength {
 		name = string(runes[:maxNameLength])
 	}
-	return name, true
+	return name
 }
 
 func (m *Manager) RemoveName(id string) error {
 	return removeIfExists(m.NameFile(id))
 }
 
+// RemoveNameIfUnchanged consumes a pending rename only while it is still
+// the one the caller read, so a name written while that one was being
+// applied stays for the next poll instead of being dropped.
+func (m *Manager) RemoveNameIfUnchanged(id, name string) error {
+	if current, found := m.ReadName(id); !found || current != name {
+		return nil
+	}
+	return removeIfExists(m.NameFile(id))
+}
+
 // NameResultFile is where the poller reports what became of a pending
 // rename, so the subcommand that queued it can tell the agent the truth
-// instead of assuming success. The first line is "renamed" or "refused";
-// the rest is the applied name or the reason.
+// instead of assuming success. The verdict is "renamed" or "refused",
+// then the name that was asked for, then the applied name or the reason.
 func (m *Manager) NameResultFile(id string) string {
 	return filepath.Join(m.dir, id+".renamed")
 }
 
-// The waiting subcommand polls for this file, so it lands whole: a
+// WriteNameResult answers the rename that asked for requested. The
+// waiting subcommand polls for this file, so it lands whole: a
 // half-written verdict would read as a rename that never happened.
-func (m *Manager) WriteNameResult(id, name string, refusal error) error {
-	content := "renamed\n" + name
+func (m *Manager) WriteNameResult(id, requested, applied string, refusal error) error {
+	content := "renamed\n" + requested + "\n" + applied
 	if refusal != nil {
-		content = "refused\n" + refusal.Error()
+		content = "refused\n" + requested + "\n" + refusal.Error()
 	}
-	path := m.NameResultFile(id)
-	partial := path + ".part"
-	if err := os.WriteFile(partial, []byte(content), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(partial, path)
+	return writeWhole(m.NameResultFile(id), content)
 }
 
-// ReadNameResult returns the applied name, or the refusal as an error.
-// found reports whether the poller has answered yet.
-func (m *Manager) ReadNameResult(id string) (name string, refusal error, found bool) {
+// ReadNameResult returns the name that was asked for and what became of
+// it: the applied name, or the refusal as an error. found reports that
+// the poller has answered, so a caller compares requested against its own
+// to know whether the answer is the one it is waiting for. Anything but
+// the two verdicts this package writes is no answer at all.
+func (m *Manager) ReadNameResult(id string) (requested, applied string, refusal error, found bool) {
 	raw, err := os.ReadFile(m.NameResultFile(id))
 	if err != nil {
-		return "", nil, false
+		return "", "", nil, false
 	}
-	verdict, detail, _ := strings.Cut(string(raw), "\n")
-	if verdict == "refused" {
-		return "", errors.New(detail), true
+	verdict, rest, _ := strings.Cut(string(raw), "\n")
+	requested, detail, _ := strings.Cut(rest, "\n")
+	switch verdict {
+	case "renamed":
+		return requested, detail, nil, true
+	case "refused":
+		return requested, "", errors.New(detail), true
 	}
-	return detail, nil, true
+	return "", "", nil, false
 }
 
 func (m *Manager) RemoveNameResult(id string) error {
@@ -269,6 +288,16 @@ func (m *Manager) ReadReviewScope(id string) (scope string, found bool) {
 
 func (m *Manager) RemoveReviewScope(id string) error {
 	return removeIfExists(m.ReviewScopeFile(id))
+}
+
+// writeWhole leaves the file complete or absent, never half written, so
+// a reader polling for it never picks up a partial line.
+func writeWhole(path, content string) error {
+	partial := path + ".part"
+	if err := os.WriteFile(partial, []byte(content), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(partial, path)
 }
 
 func removeIfExists(path string) error {

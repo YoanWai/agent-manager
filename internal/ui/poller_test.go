@@ -286,8 +286,9 @@ func TestPendingRenameOnATakenWorktreeNameStopsAfterOneReport(t *testing.T) {
 	if stored.Name != "mover" || stored.Cwd != spawned.Cwd || stored.WorktreeBranch != spawned.WorktreeBranch {
 		t.Fatalf("refused rename still moved something: %+v", stored)
 	}
-	if _, refusal, found := m.hooks.ReadNameResult(spawned.ID); !found || refusal == nil || !strings.Contains(refusal.Error(), "branch already exists") {
-		t.Fatalf("the agent that asked must hear the refusal: found=%v refusal=%v", found, refusal)
+	requested, _, refusal, found := m.hooks.ReadNameResult(spawned.ID)
+	if !found || refusal == nil || requested != "taken" || !strings.Contains(refusal.Error(), "branch already exists") {
+		t.Fatalf("the agent that asked must hear the refusal: requested=%q found=%v refusal=%v", requested, found, refusal)
 	}
 
 	// The next poll runs clean, so one bad name does not stall the loop.
@@ -305,9 +306,9 @@ func TestPendingRenameReportsTheAppliedName(t *testing.T) {
 	if err := m.poller.applyPendingRename(&sess); err != nil {
 		t.Fatalf("rename: %v", err)
 	}
-	name, refusal, found := m.hooks.ReadNameResult(sess.ID)
-	if !found || refusal != nil || name != "audit the poller" {
-		t.Fatalf("result = %q, %v, %v; want the name as applied", name, refusal, found)
+	requested, applied, refusal, found := m.hooks.ReadNameResult(sess.ID)
+	if !found || refusal != nil || applied != "audit the poller" || requested != "audit the poller" {
+		t.Fatalf("result = %q, %q, %v, %v; want the asked and applied names", requested, applied, refusal, found)
 	}
 }
 
@@ -341,9 +342,9 @@ func TestPendingRenameOnASwitchedWorktreeTakesTheName(t *testing.T) {
 	if stored.WorktreeBranch != spawned.WorktreeBranch || stored.Cwd != spawned.Cwd {
 		t.Fatalf("a worktree off its branch must be left alone: %+v", stored)
 	}
-	name, refusal, found := m.hooks.ReadNameResult(spawned.ID)
-	if !found || refusal != nil || name != "SCT-11-cpu-perf" {
-		t.Fatalf("result = %q, %v, %v", name, refusal, found)
+	requested, applied, refusal, found := m.hooks.ReadNameResult(spawned.ID)
+	if !found || refusal != nil || applied != "SCT-11-cpu-perf" || requested != "SCT-11-cpu-perf" {
+		t.Fatalf("result = %q, %q, %v, %v", requested, applied, refusal, found)
 	}
 }
 

@@ -833,7 +833,6 @@ func TestRenameWorktreeBranchLeavesDetachedWorktreeAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	// A rebase in progress is the common way a worktree ends up detached.
 	if _, err := driver.run(path, "checkout", "--detach"); err != nil {
 		t.Fatalf("detach: %v", err)
 	}
