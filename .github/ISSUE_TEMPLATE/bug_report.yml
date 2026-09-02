@@ -57,6 +57,7 @@ body:
         - Gemini CLI
         - Pi
         - Hermes Agent
+        - Command Code
         - A custom tool from my config
         - Not tool specific
 

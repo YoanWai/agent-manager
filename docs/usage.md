@@ -172,6 +172,7 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `rename` | Rename the calling session |
 | `review` | Declare the repo under review, the base ref and the diff scope, in one call |
 | `review_comment` | Mark a sent review comment handled after addressing it, or reopen it |
+| `report_issue` | File a bug report or feature request on the agent-manager repo for the user: a preview first, and posting only with `confirm` |
 | `list_sessions` | List every agent session with its id, CLI, group, directory, worktree branch and status |
 | `create_session` | Start another agent CLI on a named task, optionally in its own git worktree |
 | `read_session` | Read what another agent's screen currently shows |
@@ -186,8 +187,8 @@ Every session of an MCP-capable tool carries the agent-manager MCP server on spa
 | `release_files` | Give those claims back |
 | `list_reservations` | See what every session is editing right now |
 | `list_groups` | List groups with their default directories, worktree defaults and session counts |
-| `delete_group` | remove a group whose work is done; sessions still filed there move to the root rather than stopping |
 | `create_group` | Add a group, nested with a slash path, to file a fleet under |
+| `delete_group` | Remove a group whose work is done; sessions still filed there move to the root rather than stopping |
 | `list_terminals` | List active managed terminals and their current directories |
 | `create_terminal` | Open a terminal under the calling session, or beside it when that session is itself a terminal, unless `nest` is false |
 | `send_terminal` | Submit a command or send exact keys to a running terminal |
@@ -228,7 +229,7 @@ A worktree per session stops two agents overwriting one checkout, and that is th
 
 `create_terminal` nests under the calling session unless `nest` is false, and a call from a terminal opens the new shell beside it: under the same agent, or un-nested in the same group when that terminal is itself un-nested. It defaults to the calling agent's group and live pane directory. A group other than the caller's needs `nest: false`, since a nested terminal lives in its parent's group; that group then supplies its nearest inherited default path, and an explicit directory wins over both. `close_terminal` kills the pane and removes the row once the job is finished, and it reaches only the terminals nested under the calling session: a shell someone else opened, or one deliberately left un-nested, is the user's to close. `send_terminal` accepts exactly one of a command, which is pasted and submitted with Enter, or a sequence of tmux key names such as `C-c`, `Up`, and `Enter`. `read_terminal` returns the current screen rather than unlimited scrollback.
 
-The server's MCP initialization instructions teach agents to use these tools without waiting for an explicit request: list sessions and delegate a parallel workstream to a named `create_session` before running it in series, and open a terminal for human-visible work such as SSH, when the user should be able to watch it, attach, or take over. They list and reuse a relevant running terminal first; `create_terminal` nests under the caller unless `nest` is false; they send the command and read its screen while the job runs; and they call `close_terminal` when that job ends, unless the terminal is being left for the user. One-shot local commands stay in the agent's normal tools. The same guidance is repeated in the individual tool descriptions for clients that expose tools but not server instructions.
+The server's MCP initialization instructions teach agents to use these tools without waiting for an explicit request: list sessions and delegate a parallel workstream to a named `create_session` before running it in series, and open a terminal for human-visible work such as SSH, when the user should be able to watch it, attach, or take over. They list and reuse a relevant running terminal first; `create_terminal` nests under the caller unless `nest` is false; they send the command and read its screen while the job runs; and they call `close_terminal` when that job ends, unless the terminal is being left for the user. One-shot local commands stay in the agent's normal tools. They also say to offer `report_issue` when the user hits a bug in the manager itself or asks for something it lacks. The same guidance is repeated in the individual tool descriptions for clients that expose tools but not server instructions.
 
 Every one of these tools acts on the user's machine. Agents should treat `send_terminal` with the same care as typing into an attached shell, and treat `create_session` and `kill_session` as what they are: starting a real agent process that spends tokens, and interrupting one that may be mid-task. Inspect the target returned by `list_sessions` or `list_terminals` first, and read the result before continuing.
 
@@ -237,6 +238,12 @@ Registration is per tool. Claude gets a generated `--mcp-config` file. Codex get
 Pi does not include an MCP client. Its sessions reach the same workspace through the subcommands: `agent-manager --help` lists them, from `sessions`, `spawn`, `send` and `wait` to the shared task list, file reservations, terminals and the review declarations.
 
 A custom tool opts in with `mcp = "<style>"` in its config section. Set `mcp = "none"` to disable registration.
+
+### Bugs and ideas
+
+`report_issue` files a bug report or a feature request on the agent-manager repository for the user, from inside the session where the problem showed up. `kind` is `bug` or `feature`, `title` is the one-line title and `body` the report in markdown. The tool adds the context the issue forms ask for on its own: the agent-manager version, the operating system, the tmux version, and the CLI the calling session runs with the version it reports.
+
+A call without `confirm` composes the issue and returns a preview: the title, the labels, the body exactly as it would be posted, and how filing would go. Nothing is posted by that call. The agent shows the preview to the user and calls again with `confirm: true` once they approve. Filing goes through the `gh` CLI as the user's own GitHub account when `gh` is installed and logged in, and the result is the new issue's URL. Without `gh`, the result is the repository's issue form prefilled from the preview, field by field, for the user to open in a browser; the preview says which route applies and why. The body is public, so secrets and private paths stay out of it.
 
 ## Diff review
 
@@ -339,3 +346,7 @@ Fifteen palettes ship. Nine dark: `classic`, `solarized dark`, `catppuccin mocha
 ## Updates
 
 `agent-manager update` brings the installed binary to the newest release from a shell, without opening the manager. An install owned by a package manager (Homebrew, mise, Arch) hands the terminal to that manager's upgrade command; a direct install downloads the newest release, verifies its checksum, and swaps the binary in place. `--json` prints the outcome as a record instead of a sentence.
+
+## Reporting a bug or an idea
+
+Settings (`s`) has a row that opens the bug report form and one that opens the feature request form in your browser. From a shell, `agent-manager issue "<title>" --body "<text>"` drafts a bug report and `agent-manager feature "<title>" --body "<text>"` a feature request; both print a preview with the context the forms ask for (version, OS, tmux version, and the CLI of the session the command runs in) and post nothing. Rerun with `--confirm` to file it: through `gh` as your own account when it is installed and logged in, otherwise the command prints the prefilled issue form URL to open. `--json` prints the preview or the filed result as a record. Agents reach the same flow through the `report_issue` MCP tool.

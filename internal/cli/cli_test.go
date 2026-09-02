@@ -424,6 +424,9 @@ func TestJSONIsPromisedOnlyWhereTheCommandTakesIt(t *testing.T) {
 		{usageReviewMode, func(out *bytes.Buffer, args []string) error {
 			return runReviewMode(out, append([]string{"staged"}, args...), "cafe0001", t.TempDir())
 		}},
+		{usageIssue, func(out *bytes.Buffer, args []string) error {
+			return runIssue(out, sampleReporter(), append([]string{"t", "--body", "b"}, args...), "cafe0001")
+		}},
 		{usageUpdate, func(out *bytes.Buffer, args []string) error {
 			swapUpdateSeams(t, "agent-manager", update.Manager{},
 				update.Result{Releases: []update.Release{{Version: "v0.31.0"}}}, nil)
@@ -468,7 +471,7 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	registered := []string{
 		"sessions", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
-		"rename", "review-repo", "review-base", "review-mode", "review-comment", "update",
+		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "update",
 	}
 	for _, name := range registered {
 		if table[name] == nil {
@@ -480,7 +483,7 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	}
 
 	help := Help("dev")
-	for _, line := range []string{usageSessions, usageReserve, usageTerminalSend, usageRename, usageReviewComment, usageUpdate, "task <list|create|claim|finish|release|delete>"} {
+	for _, line := range []string{usageSessions, usageReserve, usageTerminalSend, usageRename, usageReviewComment, usageIssue, usageFeature, usageUpdate, "task <list|create|claim|finish|release|delete>"} {
 		if !strings.Contains(help, line) {
 			t.Fatalf("help is missing %q:\n%s", line, help)
 		}
