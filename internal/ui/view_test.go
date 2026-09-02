@@ -292,12 +292,24 @@ func TestZZShot(t *testing.T) {
 // manager out of view, which is what alternate scroll used to prevent; the
 // view declares it from the first frame, alongside the alternate screen.
 func TestViewClaimsMouseAndAltScreen(t *testing.T) {
-	view := shotModel().View()
+	m := shotModel()
+	view := m.View()
 	if view.MouseMode != tea.MouseModeCellMotion {
 		t.Fatalf("first frame mouse mode = %v, want cell motion", view.MouseMode)
 	}
 	if !view.AltScreen {
 		t.Fatal("first frame leaves the alternate screen off")
+	}
+	// Shift+1 reaches a Kitty terminal as a plain '1' unless the alternate
+	// key beside it is asked for.
+	if !view.KeyboardEnhancements.ReportAlternateKeys {
+		t.Fatal("first frame does not ask for alternate keys")
+	}
+	if view.Content != m.viewFrame() {
+		t.Fatalf("view content is not the rendered frame:\n%q", view.Content)
+	}
+	if view.Content == "" {
+		t.Fatal("view content is empty")
 	}
 }
 

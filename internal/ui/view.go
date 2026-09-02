@@ -23,6 +23,9 @@ func (m *Model) View() tea.View {
 	view := tea.NewView(m.viewFrame())
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeCellMotion
+	// A Kitty terminal reports the unshifted codepoint, so the shifted one
+	// alongside it is the only way shift+1 is told from 1.
+	view.KeyboardEnhancements.ReportAlternateKeys = true
 	return view
 }
 

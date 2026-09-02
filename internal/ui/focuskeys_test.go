@@ -50,7 +50,15 @@ func TestFocusKeyCommand(t *testing.T) {
 		{"alt-escape", tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModAlt}, "send-keys -t am_x M-Escape", true},
 		{"ctrl-open-bracket", tea.KeyPressMsg{Code: '[', Mod: tea.ModCtrl}, "send-keys -t am_x Escape", true},
 		{"ctrl-close-bracket", tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl}, "send-keys -t am_x C-]", true},
-		{"ctrl-backslash", tea.KeyPressMsg{Code: '\\', Mod: tea.ModCtrl}, `send-keys -t am_x C-\`, true},
+		// tmux's own command parser eats a backslash, a quote and a
+		// semicolon before the key is looked up, so those are dropped.
+		{"ctrl-backslash", tea.KeyPressMsg{Code: '\\', Mod: tea.ModCtrl}, "", false},
+		{"ctrl-quote", tea.KeyPressMsg{Code: '\'', Mod: tea.ModCtrl}, "", false},
+		{"ctrl-semicolon", tea.KeyPressMsg{Code: ';', Mod: tea.ModCtrl}, "", false},
+		// tmux has no byte for these in a pane without extended keys and
+		// types the name into it instead.
+		{"ctrl-hash", tea.KeyPressMsg{Code: '#', Mod: tea.ModCtrl}, "", false},
+		{"ctrl-star", tea.KeyPressMsg{Code: '*', Mod: tea.ModCtrl}, "", false},
 		{"ctrl-caret", tea.KeyPressMsg{Code: '^', Mod: tea.ModCtrl}, "send-keys -t am_x C-^", true},
 		{"ctrl-underscore", tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl}, "send-keys -t am_x C-_", true},
 		{"ctrl-space", tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModCtrl}, "send-keys -t am_x C-Space", true},
@@ -60,6 +68,21 @@ func TestFocusKeyCommand(t *testing.T) {
 		{"ctrl-shift-up", tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModCtrl | tea.ModShift}, "send-keys -t am_x C-S-Up", true},
 		{"ctrl-enter", tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl}, "send-keys -t am_x C-Enter", true},
 		{"shift-f5", tea.KeyPressMsg{Code: tea.KeyF5, Mod: tea.ModShift}, "send-keys -t am_x S-F5", true},
+		{"ctrl-slash", tea.KeyPressMsg{Code: '/', Mod: tea.ModCtrl}, "send-keys -t am_x C-/", true},
+		{"ctrl-minus", tea.KeyPressMsg{Code: '-', Mod: tea.ModCtrl}, "send-keys -t am_x C--", true},
+		{"ctrl-three", tea.KeyPressMsg{Code: '3', Mod: tea.ModCtrl}, "send-keys -t am_x C-3", true},
+		{"ctrl-eight", tea.KeyPressMsg{Code: '8', Mod: tea.ModCtrl}, "send-keys -t am_x C-8", true},
+		{"ctrl-shift-a", tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl | tea.ModShift}, "send-keys -t am_x C-S-a", true},
+		// Caps lock rides along on every key while it is on, and reading it
+		// as a modifier dropped the chord.
+		{"capslock-alt-rune", tea.KeyPressMsg{Code: 'x', Mod: tea.ModAlt | tea.ModCapsLock}, "send-keys -t am_x -H 1b 78", true},
+		{"kp-enter", tea.KeyPressMsg{Code: tea.KeyKpEnter}, "send-keys -t am_x Enter", true},
+		{"kp-up", tea.KeyPressMsg{Code: tea.KeyKpUp}, "send-keys -t am_x Up", true},
+		{"kp-pgdown", tea.KeyPressMsg{Code: tea.KeyKpPgDown}, "send-keys -t am_x NPage", true},
+		// A Kitty terminal reports the unshifted codepoint and the shifted
+		// one beside it, so shift+alt+1 must send "!" and not "1".
+		{"shift-alt-shifted-code", tea.KeyPressMsg{Code: '1', ShiftedCode: '!', Mod: tea.ModAlt | tea.ModShift}, "send-keys -t am_x -H 1b 21", true},
+		{"shift-alt-no-shifted-code", tea.KeyPressMsg{Code: 'a', Mod: tea.ModAlt | tea.ModShift}, "send-keys -t am_x -H 1b 41", true},
 	}
 	for _, c := range cases {
 		got, ok := focusKeyCommand("am_x", c.msg)
@@ -98,10 +121,15 @@ func TestFocusControlChordsReachThePaneAsBytes(t *testing.T) {
 		{"ctrl-open-bracket", tea.KeyPressMsg{Code: '[', Mod: tea.ModCtrl}, []string{"1b"}},
 		{"ctrl-space", tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModCtrl}, []string{"00"}},
 		{"ctrl-at", tea.KeyPressMsg{Code: '@', Mod: tea.ModCtrl}, []string{"00"}},
-		{"ctrl-backslash", tea.KeyPressMsg{Code: '\\', Mod: tea.ModCtrl}, []string{"1c"}},
 		{"ctrl-close-bracket", tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl}, []string{"1d"}},
 		{"ctrl-caret", tea.KeyPressMsg{Code: '^', Mod: tea.ModCtrl}, []string{"1e"}},
 		{"ctrl-underscore", tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl}, []string{"1f"}},
+		{"ctrl-slash", tea.KeyPressMsg{Code: '/', Mod: tea.ModCtrl}, []string{"1f"}},
+		{"ctrl-minus", tea.KeyPressMsg{Code: '-', Mod: tea.ModCtrl}, []string{"1f"}},
+		{"ctrl-three", tea.KeyPressMsg{Code: '3', Mod: tea.ModCtrl}, []string{"1b"}},
+		{"ctrl-eight", tea.KeyPressMsg{Code: '8', Mod: tea.ModCtrl}, []string{"7f"}},
+		{"ctrl-shift-a", tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl | tea.ModShift}, []string{"01"}},
+		{"kp-enter", tea.KeyPressMsg{Code: tea.KeyKpEnter}, []string{"0d"}},
 	}
 	var want []string
 	for _, c := range cases {
@@ -120,8 +148,6 @@ func TestFocusControlChordsReachThePaneAsBytes(t *testing.T) {
 	}
 }
 
-// waitForPaneBytes reads the hex reader's output, one byte per row, until
-// the reader has announced itself and count bytes follow.
 func waitForPaneBytes(t *testing.T, m *Model, id string, count int) []string {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -612,8 +638,14 @@ func TestFocusPasteKeepsPromptInComposer(t *testing.T) {
 	t.Cleanup(func() { pasteFocused = restore })
 
 	text := "line one\nline two\n"
-	updated, _ = m.Update(tea.PasteMsg{Content: text})
+	updated, cmd := m.Update(tea.PasteMsg{Content: text})
 	*m = *updated.(*Model)
+	if cmd == nil {
+		t.Fatal("paste returned no command to run the tmux buffer path")
+	}
+	if msg := cmd(); msg != nil {
+		t.Fatalf("paste command reported %v", msg)
+	}
 
 	if calls != 1 {
 		t.Fatalf("paste path called %d times, want 1 (err=%q)", calls, m.errBar.text)
@@ -816,6 +848,63 @@ func TestFocusLeftUnfocusesAtPromptHead(t *testing.T) {
 	*m = *updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("left at the prompt head did not unfocus, mode = %v", m.mode)
+	}
+}
+
+// Num lock is on for anyone who uses the numpad, and Kitty reports it on
+// every key. It is not a modifier the agent should see, so Left at the
+// prompt head still leaves focus.
+func TestFocusNumLockLeftUnfocusesAtPromptHead(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "locked", t.TempDir(), "")
+	m.selectSessionRow(t, "locked")
+
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	sess := m.rows[m.cursor].sess
+	m.rows[m.cursor].sess.Tool = "claude-hooked"
+	m.pane.forID = sess.ID
+	m.pane.cursor = paneCursor{x: 2, y: 0, ok: true}
+	m.preview = "❯ hi\n"
+
+	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModNumLock})
+	*m = *updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("left with num lock on did not unfocus, mode = %v", m.mode)
+	}
+}
+
+// The numpad's enter submits a prompt just like the main one, so the draft
+// is snapshotted on its way into the pane.
+func TestFocusNumpadEnterStashesTypedPrompt(t *testing.T) {
+	m := buildModel(t)
+	createSessionOn(t, m, "numpad", "claude-hooked", t.TempDir())
+	m.selectSessionRow(t, "numpad")
+
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	sess := m.rows[m.cursor].sess
+	waitForPane(t, m, sess.ID, "❯ hello")
+
+	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	*m = *updated.(*Model)
+	if m.pendingTyped != nil {
+		t.Fatalf("right stashed a draft: %+v", m.pendingTyped)
+	}
+
+	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyKpEnter})
+	*m = *updated.(*Model)
+	if m.pendingTyped == nil {
+		t.Fatal("numpad enter stashed no draft")
+	}
+	if m.pendingTyped.text != "hello" {
+		t.Fatalf("stashed draft = %q, want %q", m.pendingTyped.text, "hello")
 	}
 }
 

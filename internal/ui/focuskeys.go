@@ -36,7 +36,31 @@ var focusNamedKeys = map[rune]string{
 	tea.KeyF10:    "F10",
 	tea.KeyF11:    "F11",
 	tea.KeyF12:    "F12",
+
+	// A numpad key carries its main-keyboard twin's name: the pane sees the
+	// same byte unless it has turned application keypad mode on.
+	tea.KeyKpEnter:  "Enter",
+	tea.KeyKpUp:     "Up",
+	tea.KeyKpDown:   "Down",
+	tea.KeyKpLeft:   "Left",
+	tea.KeyKpRight:  "Right",
+	tea.KeyKpHome:   "Home",
+	tea.KeyKpEnd:    "End",
+	tea.KeyKpPgUp:   "PPage",
+	tea.KeyKpPgDown: "NPage",
+	tea.KeyKpDelete: "DC",
+	tea.KeyKpInsert: "IC",
 }
+
+// lockMods ride along on every key while caps or num lock is on. They say
+// nothing about the chord, so every modifier test masks them out.
+const lockMods = tea.ModCapsLock | tea.ModNumLock
+
+// unnamedCtrlBases are the ctrl chords tmux cannot hand to a pane: it has
+// no byte for #$%&* in a pane without extended keys, and its command parser
+// eats "'\;} before the key is ever looked up. Either way the name lands in
+// the pane as the literal text "C-<base>", so these are dropped instead.
+const unnamedCtrlBases = "#$%&*\"'\\;}"
 
 // focusKeyCommand encodes one key press as a tmux send-keys command for
 // the focused session. Text goes as hex byte codes (-H), which sidesteps
@@ -70,18 +94,25 @@ func focusKeyText(msg tea.KeyPressMsg) string {
 	if msg.Text != "" {
 		return msg.Text
 	}
-	if msg.Mod&^(tea.ModAlt|tea.ModShift) != 0 || !unicode.IsPrint(msg.Code) {
+	mod := msg.Mod &^ lockMods
+	if mod&^(tea.ModAlt|tea.ModShift) != 0 || !unicode.IsPrint(msg.Code) {
 		return ""
 	}
-	if msg.Mod.Contains(tea.ModShift) {
+	if mod.Contains(tea.ModShift) {
+		// A Kitty terminal reports the unshifted codepoint and leaves the
+		// shifted one beside it, so shift+1 is a '1' with a '!' alongside.
+		if msg.ShiftedCode != 0 {
+			return string(msg.ShiftedCode)
+		}
 		return string(unicode.ToUpper(msg.Code))
 	}
 	return string(msg.Code)
 }
 
 func focusKeyName(msg tea.KeyPressMsg) (string, bool) {
-	ctrl := msg.Mod.Contains(tea.ModCtrl)
-	shift := msg.Mod.Contains(tea.ModShift)
+	mod := msg.Mod &^ lockMods
+	ctrl := mod.Contains(tea.ModCtrl)
+	shift := mod.Contains(tea.ModShift)
 	switch {
 	case msg.Code == tea.KeyBackspace && ctrl:
 		// tmux has no modified BSpace or Escape names and types them as
@@ -93,14 +124,13 @@ func focusKeyName(msg tea.KeyPressMsg) (string, bool) {
 		return "Escape", true
 	case ctrl && (msg.Code == tea.KeySpace || msg.Code == '@'):
 		return "C-Space", true
-	case ctrl && strings.ContainsRune(`\]^_`, msg.Code):
-		return "C-" + string(msg.Code), true
-	case ctrl && msg.Code >= 'a' && msg.Code <= 'z':
-		return "C-" + string(msg.Code), true
 	}
 	name, named := focusNamedKeys[msg.Code]
 	if !named {
-		return "", false
+		if !ctrl || !tmuxNamesCtrl(msg.Code) {
+			return "", false
+		}
+		name = string(msg.Code)
 	}
 	if shift && msg.Code == tea.KeyTab {
 		return "BTab", true
@@ -112,6 +142,12 @@ func focusKeyName(msg tea.KeyPressMsg) (string, bool) {
 		name = "C-" + name
 	}
 	return name, true
+}
+
+// tmuxNamesCtrl reports whether tmux turns "C-<code>" into a key the pane
+// receives rather than into literal text.
+func tmuxNamesCtrl(code rune) bool {
+	return code > ' ' && code <= '~' && !strings.ContainsRune(unnamedCtrlBases, code)
 }
 
 // focusSelected enters focus mode: keys go to the selected session's pane
@@ -307,12 +343,12 @@ func (m *Model) handleFocusKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	}
-	if msg.Code == tea.KeyLeft && msg.Mod == 0 && m.arrowStep && m.caretAtInputStart(sess.ID, sess.Tool) {
+	if msg.Code == tea.KeyLeft && msg.Mod&^lockMods == 0 && m.arrowStep && m.caretAtInputStart(sess.ID, sess.Tool) {
 		return m, m.leaveFocus()
 	}
 	// Enter is how a drafted prompt leaves the composer, so the draft is
 	// snapshotted on its way in; alt+enter only breaks the line.
-	if msg.Code == tea.KeyEnter && !msg.Mod.Contains(tea.ModAlt) {
+	if (msg.Code == tea.KeyEnter || msg.Code == tea.KeyKpEnter) && !msg.Mod.Contains(tea.ModAlt) {
 		m.stashTypedPrompt(sess)
 	}
 	resume := m.wakeFocusInput(sess.ID)
@@ -339,10 +375,18 @@ func (m *Model) handleFocusPaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 		return m, m.leaveFocus()
 	}
 	resume := m.wakeFocusInput(sess.ID)
-	if err := pasteFocused(m.tmux, sess.ID, msg.Content); err != nil {
-		m.errBar.text = err.Error()
+	return m, tea.Batch(resume, pasteFocusedCmd(m.tmux, sess.ID, msg.Content))
+}
+
+// pasteFocusedCmd runs the tmux buffer round trip off the update path, so a
+// slow or hung server cannot stall the frame the paste was typed into.
+func pasteFocusedCmd(driver *tmux.Driver, sessID, text string) tea.Cmd {
+	return func() tea.Msg {
+		if err := pasteFocused(driver, sessID, text); err != nil {
+			return errMsg{err}
+		}
+		return nil
 	}
-	return m, resume
 }
 
 // wakeFocusInput is what every keystroke and paste does before reaching
