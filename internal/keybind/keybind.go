@@ -11,17 +11,14 @@ import (
 	"strings"
 )
 
-// Key is one key as the user wrote it, resolved to what each side reads.
 type Key struct {
 	tea  string
 	tmux string
 }
 
-// Tea is the name Bubble Tea reports for the key, the value of
-// tea.KeyMsg.String().
+// Tea is the value tea.KeyMsg.String() reports for the key.
 func (k Key) Tea() string { return k.tea }
 
-// Tmux is the name tmux binds the key under.
 func (k Key) Tmux() string { return k.tmux }
 
 func (k Key) String() string { return k.tea }
@@ -93,13 +90,10 @@ type Binding struct {
 	set  bool
 }
 
-// Keys builds a binding from keys already parsed, which is how the defaults
-// are written down.
 func Keys(keys ...Key) Binding {
 	return Binding{keys: keys, set: true}
 }
 
-// UnmarshalTOML accepts one key, a list of keys, or "none".
 func (b *Binding) UnmarshalTOML(value any) error {
 	b.set = true
 	b.keys = nil
@@ -136,8 +130,6 @@ func (b *Binding) UnmarshalTOML(value any) error {
 
 func (b Binding) Keys() []Key { return b.keys }
 
-// Has reports whether a key press answers to this binding; name is the
-// value Bubble Tea reports for it.
 func (b Binding) Has(name string) bool {
 	for _, key := range b.keys {
 		if key.tea == name {
@@ -147,8 +139,6 @@ func (b Binding) Has(name string) bool {
 	return false
 }
 
-// Label is the binding as a hint shows it: its keys separated by slashes,
-// or nothing for an action that is off.
 func (b Binding) Label() string {
 	names := make([]string, 0, len(b.keys))
 	for _, key := range b.keys {
@@ -157,9 +147,6 @@ func (b Binding) Label() string {
 	return strings.Join(names, " / ")
 }
 
-// Session is the table of keys the manager keeps for itself inside a
-// managed session, attached or focused: everything else typed there goes
-// to the agent.
 type Session struct {
 	Detach Binding `toml:"detach"`
 	Review Binding `toml:"review"`

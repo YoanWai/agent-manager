@@ -963,10 +963,7 @@ func (m *Model) dismissNotice(id string) {
 // a session, laid out on the same columns as the rows around it. The keys
 // come from the table, so a remapped one reads right on the first run too.
 func (m *Model) welcomeSessionKeysLine() string {
-	var line string
-	if detach := m.keys.Detach.Keys(); len(detach) > 0 {
-		line = fmt.Sprintf("%-6s %-22s", detach[0].Tea(), "back to the manager")
-	}
+	line := fmt.Sprintf("%-6s %-22s", m.keys.Detach.Keys()[0].Tea(), "back to the manager")
 	if review := m.keys.Review.Keys(); len(review) > 0 {
 		line += fmt.Sprintf("%-6s %s", review[0].Tea(), "review its diff")
 	}

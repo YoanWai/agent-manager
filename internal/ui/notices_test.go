@@ -35,6 +35,7 @@ func noticeStore(t *testing.T) *store.Store {
 func noticeModel(st *store.Store, version string) *Model {
 	return &Model{
 		store:               st,
+		keys:                keybind.DefaultSession(),
 		update:              updateInfo{version: version},
 		dismissed:           loadDismissed(st),
 		whatsNewVersion:     loadWhatsNewVersion(st),
