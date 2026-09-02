@@ -1063,14 +1063,16 @@ func (p *poller) applyPendingRename(sess *store.Session) error {
 		return err
 	}
 	renameErr := p.renamePending(sess, name)
-	resultErr := p.hooks.WriteNameResult(sess.ID, name, sess.Name, renameErr)
-	// The claim ends either way, so a verdict this poll could not write
-	// does not put the manager back on the same rename every poll.
-	if err := p.hooks.ReleaseName(sess.ID); err != nil {
+	// The claim outlives a verdict this poll could not write: the next one
+	// answers the same rename rather than leaving the agent that asked to
+	// time out on a rename that has in fact been applied or refused. That
+	// pass costs nothing, since a name the session already carries is
+	// applied again as a no-op and a refusal is refused the same way.
+	if err := p.hooks.WriteNameResult(sess.ID, name, sess.Name, renameErr); err != nil {
 		return err
 	}
-	if resultErr != nil {
-		return resultErr
+	if err := p.hooks.ReleaseName(sess.ID); err != nil {
+		return err
 	}
 	return renameErr
 }

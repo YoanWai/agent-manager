@@ -372,6 +372,47 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// A verdict the manager cannot write keeps the rename claimed, so the
+// agent waiting on it hears the answer on a later poll instead of timing
+// out on a rename that was in fact applied.
+func TestPendingRenameKeepsItsClaimUntilTheVerdictLands(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "claude-7a72", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	writeName(t, m, sess.ID, "audit the poller")
+	// A directory in the verdict's place is what an unwritable result
+	// looks like from here: the claim is still takeable, the answer is not.
+	blocked := m.hooks.NameResultFile(sess.ID)
+	if err := os.MkdirAll(blocked, 0o755); err != nil {
+		t.Fatalf("block the result: %v", err)
+	}
+
+	if err := m.poller.applyPendingRename(&sess); err == nil {
+		t.Fatal("a verdict that cannot be written should fail the pass")
+	}
+	stored, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Name != "audit the poller" {
+		t.Fatalf("name = %q, want the rename applied", stored.Name)
+	}
+
+	if err := os.Remove(blocked); err != nil {
+		t.Fatalf("unblock: %v", err)
+	}
+	if err := m.poller.applyPendingRename(&sess); err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	requested, applied, refusal, found := m.hooks.ReadNameResult(sess.ID)
+	if !found || refusal != nil || requested != "audit the poller" || applied != "audit the poller" {
+		t.Fatalf("result = %q, %q, %v, %v; want the answer the first pass could not write", requested, applied, refusal, found)
+	}
+	if _, found, _ := m.hooks.ClaimName(sess.ID); found {
+		t.Fatal("the answered rename should no longer be claimed")
+	}
+}
+
 func writeName(t *testing.T, m *Model, id, name string) {
 	t.Helper()
 	path := m.hooks.NameFile(id)
