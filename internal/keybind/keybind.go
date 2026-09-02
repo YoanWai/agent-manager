@@ -75,7 +75,7 @@ func altKey(spec, rest string) (Key, error) {
 
 func functionKey(spec, rest string) (Key, error) {
 	number, err := strconv.Atoi(rest)
-	if err != nil || number < 1 || number > 12 {
+	if err != nil || number < 1 || number > 12 || rest != strconv.Itoa(number) {
 		return Key{}, fmt.Errorf("%q: a session key is ctrl+<key>, alt+<key> or f1..f12; a plain key reaches the agent", spec)
 	}
 	return Key{tea: "f" + rest, tmux: "F" + rest}, nil

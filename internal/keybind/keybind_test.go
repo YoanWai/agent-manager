@@ -55,6 +55,8 @@ func TestParseRefusesWhatCannotBeASessionKey(t *testing.T) {
 		{"alt+enter", "letter or digit"},
 		{"f0", "f1..f12"},
 		{"f13", "f1..f12"},
+		{"f01", "f1..f12"},
+		{"f+1", "f1..f12"},
 		{"foo", "f1..f12"},
 	} {
 		_, err := Parse(tc.spec)
