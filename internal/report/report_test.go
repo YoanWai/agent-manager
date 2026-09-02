@@ -114,13 +114,91 @@ func TestFilePostsThroughGHAndReturnsTheIssue(t *testing.T) {
 	fake := loggedIn()
 	swapSeams(t, fake)
 	configDir, sessionID := workspace(t)
+	reporter := New(configDir, "0.31.0")
 
-	filed, err := New(configDir, "0.31.0").File(sessionID, bugDraft())
+	preview, err := reporter.Preview(sessionID, bugDraft())
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	filed, err := reporter.File(sessionID, bugDraft(), preview.ID)
 	if err != nil {
 		t.Fatalf("File: %v", err)
 	}
 	if filed.Route != RouteGH || filed.URL != "https://github.com/"+Repo+"/issues/512" {
 		t.Fatalf("filed = %+v", filed)
+	}
+}
+
+// An approval covers one issue on one route as one account. Between the two
+// calls gh can appear, log in, or log in as somebody else, and each of those
+// turns the outcome the user approved into a different one, so the id pins
+// all three and filing is refused rather than guessing the user meant it.
+func TestFilingRefusesAnApprovalThatNoLongerFitsTheOutcome(t *testing.T) {
+	loggedOut := loggedIn()
+	loggedOut.ghPath = errors.New("not found")
+	swapSeams(t, loggedOut)
+	configDir, sessionID := workspace(t)
+
+	browsed, err := New(configDir, "0.31.0").Preview(sessionID, bugDraft())
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if browsed.Route != RouteBrowser {
+		t.Fatalf("route = %q", browsed.Route)
+	}
+
+	// gh arrives between the approval and the filing: what the user approved
+	// posted nothing, so the id no longer fits and nothing is posted.
+	installed := loggedIn()
+	swapSeams(t, installed)
+	_, err = New(configDir, "0.31.0").File(sessionID, bugDraft(), browsed.ID)
+	if err == nil || !strings.Contains(err.Error(), "nothing was filed") || !strings.Contains(err.Error(), browsed.ID) {
+		t.Fatalf("File on a changed route = %v", err)
+	}
+	for _, ran := range installed.ran {
+		if ran[0] == "gh" && ran[1] == "issue" {
+			t.Fatalf("a stale approval posted: %v", ran)
+		}
+	}
+
+	// Same issue, same route, another account: also refused.
+	other := loggedIn()
+	other.answers["gh api user --jq .login"] = "someone-else"
+	swapSeams(t, other)
+	fitting, err := New(configDir, "0.31.0").Preview(sessionID, bugDraft())
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	swapSeams(t, loggedIn())
+	if _, err := New(configDir, "0.31.0").File(sessionID, bugDraft(), fitting.ID); err == nil {
+		t.Fatal("an approval given for another account filed")
+	}
+
+	// And a body edited after the approval never rides an old id in.
+	fake := loggedIn()
+	swapSeams(t, fake)
+	reporter := New(configDir, "0.31.0")
+	approved, err := reporter.Preview(sessionID, bugDraft())
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	edited := bugDraft()
+	edited.Body += "\nand my token is hunter2"
+	if _, err := reporter.File(sessionID, edited, approved.ID); err == nil {
+		t.Fatal("an approval given for one body filed another")
+	}
+}
+
+func TestFilingWithoutAnApprovalIsRefused(t *testing.T) {
+	fake := loggedIn()
+	swapSeams(t, fake)
+	configDir, sessionID := workspace(t)
+	if _, err := New(configDir, "0.31.0").File(sessionID, bugDraft(), "  "); err == nil ||
+		!strings.Contains(err.Error(), "needs the id of the preview the user approved") {
+		t.Fatalf("File without a preview id = %v", err)
+	}
+	if len(fake.ran) != 0 {
+		t.Fatalf("filing without an approval ran commands: %v", fake.ran)
 	}
 }
 
@@ -134,7 +212,12 @@ func TestFileReportsAGHFailure(t *testing.T) {
 	swapSeams(t, fake)
 	configDir, sessionID := workspace(t)
 
-	_, err := New(configDir, "0.31.0").File(sessionID, bugDraft())
+	reporter := New(configDir, "0.31.0")
+	preview, err := reporter.Preview(sessionID, bugDraft())
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	_, err = reporter.File(sessionID, bugDraft(), preview.ID)
 	if err == nil || !strings.Contains(err.Error(), "gh issue create: ") || !strings.Contains(err.Error(), "Resource not accessible") {
 		t.Fatalf("File with a failing gh = %v", err)
 	}
@@ -169,7 +252,7 @@ func TestWithoutGHTheBrowserRouteHandsBackThePrefilledForm(t *testing.T) {
 			if preview.Route != RouteBrowser || preview.Reason != route.reason || preview.Account != "" {
 				t.Fatalf("route = %q (%q) as %q", preview.Route, preview.Reason, preview.Account)
 			}
-			filed, err := reporter.File(sessionID, bugDraft())
+			filed, err := reporter.File(sessionID, bugDraft(), preview.ID)
 			if err != nil {
 				t.Fatalf("File: %v", err)
 			}
@@ -270,7 +353,7 @@ func TestADraftMissingItsPartsIsRefusedBeforeAnythingRuns(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), refused.want) {
 			t.Errorf("Preview(%+v) = %v, want %q", refused.draft, err, refused.want)
 		}
-		if _, err := reporter.File(sessionID, refused.draft); err == nil {
+		if _, err := reporter.File(sessionID, refused.draft, "whatever"); err == nil {
 			t.Errorf("File(%+v) filed a refused draft", refused.draft)
 		}
 	}
@@ -362,15 +445,16 @@ func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 }
 
 func TestFormatPreviewSaysWhatFilingWouldDoAndHowToConfirm(t *testing.T) {
-	preview := Preview{Kind: Bug, Title: "t", Body: "### What happened\n\nb\n", Labels: []string{"bug"}, Route: RouteGH, Account: "yoan"}
-	text := FormatPreview(preview, "call again with confirm true")
+	preview := Preview{ID: "3f2a91c4", Kind: Bug, Title: "t", Body: "### What happened\n\nb\n", Labels: []string{"bug"}, Route: RouteGH, Account: "yoan"}
+	text := FormatPreview(preview, "call again with preview_id 3f2a91c4")
 	for _, want := range []string{
 		"bug report for " + Repo + ", not filed yet",
 		"title: t",
 		"labels: bug",
+		"preview id: 3f2a91c4",
 		"### What happened",
 		"through gh as yoan",
-		"Nothing is posted until the user approves this preview; then call again with confirm true.",
+		"Nothing is posted until the user approves this preview; then call again with preview_id 3f2a91c4.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("preview text lacks %q:\n%s", want, text)

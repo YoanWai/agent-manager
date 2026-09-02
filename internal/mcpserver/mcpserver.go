@@ -147,10 +147,10 @@ type messageStatusArgs struct {
 }
 
 type reportIssueArgs struct {
-	Kind    string `json:"kind" jsonschema:"bug for something the manager does wrong, feature for something it should do"`
-	Title   string `json:"title" jsonschema:"one-line issue title naming the behaviour, as the user would search for it"`
-	Body    string `json:"body" jsonschema:"bug: what the user did, what they expected and what happened instead, step by step; feature: what they are trying to do and what they have in mind. Markdown; it is posted publicly, so no secrets or private paths"`
-	Confirm bool   `json:"confirm,omitempty" jsonschema:"false or omitted returns a preview and posts nothing; true files the issue exactly as previewed, and is passed only after the user approved that preview"`
+	Kind      string `json:"kind" jsonschema:"bug for something the manager does wrong, feature for something it should do"`
+	Title     string `json:"title" jsonschema:"one-line issue title naming the behaviour, as the user would search for it"`
+	Body      string `json:"body" jsonschema:"bug: what the user did, what they expected and what happened instead, step by step; feature: what they are trying to do and what they have in mind. Markdown; it is posted publicly, so no secrets or private paths"`
+	PreviewID string `json:"preview_id,omitempty" jsonschema:"omitted returns a preview and posts nothing; after the user approves that preview, pass the id it returned to file exactly what they saw"`
 }
 
 type terminalCommands interface {
@@ -163,7 +163,7 @@ type terminalCommands interface {
 
 type issueReporter interface {
 	Preview(sessionID string, draft report.Draft) (report.Preview, error)
-	File(sessionID string, draft report.Draft) (report.Filed, error)
+	File(sessionID string, draft report.Draft, previewID string) (report.Filed, error)
 }
 
 type sessionCommands interface {
@@ -641,20 +641,20 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		Name: "report_issue",
 		Description: "File a bug report or a feature request on Agent Manager's public GitHub repo for the user. " +
 			"Offer it when the user hits a bug in the manager itself (a wrong status, a lost message, a tool refusing what it should allow) or asks for something the manager cannot do; it is not for bugs in the user's own project. " +
-			"Without confirm it composes the issue from title, body and context gathered here (agent-manager version, OS, tmux version, this session's CLI and its version) and returns a preview that posts nothing; show the preview to the user and call again with confirm true only after they approve it. " +
+			"Without preview_id it composes the issue from title, body and context gathered here (agent-manager version, OS, tmux version, this session's CLI and its version) and returns a preview that posts nothing; show the preview to the user and call again with the id it returned only after they approve it, which files exactly what they saw and is refused once anything in it has changed. " +
 			"Filing goes through the gh CLI as the user's account when gh is installed and logged in; otherwise the result is a prefilled GitHub form URL for the user to open. " +
 			"The body is public: keep secrets and private paths out of it.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args reportIssueArgs) (*mcp.CallToolResult, any, error) {
 		draft := report.Draft{Kind: report.Kind(args.Kind), Title: args.Title, Body: args.Body}
-		if !args.Confirm {
+		if args.PreviewID == "" {
 			preview, err := reporter.Preview(sessionID, draft)
 			if err != nil {
 				return nil, nil, err
 			}
-			return textContent(report.FormatPreview(preview, "call again with confirm true")), preview, nil
+			return textContent(report.FormatPreview(preview, "call again with preview_id "+preview.ID)), preview, nil
 		}
-		filed, err := reporter.File(sessionID, draft)
+		filed, err := reporter.File(sessionID, draft, args.PreviewID)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -7,7 +7,9 @@ package report
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -67,6 +69,7 @@ type Context struct {
 }
 
 type Preview struct {
+	ID      string   `json:"id" jsonschema:"identifies this exact issue, route and account; filing takes it back and refuses once any of them has changed"`
 	Kind    Kind     `json:"kind"`
 	Title   string   `json:"title"`
 	Body    string   `json:"body" jsonschema:"issue body exactly as it will be posted, context included"`
@@ -110,16 +113,33 @@ func (r *Reporter) Preview(sessionID string, draft Draft) (Preview, error) {
 		URL:     FormURL(draft, gathered),
 	}
 	preview.Route, preview.Account, preview.Reason = route()
+	preview.ID = preview.fingerprint()
 	return preview, nil
+}
+
+// fingerprint covers everything the user weighs before approving: the issue
+// itself, the route that decides whether anything is posted at all, and the
+// account it would be posted as.
+func (p Preview) fingerprint() string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{p.Route, p.Account, p.Title, p.Body, strings.Join(p.Labels, ",")}, "\x00")))
+	return hex.EncodeToString(sum[:])[:8]
 }
 
 // File posts the issue the preview showed: through gh when it is installed
 // and logged in, otherwise by handing back the prefilled form for the user
-// to open. A caller passes here only after the user approved the preview.
-func (r *Reporter) File(sessionID string, draft Draft) (Filed, error) {
+// to open. previewID is the id of the preview the user approved, and filing
+// is refused when what would be filed now no longer matches it, so an
+// approval can never carry over to a different issue, route or account.
+func (r *Reporter) File(sessionID string, draft Draft, previewID string) (Filed, error) {
+	if strings.TrimSpace(previewID) == "" {
+		return Filed{}, errors.New("filing needs the id of the preview the user approved")
+	}
 	preview, err := r.Preview(sessionID, draft)
 	if err != nil {
 		return Filed{}, err
+	}
+	if previewID != preview.ID {
+		return Filed{}, fmt.Errorf("preview %s is not what would be filed now, which is %s, so nothing was filed; preview again and show the user what it says before filing", previewID, preview.ID)
 	}
 	if preview.Route == RouteBrowser {
 		return Filed{Route: RouteBrowser, URL: preview.URL}, nil
@@ -346,7 +366,8 @@ func FormatPreview(preview Preview, confirm string) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "%s for %s, not filed yet\n", describe(preview.Kind), Repo)
 	fmt.Fprintf(&out, "title: %s\n", preview.Title)
-	fmt.Fprintf(&out, "labels: %s\n\n", strings.Join(preview.Labels, ", "))
+	fmt.Fprintf(&out, "labels: %s\n", strings.Join(preview.Labels, ", "))
+	fmt.Fprintf(&out, "preview id: %s\n\n", preview.ID)
 	out.WriteString(preview.Body)
 	out.WriteString("\n")
 	if preview.Route == RouteGH {

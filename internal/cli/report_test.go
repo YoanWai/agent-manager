@@ -14,6 +14,7 @@ import (
 // a test can tell a run without --confirm posted nothing.
 type fakeReporter struct {
 	callerID  string
+	approved  string
 	previewed []report.Draft
 	filed     []report.Draft
 	preview   report.Preview
@@ -27,15 +28,15 @@ func (f *fakeReporter) Preview(sessionID string, draft report.Draft) (report.Pre
 	return f.preview, f.failWith
 }
 
-func (f *fakeReporter) File(sessionID string, draft report.Draft) (report.Filed, error) {
-	f.callerID = sessionID
+func (f *fakeReporter) File(sessionID string, draft report.Draft, previewID string) (report.Filed, error) {
+	f.callerID, f.approved = sessionID, previewID
 	f.filed = append(f.filed, draft)
 	return f.result, f.failWith
 }
 
 func sampleReporter() *fakeReporter {
 	return &fakeReporter{
-		preview: report.Preview{Kind: report.Bug, Title: "Space lands in the wrong pane", Body: "### What happened\n\nsteps\n", Labels: []string{"bug"}, Route: report.RouteGH, Account: "yoan"},
+		preview: report.Preview{ID: "3f2a91c4", Kind: report.Bug, Title: "Space lands in the wrong pane", Body: "### What happened\n\nsteps\n", Labels: []string{"bug"}, Route: report.RouteGH, Account: "yoan"},
 		result:  report.Filed{Route: report.RouteGH, URL: "https://github.com/YoanWai/agent-manager/issues/512"},
 	}
 }
@@ -46,7 +47,7 @@ func TestIssuePreviewsUntilConfirmed(t *testing.T) {
 	if err := runIssue(out, fake, []string{"Space lands in the wrong pane", "--body", "steps"}, "cafe0001"); err != nil {
 		t.Fatalf("issue: %v", err)
 	}
-	for _, want := range []string{"bug report for YoanWai/agent-manager, not filed yet", "through gh as yoan", "rerun with --confirm"} {
+	for _, want := range []string{"bug report for YoanWai/agent-manager, not filed yet", "preview id: 3f2a91c4", "through gh as yoan", "rerun with --confirm 3f2a91c4"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("preview lacks %q:\n%s", want, out.String())
 		}
@@ -57,14 +58,14 @@ func TestIssuePreviewsUntilConfirmed(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runIssue(out, fake, []string{"Space lands in the wrong pane", "--body", "steps", "--confirm"}, "cafe0001"); err != nil {
+	if err := runIssue(out, fake, []string{"Space lands in the wrong pane", "--body", "steps", "--confirm", "3f2a91c4"}, "cafe0001"); err != nil {
 		t.Fatalf("issue --confirm: %v", err)
 	}
 	if out.String() != "filed https://github.com/YoanWai/agent-manager/issues/512\n" {
 		t.Fatalf("issue --confirm output = %q", out.String())
 	}
-	if len(fake.filed) != 1 || fake.filed[0] != want {
-		t.Fatalf("issue --confirm filed %v", fake.filed)
+	if len(fake.filed) != 1 || fake.filed[0] != want || fake.approved != "3f2a91c4" {
+		t.Fatalf("issue --confirm filed %v approved as %q", fake.filed, fake.approved)
 	}
 }
 
@@ -95,7 +96,7 @@ func TestReportJSONPrintsTheRecord(t *testing.T) {
 		t.Fatalf("issue --json = %q (%v)", out.String(), err)
 	}
 	out.Reset()
-	if err := runIssue(out, fake, []string{"t", "--body", "b", "--json", "--confirm"}, "cafe0001"); err != nil {
+	if err := runIssue(out, fake, []string{"t", "--body", "b", "--json", "--confirm", "3f2a91c4"}, "cafe0001"); err != nil {
 		t.Fatalf("issue --json --confirm: %v", err)
 	}
 	var filed report.Filed
@@ -126,7 +127,7 @@ func TestReportUsageErrors(t *testing.T) {
 func TestReportLayerFailureReachesTheCaller(t *testing.T) {
 	fake := sampleReporter()
 	fake.failWith = errors.New("body is empty; say what you did, what you expected and what happened instead")
-	for _, args := range [][]string{{"t"}, {"t", "--confirm"}} {
+	for _, args := range [][]string{{"t"}, {"t", "--confirm", "3f2a91c4"}} {
 		out := &bytes.Buffer{}
 		err := runIssue(out, fake, args, "cafe0001")
 		if err == nil || !strings.Contains(err.Error(), "body is empty") || out.Len() != 0 {

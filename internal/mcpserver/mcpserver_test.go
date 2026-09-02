@@ -221,6 +221,7 @@ func (f *fakeSessionCommands) DeleteGroup(_ string, path string) (sessioncmd.Gro
 // fakeReporter records the drafts each call handed it, so a test can tell a
 // preview that posted nothing from a confirm that filed.
 type fakeReporter struct {
+	approved  string
 	previewed []report.Draft
 	filed     []report.Draft
 	preview   report.Preview
@@ -233,7 +234,8 @@ func (f *fakeReporter) Preview(_ string, draft report.Draft) (report.Preview, er
 	return f.preview, f.err
 }
 
-func (f *fakeReporter) File(_ string, draft report.Draft) (report.Filed, error) {
+func (f *fakeReporter) File(_ string, draft report.Draft, previewID string) (report.Filed, error) {
+	f.approved = previewID
 	f.filed = append(f.filed, draft)
 	return f.result, f.err
 }
@@ -1120,7 +1122,7 @@ func TestReservationToolsReportConflictsWithoutRefusingTheLease(t *testing.T) {
 
 func TestReportIssuePreviewsUntilTheUserConfirms(t *testing.T) {
 	fake := &fakeReporter{
-		preview: report.Preview{Kind: report.Bug, Title: "Space lands in the wrong pane", Body: "### What happened\n\nsteps\n", Labels: []string{"bug"}, Route: report.RouteGH, Account: "yoan"},
+		preview: report.Preview{ID: "3f2a91c4", Kind: report.Bug, Title: "Space lands in the wrong pane", Body: "### What happened\n\nsteps\n", Labels: []string{"bug"}, Route: report.RouteGH, Account: "yoan"},
 		result:  report.Filed{Route: report.RouteGH, URL: "https://github.com/YoanWai/agent-manager/issues/512"},
 	}
 	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", &fakeTerminalCommands{}, &fakeSessionCommands{}, fake))
@@ -1130,23 +1132,23 @@ func TestReportIssuePreviewsUntilTheUserConfirms(t *testing.T) {
 	if isError {
 		t.Fatalf("preview errored: %q", text)
 	}
-	for _, want := range []string{"not filed yet", "through gh as yoan", "call again with confirm true"} {
+	for _, want := range []string{"not filed yet", "preview id: 3f2a91c4", "through gh as yoan", "call again with preview_id 3f2a91c4"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("preview lacks %q:\n%s", want, text)
 		}
 	}
 	want := report.Draft{Kind: report.Bug, Title: "Space lands in the wrong pane", Body: "steps"}
 	if len(fake.previewed) != 1 || fake.previewed[0] != want || len(fake.filed) != 0 {
-		t.Fatalf("a call without confirm previewed %v and filed %v", fake.previewed, fake.filed)
+		t.Fatalf("a call without preview_id previewed %v and filed %v", fake.previewed, fake.filed)
 	}
 
-	args["confirm"] = true
+	args["preview_id"] = "3f2a91c4"
 	text, isError = callText(t, session, "report_issue", args)
 	if isError || text != "filed https://github.com/YoanWai/agent-manager/issues/512" {
 		t.Fatalf("confirm = %q, isError=%v", text, isError)
 	}
-	if len(fake.filed) != 1 || fake.filed[0] != want {
-		t.Fatalf("confirm filed %v", fake.filed)
+	if len(fake.filed) != 1 || fake.filed[0] != want || fake.approved != "3f2a91c4" {
+		t.Fatalf("confirm filed %v approved as %q", fake.filed, fake.approved)
 	}
 	structured := callTool(t, session, "report_issue", args).StructuredContent
 	if record, ok := structured.(map[string]any); !ok || record["url"] != "https://github.com/YoanWai/agent-manager/issues/512" || record["route"] != "gh" {
@@ -1157,10 +1159,10 @@ func TestReportIssuePreviewsUntilTheUserConfirms(t *testing.T) {
 func TestReportIssueRefusalsAreToolErrors(t *testing.T) {
 	fake := &fakeReporter{err: errors.New("body is empty; say what you did")}
 	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", &fakeTerminalCommands{}, &fakeSessionCommands{}, fake))
-	for _, confirm := range []bool{false, true} {
-		text, isError := callText(t, session, "report_issue", map[string]any{"kind": "bug", "title": "t", "body": "", "confirm": confirm})
+	for _, previewID := range []string{"", "3f2a91c4"} {
+		text, isError := callText(t, session, "report_issue", map[string]any{"kind": "bug", "title": "t", "body": "", "preview_id": previewID})
 		if !isError || !strings.Contains(text, "body is empty") {
-			t.Fatalf("confirm=%v: %q, isError=%v", confirm, text, isError)
+			t.Fatalf("preview_id=%q: %q, isError=%v", previewID, text, isError)
 		}
 	}
 }
@@ -1183,7 +1185,7 @@ func TestReportIssueDescriptionTeachesTheConfirmFlow(t *testing.T) {
 	if tool == nil {
 		t.Fatal("report_issue is not served")
 	}
-	for _, want := range []string{"bug in the manager itself", "cannot do", "preview", "posts nothing", "confirm true only after they approve", "gh", "prefilled", "public"} {
+	for _, want := range []string{"bug in the manager itself", "cannot do", "preview", "posts nothing", "only after they approve", "exactly what they saw", "gh", "prefilled", "public"} {
 		if !strings.Contains(tool.Description, want) {
 			t.Fatalf("report_issue description lacks %q:\n%s", want, tool.Description)
 		}
