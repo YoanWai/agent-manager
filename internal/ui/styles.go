@@ -118,7 +118,18 @@ func handledAnnotationBg() string {
 }
 
 func statusColor(s string) color.Color {
-	return lipgloss.Color(statusHex(s))
+	switch s {
+	case status.Working, status.Starting:
+		return colorWorking
+	case status.Waiting:
+		return colorWaiting
+	case status.Finished:
+		return colorFinished
+	case status.Errored, status.Dead:
+		return colorErrored
+	default:
+		return colorIdle
+	}
 }
 
 func statusHex(s string) string {
