@@ -488,6 +488,9 @@ type refreshMsg struct {
 	// whether the rows no server has claimed are this manager's to show as
 	// current.
 	leadingManager bool
+	// focusID is the session a clicked notification named, taken from
+	// the config directory by this pass.
+	focusID string
 }
 
 type previewMsg struct {
@@ -1367,9 +1370,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resizeSessions()
 		}
 		m.rebuildRows()
+		if msg.focusID != "" {
+			m.focusSession(msg.focusID)
+		}
 		reviewStatuses := m.reviewStatusesCmd()
 		// A pass that ran with a stale selection (a session created this
-		// tick) carries the wrong preview; resync and fetch it directly.
+		// tick, or one a notification click just chose) carries the wrong
+		// preview; resync and fetch it directly.
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
 			m.previewGen++

@@ -2,44 +2,90 @@
 // managed session's status flips into a state that needs the user.
 //
 // Delivery is best-path. Inside Ghostty (cmux included) an OSC 777 escape
-// and inside iTerm2 an OSC 9 escape go to the drawing terminal, which turns
-// them into a native notification attributed to that window and workspace,
-// so a click lands on the terminal. Since the escape rides the terminal
-// connection, it reaches the user even when the manager runs on a remote
-// host over SSH. Without such a terminal, macOS posts via osascript and
-// Linux via notify-send. With nothing better available the terminal bell
-// is the floor, so headless and WSL setups still get an audible cue.
+// goes to the drawing terminal, which turns it into a native notification
+// attributed to that window and workspace; since the escape rides the
+// terminal connection, it reaches the user even when the manager runs on a
+// remote host over SSH. On macOS the manager posts through a helper app
+// bundle of its own, so the banner carries the manager's name and icon and
+// a click brings the terminal that launched the manager forward. Linux
+// posts through notify-send, and a click there raises the terminal window
+// where the display allows it. WSL posts a Windows toast through
+// PowerShell. Every click also asks the manager to select the session the
+// banner named. With nothing better available the terminal bell is the
+// floor, so headless setups still get an audible cue.
 package notify
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/termseq"
+	"github.com/YoanWai/agent-manager/internal/wsl"
 )
 
 // Overridable seams so tests can drive the platform branches without a
 // real notification backend.
 var (
-	goos     = runtime.GOOS
-	getenv   = os.Getenv
-	lookPath = exec.LookPath
-	runCmd   = runBounded
-	emitSeq  = termseq.Emit
+	goos      = runtime.GOOS
+	getenv    = os.Getenv
+	lookPath  = exec.LookPath
+	runCmd    = runBounded
+	runOutput = runBoundedOutput
+	runEnv    = runBoundedEnv
+	emitSeq   = termseq.Emit
+	configDir = config.Dir
+	isWSL     = wsl.Detect
+	macPost   = postThroughHelper
 )
 
 // cmdTimeout bounds external notifiers: a wedged osascript or notify-send
 // must cost one delivery, not stall it forever.
 const cmdTimeout = 2 * time.Second
 
+// clickTimeout is how long a notifier that reports the click may stay up
+// waiting for it. A banner the user never touches expires on its own well
+// inside this; the bound only reaps a daemon that never answers.
+const clickTimeout = 10 * time.Minute
+
+// helperStartTimeout bounds a notifier that has a runtime to spin up
+// first, such as PowerShell reached through WSL interop.
+const helperStartTimeout = 15 * time.Second
+
+// errDenied reports that the user has refused the manager's notifications
+// at the OS level, so no other banner should be tried on their behalf.
+var errDenied = errors.New("notifications not allowed")
+
 func runBounded(name string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
 	defer cancel()
 	return exec.CommandContext(ctx, name, args...).Run()
+}
+
+// runBoundedEnv runs a notifier that takes its content from the
+// environment, which keeps the text clear of the command line and of any
+// quoting the notifier applies to arguments.
+func runBoundedEnv(env map[string]string, name string, args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), helperStartTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = os.Environ()
+	for key, value := range env {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
+	return cmd.Run()
+}
+
+func runBoundedOutput(timeout time.Duration, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, name, args...).Output()
+	return string(out), err
 }
 
 type Kind uint8
@@ -50,7 +96,11 @@ const (
 	Errored
 )
 
+// Event is one session transition worth telling the user about. ID is the
+// session's store id, which a click hands back so the manager can select
+// that row.
 type Event struct {
+	ID      string
 	Session string
 	Tool    string
 	Kind    Kind
@@ -59,6 +109,7 @@ type Event struct {
 type presentation struct {
 	body          string
 	macSound      string
+	windowsSound  string
 	linuxSound    string
 	linuxUrgency  string
 	linuxIcon     string
@@ -71,6 +122,7 @@ func describe(kind Kind) (presentation, bool) {
 		return presentation{
 			body:          "◆ Waiting for your input",
 			macSound:      "Funk",
+			windowsSound:  "ms-winsoundevent:Notification.Reminder",
 			linuxSound:    "dialog-question",
 			linuxUrgency:  "normal",
 			linuxIcon:     "dialog-question",
@@ -80,6 +132,7 @@ func describe(kind Kind) (presentation, bool) {
 		return presentation{
 			body:          "● Finished",
 			macSound:      "Hero",
+			windowsSound:  "ms-winsoundevent:Notification.Default",
 			linuxSound:    "complete-download",
 			linuxUrgency:  "low",
 			linuxIcon:     "emblem-default",
@@ -89,6 +142,7 @@ func describe(kind Kind) (presentation, bool) {
 		return presentation{
 			body:          "✕ Errored",
 			macSound:      "Basso",
+			windowsSound:  "ms-winsoundevent:Notification.Looping.Alarm2",
 			linuxSound:    "dialog-error",
 			linuxUrgency:  "critical",
 			linuxIcon:     "dialog-error",
@@ -122,11 +176,15 @@ func Notify(event Event) {
 	if ghostty() && emitSeq(osc777("agent-manager", terminalBody)) == nil {
 		return
 	}
-	if iterm() && emitSeq(osc9(terminalBody)) == nil {
-		return
-	}
 	switch goos {
 	case "darwin":
+		err := macPost(event.ID, subtitle, body, detail.macSound)
+		if err == nil {
+			return
+		}
+		if errors.Is(err, errDenied) {
+			break
+		}
 		// The argv form keeps content out of the script source, so
 		// no AppleScript quoting is needed.
 		if runCmd("osascript", "-e", "on run argv",
@@ -135,18 +193,71 @@ func Notify(event Event) {
 			return
 		}
 	case "linux":
-		if _, err := lookPath("notify-send"); err == nil &&
-			runCmd("notify-send",
-				"--app-name=agent-manager",
-				"--urgency="+detail.linuxUrgency,
-				"--category="+detail.linuxCategory,
-				"--icon="+detail.linuxIcon,
-				"--hint=string:sound-name:"+detail.linuxSound,
-				"--", "agent-manager", terminalBody) == nil {
+		if isWSL() {
+			if windowsToast(subtitle, body, detail.windowsSound) == nil {
+				return
+			}
+			break
+		}
+		if _, err := lookPath("notify-send"); err == nil && notifySend(event.ID, terminalBody, detail) == nil {
 			return
 		}
 	}
 	_ = emitSeq("\a")
+}
+
+// notifySend posts through the desktop's notification daemon. When the
+// installed notify-send can report actions, the call carries the default
+// action and stays up until the banner closes, so a click on it can raise
+// the terminal and select the session.
+func notifySend(sessionID, body string, detail presentation) error {
+	args := []string{
+		"--app-name=agent-manager",
+		"--urgency=" + detail.linuxUrgency,
+		"--category=" + detail.linuxCategory,
+		"--icon=" + detail.linuxIcon,
+		"--hint=string:sound-name:" + detail.linuxSound,
+	}
+	if !notifySendReportsActions() {
+		return runCmd("notify-send", append(args, "--", "agent-manager", body)...)
+	}
+	args = append(args, "--action=default=Open", "--", "agent-manager", body)
+	go func() {
+		out, err := runOutput(clickTimeout, "notify-send", args...)
+		if err != nil || strings.TrimSpace(out) != "default" {
+			return
+		}
+		raiseTerminalWindow()
+		if dir, err := configDir(); err == nil {
+			_ = RequestFocus(dir, sessionID)
+		}
+	}()
+	return nil
+}
+
+// notifySendReportsActions probes once whether notify-send accepts
+// --action, which libnotify added in 0.7.9.
+func notifySendReportsActions() bool {
+	out, err := runOutput(cmdTimeout, "notify-send", "--help")
+	return err == nil && strings.Contains(out, "--action")
+}
+
+// raiseTerminalWindow brings the X11 window that launched the manager to
+// the front. Wayland compositors refuse focus requests from other
+// processes, so without WINDOWID or a tool to act on it the banner alone
+// carries the click.
+func raiseTerminalWindow() {
+	window := getenv("WINDOWID")
+	if window == "" {
+		return
+	}
+	if _, err := lookPath("xdotool"); err == nil {
+		_ = runCmd("xdotool", "windowactivate", "--sync", window)
+		return
+	}
+	if _, err := lookPath("wmctrl"); err == nil {
+		_ = runCmd("wmctrl", "-ia", window)
+	}
 }
 
 // ghostty reports whether the drawing terminal understands OSC 777
@@ -159,24 +270,11 @@ func ghostty() bool {
 		getenv("TERM") == "xterm-ghostty"
 }
 
-// iterm reports whether the drawing terminal is iTerm2. TERM_PROGRAM names
-// it at the local shell; tmux overwrites that, and only LC_* crosses SSH,
-// so LC_TERMINAL is the marker inside tmux and on a remote host.
-func iterm() bool {
-	return getenv("TERM_PROGRAM") == "iTerm.app" ||
-		getenv("LC_TERMINAL") == "iTerm2"
-}
-
 // osc777 builds the Ghostty notification sequence. Semicolons would read
 // as field separators in the payload, so they cannot survive.
 func osc777(title, body string) string {
 	return "\x1b]777;notify;" + strings.ReplaceAll(title, ";", ",") + ";" +
 		strings.ReplaceAll(body, ";", ",") + "\a"
-}
-
-// osc9 builds the iTerm2 notification sequence: one message, no title.
-func osc9(body string) string {
-	return "\x1b]9;" + body + "\a"
 }
 
 // sanitize squashes a title or body to one line with no control

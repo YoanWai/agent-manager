@@ -68,8 +68,8 @@ func TestNotifyTransitionFiresOnWaitingAndErrored(t *testing.T) {
 	p.notifyTransition(sess, status.Errored)
 	calls := waitForCalls(t, rec, 2)
 	want := map[notify.Event]bool{
-		{Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting}: true,
-		{Session: sess.Name, Tool: sess.Tool, Kind: notify.Errored}: true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting}: true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Errored}: true,
 	}
 	for _, call := range calls {
 		delete(want, call)
@@ -84,7 +84,7 @@ func TestNotifyTransitionCarriesCustomToolName(t *testing.T) {
 	sess.Tool = "my-custom-agent"
 	p.notifyTransition(sess, status.Waiting)
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != (notify.Event{Session: sess.Name, Tool: "my-custom-agent", Kind: notify.Waiting}) {
+	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: "my-custom-agent", Kind: notify.Waiting}) {
 		t.Fatalf("configured tool identity should reach the backend, got %v", calls)
 	}
 }
@@ -114,7 +114,7 @@ func TestNotifyTransitionFinishedOptIn(t *testing.T) {
 	}
 	p.notifyTransition(sess, status.Finished)
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != (notify.Event{Session: sess.Name, Tool: sess.Tool, Kind: notify.Finished}) {
+	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Finished}) {
 		t.Fatalf("want one finished notification after opt-in, got %v", calls)
 	}
 }
@@ -175,7 +175,7 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 
 	m.applyCmd(t, m.refreshCmd())
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != (notify.Event{Session: "needy", Tool: "claude-hooked", Kind: notify.Waiting}) {
+	if calls[0] != (notify.Event{ID: sess.ID, Session: "needy", Tool: "claude-hooked", Kind: notify.Waiting}) {
 		t.Fatalf("want one waiting notification titled with the session name, got %v", calls)
 	}
 
@@ -183,5 +183,35 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 	settle()
 	if calls := rec.all(); len(calls) != 1 {
 		t.Fatalf("a steady waiting status should not re-fire, got %v", calls)
+	}
+}
+
+// A click on a banner leaves the session id in the config directory; the
+// next pass picks it up and moves the cursor to that row.
+func TestRefreshSelectsSessionNamedByClickedNotification(t *testing.T) {
+	m := buildModel(t)
+	createSessionOn(t, m, "first", "quietchat", t.TempDir())
+	createSessionOn(t, m, "second", "quietchat", t.TempDir())
+	m.selectSessionRow(t, "first")
+	var second store.Session
+	for _, sess := range m.sessionRows() {
+		if sess.Name == "second" {
+			second = sess
+		}
+	}
+	if second.ID == "" {
+		t.Fatal("second session missing")
+	}
+	served := false
+	m.poller.takeFocus = func() (string, bool) {
+		if served {
+			return "", false
+		}
+		served = true
+		return second.ID, true
+	}
+	m.applyCmd(t, m.refreshCmd())
+	if sess, ok := m.selected(); !ok || sess.ID != second.ID {
+		t.Fatalf("the click should select the named session, cursor is on %+v", sess)
 	}
 }
