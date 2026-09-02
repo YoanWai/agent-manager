@@ -173,17 +173,41 @@ func NormalizeName(raw string) string {
 }
 
 func (m *Manager) RemoveName(id string) error {
+	if err := removeIfExists(m.claimedNameFile(id)); err != nil {
+		return err
+	}
 	return removeIfExists(m.NameFile(id))
 }
 
-// RemoveNameIfUnchanged consumes a pending rename only while it is still
-// the one the caller read, so a name written while that one was being
-// applied stays for the next poll instead of being dropped.
-func (m *Manager) RemoveNameIfUnchanged(id, name string) error {
-	if current, found := m.ReadName(id); !found || current != name {
-		return nil
+func (m *Manager) claimedNameFile(id string) string {
+	return filepath.Join(m.dir, id+".name.claimed")
+}
+
+// ClaimName takes a pending rename for the manager to apply: the file is
+// moved aside in one step, so a rename written while this one is being
+// applied lands on a free mailbox and waits for the next poll instead of
+// being consumed with it. A claim left by a manager that stopped midway
+// is picked up again ahead of anything newer. ReleaseName ends the claim.
+func (m *Manager) ClaimName(id string) (name string, found bool, err error) {
+	claimed := m.claimedNameFile(id)
+	raw, err := os.ReadFile(claimed)
+	if errors.Is(err, fs.ErrNotExist) {
+		if err := os.Rename(m.NameFile(id), claimed); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return "", false, nil
+			}
+			return "", false, err
+		}
+		raw, err = os.ReadFile(claimed)
 	}
-	return removeIfExists(m.NameFile(id))
+	if err != nil {
+		return "", false, err
+	}
+	return NormalizeName(string(raw)), true, nil
+}
+
+func (m *Manager) ReleaseName(id string) error {
+	return removeIfExists(m.claimedNameFile(id))
 }
 
 // NameResultFile is where the poller reports what became of a pending
@@ -202,7 +226,7 @@ func (m *Manager) WriteNameResult(id, requested, applied string, refusal error) 
 	if refusal != nil {
 		content = "refused\n" + requested + "\n" + refusal.Error()
 	}
-	return writeWhole(m.NameResultFile(id), content)
+	return WriteWhole(m.NameResultFile(id), content)
 }
 
 // ReadNameResult returns the name that was asked for and what became of
@@ -215,8 +239,11 @@ func (m *Manager) ReadNameResult(id string) (requested, applied string, refusal 
 	if err != nil {
 		return "", "", nil, false
 	}
-	verdict, rest, _ := strings.Cut(string(raw), "\n")
-	requested, detail, _ := strings.Cut(rest, "\n")
+	verdict, rest, hasName := strings.Cut(string(raw), "\n")
+	requested, detail, hasDetail := strings.Cut(rest, "\n")
+	if !hasName || !hasDetail || requested == "" || detail == "" {
+		return "", "", nil, false
+	}
 	switch verdict {
 	case "renamed":
 		return requested, detail, nil, true
@@ -290,14 +317,27 @@ func (m *Manager) RemoveReviewScope(id string) error {
 	return removeIfExists(m.ReviewScopeFile(id))
 }
 
-// writeWhole leaves the file complete or absent, never half written, so
-// a reader polling for it never picks up a partial line.
-func writeWhole(path, content string) error {
-	partial := path + ".part"
-	if err := os.WriteFile(partial, []byte(content), 0o644); err != nil {
+// WriteWhole leaves the file complete or absent, never half written, so
+// a reader polling for it never picks up a partial line. Each writer
+// stages under a name of its own, so two of them cannot publish each
+// other's content.
+func WriteWhole(path, content string) error {
+	staging, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.part")
+	if err != nil {
 		return err
 	}
-	return os.Rename(partial, path)
+	defer os.Remove(staging.Name())
+	if _, err := staging.WriteString(content); err != nil {
+		staging.Close()
+		return err
+	}
+	if err := staging.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(staging.Name(), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(staging.Name(), path)
 }
 
 func removeIfExists(path string) error {

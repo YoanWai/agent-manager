@@ -39,11 +39,7 @@ func writeMailbox(path, content string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	partial := path + ".part"
-	if err := os.WriteFile(partial, []byte(content), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(partial, path)
+	return hooks.WriteWhole(path, content)
 }
 
 // A rename is applied by the manager's poll, so the answer arrives one

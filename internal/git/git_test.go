@@ -844,6 +844,9 @@ func TestRenameWorktreeBranchLeavesDetachedWorktreeAlone(t *testing.T) {
 	if got != branch {
 		t.Fatalf("returned %q, want the recorded %q", got, branch)
 	}
+	if head, err := driver.run(path, "symbolic-ref", "--short", "-q", "HEAD"); err == nil {
+		t.Fatalf("the worktree was put back on branch %q instead of left detached", head)
+	}
 	if _, err := driver.run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
 		t.Fatalf("recorded branch was disturbed: %v", err)
 	}

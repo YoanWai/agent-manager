@@ -1049,9 +1049,8 @@ func launchPromptTaken(sess store.Session, region string) bool {
 // applyPendingRename picks up a name the session's agent left via the
 // rename subcommand: the store row and tmux label update together here,
 // keeping the manager the sole database writer. The file is consumed
-// even when the name is unchanged so it never lingers, unless another
-// rename has since replaced it, and the outcome is left in the result
-// mailbox for the subcommand still waiting on it.
+// even when the name is unchanged so it never lingers, and the outcome
+// is left in the result mailbox for the subcommand still waiting on it.
 // A dead tmux session cannot take a label, which is fine; the label is
 // rewritten on revive. A worktree session's branch follows the new name
 // while its live directory stays fixed, and a name git cannot give the
@@ -1059,15 +1058,15 @@ func launchPromptTaken(sess store.Session, region string) bool {
 // way, so the reason is reported once rather than on every poll from
 // here on.
 func (p *poller) applyPendingRename(sess *store.Session) error {
-	name, found := p.hooks.ReadName(sess.ID)
-	if !found {
-		return nil
+	name, found, err := p.hooks.ClaimName(sess.ID)
+	if err != nil || !found {
+		return err
 	}
 	renameErr := p.renamePending(sess, name)
 	resultErr := p.hooks.WriteNameResult(sess.ID, name, sess.Name, renameErr)
-	// The pending name goes either way, so a verdict this poll could not
-	// write does not put the manager back on the same rename every poll.
-	if err := p.hooks.RemoveNameIfUnchanged(sess.ID, name); err != nil {
+	// The claim ends either way, so a verdict this poll could not write
+	// does not put the manager back on the same rename every poll.
+	if err := p.hooks.ReleaseName(sess.ID); err != nil {
 		return err
 	}
 	if resultErr != nil {

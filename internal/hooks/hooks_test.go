@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -315,7 +316,7 @@ func TestReadNameResultRejectsAForeignFile(t *testing.T) {
 	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	for _, content := range []string{"", "renam", "fix auth bug", "ok\nfix auth bug\nfix auth bug"} {
+	for _, content := range []string{"", "renam", "fix auth bug", "ok\nfix auth bug\nfix auth bug", "renamed\nfix auth bug", "renamed\n\nfix auth bug", "renamed\nfix auth bug\n"} {
 		if err := os.WriteFile(manager.NameResultFile("x"), []byte(content), 0o644); err != nil {
 			t.Fatalf("write: %v", err)
 		}
@@ -325,29 +326,85 @@ func TestReadNameResultRejectsAForeignFile(t *testing.T) {
 	}
 }
 
-// The poller consumes the rename it applied, and leaves one written
-// while it was working for its next pass.
-func TestRemoveNameIfUnchanged(t *testing.T) {
+// A claim takes the pending rename out of the mailbox in one step, so a
+// rename written while it is being applied waits for the next claim
+// instead of being consumed with it.
+func TestClaimNameLeavesALaterRenameForTheNextClaim(t *testing.T) {
 	manager := NewManager(t.TempDir())
 	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(manager.NameFile("x"), []byte("second name"), 0o644); err != nil {
+	if _, found, err := manager.ClaimName("x"); found || err != nil {
+		t.Fatalf("ClaimName with nothing pending = %v, %v", found, err)
+	}
+	if err := os.WriteFile(manager.NameFile("x"), []byte("first name"), 0o644); err != nil {
 		t.Fatalf("write name: %v", err)
 	}
-	if err := manager.RemoveNameIfUnchanged("x", "first name"); err != nil {
-		t.Fatalf("RemoveNameIfUnchanged: %v", err)
-	}
-	if name, found := manager.ReadName("x"); !found || name != "second name" {
-		t.Fatalf("a newer name was consumed by the older rename: %q, %v", name, found)
-	}
-	if err := manager.RemoveNameIfUnchanged("x", "second name"); err != nil {
-		t.Fatalf("RemoveNameIfUnchanged: %v", err)
+
+	name, found, err := manager.ClaimName("x")
+	if err != nil || !found || name != "first name" {
+		t.Fatalf("ClaimName = %q, %v, %v", name, found, err)
 	}
 	if _, found := manager.ReadName("x"); found {
-		t.Fatal("the applied name should be consumed")
+		t.Fatal("a claimed rename must leave the mailbox free")
 	}
-	if err := manager.RemoveNameIfUnchanged("x", "second name"); err != nil {
-		t.Fatalf("removing a name that is gone should be a no-op: %v", err)
+	if err := os.WriteFile(manager.NameFile("x"), []byte("second name"), 0o644); err != nil {
+		t.Fatalf("write second name: %v", err)
+	}
+
+	// A claim the manager did not finish is picked up again ahead of it.
+	again, found, err := manager.ClaimName("x")
+	if err != nil || !found || again != "first name" {
+		t.Fatalf("re-claim = %q, %v, %v; want the unfinished claim", again, found, err)
+	}
+	if err := manager.ReleaseName("x"); err != nil {
+		t.Fatalf("ReleaseName: %v", err)
+	}
+	next, found, err := manager.ClaimName("x")
+	if err != nil || !found || next != "second name" {
+		t.Fatalf("next claim = %q, %v, %v; want the rename written meanwhile", next, found, err)
+	}
+	if err := manager.ReleaseName("x"); err != nil {
+		t.Fatalf("ReleaseName: %v", err)
+	}
+	if _, found, _ := manager.ClaimName("x"); found {
+		t.Fatal("a released claim leaves nothing pending")
+	}
+}
+
+// Two renames for one session write at the same time, so neither may
+// publish the other's content or fail on a staging file it does not own.
+func TestWriteWholeSurvivesConcurrentWriters(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "abc123.name")
+	var wg sync.WaitGroup
+	for _, content := range []string{"first name", "second name"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 50 {
+				if err := WriteWhole(path, content); err != nil {
+					t.Errorf("WriteWhole(%q): %v", content, err)
+					return
+				}
+				raw, err := os.ReadFile(path)
+				if err != nil {
+					t.Errorf("read: %v", err)
+					return
+				}
+				if got := string(raw); got != "first name" && got != "second name" {
+					t.Errorf("read a torn file: %q", got)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("staging files were left behind: %v", entries)
 	}
 }

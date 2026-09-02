@@ -315,37 +315,61 @@ func TestPendingRenameReportsTheAppliedName(t *testing.T) {
 // A session whose agent has checked out another branch, or sits detached
 // mid-rebase, still takes its new name: the am/ branch is left as it is,
 // the way a hand-renamed one is.
-func TestPendingRenameOnASwitchedWorktreeTakesTheName(t *testing.T) {
-	m := buildModel(t)
-	repo := seedRepo(t)
-	spawned := createWorktreeSession(t, m, "pr-11442-rebase", repo)
-	for _, args := range [][]string{{"switch", "-c", "pr-11442"}, {"checkout", "--detach"}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = spawned.Cwd
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
+func TestPendingRenameOnAWorktreeOffItsBranchTakesTheName(t *testing.T) {
+	cases := []struct {
+		label    string
+		leave    []string
+		wantHead string
+	}{
+		{"switched", []string{"switch", "-c", "pr-11442"}, "pr-11442"},
+		{"detached", []string{"checkout", "--detach"}, "HEAD"},
 	}
-	writeName(t, m, spawned.ID, "SCT-11-cpu-perf")
+	for _, testCase := range cases {
+		t.Run(testCase.label, func(t *testing.T) {
+			m := buildModel(t)
+			repo := seedRepo(t)
+			spawned := createWorktreeSession(t, m, "pr-11442-rebase", repo)
+			runGit(t, spawned.Cwd, testCase.leave...)
+			before := gitOutput(t, spawned.Cwd, "rev-parse", "HEAD")
+			writeName(t, m, spawned.ID, "SCT-11-cpu-perf")
 
-	sess := spawned
-	if err := m.poller.applyPendingRename(&sess); err != nil {
-		t.Fatalf("rename: %v", err)
+			sess := spawned
+			if err := m.poller.applyPendingRename(&sess); err != nil {
+				t.Fatalf("rename: %v", err)
+			}
+			stored, err := m.store.Get(spawned.ID)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			if stored.Name != "SCT-11-cpu-perf" {
+				t.Fatalf("name = %q, want the new name", stored.Name)
+			}
+			if stored.WorktreeBranch != spawned.WorktreeBranch || stored.Cwd != spawned.Cwd {
+				t.Fatalf("a worktree off its branch must be left alone: %+v", stored)
+			}
+			if head := gitOutput(t, spawned.Cwd, "rev-parse", "--abbrev-ref", "HEAD"); head != testCase.wantHead {
+				t.Fatalf("checkout = %q, want %q", head, testCase.wantHead)
+			}
+			if after := gitOutput(t, spawned.Cwd, "rev-parse", "HEAD"); after != before {
+				t.Fatalf("the worktree moved from %q to %q", before, after)
+			}
+			requested, applied, refusal, found := m.hooks.ReadNameResult(spawned.ID)
+			if !found || refusal != nil || applied != "SCT-11-cpu-perf" || requested != "SCT-11-cpu-perf" {
+				t.Fatalf("result = %q, %q, %v, %v", requested, applied, refusal, found)
+			}
+		})
 	}
-	stored, err := m.store.Get(spawned.ID)
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("get: %v", err)
+		t.Fatalf("git %v: %v", args, err)
 	}
-	if stored.Name != "SCT-11-cpu-perf" {
-		t.Fatalf("name = %q, want the new name", stored.Name)
-	}
-	if stored.WorktreeBranch != spawned.WorktreeBranch || stored.Cwd != spawned.Cwd {
-		t.Fatalf("a worktree off its branch must be left alone: %+v", stored)
-	}
-	requested, applied, refusal, found := m.hooks.ReadNameResult(spawned.ID)
-	if !found || refusal != nil || applied != "SCT-11-cpu-perf" || requested != "SCT-11-cpu-perf" {
-		t.Fatalf("result = %q, %q, %v, %v", requested, applied, refusal, found)
-	}
+	return strings.TrimSpace(string(out))
 }
 
 func writeName(t *testing.T, m *Model, id, name string) {
