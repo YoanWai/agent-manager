@@ -7,9 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// execTerminalProcess keeps interactive child programs attached to the real
-// terminal. Bubble Tea's program output is wrapped for IME cursor placement,
-// but os/exec only gives a child a TTY when Stdout is the actual *os.File.
+// Bubble Tea's program output is wrapped for IME cursor placement, but
+// os/exec only gives a child a TTY when Stdout is the actual *os.File.
 func execTerminalProcess(cmd *exec.Cmd, fn tea.ExecCallback) tea.Cmd {
 	if cmd.Stdout == nil {
 		cmd.Stdout = os.Stdout
