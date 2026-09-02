@@ -28,10 +28,10 @@ func TestFocusKeyCommand(t *testing.T) {
 		{"alt-rune", tea.KeyPressMsg{Code: 'x', Mod: tea.ModAlt}, "send-keys -t am_x -H 1b 78", true},
 		{"enter", tea.KeyPressMsg{Code: tea.KeyEnter}, "send-keys -t am_x Enter", true},
 		{"escape", tea.KeyPressMsg{Code: tea.KeyEsc}, "send-keys -t am_x Escape", true},
-		{"ctrl-c", tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}, "send-keys -t am_x C-c", true},
+		{"ctrl-c", tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}, "send-keys -t am_x -H 03", true},
 		// The editor sits on F3 now, so ctrl+o reaches the agent: Claude
 		// Code and Gemini CLI both bind it.
-		{"ctrl-o", tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl}, "send-keys -t am_x C-o", true},
+		{"ctrl-o", tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl}, "send-keys -t am_x -H 0f", true},
 		{"tab-not-ctrl-i", tea.KeyPressMsg{Code: tea.KeyTab}, "send-keys -t am_x Tab", true},
 		{"enter-not-ctrl-m", tea.KeyPressMsg{Code: tea.KeyEnter}, "send-keys -t am_x Enter", true},
 		{"shift-tab", tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}, "send-keys -t am_x BTab", true},
@@ -42,37 +42,37 @@ func TestFocusKeyCommand(t *testing.T) {
 		{"backspace", tea.KeyPressMsg{Code: tea.KeyBackspace}, "send-keys -t am_x BSpace", true},
 		{"shift-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModShift}, "send-keys -t am_x BSpace", true},
 		{"alt-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt}, "send-keys -t am_x M-BSpace", true},
-		{"ctrl-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModCtrl}, "send-keys -t am_x C-h", true},
-		{"ctrl-shift-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModCtrl | tea.ModShift}, "send-keys -t am_x C-h", true},
-		{"alt-ctrl-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt | tea.ModCtrl}, "send-keys -t am_x M-C-h", true},
+		{"ctrl-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModCtrl}, "send-keys -t am_x -H 08", true},
+		{"ctrl-shift-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModCtrl | tea.ModShift}, "send-keys -t am_x -H 08", true},
+		{"alt-ctrl-backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt | tea.ModCtrl}, "send-keys -t am_x -H 1b 08", true},
 		{"ctrl-escape", tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModCtrl}, "send-keys -t am_x Escape", true},
 		{"ctrl-shift-escape", tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModCtrl | tea.ModShift}, "send-keys -t am_x Escape", true},
 		{"alt-escape", tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModAlt}, "send-keys -t am_x M-Escape", true},
-		{"ctrl-open-bracket", tea.KeyPressMsg{Code: '[', Mod: tea.ModCtrl}, "send-keys -t am_x Escape", true},
-		{"ctrl-close-bracket", tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl}, "send-keys -t am_x C-]", true},
-		// tmux's own command parser eats a backslash, a quote and a
-		// semicolon before the key is looked up, so those are dropped.
-		{"ctrl-backslash", tea.KeyPressMsg{Code: '\\', Mod: tea.ModCtrl}, "", false},
-		{"ctrl-quote", tea.KeyPressMsg{Code: '\'', Mod: tea.ModCtrl}, "", false},
-		{"ctrl-semicolon", tea.KeyPressMsg{Code: ';', Mod: tea.ModCtrl}, "", false},
-		// tmux has no byte for these in a pane without extended keys and
-		// types the name into it instead.
+		{"ctrl-open-bracket", tea.KeyPressMsg{Code: '[', Mod: tea.ModCtrl}, "send-keys -t am_x -H 1b", true},
+		{"ctrl-close-bracket", tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl}, "send-keys -t am_x -H 1d", true},
+		{"ctrl-backslash", tea.KeyPressMsg{Code: '\\', Mod: tea.ModCtrl}, "send-keys -t am_x -H 1c", true},
+		// xterm has no control code for these and sends the character.
+		{"ctrl-quote", tea.KeyPressMsg{Code: '\'', Mod: tea.ModCtrl}, "send-keys -t am_x -H 27", true},
+		{"ctrl-semicolon", tea.KeyPressMsg{Code: ';', Mod: tea.ModCtrl}, "send-keys -t am_x -H 3b", true},
+		{"ctrl-one", tea.KeyPressMsg{Code: '1', Mod: tea.ModCtrl}, "send-keys -t am_x -H 31", true},
+		// A shifted base reaches no terminal as a control chord, so there is
+		// no byte to send and the chord is dropped.
 		{"ctrl-hash", tea.KeyPressMsg{Code: '#', Mod: tea.ModCtrl}, "", false},
 		{"ctrl-star", tea.KeyPressMsg{Code: '*', Mod: tea.ModCtrl}, "", false},
-		{"ctrl-caret", tea.KeyPressMsg{Code: '^', Mod: tea.ModCtrl}, "send-keys -t am_x C-^", true},
-		{"ctrl-underscore", tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl}, "send-keys -t am_x C-_", true},
-		{"ctrl-space", tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModCtrl}, "send-keys -t am_x C-Space", true},
-		{"ctrl-at", tea.KeyPressMsg{Code: '@', Mod: tea.ModCtrl}, "send-keys -t am_x C-Space", true},
-		{"alt-ctrl-close-bracket", tea.KeyPressMsg{Code: ']', Mod: tea.ModAlt | tea.ModCtrl}, "send-keys -t am_x M-C-]", true},
+		{"ctrl-caret", tea.KeyPressMsg{Code: '^', Mod: tea.ModCtrl}, "send-keys -t am_x -H 1e", true},
+		{"ctrl-underscore", tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl}, "send-keys -t am_x -H 1f", true},
+		{"ctrl-space", tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModCtrl}, "send-keys -t am_x -H 00", true},
+		{"ctrl-at", tea.KeyPressMsg{Code: '@', Mod: tea.ModCtrl}, "send-keys -t am_x -H 00", true},
+		{"alt-ctrl-close-bracket", tea.KeyPressMsg{Code: ']', Mod: tea.ModAlt | tea.ModCtrl}, "send-keys -t am_x -H 1b 1d", true},
 		{"ctrl-up", tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModCtrl}, "send-keys -t am_x C-Up", true},
 		{"ctrl-shift-up", tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModCtrl | tea.ModShift}, "send-keys -t am_x C-S-Up", true},
 		{"ctrl-enter", tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl}, "send-keys -t am_x C-Enter", true},
 		{"shift-f5", tea.KeyPressMsg{Code: tea.KeyF5, Mod: tea.ModShift}, "send-keys -t am_x S-F5", true},
-		{"ctrl-slash", tea.KeyPressMsg{Code: '/', Mod: tea.ModCtrl}, "send-keys -t am_x C-/", true},
-		{"ctrl-minus", tea.KeyPressMsg{Code: '-', Mod: tea.ModCtrl}, "send-keys -t am_x C--", true},
-		{"ctrl-three", tea.KeyPressMsg{Code: '3', Mod: tea.ModCtrl}, "send-keys -t am_x C-3", true},
-		{"ctrl-eight", tea.KeyPressMsg{Code: '8', Mod: tea.ModCtrl}, "send-keys -t am_x C-8", true},
-		{"ctrl-shift-a", tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl | tea.ModShift}, "send-keys -t am_x C-S-a", true},
+		{"ctrl-slash", tea.KeyPressMsg{Code: '/', Mod: tea.ModCtrl}, "send-keys -t am_x -H 1f", true},
+		{"ctrl-minus", tea.KeyPressMsg{Code: '-', Mod: tea.ModCtrl}, "send-keys -t am_x -H 1f", true},
+		{"ctrl-three", tea.KeyPressMsg{Code: '3', Mod: tea.ModCtrl}, "send-keys -t am_x -H 1b", true},
+		{"ctrl-eight", tea.KeyPressMsg{Code: '8', Mod: tea.ModCtrl}, "send-keys -t am_x -H 7f", true},
+		{"ctrl-shift-a", tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl | tea.ModShift}, "send-keys -t am_x -H 01", true},
 		// Caps lock rides along on every key while it is on, and reading it
 		// as a modifier dropped the chord.
 		{"capslock-alt-rune", tea.KeyPressMsg{Code: 'x', Mod: tea.ModAlt | tea.ModCapsLock}, "send-keys -t am_x -H 1b 78", true},
@@ -92,9 +92,10 @@ func TestFocusKeyCommand(t *testing.T) {
 	}
 }
 
-// tmux types a key name it does not know into the pane as literal text, so
-// every name the forwarder emits for a control chord is checked against a
-// live pane that echoes each byte it receives in hex.
+// A control chord travels as the byte a terminal would put on the wire, so
+// every one of them is checked against a live pane that echoes each byte it
+// receives in hex. Names are left to the keys that have no byte, and those
+// vary by tmux build.
 func TestFocusControlChordsReachThePaneAsBytes(t *testing.T) {
 	m := buildModel(t)
 	const id = "keybytes"
@@ -121,13 +122,23 @@ func TestFocusControlChordsReachThePaneAsBytes(t *testing.T) {
 		{"ctrl-open-bracket", tea.KeyPressMsg{Code: '[', Mod: tea.ModCtrl}, []string{"1b"}},
 		{"ctrl-space", tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModCtrl}, []string{"00"}},
 		{"ctrl-at", tea.KeyPressMsg{Code: '@', Mod: tea.ModCtrl}, []string{"00"}},
+		{"ctrl-a", tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl}, []string{"01"}},
+		{"ctrl-backslash", tea.KeyPressMsg{Code: '\\', Mod: tea.ModCtrl}, []string{"1c"}},
 		{"ctrl-close-bracket", tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl}, []string{"1d"}},
 		{"ctrl-caret", tea.KeyPressMsg{Code: '^', Mod: tea.ModCtrl}, []string{"1e"}},
 		{"ctrl-underscore", tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl}, []string{"1f"}},
 		{"ctrl-slash", tea.KeyPressMsg{Code: '/', Mod: tea.ModCtrl}, []string{"1f"}},
 		{"ctrl-minus", tea.KeyPressMsg{Code: '-', Mod: tea.ModCtrl}, []string{"1f"}},
+		{"ctrl-two", tea.KeyPressMsg{Code: '2', Mod: tea.ModCtrl}, []string{"00"}},
 		{"ctrl-three", tea.KeyPressMsg{Code: '3', Mod: tea.ModCtrl}, []string{"1b"}},
+		{"ctrl-four", tea.KeyPressMsg{Code: '4', Mod: tea.ModCtrl}, []string{"1c"}},
+		{"ctrl-five", tea.KeyPressMsg{Code: '5', Mod: tea.ModCtrl}, []string{"1d"}},
+		{"ctrl-six", tea.KeyPressMsg{Code: '6', Mod: tea.ModCtrl}, []string{"1e"}},
+		{"ctrl-seven", tea.KeyPressMsg{Code: '7', Mod: tea.ModCtrl}, []string{"1f"}},
 		{"ctrl-eight", tea.KeyPressMsg{Code: '8', Mod: tea.ModCtrl}, []string{"7f"}},
+		{"ctrl-one", tea.KeyPressMsg{Code: '1', Mod: tea.ModCtrl}, []string{"31"}},
+		{"ctrl-semicolon", tea.KeyPressMsg{Code: ';', Mod: tea.ModCtrl}, []string{"3b"}},
+		{"ctrl-quote", tea.KeyPressMsg{Code: '\'', Mod: tea.ModCtrl}, []string{"27"}},
 		{"ctrl-shift-a", tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl | tea.ModShift}, []string{"01"}},
 		{"kp-enter", tea.KeyPressMsg{Code: tea.KeyKpEnter}, []string{"0d"}},
 	}
@@ -881,7 +892,7 @@ func TestFocusNumLockLeftUnfocusesAtPromptHead(t *testing.T) {
 // is snapshotted on its way into the pane.
 func TestFocusNumpadEnterStashesTypedPrompt(t *testing.T) {
 	m := buildModel(t)
-	createSessionOn(t, m, "numpad", "claude-hooked", t.TempDir())
+	createSession(t, m, "numpad", t.TempDir(), "")
 	m.selectSessionRow(t, "numpad")
 
 	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -890,6 +901,9 @@ func TestFocusNumpadEnterStashesTypedPrompt(t *testing.T) {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	sess := m.rows[m.cursor].sess
+	// The stub agent stays the plain echo the other focus tests launch; the
+	// draft rules come from the tool the row names.
+	m.rows[m.cursor].sess.Tool = "claude-hooked"
 	waitForPane(t, m, sess.ID, "❯ hello")
 
 	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyRight})

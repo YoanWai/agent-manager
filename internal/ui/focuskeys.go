@@ -56,29 +56,22 @@ var focusNamedKeys = map[rune]string{
 // nothing about the chord, so every modifier test masks them out.
 const lockMods = tea.ModCapsLock | tea.ModNumLock
 
-// unnamedCtrlBases are the ctrl chords tmux cannot hand to a pane: it has
-// no byte for #$%&* in a pane without extended keys, and its command parser
-// eats "'\;} before the key is ever looked up. Either way the name lands in
-// the pane as the literal text "C-<base>", so these are dropped instead.
-const unnamedCtrlBases = "#$%&*\"'\\;}"
+// ctrlPlainBases are the keys ctrl leaves alone: xterm has no control code
+// for them and sends the character itself.
+const ctrlPlainBases = "019=;',."
 
 // focusKeyCommand encodes one key press as a tmux send-keys command for
-// the focused session. Text goes as hex byte codes (-H), which sidesteps
-// tmux command-line quoting entirely; special keys go by tmux key name.
-// ok is false for keys tmux cannot represent, which are dropped.
+// the focused session. Text and control chords go as hex byte codes (-H),
+// which sidesteps tmux command-line quoting entirely; keys with no byte of
+// their own go by tmux key name. ok is false for keys tmux cannot
+// represent, which are dropped.
 func focusKeyCommand(target string, msg tea.KeyPressMsg) (string, bool) {
 	alt := msg.Mod.Contains(tea.ModAlt)
 	if text := focusKeyText(msg); text != "" {
-		raw := []byte(text)
-		codes := make([]string, 0, len(raw)+1)
-		if alt {
-			// Alt arrives as an ESC prefix on the wire; replay it as one.
-			codes = append(codes, "1b")
-		}
-		for _, b := range raw {
-			codes = append(codes, fmt.Sprintf("%02x", b))
-		}
-		return "send-keys -t " + target + " -H " + strings.Join(codes, " "), true
+		return focusBytesCommand(target, alt, []byte(text)), true
+	}
+	if code, ok := focusCtrlByte(msg); ok {
+		return focusBytesCommand(target, alt, []byte{code}), true
 	}
 	name, ok := focusKeyName(msg)
 	if !ok {
@@ -88,6 +81,51 @@ func focusKeyCommand(target string, msg tea.KeyPressMsg) (string, bool) {
 		name = "M-" + name
 	}
 	return "send-keys -t " + target + " " + name, true
+}
+
+func focusBytesCommand(target string, alt bool, raw []byte) string {
+	codes := make([]string, 0, len(raw)+1)
+	if alt {
+		// Alt arrives as an ESC prefix on the wire; replay it as one.
+		codes = append(codes, "1b")
+	}
+	for _, b := range raw {
+		codes = append(codes, fmt.Sprintf("%02x", b))
+	}
+	return "send-keys -t " + target + " -H " + strings.Join(codes, " ")
+}
+
+// focusCtrlByte is the byte a terminal puts on the wire for a control
+// chord, following xterm's table for a US layout. tmux parses a "C-<base>"
+// name only for the bases its own build knows and silently drops the rest,
+// so the byte goes over instead and every tmux version delivers the same
+// keystroke. Keys with a name of their own (the arrows, the function row,
+// enter and tab) keep it: those have no byte to send.
+func focusCtrlByte(msg tea.KeyPressMsg) (byte, bool) {
+	if !(msg.Mod &^ lockMods).Contains(tea.ModCtrl) {
+		return 0, false
+	}
+	if msg.Code == tea.KeyBackspace {
+		return 0x08, true
+	}
+	if _, named := focusNamedKeys[msg.Code]; named {
+		return 0, false
+	}
+	switch {
+	case msg.Code == tea.KeySpace, msg.Code == '2':
+		return 0x00, true
+	case msg.Code >= '@' && msg.Code <= '~':
+		return byte(msg.Code) & 0x1f, true
+	case msg.Code >= '3' && msg.Code <= '7':
+		return byte(msg.Code) - 0x18, true
+	case msg.Code == '8', msg.Code == '?':
+		return 0x7f, true
+	case msg.Code == '/', msg.Code == '-':
+		return 0x1f, true
+	case strings.ContainsRune(ctrlPlainBases, msg.Code):
+		return byte(msg.Code), true
+	}
+	return 0, false
 }
 
 func focusKeyText(msg tea.KeyPressMsg) string {
@@ -113,24 +151,16 @@ func focusKeyName(msg tea.KeyPressMsg) (string, bool) {
 	mod := msg.Mod &^ lockMods
 	ctrl := mod.Contains(tea.ModCtrl)
 	shift := mod.Contains(tea.ModShift)
-	switch {
-	case msg.Code == tea.KeyBackspace && ctrl:
-		// tmux has no modified BSpace or Escape names and types them as
-		// text; 0x08 is the byte a legacy terminal reports for ctrl+backspace.
-		return "C-h", true
-	case msg.Code == tea.KeyBackspace:
+	switch msg.Code {
+	case tea.KeyBackspace:
+		// By name, so the pane gets whatever tmux's backspace option says.
 		return "BSpace", true
-	case msg.Code == tea.KeyEscape, ctrl && msg.Code == '[':
+	case tea.KeyEscape:
 		return "Escape", true
-	case ctrl && (msg.Code == tea.KeySpace || msg.Code == '@'):
-		return "C-Space", true
 	}
 	name, named := focusNamedKeys[msg.Code]
 	if !named {
-		if !ctrl || !tmuxNamesCtrl(msg.Code) {
-			return "", false
-		}
-		name = string(msg.Code)
+		return "", false
 	}
 	if shift && msg.Code == tea.KeyTab {
 		return "BTab", true
@@ -142,12 +172,6 @@ func focusKeyName(msg tea.KeyPressMsg) (string, bool) {
 		name = "C-" + name
 	}
 	return name, true
-}
-
-// tmuxNamesCtrl reports whether tmux turns "C-<code>" into a key the pane
-// receives rather than into literal text.
-func tmuxNamesCtrl(code rune) bool {
-	return code > ' ' && code <= '~' && !strings.ContainsRune(unnamedCtrlBases, code)
 }
 
 // focusSelected enters focus mode: keys go to the selected session's pane
