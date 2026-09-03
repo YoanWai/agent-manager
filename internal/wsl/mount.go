@@ -8,18 +8,9 @@ import (
 
 var mountInfoFile = "/proc/self/mountinfo"
 
-// windowsMountTypes are the filesystem types a Windows drive is mounted
-// into a distro with, and the only ones WSL's own path translation
-// accepts: 9p and virtiofs under WSL2, drvfs under WSL1. The automount
-// root is configurable and a distro can bind a drive anywhere, so the
-// type is what names these mounts, not a /mnt prefix. WSL's other 9p
-// mounts carry its own tools and drivers, at fixed paths no PATH entry
-// sits under.
-var windowsMountTypes = map[string]bool{"9p": true, "virtiofs": true, "drvfs": true}
-
 // OnWindowsMount reports whether a path sits on a Windows drive mounted
 // into this distro. The innermost mount containing the path decides, so a
-// Linux filesystem mounted under a Windows drive answers false.
+// Linux filesystem mounted under a drive answers false.
 func OnWindowsMount(path string) (bool, error) {
 	data, err := os.ReadFile(mountInfoFile)
 	if err != nil {
@@ -27,32 +18,58 @@ func OnWindowsMount(path string) (bool, error) {
 	}
 	innermost, windows := "", false
 	for _, line := range strings.Split(string(data), "\n") {
-		point, fstype, ok := mountEntry(line)
-		if !ok || !underMount(path, point) {
+		mount, ok := mountEntry(line)
+		if !ok || !underMount(path, mount.point) {
 			continue
 		}
 		// Mounts stack, so the last entry at a given point is the live one.
-		if len(point) >= len(innermost) {
-			innermost, windows = point, windowsMountTypes[fstype]
+		if len(mount.point) >= len(innermost) {
+			innermost, windows = mount.point, mount.isWindowsDrive()
 		}
 	}
 	return windows, nil
 }
 
-// mountEntry reads a mountinfo line's mount point and filesystem type.
-// The optional fields between them are variable in number and end at a
-// lone dash, which is what the two halves are cut on.
-func mountEntry(line string) (point, fstype string, ok bool) {
+type mount struct {
+	point        string
+	fstype       string
+	superOptions string
+}
+
+// isWindowsDrive answers the question WSL's own path translation asks of a
+// mount. WSL1 puts a drive on its own filesystem type. WSL2 shares one over
+// Plan 9 or virtio, and serves its init binary, libraries and GPU drivers
+// over Plan 9 as well, so a 9p mount is a drive only when it carries the
+// drvfs attach name those others do not.
+func (m mount) isWindowsDrive() bool {
+	switch m.fstype {
+	case "drvfs", "virtiofs":
+		return true
+	case "9p":
+		for _, option := range strings.Split(m.superOptions, ",") {
+			if strings.HasPrefix(option, "aname=drvfs") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// mountEntry reads a mountinfo line. The optional fields before the
+// filesystem type are variable in number and end at a lone dash, and the
+// super options after it can hold a raw space when a Windows path does,
+// so the line is cut on the separator rather than counted into.
+func mountEntry(line string) (mount, bool) {
 	head, tail, found := strings.Cut(line, " - ")
 	if !found {
-		return "", "", false
+		return mount{}, false
 	}
 	fields := strings.Fields(head)
-	rest := strings.Fields(tail)
-	if len(fields) < 5 || len(rest) == 0 {
-		return "", "", false
+	rest := strings.SplitN(tail, " ", 3)
+	if len(fields) < 5 || len(rest) < 3 || rest[0] == "" {
+		return mount{}, false
 	}
-	return unescapeMount(fields[4]), rest[0], true
+	return mount{point: unescapeMount(fields[4]), fstype: rest[0], superOptions: rest[2]}, true
 }
 
 // unescapeMount decodes the octal escapes mountinfo writes for the

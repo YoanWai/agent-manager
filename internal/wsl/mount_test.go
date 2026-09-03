@@ -35,62 +35,95 @@ func TestOnWindowsMount(t *testing.T) {
 	}{
 		{
 			name:  "wsl2 plan9 drive",
-			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - 9p C:\ rw,dirsync,aname=drvfs;path=C:\;uid=1000`},
+			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - 9p C:\134 rw,dirsync,aname=drvfs;path=C:\;uid=1000;gid=1000;symlinkroot=/mnt/,mmap,access=client,msize=65536,trans=fd,rfd=5,wfd=5`},
 			path:  "/mnt/c/npm-global/claude",
 			want:  true,
 		},
 		{
 			// A drive shared over the virtio transport rather than a file
-			// descriptor, and bound somewhere other than the automount
-			// root, as WSL does when a distro shares another's mount.
+			// descriptor, and bound outside the automount root, as WSL does
+			// when one distro shares another's mount.
 			name:  "plan9 drive over virtio",
-			lines: []string{rootMount, `56 24 0:52 / /mnt/wsl/c rw,noatime shared:2 - 9p drvfsa rw,dirsync,aname=drvfs;path=C:\;uid=1000;gid=1000;metadata;symlinkroot=/mnt/,mmap,access=client,msize=262144,trans=virtio`},
+			lines: []string{rootMount, `194 193 0:46 / /mnt/wsl/c rw,noatime shared:2 - 9p drvfsa rw,dirsync,aname=drvfs;path=C:\;uid=1000;gid=1000;metadata;symlinkroot=/mnt/,mmap,access=client,msize=262144,trans=virtio`},
 			path:  "/mnt/wsl/c/npm-global/claude",
 			want:  true,
 		},
 		{
+			// A Windows path with a space leaves a raw space in the super
+			// options, so the line runs to more fields than the format's
+			// usual count.
+			name:  "drive whose windows path holds a space",
+			lines: []string{rootMount, `2619 80 0:302 / /Docker/host rw,noatime - 9p drvfs rw,dirsync,aname=drvfs;path=C:\Program Files\Docker\Docker\resources;symlinkroot=/mnt/,mmap,access=client,msize=262144,trans=virtio`},
+			path:  "/Docker/host/cli/docker",
+			want:  true,
+		},
+		{
+			// virtiofs carries no attach name at all, only the mount's own
+			// options, so the filesystem type is all there is to go on.
 			name:  "wsl2 virtiofs drive",
-			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - virtiofs drvfs rw`},
+			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - virtiofs drvfsC0 rw,noatime`},
 			path:  "/mnt/c/npm-global/claude",
 			want:  true,
 		},
 		{
 			name:  "wsl1 drvfs drive",
-			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - drvfs C: rw,case=off`},
+			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - drvfs C:\134 rw,noatime,uid=1000,gid=1000,case=off`},
 			path:  "/mnt/c/npm-global/claude",
 			want:  true,
 		},
 		{
 			// The automount root is configurable, so the mount point says
-			// nothing on its own; the filesystem type is what decides.
+			// nothing on its own.
 			name:  "drive mounted outside /mnt",
-			lines: []string{rootMount, `56 24 0:52 / /c rw,noatime - 9p C:\ rw`},
+			lines: []string{rootMount, `56 24 0:52 / /c rw,noatime - 9p drvfs rw,aname=drvfs;path=C:\`},
 			path:  "/c/npm-global/claude",
 			want:  true,
 		},
 		{
 			name:  "mount point with an escaped space",
-			lines: []string{rootMount, `56 24 0:52 / /mnt/my\040drive rw,noatime - 9p D:\ rw`},
+			lines: []string{rootMount, `56 24 0:52 / /mnt/my\040drive rw,noatime - 9p drvfs rw,aname=drvfs;path=D:\`},
 			path:  "/mnt/my drive/claude",
 			want:  true,
 		},
 		{
+			// WSL serves its own init binary, libraries and GPU drivers
+			// over the same filesystem type it shares drives over, and
+			// those hold Linux files. One of them is on PATH.
+			name: "wsl's own plan9 mounts",
+			lines: []string{
+				rootMount,
+				`166 165 0:20 /init /init ro,relatime - 9p tools ro,dirsync,aname=tools;fmask=022,loose,access=client,msize=65536,trans=fd,rfd=6,wfd=6`,
+				`191 165 0:55 / /usr/lib/wsl/drivers ro,nosuid,nodev,noatime - 9p drivers ro,dirsync,aname=drivers;fmask=333;dmask=222,mmap,access=client,msize=65536,trans=fd,rfd=4,wfd=4`,
+				`192 165 0:56 / /usr/lib/wsl/lib ro,nosuid,nodev,noatime - 9p lib ro,dirsync,aname=lib;fmask=333;dmask=222,mmap,access=client,msize=65536,trans=fd,rfd=4,wfd=4`,
+			},
+			path: "/usr/lib/wsl/lib/libcuda.so",
+			want: false,
+		},
+		{
 			name:  "linux filesystem mounted under a drive",
-			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - 9p C:\ rw`, `57 56 0:53 / /mnt/c/tmp rw - tmpfs tmpfs rw`},
+			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - 9p drvfs rw,aname=drvfs;path=C:\`, `57 56 0:53 / /mnt/c/tmp rw - tmpfs tmpfs rw`},
 			path:  "/mnt/c/tmp/claude",
+			want:  false,
+		},
+		{
+			// Docker Desktop puts its Linux CLI on a loop device under the
+			// cross-distro mount point, not on a drive share.
+			name:  "docker desktop cli tools",
+			lines: []string{rootMount, `100 24 7:0 / /mnt/wsl/docker-desktop/cli-tools ro,relatime - iso9660 /dev/loop0 ro,nojoliet,check=s,map=n,blocksize=2048`},
+			path:  "/mnt/wsl/docker-desktop/cli-tools/usr/bin/docker",
 			want:  false,
 		},
 		{
 			// A drive whose name is a prefix of another path's must not
 			// claim it.
 			name:  "sibling of a drive mount",
-			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - 9p C:\ rw`},
+			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - 9p drvfs rw,aname=drvfs;path=C:\`},
 			path:  "/mnt/cache/claude",
 			want:  false,
 		},
 		{
 			name:  "distro path",
-			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - 9p C:\ rw`},
+			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - 9p drvfs rw,aname=drvfs;path=C:\`},
 			path:  "/home/dev/.local/bin/claude",
 			want:  false,
 		},
@@ -123,19 +156,20 @@ func TestOnWindowsMountUnreadableFile(t *testing.T) {
 // an odd line would take the whole manager down; every line has to come
 // back as a decision or be skipped.
 func FuzzMountEntry(f *testing.F) {
-	f.Add(`56 24 0:52 / /mnt/c rw,noatime - 9p C:\ rw,aname=drvfs;path=C:\`)
+
 	f.Add(rootMount)
 	f.Add(`56 24 0:52 / /mnt/my\040drive rw shared:1 master:2 - virtiofs drvfs rw`)
 	f.Add(" - ")
 	f.Add("")
 	f.Fuzz(func(t *testing.T, line string) {
-		point, fstype, ok := mountEntry(line)
+		parsed, ok := mountEntry(line)
 		if !ok {
 			return
 		}
-		if fstype == "" {
+		if parsed.fstype == "" {
 			t.Fatalf("line %q parsed with no filesystem type", line)
 		}
-		underMount(point, point)
+		parsed.isWindowsDrive()
+		underMount(parsed.point, parsed.point)
 	})
 }
