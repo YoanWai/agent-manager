@@ -66,9 +66,10 @@ func TestHelperPostsLiveBanner(t *testing.T) {
 	}
 }
 
-// Two managers running the same binary post at once: the second must not
-// take the bundle apart while the first is executing it.
-func TestMaterializeHelperIsRepeatable(t *testing.T) {
+// Concurrent materialization inside one process agrees on one bundle.
+// What keeps a second process from taking that bundle apart is the path
+// keying, which no test here covers: it needs a second manager.
+func TestConcurrentMaterializeAgreesOnOneBundle(t *testing.T) {
 	if os.Getenv("AM_NOTIFY_LIVE") == "" {
 		t.Skip("set AM_NOTIFY_LIVE=1 to build a real signed bundle")
 	}
