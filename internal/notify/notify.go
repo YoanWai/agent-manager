@@ -50,6 +50,10 @@ var (
 // must cost one delivery, not stall it forever.
 const cmdTimeout = 2 * time.Second
 
+// notifySendSettle is how long a banner has to prove it reached the
+// desktop before delivery counts as done.
+const notifySendSettle = time.Second
+
 // clickTimeout is how long a notifier that reports the click may stay up
 // waiting for it. A banner the user never touches expires on its own well
 // inside this; the bound only reaps a daemon that never answers.
@@ -222,17 +226,43 @@ func notifySend(sessionID, body string, detail presentation) error {
 		return runCmd("notify-send", append(args, "--", "agent-manager", body)...)
 	}
 	args = append(args, "--action=default=Open", "--", "agent-manager", body)
+	type reply struct {
+		action string
+		err    error
+	}
+	answered := make(chan reply, 1)
 	go func() {
 		out, err := runOutput(clickTimeout, "notify-send", args...)
-		if err != nil || strings.TrimSpace(out) != "default" {
-			return
-		}
-		raiseTerminalWindow()
-		if dir, err := configDir(); err == nil {
-			_ = RequestFocus(dir, sessionID)
-		}
+		answered <- reply{strings.TrimSpace(out), err}
 	}()
+	// A daemon that cannot take the banner refuses within milliseconds,
+	// and that has to reach the caller as a failure so the bell still
+	// rings. A banner on screen holds the call until the user acts.
+	select {
+	case answer := <-answered:
+		if answer.err != nil {
+			return answer.err
+		}
+		handleNotifySendReply(answer.action, sessionID)
+	case <-time.After(notifySendSettle):
+		go func() {
+			answer := <-answered
+			if answer.err == nil {
+				handleNotifySendReply(answer.action, sessionID)
+			}
+		}()
+	}
 	return nil
+}
+
+func handleNotifySendReply(action, sessionID string) {
+	if action != "default" {
+		return
+	}
+	raiseTerminalWindow()
+	if dir, err := configDir(); err == nil {
+		_ = RequestFocus(dir, sessionID)
+	}
 }
 
 // notifySendReportsActions reports whether the installed notify-send

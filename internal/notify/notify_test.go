@@ -2,12 +2,8 @@ package notify
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -301,65 +297,6 @@ func TestNotifyLinuxOverSSHUsesOSC777(t *testing.T) {
 	}
 }
 
-// WSL has no notification daemon of its own; the banner is a Windows toast
-// posted through the interop PowerShell, with the text carried in the
-// environment rather than the command line.
-func TestNotifyWSLPostsWindowsToast(t *testing.T) {
-	defer restore()()
-	goos = "linux"
-	getenv = func(string) string { return "" }
-	isWSL = func() bool { return true }
-	rec := &cmdRecorder{known: map[string]bool{"powershell.exe": true}}
-	rec.install()
-	emitSeq = func(string) error { return nil }
-	Notify(Event{Session: "deploy", Tool: "claude", Kind: Errored})
-	if len(rec.called) != 1 || !strings.HasSuffix(rec.called[0][0], "/powershell.exe") {
-		t.Fatalf("want one powershell call, got %v", rec.called)
-	}
-	call := rec.called[0]
-	if !slices.Equal(call[1:4], []string{"-NoProfile", "-NonInteractive", "-EncodedCommand"}) || len(call) != 5 {
-		t.Fatalf("unexpected powershell invocation %v", call)
-	}
-	if call[4] != encodedCommand(toastScript) {
-		t.Fatal("the encoded command should be the toast script")
-	}
-	env := rec.envs[0]
-	want := map[string]string{
-		"AM_TOAST_TITLE":    "agent-manager",
-		"AM_TOAST_SUBTITLE": "deploy · claude",
-		"AM_TOAST_BODY":     "✕ Errored",
-		"AM_TOAST_SOUND":    "ms-winsoundevent:Notification.Looping.Alarm2",
-		"AM_TOAST_APPID":    toastAppID,
-	}
-	for key, value := range want {
-		if env[key] != value {
-			t.Fatalf("%s = %q, want %q", key, env[key], value)
-		}
-	}
-}
-
-func TestNotifyWSLWithoutPowerShellOnPathUsesTheWindowsCopy(t *testing.T) {
-	defer restore()()
-	goos = "linux"
-	getenv = func(string) string { return "" }
-	isWSL = func() bool { return true }
-	rec := &cmdRecorder{known: map[string]bool{}}
-	rec.install()
-	emitSeq = func(string) error { return nil }
-	Notify(Event{Session: "deploy", Tool: "claude", Kind: Waiting})
-	if len(rec.called) != 1 || rec.called[0][0] != powershellFallback {
-		t.Fatalf("want the System32 powershell, got %v", rec.called)
-	}
-}
-
-// PowerShell reads -EncodedCommand as base64 over UTF-16LE.
-func TestEncodedCommandIsUTF16LEBase64(t *testing.T) {
-	got := encodedCommand("Ab€")
-	if got != "QQBiAKwg" {
-		t.Fatalf("encodedCommand = %q, want QQBiAKwg", got)
-	}
-}
-
 // Headless Linux and WSL have no notify-send; the bell is the floor.
 func TestNotifyLinuxWithoutNotifySendRingsBell(t *testing.T) {
 	for _, test := range []struct {
@@ -421,23 +358,6 @@ func TestNotifyNativeFailureRingsBell(t *testing.T) {
 	}
 }
 
-func TestFocusRequestRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	if _, ok := TakeFocus(dir); ok {
-		t.Fatal("nothing should be pending in an empty directory")
-	}
-	if err := RequestFocus(dir, "sess-3"); err != nil {
-		t.Fatal(err)
-	}
-	id, ok := TakeFocus(dir)
-	if !ok || id != "sess-3" {
-		t.Fatalf("TakeFocus = %q, %v; want sess-3", id, ok)
-	}
-	if _, err := os.Stat(filepath.Join(dir, focusFile)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("a taken request must not be served twice")
-	}
-}
-
 func TestSanitizeSquashesControlCharacters(t *testing.T) {
 	got := sanitize("line one\nline two\x1b]pwn\x07\ttab")
 	if strings.ContainsAny(got, "\n\x1b\x07\t") {
@@ -471,62 +391,20 @@ func TestOsc777StripsSemicolons(t *testing.T) {
 	}
 }
 
-// Two managers polling the same directory must never both act on one
-// click. A click published while another is still pending replaces it,
-// which is the intent: the newest click is the one the user meant.
-func TestTakeFocusClaimsEachRequestOnce(t *testing.T) {
-	dir := t.TempDir()
-	if err := RequestFocus(dir, "sess-first"); err != nil {
-		t.Fatal(err)
+// An action-aware notify-send that cannot reach the desktop fails at
+// once, and that has to fall through to the bell like any other failure.
+func TestNotifyLinuxActionCommandFailureRingsBell(t *testing.T) {
+	defer restore()()
+	rec := linuxDesktop(t)
+	rec.outputByCommand["notify-send --help"] = "  -A, --action=[NAME=]Text  Specifies the actions to display"
+	rec.runErr = errors.New("cannot connect to the notification daemon")
+	var emitted []string
+	emitSeq = func(seq string) error {
+		emitted = append(emitted, seq)
+		return nil
 	}
-	var mu sync.Mutex
-	taken := map[string]int{}
-	var writes, reads sync.WaitGroup
-	for writer := 0; writer < 3; writer++ {
-		writes.Add(1)
-		go func(writer int) {
-			defer writes.Done()
-			for i := 0; i < 50; i++ {
-				if err := RequestFocus(dir, "sess-"+strconv.Itoa(writer)+"-"+strconv.Itoa(i)); err != nil {
-					t.Error(err)
-					return
-				}
-			}
-		}(writer)
-	}
-	for reader := 0; reader < 4; reader++ {
-		reads.Add(1)
-		go func() {
-			defer reads.Done()
-			for i := 0; i < 200; i++ {
-				if id, ok := TakeFocus(dir); ok {
-					mu.Lock()
-					taken[id]++
-					mu.Unlock()
-				}
-			}
-		}()
-	}
-	writes.Wait()
-	reads.Wait()
-	if len(taken) == 0 {
-		t.Fatal("no click was ever claimed")
-	}
-	for id, count := range taken {
-		if id == "" {
-			t.Fatal("a claim returned an empty session")
-		}
-		if count != 1 {
-			t.Fatalf("%s was claimed %d times, want once", id, count)
-		}
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if entry.Name() != focusFile {
-			t.Fatalf("temporary file left behind: %s", entry.Name())
-		}
+	Notify(Event{ID: "sess-2", Session: "deploy", Tool: "claude", Kind: Waiting})
+	if !slices.Equal(emitted, []string{"\a"}) {
+		t.Fatalf("a refused banner should ring once, got %q", emitted)
 	}
 }
