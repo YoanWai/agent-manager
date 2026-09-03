@@ -151,7 +151,7 @@ func TestRenameWithoutAManagerReportsItQueued(t *testing.T) {
 	if !strings.Contains(message, "queued") || strings.Contains(message, "renamed to") {
 		t.Fatalf("with no manager running the answer must not claim the rename happened: %q", message)
 	}
-	if name, found := hooks.NewManager(configDir).ReadName("abc123"); !found || name != "fix auth bug" {
+	if _, name, found := hooks.NewManager(configDir).ReadName("abc123"); !found || name != "fix auth bug" {
 		t.Fatalf("name file = %q, %v; the rename must still wait for a manager", name, found)
 	}
 }
@@ -166,8 +166,8 @@ func TestRenameWaitsForTheManagerAndReportsItsAnswer(t *testing.T) {
 		t.Helper()
 		go func() {
 			for {
-				if pending, found := mailbox.ReadName("abc123"); found && pending == name {
-					_ = mailbox.WriteNameResult("abc123", name, name, refusal)
+				if request, pending, found := mailbox.ReadName("abc123"); found && pending == name {
+					_ = mailbox.WriteNameResult("abc123", request, name, name, refusal)
 					_ = mailbox.RemoveName("abc123")
 					return
 				}
@@ -183,8 +183,8 @@ func TestRenameWaitsForTheManagerAndReportsItsAnswer(t *testing.T) {
 	if err != nil || message != "session renamed to fix auth bug" {
 		t.Fatalf("Rename = %q, %v", message, err)
 	}
-	if _, found, err := mailbox.ReadNameResult("abc123"); found || err != nil {
-		t.Fatalf("a read answer must be consumed: found=%v err=%v", found, err)
+	if left, err := filepath.Glob(filepath.Join(mailbox.Dir(), "abc123.*.renamed")); err != nil || len(left) != 0 {
+		t.Fatalf("a read answer must be consumed, left %v (%v)", left, err)
 	}
 
 	answer(t, "taken", errors.New("worktree rename: branch already exists: am/taken"))
@@ -193,31 +193,64 @@ func TestRenameWaitsForTheManagerAndReportsItsAnswer(t *testing.T) {
 	}
 }
 
-// Two renames can be in flight at once, so an answer is matched to the
-// name that asked for it rather than to whoever is waiting.
-func TestRenameIgnoresAnAnswerForAnotherName(t *testing.T) {
+// Two renames for one session are in flight at once, so each caller is
+// answered for the rename it queued and neither consumes the other's.
+func TestRenameAnswersEachCallerItsOwnRename(t *testing.T) {
 	configDir := t.TempDir()
 	stampManagerHeartbeat(t, configDir)
 	mailbox := hooks.NewManager(configDir)
 	if err := os.MkdirAll(mailbox.Dir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// The manager applies whichever rename it claims, and answers the
+	// other one where its caller is looking too.
 	go func() {
-		for {
-			if pending, found := mailbox.ReadName("abc123"); found && pending == "mine" {
-				_ = mailbox.WriteNameResult("abc123", "someone else", "someone else", nil)
-				time.Sleep(50 * time.Millisecond)
-				_ = mailbox.WriteNameResult("abc123", "mine", "mine", nil)
-				_ = mailbox.RemoveName("abc123")
-				return
+		answered := map[string]bool{}
+		for len(answered) < 2 {
+			request, pending, found := mailbox.ReadName("abc123")
+			if !found || answered[request] {
+				time.Sleep(5 * time.Millisecond)
+				continue
 			}
-			time.Sleep(10 * time.Millisecond)
+			_ = mailbox.WriteNameResult("abc123", request, pending, pending, nil)
+			_ = mailbox.RemoveName("abc123")
+			answered[request] = true
 		}
 	}()
 
-	message, err := Rename(t.Context(), configDir, "abc123", "mine")
-	if err != nil || message != "session renamed to mine" {
-		t.Fatalf("Rename = %q, %v; want the answer to its own name", message, err)
+	type outcome struct{ asked, message string }
+	results := make(chan outcome, 2)
+	for _, name := range []string{"first racer", "second racer"} {
+		go func() {
+			message, err := Rename(t.Context(), configDir, "abc123", name)
+			if err != nil {
+				message = "error: " + err.Error()
+			}
+			results <- outcome{name, message}
+		}()
+	}
+	applied := 0
+	for range 2 {
+		got := <-results
+		other := "first racer"
+		if got.asked == other {
+			other = "second racer"
+		}
+		if strings.Contains(got.message, other) {
+			t.Fatalf("the caller that asked for %q was told about %q: %q", got.asked, other, got.message)
+		}
+		if got.message == "session renamed to "+got.asked {
+			applied++
+			continue
+		}
+		// A request the other one replaced in the mailbox was never
+		// applied, and saying so is the honest answer.
+		if !strings.Contains(got.message, "queued") {
+			t.Fatalf("caller asking for %q got %q", got.asked, got.message)
+		}
+	}
+	if applied == 0 {
+		t.Fatal("neither rename was answered as applied")
 	}
 }
 
@@ -234,13 +267,13 @@ func TestRenameStopsWhenItsCallerGivesUp(t *testing.T) {
 	}
 }
 
-func TestRenameDiscardsAStaleAnswer(t *testing.T) {
+func TestRenameIgnoresAnAnswerToAnotherRequest(t *testing.T) {
 	configDir := t.TempDir()
 	mailbox := hooks.NewManager(configDir)
 	if err := os.MkdirAll(mailbox.Dir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := mailbox.WriteNameResult("abc123", "old name", "old name", nil); err != nil {
+	if err := mailbox.WriteNameResult("abc123", "earlier", "old name", "old name", nil); err != nil {
 		t.Fatal(err)
 	}
 	message, err := Rename(t.Context(), configDir, "abc123", "new name")
@@ -248,6 +281,9 @@ func TestRenameDiscardsAStaleAnswer(t *testing.T) {
 		t.Fatalf("Rename: %v", err)
 	}
 	if strings.Contains(message, "old name") || strings.Contains(message, "renamed to") {
-		t.Fatalf("an answer left over from an earlier rename must not be read as this one: %q", message)
+		t.Fatalf("an answer to an earlier rename must not be read as this one: %q", message)
+	}
+	if _, found, err := mailbox.ReadNameResult("abc123", "earlier"); !found || err != nil {
+		t.Fatalf("the earlier caller's answer was taken away: found=%v err=%v", found, err)
 	}
 }

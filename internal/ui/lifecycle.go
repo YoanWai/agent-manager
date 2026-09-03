@@ -1047,7 +1047,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.errBar.text = err.Error()
 					return m, nil
 				}
-				if err := m.hooks.RemoveNameResult(sess.ID); err != nil {
+				if err := m.hooks.RemoveNameResults(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil
 				}

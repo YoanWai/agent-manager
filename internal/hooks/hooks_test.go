@@ -170,23 +170,23 @@ func TestReadNameNormalizes(t *testing.T) {
 		}
 	}
 
-	writeName("  fix   auth\nbug \n")
-	if got, found := manager.ReadName("x"); !found || got != "fix auth bug" {
-		t.Fatalf("ReadName = %q, %v; want squashed line, true", got, found)
+	writeName(NameRequest("req1", "  fix   auth\nbug \n"))
+	if request, got, found := manager.ReadName("x"); !found || got != "fix auth bug" || request != "req1" {
+		t.Fatalf("ReadName = %q, %q, %v; want the request and the squashed line", request, got, found)
 	}
 
-	writeName("   \n\t")
-	if got, found := manager.ReadName("x"); !found || got != "" {
+	writeName(NameRequest("req1", "   \n\t"))
+	if _, got, found := manager.ReadName("x"); !found || got != "" {
 		t.Fatalf("whitespace file: got %q, %v; want empty name with found=true", got, found)
 	}
 
-	writeName(strings.Repeat("é", maxNameLength+20))
-	got, _ := manager.ReadName("x")
+	writeName(NameRequest("req1", strings.Repeat("é", maxNameLength+20)))
+	_, got, _ := manager.ReadName("x")
 	if runes := []rune(got); len(runes) != maxNameLength {
 		t.Fatalf("long name should cap at %d runes, got %d", maxNameLength, len(runes))
 	}
 
-	if _, found := manager.ReadName("no-such-session"); found {
+	if _, _, found := manager.ReadName("no-such-session"); found {
 		t.Fatal("missing name file should not be found")
 	}
 
@@ -196,7 +196,7 @@ func TestReadNameNormalizes(t *testing.T) {
 	if err := manager.RemoveName("x"); err != nil {
 		t.Fatalf("second RemoveName should be a no-op: %v", err)
 	}
-	if _, found := manager.ReadName("x"); found {
+	if _, _, found := manager.ReadName("x"); found {
 		t.Fatal("removed name file should not be found")
 	}
 }
@@ -278,34 +278,64 @@ func TestNameResultRoundTrips(t *testing.T) {
 	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if _, found, err := manager.ReadNameResult("x"); found || err != nil {
+	if _, found, err := manager.ReadNameResult("x", "req1"); found || err != nil {
 		t.Fatalf("before the poller answers: found=%v err=%v", found, err)
 	}
 
-	if err := manager.WriteNameResult("x", "fix auth  bug", "fix auth bug", nil); err != nil {
+	if err := manager.WriteNameResult("x", "req1", "fix auth  bug", "fix auth bug", nil); err != nil {
 		t.Fatalf("WriteNameResult: %v", err)
 	}
-	verdict, found, err := manager.ReadNameResult("x")
+	verdict, found, err := manager.ReadNameResult("x", "req1")
 	if err != nil || !found || verdict.Refusal != nil || verdict.Requested != "fix auth  bug" || verdict.Applied != "fix auth bug" {
 		t.Fatalf("ReadNameResult = %+v, %v, %v; want the asked and applied names", verdict, found, err)
 	}
 
-	if err := manager.WriteNameResult("x", "taken", "", errors.New("branch already exists: am/taken")); err != nil {
+	if err := manager.WriteNameResult("x", "req1", "taken", "", errors.New("branch already exists: am/taken")); err != nil {
 		t.Fatalf("WriteNameResult refusal: %v", err)
 	}
-	verdict, found, err = manager.ReadNameResult("x")
+	verdict, found, err = manager.ReadNameResult("x", "req1")
 	if err != nil || !found || verdict.Refusal == nil || verdict.Refusal.Error() != "branch already exists: am/taken" || verdict.Requested != "taken" || verdict.Applied != "" {
 		t.Fatalf("ReadNameResult = %+v, %v, %v; want the refusal", verdict, found, err)
 	}
 
-	if err := manager.RemoveNameResult("x"); err != nil {
+	if err := manager.RemoveNameResult("x", "req1"); err != nil {
 		t.Fatalf("RemoveNameResult: %v", err)
 	}
-	if _, found, err := manager.ReadNameResult("x"); found || err != nil {
+	if _, found, err := manager.ReadNameResult("x", "req1"); found || err != nil {
 		t.Fatalf("removed result: found=%v err=%v", found, err)
 	}
-	if err := manager.RemoveNameResult("x"); err != nil {
+	if err := manager.RemoveNameResult("x", "req1"); err != nil {
 		t.Fatalf("second RemoveNameResult should be a no-op: %v", err)
+	}
+}
+
+// Two renames for one session are answered apart, so neither reads nor
+// removes the answer meant for the other.
+func TestNameResultsAreKeptApartPerRequest(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := manager.WriteNameResult("x", "req1", "first name", "first name", nil); err != nil {
+		t.Fatalf("write first: %v", err)
+	}
+	if err := manager.WriteNameResult("x", "req2", "second name", "second name", nil); err != nil {
+		t.Fatalf("write second: %v", err)
+	}
+
+	if err := manager.RemoveNameResult("x", "req2"); err != nil {
+		t.Fatalf("RemoveNameResult: %v", err)
+	}
+	verdict, found, err := manager.ReadNameResult("x", "req1")
+	if err != nil || !found || verdict.Applied != "first name" {
+		t.Fatalf("the other rename took this answer with it: %+v, %v, %v", verdict, found, err)
+	}
+
+	if err := manager.RemoveNameResults("x"); err != nil {
+		t.Fatalf("RemoveNameResults: %v", err)
+	}
+	if _, found, _ := manager.ReadNameResult("x", "req1"); found {
+		t.Fatal("a session's answers should all go with it")
 	}
 }
 
@@ -317,10 +347,10 @@ func TestReadNameResultRejectsAForeignFile(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	for _, content := range []string{"", "renam", "fix auth bug", "ok\nfix auth bug\nfix auth bug", "renamed\nfix auth bug", "renamed\n\nfix auth bug", "renamed\nfix auth bug\n"} {
-		if err := os.WriteFile(manager.NameResultFile("x"), []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(manager.NameResultFile("x", "req1"), []byte(content), 0o644); err != nil {
 			t.Fatalf("write: %v", err)
 		}
-		if verdict, found, err := manager.ReadNameResult("x"); found || err != nil {
+		if verdict, found, err := manager.ReadNameResult("x", "req1"); found || err != nil {
 			t.Fatalf("content %q read as an answer: %+v, %v", content, verdict, err)
 		}
 	}
@@ -334,40 +364,40 @@ func TestClaimNameLeavesALaterRenameForTheNextClaim(t *testing.T) {
 	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if _, found, err := manager.ClaimName("x"); found || err != nil {
+	if _, _, found, err := manager.ClaimName("x"); found || err != nil {
 		t.Fatalf("ClaimName with nothing pending = %v, %v", found, err)
 	}
-	if err := os.WriteFile(manager.NameFile("x"), []byte("first name"), 0o644); err != nil {
+	if err := os.WriteFile(manager.NameFile("x"), []byte(NameRequest("req1", "first name")), 0o644); err != nil {
 		t.Fatalf("write name: %v", err)
 	}
 
-	name, found, err := manager.ClaimName("x")
-	if err != nil || !found || name != "first name" {
-		t.Fatalf("ClaimName = %q, %v, %v", name, found, err)
+	request, name, found, err := manager.ClaimName("x")
+	if err != nil || !found || name != "first name" || request != "req1" {
+		t.Fatalf("ClaimName = %q, %q, %v, %v", request, name, found, err)
 	}
-	if _, found := manager.ReadName("x"); found {
+	if _, _, found := manager.ReadName("x"); found {
 		t.Fatal("a claimed rename must leave the mailbox free")
 	}
-	if err := os.WriteFile(manager.NameFile("x"), []byte("second name"), 0o644); err != nil {
+	if err := os.WriteFile(manager.NameFile("x"), []byte(NameRequest("req2", "second name")), 0o644); err != nil {
 		t.Fatalf("write second name: %v", err)
 	}
 
 	// A claim the manager did not finish is picked up again ahead of it.
-	again, found, err := manager.ClaimName("x")
-	if err != nil || !found || again != "first name" {
-		t.Fatalf("re-claim = %q, %v, %v; want the unfinished claim", again, found, err)
+	request, again, found, err := manager.ClaimName("x")
+	if err != nil || !found || again != "first name" || request != "req1" {
+		t.Fatalf("re-claim = %q, %q, %v, %v; want the unfinished claim", request, again, found, err)
 	}
 	if err := manager.ReleaseName("x"); err != nil {
 		t.Fatalf("ReleaseName: %v", err)
 	}
-	next, found, err := manager.ClaimName("x")
-	if err != nil || !found || next != "second name" {
-		t.Fatalf("next claim = %q, %v, %v; want the rename written meanwhile", next, found, err)
+	request, next, found, err := manager.ClaimName("x")
+	if err != nil || !found || next != "second name" || request != "req2" {
+		t.Fatalf("next claim = %q, %q, %v, %v; want the rename written meanwhile", request, next, found, err)
 	}
 	if err := manager.ReleaseName("x"); err != nil {
 		t.Fatalf("ReleaseName: %v", err)
 	}
-	if _, found, _ := manager.ClaimName("x"); found {
+	if _, _, found, _ := manager.ClaimName("x"); found {
 		t.Fatal("a released claim leaves nothing pending")
 	}
 }
@@ -413,10 +443,10 @@ func TestWriteWholeSurvivesConcurrentWriters(t *testing.T) {
 // waiting command must hear about it rather than report a rename queued.
 func TestReadNameResultSurfacesAReadFailure(t *testing.T) {
 	manager := NewManager(t.TempDir())
-	if err := os.MkdirAll(manager.NameResultFile("x"), 0o755); err != nil {
+	if err := os.MkdirAll(manager.NameResultFile("x", "req1"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if _, found, err := manager.ReadNameResult("x"); err == nil || found {
+	if _, found, err := manager.ReadNameResult("x", "req1"); err == nil || found {
 		t.Fatalf("unreadable result = found %v, err %v; want the failure", found, err)
 	}
 }

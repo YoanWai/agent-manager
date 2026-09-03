@@ -542,8 +542,9 @@ func TestRenameWritesMailbox(t *testing.T) {
 	if isError || !strings.Contains(text, "fix-auth-bug") {
 		t.Fatalf("rename = %q, isError=%v", text, isError)
 	}
+	// The first line is the request the manager answers under.
 	content, err := os.ReadFile(hooks.NewManager(configDir).NameFile("abc123"))
-	if err != nil || string(content) != "fix-auth-bug" {
+	if _, name, _ := strings.Cut(string(content), "\n"); err != nil || name != "fix-auth-bug" {
 		t.Fatalf("mailbox = %q, %v", content, err)
 	}
 }

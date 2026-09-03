@@ -72,10 +72,11 @@ func Rename(ctx context.Context, configDir, sessionID, name string) (string, err
 		return "", err
 	}
 	mailbox := hooks.NewManager(configDir)
-	if err := mailbox.RemoveNameResult(sessionID); err != nil {
+	request, err := hooks.NewRequestID()
+	if err != nil {
 		return "", err
 	}
-	if err := writeMailbox(mailbox.NameFile(sessionID), name); err != nil {
+	if err := writeMailbox(mailbox.NameFile(sessionID), hooks.NameRequest(request, name)); err != nil {
 		return "", err
 	}
 	if !awake {
@@ -86,7 +87,7 @@ func Rename(ctx context.Context, configDir, sessionID, name string) (string, err
 	asked := hooks.NormalizeName(name)
 	deadline := time.Now().Add(min(max(3*pollInterval, renameWaitFloor), renameWaitCap))
 	for time.Now().Before(deadline) {
-		verdict, found, err := mailbox.ReadNameResult(sessionID)
+		verdict, found, err := mailbox.ReadNameResult(sessionID, request)
 		if err != nil {
 			return "", fmt.Errorf("read the rename answer: %w", err)
 		}
@@ -99,7 +100,7 @@ func Rename(ctx context.Context, configDir, sessionID, name string) (string, err
 			}
 			continue
 		}
-		if err := mailbox.RemoveNameResult(sessionID); err != nil {
+		if err := mailbox.RemoveNameResult(sessionID, request); err != nil {
 			return "", err
 		}
 		if verdict.Refusal != nil {

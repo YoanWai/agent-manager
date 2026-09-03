@@ -1058,7 +1058,7 @@ func launchPromptTaken(sess store.Session, region string) bool {
 // way, so the reason is reported once rather than on every poll from
 // here on.
 func (p *poller) applyPendingRename(sess *store.Session) error {
-	name, found, err := p.hooks.ClaimName(sess.ID)
+	request, name, found, err := p.hooks.ClaimName(sess.ID)
 	if err != nil || !found {
 		return err
 	}
@@ -1068,7 +1068,7 @@ func (p *poller) applyPendingRename(sess *store.Session) error {
 	// time out on a rename that has in fact been applied or refused. That
 	// pass costs nothing, since a name the session already carries is
 	// applied again as a no-op and a refusal is refused the same way.
-	if err := p.hooks.WriteNameResult(sess.ID, name, sess.Name, renameErr); err != nil {
+	if err := p.hooks.WriteNameResult(sess.ID, request, name, sess.Name, renameErr); err != nil {
 		return err
 	}
 	if err := p.hooks.ReleaseName(sess.ID); err != nil {
