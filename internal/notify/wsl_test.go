@@ -18,22 +18,22 @@ func TestNotifyWSLPostsWindowsToast(t *testing.T) {
 	rec.install()
 	emitSeq = func(string) error { return nil }
 	Notify(Event{Session: "deploy", Tool: "claude", Kind: Errored})
-	if len(rec.called) != 1 || !strings.HasSuffix(rec.called[0][0], "/powershell.exe") {
-		t.Fatalf("want one powershell call, got %v", rec.called)
+	if len(rec.calls()) != 1 || !strings.HasSuffix(rec.calls()[0][0], "/powershell.exe") {
+		t.Fatalf("want one powershell call, got %v", rec.calls())
 	}
-	call := rec.called[0]
+	call := rec.calls()[0]
 	if !slices.Equal(call[1:4], []string{"-NoProfile", "-NonInteractive", "-EncodedCommand"}) || len(call) != 5 {
 		t.Fatalf("unexpected powershell invocation %v", call)
 	}
 	if call[4] != encodedCommand(toastScript) {
 		t.Fatal("the encoded command should be the toast script")
 	}
-	env := rec.envs[0]
+	env := rec.environments()[0]
 	want := map[string]string{
 		"AM_TOAST_TITLE":    "agent-manager",
 		"AM_TOAST_SUBTITLE": "deploy · claude",
 		"AM_TOAST_BODY":     "✕ Errored",
-		"AM_TOAST_SOUND":    "ms-winsoundevent:Notification.Looping.Alarm2",
+		"AM_TOAST_SOUND":    "ms-winsoundevent:Notification.IM",
 		"AM_TOAST_APPID":    toastAppID,
 	}
 	for key, value := range want {
@@ -52,8 +52,8 @@ func TestNotifyWSLWithoutPowerShellOnPathUsesTheWindowsCopy(t *testing.T) {
 	rec.install()
 	emitSeq = func(string) error { return nil }
 	Notify(Event{Session: "deploy", Tool: "claude", Kind: Waiting})
-	if len(rec.called) != 1 || rec.called[0][0] != powershellFallback {
-		t.Fatalf("want the System32 powershell, got %v", rec.called)
+	if len(rec.calls()) != 1 || rec.calls()[0][0] != powershellFallback {
+		t.Fatalf("want the System32 powershell, got %v", rec.calls())
 	}
 }
 

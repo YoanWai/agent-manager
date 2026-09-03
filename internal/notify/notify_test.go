@@ -4,25 +4,51 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 func restore() func() {
 	origGOOS, origEnv, origLook, origRun, origOutput, origRunEnv, origEmit := goos, getenv, lookPath, runCmd, runOutput, runEnv, emitSeq
-	origDir, origWSL, origMac := configDir, isWSL, macPost
+	origDir, origWSL, origMac, origSettle := configDir, isWSL, macPost, notifySendSettle
 	return func() {
 		goos, getenv, lookPath, runCmd, runOutput, runEnv, emitSeq = origGOOS, origEnv, origLook, origRun, origOutput, origRunEnv, origEmit
-		configDir, isWSL, macPost = origDir, origWSL, origMac
+		configDir, isWSL, macPost, notifySendSettle = origDir, origWSL, origMac, origSettle
 	}
 }
 
 type cmdRecorder struct {
 	known           map[string]bool
-	called          [][]string
-	envs            []map[string]string
 	runErr          error
 	outputByCommand map[string]string
+
+	// The notify-send paths record from goroutines of their own, so a
+	// test reading these while one is still running would race.
+	mu     sync.Mutex
+	called [][]string
+	envs   []map[string]string
+}
+
+func (r *cmdRecorder) record(name string, args []string, env map[string]string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.called = append(r.called, append([]string{name}, args...))
+	if env != nil {
+		r.envs = append(r.envs, env)
+	}
+}
+
+func (r *cmdRecorder) calls() [][]string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.called)
+}
+
+func (r *cmdRecorder) environments() []map[string]string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.envs)
 }
 
 func (r *cmdRecorder) install() {
@@ -33,11 +59,11 @@ func (r *cmdRecorder) install() {
 		return "", errors.New("not found")
 	}
 	runCmd = func(name string, args ...string) error {
-		r.called = append(r.called, append([]string{name}, args...))
+		r.record(name, args, nil)
 		return r.runErr
 	}
 	runOutput = func(_ time.Duration, name string, args ...string) (string, error) {
-		r.called = append(r.called, append([]string{name}, args...))
+		r.record(name, args, nil)
 		key := name
 		if len(args) > 0 {
 			key += " " + args[0]
@@ -48,8 +74,7 @@ func (r *cmdRecorder) install() {
 		return "", r.runErr
 	}
 	runEnv = func(env map[string]string, name string, args ...string) error {
-		r.called = append(r.called, append([]string{name}, args...))
-		r.envs = append(r.envs, env)
+		r.record(name, args, env)
 		return r.runErr
 	}
 }
@@ -84,8 +109,8 @@ func TestNotifyDarwinGhosttyUsesOSC777(t *testing.T) {
 	if len(emitted) != 1 || emitted[0] != "\x1b]777;notify;agent-manager;◆ Waiting for your input — deploy · claude\a" {
 		t.Fatalf("want one OSC 777 sequence, got %q", emitted)
 	}
-	if len(rec.called) != 0 {
-		t.Fatalf("osascript should not run inside Ghostty, got %v", rec.called)
+	if len(rec.calls()) != 0 {
+		t.Fatalf("osascript should not run inside Ghostty, got %v", rec.calls())
 	}
 }
 
@@ -100,8 +125,8 @@ func TestNotifyGhosttyFailureFallsBackToNative(t *testing.T) {
 	}
 	emitSeq = func(string) error { return errors.New("closed terminal") }
 	Notify(Event{Session: "deploy", Tool: "claude", Kind: Waiting})
-	if len(rec.called) != 1 || rec.called[0][0] != "osascript" {
-		t.Fatalf("failed terminal delivery should fall back to the OS, got %v", rec.called)
+	if len(rec.calls()) != 1 || rec.calls()[0][0] != "osascript" {
+		t.Fatalf("failed terminal delivery should fall back to the OS, got %v", rec.calls())
 	}
 }
 
@@ -132,8 +157,8 @@ func TestNotifyDarwinPostsThroughHelper(t *testing.T) {
 			if !slices.Equal(posted, want) {
 				t.Fatalf("helper fields = %v, want %v", posted, want)
 			}
-			if len(rec.called) != 0 {
-				t.Fatalf("nothing else should run once the helper posted, got %v", rec.called)
+			if len(rec.calls()) != 0 {
+				t.Fatalf("nothing else should run once the helper posted, got %v", rec.calls())
 			}
 		})
 	}
@@ -144,10 +169,10 @@ func TestNotifyDarwinHelperFailureFallsBackToAppleScript(t *testing.T) {
 	rec := plainMac(t)
 	emitSeq = func(string) error { return nil }
 	Notify(Event{Session: "deploy", Tool: "codex", Kind: Errored})
-	if len(rec.called) != 1 || rec.called[0][0] != "osascript" {
-		t.Fatalf("want one osascript call, got %v", rec.called)
+	if len(rec.calls()) != 1 || rec.calls()[0][0] != "osascript" {
+		t.Fatalf("want one osascript call, got %v", rec.calls())
 	}
-	call := rec.called[0]
+	call := rec.calls()[0]
 	want := []string{"agent-manager", "deploy · codex", "✕ Errored", "Basso"}
 	if len(call) < len(want) || !slices.Equal(call[len(call)-len(want):], want) {
 		t.Fatalf("notification fields should ride argv unquoted, got %v", call)
@@ -166,8 +191,8 @@ func TestNotifyDarwinDeniedRingsBellOnly(t *testing.T) {
 		return nil
 	}
 	Notify(Event{Session: "deploy", Tool: "codex", Kind: Waiting})
-	if len(rec.called) != 0 {
-		t.Fatalf("no command should run after a refusal, got %v", rec.called)
+	if len(rec.calls()) != 0 {
+		t.Fatalf("no command should run after a refusal, got %v", rec.calls())
 	}
 	if !slices.Equal(emitted, []string{"\a"}) {
 		t.Fatalf("want one bell, got %q", emitted)
@@ -204,8 +229,8 @@ func TestNotifyLinuxUsesPortableStatusHints(t *testing.T) {
 			rec.outputByCommand["notify-send --help"] = "Usage: notify-send [OPTION…] <SUMMARY> [BODY]"
 			emitSeq = func(string) error { return nil }
 			Notify(Event{Session: "--help", Tool: "claude", Kind: test.kind})
-			if len(rec.called) != 2 {
-				t.Fatalf("want the probe and one notify-send call, got %v", rec.called)
+			if len(rec.calls()) != 2 {
+				t.Fatalf("want the probe and one notify-send call, got %v", rec.calls())
 			}
 			want := []string{
 				"notify-send",
@@ -216,8 +241,8 @@ func TestNotifyLinuxUsesPortableStatusHints(t *testing.T) {
 				"--hint=string:sound-name:" + test.sound,
 				"--", "agent-manager", test.body + " — --help · claude",
 			}
-			if !slices.Equal(rec.called[1], want) {
-				t.Fatalf("unexpected notify-send args %v", rec.called[1])
+			if !slices.Equal(rec.calls()[1], want) {
+				t.Fatalf("unexpected notify-send args %v", rec.calls()[1])
 			}
 		})
 	}
@@ -255,7 +280,7 @@ func TestNotifyLinuxClickRaisesTerminalAndSelectsSession(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	var send, raise []string
-	for _, call := range rec.called {
+	for _, call := range rec.calls() {
 		switch {
 		case call[0] == "notify-send" && len(call) > 1 && call[1] != "--help":
 			send = call
@@ -292,8 +317,8 @@ func TestNotifyLinuxOverSSHUsesOSC777(t *testing.T) {
 	if len(emitted) != 1 || emitted[0] != "\x1b]777;notify;agent-manager;◆ Waiting for your input — remote-build · codex\a" {
 		t.Fatalf("want one OSC 777 sequence, got %q", emitted)
 	}
-	if len(rec.called) != 0 {
-		t.Fatalf("notify-send on the remote host should not run, got %v", rec.called)
+	if len(rec.calls()) != 0 {
+		t.Fatalf("notify-send on the remote host should not run, got %v", rec.calls())
 	}
 }
 
@@ -317,8 +342,8 @@ func TestNotifyLinuxWithoutNotifySendRingsBell(t *testing.T) {
 				return nil
 			}
 			Notify(Event{Session: "deploy", Tool: "custom-cli", Kind: test.kind})
-			if len(rec.called) != 0 {
-				t.Fatalf("no command should run without notify-send, got %v", rec.called)
+			if len(rec.calls()) != 0 {
+				t.Fatalf("no command should run without notify-send, got %v", rec.calls())
 			}
 			if len(emitted) != 1 || emitted[0] != "\a" {
 				t.Fatalf("want one bell, got %q", emitted)
@@ -377,8 +402,8 @@ func TestNotifyIgnoresUnknownKind(t *testing.T) {
 		return nil
 	}
 	Notify(Event{Session: "deploy"})
-	if len(rec.called) != 0 || len(emitted) != 0 {
-		t.Fatalf("unknown transition should stay quiet, commands=%v escapes=%q", rec.called, emitted)
+	if len(rec.calls()) != 0 || len(emitted) != 0 {
+		t.Fatalf("unknown transition should stay quiet, commands=%v escapes=%q", rec.calls(), emitted)
 	}
 }
 
@@ -388,6 +413,52 @@ func TestOsc777StripsSemicolons(t *testing.T) {
 	got := osc777("a;b", "c;d")
 	if got != "\x1b]777;notify;a,b;c,d\a" {
 		t.Fatalf("unexpected sequence %q", got)
+	}
+}
+
+// A banner the user leaves on screen answers long after Notify returned,
+// and the click still has to reach the manager.
+func TestNotifyLinuxDelayedClickStillSelectsSession(t *testing.T) {
+	defer restore()()
+	rec := linuxDesktop(t)
+	rec.outputByCommand["notify-send --help"] = "  -A, --action=[NAME=]Text  Specifies the actions to display"
+	notifySendSettle = 20 * time.Millisecond
+	answered := make(chan struct{})
+	runOutput = func(_ time.Duration, name string, args ...string) (string, error) {
+		rec.record(name, args, nil)
+		if len(args) > 0 && args[0] == "--help" {
+			return rec.outputByCommand["notify-send --help"], nil
+		}
+		<-answered
+		return "default\n", nil
+	}
+	dir := t.TempDir()
+	configDir = func() (string, error) { return dir, nil }
+	var emitted []string
+	emitSeq = func(seq string) error {
+		emitted = append(emitted, seq)
+		return nil
+	}
+	Notify(Event{ID: "sess-late", Session: "deploy", Tool: "claude", Kind: Waiting})
+	if len(emitted) != 0 {
+		t.Fatalf("a banner still waiting for its click should not ring, got %q", emitted)
+	}
+	if _, ok := TakeFocus(dir); ok {
+		t.Fatal("nothing was clicked yet")
+	}
+	close(answered)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if id, ok := TakeFocus(dir); ok {
+			if id != "sess-late" {
+				t.Fatalf("focus request = %q, want sess-late", id)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the delayed click never reached the manager")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

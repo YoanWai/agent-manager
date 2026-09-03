@@ -51,8 +51,8 @@ var (
 const cmdTimeout = 2 * time.Second
 
 // notifySendSettle is how long a banner has to prove it reached the
-// desktop before delivery counts as done.
-const notifySendSettle = time.Second
+// desktop before delivery counts as done. Tests shorten it.
+var notifySendSettle = time.Second
 
 // clickTimeout is how long a notifier that reports the click may stay up
 // waiting for it. A banner the user never touches expires on its own well
@@ -147,7 +147,7 @@ func describe(kind Kind) (presentation, bool) {
 		return presentation{
 			body:          "✕ Errored",
 			macSound:      "Basso",
-			windowsSound:  "ms-winsoundevent:Notification.Looping.Alarm2",
+			windowsSound:  "ms-winsoundevent:Notification.IM",
 			linuxSound:    "dialog-error",
 			linuxUrgency:  "critical",
 			linuxIcon:     "dialog-error",
@@ -261,13 +261,15 @@ func handleNotifySendReply(action, sessionID string) {
 	}
 	raiseTerminalWindow()
 	dir, err := configDir()
-	if err != nil {
-		return
+	if err == nil {
+		err = RequestFocus(dir, os.Getpid(), sessionID)
 	}
-	// The banner is already gone by the time this runs and Notify has
-	// long returned, so a failure here has nowhere to surface: the click
-	// simply leaves the cursor where it was.
-	_ = RequestFocus(dir, os.Getpid(), sessionID)
+	if err != nil {
+		// Notify returned long ago, so the bell is the only thing left
+		// that reaches the user: their click raised the terminal and then
+		// went nowhere.
+		_ = emitSeq("\a")
+	}
 }
 
 // notifySendReportsActions reports whether the installed notify-send
