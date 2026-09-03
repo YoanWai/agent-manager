@@ -206,31 +206,43 @@ func TestRenameAnswersEachCallerItsOwnRename(t *testing.T) {
 	if err := os.MkdirAll(mailbox.Dir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// The manager applies whichever rename it claims, and answers the
-	// other one where its caller is looking too.
-	// The claim is what the manager does: it takes the pending rename out
-	// of the mailbox in one step, so a request queued meanwhile survives.
+	// The stand-in manager claims whatever is pending, the way the poller
+	// does, and answers it under the request that asked.
+	stop := make(chan struct{})
+	stopped := make(chan struct{})
+	t.Cleanup(func() {
+		close(stop)
+		<-stopped
+	})
 	go func() {
-		answered := map[string]bool{}
-		for len(answered) < 2 {
+		defer close(stopped)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
 			request, pending, found, err := mailbox.ClaimName("abc123")
 			if err != nil || !found {
-				time.Sleep(5 * time.Millisecond)
 				continue
 			}
 			_ = mailbox.WriteNameResult("abc123", request, pending, pending, nil)
 			_ = mailbox.ReleaseName("abc123")
-			answered[request] = true
 		}
 	}()
 
+	// Both renames are in flight together, and a caller whose request the
+	// other replaced in the mailbox gives up rather than hold the test for
+	// the full rename deadline.
 	type outcome struct{ asked, message string }
 	results := make(chan outcome, 2)
 	for _, name := range []string{"first racer", "second racer"} {
 		go func() {
-			message, err := Rename(t.Context(), configDir, "abc123", name)
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			message, err := Rename(ctx, configDir, "abc123", name)
 			if err != nil {
-				message = "error: " + err.Error()
+				message = "unanswered: " + err.Error()
 			}
 			results <- outcome{name, message}
 		}()
@@ -249,9 +261,7 @@ func TestRenameAnswersEachCallerItsOwnRename(t *testing.T) {
 			applied++
 			continue
 		}
-		// A request the other one replaced in the mailbox was never
-		// applied, and saying so is the honest answer.
-		if !strings.Contains(got.message, "queued") {
+		if !strings.HasPrefix(got.message, "unanswered: ") {
 			t.Fatalf("caller asking for %q got %q", got.asked, got.message)
 		}
 	}
