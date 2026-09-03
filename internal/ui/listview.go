@@ -1110,10 +1110,12 @@ func ringLoader(width, height int, label string, phase int) []string {
 }
 
 // previewLines is the captured pane, filling every row under the detail
-// separator. The captured rows are marked raw and drawn without the
-// column's gutters: painting our backdrop behind an agent's own CLI colors
-// would replace the background it drew itself, and insetting its output
-// would put a margin around a terminal that has its own.
+// separator. Compact content sits at the bottom, where an agent's composer
+// remains beside the manager footer instead of floating above a blank tail.
+// The captured rows are marked raw and drawn without the column's gutters:
+// painting our backdrop behind an agent's own CLI colors would replace the
+// background it drew itself, and insetting its output would put a margin
+// around a terminal that has its own.
 func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	var lines []contentLine
 	loader := m.startupLoader(width, height)
@@ -1130,18 +1132,23 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 		}
 		return append(lines, contentLine{text: gutter + mutedStyle.Render("(no output yet)")})
 	}
+	topPadding := height - len(pane)
+	for len(lines) < topPadding {
+		lines = append(lines, contentLine{raw: true})
+	}
 	// Record where these rows land so mouse hit-testing reads the same
 	// geometry the paint used.
 	m.pane.box = paneBox{
 		x:      m.paneOriginX(),
-		y:      m.listChromeRows() + m.previewBodyOffset,
+		y:      m.listChromeRows() + m.previewBodyOffset + topPadding,
 		width:  width,
 		height: len(pane),
 		ok:     true,
 	}
 	for i, line := range pane {
-		if i < len(loader) && loader[i] != "" {
-			lines = append(lines, contentLine{text: previewLine(loader[i], width), raw: true})
+		screenRow := topPadding + i
+		if screenRow < len(loader) && loader[screenRow] != "" {
+			lines = append(lines, contentLine{text: previewLine(loader[screenRow], width), raw: true})
 			continue
 		}
 		lines = append(lines, contentLine{text: m.renderPaneRow(i, line, width), raw: true})
