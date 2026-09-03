@@ -68,6 +68,9 @@ type Model struct {
 	// keys is the table of keys the manager keeps inside a session; the
 	// driver binds the same table for a full-screen attach.
 	keys keybind.Session
+	// configDir holds the config.toml the settings screen writes keys
+	// back to, resolved once so a later lookup cannot land elsewhere.
+	configDir string
 
 	// setSnapshot writes a session's pane capture before archive or kill
 	// takes the window; a seam so snapshot failures can be exercised
@@ -431,6 +434,16 @@ type settingsState struct {
 	cliNames  []string
 	cliHidden map[string]bool
 	cliCursor int
+	// keyPicker is the sub-panel for the keys the manager keeps inside a
+	// session. keys is the table it edits, and capture holds the row
+	// waiting for the key press that binds it.
+	keyPicker  bool
+	keys       keybind.Session
+	keyCursor  int
+	keyCapture bool
+	// keyAppend distinguishes adding a second key to an action from
+	// replacing what it answers to.
+	keyAppend bool
 }
 
 const (
@@ -448,6 +461,7 @@ const (
 	settingsFieldWorktree
 	settingsFieldNotify
 	settingsFieldNotifyFinish
+	settingsFieldSessionBindings
 	settingsFieldCLIs
 	settingsFieldBugReport
 	settingsFieldFeatureRequest
@@ -711,6 +725,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		whatsNewFromVersion: loadWhatsNewFromVersion(st),
 	}
 	if dir, err := config.Dir(); err == nil {
+		model.configDir = dir
 		cached := update.Cached(dir, version)
 		model.update.latest = cached.Latest
 		model.update.url = cached.URL

@@ -143,7 +143,7 @@ func helpSections(keys keybind.Session) []helpSection {
 		{title: "settings (s)", rows: [][2]string{
 			{"↑↓", "pick a field"},
 			{"←→", "change the value"},
-			{"↵", "run the field's action (CLIs, report, suggest, update)"},
+			{"↵", "run the field's action (in-session keys, CLIs, report, update)"},
 			{"esc", "save and close"},
 		}},
 		{title: "dialogs (n, g, r, f, m)", rows: [][2]string{
