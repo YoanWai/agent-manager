@@ -249,3 +249,41 @@ func TestClickedNotificationLeavesFocusBeforeSelecting(t *testing.T) {
 		t.Fatalf("cursor is on %+v, want the session the banner named", sess)
 	}
 }
+
+// A banner outlives its session: the row can be gone by the time the user
+// clicks it, and that must cost neither the cursor nor the focused pane.
+func TestClickedNotificationForAGoneSessionChangesNothing(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		mode mode
+	}{
+		{"list", modeList},
+		{"focus", modeFocus},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m := buildModel(t)
+			createSessionOn(t, m, "still-here", "quietchat", t.TempDir())
+			m.selectSessionRow(t, "still-here")
+			before, ok := m.selected()
+			if !ok {
+				t.Fatal("nothing selected")
+			}
+			m.mode = test.mode
+			served := false
+			m.poller.takeFocus = func() (string, bool) {
+				if served {
+					return "", false
+				}
+				served = true
+				return "sess-long-gone", true
+			}
+			m.applyCmd(t, m.refreshCmd())
+			if m.mode != test.mode {
+				t.Fatalf("mode = %v, want %v", m.mode, test.mode)
+			}
+			if sess, ok := m.selected(); !ok || sess.ID != before.ID {
+				t.Fatalf("cursor moved to %+v, want it left on %s", sess, before.Name)
+			}
+		})
+	}
+}

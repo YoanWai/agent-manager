@@ -1060,15 +1060,17 @@ func (m *Model) selectedRow() (treeRow, bool) {
 }
 
 // focusSession puts the cursor on a session's row, for the keys that make
-// one and leave the user on it. A session filtered out of the current view
-// has no row, and the cursor stays where it was.
-func (m *Model) focusSession(id string) {
+// one and leave the user on it, and reports whether it found the row. A
+// session filtered out of the current view has none, and the cursor stays
+// where it was.
+func (m *Model) focusSession(id string) bool {
 	for i, row := range m.rows {
 		if !row.isGroup && row.sess.ID == id {
 			m.cursor = i
-			return
+			return true
 		}
 	}
+	return false
 }
 
 // schedulePreview arms a single capture after previewSettle. Call after
@@ -1371,15 +1373,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.rebuildRows()
 		if msg.focusID != "" {
+			focused, ok := m.selected()
 			// Moving the cursor under a focused pane would leave the
 			// keyboard pinned to the session the user was in while the
-			// list claims another. The click steps back to the list.
-			if m.mode == modeFocus {
-				if sess, ok := m.selected(); !ok || sess.ID != msg.focusID {
-					focusExit = m.leaveFocus()
-				}
+			// list claims another. The click steps back to the list, and
+			// only once its session turns out to have a row to land on.
+			if m.focusSession(msg.focusID) && m.mode == modeFocus && (!ok || focused.ID != msg.focusID) {
+				focusExit = m.leaveFocus()
 			}
-			m.focusSession(msg.focusID)
 		}
 		reviewStatuses := m.reviewStatusesCmd()
 		// A pass that ran with a stale selection (a session created this
