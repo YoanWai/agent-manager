@@ -31,7 +31,8 @@ func TestRenameWritesNameFile(t *testing.T) {
 		t.Fatalf("read name file: %v", err)
 	}
 	// The first line is the request the answer comes back under.
-	if _, name, _ := strings.Cut(string(raw), "\n"); name != "fix auth bug" {
+	request, name, ok := strings.Cut(string(raw), "\n")
+	if !ok || request == "" || name != "fix auth bug" {
 		t.Fatalf("name file = %q", raw)
 	}
 }

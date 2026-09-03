@@ -167,13 +167,18 @@ func TestRenameWaitsForTheManagerAndReportsItsAnswer(t *testing.T) {
 		go func() {
 			for {
 				request, pending, found, err := mailbox.ClaimName("abc123")
-				if err == nil && found && pending == name {
-					_ = mailbox.WriteNameResult("abc123", request, name, name, refusal)
-					_ = mailbox.ReleaseName("abc123")
+				if err != nil {
+					t.Errorf("ClaimName: %v", err)
 					return
 				}
 				if found {
+					if pending == name {
+						_ = mailbox.WriteNameResult("abc123", request, name, name, refusal)
+					}
 					_ = mailbox.ReleaseName("abc123")
+					if pending == name {
+						return
+					}
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
