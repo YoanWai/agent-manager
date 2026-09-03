@@ -892,7 +892,7 @@ func TestFocusNumLockLeftUnfocusesAtPromptHead(t *testing.T) {
 // is snapshotted on its way into the pane.
 func TestFocusNumpadEnterStashesTypedPrompt(t *testing.T) {
 	m := buildModel(t)
-	createSession(t, m, "numpad", t.TempDir(), "")
+	createSessionOn(t, m, "numpad", "quietchat", t.TempDir())
 	m.selectSessionRow(t, "numpad")
 
 	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -901,8 +901,8 @@ func TestFocusNumpadEnterStashesTypedPrompt(t *testing.T) {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	sess := m.rows[m.cursor].sess
-	// The stub agent stays the plain echo the other focus tests launch; the
-	// draft rules come from the tool the row names.
+	// quietchat launches a bare echo: a tool the MCP registry knows would
+	// have flags appended that the stub is not a real agent to accept.
 	m.rows[m.cursor].sess.Tool = "claude-hooked"
 	waitForPane(t, m, sess.ID, "❯ hello")
 
