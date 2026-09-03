@@ -215,3 +215,37 @@ func TestRefreshSelectsSessionNamedByClickedNotification(t *testing.T) {
 		t.Fatalf("the click should select the named session, cursor is on %+v", sess)
 	}
 }
+
+// The keyboard is inside a pane in focus mode, so moving the cursor under
+// it would leave every keystroke going to the session the user left.
+func TestClickedNotificationLeavesFocusBeforeSelecting(t *testing.T) {
+	m := buildModel(t)
+	createSessionOn(t, m, "typing", "quietchat", t.TempDir())
+	createSessionOn(t, m, "waiting", "quietchat", t.TempDir())
+	m.selectSessionRow(t, "typing")
+	var other store.Session
+	for _, sess := range m.sessionRows() {
+		if sess.Name == "waiting" {
+			other = sess
+		}
+	}
+	if other.ID == "" {
+		t.Fatal("waiting session missing")
+	}
+	m.mode = modeFocus
+	served := false
+	m.poller.takeFocus = func() (string, bool) {
+		if served {
+			return "", false
+		}
+		served = true
+		return other.ID, true
+	}
+	m.applyCmd(t, m.refreshCmd())
+	if m.mode != modeList {
+		t.Fatalf("mode = %v, want the list", m.mode)
+	}
+	if sess, ok := m.selected(); !ok || sess.ID != other.ID {
+		t.Fatalf("cursor is on %+v, want the session the banner named", sess)
+	}
+}

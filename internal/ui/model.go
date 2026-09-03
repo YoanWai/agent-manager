@@ -1371,6 +1371,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.rebuildRows()
 		if msg.focusID != "" {
+			// Moving the cursor under a focused pane would leave the
+			// keyboard pinned to the session the user was in while the
+			// list claims another. The click steps back to the list.
+			if m.mode == modeFocus {
+				if sess, ok := m.selected(); !ok || sess.ID != msg.focusID {
+					focusExit = m.leaveFocus()
+				}
+			}
 			m.focusSession(msg.focusID)
 		}
 		reviewStatuses := m.reviewStatusesCmd()

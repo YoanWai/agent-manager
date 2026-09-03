@@ -107,16 +107,14 @@ func materializeHelper(configDir string) (string, error) {
 	if current, err := os.ReadFile(stampPath); err == nil && string(current) == stamp {
 		return helperExecutablePath(configDir), nil
 	}
-	if err := buildHelper(bundle, source); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(stampPath, []byte(stamp), 0o644); err != nil {
+	if err := buildHelper(bundle, source, stamp); err != nil {
 		return "", err
 	}
 	return helperExecutablePath(configDir), nil
 }
 
-func buildHelper(bundle, source string) error {
+// buildHelper signs last, so every file it lays down is inside the seal.
+func buildHelper(bundle, source, stamp string) error {
 	if err := os.RemoveAll(bundle); err != nil {
 		return err
 	}
@@ -140,6 +138,9 @@ func buildHelper(bundle, source string) error {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(bundle, "Contents", "Info.plist"), []byte(helperInfoPlist), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(resources, "source"), []byte(stamp), 0o644); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), codesignTimeout)
