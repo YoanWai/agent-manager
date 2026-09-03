@@ -121,20 +121,24 @@ func TestOfficialInstallIsPortable(t *testing.T) {
 	}
 }
 
-func TestCommandIsTheBareInstallLine(t *testing.T) {
-	stubUID(t, 1)
-	stubPath(t, "pacman", "sudo")
-	if got, want := command("linux", "tmux"), "sudo pacman -S --needed tmux"; got != want {
-		t.Fatalf("command = %q, want %q", got, want)
-	}
-	if got := command("linux", "claude"); got != official["claude"] {
-		t.Fatalf("command = %q, want the official installer", got)
+func TestCommandIsTheVendorInstaller(t *testing.T) {
+	if got := Command("claude"); got != official["claude"] {
+		t.Fatalf("Command = %q, want the official installer", got)
 	}
 }
 
-func TestCommandIsEmptyWithoutAKnownManager(t *testing.T) {
-	stubPath(t)
-	if got := command("linux", "acme"); got != "" {
-		t.Fatalf("command = %q, want none", got)
+// A package-manager line names the tool's own command, so running one for
+// a tool we do not know would install whatever package shares that name.
+// The hint still says it; only the runnable command is withheld.
+func TestCommandWithholdsPackageManagerLines(t *testing.T) {
+	stubUID(t, 1)
+	stubPath(t, "pacman", "sudo")
+	for _, tool := range []string{"tmux", "acme"} {
+		if got := Command(tool); got != "" {
+			t.Fatalf("Command(%q) = %q, want none", tool, got)
+		}
+	}
+	if got := hint("linux", "tmux"); !strings.Contains(got, "pacman") {
+		t.Fatalf("hint = %q, want the package manager still suggested", got)
 	}
 }

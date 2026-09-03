@@ -108,9 +108,9 @@ func (m *Model) openLaunchHint(fix launchFix) {
 	m.mode = modeLaunchHint
 }
 
-func removeInstallFiles(install *pendingInstall) {
-	_ = os.Remove(install.statusFile)
-	_ = os.Remove(install.script)
+func removeInstallFiles(statusFile, script string) {
+	_ = os.Remove(statusFile)
+	_ = os.Remove(script)
 }
 
 func dropImages(images []imageAttachment) {
@@ -196,10 +196,14 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if err := m.launchNewSession(sess, tool, tool.Command, launchOptions{}); err != nil {
+		removeInstallFiles(statusFile, script)
 		m.errBar.text = err.Error()
 		return m, nil
 	}
 	if err := m.tmux.SendText(sess.ID, "sh "+tmux.ShellQuote(script)); err != nil {
+		// The shell is left open: it is a tab like any other, and the
+		// command it never ran is still on the dialog to copy.
+		removeInstallFiles(statusFile, script)
 		m.errBar.text = err.Error()
 		return m, nil
 	}
@@ -246,14 +250,14 @@ func (m *Model) settleInstall() {
 		// A shell killed before the command ended takes the launch with it.
 		if !m.tmux.Exists(install.sessionID) {
 			m.install = nil
-			removeInstallFiles(install)
+			removeInstallFiles(install.statusFile, install.script)
 			dropImages(install.images)
 		}
 		return
 	}
 	if err != nil {
 		m.install = nil
-		removeInstallFiles(install)
+		removeInstallFiles(install.statusFile, install.script)
 		m.errBar.text = err.Error()
 		return
 	}
@@ -264,14 +268,19 @@ func (m *Model) settleInstall() {
 		return
 	}
 	m.install = nil
-	removeInstallFiles(install)
+	removeInstallFiles(install.statusFile, install.script)
 	if code != "0" {
 		dropImages(install.images)
 		m.errBar.text = fmt.Sprintf("%s install exited with status %s; its output is in %s", install.binary, code, install.name)
 		return
 	}
-	if config.CheckInstalled(install.binary) != nil {
+	if err := config.CheckInstalled(install.binary); err != nil {
 		dropImages(install.images)
+		var missing config.MissingToolError
+		if !errors.As(err, &missing) {
+			m.errBar.text = fmt.Sprintf("%s installer finished, and looking for it failed: %v", install.binary, err)
+			return
+		}
 		m.errBar.text = fmt.Sprintf("%s installer finished, but %s is still not on PATH; add its directory to PATH, the installer's output names it", install.binary, install.binary)
 		return
 	}

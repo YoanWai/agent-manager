@@ -408,7 +408,6 @@ func TestLaunchHintCopyFailureIsReported(t *testing.T) {
 // nothing to run.
 func TestLaunchHintWithoutARecipeOffersOnlyClose(t *testing.T) {
 	m := buildModel(t)
-	stubUnknownInstaller(t)
 	m.reportLaunchError(config.MissingToolError{Binary: "acme"}, nil)
 
 	frame := ansi.Strip(m.viewLaunchHint())
@@ -423,13 +422,6 @@ func TestLaunchHintWithoutARecipeOffersOnlyClose(t *testing.T) {
 	if cmd := pressInLaunchHint(t, m, 'c'); cmd != nil {
 		t.Fatal("c must do nothing without a recipe")
 	}
-}
-
-// stubUnknownInstaller empties PATH of every package manager deps knows,
-// so an unknown tool has no install command on this machine.
-func stubUnknownInstaller(t *testing.T) {
-	t.Helper()
-	t.Setenv("PATH", t.TempDir())
 }
 
 // The dialog hands the mouse back to the terminal while it is up, so a
@@ -744,9 +736,12 @@ func TestLaunchHintInstallRunsFromAScriptAndCleansUp(t *testing.T) {
 	command := `printf '%s\n' "one '\'' two" > /dev/null`
 	installFixture(t, m, command)
 
-	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
-	shell := terminalSession(t, m)
+	cmd := pressInLaunchHint(t, m, 'i')
+	// Read the paths before the refresh runs: a command this short can
+	// have settled by then, and settling clears the pending install.
 	script := m.install.script
+	statusFile := m.install.statusFile
+	m.applyCmd(t, cmd)
 	body, err := os.ReadFile(script)
 	if err != nil {
 		t.Fatal(err)
@@ -759,9 +754,50 @@ func TestLaunchHintInstallRunsFromAScriptAndCleansUp(t *testing.T) {
 	if !strings.Contains(m.errBar.text, "not on PATH") {
 		t.Fatalf("status = %q, want the command reported as run", m.errBar.text)
 	}
-	for _, path := range []string{script, m.hooks.InstallStatusFile(shell.ID)} {
+	for _, path := range []string{script, statusFile} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("%s should be gone, stat err = %v", path, err)
 		}
+	}
+}
+
+// A restore the manager refused for a missing CLI has to finish the
+// restore when the install unblocks it: a session brought back but left
+// filed as archived is invisible in the list it returned to.
+func TestInstallFinishesARefusedRestore(t *testing.T) {
+	m := buildModel(t)
+	sess := store.Session{ID: newID(), Name: "agent", Tool: "claude", Cwd: t.TempDir(), Archived: true}
+	if err := m.store.CreateSession(sess); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetArchived(sess.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	m.cfg.Tools["claude"] = config.Tool{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
+	m.confirm = confirmTarget{action: actionRestore, sessions: []store.Session{sess}}
+	m.mode = modeConfirmDelete
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m = updated.(*Model)
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, err = %q, want the dialog", m.mode, m.errBar.text)
+	}
+
+	// What the install unblocks has to be the whole restore, not the
+	// revive alone, so the retry is run here with a working CLI.
+	m.cfg.Tools["claude"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	if err := m.launchFix.retry(); err != nil {
+		t.Fatal(err)
+	}
+
+	restored, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Archived {
+		t.Fatal("the revived session is still filed as archived")
+	}
+	if !m.tmux.Exists(sess.ID) {
+		t.Fatal("the session should be running again")
 	}
 }
