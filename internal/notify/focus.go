@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 // focusFile is where a clicked notification leaves the id of the session
@@ -13,10 +14,21 @@ import (
 // through the config directory, which every manager on the machine polls.
 const focusFile = "notify-focus"
 
+var focusSeq atomic.Uint64
+
+// scratchPath names a file no other caller can be using: rename replaces
+// its destination, so two callers sharing one name would trample each
+// other's request rather than each taking its own.
+func scratchPath(configDir, stage string) string {
+	name := focusFile + "." + stage + "." +
+		strconv.Itoa(os.Getpid()) + "." + strconv.FormatUint(focusSeq.Add(1), 10)
+	return filepath.Join(configDir, name)
+}
+
 // RequestFocus publishes the click through a rename, so a manager polling
 // mid-write can never read half an id.
 func RequestFocus(configDir, sessionID string) error {
-	pending := filepath.Join(configDir, focusFile+".pending."+strconv.Itoa(os.Getpid()))
+	pending := scratchPath(configDir, "pending")
 	if err := os.WriteFile(pending, []byte(sessionID+"\n"), 0o600); err != nil {
 		return err
 	}
@@ -28,10 +40,10 @@ func RequestFocus(configDir, sessionID string) error {
 }
 
 // TakeFocus returns the session id of a pending click. The rename is the
-// claim: only one manager can win it, and a click published after it lands
+// claim: only one caller can win it, and a click published after it lands
 // in a new file rather than under the winner's read.
 func TakeFocus(configDir string) (string, bool) {
-	claimed := filepath.Join(configDir, focusFile+".claimed."+strconv.Itoa(os.Getpid()))
+	claimed := scratchPath(configDir, "claimed")
 	if err := os.Rename(filepath.Join(configDir, focusFile), claimed); err != nil {
 		return "", false
 	}

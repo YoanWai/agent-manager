@@ -482,16 +482,18 @@ func TestTakeFocusClaimsEachRequestOnce(t *testing.T) {
 	var mu sync.Mutex
 	taken := map[string]int{}
 	var writes, reads sync.WaitGroup
-	writes.Add(1)
-	go func() {
-		defer writes.Done()
-		for i := 0; i < 50; i++ {
-			if err := RequestFocus(dir, "sess-"+strconv.Itoa(i)); err != nil {
-				t.Error(err)
-				return
+	for writer := 0; writer < 3; writer++ {
+		writes.Add(1)
+		go func(writer int) {
+			defer writes.Done()
+			for i := 0; i < 50; i++ {
+				if err := RequestFocus(dir, "sess-"+strconv.Itoa(writer)+"-"+strconv.Itoa(i)); err != nil {
+					t.Error(err)
+					return
+				}
 			}
-		}
-	}()
+		}(writer)
+	}
 	for reader := 0; reader < 4; reader++ {
 		reads.Add(1)
 		go func() {
