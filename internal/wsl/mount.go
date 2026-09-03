@@ -11,8 +11,10 @@ var mountInfoFile = "/proc/self/mountinfo"
 // windowsMountTypes are the filesystem types a Windows drive is mounted
 // into a distro with, and the only ones WSL's own path translation
 // accepts: 9p and virtiofs under WSL2, drvfs under WSL1. The automount
-// root is configurable, so the type is what names these mounts, not a
-// /mnt prefix.
+// root is configurable and a distro can bind a drive anywhere, so the
+// type is what names these mounts, not a /mnt prefix. WSL's other 9p
+// mounts carry its own tools and drivers, at fixed paths no PATH entry
+// sits under.
 var windowsMountTypes = map[string]bool{"9p": true, "virtiofs": true, "drvfs": true}
 
 // OnWindowsMount reports whether a path sits on a Windows drive mounted

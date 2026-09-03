@@ -40,6 +40,15 @@ func TestOnWindowsMount(t *testing.T) {
 			want:  true,
 		},
 		{
+			// A drive shared over the virtio transport rather than a file
+			// descriptor, and bound somewhere other than the automount
+			// root, as WSL does when a distro shares another's mount.
+			name:  "plan9 drive over virtio",
+			lines: []string{rootMount, `56 24 0:52 / /mnt/wsl/c rw,noatime shared:2 - 9p drvfsa rw,dirsync,aname=drvfs;path=C:\;uid=1000;gid=1000;metadata;symlinkroot=/mnt/,mmap,access=client,msize=262144,trans=virtio`},
+			path:  "/mnt/wsl/c/npm-global/claude",
+			want:  true,
+		},
+		{
 			name:  "wsl2 virtiofs drive",
 			lines: []string{rootMount, `56 24 0:52 / /mnt/c rw,noatime - virtiofs drvfs rw`},
 			path:  "/mnt/c/npm-global/claude",
