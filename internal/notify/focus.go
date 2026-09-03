@@ -10,12 +10,10 @@ import (
 	"time"
 )
 
-// focusFile is the stem of the file where a clicked notification leaves
-// the id of the session it named. The click lands in another process (the
-// macOS helper, or the goroutine waiting on notify-send), so the request
-// crosses to the manager through the config directory. Several managers
-// share that directory, and each names its own file after its process, so
-// the manager whose banner was clicked is the one that acts on it.
+// A click lands in another process: the macOS helper, or the goroutine
+// waiting on notify-send. The config directory is how it crosses back,
+// and since several managers share that directory, each file carries the
+// process of the manager whose banner was clicked.
 const focusFile = "notify-focus"
 
 var (
@@ -27,18 +25,17 @@ func focusPath(configDir string, manager int) string {
 	return filepath.Join(configDir, focusFile+"."+strconv.Itoa(manager))
 }
 
-// scratchPath names a file no other caller can be using: rename replaces
-// its destination, so two callers sharing one name would trample each
-// other's request rather than each taking its own.
+// rename replaces its destination, so two callers sharing one scratch
+// name would trample each other's request rather than each taking its
+// own.
 func scratchPath(configDir, stage string) string {
 	name := focusFile + "." + stage + "." +
 		strconv.Itoa(os.Getpid()) + "." + strconv.FormatUint(focusSeq.Add(1), 10)
 	return filepath.Join(configDir, name)
 }
 
-// RequestFocus publishes the click through a rename, so a manager polling
-// mid-write can never read half an id. manager is the process id of the
-// manager that posted the banner.
+// RequestFocus publishes through a rename, so a manager polling mid-write
+// cannot read half an id. manager is the process that posted the banner.
 func RequestFocus(configDir string, manager int, sessionID string) error {
 	pending := scratchPath(configDir, "pending")
 	if err := os.WriteFile(pending, []byte(sessionID+"\n"), 0o600); err != nil {
@@ -51,10 +48,9 @@ func RequestFocus(configDir string, manager int, sessionID string) error {
 	return nil
 }
 
-// TakeFocus returns the session id of a click on this manager's own
-// banner. The rename is the claim: only one caller can win it, and a click
-// published after it lands in a new file rather than under the winner's
-// read.
+// TakeFocus serves this manager's own banners only. The rename is the
+// claim: one caller wins it, and a click published afterwards lands in a
+// new file rather than under the winner's read.
 func TakeFocus(configDir string) (string, bool) {
 	sweepStale.Do(func() { sweepAbandonedFocus(configDir) })
 	claimed := scratchPath(configDir, "claimed")
@@ -70,9 +66,8 @@ func TakeFocus(configDir string) (string, bool) {
 	return id, id != ""
 }
 
-// sweepAbandonedFocus clears requests left by managers that exited before
-// polling for them. Anything younger than the click window may still
-// belong to a manager that is running, so only older files go.
+// A request younger than the click window may still belong to a manager
+// that is running, so only older ones are abandoned.
 func sweepAbandonedFocus(configDir string) {
 	stale, err := filepath.Glob(filepath.Join(configDir, focusFile+".*"))
 	if err != nil {

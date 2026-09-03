@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestFocusRequestRoundTrip(t *testing.T) {
@@ -122,5 +123,27 @@ func TestTakeFocusLeavesAnotherManagersClick(t *testing.T) {
 	}
 	if _, err := os.Stat(focusPath(dir, os.Getpid()+1)); err != nil {
 		t.Fatal("the other manager's click should still be waiting for it")
+	}
+}
+
+func TestSweepAbandonedFocusKeepsLiveRequests(t *testing.T) {
+	dir := t.TempDir()
+	abandoned := focusPath(dir, os.Getpid()+1)
+	if err := RequestFocus(dir, os.Getpid()+1, "sess-abandoned"); err != nil {
+		t.Fatal(err)
+	}
+	aged := time.Now().Add(-clickTimeout - time.Minute)
+	if err := os.Chtimes(abandoned, aged, aged); err != nil {
+		t.Fatal(err)
+	}
+	if err := RequestFocus(dir, os.Getpid(), "sess-fresh"); err != nil {
+		t.Fatal(err)
+	}
+	sweepAbandonedFocus(dir)
+	if _, err := os.Stat(abandoned); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("a request older than the click window should be gone")
+	}
+	if id, ok := TakeFocus(dir); !ok || id != "sess-fresh" {
+		t.Fatalf("TakeFocus = %q, %v; want the fresh request", id, ok)
 	}
 }
