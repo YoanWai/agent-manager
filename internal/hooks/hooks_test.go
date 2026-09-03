@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 )
@@ -331,11 +332,40 @@ func TestNameResultsAreKeptApartPerRequest(t *testing.T) {
 		t.Fatalf("the other rename took this answer with it: %+v, %v, %v", verdict, found, err)
 	}
 
-	if err := manager.RemoveNameResults("x"); err != nil {
-		t.Fatalf("RemoveNameResults: %v", err)
+	if err := manager.SweepNameResults(time.Now().Add(NameResultLifetime)); err != nil {
+		t.Fatalf("SweepNameResults: %v", err)
 	}
 	if _, found, _ := manager.ReadNameResult("x", "req1"); found {
-		t.Fatal("a session's answers should all go with it")
+		t.Fatal("an answer nobody came back for should be swept")
+	}
+}
+
+// A sweep must never take an answer from a caller still reading for it,
+// and must collect the ones left by sessions that are gone.
+func TestSweepNameResultsKeepsFreshAnswers(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := manager.WriteNameResult("fresh", "req1", "a name", "a name", nil); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := manager.WriteNameResult("stale", "req2", "another name", "another name", nil); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	old := time.Now().Add(-NameResultLifetime - time.Minute)
+	if err := os.Chtimes(manager.NameResultFile("stale", "req2"), old, old); err != nil {
+		t.Fatalf("age the answer: %v", err)
+	}
+
+	if err := manager.SweepNameResults(time.Now()); err != nil {
+		t.Fatalf("SweepNameResults: %v", err)
+	}
+	if _, found, err := manager.ReadNameResult("fresh", "req1"); !found || err != nil {
+		t.Fatalf("the sweep took an answer a caller could still be reading: found=%v err=%v", found, err)
+	}
+	if _, found, _ := manager.ReadNameResult("stale", "req2"); found {
+		t.Fatal("an answer past its lifetime should be gone")
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 )
@@ -201,14 +202,29 @@ func (m *Manager) RemoveName(id string) error {
 	return removeIfExists(m.NameFile(id))
 }
 
-// RemoveNameResults drops every answer left for a session, which is what
-// a session being launched or deleted leaves behind.
-func (m *Manager) RemoveNameResults(id string) error {
-	paths, err := filepath.Glob(filepath.Join(m.dir, id+".*.renamed"))
+// NameResultLifetime is how long an answer nobody claimed is kept. It is
+// far longer than any caller waits, so a sweep never takes an answer out
+// from under one still reading for it.
+const NameResultLifetime = 5 * time.Minute
+
+// SweepNameResults drops answers nobody came back for, including those of
+// sessions that have since been deleted, whose ids never come round again.
+func (m *Manager) SweepNameResults(now time.Time) error {
+	paths, err := filepath.Glob(filepath.Join(m.dir, "*.renamed"))
 	if err != nil {
 		return err
 	}
 	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return err
+		}
+		if now.Sub(info.ModTime()) < NameResultLifetime {
+			continue
+		}
 		if err := removeIfExists(path); err != nil {
 			return err
 		}

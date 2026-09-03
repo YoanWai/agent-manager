@@ -8,6 +8,7 @@ package launch
 import (
 	"os"
 	"strings"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -171,7 +172,7 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	if err := manager.RemoveName(id); err != nil {
 		return "", nil, err
 	}
-	if err := manager.RemoveNameResults(id); err != nil {
+	if err := manager.SweepNameResults(time.Now()); err != nil {
 		return "", nil, err
 	}
 	env := map[string]string{hooks.EnvSessionID: id}
