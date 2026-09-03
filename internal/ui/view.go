@@ -418,12 +418,9 @@ func expandPaneTabs(line string, width int) string {
 
 // paneWindow picks the half-open row range of a capture the panel shows.
 // A pane is left taller than the panel on purpose, since shrinking it
-// costs agents like Codex their whole scrollback (#369), so a plain crop
-// would show the blank tail such a pane leaves under short output and drop
-// the output itself. The window instead ends at the last painted row, but
-// never retreats past the panel's own row count (short output keeps its
-// top anchor, and a not-yet-painted pane keeps its blank rows hit-testable)
-// or past the caret's row, which is the cell someone is typing into.
+// costs agents like Codex their whole scrollback (#369), so the window
+// drops a blank tail instead. A completely blank, not-yet-painted pane
+// keeps its rows hit-testable, and a live caret keeps its row in view.
 func paneWindow(pane string, n, caretRow int) (lines []string, start int) {
 	if n <= 0 || pane == "" {
 		return nil, 0
@@ -434,8 +431,8 @@ func paneWindow(pane string, n, caretRow int) (lines []string, start int) {
 	for end > 0 && blankPaneRow(lines[end-1]) {
 		end--
 	}
-	if end < n {
-		end = n
+	if end == 0 {
+		end = min(n, len(lines))
 	}
 	if caretRow+1 > end {
 		end = caretRow + 1

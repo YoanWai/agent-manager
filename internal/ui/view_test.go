@@ -58,13 +58,13 @@ func TestPaneExactPreservesBlanks(t *testing.T) {
 
 // A pane held taller than the panel (kept tall on purpose, since a height
 // shrink costs Codex its scrollback, #369) carries a blank tail under
-// short output. The crop ends at the content so the output stays visible,
-// top-anchored the way a terminal shows it.
+// short output. The crop returns only its content so the renderer can
+// align it without carrying the dead rows along.
 func TestPaneWindowCropsBlankTailNotContent(t *testing.T) {
 	tall := "one\ntwo" + strings.Repeat("\n", 40)
 	lines, start := paneWindow(tall, 5, -1)
-	if start != 0 || len(lines) != 5 || lines[0] != "one" || lines[1] != "two" {
-		t.Fatalf("short output in a tall pane = start %d rows %q, want its top rows", start, lines)
+	if start != 0 || len(lines) != 2 || lines[0] != "one" || lines[1] != "two" {
+		t.Fatalf("short output in a tall pane = start %d rows %q, want content only", start, lines)
 	}
 
 	full := strings.TrimSuffix(strings.Repeat("line\n", 40), "\n")

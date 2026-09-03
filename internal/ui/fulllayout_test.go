@@ -222,8 +222,9 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	if !m.pane.box.ok || m.pane.box.x != 0 || m.pane.box.width != m.width {
 		t.Fatalf("pane box = %+v, want the whole width at column 0", m.pane.box)
 	}
-	if m.pane.box.y != m.listChromeRows() {
-		t.Fatalf("pane box starts at row %d, want right under the focus rule at %d", m.pane.box.y, m.listChromeRows())
+	wantPaneY := m.listChromeRows() + m.listBodyHeight() - 1
+	if m.pane.box.y != wantPaneY {
+		t.Fatalf("pane box starts at row %d, want compact content at the bottom row %d", m.pane.box.y, wantPaneY)
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
