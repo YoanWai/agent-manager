@@ -14,14 +14,14 @@ func TestFocusRequestRoundTrip(t *testing.T) {
 	if _, ok := TakeFocus(dir); ok {
 		t.Fatal("nothing should be pending in an empty directory")
 	}
-	if err := RequestFocus(dir, "sess-3"); err != nil {
+	if err := RequestFocus(dir, os.Getpid(), "sess-3"); err != nil {
 		t.Fatal(err)
 	}
 	id, ok := TakeFocus(dir)
 	if !ok || id != "sess-3" {
 		t.Fatalf("TakeFocus = %q, %v; want sess-3", id, ok)
 	}
-	if _, err := os.Stat(filepath.Join(dir, focusFile)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(focusPath(dir, os.Getpid())); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("a taken request must not be served twice")
 	}
 }
@@ -31,18 +31,21 @@ func TestFocusRequestRoundTrip(t *testing.T) {
 // which is the intent: the newest click is the one the user meant.
 func TestTakeFocusClaimsEachRequestOnce(t *testing.T) {
 	dir := t.TempDir()
-	if err := RequestFocus(dir, "sess-first"); err != nil {
+	if err := RequestFocus(dir, os.Getpid(), "sess-first"); err != nil {
 		t.Fatal(err)
 	}
 	var mu sync.Mutex
 	taken := map[string]int{}
 	var writes, reads sync.WaitGroup
+	// Readers that stopped on a fixed count could all finish before the
+	// first write landed, leaving the test green with nothing claimed.
+	published := make(chan struct{})
 	for writer := 0; writer < 3; writer++ {
 		writes.Add(1)
 		go func(writer int) {
 			defer writes.Done()
 			for i := 0; i < 50; i++ {
-				if err := RequestFocus(dir, "sess-"+strconv.Itoa(writer)+"-"+strconv.Itoa(i)); err != nil {
+				if err := RequestFocus(dir, os.Getpid(), "sess-"+strconv.Itoa(writer)+"-"+strconv.Itoa(i)); err != nil {
 					t.Error(err)
 					return
 				}
@@ -53,16 +56,30 @@ func TestTakeFocusClaimsEachRequestOnce(t *testing.T) {
 		reads.Add(1)
 		go func() {
 			defer reads.Done()
-			for i := 0; i < 200; i++ {
+			for {
 				if id, ok := TakeFocus(dir); ok {
 					mu.Lock()
 					taken[id]++
 					mu.Unlock()
+					continue
+				}
+				select {
+				case <-published:
+					// One last look, so the final write cannot be missed
+					// by a reader that gave up between it and the close.
+					if id, ok := TakeFocus(dir); ok {
+						mu.Lock()
+						taken[id]++
+						mu.Unlock()
+					}
+					return
+				default:
 				}
 			}
 		}()
 	}
 	writes.Wait()
+	close(published)
 	reads.Wait()
 	if len(taken) == 0 {
 		t.Fatal("no click was ever claimed")
@@ -80,8 +97,30 @@ func TestTakeFocusClaimsEachRequestOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if entry.Name() != focusFile {
+		if entry.Name() != filepath.Base(focusPath(dir, os.Getpid())) {
 			t.Fatalf("temporary file left behind: %s", entry.Name())
 		}
+	}
+}
+
+// Two managers share the config directory, and a click belongs to the one
+// whose banner was clicked.
+func TestTakeFocusLeavesAnotherManagersClick(t *testing.T) {
+	dir := t.TempDir()
+	if err := RequestFocus(dir, os.Getpid()+1, "sess-elsewhere"); err != nil {
+		t.Fatal(err)
+	}
+	if id, ok := TakeFocus(dir); ok {
+		t.Fatalf("claimed %q, which belongs to another manager", id)
+	}
+	if err := RequestFocus(dir, os.Getpid(), "sess-mine"); err != nil {
+		t.Fatal(err)
+	}
+	id, ok := TakeFocus(dir)
+	if !ok || id != "sess-mine" {
+		t.Fatalf("TakeFocus = %q, %v; want sess-mine", id, ok)
+	}
+	if _, err := os.Stat(focusPath(dir, os.Getpid()+1)); err != nil {
+		t.Fatal("the other manager's click should still be waiting for it")
 	}
 }

@@ -260,9 +260,14 @@ func handleNotifySendReply(action, sessionID string) {
 		return
 	}
 	raiseTerminalWindow()
-	if dir, err := configDir(); err == nil {
-		_ = RequestFocus(dir, sessionID)
+	dir, err := configDir()
+	if err != nil {
+		return
 	}
+	// The banner is already gone by the time this runs and Notify has
+	// long returned, so a failure here has nowhere to surface: the click
+	// simply leaves the cursor where it was.
+	_ = RequestFocus(dir, os.Getpid(), sessionID)
 }
 
 // notifySendReportsActions reports whether the installed notify-send
@@ -282,8 +287,9 @@ func raiseTerminalWindow() {
 		return
 	}
 	if _, err := lookPath("xdotool"); err == nil {
-		_ = runCmd("xdotool", "windowactivate", "--sync", window)
-		return
+		if runCmd("xdotool", "windowactivate", "--sync", window) == nil {
+			return
+		}
 	}
 	if _, err := lookPath("wmctrl"); err == nil {
 		_ = runCmd("wmctrl", "-ia", window)

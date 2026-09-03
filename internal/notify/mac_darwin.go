@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -63,7 +64,8 @@ func postThroughHelper(sessionID, subtitle, body, sound string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), helperTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, helper, "post",
-		"agent-manager", subtitle, body, sound+".aiff", getenv("__CFBundleIdentifier"), sessionID)
+		"agent-manager", subtitle, body, sound+".aiff", getenv("__CFBundleIdentifier"),
+		sessionID, strconv.Itoa(os.Getpid()))
 	err = cmd.Run()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() == exitDenied {
@@ -76,9 +78,9 @@ func helperExecutablePath(configDir string) string {
 	return filepath.Join(configDir, helperBundle, "Contents", "MacOS", helperExecutable)
 }
 
-// LaunchedAsHelper reports whether this process is the copy inside the
-// notifier bundle, which Launch Services starts with no arguments when a
-// banner is clicked.
+// LaunchedAsHelper: Launch Services starts the bundle's copy with no
+// arguments at all when a banner is clicked, so the path is the only
+// marker of what this process is.
 func LaunchedAsHelper() bool {
 	exe, err := os.Executable()
 	return err == nil && strings.HasSuffix(exe, filepath.Join(helperBundle, "Contents", "MacOS", helperExecutable))
@@ -108,6 +110,9 @@ func materializeHelper(configDir string) (string, error) {
 		return helperExecutablePath(configDir), nil
 	}
 	if err := buildHelper(bundle, source, stamp); err != nil {
+		// The stamp is written before signing, so a bundle left behind by
+		// a failure here would be trusted unsigned by the next call.
+		os.RemoveAll(bundle)
 		return "", err
 	}
 	return helperExecutablePath(configDir), nil
@@ -193,11 +198,10 @@ func copyFile(from, to string, mode os.FileMode) error {
 	return out.Close()
 }
 
-// HelperMain is the notifier bundle's entry point. With "post" and the
-// banner fields it requests permission if needed, posts, and exits. With
-// no arguments it was relaunched by a click: it reveals the terminal named
-// in the banner, leaves the focus request for the manager, and exits. The
-// exit code is the result, since the caller is the manager itself.
+// HelperMain runs in the bundle's copy of this binary: with "post" and
+// the banner fields when the manager posts, and with no arguments at all
+// when Launch Services relaunches it for a click. Its exit code is what
+// the manager reads.
 func HelperMain(args []string) int {
 	runtime.LockOSThread()
 	for _, lib := range []string{
@@ -217,8 +221,12 @@ func HelperMain(args []string) int {
 	center.Send(sel("setDelegate:"), delegate)
 
 	exit := make(chan int, 1)
-	if len(args) == 7 && args[0] == "post" {
+	if len(args) == 8 && args[0] == "post" {
 		title, subtitle, body, sound, terminal, sessionID := args[1], args[2], args[3], args[4], args[5], args[6]
+		manager, err := strconv.Atoi(args[7])
+		if err != nil {
+			return 1
+		}
 		granted := objc.NewBlock(func(_ objc.Block, ok bool, _ objc.ID) {
 			if !ok {
 				exit <- exitDenied
@@ -232,6 +240,7 @@ func HelperMain(args []string) int {
 			info := objc.ID(objc.GetClass("NSMutableDictionary")).Send(sel("dictionary"))
 			info.Send(sel("setObject:forKey:"), nsString(terminal), nsString("terminal"))
 			info.Send(sel("setObject:forKey:"), nsString(sessionID), nsString("session"))
+			info.Send(sel("setObject:forKey:"), nsString(strconv.Itoa(manager)), nsString("manager"))
 			content.Send(sel("setUserInfo:"), info)
 			request := objc.ID(objc.GetClass("UNNotificationRequest")).Send(sel("requestWithIdentifier:content:trigger:"),
 				nsString(fmt.Sprintf("agent-manager-%d", time.Now().UnixNano())), content, objc.ID(0))
@@ -264,8 +273,7 @@ func HelperMain(args []string) int {
 	return 0
 }
 
-// helperExit is where the delegate reports the click handled, so the run
-// loop started in HelperMain can end.
+// helperExit lets the delegate end the run loop HelperMain started.
 var helperExit chan<- int
 
 func newHelperDelegate() (objc.ID, error) {
@@ -284,8 +292,14 @@ func newHelperDelegate() (objc.ID, error) {
 				Fn: func(_ objc.ID, _ objc.SEL, _, response objc.ID, handler objc.Block) {
 					info := response.Send(sel("notification")).Send(sel("request")).Send(sel("content")).Send(sel("userInfo"))
 					revealTerminal(goString(info.Send(sel("objectForKey:"), nsString("terminal"))))
-					if dir, err := configDir(); err == nil {
-						_ = RequestFocus(dir, goString(info.Send(sel("objectForKey:"), nsString("session"))))
+					manager, convErr := strconv.Atoi(goString(info.Send(sel("objectForKey:"), nsString("manager"))))
+					dir, dirErr := configDir()
+					if convErr == nil && dirErr == nil {
+						session := goString(info.Send(sel("objectForKey:"), nsString("session")))
+						// Nothing reads this process's exit code on a
+						// click, so a failed handoff can only mean the
+						// cursor stays where it was.
+						_ = RequestFocus(dir, manager, session)
 					}
 					callBlock(handler)
 					helperExit <- 0
