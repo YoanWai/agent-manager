@@ -9,10 +9,12 @@
 // bundle of its own, so the banner carries the manager's name and icon and
 // a click brings the terminal that launched the manager forward. Linux
 // posts through notify-send, and a click there raises the terminal window
-// where the display allows it. WSL posts a Windows toast through
-// PowerShell. Every click also asks the manager to select the session the
-// banner named. With nothing better available the terminal bell is the
-// floor, so headless setups still get an audible cue.
+// where the display allows it. Both record the session the banner named,
+// so the manager selects it on the next poll. WSL posts a Windows toast
+// through PowerShell, which Windows attributes to PowerShell itself, so
+// that banner tells the user and nothing more. With nothing better
+// available the terminal bell is the floor, so headless setups still get
+// an audible cue.
 package notify
 
 import (
