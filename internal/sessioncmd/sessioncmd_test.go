@@ -183,8 +183,8 @@ func TestRenameWaitsForTheManagerAndReportsItsAnswer(t *testing.T) {
 	if err != nil || message != "session renamed to fix auth bug" {
 		t.Fatalf("Rename = %q, %v", message, err)
 	}
-	if _, _, _, found := mailbox.ReadNameResult("abc123"); found {
-		t.Fatal("a read answer must be consumed")
+	if _, found, err := mailbox.ReadNameResult("abc123"); found || err != nil {
+		t.Fatalf("a read answer must be consumed: found=%v err=%v", found, err)
 	}
 
 	answer(t, "taken", errors.New("worktree rename: branch already exists: am/taken"))

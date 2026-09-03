@@ -229,28 +229,39 @@ func (m *Manager) WriteNameResult(id, requested, applied string, refusal error) 
 	return WriteWhole(m.NameResultFile(id), content)
 }
 
-// ReadNameResult returns the name that was asked for and what became of
-// it: the applied name, or the refusal as an error. found reports that
-// the poller has answered, so a caller compares requested against its own
-// to know whether the answer is the one it is waiting for. Anything but
-// the two verdicts this package writes is no answer at all.
-func (m *Manager) ReadNameResult(id string) (requested, applied string, refusal error, found bool) {
+// NameVerdict is what became of one rename: the name it asked for, and
+// either the name the session took or the reason it kept the one it had.
+type NameVerdict struct {
+	Requested string
+	Applied   string
+	Refusal   error
+}
+
+// ReadNameResult returns the poller's answer, if it has written one. A
+// caller compares Requested against its own name to know whether the
+// answer is the one it is waiting for. Anything but the two verdicts this
+// package writes is no answer at all, while a mailbox that cannot be read
+// is an error rather than silence, since silence reads as "not yet".
+func (m *Manager) ReadNameResult(id string) (verdict NameVerdict, found bool, err error) {
 	raw, err := os.ReadFile(m.NameResultFile(id))
 	if err != nil {
-		return "", "", nil, false
+		if errors.Is(err, fs.ErrNotExist) {
+			return NameVerdict{}, false, nil
+		}
+		return NameVerdict{}, false, err
 	}
-	verdict, rest, hasName := strings.Cut(string(raw), "\n")
+	state, rest, hasName := strings.Cut(string(raw), "\n")
 	requested, detail, hasDetail := strings.Cut(rest, "\n")
 	if !hasName || !hasDetail || requested == "" || detail == "" {
-		return "", "", nil, false
+		return NameVerdict{}, false, nil
 	}
-	switch verdict {
+	switch state {
 	case "renamed":
-		return requested, detail, nil, true
+		return NameVerdict{Requested: requested, Applied: detail}, true, nil
 	case "refused":
-		return requested, "", errors.New(detail), true
+		return NameVerdict{Requested: requested, Refusal: errors.New(detail)}, true, nil
 	}
-	return "", "", nil, false
+	return NameVerdict{}, false, nil
 }
 
 func (m *Manager) RemoveNameResult(id string) error {

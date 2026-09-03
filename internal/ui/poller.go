@@ -1074,6 +1074,11 @@ func (p *poller) applyPendingRename(sess *store.Session) error {
 	if err := p.hooks.ReleaseName(sess.ID); err != nil {
 		return err
 	}
+	// The row going out from under this rename is the agent's answer, not
+	// a failure of the pass that carried it.
+	if errors.Is(renameErr, store.ErrSessionGone) {
+		return nil
+	}
 	return renameErr
 }
 
@@ -1084,7 +1089,7 @@ func (p *poller) renamePending(sess *store.Session, name string) error {
 	if err := renameSessionWorktreeBranch(p.gitDrv, p.store, sess, name); err != nil {
 		return fmt.Errorf("worktree rename: %w", err)
 	}
-	if err := ignoreDeletedSession(p.store.RenameSession(sess.ID, name)); err != nil {
+	if err := p.store.RenameSession(sess.ID, name); err != nil {
 		return err
 	}
 	sess.Name = name

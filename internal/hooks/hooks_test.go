@@ -278,31 +278,31 @@ func TestNameResultRoundTrips(t *testing.T) {
 	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if _, _, _, found := manager.ReadNameResult("x"); found {
-		t.Fatal("no result should be found before the poller answers")
+	if _, found, err := manager.ReadNameResult("x"); found || err != nil {
+		t.Fatalf("before the poller answers: found=%v err=%v", found, err)
 	}
 
 	if err := manager.WriteNameResult("x", "fix auth  bug", "fix auth bug", nil); err != nil {
 		t.Fatalf("WriteNameResult: %v", err)
 	}
-	requested, applied, refusal, found := manager.ReadNameResult("x")
-	if !found || refusal != nil || requested != "fix auth  bug" || applied != "fix auth bug" {
-		t.Fatalf("ReadNameResult = %q, %q, %v, %v; want the asked and applied names", requested, applied, refusal, found)
+	verdict, found, err := manager.ReadNameResult("x")
+	if err != nil || !found || verdict.Refusal != nil || verdict.Requested != "fix auth  bug" || verdict.Applied != "fix auth bug" {
+		t.Fatalf("ReadNameResult = %+v, %v, %v; want the asked and applied names", verdict, found, err)
 	}
 
 	if err := manager.WriteNameResult("x", "taken", "", errors.New("branch already exists: am/taken")); err != nil {
 		t.Fatalf("WriteNameResult refusal: %v", err)
 	}
-	requested, applied, refusal, found = manager.ReadNameResult("x")
-	if !found || refusal == nil || refusal.Error() != "branch already exists: am/taken" || requested != "taken" || applied != "" {
-		t.Fatalf("ReadNameResult = %q, %q, %v, %v; want the refusal", requested, applied, refusal, found)
+	verdict, found, err = manager.ReadNameResult("x")
+	if err != nil || !found || verdict.Refusal == nil || verdict.Refusal.Error() != "branch already exists: am/taken" || verdict.Requested != "taken" || verdict.Applied != "" {
+		t.Fatalf("ReadNameResult = %+v, %v, %v; want the refusal", verdict, found, err)
 	}
 
 	if err := manager.RemoveNameResult("x"); err != nil {
 		t.Fatalf("RemoveNameResult: %v", err)
 	}
-	if _, _, _, found := manager.ReadNameResult("x"); found {
-		t.Fatal("removed result should not be found")
+	if _, found, err := manager.ReadNameResult("x"); found || err != nil {
+		t.Fatalf("removed result: found=%v err=%v", found, err)
 	}
 	if err := manager.RemoveNameResult("x"); err != nil {
 		t.Fatalf("second RemoveNameResult should be a no-op: %v", err)
@@ -320,8 +320,8 @@ func TestReadNameResultRejectsAForeignFile(t *testing.T) {
 		if err := os.WriteFile(manager.NameResultFile("x"), []byte(content), 0o644); err != nil {
 			t.Fatalf("write: %v", err)
 		}
-		if requested, applied, refusal, found := manager.ReadNameResult("x"); found {
-			t.Fatalf("content %q read as an answer: %q, %q, %v", content, requested, applied, refusal)
+		if verdict, found, err := manager.ReadNameResult("x"); found || err != nil {
+			t.Fatalf("content %q read as an answer: %+v, %v", content, verdict, err)
 		}
 	}
 }
@@ -406,5 +406,17 @@ func TestWriteWholeSurvivesConcurrentWriters(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("staging files were left behind: %v", entries)
+	}
+}
+
+// A mailbox that cannot be read is not the same as no answer yet: the
+// waiting command must hear about it rather than report a rename queued.
+func TestReadNameResultSurfacesAReadFailure(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := os.MkdirAll(manager.NameResultFile("x"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if _, found, err := manager.ReadNameResult("x"); err == nil || found {
+		t.Fatalf("unreadable result = found %v, err %v; want the failure", found, err)
 	}
 }

@@ -86,8 +86,11 @@ func Rename(ctx context.Context, configDir, sessionID, name string) (string, err
 	asked := hooks.NormalizeName(name)
 	deadline := time.Now().Add(min(max(3*pollInterval, renameWaitFloor), renameWaitCap))
 	for time.Now().Before(deadline) {
-		requested, applied, refusal, found := mailbox.ReadNameResult(sessionID)
-		if !found || requested != asked {
+		verdict, found, err := mailbox.ReadNameResult(sessionID)
+		if err != nil {
+			return "", fmt.Errorf("read the rename answer: %w", err)
+		}
+		if !found || verdict.Requested != asked {
 			// A verdict for another rename belongs to whoever asked for it.
 			select {
 			case <-ctx.Done():
@@ -99,10 +102,10 @@ func Rename(ctx context.Context, configDir, sessionID, name string) (string, err
 		if err := mailbox.RemoveNameResult(sessionID); err != nil {
 			return "", err
 		}
-		if refusal != nil {
-			return "", fmt.Errorf("session keeps its name: %w", refusal)
+		if verdict.Refusal != nil {
+			return "", fmt.Errorf("session keeps its name: %w", verdict.Refusal)
 		}
-		return "session renamed to " + applied, nil
+		return "session renamed to " + verdict.Applied, nil
 	}
 	return fmt.Sprintf("rename to %q is queued: Agent Manager is running but has not applied it yet", name), nil
 }

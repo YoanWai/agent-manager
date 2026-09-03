@@ -164,6 +164,12 @@ func TestPendingRenameForADeletedSessionDoesNotFailThePoll(t *testing.T) {
 	if _, found := m.hooks.ReadName(sess.ID); found {
 		t.Fatal("the name file should be consumed instead of retried every poll")
 	}
+	// The agent that asked hears that the row went away rather than a
+	// success for a session that no longer exists.
+	verdict, found, err := m.hooks.ReadNameResult(sess.ID)
+	if err != nil || !found || verdict.Refusal == nil || !strings.Contains(verdict.Refusal.Error(), "session no longer exists") {
+		t.Fatalf("result = %+v, %v, %v; want the refusal", verdict, found, err)
+	}
 }
 
 func TestPendingRenameKeepsTheWorktreeDirectory(t *testing.T) {
@@ -286,9 +292,9 @@ func TestPendingRenameOnATakenWorktreeNameStopsAfterOneReport(t *testing.T) {
 	if stored.Name != "mover" || stored.Cwd != spawned.Cwd || stored.WorktreeBranch != spawned.WorktreeBranch {
 		t.Fatalf("refused rename still moved something: %+v", stored)
 	}
-	requested, _, refusal, found := m.hooks.ReadNameResult(spawned.ID)
-	if !found || refusal == nil || requested != "taken" || !strings.Contains(refusal.Error(), "branch already exists") {
-		t.Fatalf("the agent that asked must hear the refusal: requested=%q found=%v refusal=%v", requested, found, refusal)
+	verdict, found, err := m.hooks.ReadNameResult(spawned.ID)
+	if err != nil || !found || verdict.Refusal == nil || verdict.Requested != "taken" || !strings.Contains(verdict.Refusal.Error(), "branch already exists") {
+		t.Fatalf("the agent that asked must hear the refusal: %+v found=%v err=%v", verdict, found, err)
 	}
 
 	// The next poll runs clean, so one bad name does not stall the loop.
@@ -306,9 +312,9 @@ func TestPendingRenameReportsTheAppliedName(t *testing.T) {
 	if err := m.poller.applyPendingRename(&sess); err != nil {
 		t.Fatalf("rename: %v", err)
 	}
-	requested, applied, refusal, found := m.hooks.ReadNameResult(sess.ID)
-	if !found || refusal != nil || applied != "audit the poller" || requested != "audit the poller" {
-		t.Fatalf("result = %q, %q, %v, %v; want the asked and applied names", requested, applied, refusal, found)
+	verdict, found, err := m.hooks.ReadNameResult(sess.ID)
+	if err != nil || !found || verdict.Refusal != nil || verdict.Applied != "audit the poller" || verdict.Requested != "audit the poller" {
+		t.Fatalf("result = %+v, %v, %v; want the asked and applied names", verdict, found, err)
 	}
 }
 
@@ -353,9 +359,9 @@ func TestPendingRenameOnAWorktreeOffItsBranchTakesTheName(t *testing.T) {
 			if after := gitOutput(t, spawned.Cwd, "rev-parse", "HEAD"); after != before {
 				t.Fatalf("the worktree moved from %q to %q", before, after)
 			}
-			requested, applied, refusal, found := m.hooks.ReadNameResult(spawned.ID)
-			if !found || refusal != nil || applied != "SCT-11-cpu-perf" || requested != "SCT-11-cpu-perf" {
-				t.Fatalf("result = %q, %q, %v, %v", requested, applied, refusal, found)
+			verdict, found, err := m.hooks.ReadNameResult(spawned.ID)
+			if err != nil || !found || verdict.Refusal != nil || verdict.Applied != "SCT-11-cpu-perf" || verdict.Requested != "SCT-11-cpu-perf" {
+				t.Fatalf("result = %+v, %v, %v", verdict, found, err)
 			}
 		})
 	}
@@ -404,9 +410,9 @@ func TestPendingRenameKeepsItsClaimUntilTheVerdictLands(t *testing.T) {
 	if err := m.poller.applyPendingRename(&sess); err != nil {
 		t.Fatalf("second pass: %v", err)
 	}
-	requested, applied, refusal, found := m.hooks.ReadNameResult(sess.ID)
-	if !found || refusal != nil || requested != "audit the poller" || applied != "audit the poller" {
-		t.Fatalf("result = %q, %q, %v, %v; want the answer the first pass could not write", requested, applied, refusal, found)
+	verdict, found, err := m.hooks.ReadNameResult(sess.ID)
+	if err != nil || !found || verdict.Refusal != nil || verdict.Requested != "audit the poller" || verdict.Applied != "audit the poller" {
+		t.Fatalf("result = %+v, %v, %v; want the answer the first pass could not write", verdict, found, err)
 	}
 	if _, found, _ := m.hooks.ClaimName(sess.ID); found {
 		t.Fatal("the answered rename should no longer be claimed")
