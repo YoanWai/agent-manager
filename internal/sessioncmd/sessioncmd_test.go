@@ -166,10 +166,14 @@ func TestRenameWaitsForTheManagerAndReportsItsAnswer(t *testing.T) {
 		t.Helper()
 		go func() {
 			for {
-				if request, pending, found := mailbox.ReadName("abc123"); found && pending == name {
+				request, pending, found, err := mailbox.ClaimName("abc123")
+				if err == nil && found && pending == name {
 					_ = mailbox.WriteNameResult("abc123", request, name, name, refusal)
-					_ = mailbox.RemoveName("abc123")
+					_ = mailbox.ReleaseName("abc123")
 					return
+				}
+				if found {
+					_ = mailbox.ReleaseName("abc123")
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
@@ -204,16 +208,18 @@ func TestRenameAnswersEachCallerItsOwnRename(t *testing.T) {
 	}
 	// The manager applies whichever rename it claims, and answers the
 	// other one where its caller is looking too.
+	// The claim is what the manager does: it takes the pending rename out
+	// of the mailbox in one step, so a request queued meanwhile survives.
 	go func() {
 		answered := map[string]bool{}
 		for len(answered) < 2 {
-			request, pending, found := mailbox.ReadName("abc123")
-			if !found || answered[request] {
+			request, pending, found, err := mailbox.ClaimName("abc123")
+			if err != nil || !found {
 				time.Sleep(5 * time.Millisecond)
 				continue
 			}
 			_ = mailbox.WriteNameResult("abc123", request, pending, pending, nil)
-			_ = mailbox.RemoveName("abc123")
+			_ = mailbox.ReleaseName("abc123")
 			answered[request] = true
 		}
 	}()
