@@ -51,11 +51,10 @@ const (
 	renameResultPoll = 100 * time.Millisecond
 )
 
-// Rename records a session's self-chosen name for the running manager to
-// apply on its next poll, then waits for that poll to say what it did.
-// The manager owns the database and the tmux label: a name it cannot
-// give the session comes back as the reason, and a name no manager is
-// running to apply is reported as queued rather than as done.
+// Rename waits for the manager's poll because the manager owns the
+// database and the tmux label: a name it cannot give the session comes
+// back as the reason, and a name no manager is running to apply is
+// reported as queued rather than as done.
 func Rename(ctx context.Context, configDir, sessionID, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
