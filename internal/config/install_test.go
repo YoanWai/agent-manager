@@ -55,6 +55,48 @@ func TestCheckInstalledNamesOfficialInstaller(t *testing.T) {
 	}
 }
 
+func TestCheckInstalledRejectsWindowsMountUnderWSL(t *testing.T) {
+	origLookPath, origWSLDetect := lookPath, wslDetect
+	lookPath = func(string) (string, error) {
+		return "/mnt/c/Users/dev/AppData/Roaming/npm/claude", nil
+	}
+	wslDetect = func() bool { return true }
+	t.Cleanup(func() { lookPath, wslDetect = origLookPath, origWSLDetect })
+
+	err := CheckInstalled("claude")
+	var missing MissingToolError
+	if !errors.As(err, &missing) {
+		t.Fatalf("a Windows-mount hit under WSL should read as not installed in the distro, got %v", err)
+	}
+	if missing.Binary != "claude" {
+		t.Fatalf("binary = %q", missing.Binary)
+	}
+}
+
+func TestCheckInstalledAcceptsWindowsMountOutsideWSL(t *testing.T) {
+	origLookPath, origWSLDetect := lookPath, wslDetect
+	lookPath = func(string) (string, error) {
+		return "/mnt/c/Users/dev/AppData/Roaming/npm/claude", nil
+	}
+	wslDetect = func() bool { return false }
+	t.Cleanup(func() { lookPath, wslDetect = origLookPath, origWSLDetect })
+
+	if err := CheckInstalled("claude"); err != nil {
+		t.Fatalf("a /mnt/c path outside WSL is an ordinary mounted path, not a distro miss: %v", err)
+	}
+}
+
+func TestCheckInstalledAcceptsDistroBinaryUnderWSL(t *testing.T) {
+	origLookPath, origWSLDetect := lookPath, wslDetect
+	lookPath = func(string) (string, error) { return "/usr/local/bin/claude", nil }
+	wslDetect = func() bool { return true }
+	t.Cleanup(func() { lookPath, wslDetect = origLookPath, origWSLDetect })
+
+	if err := CheckInstalled("claude"); err != nil {
+		t.Fatalf("a distro-installed binary under WSL must still pass: %v", err)
+	}
+}
+
 func TestCheckInstalledKeepsLookupErrors(t *testing.T) {
 	orig := lookPath
 	denied := errors.New("permission denied")
