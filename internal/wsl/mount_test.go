@@ -109,3 +109,24 @@ func TestOnWindowsMountUnreadableFile(t *testing.T) {
 		t.Fatal("an unreadable mount table must not pass for a distro path")
 	}
 }
+
+// The mount table is written by the kernel, but a parser that panics on
+// an odd line would take the whole manager down; every line has to come
+// back as a decision or be skipped.
+func FuzzMountEntry(f *testing.F) {
+	f.Add(`56 24 0:52 / /mnt/c rw,noatime - 9p C:\ rw,aname=drvfs;path=C:\`)
+	f.Add(rootMount)
+	f.Add(`56 24 0:52 / /mnt/my\040drive rw shared:1 master:2 - virtiofs drvfs rw`)
+	f.Add(" - ")
+	f.Add("")
+	f.Fuzz(func(t *testing.T, line string) {
+		point, fstype, ok := mountEntry(line)
+		if !ok {
+			return
+		}
+		if fstype == "" {
+			t.Fatalf("line %q parsed with no filesystem type", line)
+		}
+		underMount(point, point)
+	})
+}

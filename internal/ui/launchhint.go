@@ -33,13 +33,16 @@ type launchFix struct {
 }
 
 // pendingInstall is an install the dialog started in a shell tab: the
-// session running it, and the launch to finish once its exit status lands.
+// session running it, the files its script writes and runs from, and the
+// launch to finish once the command's exit status lands.
 type pendingInstall struct {
-	sessionID string
-	name      string
-	binary    string
-	retry     func() error
-	images    []imageAttachment
+	sessionID  string
+	name       string
+	binary     string
+	statusFile string
+	script     string
+	retry      func() error
+	images     []imageAttachment
 }
 
 // copyLaunchCommand is the seam tests swap so a copy never reaches the
@@ -105,6 +108,11 @@ func (m *Model) openLaunchHint(fix launchFix) {
 	m.mode = modeLaunchHint
 }
 
+func removeInstallFiles(install *pendingInstall) {
+	_ = os.Remove(install.statusFile)
+	_ = os.Remove(install.script)
+}
+
 func dropImages(images []imageAttachment) {
 	for _, att := range images {
 		if att.path != "" {
@@ -115,6 +123,8 @@ func dropImages(images []imageAttachment) {
 
 func (m *Model) handleLaunchHintKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
 	case "c":
 		if m.launchFix.command == "" {
 			return m, nil
@@ -179,7 +189,8 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 		Group:  m.contextGroup(),
 		Status: status.Starting,
 	}
-	exitFile, err := m.hooks.InstallExitFile(sess.ID)
+	statusFile := m.hooks.InstallStatusFile(sess.ID)
+	script, err := m.hooks.WriteInstallScript(sess.ID, installScript(fix.command, statusFile))
 	if err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
@@ -188,20 +199,37 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
-	// Under sh, so the status write reads the same in every login shell,
-	// and in a subshell, so an installer's exit cannot skip it.
-	command := "sh -c " + tmux.ShellQuote("("+fix.command+`); printf %s "$?" > `+tmux.ShellQuote(exitFile))
-	if err := m.tmux.SendText(sess.ID, command); err != nil {
+	if err := m.tmux.SendText(sess.ID, "sh "+tmux.ShellQuote(script)); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
-	m.install = &pendingInstall{sessionID: sess.ID, name: sess.Name, binary: fix.binary, retry: fix.retry, images: fix.images}
+	m.install = &pendingInstall{
+		sessionID:  sess.ID,
+		name:       sess.Name,
+		binary:     fix.binary,
+		statusFile: statusFile,
+		script:     script,
+		retry:      fix.retry,
+		images:     fix.images,
+	}
 	m.launchFix = launchFix{}
 	m.mode = modeList
 	m.statusFilter = statusFilterAll
 	m.focusSession(sess.ID)
-	m.reportDone("installing " + fix.binary + " in " + sess.Name)
+	m.reportDone("installing " + fix.binary)
 	return m, m.refreshCmd()
+}
+
+// installScript shows the command, runs it, and records how it ended. The
+// command runs in a subshell so an installer that exits cannot skip the
+// status write, and the whole thing is a file so the pane's shell is typed
+// one short line: an installer's own quoting then reaches sh unchanged
+// whatever shell the user runs.
+func installScript(command, statusFile string) string {
+	return "#!/bin/sh\n" +
+		"printf '%s\\n' " + tmux.ShellQuote("$ "+command) + "\n" +
+		"(" + command + ")\n" +
+		`printf %s "$?" > ` + tmux.ShellQuote(statusFile) + "\n"
 }
 
 // settleInstall runs on every poll while an install is pending: once the
@@ -213,22 +241,19 @@ func (m *Model) settleInstall() {
 	if install == nil {
 		return
 	}
-	exitFile, err := m.hooks.InstallExitFile(install.sessionID)
-	if err != nil {
-		m.install = nil
-		m.errBar.text = err.Error()
-		return
-	}
-	data, err := os.ReadFile(exitFile)
+	data, err := os.ReadFile(install.statusFile)
 	if errors.Is(err, fs.ErrNotExist) {
+		// A shell killed before the command ended takes the launch with it.
 		if !m.tmux.Exists(install.sessionID) {
 			m.install = nil
+			removeInstallFiles(install)
 			dropImages(install.images)
 		}
 		return
 	}
 	if err != nil {
 		m.install = nil
+		removeInstallFiles(install)
 		m.errBar.text = err.Error()
 		return
 	}
@@ -239,7 +264,7 @@ func (m *Model) settleInstall() {
 		return
 	}
 	m.install = nil
-	_ = os.Remove(exitFile)
+	removeInstallFiles(install)
 	if code != "0" {
 		dropImages(install.images)
 		m.errBar.text = fmt.Sprintf("%s install exited with status %s; its output is in %s", install.binary, code, install.name)
@@ -251,14 +276,23 @@ func (m *Model) settleInstall() {
 		return
 	}
 	if install.retry == nil {
+		dropImages(install.images)
 		m.reportDone(install.binary + " installed")
 		return
 	}
 	if err := install.retry(); err != nil {
 		m.reportLaunchError(err, install.retry)
+		if m.mode != modeLaunchHint {
+			dropImages(install.images)
+			return
+		}
+		// The dialog can still clear whatever stopped it this time and
+		// spawn the same prompt, so it keeps holding the images.
 		m.launchFix.images = install.images
 		return
 	}
+	// The launched prompt names the image paths, so the files stay for the
+	// agent to read; the stale-paste sweep retires them.
 	m.statusFilter = statusFilterAll
 	m.rebuildRows()
 	m.requestRefresh()

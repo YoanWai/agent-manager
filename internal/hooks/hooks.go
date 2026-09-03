@@ -123,14 +123,24 @@ func (m *Manager) StatusFile(id string) string {
 	return filepath.Join(m.dir, id+".status")
 }
 
-// InstallExitFile is the mailbox an install started from the setup dialog
-// writes its exit status to. The shell redirect writing it cannot create
-// the directory, so this does.
-func (m *Manager) InstallExitFile(id string) (string, error) {
+// InstallStatusFile is the mailbox an install started from the setup
+// dialog writes the command's exit status to.
+func (m *Manager) InstallStatusFile(id string) string {
+	return filepath.Join(m.dir, id+".install")
+}
+
+// WriteInstallScript stores the script that install runs, so the shell in
+// the pane is typed one short command instead of a quoted line the user's
+// shell may read differently from sh.
+func (m *Manager) WriteInstallScript(id, body string) (string, error) {
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		return "", err
 	}
-	return filepath.Join(m.dir, id+".install"), nil
+	path := filepath.Join(m.dir, id+".install.sh")
+	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // Read returns the hook-reported status for a session. The file is

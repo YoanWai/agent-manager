@@ -661,3 +661,107 @@ func TestLaunchHintRefusesASecondInstall(t *testing.T) {
 		t.Fatalf("%d install shells, want 1", shells)
 	}
 }
+
+// The dialog holds the keyboard, so the quit key has to keep working
+// there the way it does over the key map.
+func TestLaunchHintQuitsOnCtrlC(t *testing.T) {
+	m := buildModel(t)
+	m.reportLaunchError(config.MissingToolError{Binary: "claude"}, nil)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = updated.(*Model)
+	if cmd == nil {
+		t.Fatal("ctrl+c in the dialog should quit")
+	}
+	// The quit rides in a batch with the mouse hand-off the dialog does
+	// on its way up.
+	if !quits(cmd()) {
+		t.Fatalf("ctrl+c produced %T, want a quit", cmd())
+	}
+}
+
+func quits(msg tea.Msg) bool {
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		_, isQuit := msg.(tea.QuitMsg)
+		return isQuit
+	}
+	for _, part := range batch {
+		if quits(part()) {
+			return true
+		}
+	}
+	return false
+}
+
+// A retry that stops on the next missing piece hands the dialog back the
+// images, so one more install can still spawn the same prompt.
+func TestLaunchHintRetryThatStopsAgainKeepsTheImages(t *testing.T) {
+	m := buildModel(t)
+	_, image := installFixture(t, m, fakeInstallCommand(t))
+	m.launchFix.retry = func() error { return config.MissingToolError{Binary: "tmux"} }
+
+	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
+	waitForInstallToSettle(t, m)
+
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, err = %q, want the dialog on the next missing tool", m.mode, m.errBar.text)
+	}
+	if len(m.launchFix.images) != 1 {
+		t.Fatalf("dialog images = %+v, want the prompt's image still held", m.launchFix.images)
+	}
+	if !imageExists(t, image) {
+		t.Fatal("a prompt the dialog can still spawn keeps its image")
+	}
+}
+
+// A retry that fails into the status bar has no dialog left to hold the
+// prompt, so its images go with it.
+func TestLaunchHintRetryThatFailsOutrightDropsTheImages(t *testing.T) {
+	m := buildModel(t)
+	_, image := installFixture(t, m, fakeInstallCommand(t))
+	m.launchFix.retry = func() error { return errors.New("tmux create: boom") }
+
+	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
+	waitForInstallToSettle(t, m)
+
+	if m.mode != modeList {
+		t.Fatalf("mode = %v, want the list", m.mode)
+	}
+	if m.errBar.text != "tmux create: boom" {
+		t.Fatalf("status = %q", m.errBar.text)
+	}
+	if imageExists(t, image) {
+		t.Fatal("nothing can spawn that prompt now, so its image goes too")
+	}
+}
+
+// The install runs from a script the manager writes, so the pane's shell
+// is typed one short line and the installer's own quoting reaches sh
+// untouched. Both files are gone once the install has settled.
+func TestLaunchHintInstallRunsFromAScriptAndCleansUp(t *testing.T) {
+	m := buildModel(t)
+	command := `printf '%s\n' "one '\'' two" > /dev/null`
+	installFixture(t, m, command)
+
+	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
+	shell := terminalSession(t, m)
+	script := m.install.script
+	body, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), command) {
+		t.Fatalf("script does not carry the command verbatim:\n%s", body)
+	}
+	waitForInstallToSettle(t, m)
+
+	if !strings.Contains(m.errBar.text, "not on PATH") {
+		t.Fatalf("status = %q, want the command reported as run", m.errBar.text)
+	}
+	for _, path := range []string{script, m.hooks.InstallStatusFile(shell.ID)} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("%s should be gone, stat err = %v", path, err)
+		}
+	}
+}
