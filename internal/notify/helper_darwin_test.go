@@ -4,7 +4,9 @@ package notify
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -39,7 +41,68 @@ func TestHelperPostsLiveBanner(t *testing.T) {
 	if err := postThroughHelper("live-session", "live-test · codex", "● Finished", "Hero"); err != nil {
 		t.Fatalf("post through helper: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, helperBundle, "Contents", "Resources", "source")); err != nil {
+	source, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source, err = filepath.EvalSymlinks(source); err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(helperHome(dir, source), helperBundle)
+	if _, err := os.Stat(filepath.Join(bundle, "Contents", "Resources", "source")); err != nil {
 		t.Fatalf("bundle stamp missing: %v", err)
+	}
+	if err := exec.Command("codesign", "--verify", "--strict", bundle).Run(); err != nil {
+		t.Fatalf("the bundle the manager posts through is not sealed: %v", err)
+	}
+	entries, err := os.ReadDir(helperHome(dir, source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != helperBundle {
+			t.Fatalf("staging left behind: %s", entry.Name())
+		}
+	}
+}
+
+// Two managers running the same binary post at once: the second must not
+// take the bundle apart while the first is executing it.
+func TestMaterializeHelperIsRepeatable(t *testing.T) {
+	if os.Getenv("AM_NOTIFY_LIVE") == "" {
+		t.Skip("set AM_NOTIFY_LIVE=1 to build a real signed bundle")
+	}
+	base, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(base, "agent-manager-live-test")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	defer restore()()
+	configDir = func() (string, error) { return dir, nil }
+	var wg sync.WaitGroup
+	paths := make([]string, 4)
+	for i := range paths {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			path, err := materializeHelper(dir)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			paths[i] = path
+		}(i)
+	}
+	wg.Wait()
+	for _, path := range paths {
+		if path != paths[0] {
+			t.Fatalf("materialize returned %q and %q", path, paths[0])
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("the returned helper is not there: %v", err)
+		}
 	}
 }

@@ -4,7 +4,9 @@ package notify
 
 import (
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -74,8 +76,14 @@ func postThroughHelper(sessionID, subtitle, body, sound string) error {
 	return err
 }
 
-func helperExecutablePath(configDir string) string {
-	return filepath.Join(configDir, helperBundle, "Contents", "MacOS", helperExecutable)
+// helperHome keeps one bundle per installed binary. Two managers from
+// different installs would otherwise share a path and rebuild it out from
+// under each other on every banner, since each would find the other's
+// stamp. The set of install paths is what bounds this, not the set of
+// versions, so nothing accumulates across upgrades.
+func helperHome(configDir, source string) string {
+	digest := sha256.Sum256([]byte(source))
+	return filepath.Join(configDir, "notifier", hex.EncodeToString(digest[:6]))
 }
 
 // LaunchedAsHelper: Launch Services starts the bundle's copy with no
@@ -104,18 +112,30 @@ func materializeHelper(configDir string) (string, error) {
 		return "", err
 	}
 	stamp := fmt.Sprintf("%s %d %d\n", source, info.Size(), info.ModTime().UnixNano())
-	bundle := filepath.Join(configDir, helperBundle)
+	home := helperHome(configDir, source)
+	bundle := filepath.Join(home, helperBundle)
+	executable := filepath.Join(bundle, "Contents", "MacOS", helperExecutable)
 	stampPath := filepath.Join(bundle, "Contents", "Resources", "source")
 	if current, err := os.ReadFile(stampPath); err == nil && string(current) == stamp {
-		return helperExecutablePath(configDir), nil
+		return executable, nil
 	}
-	if err := buildHelper(bundle, source, stamp); err != nil {
-		// The stamp is written before signing, so a bundle left behind by
-		// a failure here would be trusted unsigned by the next call.
-		os.RemoveAll(bundle)
+	// The finished bundle is swapped in rather than rebuilt in place, so
+	// a manager running the same binary is never left executing a path
+	// that is being taken apart around it.
+	staged := filepath.Join(home, ".staging."+strconv.Itoa(os.Getpid())+"."+strconv.FormatUint(focusSeq.Add(1), 10)+".app")
+	if err := buildHelper(staged, source, stamp); err != nil {
+		os.RemoveAll(staged)
 		return "", err
 	}
-	return helperExecutablePath(configDir), nil
+	if err := os.RemoveAll(bundle); err != nil {
+		os.RemoveAll(staged)
+		return "", err
+	}
+	if err := os.Rename(staged, bundle); err != nil {
+		os.RemoveAll(staged)
+		return "", err
+	}
+	return executable, nil
 }
 
 // buildHelper signs last, so every file it lays down is inside the seal.
