@@ -1,10 +1,16 @@
 package sessioncmd
 
 import (
+	"context"
+	"errors"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
@@ -121,5 +127,293 @@ func TestReviewCommentRefusesAnIDTwoReposShare(t *testing.T) {
 		if reviewCommentResolved(t, configDir, repoRoot) {
 			t.Fatalf("the refused call still marked %s handled", repoRoot)
 		}
+	}
+}
+
+func stampManagerHeartbeat(t *testing.T, configDir string) {
+	t.Helper()
+	st, err := store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.SetSetting(store.PollerHeartbeatKey, strconv.FormatInt(time.Now().UnixNano(), 10)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRenameWithoutAManagerReportsItQueued(t *testing.T) {
+	configDir := t.TempDir()
+	message, err := Rename(t.Context(), configDir, "abc123", "fix auth bug")
+	if err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if !strings.Contains(message, "queued") || strings.Contains(message, "renamed to") {
+		t.Fatalf("with no manager running the answer must not claim the rename happened: %q", message)
+	}
+	if _, name, found := hooks.NewManager(configDir).ReadName("abc123"); !found || name != "fix auth bug" {
+		t.Fatalf("name file = %q, %v; the rename must still wait for a manager", name, found)
+	}
+}
+
+// The subcommand answers with what the poller did, so an agent that
+// names itself reasons about the name it actually has.
+func TestRenameWaitsForTheManagerAndReportsItsAnswer(t *testing.T) {
+	configDir := t.TempDir()
+	stampManagerHeartbeat(t, configDir)
+	mailbox := hooks.NewManager(configDir)
+	answer := func(t *testing.T, name string, refusal error) {
+		t.Helper()
+		go func() {
+			for {
+				request, pending, found, err := mailbox.ClaimName("abc123")
+				if err != nil {
+					t.Errorf("ClaimName: %v", err)
+					return
+				}
+				if found {
+					mine := pending == name
+					if mine {
+						if err := mailbox.WriteNameResult("abc123", request, name, name, refusal); err != nil {
+							t.Errorf("WriteNameResult: %v", err)
+						}
+					}
+					// The claim is released either way, or the next one
+					// picks this rename up again instead of the next name.
+					if err := mailbox.ReleaseName("abc123"); err != nil {
+						t.Errorf("ReleaseName: %v", err)
+						return
+					}
+					if mine {
+						return
+					}
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}()
+	}
+
+	answer(t, "fix auth bug", nil)
+	// The typed name carries whitespace the manager squashes out, so the
+	// wait has to recognize the answer by the squashed name.
+	message, err := Rename(t.Context(), configDir, "abc123", "fix   auth bug")
+	if err != nil || message != "session renamed to fix auth bug" {
+		t.Fatalf("Rename = %q, %v", message, err)
+	}
+	if left, err := filepath.Glob(filepath.Join(mailbox.Dir(), "abc123.*.renamed")); err != nil || len(left) != 0 {
+		t.Fatalf("a read answer must be consumed, left %v (%v)", left, err)
+	}
+
+	answer(t, "taken", errors.New("worktree rename: branch already exists: am/taken"))
+	if _, err := Rename(t.Context(), configDir, "abc123", "taken"); err == nil || !strings.Contains(err.Error(), "branch already exists: am/taken") {
+		t.Fatalf("a refusal must reach the caller with its reason, got %v", err)
+	}
+}
+
+// Two renames for one session are in flight at once, so each caller is
+// answered for the rename it queued and neither consumes the other's.
+func TestRenameAnswersEachCallerItsOwnRename(t *testing.T) {
+	configDir := t.TempDir()
+	stampManagerHeartbeat(t, configDir)
+	mailbox := hooks.NewManager(configDir)
+	if err := os.MkdirAll(mailbox.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The stand-in manager claims whatever is pending, the way the poller
+	// does, and answers it under the request that asked.
+	stop := make(chan struct{})
+	stopped := make(chan struct{})
+	t.Cleanup(func() {
+		close(stop)
+		<-stopped
+	})
+	go func() {
+		defer close(stopped)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+			request, pending, found, err := mailbox.ClaimName("abc123")
+			if err != nil {
+				t.Errorf("ClaimName: %v", err)
+				return
+			}
+			if !found {
+				continue
+			}
+			if err := mailbox.WriteNameResult("abc123", request, pending, pending, nil); err != nil {
+				t.Errorf("WriteNameResult: %v", err)
+			}
+			if err := mailbox.ReleaseName("abc123"); err != nil {
+				t.Errorf("ReleaseName: %v", err)
+				return
+			}
+		}
+	}()
+
+	// Both renames are in flight together, and a caller whose request the
+	// other replaced in the mailbox gives up rather than hold the test for
+	// the full rename deadline.
+	type outcome struct{ asked, message string }
+	results := make(chan outcome, 2)
+	for _, name := range []string{"first racer", "second racer"} {
+		go func() {
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			message, err := Rename(ctx, configDir, "abc123", name)
+			if err != nil {
+				message = "unanswered: " + err.Error()
+			}
+			results <- outcome{name, message}
+		}()
+	}
+	applied := 0
+	for range 2 {
+		got := <-results
+		other := "first racer"
+		if got.asked == other {
+			other = "second racer"
+		}
+		if strings.Contains(got.message, other) {
+			t.Fatalf("the caller that asked for %q was told about %q: %q", got.asked, other, got.message)
+		}
+		if got.message == "session renamed to "+got.asked {
+			applied++
+			continue
+		}
+		// The other rename replacing this one in the mailbox is reported as
+		// exactly that, and giving up on the context is the other way this
+		// caller ends.
+		if !strings.HasPrefix(got.message, "unanswered: ") && !strings.Contains(got.message, "was replaced by a later rename") {
+			t.Fatalf("caller asking for %q got %q", got.asked, got.message)
+		}
+	}
+	if applied == 0 {
+		t.Fatal("neither rename was answered as applied")
+	}
+}
+
+func TestRenameStopsWhenItsCallerGivesUp(t *testing.T) {
+	configDir := t.TempDir()
+	stampManagerHeartbeat(t, configDir)
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	if _, err := Rename(ctx, configDir, "abc123", "abandoned"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Rename = %v, want the cancellation", err)
+	}
+}
+
+func TestRenameIgnoresAnAnswerToAnotherRequest(t *testing.T) {
+	configDir := t.TempDir()
+	mailbox := hooks.NewManager(configDir)
+	if err := os.MkdirAll(mailbox.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := mailbox.WriteNameResult("abc123", "earlier", "old name", "old name", nil); err != nil {
+		t.Fatal(err)
+	}
+	message, err := Rename(t.Context(), configDir, "abc123", "new name")
+	if err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if strings.Contains(message, "old name") || strings.Contains(message, "renamed to") {
+		t.Fatalf("an answer to an earlier rename must not be read as this one: %q", message)
+	}
+	if _, found, err := mailbox.ReadNameResult("abc123", "earlier"); !found || err != nil {
+		t.Fatalf("the earlier caller's answer was taken away: found=%v err=%v", found, err)
+	}
+}
+
+// A rename the next one replaced in the mailbox is never applied, so the
+// caller hears that rather than waiting out its deadline to be told the
+// rename is still on its way.
+func TestRenameReportsARequestALaterRenameReplaced(t *testing.T) {
+	configDir := t.TempDir()
+	stampManagerHeartbeat(t, configDir)
+	mailbox := hooks.NewManager(configDir)
+	if err := os.MkdirAll(mailbox.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The later rename lands in the mailbox while this one is waiting, and
+	// no manager ever claims either.
+	go func() {
+		for {
+			if _, _, found := mailbox.ReadName("abc123"); found {
+				later, err := hooks.NewRequestID()
+				if err != nil {
+					t.Errorf("NewRequestID: %v", err)
+					return
+				}
+				if err := hooks.WriteWhole(mailbox.NameFile("abc123"), hooks.NameRequest(later, "the later name")); err != nil {
+					t.Errorf("queue the later rename: %v", err)
+				}
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+
+	message, err := Rename(t.Context(), configDir, "abc123", "the replaced name")
+	if err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if !strings.Contains(message, "was replaced by a later rename") || !strings.Contains(message, "the replaced name") {
+		t.Fatalf("Rename = %q; want the replaced rename named as never applied", message)
+	}
+}
+
+// A rename the manager has already claimed is still on its way, however
+// many renames queue behind it, so its caller waits for the answer rather
+// than being told it was replaced.
+func TestRenameWaitsWhileItsClaimedRenameIsApplied(t *testing.T) {
+	configDir := t.TempDir()
+	stampManagerHeartbeat(t, configDir)
+	mailbox := hooks.NewManager(configDir)
+	if err := os.MkdirAll(mailbox.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The manager claims this rename, a later one queues behind it, and
+	// only then is the claimed rename answered.
+	go func() {
+		for {
+			request, pending, found, err := mailbox.ClaimName("abc123")
+			if err != nil {
+				t.Errorf("ClaimName: %v", err)
+				return
+			}
+			if !found {
+				time.Sleep(5 * time.Millisecond)
+				continue
+			}
+			later, err := hooks.NewRequestID()
+			if err != nil {
+				t.Errorf("NewRequestID: %v", err)
+				return
+			}
+			if err := hooks.WriteWhole(mailbox.NameFile("abc123"), hooks.NameRequest(later, "the later name")); err != nil {
+				t.Errorf("queue the later rename: %v", err)
+				return
+			}
+			// Long enough that the caller polls while the later rename is
+			// the pending one and this rename has no answer yet.
+			time.Sleep(300 * time.Millisecond)
+			if err := mailbox.WriteNameResult("abc123", request, pending, pending, nil); err != nil {
+				t.Errorf("WriteNameResult: %v", err)
+			}
+			if err := mailbox.ReleaseName("abc123"); err != nil {
+				t.Errorf("ReleaseName: %v", err)
+			}
+			return
+		}
+	}()
+
+	message, err := Rename(t.Context(), configDir, "abc123", "the claimed name")
+	if err != nil || message != "session renamed to the claimed name" {
+		t.Fatalf("Rename = %q, %v; want the claimed rename reported as applied", message, err)
 	}
 }

@@ -1049,30 +1049,56 @@ func launchPromptTaken(sess store.Session, region string) bool {
 // applyPendingRename picks up a name the session's agent left via the
 // rename subcommand: the store row and tmux label update together here,
 // keeping the manager the sole database writer. The file is consumed
-// even when the name is unchanged so it never lingers. A dead tmux
-// session cannot take a label, which is fine; the label is rewritten on
-// revive. A worktree session's branch follows the new name while its live
-// directory stays fixed, and a name git cannot give the branch keeps the
-// session on the one it has:
-// the file is consumed either way, so the reason is reported once rather
-// than on every poll from here on.
+// even when the name is unchanged so it never lingers, and the outcome
+// is left in the result mailbox for the subcommand still waiting on it.
+// A dead tmux session cannot take a label, which is fine; the label is
+// rewritten on revive. A worktree session's branch follows the new name
+// while its live directory stays fixed, and a name git cannot give the
+// branch keeps the session on the one it has: the file is consumed either
+// way, so the reason is reported once rather than on every poll from
+// here on.
 func (p *poller) applyPendingRename(sess *store.Session) error {
-	name, found := p.hooks.ReadName(sess.ID)
-	if !found {
-		return nil
+	request, name, found, err := p.hooks.ClaimName(sess.ID)
+	if err != nil || !found {
+		return err
 	}
-	if name != "" && name != sess.Name {
-		if err := renameSessionWorktreeBranch(p.gitDrv, p.store, sess, name); err != nil {
-			_ = p.hooks.RemoveName(sess.ID)
-			return fmt.Errorf("worktree rename: %w", err)
-		}
-		if err := ignoreDeletedSession(p.store.RenameSession(sess.ID, name)); err != nil {
+	renameErr := p.renamePending(sess, name)
+	// The claim outlives a verdict this poll could not write: the next one
+	// answers the same rename rather than leaving the agent that asked to
+	// time out on a rename that has in fact been applied or refused. That
+	// pass costs nothing, since a name the session already carries is
+	// applied again as a no-op and a refusal is refused the same way.
+	// A rename that carries no request of ours has nobody waiting on an
+	// answer, so it is applied and left at that.
+	if request != "" {
+		if err := p.hooks.WriteNameResult(sess.ID, request, name, sess.Name, renameErr); err != nil {
 			return err
 		}
-		sess.Name = name
-		_ = p.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, name))
 	}
-	return p.hooks.RemoveName(sess.ID)
+	if err := p.hooks.ReleaseName(sess.ID); err != nil {
+		return err
+	}
+	// The row going out from under this rename is the agent's answer, not
+	// a failure of the pass that carried it.
+	if errors.Is(renameErr, store.ErrSessionGone) {
+		return nil
+	}
+	return renameErr
+}
+
+func (p *poller) renamePending(sess *store.Session, name string) error {
+	if name == "" || name == sess.Name {
+		return nil
+	}
+	if err := renameSessionWorktreeBranch(p.gitDrv, p.store, sess, name); err != nil {
+		return fmt.Errorf("worktree rename: %w", err)
+	}
+	if err := p.store.RenameSession(sess.ID, name); err != nil {
+		return err
+	}
+	sess.Name = name
+	_ = p.tmux.SetLabel(sess.ID, sessionLabel(sess.Group, name))
+	return nil
 }
 
 func (p *poller) applyPendingReviewRepo(sess *store.Session) error {

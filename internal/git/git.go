@@ -717,8 +717,9 @@ func (d *Driver) AddWorktree(root, sessionName string) (string, string, error) {
 // RenameWorktreeBranch gives a managed worktree the branch a session of
 // newName would have received at spawn without moving its live directory.
 // The recorded branch is returned untouched when the worktree directory or
-// branch no longer exists, which is what a worktree renamed or removed by
-// hand looks like.
+// branch no longer exists, or the worktree has left the recorded branch
+// (switched to another, or detached mid-rebase), which is what a worktree
+// renamed, removed or repointed by hand looks like.
 func (d *Driver) RenameWorktreeBranch(root, path, branch, newName string) (string, error) {
 	name := sanitizeWorktreeName(newName)
 	if name == "" {
@@ -744,10 +745,15 @@ func (d *Driver) RenameWorktreeBranch(root, path, branch, newName string) (strin
 	}
 	currentBranch, err := d.run(path, "symbolic-ref", "--short", "-q", "HEAD")
 	if err != nil {
-		return "", fmt.Errorf("read worktree branch: %w", err)
+		// -q exits 1 on a detached HEAD; anything else is a real failure.
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+			return "", fmt.Errorf("read worktree branch: %w", err)
+		}
+		return branch, nil
 	}
 	if currentBranch != branch {
-		return "", fmt.Errorf("worktree is on branch %s, not recorded branch %s", currentBranch, branch)
+		return branch, nil
 	}
 	if _, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+newBranch); err == nil {
 		return "", fmt.Errorf("branch already exists: %s", newBranch)

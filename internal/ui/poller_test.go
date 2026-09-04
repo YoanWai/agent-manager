@@ -150,19 +150,19 @@ func TestPendingRenameForADeletedSessionDoesNotFailThePoll(t *testing.T) {
 	if err := m.store.Delete(sess.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	nameFile := m.hooks.NameFile(sess.ID)
-	if err := os.MkdirAll(filepath.Dir(nameFile), 0o755); err != nil {
-		t.Fatalf("hooks dir: %v", err)
-	}
-	if err := os.WriteFile(nameFile, []byte("renamed"), 0o644); err != nil {
-		t.Fatalf("write name file: %v", err)
-	}
+	request := writeName(t, m, sess.ID, "renamed")
 
 	if err := m.poller.applyPendingRename(&sess); err != nil {
 		t.Fatalf("rename of a deleted session should not fail the pass: %v", err)
 	}
-	if _, found := m.hooks.ReadName(sess.ID); found {
+	if _, _, found := m.hooks.ReadName(sess.ID); found {
 		t.Fatal("the name file should be consumed instead of retried every poll")
+	}
+	// The agent that asked hears that the row went away rather than a
+	// success for a session that no longer exists.
+	verdict, found, err := m.hooks.ReadNameResult(sess.ID, request)
+	if err != nil || !found || verdict.Refusal == nil || !strings.Contains(verdict.Refusal.Error(), "session no longer exists") {
+		t.Fatalf("result = %+v, %v, %v; want the refusal", verdict, found, err)
 	}
 }
 
@@ -193,7 +193,7 @@ func TestPendingRenameKeepsTheWorktreeDirectory(t *testing.T) {
 	if _, err := os.Stat(spawned.Cwd); err != nil {
 		t.Fatalf("worktree directory moved: %v", err)
 	}
-	if _, found := m.hooks.ReadName(spawned.ID); found {
+	if _, _, found := m.hooks.ReadName(spawned.ID); found {
 		t.Fatal("the name file should be consumed")
 	}
 	assertPaneStayedOnSpawnPath(t, m, spawned.ID, spawned.Cwd)
@@ -270,13 +270,13 @@ func TestPendingRenameOnATakenWorktreeNameStopsAfterOneReport(t *testing.T) {
 	repo := seedRepo(t)
 	spawned := createWorktreeSession(t, m, "mover", repo)
 	createWorktreeSession(t, m, "taken", repo)
-	writeName(t, m, spawned.ID, "taken")
+	request := writeName(t, m, spawned.ID, "taken")
 
 	sess := spawned
 	if err := m.poller.applyPendingRename(&sess); err == nil {
 		t.Fatal("a taken worktree name should report why")
 	}
-	if _, found := m.hooks.ReadName(spawned.ID); found {
+	if _, _, found := m.hooks.ReadName(spawned.ID); found {
 		t.Fatal("the name file must be consumed so later polls are not stuck on it")
 	}
 	stored, err := m.store.Get(spawned.ID)
@@ -286,6 +286,10 @@ func TestPendingRenameOnATakenWorktreeNameStopsAfterOneReport(t *testing.T) {
 	if stored.Name != "mover" || stored.Cwd != spawned.Cwd || stored.WorktreeBranch != spawned.WorktreeBranch {
 		t.Fatalf("refused rename still moved something: %+v", stored)
 	}
+	verdict, found, err := m.hooks.ReadNameResult(spawned.ID, request)
+	if err != nil || !found || verdict.Refusal == nil || verdict.Requested != "taken" || !strings.Contains(verdict.Refusal.Error(), "branch already exists") {
+		t.Fatalf("the agent that asked must hear the refusal: %+v found=%v err=%v", verdict, found, err)
+	}
 
 	// The next poll runs clean, so one bad name does not stall the loop.
 	if err := m.poller.applyPendingRename(&sess); err != nil {
@@ -293,15 +297,138 @@ func TestPendingRenameOnATakenWorktreeNameStopsAfterOneReport(t *testing.T) {
 	}
 }
 
-func writeName(t *testing.T, m *Model, id, name string) {
+func TestPendingRenameReportsTheAppliedName(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "claude-7a72", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	request := writeName(t, m, sess.ID, "audit   the poller")
+
+	if err := m.poller.applyPendingRename(&sess); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	verdict, found, err := m.hooks.ReadNameResult(sess.ID, request)
+	if err != nil || !found || verdict.Refusal != nil || verdict.Applied != "audit the poller" || verdict.Requested != "audit the poller" {
+		t.Fatalf("result = %+v, %v, %v; want the asked and applied names", verdict, found, err)
+	}
+}
+
+// A session whose agent has checked out another branch, or sits detached
+// mid-rebase, still takes its new name: the am/ branch is left as it is,
+// the way a hand-renamed one is.
+func TestPendingRenameOnAWorktreeOffItsBranchTakesTheName(t *testing.T) {
+	cases := []struct {
+		label    string
+		leave    []string
+		wantHead string
+	}{
+		{"switched", []string{"switch", "-c", "pr-11442"}, "pr-11442"},
+		{"detached", []string{"checkout", "--detach"}, "HEAD"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.label, func(t *testing.T) {
+			m := buildModel(t)
+			repo := seedRepo(t)
+			spawned := createWorktreeSession(t, m, "pr-11442-rebase", repo)
+			runGit(t, spawned.Cwd, testCase.leave...)
+			before := gitOutput(t, spawned.Cwd, "rev-parse", "HEAD")
+			request := writeName(t, m, spawned.ID, "SCT-11-cpu-perf")
+
+			sess := spawned
+			if err := m.poller.applyPendingRename(&sess); err != nil {
+				t.Fatalf("rename: %v", err)
+			}
+			stored, err := m.store.Get(spawned.ID)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			if stored.Name != "SCT-11-cpu-perf" {
+				t.Fatalf("name = %q, want the new name", stored.Name)
+			}
+			if stored.WorktreeBranch != spawned.WorktreeBranch || stored.Cwd != spawned.Cwd {
+				t.Fatalf("a worktree off its branch must be left alone: %+v", stored)
+			}
+			if head := gitOutput(t, spawned.Cwd, "rev-parse", "--abbrev-ref", "HEAD"); head != testCase.wantHead {
+				t.Fatalf("checkout = %q, want %q", head, testCase.wantHead)
+			}
+			if after := gitOutput(t, spawned.Cwd, "rev-parse", "HEAD"); after != before {
+				t.Fatalf("the worktree moved from %q to %q", before, after)
+			}
+			verdict, found, err := m.hooks.ReadNameResult(spawned.ID, request)
+			if err != nil || !found || verdict.Refusal != nil || verdict.Applied != "SCT-11-cpu-perf" || verdict.Requested != "SCT-11-cpu-perf" {
+				t.Fatalf("result = %+v, %v, %v", verdict, found, err)
+			}
+		})
+	}
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// A verdict the manager cannot write keeps the rename claimed, so the
+// agent waiting on it hears the answer on a later poll instead of timing
+// out on a rename that was in fact applied.
+func TestPendingRenameKeepsItsClaimUntilTheVerdictLands(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "claude-7a72", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	request := writeName(t, m, sess.ID, "audit the poller")
+	// A directory in the verdict's place is what an unwritable result
+	// looks like from here: the claim is still takeable, the answer is not.
+	blocked := m.hooks.NameResultFile(sess.ID, request)
+	if err := os.MkdirAll(blocked, 0o755); err != nil {
+		t.Fatalf("block the result: %v", err)
+	}
+
+	if err := m.poller.applyPendingRename(&sess); err == nil {
+		t.Fatal("a verdict that cannot be written should fail the pass")
+	}
+	stored, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Name != "audit the poller" {
+		t.Fatalf("name = %q, want the rename applied", stored.Name)
+	}
+
+	if err := os.Remove(blocked); err != nil {
+		t.Fatalf("unblock: %v", err)
+	}
+	if err := m.poller.applyPendingRename(&sess); err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	verdict, found, err := m.hooks.ReadNameResult(sess.ID, request)
+	if err != nil || !found || verdict.Refusal != nil || verdict.Requested != "audit the poller" || verdict.Applied != "audit the poller" {
+		t.Fatalf("result = %+v, %v, %v; want the answer the first pass could not write", verdict, found, err)
+	}
+	if _, _, found, _ := m.hooks.ClaimName(sess.ID); found {
+		t.Fatal("the answered rename should no longer be claimed")
+	}
+}
+
+// writeName queues a rename the way the subcommand does, and returns the
+// request its answer comes back under.
+func writeName(t *testing.T, m *Model, id, name string) string {
 	t.Helper()
 	path := m.hooks.NameFile(id)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("hooks dir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte(name), 0o644); err != nil {
+	request, err := hooks.NewRequestID()
+	if err != nil {
+		t.Fatalf("request id: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(hooks.NameRequest(request, name)), 0o644); err != nil {
 		t.Fatalf("write name file: %v", err)
 	}
+	return request
 }
 
 func writeHookStatus(t *testing.T, m *Model, id, state string) {
@@ -799,23 +926,12 @@ func TestLiveQuietTurnResolvesFinished(t *testing.T) {
 	waitStatus(status.Finished)
 }
 
-func writePendingName(t *testing.T, m *Model, id, name string) {
-	t.Helper()
-	path := m.hooks.NameFile(id)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir hooks dir: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(name), 0o644); err != nil {
-		t.Fatalf("write name: %v", err)
-	}
-}
-
 func TestRefreshAppliesPendingRename(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "placeholder", t.TempDir(), "")
 	sess := m.sessionRows()[0]
 
-	writePendingName(t, m, sess.ID, "fix auth bug\n")
+	writeName(t, m, sess.ID, "fix auth bug\n")
 	m.applyCmd(t, m.refreshCmd())
 
 	got, err := m.store.Get(sess.ID)
@@ -835,7 +951,7 @@ func TestRefreshConsumesGarbageNameFile(t *testing.T) {
 	createSession(t, m, "keeper", t.TempDir(), "")
 	sess := m.sessionRows()[0]
 
-	writePendingName(t, m, sess.ID, "   \n")
+	writeName(t, m, sess.ID, "   \n")
 	m.applyCmd(t, m.refreshCmd())
 
 	got, err := m.store.Get(sess.ID)

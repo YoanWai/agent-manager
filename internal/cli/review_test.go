@@ -22,14 +22,17 @@ func TestRenameWritesNameFile(t *testing.T) {
 	if err := runRename(out, []string{"fix auth bug"}, "abcd1234", dir); err != nil {
 		t.Fatalf("runRename: %v", err)
 	}
-	if out.String() != "session renamed to fix auth bug\n" {
+	// No manager runs in this test, so the answer is that the name waits.
+	if !strings.Contains(out.String(), `rename to "fix auth bug" is queued`) {
 		t.Fatalf("rename output = %q", out.String())
 	}
 	raw, err := os.ReadFile(hooks.NewManager(dir).NameFile("abcd1234"))
 	if err != nil {
 		t.Fatalf("read name file: %v", err)
 	}
-	if string(raw) != "fix auth bug" {
+	// The first line is the request the answer comes back under.
+	request, name, ok := strings.Cut(string(raw), "\n")
+	if !ok || request == "" || name != "fix auth bug" {
 		t.Fatalf("name file = %q", raw)
 	}
 }

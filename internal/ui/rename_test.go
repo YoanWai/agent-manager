@@ -283,9 +283,11 @@ func TestRenameSessionWorktreeBranchPreservesRollbackError(t *testing.T) {
 		Store: m.store,
 		err:   storeErr,
 		beforeRefusal: func(string) {
-			cmd := exec.Command("git", "-C", spawned.Cwd, "switch", "-c", "feat/taken-over")
+			// The name the rollback wants is taken again in the meantime, so
+			// git refuses to put the branch back.
+			cmd := exec.Command("git", "-C", repo, "branch", spawned.WorktreeBranch)
 			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("take over worktree: %v: %s", err, out)
+				t.Fatalf("retake the old branch: %v: %s", err, out)
 			}
 		},
 	}
@@ -298,8 +300,41 @@ func TestRenameSessionWorktreeBranchPreservesRollbackError(t *testing.T) {
 	if !ok || len(wrapped.Unwrap()) != 2 {
 		t.Fatalf("rename error does not preserve both causes: %v", err)
 	}
-	if rollbackErr := wrapped.Unwrap()[1]; !strings.Contains(rollbackErr.Error(), "not recorded branch am/renamed") {
+	if rollbackErr := wrapped.Unwrap()[1]; !strings.Contains(rollbackErr.Error(), "branch already exists: "+spawned.WorktreeBranch) {
 		t.Fatalf("rollback error = %v", rollbackErr)
+	}
+}
+
+// A worktree switched off the branch mid-rename is left where it is, so
+// the rollback reports what it found rather than moving someone else's
+// checkout back.
+func TestRenameSessionWorktreeBranchReportsASwitchedRollback(t *testing.T) {
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "claude-7a72", repo)
+
+	storeErr := errors.New("store refused branch")
+	refusingStore := &refusingWorktreeBranchStore{
+		Store: m.store,
+		err:   storeErr,
+		beforeRefusal: func(string) {
+			cmd := exec.Command("git", "-C", spawned.Cwd, "switch", "-c", "feat/taken-over")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("take over worktree: %v: %s", err, out)
+			}
+		},
+	}
+	sess := spawned
+	err := renameSessionWorktreeBranch(m.gitDrv, refusingStore, &sess, "renamed")
+	if !errors.Is(err, storeErr) || !strings.Contains(err.Error(), "rollback returned am/renamed instead of "+spawned.WorktreeBranch) {
+		t.Fatalf("rename error = %v", err)
+	}
+	if sess.WorktreeBranch != spawned.WorktreeBranch {
+		t.Fatalf("session took a branch the store never recorded: %+v", sess)
+	}
+	head, err := exec.Command("git", "-C", spawned.Cwd, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil || strings.TrimSpace(string(head)) != "feat/taken-over" {
+		t.Fatalf("taken-over worktree HEAD = %q err=%v", strings.TrimSpace(string(head)), err)
 	}
 }
 
