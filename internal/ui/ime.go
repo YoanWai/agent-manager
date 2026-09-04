@@ -27,6 +27,9 @@ var (
 	altScreenExit  = []byte(ansi.ResetModeAltScreenSaveCursor)
 )
 
+// Bubble Tea v2 places the cursor itself through View.Cursor, so this file
+// and the marker plumbing in the input views go away with that migration.
+//
 // cursorAnchor is the real terminal cell an input method should open beside.
 // Bubble Tea v1 finishes every alternate-screen render at the bottom-left,
 // while focus mode paints a pane caret elsewhere, so an IME otherwise follows
