@@ -90,7 +90,9 @@ func lookInDistro(binary string) (bool, error) {
 		if dir == "" {
 			dir = "."
 		}
-		hit, err := lookPath(filepath.Join(dir, binary))
+		// filepath.Join cleans "./binary" to a bare name, which sends
+		// lookPath around PATH again instead of at this entry.
+		hit, err := lookPath(dir + string(filepath.Separator) + binary)
 		if err != nil {
 			continue
 		}

@@ -157,6 +157,23 @@ func TestCheckInstalledUnderWSLAcceptsADistroInstall(t *testing.T) {
 	}
 }
 
+// An empty PATH entry means the working directory, so a distro copy
+// sitting there answers for a Windows hit earlier on PATH.
+func TestCheckInstalledUnderWSLAcceptsADistroInstallInAnEmptyPathEntry(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("builds a Unix PATH")
+	}
+	windows, _ := installBinary(t, "claude")
+	distro, _ := installBinary(t, "claude")
+	stubWSL(t, windows)
+	t.Chdir(distro)
+	t.Setenv("PATH", windows+string(os.PathListSeparator))
+
+	if err := CheckInstalled("claude"); err != nil {
+		t.Fatalf("a copy in the working directory should answer: %v", err)
+	}
+}
+
 // Off WSL a Windows path is just a path, and the mount table is never
 // consulted.
 func TestCheckInstalledOutsideWSLKeepsTheFirstHit(t *testing.T) {

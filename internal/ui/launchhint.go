@@ -230,7 +230,9 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 // one short line: an installer's own quoting then reaches sh unchanged
 // whatever shell the user runs.
 func installScript(command, statusFile string) string {
+	interrupted := "printf %s 130 > " + tmux.ShellQuote(statusFile) + "; exit 130"
 	return "#!/bin/sh\n" +
+		"trap " + tmux.ShellQuote(interrupted) + " INT TERM\n" +
 		"printf '%s\\n' " + tmux.ShellQuote("$ "+command) + "\n" +
 		"(" + command + ")\n" +
 		`printf %s "$?" > ` + tmux.ShellQuote(statusFile) + "\n"
