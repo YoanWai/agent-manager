@@ -63,6 +63,10 @@ const clickTimeout = 10 * time.Minute
 // first, such as PowerShell reached through WSL interop.
 const helperStartTimeout = 15 * time.Second
 
+// clickWaiters caps how many banners may hold a notify-send open for
+// their click at once.
+var clickWaiters = make(chan struct{}, 8)
+
 // errDenied reports that the user has refused the manager's notifications
 // at the OS level, so no other banner should be tried on their behalf.
 var errDenied = errors.New("notifications not allowed")
@@ -225,6 +229,14 @@ func notifySend(sessionID, body string, detail presentation) error {
 	if !notifySendReportsActions() {
 		return runCmd("notify-send", append(args, "--", "agent-manager", body)...)
 	}
+	// A banner nobody dismisses holds its notify-send until the click
+	// window runs out, so the ones that wait for a click are capped. Past
+	// that, the banner still goes up; only its click is given up.
+	select {
+	case clickWaiters <- struct{}{}:
+	default:
+		return runCmd("notify-send", append(args, "--", "agent-manager", body)...)
+	}
 	args = append(args, "--action=default=Open", "--", "agent-manager", body)
 	type reply struct {
 		action string
@@ -232,6 +244,7 @@ func notifySend(sessionID, body string, detail presentation) error {
 	}
 	answered := make(chan reply, 1)
 	go func() {
+		defer func() { <-clickWaiters }()
 		out, err := runOutput(clickTimeout, "notify-send", args...)
 		answered <- reply{strings.TrimSpace(out), err}
 	}()

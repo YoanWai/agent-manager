@@ -62,6 +62,18 @@ func postThroughHelper(sessionID, subtitle, body, sound string) error {
 	if err != nil {
 		return err
 	}
+	err = runHelper(dir, sessionID, subtitle, body, sound)
+	// Another manager retiring a build it believed unused can take the
+	// bundle away between materializing it and launching it. Building it
+	// again is cheaper than holding a lock across the launch, and the
+	// second attempt starts from whatever is there now.
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
+		err = runHelper(dir, sessionID, subtitle, body, sound)
+	}
+	return err
+}
+
+func runHelper(dir, sessionID, subtitle, body, sound string) error {
 	helper, err := materializeHelper(dir)
 	if err != nil {
 		return err

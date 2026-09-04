@@ -479,3 +479,44 @@ func TestNotifyLinuxActionCommandFailureRingsBell(t *testing.T) {
 		t.Fatalf("a refused banner should ring once, got %q", emitted)
 	}
 }
+
+// Banners nobody dismisses would each hold a notify-send open for the
+// click window, so past the cap the banner goes up without one.
+func TestNotifyLinuxCapsBannersWaitingForAClick(t *testing.T) {
+	defer restore()()
+	rec := linuxDesktop(t)
+	rec.outputByCommand["notify-send --help"] = "  -A, --action=[NAME=]Text  Specifies the actions to display"
+	held := make(chan struct{})
+	defer close(held)
+	runOutput = func(_ time.Duration, name string, args ...string) (string, error) {
+		rec.record(name, args, nil)
+		if len(args) > 0 && args[0] == "--help" {
+			return rec.outputByCommand["notify-send --help"], nil
+		}
+		<-held
+		return "", nil
+	}
+	notifySendSettle = 10 * time.Millisecond
+	emitSeq = func(string) error { return nil }
+	waiting := cap(clickWaiters)
+	for i := 0; i < waiting+3; i++ {
+		Notify(Event{ID: "sess", Session: "deploy", Tool: "claude", Kind: Errored})
+	}
+	var withAction, without int
+	for _, call := range rec.calls() {
+		if call[0] != "notify-send" || call[1] == "--help" {
+			continue
+		}
+		if slices.Contains(call, "--action=default=Open") {
+			withAction++
+		} else {
+			without++
+		}
+	}
+	if withAction != waiting {
+		t.Fatalf("%d banners are holding a click open, want the cap of %d", withAction, waiting)
+	}
+	if without != 3 {
+		t.Fatalf("%d banners went up without a click, want 3", without)
+	}
+}
