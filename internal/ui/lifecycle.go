@@ -149,14 +149,14 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	if m.tmux.Exists(entry.sess.ID) {
 		cmd, err := m.relaunchInPane(entry.sess)
 		if err != nil {
-			m.reportLaunchError(err)
+			m.reportLaunchError(err, nil)
 			return m, nil
 		}
 		m.errBar.text = m.degradedResumeNotice(entry.sess)
 		return m, cmd
 	}
 	if err := m.reviveSession(entry.sess); err != nil {
-		m.reportLaunchError(err)
+		m.reportLaunchError(err, func() error { return m.reviveSession(entry.sess) })
 		return m, nil
 	}
 	m.errBar.text = m.degradedResumeNotice(entry.sess)
@@ -949,6 +949,27 @@ func archivedGroupDelete(path string, subtree []store.Session) confirmTarget {
 	}
 }
 
+// restoreFromArchive brings one session back and takes it out of the
+// archive. The pair is one step so that a revive the manager refused, for
+// a missing CLI it can install, finishes the restore when it runs again
+// instead of leaving a running session filed as archived. A group's rows
+// leave the archive together once the whole set is back.
+func (m *Model) restoreFromArchive(sess store.Session, isGroup bool) error {
+	if !m.tmux.Exists(sess.ID) {
+		if err := m.reviveSession(sess); err != nil {
+			return err
+		}
+	}
+	if isGroup {
+		return nil
+	}
+	if err := m.store.SetArchived(sess.ID, false); err != nil {
+		return err
+	}
+	m.markSession(sess.ID, goneMark{archived: false})
+	return nil
+}
+
 func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// A relaunch the manager refused opened the hint dialog; every other
 	// answer falls back to the list.
@@ -978,23 +999,12 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.markArchivedLocally(m.confirm.sessions, groupPath(m.confirm))
 			m.errBar.text = ""
 		case actionRestore:
-			// Each session leaves the archive as it comes back, so a later
-			// failure cannot strand a running one in the archived view.
 			for _, sess := range m.confirm.sessions {
-				if !m.tmux.Exists(sess.ID) {
-					if err := m.reviveSession(sess); err != nil {
-						m.reportLaunchError(err)
-						return m, nil
-					}
-				}
-				if m.confirm.isGroup {
-					continue
-				}
-				if err := m.store.SetArchived(sess.ID, false); err != nil {
-					m.errBar.text = err.Error()
+				isGroup := m.confirm.isGroup
+				if err := m.restoreFromArchive(sess, isGroup); err != nil {
+					m.reportLaunchError(err, func() error { return m.restoreFromArchive(sess, isGroup) })
 					return m, nil
 				}
-				m.markSession(sess.ID, goneMark{archived: false})
 			}
 			if m.confirm.isGroup {
 				if err := m.applyConfirmedArchived(false); err != nil {
@@ -1016,7 +1026,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case actionRestart:
 			for _, sess := range m.confirm.sessions {
 				if err := m.restartSession(sess); err != nil {
-					m.reportLaunchError(err)
+					m.reportLaunchError(err, func() error { return m.restartSession(sess) })
 					return m, nil
 				}
 			}
@@ -1028,7 +1038,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				if err := m.reviveSession(sess); err != nil {
-					m.reportLaunchError(err)
+					m.reportLaunchError(err, func() error { return m.reviveSession(sess) })
 					return m, nil
 				}
 			}

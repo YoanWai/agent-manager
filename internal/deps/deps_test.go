@@ -120,3 +120,25 @@ func TestOfficialInstallIsPortable(t *testing.T) {
 		}
 	}
 }
+
+func TestCommandIsTheVendorInstaller(t *testing.T) {
+	if got := Command("claude"); got != official["claude"] {
+		t.Fatalf("Command = %q, want the official installer", got)
+	}
+}
+
+// A package-manager line names the tool's own command, so running one for
+// a tool we do not know would install whatever package shares that name.
+// The hint still says it; only the runnable command is withheld.
+func TestCommandWithholdsPackageManagerLines(t *testing.T) {
+	stubUID(t, 1)
+	stubPath(t, "pacman", "sudo")
+	for _, tool := range []string{"tmux", "acme"} {
+		if got := Command(tool); got != "" {
+			t.Fatalf("Command(%q) = %q, want none", tool, got)
+		}
+	}
+	if got := hint("linux", "tmux"); !strings.Contains(got, "pacman") {
+		t.Fatalf("hint = %q, want the package manager still suggested", got)
+	}
+}

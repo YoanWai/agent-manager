@@ -52,6 +52,15 @@ func Hint(tool string) string {
 	return hint(runtime.GOOS, tool)
 }
 
+// Command is the install command the setup dialog offers to run, empty
+// when there is none to offer. Only the agent CLIs with a vendor
+// installer have one: a package-manager line is built from the tool's
+// own command name, so for a custom tool it would install whatever
+// package happens to share that name. Those stay a suggestion to read.
+func Command(tool string) string {
+	return official[tool]
+}
+
 func hint(goos, tool string) string {
 	if command := official[tool]; command != "" {
 		return "install it with: " + command

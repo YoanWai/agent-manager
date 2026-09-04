@@ -177,15 +177,21 @@ type Model struct {
 	search          string
 	searching       bool
 
-	diff       diffState
-	form       form
-	groupForm  groupForm
-	pathSugg   pathComplete
-	confirm    confirmTarget
-	launchHint string
-	rename     renameTarget
-	fork       forkState
-	quick      quickState
+	diff      diffState
+	form      form
+	groupForm groupForm
+	pathSugg  pathComplete
+	confirm   confirmTarget
+	launchFix launchFix
+	// install is the setup-dialog install still running in a shell tab,
+	// nil when none is.
+	install *pendingInstall
+	// mouseReleased is true while the setup dialog has handed the mouse
+	// back to the terminal, so a drag selects its text.
+	mouseReleased bool
+	rename        renameTarget
+	fork          forkState
+	quick         quickState
 	// composerSeq numbers the prompt boxes this run has opened.
 	composerSeq int
 	settings    settingsState
@@ -1250,6 +1256,26 @@ func (m *Model) seedPaneGeom() {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := m.handleMsg(msg)
+	return model, tea.Batch(cmd, m.syncMouseCapture())
+}
+
+// syncMouseCapture hands the mouse to the terminal while the setup dialog
+// is up, so a drag over it selects the install command, and takes it back
+// when the dialog closes.
+func (m *Model) syncMouseCapture() tea.Cmd {
+	release := m.mode == modeLaunchHint
+	if release == m.mouseReleased {
+		return nil
+	}
+	m.mouseReleased = release
+	if release {
+		return tea.DisableMouse
+	}
+	return tea.EnableMouseCellMotion
+}
+
+func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		// Resuming from a tmux attach re-sends the current size unchanged; only
@@ -1366,6 +1392,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.sessionsSized && m.width > 0 {
 			m.resizeSessions()
 		}
+		m.settleInstall()
 		m.rebuildRows()
 		reviewStatuses := m.reviewStatusesCmd()
 		// A pass that ran with a stale selection (a session created this
@@ -1485,6 +1512,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case linkOpenErrMsg:
 		m.errBar.text = msg.err.Error()
+		return m, nil
+
+	case launchCommandCopiedMsg:
+		m.handleLaunchCommandCopied(msg)
 		return m, nil
 
 	case focusCopiedMsg:
@@ -1707,7 +1738,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case relaunchedMsg:
 		if msg.err != nil {
-			m.reportLaunchError(msg.err)
+			m.reportLaunchError(msg.err, nil)
 			return m, nil
 		}
 		m.bindReviveLocally(msg.sessID, msg.launchedAt)
