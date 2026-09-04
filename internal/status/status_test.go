@@ -902,6 +902,50 @@ func TestLastMessage(t *testing.T) {
 	}
 }
 
+// FullTurnText keeps every marker-led paragraph in the turn, where
+// LastMessage/LastMessageText anchor to only the newest one.
+func TestFullTurnText(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "❯ Reply with exactly this sentence and nothing else: some prompt text\n" +
+		"⏺ First paragraph about the topic.\n" +
+		"  continued content of first paragraph.\n" +
+		"\n" +
+		"\n" +
+		"⏺ Second paragraph, a different topic.\n" +
+		"\n" +
+		"⏺ Third and final paragraph.\n" +
+		"\n" +
+		"✻ Crunched for 3s\n" +
+		"────────────────────\n" +
+		"❯ "
+	want := "⏺ First paragraph about the topic.\n" +
+		"  continued content of first paragraph.\n" +
+		"\n" +
+		"⏺ Second paragraph, a different topic.\n" +
+		"\n" +
+		"⏺ Third and final paragraph."
+	text, ok := engine.FullTurnText("claude", pane)
+	if !ok {
+		t.Fatal("claude has an activity cutoff, ok should be true")
+	}
+	if text != want {
+		t.Fatalf("FullTurnText =\n%q\nwant\n%q", text, want)
+	}
+
+	// Sanity check against the exact same pane: LastMessageText only
+	// keeps the last paragraph, the difference FullTurnText exists for.
+	if last, _, ok := engine.LastMessageText("claude", pane); !ok || last != "Third and final paragraph." {
+		t.Fatalf("LastMessageText = %q ok=%v, want just the last paragraph for contrast", last, ok)
+	}
+
+	if _, ok := engine.FullTurnText("no-such-tool", pane); ok {
+		t.Fatal("unknown tool should report it cannot tell")
+	}
+	if _, ok := engine.FullTurnText("claude", "just text, no input box"); ok {
+		t.Fatal("pane without the cutoff should report it cannot tell")
+	}
+}
+
 // InputDraft reads what the user has typed after the composer marker, and
 // refuses the placeholder wording a composer paints on its empty row.
 func TestInputDraft(t *testing.T) {

@@ -6,12 +6,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
 )
 
@@ -107,6 +109,37 @@ func (m *Model) reattach(id string, diffGen int) tea.Cmd {
 		}
 		return reattachPreparedMsg{sessID: id, diffGen: diffGen, warn: warn}
 	}
+}
+
+// copyLastOutput copies the selected session's newest reply to the system
+// clipboard, on demand: an explicit key rather than a finish-triggered
+// write, which would silently overwrite whatever the user already had on
+// the clipboard, and race several sessions finishing in a row for the
+// same write. FullTurnText keeps every line of the turn, not just the
+// last message_start block, so a reply with several marker-led
+// paragraphs copies whole.
+func (m *Model) copyLastOutput() (tea.Model, tea.Cmd) {
+	entry, ok := m.selectedRow()
+	if !ok || entry.isGroup || m.engine == nil || m.tmux == nil {
+		return m, nil
+	}
+	sess := entry.sess
+	pane, err := m.tmux.CapturePane(sess.ID)
+	if err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
+	text, ok := m.engine.FullTurnText(sess.Tool, ansi.Strip(pane))
+	if !ok || strings.TrimSpace(text) == "" {
+		m.errBar.text = "nothing to copy"
+		return m, nil
+	}
+	if err := clipboard.WriteText(text); err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
+	m.reportDone(fmt.Sprintf("copied %d chars from %s", len([]rune(text)), sess.Name))
+	return m, nil
 }
 
 // reviveSelected relaunches a dead session's tmux session under the same
