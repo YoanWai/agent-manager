@@ -46,7 +46,7 @@ func loggedIn() *fakeCommands {
 			"tmux -V":                 "tmux 3.5a",
 			"claude --version":        "2.4.1 (Claude Code)\nextra line",
 			"gh api user --jq .login": "yoan",
-			"gh issue create --repo " + Repo + " --title Space lands in the wrong pane --body " + bugBody() + " --label bug": "https://github.com/" + Repo + "/issues/512",
+			"gh issue create --repo " + repo + " --title Space lands in the wrong pane --body " + bugBody() + " --label bug": "https://github.com/" + repo + "/issues/512",
 		},
 		failing: map[string]error{},
 	}
@@ -124,7 +124,7 @@ func TestFilePostsThroughGHAndReturnsTheIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("File: %v", err)
 	}
-	if filed.Route != RouteGH || filed.URL != "https://github.com/"+Repo+"/issues/512" {
+	if filed.Route != RouteGH || filed.URL != "https://github.com/"+repo+"/issues/512" {
 		t.Fatalf("filed = %+v", filed)
 	}
 }
@@ -273,11 +273,11 @@ func TestWithoutGHTheBrowserRouteHandsBackThePrefilledForm(t *testing.T) {
 // contents in place rather than a body to paste.
 func TestFormURLFillsTheTemplateFields(t *testing.T) {
 	gathered := Context{Version: "0.31.0", OS: "macOS", Tmux: "tmux 3.5a", Tool: "Claude Code", ToolVersion: "2.4.1"}
-	parsed, err := url.Parse(FormURL(bugDraft(), gathered))
+	parsed, err := url.Parse(formURL(bugDraft(), gathered))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parsed.Path != "/"+Repo+"/issues/new" {
+	if parsed.Path != "/"+repo+"/issues/new" {
 		t.Fatalf("path = %q", parsed.Path)
 	}
 	query := parsed.Query()
@@ -297,7 +297,7 @@ func TestFormURLFillsTheTemplateFields(t *testing.T) {
 	}
 
 	feature := Draft{Kind: Feature, Title: "Show overlapping files", Body: "I keep several agents on one repo."}
-	parsed, err = url.Parse(FormURL(feature, Context{Version: "0.31.0", OS: "Linux"}))
+	parsed, err = url.Parse(formURL(feature, Context{Version: "0.31.0", OS: "Linux"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +318,7 @@ func TestFormURLFillsTheTemplateFields(t *testing.T) {
 }
 
 func TestBlankContextFieldsLeaveNoEmptyHeading(t *testing.T) {
-	body := Compose(bugDraft(), Context{Version: "dev", OS: "Linux"})
+	body := compose(bugDraft(), Context{Version: "dev", OS: "Linux"})
 	if strings.Contains(body, "tmux version") || strings.Contains(body, "Which agent CLI") {
 		t.Fatalf("empty context rendered a heading:\n%s", body)
 	}
@@ -328,7 +328,7 @@ func TestBlankContextFieldsLeaveNoEmptyHeading(t *testing.T) {
 }
 
 func TestAFeatureRequestSaysWhereItCameFrom(t *testing.T) {
-	body := Compose(Draft{Kind: Feature, Title: "t", Body: "  I want a panel.  "}, Context{Version: "0.31.0", OS: "macOS", Tool: "Codex"})
+	body := compose(Draft{Kind: Feature, Title: "t", Body: "  I want a panel.  "}, Context{Version: "0.31.0", OS: "macOS", Tool: "Codex"})
 	want := "### What are you trying to do\n\nI want a panel.\n\n### Anything else\n\nagent-manager 0.31.0 on macOS, reported from a Codex session.\n"
 	if body != want {
 		t.Fatalf("body =\n%s\nwant\n%s", body, want)
@@ -413,10 +413,7 @@ func TestTheOperatingSystemIsSpelledLikeTheFormDropdown(t *testing.T) {
 		{"linux", wsl, "Windows (WSL2)"},
 		{"freebsd", "", "freebsd"},
 	} {
-		goos = platform.goos
-		if platform.proc != "" {
-			procVersion = platform.proc
-		}
+		goos, procVersion = platform.goos, platform.proc
 		if got := operatingSystem(); got != platform.want {
 			t.Errorf("%s with %q = %q, want %q", platform.goos, platform.proc, got, platform.want)
 		}
@@ -448,7 +445,7 @@ func TestFormatPreviewSaysWhatFilingWouldDoAndHowToConfirm(t *testing.T) {
 	preview := Preview{ID: "3f2a91c4", Kind: Bug, Title: "t", Body: "### What happened\n\nb\n", Labels: []string{"bug"}, Route: RouteGH, Account: "yoan"}
 	text := FormatPreview(preview, "call again with preview_id 3f2a91c4")
 	for _, want := range []string{
-		"bug report for " + Repo + ", not filed yet",
+		"bug report for " + repo + ", not filed yet",
 		"title: t",
 		"labels: bug",
 		"preview id: 3f2a91c4",

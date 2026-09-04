@@ -24,9 +24,9 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
-const Repo = "YoanWai/agent-manager"
+const repo = "YoanWai/agent-manager"
 
-const newIssueURL = "https://github.com/" + Repo + "/issues/new"
+const newIssueURL = "https://github.com/" + repo + "/issues/new"
 
 type Kind string
 
@@ -40,12 +40,9 @@ const (
 	RouteBrowser = "browser"
 )
 
-// commandBudget bounds every command the report shells out to, so a hung
-// CLI never hangs the preview.
 const commandBudget = 10 * time.Second
 
-// Test seams: lookPath finds gh, runCommand runs it and the version probes,
-// goos and procVersion decide the operating system label.
+// Vars so tests can stand in for gh, the version probes and the platform.
 var (
 	lookPath    = exec.LookPath
 	runCommand  = run
@@ -107,10 +104,10 @@ func (r *Reporter) Preview(sessionID string, draft Draft) (Preview, error) {
 	preview := Preview{
 		Kind:    draft.Kind,
 		Title:   strings.TrimSpace(draft.Title),
-		Body:    Compose(draft, gathered),
+		Body:    compose(draft, gathered),
 		Labels:  labels(draft.Kind),
 		Context: gathered,
-		URL:     FormURL(draft, gathered),
+		URL:     formURL(draft, gathered),
 	}
 	preview.Route, preview.Account, preview.Reason = route()
 	preview.ID = preview.fingerprint()
@@ -144,7 +141,7 @@ func (r *Reporter) File(sessionID string, draft Draft, previewID string) (Filed,
 	if preview.Route == RouteBrowser {
 		return Filed{Route: RouteBrowser, URL: preview.URL}, nil
 	}
-	args := []string{"issue", "create", "--repo", Repo, "--title", preview.Title, "--body", preview.Body}
+	args := []string{"issue", "create", "--repo", repo, "--title", preview.Title, "--body", preview.Body}
 	for _, label := range preview.Labels {
 		args = append(args, "--label", label)
 	}
@@ -178,10 +175,10 @@ func labels(kind Kind) []string {
 	return []string{"enhancement"}
 }
 
-// Compose renders the body with the headings GitHub gives a form
+// compose renders the body with the headings GitHub gives a form
 // submission, so an issue filed through gh reads like one filed through
 // the form.
-func Compose(draft Draft, gathered Context) string {
+func compose(draft Draft, gathered Context) string {
 	body := strings.TrimSpace(draft.Body)
 	if draft.Kind == Feature {
 		return sections(
@@ -218,9 +215,7 @@ func (c Context) summary() string {
 	return line + "."
 }
 
-// FormURL prefills the repository's issue form for the draft, field by
-// field, so the user opening it finds the same issue the preview showed.
-func FormURL(draft Draft, gathered Context) string {
+func formURL(draft Draft, gathered Context) string {
 	query := url.Values{}
 	query.Set("title", strings.TrimSpace(draft.Title))
 	body := strings.TrimSpace(draft.Body)
@@ -234,20 +229,18 @@ func FormURL(draft Draft, gathered Context) string {
 	query.Set("what-happened", body)
 	query.Set("version", gathered.Version)
 	query.Set("os", gathered.OS)
-	for field, value := range map[string]string{
-		"tmux-version": gathered.Tmux,
-		"tool":         gathered.Tool,
-		"tool-version": gathered.ToolVersion,
-	} {
-		if value != "" {
-			query.Set(field, value)
-		}
+	if gathered.Tmux != "" {
+		query.Set("tmux-version", gathered.Tmux)
+	}
+	if gathered.Tool != "" {
+		query.Set("tool", gathered.Tool)
+	}
+	if gathered.ToolVersion != "" {
+		query.Set("tool-version", gathered.ToolVersion)
 	}
 	return newIssueURL + "?" + query.Encode()
 }
 
-// route decides how filing goes: gh, when it is on PATH and logged in, or
-// the browser with the reason gh is not usable.
 func route() (name, account, reason string) {
 	if _, err := lookPath("gh"); err != nil {
 		return RouteBrowser, "", "gh is not installed"
@@ -280,8 +273,7 @@ func (r *Reporter) gather(sessionID string) (Context, error) {
 		return gathered, nil
 	}
 	gathered.Tool = toolLabel(toolName)
-	// The executable the tool's config block launches is what answers
-	// --version; a CLI that answers with an error leaves the field blank.
+	// A CLI that will not name its version is context missing, not a failure.
 	if fields := strings.Fields(tool.Command); len(fields) > 0 {
 		if probed, err := runCommand(fields[0], "--version"); err == nil {
 			gathered.ToolVersion = firstLine(probed)
@@ -364,7 +356,7 @@ func run(name string, args ...string) (string, error) {
 // names how that front files it, since the word differs between them.
 func FormatPreview(preview Preview, confirm string) string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "%s for %s, not filed yet\n", describe(preview.Kind), Repo)
+	fmt.Fprintf(&out, "%s for %s, not filed yet\n", describe(preview.Kind), repo)
 	fmt.Fprintf(&out, "title: %s\n", preview.Title)
 	fmt.Fprintf(&out, "labels: %s\n", strings.Join(preview.Labels, ", "))
 	fmt.Fprintf(&out, "preview id: %s\n\n", preview.ID)
