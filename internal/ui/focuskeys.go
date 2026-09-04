@@ -168,12 +168,17 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 // composer row instead: the placeholder being on screen is the evidence
 // the composer is empty and its caret at the head of the prompt; a draft
 // replaces the placeholder and Left belongs to the agent.
+//
+// A zero-width input_prefix declares a bare composer row (pi's). Its
+// painted cursor is the only thing locating that row, so tmux's position
+// stays meaningful when the application hides the terminal cursor.
 func (m *Model) caretAtInputStart(sessID, tool string) bool {
 	if m.engine == nil || m.pane.forID != sessID || m.scrolledBack() {
 		return false
 	}
+	_, bareInput := m.engine.InputPrefix(tool, "")
 	caretCellKnown := m.pane.cursor.ok ||
-		(m.pane.cursor.positionOK && m.engine.ParksItsCaret(tool))
+		(m.pane.cursor.positionOK && (m.engine.ParksItsCaret(tool) || bareInput))
 	if !caretCellKnown {
 		return false
 	}
