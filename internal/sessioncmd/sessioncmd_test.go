@@ -283,7 +283,10 @@ func TestRenameAnswersEachCallerItsOwnRename(t *testing.T) {
 			applied++
 			continue
 		}
-		if !strings.HasPrefix(got.message, "unanswered: ") {
+		// The other rename replacing this one in the mailbox is reported as
+		// exactly that, and giving up on the context is the other way this
+		// caller ends.
+		if !strings.HasPrefix(got.message, "unanswered: ") && !strings.Contains(got.message, "was replaced by a later rename") {
 			t.Fatalf("caller asking for %q got %q", got.asked, got.message)
 		}
 	}
@@ -323,5 +326,43 @@ func TestRenameIgnoresAnAnswerToAnotherRequest(t *testing.T) {
 	}
 	if _, found, err := mailbox.ReadNameResult("abc123", "earlier"); !found || err != nil {
 		t.Fatalf("the earlier caller's answer was taken away: found=%v err=%v", found, err)
+	}
+}
+
+// A rename the next one replaced in the mailbox is never applied, so the
+// caller hears that rather than waiting out its deadline to be told the
+// rename is still on its way.
+func TestRenameReportsARequestALaterRenameReplaced(t *testing.T) {
+	configDir := t.TempDir()
+	stampManagerHeartbeat(t, configDir)
+	mailbox := hooks.NewManager(configDir)
+	if err := os.MkdirAll(mailbox.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The later rename lands in the mailbox while this one is waiting, and
+	// no manager ever claims either.
+	go func() {
+		for {
+			if _, _, found := mailbox.ReadName("abc123"); found {
+				later, err := hooks.NewRequestID()
+				if err != nil {
+					t.Errorf("NewRequestID: %v", err)
+					return
+				}
+				if err := hooks.WriteWhole(mailbox.NameFile("abc123"), hooks.NameRequest(later, "the later name")); err != nil {
+					t.Errorf("queue the later rename: %v", err)
+				}
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+
+	message, err := Rename(t.Context(), configDir, "abc123", "the replaced name")
+	if err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if !strings.Contains(message, "was replaced by a later rename") || !strings.Contains(message, "the replaced name") {
+		t.Fatalf("Rename = %q; want the replaced rename named as never applied", message)
 	}
 }

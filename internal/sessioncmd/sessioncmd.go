@@ -86,28 +86,48 @@ func Rename(ctx context.Context, configDir, sessionID, name string) (string, err
 	asked := hooks.NormalizeName(name)
 	deadline := time.Now().Add(min(max(3*pollInterval, renameWaitFloor), renameWaitCap))
 	for time.Now().Before(deadline) {
-		verdict, found, err := mailbox.ReadNameResult(sessionID, request)
-		if err != nil {
-			return "", fmt.Errorf("read the rename answer: %w", err)
+		answer, found, err := readRenameAnswer(mailbox, sessionID, request, asked)
+		if err != nil || found {
+			return answer, err
 		}
-		if !found || verdict.Requested != asked {
-			// A verdict for another rename belongs to whoever asked for it.
-			select {
-			case <-ctx.Done():
-				return "", ctx.Err()
-			case <-time.After(renameResultPoll):
+		// A rename queued after this one replaced it in the mailbox, so it
+		// is never applied, and waiting out the deadline would report it as
+		// still on its way. The answer is read once more first, since the
+		// manager may have answered this one already.
+		if pending, _, queued := mailbox.ReadName(sessionID); queued && pending != "" && pending != request {
+			answer, found, err := readRenameAnswer(mailbox, sessionID, request, asked)
+			if err != nil || found {
+				return answer, err
 			}
-			continue
+			return fmt.Sprintf("rename to %q was replaced by a later rename of this session, so it was never applied", name), nil
 		}
-		if err := mailbox.RemoveNameResult(sessionID, request); err != nil {
-			return "", err
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(renameResultPoll):
 		}
-		if verdict.Refusal != nil {
-			return "", fmt.Errorf("session keeps its name: %w", verdict.Refusal)
-		}
-		return "session renamed to " + verdict.Applied, nil
 	}
 	return fmt.Sprintf("rename to %q is queued: Agent Manager is running but has not applied it yet", name), nil
+}
+
+// readRenameAnswer reports what the manager did with one rename. found is
+// false while it has not answered that request yet.
+func readRenameAnswer(mailbox *hooks.Manager, sessionID, request, asked string) (message string, found bool, err error) {
+	verdict, found, err := mailbox.ReadNameResult(sessionID, request)
+	if err != nil {
+		return "", false, fmt.Errorf("read the rename answer: %w", err)
+	}
+	// A verdict for another rename belongs to whoever asked for it.
+	if !found || verdict.Requested != asked {
+		return "", false, nil
+	}
+	if err := mailbox.RemoveNameResult(sessionID, request); err != nil {
+		return "", false, err
+	}
+	if verdict.Refusal != nil {
+		return "", true, fmt.Errorf("session keeps its name: %w", verdict.Refusal)
+	}
+	return "session renamed to " + verdict.Applied, true, nil
 }
 
 func managerAwake(configDir string) (bool, time.Duration, error) {
