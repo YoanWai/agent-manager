@@ -48,6 +48,9 @@ const (
 	codesignTimeout = 30 * time.Second
 	// exitDenied is how the helper reports a refused permission.
 	exitDenied = 2
+	// versionRetention is how long an unused build stays before it is
+	// cleared, which has to outlast a manager that sits idle for days.
+	versionRetention = 7 * 24 * time.Hour
 )
 
 var helperSounds = []string{"Funk", "Hero", "Basso"}
@@ -76,11 +79,10 @@ func postThroughHelper(sessionID, subtitle, body, sound string) error {
 	return err
 }
 
-// helperHome keeps one bundle per installed binary. Two managers from
-// different installs would otherwise share a path and rebuild it out from
-// under each other on every banner, since each would find the other's
-// stamp. The set of install paths is what bounds this, not the set of
-// versions, so nothing accumulates across upgrades.
+// helperHome keeps the builds of one installed binary apart from every
+// other install's. Two managers from different installs would otherwise
+// share a path and rebuild it out from under each other on every banner,
+// since each would find the other's build there.
 func helperHome(configDir, source string) string {
 	digest := sha256.Sum256([]byte(source))
 	return filepath.Join(configDir, "notifier", hex.EncodeToString(digest[:6]))
@@ -94,9 +96,8 @@ func LaunchedAsHelper() bool {
 	return err == nil && strings.HasSuffix(exe, filepath.Join(helperBundle, "Contents", "MacOS", helperExecutable))
 }
 
-// materializeHelper returns the path of the bundle's executable. The
-// stamp records which binary was copied, so a release upgrade rebuilds
-// once and every later banner reuses the bundle.
+// materializeHelper returns the path of the bundle's executable, building
+// it when this binary has none yet.
 func materializeHelper(configDir string) (string, error) {
 	materializeMu.Lock()
 	defer materializeMu.Unlock()
@@ -113,29 +114,65 @@ func materializeHelper(configDir string) (string, error) {
 	}
 	stamp := fmt.Sprintf("%s %d %d\n", source, info.Size(), info.ModTime().UnixNano())
 	home := helperHome(configDir, source)
-	bundle := filepath.Join(home, helperBundle)
+	version := filepath.Join(home, versionOf(stamp))
+	bundle := filepath.Join(version, helperBundle)
 	executable := filepath.Join(bundle, "Contents", "MacOS", helperExecutable)
-	stampPath := filepath.Join(bundle, "Contents", "Resources", "source")
-	if current, err := os.ReadFile(stampPath); err == nil && string(current) == stamp {
+	if _, err := os.Stat(executable); err == nil {
+		touch(version)
+		retireOldVersions(home, version)
 		return executable, nil
 	}
-	// The finished bundle is swapped in rather than rebuilt in place, so
-	// a manager running the same binary is never left executing a path
-	// that is being taken apart around it.
-	staged := filepath.Join(home, ".staging."+strconv.Itoa(os.Getpid())+"."+strconv.FormatUint(focusSeq.Add(1), 10)+".app")
-	if err := buildHelper(staged, source, stamp); err != nil {
+	staged := filepath.Join(home, ".staging."+strconv.Itoa(os.Getpid())+"."+strconv.FormatUint(focusSeq.Add(1), 10))
+	if err := buildHelper(filepath.Join(staged, helperBundle), source, stamp); err != nil {
 		os.RemoveAll(staged)
 		return "", err
 	}
-	if err := os.RemoveAll(bundle); err != nil {
+	// A version directory is named for the binary inside it, so it is
+	// written once and never rewritten: a manager mid-launch cannot have
+	// its executable replaced by another manager's upgrade. Losing the
+	// rename means someone else published the same build first.
+	if err := os.Rename(staged, version); err != nil {
 		os.RemoveAll(staged)
-		return "", err
+		if _, statErr := os.Stat(executable); statErr != nil {
+			return "", err
+		}
 	}
-	if err := os.Rename(staged, bundle); err != nil {
-		os.RemoveAll(staged)
-		return "", err
-	}
+	retireOldVersions(home, version)
 	return executable, nil
+}
+
+func versionOf(stamp string) string {
+	digest := sha256.Sum256([]byte(stamp))
+	return hex.EncodeToString(digest[:6])
+}
+
+// touch dates a version by its last use, since a directory keeps the
+// mtime of its creation however long the manager inside it runs.
+func touch(version string) {
+	now := time.Now()
+	_ = os.Chtimes(version, now, now)
+}
+
+// retireOldVersions clears builds of binaries this install no longer
+// runs. A manager that has not posted a banner in a week may still be
+// alive, so its bundle only goes once it is that far out of use, and
+// rebuilding it costs one banner.
+func retireOldVersions(home, keep string) {
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		path := filepath.Join(home, entry.Name())
+		if path == keep {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || time.Since(info.ModTime()) < versionRetention {
+			continue
+		}
+		os.RemoveAll(path)
+	}
 }
 
 // buildHelper signs last, so every file it lays down is inside the seal.

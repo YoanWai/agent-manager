@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // The bundle built by the live test holds a copy of this test binary, and
@@ -48,7 +50,11 @@ func TestHelperPostsLiveBanner(t *testing.T) {
 	if source, err = filepath.EvalSymlinks(source); err != nil {
 		t.Fatal(err)
 	}
-	bundle := filepath.Join(helperHome(dir, source), helperBundle)
+	helperPath, err := materializeHelper(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Dir(filepath.Dir(filepath.Dir(helperPath)))
 	if _, err := os.Stat(filepath.Join(bundle, "Contents", "Resources", "source")); err != nil {
 		t.Fatalf("bundle stamp missing: %v", err)
 	}
@@ -60,9 +66,54 @@ func TestHelperPostsLiveBanner(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if entry.Name() != helperBundle {
+		if strings.HasPrefix(entry.Name(), ".staging.") {
 			t.Fatalf("staging left behind: %s", entry.Name())
 		}
+	}
+}
+
+// A build is named for the binary in it, so an upgrade publishes beside
+// the running one instead of replacing the executable under it.
+func TestUpgradePublishesBesideTheRunningBuild(t *testing.T) {
+	if os.Getenv("AM_NOTIFY_LIVE") == "" {
+		t.Skip("set AM_NOTIFY_LIVE=1 to build a real signed bundle")
+	}
+	base, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(base, "agent-manager-live-test")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	defer restore()()
+	configDir = func() (string, error) { return dir, nil }
+	running, err := materializeHelper(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source, err = filepath.EvalSymlinks(source); err != nil {
+		t.Fatal(err)
+	}
+	// An in-place upgrade is a new mtime on the same path, which is what
+	// the build is named after.
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(source, later, later); err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := materializeHelper(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upgraded == running {
+		t.Fatal("the upgrade reused the path the running manager launches from")
+	}
+	if _, err := os.Stat(running); err != nil {
+		t.Fatalf("the running build was taken away: %v", err)
 	}
 }
 
