@@ -6,6 +6,21 @@
 
 Closes #
 
+## Scope
+
+### Required behavior
+
+### Non-goals
+
+### Why this approach
+
+### New guards or fallbacks
+
+<!--
+Name the reachable caller or external input that requires each one.
+Write "none" when the diff adds none.
+-->
+
 ## How it was verified
 
 <!-- Commands you ran, sessions you drove, and what you saw. -->
