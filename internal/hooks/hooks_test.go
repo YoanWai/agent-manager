@@ -524,3 +524,41 @@ func TestReadNameResultSurfacesAReadFailure(t *testing.T) {
 		t.Fatalf("unreadable result = found %v, err %v; want the failure", found, err)
 	}
 }
+
+// The claim tells a caller its rename is being applied, so a claim the
+// manager took from a file carrying no request of ours reports no
+// request rather than a made-up one.
+func TestClaimedRequestReportsWhatWasClaimed(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if request, held, err := manager.ClaimedRequest("x"); held || request != "" || err != nil {
+		t.Fatalf("with nothing claimed = %q, %v, %v", request, held, err)
+	}
+
+	for _, testCase := range []struct {
+		label   string
+		content string
+		want    string
+	}{
+		{"a request we issued", NameRequest(testRequest, "fix auth bug"), testRequest},
+		{"a file carrying no request", "fix auth bug", ""},
+	} {
+		t.Run(testCase.label, func(t *testing.T) {
+			if err := os.WriteFile(manager.NameFile("x"), []byte(testCase.content), 0o644); err != nil {
+				t.Fatalf("write name: %v", err)
+			}
+			if _, _, found, err := manager.ClaimName("x"); err != nil || !found {
+				t.Fatalf("ClaimName = %v, %v", found, err)
+			}
+			request, held, err := manager.ClaimedRequest("x")
+			if err != nil || !held || request != testCase.want {
+				t.Fatalf("ClaimedRequest = %q, %v, %v; want %q", request, held, err, testCase.want)
+			}
+			if err := manager.ReleaseName("x"); err != nil {
+				t.Fatalf("ReleaseName: %v", err)
+			}
+		})
+	}
+}
