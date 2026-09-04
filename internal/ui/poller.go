@@ -15,6 +15,7 @@ import (
 	"os"
 
 	"github.com/YoanWai/agent-manager/internal/agentsession"
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
@@ -58,6 +59,9 @@ type poller struct {
 
 	// notifyFn delivers one desktop notification; tests swap in a recorder.
 	notifyFn func(notify.Event)
+	// takeFocus collects the session a clicked notification named; tests
+	// swap in a stub.
+	takeFocus func() (string, bool)
 
 	// guarded by runMu: refresh state shared between the polling loop
 	// and one-off refresh commands
@@ -274,7 +278,16 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		quietSince:    map[string]quietTimer{},
 		recaptureSeen: map[string]recaptureSighting{},
 		notifyFn:      notify.Notify,
+		takeFocus:     takeNotifyFocus,
 	}
+}
+
+func takeNotifyFocus() (string, bool) {
+	dir, err := config.Dir()
+	if err != nil {
+		return "", false
+	}
+	return notify.TakeFocus(dir)
 }
 
 func (p *poller) setInput(includeArchived bool, selectedID string) {
@@ -645,6 +658,11 @@ func (p *poller) refreshOnce() tea.Msg {
 		paneLines:      paneLastLines,
 		panePrompts:    panePrompts,
 		panes:          panes,
+	}
+	if p.takeFocus != nil {
+		if id, ok := p.takeFocus(); ok {
+			msg.focusID = id
+		}
 	}
 	if sampleStats {
 		msg.snap = sysstat.Sample("/")
@@ -1322,7 +1340,7 @@ func (p *poller) notifyTransition(sess store.Session, newStatus string) {
 	}
 	// Delivery can wait on an external process (osascript, notify-send),
 	// so it must never run inside refreshOnce, which holds runMu.
-	go p.notifyFn(notify.Event{Session: sess.Name, Tool: sess.Tool, Kind: kind})
+	go p.notifyFn(notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: kind})
 }
 
 func (p *poller) notificationsOn() bool {

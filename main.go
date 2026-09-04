@@ -15,6 +15,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
+	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -60,6 +61,12 @@ func main() {
 	info, hasInfo := debug.ReadBuildInfo()
 	version = resolveVersion(version, info, hasInfo)
 	update.SetBuildSource(buildSource)
+
+	// The macOS notifier bundle runs a copy of this binary; a click on a
+	// banner relaunches it with no arguments at all.
+	if notify.LaunchedAsHelper() {
+		os.Exit(notify.HelperMain(os.Args[1:]))
+	}
 
 	if len(os.Args) > 1 {
 		if os.Args[1] == "help" || os.Args[1] == "--help" || os.Args[1] == "-h" {

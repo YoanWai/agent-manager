@@ -494,6 +494,9 @@ type refreshMsg struct {
 	// whether the rows no server has claimed are this manager's to show as
 	// current.
 	leadingManager bool
+	// focusID is the session a clicked notification named, taken from
+	// the config directory by this pass.
+	focusID string
 }
 
 type previewMsg struct {
@@ -1063,15 +1066,17 @@ func (m *Model) selectedRow() (treeRow, bool) {
 }
 
 // focusSession puts the cursor on a session's row, for the keys that make
-// one and leave the user on it. A session filtered out of the current view
-// has no row, and the cursor stays where it was.
-func (m *Model) focusSession(id string) {
+// one and leave the user on it, and reports whether it found the row. A
+// session filtered out of the current view has none, and the cursor stays
+// where it was.
+func (m *Model) focusSession(id string) bool {
 	for i, row := range m.rows {
 		if !row.isGroup && row.sess.ID == id {
 			m.cursor = i
-			return
+			return true
 		}
 	}
+	return false
 }
 
 // schedulePreview arms a single capture after previewSettle. Call after
@@ -1394,9 +1399,20 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.settleInstall()
 		m.rebuildRows()
+		if msg.focusID != "" {
+			focused, ok := m.selected()
+			// Moving the cursor under a focused pane would leave the
+			// keyboard pinned to the session the user was in while the
+			// list claims another. The click steps back to the list, and
+			// only once its session turns out to have a row to land on.
+			if m.focusSession(msg.focusID) && m.mode == modeFocus && (!ok || focused.ID != msg.focusID) {
+				focusExit = m.leaveFocus()
+			}
+		}
 		reviewStatuses := m.reviewStatusesCmd()
 		// A pass that ran with a stale selection (a session created this
-		// tick) carries the wrong preview; resync and fetch it directly.
+		// tick, or one a notification click just chose) carries the wrong
+		// preview; resync and fetch it directly.
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
 			m.previewGen++
