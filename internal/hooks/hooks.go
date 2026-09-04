@@ -276,6 +276,21 @@ func (m *Manager) ClaimName(id string) (request, name string, found bool, err er
 	return request, name, true, nil
 }
 
+// ClaimedRequest reports the rename the manager has taken to apply, so a
+// caller can tell its request being worked on from one a later rename
+// replaced in the mailbox before it was ever claimed.
+func (m *Manager) ClaimedRequest(id string) (request string, found bool, err error) {
+	raw, err := os.ReadFile(m.claimedNameFile(id))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	request, _ = parseNameRequest(string(raw))
+	return request, true, nil
+}
+
 func (m *Manager) ReleaseName(id string) error {
 	return removeIfExists(m.claimedNameFile(id))
 }

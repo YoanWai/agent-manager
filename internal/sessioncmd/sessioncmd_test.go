@@ -366,3 +366,54 @@ func TestRenameReportsARequestALaterRenameReplaced(t *testing.T) {
 		t.Fatalf("Rename = %q; want the replaced rename named as never applied", message)
 	}
 }
+
+// A rename the manager has already claimed is still on its way, however
+// many renames queue behind it, so its caller waits for the answer rather
+// than being told it was replaced.
+func TestRenameWaitsWhileItsClaimedRenameIsApplied(t *testing.T) {
+	configDir := t.TempDir()
+	stampManagerHeartbeat(t, configDir)
+	mailbox := hooks.NewManager(configDir)
+	if err := os.MkdirAll(mailbox.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The manager claims this rename, a later one queues behind it, and
+	// only then is the claimed rename answered.
+	go func() {
+		for {
+			request, pending, found, err := mailbox.ClaimName("abc123")
+			if err != nil {
+				t.Errorf("ClaimName: %v", err)
+				return
+			}
+			if !found {
+				time.Sleep(5 * time.Millisecond)
+				continue
+			}
+			later, err := hooks.NewRequestID()
+			if err != nil {
+				t.Errorf("NewRequestID: %v", err)
+				return
+			}
+			if err := hooks.WriteWhole(mailbox.NameFile("abc123"), hooks.NameRequest(later, "the later name")); err != nil {
+				t.Errorf("queue the later rename: %v", err)
+				return
+			}
+			// Long enough that the caller polls while the later rename is
+			// the pending one and this rename has no answer yet.
+			time.Sleep(300 * time.Millisecond)
+			if err := mailbox.WriteNameResult("abc123", request, pending, pending, nil); err != nil {
+				t.Errorf("WriteNameResult: %v", err)
+			}
+			if err := mailbox.ReleaseName("abc123"); err != nil {
+				t.Errorf("ReleaseName: %v", err)
+			}
+			return
+		}
+	}()
+
+	message, err := Rename(t.Context(), configDir, "abc123", "the claimed name")
+	if err != nil || message != "session renamed to the claimed name" {
+		t.Fatalf("Rename = %q, %v; want the claimed rename reported as applied", message, err)
+	}
+}

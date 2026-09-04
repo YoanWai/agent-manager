@@ -90,11 +90,15 @@ func Rename(ctx context.Context, configDir, sessionID, name string) (string, err
 		if err != nil || found {
 			return answer, err
 		}
-		// A rename queued after this one replaced it in the mailbox, so it
-		// is never applied, and waiting out the deadline would report it as
+		replaced, err := renameWasReplaced(mailbox, sessionID, request)
+		if err != nil {
+			return "", err
+		}
+		// A rename replaced in the mailbox before the manager claimed it is
+		// never applied, and waiting out the deadline would report it as
 		// still on its way. The answer is read once more first, since the
-		// manager may have answered this one already.
-		if pending, _, queued := mailbox.ReadName(sessionID); queued && pending != "" && pending != request {
+		// manager may have answered this one meanwhile.
+		if replaced {
 			answer, found, err := readRenameAnswer(mailbox, sessionID, request, asked)
 			if err != nil || found {
 				return answer, err
@@ -108,6 +112,21 @@ func Rename(ctx context.Context, configDir, sessionID, name string) (string, err
 		}
 	}
 	return fmt.Sprintf("rename to %q is queued: Agent Manager is running but has not applied it yet", name), nil
+}
+
+// renameWasReplaced reports that a later rename took this one's place in
+// the mailbox before the manager could claim it. A request the manager
+// holds is still on its way, however many renames have queued behind it.
+func renameWasReplaced(mailbox *hooks.Manager, sessionID, request string) (bool, error) {
+	pending, _, queued := mailbox.ReadName(sessionID)
+	if !queued || pending == "" || pending == request {
+		return false, nil
+	}
+	claimed, held, err := mailbox.ClaimedRequest(sessionID)
+	if err != nil {
+		return false, err
+	}
+	return !held || claimed != request, nil
 }
 
 // readRenameAnswer reports what the manager did with one rename. found is
