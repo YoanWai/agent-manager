@@ -47,7 +47,7 @@ func spliceSessionKeys(current string, keys keybind.Session) string {
 	lines := strings.Split(current, "\n")
 	start := -1
 	for i, line := range lines {
-		if strings.TrimSpace(line) == sessionKeysHeader {
+		if isSessionKeysHeader(line) {
 			start = i
 			break
 		}
@@ -59,9 +59,15 @@ func spliceSessionKeys(current string, keys keybind.Session) string {
 		}
 		return body + "\n\n" + strings.Join(block, "\n") + "\n"
 	}
+	block[0] = lines[start]
 	spliced := append([]string{}, lines[:start]...)
 	spliced = append(spliced, block...)
 	return strings.Join(append(spliced, lines[sessionKeysEnd(lines, start):]...), "\n")
+}
+
+func isSessionKeysHeader(line string) bool {
+	header, _, _ := strings.Cut(line, "#")
+	return strings.TrimSpace(header) == sessionKeysHeader
 }
 
 // sessionKeysEnd is the line the table stops at: the next table header,

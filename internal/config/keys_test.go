@@ -124,6 +124,32 @@ command = "mine"
 	}
 }
 
+func TestSaveSessionKeysKeepsAnInlineCommentOnTheHeader(t *testing.T) {
+	dir, path := writeConfig(t, `[keybindings.session] # session shortcuts
+detach = "f9"
+review = "none"
+editor = "none"
+`)
+	if err := SaveSessionKeys(dir, keysFrom(t, []string{"ctrl+q"}, []string{"ctrl+r"}, []string{"f3"})); err != nil {
+		t.Fatalf("SaveSessionKeys: %v", err)
+	}
+
+	saved := readConfig(t, path)
+	if strings.Count(saved, "[keybindings.session]") != 1 {
+		t.Fatalf("the table should be replaced, not repeated:\n%s", saved)
+	}
+	if !strings.Contains(saved, "[keybindings.session] # session shortcuts\n") {
+		t.Fatalf("the header lost its comment:\n%s", saved)
+	}
+	loaded, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if got := loaded.Keybindings.Session.Detach.Label(); got != "ctrl+q" {
+		t.Fatalf("reloaded detach = %q", got)
+	}
+}
+
 // A table the splice cannot express leaves the file alone rather than
 // writing something that would not load.
 func TestSaveSessionKeysRefusesAFileItWouldBreak(t *testing.T) {
