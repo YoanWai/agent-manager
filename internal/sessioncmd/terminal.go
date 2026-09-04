@@ -76,6 +76,18 @@ type runtime struct {
 	driver *tmux.Driver
 }
 
+// createPane opens a session's pane at the box the running manager pins
+// its panes to. Nothing here can measure the preview, and tmux hands an
+// unsized detached session 80x24, which is narrower than any manager
+// layout and holds until something resizes it.
+func (r *runtime) createPane(id, cwd, command string, env map[string]string) error {
+	width, height, err := r.store.PaneSize()
+	if err != nil {
+		return err
+	}
+	return r.driver.Create(id, cwd, command, env, width, height)
+}
+
 func (c *commands) open() (*runtime, error) {
 	cfg, err := config.LoadDir(c.configDir)
 	if err != nil {
@@ -250,7 +262,7 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		Group:  group,
 		Status: status.Starting,
 	}
-	if err := runtime.driver.Create(sess.ID, sess.Cwd, tool.Command, nil, 0, 0); err != nil {
+	if err := runtime.createPane(sess.ID, sess.Cwd, tool.Command, nil); err != nil {
 		return Terminal{}, err
 	}
 	sess.TmuxSocket = runtime.driver.SocketPath()

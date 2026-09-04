@@ -243,6 +243,68 @@ func TestUnchangedWindowSizeSkipsResize(t *testing.T) {
 	}
 }
 
+// A revive that runs outside the manager, from the CLI or the MCP tool,
+// puts the row on a window this process never sized. The geometry it
+// cached for the window that died would otherwise read as already matching
+// the box, leaving the replacement at whatever it was born with. The
+// replacement is pinned to the exact box, taller or shorter, since a pane
+// born a moment ago has no scrollback to keep.
+func TestRelaunchedSessionIsRepinnedToThePreviewPanel(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "revived", dir, "")
+	id := m.sessionRows()[0].ID
+	m.applyCmd(t, m.refreshCmd())
+	if w, _ := windowSize(t, id); w != m.previewPaneWidth() {
+		t.Fatalf("before the relaunch, window width = %d, want %d", w, m.previewPaneWidth())
+	}
+
+	// What a revive with no manager to ask does: the sized window is gone
+	// and the replacement carries tmux's own default, or a box some other
+	// manager run recorded.
+	wantW, wantH := m.previewPaneWidth(), m.previewPaneHeight()
+	for _, born := range [][2]int{{0, 0}, {wantW + 40, wantH + 20}} {
+		if err := m.tmux.Kill(id); err != nil {
+			t.Fatalf("kill: %v", err)
+		}
+		if err := m.tmux.Create(id, dir, "", nil, born[0], born[1]); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if w, h := windowSize(t, id); w == wantW && h == wantH {
+			t.Fatalf("relaunched window already at the box %dx%d, nothing to prove", w, h)
+		}
+		m.applyCmd(t, m.refreshCmd())
+		if w, h := windowSize(t, id); w != wantW || h != wantH {
+			t.Fatalf("born %dx%d: after the refresh, window = %dx%d, want %dx%d", born[0], born[1], w, h, wantW, wantH)
+		}
+	}
+}
+
+// The launch paths that run without a manager read the box out of the
+// store, so the manager has to keep it current there.
+func TestRefreshPublishesThePaneSize(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "sized", t.TempDir(), "")
+	m.applyCmd(t, m.refreshCmd())
+	width, height, err := m.store.PaneSize()
+	if err != nil {
+		t.Fatalf("pane size: %v", err)
+	}
+	if width != m.previewPaneWidth() || height != m.previewPaneHeight() {
+		t.Fatalf("published %dx%d, want %dx%d", width, height, m.previewPaneWidth(), m.previewPaneHeight())
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 150, Height: 45})
+	*m = *updated.(*Model)
+	width, height, err = m.store.PaneSize()
+	if err != nil {
+		t.Fatalf("pane size after resize: %v", err)
+	}
+	if width != m.previewPaneWidth() || height != m.previewPaneHeight() {
+		t.Fatalf("after a resize published %dx%d, want %dx%d", width, height, m.previewPaneWidth(), m.previewPaneHeight())
+	}
+}
+
 func TestRebuildRowsNestsChildrenUnderParent(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
