@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -180,8 +181,23 @@ func (m *Manager) ReadName(id string) (request, name string, found bool) {
 	if err != nil {
 		return "", "", false
 	}
-	request, rest, _ := strings.Cut(string(raw), "\n")
-	return request, NormalizeName(rest), true
+	request, name = parseNameRequest(string(raw))
+	return request, name, true
+}
+
+var requestIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
+
+// parseNameRequest splits a queued rename into the request its answer
+// comes back under and the name asked for. The file is written by agents,
+// so a first line that is not a request this package issued is no request
+// at all: the whole file is the name, and the rename is applied with
+// nobody to answer rather than letting that line reach a file path.
+func parseNameRequest(raw string) (request, name string) {
+	first, rest, split := strings.Cut(raw, "\n")
+	if !split || !requestIDPattern.MatchString(first) {
+		return "", NormalizeName(raw)
+	}
+	return first, NormalizeName(rest)
 }
 
 // NormalizeName is the name a session actually takes: written by agents,
@@ -256,8 +272,8 @@ func (m *Manager) ClaimName(id string) (request, name string, found bool, err er
 	if err != nil {
 		return "", "", false, err
 	}
-	request, rest, _ := strings.Cut(string(raw), "\n")
-	return request, NormalizeName(rest), true, nil
+	request, name = parseNameRequest(string(raw))
+	return request, name, true, nil
 }
 
 func (m *Manager) ReleaseName(id string) error {
@@ -265,6 +281,8 @@ func (m *Manager) ReleaseName(id string) error {
 }
 
 // NameResultFile is where the poller reports what became of one rename,
+// under a request id this package issued, so the name never reaches the
+// path.
 // so the subcommand that queued it can tell the agent the truth instead
 // of assuming success. It is named for the request, so a second rename
 // for the same session neither reads nor removes this answer. The verdict

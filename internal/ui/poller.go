@@ -1068,8 +1068,12 @@ func (p *poller) applyPendingRename(sess *store.Session) error {
 	// time out on a rename that has in fact been applied or refused. That
 	// pass costs nothing, since a name the session already carries is
 	// applied again as a no-op and a refusal is refused the same way.
-	if err := p.hooks.WriteNameResult(sess.ID, request, name, sess.Name, renameErr); err != nil {
-		return err
+	// A rename that carries no request of ours has nobody waiting on an
+	// answer, so it is applied and left at that.
+	if request != "" {
+		if err := p.hooks.WriteNameResult(sess.ID, request, name, sess.Name, renameErr); err != nil {
+			return err
+		}
 	}
 	if err := p.hooks.ReleaseName(sess.ID); err != nil {
 		return err
