@@ -99,4 +99,4 @@ header and footer from `.goreleaser.yaml` come along either way.
   in `listview_test.go`.
 - A change holds for every tool in `defaultConfig` and every platform
   `.goreleaser.yaml` builds; [REVIEW.md](REVIEW.md) says what to do when one
-  of them needs a workaround.
+  of them is left out.
