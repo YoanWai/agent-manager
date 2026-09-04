@@ -549,6 +549,10 @@ func TestPiPanes(t *testing.T) {
 			" ⠴ Working...\n\n─────────────────────────────────\n \n─────────────────────────────────\n~/scratch/2026-08-26-agent-man...\n↑12 ↓7.7k R77k W16k CH99.2% $0...\nhydra:navigator hit 89.0% (las...\nmodel anthropic/claude-sonnet-4\ncontext 41.2k of 200k used\nbranch fix/pi-footer-lines", Finished},
 		{"resting turn behind a 3-line extension footer",
 			"Implementation complete." + editor + "\nhydra:navigator hit 89.0% (last hour)", Finished},
+		{"active turn with the spinner in the composer border",
+			"── ⠹ Working ─────────────────────────────────────\n\n──────────────────────────────────────────────────\n~\n↑116 ↓26k R1.4M W61k CH96.6% $2.862 (sub) 6.2%/1.\nhydra:navigator+simplifier hit 97.1% (last 98.8%)", Working},
+		{"historical border spinner frame",
+			"── ⠹ Working ─────────────────────────────────────\n\n──────────────────────────────\n~/dev/project (main)\nanthropic/claude-sonnet-4\n\nImplementation complete." + editor, Finished},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
