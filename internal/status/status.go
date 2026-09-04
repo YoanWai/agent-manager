@@ -367,6 +367,16 @@ func (e *Engine) LastMessageText(tool, pane string) (text string, anchored, ok b
 	return strings.TrimSpace(strings.Join(parts, "\n")), anchored, ok
 }
 
+// composerHint matches Claude Code's own "start a new task" nudge,
+// right-padded and printed near the input box once context use gets
+// high enough to suggest /clear - a UI element, not part of any reply,
+// but not covered by any tool's own chrome/busy/turn_end rules either
+// (it sits inside the activity_cutoff region, above the "❯" line those
+// rules are built around, not below it where the rest of the composer
+// chrome lives). Checked directly here rather than added to config.toml
+// since it names its own token count and so never repeats byte-for-byte.
+var composerHint = regexp.MustCompile(`new task\? /clear to save`)
+
 // FullTurnText is the whole turn's content above the input box, not just
 // the newest message_start block LastMessageText anchors to: a reply with
 // several marker-led paragraphs (Claude's bulleted sections, for example)
@@ -402,6 +412,9 @@ func (e *Engine) FullTurnText(tool, pane string) (text string, ok bool) {
 			continue
 		}
 		if tr.userEcho != nil && tr.userEcho.MatchString(line) {
+			continue
+		}
+		if composerHint.MatchString(line) {
 			continue
 		}
 		out = append(out, line)

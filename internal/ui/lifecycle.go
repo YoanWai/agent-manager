@@ -3,9 +3,12 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"os"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -123,14 +126,13 @@ func (m *Model) reattach(id string, diffGen int) tea.Cmd {
 // screen, plus real scrollback for a tool that keeps any. An alt-screen,
 // mouse-tracking tool (Claude Code, for one) keeps none of its own for
 // tmux to walk, so a reply longer than the viewport truncates at
-// whatever's on screen when y is pressed. Reading the on-disk transcript
-// instead was tried and reverted: AgentSessionID is captured once and
-// trusted as still pointing at the live file, but Claude Code opens a
-// new transcript on its own compaction, invisibly to agent-manager, and
-// a stale id then reads a real but unrelated past conversation with no
-// signal that anything is wrong. Silently wrong beats silently short,
-// but it's still wrong, so this waits on a way to tell a stale id from a
-// live one before it's worth the risk again.
+// whatever's on screen when y is pressed. deepCopyFallback covers that
+// case for claude by reading the on-disk transcript instead, gated on
+// the tail-match check documented there: AgentSessionID is captured
+// once and can go stale (Claude Code opens a new transcript on its own
+// compaction, invisibly to agent-manager), so the fallback is only
+// trusted when its own tail provably continues what's already on
+// screen, not just because the id is set.
 func (m *Model) copyLastOutput() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedRow()
 	if !ok || entry.isGroup || m.engine == nil || m.tmux == nil {
@@ -150,12 +152,150 @@ func (m *Model) copyLastOutput() (tea.Model, tea.Cmd) {
 		m.errBar.text = "nothing to copy"
 		return m, nil
 	}
+	if deep, ok := m.deepCopyFallback(sess, text); ok {
+		text = deep
+	}
 	if err := clipboard.WriteText(text); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
 	m.reportDone(fmt.Sprintf("copied %d chars from %s", len([]rune(text)), sess.Name))
 	return m, nil
+}
+
+// staleCheckRunes is how much of the viewport-captured text has to show
+// up, verbatim, at the end of the on-disk transcript's reply before
+// deepCopyFallback trusts that reply. Long enough that an unrelated past
+// conversation won't match it by coincidence, short enough to tolerate
+// FullTurnText's own normalizing (collapsed blank lines, trimmed
+// trailing spaces) not lining up byte-for-byte with the raw transcript
+// text.
+const staleCheckRunes = 80
+
+// rescanTranscripts caps how many of the project's other transcripts
+// deepCopyFallback checks once the stored AgentSessionID's own file
+// fails the tail-match: newest first, most-likely-current one tried
+// first, and a compacted session is rarely more than one or two rotations
+// past the id agent-manager last captured.
+const rescanTranscripts = 5
+
+// deepCopyFallback returns the full reply from Claude Code's own on-disk
+// transcript when the pane's captured viewport only got the tail of it -
+// see copyLastOutput's doc comment for why that happens. viewportText is
+// what copyLastOutput already has and trusts as current.
+//
+// AgentSessionID is captured once and never re-verified, and Claude Code
+// opens a new transcript on its own context compaction, invisibly to
+// agent-manager, leaving the stored id pointing at a real but unrelated
+// past conversation - trusting it just because it's set would silently
+// hand back the wrong task. So every candidate, the stored id included,
+// is checked the same way: its transcript's reply has to provably
+// continue viewportText, its own tail found inside the file's reply.
+// Nothing here is used unless that holds.
+//
+// When the stored id fails but a newer transcript in the same project
+// directory passes, that id replaces it in the store (SetAgentSessionID)
+// so the next call - and the poller's own row-quote fallback, which
+// trusts the stored id the same way - don't pay for the rescan again.
+func (m *Model) deepCopyFallback(sess store.Session, viewportText string) (text string, ok bool) {
+	if m.poller == nil || m.poller.mcpStyles[sess.Tool] != "claude" || sess.AgentSessionID == "" {
+		return "", false
+	}
+	anchor := stripMarkdownPunct(tailRunes(strings.TrimSpace(viewportText), staleCheckRunes))
+	if anchor == "" {
+		return "", false
+	}
+	if reply, ok := claudeTranscriptReplyMatching(sess.Cwd, sess.AgentSessionID, anchor); ok {
+		return reply, true
+	}
+	for _, id := range m.otherClaudeTranscripts(sess.Cwd, sess.AgentSessionID) {
+		reply, ok := claudeTranscriptReplyMatching(sess.Cwd, id, anchor)
+		if !ok {
+			continue
+		}
+		if m.store != nil {
+			_ = m.store.SetAgentSessionID(sess.ID, id)
+		}
+		return reply, true
+	}
+	return "", false
+}
+
+// claudeTranscriptReplyMatching reads sessionID's transcript tail and
+// reports it only if its reply contains anchor - see deepCopyFallback.
+// The comparison is on stripMarkdownPunct'd text on both sides: the raw
+// transcript keeps Claude's own markdown (a code span's backticks, for
+// one) that the terminal renders as styling rather than characters, so
+// anchor - built from what actually painted on screen - would otherwise
+// never match a reply that's really the same text.
+func claudeTranscriptReplyMatching(cwd, sessionID, anchor string) (reply string, ok bool) {
+	reply, tailOK := agentsession.ClaudeTranscriptFullTurn(cwd, sessionID)
+	if !tailOK || strings.TrimSpace(reply) == "" || !strings.Contains(stripMarkdownPunct(reply), anchor) {
+		return "", false
+	}
+	return reply, true
+}
+
+// otherClaudeTranscripts lists up to rescanTranscripts other session ids
+// Claude Code has ever written a transcript for in cwd's project
+// directory, newest first, skip is excluded (the id already tried).
+func (m *Model) otherClaudeTranscripts(cwd, skip string) []string {
+	dir, err := agentsession.ClaudeProjectDir(cwd)
+	if err != nil {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	type candidate struct {
+		id      string
+		modTime time.Time
+	}
+	candidates := make([]candidate, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		id := strings.TrimSuffix(name, ".jsonl")
+		if id == name || id == skip {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		candidates = append(candidates, candidate{id: id, modTime: info.ModTime()})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].modTime.After(candidates[j].modTime)
+	})
+	if len(candidates) > rescanTranscripts {
+		candidates = candidates[:rescanTranscripts]
+	}
+	ids := make([]string, len(candidates))
+	for i, c := range candidates {
+		ids[i] = c.id
+	}
+	return ids
+}
+
+// tailRunes returns the last n runes of s, or the whole string if it has
+// n or fewer.
+func tailRunes(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[len(runes)-n:])
+}
+
+// stripMarkdownPunct drops the characters Claude's own markdown uses for
+// inline styling - a code span's backticks, emphasis's asterisks and
+// underscores - that the terminal renders as color or weight rather
+// than painting the character itself. Comparing text captured off
+// screen against the raw transcript needs both sides free of them, or a
+// styled word never matches its own unstyled-looking rendering.
+func stripMarkdownPunct(s string) string {
+	return strings.NewReplacer("`", "", "*", "", "_", "").Replace(s)
 }
 
 // reviveSelected relaunches a dead session's tmux session under the same

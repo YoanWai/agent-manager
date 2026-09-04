@@ -23,6 +23,21 @@ func ClaudeTranscriptPath(cwd, sessionID string) (string, error) {
 	return filepath.Join(home, ".claude", "projects", claudeProjectSlug(resolvePath(cwd)), sessionID+".jsonl"), nil
 }
 
+// ClaudeProjectDir is the folder ClaudeTranscriptPath's transcript lives
+// in: every transcript Claude Code has ever written for this working
+// directory, one file per conversation. Claude Code opens a new one on
+// its own context compaction, so a session id captured once can go
+// stale mid-conversation - listing the directory (sorted newest first,
+// say) is how a caller finds the transcript actually being written to
+// now instead of trusting a possibly-stale id.
+func ClaudeProjectDir(cwd string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".claude", "projects", claudeProjectSlug(resolvePath(cwd))), nil
+}
+
 // claudeProjectSlug names the per-directory folder Claude Code files a
 // transcript under: the resolved working directory with every character
 // outside [A-Za-z0-9] turned into a dash.
@@ -106,6 +121,67 @@ func ClaudeTranscriptTail(cwd, sessionID string, cleanUser func(string) string) 
 		}
 	}
 	return prompt, reply, true
+}
+
+// ClaudeTranscriptFullTurn reads every assistant text block written
+// since the transcript's last user entry, joined as separate paragraphs
+// - the whole current turn, not just its last block. ClaudeTranscriptTail
+// only keeps the newest assistant entry (reply = text, overwritten each
+// time), right for a one-line row quote but wrong here: a turn with
+// several marker-led paragraphs writes as several separate assistant
+// entries, and only concatenating all of them since the last user entry
+// reconstructs it whole. ok is false when the transcript cannot be read
+// at all, same as ClaudeTranscriptTail.
+func ClaudeTranscriptFullTurn(cwd, sessionID string) (reply string, ok bool) {
+	path, err := ClaudeTranscriptPath(cwd, sessionID)
+	if err != nil {
+		return "", false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return "", false
+	}
+	offset := int64(0)
+	if info.Size() > claudeTailBytes {
+		offset = info.Size() - claudeTailBytes
+	}
+	raw := make([]byte, info.Size()-offset)
+	if _, err := file.ReadAt(raw, offset); err != nil {
+		return "", false
+	}
+	lines := strings.Split(string(raw), "\n")
+	if offset > 0 && len(lines) > 0 {
+		lines = lines[1:]
+	}
+	var turn []string
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var entry claudeEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		if entry.IsSidechain || entry.IsMeta {
+			continue
+		}
+		text := entryText(entry)
+		if text == "" {
+			continue
+		}
+		switch entry.Type {
+		case "user":
+			turn = turn[:0]
+		case "assistant":
+			turn = append(turn, text)
+		}
+	}
+	return strings.Join(turn, "\n\n"), true
 }
 
 // entryText is the first plain-text block of an entry's content: a bare
