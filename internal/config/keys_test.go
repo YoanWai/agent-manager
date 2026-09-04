@@ -80,7 +80,7 @@ command = "claude"
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
-	if !sameSessionKeys(loaded.Keybindings.Session, keys) {
+	if !loaded.Keybindings.Session.Equal(keys) {
 		t.Fatalf("reloaded keys = %q / %q / %q", loaded.Keybindings.Session.Detach.Label(),
 			loaded.Keybindings.Session.Review.Label(), loaded.Keybindings.Session.Editor.Label())
 	}

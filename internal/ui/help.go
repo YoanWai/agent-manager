@@ -156,9 +156,6 @@ func helpSections(keys keybind.Session) []helpSection {
 	}
 }
 
-// sessionHelpRows spells the session key table out ahead of the mouse
-// rows: a detach with several keys names the first and notes the rest,
-// and an action turned off has no row.
 func sessionHelpRows(keys keybind.Session, mouseRows [][2]string) [][2]string {
 	rows := [][2]string{{"typing", "goes straight to the agent, q included"}}
 	if detach := keys.Detach.Keys(); len(detach) > 0 {

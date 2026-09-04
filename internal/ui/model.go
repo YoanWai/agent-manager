@@ -65,11 +65,9 @@ type Model struct {
 	hooks  *hooks.Manager
 	gitDrv *git.Driver
 	engine *status.Engine
-	// keys is the table of keys the manager keeps inside a session; the
-	// driver binds the same table for a full-screen attach.
-	keys keybind.Session
-	// configDir holds the config.toml the settings screen writes keys
-	// back to, resolved once so a later lookup cannot land elsewhere.
+	keys   keybind.Session
+	// configDir is resolved once, at New, so the settings screen writes
+	// keys back to the config.toml the manager loaded.
 	configDir string
 
 	// setSnapshot writes a session's pane capture before archive or kill
@@ -434,16 +432,12 @@ type settingsState struct {
 	cliNames  []string
 	cliHidden map[string]bool
 	cliCursor int
-	// keyPicker is the sub-panel for the keys the manager keeps inside a
-	// session. keys is the table it edits, and capture holds the row
-	// waiting for the key press that binds it.
+	// keyPicker is the sub-panel for the keys the manager keeps inside a session.
 	keyPicker  bool
 	keys       keybind.Session
 	keyCursor  int
 	keyCapture bool
-	// keyAppend distinguishes adding a second key to an action from
-	// replacing what it answers to.
-	keyAppend bool
+	keyAppend  bool
 }
 
 const (

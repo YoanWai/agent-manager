@@ -489,8 +489,6 @@ func formField(label, value string, focused bool) string {
 	return b.String()
 }
 
-// viewKeyPicker lists the keys the manager keeps inside a session, one row
-// per action, with what the action does beside its keys.
 func (m *Model) viewKeyPicker() string {
 	var b strings.Builder
 	for i, action := range sessionKeyActions {

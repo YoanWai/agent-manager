@@ -959,9 +959,7 @@ func (m *Model) dismissNotice(id string) {
 	}
 }
 
-// welcomeSessionKeysLine is the welcome card's row for the keys kept inside
-// a session, laid out on the same columns as the rows around it. The keys
-// come from the table, so a remapped one reads right on the first run too.
+// The widths are the columns of the welcome rows around this line.
 func (m *Model) welcomeSessionKeysLine() string {
 	line := fmt.Sprintf("%-6s %-22s", m.keys.Detach.Keys()[0].Tea(), "back to the manager")
 	if review := m.keys.Review.Keys(); len(review) > 0 {

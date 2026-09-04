@@ -117,7 +117,6 @@ type Config struct {
 	Keybindings Keybindings     `toml:"keybindings"`
 }
 
-// Keybindings holds the key tables, one per place a key is read.
 type Keybindings struct {
 	Session keybind.Session `toml:"session"`
 }

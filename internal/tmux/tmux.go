@@ -434,7 +434,6 @@ func titledLabel(binding keybind.Binding) string {
 	return strings.Join(names, " / ")
 }
 
-// titled spells a key the way the footer always has: Ctrl+q, F3.
 func titled(key keybind.Key) string {
 	name := key.Tea()
 	return strings.ToUpper(name[:1]) + name[1:]

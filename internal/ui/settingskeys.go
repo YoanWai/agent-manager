@@ -8,8 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// sessionKeyActions is the order the picker lists the actions in, with what
-// each one does written beside its keys.
 var sessionKeyActions = []struct{ name, does string }{
 	{"detach", "back to the manager"},
 	{"review", "open the session's diff"},
@@ -38,8 +36,6 @@ func withSessionBinding(keys keybind.Session, index int, binding keybind.Binding
 	return keys
 }
 
-// sessionKeysSummary is the settings row's value: the keys each action
-// answers to, or a note that it is off.
 func sessionKeysSummary(keys keybind.Session) string {
 	summary := ""
 	for i := range sessionKeyActions {
@@ -87,9 +83,8 @@ func (m *Model) handleKeyPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// captureSessionKey binds the key just pressed. Every key reaches here, so
-// esc is what leaves rather than a binding: it is refused as a key anyway,
-// since a plain key belongs to the agent.
+// Every key reaches here, so esc leaves rather than binds; Parse would
+// refuse it as a plain key anyway.
 func (m *Model) captureSessionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.settings.keyCapture = false
 	if msg.String() == "esc" {
@@ -113,9 +108,8 @@ func (m *Model) captureSessionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, m.setSessionBinding(binding)
 }
 
-// setSessionBinding puts a binding on the selected action, keeping the
-// table the file would accept: a key already spoken for, or an action left
-// with no way back, is refused here the way config load refuses it.
+// The picker refuses what config load would refuse, so the table it saves
+// always loads back.
 func (m *Model) setSessionBinding(binding keybind.Binding) tea.Cmd {
 	candidate := withSessionBinding(m.settings.keys, m.settings.keyCursor, binding)
 	if err := candidate.Validate(); err != nil {
@@ -127,12 +121,11 @@ func (m *Model) setSessionBinding(binding keybind.Binding) tea.Cmd {
 	return nil
 }
 
-// saveSessionKeys writes the table to config.toml and puts it to work
-// without a restart: the driver rebinds the tmux keys a full-screen attach
-// uses, and every live session's footer is redrawn to name them.
+// The saved table takes effect without a restart: the driver rebinds the
+// tmux keys and every live session's footer is redrawn.
 func (m *Model) saveSessionKeys() tea.Cmd {
 	keys := m.settings.keys
-	if sameSessionKeys(keys, m.keys) {
+	if keys.Equal(m.keys) {
 		return nil
 	}
 	if m.configDir == "" {
@@ -144,16 +137,6 @@ func (m *Model) saveSessionKeys() tea.Cmd {
 		return nil
 	}
 	m.keys = keys
-	m.cfg.Keybindings.Session = keys
 	m.tmux.SetSessionKeys(keys)
 	return m.refreshExistingSessionUX
-}
-
-func sameSessionKeys(a, b keybind.Session) bool {
-	for i := range sessionKeyActions {
-		if sessionBinding(a, i).Label() != sessionBinding(b, i).Label() {
-			return false
-		}
-	}
-	return true
 }

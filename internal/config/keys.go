@@ -36,14 +36,12 @@ func SaveSessionKeys(dir string, keys keybind.Session) error {
 	if _, err := toml.Decode(updated, &check); err != nil {
 		return fmt.Errorf("writing the keys to %s would leave it unreadable: %w", path, err)
 	}
-	if !sameSessionKeys(check.Keybindings.Session.WithDefaults(), keys) {
+	if !check.Keybindings.Session.WithDefaults().Equal(keys) {
 		return fmt.Errorf("%s already declares its keybindings another way; edit the file itself", path)
 	}
 	return atomicfile.WriteFile(path, []byte(updated), 0o644)
 }
 
-// spliceSessionKeys replaces the session key table, or appends one when the
-// file has none.
 func spliceSessionKeys(current string, keys keybind.Session) string {
 	block := strings.Split(sessionKeysBlock(keys), "\n")
 	lines := strings.Split(current, "\n")
@@ -107,10 +105,4 @@ func bindingValue(binding keybind.Binding) string {
 		return quoted[0]
 	}
 	return "[" + strings.Join(quoted, ", ") + "]"
-}
-
-func sameSessionKeys(a, b keybind.Session) bool {
-	return a.Detach.Label() == b.Detach.Label() &&
-		a.Review.Label() == b.Review.Label() &&
-		a.Editor.Label() == b.Editor.Label()
 }
