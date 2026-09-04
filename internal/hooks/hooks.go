@@ -406,15 +406,20 @@ func (m *Manager) RemoveReviewScope(id string) error {
 // a reader polling for it never picks up a partial line. Each writer
 // stages under a name of its own, so two of them cannot publish each
 // other's content.
-func WriteWhole(path, content string) error {
+func WriteWhole(path, content string) (err error) {
 	staging, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.part")
 	if err != nil {
 		return err
 	}
-	defer os.Remove(staging.Name())
+	// The staging file is gone once it lands, so this collects the one a
+	// failure left behind rather than letting it sit in the mailbox.
+	defer func() {
+		if leftover := removeIfExists(staging.Name()); err == nil {
+			err = leftover
+		}
+	}()
 	if _, err := staging.WriteString(content); err != nil {
-		staging.Close()
-		return err
+		return errors.Join(err, staging.Close())
 	}
 	if err := staging.Close(); err != nil {
 		return err
