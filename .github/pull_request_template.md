@@ -9,13 +9,11 @@ Closes #
 ## Scope
 
 <!--
-What the change has to do, what it deliberately leaves alone, and why this
-shape. A typo or a one-line fix can answer all three in a sentence.
+What the change has to do and why this shape. A typo or a one-line fix
+answers both in a sentence.
 -->
 
 ### Required behavior
-
-### Non-goals
 
 ### Why this approach
 
@@ -28,6 +26,7 @@ shape. A typo or a one-line fix can answer all three in a sentence.
 - [ ] `go test -race ./...` passes
 - [ ] `go build ./...` passes
 - [ ] Ran it against real sessions
+- [ ] Holds for every supported agent CLI and platform, or the description names what it leaves out
 
 ## Visual evidence
 

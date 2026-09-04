@@ -89,12 +89,26 @@ reviews:
       - name: "Scope fidelity"
         mode: warning
         instructions: >-
-          Read the Scope section of the PR description: Required behavior,
-          Non-goals, and Why this approach. Fail when the diff adds
-          user-visible behavior, public CLI, config or MCP surface, unrelated
-          refactoring, or new persisted state that none of them asks for.
-          Return Inconclusive when the section is absent or too thin to judge;
-          never infer a requirement that no human wrote down.
+          Read the Scope section of the PR description: Required behavior
+          and Why this approach. Fail when the diff adds user-visible
+          behavior, public CLI, config or MCP surface, unrelated refactoring,
+          or new persisted state that neither asks for. Return Inconclusive
+          when the section is absent or too thin to judge; never infer a
+          requirement that no human wrote down.
+      - name: "Tool and platform coverage"
+        mode: warning
+        instructions: >-
+          This project supports every agent CLI in defaultConfig
+          (internal/config/config.go) and every platform .goreleaser.yaml
+          builds. Fail when new behavior reaches only some of them: a
+          runtime.GOOS branch or a command that exists on one platform, a
+          path built from one platform's separator or home layout, a switch
+          or lookup keyed on tool name that handles a subset of the tools it
+          affects, or a field or status rule added to one [tools.*] block
+          that the others need too. A PR description that names the excluded
+          values and what supporting them would take passes. Adding support
+          for a new tool is itself coverage, so pass it. Return Inconclusive
+          when the diff carries no evidence either way.
       - name: "No speculative fallbacks"
         mode: warning
         instructions: >-

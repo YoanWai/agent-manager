@@ -97,3 +97,6 @@ header and footer from `.goreleaser.yaml` come along either way.
   shape first.
 - Tests live next to the file they cover: a test for `listview.go` belongs
   in `listview_test.go`.
+- A change holds for every tool in `defaultConfig` and every platform
+  `.goreleaser.yaml` builds; [REVIEW.md](REVIEW.md) says what to do when one
+  of them needs a workaround.
