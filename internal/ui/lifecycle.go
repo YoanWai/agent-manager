@@ -75,7 +75,7 @@ func (m *Model) attachCmd(id string) tea.Cmd {
 	if prepErr != nil {
 		m.errBar.text = prepErr.Error()
 	}
-	return tea.ExecProcess(m.tmux.AttachCommand(id), func(err error) tea.Msg {
+	return execTerminalProcess(m.tmux.AttachCommand(id), func(err error) tea.Msg {
 		return attachDoneMsg{sessID: id, err: err}
 	})
 }

@@ -782,7 +782,7 @@ func (m *Model) viewDiffCode(width, height int) string {
 		num, _ := annotationLine(fdLine)
 		m.diff.annInput.SetWidth(width)
 		m.diff.annInput.SetHeight(m.annotationInputHeight(width))
-		bar = divider(fmt.Sprintf("Comment · %s:%d", escapeControlsInline(fd.File.Path), num), width) + "\n" + m.diff.annInput.View()
+		bar = divider(fmt.Sprintf("Comment · %s:%d", escapeControlsInline(fd.File.Path), num), width) + "\n" + textAreaView(m.diff.annInput)
 		height -= lipgloss.Height(bar) + 1
 		if height < 3 {
 			height = 3

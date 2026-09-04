@@ -193,7 +193,7 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 func (m *Model) searchFieldLine(width int) string {
 	indent := strings.Repeat(" ", railInset)
 	glyph := keyStyle.Render("⌕ ")
-	caret := lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
+	caret := cursorAnchorMarker + lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
 	hint := keyCapQuiet("esc", "close")
 	if !m.searching {
 		caret, hint = "", keyCapQuiet("esc", "clear")
@@ -1286,7 +1286,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		if fieldWidth := width - 12; fieldWidth >= 10 {
 			m.rename.dir.Width = fieldWidth
 		}
-		out := head + "\n" + pathLabel.Width(10).Render("path") + m.rename.dir.View()
+		out := head + "\n" + pathLabel.Width(10).Render("path") + textInputView(m.rename.dir)
 		if m.rename.focus == 1 && m.pathSugg.active() {
 			out += "\n" + m.viewPathSuggestions()
 		}
@@ -1455,7 +1455,7 @@ func (m *Model) viewQuickBar(width int) string {
 	m.quick.input.SetHeight(m.quickBarRows(width - 2))
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
-	return target + "\n" + m.quick.renderChips(m.quick.input.View())
+	return target + "\n" + m.quick.renderChips(textAreaView(m.quick.input))
 }
 
 // viewHeaderRows is the full-width band over both columns: the wordmark
