@@ -664,6 +664,7 @@ func TestCaretAtInputStart(t *testing.T) {
 		{"tool without a marker", "unmarked", paneCursor{x: 2, y: 0, ok: true}, []string{"❯"}, false},
 		{"unknown tool", "nosuch", paneCursor{x: 2, y: 0, ok: true}, []string{"❯"}, false},
 		{"no cursor report", "claude", paneCursor{x: 2, y: 1}, []string{"output", "❯"}, false},
+		{"hidden cursor on marked prompt", "claude", paneCursor{x: 2, y: 1, positionOK: true}, []string{"output", "❯"}, false},
 		{"cursor row past the capture", "claude", paneCursor{x: 2, y: 9, ok: true}, []string{"❯"}, false},
 	}
 	for _, c := range cases {
@@ -685,11 +686,11 @@ func TestCaretAtInputStartMeasuresMarkerInCells(t *testing.T) {
 	}
 }
 
-// pi composes on a bare row between rules and marks the caret cell with a
-// reverse-video space, so the captured row strips to one blank at column
-// zero (shapes taken from a live pane). Its zero-width prefix reads that as
-// the prompt head; text before the caret, or a wrapped line continuing from
-// above, keeps Left with the agent.
+// pi composes on a bare row between rules, hides the terminal cursor and
+// paints its own reverse-video caret. tmux still reports the right cell, so
+// its zero-width prefix can read the hidden position as the prompt head;
+// text before it, or a wrapped line continuing from above, keeps Left with
+// the agent.
 func TestCaretOnPisBareComposerRow(t *testing.T) {
 	engine, err := status.NewEngine(config.Config{Tools: map[string]config.Tool{
 		"pi": {
@@ -704,7 +705,7 @@ func TestCaretOnPisBareComposerRow(t *testing.T) {
 		m := &Model{engine: engine, mode: modeFocus}
 		m.preview = strings.Join(rows, "\n") + "\n"
 		m.pane.forID = "s1"
-		m.pane.cursor = paneCursor{x: x, y: y, ok: true}
+		m.pane.cursor = paneCursor{x: x, y: y, positionOK: true}
 		return m
 	}
 
@@ -893,9 +894,17 @@ func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
 	}
 	sess := m.rows[m.cursor].sess
 	m.rows[m.cursor].sess.Tool = "pi-tool"
-	m.pane.forID = sess.ID
-	m.pane.cursor = paneCursor{x: 2, y: 1, ok: true}
-	m.preview = "────────────\nxy\n────────────\n"
+	setHiddenPane := func(x int, preview string) {
+		updated, _ := m.Update(focusPreviewMsg{
+			sessID: sess.ID, preview: preview,
+			cursorX: x, cursorY: 1, paneStateOK: true,
+		})
+		*m = *updated.(*Model)
+		if m.pane.cursor.ok || !m.pane.cursor.positionOK {
+			t.Fatalf("hidden pi cursor state = %+v, want known position without a visible cursor", m.pane.cursor)
+		}
+	}
+	setHiddenPane(2, "────────────\nxy\n────────────\n")
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
@@ -903,8 +912,7 @@ func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
 		t.Fatalf("left inside typed pi input left focus, mode = %v", m.mode)
 	}
 
-	m.preview = "────────────\n\n────────────\n"
-	m.pane.cursor = paneCursor{x: 0, y: 1, ok: true}
+	setHiddenPane(0, "────────────\n\n────────────\n")
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
 	if m.mode != modeList {

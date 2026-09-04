@@ -275,6 +275,9 @@ func TestFocusWatchHonorsHiddenCursor(t *testing.T) {
 			if !preview.paneStateOK || preview.cursorOK {
 				continue
 			}
+			if preview.cursorX != len("hidden-cursor") || preview.cursorY != 0 {
+				t.Fatalf("hidden cursor position = %d,%d", preview.cursorX, preview.cursorY)
+			}
 			return
 		case <-deadline:
 			t.Fatal("no hidden-cursor preview reported the cursor hidden")
@@ -314,7 +317,7 @@ func TestApplyPaneState(t *testing.T) {
 
 	var hidden focusPreviewMsg
 	applyPaneState(&hidden, "7,8,0,000,0,0,0")
-	if !hidden.paneStateOK || hidden.cursorOK {
+	if !hidden.paneStateOK || hidden.cursorOK || hidden.cursorX != 7 || hidden.cursorY != 8 {
 		t.Fatalf("hidden cursor pane state = %+v", hidden)
 	}
 

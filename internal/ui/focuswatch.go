@@ -294,9 +294,8 @@ func applyPaneState(msg *focusPreviewMsg, reply string) {
 		return
 	}
 	msg.paneStateOK = true
-	if strings.TrimSpace(parts[2]) == "1" {
-		msg.cursorX, msg.cursorY, msg.cursorOK = x, y, true
-	}
+	msg.cursorX, msg.cursorY = x, y
+	msg.cursorOK = strings.TrimSpace(parts[2]) == "1"
 	msg.paneMouse = strings.Contains(parts[3], "1")
 	if historySize > 0 {
 		msg.historySize = historySize
