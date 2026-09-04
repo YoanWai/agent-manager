@@ -714,9 +714,9 @@ func TestLaunchHintRetryThatStopsAgainKeepsAPastedImage(t *testing.T) {
 	_, image := installFixture(t, m, fakeInstallCommand(t))
 	m.launchFix.retry = func() error { return config.MissingToolError{Binary: "tmux"} }
 
-	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	pasted := tempImage(t, "pasted.png")
 	m.form.prompt.attachments = []imageAttachment{{id: 2, path: pasted}}
+	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
 
 	if len(m.launchFix.images) != 2 {
@@ -757,11 +757,10 @@ func TestLaunchHintInstallRunsFromAScriptAndCleansUp(t *testing.T) {
 	installFixture(t, m, command)
 
 	cmd := pressInLaunchHint(t, m, 'i')
-	// Read the paths before the refresh runs: a command this short can
-	// have settled by then, and settling clears the pending install.
+	// Read the script before the refresh runs: a command this short can
+	// have settled by then, and settling removes the file.
 	script := m.install.script
 	statusFile := m.install.statusFile
-	m.applyCmd(t, cmd)
 	body, err := os.ReadFile(script)
 	if err != nil {
 		t.Fatal(err)
@@ -769,6 +768,7 @@ func TestLaunchHintInstallRunsFromAScriptAndCleansUp(t *testing.T) {
 	if !strings.Contains(string(body), command) {
 		t.Fatalf("script does not carry the command verbatim:\n%s", body)
 	}
+	m.applyCmd(t, cmd)
 	waitForInstallToSettle(t, m)
 
 	if !strings.Contains(m.errBar.text, "not on PATH") {
