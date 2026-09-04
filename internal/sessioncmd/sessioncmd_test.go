@@ -172,11 +172,19 @@ func TestRenameWaitsForTheManagerAndReportsItsAnswer(t *testing.T) {
 					return
 				}
 				if found {
-					if pending == name {
-						_ = mailbox.WriteNameResult("abc123", request, name, name, refusal)
+					mine := pending == name
+					if mine {
+						if err := mailbox.WriteNameResult("abc123", request, name, name, refusal); err != nil {
+							t.Errorf("WriteNameResult: %v", err)
+						}
 					}
-					_ = mailbox.ReleaseName("abc123")
-					if pending == name {
+					// The claim is released either way, or the next one
+					// picks this rename up again instead of the next name.
+					if err := mailbox.ReleaseName("abc123"); err != nil {
+						t.Errorf("ReleaseName: %v", err)
+						return
+					}
+					if mine {
 						return
 					}
 				}
@@ -228,11 +236,20 @@ func TestRenameAnswersEachCallerItsOwnRename(t *testing.T) {
 			case <-time.After(5 * time.Millisecond):
 			}
 			request, pending, found, err := mailbox.ClaimName("abc123")
-			if err != nil || !found {
+			if err != nil {
+				t.Errorf("ClaimName: %v", err)
+				return
+			}
+			if !found {
 				continue
 			}
-			_ = mailbox.WriteNameResult("abc123", request, pending, pending, nil)
-			_ = mailbox.ReleaseName("abc123")
+			if err := mailbox.WriteNameResult("abc123", request, pending, pending, nil); err != nil {
+				t.Errorf("WriteNameResult: %v", err)
+			}
+			if err := mailbox.ReleaseName("abc123"); err != nil {
+				t.Errorf("ReleaseName: %v", err)
+				return
+			}
 		}
 	}()
 
