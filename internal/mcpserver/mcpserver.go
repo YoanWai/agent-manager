@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/report"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -145,12 +146,24 @@ type messageStatusArgs struct {
 	MessageID int64 `json:"message_id" jsonschema:"message id returned by send_session"`
 }
 
+type reportIssueArgs struct {
+	Kind      string `json:"kind" jsonschema:"bug for something the manager does wrong, feature for something it should do"`
+	Title     string `json:"title" jsonschema:"one-line issue title naming the behaviour, as the user would search for it"`
+	Body      string `json:"body" jsonschema:"bug: what the user did, what they expected and what happened instead, step by step; feature: what they are trying to do and what they have in mind. Markdown; it is posted publicly, so no secrets or private paths"`
+	PreviewID string `json:"preview_id,omitempty" jsonschema:"omitted returns a preview and posts nothing; after the user approves that preview, pass the id it returned to file exactly what they saw"`
+}
+
 type terminalCommands interface {
 	List(sessionID string) ([]sessioncmd.Terminal, error)
 	Create(sessionID string, opts sessioncmd.CreateTerminalOptions) (sessioncmd.Terminal, error)
 	Send(sessionID, terminalID, command string, keys []string) (sessioncmd.TerminalInput, error)
 	Read(sessionID, terminalID string) (sessioncmd.TerminalScreen, error)
 	Close(sessionID, terminalID string) error
+}
+
+type issueReporter interface {
+	Preview(sessionID string, draft report.Draft) (report.Preview, error)
+	File(sessionID string, draft report.Draft, previewID string) (report.Filed, error)
 }
 
 type sessionCommands interface {
@@ -185,9 +198,11 @@ type sessionCommands interface {
 // review targets, the queueing rules) is left to them.
 const serverInstructions = `Agent Manager runs this conversation in one of the user's managed tmux sessions. The others are separate CLI processes with contexts of their own, running any CLI the user chose (Claude Code, Codex, Gemini), never subagents of this conversation. These tools operate that workspace. Use them whenever the conditions below apply, without waiting to be asked.
 
-Delegating to other agents. When the work holds two or more deliverables that could be built at once, or the user asks for parallel work, a second opinion or another agent: call list_sessions, reuse a relevant idle session, otherwise create_session per part, each with a descriptive name and a prompt stating the whole task, since a new agent cannot see this conversation. Repo work takes worktree: true so parallel agents never share a checkout; where they do, reserve_files before editing so an overlap surfaces early. Follow with read_session, send_session to answer or redirect an agent, and wait_for_session when your next step needs one finished. Put the plan on the shared task list with the task tool: spawned agents claim their next piece and finish it, unblocking what waited on it. Group related spawns with create_group, archive_session once done. Sessions spend the user's tokens, so create one per workstream, not per trivial step.
+Delegating to other agents. When the work holds two or more deliverables that could be built at once, or the user asks for parallel work, a second opinion or another agent: call list_sessions, reuse a relevant idle session, otherwise create_session per part, each with a descriptive name and a prompt stating the whole task, as it cannot see this conversation. Repo work takes worktree: true so parallel agents never share a checkout; where they do, reserve_files before editing. Then read_session, send_session to answer or redirect an agent, and wait_for_session when your next step needs one finished. Put the plan on the shared task list with the task tool, which spawned agents claim from. Group related spawns with create_group, archive_session once done. Sessions spend the user's tokens: one per workstream, not per step.
 
-Shell work the user should see. Open a terminal when the session itself is the point: the user should be able to watch, attach or take over, as with SSH into a host. Keep one-shot local commands in your normal tools. Call list_terminals first and reuse a running terminal when possible. create_terminal nests under this session unless nest is false, which another group needs. Use send_terminal and read_terminal, and close_terminal when that job is done unless it is left for the user.
+Shell work the user should see. Open a terminal when the user should watch, attach or take over, as with SSH into a host. Keep one-shot local commands in your normal tools. Call list_terminals first and reuse a running terminal when possible. create_terminal nests under this session unless nest is false, which another group needs. Use send_terminal and read_terminal, and close_terminal when that job is done unless it is left for the user.
+
+Bugs and ideas. When the user hits a bug in the manager itself or asks for something it lacks, offer report_issue: it previews first and files only once the user approves.
 
 Everything here acts on the user's machine: create_session and create_terminal start real processes, send_terminal runs commands, and kill_session ends a running agent. Treat them with the care and approval normal shell execution needs.`
 
@@ -195,10 +210,10 @@ Everything here acts on the user's machine: create_session and create_terminal s
 // Split from Run so tests can connect an in-process client.
 func NewServer(configDir, sessionID, version string) *mcp.Server {
 	words := sessioncmd.MCPVocabulary()
-	return newServer(configDir, sessionID, version, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessions(configDir, words))
+	return newServer(configDir, sessionID, version, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessions(configDir, words), report.New(configDir, version))
 }
 
-func newServer(configDir, sessionID, version string, terminals terminalCommands, sessions sessionCommands) *mcp.Server {
+func newServer(configDir, sessionID, version string, terminals terminalCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "agent-manager", Version: version},
 		&mcp.ServerOptions{Instructions: serverInstructions},
@@ -621,6 +636,30 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			return nil, nil, err
 		}
 		return textContent("closed terminal " + args.TerminalID), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "report_issue",
+		Description: "File a bug report or a feature request on Agent Manager's public GitHub repo for the user. " +
+			"Offer it when the user hits a bug in the manager itself (a wrong status, a lost message, a tool refusing what it should allow) or asks for something the manager cannot do; it is not for bugs in the user's own project. " +
+			"Without preview_id it composes the issue from title, body and context gathered here (agent-manager version, OS, tmux version, this session's CLI and its version) and returns a preview that posts nothing; show the preview to the user and call again with the id it returned only after they approve it, which files exactly what they saw and is refused once anything in it has changed. " +
+			"Filing goes through the gh CLI as the user's account when gh is installed and logged in; otherwise the result is a prefilled GitHub form URL for the user to open. " +
+			"The body is public: keep secrets and private paths out of it.",
+		Annotations: toolAnnotations(false, false, true),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args reportIssueArgs) (*mcp.CallToolResult, any, error) {
+		draft := report.Draft{Kind: report.Kind(args.Kind), Title: args.Title, Body: args.Body}
+		if args.PreviewID == "" {
+			preview, err := reporter.Preview(sessionID, draft)
+			if err != nil {
+				return nil, nil, err
+			}
+			return textContent(report.FormatPreview(preview, "call again with preview_id "+preview.ID)), preview, nil
+		}
+		filed, err := reporter.File(sessionID, draft, args.PreviewID)
+		if err != nil {
+			return nil, nil, err
+		}
+		return textContent(report.FormatFiled(filed)), filed, nil
 	})
 
 	return server

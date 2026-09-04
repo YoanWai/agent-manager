@@ -44,6 +44,7 @@ func sections(version string) []section {
 		fileSection(),
 		terminalSection(),
 		reviewSection(),
+		reportSection(version),
 		updateSection(version),
 	}
 }
