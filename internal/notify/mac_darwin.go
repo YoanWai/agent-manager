@@ -95,9 +95,8 @@ func runHelper(dir, sessionID, subtitle, body, sound string) error {
 // other install's. Two managers from different installs would otherwise
 // share a path and rebuild it out from under each other on every banner,
 // since each would find the other's build there.
-func helperHome(configDir, source string) string {
-	digest := sha256.Sum256([]byte(source))
-	return filepath.Join(configDir, "notifier", hex.EncodeToString(digest[:6]))
+func helperHome(dir, source string) string {
+	return filepath.Join(dir, "notifier", shortDigest(source))
 }
 
 // LaunchedAsHelper: Launch Services starts the bundle's copy with no
@@ -108,9 +107,7 @@ func LaunchedAsHelper() bool {
 	return err == nil && strings.HasSuffix(exe, filepath.Join(helperBundle, "Contents", "MacOS", helperExecutable))
 }
 
-// materializeHelper returns the path of the bundle's executable, building
-// it when this binary has none yet.
-func materializeHelper(configDir string) (string, error) {
+func materializeHelper(dir string) (string, error) {
 	materializeMu.Lock()
 	defer materializeMu.Unlock()
 	source, err := os.Executable()
@@ -125,8 +122,8 @@ func materializeHelper(configDir string) (string, error) {
 		return "", err
 	}
 	stamp := fmt.Sprintf("%s %d %d\n", source, info.Size(), info.ModTime().UnixNano())
-	home := helperHome(configDir, source)
-	version := filepath.Join(home, versionOf(stamp))
+	home := helperHome(dir, source)
+	version := filepath.Join(home, shortDigest(stamp))
 	bundle := filepath.Join(version, helperBundle)
 	executable := filepath.Join(bundle, "Contents", "MacOS", helperExecutable)
 	if _, err := os.Stat(executable); err == nil {
@@ -134,7 +131,7 @@ func materializeHelper(configDir string) (string, error) {
 		retireOldVersions(home, version)
 		return executable, nil
 	}
-	staged := filepath.Join(home, ".staging."+strconv.Itoa(os.Getpid())+"."+strconv.FormatUint(focusSeq.Add(1), 10))
+	staged := filepath.Join(home, ".staging."+strconv.Itoa(os.Getpid())+"."+strconv.FormatUint(scratchSeq.Add(1), 10))
 	if err := buildHelper(filepath.Join(staged, helperBundle), source, stamp); err != nil {
 		os.RemoveAll(staged)
 		return "", err
@@ -153,8 +150,8 @@ func materializeHelper(configDir string) (string, error) {
 	return executable, nil
 }
 
-func versionOf(stamp string) string {
-	digest := sha256.Sum256([]byte(stamp))
+func shortDigest(s string) string {
+	digest := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(digest[:6])
 }
 

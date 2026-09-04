@@ -17,7 +17,7 @@ import (
 const focusFile = "notify-focus"
 
 var (
-	focusSeq   atomic.Uint64
+	scratchSeq atomic.Uint64
 	sweepStale sync.Once
 )
 
@@ -30,7 +30,7 @@ func focusPath(configDir string, manager int) string {
 // own.
 func scratchPath(configDir, stage string) string {
 	name := focusFile + "." + stage + "." +
-		strconv.Itoa(os.Getpid()) + "." + strconv.FormatUint(focusSeq.Add(1), 10)
+		strconv.Itoa(os.Getpid()) + "." + strconv.FormatUint(scratchSeq.Add(1), 10)
 	return filepath.Join(configDir, name)
 }
 
