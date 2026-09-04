@@ -707,6 +707,26 @@ func TestLaunchHintRetryThatStopsAgainKeepsTheImages(t *testing.T) {
 	}
 }
 
+// An image pasted into the form while the install ran is on the dialog the
+// stopped retry opens, alongside the ones that dialog was already holding.
+func TestLaunchHintRetryThatStopsAgainKeepsAPastedImage(t *testing.T) {
+	m := buildModel(t)
+	_, image := installFixture(t, m, fakeInstallCommand(t))
+	m.launchFix.retry = func() error { return config.MissingToolError{Binary: "tmux"} }
+
+	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
+	pasted := tempImage(t, "pasted.png")
+	m.form.prompt.attachments = []imageAttachment{{id: 2, path: pasted}}
+	waitForInstallToSettle(t, m)
+
+	if len(m.launchFix.images) != 2 {
+		t.Fatalf("dialog images = %+v, want the refused prompt's image and the pasted one", m.launchFix.images)
+	}
+	if !imageExists(t, image) || !imageExists(t, pasted) {
+		t.Fatal("both images stay for a prompt the dialog can still spawn")
+	}
+}
+
 // A retry that fails into the status bar has no dialog left to hold the
 // prompt, so its images go with it.
 func TestLaunchHintRetryThatFailsOutrightDropsTheImages(t *testing.T) {

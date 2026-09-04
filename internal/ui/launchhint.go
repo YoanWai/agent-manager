@@ -297,7 +297,7 @@ func (m *Model) settleInstall() {
 		}
 		// The dialog can still clear whatever stopped it this time and
 		// spawn the same prompt, so it keeps holding the images.
-		m.launchFix.images = install.images
+		m.launchFix.images = append(install.images, m.launchFix.images...)
 		return
 	}
 	// The launched prompt names the image paths, so the files stay for the
