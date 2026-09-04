@@ -253,6 +253,7 @@ func (m *Model) openSettings() {
 		hideHeader:      m.hideHeader,
 		hideStats:       m.hideStats,
 		worktreeDefault: m.defaultWorktree(),
+		keys:            m.keys,
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
 		themeAuto:       themeAutoEnabled(m.store),
@@ -264,6 +265,9 @@ func (m *Model) openSettings() {
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.settings.cliPicker {
 		return m.handleCLIPickerKey(msg)
+	}
+	if m.settings.keyPicker {
+		return m.handleKeyPickerKey(msg)
 	}
 	switch msg.String() {
 	case "up", "k":
@@ -282,6 +286,9 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, openLink(featureRequestURL())
 		case settingsFieldCLIs:
 			m.openCLIPicker()
+			return m, nil
+		case settingsFieldSessionBindings:
+			m.openKeyPicker()
 			return m, nil
 		case settingsFieldUpdate:
 			if m.update.applying {

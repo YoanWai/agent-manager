@@ -85,6 +85,7 @@ func (c *commands) open() (*runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	driver.SetSessionKeys(cfg.Keybindings.Session)
 	st, err := store.Open(filepath.Join(c.configDir, "state.db"))
 	if err != nil {
 		return nil, err

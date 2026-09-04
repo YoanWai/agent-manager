@@ -8,6 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/YoanWai/agent-manager/internal/keybind"
 )
 
 // The key map is the one place every binding in the app is written down, so
@@ -35,9 +37,9 @@ type helpSection struct {
 // added later cannot render clipped against its own description, and always
 // over the whole catalog rather than a search's hits, so narrowing the map
 // does not shift the column under the reader.
-func helpKeyColumn() int {
+func helpKeyColumn(keys keybind.Session) int {
 	width := 0
-	for _, section := range helpSections() {
+	for _, section := range helpSections(keys) {
 		for _, row := range section.rows {
 			if w := ansi.StringWidth(row[0]); w > width {
 				width = w
@@ -51,7 +53,7 @@ func helpKeyColumn() int {
 // eye has to travel too far from a key to its description.
 const helpCardMaxWidth = 92
 
-func helpSections() []helpSection {
+func helpSections(keys keybind.Session) []helpSection {
 	return []helpSection{
 		{title: "list", rows: [][2]string{
 			{"", "Tell your agent to manage sessions and terminals in Agent Manager."},
@@ -120,19 +122,14 @@ func helpSections() []helpSection {
 			{"←→", "step over a chip as one token"},
 			{"esc", "close"},
 		}},
-		{title: "inside a session (attached or focused)", rows: [][2]string{
-			{"typing", "goes straight to the agent, q included"},
-			{"ctrl+q", "back to the manager (ctrl+\\ too)"},
-			{"←", "focused: back to the manager, at the prompt's start"},
-			{"ctrl+r", "review the session's diff, esc returns"},
-			{"f3", "open its directory in an editor"},
+		{title: "inside a session (attached or focused)", rows: sessionHelpRows(keys, [][2]string{
 			{"wheel", "focused: scroll the pane's history, type to catch up"},
 			{"drag", "focused: select pane text and copy it"},
 			{"double click", "focused: copy the word"},
 			{"triple click", "focused: copy the line"},
 			{"click", "focused: open the link under it, else a tracking agent gets it"},
 			{"alt+drag", "focused: pass a whole drag to that agent UI"},
-		}},
+		})},
 		reviewHelpSection(),
 		{title: "messages (M)", rows: [][2]string{
 			{"↑↓", "pick a message"},
@@ -146,7 +143,7 @@ func helpSections() []helpSection {
 		{title: "settings (s)", rows: [][2]string{
 			{"↑↓", "pick a field"},
 			{"←→", "change the value"},
-			{"↵", "run the field's action (CLIs, report, suggest, update)"},
+			{"↵", "run the field's action (in-session keys, CLIs, report, update)"},
 			{"esc", "save and close"},
 		}},
 		{title: "dialogs (n, g, r, f, m)", rows: [][2]string{
@@ -157,6 +154,25 @@ func helpSections() []helpSection {
 			{"esc", "cancel"},
 		}},
 	}
+}
+
+func sessionHelpRows(keys keybind.Session, mouseRows [][2]string) [][2]string {
+	rows := [][2]string{{"typing", "goes straight to the agent, q included"}}
+	if detach := keys.Detach.Keys(); len(detach) > 0 {
+		back := "back to the manager"
+		if len(detach) > 1 {
+			back += " (" + keybind.Keys(detach[1:]...).Label() + " too)"
+		}
+		rows = append(rows, [2]string{detach[0].Tea(), back})
+	}
+	rows = append(rows, [2]string{"←", "focused: back to the manager, at the prompt's start"})
+	if label := keys.Review.Label(); label != "" {
+		rows = append(rows, [2]string{label, "review the session's diff, esc returns"})
+	}
+	if label := keys.Editor.Label(); label != "" {
+		rows = append(rows, [2]string{label, "open its directory in an editor"})
+	}
+	return append(rows, mouseRows...)
 }
 
 func reviewHelpSection() helpSection {
@@ -188,7 +204,7 @@ func (m *Model) visibleHelpSections() []helpSection {
 	if m.help.returnMode == modeDiff {
 		return []helpSection{reviewHelpSection()}
 	}
-	sections := helpSections()
+	sections := helpSections(m.keys)
 	if m.arrowStep {
 		return sections
 	}
@@ -243,8 +259,8 @@ func helpRowCount(sections []helpSection) int {
 
 // helpBodyLines lays the catalog out as one scrollable column: a titled rule
 // per section, then its bindings in two aligned columns.
-func helpBodyLines(sections []helpSection, width int, query string) []string {
-	keyColumn := helpKeyColumn()
+func helpBodyLines(sections []helpSection, keys keybind.Session, width int, query string) []string {
+	keyColumn := helpKeyColumn(keys)
 	if room := width / 3; keyColumn > room {
 		keyColumn = max(room, 4)
 	}
@@ -322,7 +338,7 @@ func (m *Model) helpSearchActive() bool {
 
 func (m *Model) helpScrollLimit() int {
 	sections := matchHelp(m.visibleHelpSections(), m.help.query)
-	body := helpBodyLines(sections, cardInnerWidth(helpCardWidth(m.width)), m.help.query)
+	body := helpBodyLines(sections, m.keys, cardInnerWidth(helpCardWidth(m.width)), m.help.query)
 	return max(0, len(body)-m.helpBodyRoom())
 }
 
@@ -336,7 +352,7 @@ func (m *Model) viewHelp() string {
 		head = append(head, m.helpSearchLine(sections), "")
 	}
 
-	body := helpBodyLines(sections, inner, m.help.query)
+	body := helpBodyLines(sections, m.keys, inner, m.help.query)
 	if len(body) == 0 {
 		body = []string{subtleStyle.Render("no key matches that")}
 	}

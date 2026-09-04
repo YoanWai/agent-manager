@@ -269,6 +269,9 @@ func (m *Model) viewSettings() string {
 	if m.settings.cliPicker {
 		return m.viewCLIPicker()
 	}
+	if m.settings.keyPicker {
+		return m.viewKeyPicker()
+	}
 	layout := "unified"
 	if m.settings.layoutSplit {
 		layout = "split"
@@ -370,6 +373,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
+		actionRow(settingsFieldSessionBindings, "in-session keys", sessionKeysSummary(m.keys)) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
 		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
 		ctaRow(settingsFieldFeatureRequest, "suggest a change", "open the feature request form") + "\n" +
@@ -380,6 +384,8 @@ func (m *Model) viewSettings() string {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
 	case settingsFieldCLIs:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
+	case settingsFieldSessionBindings:
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save"}}
 	case settingsFieldUpdate:
 		switch {
 		case m.update.applying:
@@ -481,4 +487,40 @@ func formField(label, value string, focused bool) string {
 		b.WriteString(strings.Repeat(" ", formLabelColumn) + line + "\n")
 	}
 	return b.String()
+}
+
+func (m *Model) viewKeyPicker() string {
+	var b strings.Builder
+	for i, action := range sessionKeyActions {
+		marker := "  "
+		labelStyle := valueStyle
+		if m.settings.keyCursor == i {
+			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
+			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+		}
+		value := sessionBinding(m.settings.keys, i).Label()
+		valueRender := valueStyle.Render(value)
+		if value == "" {
+			valueRender = subtleStyle.Render("off, the agent gets it")
+		}
+		if m.settings.keyCapture && m.settings.keyCursor == i {
+			word := "press a key"
+			if m.settings.keyAppend {
+				word = "press a key to add"
+			}
+			valueRender = lipgloss.NewStyle().Foreground(colorAccent).Render(word + "…")
+		}
+		b.WriteString(marker)
+		b.WriteString(padRight(labelStyle.Render(action.name), 10))
+		b.WriteString(padRight(valueRender, 26))
+		b.WriteString(mutedStyle.Render(action.does))
+		b.WriteByte('\n')
+	}
+	b.WriteByte('\n')
+	b.WriteString(subtleStyle.Render("  every other key reaches the agent"))
+	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"esc", "back"}}
+	if m.settings.keyCapture {
+		hint = [][2]string{{"any key", "bind it"}, {"esc", "cancel"}}
+	}
+	return m.cardFlex("⚙ Keys inside a session", strings.TrimRight(b.String(), "\n"), hint)
 }

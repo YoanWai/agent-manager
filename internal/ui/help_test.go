@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -21,7 +22,7 @@ func namedKey(t tea.KeyType) tea.KeyMsg { return tea.KeyMsg{Type: t} }
 // that separates alternatives inside one row.
 func helpKeyTokens() map[string]bool {
 	tokens := map[string]bool{}
-	for _, section := range helpSections() {
+	for _, section := range helpSections(keybind.DefaultSession()) {
 		for _, row := range section.rows {
 			for _, token := range strings.Split(row[0], " / ") {
 				if token = strings.TrimSpace(token); token != "" {
@@ -101,7 +102,7 @@ func TestHelpCatalogDocumentsEveryListKey(t *testing.T) {
 }
 
 func TestHelpSectionListsAKeyOnce(t *testing.T) {
-	for _, section := range helpSections() {
+	for _, section := range helpSections(keybind.DefaultSession()) {
 		seen := map[string]bool{}
 		for _, row := range section.rows {
 			if row[0] == "" {
@@ -116,7 +117,7 @@ func TestHelpSectionListsAKeyOnce(t *testing.T) {
 }
 
 func TestHelpEveryRowHasADescription(t *testing.T) {
-	for _, section := range helpSections() {
+	for _, section := range helpSections(keybind.DefaultSession()) {
 		if len(section.rows) == 0 {
 			t.Errorf("section %q has no rows", section.title)
 		}
@@ -129,7 +130,7 @@ func TestHelpEveryRowHasADescription(t *testing.T) {
 }
 
 func TestHelpSearchNarrowsToMatchingRows(t *testing.T) {
-	all := helpSections()
+	all := helpSections(keybind.DefaultSession())
 	if got := matchHelp(all, ""); len(got) != len(all) {
 		t.Fatalf("empty query dropped sections: %d of %d", len(got), len(all))
 	}
@@ -152,8 +153,8 @@ func TestHelpSearchNarrowsToMatchingRows(t *testing.T) {
 }
 
 func TestHelpSearchIsCaseInsensitive(t *testing.T) {
-	lower := helpRowCount(matchHelp(helpSections(), "revive"))
-	upper := helpRowCount(matchHelp(helpSections(), "REVIVE"))
+	lower := helpRowCount(matchHelp(helpSections(keybind.DefaultSession()), "revive"))
+	upper := helpRowCount(matchHelp(helpSections(keybind.DefaultSession()), "REVIVE"))
 	if lower == 0 || lower != upper {
 		t.Fatalf("case changed the hits: %d lower, %d upper", lower, upper)
 	}
@@ -163,7 +164,7 @@ func TestHelpSearchIsCaseInsensitive(t *testing.T) {
 // should hand back the review screen, not the two rows spelling the word.
 func TestHelpSearchOnASectionTitleKeepsItsRows(t *testing.T) {
 	var review helpSection
-	for _, section := range helpSections() {
+	for _, section := range helpSections(keybind.DefaultSession()) {
 		if strings.HasPrefix(section.title, "review") {
 			review = section
 		}
@@ -171,7 +172,7 @@ func TestHelpSearchOnASectionTitleKeepsItsRows(t *testing.T) {
 	if len(review.rows) == 0 {
 		t.Fatal("no review section in the catalog")
 	}
-	for _, section := range matchHelp(helpSections(), "review") {
+	for _, section := range matchHelp(helpSections(keybind.DefaultSession()), "review") {
 		if section.title != review.title {
 			continue
 		}
@@ -226,7 +227,7 @@ func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
 	}
 
 	for _, enabled := range []bool{true, false} {
-		sections := (&Model{arrowStep: enabled}).visibleHelpSections()
+		sections := (&Model{arrowStep: enabled, keys: keybind.DefaultSession()}).visibleHelpSections()
 		for _, row := range []struct{ title, key string }{
 			{"list", "→"},
 			{"list", "←"},
@@ -240,7 +241,7 @@ func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
 }
 
 func helpModel() *Model {
-	return &Model{width: 120, height: 30, mode: modeHelp, arrowStep: true}
+	return &Model{width: 120, height: 30, mode: modeHelp, arrowStep: true, keys: keybind.DefaultSession()}
 }
 
 func TestHelpScrollClampsToContent(t *testing.T) {
@@ -367,8 +368,8 @@ func TestHelpReportsWhenNothingMatches(t *testing.T) {
 // The column is measured from the catalog, so a key can never render clipped
 // against its own description. This is what catches a long binding added later.
 func TestHelpKeyColumnFitsEveryKey(t *testing.T) {
-	column := helpKeyColumn()
-	for _, section := range helpSections() {
+	column := helpKeyColumn(keybind.DefaultSession())
+	for _, section := range helpSections(keybind.DefaultSession()) {
 		for _, row := range section.rows {
 			if w := ansi.StringWidth(row[0]); w >= column {
 				t.Errorf("key %q is %d wide, the column is %d", row[0], w, column)
@@ -380,8 +381,8 @@ func TestHelpKeyColumnFitsEveryKey(t *testing.T) {
 // Descriptions have to survive the default card too: a row wider than the
 // column leaves it renders with an ellipsis instead of its own words.
 func TestHelpDescriptionsFitTheDefaultCard(t *testing.T) {
-	room := cardInnerWidth(helpCardWidth(120)) - helpKeyColumn()
-	for _, section := range helpSections() {
+	room := cardInnerWidth(helpCardWidth(120)) - helpKeyColumn(keybind.DefaultSession())
+	for _, section := range helpSections(keybind.DefaultSession()) {
 		for _, row := range section.rows {
 			if w := ansi.StringWidth(row[1]); w > room {
 				t.Errorf("section %q: %q is %d wide, only %d is left beside the key column",
@@ -395,10 +396,53 @@ func TestHelpHighlightSurvivesAnAwkwardQuery(t *testing.T) {
 	// Folding "İ" lengthens it, which is the case that would slice out of
 	// range if the run were measured by the raw query.
 	for _, query := range []string{"İ", "ẞ", "", "  ", "the", "THE"} {
-		for _, section := range helpSections() {
+		for _, section := range helpSections(keybind.DefaultSession()) {
 			for _, row := range section.rows {
 				highlightMatch(row[1], query, 60)
 			}
 		}
+	}
+}
+
+func TestHelpSessionRowsFollowTheKeyTable(t *testing.T) {
+	rowFor := func(keys keybind.Session, key string) (string, bool) {
+		for _, section := range helpSections(keys) {
+			if section.title != "inside a session (attached or focused)" {
+				continue
+			}
+			for _, row := range section.rows {
+				if row[0] == key {
+					return row[1], true
+				}
+			}
+		}
+		return "", false
+	}
+	defaults := keybind.DefaultSession()
+	if desc, ok := rowFor(defaults, "ctrl+q"); !ok || desc != `back to the manager (ctrl+\ too)` {
+		t.Errorf("default detach row = %q, %v", desc, ok)
+	}
+	if _, ok := rowFor(defaults, "ctrl+r"); !ok {
+		t.Error("default review row missing")
+	}
+	if _, ok := rowFor(defaults, "f3"); !ok {
+		t.Error("default editor row missing")
+	}
+
+	custom := keybind.Session{
+		Detach: bindingOf(t, "f9"),
+		Review: bindingOf(t),
+		Editor: bindingOf(t, "alt+e"),
+	}
+	if desc, ok := rowFor(custom, "f9"); !ok || desc != "back to the manager" {
+		t.Errorf("single detach row = %q, %v", desc, ok)
+	}
+	for _, gone := range []string{"ctrl+q", "ctrl+r", "f3"} {
+		if desc, ok := rowFor(custom, gone); ok {
+			t.Errorf("%s should have no row under the custom table, got %q", gone, desc)
+		}
+	}
+	if desc, ok := rowFor(custom, "alt+e"); !ok || desc != "open its directory in an editor" {
+		t.Errorf("editor row = %q, %v", desc, ok)
 	}
 }

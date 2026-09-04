@@ -76,6 +76,9 @@ default_status = "idle"
 command = ""
 shell = true
 default_status = "idle"
+
+[keybindings.session]
+review = "ctrl+g"
 `
 
 func newSessionHarness(t *testing.T) *sessionHarness {
@@ -956,5 +959,38 @@ func TestReviveRefusesWhileTheAgentIsStillRunning(t *testing.T) {
 	if _, err := h.sessions.Revive(h.caller.ID, created.ID); err == nil ||
 		!strings.Contains(err.Error(), "still running") {
 		t.Fatalf("reviving a session whose agent is up = %v", err)
+	}
+}
+
+// A spawn from an agent installs the session bindings the way the manager
+// does, read from the same config: the key table reaches the driver before
+// the first session is created.
+func TestSessionsCreateBindsTheConfiguredSessionKeys(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "bound"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	bound, err := exec.Command("tmux", "-L", h.driver.SocketName(), "list-keys", "-T", "root").CombinedOutput()
+	if err != nil {
+		t.Fatalf("list-keys: %v: %s", err, bound)
+	}
+	review, stale := "", ""
+	for _, line := range strings.Split(string(bound), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 || !strings.Contains(line, tmux.RequestReview) {
+			continue
+		}
+		switch fields[3] {
+		case "C-g":
+			review = line
+		case "C-r":
+			stale = line
+		}
+	}
+	if review == "" {
+		t.Fatalf("ctrl+g from config.toml should request the review, got:\n%s", bound)
+	}
+	if stale != "" {
+		t.Fatalf("the default review key should not be bound alongside the configured one: %q", stale)
 	}
 }

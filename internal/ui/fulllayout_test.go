@@ -468,7 +468,7 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 
 	// The split's own rule still names the keys: its detail head above the
 	// pane already says which session this is.
-	if split := ansi.Strip(focusTopRule(m.width)); !strings.Contains(split, "ctrl+q back") {
+	if split := ansi.Strip(focusTopRule(m.width, m.keys)); !strings.Contains(split, `ctrl+q / ctrl+\ back`) {
 		t.Fatalf("split focus rule lost its keys:\n%s", split)
 	}
 }

@@ -147,7 +147,7 @@ func (m *Model) activeNotices() []notice {
 				"",
 				"n      new session           space  prompt it, no attach",
 				"↵      focus it              A      attach it full screen",
-				"ctrl+q back to the manager   ctrl+r review its diff",
+				m.welcomeSessionKeysLine(),
 				"x / v  kill / revive         s      settings",
 				"",
 				"space on a group row starts a new agent there on what you type.",
@@ -957,4 +957,13 @@ func (m *Model) dismissNotice(id string) {
 	if err := m.store.SetSetting(dismissedNoticesSetting, string(raw)); err != nil {
 		m.errBar.text = err.Error()
 	}
+}
+
+// The widths are the columns of the welcome rows around this line.
+func (m *Model) welcomeSessionKeysLine() string {
+	line := fmt.Sprintf("%-6s %-22s", m.keys.Detach.Keys()[0].Tea(), "back to the manager")
+	if review := m.keys.Review.Keys(); len(review) > 0 {
+		line += fmt.Sprintf("%-6s %s", review[0].Tea(), "review its diff")
+	}
+	return strings.TrimRight(line, " ")
 }

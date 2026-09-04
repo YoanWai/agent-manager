@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -319,6 +320,7 @@ func shotModel() *Model {
 		{depth: 2, sess: sessions[5]},
 	}
 	m := &Model{
+		keys:  keybind.DefaultSession(),
 		width: 120, height: 34, mode: modeList, cursor: 4,
 		sessions: sessions, rows: rows, collapsed: map[string]bool{},
 		groupPaths: map[string]string{"backend": "/Users/someone/dev/api"},
@@ -715,5 +717,24 @@ func TestStatusMessageEscapesControlBytes(t *testing.T) {
 	}
 	if stray := strayControl(m.statusMessage("✖", "✔")); stray != "" {
 		t.Errorf("outcome branch leaks a control byte near %q", stray)
+	}
+}
+
+// The focus footer reads the key table: a moved key shows under its new
+// name, and an action turned off has no hint to mislead with.
+func TestFooterInFocusModeNamesTheKeyTable(t *testing.T) {
+	m := buildModel(t)
+	useSessionKeys(t, m, []string{"f9"}, nil, []string{"alt+e"})
+	m.mode = modeFocus
+	footer := ansi.Strip(m.viewFooter())
+	if !strings.Contains(footer, "f9 back") || !strings.Contains(footer, "alt+e editor") {
+		t.Fatalf("focus footer should name the configured keys:\n%s", footer)
+	}
+	if strings.Contains(footer, "review") || strings.Contains(footer, "ctrl+q") {
+		t.Fatalf("focus footer should drop the review hint and the old detach key:\n%s", footer)
+	}
+	rule := ansi.Strip(focusTopRule(80, m.keys))
+	if !strings.Contains(rule, "f9 back") || !strings.Contains(rule, "alt+e editor") || strings.Contains(rule, "review") {
+		t.Fatalf("split focus rule should follow the table:\n%s", rule)
 	}
 }
