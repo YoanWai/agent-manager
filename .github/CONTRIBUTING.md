@@ -64,7 +64,12 @@ feed; see [Release summaries and messages](../docs/notifications.md) for the two
 publishing paths.
 
 In the pull request description, say what changed and why, and how you verified
-it. Complete the Visual evidence section for every pull request. Include before
+it. Fill the Scope section: what the change has to do and why this shape. A typo
+or a one-line fix answers both in a sentence, and a review reads them to tell
+the change you meant from the change you made. Say there too when the change
+reaches only some of the agent CLIs or platforms we support, and what covering
+the rest would take.
+Complete the Visual evidence section for every pull request. Include before
 and after screenshots whenever the change can be shown visually; use a short
 recording when interaction or motion is clearer that way. If useful visual
 evidence is not possible, say why. For example, a new UI may have no
@@ -79,7 +84,7 @@ Two clauses are worth knowing as a contributor. Section 3 licenses the patent cl
 
 ## Review
 
-CodeRabbit reviews every pull request automatically, usually within minutes. Work through its findings first: fix what it got right, and reply on the comment when you disagree, so the thread records why. Maintainer review starts once the CodeRabbit round is handled; a PR with open, unanswered findings waits.
+[REVIEW.md](../REVIEW.md) states what a review here covers, so you can see what a finding will be about before you open the PR. CodeRabbit reviews every pull request automatically, usually within minutes. Work through its findings first: fix what it got right, and reply on the comment when you disagree, so the thread records why. Maintainer review starts once the CodeRabbit round is handled; a PR with open, unanswered findings waits.
 
 @YoanWai reviews and merges everything (see [CODEOWNERS](CODEOWNERS)). Expect a first response within a few days.
 

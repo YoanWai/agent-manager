@@ -1,7 +1,10 @@
 # Agent notes
 
 Project context for coding agents. Human setup and PR conventions live in
-[.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
+[.github/CONTRIBUTING.md](.github/CONTRIBUTING.md), and what a review looks
+for in [REVIEW.md](REVIEW.md). Fill the Scope section of the pull request
+template: a review reads it to tell the change you meant from the change you
+made.
 
 ## Build and test
 
@@ -94,3 +97,6 @@ header and footer from `.goreleaser.yaml` come along either way.
   shape first.
 - Tests live next to the file they cover: a test for `listview.go` belongs
   in `listview_test.go`.
+- A change holds for every tool in `defaultConfig` and every platform
+  `.goreleaser.yaml` builds; [REVIEW.md](REVIEW.md) says what to do when one
+  of them is left out.

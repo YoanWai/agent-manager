@@ -6,6 +6,17 @@
 
 Closes #
 
+## Scope
+
+<!--
+What the change has to do and why this shape. A typo or a one-line fix
+answers both in a sentence.
+-->
+
+### Required behavior
+
+### Why this approach
+
 ## How it was verified
 
 <!-- Commands you ran, sessions you drove, and what you saw. -->
@@ -15,6 +26,7 @@ Closes #
 - [ ] `go test -race ./...` passes
 - [ ] `go build ./...` passes
 - [ ] Ran it against real sessions
+- [ ] Holds for every supported agent CLI and platform, or the description names what it leaves out
 
 ## Visual evidence
 
