@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -27,13 +27,31 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 	if !strings.Contains(m.launchHint, "hermes setup") {
 		t.Fatalf("hint %q should name the install command", m.launchHint)
 	}
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("after esc, mode = %v, want modeList", m.mode)
 	}
 	if m.launchHint != "" {
 		t.Fatalf("dismiss should clear the hint, got %q", m.launchHint)
+	}
+}
+
+func TestPasteClosesLaunchHint(t *testing.T) {
+	m := buildModel(t)
+	m.reportLaunchError(config.MissingToolError{Binary: "claude"})
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+	}
+
+	updated, _ := m.Update(tea.PasteMsg{Content: "claude"})
+	m = updated.(*Model)
+
+	if m.mode != modeList {
+		t.Fatalf("after paste, mode = %v, want modeList", m.mode)
+	}
+	if m.launchHint != "" {
+		t.Fatalf("paste should clear the hint, got %q", m.launchHint)
 	}
 }
 
@@ -175,7 +193,7 @@ func TestRestartHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 	m.confirm = confirmTarget{action: actionRestart, sessions: []store.Session{sess}}
 	m.mode = modeConfirmDelete
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m = updated.(*Model)
 
 	if m.mode != modeLaunchHint {

@@ -5,10 +5,9 @@ import (
 	"sort"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 type worktreeRenameStore interface {
@@ -61,8 +60,7 @@ func (m *Model) openRename() {
 		m.errBar.text = "root is the top level, not a group to rename"
 		return
 	}
-	input := textinput.New()
-	input.CharLimit = 60
+	input := textField("", 60)
 	input.Prompt = ""
 	input.Focus()
 	if entry.isGroup {
@@ -134,7 +132,7 @@ func (m *Model) renameFocus(delta int) {
 	}
 }
 
-func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleRenameKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	pathSuggesting := m.rename.isGroup && m.rename.focus == 1 && m.pathSugg.active()
 	switch msg.String() {
 	case "esc":
@@ -204,6 +202,10 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.applyRename()
 	}
+	return m, m.updateRenameField(msg)
+}
+
+func (m *Model) updateRenameField(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	switch m.rename.focus {
 	case 0:
@@ -212,7 +214,7 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rename.dir, cmd = m.rename.dir.Update(msg)
 		m.pathSugg.recompute(m.rename.dir.Value())
 	}
-	return m, cmd
+	return cmd
 }
 
 func (m *Model) cycleRenameTool(delta int) {

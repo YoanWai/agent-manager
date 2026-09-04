@@ -5,10 +5,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 )
 
 // paneAt sets up a model with a known pane box and captured text so
@@ -38,11 +36,11 @@ func TestCaretRowSurvivesTallPaneCrop(t *testing.T) {
 }
 
 func press(m *Model, x, y int) {
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
+	m.handleFocusMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: x, Y: y})
 }
 
 func drag(m *Model, x, y int) {
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft, X: x, Y: y})
+	m.handleFocusMouse(tea.MouseMotionMsg{Button: tea.MouseLeft, X: x, Y: y})
 }
 
 // A click outside the pane selects nothing: that region belongs to the
@@ -65,8 +63,8 @@ func TestSelectionIgnoresOutsidePane(t *testing.T) {
 // a plain pane keeps its ordinary selection and copy behavior.
 func TestAltClickSelectsPlainPane(t *testing.T) {
 	m := paneAt(t, "alpha beta")
-	m.handleFocusMouse(tea.MouseMsg{
-		Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Alt: true, X: 10, Y: 5,
+	m.handleFocusMouse(tea.MouseClickMsg{
+		Button: tea.MouseLeft, Mod: tea.ModAlt, X: 10, Y: 5,
 	})
 	if !m.sel.active {
 		t.Fatal("Alt-click on a plain pane did not start a selection")
@@ -79,9 +77,9 @@ func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
 		button tea.MouseButton
 		want   int
 	}{
-		{name: "left", button: tea.MouseButtonLeft, want: leftButton},
-		{name: "middle", button: tea.MouseButtonMiddle, want: middleButton},
-		{name: "right", button: tea.MouseButtonRight, want: rightButton},
+		{name: "left", button: tea.MouseLeft, want: leftButton},
+		{name: "middle", button: tea.MouseMiddle, want: middleButton},
+		{name: "right", button: tea.MouseRight, want: rightButton},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Drive the real forwarding path through a focused tmux session,
@@ -90,8 +88,8 @@ func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
 			m, sess := focusedMouseApp(t, "mouse-tool", "release-"+tc.name)
 			x, y := m.pane.box.x+2, m.pane.box.y+1
 
-			m.handleFocusMouse(tea.MouseMsg{
-				Action: tea.MouseActionPress, Button: tc.button, Alt: true, X: x, Y: y,
+			m.handleFocusMouse(tea.MouseClickMsg{
+				Button: tc.button, Mod: tea.ModAlt, X: x, Y: y,
 			})
 			if !m.forwardingMouse || m.sel.active {
 				t.Fatalf("Alt press did not start forwarding: forwarding=%v selection=%v", m.forwardingMouse, m.sel.active)
@@ -102,8 +100,8 @@ func TestAltMouseForwardingKeepsTheRelease(t *testing.T) {
 
 			// X10 reports a release as MouseButtonNone, so the stored pressed
 			// button must supply the SGR release code that reaches the app.
-			m.handleFocusMouse(tea.MouseMsg{
-				Action: tea.MouseActionRelease, Button: tea.MouseButtonNone, X: x, Y: y,
+			m.handleFocusMouse(tea.MouseReleaseMsg{
+				Button: tea.MouseNone, X: x, Y: y,
 			})
 			if m.forwardingMouse || m.forwardingButton != leftButton {
 				t.Fatalf("release did not clear forwarding state: active=%v button=%d", m.forwardingMouse, m.forwardingButton)
@@ -154,7 +152,7 @@ func TestDeferredPressReleaseIsAClick(t *testing.T) {
 	m := paneAt(t, "alpha beta")
 	m.pane.mouse = true
 	press(m, 12, 5)
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 12, Y: 5})
+	m.handleFocusMouse(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 12, Y: 5})
 	if m.pending.active || m.sel.active {
 		t.Fatalf("click left state behind: pending=%v sel=%v", m.pending.active, m.sel.active)
 	}
@@ -167,7 +165,7 @@ func TestDeferredPressMotionlessDragSelects(t *testing.T) {
 	m := paneAt(t, "abcdef", "ghijkl")
 	m.pane.mouse = true
 	press(m, 12, 5)
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 13, Y: 6})
+	m.handleFocusMouse(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 13, Y: 6})
 	if m.pending.active {
 		t.Fatal("release should resolve the pending press")
 	}
@@ -182,7 +180,7 @@ func TestDoubleClickStillSelectsInMousePane(t *testing.T) {
 	m := paneAt(t, "alpha beta gamma")
 	m.pane.mouse = true
 	press(m, 16, 5)
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 16, Y: 5})
+	m.handleFocusMouse(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 16, Y: 5})
 	press(m, 16, 5)
 	if got := m.selectionText(); got != "beta" {
 		t.Fatalf("double click in a mouse pane copied %q", got)
@@ -194,11 +192,11 @@ func TestDoubleClickStillSelectsInMousePane(t *testing.T) {
 func TestDeferredClickForwardsPressReleasePair(t *testing.T) {
 	m, sess := focusedMouseApp(t, "mouse-tool", "deferred-click")
 	x, y := m.pane.box.x+2, m.pane.box.y+1
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
+	m.handleFocusMouse(tea.MouseClickMsg{Button: tea.MouseLeft, X: x, Y: y})
 	if m.sel.active {
 		t.Fatal("press in a mouse pane should not open a selection")
 	}
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: x, Y: y})
+	m.handleFocusMouse(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: x, Y: y})
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		pane, err := m.tmux.CapturePane(sess.ID)
@@ -341,9 +339,6 @@ func TestSelectionOverlayPreservesSurroundingANSI(t *testing.T) {
 		headRow:   0,
 		headCol:   4,
 	}
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 	row := m.renderPaneRow(0, m.preview, 20)
 	overlay := selectionStyle().Render(" ")
 	redStart := strings.Index(row, "\x1b[31mred")
@@ -391,10 +386,10 @@ func TestPaneBoxMatchesPaintedFrame(t *testing.T) {
 	marker := "PANE-BOX-MARKER"
 	m.preview = marker + "\nsecond row\n"
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	*m = *updated.(*Model)
 
-	frame := splitLines(m.View())
+	frame := splitLines(m.viewFrame())
 	if !m.pane.box.ok {
 		t.Fatal("pane box never recorded")
 	}
@@ -420,9 +415,9 @@ func TestTripleClickOnRealFrameTakesPaneRowOnly(t *testing.T) {
 	m.selectSessionRow(t, "railmate")
 	m.preview = "pane row one\npane row two\n"
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	*m = *updated.(*Model)
-	m.View()
+	m.viewFrame()
 
 	y := m.pane.box.y + 1
 	for i := 0; i < 3; i++ {
@@ -580,9 +575,6 @@ func TestCursorCellMapsIntoVisibleRows(t *testing.T) {
 
 // The drawn row carries the cursor cell; unfocused rows stay untouched.
 func TestCursorPaintedOnItsRow(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := paneAt(t, "abc", "def")
 	m.pane.cursor = paneCursor{x: 1, y: 0, ok: true}
@@ -624,9 +616,6 @@ func TestRuneAtColumn(t *testing.T) {
 // The cursor is drawn even when it sits past the end of a short line,
 // which is where a shell prompt leaves it most of the time.
 func TestCursorPastEndOfLine(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	m := paneAt(t, "ab")
 	m.pane.cursor = paneCursor{x: 5, y: 0, ok: true}
@@ -643,9 +632,6 @@ func TestCursorPastEndOfLine(t *testing.T) {
 // `go test` wrote the tab's cells have to count for the caret and the
 // selection the same way they count for the paint.
 func TestTabbedRowSharesItsColumns(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 
 	const width = 30
 	m := paneAt(t, "ok  \tgithub.com/x/y\t1.5s")
@@ -684,7 +670,7 @@ func TestClickElsewhereClearsSelection(t *testing.T) {
 		m.pane.mouse = tracksMouse
 		press(m, 10, 5)
 		drag(m, 14, 5)
-		m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 14, Y: 5})
+		m.handleFocusMouse(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 14, Y: 5})
 		if got := m.selectionText(); got != "alph" {
 			t.Fatalf("mouse=%v: drag selected %q", tracksMouse, got)
 		}
@@ -697,7 +683,7 @@ func TestClickElsewhereClearsSelection(t *testing.T) {
 		if m.copied != 0 {
 			t.Fatalf("mouse=%v: click elsewhere kept the copy confirmation: %d", tracksMouse, m.copied)
 		}
-		m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 12, Y: 6})
+		m.handleFocusMouse(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 12, Y: 6})
 		if got := m.selectionText(); got != "" {
 			t.Fatalf("mouse=%v: releasing the click restored the selection %q", tracksMouse, got)
 		}
@@ -712,7 +698,7 @@ func TestLateCopyConfirmationIsDroppedAfterTheSelectionGoes(t *testing.T) {
 	m := paneAt(t, "alpha beta", "gamma delta")
 	press(m, 10, 5)
 	drag(m, 14, 5)
-	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 14, Y: 5})
+	m.handleFocusMouse(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 14, Y: 5})
 	inFlight := focusCopiedMsg{chars: 4, gen: m.copyGen}
 
 	press(m, 12, 6)
@@ -725,7 +711,7 @@ func TestLateCopyConfirmationIsDroppedAfterTheSelectionGoes(t *testing.T) {
 	m2 := paneAt(t, "alpha beta", "gamma delta")
 	press(m2, 10, 5)
 	drag(m2, 14, 5)
-	m2.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 14, Y: 5})
+	m2.handleFocusMouse(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 14, Y: 5})
 	m2.Update(focusCopiedMsg{chars: 4, gen: m2.copyGen})
 	if m2.copied != 4 {
 		t.Fatalf("the write for the standing selection was dropped: %d", m2.copied)

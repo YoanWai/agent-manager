@@ -7,13 +7,29 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
-func (m *Model) View() string {
+// View frames every screen in the alternate buffer with mouse reporting
+// on. Reporting claims the wheel for the app, so a notch never scrolls the
+// host's scrollback out from under the manager, and it makes a focused
+// pane a closed window: a drag selects pane text alone, never the rail
+// beside it.
+func (m *Model) View() tea.View {
+	view := tea.NewView(m.viewFrame())
+	view.AltScreen = true
+	view.MouseMode = tea.MouseModeCellMotion
+	// A Kitty terminal reports the unshifted codepoint, so the shifted one
+	// alongside it is the only way shift+1 is told from 1.
+	view.KeyboardEnhancements.ReportAlternateKeys = true
+	return view
+}
+
+func (m *Model) viewFrame() string {
 	if m.width == 0 {
 		return "loading..."
 	}
@@ -250,7 +266,7 @@ func (m *Model) renameRowInput(entry treeRow, width int) string {
 		lead = m.sessionGlyph(entry.sess)
 	}
 	if fieldWidth := width - 4; fieldWidth >= 5 {
-		m.rename.input.Width = fieldWidth
+		m.rename.input.SetWidth(fieldWidth)
 	}
 	return lead + " " + m.rename.input.View()
 }

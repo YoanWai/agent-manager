@@ -3,8 +3,8 @@ package ui
 import (
 	"strconv"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 const (
@@ -180,44 +180,45 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// Mouse events are always consumed so the host terminal / outer tmux
 	// never scrolls the manager off-screen. Wheel maps to in-app
 	// navigation; clicks only drive the divider while resize mode is armed.
-	if tea.MouseEvent(msg).IsWheel() {
-		return m.handleMouseWheel(msg)
+	if wheel, ok := msg.(tea.MouseWheelMsg); ok {
+		return m.handleMouseWheel(wheel)
 	}
 	if !m.split.resizeMode {
 		return m, nil
 	}
 
-	switch msg.Action {
-	case tea.MouseActionPress:
-		if msg.Button != tea.MouseButtonLeft {
+	mouse := msg.Mouse()
+	switch msg.(type) {
+	case tea.MouseClickMsg:
+		if mouse.Button != tea.MouseLeft {
 			return m, nil
 		}
 		y0, y1 := m.bodyYRange()
-		if msg.Y < y0 || msg.Y >= y1 {
+		if mouse.Y < y0 || mouse.Y >= y1 {
 			return m, nil
 		}
-		if !m.onDivider(msg.X) {
+		if !m.onDivider(mouse.X) {
 			return m, nil
 		}
 		m.split.dragging = true
 		m.split.ratioBefore = m.split.ratio
-		m.setSplitFromX(msg.X)
+		m.setSplitFromX(mouse.X)
 		return m, nil
 
-	case tea.MouseActionMotion:
+	case tea.MouseMotionMsg:
 		if !m.split.dragging {
 			return m, nil
 		}
 		// Button may be reported as left or none depending on terminal;
 		// once a drag has started, any motion updates the live ratio.
-		m.setSplitFromX(msg.X)
+		m.setSplitFromX(mouse.X)
 		return m, nil
 
-	case tea.MouseActionRelease:
+	case tea.MouseReleaseMsg:
 		if !m.split.dragging {
 			return m, nil
 		}
-		m.setSplitFromX(msg.X)
+		m.setSplitFromX(mouse.X)
 		return m.exitResizeMode(true)
 	}
 	return m, nil
@@ -227,7 +228,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // cannot scroll the manager away. It scrolls the diff, and is swallowed
 // everywhere else: in the list a notch would move the session cursor,
 // silently retargeting every keystroke that follows (#110).
-func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	if m.split.resizeMode || m.mode != modeDiff {
 		return m, nil
 	}
@@ -235,9 +236,9 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.Button {
-	case tea.MouseButtonWheelUp:
+	case tea.MouseWheelUp:
 		m.moveDiffCursor(-1, m.diffCodeHeight())
-	case tea.MouseButtonWheelDown:
+	case tea.MouseWheelDown:
 		m.moveDiffCursor(1, m.diffCodeHeight())
 	}
 	return m, nil

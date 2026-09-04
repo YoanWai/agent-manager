@@ -11,13 +11,13 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/update"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -131,7 +131,7 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 	if len(n.releases) != 4 {
 		t.Fatalf("summary has %d releases, want 4", len(n.releases))
 	}
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(m.viewFrame())
 	for _, want := range []string{
 		"4 releases available · v0.6.0",
 		"v0.3.0 · 1 change",
@@ -168,7 +168,7 @@ func TestPostUpdateNoticeUsesPersistedStartingVersion(t *testing.T) {
 	if from, _ := st.Setting(whatsNewFromSetting); from != "v0.1.0" {
 		t.Fatalf("persisted starting version = %q", from)
 	}
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(m.viewFrame())
 	for _, want := range []string{
 		"Updated across 4 releases · v0.5.0",
 		"Updated from v0.1.0 to v0.5.0.",
@@ -316,7 +316,7 @@ func TestFeedUsesOneCanonicalTitleInCardAndModal(t *testing.T) {
 		t.Fatalf("card did not use canonical title:\n%s", card)
 	}
 	m.openNotices("feed-canonical")
-	modal := ansi.Strip(m.View())
+	modal := ansi.Strip(m.viewFrame())
 	if !strings.Contains(modal, "One title everywhere") || strings.Contains(modal, "legacy compact copy") {
 		t.Fatalf("modal and card titles diverged:\n%s", modal)
 	}
@@ -455,18 +455,20 @@ func TestRailFootLinesFitWidth(t *testing.T) {
 	}
 }
 
-func key(s string) tea.KeyMsg {
+func key(s string) tea.KeyPressMsg {
 	switch s {
 	case "enter":
-		return tea.KeyMsg{Type: tea.KeyEnter}
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
 	case "esc":
-		return tea.KeyMsg{Type: tea.KeyEscape}
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
 	case "down":
-		return tea.KeyMsg{Type: tea.KeyDown}
+		return tea.KeyPressMsg{Code: tea.KeyDown}
 	case "up":
-		return tea.KeyMsg{Type: tea.KeyUp}
+		return tea.KeyPressMsg{Code: tea.KeyUp}
+	case "pgdown":
+		return tea.KeyPressMsg{Code: tea.KeyPgDown}
 	}
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+	return tea.KeyPressMsg{Code: []rune(s)[0], Text: s}
 }
 
 func modalModel(t *testing.T) *Model {
@@ -489,7 +491,7 @@ func TestOpenNoticesFromList(t *testing.T) {
 
 func TestNoticesViewListsAndDetails(t *testing.T) {
 	m := modalModel(t)
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(m.viewFrame())
 	for _, want := range []string{"messages", "Welcome to agent-manager", "Settings (s)", "A bug or an idea?", "dismiss"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("modal missing %q:\n%s", want, frame)
@@ -498,7 +500,7 @@ func TestNoticesViewListsAndDetails(t *testing.T) {
 
 	for _, terminal := range []int{100, 40} {
 		m.width = terminal
-		frame := ansi.Strip(m.View())
+		frame := ansi.Strip(m.viewFrame())
 		var widths []int
 		for _, line := range strings.Split(frame, "\n") {
 			trimmed := strings.TrimRight(line, " ")
@@ -528,7 +530,7 @@ func TestNoticesLongBodyWrapsFully(t *testing.T) {
 		},
 	}}
 	m.openNotices("feed-long")
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(m.viewFrame())
 	for _, line := range strings.Split(frame, "\n") {
 		if !strings.Contains(line, "╭") {
 			continue
@@ -562,7 +564,7 @@ func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 		},
 	}}
 	m.openNotices("feed-long")
-	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	lines := strings.Split(ansi.Strip(m.viewFrame()), "\n")
 	if len(lines) > m.height {
 		t.Fatalf("frame must fit %d rows, got %d", m.height, len(lines))
 	}
@@ -588,12 +590,12 @@ func TestNoticesBodyScrollIsBoundedAndVisible(t *testing.T) {
 	m.feedMessages = []feed.Message{{ID: "feed-scroll", Banner: "scroll", Title: "Scrollable summary", Body: body}}
 	m.openNotices("feed-scroll")
 
-	before := ansi.Strip(m.View())
+	before := ansi.Strip(m.viewFrame())
 	if !strings.Contains(before, "↓ more below…") {
 		t.Fatalf("clipped summary did not advertise more content:\n%s", before)
 	}
 	m.handleNoticesKey(key("pgdown"))
-	after := ansi.Strip(m.View())
+	after := ansi.Strip(m.viewFrame())
 	if m.noticeScroll == 0 || !strings.Contains(after, "↑ more above…") {
 		t.Fatalf("page down did not move the summary:\n%s", after)
 	}
@@ -905,7 +907,7 @@ func TestUpdateNoticeAppliesOnU(t *testing.T) {
 		return nil
 	}
 
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_, cmd := m.handleNoticesKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
 	if cmd == nil {
 		t.Fatal("u on the update notice should start the update")
 	}
@@ -954,7 +956,7 @@ func TestUpdateNoticeApplyFailureSurfaces(t *testing.T) {
 	applyUpdate = func(_ context.Context, _, _ string) error {
 		return errors.New("permission denied")
 	}
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_, cmd := m.handleNoticesKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
 	updated, _ := m.Update(cmd().(updateAppliedMsg))
 	m = updated.(*Model)
 	if m.update.applying {
@@ -1029,7 +1031,7 @@ func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
 func TestUOutsideUpdateNoticeDoesNothing(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.openNotices(noticeWelcome)
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_, cmd := m.handleNoticesKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
 	if cmd != nil || m.update.applying {
 		t.Fatal("u on a plain notice must not start an update")
 	}
@@ -1039,7 +1041,7 @@ func TestNoticesTinyTerminalStaysInside(t *testing.T) {
 	m := modalModel(t)
 	for _, width := range []int{5, 12, 30} {
 		m.width, m.height = width, 10
-		for _, line := range strings.Split(ansi.Strip(m.View()), "\n") {
+		for _, line := range strings.Split(ansi.Strip(m.viewFrame()), "\n") {
 			if got := lipgloss.Width(line); got > width {
 				t.Fatalf("width %d: line overflows at %d: %q", width, got, line)
 			}
@@ -1071,7 +1073,7 @@ func TestUpdateDelegatesToPackageManager(t *testing.T) {
 		return update.Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}}
 	}
 
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_, cmd := m.handleNoticesKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
 	if cmd == nil {
 		t.Fatal("u on a package-manager install should start the delegated upgrade")
 	}
@@ -1115,7 +1117,7 @@ func TestUpdateWithoutRunnableManagerSurfacesAdvice(t *testing.T) {
 		return update.Manager{Name: "pacman", Advice: advice}
 	}
 
-	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_, cmd := m.handleNoticesKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
 	if cmd == nil {
 		t.Fatal("u should still answer with the advice")
 	}
@@ -1171,7 +1173,7 @@ func TestFullLayoutFootLineCountsMessages(t *testing.T) {
 	if !strings.Contains(foot, "messages") {
 		t.Fatalf("active notices should show a messages count:\n%s", foot)
 	}
-	full := ansi.Strip(m.View())
+	full := ansi.Strip(m.viewFrame())
 	if !strings.Contains(full, "messages") {
 		t.Fatalf("full screen frame lost the messages count:\n%s", full)
 	}
@@ -1333,7 +1335,7 @@ func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("M should open an empty panel, mode=%v", m.mode)
 	}
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(m.viewFrame())
 	for _, want := range []string{"nothing new", "r refresh"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("empty panel missing %q:\n%s", want, frame)
@@ -1343,7 +1345,7 @@ func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	if _, cmd := m.handleNoticesKey(key("r")); cmd == nil || !m.update.refreshing {
 		t.Fatalf("r unreachable on an empty panel: refreshing=%v", m.update.refreshing)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "refreshing releases and messages") {
-		t.Fatalf("empty panel hides the refresh it started:\n%s", ansi.Strip(m.View()))
+	if !strings.Contains(ansi.Strip(m.viewFrame()), "refreshing releases and messages") {
+		t.Fatalf("empty panel hides the refresh it started:\n%s", ansi.Strip(m.viewFrame()))
 	}
 }

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/systheme"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // defaultTool is the CLI quick spawn launches: the settings choice when it
@@ -261,7 +261,7 @@ func (m *Model) openSettings() {
 	m.mode = modeSettings
 }
 
-func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleSettingsKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.settings.cliPicker {
 		return m.handleCLIPickerKey(msg)
 	}
@@ -429,7 +429,7 @@ func (m *Model) openCLIPicker() {
 	m.settings.cliCursor = 0
 }
 
-func (m *Model) handleCLIPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleCLIPickerKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// cursor 0..len(names)-1 = tools; len(names) = request-support action.
 	count := len(m.settings.cliNames) + 1
 	if count < 1 {
@@ -440,7 +440,7 @@ func (m *Model) handleCLIPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.settings.cliCursor = (m.settings.cliCursor + count - 1) % count
 	case "down", "j":
 		m.settings.cliCursor = (m.settings.cliCursor + 1) % count
-	case " ", "space":
+	case "space":
 		if m.settings.cliCursor < len(m.settings.cliNames) {
 			m.toggleCLIHidden(m.settings.cliNames[m.settings.cliCursor])
 		}

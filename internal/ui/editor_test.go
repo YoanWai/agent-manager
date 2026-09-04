@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/tmux"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // captureEditor swaps both editor seams: PATH answers only for the names
@@ -154,7 +154,7 @@ func TestReviewOpensCurrentFileInEditor(t *testing.T) {
 		t.Fatal("review has no selected file")
 	}
 	want := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
-	_, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	_, cmd := m.handleDiffKey(tea.KeyPressMsg{Code: 'o', Text: "o"})
 	if cmd == nil {
 		t.Fatalf("o returned no command, err = %q", m.errBar.text)
 	}

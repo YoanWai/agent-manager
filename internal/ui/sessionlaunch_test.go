@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -56,7 +56,7 @@ func TestAStaleRefreshKeepsALaunchListedWhileTmuxWasStartingIt(t *testing.T) {
 // pressRune sends one key through Update the way the terminal would.
 func (m *Model) pressRune(t *testing.T, r rune) {
 	t.Helper()
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	*m = *updated.(*Model)
 	if cmd != nil {
 		if msg := cmd(); msg != nil {
@@ -153,7 +153,7 @@ func TestAStalePollCannotBringAnArchivedRowBackLive(t *testing.T) {
 
 	m.selectSessionRow(t, "shelved")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	stale := sess
 	stale.Status = status.Dead
@@ -196,7 +196,7 @@ func TestAStalePollCannotRestoreADeletedGroupHeader(t *testing.T) {
 
 	m.selectGroupRow(t, "zone")
 	m.prepareDelete()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	stale := refreshMsg{
 		sessions:       []store.Session{sess},
@@ -238,14 +238,14 @@ func TestAStalePollCannotUndoARestore(t *testing.T) {
 
 	m.selectSessionRow(t, "returning")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	listedAt := time.Now()
 
 	m.showArchived = true
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "returning")
 	m.restoreSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	stale := sess
 	stale.Archived = true
@@ -276,7 +276,7 @@ func TestAStalePollCannotBringAnArchivedGroupBackLive(t *testing.T) {
 
 	m.selectGroupRow(t, "zone")
 	m.archiveSelected()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.handleConfirmKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	stale := refreshMsg{
 		sessions:   []store.Session{sess},

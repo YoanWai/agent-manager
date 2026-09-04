@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/tmux"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // focusScrollStep is how many lines one wheel notch moves the focused
@@ -167,8 +167,8 @@ func (m *Model) forwardFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	button := m.forwardedMouseButton(msg)
-	release := msg.Action == tea.MouseActionRelease
-	if msg.Action == tea.MouseActionMotion {
+	_, release := msg.(tea.MouseReleaseMsg)
+	if _, motion := msg.(tea.MouseMotionMsg); motion {
 		button |= motionBit
 	}
 	report, ok := m.mouseReport(button, release, col, row+m.paneRowOffset(m.pane.box.height))
@@ -198,11 +198,12 @@ func (m *Model) sendFocusReport(report string) {
 // A release immediately after leaving the pane belongs to the active gesture,
 // so it lands at that gesture's final in-pane cell instead.
 func (m *Model) forwardedMouseCell(msg tea.MouseMsg) (row, col int, ok bool) {
-	if row, col, inside := m.paneCell(msg.X, msg.Y); inside {
+	mouse := msg.Mouse()
+	if row, col, inside := m.paneCell(mouse.X, mouse.Y); inside {
 		m.forwardingRow, m.forwardingCol = row, col
 		return row, col, true
 	}
-	if msg.Action == tea.MouseActionRelease && m.forwardingMouse {
+	if _, release := msg.(tea.MouseReleaseMsg); release && m.forwardingMouse {
 		return m.forwardingRow, m.forwardingCol, true
 	}
 	return 0, 0, false
@@ -210,19 +211,19 @@ func (m *Model) forwardedMouseCell(msg tea.MouseMsg) (row, col int, ok bool) {
 
 // forwardedMouseButton keeps an X10 release paired with the press that
 // started its Alt-forwarded lifecycle. Bubble Tea reports X10 releases as
-// MouseButtonNone, while SGR needs the button that was released.
+// MouseNone, while SGR needs the button that was released.
 func (m *Model) forwardedMouseButton(msg tea.MouseMsg) int {
-	if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonNone {
+	if release, ok := msg.(tea.MouseReleaseMsg); ok && release.Button == tea.MouseNone {
 		return m.forwardingButton
 	}
-	return mouseButton(msg.Button)
+	return mouseButton(msg.Mouse().Button)
 }
 
 func mouseButton(button tea.MouseButton) int {
 	switch button {
-	case tea.MouseButtonMiddle:
+	case tea.MouseMiddle:
 		return middleButton
-	case tea.MouseButtonRight:
+	case tea.MouseRight:
 		return rightButton
 	default:
 		return leftButton

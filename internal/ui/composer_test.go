@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // newComposer is a composer detached from any screen, so the chip logic can
@@ -42,7 +42,7 @@ func setCursorAt(t *testing.T, c *composer, offset int) {
 	if strings.Contains(c.input.Value(), "\n") {
 		t.Fatal("setCursorAt places the caret on a single-row value only")
 	}
-	c.input.SetCursor(offset)
+	c.input.SetCursorColumn(offset)
 	if got := c.cursorOffset(); got != offset {
 		t.Fatalf("caret at %d, want %d", got, offset)
 	}
@@ -243,7 +243,7 @@ func TestComposerPasteRefusedWhenThePromptIsFull(t *testing.T) {
 	full := strings.Repeat("x", m.quick.input.CharLimit)
 	m.quick.input.SetValue(full)
 
-	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlV})
+	_, cmd := m.handleQuickKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
 
 	if cmd != nil {
 		t.Fatal("a refused paste must not start a clipboard read")
@@ -267,7 +267,7 @@ func TestComposerNoImageFallsThroughToATextPaste(t *testing.T) {
 	orig := readClipboardText
 	t.Cleanup(func() { readClipboardText = orig })
 	readClipboardText = func() tea.Msg {
-		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("from the clipboard")}
+		return tea.PasteMsg{Content: "from the clipboard"}
 	}
 
 	m := buildModel(t)
@@ -310,7 +310,7 @@ func TestComposerNoImageFallsThroughToABlurredFormPrompt(t *testing.T) {
 	orig := readClipboardText
 	t.Cleanup(func() { readClipboardText = orig })
 	readClipboardText = func() tea.Msg {
-		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("from the clipboard")}
+		return tea.PasteMsg{Content: "from the clipboard"}
 	}
 
 	m := buildModel(t)
@@ -360,7 +360,7 @@ func TestComposerTextPasteDroppedWhenItsBoxIsClosed(t *testing.T) {
 	m = applyMsg(t, m, pasteTextMsg{
 		target: composerQuick,
 		gen:    gen,
-		inner:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("late")},
+		inner:  tea.PasteMsg{Content: "late"},
 	})
 	if got := m.quick.input.Value(); got != "kept" {
 		t.Fatalf("value = %q, want the closed bar left alone", got)
@@ -374,20 +374,20 @@ func TestComposerPasteFromAClosedBoxSkipsItsSuccessor(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	stale := m.form.prompt.gen
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.handleFormKey(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m.openForm()
 	if m.form.prompt.gen == stale {
 		t.Fatal("a reopened form should be a different box")
 	}
 	focusFormPrompt(t, m)
 	for _, r := range "typed since" {
-		m.handleFormKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m.handleFormKey(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 
 	m = applyMsg(t, m, pasteTextMsg{
 		target: composerForm,
 		gen:    stale,
-		inner:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" from the old form")},
+		inner:  tea.PasteMsg{Content: " from the old form"},
 	})
 	if got := m.form.prompt.input.Value(); got != "typed since" {
 		t.Fatalf("value = %q, want the new form untouched by the old form's paste", got)

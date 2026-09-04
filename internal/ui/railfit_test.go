@@ -19,7 +19,7 @@ func TestRailBannersSurviveShortTerminals(t *testing.T) {
 					m.width, m.height = width, height
 					m.searching, m.showArchived = searching, archived
 					m.errBar.text = "worktree kept (has work): /Users/someone/dev/api"
-					rows := strings.Split(m.View(), "\n")
+					rows := strings.Split(m.viewFrame(), "\n")
 					if len(rows) != height {
 						t.Errorf("%dx%d search=%v archived=%v: frame is %d rows",
 							width, height, searching, archived, len(rows))
@@ -35,7 +35,7 @@ func TestRailBannersLeaveRoomForEntries(t *testing.T) {
 	m := shotModel()
 	m.width, m.height = 120, 34
 	m.searching, m.search = true, "rate"
-	rail := railLinesText(m.railLines(36, m.listBodyHeight()))
+	rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
 	if !strings.Contains(rail, "⌕ rate") {
 		t.Fatalf("no search field in the rail:\n%s", rail)
 	}

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/feed"
@@ -22,8 +24,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/update"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -1679,31 +1679,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleDiffFileChecked(msg)
 
 	case editorDoneMsg:
-		var resume tea.Cmd
 		if msg.tookScreen {
 			// The terminal comes back from an editor the way it comes back
-			// from an attach: painted in the editor's background, and
-			// without the mouse reporting focus mode armed on the way in.
+			// from an attach: painted in the editor's background.
 			SyncTerminalBackground()
-			if m.mode == modeFocus {
-				resume = tea.EnableMouseCellMotion
-			}
 		}
 		if msg.err != nil {
 			// Going back into the session would hide the only account of
 			// what went wrong, so a failed editor keeps the list.
 			m.errBar.text = msg.err.Error()
 			m.editorReturnID = ""
-			return m, resume
+			return m, nil
 		}
 		if msg.name != "" {
 			m.reportDone("opened " + msg.path + " in " + msg.name)
 		}
 		if id := m.editorReturnID; id != "" {
 			m.editorReturnID = ""
-			return m, tea.Batch(resume, m.reattach(id, m.diff.gen))
+			return m, m.reattach(id, m.diff.gen)
 		}
-		return m, resume
+		return m, nil
 
 	case relaunchedMsg:
 		if msg.err != nil {
@@ -1731,7 +1726,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
 
-	case tea.KeyMsg:
+	case tea.PasteMsg:
+		model, cmd := m.handlePaste(msg)
+		m.syncPollInput()
+		return model, cmd
+
+	case tea.KeyPressMsg:
 		model, cmd := m.handleKey(msg)
 		m.syncPollInput()
 		return model, cmd

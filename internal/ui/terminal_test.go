@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -30,7 +30,7 @@ func shellCount(m *Model) int {
 
 func pressTerminalKey(t *testing.T, m *Model) {
 	t.Helper()
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'T'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'T', Text: "T"})
 	m.applyCmd(t, cmd)
 }
 

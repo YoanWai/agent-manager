@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/update"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -43,13 +43,13 @@ func TestSettingsTogglesQuickClose(t *testing.T) {
 		t.Fatal("settings should open on stay-open by default")
 	}
 	for i := 0; i < settingsFieldQuickClose; i++ {
-		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+		m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	if m.settings.field != settingsFieldQuickClose {
 		t.Fatalf("stepping down should reach the quick send field, got %d", m.settings.field)
 	}
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !m.quickCloseAfterSend() {
 		t.Fatal("close choice should persist after toggle")
 	}
@@ -61,18 +61,18 @@ func TestSettingsTogglesReviewLayout(t *testing.T) {
 	if !m.settings.layoutSplit {
 		t.Fatal("settings should open on split by default")
 	}
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	if m.settings.field != settingsFieldTheme {
 		t.Fatalf("first down should focus theme field, got %d", m.settings.field)
 	}
 	for i := settingsFieldTheme; i < settingsFieldLayout; i++ {
-		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+		m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	if m.settings.field != settingsFieldLayout {
 		t.Fatalf("stepping down should reach the layout field, got %d", m.settings.field)
 	}
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyLeft})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := m.defaultSplitLayout(); got {
 		t.Fatal("layout should persist as unified after toggle")
 	}
@@ -82,10 +82,10 @@ func TestSettingsWorktreeDefaultPersists(t *testing.T) {
 	m := buildModel(t)
 	m.openSettings()
 	for m.settings.field != settingsFieldWorktree {
-		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+		m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if chosen, err := m.store.Setting(worktreeSetting); err != nil || chosen != "on" {
 		t.Fatalf("want stored on, got %q err %v", chosen, err)
 	}
@@ -104,12 +104,12 @@ func TestSettingsNotificationsPersist(t *testing.T) {
 		t.Fatal("notify on finish should open off by default")
 	}
 	for m.settings.field != settingsFieldNotify {
-		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+		m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
-	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyDown})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.handleSettingsKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if chosen, err := m.store.Setting(notificationsSetting); err != nil || chosen != "off" {
 		t.Fatalf("want stored off, got %q err %v", chosen, err)
 	}
@@ -132,8 +132,8 @@ func TestSettingsShowsVersion(t *testing.T) {
 	}
 	m.settings.field = settingsFieldUpdate
 	out = m.viewSettings()
-	if !strings.Contains(out, keyCap("↵/esc", "save")) {
-		t.Errorf("current version row should hint save, not update: %q", out)
+	if !strings.Contains(ansi.Strip(out), "↵/esc save") {
+		t.Errorf("current version row should hint save, not update: %q", ansi.Strip(out))
 	}
 	m.settings.field = 0
 	m.update.latest = "v0.9.1"
@@ -143,7 +143,7 @@ func TestSettingsShowsVersion(t *testing.T) {
 	}
 	m.settings.field = settingsFieldUpdate
 	out = m.viewSettings()
-	if !strings.Contains(out, keyStyle.Render("↵")+mutedStyle.Render(" update to")) {
+	if !strings.Contains(ansi.Strip(out), "↵ update to") {
 		t.Errorf("focused update row should hint enter: %q", out)
 	}
 }

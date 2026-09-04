@@ -7,13 +7,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -240,7 +240,7 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 	offset := 0
 
 	noteAnsi := func(seq string) {
-		if seq == "\x1b[0m" {
+		if isSGRReset(seq) {
 			activeFg = ""
 		} else {
 			activeFg += seq
@@ -276,7 +276,7 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 				seq := text[ti:end]
 				b.WriteString(seq)
 				noteAnsi(seq)
-				if seq == "\x1b[0m" && activeBg != "" {
+				if isSGRReset(seq) && activeBg != "" {
 					b.WriteString(activeBg)
 				}
 				ti = end
@@ -317,7 +317,7 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 		if isAnsi {
 			b.WriteString(tok.text)
 			noteAnsi(tok.text)
-			if tok.text == "\x1b[0m" && activeBg != "" {
+			if isSGRReset(tok.text) && activeBg != "" {
 				b.WriteString(activeBg)
 			}
 			continue

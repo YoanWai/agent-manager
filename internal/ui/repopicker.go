@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // pickKind selects what a picker's Enter does: retarget the repo/branch, or
@@ -143,27 +143,27 @@ func (m *Model) filteredRows() []pickRow {
 	return out
 }
 
-func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleRepoPickKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	rows := m.filteredRows()
-	switch msg.Type {
-	case tea.KeyCtrlC:
+	switch msg.String() {
+	case "ctrl+c":
 		return m, tea.Quit
-	case tea.KeyEsc:
+	case "esc":
 		m.mode = modeDiff
 		return m, nil
-	case tea.KeyUp:
+	case "up":
 		m.moveRepoPickCursor(-1, len(rows))
 		return m, nil
-	case tea.KeyDown:
+	case "down":
 		m.moveRepoPickCursor(1, len(rows))
 		return m, nil
-	case tea.KeyBackspace:
+	case "backspace":
 		if m.repoPick.filter != "" {
 			m.repoPick.filter = m.repoPick.filter[:len(m.repoPick.filter)-1]
 			m.repoPick.cursor = 0
 		}
 		return m, nil
-	case tea.KeyEnter:
+	case "enter":
 		if len(rows) == 0 {
 			return m, nil
 		}
@@ -173,12 +173,18 @@ func (m *Model) handleRepoPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.selectBase(row.root)
 		}
 		return m, m.selectRepo(row.root)
-	case tea.KeyRunes:
-		m.repoPick.filter += string(msg.Runes)
-		m.repoPick.cursor = 0
-		return m, nil
+	}
+	// Space carries a text of its own now, and the picker takes no phrases:
+	// one typed at the head of the filter matches nothing.
+	if msg.Text != "" && msg.Code != tea.KeySpace {
+		m.typeRepoPickFilter(msg.Text)
 	}
 	return m, nil
+}
+
+func (m *Model) typeRepoPickFilter(text string) {
+	m.repoPick.filter += text
+	m.repoPick.cursor = 0
 }
 
 func (m *Model) moveRepoPickCursor(delta, count int) {

@@ -2,14 +2,15 @@ package ui
 
 import (
 	"fmt"
+	"unicode/utf8"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
-func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Resize mode owns the keyboard until the drag commits or the user
 	// cancels: other bindings would fight the mouse-gated session.
 	if m.split.resizeMode {
@@ -139,7 +140,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.restoreSelected()
 	case "d":
 		m.prepareDelete()
-	case " ", "space":
+	case "space":
 		m.openQuickMode()
 	case "F", "shift+f":
 		m.toggleCollapseAll()
@@ -375,6 +376,52 @@ func (m *Model) allGroupsCollapsed() bool {
 	return any
 }
 
+func (m *Model) handlePaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
+	if m.split.resizeMode {
+		return m, nil
+	}
+	switch m.mode {
+	case modeFocus:
+		return m.handleFocusPaste(msg)
+	case modeConfirmDelete:
+		m.mode = modeList
+		return m, nil
+	case modeLaunchHint:
+		m.closeLaunchHint()
+		return m, nil
+	case modeForm:
+		return m, m.updateFormField(msg)
+	case modeGroupForm:
+		return m, m.updateGroupFormField(msg)
+	case modeRename:
+		return m, m.updateRenameField(msg)
+	case modeFork:
+		var cmd tea.Cmd
+		m.fork.name, cmd = m.fork.name.Update(msg)
+		return m, cmd
+	case modeRepoPick:
+		m.typeRepoPickFilter(msg.Content)
+		return m, nil
+	case modeDiff:
+		if !m.diff.annotating {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.diff.annInput, cmd = m.diff.annInput.Update(msg)
+		return m, cmd
+	case modeHelp:
+		if m.help.searching {
+			m.typeHelpQuery(msg.Content)
+		}
+		return m, nil
+	case modeList:
+		if m.quick.active && !m.searching {
+			return m, m.quick.typeKey(msg)
+		}
+	}
+	return m, nil
+}
+
 // pasteFocused is the seam tests swap to observe pastes into the pane.
 var pasteFocused = func(driver *tmux.Driver, id, text string) error {
 	return driver.Paste(id, text)
@@ -470,7 +517,7 @@ const notifyFinishedSetting = "notify_finished"
 // (comma-separated names). Empty means every configured tool is shown.
 const hiddenToolsSetting = "hidden_tools"
 
-func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		m.searching = false
@@ -478,13 +525,14 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searching = false
 		return m, m.clearSearch()
 	case "backspace":
-		if len(m.search) > 0 {
-			m.search = m.search[:len(m.search)-1]
+		if m.search != "" {
+			_, width := utf8.DecodeLastRuneInString(m.search)
+			m.search = m.search[:len(m.search)-width]
 		}
 		m.rebuildRows()
 	default:
-		if len(msg.String()) == 1 {
-			m.search += msg.String()
+		if msg.Text != "" {
+			m.search += msg.Text
 			m.rebuildRows()
 		}
 	}

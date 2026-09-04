@@ -5,10 +5,11 @@ import (
 	"strconv"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/termseq"
 	"github.com/YoanWai/agent-manager/internal/tmux"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Theme is the full token set every rendered pixel of the TUI resolves
@@ -446,16 +447,16 @@ func EnableTerminalPassthrough() {
 }
 
 // bgSeq is the raw "set background" SGR for a hex color, for the few spots
-// that paint a background around content lipgloss already styled. It goes
-// through the live color profile, so a 256-color terminal gets an indexed
-// sequence rather than a truecolor one lipgloss would have downsampled.
+// that paint a background around content lipgloss already styled. The
+// renderer downsamples it with everything else it draws, so a 256-color
+// terminal still gets an indexed sequence.
 func bgSeq(hex string) string {
-	return "\x1b[" + lipgloss.ColorProfile().Color(hex).Sequence(true) + "m"
+	return ansi.Style{}.BackgroundColor(lipgloss.Color(hex)).String()
 }
 
 // fgSeq is the raw "set foreground" SGR for a hex color.
 func fgSeq(hex string) string {
-	return "\x1b[" + lipgloss.ColorProfile().Color(hex).Sequence(false) + "m"
+	return ansi.Style{}.ForegroundColor(lipgloss.Color(hex)).String()
 }
 
 // hexRGB parses "#rrggbb"; an unparseable value reads as black, which is

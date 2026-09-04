@@ -9,13 +9,13 @@ import (
 	"sync"
 	"unicode"
 
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 const (
@@ -1217,7 +1217,7 @@ func (m *Model) diffPaneWidths() (fileWidth, codeWidth int) {
 }
 
 // handleDiffKey owns the whole keymap in fullscreen review mode.
-func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleDiffKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.diff.notice = ""
 	if m.diff.annotating {
 		return m.handleAnnotateKey(msg)
@@ -1284,7 +1284,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setCursorDiffLine(lineIdx)
 	case "f":
 		return m, m.toggleCodeOnly()
-	case " ", "space":
+	case "space":
 		return m, m.toggleReviewed()
 	case "c":
 		m.openAnnotate()
@@ -1455,18 +1455,13 @@ func (m *Model) openAnnotate() {
 	if lineIdx < 0 || lineIdx >= len(fd.Lines) {
 		return
 	}
-	input := textarea.New()
-	input.CharLimit = 500
-	input.Placeholder = "comment for the agent"
-	input.ShowLineNumbers = false
-	input.SetPromptFunc(2, func(lineIndex int) string {
-		if lineIndex == 0 {
+	input := promptArea("comment for the agent", 500)
+	input.SetPromptFunc(2, func(info textarea.PromptInfo) string {
+		if info.LineNumber == 0 {
 			return "¶ "
 		}
 		return ""
 	})
-	input.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	input.SetHeight(1)
 	if existing := m.annotationAt(fd.File.Path, fd.Lines[lineIdx]); existing != nil {
 		input.SetValue(existing.text)
 	}
@@ -1607,7 +1602,7 @@ func (m *Model) fileDiffByPath(path string) *diff.FileDiff {
 	return nil
 }
 
-func (m *Model) handleAnnotateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleAnnotateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit

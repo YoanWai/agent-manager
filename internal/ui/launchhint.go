@@ -4,11 +4,11 @@ import (
 	"errors"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/mcpreg"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -37,10 +37,14 @@ func missingToolHint(missing config.MissingToolError) string {
 
 // Any key closes the dialog, the way the confirm dialog reads every
 // answer but yes as no: there is nothing to decide here, only to read.
-func (m *Model) handleLaunchHintKey(tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleLaunchHintKey(tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	m.closeLaunchHint()
+	return m, nil
+}
+
+func (m *Model) closeLaunchHint() {
 	m.launchHint = ""
 	m.mode = modeList
-	return m, nil
 }
 
 func (m *Model) viewLaunchHint() string {

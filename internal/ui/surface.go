@@ -3,7 +3,7 @@ package ui
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -171,13 +171,26 @@ func paint(s string, width int, bg string) string {
 		return plain(s, width)
 	}
 	fill := bgSeq(bg)
-	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+fill)
+	s = reapplyAfterResets(s, fill)
 	if w := ansi.StringWidth(s); w > width {
 		s = ansi.Truncate(s, width, "…")
 	} else if w < width {
 		s += strings.Repeat(" ", width-w)
 	}
 	return fill + s + "\x1b[0m"
+}
+
+const sgrReset = "\x1b[0m"
+
+func isSGRReset(seq string) bool {
+	return seq == sgrReset || seq == ansi.ResetStyle
+}
+
+// Lip Gloss v2 resets with ansi.ResetStyle ("\x1b[m"), chroma and older
+// renderers with "\x1b[0m"; both drop an outer fill until it is re-applied.
+func reapplyAfterResets(s, reapply string) string {
+	s = strings.ReplaceAll(s, sgrReset, sgrReset+reapply)
+	return strings.ReplaceAll(s, ansi.ResetStyle, ansi.ResetStyle+reapply)
 }
 
 // plain pads a line to width without filling it, leaving the terminal's own

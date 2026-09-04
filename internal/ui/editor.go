@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // guiEditors are probed on PATH when nothing is configured, in the order

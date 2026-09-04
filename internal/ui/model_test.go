@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -163,7 +163,7 @@ func TestPreviewFollowsPaneWithoutCursorMoves(t *testing.T) {
 	waitForPane("second-line")
 
 	// The frame has to carry it too, not just the model field.
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "second-line") {
+	if view := ansi.Strip(m.viewFrame()); !strings.Contains(view, "second-line") {
 		t.Fatalf("frame missing the newest pane content:\n%s", view)
 	}
 }
@@ -420,7 +420,7 @@ func TestStatusFilterHoldsNestedIdleShell(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "term-hold")
-	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	updated, cmd := m.handleKey(tea.KeyPressMsg{Code: 'w', Text: "w"})
 	m = updated.(*Model)
 	if cmd != nil {
 		m.applyCmd(t, cmd)

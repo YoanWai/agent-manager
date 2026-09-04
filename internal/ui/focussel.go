@@ -4,9 +4,9 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/YoanWai/agent-manager/internal/clipboard"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -167,37 +167,40 @@ type pendingClick struct {
 // while a drag still selects for copy; the press is held back until one of
 // the two is proven. Alt forces a whole gesture through, drags included.
 func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if tea.MouseEvent(msg).IsWheel() {
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			return m, m.wheelFocus(true, msg.X, msg.Y)
-		case tea.MouseButtonWheelDown:
-			return m, m.wheelFocus(false, msg.X, msg.Y)
+	mouse := msg.Mouse()
+	if wheel, ok := msg.(tea.MouseWheelMsg); ok {
+		switch wheel.Button {
+		case tea.MouseWheelUp:
+			return m, m.wheelFocus(true, mouse.X, mouse.Y)
+		case tea.MouseWheelDown:
+			return m, m.wheelFocus(false, mouse.X, mouse.Y)
 		}
 		return m, nil
 	}
-	if msg.Action == tea.MouseActionPress && msg.Alt && m.pane.mouse {
-		if row, col, inside := m.paneCell(msg.X, msg.Y); inside {
+	_, press := msg.(tea.MouseClickMsg)
+	_, release := msg.(tea.MouseReleaseMsg)
+	if press && mouse.Mod.Contains(tea.ModAlt) && m.pane.mouse {
+		if row, col, inside := m.paneCell(mouse.X, mouse.Y); inside {
 			m.clearSelection()
 			m.pending = pendingClick{}
 			m.forwardingMouse = true
-			m.forwardingButton = mouseButton(msg.Button)
+			m.forwardingButton = mouseButton(mouse.Button)
 			m.forwardingRow, m.forwardingCol = row, col
 		}
 	}
 	if m.forwardingMouse {
 		model, cmd := m.forwardFocusMouse(msg)
-		if msg.Action == tea.MouseActionRelease {
+		if release {
 			m.clearForwardingMouse()
 		}
 		return model, cmd
 	}
-	switch msg.Action {
-	case tea.MouseActionPress:
-		if msg.Button != tea.MouseButtonLeft {
+	switch msg.(type) {
+	case tea.MouseClickMsg:
+		if mouse.Button != tea.MouseLeft {
 			return m, nil
 		}
-		row, col, ok := m.paneCell(msg.X, msg.Y)
+		row, col, ok := m.paneCell(mouse.X, mouse.Y)
 		if !ok {
 			m.clearSelection()
 			return m, nil
@@ -206,15 +209,15 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		// line: keep the click run on the selection path. The first press of
 		// the run has already reached the app; a lone click is harmless there.
 		if m.pane.mouse && !m.clickRunContinues(row, col) {
-			m.deferClick(mouseButton(msg.Button), row, col)
+			m.deferClick(mouseButton(mouse.Button), row, col)
 			return m, nil
 		}
 		m.startSelection(row, col)
 		return m, nil
 
-	case tea.MouseActionMotion:
+	case tea.MouseMotionMsg:
 		if m.pending.active {
-			if row, col, ok := m.paneCell(msg.X, msg.Y); ok && row == m.pending.row && col == m.pending.col {
+			if row, col, ok := m.paneCell(mouse.X, mouse.Y); ok && row == m.pending.row && col == m.pending.col {
 				return m, nil
 			}
 			m.beginSelection(m.pending.row, m.pending.col)
@@ -223,18 +226,18 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if !m.sel.dragging {
 			return m, nil
 		}
-		row, col, ok := m.paneCell(msg.X, msg.Y)
+		row, col, ok := m.paneCell(mouse.X, mouse.Y)
 		if !ok {
 			return m, nil
 		}
 		m.sel.headRow, m.sel.headCol = row, col
 		return m, nil
 
-	case tea.MouseActionRelease:
+	case tea.MouseReleaseMsg:
 		if m.pending.active {
 			pending := m.pending
 			m.pending = pendingClick{}
-			row, col, ok := m.paneCell(msg.X, msg.Y)
+			row, col, ok := m.paneCell(mouse.X, mouse.Y)
 			if ok && row == pending.row && col == pending.col {
 				// A click on a link opens it here: the terminal's own
 				// opener cannot reach through the mouse claim, and the
