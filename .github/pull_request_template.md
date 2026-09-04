@@ -8,6 +8,11 @@ Closes #
 
 ## Scope
 
+<!--
+What the change has to do, what it deliberately leaves alone, and why this
+shape. A typo or a one-line fix can answer all three in a sentence.
+-->
+
 ### Required behavior
 
 ### Non-goals

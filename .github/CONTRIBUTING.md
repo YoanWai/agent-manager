@@ -64,7 +64,10 @@ feed; see [Release summaries and messages](../docs/notifications.md) for the two
 publishing paths.
 
 In the pull request description, say what changed and why, and how you verified
-it. Complete the Visual evidence section for every pull request. Include before
+it. Fill the Scope section: what the change has to do, what it leaves alone,
+and why this shape. A typo or a one-line fix answers all three in a sentence,
+and a review reads them to tell the change you meant from the change you made.
+Complete the Visual evidence section for every pull request. Include before
 and after screenshots whenever the change can be shown visually; use a short
 recording when interaction or motion is clearer that way. If useful visual
 evidence is not possible, say why. For example, a new UI may have no
