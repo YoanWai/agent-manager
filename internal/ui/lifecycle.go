@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -119,6 +118,19 @@ func (m *Model) reattach(id string, diffGen int) tea.Cmd {
 // same write. FullTurnText keeps every line of the turn, not just the
 // last message_start block, so a reply with several marker-led
 // paragraphs copies whole.
+//
+// This is bounded by whatever tmux capture-pane can see: the current
+// screen, plus real scrollback for a tool that keeps any. An alt-screen,
+// mouse-tracking tool (Claude Code, for one) keeps none of its own for
+// tmux to walk, so a reply longer than the viewport truncates at
+// whatever's on screen when y is pressed. Reading the on-disk transcript
+// instead was tried and reverted: AgentSessionID is captured once and
+// trusted as still pointing at the live file, but Claude Code opens a
+// new transcript on its own compaction, invisibly to agent-manager, and
+// a stale id then reads a real but unrelated past conversation with no
+// signal that anything is wrong. Silently wrong beats silently short,
+// but it's still wrong, so this waits on a way to tell a stale id from a
+// live one before it's worth the risk again.
 func (m *Model) copyLastOutput() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedRow()
 	if !ok || entry.isGroup || m.engine == nil || m.tmux == nil {
@@ -127,20 +139,16 @@ func (m *Model) copyLastOutput() (tea.Model, tea.Cmd) {
 	sess := entry.sess
 	// quoteHistoryLines matches the poller's own row-quote capture depth:
 	// past what's currently on screen when the tool keeps real tmux
-	// scrollback to walk (unlike Claude Code - see deepCopyFallback).
+	// scrollback to walk.
 	pane, err := m.tmux.CapturePaneHistory(sess.ID, quoteHistoryLines)
 	if err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
-	clean := ansi.Strip(pane)
-	text, ok := m.engine.FullTurnText(sess.Tool, clean)
+	text, ok := m.engine.FullTurnText(sess.Tool, ansi.Strip(pane))
 	if !ok || strings.TrimSpace(text) == "" {
 		m.errBar.text = "nothing to copy"
 		return m, nil
-	}
-	if deep, ok := m.deepCopyFallback(sess, clean); ok {
-		text = deep
 	}
 	if err := clipboard.WriteText(text); err != nil {
 		m.errBar.text = err.Error()
@@ -148,33 +156,6 @@ func (m *Model) copyLastOutput() (tea.Model, tea.Cmd) {
 	}
 	m.reportDone(fmt.Sprintf("copied %d chars from %s", len([]rune(text)), sess.Name))
 	return m, nil
-}
-
-// deepCopyFallback returns the full reply from Claude Code's own on-disk
-// transcript when the pane's captured viewport has scrolled the reply's
-// start away and FullTurnText only got the tail of it: tmux only ever
-// sees what's currently rendered for an alt-screen, mouse-tracking tool
-// like Claude Code, which keeps no scrollback of its own for
-// capture-pane to walk (see FullTurnText's doc comment - same
-// limitation the drag-to-scroll work ran into). Same adrift check the
-// poller already uses for the one-line row quote (claudeTail): no
-// message_start marker anchored in the capture at all means the true
-// start of the reply isn't in it. ok is false whenever the capture
-// already had the whole reply, or nothing more can be done - the
-// caller keeps what FullTurnText found instead.
-func (m *Model) deepCopyFallback(sess store.Session, clean string) (text string, ok bool) {
-	if m.poller == nil || m.poller.mcpStyles[sess.Tool] != "claude" || sess.AgentSessionID == "" {
-		return "", false
-	}
-	_, anchored, msgOK := m.engine.LastMessage(sess.Tool, clean)
-	if !msgOK || anchored || !m.engine.HasMessageStart(sess.Tool) {
-		return "", false
-	}
-	_, reply, tailOK := agentsession.ClaudeTranscriptTail(sess.Cwd, sess.AgentSessionID, func(s string) string { return s })
-	if !tailOK || strings.TrimSpace(reply) == "" {
-		return "", false
-	}
-	return reply, true
 }
 
 // reviveSelected relaunches a dead session's tmux session under the same
