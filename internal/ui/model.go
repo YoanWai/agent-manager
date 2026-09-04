@@ -303,6 +303,12 @@ type paneMirror struct {
 	columnX int
 	cursor  paneCursor
 	geom    map[string][2]int
+	// pids is the pane process each geom entry was measured on, so a pane
+	// replaced by a relaunch can be told from the one the manager sized.
+	pids map[string]int
+	// published is the last box written to the store for the paneless
+	// launch paths to read.
+	published [2]int
 }
 
 type errBar struct {
@@ -1161,6 +1167,7 @@ func (m *Model) resizeSessions() {
 	if m.pane.geom == nil {
 		m.pane.geom = map[string][2]int{}
 	}
+	m.markReplacedPanesFresh()
 	m.seedPaneGeom()
 	// The session open full screen is pinned to the whole body by
 	// pinFullFocusPane, not to the preview box; matching it to the box
@@ -1258,6 +1265,45 @@ func (m *Model) markFreshPane(id string) {
 	m.pane.geom[id] = [2]int{0, 0}
 }
 
+// publishPaneSize records the box for the launch paths that run without a
+// manager: the CLI and the MCP server open a pane with nothing to ask for
+// the preview geometry, and tmux gives an unsized detached session 80x24.
+func (m *Model) publishPaneSize() {
+	if m.width <= 0 {
+		return
+	}
+	width, height := m.paneTargetSize()
+	if width <= 0 || height <= 0 || m.pane.published == [2]int{width, height} {
+		return
+	}
+	if err := m.store.SetPaneSize(width, height); err != nil {
+		m.errBar.text = err.Error()
+		return
+	}
+	m.pane.published = [2]int{width, height}
+}
+
+// markReplacedPanesFresh spots a session whose pane process changed since
+// its geometry was measured: a revive outside this process put the row on
+// a window the manager never sized, and the cached size of the window it
+// replaced would otherwise read as already matching the box, leaving the
+// new pane at whatever it was born with for the life of the run. The
+// replacement has no scrollback to protect, so it takes markFreshPane's
+// exact pin rather than the adopted-pane treatment that keeps a taller
+// height.
+func (m *Model) markReplacedPanesFresh() {
+	if m.pane.pids == nil {
+		m.pane.pids = map[string]int{}
+	}
+	for id, pane := range m.panes {
+		last := m.pane.pids[id]
+		m.pane.pids[id] = pane.PID
+		if last != 0 && last != pane.PID {
+			m.markFreshPane(id)
+		}
+	}
+}
+
 // seedPaneGeom fills the geometry cache from the pass's pane listing for
 // sessions this run has not sized yet, so a pane adopted from a previous
 // run is not shrunk (and its Codex scrollback cleared) just to match a box
@@ -1315,6 +1361,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Re-assert the terminal backdrop: a reattach or a fresh outer
 		// terminal delivers a size message and may carry stale colors.
 		SyncTerminalBackground()
+		m.publishPaneSize()
 		m.resizeSessions()
 		if m.fullFocus() {
 			if sess, ok := m.selected(); ok {
@@ -1410,6 +1457,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.sessionsSized && m.width > 0 && len(m.sessions) > 0 {
 			m.sessionsSized = true
 		}
+		m.publishPaneSize()
 		// The preview box changes height for more reasons than a terminal
 		// resize: the quick bar opening, the status line appearing, a new
 		// badge in the header. A pane shorter than the box paints a dead
