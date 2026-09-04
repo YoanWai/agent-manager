@@ -129,6 +129,38 @@ func TestFilePostsThroughGHAndReturnsTheIssue(t *testing.T) {
 	}
 }
 
+func TestFilingTheSameApprovalTwicePostsOnce(t *testing.T) {
+	fake := loggedIn()
+	swapSeams(t, fake)
+	configDir, sessionID := workspace(t)
+	reporter := New(configDir, "0.31.0")
+
+	preview, err := reporter.Preview(sessionID, bugDraft())
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	first, err := reporter.File(sessionID, bugDraft(), preview.ID)
+	if err != nil {
+		t.Fatalf("File: %v", err)
+	}
+	again, err := reporter.File(sessionID, bugDraft(), preview.ID)
+	if err != nil {
+		t.Fatalf("File again: %v", err)
+	}
+	if again != first {
+		t.Fatalf("second filing = %+v, want the first %+v", again, first)
+	}
+	created := 0
+	for _, ran := range fake.ran {
+		if ran[0] == "gh" && ran[1] == "issue" && ran[2] == "create" {
+			created++
+		}
+	}
+	if created != 1 {
+		t.Fatalf("gh issue create ran %d times: %v", created, fake.ran)
+	}
+}
+
 // An approval covers one issue on one route as one account. Between the two
 // calls gh can appear, log in, or log in as somebody else, and each of those
 // turns the outcome the user approved into a different one, so the id pins

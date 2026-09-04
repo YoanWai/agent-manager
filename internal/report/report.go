@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -86,10 +87,13 @@ type Filed struct {
 type Reporter struct {
 	configDir string
 	version   string
+
+	mu    sync.Mutex
+	filed map[string]Filed
 }
 
 func New(configDir, version string) *Reporter {
-	return &Reporter{configDir: configDir, version: version}
+	return &Reporter{configDir: configDir, version: version, filed: map[string]Filed{}}
 }
 
 // Preview composes the issue and says how filing would go, without posting.
@@ -119,7 +123,7 @@ func (r *Reporter) Preview(sessionID string, draft Draft) (Preview, error) {
 // account it would be posted as.
 func (p Preview) fingerprint() string {
 	sum := sha256.Sum256([]byte(strings.Join([]string{p.Route, p.Account, p.Title, p.Body, strings.Join(p.Labels, ",")}, "\x00")))
-	return hex.EncodeToString(sum[:])[:8]
+	return hex.EncodeToString(sum[:])
 }
 
 // File posts the issue the preview showed: through gh when it is installed
@@ -127,6 +131,8 @@ func (p Preview) fingerprint() string {
 // to open. previewID is the id of the preview the user approved, and filing
 // is refused when what would be filed now no longer matches it, so an
 // approval can never carry over to a different issue, route or account.
+// One approval posts one issue: a repeated call with the same id, as after
+// a timed-out tool call, hands back the issue already filed.
 func (r *Reporter) File(sessionID string, draft Draft, previewID string) (Filed, error) {
 	if strings.TrimSpace(previewID) == "" {
 		return Filed{}, errors.New("filing needs the id of the preview the user approved")
@@ -141,6 +147,11 @@ func (r *Reporter) File(sessionID string, draft Draft, previewID string) (Filed,
 	if preview.Route == RouteBrowser {
 		return Filed{Route: RouteBrowser, URL: preview.URL}, nil
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if filed, done := r.filed[previewID]; done {
+		return filed, nil
+	}
 	args := []string{"issue", "create", "--repo", repo, "--title", preview.Title, "--body", preview.Body}
 	for _, label := range preview.Labels {
 		args = append(args, "--label", label)
@@ -149,7 +160,9 @@ func (r *Reporter) File(sessionID string, draft Draft, previewID string) (Filed,
 	if err != nil {
 		return Filed{}, fmt.Errorf("gh issue create: %w", err)
 	}
-	return Filed{Route: RouteGH, URL: issueURL}, nil
+	filed := Filed{Route: RouteGH, URL: issueURL}
+	r.filed[previewID] = filed
+	return filed, nil
 }
 
 func (d Draft) validate() error {
