@@ -16,12 +16,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.split.resizeMode {
 		key := keybind.Normalize(msg.String())
 		switch {
-		case key == "left" || key == "h":
-			m.nudgeSplit(-1)
-			return m, nil
-		case key == "right" || key == "l":
-			m.nudgeSplit(1)
-			return m, nil
 		case key == "enter" || m.listKeys.Binding(keybind.Resize).Has(key):
 			return m.exitResizeMode(true)
 		case key == "esc":
@@ -31,6 +25,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.split.resizeMode = false
 			m.split.dragging = false
 			return m, tea.Quit
+		case key == "left" || key == "h":
+			m.nudgeSplit(-1)
+			return m, nil
+		case key == "right" || key == "l":
+			m.nudgeSplit(1)
+			return m, nil
 		default:
 			return m, nil
 		}
