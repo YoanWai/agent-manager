@@ -41,26 +41,7 @@ func (m *Model) confirmDestructive() bool {
 }
 
 func (m *Model) viewConfirm() string {
-	width := m.cardWidth()
-	inner := cardInnerWidth(width)
-
 	question, consequence := splitConfirmLabel(m.confirm.label)
-	tone := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
-	if m.confirmDestructive() {
-		tone = errStyle
-	}
-
-	var body strings.Builder
-	for _, line := range strings.Split(ansi.Wordwrap(question, inner, "-"), "\n") {
-		body.WriteString(tone.Render(line) + "\n")
-	}
-	if consequence != "" {
-		body.WriteString("\n")
-		for _, line := range strings.Split(ansi.Wordwrap(consequence, inner, "-"), "\n") {
-			body.WriteString(mutedStyle.Render(line) + "\n")
-		}
-	}
-
 	answer := "delete"
 	switch m.confirm.action {
 	case actionKill:
@@ -74,8 +55,32 @@ func (m *Model) viewConfirm() string {
 	case actionRevive:
 		answer = "revive"
 	}
+	return m.confirmCard(m.confirmTitle(), question, consequence, m.confirmDestructive(), answer)
+}
+
+// confirmCard is the dialog every yes-or-no answer shares: the question in
+// the tone of what it commits, the consequence set beneath it, and the
+// answer named on the key that gives it.
+func (m *Model) confirmCard(title, question, consequence string, destructive bool, answer string) string {
+	width := m.cardWidth()
+	inner := cardInnerWidth(width)
+	tone := lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	if destructive {
+		tone = errStyle
+	}
+
+	var body strings.Builder
+	for _, line := range strings.Split(ansi.Wordwrap(question, inner, "-"), "\n") {
+		body.WriteString(tone.Render(line) + "\n")
+	}
+	if consequence != "" {
+		body.WriteString("\n")
+		for _, line := range strings.Split(ansi.Wordwrap(consequence, inner, "-"), "\n") {
+			body.WriteString(mutedStyle.Render(line) + "\n")
+		}
+	}
 	hint := [][2]string{{"y/↵", answer}, {"n/esc", "cancel"}}
-	return m.cardSized(width, m.confirmTitle(), strings.TrimRight(body.String(), "\n"), hint)
+	return m.cardSized(width, title, strings.TrimRight(body.String(), "\n"), hint)
 }
 
 // splitConfirmLabel cuts a confirm sentence into the question the dialog

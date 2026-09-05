@@ -447,6 +447,7 @@ type settingsState struct {
 	keyCursor  int
 	keyCapture bool
 	keyAppend  bool
+	keyReset   bool
 }
 
 const (

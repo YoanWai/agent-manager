@@ -490,6 +490,10 @@ func formField(label, value string, focused bool) string {
 }
 
 func (m *Model) viewKeyPicker() string {
+	if m.settings.keyReset {
+		return m.confirmCard("↺ Reset keys", "Reset the in-session keys to their defaults?",
+			strings.Join(keyResetChanges(m.settings.keys), "\n"), true, "reset")
+	}
 	var b strings.Builder
 	for i, action := range sessionKeyActions {
 		marker := "  "
@@ -518,7 +522,7 @@ func (m *Model) viewKeyPicker() string {
 	}
 	b.WriteByte('\n')
 	b.WriteString(subtleStyle.Render("  every other key reaches the agent"))
-	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"esc", "back"}}
+	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
 	if m.settings.keyCapture {
 		hint = [][2]string{{"any key", "bind it"}, {"esc", "cancel"}}
 	}

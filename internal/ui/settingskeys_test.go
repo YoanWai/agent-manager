@@ -173,6 +173,65 @@ func TestKeyPickerAddsASecondKey(t *testing.T) {
 }
 
 // esc during capture cancels it; the key that would have been bound is not.
+// r asks before it moves anything, names what would change, and on yes
+// puts the shipped keys back on every action at once, added keys included;
+// leaving then saves it like any other change.
+func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
+	m := keyPickerModel(t)
+	custom := keybind.Session{
+		Detach: bindingOf(t, "ctrl+q", "f9"),
+		Review: bindingOf(t),
+		Editor: bindingOf(t, "f5"),
+	}
+	m.keys = custom
+	m.tmux.SetSessionKeys(custom)
+	m.settings.keys = custom
+
+	m.pressInPicker(t, runeKey("r"))
+	if !m.settings.keyReset {
+		t.Fatal("r should ask before resetting")
+	}
+	ask := ansi.Strip(m.viewKeyPicker())
+	for _, want := range []string{"Reset the in-session keys", "detach: ctrl+q / f9 back to ctrl+q / ctrl+\\", "review: off back to ctrl+r", "editor: f5 back to f3"} {
+		if !strings.Contains(ask, want) {
+			t.Fatalf("the question should say %q:\n%s", want, ask)
+		}
+	}
+	m.pressInPicker(t, runeKey("n"))
+	if m.settings.keyReset || !m.settings.keys.Equal(custom) {
+		t.Fatalf("n should keep the keys, got %s", sessionKeysSummary(m.settings.keys))
+	}
+
+	m.pressInPicker(t, runeKey("r"))
+	m.pressInPicker(t, runeKey("y"))
+	if m.settings.keyReset || !m.settings.keys.Equal(keybind.DefaultSession()) {
+		t.Fatalf("y should restore the defaults, got %s", sessionKeysSummary(m.settings.keys))
+	}
+
+	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
+	if !m.keys.Equal(keybind.DefaultSession()) {
+		t.Fatalf("model keys after save = %s", sessionKeysSummary(m.keys))
+	}
+	saved := savedConfig(t, m)
+	for _, want := range []string{"[keybindings.session]", `review = "ctrl+r"`, `editor = "f3"`} {
+		if !strings.Contains(saved, want) {
+			t.Fatalf("saved config is missing %q:\n%s", want, saved)
+		}
+	}
+	if strings.Contains(saved, "f9") {
+		t.Fatalf("the added key should be gone:\n%s", saved)
+	}
+}
+
+// A table already on its defaults has nothing to reset, so r asks nothing.
+func TestKeyPickerResetOnDefaultsAsksNothing(t *testing.T) {
+	m := keyPickerModel(t)
+	m.pressInPicker(t, runeKey("r"))
+	if m.settings.keyReset {
+		t.Fatal("r on the defaults should not open the question")
+	}
+}
+
 func TestKeyPickerEscapeCancelsCapture(t *testing.T) {
 	m := keyPickerModel(t)
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEnter})

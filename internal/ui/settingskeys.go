@@ -57,12 +57,16 @@ func (m *Model) openKeyPicker() {
 	m.settings.keyCursor = 0
 	m.settings.keyCapture = false
 	m.settings.keyAppend = false
+	m.settings.keyReset = false
 	m.errBar.text = ""
 }
 
 func (m *Model) handleKeyPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.settings.keyCapture {
 		return m.captureSessionKey(msg)
+	}
+	if m.settings.keyReset {
+		return m.answerKeyReset(msg)
 	}
 	count := len(sessionKeyActions)
 	switch msg.String() {
@@ -76,6 +80,9 @@ func (m *Model) handleKeyPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.errBar.text = ""
 	case "d":
 		return m, m.setSessionBinding(keybind.Keys())
+	case "r":
+		m.settings.keyReset = len(keyResetChanges(m.settings.keys)) > 0
+		m.errBar.text = ""
 	case "esc":
 		m.settings.keyPicker = false
 		return m, m.saveSessionKeys()
@@ -106,6 +113,35 @@ func (m *Model) captureSessionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		binding = keybind.Keys(append(existing.Keys(), key)...)
 	}
 	return m, m.setSessionBinding(binding)
+}
+
+func (m *Model) answerKeyReset(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "enter":
+		m.settings.keys = keybind.DefaultSession()
+		m.settings.keyReset = false
+	case "n", "esc":
+		m.settings.keyReset = false
+	}
+	return m, nil
+}
+
+// keyResetChanges names each action a reset would move, with the keys it
+// leaves and the ones it goes back to.
+func keyResetChanges(keys keybind.Session) []string {
+	defaults := keybind.DefaultSession()
+	var changes []string
+	for i, action := range sessionKeyActions {
+		current, shipped := sessionBinding(keys, i).Label(), sessionBinding(defaults, i).Label()
+		if current == shipped {
+			continue
+		}
+		if current == "" {
+			current = "off"
+		}
+		changes = append(changes, fmt.Sprintf("%s: %s back to %s", action.name, current, shipped))
+	}
+	return changes
 }
 
 // The picker refuses what config load would refuse, so the table it saves
