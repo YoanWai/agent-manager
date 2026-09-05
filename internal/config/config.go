@@ -115,14 +115,10 @@ type Config struct {
 	Editor      string          `toml:"editor"`
 	Tools       map[string]Tool `toml:"tools"`
 	Keybindings Keybindings     `toml:"keybindings"`
-	// SessionKeys and ListKeys are the tables the file's [keybindings]
-	// declare, each filled out with the defaults for the actions it left out.
-	SessionKeys keybind.Table `toml:"-"`
-	ListKeys    keybind.Table `toml:"-"`
+	SessionKeys keybind.Table   `toml:"-"`
+	ListKeys    keybind.Table   `toml:"-"`
 }
 
-// Keybindings is the [keybindings] section as written: an action named in
-// a table moves onto the keys given, and one written as "none" is off.
 type Keybindings struct {
 	Session map[string]keybind.Binding `toml:"session"`
 	List    map[string]keybind.Binding `toml:"list"`
@@ -372,7 +368,6 @@ func (c *Config) resolveKeys() error {
 	return nil
 }
 
-// keys is the resolved table for one scope's [keybindings] name.
 func (c Config) keys(scope string) keybind.Table {
 	if scope == keybind.ScopeList {
 		return c.ListKeys

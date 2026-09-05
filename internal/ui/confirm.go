@@ -58,9 +58,6 @@ func (m *Model) viewConfirm() string {
 	return m.confirmCard(m.confirmTitle(), question, consequence, m.confirmDestructive(), answer)
 }
 
-// confirmCard is the dialog every yes-or-no answer shares: the question in
-// the tone of what it commits, the consequence set beneath it, and the
-// answer named on the key that gives it.
 func (m *Model) confirmCard(title, question, consequence string, destructive bool, answer string) string {
 	width := m.cardWidth()
 	inner := cardInnerWidth(width)

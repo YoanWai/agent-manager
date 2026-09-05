@@ -668,7 +668,7 @@ func (m *Model) viewLegend() legendSection {
 	// Ordered by what a narrow terminal must keep: moving around, making
 	// something, the filters, then the keys a user already knows to look for.
 	k := m.listGlyph
-	pairs := [][2]string{{k(keybind.Up) + " " + k(keybind.Down), "navigate"}}
+	pairs := [][2]string{{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"}}
 	pairs = append(pairs, [][2]string{
 		{k(keybind.NewSession), "new"}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {k(keybind.EmptyGroups), emptyGroupsAction},

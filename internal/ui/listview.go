@@ -443,7 +443,7 @@ func (m *Model) emptyRailLines(width, height int) []string {
 	}
 	if m.statusFilter.active() {
 		title = "nothing needs " + m.statusFilter.label()
-		hint = keyCap("w", "show all")
+		hint = keyCap(m.listGlyph(keybind.Filter), "show all")
 	}
 	if search := strings.TrimSpace(m.search); search != "" {
 		title = "no matches"

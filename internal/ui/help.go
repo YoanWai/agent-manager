@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,7 +38,7 @@ type helpSection struct {
 // does not shift the column under the reader.
 func helpKeyColumn(session, list keybind.Table) int {
 	width := 0
-	for _, section := range helpSections(session, list) {
+	for _, section := range helpSections(session, list, true) {
 		for _, row := range section.rows {
 			if w := ansi.StringWidth(row[0]); w > width {
 				width = w
@@ -78,13 +77,15 @@ func (h *helpRows) fixed(key, does string) {
 	h.rows = append(h.rows, [2]string{key, does})
 }
 
-func listHelpRows(list keybind.Table) [][2]string {
+func listHelpRows(list keybind.Table, arrowStep bool) [][2]string {
 	h := helpRows{list: list}
 	h.fixed("", "Tell your agent to manage sessions and terminals in Agent Manager.")
 	h.action("move the cursor up", keybind.Up)
 	h.action("move the cursor down", keybind.Down)
-	h.action("step in: focus the session, open the group", keybind.StepIn)
-	h.action("step out: close the group", keybind.StepOut)
+	if arrowStep {
+		h.action("step in: focus the session, open the group", keybind.StepIn)
+		h.action("step out: close the group", keybind.StepOut)
+	}
 	h.action("reorder the row up among its siblings", keybind.ReorderUp)
 	h.action("reorder the row down among its siblings", keybind.ReorderDown)
 	h.action("new session", keybind.NewSession)
@@ -138,9 +139,11 @@ func groupRowHelpRows(list keybind.Table) [][2]string {
 	return h.rows
 }
 
-func helpSections(session, list keybind.Table) []helpSection {
+// helpSections is the catalog for one setting of the arrow-step pair: off,
+// the rows that pair would answer are left out rather than named as dead.
+func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 	return []helpSection{
-		{title: "list", rows: listHelpRows(list)},
+		{title: "list", rows: listHelpRows(list, arrowStep)},
 		{title: "session under the cursor", rows: sessionRowHelpRows(list)},
 		{title: "the mark on a session row", rows: [][2]string{
 			{"◐ working", "the agent is busy on a turn"},
@@ -162,7 +165,7 @@ func helpSections(session, list keybind.Table) []helpSection {
 			{"←→", "step over a chip as one token"},
 			{"esc", "close"},
 		}},
-		{title: "inside a session (attached or focused)", rows: sessionHelpRows(session, [][2]string{
+		{title: "inside a session (attached or focused)", rows: sessionHelpRows(session, arrowStep, [][2]string{
 			{"wheel", "focused: scroll the pane's history, type to catch up"},
 			{"drag", "focused: select pane text and copy it"},
 			{"double click", "focused: copy the word"},
@@ -196,7 +199,7 @@ func helpSections(session, list keybind.Table) []helpSection {
 	}
 }
 
-func sessionHelpRows(keys keybind.Table, mouseRows [][2]string) [][2]string {
+func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) [][2]string {
 	rows := [][2]string{{"typing", "goes straight to the agent, q included"}}
 	if detach := keys.Binding(keybind.Detach).Keys(); len(detach) > 0 {
 		back := "back to the manager"
@@ -205,7 +208,9 @@ func sessionHelpRows(keys keybind.Table, mouseRows [][2]string) [][2]string {
 		}
 		rows = append(rows, [2]string{detach[0].Tea(), back})
 	}
-	rows = append(rows, [2]string{"←", "focused: back to the manager, at the prompt's start"})
+	if arrowStep {
+		rows = append(rows, [2]string{"←", "focused: back to the manager, at the prompt's start"})
+	}
 	if label := keys.Binding(keybind.Review).Label(); label != "" {
 		rows = append(rows, [2]string{label, "review the session's diff, esc returns"})
 	}
@@ -244,17 +249,7 @@ func (m *Model) visibleHelpSections() []helpSection {
 	if m.help.returnMode == modeDiff {
 		return []helpSection{reviewHelpSection()}
 	}
-	sections := helpSections(m.keys, m.listKeys)
-	if m.arrowStep {
-		return sections
-	}
-	stepIn, stepOut := m.listKeys.Binding(keybind.StepIn).Glyph(" / "), m.listKeys.Binding(keybind.StepOut).Glyph(" / ")
-	for i := range sections {
-		sections[i].rows = slices.DeleteFunc(sections[i].rows, func(row [2]string) bool {
-			return row[0] != "" && (row[0] == stepIn || row[0] == stepOut)
-		})
-	}
-	return sections
+	return helpSections(m.keys, m.listKeys, m.arrowStep)
 }
 
 // matchHelp narrows the catalog to the rows whose key or description

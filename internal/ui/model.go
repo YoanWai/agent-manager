@@ -59,13 +59,12 @@ type treeRow struct {
 }
 
 type Model struct {
-	cfg    config.Config
-	store  *store.Store
-	tmux   *tmux.Driver
-	hooks  *hooks.Manager
-	gitDrv *git.Driver
-	engine *status.Engine
-	// keys is the table inside a session, listKeys the manager's own.
+	cfg      config.Config
+	store    *store.Store
+	tmux     *tmux.Driver
+	hooks    *hooks.Manager
+	gitDrv   *git.Driver
+	engine   *status.Engine
 	keys     keybind.Table
 	listKeys keybind.Table
 	// configDir is resolved once, at New, so the settings screen writes
@@ -439,11 +438,10 @@ type settingsState struct {
 	// to it.
 	manualTheme string
 	// cliPicker is the sub-panel for which CLIs appear when creating sessions.
-	cliPicker bool
-	cliNames  []string
-	cliHidden map[string]bool
-	cliCursor int
-	// keyPicker is the sub-panel editing the key tables, session then list.
+	cliPicker  bool
+	cliNames   []string
+	cliHidden  map[string]bool
+	cliCursor  int
 	keyPicker  bool
 	tables     []keybind.Table
 	keyCursor  int
