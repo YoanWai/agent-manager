@@ -1244,6 +1244,14 @@ func TestSocketPathFromRelativeTmpdirIsAbsolute(t *testing.T) {
 	}
 }
 
+func sessionOf(t *testing.T, detach, review, editor []string) keybind.Table {
+	t.Helper()
+	return keybind.DefaultSession().
+		With(keybind.Detach, bindingOf(t, detach...)).
+		With(keybind.Review, bindingOf(t, review...)).
+		With(keybind.Editor, bindingOf(t, editor...))
+}
+
 func bindingOf(t *testing.T, specs ...string) keybind.Binding {
 	t.Helper()
 	keys := make([]keybind.Key, 0, len(specs))
@@ -1292,11 +1300,7 @@ func restoreDefaultKeys(t *testing.T, driver *Driver) {
 func TestEnsureBindingsFollowsTheKeyTable(t *testing.T) {
 	driver := requireTmux(t)
 	restoreDefaultKeys(t, driver)
-	custom := keybind.Session{
-		Detach: bindingOf(t, "f9", "alt+q"),
-		Review: bindingOf(t, "ctrl+g"),
-		Editor: bindingOf(t),
-	}
+	custom := sessionOf(t, []string{"f9", "alt+q"}, []string{"ctrl+g"}, nil)
 	driver.SetSessionKeys(custom)
 	if err := driver.EnsureBindings(); err != nil {
 		t.Fatalf("EnsureBindings: %v", err)
@@ -1363,14 +1367,10 @@ func TestEnsureBindingsLeavesTheUsersOwnBindingsAlone(t *testing.T) {
 }
 
 func TestAttachStatusRightNamesTheKeyTable(t *testing.T) {
-	custom := keybind.Session{
-		Detach: bindingOf(t, "f9", "alt+q"),
-		Review: bindingOf(t, "ctrl+g"),
-		Editor: bindingOf(t),
-	}
+	custom := sessionOf(t, []string{"f9", "alt+q"}, []string{"ctrl+g"}, nil)
 	for _, tc := range []struct {
 		name, primary, secondary string
-		keys                     keybind.Session
+		keys                     keybind.Table
 		want                     string
 	}{
 		{"defaults", "C-b", "None", keybind.DefaultSession(), ` agent-manager · Ctrl+r = review · F3 = editor · Ctrl+q / Ctrl+\ / C-b d = back `},
@@ -1388,11 +1388,7 @@ func TestAttachStatusRightNamesTheKeyTable(t *testing.T) {
 func TestSessionFooterNamesTheConfiguredKeys(t *testing.T) {
 	driver := requireTmux(t)
 	restoreDefaultKeys(t, driver)
-	driver.SetSessionKeys(keybind.Session{
-		Detach: bindingOf(t, "f9"),
-		Review: bindingOf(t, "ctrl+g"),
-		Editor: bindingOf(t),
-	})
+	driver.SetSessionKeys(sessionOf(t, []string{"f9"}, []string{"ctrl+g"}, nil))
 	id := "footerkeys"
 	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)

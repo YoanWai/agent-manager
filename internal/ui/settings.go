@@ -253,7 +253,6 @@ func (m *Model) openSettings() {
 		hideHeader:      m.hideHeader,
 		hideStats:       m.hideStats,
 		worktreeDefault: m.defaultWorktree(),
-		keys:            m.keys,
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
 		themeAuto:       themeAutoEnabled(m.store),
@@ -287,7 +286,7 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case settingsFieldCLIs:
 			m.openCLIPicker()
 			return m, nil
-		case settingsFieldSessionBindings:
+		case settingsFieldKeybindings:
 			m.openKeyPicker()
 			return m, nil
 		case settingsFieldUpdate:

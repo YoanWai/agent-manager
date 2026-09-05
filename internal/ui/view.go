@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"os"
 	"regexp"
 	"strings"
@@ -494,7 +495,7 @@ func (m *Model) viewFooter() string {
 	}
 	if m.split.resizeMode {
 		return m.transientFooter(legendSection{title: "Resize", pairs: [][2]string{
-			{"←→", "nudge"}, {"drag", "divider"}, {"| / release", "commit"}, {"esc", "cancel"},
+			{"←→", "nudge"}, {"drag", "divider"}, {strings.TrimPrefix(m.listGlyph(keybind.Resize)+" / release", " / "), "commit"}, {"esc", "cancel"},
 		}})
 	}
 	if m.mode == modeRename {
@@ -512,15 +513,15 @@ func (m *Model) viewFooter() string {
 	if m.mode == modeFocus {
 		pairs := [][2]string{
 			{"typing", "to agent"},
-			{m.keys.Detach.Label(), "back"},
+			{m.keys.Binding(keybind.Detach).Label(), "back"},
 		}
 		if m.arrowStep {
 			pairs = append(pairs, [2]string{"←", "prompt start: back"})
 		}
-		if label := m.keys.Review.Label(); label != "" {
+		if label := m.keys.Binding(keybind.Review).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "review"})
 		}
-		if label := m.keys.Editor.Label(); label != "" {
+		if label := m.keys.Binding(keybind.Editor).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "editor"})
 		}
 		// The footer holds one row: the word and line gestures are in the
@@ -554,6 +555,7 @@ func (m *Model) transientFooter(section legendSection) string {
 // rowLegend is the tier for the entry under the cursor: what this session or
 // this group can be told to do.
 func (m *Model) rowLegend() legendSection {
+	k := m.listGlyph
 	enterHint, attachHint := "focus / fold", "attach"
 	if !m.enterFocuses() {
 		enterHint, attachHint = "attach / fold", "focus"
@@ -567,40 +569,75 @@ func (m *Model) rowLegend() legendSection {
 		if m.collapsed[row.group] {
 			foldAction = "unfold"
 		}
-		pairs := [][2]string{{"↵", foldAction}}
+		pairs := [][2]string{{k(keybind.Open), foldAction}}
 		if m.arrowStep {
-			pairs = append(pairs, [2]string{"←→", "close / open"})
+			pairs = append(pairs, m.legendPair(keybind.StepOut, "close", keybind.StepIn, "open"))
 		}
 		pairs = append(pairs, [][2]string{
-			{"o", "editor"}, {"r", "rename"}, {"m", "move"},
-			{"x/X", "kill / all"}, {"v/V", "revive / all"},
-			{"a/u", "archive / restore"}, {"d", "delete"},
+			{k(keybind.Editor), "editor"}, {k(keybind.Rename), "rename"}, {k(keybind.Move), "move"},
+			m.legendPair(keybind.Kill, "kill", keybind.KillAll, "all"), m.legendPair(keybind.Revive, "revive", keybind.ReviveAll, "all"),
+			m.legendPair(keybind.Archive, "archive", keybind.Restore, "restore"), {k(keybind.Delete), "delete"},
 		}...)
-		return legendSection{title: "Group", pairs: pairs}
+		return legendSection{title: "Group", pairs: legendPairsBound(pairs)}
 	}
 	title := "Session"
-	conversation := [][2]string{{"space", "prompt"}, {"ctrl+r", "review"}, {"f", "fork"}}
+	conversation := [][2]string{{k(keybind.Prompt), "prompt"}, {k(keybind.Review), "review"}, {k(keybind.Fork), "fork"}}
 	if m.isShell(row.sess.Tool) {
 		// A shell has no conversation, so the keys that would prompt,
 		// review or fork one are left off rather than offered and refused.
 		title, conversation = "Shell", nil
 	}
-	pairs := [][2]string{{"↵", enterHint}, {"A", attachHint}}
+	pairs := [][2]string{{k(keybind.Open), enterHint}, {k(keybind.Attach), attachHint}}
 	if m.arrowStep {
-		pairs = append(pairs, [2]string{"→", "focus"})
+		pairs = append(pairs, [2]string{k(keybind.StepIn), "focus"})
 	}
 	if row.sess.Status == status.Finished && !row.sess.Archived {
-		pairs = append(pairs, [2]string{".", "mark idle"})
+		pairs = append(pairs, [2]string{k(keybind.MarkIdle), "mark idle"})
 	}
 	pairs = append(pairs, conversation...)
 	// o sits outside the conversation keys: a shell's directory is worth
 	// opening as much as an agent's.
 	pairs = append(pairs, [][2]string{
-		{"o", "editor"}, {"r", "rename"}, {"m", "move"},
-		{"x/X", "kill / all"}, {"v/V", "revive / all"}, {"R", "restart"},
-		{"a/u", "archive / restore"}, {"d", "delete"},
+		{k(keybind.Editor), "editor"}, {k(keybind.Rename), "rename"}, {k(keybind.Move), "move"},
+		m.legendPair(keybind.Kill, "kill", keybind.KillAll, "all"), m.legendPair(keybind.Revive, "revive", keybind.ReviveAll, "all"), {k(keybind.Restart), "restart"},
+		m.legendPair(keybind.Archive, "archive", keybind.Restore, "restore"), {k(keybind.Delete), "delete"},
 	}...)
-	return legendSection{title: title, pairs: pairs}
+	return legendSection{title: title, pairs: legendPairsBound(pairs)}
+}
+
+func (m *Model) legendPair(first, firstLabel, second, secondLabel string) [2]string {
+	switch {
+	case m.listGlyph(first) == "":
+		return [2]string{m.listGlyph(second), secondLabel}
+	case m.listGlyph(second) == "":
+		return [2]string{m.listGlyph(first), firstLabel}
+	}
+	return [2]string{m.listGlyph(first, second), firstLabel + " / " + secondLabel}
+}
+
+func legendPairsBound(pairs [][2]string) [][2]string {
+	kept := pairs[:0]
+	for _, pair := range pairs {
+		if pair[0] != "" {
+			kept = append(kept, pair)
+		}
+	}
+	return kept
+}
+
+func (m *Model) listGlyph(actions ...string) string {
+	joined := ""
+	for _, action := range actions {
+		glyph := m.listKeys.Binding(action).Glyph("/")
+		if glyph == "" {
+			continue
+		}
+		if joined != "" {
+			joined += "/"
+		}
+		joined += glyph
+	}
+	return joined
 }
 
 // viewLegend is the tier that never changes with the cursor: moving around
@@ -624,14 +661,15 @@ func (m *Model) viewLegend() legendSection {
 	}
 	// Ordered by what a narrow terminal must keep: moving around, making
 	// something, the filters, then the keys a user already knows to look for.
-	pairs := [][2]string{{"↑↓/jk", "navigate"}}
+	k := m.listGlyph
+	pairs := [][2]string{{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"}}
 	pairs = append(pairs, [][2]string{
-		{"n", "new"}, {"T", "terminal"}, {"g", "group"}, {"/", "search"},
-		{"t", archivedAction}, {"w", statusFilterAction}, {"e", emptyGroupsAction},
-		{"?", "keys"}, {"q", "quit"},
-		{"K/J", "reorder"}, {"F", foldAllAction}, {"|", "resize"}, {"s", "settings"},
+		{k(keybind.NewSession), "new"}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
+		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {k(keybind.EmptyGroups), emptyGroupsAction},
+		{k(keybind.Help), "keys"}, {k(keybind.Quit), "quit"},
+		{k(keybind.ReorderUp, keybind.ReorderDown), "reorder"}, {k(keybind.FoldAll), foldAllAction}, {k(keybind.Resize), "resize"}, {k(keybind.Settings), "settings"},
 	}...)
-	return legendSection{title: "View", quiet: true, pairs: pairs}
+	return legendSection{title: "View", quiet: true, pairs: legendPairsBound(pairs)}
 }
 
 func displayGroup(path string) string {

@@ -9,20 +9,25 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 )
 
-func keysFrom(t *testing.T, detach, review, editor []string) keybind.Session {
+func bindingOf(t *testing.T, specs ...string) keybind.Binding {
 	t.Helper()
-	binding := func(specs []string) keybind.Binding {
-		keys := make([]keybind.Key, 0, len(specs))
-		for _, spec := range specs {
-			key, err := keybind.Parse(spec)
-			if err != nil {
-				t.Fatalf("Parse(%q): %v", spec, err)
-			}
-			keys = append(keys, key)
+	keys := make([]keybind.Key, 0, len(specs))
+	for _, spec := range specs {
+		key, err := keybind.Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
 		}
-		return keybind.Keys(keys...)
+		keys = append(keys, key)
 	}
-	return keybind.Session{Detach: binding(detach), Review: binding(review), Editor: binding(editor)}
+	return keybind.Keys(keys...)
+}
+
+func sessionOf(t *testing.T, detach, review, editor []string) keybind.Table {
+	t.Helper()
+	return keybind.DefaultSession().
+		With(keybind.Detach, bindingOf(t, detach...)).
+		With(keybind.Review, bindingOf(t, review...)).
+		With(keybind.Editor, bindingOf(t, editor...))
 }
 
 func writeConfig(t *testing.T, text string) (string, string) {
@@ -46,7 +51,7 @@ func readConfig(t *testing.T, path string) string {
 
 // The file belongs to the user: their tool blocks and the comments around
 // them survive a table the settings screen writes.
-func TestSaveSessionKeysAppendsAndKeepsTheRestOfTheFile(t *testing.T) {
+func TestSaveKeysAppendsAndKeepsTheRestOfTheFile(t *testing.T) {
 	original := `poll_interval = "2s"
 
 # the CLI I actually use
@@ -54,9 +59,9 @@ func TestSaveSessionKeysAppendsAndKeepsTheRestOfTheFile(t *testing.T) {
 command = "claude"
 `
 	dir, path := writeConfig(t, original)
-	keys := keysFrom(t, []string{"ctrl+q", `ctrl+\`}, []string{"alt+r"}, nil)
-	if err := SaveSessionKeys(dir, keys); err != nil {
-		t.Fatalf("SaveSessionKeys: %v", err)
+	keys := sessionOf(t, []string{"ctrl+q", `ctrl+\`}, []string{"alt+r"}, nil)
+	if err := SaveKeys(dir, keys); err != nil {
+		t.Fatalf("SaveKeys: %v", err)
 	}
 
 	saved := readConfig(t, path)
@@ -80,15 +85,14 @@ command = "claude"
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
-	if !loaded.Keybindings.Session.Equal(keys) {
-		t.Fatalf("reloaded keys = %q / %q / %q", loaded.Keybindings.Session.Detach.Label(),
-			loaded.Keybindings.Session.Review.Label(), loaded.Keybindings.Session.Editor.Label())
+	if !loaded.SessionKeys.Equal(keys) {
+		t.Fatalf("reloaded keys = %q", sessionLabels(loaded.SessionKeys))
 	}
 }
 
 // A second save replaces the table it wrote rather than stacking another
 // one, and the table after it keeps the comment introducing it.
-func TestSaveSessionKeysReplacesTheTableInPlace(t *testing.T) {
+func TestSaveKeysReplacesTheTableInPlace(t *testing.T) {
 	dir, path := writeConfig(t, `[keybindings.session]
 detach = "f9"
 review = "none"
@@ -98,8 +102,8 @@ editor = "none"
 [tools.mine]
 command = "mine"
 `)
-	if err := SaveSessionKeys(dir, keysFrom(t, []string{"ctrl+q"}, []string{"ctrl+r"}, []string{"f3"})); err != nil {
-		t.Fatalf("SaveSessionKeys: %v", err)
+	if err := SaveKeys(dir, sessionOf(t, []string{"ctrl+q"}, []string{"ctrl+r"}, []string{"f3"})); err != nil {
+		t.Fatalf("SaveKeys: %v", err)
 	}
 
 	saved := readConfig(t, path)
@@ -116,7 +120,7 @@ command = "mine"
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
-	if got := loaded.Keybindings.Session.Detach.Label(); got != "ctrl+q" {
+	if got := loaded.SessionKeys.Binding(keybind.Detach).Label(); got != "ctrl+q" {
 		t.Fatalf("reloaded detach = %q", got)
 	}
 	if got := loaded.Tools["mine"].Command; got != "mine" {
@@ -124,14 +128,14 @@ command = "mine"
 	}
 }
 
-func TestSaveSessionKeysKeepsAnInlineCommentOnTheHeader(t *testing.T) {
+func TestSaveKeysKeepsAnInlineCommentOnTheHeader(t *testing.T) {
 	dir, path := writeConfig(t, `[keybindings.session] # session shortcuts
 detach = "f9"
 review = "none"
 editor = "none"
 `)
-	if err := SaveSessionKeys(dir, keysFrom(t, []string{"ctrl+q"}, []string{"ctrl+r"}, []string{"f3"})); err != nil {
-		t.Fatalf("SaveSessionKeys: %v", err)
+	if err := SaveKeys(dir, sessionOf(t, []string{"ctrl+q"}, []string{"ctrl+r"}, []string{"f3"})); err != nil {
+		t.Fatalf("SaveKeys: %v", err)
 	}
 
 	saved := readConfig(t, path)
@@ -145,17 +149,17 @@ editor = "none"
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
-	if got := loaded.Keybindings.Session.Detach.Label(); got != "ctrl+q" {
+	if got := loaded.SessionKeys.Binding(keybind.Detach).Label(); got != "ctrl+q" {
 		t.Fatalf("reloaded detach = %q", got)
 	}
 }
 
 // A table the splice cannot express leaves the file alone rather than
 // writing something that would not load.
-func TestSaveSessionKeysRefusesAFileItWouldBreak(t *testing.T) {
+func TestSaveKeysRefusesAFileItWouldBreak(t *testing.T) {
 	original := "[keybindings]\nsession = { detach = \"ctrl+q\" }\n"
 	dir, path := writeConfig(t, original)
-	err := SaveSessionKeys(dir, keysFrom(t, []string{"f9"}, nil, nil))
+	err := SaveKeys(dir, sessionOf(t, []string{"f9"}, nil, nil))
 	if err == nil {
 		t.Fatal("saving over an inline keybindings table should fail")
 	}
@@ -167,14 +171,71 @@ func TestSaveSessionKeysRefusesAFileItWouldBreak(t *testing.T) {
 	}
 }
 
-func TestSaveSessionKeysRefusesATableWithNoWayBack(t *testing.T) {
+func TestSaveKeysRefusesATableWithNoWayBack(t *testing.T) {
 	original := "poll_interval = \"2s\"\n"
 	dir, path := writeConfig(t, original)
-	err := SaveSessionKeys(dir, keysFrom(t, nil, []string{"ctrl+r"}, []string{"f3"}))
+	err := SaveKeys(dir, sessionOf(t, nil, []string{"ctrl+r"}, []string{"f3"}))
 	if err == nil || !strings.Contains(err.Error(), "detach needs at least one key") {
 		t.Fatalf("err = %v, want the detach rule", err)
 	}
 	if got := readConfig(t, path); got != original {
 		t.Fatalf("the file should be untouched, got:\n%s", got)
+	}
+}
+
+func sessionLabels(keys keybind.Table) string {
+	return keys.Binding(keybind.Detach).Label() + " / " + keys.Binding(keybind.Review).Label() + " / " + keys.Binding(keybind.Editor).Label()
+}
+
+// The list table is written whole, one line per action, and lives beside
+// the session table in the same file without touching it.
+func TestSaveKeysWritesTheListTableBesideTheSessionOne(t *testing.T) {
+	dir, path := writeConfig(t, `[keybindings.session]
+detach = "f9"
+review = "none"
+editor = "none"
+`)
+	list := keybind.DefaultList().
+		With(keybind.NewSession, bindingOf(t, "N")).
+		With(keybind.Prompt, bindingOf(t, "space", "p")).
+		With(keybind.Quit, bindingOf(t))
+	if err := SaveKeys(dir, list); err != nil {
+		t.Fatalf("SaveKeys: %v", err)
+	}
+
+	saved := readConfig(t, path)
+	for _, want := range []string{
+		"[keybindings.session]\ndetach = \"f9\"",
+		"[keybindings.list]",
+		`new_session = "N"`,
+		`prompt = ["space", "p"]`,
+		`quit = "none"`,
+		`up = ["up", "k"]`,
+		`help = "?"`,
+	} {
+		if !strings.Contains(saved, want) {
+			t.Fatalf("saved file is missing %q:\n%s", want, saved)
+		}
+	}
+	if got := strings.Count(saved, "\n") - strings.Count(saved, "= "); got > 6 {
+		t.Fatalf("every list line should be an action, got:\n%s", saved)
+	}
+
+	loaded, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if !loaded.ListKeys.Equal(list) {
+		t.Fatalf("reloaded list keys differ")
+	}
+	if got := loaded.SessionKeys.Binding(keybind.Detach).Label(); got != "f9" {
+		t.Fatalf("the session table should be untouched, detach = %q", got)
+	}
+
+	if err := SaveKeys(dir, list.With(keybind.Quit, bindingOf(t, "Q"))); err != nil {
+		t.Fatalf("second SaveKeys: %v", err)
+	}
+	if saved := readConfig(t, path); strings.Count(saved, "[keybindings.list]") != 1 || !strings.Contains(saved, `quit = "Q"`) {
+		t.Fatalf("the list table should be replaced in place:\n%s", saved)
 	}
 }

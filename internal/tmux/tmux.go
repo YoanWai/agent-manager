@@ -42,16 +42,14 @@ type Driver struct {
 	paneTheme         atomic.Pointer[PaneTheme]
 	paneThemePush     sync.Mutex
 	socketPath        atomic.Pointer[string]
-	sessionKeys       atomic.Pointer[keybind.Session]
+	sessionKeys       atomic.Pointer[keybind.Table]
 }
 
-// SetSessionKeys is the key table EnsureBindings installs and the session
-// footer names. Unset, the driver binds the defaults.
-func (d *Driver) SetSessionKeys(keys keybind.Session) {
+func (d *Driver) SetSessionKeys(keys keybind.Table) {
 	d.sessionKeys.Store(&keys)
 }
 
-func (d *Driver) currentSessionKeys() keybind.Session {
+func (d *Driver) currentSessionKeys() keybind.Table {
 	if keys := d.sessionKeys.Load(); keys != nil {
 		return *keys
 	}
@@ -402,16 +400,16 @@ func (d *Driver) styleStatusBar(name string) error {
 // attachStatusRight is the session footer: the keys the manager keeps,
 // and every way back. A detach key the inner prefix shadows is left off,
 // since the prefix takes it first, and the prefix itself follows with d.
-func attachStatusRight(primary, secondary string, keys keybind.Session) string {
+func attachStatusRight(primary, secondary string, keys keybind.Table) string {
 	parts := []string{"agent-manager"}
-	if label := titledLabel(keys.Review); label != "" {
+	if label := titledLabel(keys.Binding(keybind.Review)); label != "" {
 		parts = append(parts, label+" = review")
 	}
-	if label := titledLabel(keys.Editor); label != "" {
+	if label := titledLabel(keys.Binding(keybind.Editor)); label != "" {
 		parts = append(parts, label+" = editor")
 	}
 	var exits []string
-	for _, key := range keys.Detach.Keys() {
+	for _, key := range keys.Binding(keybind.Detach).Keys() {
 		if key.Tmux() != primary && key.Tmux() != secondary {
 			exits = append(exits, titled(key))
 		}
@@ -469,13 +467,13 @@ func (d *Driver) EnsureBindings() error {
 	for _, key := range stale {
 		commands = append(commands, []string{"unbind-key", "-T", "root", key})
 	}
-	for _, key := range keys.Detach.Keys() {
+	for _, key := range keys.Binding(keybind.Detach).Keys() {
 		commands = append(commands, rootBinding(key, "detach-client"))
 	}
-	for _, key := range keys.Review.Keys() {
+	for _, key := range keys.Binding(keybind.Review).Keys() {
 		commands = append(commands, rootBinding(key, request(RequestReview)))
 	}
-	for _, key := range keys.Editor.Keys() {
+	for _, key := range keys.Binding(keybind.Editor).Keys() {
 		commands = append(commands, rootBinding(key, request(RequestEditor)))
 	}
 	// Restore the standard fallback when the prefix shadows a direct binding.

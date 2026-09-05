@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"net/url"
 	"os"
 	"os/exec"
@@ -142,22 +143,8 @@ func (m *Model) activeNotices() []notice {
 			glyph: "✳",
 			tint:  colorAccent2,
 			title: "Welcome to agent-manager",
-			body: []string{
-				"Every row on the left is a live agent session.",
-				"",
-				"n      new session           space  prompt it, no attach",
-				"↵      focus it              A      attach it full screen",
-				m.welcomeSessionKeysLine(),
-				"x / v  kill / revive         s      settings",
-				"",
-				"space on a group row starts a new agent there on what you type.",
-				"Each row's mark is its state: ◐ working, ◆ waiting, ● finished, ○ idle.",
-				"",
-				"Press ? for every key: the map scrolls, and / searches it.",
-				"A bug or an idea? Settings (s) has a row for each.",
-				"Messages like this one live here; x dismisses one for good.",
-			},
-			url: repoURL + "#readme",
+			body:  m.welcomeBody(),
+			url:   repoURL + "#readme",
 		},
 		notice{
 			id:    noticeArrowStep,
@@ -959,10 +946,69 @@ func (m *Model) dismissNotice(id string) {
 	}
 }
 
+// The welcome names the keys as the tables bind them on this run: the first
+// key of each action, and nothing for an action turned off.
+func (m *Model) welcomeBody() []string {
+	prompt, help, search, settings := m.firstListKey(keybind.Prompt), m.firstListKey(keybind.Help), m.firstListKey(keybind.Search), m.firstListKey(keybind.Settings)
+	body := []string{
+		"Every row on the left is a live agent session.",
+		"",
+		welcomeRow(m.firstListKey(keybind.NewSession), "new session", prompt, "prompt it, no attach"),
+		welcomeRow(m.firstListKey(keybind.Open), "focus it", m.firstListKey(keybind.Attach), "attach it full screen"),
+		m.welcomeSessionKeysLine(),
+		welcomeRow(m.firstListKeys(keybind.Kill, keybind.Revive), "kill / revive", settings, "settings"),
+		"",
+	}
+	if prompt != "" {
+		body = append(body, prompt+" on a group row starts a new agent there on what you type.")
+	}
+	body = append(body, "Each row's mark is its state: ◐ working, ◆ waiting, ● finished, ○ idle.", "")
+	if help != "" {
+		keyMap := "Press " + help + " for every key: the map scrolls"
+		if search != "" {
+			keyMap += ", and " + search + " searches it"
+		}
+		body = append(body, keyMap+".")
+	}
+	return append(body,
+		"A bug or an idea? Settings ("+settings+") has a row for each.",
+		"Messages like this one live here; x dismisses one for good.",
+	)
+}
+
+func (m *Model) firstListKey(action string) string {
+	keys := m.listKeys.Binding(action).Keys()
+	if len(keys) == 0 {
+		return ""
+	}
+	return keys[0].Glyph()
+}
+
+func (m *Model) firstListKeys(actions ...string) string {
+	var glyphs []string
+	for _, action := range actions {
+		if glyph := m.firstListKey(action); glyph != "" {
+			glyphs = append(glyphs, glyph)
+		}
+	}
+	return strings.Join(glyphs, " / ")
+}
+
+// welcomeRow is two key columns; a half with no key left is blank.
+func welcomeRow(leftKey, leftDoes, rightKey, rightDoes string) string {
+	if leftKey == "" {
+		leftDoes = ""
+	}
+	if rightKey == "" {
+		rightDoes = ""
+	}
+	return strings.TrimRight(fmt.Sprintf("%-6s %-22s%-6s %s", leftKey, leftDoes, rightKey, rightDoes), " ")
+}
+
 // The widths are the columns of the welcome rows around this line.
 func (m *Model) welcomeSessionKeysLine() string {
-	line := fmt.Sprintf("%-6s %-22s", m.keys.Detach.Keys()[0].Tea(), "back to the manager")
-	if review := m.keys.Review.Keys(); len(review) > 0 {
+	line := fmt.Sprintf("%-6s %-22s", m.keys.Binding(keybind.Detach).Keys()[0].Tea(), "back to the manager")
+	if review := m.keys.Binding(keybind.Review).Keys(); len(review) > 0 {
 		line += fmt.Sprintf("%-6s %s", review[0].Tea(), "review its diff")
 	}
 	return strings.TrimRight(line, " ")

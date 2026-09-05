@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"io"
 	"strings"
 	"testing"
@@ -199,6 +200,8 @@ func TestFinalHelpLayoutPublishesAndRemovesCursorMarker(t *testing.T) {
 		mode:      modeHelp,
 		help:      helpState{searching: true, query: "中文"},
 		imeCursor: &cursorAnchor{},
+		keys:      keybind.DefaultSession(),
+		listKeys:  keybind.DefaultList(),
 	}
 	frame := m.View()
 	if strings.Contains(frame, cursorAnchorMarker) {

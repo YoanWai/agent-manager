@@ -436,14 +436,14 @@ func windowEnd(heights []int, top, budget int) int {
 
 func (m *Model) emptyRailLines(width, height int) []string {
 	title := "no sessions yet"
-	hint := keyCap("n", "starts one")
+	hint := m.listHint(keybind.NewSession, "starts one")
 	if m.showArchived {
 		title = "nothing archived"
-		hint = keyCap("t", "back to active")
+		hint = m.listHint(keybind.Archived, "back to active")
 	}
 	if m.statusFilter.active() {
 		title = "nothing needs " + m.statusFilter.label()
-		hint = keyCap("w", "show all")
+		hint = m.listHint(keybind.Filter, "show all")
 	}
 	if search := strings.TrimSpace(m.search); search != "" {
 		title = "no matches"
@@ -1057,12 +1057,20 @@ const (
 // focusTopRule is the hairline that caps the focused pane in the split,
 // where the detail head above it already names the session, so the rule
 // spends its title on the keys instead.
-func focusTopRule(width int, keys keybind.Session) string {
-	hints := []string{"focused", keys.Detach.Label() + " back"}
-	if label := keys.Review.Label(); label != "" {
+func (m *Model) listHint(action, label string) string {
+	glyph := m.listGlyph(action)
+	if glyph == "" {
+		return ""
+	}
+	return keyCap(glyph, label)
+}
+
+func focusTopRule(width int, keys keybind.Table) string {
+	hints := []string{"focused", keys.Binding(keybind.Detach).Label() + " back"}
+	if label := keys.Binding(keybind.Review).Label(); label != "" {
 		hints = append(hints, label+" review")
 	}
-	if label := keys.Editor.Label(); label != "" {
+	if label := keys.Binding(keybind.Editor).Label(); label != "" {
 		hints = append(hints, label+" editor")
 	}
 	title := " " + strings.Join(hints, " · ") + " "
@@ -1307,7 +1315,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		// The key that spawns into a group is the one people miss, since the
 		// same key answers a session, so the group says what it does here.
 		// The breakdown is the reading, so a column too tight for both keeps it.
-		hint := keyCap("space", "new agent")
+		hint := m.listHint(keybind.Prompt, "new agent")
 		if detailLabelWidth+ansi.StringWidth(breakdown)+ansi.StringWidth(hint)+2 > width {
 			hint = ""
 		}
@@ -1330,8 +1338,11 @@ const (
 func (m *Model) viewGroupAgents(group string, width, height int) string {
 	total := m.groupSessionCount(group)
 	if total == 0 {
-		return subtleStyle.Render("agents") + "\n" +
-			mutedStyle.Render("(none yet — press space to spawn one)")
+		none := "(none yet)"
+		if prompt := m.listGlyph(keybind.Prompt); prompt != "" {
+			none = "(none yet, press " + prompt + " to spawn one)"
+		}
+		return subtleStyle.Render("agents") + "\n" + mutedStyle.Render(none)
 	}
 
 	type rosterRow struct{ name, tool, state string }

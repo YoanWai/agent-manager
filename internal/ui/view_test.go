@@ -320,8 +320,9 @@ func shotModel() *Model {
 		{depth: 2, sess: sessions[5]},
 	}
 	m := &Model{
-		keys:  keybind.DefaultSession(),
-		width: 120, height: 34, mode: modeList, cursor: 4,
+		keys:     keybind.DefaultSession(),
+		listKeys: keybind.DefaultList(),
+		width:    120, height: 34, mode: modeList, cursor: 4,
 		sessions: sessions, rows: rows, collapsed: map[string]bool{},
 		groupPaths: map[string]string{"backend": "/Users/someone/dev/api"},
 		split:      splitState{ratio: defaultSplitRatio},
@@ -523,7 +524,7 @@ func TestArrowStepFooterHintsFollowSetting(t *testing.T) {
 		m.selectSessionRow(t, "arrow-hints")
 		assertHint("session", "→ focus", enabled)
 		m.selectGroupRow(t, "arrow-group")
-		assertHint("group", "←→ close / open", enabled)
+		assertHint("group", "←/→ close / open", enabled)
 		m.mode = modeFocus
 		assertHint("focus", "← prompt start: back", enabled)
 	}

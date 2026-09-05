@@ -583,11 +583,11 @@ func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 func TestNewHandsTheKeyTableToTmux(t *testing.T) {
 	m := buildModel(t)
 	cfg := m.cfg
-	cfg.Keybindings.Session = keybind.Session{Detach: bindingOf(t, "f9"), Review: bindingOf(t, "ctrl+g")}
+	cfg.SessionKeys = keybind.DefaultSession().With(keybind.Detach, bindingOf(t, "f9")).With(keybind.Review, bindingOf(t, "ctrl+g"))
 	loaded := New(cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
 	loaded.width, loaded.height = 120, 40
 	t.Cleanup(func() { m.tmux.SetSessionKeys(keybind.DefaultSession()) })
-	if got := loaded.keys.Editor.Label(); got != "f3" {
+	if got := loaded.keys.Binding(keybind.Editor).Label(); got != "f3" {
 		t.Fatalf("editor left out should take the default, got %q", got)
 	}
 	createSession(t, loaded, "tablebound", t.TempDir(), "")

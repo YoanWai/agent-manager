@@ -115,10 +115,13 @@ type Config struct {
 	Editor      string          `toml:"editor"`
 	Tools       map[string]Tool `toml:"tools"`
 	Keybindings Keybindings     `toml:"keybindings"`
+	SessionKeys keybind.Table   `toml:"-"`
+	ListKeys    keybind.Table   `toml:"-"`
 }
 
 type Keybindings struct {
-	Session keybind.Session `toml:"session"`
+	Session map[string]keybind.Binding `toml:"session"`
+	List    map[string]keybind.Binding `toml:"list"`
 }
 
 type Duration struct {
@@ -176,7 +179,7 @@ func LoadDir(dir string) (Config, error) {
 		return Config{}, err
 	}
 	cfg.applyDefaults()
-	if err := cfg.Keybindings.Session.Validate(); err != nil {
+	if err := cfg.resolveKeys(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	return cfg, nil
@@ -346,7 +349,30 @@ func Default() (Config, error) {
 		return Config{}, err
 	}
 	cfg.applyDefaults()
+	if err := cfg.resolveKeys(); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+func (c *Config) resolveKeys() error {
+	session, err := keybind.SessionTable(c.Keybindings.Session)
+	if err != nil {
+		return err
+	}
+	list, err := keybind.ListTable(c.Keybindings.List)
+	if err != nil {
+		return err
+	}
+	c.SessionKeys, c.ListKeys = session, list
+	return nil
+}
+
+func (c Config) keys(scope string) keybind.Table {
+	if scope == keybind.ScopeList {
+		return c.ListKeys
+	}
+	return c.SessionKeys
 }
 
 func (c *Config) applyDefaults() {
@@ -362,7 +388,6 @@ func (c *Config) applyDefaults() {
 			c.Tools[name] = tool
 		}
 	}
-	c.Keybindings.Session = c.Keybindings.Session.WithDefaults()
 }
 
 func (c Config) ToolNames() []string {
@@ -411,6 +436,15 @@ const defaultConfig = `poll_interval = "2s"
 # detach = ["ctrl+q", "ctrl+\\"]
 # review = "ctrl+r"
 # editor = "f3"
+
+# The keys of the manager's own list, one line per action; Settings > keys
+# in the manager names them all. A plain character, a key name (space,
+# enter, up, shift+up ...), ctrl+<key>, alt+<key> or f1..f12; "none" turns
+# an action off. esc and ctrl+c stay as they are.
+# [keybindings.list]
+# new_session = "N"
+# prompt = ["space", "p"]
+# quit = "none"
 
 # Rules are matched top-down against the visible pane text (ANSI stripped);
 # first match wins, except a matching waiting rule outranks a working match.

@@ -373,7 +373,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
-		actionRow(settingsFieldSessionBindings, "in-session keys", sessionKeysSummary(m.keys)) + "\n" +
+		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.keys, m.listKeys)) + "\n" +
 		actionRow(settingsFieldCLIs, "CLIs", "show or hide for new sessions") + "\n" +
 		ctaRow(settingsFieldBugReport, "report a bug", "open the bug report form") + "\n" +
 		ctaRow(settingsFieldFeatureRequest, "suggest a change", "open the feature request form") + "\n" +
@@ -384,7 +384,7 @@ func (m *Model) viewSettings() string {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
 	case settingsFieldCLIs:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
-	case settingsFieldSessionBindings:
+	case settingsFieldKeybindings:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save"}}
 	case settingsFieldUpdate:
 		switch {
@@ -490,18 +490,37 @@ func formField(label, value string, focused bool) string {
 }
 
 func (m *Model) viewKeyPicker() string {
+	tables := m.settings.tables
+	if m.settings.keyReset {
+		return m.confirmCard("↺ Reset keys", "Reset every key to its default?",
+			strings.Join(keyResetChanges(tables...), "\n"), true, "reset")
+	}
+	rows := keyRowsOf(tables)
+	first, last := pickerWindow(len(rows), m.settings.keyCursor, m.height-14)
 	var b strings.Builder
-	for i, action := range sessionKeyActions {
+	if first > 0 {
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", first)) + "\n")
+	}
+	for i := first; i < last; i++ {
+		row := rows[i]
+		keys := tables[row.table]
+		section := keySectionFor(keys)
+		if i == first || rows[i-1].table != row.table {
+			if i > first {
+				b.WriteByte('\n')
+			}
+			b.WriteString(annotationStyle.Render("  "+section.title) + "\n")
+		}
 		marker := "  "
 		labelStyle := valueStyle
 		if m.settings.keyCursor == i {
 			marker = lipgloss.NewStyle().Foreground(colorAccent).Render("❯ ")
 			labelStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 		}
-		value := sessionBinding(m.settings.keys, i).Label()
+		value := keys.Binding(row.action.Name).Label()
 		valueRender := valueStyle.Render(value)
 		if value == "" {
-			valueRender = subtleStyle.Render("off, the agent gets it")
+			valueRender = subtleStyle.Render(section.off)
 		}
 		if m.settings.keyCapture && m.settings.keyCursor == i {
 			word := "press a key"
@@ -511,16 +530,32 @@ func (m *Model) viewKeyPicker() string {
 			valueRender = lipgloss.NewStyle().Foreground(colorAccent).Render(word + "…")
 		}
 		b.WriteString(marker)
-		b.WriteString(padRight(labelStyle.Render(action.name), 10))
+		b.WriteString(padRight(labelStyle.Render(row.action.Name), 14))
 		b.WriteString(padRight(valueRender, 26))
-		b.WriteString(mutedStyle.Render(action.does))
+		b.WriteString(mutedStyle.Render(row.action.Does))
 		b.WriteByte('\n')
 	}
-	b.WriteByte('\n')
-	b.WriteString(subtleStyle.Render("  every other key reaches the agent"))
-	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"esc", "back"}}
+	if last < len(rows) {
+		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-last)) + "\n")
+	}
+	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
 	if m.settings.keyCapture {
 		hint = [][2]string{{"any key", "bind it"}, {"esc", "cancel"}}
 	}
-	return m.cardFlex("⚙ Keys inside a session", strings.TrimRight(b.String(), "\n"), hint)
+	return m.cardFlex("⚙ Keybindings", strings.TrimRight(b.String(), "\n"), hint)
+}
+
+func pickerWindow(count, cursor, room int) (first, last int) {
+	visible := max(min(count, room), 5)
+	if visible >= count {
+		return 0, count
+	}
+	first = cursor - visible/2
+	if first < 0 {
+		first = 0
+	}
+	if first+visible > count {
+		first = count - visible
+	}
+	return first, first + visible
 }

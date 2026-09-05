@@ -59,13 +59,14 @@ type treeRow struct {
 }
 
 type Model struct {
-	cfg    config.Config
-	store  *store.Store
-	tmux   *tmux.Driver
-	hooks  *hooks.Manager
-	gitDrv *git.Driver
-	engine *status.Engine
-	keys   keybind.Session
+	cfg      config.Config
+	store    *store.Store
+	tmux     *tmux.Driver
+	hooks    *hooks.Manager
+	gitDrv   *git.Driver
+	engine   *status.Engine
+	keys     keybind.Table
+	listKeys keybind.Table
 	// configDir is resolved once, at New, so the settings screen writes
 	// keys back to the config.toml the manager loaded.
 	configDir string
@@ -437,16 +438,16 @@ type settingsState struct {
 	// to it.
 	manualTheme string
 	// cliPicker is the sub-panel for which CLIs appear when creating sessions.
-	cliPicker bool
-	cliNames  []string
-	cliHidden map[string]bool
-	cliCursor int
-	// keyPicker is the sub-panel for the keys the manager keeps inside a session.
+	cliPicker  bool
+	cliNames   []string
+	cliHidden  map[string]bool
+	cliCursor  int
 	keyPicker  bool
-	keys       keybind.Session
+	tables     []keybind.Table
 	keyCursor  int
 	keyCapture bool
 	keyAppend  bool
+	keyReset   bool
 }
 
 const (
@@ -464,7 +465,7 @@ const (
 	settingsFieldWorktree
 	settingsFieldNotify
 	settingsFieldNotifyFinish
-	settingsFieldSessionBindings
+	settingsFieldKeybindings
 	settingsFieldCLIs
 	settingsFieldBugReport
 	settingsFieldFeatureRequest
@@ -704,13 +705,13 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
 	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
-	keys := cfg.Keybindings.Session.WithDefaults()
-	driver.SetSessionKeys(keys)
+	driver.SetSessionKeys(cfg.SessionKeys)
 	model := &Model{
 		cfg:                 cfg,
 		store:               st,
 		tmux:                driver,
-		keys:                keys,
+		keys:                cfg.SessionKeys,
+		listKeys:            cfg.ListKeys,
 		hooks:               hookManager,
 		gitDrv:              gitDriver,
 		engine:              engine,
