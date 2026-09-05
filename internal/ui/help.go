@@ -121,6 +121,21 @@ func sessionRowHelpRows(list keybind.Table) [][2]string {
 	return h.rows
 }
 
+func markHelpRows(list keybind.Table) [][2]string {
+	rows := [][2]string{
+		{"◐ working", "the agent is busy on a turn"},
+		{"◆ waiting", "blocked on you: a dialog, a permission ask, a question"},
+		{"● finished", "the turn ended; entering the session clears it to idle"},
+		{"○ idle", "nothing running"},
+		{"✕ errored", "the tool reported an error, or the session is dead"},
+		{"◌ starting", "the pane is still launching"},
+	}
+	if filter := list.Binding(keybind.Filter).Glyph(" / "); filter != "" {
+		rows = append(rows, [2]string{"", filter + " filters the list down to the marks that need you"})
+	}
+	return rows
+}
+
 func groupRowHelpRows(list keybind.Table) [][2]string {
 	h := helpRows{list: list}
 	h.action("fold / unfold", keybind.Open)
@@ -141,15 +156,7 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 	return []helpSection{
 		{title: "list", rows: listHelpRows(list, arrowStep)},
 		{title: "session under the cursor", rows: sessionRowHelpRows(list)},
-		{title: "the mark on a session row", rows: [][2]string{
-			{"◐ working", "the agent is busy on a turn"},
-			{"◆ waiting", "blocked on you: a dialog, a permission ask, a question"},
-			{"● finished", "the turn ended; entering the session clears it to idle"},
-			{"○ idle", "nothing running"},
-			{"✕ errored", "the tool reported an error, or the session is dead"},
-			{"◌ starting", "the pane is still launching"},
-			{"", "w filters the list down to the marks that need you"},
-		}},
+		{title: "the mark on a session row", rows: markHelpRows(list)},
 		{title: "group under the cursor", rows: groupRowHelpRows(list)},
 		{title: titledWith("quick prompt", list, keybind.Prompt), rows: [][2]string{
 			{"↵", "send"},

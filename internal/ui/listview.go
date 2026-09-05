@@ -1338,8 +1338,11 @@ const (
 func (m *Model) viewGroupAgents(group string, width, height int) string {
 	total := m.groupSessionCount(group)
 	if total == 0 {
-		return subtleStyle.Render("agents") + "\n" +
-			mutedStyle.Render("(none yet — press space to spawn one)")
+		none := "(none yet)"
+		if prompt := m.listGlyph(keybind.Prompt); prompt != "" {
+			none = "(none yet, press " + prompt + " to spawn one)"
+		}
+		return subtleStyle.Render("agents") + "\n" + mutedStyle.Render(none)
 	}
 
 	type rosterRow struct{ name, tool, state string }
