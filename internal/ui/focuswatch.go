@@ -156,7 +156,6 @@ func (w *focusWatch) query(command string) (string, bool) {
 	return out, true
 }
 
-// unwatch stops the watcher when it is on id.
 func (w *focusWatch) unwatch(id string) {
 	w.mu.Lock()
 	if w.id == id {
