@@ -205,7 +205,8 @@ func TestSessionTableRefusesASharedKeyANoneDetachAndAPlainKey(t *testing.T) {
 func TestDefaultListAnswersToTodaysKeys(t *testing.T) {
 	list := DefaultList()
 	for key, want := range map[string]string{
-		"k": Up, "up": Up, "j": Down, "K": ReorderUp, "shift+up": ReorderUp, "enter": Open, "A": Attach,
+		"k": Up, "up": Up, "j": Down, "down": Down, "K": ReorderUp, "shift+up": ReorderUp,
+		"J": ReorderDown, "shift+down": ReorderDown, "enter": Open, "A": Attach,
 		"right": StepIn, "left": StepOut, "n": NewSession, "T": Terminal, "g": NewGroup, "f": Fork,
 		"space": Prompt, "ctrl+r": Review, ".": MarkIdle, "r": Rename, "m": Move, "o": Editor, "R": Restart,
 		"x": Kill, "X": KillAll, "v": Revive, "V": ReviveAll, "a": Archive, "u": Restore, "d": Delete,
