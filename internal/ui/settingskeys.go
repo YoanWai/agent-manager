@@ -24,8 +24,6 @@ func keySectionFor(keys keybind.Table) keySection {
 	return keySection{"in the manager · esc and ctrl+c stay as they are", "off"}
 }
 
-// keyRow is one action of one of the picker's tables, in the order the
-// picker lists them: the session table first, then the manager's.
 type keyRow struct {
 	table  int
 	action keybind.Action
@@ -41,8 +39,6 @@ func keyRowsOf(tables []keybind.Table) []keyRow {
 	return rows
 }
 
-// keybindingsSummary names a key or two that left their defaults, and
-// counts them past what one settings row can hold.
 func keybindingsSummary(tables ...keybind.Table) string {
 	var moved []string
 	for _, keys := range tables {
@@ -152,8 +148,6 @@ func (m *Model) answerKeyReset(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// keyResetChanges names each action a reset would move, with the keys it
-// leaves and the ones it goes back to.
 func keyResetChanges(tables ...keybind.Table) []string {
 	var changes []string
 	for _, keys := range tables {

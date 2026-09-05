@@ -545,8 +545,6 @@ func (m *Model) viewKeyPicker() string {
 	return m.cardFlex("⚙ Keybindings", strings.TrimRight(b.String(), "\n"), hint)
 }
 
-// pickerWindow is the run of rows a list too tall for the screen shows,
-// kept around the cursor so it never leaves the window.
 func pickerWindow(count, cursor, room int) (first, last int) {
 	visible := max(min(count, room), 5)
 	if visible >= count {

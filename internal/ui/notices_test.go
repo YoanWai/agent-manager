@@ -1363,3 +1363,31 @@ func TestWelcomeSessionKeysLineFollowsTheKeyTable(t *testing.T) {
 		t.Errorf("review off line = %q", got)
 	}
 }
+
+// The welcome's list keys follow the list table the same way: a moved key
+// is named where it moved to, and an action turned off is left out.
+func TestWelcomeBodyFollowsTheListTable(t *testing.T) {
+	m := &Model{keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()}
+	body := strings.Join(m.welcomeBody(), "\n")
+	for _, want := range []string{"n      new session           space  prompt it, no attach", "↵      focus it              A      attach it full screen", "x / v  kill / revive         s      settings", "space on a group row", "Press ? for every key: the map scrolls, and / searches it.", "Settings (s)"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("default welcome is missing %q:\n%s", want, body)
+		}
+	}
+	m.listKeys = m.listKeys.
+		With(keybind.NewSession, bindingOf(t, "N")).
+		With(keybind.Prompt, bindingOf(t)).
+		With(keybind.Search, bindingOf(t)).
+		With(keybind.Settings, bindingOf(t, "S"))
+	body = strings.Join(m.welcomeBody(), "\n")
+	for _, want := range []string{"N      new session", "Press ? for every key: the map scrolls.", "Settings (S)", "x / v  kill / revive         S      settings"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("remapped welcome is missing %q:\n%s", want, body)
+		}
+	}
+	for _, gone := range []string{"prompt it", "on a group row", "searches it", "n      new session"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("remapped welcome should drop %q:\n%s", gone, body)
+		}
+	}
+}

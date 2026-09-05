@@ -378,8 +378,6 @@ func TestListPickerScrollsAroundTheCursor(t *testing.T) {
 	}
 }
 
-// listRow is the picker row of one manager action: the session rows come
-// first, so the list starts after them.
 func listRow(t *testing.T, m *Model, name string) int {
 	t.Helper()
 	for i, row := range keyRowsOf(m.settings.tables) {
