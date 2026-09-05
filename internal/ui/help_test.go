@@ -158,7 +158,7 @@ func TestHelpSearchOnASectionTitleKeepsItsRows(t *testing.T) {
 }
 
 func TestReviewHelpOnlyShowsReviewBindingsAndSetupGuidance(t *testing.T) {
-	m := &Model{width: 120, height: 30, mode: modeDiff, diff: diffState{active: true}}
+	m := &Model{width: 120, height: 30, mode: modeDiff, diff: diffState{active: true}, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()}
 	m.openHelp()
 	sections := m.visibleHelpSections()
 	if len(sections) != 1 || !strings.HasPrefix(sections[0].title, "review") {
@@ -300,7 +300,7 @@ func TestHelpOpensClean(t *testing.T) {
 func TestHelpFramePaintsInsideTheTerminal(t *testing.T) {
 	for _, width := range []int{60, 80, 120, 200} {
 		for _, height := range []int{14, 24, 40} {
-			m := &Model{width: width, height: height, mode: modeHelp}
+			m := &Model{width: width, height: height, mode: modeHelp, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()}
 			for _, query := range []string{"", "revive"} {
 				m.help.query = query
 				lines := strings.Split(m.View(), "\n")

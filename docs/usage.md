@@ -22,7 +22,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
 | `A` | Attach session full screen (Settings can swap it with `enter`) |
 | `.` | Mark a finished session idle without entering it |
-| `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available. `ctrl+r`, `F3` and this pair move with `[keybindings.session]` in config.toml, and every key in this table moves with `[keybindings.list]` (see [Key bindings](configuration.md#key-bindings)) |
+| `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available. `ctrl+r`, `F3` and this pair move with `[keybindings.session]` in config.toml, and every key of the list itself moves with `[keybindings.list]` (see [Key bindings](configuration.md#key-bindings)) |
 | tmux prefix, then `d` | Inside a full-screen attach: back to the manager when the prefix reaches the inner tmux |
 | `F3` | Inside a session: open its directory in your editor |
 | `→` | Step into the row: focus the session, or open the group. In beta; Settings (`s`) can turn the pair off |

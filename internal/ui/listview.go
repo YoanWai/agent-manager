@@ -1315,7 +1315,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		// The key that spawns into a group is the one people miss, since the
 		// same key answers a session, so the group says what it does here.
 		// The breakdown is the reading, so a column too tight for both keeps it.
-		hint := keyCap(m.listGlyph(keybind.Prompt), "new agent")
+		hint := m.listHint(keybind.Prompt, "new agent")
 		if detailLabelWidth+ansi.StringWidth(breakdown)+ansi.StringWidth(hint)+2 > width {
 			hint = ""
 		}

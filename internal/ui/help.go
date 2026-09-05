@@ -197,13 +197,12 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 
 func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) [][2]string {
 	rows := [][2]string{{"typing", "goes straight to the agent, q included"}}
-	if detach := keys.Binding(keybind.Detach).Keys(); len(detach) > 0 {
-		back := "back to the manager"
-		if len(detach) > 1 {
-			back += " (" + keybind.Keys(detach[1:]...).Label() + " too)"
-		}
-		rows = append(rows, [2]string{detach[0].Tea(), back})
+	detach := keys.Binding(keybind.Detach).Keys()
+	back := "back to the manager"
+	if len(detach) > 1 {
+		back += " (" + keybind.Keys(detach[1:]...).Label() + " too)"
 	}
+	rows = append(rows, [2]string{detach[0].Tea(), back})
 	if arrowStep {
 		rows = append(rows, [2]string{"←", "focused: back to the manager, at the prompt's start"})
 	}
