@@ -596,8 +596,10 @@ func TestMigratesStaleCommandCodePatterns(t *testing.T) {
 
 // A config.toml written before the pi footer widened carries rules that pin
 // exactly two footer lines, so a pi extension drawing more keeps every rule
-// from matching. The stale strings are rewritten to the current defaults;
-// a rule the user edited by hand is kept as written.
+// from matching. A config written on 0.34 or 0.35 carries the widened
+// working rule that still wants the spinner on a line of its own, which pi
+// 0.85 no longer draws. The stale strings are rewritten to the current
+// defaults; a rule the user edited by hand is kept as written.
 func TestMigratesStalePiFooterRules(t *testing.T) {
 	handEdited := `(?ms)my own waiting rule\z`
 	cfg := Config{Tools: map[string]Tool{
@@ -609,6 +611,7 @@ func TestMigratesStalePiFooterRules(t *testing.T) {
 				{State: "errored", Pattern: oldPiRateLimitRule},
 				{State: "waiting", Pattern: oldPiQuestionRule},
 				{State: "working", Pattern: oldPiWorkingRule},
+				{State: "working", Pattern: oldPiOwnLineWorkingRule},
 				{State: "waiting", Pattern: handEdited},
 			},
 		},
@@ -625,12 +628,12 @@ func TestMigratesStalePiFooterRules(t *testing.T) {
 		defaults[rule.Pattern] = true
 	}
 	tool := cfg.Tools["pi"]
-	for _, rule := range tool.Rules[:5] {
+	for _, rule := range tool.Rules[:6] {
 		if !defaults[rule.Pattern] {
 			t.Fatalf("stale %s rule was not rewritten to the current default: %q", rule.State, rule.Pattern)
 		}
 	}
-	if got := tool.Rules[5].Pattern; got != handEdited {
+	if got := tool.Rules[6].Pattern; got != handEdited {
 		t.Fatalf("hand-edited rule = %q, want kept as written", got)
 	}
 }

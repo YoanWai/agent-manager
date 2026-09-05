@@ -797,6 +797,31 @@ func TestMatchedWorkingAfterQuietRestartsGrace(t *testing.T) {
 	}
 }
 
+// pi anchors its activity region at the pane origin, so the region never
+// changes and the spinner animates below it. The stuck grace restarts on
+// any pane change, and only a pane frozen for the whole grace settles.
+func TestSpinnerAnimatingBelowTheRegionStaysWorking(t *testing.T) {
+	prev := stuckEndGrace
+	stuckEndGrace = time.Minute
+	t.Cleanup(func() { stuckEndGrace = prev })
+	m := buildModel(t)
+	defaultEngine(t, m)
+	sess := store.Session{ID: "anim-pi", Tool: "pi", Status: status.Working}
+	footer := "\n──────────────────────────────\n~/dev/project (main)\n↑116 ↓26k $2.862 (sub) 6.2%/1.0M (auto)\n"
+	still := "── ⠋ Working ─────────────────" + footer
+	moved := "── ⠹ Working ─────────────────" + footer
+	seedRegionHash(t, m, sess, still)
+	expired := quietTimer{since: time.Now().Add(-2 * time.Minute), stuck: true, pane: hashString(still)}
+	m.poller.quietSince[sess.ID] = expired
+	if got := deriveStatus(t, m, sess, moved, true); got != status.Working {
+		t.Fatalf("a spinner frame change past the grace should restart it and stay working, got %q", got)
+	}
+	m.poller.quietSince[sess.ID] = expired
+	if got := deriveStatus(t, m, sess, still, true); got != status.Finished {
+		t.Fatalf("a pane frozen for the whole grace should settle finished, got %q", got)
+	}
+}
+
 // A live agent animates its pane every poll or two; a changing region must
 // keep a rule-matched working verdict working no matter how long it runs.
 func TestAnimatedMatchedWorkingStaysWorking(t *testing.T) {

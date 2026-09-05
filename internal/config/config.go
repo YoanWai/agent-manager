@@ -246,6 +246,13 @@ const (
 	newPiFooterTail = `(?:\n[^\n]*){2,5}[ \t]*(?:\n[ \t]*)*\z`
 )
 
+// pi 0.85 moved the streaming indicator into the composer's top border, and
+// the working rule wanted the spinner on a line of its own above that
+// border. This is the widened-footer form a config written on 0.34 or 0.35
+// carries; it and the two-line form above are rewritten to the current
+// working default.
+const oldPiOwnLineWorkingRule = `(?ms)^[ \t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\b[^\n]*\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + newPiFooterTail
+
 // mergeTool returns user with any zero-value field filled from def.
 //
 // Shell is deliberately not among them. "terminal" is a plausible name for
@@ -314,8 +321,15 @@ func mergeTool(name string, user, def Tool) Tool {
 	if name == "pi" {
 		for i, rule := range user.Rules {
 			switch rule.Pattern {
-			case oldPiIdleRule, oldPiErrorRule, oldPiRateLimitRule, oldPiQuestionRule, oldPiWorkingRule:
+			case oldPiIdleRule, oldPiErrorRule, oldPiRateLimitRule, oldPiQuestionRule:
 				user.Rules[i].Pattern = strings.Replace(rule.Pattern, oldPiFooterTail, newPiFooterTail, 1)
+			case oldPiWorkingRule, oldPiOwnLineWorkingRule:
+				for _, current := range def.Rules {
+					if current.State == "working" {
+						user.Rules[i].Pattern = current.Pattern
+						break
+					}
+				}
 			}
 		}
 	}
@@ -728,7 +742,11 @@ rules = [
   { state = "errored", pattern = "(?ms)^[ \\t]*Error:[^\\n]*(?:\\n[ \\t]+[^ \\t\\n][^\\n]*){0,8}\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
   { state = "errored", pattern = "(?ms)^[ \\t]*[^\\n]*rate limit reached[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
   { state = "waiting", pattern = "(?ms)\\?[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
-  { state = "working", pattern = "(?ms)^[ \\t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
+  # The spinner sits on a line of its own above the composer, or since pi
+  # 0.85 inside the composer's top border ("── ⠹ Working ───"); custom
+  # editors keep the standalone shape, so both are live. The composer may
+  # hold a draft typed mid-turn.
+  { state = "working", pattern = "(?ms)^[ \\t]*(?:[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*|─+[ \\t]+[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*)\\n(?:(?:[^─\\n][^\\n]*)?\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
 ]
 
 [tools.command-code]
