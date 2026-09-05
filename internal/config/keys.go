@@ -13,13 +13,11 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 )
 
-const sessionKeysHeader = "[keybindings.session]"
-
-// SaveSessionKeys rewrites the session key table in the config file and
-// leaves every other line as it was. The file is the user's: it carries
-// their tool blocks and the comments they wrote around them, so the table
-// is spliced as text rather than the document being re-encoded.
-func SaveSessionKeys(dir string, keys keybind.Session) error {
+// SaveKeys rewrites one key table in the config file and leaves every
+// other line as it was. The file is the user's: it carries their tool
+// blocks and the comments they wrote around them, so the table is spliced
+// as text rather than the document being re-encoded.
+func SaveKeys(dir string, keys keybind.Table) error {
 	if err := keys.Validate(); err != nil {
 		return err
 	}
@@ -28,7 +26,7 @@ func SaveSessionKeys(dir string, keys keybind.Session) error {
 	if err != nil {
 		return err
 	}
-	updated := spliceSessionKeys(string(current), keys)
+	updated := spliceKeys(string(current), keys)
 	// A splice is text, so the result is read back before it lands. A file
 	// whose keybindings the splice cannot express - one already carrying an
 	// inline [keybindings] table - keeps the copy it has.
@@ -36,18 +34,26 @@ func SaveSessionKeys(dir string, keys keybind.Session) error {
 	if _, err := toml.Decode(updated, &check); err != nil {
 		return fmt.Errorf("writing the keys to %s would leave it unreadable: %w", path, err)
 	}
-	if !check.Keybindings.Session.WithDefaults().Equal(keys) {
+	if err := check.resolveKeys(); err != nil {
+		return fmt.Errorf("writing the keys to %s would leave it unreadable: %w", path, err)
+	}
+	if !check.keys(keys.Scope()).Equal(keys) {
 		return fmt.Errorf("%s already declares its keybindings another way; edit the file itself", path)
 	}
 	return atomicfile.WriteFile(path, []byte(updated), 0o644)
 }
 
-func spliceSessionKeys(current string, keys keybind.Session) string {
-	block := strings.Split(sessionKeysBlock(keys), "\n")
+func keysHeader(scope string) string {
+	return "[keybindings." + scope + "]"
+}
+
+func spliceKeys(current string, keys keybind.Table) string {
+	header := keysHeader(keys.Scope())
+	block := strings.Split(keysBlock(keys), "\n")
 	lines := strings.Split(current, "\n")
 	start := -1
 	for i, line := range lines {
-		if isSessionKeysHeader(line) {
+		if isKeysHeader(line, header) {
 			start = i
 			break
 		}
@@ -62,18 +68,18 @@ func spliceSessionKeys(current string, keys keybind.Session) string {
 	block[0] = lines[start]
 	spliced := append([]string{}, lines[:start]...)
 	spliced = append(spliced, block...)
-	return strings.Join(append(spliced, lines[sessionKeysEnd(lines, start):]...), "\n")
+	return strings.Join(append(spliced, lines[keysEnd(lines, start):]...), "\n")
 }
 
-func isSessionKeysHeader(line string) bool {
-	header, _, _ := strings.Cut(line, "#")
-	return strings.TrimSpace(header) == sessionKeysHeader
+func isKeysHeader(line, header string) bool {
+	written, _, _ := strings.Cut(line, "#")
+	return strings.TrimSpace(written) == header
 }
 
-// sessionKeysEnd is the line the table stops at: the next table header,
-// minus the blank lines and comments written directly above it, which
-// introduce that table rather than closing this one.
-func sessionKeysEnd(lines []string, start int) int {
+// keysEnd is the line the table stops at: the next table header, minus
+// the blank lines and comments written directly above it, which introduce
+// that table rather than closing this one.
+func keysEnd(lines []string, start int) int {
 	end := len(lines)
 	for i := start + 1; i < len(lines); i++ {
 		if strings.HasPrefix(strings.TrimSpace(lines[i]), "[") {
@@ -91,11 +97,12 @@ func sessionKeysEnd(lines []string, start int) int {
 	return end
 }
 
-func sessionKeysBlock(keys keybind.Session) string {
-	return sessionKeysHeader + "\n" +
-		"detach = " + bindingValue(keys.Detach) + "\n" +
-		"review = " + bindingValue(keys.Review) + "\n" +
-		"editor = " + bindingValue(keys.Editor)
+func keysBlock(keys keybind.Table) string {
+	lines := []string{keysHeader(keys.Scope())}
+	for _, action := range keys.Actions() {
+		lines = append(lines, action.Name+" = "+bindingValue(keys.Binding(action.Name)))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func bindingValue(binding keybind.Binding) string {

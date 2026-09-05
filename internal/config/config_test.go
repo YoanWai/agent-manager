@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/keybind"
 )
 
 func TestLoadWritesAndParsesDefault(t *testing.T) {
@@ -642,25 +644,38 @@ func writeConfigText(t *testing.T, text string) string {
 	return dir
 }
 
-func TestLoadDirReadsTheSessionKeyTable(t *testing.T) {
+func TestLoadDirReadsTheKeyTables(t *testing.T) {
 	dir := writeConfigText(t, `
 [keybindings.session]
 detach = ["f9", "alt+q"]
 review = "none"
+
+[keybindings.list]
+new_session = "N"
+quit = "none"
 `)
 	cfg, err := LoadDir(dir)
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
-	keys := cfg.Keybindings.Session
-	if got := keys.Detach.Label(); got != "f9 / alt+q" {
+	keys := cfg.SessionKeys
+	if got := keys.Binding(keybind.Detach).Label(); got != "f9 / alt+q" {
 		t.Errorf("detach = %q", got)
 	}
-	if got := keys.Review.Label(); got != "" {
+	if got := keys.Binding(keybind.Review).Label(); got != "" {
 		t.Errorf("review none should be off, got %q", got)
 	}
-	if got := keys.Editor.Label(); got != "f3" {
+	if got := keys.Binding(keybind.Editor).Label(); got != "f3" {
 		t.Errorf("editor left out should take the default, got %q", got)
+	}
+	if got, _ := cfg.ListKeys.ActionFor("N"); got != keybind.NewSession {
+		t.Errorf("N should open a new session, got %q", got)
+	}
+	if _, bound := cfg.ListKeys.ActionFor("q"); bound {
+		t.Error("quit none should leave q unbound")
+	}
+	if got, _ := cfg.ListKeys.ActionFor("?"); got != keybind.Help {
+		t.Errorf("an action left out keeps its key, got %q", got)
 	}
 }
 
@@ -676,24 +691,30 @@ func TestKeyTableDefaultsWhenTheFileNamesNone(t *testing.T) {
 		t.Fatalf("Default: %v", err)
 	}
 	for name, keys := range map[string]Config{"generated": cfg, "built-in": def} {
-		session := keys.Keybindings.Session
-		if session.Detach.Label() != `ctrl+q / ctrl+\` || session.Review.Label() != "ctrl+r" || session.Editor.Label() != "f3" {
-			t.Errorf("%s: session keys = %q / %q / %q", name, session.Detach.Label(), session.Review.Label(), session.Editor.Label())
+		if !keys.SessionKeys.Equal(keybind.DefaultSession()) {
+			t.Errorf("%s: session keys = %q", name, sessionLabels(keys.SessionKeys))
+		}
+		if !keys.ListKeys.Equal(keybind.DefaultList()) {
+			t.Errorf("%s: list keys are not the defaults", name)
 		}
 	}
 }
 
 func TestLoadDirRefusesAKeyTableThatCannotWork(t *testing.T) {
-	for _, tc := range []struct{ text, reason string }{
-		{`editor = "ctrl+i"`, "ctrl+i is tab"},
-		{`editor = "o"`, "a plain key reaches the agent"},
-		{`detach = "none"`, "detach needs at least one key"},
-		{`review = "f3"`, "f3 is bound to both review and editor"},
+	for _, tc := range []struct{ table, text, reason string }{
+		{"session", `editor = "ctrl+i"`, "ctrl+i is tab"},
+		{"session", `editor = "o"`, `"o" is a plain key, which reaches the agent`},
+		{"session", `detach = "none"`, "detach needs at least one key"},
+		{"session", `review = "f3"`, "f3 is bound to both review and editor"},
+		{"list", `kill = "n"`, "n is bound to both new_session and kill"},
+		{"list", `settings = "none"`, "settings needs at least one key"},
+		{"list", `quit = "esc"`, "stays as it is"},
+		{"list", `detach = "f9"`, `no action named "detach"`},
 	} {
-		dir := writeConfigText(t, "[keybindings.session]\n"+tc.text+"\n")
+		dir := writeConfigText(t, "[keybindings."+tc.table+"]\n"+tc.text+"\n")
 		_, err := LoadDir(dir)
 		if err == nil || !strings.Contains(err.Error(), tc.reason) {
-			t.Errorf("%s: err = %v, want %q", tc.text, err, tc.reason)
+			t.Errorf("%s %s: err = %v, want %q", tc.table, tc.text, err, tc.reason)
 		}
 	}
 }

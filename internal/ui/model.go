@@ -65,7 +65,9 @@ type Model struct {
 	hooks  *hooks.Manager
 	gitDrv *git.Driver
 	engine *status.Engine
-	keys   keybind.Session
+	// keys is the table inside a session, listKeys the manager's own.
+	keys     keybind.Table
+	listKeys keybind.Table
 	// configDir is resolved once, at New, so the settings screen writes
 	// keys back to the config.toml the manager loaded.
 	configDir string
@@ -441,9 +443,9 @@ type settingsState struct {
 	cliNames  []string
 	cliHidden map[string]bool
 	cliCursor int
-	// keyPicker is the sub-panel for the keys the manager keeps inside a session.
+	// keyPicker is the sub-panel editing the key tables, session then list.
 	keyPicker  bool
-	keys       keybind.Session
+	tables     []keybind.Table
 	keyCursor  int
 	keyCapture bool
 	keyAppend  bool
@@ -465,7 +467,7 @@ const (
 	settingsFieldWorktree
 	settingsFieldNotify
 	settingsFieldNotifyFinish
-	settingsFieldSessionBindings
+	settingsFieldKeybindings
 	settingsFieldCLIs
 	settingsFieldBugReport
 	settingsFieldFeatureRequest
@@ -705,13 +707,13 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	// works without it, so the error surfaces on first use instead.
 	gitDriver, _ := git.New()
 	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
-	keys := cfg.Keybindings.Session.WithDefaults()
-	driver.SetSessionKeys(keys)
+	driver.SetSessionKeys(cfg.SessionKeys)
 	model := &Model{
 		cfg:                 cfg,
 		store:               st,
 		tmux:                driver,
-		keys:                keys,
+		keys:                cfg.SessionKeys,
+		listKeys:            cfg.ListKeys,
 		hooks:               hookManager,
 		gitDrv:              gitDriver,
 		engine:              engine,

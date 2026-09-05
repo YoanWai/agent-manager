@@ -36,6 +36,7 @@ func noticeModel(st *store.Store, version string) *Model {
 	return &Model{
 		store:               st,
 		keys:                keybind.DefaultSession(),
+		listKeys:            keybind.DefaultList(),
 		update:              updateInfo{version: version},
 		dismissed:           loadDismissed(st),
 		whatsNewVersion:     loadWhatsNewVersion(st),
@@ -1357,7 +1358,7 @@ func TestWelcomeSessionKeysLineFollowsTheKeyTable(t *testing.T) {
 	if got := m.welcomeSessionKeysLine(); got != "ctrl+q back to the manager   ctrl+r review its diff" {
 		t.Errorf("default line = %q", got)
 	}
-	m.keys = keybind.Session{Detach: bindingOf(t, "f9"), Review: bindingOf(t), Editor: bindingOf(t, "f3")}
+	m.keys = sessionOf(t, []string{"f9"}, nil, []string{"f3"})
 	if got := m.welcomeSessionKeysLine(); got != "f9     back to the manager" {
 		t.Errorf("review off line = %q", got)
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,19 +14,20 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Resize mode owns the keyboard until the drag commits or the user
 	// cancels: other bindings would fight the mouse-gated session.
 	if m.split.resizeMode {
-		switch msg.String() {
-		case "left", "h":
+		key := keybind.Normalize(msg.String())
+		switch {
+		case key == "left" || key == "h":
 			m.nudgeSplit(-1)
 			return m, nil
-		case "right", "l":
+		case key == "right" || key == "l":
 			m.nudgeSplit(1)
 			return m, nil
-		case "|", "enter":
-			// Enter or a second | commits the working ratio.
+		case key == "enter" || m.listKeys.Binding(keybind.Resize).Has(key):
+			// Enter or a second press of the resize key commits the working ratio.
 			return m.exitResizeMode(true)
-		case "esc":
+		case key == "esc":
 			return m.exitResizeMode(false)
-		case "q", "ctrl+c":
+		case key == "ctrl+c" || m.listKeys.Binding(keybind.Quit).Has(key):
 			m.persistSplitRatio()
 			m.split.resizeMode = false
 			m.split.dragging = false
@@ -72,17 +74,24 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "ctrl+c":
 		return m, tea.Quit
-	case "up", "k":
+	case "esc":
+		return m, m.clearSearch()
+	}
+	action, _ := m.listKeys.ActionFor(keybind.Normalize(msg.String()))
+	switch action {
+	case keybind.Quit:
+		return m, tea.Quit
+	case keybind.Up:
 		return m, m.moveCursor(-1)
-	case "down", "j":
+	case keybind.Down:
 		return m, m.moveCursor(1)
-	case "shift+up", "K", "shift+k":
+	case keybind.ReorderUp:
 		return m.reorderSelected(-1)
-	case "shift+down", "J", "shift+j":
+	case keybind.ReorderDown:
 		return m.reorderSelected(1)
-	case "enter":
+	case keybind.Open:
 		if entry, ok := m.selectedRow(); ok && entry.isGroup {
 			m.toggleCollapse()
 			return m, nil
@@ -91,7 +100,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.focusSelected()
 		}
 		return m.attachSelected()
-	case "right":
+	case keybind.StepIn:
 		if !m.arrowStep {
 			return m, nil
 		}
@@ -102,7 +111,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.focusSelected()
-	case "left":
+	case keybind.StepOut:
 		if !m.arrowStep {
 			return m, nil
 		}
@@ -110,68 +119,66 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.toggleCollapse()
 		}
 		return m, nil
-	case "A", "shift+a":
+	case keybind.Attach:
 		if m.enterFocuses() {
 			return m.attachSelected()
 		}
 		return m.focusSelected()
-	case "n":
+	case keybind.NewSession:
 		m.openForm()
-	case "g":
+	case keybind.NewGroup:
 		m.openGroupForm()
-	case "f":
+	case keybind.Fork:
 		m.openFork()
-	case "v":
+	case keybind.Revive:
 		return m.reviveSelected()
-	case ".":
+	case keybind.MarkIdle:
 		return m.acknowledgeSelected()
-	case "V", "shift+v":
+	case keybind.ReviveAll:
 		return m.reviveAllDead()
-	case "R", "shift+r":
+	case keybind.Restart:
 		return m.restartSelected()
-	case "x":
+	case keybind.Kill:
 		return m.killSelected()
-	case "X", "shift+x":
+	case keybind.KillAll:
 		return m.killAllLive()
-	case "a":
+	case keybind.Archive:
 		return m.archiveSelected()
-	case "u":
+	case keybind.Restore:
 		return m.restoreSelected()
-	case "d":
+	case keybind.Delete:
 		m.prepareDelete()
-	case " ", "space":
+	case keybind.Prompt:
 		m.openQuickMode()
-	case "F", "shift+f":
+	case keybind.FoldAll:
 		m.toggleCollapseAll()
-	case "w":
+	case keybind.Filter:
 		return m, m.cycleStatusFilter()
-	case "s":
+	case keybind.Settings:
 		m.openSettings()
-	case "|":
+	case keybind.Resize:
 		return m.enterResizeMode()
-	case "t":
+	case keybind.Archived:
 		m.showArchived = !m.showArchived
 		m.requestRefresh()
-	case "T", "shift+t":
+	case keybind.Terminal:
 		return m.terminalKey()
-	case "o":
+	case keybind.Editor:
 		return m.openEditor()
-	case "e":
+	case keybind.EmptyGroups:
 		return m, m.toggleEmptyGroups()
-	case "/":
+	case keybind.Search:
 		m.searching = true
 		m.errBar.text = ""
-	case "esc":
-		return m, m.clearSearch()
-	case "r":
+	case keybind.Rename:
 		m.openRename()
-	case "m":
+	case keybind.Move:
 		m.openMove()
-	case "M", "shift+m":
+	case keybind.Messages:
 		m.openNotices("")
-	case "?":
+	case keybind.Help:
 		m.openHelp()
-	case "ctrl+r":
+	case keybind.Review:
 		return m, m.openDiff()
 	}
 	return m, nil

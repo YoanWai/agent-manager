@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -54,7 +55,7 @@ func TestClampSplitLeft(t *testing.T) {
 }
 
 func TestSplitWidthsUsesRatio(t *testing.T) {
-	m := &Model{width: 100, split: splitState{ratio: 0.4}}
+	m := &Model{listKeys: keybind.DefaultList(), width: 100, split: splitState{ratio: 0.4}}
 	left, right := m.splitWidths()
 	if left != 40 || right != 60 {
 		t.Fatalf("splitWidths = %d,%d want 40,60", left, right)
@@ -70,7 +71,7 @@ func TestSplitWidthsUsesRatio(t *testing.T) {
 }
 
 func TestSetSplitFromXClampsAndUpdatesRatio(t *testing.T) {
-	m := &Model{width: 100, split: splitState{ratio: defaultSplitRatio}}
+	m := &Model{listKeys: keybind.DefaultList(), width: 100, split: splitState{ratio: defaultSplitRatio}}
 	m.setSplitFromX(50)
 	if m.split.ratio != 0.5 {
 		t.Fatalf("ratio = %v want 0.5", m.split.ratio)
@@ -87,7 +88,7 @@ func TestSetSplitFromXClampsAndUpdatesRatio(t *testing.T) {
 }
 
 func TestResizeModeKeyArmsDrag(t *testing.T) {
-	m := &Model{mode: modeList, split: splitState{ratio: defaultSplitRatio}, width: 120, height: 40}
+	m := &Model{listKeys: keybind.DefaultList(), mode: modeList, split: splitState{ratio: defaultSplitRatio}, width: 120, height: 40}
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'|'}})
 	m = updated.(*Model)
 	if !m.split.resizeMode {
@@ -124,7 +125,7 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{
+	m := &Model{listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -171,7 +172,7 @@ func TestEnterCommitsResize(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{
+	m := &Model{listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -196,7 +197,7 @@ func TestEnterCommitsResize(t *testing.T) {
 }
 
 func TestArrowCancelRestoresRatio(t *testing.T) {
-	m := &Model{mode: modeList, width: 100, height: 40, split: splitState{ratio: 0.34}}
+	m := &Model{listKeys: keybind.DefaultList(), mode: modeList, width: 100, height: 40, split: splitState{ratio: 0.34}}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
@@ -218,7 +219,7 @@ func TestQuitFromResizePersistsRatio(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{
+	m := &Model{listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -252,7 +253,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	m := &Model{
+	m := &Model{listKeys: keybind.DefaultList(),
 		store:  st,
 		mode:   modeList,
 		width:  100,
@@ -355,7 +356,7 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 }
 
 func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
-	m := &Model{
+	m := &Model{listKeys: keybind.DefaultList(),
 		mode:   modeList,
 		width:  100,
 		height: 40,
@@ -383,7 +384,7 @@ func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 }
 
 func TestEnterResizeBlockedWhenSearchingOrQuick(t *testing.T) {
-	m := &Model{mode: modeList, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, searching: true}
+	m := &Model{listKeys: keybind.DefaultList(), mode: modeList, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, searching: true}
 	updated, cmd := m.enterResizeMode()
 	m = updated.(*Model)
 	if m.split.resizeMode || cmd != nil {
@@ -399,7 +400,7 @@ func TestEnterResizeBlockedWhenSearchingOrQuick(t *testing.T) {
 }
 
 func TestBodyYRangeMatchesListChrome(t *testing.T) {
-	m := &Model{width: 120, height: 40, split: splitState{ratio: defaultSplitRatio}, mode: modeList}
+	m := &Model{listKeys: keybind.DefaultList(), width: 120, height: 40, split: splitState{ratio: defaultSplitRatio}, mode: modeList}
 	start, end := m.bodyYRange()
 	if start != m.listChromeRows() {
 		t.Fatalf("start = %d want listChromeRows=%d", start, m.listChromeRows())
@@ -418,7 +419,7 @@ func TestBodyYRangeMatchesListChrome(t *testing.T) {
 }
 
 func TestDragCancelRestoresRatio(t *testing.T) {
-	m := &Model{
+	m := &Model{listKeys: keybind.DefaultList(),
 		mode:   modeList,
 		width:  100,
 		height: 40,
@@ -450,7 +451,7 @@ func TestDragCancelRestoresRatio(t *testing.T) {
 }
 
 func TestPressOffDividerDoesNotDrag(t *testing.T) {
-	m := &Model{
+	m := &Model{listKeys: keybind.DefaultList(),
 		mode:   modeList,
 		width:  100,
 		height: 40,
@@ -480,7 +481,7 @@ func TestNewLoadsPersistedSplitRatio(t *testing.T) {
 // scroll the TUI away, and swallowed in the list: moving the cursor there
 // retargets every keystroke that follows (#110).
 func TestWheelSwallowedInList(t *testing.T) {
-	m := &Model{
+	m := &Model{listKeys: keybind.DefaultList(),
 		mode:   modeList,
 		cursor: 0,
 		rows:   []treeRow{{}, {}},
@@ -502,7 +503,7 @@ func TestWheelSwallowedInList(t *testing.T) {
 }
 
 func TestWheelSwallowedInResizeMode(t *testing.T) {
-	m := &Model{
+	m := &Model{listKeys: keybind.DefaultList(),
 		mode:   modeList,
 		split:  splitState{resizeMode: true},
 		cursor: 0,

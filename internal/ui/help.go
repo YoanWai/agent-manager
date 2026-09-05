@@ -37,9 +37,9 @@ type helpSection struct {
 // added later cannot render clipped against its own description, and always
 // over the whole catalog rather than a search's hits, so narrowing the map
 // does not shift the column under the reader.
-func helpKeyColumn(keys keybind.Session) int {
+func helpKeyColumn(session, list keybind.Table) int {
 	width := 0
-	for _, section := range helpSections(keys) {
+	for _, section := range helpSections(session, list) {
 		for _, row := range section.rows {
 			if w := ansi.StringWidth(row[0]); w > width {
 				width = w
@@ -53,45 +53,95 @@ func helpKeyColumn(keys keybind.Session) int {
 // eye has to travel too far from a key to its description.
 const helpCardMaxWidth = 92
 
-func helpSections(keys keybind.Session) []helpSection {
+// helpRows collects one section's rows: an action's row carries the keys
+// its table binds today, and an action with no key left has no row.
+type helpRows struct {
+	list keybind.Table
+	rows [][2]string
+}
+
+func (h *helpRows) action(does string, actions ...string) {
+	var glyphs []string
+	for _, action := range actions {
+		if glyph := h.list.Binding(action).Glyph(" / "); glyph != "" {
+			glyphs = append(glyphs, glyph)
+		}
+	}
+	if len(glyphs) > 0 {
+		h.rows = append(h.rows, [2]string{strings.Join(glyphs, " / "), does})
+	}
+}
+
+// fixed is a row whose key is not an action of the table: a note under the
+// row above it, or a key no table may move.
+func (h *helpRows) fixed(key, does string) {
+	h.rows = append(h.rows, [2]string{key, does})
+}
+
+func listHelpRows(list keybind.Table) [][2]string {
+	h := helpRows{list: list}
+	h.fixed("", "Tell your agent to manage sessions and terminals in Agent Manager.")
+	h.action("move the cursor up", keybind.Up)
+	h.action("move the cursor down", keybind.Down)
+	h.action("step in: focus the session, open the group", keybind.StepIn)
+	h.action("step out: close the group", keybind.StepOut)
+	h.action("reorder the row up among its siblings", keybind.ReorderUp)
+	h.action("reorder the row down among its siblings", keybind.ReorderDown)
+	h.action("new session", keybind.NewSession)
+	h.action("new terminal tab: a shell under the selected agent, or in the group", keybind.Terminal)
+	h.action("new group (name, parent, default path, worktree)", keybind.NewGroup)
+	h.action("search the list by name", keybind.Search)
+	h.action("filter to what needs attention (waiting, finished, errored)", keybind.Filter)
+	h.action("archived view", keybind.Archived)
+	h.action("hide / show empty groups", keybind.EmptyGroups)
+	h.action("fold / unfold every group", keybind.FoldAll)
+	h.action("resize the split (←→ or hl, or drag; ↵ commits, esc cancels)", keybind.Resize)
+	h.action("settings", keybind.Settings)
+	h.action("messages", keybind.Messages)
+	h.action("this key map", keybind.Help)
+	h.action("quit (sessions keep running)", keybind.Quit)
+	h.fixed("ctrl+c", "quit, from anywhere")
+	return h.rows
+}
+
+func sessionRowHelpRows(list keybind.Table) [][2]string {
+	h := helpRows{list: list}
+	h.action("focus it: keys reach the agent, the list stays on screen", keybind.Open)
+	h.action("attach it: the pane takes the whole terminal", keybind.Attach)
+	h.fixed("", "settings swap what the two do")
+	h.action("mark it idle when it is finished, without entering it", keybind.MarkIdle)
+	h.action("quick prompt: answer the session without attaching", keybind.Prompt)
+	h.action("review its diff", keybind.Review)
+	h.action("fork it into a new session in the same group", keybind.Fork)
+	h.action("rename it, and re-pick its tool", keybind.Rename)
+	h.action("move it to a group, or a terminal into a session", keybind.Move)
+	h.action("open its working directory in your editor", keybind.Editor)
+	h.action("restart it on an empty context (same name, group, dir, tool)", keybind.Restart)
+	h.action("kill it / kill every live session (frees their RAM)", keybind.Kill, keybind.KillAll)
+	h.action("revive it, its pane included / revive every dead session", keybind.Revive, keybind.ReviveAll)
+	h.action("archive / restore (archive kills, restore revives)", keybind.Archive, keybind.Restore)
+	h.action("delete it", keybind.Delete)
+	return h.rows
+}
+
+func groupRowHelpRows(list keybind.Table) [][2]string {
+	h := helpRows{list: list}
+	h.action("fold / unfold", keybind.Open)
+	h.action("quick prompt: spawn a new agent in the group", keybind.Prompt)
+	h.action("edit it: name, default path, worktree", keybind.Rename)
+	h.action("move it, with its whole subtree, under another group", keybind.Move)
+	h.action("open its default path in your editor", keybind.Editor)
+	h.action("kill every live session in it / everywhere", keybind.Kill, keybind.KillAll)
+	h.action("revive every dead session in it / everywhere", keybind.Revive, keybind.ReviveAll)
+	h.action("archive / restore the subtree (archive kills, restore revives)", keybind.Archive, keybind.Restore)
+	h.action("delete the group and its subtree", keybind.Delete)
+	return h.rows
+}
+
+func helpSections(session, list keybind.Table) []helpSection {
 	return []helpSection{
-		{title: "list", rows: [][2]string{
-			{"", "Tell your agent to manage sessions and terminals in Agent Manager."},
-			{"↑↓ / jk", "move the cursor"},
-			{"→", "step in: focus the session, open the group"},
-			{"←", "step out: close the group"},
-			{"K / J", "reorder the row up / down (shift+↑↓ too)"},
-			{"n", "new session"},
-			{"T", "new terminal tab: a shell under the selected agent, or in the group"},
-			{"g", "new group (name, parent, default path, worktree)"},
-			{"/", "search the list by name"},
-			{"w", "filter to what needs attention (waiting, finished, errored)"},
-			{"t", "archived view"},
-			{"e", "hide / show empty groups"},
-			{"F", "fold / unfold every group"},
-			{"|", "resize the split (←→ or hl, or drag; ↵ commits, esc cancels)"},
-			{"s", "settings"},
-			{"M", "messages"},
-			{"?", "this key map"},
-			{"q", "quit (sessions keep running)"},
-		}},
-		{title: "session under the cursor", rows: [][2]string{
-			{"↵", "focus it: keys reach the agent, the list stays on screen"},
-			{"A", "attach it: the pane takes the whole terminal"},
-			{"", "settings swap what ↵ and A do"},
-			{".", "mark it idle when it is finished, without entering it"},
-			{"space", "quick prompt: answer the session without attaching"},
-			{"ctrl+r", "review its diff"},
-			{"f", "fork it into a new session in the same group"},
-			{"r", "rename it, and re-pick its tool"},
-			{"m", "move it to a group, or a terminal into a session"},
-			{"o", "open its working directory in your editor"},
-			{"R", "restart it on an empty context (same name, group, dir, tool)"},
-			{"x / X", "kill it / kill every live session (frees their RAM)"},
-			{"v / V", "revive it, its pane included / revive every dead session"},
-			{"a / u", "archive / restore (archive kills, restore revives)"},
-			{"d", "delete it"},
-		}},
+		{title: "list", rows: listHelpRows(list)},
+		{title: "session under the cursor", rows: sessionRowHelpRows(list)},
 		{title: "the mark on a session row", rows: [][2]string{
 			{"◐ working", "the agent is busy on a turn"},
 			{"◆ waiting", "blocked on you: a dialog, a permission ask, a question"},
@@ -101,17 +151,7 @@ func helpSections(keys keybind.Session) []helpSection {
 			{"◌ starting", "the pane is still launching"},
 			{"", "w filters the list down to the marks that need you"},
 		}},
-		{title: "group under the cursor", rows: [][2]string{
-			{"↵", "fold / unfold"},
-			{"space", "quick prompt: spawn a new agent in the group"},
-			{"r", "edit it: name, default path, worktree"},
-			{"m", "move it, with its whole subtree, under another group"},
-			{"o", "open its default path in your editor"},
-			{"x / X", "kill every live session in it / everywhere"},
-			{"v / V", "revive every dead session in it / everywhere"},
-			{"a / u", "archive / restore the subtree (archive kills, restore revives)"},
-			{"d", "delete the group and its subtree"},
-		}},
+		{title: "group under the cursor", rows: groupRowHelpRows(list)},
 		{title: "quick prompt (space)", rows: [][2]string{
 			{"↵", "send"},
 			{"↑↓", "switch the target session"},
@@ -122,7 +162,7 @@ func helpSections(keys keybind.Session) []helpSection {
 			{"←→", "step over a chip as one token"},
 			{"esc", "close"},
 		}},
-		{title: "inside a session (attached or focused)", rows: sessionHelpRows(keys, [][2]string{
+		{title: "inside a session (attached or focused)", rows: sessionHelpRows(session, [][2]string{
 			{"wheel", "focused: scroll the pane's history, type to catch up"},
 			{"drag", "focused: select pane text and copy it"},
 			{"double click", "focused: copy the word"},
@@ -143,7 +183,7 @@ func helpSections(keys keybind.Session) []helpSection {
 		{title: "settings (s)", rows: [][2]string{
 			{"↑↓", "pick a field"},
 			{"←→", "change the value"},
-			{"↵", "run the field's action (in-session keys, CLIs, report, update)"},
+			{"↵", "run the field's action (keybindings, CLIs, report, update)"},
 			{"esc", "save and close"},
 		}},
 		{title: "dialogs (n, g, r, f, m)", rows: [][2]string{
@@ -156,9 +196,9 @@ func helpSections(keys keybind.Session) []helpSection {
 	}
 }
 
-func sessionHelpRows(keys keybind.Session, mouseRows [][2]string) [][2]string {
+func sessionHelpRows(keys keybind.Table, mouseRows [][2]string) [][2]string {
 	rows := [][2]string{{"typing", "goes straight to the agent, q included"}}
-	if detach := keys.Detach.Keys(); len(detach) > 0 {
+	if detach := keys.Binding(keybind.Detach).Keys(); len(detach) > 0 {
 		back := "back to the manager"
 		if len(detach) > 1 {
 			back += " (" + keybind.Keys(detach[1:]...).Label() + " too)"
@@ -166,10 +206,10 @@ func sessionHelpRows(keys keybind.Session, mouseRows [][2]string) [][2]string {
 		rows = append(rows, [2]string{detach[0].Tea(), back})
 	}
 	rows = append(rows, [2]string{"←", "focused: back to the manager, at the prompt's start"})
-	if label := keys.Review.Label(); label != "" {
+	if label := keys.Binding(keybind.Review).Label(); label != "" {
 		rows = append(rows, [2]string{label, "review the session's diff, esc returns"})
 	}
-	if label := keys.Editor.Label(); label != "" {
+	if label := keys.Binding(keybind.Editor).Label(); label != "" {
 		rows = append(rows, [2]string{label, "open its directory in an editor"})
 	}
 	return append(rows, mouseRows...)
@@ -204,13 +244,14 @@ func (m *Model) visibleHelpSections() []helpSection {
 	if m.help.returnMode == modeDiff {
 		return []helpSection{reviewHelpSection()}
 	}
-	sections := helpSections(m.keys)
+	sections := helpSections(m.keys, m.listKeys)
 	if m.arrowStep {
 		return sections
 	}
+	stepIn, stepOut := m.listKeys.Binding(keybind.StepIn).Glyph(" / "), m.listKeys.Binding(keybind.StepOut).Glyph(" / ")
 	for i := range sections {
 		sections[i].rows = slices.DeleteFunc(sections[i].rows, func(row [2]string) bool {
-			return row[0] == "→" || row[0] == "←"
+			return row[0] != "" && (row[0] == stepIn || row[0] == stepOut)
 		})
 	}
 	return sections
@@ -259,8 +300,8 @@ func helpRowCount(sections []helpSection) int {
 
 // helpBodyLines lays the catalog out as one scrollable column: a titled rule
 // per section, then its bindings in two aligned columns.
-func helpBodyLines(sections []helpSection, keys keybind.Session, width int, query string) []string {
-	keyColumn := helpKeyColumn(keys)
+func helpBodyLines(sections []helpSection, session, list keybind.Table, width int, query string) []string {
+	keyColumn := helpKeyColumn(session, list)
 	if room := width / 3; keyColumn > room {
 		keyColumn = max(room, 4)
 	}
@@ -338,7 +379,7 @@ func (m *Model) helpSearchActive() bool {
 
 func (m *Model) helpScrollLimit() int {
 	sections := matchHelp(m.visibleHelpSections(), m.help.query)
-	body := helpBodyLines(sections, m.keys, cardInnerWidth(helpCardWidth(m.width)), m.help.query)
+	body := helpBodyLines(sections, m.keys, m.listKeys, cardInnerWidth(helpCardWidth(m.width)), m.help.query)
 	return max(0, len(body)-m.helpBodyRoom())
 }
 
@@ -352,7 +393,7 @@ func (m *Model) viewHelp() string {
 		head = append(head, m.helpSearchLine(sections), "")
 	}
 
-	body := helpBodyLines(sections, m.keys, inner, m.help.query)
+	body := helpBodyLines(sections, m.keys, m.listKeys, inner, m.help.query)
 	if len(body) == 0 {
 		body = []string{subtleStyle.Render("no key matches that")}
 	}

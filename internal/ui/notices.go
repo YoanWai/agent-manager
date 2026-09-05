@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"net/url"
 	"os"
 	"os/exec"
@@ -961,8 +962,8 @@ func (m *Model) dismissNotice(id string) {
 
 // The widths are the columns of the welcome rows around this line.
 func (m *Model) welcomeSessionKeysLine() string {
-	line := fmt.Sprintf("%-6s %-22s", m.keys.Detach.Keys()[0].Tea(), "back to the manager")
-	if review := m.keys.Review.Keys(); len(review) > 0 {
+	line := fmt.Sprintf("%-6s %-22s", m.keys.Binding(keybind.Detach).Keys()[0].Tea(), "back to the manager")
+	if review := m.keys.Binding(keybind.Review).Keys(); len(review) > 0 {
 		line += fmt.Sprintf("%-6s %s", review[0].Tea(), "review its diff")
 	}
 	return strings.TrimRight(line, " ")

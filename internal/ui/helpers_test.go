@@ -26,6 +26,8 @@ func buildModel(t *testing.T) *Model {
 		t.Skip("tmux not installed")
 	}
 	cfg := config.Config{
+		SessionKeys: keybind.DefaultSession(),
+		ListKeys:    keybind.DefaultList(),
 		Tools: map[string]config.Tool{
 			"claude": {Command: "cat", DefaultStatus: status.Idle},
 			// Parks the terminal cursor below its footer and paints the
@@ -440,12 +442,16 @@ func quitAgent(t *testing.T, m *Model, sessID string) {
 // read, the way a config.toml with a [keybindings.session] block would.
 func useSessionKeys(t *testing.T, m *Model, detach, review, editor []string) {
 	t.Helper()
-	m.keys = keybind.Session{
-		Detach: bindingOf(t, detach...),
-		Review: bindingOf(t, review...),
-		Editor: bindingOf(t, editor...),
-	}
+	m.keys = sessionOf(t, detach, review, editor)
 	m.tmux.SetSessionKeys(m.keys)
+}
+
+func sessionOf(t *testing.T, detach, review, editor []string) keybind.Table {
+	t.Helper()
+	return keybind.DefaultSession().
+		With(keybind.Detach, bindingOf(t, detach...)).
+		With(keybind.Review, bindingOf(t, review...)).
+		With(keybind.Editor, bindingOf(t, editor...))
 }
 
 func bindingOf(t *testing.T, specs ...string) keybind.Binding {
