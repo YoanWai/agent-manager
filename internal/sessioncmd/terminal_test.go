@@ -544,3 +544,19 @@ func TestCloseRefusesUnnestedTerminal(t *testing.T) {
 		t.Fatal("pane killed")
 	}
 }
+
+// A terminal opened from the CLI or the MCP server takes the box the running
+// manager recorded, the way an agent session does, rather than tmux's 80x24.
+func TestTerminalsCreateUsesTheManagersPaneSize(t *testing.T) {
+	h := newTerminalHarness(t)
+	if err := h.store.SetPaneSize(131, 47); err != nil {
+		t.Fatalf("set pane size: %v", err)
+	}
+	terminal, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if width, height := paneWindowSize(t, h.driver, terminal.ID); width != 131 || height != 47 {
+		t.Fatalf("terminal pane = %dx%d, want 131x47", width, height)
+	}
+}

@@ -999,12 +999,4 @@ func TestHeadlessLaunchesUseTheManagersPaneSize(t *testing.T) {
 	if width, height := paneWindowSize(t, h.driver, created.ID); width != 131 || height != 47 {
 		t.Fatalf("revived pane = %dx%d, want 131x47", width, height)
 	}
-
-	terminal, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
-	if err != nil {
-		t.Fatalf("terminal Create: %v", err)
-	}
-	if width, height := paneWindowSize(t, h.driver, terminal.ID); width != 131 || height != 47 {
-		t.Fatalf("terminal pane = %dx%d, want 131x47", width, height)
-	}
 }
