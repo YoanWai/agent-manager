@@ -77,7 +77,7 @@ A list key is a plain character (`n`, `N`, `?`, `|`), a key name (`space`, `ente
 
 ### The picker
 
-Settings (`s`) edits both tables: the **keybindings** row opens one picker, the session keys first and the manager's below them, where `↵` binds the key you press next, `a` adds a second key to an action, `d` turns the action off, and `r` names what would move and asks, then puts the shipped keys back on every action. A key its table cannot take is refused there with the reason the file would give. Leaving the picker writes each table you changed back into your config.toml, one line per action, keeping the rest of the file as you wrote it, comments included, and puts the keys to work at once, so no restart is needed.
+Settings (`s` by default) edits both tables: the **keybindings** row opens one picker, the session keys first and the manager's below them, where `↵` binds the key you press next, `a` adds a second key to an action, `d` turns the action off, and `r` names what would move and asks, then puts the shipped keys back on every action. A key its table cannot take is refused there with the reason the file would give. Leaving the picker writes each table you changed back into your config.toml, one line per action, keeping the rest of the file as you wrote it, comments included, and puts the keys to work at once, so no restart is needed.
 
 The same table drives a full-screen attach, where the keys are tmux bindings on the `agentmgr` server, and focus mode, where the manager reads them itself; the session footer, the focus footer and the `?` key map all name whatever the table says. The bindings are reinstalled on every launch and every session create, so a change to the table takes effect when the manager next starts, running sessions included.
 

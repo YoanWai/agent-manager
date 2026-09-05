@@ -45,8 +45,6 @@ type Driver struct {
 	sessionKeys       atomic.Pointer[keybind.Table]
 }
 
-// SetSessionKeys is the key table EnsureBindings installs and the session
-// footer names. Unset, the driver binds the defaults.
 func (d *Driver) SetSessionKeys(keys keybind.Table) {
 	d.sessionKeys.Store(&keys)
 }

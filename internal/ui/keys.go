@@ -23,7 +23,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.nudgeSplit(1)
 			return m, nil
 		case key == "enter" || m.listKeys.Binding(keybind.Resize).Has(key):
-			// Enter or a second press of the resize key commits the working ratio.
 			return m.exitResizeMode(true)
 		case key == "esc":
 			return m.exitResizeMode(false)
