@@ -374,7 +374,7 @@ func TestSelectionOverlayKeepsWideGraphemesWhole(t *testing.T) {
 }
 
 func TestSelectionSurvivesShortLines(t *testing.T) {
-	m := paneAt(t, "ab", "")
+	m := paneAt(t, "ab", "", "later")
 	press(m, 10, 5)
 	drag(m, 40, 6)
 	if got := m.selectionText(); got != "ab\n" {

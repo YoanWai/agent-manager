@@ -998,7 +998,7 @@ func TestCaretParkedBelowCommandCodesComposer(t *testing.T) {
 		m := &Model{engine: engine, mode: modeFocus}
 		m.preview = strings.Join(rows, "\n") + "\n"
 		m.pane.forID = "s1"
-		m.pane.cursor = paneCursor{x: x, y: y, ok: true}
+		m.pane.cursor = paneCursor{x: x, y: y, positionOK: true}
 		return m
 	}
 	footer := "  » accept edits on [shift+tab]\n  ? for shortcuts · taste on"
@@ -1064,9 +1064,16 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	}
 	sess := m.rows[m.cursor].sess
 	m.rows[m.cursor].sess.Tool = "command-code"
-	m.pane.forID = sess.ID
-	m.pane.cursor = paneCursor{x: 0, y: 6, ok: true}
-	m.preview = "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ Ask your question...\n────────────\n  ? for shortcuts\n\n\n\n"
+	hidden := focusPreviewMsg{
+		sessID:  sess.ID,
+		preview: "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ Ask your question...\n────────────\n  ? for shortcuts\n\n\n\n",
+	}
+	applyPaneState(&hidden, "0,6,0,000,0,0,0")
+	updated, _ = m.Update(hidden)
+	*m = *updated.(*Model)
+	if m.pane.cursor.ok || !m.pane.cursor.positionOK {
+		t.Fatalf("hidden cursor state = %+v, want known position without a visible caret", m.pane.cursor)
+	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
@@ -1079,7 +1086,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("after re-enter, mode = %v", m.mode)
 	}
-	m.pane.cursor = paneCursor{x: 0, y: 6, ok: true}
+	m.pane.cursor = paneCursor{x: 0, y: 6, positionOK: true}
 	m.preview = "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ z\n────────────\n  ? for shortcuts\n\n\n\n"
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
@@ -1097,7 +1104,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("after re-enter, mode = %v", m.mode)
 	}
-	m.pane.cursor = paneCursor{x: 0, y: 9, ok: true}
+	m.pane.cursor = paneCursor{x: 0, y: 9, positionOK: true}
 	m.preview = "❯ did you forget about peerlist?\n" +
 		"⠶ No, it is queued.\n" +
 		" ✻ Worked for 19m 16s\n" +

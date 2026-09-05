@@ -927,6 +927,24 @@ func previewText(m *Model) string {
 	return strings.Join(out, "\n")
 }
 
+func TestPreviewBottomAlignsCompactPane(t *testing.T) {
+	m := previewModel(status.Finished, "todo\ncomposer"+strings.Repeat("\n", 10))
+	lines := strings.Split(previewText(m), "\n")
+	if strings.TrimSpace(lines[10]) != "todo" || strings.TrimSpace(lines[11]) != "composer" {
+		t.Fatalf("compact pane was not bottom aligned: %q", lines)
+	}
+	wantY := m.listChromeRows() + 10
+	if !m.pane.box.ok || m.pane.box.y != wantY || m.pane.box.height != 2 {
+		t.Fatalf("pane box = %+v, want two rows starting at %d", m.pane.box, wantY)
+	}
+	if _, _, ok := m.paneCell(m.pane.box.x, m.pane.box.y-1); ok {
+		t.Fatal("padding above a compact pane became hit-testable")
+	}
+	if row, _, ok := m.paneCell(m.pane.box.x, m.pane.box.y); !ok || row != 0 {
+		t.Fatalf("first compact pane row maps to (%d,%v), want pane row zero", row, ok)
+	}
+}
+
 // A launching agent paints nothing for a while, and the blank block that
 // leaves reads as a broken session; the preview says it is coming up. The
 // blank rows are still the session's pane, so they stay hit-testable.
@@ -1047,8 +1065,8 @@ func TestPreviewLoaderFramesAreNotStatusMarks(t *testing.T) {
 	}
 }
 
-// A focused pane is the screen the user types on, so it keeps its own first
-// row and the caret drawn there rather than the loader.
+// A focused pane is the screen the user types on, so its first captured row
+// keeps the caret drawn there rather than the loader.
 func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
 	prev := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
@@ -1058,7 +1076,8 @@ func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
 	m.mode = modeFocus
 	m.cursorOn = true
 	m.pane.cursor = paneCursor{ok: true}
-	first := m.previewLines(80, 12, "  ")[0].text
+	lines := m.previewLines(80, 12, "  ")
+	first := lines[m.pane.box.y-m.listChromeRows()].text
 	if strings.Contains(ansi.Strip(first), "starting up") {
 		t.Fatalf("the loader took the focused pane's first row: %q", first)
 	}

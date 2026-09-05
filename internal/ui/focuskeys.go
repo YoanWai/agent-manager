@@ -169,7 +169,12 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 // the composer is empty and its caret at the head of the prompt; a draft
 // replaces the placeholder and Left belongs to the agent.
 func (m *Model) caretAtInputStart(sessID, tool string) bool {
-	if m.engine == nil || !m.pane.cursor.ok || m.pane.forID != sessID || m.scrolledBack() {
+	if m.engine == nil || m.pane.forID != sessID || m.scrolledBack() {
+		return false
+	}
+	caretCellKnown := m.pane.cursor.ok ||
+		(m.pane.cursor.positionOK && m.engine.ParksItsCaret(tool))
+	if !caretCellKnown {
 		return false
 	}
 	rows := strings.Split(strings.TrimSuffix(m.preview, "\n"), "\n")

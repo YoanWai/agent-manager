@@ -1608,7 +1608,10 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.preview = msg.preview
-		m.pane.cursor = paneCursor{x: msg.cursorX, y: msg.cursorY, ok: msg.cursorOK}
+		m.pane.cursor = paneCursor{
+			x: msg.cursorX, y: msg.cursorY,
+			ok: msg.cursorOK, positionOK: msg.paneStateOK,
+		}
 		return m, nil
 
 	case previewMsg:

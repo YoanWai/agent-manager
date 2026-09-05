@@ -31,10 +31,12 @@ type paneBox struct {
 }
 
 // paneCursor is where the focused session's own cursor sits, in pane
-// cells, as tmux last reported it.
+// cells, as tmux last reported it. positionOK stays true when the
+// application hides that cursor but tmux still reports its coordinates.
 type paneCursor struct {
-	x, y int
-	ok   bool
+	x, y       int
+	ok         bool
+	positionOK bool
 }
 
 // cursorCell maps the pane cursor onto the rows the preview is painting.
