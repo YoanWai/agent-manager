@@ -20,6 +20,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
 
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: go.mod
+          go-package: ./...
+
   test:
     runs-on: ubuntu-latest
     steps:
