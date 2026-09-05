@@ -89,6 +89,7 @@ func helpSections(keys keybind.Session) []helpSection {
 			{"R", "restart it on an empty context (same name, group, dir, tool)"},
 			{"x / X", "kill it / kill every live session (frees their RAM)"},
 			{"v / V", "revive it, its pane included / revive every dead session"},
+			{"y", "copy its newest reply to the clipboard"},
 			{"a / u", "archive / restore (archive kills, restore revives)"},
 			{"d", "delete it"},
 		}},
