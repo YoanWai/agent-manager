@@ -314,8 +314,8 @@ func TestApplyPaneState(t *testing.T) {
 
 	var hidden focusPreviewMsg
 	applyPaneState(&hidden, "7,8,0,000,0,0,0")
-	if !hidden.paneStateOK || hidden.cursorOK {
-		t.Fatalf("hidden cursor pane state = %+v", hidden)
+	if !hidden.paneStateOK || hidden.cursorOK || hidden.cursorX != 7 || hidden.cursorY != 8 {
+		t.Fatalf("hidden cursor pane state = %+v, want its coordinates kept", hidden)
 	}
 
 	// tmux answers an unquoted format with its default status message;

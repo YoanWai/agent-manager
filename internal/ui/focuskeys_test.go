@@ -1064,10 +1064,12 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	}
 	sess := m.rows[m.cursor].sess
 	m.rows[m.cursor].sess.Tool = "command-code"
-	updated, _ = m.Update(focusPreviewMsg{
-		sessID: sess.ID, paneStateOK: true, cursorX: 0, cursorY: 6,
+	hidden := focusPreviewMsg{
+		sessID:  sess.ID,
 		preview: "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ Ask your question...\n────────────\n  ? for shortcuts\n\n\n\n",
-	})
+	}
+	applyPaneState(&hidden, "0,6,0,000,0,0,0")
+	updated, _ = m.Update(hidden)
 	*m = *updated.(*Model)
 	if m.pane.cursor.ok || !m.pane.cursor.positionOK {
 		t.Fatalf("hidden cursor state = %+v, want known position without a visible caret", m.pane.cursor)
