@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,7 +34,12 @@ type focusPreviewMsg struct {
 
 // focusDebounce is how long the watcher lets a paint burst settle before
 // capturing, so a stream of tmux output events becomes a few captures.
-const focusDebounce = 25 * time.Millisecond
+// It is also the preview's frame budget: every capture repaints the
+// preview in the outer terminal, and a scrolling agent captured at 25ms
+// drove forty full-frame repaints a second through it, which is what
+// made the terminal fall behind the keyboard. At 80ms a typed key still
+// echoes within a frame while a stream costs the terminal a third.
+const focusDebounce = 80 * time.Millisecond
 
 // focusWatch keeps one tmux control-mode client on the selected session.
 // tmux pushes an event the moment the pane paints and the capture rides
@@ -150,6 +156,15 @@ func (w *focusWatch) query(command string) (string, bool) {
 	return out, true
 }
 
+func (w *focusWatch) unwatch(id string) {
+	w.mu.Lock()
+	if w.id == id {
+		w.stopLocked()
+		w.id = ""
+	}
+	w.mu.Unlock()
+}
+
 // stopLocked signals the watcher and returns immediately. It must never
 // wait: it runs inside Update, and the watcher may at that moment be
 // blocked in send, which only the Update loop can drain — waiting here
@@ -214,6 +229,7 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 	capture := func() bool {
 		pane, err := control.Command("capture-pane -p -e -t " + target)
 		if err != nil {
+			w.report(stop, fmt.Errorf("preview client for %s: %w", id, err))
 			return false
 		}
 		msg := focusPreviewMsg{sessID: id, preview: matchExecShape(pane)}
@@ -249,6 +265,11 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 			return
 		case <-control.Done():
 			w.clearIfCurrent(id, stop)
+			lost := fmt.Errorf("preview client for %s exited", id)
+			if err := control.Err(); err != nil {
+				lost = fmt.Errorf("%w: %w", lost, err)
+			}
+			w.report(stop, lost)
 			return
 		case <-control.Events():
 		}
@@ -268,6 +289,19 @@ func (w *focusWatch) watch(id string, stop chan struct{}) {
 			return
 		}
 	}
+}
+
+// report surfaces a client the watcher lost, so the preview dropping to
+// the poll cadence shows its reason instead of reading as lag. A stopped
+// watcher stays quiet: its send could block on the UI loop for a frame,
+// and the loss was asked for.
+func (w *focusWatch) report(stop chan struct{}, err error) {
+	select {
+	case <-stop:
+		return
+	default:
+	}
+	w.send(errMsg{err})
 }
 
 // matchExecShape gives the control-pipe capture the same shape the exec

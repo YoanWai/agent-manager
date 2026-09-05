@@ -332,6 +332,13 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err := m.tmux.SendRaw(command); err != nil {
 			m.errBar.text = err.Error()
 		}
+		// Without the client the echo only shows on the poll cadence, a
+		// second or more after each key. Typing is as deliberate as
+		// focusing, so it lifts the failure backoff and reopens now.
+		if m.focus != nil {
+			m.focus.retryNow()
+			m.watchSelection()
+		}
 	}
 	return m, resume
 }

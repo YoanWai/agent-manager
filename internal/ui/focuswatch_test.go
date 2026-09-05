@@ -361,3 +361,39 @@ func TestControlCaptureKeepsTrailingBlankRows(t *testing.T) {
 		t.Fatalf("matchExecShape(%q) = %q, want %q", "a\nb", got, want)
 	}
 }
+
+// A client that dies under the watcher is reported, not swallowed: the
+// preview silently dropping to the poll cadence reads as the manager
+// lagging, with nothing on screen saying why.
+func TestFocusWatchReportsALostClient(t *testing.T) {
+	driver := requireFocusDriver(t)
+	id := "lost" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	msgs := make(chan tea.Msg, 64)
+	watch := newFocusWatch(driver, func(msg tea.Msg) { msgs <- msg })
+	t.Cleanup(watch.Close)
+	watch.setFocus(id)
+	waitFocusPreview(t, msgs, id, "")
+
+	// Killing the session detaches its control client out from under the
+	// watcher, which is one of the ways the client goes away in use.
+	driver.Kill(id)
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case msg := <-msgs:
+			if failure, ok := msg.(errMsg); ok {
+				if !strings.Contains(failure.err.Error(), "preview") {
+					t.Fatalf("lost client reported as %q", failure.err)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("lost control client was never reported")
+		}
+	}
+}
