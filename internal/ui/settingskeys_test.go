@@ -174,9 +174,6 @@ func TestKeyPickerAddsASecondKey(t *testing.T) {
 }
 
 // esc during capture cancels it; the key that would have been bound is not.
-// r asks before it moves anything, names what would change, and on yes
-// puts the shipped keys back on every action at once, added keys included;
-// leaving then saves it like any other change.
 func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
 	m := keyPickerModel(t)
 	custom := sessionOf(t, []string{"ctrl+q", "f9"}, nil, []string{"f5"})
@@ -221,7 +218,6 @@ func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
 	}
 }
 
-// A table already on its defaults has nothing to reset, so r asks nothing.
 func TestKeyPickerResetOnDefaultsAsksNothing(t *testing.T) {
 	m := keyPickerModel(t)
 	m.pressInPicker(t, runeKey("r"))
@@ -303,9 +299,6 @@ func TestSettingsRowCountsTheMovedKeys(t *testing.T) {
 	}
 }
 
-// The manager's own keys go through the same picker: a moved key is
-// written to [keybindings.list], answers in the list at once, and the key
-// it left is free.
 func TestListPickerMovesAKeyAndTheListFollows(t *testing.T) {
 	m := keyPickerModel(t)
 	view := ansi.Strip(m.viewKeyPicker())
@@ -348,7 +341,6 @@ func TestListPickerMovesAKeyAndTheListFollows(t *testing.T) {
 	}
 }
 
-// The list keeps a way back to the picker, and one key serves one action.
 func TestListPickerRefusesWhatWouldStrandTheUser(t *testing.T) {
 	m := keyPickerModel(t)
 	m.settings.keyCursor = listRow(t, m, keybind.Settings)

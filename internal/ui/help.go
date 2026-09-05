@@ -52,8 +52,6 @@ func helpKeyColumn(session, list keybind.Table, arrowStep bool) int {
 // eye has to travel too far from a key to its description.
 const helpCardMaxWidth = 92
 
-// helpRows collects one section's rows: an action's row carries the keys
-// its table binds today, and an action with no key left has no row.
 type helpRows struct {
 	list keybind.Table
 	rows [][2]string
@@ -71,8 +69,6 @@ func (h *helpRows) action(does string, actions ...string) {
 	}
 }
 
-// fixed is a row whose key is not an action of the table: a note under the
-// row above it, or a key no table may move.
 func (h *helpRows) fixed(key, does string) {
 	h.rows = append(h.rows, [2]string{key, does})
 }
@@ -220,8 +216,6 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) 
 	return append(rows, mouseRows...)
 }
 
-// titledWith names a section after the keys that open it, as the table
-// binds them today; an action with no key leaves the title bare.
 func titledWith(name string, list keybind.Table, actions ...string) string {
 	var glyphs []string
 	for _, action := range actions {

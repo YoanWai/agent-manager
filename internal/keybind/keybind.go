@@ -218,8 +218,6 @@ func (b Binding) Glyph(separator string) string {
 	return strings.Join(names, separator)
 }
 
-// Action is one thing a scope can be told to do, named the way the file
-// names it.
 type Action struct {
 	Name     string
 	Does     string

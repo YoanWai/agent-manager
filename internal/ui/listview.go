@@ -1057,8 +1057,6 @@ const (
 // focusTopRule is the hairline that caps the focused pane in the split,
 // where the detail head above it already names the session, so the rule
 // spends its title on the keys instead.
-// listHint is a key cap for one list action, or nothing when the action
-// has no key left to name.
 func (m *Model) listHint(action, label string) string {
 	glyph := m.listGlyph(action)
 	if glyph == "" {

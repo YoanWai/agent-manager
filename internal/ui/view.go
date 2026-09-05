@@ -605,8 +605,6 @@ func (m *Model) rowLegend() legendSection {
 	return legendSection{title: title, pairs: legendPairsBound(pairs)}
 }
 
-// legendPair is one hint for two sibling actions, "x/X kill / all"; with
-// one of them turned off the hint keeps only the half that still answers.
 func (m *Model) legendPair(first, firstLabel, second, secondLabel string) [2]string {
 	switch {
 	case m.listGlyph(first) == "":
@@ -617,8 +615,6 @@ func (m *Model) legendPair(first, firstLabel, second, secondLabel string) [2]str
 	return [2]string{m.listGlyph(first, second), firstLabel + " / " + secondLabel}
 }
 
-// legendPairsBound drops the hints for actions with no key left: a footer
-// naming a key that does nothing would send the reader the wrong way.
 func legendPairsBound(pairs [][2]string) [][2]string {
 	kept := pairs[:0]
 	for _, pair := range pairs {
@@ -629,8 +625,6 @@ func legendPairsBound(pairs [][2]string) [][2]string {
 	return kept
 }
 
-// listGlyph is the footer's spelling of the keys on one or two list
-// actions, the pair joined the way "x/X" always was.
 func (m *Model) listGlyph(actions ...string) string {
 	joined := ""
 	for _, action := range actions {
