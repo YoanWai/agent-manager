@@ -524,7 +524,7 @@ func TestArrowStepFooterHintsFollowSetting(t *testing.T) {
 		m.selectSessionRow(t, "arrow-hints")
 		assertHint("session", "→ focus", enabled)
 		m.selectGroupRow(t, "arrow-group")
-		assertHint("group", "←→ close / open", enabled)
+		assertHint("group", "←/→ close / open", enabled)
 		m.mode = modeFocus
 		assertHint("focus", "← prompt start: back", enabled)
 	}

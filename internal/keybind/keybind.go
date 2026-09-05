@@ -34,7 +34,6 @@ var glyphs = map[string]string{
 	"backspace": "⌫",
 }
 
-// Glyph is the key as the footer and the key map draw it.
 func (k Key) Glyph() string {
 	if glyph, drawn := glyphs[k.tea]; drawn {
 		return glyph
@@ -169,6 +168,9 @@ func (b *Binding) UnmarshalTOML(value any) error {
 		}
 		b.keys = []Key{key}
 	case []any:
+		if len(spec) == 0 {
+			return errors.New(`a binding is one or more keys or "none"`)
+		}
 		for _, item := range spec {
 			text, ok := item.(string)
 			if !ok {
@@ -200,7 +202,6 @@ func (b Binding) Has(name string) bool {
 	return false
 }
 
-// Label is the keys as they are written, for the picker and the file.
 func (b Binding) Label() string {
 	names := make([]string, 0, len(b.keys))
 	for _, key := range b.keys {
@@ -209,7 +210,6 @@ func (b Binding) Label() string {
 	return strings.Join(names, " / ")
 }
 
-// Glyph is the keys as the footer and the key map draw them.
 func (b Binding) Glyph(separator string) string {
 	names := make([]string, 0, len(b.keys))
 	for _, key := range b.keys {
@@ -226,7 +226,6 @@ type Action struct {
 	defaults Binding
 }
 
-// The action names, shared by every place that reads a table.
 const (
 	Detach      = "detach"
 	Review      = "review"
@@ -421,7 +420,6 @@ func (t Table) Equal(other Table) bool {
 	return true
 }
 
-// ActionFor is the action a pressed key answers to, if any.
 func (t Table) ActionFor(key string) (string, bool) {
 	for _, action := range t.actions {
 		if t.bound[action.Name].Has(key) {

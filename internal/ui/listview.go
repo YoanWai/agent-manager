@@ -436,14 +436,14 @@ func windowEnd(heights []int, top, budget int) int {
 
 func (m *Model) emptyRailLines(width, height int) []string {
 	title := "no sessions yet"
-	hint := keyCap(m.listGlyph(keybind.NewSession), "starts one")
+	hint := m.listHint(keybind.NewSession, "starts one")
 	if m.showArchived {
 		title = "nothing archived"
-		hint = keyCap(m.listGlyph(keybind.Archived), "back to active")
+		hint = m.listHint(keybind.Archived, "back to active")
 	}
 	if m.statusFilter.active() {
 		title = "nothing needs " + m.statusFilter.label()
-		hint = keyCap(m.listGlyph(keybind.Filter), "show all")
+		hint = m.listHint(keybind.Filter, "show all")
 	}
 	if search := strings.TrimSpace(m.search); search != "" {
 		title = "no matches"
@@ -1057,6 +1057,16 @@ const (
 // focusTopRule is the hairline that caps the focused pane in the split,
 // where the detail head above it already names the session, so the rule
 // spends its title on the keys instead.
+// listHint is a key cap for one list action, or nothing when the action
+// has no key left to name.
+func (m *Model) listHint(action, label string) string {
+	glyph := m.listGlyph(action)
+	if glyph == "" {
+		return ""
+	}
+	return keyCap(glyph, label)
+}
+
 func focusTopRule(width int, keys keybind.Table) string {
 	hints := []string{"focused", keys.Binding(keybind.Detach).Label() + " back"}
 	if label := keys.Binding(keybind.Review).Label(); label != "" {

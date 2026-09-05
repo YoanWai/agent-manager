@@ -180,16 +180,17 @@ func TestKeyPickerAddsASecondKey(t *testing.T) {
 func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
 	m := keyPickerModel(t)
 	custom := sessionOf(t, []string{"ctrl+q", "f9"}, nil, []string{"f5"})
-	m.keys = custom
+	customList := keybind.DefaultList().With(keybind.NewSession, bindingOf(t, "N"))
+	m.keys, m.listKeys = custom, customList
 	m.tmux.SetSessionKeys(custom)
-	m.settings.tables[0] = custom
+	m.settings.tables[0], m.settings.tables[1] = custom, customList
 
 	m.pressInPicker(t, runeKey("r"))
 	if !m.settings.keyReset {
 		t.Fatal("r should ask before resetting")
 	}
 	ask := ansi.Strip(m.viewKeyPicker())
-	for _, want := range []string{"Reset every key", "detach: ctrl+q / f9 back to ctrl+q / ctrl+\\", "review: off back to ctrl+r", "editor: f5 back to f3"} {
+	for _, want := range []string{"Reset every key", "detach: ctrl+q / f9 back to ctrl+q / ctrl+\\", "review: off back to ctrl+r", "editor: f5 back to f3", "new_session: N back to n"} {
 		if !strings.Contains(ask, want) {
 			t.Fatalf("the question should say %q:\n%s", want, ask)
 		}
@@ -201,16 +202,16 @@ func TestKeyPickerResetsEveryActionToItsDefaultAfterAsking(t *testing.T) {
 
 	m.pressInPicker(t, runeKey("r"))
 	m.pressInPicker(t, runeKey("y"))
-	if m.settings.keyReset || !m.settings.tables[0].Equal(keybind.DefaultSession()) {
-		t.Fatalf("y should restore the defaults, got %s", m.settings.tables[0].Binding(keybind.Detach).Label())
+	if m.settings.keyReset || !m.settings.tables[0].Equal(keybind.DefaultSession()) || !m.settings.tables[1].Equal(keybind.DefaultList()) {
+		t.Fatalf("y should restore both tables, got %s and new_session %s", m.settings.tables[0].Binding(keybind.Detach).Label(), m.settings.tables[1].Binding(keybind.NewSession).Label())
 	}
 
 	m.pressInPicker(t, tea.KeyMsg{Type: tea.KeyEsc})
-	if !m.keys.Equal(keybind.DefaultSession()) {
-		t.Fatalf("model keys after save = %s", m.keys.Binding(keybind.Detach).Label())
+	if !m.keys.Equal(keybind.DefaultSession()) || !m.listKeys.Equal(keybind.DefaultList()) {
+		t.Fatalf("model keys after save = %s, new_session %s", m.keys.Binding(keybind.Detach).Label(), m.listKeys.Binding(keybind.NewSession).Label())
 	}
 	saved := savedConfig(t, m)
-	for _, want := range []string{"[keybindings.session]", `review = "ctrl+r"`, `editor = "f3"`} {
+	for _, want := range []string{"[keybindings.session]", `review = "ctrl+r"`, `editor = "f3"`, "[keybindings.list]", `new_session = "n"`} {
 		if !strings.Contains(saved, want) {
 			t.Fatalf("saved config is missing %q:\n%s", want, saved)
 		}

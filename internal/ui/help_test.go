@@ -341,7 +341,7 @@ func TestHelpReportsWhenNothingMatches(t *testing.T) {
 // The column is measured from the catalog, so a key can never render clipped
 // against its own description. This is what catches a long binding added later.
 func TestHelpKeyColumnFitsEveryKey(t *testing.T) {
-	column := helpKeyColumn(keybind.DefaultSession(), keybind.DefaultList())
+	column := helpKeyColumn(keybind.DefaultSession(), keybind.DefaultList(), true)
 	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
 		for _, row := range section.rows {
 			if w := ansi.StringWidth(row[0]); w >= column {
@@ -354,7 +354,7 @@ func TestHelpKeyColumnFitsEveryKey(t *testing.T) {
 // Descriptions have to survive the default card too: a row wider than the
 // column leaves it renders with an ellipsis instead of its own words.
 func TestHelpDescriptionsFitTheDefaultCard(t *testing.T) {
-	room := cardInnerWidth(helpCardWidth(120)) - helpKeyColumn(keybind.DefaultSession(), keybind.DefaultList())
+	room := cardInnerWidth(helpCardWidth(120)) - helpKeyColumn(keybind.DefaultSession(), keybind.DefaultList(), true)
 	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
 		for _, row := range section.rows {
 			if w := ansi.StringWidth(row[1]); w > room {

@@ -571,7 +571,7 @@ func (m *Model) rowLegend() legendSection {
 		}
 		pairs := [][2]string{{k(keybind.Open), foldAction}}
 		if m.arrowStep {
-			pairs = append(pairs, [2]string{k(keybind.StepOut) + k(keybind.StepIn), "close / open"})
+			pairs = append(pairs, m.legendPair(keybind.StepOut, "close", keybind.StepIn, "open"))
 		}
 		pairs = append(pairs, [][2]string{
 			{k(keybind.Editor), "editor"}, {k(keybind.Rename), "rename"}, {k(keybind.Move), "move"},

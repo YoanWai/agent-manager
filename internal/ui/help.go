@@ -36,9 +36,9 @@ type helpSection struct {
 // added later cannot render clipped against its own description, and always
 // over the whole catalog rather than a search's hits, so narrowing the map
 // does not shift the column under the reader.
-func helpKeyColumn(session, list keybind.Table) int {
+func helpKeyColumn(session, list keybind.Table, arrowStep bool) int {
 	width := 0
-	for _, section := range helpSections(session, list, true) {
+	for _, section := range helpSections(session, list, arrowStep) {
 		for _, row := range section.rows {
 			if w := ansi.StringWidth(row[0]); w > width {
 				width = w
@@ -155,7 +155,7 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 			{"", "w filters the list down to the marks that need you"},
 		}},
 		{title: "group under the cursor", rows: groupRowHelpRows(list)},
-		{title: "quick prompt (space)", rows: [][2]string{
+		{title: titledWith("quick prompt", list, keybind.Prompt), rows: [][2]string{
 			{"↵", "send"},
 			{"↑↓", "switch the target session"},
 			{"tab", "switch the tool a spawn uses (alt+m too)"},
@@ -173,8 +173,8 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 			{"click", "focused: open the link under it, else a tracking agent gets it"},
 			{"alt+drag", "focused: pass a whole drag to that agent UI"},
 		})},
-		reviewHelpSection(),
-		{title: "messages (M)", rows: [][2]string{
+		reviewHelpSection(list),
+		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
 			{"↑↓", "pick a message"},
 			{"pgup / pgdn", "scroll its body"},
 			{"↵", "open its link in the browser"},
@@ -183,13 +183,13 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 			{"x", "dismiss it for good"},
 			{"esc", "close"},
 		}},
-		{title: "settings (s)", rows: [][2]string{
+		{title: titledWith("settings", list, keybind.Settings), rows: [][2]string{
 			{"↑↓", "pick a field"},
 			{"←→", "change the value"},
 			{"↵", "run the field's action (keybindings, CLIs, report, update)"},
 			{"esc", "save and close"},
 		}},
-		{title: "dialogs (n, g, r, f, m)", rows: [][2]string{
+		{title: titledWith("dialogs", list, keybind.NewSession, keybind.NewGroup, keybind.Rename, keybind.Fork, keybind.Move), rows: [][2]string{
 			{"tab / ↑↓", "next field"},
 			{"ctrl+v", "in a prompt field, paste an image as a chip"},
 			{"←→", "change a picker's value"},
@@ -220,8 +220,23 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) 
 	return append(rows, mouseRows...)
 }
 
-func reviewHelpSection() helpSection {
-	return helpSection{title: "review (ctrl+r)", rows: [][2]string{
+// titledWith names a section after the keys that open it, as the table
+// binds them today; an action with no key leaves the title bare.
+func titledWith(name string, list keybind.Table, actions ...string) string {
+	var glyphs []string
+	for _, action := range actions {
+		if glyph := list.Binding(action).Glyph(" / "); glyph != "" {
+			glyphs = append(glyphs, glyph)
+		}
+	}
+	if len(glyphs) == 0 {
+		return name
+	}
+	return name + " (" + strings.Join(glyphs, ", ") + ")"
+}
+
+func reviewHelpSection(list keybind.Table) helpSection {
+	return helpSection{title: titledWith("review", list, keybind.Review), rows: [][2]string{
 		{"", "Tell your agent what to review in Agent Manager; they set it up."},
 		{"c", "comment on the line"},
 		{"d", "remove a draft, or mark sent feedback handled / open"},
@@ -247,7 +262,7 @@ func reviewHelpSection() helpSection {
 
 func (m *Model) visibleHelpSections() []helpSection {
 	if m.help.returnMode == modeDiff {
-		return []helpSection{reviewHelpSection()}
+		return []helpSection{reviewHelpSection(m.listKeys)}
 	}
 	return helpSections(m.keys, m.listKeys, m.arrowStep)
 }
@@ -295,8 +310,8 @@ func helpRowCount(sections []helpSection) int {
 
 // helpBodyLines lays the catalog out as one scrollable column: a titled rule
 // per section, then its bindings in two aligned columns.
-func helpBodyLines(sections []helpSection, session, list keybind.Table, width int, query string) []string {
-	keyColumn := helpKeyColumn(session, list)
+func helpBodyLines(sections []helpSection, session, list keybind.Table, arrowStep bool, width int, query string) []string {
+	keyColumn := helpKeyColumn(session, list, arrowStep)
 	if room := width / 3; keyColumn > room {
 		keyColumn = max(room, 4)
 	}
@@ -374,7 +389,7 @@ func (m *Model) helpSearchActive() bool {
 
 func (m *Model) helpScrollLimit() int {
 	sections := matchHelp(m.visibleHelpSections(), m.help.query)
-	body := helpBodyLines(sections, m.keys, m.listKeys, cardInnerWidth(helpCardWidth(m.width)), m.help.query)
+	body := helpBodyLines(sections, m.keys, m.listKeys, m.arrowStep, cardInnerWidth(helpCardWidth(m.width)), m.help.query)
 	return max(0, len(body)-m.helpBodyRoom())
 }
 
@@ -388,7 +403,7 @@ func (m *Model) viewHelp() string {
 		head = append(head, m.helpSearchLine(sections), "")
 	}
 
-	body := helpBodyLines(sections, m.keys, m.listKeys, inner, m.help.query)
+	body := helpBodyLines(sections, m.keys, m.listKeys, m.arrowStep, inner, m.help.query)
 	if len(body) == 0 {
 		body = []string{subtleStyle.Render("no key matches that")}
 	}

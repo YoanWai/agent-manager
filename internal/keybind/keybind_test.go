@@ -142,6 +142,7 @@ func TestBindingRefusesBadValues(t *testing.T) {
 		{`review = [1]`, "written as a string"},
 		{`review = 3`, "a key, a list of keys or \"none\""},
 		{`review = ["none"]`, "not a key"},
+		{`review = []`, "one or more keys"},
 	} {
 		_, err := decode(t, "[session]\n"+tc.text)
 		if err == nil || !strings.Contains(err.Error(), tc.reason) {
