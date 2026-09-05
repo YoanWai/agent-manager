@@ -549,6 +549,14 @@ func (m *Model) liveSessions(sessions []store.Session) ([]store.Session, error) 
 	return live, nil
 }
 
+// unwatch stops the focus watcher before a session is killed on purpose:
+// the client going away then is the plan, not a loss to report.
+func (m *Model) unwatch(id string) {
+	if m.focus != nil {
+		m.focus.unwatch(id)
+	}
+}
+
 // killSession ends one session's tmux window, freeing everything its agent
 // held, while the store row keeps the name, group, history and conversation
 // id that revive needs. The pane is captured first so the preview still
@@ -562,6 +570,7 @@ func (m *Model) killSession(sess store.Session) error {
 			return err
 		}
 	}
+	m.unwatch(sess.ID)
 	var killErr error
 	// Runs under the poller's lock so no pass can capture a half-killed
 	// pane, and drops the pane hash the revived session would be compared
@@ -1045,6 +1054,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errBar.text = ""
 		case actionDelete:
 			for _, sess := range childrenFirst(m.confirm.sessions) {
+				m.unwatch(sess.ID)
 				if err := m.tmux.Kill(sess.ID); err != nil {
 					m.errBar.text = err.Error()
 					return m, nil

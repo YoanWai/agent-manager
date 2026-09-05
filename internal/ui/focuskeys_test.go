@@ -1205,3 +1205,71 @@ func TestFocusModeRemappedReviewAndEditorKeys(t *testing.T) {
 		t.Fatalf("closing review should return to focus, mode = %v", m.mode)
 	}
 }
+
+// Typing into a session whose control client is in failure backoff reopens
+// the client at once: a keystroke is the same deliberate act as focusing,
+// and without the client the typed text only shows on the poll cadence,
+// a second or more after each key.
+func TestFocusKeyRetriesADeadWatcher(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "retype", t.TempDir(), "")
+	m.selectSessionRow(t, "retype")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	sess := m.rows[m.cursor].sess
+
+	m.focus = newFocusWatch(m.tmux, func(tea.Msg) {})
+	t.Cleanup(m.focus.Close)
+	m.focus.mu.Lock()
+	m.focus.failedID, m.focus.failedAt = sess.ID, time.Now()
+	m.focus.mu.Unlock()
+	m.focus.setFocus(sess.ID)
+	if m.focus.watching() != "" {
+		t.Fatal("backoff did not hold before the keystroke")
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	*m = *updated.(*Model)
+	if m.errBar.text != "" {
+		t.Fatalf("forwarding set err: %q", m.errBar.text)
+	}
+	if m.focus.watching() != sess.ID {
+		t.Fatalf("keystroke left the watcher on %q, want %q", m.focus.watching(), sess.ID)
+	}
+}
+
+// Killing the focused session is deliberate, so the watcher losing its
+// client there is not a failure to report; only a client that dies under
+// the watcher is.
+func TestKillingTheFocusedSessionReportsNoLoss(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "doomed-focus", t.TempDir(), "")
+	m.selectSessionRow(t, "doomed-focus")
+	sess := m.rows[m.cursor].sess
+
+	msgs := make(chan tea.Msg, 64)
+	m.focus = newFocusWatch(m.tmux, func(msg tea.Msg) { msgs <- msg })
+	t.Cleanup(m.focus.Close)
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	waitFocusPreview(t, msgs, sess.ID, "")
+
+	if err := m.killSession(sess); err != nil {
+		t.Fatalf("killSession: %v", err)
+	}
+	quiet := time.After(time.Second)
+	for {
+		select {
+		case msg := <-msgs:
+			if failure, ok := msg.(errMsg); ok {
+				t.Fatalf("deliberate kill reported %q", failure.err)
+			}
+		case <-quiet:
+			return
+		}
+	}
+}
