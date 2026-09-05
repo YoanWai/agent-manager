@@ -495,7 +495,7 @@ func (m *Model) viewFooter() string {
 	}
 	if m.split.resizeMode {
 		return m.transientFooter(legendSection{title: "Resize", pairs: [][2]string{
-			{"←→", "nudge"}, {"drag", "divider"}, {"| / release", "commit"}, {"esc", "cancel"},
+			{"←→", "nudge"}, {"drag", "divider"}, {strings.TrimPrefix(m.listGlyph(keybind.Resize)+" / release", " / "), "commit"}, {"esc", "cancel"},
 		}})
 	}
 	if m.mode == modeRename {
