@@ -110,6 +110,8 @@ var stuckEndGrace = 15 * time.Second
 type quietTimer struct {
 	since time.Time
 	stuck bool
+	// pane hashes the whole pane while stuck: pi animates its spinner below the activity region.
+	pane uint64
 }
 
 // startingGrace caps how long a session may show the launch state before the
@@ -1211,13 +1213,15 @@ func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 					// Mid-turn pauses (thinking, between tools) look quiet for
 					// a poll or two; wait before treating that as turn end.
 					grace := quietEndGrace
+					var paneHash uint64
 					if stuck {
 						grace = stuckEndGrace
+						paneHash = hashString(text)
 					}
 					now := time.Now()
 					timer, ok := p.quietSince[sess.ID]
-					if !ok || timer.stuck != stuck {
-						timer = quietTimer{since: now, stuck: stuck}
+					if !ok || timer.stuck != stuck || timer.pane != paneHash {
+						timer = quietTimer{since: now, stuck: stuck, pane: paneHash}
 						p.quietSince[sess.ID] = timer
 					}
 					if now.Sub(timer.since) >= grace {

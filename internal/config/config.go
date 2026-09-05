@@ -692,8 +692,9 @@ rules = [
   { state = "waiting", pattern = "(?ms)\\?[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
   # The spinner sits on a line of its own above the composer, or since pi
   # 0.85 inside the composer's top border ("── ⠹ Working ───"); custom
-  # editors keep the standalone shape, so both are live.
-  { state = "working", pattern = "(?ms)^[ \\t]*(?:─+[ \\t]+)?[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*(?:\\n[ \\t]*\\n─{8,}[ \\t]*)?\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
+  # editors keep the standalone shape, so both are live. The composer may
+  # hold a draft typed mid-turn.
+  { state = "working", pattern = "(?ms)^[ \\t]*(?:[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*|─+[ \\t]+[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*)\\n(?:(?:[^─\\n][^\\n]*)?\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
 ]
 
 [tools.command-code]

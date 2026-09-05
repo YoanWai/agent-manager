@@ -551,8 +551,16 @@ func TestPiPanes(t *testing.T) {
 			"Implementation complete." + editor + "\nhydra:navigator hit 89.0% (last hour)", Finished},
 		{"active turn with the spinner in the composer border",
 			"── ⠹ Working ─────────────────────────────────────\n\n──────────────────────────────────────────────────\n~\n↑116 ↓26k R1.4M W61k CH96.6% $2.862 (sub) 6.2%/1.\nhydra:navigator+simplifier hit 97.1% (last 98.8%)", Working},
+		{"active turn with a draft typed into the composer",
+			"── ⠹ Working ─────────────────────────────────────\nfollow-up I am typing\n──────────────────────────────────────────────────\n~\n↑116 ↓26k R1.4M W61k CH96.6% $2.862 (sub) 6.2%/1.\nhydra:navigator+simplifier hit 97.1% (last 98.8%)", Working},
+		{"active turn with a multiline draft in the composer",
+			"── ⠹ Working ─────────────────────────────────────\nfollow-up I am typing\n\nsecond paragraph\n──────────────────────────────────────────────────\n~/dev/project (main)\n0.1%/128k (auto) slow", Working},
+		{"active turn with a draft under a standalone spinner",
+			" ⠴ Working...\n\n─────────────────────────────────\nfollow-up I am typing\n─────────────────────────────────\n~/scratch/2026-08-26-agent-man...\n↑12 ↓7.7k R77k W16k CH99.2% $0...", Working},
 		{"historical border spinner frame",
 			"── ⠹ Working ─────────────────────────────────────\n\n──────────────────────────────\n~/dev/project (main)\nanthropic/claude-sonnet-4\n\nImplementation complete." + editor, Finished},
+		{"historical border spinner with a draft in the resting composer",
+			"── ⠹ Working ─────────────────────────────────────\nold draft\n──────────────────────────────\n~/dev/project (main)\nanthropic/claude-sonnet-4\n\nImplementation complete.\n\n──────────────────────────────\nnew draft\n──────────────────────────────\n~/dev/project (main)\nanthropic/claude-sonnet-4", Finished},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
