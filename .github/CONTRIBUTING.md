@@ -15,6 +15,12 @@ Send it. Typos, broken links, a one-line fix, a status rule for a tool you use: 
 
 For a large change (new UI, new keybinding, reworked status detection), an issue first gets you a read on the approach so the work lands the first time. Optional, and worth it.
 
+Follow the [Thin Wrapper Principle](../PRODUCT.md#thin-wrapper-principle): preserve
+each agent TUI's defaults and user configuration, keep shared features generic,
+and avoid integrations that need updates whenever an upstream tool changes.
+For example, a model picker needs reliable dynamic discovery across supported
+tools; a maintained list of model names does not belong in agent-manager.
+
 ## Setup
 
 You need Go 1.26+ and tmux.
