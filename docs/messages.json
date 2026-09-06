@@ -1,5 +1,20 @@
 [
   {
+    "id": "keys-are-yours-v0360",
+    "banner": "new: every key is configurable",
+    "title": "v0.36.0: set your own keys, and tell us which defaults should change",
+    "body": [
+      "[keybindings.session] and [keybindings.list] in config.toml name every key the manager answers to.",
+      "The keybindings row in Settings opens a picker; r puts the shipped keys back.",
+      "Focus mode keeps up with a streaming pane, and Left leaves Command Code and pi again when they hide the cursor.",
+      "A notification click lands on the session that sent it, on macOS, Linux and WSL.",
+      "Which default keys got in your way? Say so in discussion #455, that thread decides what changes.",
+      "Update with `agent-manager update`, `brew upgrade yoanwai/tap/agent-manager`, or your package manager."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/discussions/454",
+    "max_version": "0.36.0"
+  },
+  {
     "id": "full-screen-sessions",
     "banner": "new: the session list can take the whole terminal",
     "title": "Full-screen sessions, with rows that read as a conversation",
