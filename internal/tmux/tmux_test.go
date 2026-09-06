@@ -133,6 +133,23 @@ func TestPrepareAttachFallsBackWhenLatestRejected(t *testing.T) {
 	}
 }
 
+// resolvedOption's global fallback can fail on its own (no server, a
+// stale socket); that error must reach the caller, not just the
+// session-scoped read's.
+func TestResolvedOptionPropagatesTheGlobalFallbackError(t *testing.T) {
+	dir := t.TempDir()
+	stub := dir + "/tmux"
+	script := "#!/bin/sh\ncase \"$*\" in *'-g -v prefix'*) echo 'no server running' >&2; exit 1;; esac\nexit 0\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	if _, err := driver.resolvedOption("x1", "prefix"); err == nil {
+		t.Fatal("resolvedOption should propagate the global fallback's error")
+	}
+}
+
 func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	driver := requireTmux(t)
 	id := "lbl" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
@@ -609,7 +626,9 @@ func restorePrefix(t *testing.T) {
 	}
 	snapshot := strings.TrimSpace(string(original))
 	t.Cleanup(func() {
-		tmuxCmd("set-option", "-g", "prefix", snapshot).Run()
+		if out, err := tmuxCmd("set-option", "-g", "prefix", snapshot).CombinedOutput(); err != nil {
+			t.Errorf("restore prefix: %v: %s", err, out)
+		}
 	})
 }
 
