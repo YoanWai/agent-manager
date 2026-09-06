@@ -138,6 +138,7 @@ func newSessionHarness(t *testing.T) *sessionHarness {
 			!strings.Contains(string(out), "server exited unexpectedly") {
 			t.Errorf("kill test tmux server: %v: %s", err, strings.TrimSpace(string(out)))
 		}
+		_ = os.Remove(driver.SocketPath())
 		_ = st.Close()
 	})
 	return h
@@ -1034,5 +1035,18 @@ func TestHeadlessLaunchesUseTheManagersPaneSize(t *testing.T) {
 	}
 	if width, height := paneWindowSize(t, h.driver, created.ID); width != 131 || height != 47 {
 		t.Fatalf("revived pane = %dx%d, want 131x47", width, height)
+	}
+}
+
+func TestSessionHarnessCleanupRemovesSocket(t *testing.T) {
+	var socket string
+	t.Run("harness", func(t *testing.T) {
+		socket = newSessionHarness(t).driver.SocketPath()
+	})
+	if socket == "" {
+		t.Skip("tmux not installed")
+	}
+	if _, err := os.Stat(socket); !os.IsNotExist(err) {
+		t.Fatalf("socket %q survived harness cleanup: %v", socket, err)
 	}
 }
