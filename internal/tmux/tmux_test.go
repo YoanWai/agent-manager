@@ -599,6 +599,51 @@ func TestRefreshChromeKeepsLabelAndAddsSessionHints(t *testing.T) {
 	}
 }
 
+// restorePrefix snapshots and restores the server's global prefix, so a
+// test that sets one does not leak it into the next.
+func restorePrefix(t *testing.T) {
+	t.Helper()
+	original, err := tmuxCmd("show-options", "-g", "-v", "prefix").CombinedOutput()
+	if err != nil {
+		t.Fatalf("show-options prefix: %v: %s", err, original)
+	}
+	snapshot := strings.TrimSpace(string(original))
+	t.Cleanup(func() {
+		tmuxCmd("set-option", "-g", "prefix", snapshot).Run()
+	})
+}
+
+// A tmux.conf almost always sets the prefix with "set -g", which
+// TestRefreshChromeKeepsLabelAndAddsSessionHints never exercises (it
+// always overrides "-t <session>" directly).
+func TestRefreshChromeResolvesAGloballySetPrefix(t *testing.T) {
+	driver := requireTmux(t)
+	restorePrefix(t)
+	id := "globalprefix" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	if out, err := tmuxCmd("set-option", "-g", "prefix", "C-q").CombinedOutput(); err != nil {
+		t.Fatalf("set global prefix: %v: %s", err, out)
+	}
+	if err := driver.RefreshChrome(id); err != nil {
+		t.Fatalf("RefreshChrome: %v", err)
+	}
+
+	right, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("status-right: %v", err)
+	}
+	if strings.Contains(string(right), "Ctrl+q /") {
+		t.Fatalf("footer should hide the default detach key claimed by a globally-set prefix, got %q", right)
+	}
+	if !strings.Contains(string(right), "C-q d = back") {
+		t.Fatalf("footer should advertise the prefix escape for a globally-set prefix, got %q", right)
+	}
+}
+
 // clearPaneTheme drops the server-global colors a pane-theme test left
 // behind, so the rest of the package sees an unstyled server.
 func clearPaneTheme(t *testing.T) {
