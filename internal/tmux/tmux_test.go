@@ -133,6 +133,23 @@ func TestPrepareAttachFallsBackWhenLatestRejected(t *testing.T) {
 	}
 }
 
+// resolvedOption's global fallback can fail on its own (no server, a
+// stale socket); that error must reach the caller, not just the
+// session-scoped read's.
+func TestResolvedOptionPropagatesTheGlobalFallbackError(t *testing.T) {
+	dir := t.TempDir()
+	stub := dir + "/tmux"
+	script := "#!/bin/sh\ncase \"$*\" in *'-g -v prefix'*) echo 'no server running' >&2; exit 1;; esac\nexit 0\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	if _, err := driver.resolvedOption("x1", "prefix"); err == nil {
+		t.Fatal("resolvedOption should propagate the global fallback's error")
+	}
+}
+
 func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	driver := requireTmux(t)
 	id := "lbl" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
@@ -596,6 +613,53 @@ func TestRefreshChromeKeepsLabelAndAddsSessionHints(t *testing.T) {
 	}
 	if !strings.Contains(string(left), "my-session") {
 		t.Fatalf("re-styling should keep the name label, got %q", left)
+	}
+}
+
+// restorePrefix snapshots and restores the server's global prefix, so a
+// test that sets one does not leak it into the next.
+func restorePrefix(t *testing.T) {
+	t.Helper()
+	original, err := tmuxCmd("show-options", "-g", "-v", "prefix").CombinedOutput()
+	if err != nil {
+		t.Fatalf("show-options prefix: %v: %s", err, original)
+	}
+	snapshot := strings.TrimSpace(string(original))
+	t.Cleanup(func() {
+		if out, err := tmuxCmd("set-option", "-g", "prefix", snapshot).CombinedOutput(); err != nil {
+			t.Errorf("restore prefix: %v: %s", err, out)
+		}
+	})
+}
+
+// A tmux.conf almost always sets the prefix with "set -g", which
+// TestRefreshChromeKeepsLabelAndAddsSessionHints never exercises (it
+// always overrides "-t <session>" directly).
+func TestRefreshChromeResolvesAGloballySetPrefix(t *testing.T) {
+	driver := requireTmux(t)
+	restorePrefix(t)
+	id := "globalprefix" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	if out, err := tmuxCmd("set-option", "-g", "prefix", "C-q").CombinedOutput(); err != nil {
+		t.Fatalf("set global prefix: %v: %s", err, out)
+	}
+	if err := driver.RefreshChrome(id); err != nil {
+		t.Fatalf("RefreshChrome: %v", err)
+	}
+
+	right, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-right}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("status-right: %v", err)
+	}
+	if strings.Contains(string(right), "Ctrl+q /") {
+		t.Fatalf("footer should hide the default detach key claimed by a globally-set prefix, got %q", right)
+	}
+	if !strings.Contains(string(right), "C-q d = back") {
+		t.Fatalf("footer should advertise the prefix escape for a globally-set prefix, got %q", right)
 	}
 }
 

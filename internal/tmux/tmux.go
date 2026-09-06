@@ -368,14 +368,31 @@ func (d *Driver) installSessionUX(name string) error {
 	return err
 }
 
+// Reads a session-scoped option, falling back to the server's global value.
+// Tmux answers an un-overridden session option with an empty string rather than the global option.
+func (d *Driver) resolvedOption(name, option string) (string, error) {
+	value, err := d.run("show-options", "-t", name, "-v", option)
+	if err != nil {
+		return "", err
+	}
+	if value = strings.TrimSpace(value); value != "" {
+		return value, nil
+	}
+	global, err := d.run("show-options", "-g", "-v", option)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(global), nil
+}
+
 // styleStatusBar sets a session's status bar chrome, leaving status-left (the
 // name label) untouched so re-styling a live session keeps its label.
 func (d *Driver) styleStatusBar(name string) error {
-	primary, err := d.run("show-options", "-t", name, "-v", "prefix")
+	primary, err := d.resolvedOption(name, "prefix")
 	if err != nil {
 		return err
 	}
-	secondary, err := d.run("show-options", "-t", name, "-v", "prefix2")
+	secondary, err := d.resolvedOption(name, "prefix2")
 	if err != nil {
 		return err
 	}
@@ -384,7 +401,7 @@ func (d *Driver) styleStatusBar(name string) error {
 		// The default status-right-length of 40 truncates the hints, so widen it
 		// to fit the whole footer, including the configured-prefix fallback.
 		{"set-option", "-t", name, "status-right-length", "100"},
-		{"set-option", "-t", name, "status-right", attachStatusRight(strings.TrimSpace(primary), strings.TrimSpace(secondary), d.currentSessionKeys())},
+		{"set-option", "-t", name, "status-right", attachStatusRight(primary, secondary, d.currentSessionKeys())},
 		{"set-option", "-t", name, "status-style", "bg=colour236,fg=colour249"},
 		// hide the "0:windowname*" window list; it reads as noise here
 		{"set-option", "-t", name, "window-status-format", ""},
