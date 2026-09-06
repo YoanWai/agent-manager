@@ -994,3 +994,45 @@ func TestSessionsCreateBindsTheConfiguredSessionKeys(t *testing.T) {
 		t.Fatalf("the default review key should not be bound alongside the configured one: %q", stale)
 	}
 }
+
+func paneWindowSize(t *testing.T, driver *tmux.Driver, id string) (int, int) {
+	t.Helper()
+	panes, err := driver.Panes()
+	if err != nil {
+		t.Fatalf("Panes: %v", err)
+	}
+	pane, ok := panes[id]
+	if !ok {
+		t.Fatalf("session %s has no pane", id)
+	}
+	return pane.Width, pane.Height
+}
+
+// Nothing outside the manager can measure the preview panel, and tmux
+// hands an unsized detached session 80x24, so every pane these tools open
+// comes up narrower than the panel that has to draw it. They take the box
+// the running manager recorded instead.
+func TestHeadlessLaunchesUseTheManagersPaneSize(t *testing.T) {
+	h := newSessionHarness(t)
+	if err := h.store.SetPaneSize(131, 47); err != nil {
+		t.Fatalf("set pane size: %v", err)
+	}
+
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if width, height := paneWindowSize(t, h.driver, created.ID); width != 131 || height != 47 {
+		t.Fatalf("created pane = %dx%d, want 131x47", width, height)
+	}
+
+	if _, err := h.sessions.Kill(h.caller.ID, created.ID); err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+	if _, err := h.sessions.Revive(h.caller.ID, created.ID); err != nil {
+		t.Fatalf("Revive: %v", err)
+	}
+	if width, height := paneWindowSize(t, h.driver, created.ID); width != 131 || height != 47 {
+		t.Fatalf("revived pane = %dx%d, want 131x47", width, height)
+	}
+}

@@ -361,7 +361,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		PendingInputs:  plan.PendingInputs,
 		LaunchPrompt:   plan.LaunchPrompt,
 	}
-	if err := runtime.driver.Create(sess.ID, sess.Cwd, command, env, 0, 0); err != nil {
+	if err := runtime.createPane(sess.ID, sess.Cwd, command, env); err != nil {
 		discard()
 		return Session{}, err
 	}
@@ -751,7 +751,7 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	if err := runtime.driver.Create(target.ID, target.Cwd, command, env, 0, 0); err != nil {
+	if err := runtime.createPane(target.ID, target.Cwd, command, env); err != nil {
 		return Session{}, err
 	}
 	launchedAt := time.Now()
