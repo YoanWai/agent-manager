@@ -16,5 +16,12 @@ the tools in `defaultConfig` in `internal/config/config.go`, and the platforms
 left out and what supporting them would take, and let the maintainer decide.
 Opening the pull request first and settling that in review is the right order.
 
+For integrations, apply the [Thin Wrapper Principle](PRODUCT.md#thin-wrapper-principle).
+Check for overridden upstream defaults, hardcoded model catalogs, and dependencies
+on particular tool versions. Verify that unavailable capabilities leave ordinary
+launch and interaction usable.
+Assess ongoing maintenance across providers and releases, including whether the
+feature requires a separate implementation for each provider.
+
 When the need for a change depends on product intent that nobody wrote down,
 ask for a maintainer decision. An unanswered question stays a question.

@@ -6,6 +6,16 @@ for in [REVIEW.md](REVIEW.md). Fill the Scope section of the pull request
 template: a review reads it to tell the change you meant from the change you
 made.
 
+## Product boundary
+
+Keep agent-manager a thin wrapper around the supported TUIs. Preserve upstream
+defaults and user configuration; avoid hardcoded models, version-specific
+behavior, and recreating upstream settings. Apply the
+[Thin Wrapper Principle](PRODUCT.md#thin-wrapper-principle) to every integration,
+including shared controls, capability discovery, and status detection.
+Provider-specific features multiply ongoing maintenance. Supporting a TUI does
+not mean mirroring its feature set; prefer workspace features shared across tools.
+
 ## Build and test
 
 ```bash
