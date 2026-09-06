@@ -8,10 +8,10 @@
       "The keybindings row in Settings opens a picker; r puts the shipped keys back.",
       "Focus mode keeps up with a streaming pane, and Left leaves Command Code and pi again when they hide the cursor.",
       "A notification click lands on the session that sent it, on macOS, Linux and WSL.",
-      "Which default keys got in your way? Say so in discussion #455, that thread decides what changes.",
+      "Which default keys got in your way? Say so in the discussion this entry opens, that thread decides what changes.",
       "Update with `agent-manager update`, `brew upgrade yoanwai/tap/agent-manager`, or your package manager."
     ],
-    "url": "https://github.com/YoanWai/agent-manager/discussions/454",
+    "url": "https://github.com/YoanWai/agent-manager/discussions/455",
     "max_version": "0.36.0"
   },
   {
