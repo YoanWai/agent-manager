@@ -1452,7 +1452,7 @@ func (m *Model) openAnnotate() {
 		return
 	}
 	lineIdx := m.cursorDiffLine()
-	if lineIdx < 0 || lineIdx >= len(fd.Lines) {
+	if lineIdx < 0 || lineIdx >= len(fd.Lines) || fd.Lines[lineIdx].Kind == diff.Gap {
 		return
 	}
 	input := textarea.New()
@@ -1561,6 +1561,9 @@ func (m *Model) reanchorAnnotationsFor(path string) bool {
 		}
 		matches, target := 0, 0
 		for _, line := range fd.Lines {
+			if line.Kind == diff.Gap {
+				continue
+			}
 			num, deleted := annotationLine(line)
 			if deleted == note.deleted && excerptOf(line.Text) == note.excerpt {
 				matches++

@@ -42,11 +42,11 @@ func brightCommentStyle() *chroma.Style {
 	return style
 }
 
-// fileHL holds one file's syntax-highlighted lines per side, indexed by
-// OldNum/NewNum minus one.
+// fileHL holds one file's syntax-highlighted lines, indexed the same way
+// as the diff's own line model: a hunk-only model skips file lines, so a
+// line's number is not its position.
 type fileHL struct {
-	oldLines []string
-	newLines []string
+	lines []string
 }
 
 type hlKey struct {
@@ -105,15 +105,45 @@ func highlightFile(fd *diff.FileDiff) *fileHL {
 		return &fileHL{}
 	}
 	lexer = chroma.Coalesce(lexer)
-	return &fileHL{
-		oldLines: highlightSide(lexer, oldText),
-		newLines: highlightSide(lexer, newText),
+	return &fileHL{lines: alignSides(fd, highlightSide(lexer, oldText), highlightSide(lexer, newText))}
+}
+
+// alignSides walks the model in the order sideTexts wrote the two sides,
+// pairing every line with its highlighted text.
+func alignSides(fd *diff.FileDiff, oldLines, newLines []string) []string {
+	lines := make([]string, len(fd.Lines))
+	oldIdx, newIdx := 0, 0
+	for i, line := range fd.Lines {
+		switch line.Kind {
+		case diff.Gap:
+			continue
+		case diff.Del:
+			if oldIdx < len(oldLines) {
+				lines[i] = oldLines[oldIdx]
+			}
+			oldIdx++
+		case diff.Add:
+			if newIdx < len(newLines) {
+				lines[i] = newLines[newIdx]
+			}
+			newIdx++
+		default:
+			if newIdx < len(newLines) {
+				lines[i] = newLines[newIdx]
+			}
+			oldIdx++
+			newIdx++
+		}
 	}
+	return lines
 }
 
 func sideTexts(fd *diff.FileDiff) (oldText, newText string) {
 	var oldBuilder, newBuilder strings.Builder
 	for _, line := range fd.Lines {
+		if line.Kind == diff.Gap {
+			continue
+		}
 		text := escapeControls(line.Text)
 		if line.Kind != diff.Add {
 			oldBuilder.WriteString(text)
@@ -122,6 +152,9 @@ func sideTexts(fd *diff.FileDiff) (oldText, newText string) {
 		if line.Kind != diff.Del {
 			newBuilder.WriteString(text)
 			newBuilder.WriteByte('\n')
+		}
+		if oldBuilder.Len()+newBuilder.Len() > maxHighlightBytes {
+			break
 		}
 	}
 	return oldBuilder.String(), newBuilder.String()
@@ -150,15 +183,12 @@ func highlightSide(lexer chroma.Lexer, text string) []string {
 
 // hlLine returns the highlighted text for a diff line, falling back to
 // the raw text when highlighting is unavailable.
-func (hl *fileHL) hlLine(line diff.Line) string {
-	if hl != nil {
-		if line.Kind == diff.Del {
-			if line.OldNum >= 1 && line.OldNum <= len(hl.oldLines) {
-				return hl.oldLines[line.OldNum-1]
-			}
-		} else if line.NewNum >= 1 && line.NewNum <= len(hl.newLines) {
-			return hl.newLines[line.NewNum-1]
-		}
+func (hl *fileHL) hlLine(line diff.Line, index int) string {
+	if line.Kind == diff.Gap {
+		return mutedStyle.Render(escapeControls(line.Text))
+	}
+	if hl != nil && index < len(hl.lines) && hl.lines[index] != "" {
+		return hl.lines[index]
 	}
 	return escapeControls(line.Text)
 }
@@ -451,7 +481,7 @@ func (m *Model) renderDiffRow(fd *diff.FileDiff, hl *fileHL, index, width int, c
 	if textWidth < 4 {
 		textWidth = 4
 	}
-	textRows := wrapTinted(hl.hlLine(line), escapeSpans(line.Text, line.Spans), baseBg, spanBg, textWidth)
+	textRows := wrapTinted(hl.hlLine(line, index), escapeSpans(line.Text, line.Spans), baseBg, spanBg, textWidth)
 
 	marker := " "
 	if len(m.annotationsAt(fd.File.Path, line)) > 0 {
@@ -962,7 +992,7 @@ func (m *Model) renderSideCell(fd *diff.FileDiff, hl *fileHL, index, width int, 
 	if textWidth < 4 {
 		textWidth = 4
 	}
-	textRows := wrapTinted(hl.hlLine(line), escapeSpans(line.Text, line.Spans), baseBg, spanBg, textWidth)
+	textRows := wrapTinted(hl.hlLine(line, index), escapeSpans(line.Text, line.Spans), baseBg, spanBg, textWidth)
 	blankGutter := strings.Repeat(" ", gutterWidth)
 	out := make([]string, len(textRows))
 	for i, text := range textRows {

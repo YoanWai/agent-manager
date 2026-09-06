@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -123,15 +124,75 @@ func TestHighlightFileBothSides(t *testing.T) {
 		[]byte("package a\n\nfunc A() int { return 1 }\n"),
 		git.ChangedFile{Path: "a.go", OldPath: "a.go", Status: git.Modified}, git.FileStat{})
 	hl := highlightFile(&fd)
-	if hl == nil || len(hl.newLines) != 3 || len(hl.oldLines) != 3 {
-		t.Fatalf("hl sides = %d/%d", len(hl.oldLines), len(hl.newLines))
+	if hl == nil || len(hl.lines) != len(fd.Lines) {
+		t.Fatalf("hl lines = %d, want %d", len(hl.lines), len(fd.Lines))
 	}
-	if !strings.Contains(hl.newLines[0], "\x1b[") {
-		t.Fatalf("go source should highlight: %q", hl.newLines[0])
+	if !strings.Contains(hl.lines[0], "\x1b[") {
+		t.Fatalf("go source should highlight: %q", hl.lines[0])
 	}
-	for _, line := range fd.Lines {
-		if ansi.Strip(hl.hlLine(line)) != line.Text {
-			t.Fatalf("highlight text drifted: %q vs %q", ansi.Strip(hl.hlLine(line)), line.Text)
+	assertHighlightMatchesText(t, &fd, hl)
+}
+
+// A hunk-only model skips file lines, so highlighting keyed by line number
+// would colour every line after the first gap with another line's tokens.
+func TestHighlightFileHunkModel(t *testing.T) {
+	fd := bigEditedFile(t)
+	if fd.Lines[0].Kind != diff.Gap {
+		t.Fatalf("want a hunk model opening with a gap, got %d lines", len(fd.Lines))
+	}
+	hl := highlightFile(&fd)
+	if !strings.Contains(strings.Join(hl.lines, ""), "\x1b[") {
+		t.Fatal("go source should highlight")
+	}
+	assertHighlightMatchesText(t, &fd, hl)
+}
+
+// The point of the hunk model: one edit deep inside a file too big for the
+// whole-file model still reaches the screen.
+func TestReviewRendersHunksForBigFile(t *testing.T) {
+	fd := bigEditedFile(t)
+	m := &Model{
+		width: 100, height: 30, mode: modeDiff,
+		diff: diffState{active: true, sessID: "s", hl: newHLCache(), set: diff.Set{Files: []diff.FileDiff{fd}}},
+	}
+	for _, split := range []bool{false, true} {
+		m.diff.sideBySide = split
+		code := ansi.Strip(m.viewDiffCode(160, 20))
+		if !strings.Contains(code, `var name11000 = "edited"`) || !strings.Contains(code, "11002") {
+			t.Fatalf("split=%v: the edit and its line number should render, got:\n%s", split, code)
+		}
+		if !strings.Contains(code, "⋯") {
+			t.Fatalf("split=%v: skipped lines should be marked, got:\n%s", split, code)
+		}
+	}
+}
+
+// bigEditedFile is one edit at line 11002 of a file past the whole-file
+// line threshold, so it can only render through the hunk model.
+func bigEditedFile(t *testing.T) diff.FileDiff {
+	t.Helper()
+	var oldText strings.Builder
+	oldText.WriteString("package a\n")
+	for i := 0; i < 12000; i++ {
+		fmt.Fprintf(&oldText, "var name%d = %q\n", i, fmt.Sprintf("value %d", i))
+	}
+	newText := strings.Replace(oldText.String(), `var name11000 = "value 11000"`, `var name11000 = "edited"`, 1)
+	fd := diff.BuildFile([]byte(oldText.String()), []byte(newText),
+		git.ChangedFile{Path: "a.go", OldPath: "a.go", Status: git.Modified}, git.FileStat{Adds: 1, Dels: 1})
+	if fd.Err != nil {
+		t.Fatal(fd.Err)
+	}
+	if len(fd.Lines) == 0 {
+		t.Fatal("the hunk model is empty")
+	}
+	return fd
+}
+
+func assertHighlightMatchesText(t *testing.T, fd *diff.FileDiff, hl *fileHL) {
+	t.Helper()
+	for i, line := range fd.Lines {
+		if got := ansi.Strip(hl.hlLine(line, i)); got != line.Text {
+			t.Fatalf("line %d highlight drifted: %q vs %q", i, got, line.Text)
 		}
 	}
 }
@@ -251,5 +312,15 @@ func TestReviewHeaderShowsCodeOnlyFilter(t *testing.T) {
 	}
 	if !strings.Contains(header, "+2") || !strings.Contains(header, "−2") {
 		t.Fatalf("header should drop the lock file's totals, got %q", header)
+	}
+}
+
+func BenchmarkHighlightLargeHunkModel(b *testing.B) {
+	fd := diff.BuildFile(nil, []byte(strings.Repeat(strings.Repeat("x", 4000)+"\n", 8000)),
+		git.ChangedFile{Path: "large.txt", Status: git.Added}, git.FileStat{})
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		highlightFile(&fd)
 	}
 }

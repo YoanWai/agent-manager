@@ -1,13 +1,14 @@
-// Package diff builds whole-file line models for changed files: every
-// line of the new file with deletions interleaved, ready to render with
-// changed lines highlighted in full context.
+// Package diff builds line models for changed files, using full-file
+// context for small files and changed hunks for large ones.
 package diff
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/git"
 	udiff "github.com/aymanbagabas/go-udiff"
@@ -20,6 +21,7 @@ const (
 	Same LineKind = iota
 	Add
 	Del
+	Gap // a marker standing in for lines the hunk model left out
 )
 
 // Span marks a changed byte range within a line's text.
@@ -61,8 +63,20 @@ type Set struct {
 }
 
 const (
-	maxFileBytes = 1 << 20
-	maxFileLines = 10000
+	// Past either threshold the whole-file model would be too big to build
+	// or to scroll, so the file falls back to changed hunks with a little
+	// context around them.
+	maxWholeFileBytes = 1 << 20
+	maxWholeFileLines = 10000
+
+	maxHunkModelLines = 10000
+	maxHunkLineBytes  = 4096
+	hunkContext       = 3
+
+	// Past this a file is not diffed at all: reading, diffing and holding
+	// both sides costs several copies of the file.
+	maxDiffBytes = 32 << 20
+
 	maxSpanLine  = 1000
 	maxSpanBlock = 200
 )
@@ -208,7 +222,7 @@ func loadFile(driver *git.Driver, root string, scope git.Scope, baseRef string, 
 		fd.Binary = true
 		return
 	}
-	if len(oldContent) > maxFileBytes || len(newContent) > maxFileBytes {
+	if len(oldContent) > maxDiffBytes || len(newContent) > maxDiffBytes {
 		fd.Truncated = true
 		return
 	}
@@ -273,27 +287,45 @@ func fileSides(driver *git.Driver, root string, scope git.Scope, baseRef string,
 	return oldContent, newContent, nil
 }
 
-// BuildFile diffs two file versions into the whole-file line model:
-// every new-file line in order, with deleted old lines interleaved
-// ahead of the lines that replaced them.
+// BuildFile interleaves deletions with new-file lines. Large files show
+// only changed hunks, with gap markers for omitted context.
 func BuildFile(oldContent, newContent []byte, file git.ChangedFile, stat git.FileStat) FileDiff {
 	fd := FileDiff{File: file, Stat: stat, loaded: true}
-	oldText, oldTruncated := capLines(string(oldContent))
-	newText, newTruncated := capLines(string(newContent))
-	fd.Truncated = oldTruncated || newTruncated
+	oldText, newText := string(oldContent), string(newContent)
+	fd.OldTotal, fd.NewTotal = countLines(oldText), countLines(newText)
+
+	hunksOnly := len(oldText) > maxWholeFileBytes || len(newText) > maxWholeFileBytes ||
+		fd.OldTotal > maxWholeFileLines || fd.NewTotal > maxWholeFileLines
+	context := maxWholeFileLines * 2
+	if hunksOnly {
+		context = hunkContext
+	}
 
 	edits := udiff.Lines(oldText, newText)
-	unified, err := udiff.ToUnifiedDiff("a", "b", oldText, edits, maxFileLines*2)
+	unified, err := udiff.ToUnifiedDiff("a", "b", oldText, edits, context)
 	if err != nil {
 		fd.Err = err
 		return fd
 	}
 
-	oldNum, newNum := 0, 0
+	reached := 0
+hunks:
 	for _, hunk := range unified.Hunks {
+		if skipped := hunk.ToLine - 1 - reached; hunksOnly && skipped > 0 {
+			fd.Lines = append(fd.Lines, gapLine(fmt.Sprintf("⋯ %d unchanged lines", skipped)))
+		}
+		oldNum, newNum := hunk.FromLine-1, hunk.ToLine-1
 		for _, hunkLine := range hunk.Lines {
+			if hunksOnly && len(fd.Lines) >= maxHunkModelLines {
+				fd.Lines = append(fd.Lines[:maxHunkModelLines], gapLine("⋯ diff truncated"))
+				fd.Truncated = true
+				break hunks
+			}
 			text := strings.TrimSuffix(hunkLine.Content, "\n")
 			text = strings.ReplaceAll(strings.TrimSuffix(text, "\r"), "\t", "    ")
+			if hunksOnly {
+				text = capLine(text)
+			}
 			switch hunkLine.Kind {
 			case udiff.Equal:
 				oldNum++
@@ -307,29 +339,47 @@ func BuildFile(oldContent, newContent []byte, file git.ChangedFile, stat git.Fil
 				fd.Lines = append(fd.Lines, Line{Kind: Add, NewNum: newNum, Text: text, Pair: -1})
 			}
 		}
+		reached = newNum
 	}
-	// A no-context diff of an unchanged file yields no hunks; equal-only
-	// content still needs the full file present.
-	if len(unified.Hunks) == 0 && newText != "" {
+	if skipped := fd.NewTotal - reached; hunksOnly && !fd.Truncated && skipped > 0 {
+		fd.Lines = append(fd.Lines, gapLine(fmt.Sprintf("⋯ %d unchanged lines", skipped)))
+	}
+	// Unchanged small files still show their full content.
+	if !hunksOnly && len(unified.Hunks) == 0 && newText != "" {
 		for i, text := range strings.Split(strings.TrimSuffix(newText, "\n"), "\n") {
 			clean := strings.ReplaceAll(strings.ReplaceAll(text, "\r", ""), "\t", "    ")
 			fd.Lines = append(fd.Lines, Line{Kind: Same, OldNum: i + 1, NewNum: i + 1, Text: clean, Pair: -1})
 		}
 	}
-	fd.OldTotal = oldNum
-	fd.NewTotal = newNum
 	pairBlocks(&fd)
 	markChanges(&fd)
 	return fd
 }
 
-func capLines(text string) (string, bool) {
-	count := strings.Count(text, "\n")
-	if count <= maxFileLines {
-		return text, false
+func gapLine(text string) Line { return Line{Kind: Gap, Text: text, Pair: -1} }
+
+func countLines(text string) int {
+	if text == "" {
+		return 0
 	}
-	lines := strings.SplitAfterN(text, "\n", maxFileLines+1)
-	return strings.Join(lines[:maxFileLines], ""), true
+	count := strings.Count(text, "\n")
+	if !strings.HasSuffix(text, "\n") {
+		count++
+	}
+	return count
+}
+
+// capLine keeps one minified or data line from wrapping into thousands of
+// visual rows.
+func capLine(text string) string {
+	if len(text) <= maxHunkLineBytes {
+		return text
+	}
+	cut := maxHunkLineBytes
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut] + "…"
 }
 
 // pairBlocks matches runs of deletions with the additions that follow
@@ -404,6 +454,10 @@ func wordSpans(dmp *diffmatchpatch.DiffMatchPatch, oldLine, newLine string) (old
 func markChanges(fd *FileDiff) {
 	previous := Same
 	for i, line := range fd.Lines {
+		if line.Kind == Gap {
+			previous = Same
+			continue
+		}
 		if line.Kind != Same && previous == Same {
 			fd.Changes = append(fd.Changes, i)
 		}
@@ -423,7 +477,7 @@ func (fd *FileDiff) SideBySideRows() []Row {
 	i := 0
 	for i < len(fd.Lines) {
 		line := fd.Lines[i]
-		if line.Kind == Same {
+		if line.Kind != Add && line.Kind != Del {
 			fd.rows = append(fd.rows, Row{i, i})
 			i++
 			continue
