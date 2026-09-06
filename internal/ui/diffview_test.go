@@ -3399,3 +3399,22 @@ func TestAnnotationsDropControlBytes(t *testing.T) {
 		t.Fatalf("excerpt = %q, want the escape introducer gone", got)
 	}
 }
+
+func TestAnnotateSkipsHunkGaps(t *testing.T) {
+	fd := bigEditedFile(t)
+	m := &Model{diff: diffState{active: true, set: diff.Set{Files: []diff.FileDiff{fd}}}}
+	for _, split := range []bool{false, true} {
+		m.diff.sideBySide = split
+		m.diff.cursorLine = 0
+		m.openAnnotate()
+		if m.diff.annotating {
+			t.Fatalf("split=%v: gap marker must not accept comments", split)
+		}
+		m.diff.cursorLine = 1
+		m.openAnnotate()
+		if !m.diff.annotating {
+			t.Fatalf("split=%v: real context line should accept comments", split)
+		}
+		m.diff.annotating = false
+	}
+}
