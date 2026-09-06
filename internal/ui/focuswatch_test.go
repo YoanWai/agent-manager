@@ -400,3 +400,14 @@ func TestFocusWatchReportsALostClient(t *testing.T) {
 		}
 	}
 }
+
+func TestFocusWatchSkipsMissingSession(t *testing.T) {
+	driver := requireFocusDriver(t)
+	id := "missing" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	watch := newFocusWatch(driver, func(msg tea.Msg) {
+		t.Errorf("missing session produced a preview notification: %#v", msg)
+	})
+	t.Cleanup(watch.Close)
+
+	watch.watch(id, make(chan struct{}))
+}

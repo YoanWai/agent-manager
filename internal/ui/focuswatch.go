@@ -205,6 +205,10 @@ func (w *focusWatch) retryNow() {
 }
 
 func (w *focusWatch) watch(id string, stop chan struct{}) {
+	if !w.driver.Exists(id) {
+		w.clearIfCurrent(id, stop)
+		return
+	}
 	control, err := w.driver.OpenControl(id)
 	if err != nil {
 		// No control client, no pushed previews; the settle/tick capture
