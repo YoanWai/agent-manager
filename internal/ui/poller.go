@@ -525,7 +525,20 @@ func (p *poller) refreshOnce() tea.Msg {
 			agentAlive := !stat.OK || stat.Procs > 1
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
 				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(sess, pane)
-				sent, err := p.maybeSendPendingInput(sess, pane, agentAlive)
+				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
+				if err != nil {
+					return errMsg{err}
+				}
+				newStatus = derived
+				// Hold the launch state until the agent first paints its pane,
+				// so a just-created session reads "starting up" rather than
+				// flashing idle before it has booted. A grace cap keeps a tool
+				// that never paints from sticking on starting forever.
+				if sess.Status == status.Starting && !paneBooted(pane) &&
+					time.Since(sess.LaunchTime()) < startingGrace {
+					newStatus = status.Starting
+				}
+				sent, err := p.maybeSendPendingInputWhenReady(sess, pane, newStatus, agentAlive)
 				if err != nil {
 					return errMsg{err}
 				}
@@ -538,11 +551,6 @@ func (p *poller) refreshOnce() tea.Msg {
 					}
 					sessions[i].PendingInputs = sessions[i].PendingInputs[1:]
 				}
-				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
-				if err != nil {
-					return errMsg{err}
-				}
-				newStatus = derived
 				// Launch inputs open the conversation, so they go first; a
 				// message from another agent waits its turn behind them.
 				// A launch input sent this tick leaves pane and derived
@@ -553,14 +561,6 @@ func (p *poller) refreshOnce() tea.Msg {
 					if err := p.maybeDeliverInbox(sess, pane, derived, agentAlive); err != nil {
 						return errMsg{err}
 					}
-				}
-				// Hold the launch state until the agent first paints its pane,
-				// so a just-created session reads "starting up" rather than
-				// flashing idle before it has booted. A grace cap keeps a tool
-				// that never paints from sticking on starting forever.
-				if sess.Status == status.Starting && !paneBooted(pane) &&
-					time.Since(sess.LaunchTime()) < startingGrace {
-					newStatus = status.Starting
 				}
 				// Any real transition re-arms the finished alert.
 				if sess.Acked && newStatus != status.Idle && newStatus != status.Finished {
@@ -831,6 +831,13 @@ func (p *poller) clearRecaptureSeen(sessID string) {
 // A durable claim makes automatic delivery at-most-once: after a process or
 // database failure, an ambiguous input is dropped and surfaced rather than
 // risking the same task or slash command running twice.
+func (p *poller) maybeSendPendingInputWhenReady(sess store.Session, pane, derived string, agentAlive bool) (bool, error) {
+	if !sess.PendingInputClaimed && !inboxDeliverable(derived) {
+		return false, nil
+	}
+	return p.maybeSendPendingInput(sess, pane, agentAlive)
+}
+
 func (p *poller) maybeSendPendingInput(sess store.Session, pane string, agentAlive bool) (bool, error) {
 	if len(sess.PendingInputs) == 0 {
 		return false, nil
@@ -849,7 +856,11 @@ func (p *poller) maybeSendPendingInput(sess store.Session, pane string, agentAli
 	if !agentAlive {
 		return false, nil
 	}
-	region, ready := p.engine.ActivityRegion(sess.Tool, ansi.Strip(pane))
+	clean := ansi.Strip(pane)
+	if p.engine.TypingHold(sess.Tool, clean) != "" {
+		return false, nil
+	}
+	region, ready := p.engine.ActivityRegion(sess.Tool, clean)
 	if !ready {
 		return false, nil
 	}
