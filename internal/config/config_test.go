@@ -594,6 +594,18 @@ func TestMigratesStaleCommandCodePatterns(t *testing.T) {
 	}
 }
 
+func TestMigratesStaleCodexTurnEnd(t *testing.T) {
+	cfg := Config{Tools: map[string]Tool{
+		"codex": {Command: "codex", TurnEnd: oldCodexTurnEnd},
+	}}
+	if err := cfg.backfillToolDefaults(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if got := cfg.Tools["codex"].TurnEnd; got == oldCodexTurnEnd || !strings.Contains(got, "|─+") {
+		t.Fatalf("migrated turn_end = %q, want the bare divider shape", got)
+	}
+}
+
 // A config.toml written before the pi footer widened carries rules that pin
 // exactly two footer lines, so a pi extension drawing more keeps every rule
 // from matching. A config written on 0.34 or 0.35 carries the widened
