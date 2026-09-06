@@ -153,6 +153,9 @@ func sideTexts(fd *diff.FileDiff) (oldText, newText string) {
 			newBuilder.WriteString(text)
 			newBuilder.WriteByte('\n')
 		}
+		if oldBuilder.Len()+newBuilder.Len() > maxHighlightBytes {
+			break
+		}
 	}
 	return oldBuilder.String(), newBuilder.String()
 }

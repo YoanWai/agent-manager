@@ -314,3 +314,13 @@ func TestReviewHeaderShowsCodeOnlyFilter(t *testing.T) {
 		t.Fatalf("header should drop the lock file's totals, got %q", header)
 	}
 }
+
+func BenchmarkHighlightLargeHunkModel(b *testing.B) {
+	fd := diff.BuildFile(nil, []byte(strings.Repeat(strings.Repeat("x", 4000)+"\n", 8000)),
+		git.ChangedFile{Path: "large.txt", Status: git.Added}, git.FileStat{})
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		highlightFile(&fd)
+	}
+}
