@@ -570,16 +570,33 @@ func (m *Model) applyNotices(apply func()) {
 		before[n.id] = true
 	}
 	m.keepNoticeSelection(apply)
-	// An open session keeps its keyboard; a modal already showing already lists it.
-	if m.mode != modeList {
-		return
-	}
+	var added string
 	for _, n := range m.activeNotices() {
 		if !before[n.id] {
-			m.openNotices(n.id)
-			return
+			added = n.id
+			break
 		}
 	}
+	if added == "" {
+		return
+	}
+	switch m.mode {
+	case modeList:
+		m.openNotices(added)
+	case modeNotices:
+		return
+	default:
+		m.pendingNotice = added
+	}
+}
+
+func (m *Model) flushPendingNotice() {
+	if m.pendingNotice == "" || m.mode != modeList {
+		return
+	}
+	id := m.pendingNotice
+	m.pendingNotice = ""
+	m.openNotices(id)
 }
 
 // RestartPath is the binary main execs into after the program exits;

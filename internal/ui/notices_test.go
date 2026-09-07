@@ -929,6 +929,67 @@ func TestNewFeedDoesNotStealFocus(t *testing.T) {
 	}
 }
 
+func TestCachedFeedDoesNotOpenOnBoot(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+	m.feedMessages = []feed.Message{{ID: "feed-cached", Banner: "cached", Title: "Cached"}}
+
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-cached", Banner: "cached", Title: "Cached"}}})
+	if m.mode != modeList {
+		t.Fatal("a feed already on disk must not pop the modal on launch")
+	}
+}
+
+func TestNewFeedAfterCacheOpens(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+	m.feedMessages = []feed.Message{{ID: "feed-cached", Banner: "cached", Title: "Cached"}}
+
+	m.Update(feedMsg{messages: []feed.Message{
+		{ID: "feed-cached", Banner: "cached", Title: "Cached"},
+		{ID: "feed-new", Banner: "new", Title: "Just in"},
+	}})
+	if m.mode != modeNotices {
+		t.Fatalf("a new id on top of the cache should open the modal, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
+}
+
+func TestFeedDuringFocusOpensOnLeave(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeFocus
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeFocus {
+		t.Fatalf("mode=%v, want focus until leave", m.mode)
+	}
+
+	m.leaveFocus()
+	if m.mode != modeNotices {
+		t.Fatalf("returning to the list should open the new message, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
+}
+
+func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
+	m := footModel(t)
+	m.width, m.height = 100, 34
+	m.mode = modeSettings
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeSettings {
+		t.Fatalf("mode=%v, want settings until close", m.mode)
+	}
+
+	m.mode = modeList
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
+	if m.mode != modeNotices {
+		t.Fatalf("closing settings should open the new message, mode=%v", m.mode)
+	}
+}
+
 func TestNewUpdateOpensNoticesModal(t *testing.T) {
 	m := footModel(t)
 	m.mode = modeList

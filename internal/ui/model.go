@@ -272,6 +272,9 @@ type Model struct {
 	// feedMessages is the remote message feed, refreshed on the update
 	// tick and folded into the notices next to the built-in ones.
 	feedMessages []feed.Message
+	// pendingNotice is a new notice that arrived while the list was not
+	// showing; flushPendingNotice opens it once the list is back.
+	pendingNotice string
 }
 
 type netStats struct {
@@ -745,6 +748,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		model.update.url = cached.URL
 		model.update.releases = cached.Releases
 		model.update.checked = len(cached.Releases) > 0
+		model.feedMessages = feed.Cached(dir, version)
 	}
 	model.openStartupNotice()
 	model.indexReleaseRanges()
@@ -1329,6 +1333,10 @@ func (m *Model) seedPaneGeom() {
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.handleMsg(msg)
+	if mm, ok := model.(*Model); ok {
+		mm.flushPendingNotice()
+		return mm, tea.Batch(cmd, mm.syncMouseCapture())
+	}
 	return model, tea.Batch(cmd, m.syncMouseCapture())
 }
 
