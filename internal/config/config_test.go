@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -635,6 +636,63 @@ func TestMigratesStalePiFooterRules(t *testing.T) {
 	}
 	if got := tool.Rules[6].Pattern; got != handEdited {
 		t.Fatalf("hand-edited rule = %q, want kept as written", got)
+	}
+}
+
+// A config.toml written before pi 0.85 carries an activity_cutoff that
+// knows only the plain rule as the input box's edge, so the composer's top
+// border read as draft text for the length of every turn once the spinner
+// moved into it. The stale string is rewritten to the current default; a
+// hand-edited one is kept.
+func TestMigratesStalePiActivityCutoff(t *testing.T) {
+	def, err := Default()
+	if err != nil {
+		t.Fatalf("default: %v", err)
+	}
+	for _, c := range []struct {
+		name, stored, want string
+	}{
+		{"stale default", oldPiActivityCutoff, def.Tools["pi"].ActivityCutoff},
+		{"hand-edited", `(?m)^my own cutoff$`, `(?m)^my own cutoff$`},
+	} {
+		cfg := Config{Tools: map[string]Tool{"pi": {Command: "pi", ActivityCutoff: c.stored}}}
+		if err := cfg.backfillToolDefaults(); err != nil {
+			t.Fatalf("%s: backfill: %v", c.name, err)
+		}
+		if got := cfg.Tools["pi"].ActivityCutoff; got != c.want {
+			t.Fatalf("%s: activity_cutoff = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// The shipped pi activity_cutoff, read against a single row, takes both
+// rules that bound the composer: the top one with or without the spinner pi
+// 0.85 draws inside it. The scroll indicator a tall draft puts on that
+// border is not an edge: the row under it is the middle of the draft, and
+// Left there belongs to pi. Read against a whole pane it still cuts at the
+// bottom rule, so the activity region stays anchored at the origin.
+func TestPiActivityCutoffReadsTheSpinnerBorder(t *testing.T) {
+	def, err := Default()
+	if err != nil {
+		t.Fatalf("default: %v", err)
+	}
+	cutoff := regexp.MustCompile(def.Tools["pi"].ActivityCutoff)
+	for row, want := range map[string]bool{
+		"──────────────────────────────────────────────────": true,
+		"── ⠧ Working ─────────────────────────────────────": true,
+		"── ⠹ Compacting context ─────────────────────────":  true,
+		"─── ↑ 2 more ─────────────────────────────────────": false,
+		"─── ↓ 1 more ─────────────────────────────────────": false,
+		"a draft that trails off ────────────":               false,
+		"⠧ Working": false,
+	} {
+		if got := cutoff.MatchString(row); got != want {
+			t.Errorf("activity_cutoff on %q = %v, want %v", row, got, want)
+		}
+	}
+	pane := "output\n── ⠧ Working ──────────\n\n──────────────────\n~\n$0.000"
+	if loc := cutoff.FindStringIndex(pane); loc == nil || loc[0] != 0 || pane[loc[1]:] != "\n~\n$0.000" {
+		t.Fatalf("whole-pane cutoff = %v on %q, want one match from the origin to the bottom rule", loc, pane)
 	}
 }
 

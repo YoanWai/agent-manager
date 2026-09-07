@@ -724,6 +724,71 @@ func TestCaretOnPisBareComposerRow(t *testing.T) {
 	}
 }
 
+// pi 0.85 paints its spinner inside the composer's top border while a turn
+// runs ("── ⠧ Working ───", shape taken from a live pane). That border is
+// furniture like the plain rule it replaces: an empty composer under it
+// still lets Left leave, and a draft typed mid-turn still keeps it. The
+// shipped defaults decide this, since that is the config that regressed.
+func TestCaretOnPisComposerRowWhileWorking(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := status.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	build := func(x int, rows ...string) *Model {
+		m := &Model{engine: engine, mode: modeFocus}
+		m.preview = strings.Join(rows, "\n") + "\n"
+		m.pane.forID = "s1"
+		m.pane.cursor = paneCursor{x: x, y: 2, positionOK: true}
+		return m
+	}
+
+	border := "── ⠧ Working ─────────────"
+	footer := []string{"──────────────────────────", "~", "$0.000"}
+	m := build(0, append([]string{"output", border, ""}, footer...)...)
+	if !m.caretAtInputStart("s1", "pi") {
+		t.Fatal("the empty composer under pi's working border was not recognised")
+	}
+	m = build(2, append([]string{"output", border, "zz"}, footer...)...)
+	if m.caretAtInputStart("s1", "pi") {
+		t.Fatal("a draft typed mid-turn was read as input start")
+	}
+	m = build(0, append([]string{"output", "─── ↑ 2 more ─────────────", ""}, footer...)...)
+	if m.caretAtInputStart("s1", "pi") {
+		t.Fatal("a scrolled draft's continuation row was read as input start")
+	}
+}
+
+// The rows the head check steps over are the ones that bound the input
+// box, never every chrome row: opencode's shipped chrome_line takes any
+// gutter row, draft text and all, so reading chrome as "not a draft" would
+// let Left leave from the middle of a multi-line opencode draft. Decided on
+// the shipped defaults, where that overlap lives.
+func TestCaretOnOpencodesMultiLineDraftWithShippedDefaults(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := status.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	m := &Model{engine: engine, mode: modeFocus}
+	m.preview = strings.Join([]string{"", "  ┃  first line", "  ┃", "  ┃", "  ┃  Build · model", "  ╹▀▀▀▀▀▀"}, "\n") + "\n"
+	m.pane.forID = "s1"
+	m.pane.cursor = paneCursor{x: 5, y: 2, ok: true}
+	if m.caretAtInputStart("s1", "opencode") {
+		t.Fatal("a multi-line draft's continuation row was read as input start")
+	}
+	m.preview = strings.Join([]string{"", "  ┃", "  ┃", "  ┃", "  ┃  Build · model", "  ╹▀▀▀▀▀▀"}, "\n") + "\n"
+	if !m.caretAtInputStart("s1", "opencode") {
+		t.Fatal("the empty composer's caret row was not recognised")
+	}
+}
+
 // The mirror belongs to whichever session pushed it, and a scrolled-back
 // pane's rows no longer line up with the live caret: neither can decide.
 func TestCaretAtInputStartNeedsCurrentPane(t *testing.T) {
