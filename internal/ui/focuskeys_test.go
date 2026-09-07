@@ -686,6 +686,50 @@ func TestCaretAtInputStartMeasuresMarkerInCells(t *testing.T) {
 	}
 }
 
+func TestCaretOnGrokComposer(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatalf("built-in config: %v", err)
+	}
+	engine, err := status.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	build := func(x int, y int, rows ...string) *Model {
+		m := &Model{engine: engine, mode: modeFocus}
+		m.preview = strings.Join(rows, "\n") + "\n"
+		m.pane.forID = "s1"
+		m.pane.cursor = paneCursor{x: x, y: y, ok: true}
+		return m
+	}
+
+	m := build(5, 1, " ╭────╮", " │ ❯                        │", " ╰──── Grok 4.6 ─╯")
+	if !m.caretAtInputStart("s1", "grok") {
+		t.Fatal("boxed empty composer was not recognised")
+	}
+	m = build(2, 1, "minimal · /help", "❯", "Grok 4.6 (medium)")
+	if !m.caretAtInputStart("s1", "grok") {
+		t.Fatal("minimal empty composer was not recognised")
+	}
+	m = build(7, 1, "minimal · /help", "❯ hello", "Grok 4.6 (medium)")
+	if m.caretAtInputStart("s1", "grok") {
+		t.Fatal("a typed grok draft was read as input start")
+	}
+	m = build(7, 0, "     ❯ count from 1 to 5", " │ ❯                        │")
+	if m.caretAtInputStart("s1", "grok") {
+		t.Fatal("an indented grok user turn was read as the composer")
+	}
+	m = build(59, 3,
+		"│   ◆ session_start",
+		" │ ❯ Build anything",
+		" ╰──── Grok 4.6 ─╯",
+		" →:expand  │  Ctrl+e:collapse thinking  │  Ctrl+x:shortcuts",
+	)
+	if m.caretAtInputStart("s1", "grok") {
+		t.Fatal("a highlighted grok entry parked on the shortcuts bar was read as input start")
+	}
+}
+
 // pi composes on a bare row between rules, hides the terminal cursor and
 // paints its own reverse-video caret. tmux still reports the right cell, so
 // its zero-width prefix can read the hidden position as the prompt head;

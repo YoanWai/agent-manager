@@ -55,6 +55,9 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["grok"].PromptFlag; got != "" {
 		t.Fatalf("grok prompt_flag = %q want empty (positional prompt)", got)
 	}
+	if got := cfg.Tools["grok"].ActivityCutoff; got != `(?m)^(?:\s*│ )?❯` {
+		t.Fatalf("grok activity_cutoff = %q want boxed-or-minimal composer", got)
+	}
 	if _, ok := cfg.Tools["gemini"]; !ok {
 		t.Fatal("expected gemini tool in default config")
 	}
@@ -216,6 +219,42 @@ chrome_line = '` + oldClaudeChromeLine + `'
 	}
 	if !strings.Contains(cfg.Tools["claude"].ChromeLine, "Update installed") {
 		t.Fatalf("legacy claude chrome_line was not upgraded: %q", cfg.Tools["claude"].ChromeLine)
+	}
+}
+
+func TestLoadDirUpgradesLegacyGrokCutoff(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	legacy := `
+[tools.grok]
+command = "grok"
+activity_cutoff = '` + grokBoxedCutoff + `'
+`
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if got := cfg.Tools["grok"].ActivityCutoff; got != `(?m)^(?:\s*│ )?❯` {
+		t.Fatalf("legacy grok activity_cutoff was not upgraded: %q", got)
+	}
+}
+
+func TestLoadDirPreservesCustomGrokCutoff(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	custom := `(?m)^GROK>`
+	if err := os.WriteFile(path, []byte("[tools.grok]\ncommand = \"grok\"\nactivity_cutoff = '"+custom+"'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if got := cfg.Tools["grok"].ActivityCutoff; got != custom {
+		t.Fatalf("custom grok activity_cutoff was overwritten: %q", got)
 	}
 }
 
