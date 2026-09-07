@@ -368,6 +368,9 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 		if tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
 			return true
 		}
+		if tr.trailingNote != nil && tr.trailingNote.MatchString(strings.TrimLeft(line, " \t")) {
+			return true
+		}
 		return tr.matchesWorkingRule(line)
 	}
 	start, lastContent := -1, -1

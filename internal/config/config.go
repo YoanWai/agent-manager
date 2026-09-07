@@ -220,8 +220,13 @@ const busyLineAgentsOnly = `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ backgro
 const oldClaudeChromeLine = `^\s*[─q]{4,}.*$|^[\s─q]*$`
 
 // This exact cutoff was written before grok's minimal mode, which draws a
-// flush-left composer with no box. Hand-edited patterns remain untouched.
-const grokBoxedCutoff = `(?m)^\s*│ ❯`
+// flush-left composer with no box. oldGrokChromeLine is the box-only chrome
+// from before the list row had to step over the opt-in card and the minimal
+// hint. Hand-edited patterns remain untouched.
+const (
+	grokBoxedCutoff   = `(?m)^\s*│ ❯`
+	oldGrokChromeLine = `^\s*[┃❙│─╭╮╰╯█]*\s*$`
+)
 
 // Codex used to end every command-running turn with a timed divider. Current
 // builds can draw a bare divider instead, so stored defaults need the wider
@@ -315,8 +320,13 @@ func mergeTool(name string, user, def Tool) Tool {
 			user.ChromeLine = def.ChromeLine
 		}
 	}
-	if name == "grok" && user.ActivityCutoff == grokBoxedCutoff {
-		user.ActivityCutoff = def.ActivityCutoff
+	if name == "grok" {
+		if user.ActivityCutoff == grokBoxedCutoff {
+			user.ActivityCutoff = def.ActivityCutoff
+		}
+		if user.ChromeLine == oldGrokChromeLine {
+			user.ChromeLine = def.ChromeLine
+		}
 	}
 	if name == "codex" && user.TurnEnd == oldCodexTurnEnd {
 		user.TurnEnd = def.TurnEnd
@@ -640,8 +650,10 @@ activity_cutoff = "(?m)^(?:\\s*│ )?❯"
 # timer while subagents run; only the real end line gains "stop" (and usually
 # "[hooks: N]"). Trailing period after the duration is optional.
 turn_end = "(?m)^\\s*Worked for [\\dhms. ]+s\\.?(?:\\s|$).*\\bstop\\b"
-# input-box borders plus the right-edge scrollbar block on overflow panes
-chrome_line = "^\\s*[┃❙│─╭╮╰╯█]*\\s*$"
+# box, scrollbar, header, opt-in card, minimal hint, model footer, hook rows
+chrome_line = "^\\s*[┃❙│─━╭╮╰╯█▴▾]*\\s*$|^\\s*⎇ |^\\s*Help improve Grok\\b|^\\s*Off by default\\. Opt-in|^\\s*Read Terms and Privacy Policy|^\\s*minimal ·|^\\s*Grok \\d|^\\s*◆ (?:user_prompt_submit|session_start)\\b|^\\s*✓ |^\\s*Shift\\+Tab:"
+# the duration line sits under the reply; LastMessage steps over it so the row quotes the reply
+trailing_note = "^Worked for "
 limit_line = "(?i)You've hit the rate limit|You hit your free usage limit|You've reached your free Grok Build usage limit|usage limit reached|out of credits"
 rules = [
   # first-run "Do you trust this directory?" and other y/n prompts block on the user
