@@ -990,6 +990,68 @@ func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
 	}
 }
 
+func TestExpiredPendingNoticeDoesNotOpen(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeFocus
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	m.Update(feedMsg{})
+	m.leaveFocus()
+	if m.mode != modeList {
+		t.Fatalf("a notice that left the feed must not open, mode=%v", m.mode)
+	}
+}
+
+func TestNewFeedWaitsForSearchToClose(t *testing.T) {
+	m := footModel(t)
+	m.width, m.height = 100, 34
+	m.mode = modeList
+	m.searching = true
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeList || !m.searching {
+		t.Fatalf("search should keep the modal closed, mode=%v searching=%v", m.mode, m.searching)
+	}
+
+	m.searching = false
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
+	if m.mode != modeNotices {
+		t.Fatalf("closing search should open the new message, mode=%v", m.mode)
+	}
+}
+
+func TestNewFeedWaitsForQuickBar(t *testing.T) {
+	m := footModel(t)
+	m.width, m.height = 100, 34
+	m.mode = modeList
+	m.quick.active = true
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeList || !m.quick.active {
+		t.Fatalf("quick bar should keep the modal closed, mode=%v quick=%v", m.mode, m.quick.active)
+	}
+
+	m.quick.active = false
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
+	if m.mode != modeNotices {
+		t.Fatalf("closing the quick bar should open the new message, mode=%v", m.mode)
+	}
+}
+
+func TestNewFeedWaitsForResize(t *testing.T) {
+	m := footModel(t)
+	m.width, m.height = 100, 34
+	m.mode = modeList
+	m.split.resizeMode = true
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeList || !m.split.resizeMode {
+		t.Fatalf("resize should keep the modal closed, mode=%v resize=%v", m.mode, m.split.resizeMode)
+	}
+
+	m.split.resizeMode = false
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
+	if m.mode != modeNotices {
+		t.Fatalf("leaving resize should open the new message, mode=%v", m.mode)
+	}
+}
+
 func TestNewUpdateOpensNoticesModal(t *testing.T) {
 	m := footModel(t)
 	m.mode = modeList

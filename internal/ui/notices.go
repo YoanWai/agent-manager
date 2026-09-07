@@ -580,23 +580,32 @@ func (m *Model) applyNotices(apply func()) {
 	if added == "" {
 		return
 	}
-	switch m.mode {
-	case modeList:
-		m.openNotices(added)
-	case modeNotices:
+	if m.mode == modeNotices {
 		return
-	default:
-		m.pendingNotice = added
 	}
+	if m.listReadyForNotice() {
+		m.openNotices(added)
+		return
+	}
+	m.pendingNotice = added
+}
+
+func (m *Model) listReadyForNotice() bool {
+	return m.mode == modeList && !m.searching && !m.quick.active && !m.split.resizeMode
 }
 
 func (m *Model) flushPendingNotice() {
-	if m.pendingNotice == "" || m.mode != modeList {
+	if m.pendingNotice == "" || !m.listReadyForNotice() {
 		return
 	}
 	id := m.pendingNotice
 	m.pendingNotice = ""
-	m.openNotices(id)
+	for _, n := range m.activeNotices() {
+		if n.id == id {
+			m.openNotices(id)
+			return
+		}
+	}
 }
 
 // RestartPath is the binary main execs into after the program exits;
