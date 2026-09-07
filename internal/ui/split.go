@@ -178,31 +178,14 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Mouse events are always consumed so the host terminal / outer tmux
-	// never scrolls the manager off-screen. Wheel maps to in-app
-	// navigation; clicks only drive the divider while resize mode is armed.
+	// never scrolls the manager off-screen.
 	if tea.MouseEvent(msg).IsWheel() {
 		return m.handleMouseWheel(msg)
-	}
-	if !m.split.resizeMode {
-		return m, nil
 	}
 
 	switch msg.Action {
 	case tea.MouseActionPress:
-		if msg.Button != tea.MouseButtonLeft {
-			return m, nil
-		}
-		y0, y1 := m.bodyYRange()
-		if msg.Y < y0 || msg.Y >= y1 {
-			return m, nil
-		}
-		if !m.onDivider(msg.X) {
-			return m, nil
-		}
-		m.split.dragging = true
-		m.split.ratioBefore = m.split.ratio
-		m.setSplitFromX(msg.X)
-		return m, nil
+		return m.handleMousePress(msg)
 
 	case tea.MouseActionMotion:
 		if !m.split.dragging {
@@ -223,22 +206,84 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleMousePress resolves a left press against the divider first, then a
+// session row: dragging the seam has to win over the row underneath it.
+// Neither needs resize mode armed from the keyboard first. A press while
+// resize mode is already armed but off the divider is left alone, waiting,
+// exactly as it did before the mouse could arm it too.
+func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Button != tea.MouseButtonLeft || m.searching || m.quick.active {
+		return m, nil
+	}
+	y0, y1 := m.bodyYRange()
+	onDivider := m.mode == modeList && msg.Y >= y0 && msg.Y < y1 && m.onDivider(msg.X)
+	if onDivider {
+		m.split.resizeMode = true
+		m.split.dragging = true
+		m.split.ratioBefore = m.split.ratio
+		m.setSplitFromX(msg.X)
+		return m, nil
+	}
+	if m.split.resizeMode || m.mode != modeList {
+		return m, nil
+	}
+	if row, ok := m.clickRow(msg.X, msg.Y); ok {
+		return m, m.selectRow(row)
+	}
+	return m, nil
+}
+
+// clickRow reports which m.rows index covers a press at (x, y), reading the
+// geometry entryLines/railLines recorded while painting this frame rather
+// than re-deriving column and row offsets here, where they would drift the
+// first time the layout moves (#110).
+func (m *Model) clickRow(x, y int) (int, bool) {
+	if !m.fullRows() && x >= m.dividerX() {
+		return 0, false
+	}
+	y0, y1 := m.bodyYRange()
+	if y < y0 || y >= y1 {
+		return 0, false
+	}
+	idx := y - y0
+	if idx < 0 || idx >= len(m.railHits) {
+		return 0, false
+	}
+	row := m.railHits[idx]
+	if row < 0 {
+		return 0, false
+	}
+	return row, true
+}
+
 // handleMouseWheel keeps the wheel inside the app so the outer terminal
-// cannot scroll the manager away. It scrolls the diff, and is swallowed
-// everywhere else: in the list a notch would move the session cursor,
-// silently retargeting every keystroke that follows (#110).
+// cannot scroll the manager away: it moves the session cursor in the list,
+// same as an arrow key, and the diff cursor in review.
 func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.split.resizeMode || m.mode != modeDiff {
+	if m.split.resizeMode {
 		return m, nil
 	}
-	if m.diff.annotating || m.diff.sendConfirm {
-		return m, nil
-	}
-	switch msg.Button {
-	case tea.MouseButtonWheelUp:
-		m.moveDiffCursor(-1, m.diffCodeHeight())
-	case tea.MouseButtonWheelDown:
-		m.moveDiffCursor(1, m.diffCodeHeight())
+	switch m.mode {
+	case modeList:
+		if m.searching || m.quick.active {
+			return m, nil
+		}
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			return m, m.moveCursor(-1)
+		case tea.MouseButtonWheelDown:
+			return m, m.moveCursor(1)
+		}
+	case modeDiff:
+		if m.diff.annotating || m.diff.sendConfirm {
+			return m, nil
+		}
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.moveDiffCursor(-1, m.diffCodeHeight())
+		case tea.MouseButtonWheelDown:
+			m.moveDiffCursor(1, m.diffCodeHeight())
+		}
 	}
 	return m, nil
 }
