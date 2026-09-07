@@ -564,6 +564,24 @@ func (m *Model) keepNoticeSelection(apply func()) {
 	}
 }
 
+func (m *Model) applyNotices(apply func()) {
+	before := map[string]bool{}
+	for _, n := range m.activeNotices() {
+		before[n.id] = true
+	}
+	m.keepNoticeSelection(apply)
+	// An open session keeps its keyboard; a modal already showing already lists it.
+	if m.mode != modeList {
+		return
+	}
+	for _, n := range m.activeNotices() {
+		if !before[n.id] {
+			m.openNotices(n.id)
+			return
+		}
+	}
+}
+
 // RestartPath is the binary main execs into after the program exits;
 // empty when no self-update happened this run.
 func (m *Model) RestartPath() string { return m.update.restartPath }

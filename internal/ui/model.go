@@ -1508,7 +1508,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		m.keepNoticeSelection(func() {
+		m.applyNotices(func() {
 			m.update.latest = msg.latest
 			m.update.url = msg.url
 			m.update.releases = msg.releases
@@ -1559,7 +1559,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.finishNoticeRefresh()
 		}
 		if !msg.failed || len(msg.messages) > 0 {
-			m.keepNoticeSelection(func() { m.feedMessages = msg.messages })
+			m.applyNotices(func() { m.feedMessages = msg.messages })
 		}
 		if msg.manual && msg.err != nil {
 			m.errBar.text = "refresh failed: " + msg.err.Error()

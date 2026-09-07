@@ -880,6 +880,68 @@ func TestLateFeedKeepsModalSelection(t *testing.T) {
 	}
 }
 
+func TestNewFeedOpensNoticesModal(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeNotices {
+		t.Fatalf("a new feed message should open the modal, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
+}
+
+func TestSameFeedDoesNotReopenNoticesModal(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	m.handleNoticesKey(key("esc"))
+	if m.mode != modeList {
+		t.Fatal("esc should close the modal")
+	}
+
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeList {
+		t.Fatal("the same message must not reopen after esc")
+	}
+}
+
+func TestDismissedFeedDoesNotOpenNoticesModal(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+	m.dismissNotice("feed-new")
+
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeList {
+		t.Fatal("a dismissed message must not open the modal")
+	}
+}
+
+func TestNewFeedDoesNotStealFocus(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeFocus
+
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeFocus {
+		t.Fatalf("a new message must not steal an open session, mode=%v", m.mode)
+	}
+}
+
+func TestNewUpdateOpensNoticesModal(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+
+	m.Update(updateMsg{latest: "v0.3.0", url: "https://example.com"})
+	if m.mode != modeNotices {
+		t.Fatalf("a new update notice should open the modal, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "update-v0.3.0" {
+		t.Fatalf("update notice should be selected, got %q", got)
+	}
+}
+
 func TestUpdateNoticeAppliesOnU(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.update.latest = "v0.3.0"
