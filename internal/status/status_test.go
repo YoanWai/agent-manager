@@ -402,6 +402,8 @@ func TestCodexRealPanes(t *testing.T) {
 			"• Ran echo preparing\n  └ preparing\n\n────────────────────────────────\n\n• Final response.\n\n─ Worked for 2m 05s ─────────────\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Finished},
 		{"codex finished turn ending on a question", "codex",
 			"• Which file should I edit, A or B?\n\n─ Worked for 3s ─────────────────\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Waiting},
+		{"codex recovered after an earlier error", "codex",
+			"─ Worked for 1s ─────────────\n\n■ unexpected status 404 Not Found: Unknown error\n\n› fix it?\n\n• Fixed. PR #298792 is ready.\n\n────────────────────────────────\n\n› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev", Finished},
 		{"codex command-approval modal", "codex",
 			"  $ echo hello world\n\n› 1. Yes, proceed (y)\n  2. Yes, and don't ask again for commands that start with `echo hello world` (p)\n  3. No, and tell Codex what to do differently (esc)\n\n  Press enter to confirm or esc to cancel", Waiting},
 		{"codex command-approval modal overrides stale working signal", "codex",

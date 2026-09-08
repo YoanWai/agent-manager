@@ -219,6 +219,11 @@ const busyLineAgentsOnly = `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ backgro
 // banner beneath completed turns. Hand-edited patterns remain untouched.
 const oldClaudeChromeLine = `^\s*[─q]{4,}.*$|^[\s─q]*$`
 
+// Codex used to end every command-running turn with a timed divider. Current
+// builds can draw a bare divider instead, so stored defaults need the wider
+// shape while hand-edited rules remain untouched.
+const oldCodexTurnEnd = `(?m)^─+ Worked for [\dhms. ]+─`
+
 // The command-code matching rules #385 shipped, which no longer match the
 // shapes current Command Code draws. A stored config.toml carries these
 // verbatim and keeps them over any new default, so mergeTool rewrites
@@ -298,6 +303,9 @@ func mergeTool(name string, user, def Tool) Tool {
 		if user.ChromeLine == oldClaudeChromeLine {
 			user.ChromeLine = def.ChromeLine
 		}
+	}
+	if name == "codex" && user.TurnEnd == oldCodexTurnEnd {
+		user.TurnEnd = def.TurnEnd
 	}
 	if name == "command-code" {
 		if user.TurnEnd == oldCmdTurnEnd {
@@ -576,10 +584,9 @@ fork_command = "codex fork {id}"
 revive_command = "codex resume --last"
 default_status = "idle"
 activity_cutoff = "(?m)^›"
-# a turn that ran commands closes with a "─ Worked for 12s ─" divider above
-# the input box; purely conversational turns leave no divider and resolve
-# through the quiet-region fallback instead
-turn_end = "(?m)^─+ Worked for [\\dhms. ]+─"
+# a completed turn closes with either a "─ Worked for 12s ─" or bare divider
+# above the input box
+turn_end = "(?m)^(?:─+ Worked for [\\dhms. ]+─+|─+)$"
 chrome_line = "^\\s*─*\\s*$"
 # every message and tool call opens on a "• " bullet
 message_start = "^• "
