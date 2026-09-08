@@ -929,28 +929,17 @@ func TestNewFeedDoesNotStealFocus(t *testing.T) {
 	}
 }
 
-func TestCachedFeedDoesNotOpenOnBoot(t *testing.T) {
+func TestAdditionalFeedIdOpensNoticesModal(t *testing.T) {
 	m := footModel(t)
 	m.mode = modeList
-	m.feedMessages = []feed.Message{{ID: "feed-cached", Banner: "cached", Title: "Cached"}}
-
-	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-cached", Banner: "cached", Title: "Cached"}}})
-	if m.mode != modeList {
-		t.Fatal("a feed already on disk must not pop the modal on launch")
-	}
-}
-
-func TestNewFeedAfterCacheOpens(t *testing.T) {
-	m := footModel(t)
-	m.mode = modeList
-	m.feedMessages = []feed.Message{{ID: "feed-cached", Banner: "cached", Title: "Cached"}}
+	m.feedMessages = []feed.Message{{ID: "feed-old", Banner: "old", Title: "Old"}}
 
 	m.Update(feedMsg{messages: []feed.Message{
-		{ID: "feed-cached", Banner: "cached", Title: "Cached"},
+		{ID: "feed-old", Banner: "old", Title: "Old"},
 		{ID: "feed-new", Banner: "new", Title: "Just in"},
 	}})
 	if m.mode != modeNotices {
-		t.Fatalf("a new id on top of the cache should open the modal, mode=%v", m.mode)
+		t.Fatalf("a new id should open the modal, mode=%v", m.mode)
 	}
 	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
 		t.Fatalf("new message should be selected, got %q", got)

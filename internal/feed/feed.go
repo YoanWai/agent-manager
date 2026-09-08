@@ -77,16 +77,6 @@ type cache struct {
 	Messages  []rawMessage `json:"messages"`
 }
 
-// Cached returns the on-disk feed without a network request, so startup
-// can paint known messages before the first fetch.
-func Cached(configDir, version string) []Message {
-	cached, ok := readCache(filepath.Join(configDir, cacheFile))
-	if !ok {
-		return nil
-	}
-	return sanitize(cached.Messages, version, time.Now())
-}
-
 // Fetch returns the feed messages that apply to this build. It serves
 // from the on-disk cache within checkInterval, and falls back to the
 // stale cache when the network fails, so the TUI never blocks or loses

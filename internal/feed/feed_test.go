@@ -148,18 +148,6 @@ func TestRefreshBypassesCache(t *testing.T) {
 	}
 }
 
-func TestCachedReadsDiskWithoutNetwork(t *testing.T) {
-	dir := t.TempDir()
-	writeCache(filepath.Join(dir, cacheFile), cache{
-		CheckedAt: time.Now(),
-		Messages:  []rawMessage{{ID: "cached", Banner: "b", Title: "Cached"}},
-	})
-	messages := Cached(dir, "v0.14.2")
-	if len(messages) != 1 || messages[0].ID != "feed-cached" {
-		t.Fatalf("Cached = %+v", messages)
-	}
-}
-
 func TestFetchRefetchesFutureDatedCache(t *testing.T) {
 	dir := t.TempDir()
 	writeCache(filepath.Join(dir, cacheFile), cache{
