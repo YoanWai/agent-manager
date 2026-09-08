@@ -219,6 +219,10 @@ const busyLineAgentsOnly = `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ backgro
 // banner beneath completed turns. Hand-edited patterns remain untouched.
 const oldClaudeChromeLine = `^\s*[─q]{4,}.*$|^[\s─q]*$`
 
+// This exact cutoff was written before grok's minimal mode, which draws a
+// flush-left composer with no box. Hand-edited patterns remain untouched.
+const grokBoxedCutoff = `(?m)^\s*│ ❯`
+
 // Codex used to end every command-running turn with a timed divider. Current
 // builds can draw a bare divider instead, so stored defaults need the wider
 // shape while hand-edited rules remain untouched.
@@ -303,6 +307,9 @@ func mergeTool(name string, user, def Tool) Tool {
 		if user.ChromeLine == oldClaudeChromeLine {
 			user.ChromeLine = def.ChromeLine
 		}
+	}
+	if name == "grok" && user.ActivityCutoff == grokBoxedCutoff {
+		user.ActivityCutoff = def.ActivityCutoff
 	}
 	if name == "codex" && user.TurnEnd == oldCodexTurnEnd {
 		user.TurnEnd = def.TurnEnd
@@ -617,7 +624,8 @@ resume_picker_command = "grok"
 # fallback: resumes the most recent session for the working directory
 revive_command = "grok --continue"
 default_status = "idle"
-activity_cutoff = "(?m)^\\s*│ ❯"
+# boxed fullscreen and flush-left minimal; indented transcript prompt lines stay out
+activity_cutoff = "(?m)^(?:\\s*│ )?❯"
 # turn summary above the input box. Grok prints a live "Worked for 1m20s"
 # timer while subagents run; only the real end line gains "stop" (and usually
 # "[hooks: N]"). Trailing period after the duration is optional.

@@ -1,6 +1,7 @@
 package status
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -367,6 +368,23 @@ func TestGrokRealPanes(t *testing.T) {
 				t.Fatalf("Match(%s) = %q want %q", tc.name, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestGrokActivityRegionBoxedAndMinimal(t *testing.T) {
+	engine := defaultEngine(t)
+	boxed := "     ❯ count from 1 to 5\n  ╭────╮\n  │ ❯                        │\n"
+	region, ok := engine.ActivityRegion("grok", boxed)
+	if !ok || !strings.Contains(region, "count from 1 to 5") {
+		t.Fatalf("boxed region = %q ok=%v", region, ok)
+	}
+	minimal := "◆ session_start\nminimal · /help\n❯\nGrok 4.6 (medium)\n"
+	region, ok = engine.ActivityRegion("grok", minimal)
+	if !ok || !strings.Contains(region, "session_start") {
+		t.Fatalf("minimal region = %q ok=%v", region, ok)
+	}
+	if _, ok := engine.ActivityRegion("grok", "     ❯ count from 1 to 5\n     done\n"); ok {
+		t.Fatal("an indented grok user turn was treated as the composer")
 	}
 }
 

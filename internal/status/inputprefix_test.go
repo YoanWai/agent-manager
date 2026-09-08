@@ -47,6 +47,38 @@ func TestInputPrefix(t *testing.T) {
 	}
 }
 
+func TestGrokInputPrefixBoxedAndMinimal(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatalf("built-in config: %v", err)
+	}
+	engine, err := NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	cases := []struct {
+		name   string
+		row    string
+		prefix string
+		ok     bool
+	}{
+		{"boxed empty", " │ ❯                        │", " │ ❯", true},
+		{"boxed draft", " │ ❯ hello                  │", " │ ❯", true},
+		{"minimal empty", "❯", "❯", true},
+		{"minimal draft", "❯ hello", "❯", true},
+		{"indented user turn", "     ❯ count from 1 to 5", "", false},
+		{"shortcuts bar", " →:expand  │  Ctrl+e:collapse thinking  │  Ctrl+x:shortcuts", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prefix, ok := engine.InputPrefix("grok", c.row)
+			if prefix != c.prefix || ok != c.ok {
+				t.Fatalf("InputPrefix = (%q, %v), want (%q, %v)", prefix, ok, c.prefix, c.ok)
+			}
+		})
+	}
+}
+
 // A tool whose composer row carries no marker can declare its own input
 // line with input_prefix. Pi composes on a bare blank row and opencode on
 // one of its blank gutter rows, so their declared prefixes are zero-width
