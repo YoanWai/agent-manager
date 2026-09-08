@@ -1054,6 +1054,91 @@ func TestNewUpdateOpensNoticesModal(t *testing.T) {
 	}
 }
 
+func TestKnownLatestDoesNotReopenOnFetch(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+	m.update.latest = "v0.3.0"
+	m.update.url = "https://example.com"
+	m.indexReleaseRanges()
+
+	m.Update(updateMsg{latest: "v0.3.0", url: "https://example.com"})
+	if m.mode != modeList {
+		t.Fatal("a latest already on the list must not pop the modal again")
+	}
+}
+
+func TestNewerReleaseOpensNoticesModal(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+	m.update.latest = "v0.3.0"
+	m.update.url = "https://example.com"
+	m.indexReleaseRanges()
+
+	m.Update(updateMsg{latest: "v0.4.0", url: "https://example.com"})
+	if m.mode != modeNotices {
+		t.Fatalf("a newer tag should open the modal, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "update-v0.4.0" {
+		t.Fatalf("new release should be selected, got %q", got)
+	}
+}
+
+func TestFeedArrivingDuringWelcomeStaysOnWelcome(t *testing.T) {
+	m := footModel(t)
+	m.width, m.height = 100, 34
+	m.openStartupNotice()
+	if m.mode != modeNotices {
+		t.Fatal("first launch should open welcome")
+	}
+
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeNotices {
+		t.Fatalf("mode=%v, want notices", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != noticeWelcome {
+		t.Fatalf("welcome should stay selected, got %q", got)
+	}
+	if !contains(noticeIDs(m.activeNotices()), "feed-new") {
+		t.Fatal("feed should still be listed")
+	}
+}
+
+func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
+	feedModel := footModel(t)
+	feedModel.width, feedModel.height = 100, 34
+	feedModel.mode = modeList
+	feedModel.Update(feedMsg{messages: []feed.Message{{
+		ID:     "feed-holdoff",
+		Banner: "Hold off on v0.36",
+		Title:  "Hold off on v0.36",
+		Body:   []string{"Sessions may drop.", "Stay on v0.35 until the fix."},
+		URL:    "https://github.com/YoanWai/agent-manager/issues/1",
+	}}})
+	feedFrame := ansi.Strip(feedModel.View())
+	t.Log("FEED\n" + feedFrame)
+	for _, want := range []string{"messages", "Hold off on v0.36", "Sessions may drop", "Stay on v0.35", "esc"} {
+		if !strings.Contains(feedFrame, want) {
+			t.Fatalf("feed modal missing %q:\n%s", want, feedFrame)
+		}
+	}
+
+	upd := footModel(t)
+	upd.width, upd.height = 100, 34
+	upd.mode = modeList
+	upd.Update(updateMsg{
+		latest:   "v0.3.0",
+		url:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
+		releases: []update.Release{uiRelease("v0.3.0", "Notices: Open the modal on a new message")},
+	})
+	updFrame := ansi.Strip(upd.View())
+	t.Log("UPDATE\n" + updFrame)
+	for _, want := range []string{"messages", "v0.3.0 available", "You are on v0.2.0", "u update", "x dismiss"} {
+		if !strings.Contains(updFrame, want) {
+			t.Fatalf("update modal missing %q:\n%s", want, updFrame)
+		}
+	}
+}
+
 func TestUpdateNoticeAppliesOnU(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.update.latest = "v0.3.0"
