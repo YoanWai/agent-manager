@@ -977,6 +977,9 @@ func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("closing settings should open the new message, mode=%v", m.mode)
 	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
 }
 
 func TestExpiredPendingNoticeDoesNotOpen(t *testing.T) {
@@ -1005,6 +1008,9 @@ func TestNewFeedWaitsForSearchToClose(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("closing search should open the new message, mode=%v", m.mode)
 	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
 }
 
 func TestNewFeedWaitsForQuickBar(t *testing.T) {
@@ -1022,6 +1028,9 @@ func TestNewFeedWaitsForQuickBar(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("closing the quick bar should open the new message, mode=%v", m.mode)
 	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
 }
 
 func TestNewFeedWaitsForResize(t *testing.T) {
@@ -1038,6 +1047,9 @@ func TestNewFeedWaitsForResize(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	if m.mode != modeNotices {
 		t.Fatalf("leaving resize should open the new message, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
 	}
 }
 
@@ -1115,7 +1127,6 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 		URL:    "https://github.com/YoanWai/agent-manager/issues/1",
 	}}})
 	feedFrame := ansi.Strip(feedModel.View())
-	t.Log("FEED\n" + feedFrame)
 	for _, want := range []string{"messages", "Hold off on v0.36", "Sessions may drop", "Stay on v0.35", "esc"} {
 		if !strings.Contains(feedFrame, want) {
 			t.Fatalf("feed modal missing %q:\n%s", want, feedFrame)
@@ -1131,7 +1142,6 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 		releases: []update.Release{uiRelease("v0.3.0", "Notices: Open the modal on a new message")},
 	})
 	updFrame := ansi.Strip(upd.View())
-	t.Log("UPDATE\n" + updFrame)
 	for _, want := range []string{"messages", "v0.3.0 available", "You are on v0.2.0", "u update", "x dismiss"} {
 		if !strings.Contains(updFrame, want) {
 			t.Fatalf("update modal missing %q:\n%s", want, updFrame)
