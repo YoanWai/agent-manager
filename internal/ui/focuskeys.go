@@ -274,6 +274,7 @@ func (m *Model) leaveFocus() tea.Cmd {
 	m.clearSelection()
 	m.pending = pendingClick{}
 	m.clearForwardingMouse()
+	m.flushPendingNotice()
 	return nil
 }
 

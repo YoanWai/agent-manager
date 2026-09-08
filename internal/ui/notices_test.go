@@ -880,6 +880,275 @@ func TestLateFeedKeepsModalSelection(t *testing.T) {
 	}
 }
 
+func TestNewFeedOpensNoticesModal(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeNotices {
+		t.Fatalf("a new feed message should open the modal, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
+}
+
+func TestSameFeedDoesNotReopenNoticesModal(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	m.handleNoticesKey(key("esc"))
+	if m.mode != modeList {
+		t.Fatal("esc should close the modal")
+	}
+
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeList {
+		t.Fatal("the same message must not reopen after esc")
+	}
+}
+
+func TestDismissedFeedDoesNotOpenNoticesModal(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+	m.dismissNotice("feed-new")
+
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeList {
+		t.Fatal("a dismissed message must not open the modal")
+	}
+}
+
+func TestNewFeedDoesNotStealFocus(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeFocus
+
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeFocus {
+		t.Fatalf("a new message must not steal an open session, mode=%v", m.mode)
+	}
+}
+
+func TestAdditionalFeedIdOpensNoticesModal(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+	m.feedMessages = []feed.Message{{ID: "feed-old", Banner: "old", Title: "Old"}}
+
+	m.Update(feedMsg{messages: []feed.Message{
+		{ID: "feed-old", Banner: "old", Title: "Old"},
+		{ID: "feed-new", Banner: "new", Title: "Just in"},
+	}})
+	if m.mode != modeNotices {
+		t.Fatalf("a new id should open the modal, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
+}
+
+func TestFeedDuringFocusOpensOnLeave(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeFocus
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeFocus {
+		t.Fatalf("mode=%v, want focus until leave", m.mode)
+	}
+
+	m.leaveFocus()
+	if m.mode != modeNotices {
+		t.Fatalf("returning to the list should open the new message, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
+}
+
+func TestFeedDuringSettingsOpensOnClose(t *testing.T) {
+	m := footModel(t)
+	m.width, m.height = 100, 34
+	m.mode = modeSettings
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeSettings {
+		t.Fatalf("mode=%v, want settings until close", m.mode)
+	}
+
+	m.mode = modeList
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
+	if m.mode != modeNotices {
+		t.Fatalf("closing settings should open the new message, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
+}
+
+func TestExpiredPendingNoticeDoesNotOpen(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeFocus
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	m.Update(feedMsg{})
+	m.leaveFocus()
+	if m.mode != modeList {
+		t.Fatalf("a notice that left the feed must not open, mode=%v", m.mode)
+	}
+}
+
+func TestNewFeedWaitsForSearchToClose(t *testing.T) {
+	m := footModel(t)
+	m.width, m.height = 100, 34
+	m.mode = modeList
+	m.searching = true
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeList || !m.searching {
+		t.Fatalf("search should keep the modal closed, mode=%v searching=%v", m.mode, m.searching)
+	}
+
+	m.searching = false
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
+	if m.mode != modeNotices {
+		t.Fatalf("closing search should open the new message, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
+}
+
+func TestNewFeedWaitsForQuickBar(t *testing.T) {
+	m := footModel(t)
+	m.width, m.height = 100, 34
+	m.mode = modeList
+	m.quick.active = true
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeList || !m.quick.active {
+		t.Fatalf("quick bar should keep the modal closed, mode=%v quick=%v", m.mode, m.quick.active)
+	}
+
+	m.quick.active = false
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
+	if m.mode != modeNotices {
+		t.Fatalf("closing the quick bar should open the new message, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
+}
+
+func TestNewFeedWaitsForResize(t *testing.T) {
+	m := footModel(t)
+	m.width, m.height = 100, 34
+	m.mode = modeList
+	m.split.resizeMode = true
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeList || !m.split.resizeMode {
+		t.Fatalf("resize should keep the modal closed, mode=%v resize=%v", m.mode, m.split.resizeMode)
+	}
+
+	m.split.resizeMode = false
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
+	if m.mode != modeNotices {
+		t.Fatalf("leaving resize should open the new message, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "feed-new" {
+		t.Fatalf("new message should be selected, got %q", got)
+	}
+}
+
+func TestNewUpdateOpensNoticesModal(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+
+	m.Update(updateMsg{latest: "v0.3.0", url: "https://example.com"})
+	if m.mode != modeNotices {
+		t.Fatalf("a new update notice should open the modal, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "update-v0.3.0" {
+		t.Fatalf("update notice should be selected, got %q", got)
+	}
+}
+
+func TestKnownLatestDoesNotReopenOnFetch(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+	m.update.latest = "v0.3.0"
+	m.update.url = "https://example.com"
+	m.indexReleaseRanges()
+
+	m.Update(updateMsg{latest: "v0.3.0", url: "https://example.com"})
+	if m.mode != modeList {
+		t.Fatal("a latest already on the list must not pop the modal again")
+	}
+}
+
+func TestNewerReleaseOpensNoticesModal(t *testing.T) {
+	m := footModel(t)
+	m.mode = modeList
+	m.update.latest = "v0.3.0"
+	m.update.url = "https://example.com"
+	m.indexReleaseRanges()
+
+	m.Update(updateMsg{latest: "v0.4.0", url: "https://example.com"})
+	if m.mode != modeNotices {
+		t.Fatalf("a newer tag should open the modal, mode=%v", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != "update-v0.4.0" {
+		t.Fatalf("new release should be selected, got %q", got)
+	}
+}
+
+func TestFeedArrivingDuringWelcomeStaysOnWelcome(t *testing.T) {
+	m := footModel(t)
+	m.width, m.height = 100, 34
+	m.openStartupNotice()
+	if m.mode != modeNotices {
+		t.Fatal("first launch should open welcome")
+	}
+
+	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
+	if m.mode != modeNotices {
+		t.Fatalf("mode=%v, want notices", m.mode)
+	}
+	if got := m.activeNotices()[m.noticeCursor].id; got != noticeWelcome {
+		t.Fatalf("welcome should stay selected, got %q", got)
+	}
+	if !contains(noticeIDs(m.activeNotices()), "feed-new") {
+		t.Fatal("feed should still be listed")
+	}
+}
+
+func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
+	feedModel := footModel(t)
+	feedModel.width, feedModel.height = 100, 34
+	feedModel.mode = modeList
+	feedModel.Update(feedMsg{messages: []feed.Message{{
+		ID:     "feed-holdoff",
+		Banner: "Hold off on v0.36",
+		Title:  "Hold off on v0.36",
+		Body:   []string{"Sessions may drop.", "Stay on v0.35 until the fix."},
+		URL:    "https://github.com/YoanWai/agent-manager/issues/1",
+	}}})
+	feedFrame := ansi.Strip(feedModel.View())
+	for _, want := range []string{"messages", "Hold off on v0.36", "Sessions may drop", "Stay on v0.35", "esc"} {
+		if !strings.Contains(feedFrame, want) {
+			t.Fatalf("feed modal missing %q:\n%s", want, feedFrame)
+		}
+	}
+
+	upd := footModel(t)
+	upd.width, upd.height = 100, 34
+	upd.mode = modeList
+	upd.Update(updateMsg{
+		latest:   "v0.3.0",
+		url:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
+		releases: []update.Release{uiRelease("v0.3.0", "Notices: Open the modal on a new message")},
+	})
+	updFrame := ansi.Strip(upd.View())
+	for _, want := range []string{"messages", "v0.3.0 available", "You are on v0.2.0", "u update", "x dismiss"} {
+		if !strings.Contains(updFrame, want) {
+			t.Fatalf("update modal missing %q:\n%s", want, updFrame)
+		}
+	}
+}
+
 func TestUpdateNoticeAppliesOnU(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.update.latest = "v0.3.0"

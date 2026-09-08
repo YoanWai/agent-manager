@@ -564,6 +564,50 @@ func (m *Model) keepNoticeSelection(apply func()) {
 	}
 }
 
+func (m *Model) applyNotices(apply func()) {
+	before := map[string]bool{}
+	for _, n := range m.activeNotices() {
+		before[n.id] = true
+	}
+	m.keepNoticeSelection(apply)
+	var added string
+	for _, n := range m.activeNotices() {
+		if !before[n.id] {
+			added = n.id
+			break
+		}
+	}
+	if added == "" {
+		return
+	}
+	if m.mode == modeNotices {
+		return
+	}
+	if m.listReadyForNotice() {
+		m.openNotices(added)
+		return
+	}
+	m.pendingNotice = added
+}
+
+func (m *Model) listReadyForNotice() bool {
+	return m.mode == modeList && !m.searching && !m.quick.active && !m.split.resizeMode
+}
+
+func (m *Model) flushPendingNotice() {
+	if m.pendingNotice == "" || !m.listReadyForNotice() {
+		return
+	}
+	id := m.pendingNotice
+	m.pendingNotice = ""
+	for _, n := range m.activeNotices() {
+		if n.id == id {
+			m.openNotices(id)
+			return
+		}
+	}
+}
+
 // RestartPath is the binary main execs into after the program exits;
 // empty when no self-update happened this run.
 func (m *Model) RestartPath() string { return m.update.restartPath }

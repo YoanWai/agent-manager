@@ -272,6 +272,9 @@ type Model struct {
 	// feedMessages is the remote message feed, refreshed on the update
 	// tick and folded into the notices next to the built-in ones.
 	feedMessages []feed.Message
+	// pendingNotice is a new notice that arrived while the list was not
+	// showing; flushPendingNotice opens it once the list is back.
+	pendingNotice string
 }
 
 type netStats struct {
@@ -1329,6 +1332,10 @@ func (m *Model) seedPaneGeom() {
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.handleMsg(msg)
+	if mm, ok := model.(*Model); ok {
+		mm.flushPendingNotice()
+		return mm, tea.Batch(cmd, mm.syncMouseCapture())
+	}
 	return model, tea.Batch(cmd, m.syncMouseCapture())
 }
 
@@ -1508,7 +1515,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		m.keepNoticeSelection(func() {
+		m.applyNotices(func() {
 			m.update.latest = msg.latest
 			m.update.url = msg.url
 			m.update.releases = msg.releases
@@ -1559,7 +1566,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.finishNoticeRefresh()
 		}
 		if !msg.failed || len(msg.messages) > 0 {
-			m.keepNoticeSelection(func() { m.feedMessages = msg.messages })
+			m.applyNotices(func() { m.feedMessages = msg.messages })
 		}
 		if msg.manual && msg.err != nil {
 			m.errBar.text = "refresh failed: " + msg.err.Error()
