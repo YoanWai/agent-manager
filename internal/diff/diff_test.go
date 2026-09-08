@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/git"
 	"golang.org/x/sys/unix"
@@ -197,13 +198,13 @@ func linesOf(count int) string {
 	return b.String()
 }
 
-// Regression guard: the capped model would report maxFileLines here.
+// Regression guard: the capped model would report maxWholeFileLines here.
 func TestUntrackedFileOverLineCapCountsTrueLines(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "tracked.go", "package a\n")
 	commit(t, dir, "init")
 
-	const total = maxFileLines + 2000
+	const total = maxWholeFileLines + 2000
 	write(t, dir, "huge.txt", linesOf(total))
 
 	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
@@ -225,21 +226,22 @@ func TestUntrackedFileOverLineCapCountsTrueLines(t *testing.T) {
 		t.Fatal("huge.txt stat should be known")
 	}
 	if huge.Stat.Adds != total {
-		t.Errorf("huge.txt adds = %d, want %d (the capped model would say %d)", huge.Stat.Adds, total, maxFileLines)
+		t.Errorf("huge.txt adds = %d, want %d (the capped model would say %d)", huge.Stat.Adds, total, maxWholeFileLines)
 	}
 	if !huge.Truncated {
 		t.Error("huge.txt should still be marked truncated for display")
 	}
 }
 
-// Regression guard: the byte cap stops the diff model, not the count.
-func TestUntrackedFileOverByteCapStillCounts(t *testing.T) {
+// Regression guard: a file past the whole-file byte threshold still counts
+// its lines, and still diffs through the hunk model.
+func TestUntrackedFileOverByteThresholdStillCounts(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "tracked.go", "package a\n")
 	commit(t, dir, "init")
 
 	line := strings.Repeat("x", 200) + "\n"
-	total := (maxFileBytes / len(line)) + 500
+	total := (maxWholeFileBytes / len(line)) + 500
 	write(t, dir, "wide.txt", strings.Repeat(line, total))
 
 	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
@@ -263,15 +265,17 @@ func TestUntrackedFileOverByteCapStillCounts(t *testing.T) {
 	if wide.Stat.Adds != total {
 		t.Errorf("wide.txt adds = %d, want %d", wide.Stat.Adds, total)
 	}
-	if !wide.Truncated {
-		t.Error("wide.txt should be marked too large to diff")
+	if len(wide.Lines) == 0 {
+		t.Error("wide.txt should still diff through the hunk model")
 	}
 }
 
-// Invariant: numstat wins; the truncated model must not overwrite it.
-func TestTruncatedTrackedFileKeepsNumstat(t *testing.T) {
+// Invariant: numstat wins; the hunk model must not overwrite it. The edit
+// sits past the whole-file line threshold, so it is only visible at all
+// because the file falls back to hunks.
+func TestHunkModelKeepsNumstat(t *testing.T) {
 	driver, dir := testRepo(t)
-	const total = maxFileLines + 2000
+	const total = maxWholeFileLines + 2000
 	write(t, dir, "big.txt", linesOf(total))
 	commit(t, dir, "init")
 
@@ -295,6 +299,87 @@ func TestTruncatedTrackedFileKeepsNumstat(t *testing.T) {
 	}
 	if big.Stat.Adds != 1 || big.Stat.Dels != 1 {
 		t.Errorf("big.txt stat = %+v, want 1 add 1 del from numstat", big.Stat)
+	}
+	if !hasLine(big, Add, "line 11000 edited") {
+		t.Error("the edited line past the line threshold should be in the model")
+	}
+}
+
+func hasLine(fd FileDiff, kind LineKind, text string) bool {
+	for _, line := range fd.Lines {
+		if line.Kind == kind && line.Text == text {
+			return true
+		}
+	}
+	return false
+}
+
+// A big file with one small edit shows that edit with its real line numbers,
+// the context around it, and gap markers for everything left out.
+func TestHunkModelKeepsRealLineNumbers(t *testing.T) {
+	const total = maxWholeFileLines + 2000
+	oldText := linesOf(total)
+	newText := strings.Replace(oldText, "line 11000\n", "line 11000 edited\n", 1)
+	fd := buildTestFile(t, oldText, newText)
+
+	if fd.Truncated {
+		t.Error("a small edit in a big file fits the hunk model")
+	}
+	if fd.OldTotal != total || fd.NewTotal != total {
+		t.Errorf("totals = %d/%d, want %d", fd.OldTotal, fd.NewTotal, total)
+	}
+	if len(fd.Lines) > 2*hunkContext+4 {
+		t.Errorf("model = %d lines, want one small hunk", len(fd.Lines))
+	}
+	if fd.Lines[0].Kind != Gap {
+		t.Errorf("first line = %v, want a gap for the skipped head", fd.Lines[0].Kind)
+	}
+	var edited *Line
+	for i := range fd.Lines {
+		if fd.Lines[i].Kind == Add {
+			edited = &fd.Lines[i]
+		}
+	}
+	if edited == nil {
+		t.Fatal("the edit is missing from the model")
+	}
+	// linesOf numbers from zero, so "line 11000" is the file's 11001st line.
+	const wantNum = 11001
+	if edited.NewNum != wantNum {
+		t.Errorf("edited line number = %d, want %d", edited.NewNum, wantNum)
+	}
+	if len(fd.Changes) != 1 {
+		t.Errorf("changes = %v, want one jump target", fd.Changes)
+	}
+}
+
+// A file whose hunks outgrow the model is cut off with a marker rather than
+// building a model no one can scroll.
+func TestHunkModelCapsAndMarksTruncation(t *testing.T) {
+	const total = maxHunkModelLines + 2000
+	fd := buildTestFile(t, "", linesOf(total))
+
+	if !fd.Truncated {
+		t.Error("a model over the cap is truncated")
+	}
+	if len(fd.Lines) != maxHunkModelLines+1 {
+		t.Errorf("model = %d lines, want the cap plus a marker", len(fd.Lines))
+	}
+	last := fd.Lines[len(fd.Lines)-1]
+	if last.Kind != Gap {
+		t.Errorf("last line = %v, want a gap marker", last.Kind)
+	}
+}
+
+// A minified line would otherwise wrap into thousands of visual rows.
+func TestHunkModelCapsLongLines(t *testing.T) {
+	oldText := strings.Repeat("x", maxWholeFileBytes+10) + "\n"
+	fd := buildTestFile(t, oldText, oldText+"tail\n")
+
+	for _, line := range fd.Lines {
+		if len(line.Text) > maxHunkLineBytes+len("…") {
+			t.Fatalf("line kept %d bytes, want it capped", len(line.Text))
+		}
 	}
 }
 
@@ -500,5 +585,52 @@ func TestBuildSetBranchBaseOverrideInvalid(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no-such-ref") {
 		t.Errorf("error must name the ref, got %q", err)
+	}
+}
+
+func TestHunkModelUnchangedLargeFile(t *testing.T) {
+	for _, text := range []string{linesOf(maxWholeFileLines + 1), strings.Repeat("x", maxWholeFileBytes+1)} {
+		fd := buildTestFile(t, text, text)
+		if len(fd.Lines) != 1 || fd.Lines[0].Kind != Gap || fd.Truncated || len(fd.Changes) != 0 {
+			t.Fatalf("unchanged large file should show only an unchanged-lines marker: %+v", fd)
+		}
+	}
+}
+
+func TestHunkModelMultipleHunks(t *testing.T) {
+	for _, newline := range []string{"\n", "\r\n"} {
+		t.Run(fmt.Sprintf("newline-%q", newline), func(t *testing.T) {
+			oldText := strings.ReplaceAll(linesOf(12000), "\n", newline)
+			newText := "inserted" + newline + oldText
+			newText = strings.Replace(newText, "line 6000"+newline, "", 1)
+			newText = strings.TrimSuffix(newText, newline) + newline + "tail"
+			fd := buildTestFile(t, oldText, newText)
+			oldLines := strings.Split(strings.TrimSuffix(oldText, newline), newline)
+			newLines := strings.Split(newText, newline)
+			gaps := 0
+			for _, line := range fd.Lines {
+				if line.Kind == Gap {
+					gaps++
+					continue
+				}
+				if line.OldNum > 0 && oldLines[line.OldNum-1] != line.Text {
+					t.Fatalf("old line number drifted: %+v", line)
+				}
+				if line.NewNum > 0 && newLines[line.NewNum-1] != line.Text {
+					t.Fatalf("new line number drifted: %+v", line)
+				}
+			}
+			if gaps != 2 || len(fd.Changes) != 3 || fd.OldTotal != 12000 || fd.NewTotal != 12001 {
+				t.Fatalf("gaps=%d changes=%v totals=%d/%d", gaps, fd.Changes, fd.OldTotal, fd.NewTotal)
+			}
+		})
+	}
+}
+
+func TestHunkModelLineCapPreservesUTF8(t *testing.T) {
+	text := strings.Repeat("界", maxWholeFileBytes/3+1)
+	fd := buildTestFile(t, "", text)
+	if len(fd.Lines) != 1 || !utf8.ValidString(fd.Lines[0].Text) || !strings.HasSuffix(fd.Lines[0].Text, "…") {
+		t.Fatal("capped line must preserve complete Unicode characters and show an ellipsis")
 	}
 }
