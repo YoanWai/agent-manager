@@ -621,6 +621,40 @@ func TestClickSelectsRowInFullLayout(t *testing.T) {
 	}
 }
 
+// splitWidths still returns a ratio-based column in full layout even though
+// no divider is painted there; a click at that phantom column must select
+// the rail row under it, not arm a drag over a seam that does not exist.
+func TestClickAtDividerXInFullLayoutSelectsRow(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "beta")
+	m.fullLayout = true
+	m.View()
+
+	line := -1
+	for i, row := range m.railHits {
+		if row >= 0 && m.rows[row].sess.Name == "alpha" {
+			line = i
+			break
+		}
+	}
+	if line < 0 {
+		t.Fatal("test setup: alpha's row not found in railHits")
+	}
+	y0, _ := m.bodyYRange()
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: m.dividerX(), Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.split.resizeMode || m.split.dragging {
+		t.Fatal("full layout has no divider to drag")
+	}
+	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
+		t.Fatalf("click at dividerX should select the row under it, got %q ok=%v", sess.Name, ok)
+	}
+}
+
 // A comfortable entry paints two or three lines; a click on any of them
 // should select the entry, not whatever railHits index that physical line
 // would be under a compact row.

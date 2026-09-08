@@ -216,7 +216,10 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	y0, y1 := m.bodyYRange()
-	onDivider := m.mode == modeList && msg.Y >= y0 && msg.Y < y1 && m.onDivider(msg.X)
+	// Full layout paints no divider; splitWidths still returns a ratio-based
+	// column, so without this check a click there would arm a drag instead
+	// of landing on the rail row it's actually over.
+	onDivider := m.mode == modeList && !m.fullRows() && msg.Y >= y0 && msg.Y < y1 && m.onDivider(msg.X)
 	if onDivider {
 		m.split.resizeMode = true
 		m.split.dragging = true
