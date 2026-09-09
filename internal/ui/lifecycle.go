@@ -6,12 +6,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
 )
 
@@ -107,6 +109,44 @@ func (m *Model) reattach(id string, diffGen int) tea.Cmd {
 		}
 		return reattachPreparedMsg{sessID: id, diffGen: diffGen, warn: warn}
 	}
+}
+
+// copyLastOutput copies the selected session's newest reply to the
+// system clipboard without attaching to it. Capture and clipboard write
+// both run inside the returned command: WriteText can block for seconds,
+// which would freeze Update.
+func (m *Model) copyLastOutput() (tea.Model, tea.Cmd) {
+	entry, ok := m.selectedRow()
+	if !ok || entry.isGroup || m.engine == nil || m.tmux == nil {
+		return m, nil
+	}
+	sess := entry.sess
+	if !m.tmux.Exists(sess.ID) {
+		m.errBar.text = deadSessionHint
+		return m, nil
+	}
+	engine, driver := m.engine, m.tmux
+	return m, func() tea.Msg {
+		pane, err := driver.CapturePaneHistory(sess.ID, quoteHistoryLines)
+		if err != nil {
+			return errMsg{err}
+		}
+		text, ok := engine.FullTurnText(sess.Tool, ansi.Strip(pane))
+		if !ok || strings.TrimSpace(text) == "" {
+			return copyLastOutputMsg{}
+		}
+		if err := clipboard.WriteText(text); err != nil {
+			return errMsg{err}
+		}
+		return copyLastOutputMsg{chars: len([]rune(text)), name: sess.Name}
+	}
+}
+
+// copyLastOutputMsg reports a finished y copy. A zero chars means the
+// turn held nothing to copy.
+type copyLastOutputMsg struct {
+	chars int
+	name  string
 }
 
 // reviveSelected relaunches a dead session's tmux session under the same
