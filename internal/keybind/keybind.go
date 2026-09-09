@@ -370,10 +370,42 @@ func build(scope string, actions []Action, written map[string]Binding) (Table, e
 		}
 		table.bound[name] = written[name]
 	}
+	table.yieldDefaults(written)
 	if err := table.Validate(); err != nil {
 		return Table{}, err
 	}
 	return table, nil
+}
+
+// yieldDefaults takes a key away from the action that only holds it by
+// default, wherever the file gives that key to something else. A table
+// cannot know to move out of the way of an action added after it was
+// written, so without this the day such an action ships its default key
+// is the day everyone who spent that key is locked out of the manager,
+// and their running sessions with it. What the file asks for wins; the
+// action that yielded is left unbound, and the picker can give it a key.
+func (t Table) yieldDefaults(written map[string]Binding) {
+	claimed := make(map[string]bool, len(written))
+	for name := range written {
+		for _, key := range written[name].keys {
+			claimed[key.tea] = true
+		}
+	}
+	for _, action := range t.actions {
+		if _, spoken := written[action.Name]; spoken {
+			continue
+		}
+		bound := t.bound[action.Name].keys
+		kept := make([]Key, 0, len(bound))
+		for _, key := range bound {
+			if !claimed[key.tea] {
+				kept = append(kept, key)
+			}
+		}
+		if len(kept) != len(bound) {
+			t.bound[action.Name] = Binding{keys: kept}
+		}
+	}
 }
 
 func (t Table) names() string {

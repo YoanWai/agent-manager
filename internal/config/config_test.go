@@ -835,8 +835,6 @@ func TestLoadDirRefusesAKeyTableThatCannotWork(t *testing.T) {
 		{"session", `editor = "ctrl+i"`, "ctrl+i is tab"},
 		{"session", `editor = "o"`, `"o" is a plain key, which reaches the agent`},
 		{"session", `detach = "none"`, "detach needs at least one key"},
-		{"session", `review = "f3"`, "f3 is bound to both review and editor"},
-		{"list", `kill = "n"`, "n is bound to both new_session and kill"},
 		{"list", `settings = "none"`, "settings needs at least one key"},
 		{"list", `quit = "esc"`, "stays as it is"},
 		{"list", `detach = "f9"`, `no action named "detach"`},
