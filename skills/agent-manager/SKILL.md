@@ -51,6 +51,7 @@ prebuilt binary from the releases page.
 | `alt+w` | Spawns the agent into a fresh git worktree and branch. |
 | `ctrl+r` | Opens a full-screen whole-file diff whose line comments go back to the agent as one review prompt. |
 | `v` | Revives a dead session on the conversation it held. |
+| `y` | Copies the selected session's newest reply to the system clipboard, without attaching. |
 
 ## Status colours
 

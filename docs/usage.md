@@ -30,6 +30,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings |
 | `m` | Move a session to a group, a terminal into a session, or a group under another group |
 | `r` | Rename session / edit tool; edit group name and default path |
+| `y` | Copy the selected session's newest reply to the system clipboard, without attaching |
 | `x` | Kill the selected session, or every live session under a group: frees the RAM their agents hold, and the rows stay for `v` |
 | `X` | Kill every live session in view |
 | `v` | Revive a dead session, or every dead session under a group |

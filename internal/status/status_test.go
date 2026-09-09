@@ -1178,3 +1178,157 @@ func TestComposerIsEmpty(t *testing.T) {
 		t.Fatal("a tool without a declared placeholder took the parked-caret path")
 	}
 }
+
+// FullTurnText keeps every marker-led paragraph in the turn, where
+// LastMessage/LastMessageText anchor to only the newest one.
+func TestFullTurnText(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "❯ Reply with exactly this sentence and nothing else: some prompt text\n" +
+		"⏺ First paragraph about the topic.\n" +
+		"  continued content of first paragraph.\n" +
+		"\n" +
+		"\n" +
+		"⏺ Second paragraph, a different topic.\n" +
+		"\n" +
+		"⏺ Third and final paragraph.\n" +
+		"\n" +
+		"✻ Crunched for 3s\n" +
+		"────────────────────\n" +
+		"❯ "
+	want := "⏺ First paragraph about the topic.\n" +
+		"  continued content of first paragraph.\n" +
+		"\n" +
+		"⏺ Second paragraph, a different topic.\n" +
+		"\n" +
+		"⏺ Third and final paragraph."
+	text, ok := engine.FullTurnText("claude", pane)
+	if !ok {
+		t.Fatal("claude has an activity cutoff, ok should be true")
+	}
+	if text != want {
+		t.Fatalf("FullTurnText =\n%q\nwant\n%q", text, want)
+	}
+
+	if _, ok := engine.FullTurnText("no-such-tool", pane); ok {
+		t.Fatal("unknown tool should report it cannot tell")
+	}
+	if _, ok := engine.FullTurnText("claude", "just text, no input box"); ok {
+		t.Fatal("pane without the cutoff should report it cannot tell")
+	}
+}
+
+// FullTurnText copies the newest turn, not every turn still on screen:
+// a pane holding two exchanges must return only the second one's prose.
+func TestFullTurnTextStopsAtPreviousTurn(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "❯ first prompt\n" +
+		"⏺ first answer\n" +
+		"✻ Crunched for 1s\n" +
+		"❯ second prompt\n" +
+		"⏺ second answer\n" +
+		"✻ Crunched for 2s\n" +
+		"❯ "
+	text, ok := engine.FullTurnText("claude", pane)
+	if !ok {
+		t.Fatal("ok should be true")
+	}
+	if text != "⏺ second answer" {
+		t.Fatalf("FullTurnText = %q, want only the newest turn", text)
+	}
+}
+
+// A prompt long enough to wrap echoes over several rows, but user_echo
+// only matches the first: the rest are still the prompt, not the reply.
+// Tool calls and their result rows are not prose either, and a notice
+// printed after the turn-end summary is past the reply entirely.
+func TestFullTurnTextDropsPromptTailAndToolRows(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "❯ a prompt long enough that the composer wrapped it onto\n" +
+		"  a second row and then a third row as well\n" +
+		"⏺ Read(internal/status/status.go)\n" +
+		"  ⎿  Read 120 lines\n" +
+		"⏺ The answer itself.\n" +
+		"✻ Crunched for 3s\n" +
+		"✔ Update installed · Restart to update\n" +
+		"❯ "
+	want := "⏺ Read(internal/status/status.go)\n" +
+		"⏺ The answer itself."
+	text, ok := engine.FullTurnText("claude", pane)
+	if !ok {
+		t.Fatal("ok should be true")
+	}
+	if text != want {
+		t.Fatalf("FullTurnText =\n%q\nwant\n%q", text, want)
+	}
+}
+
+// Claude prints a "new task?" nudge above the composer once context use
+// runs high. It is chrome, and belongs to no turn.
+func TestFullTurnTextDropsComposerHint(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "❯ a prompt\n" +
+		"⏺ The answer.\n" +
+		"                          new task? /clear to save 421.3k tokens\n" +
+		"❯ "
+	text, ok := engine.FullTurnText("claude", pane)
+	if !ok {
+		t.Fatal("ok should be true")
+	}
+	if text != "⏺ The answer." {
+		t.Fatalf("FullTurnText = %q, want the nudge dropped", text)
+	}
+}
+
+// Not every reply opens on a message_start marker: a turn can render as
+// plain unmarked prose, and dropping it as prompt tail would copy
+// nothing at all.
+func TestFullTurnTextKeepsUnmarkedReply(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "❯ a prompt\n" +
+		"Regression test. Some unmarked prose.\n" +
+		"  its own wrapped continuation row.\n" +
+		"\n" +
+		"Docs. A second unmarked paragraph.\n" +
+		"✻ Baked for 1m 33s\n" +
+		"❯ "
+	want := "Regression test. Some unmarked prose.\n" +
+		"  its own wrapped continuation row.\n" +
+		"\n" +
+		"Docs. A second unmarked paragraph."
+	text, ok := engine.FullTurnText("claude", pane)
+	if !ok {
+		t.Fatal("ok should be true")
+	}
+	if text != want {
+		t.Fatalf("FullTurnText =\n%q\nwant\n%q", text, want)
+	}
+}
+
+// A table's rows open on the same box-drawing characters a tool result
+// is drawn under, and they are content: only claude's own ⎿ marks a
+// result row.
+func TestFullTurnTextKeepsTableRows(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "❯ a prompt\n" +
+		"⏺ Here is the table.\n" +
+		"  ┌───────┬───────┐\n" +
+		"  │ Raw   │ Under │\n" +
+		"  ├───────┼───────┤\n" +
+		"  │ 0.50  │ 23.00 │\n" +
+		"  └───────┴───────┘\n" +
+		"  ⎿  Read 120 lines\n" +
+		"❯ "
+	want := "⏺ Here is the table.\n" +
+		"  ┌───────┬───────┐\n" +
+		"  │ Raw   │ Under │\n" +
+		"  ├───────┼───────┤\n" +
+		"  │ 0.50  │ 23.00 │\n" +
+		"  └───────┴───────┘"
+	text, ok := engine.FullTurnText("claude", pane)
+	if !ok {
+		t.Fatal("ok should be true")
+	}
+	if text != want {
+		t.Fatalf("FullTurnText =\n%q\nwant\n%q", text, want)
+	}
+}

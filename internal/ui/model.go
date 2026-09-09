@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"hash/fnv"
 	"sort"
 	"strings"
@@ -1581,6 +1582,14 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case pasteSweepTickMsg:
 		return m, tea.Batch(m.sweepPastes, m.pasteSweepTick())
+
+	case copyLastOutputMsg:
+		if msg.chars == 0 {
+			m.errBar.text = "nothing to copy"
+			return m, nil
+		}
+		m.reportDone(fmt.Sprintf("copied %d chars from %s", msg.chars, msg.name))
+		return m, nil
 
 	case previewSettleMsg:
 		if msg.gen != m.previewGen {

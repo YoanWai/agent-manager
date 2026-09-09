@@ -108,6 +108,7 @@ func sessionRowHelpRows(list keybind.Table) [][2]string {
 	h.fixed("", "settings swap what the two do")
 	h.action("mark it idle when it is finished, without entering it", keybind.MarkIdle)
 	h.action("quick prompt: answer the session without attaching", keybind.Prompt)
+	h.action("copy its newest reply to the clipboard", keybind.CopyReply)
 	h.action("review its diff", keybind.Review)
 	h.action("fork it into a new session in the same group", keybind.Fork)
 	h.action("rename it, and re-pick its tool", keybind.Rename)

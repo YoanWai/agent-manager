@@ -242,6 +242,7 @@ const (
 	NewGroup    = "new_group"
 	Fork        = "fork"
 	Prompt      = "prompt"
+	CopyReply   = "copy_reply"
 	MarkIdle    = "mark_idle"
 	Rename      = "rename"
 	Move        = "move"
@@ -289,6 +290,7 @@ var listActions = []Action{
 	{NewGroup, "new group", keys("g")},
 	{Fork, "fork the session", keys("f")},
 	{Prompt, "quick prompt", keys("space")},
+	{CopyReply, "copy the session's newest reply to the clipboard", keys("y")},
 	{Review, "review the session's diff", keys("ctrl+r")},
 	{MarkIdle, "mark a finished session idle", keys(".")},
 	{Rename, "rename the session, edit the group", keys("r")},

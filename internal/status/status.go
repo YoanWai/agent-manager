@@ -358,25 +358,10 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 		return "", false, false
 	}
 	lines := strings.Split(region, "\n")
-	structural := func(line string) bool {
-		if tr.chromeLine != nil && tr.chromeLine.MatchString(line) {
-			return true
-		}
-		if tr.busyLine != nil && tr.busyLine.MatchString(line) {
-			return true
-		}
-		if tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
-			return true
-		}
-		if tr.trailingNote != nil && tr.trailingNote.MatchString(strings.TrimLeft(line, " \t")) {
-			return true
-		}
-		return tr.matchesWorkingRule(line)
-	}
 	start, lastContent := -1, -1
 	for i, raw := range lines {
 		line := strings.TrimRight(raw, " \t")
-		if strings.TrimSpace(line) == "" || structural(line) {
+		if strings.TrimSpace(line) == "" || tr.isStructural(line) {
 			continue
 		}
 		lastContent = i
@@ -402,12 +387,110 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if structural(line) {
+		if tr.isStructural(line) {
 			break
 		}
 		parts = append(parts, strings.TrimSpace(line))
 	}
 	return strings.TrimSpace(strings.Join(parts, " ")), true, true
+}
+
+// toolResultRow matches the row a tool call's result is drawn under.
+// Only claude's own glyph: the box-drawing characters a table is built
+// from open rows too, and those are content.
+var toolResultRow = regexp.MustCompile(`^\s*⎿`)
+
+// isStructural reports whether line is chrome, a busy spinner, or a
+// turn-end summary rather than message content: the one check shared by
+// LastMessage's marker search and FullTurnText's whole-region copy, so a
+// rule added to one is never missed by the other.
+func (tr toolRules) isStructural(line string) bool {
+	if tr.chromeLine != nil && tr.chromeLine.MatchString(line) {
+		return true
+	}
+	if tr.busyLine != nil && tr.busyLine.MatchString(line) {
+		return true
+	}
+	if tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
+		return true
+	}
+	if tr.trailingNote != nil && tr.trailingNote.MatchString(strings.TrimLeft(line, " \t")) {
+		return true
+	}
+	return tr.matchesWorkingRule(line)
+}
+
+// FullTurnText is the newest turn's prose: everything the agent wrote
+// after the last prompt, with tool calls, their results and the tool's
+// own chrome left out.
+//
+// The turn starts after the last user_echo (the prompt the tool echoed
+// back), or after the last turn_end for a tool that echoes nothing.
+// Without that bound this would return every turn still on screen, since
+// activityRegion is only bounded below, by the composer. A wrapped
+// prompt's continuation rows are dropped with it: user_echo only matches
+// the first row, so anything between it and the first real content row
+// belongs to the prompt too.
+//
+// ok is false under the same conditions as ActivityRegion: no
+// activity_cutoff configured, or none found in pane.
+func (e *Engine) FullTurnText(tool, pane string) (text string, ok bool) {
+	tr, ok := e.tools[tool]
+	if !ok {
+		return "", false
+	}
+	region, ok := tr.activityRegion(pane)
+	if !ok {
+		return "", false
+	}
+	lines := strings.Split(region, "\n")
+	start := 0
+	sawPrompt := false
+	for i, raw := range lines {
+		line := strings.TrimRight(raw, " \t")
+		if tr.userEcho != nil && tr.userEcho.MatchString(line) {
+			start, sawPrompt = i+1, true
+			continue
+		}
+		if tr.userEcho == nil && tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
+			start = i + 1
+		}
+	}
+	out := make([]string, 0, len(lines)-start)
+	// A reply long enough to outrun the capture leaves its prompt off the
+	// top of it. Nothing was skipped, so nothing below is prompt tail
+	// either: the region opens mid-reply and every row of it is content.
+	started := !sawPrompt
+	for _, raw := range lines[start:] {
+		line := strings.TrimRight(raw, " \t")
+		if strings.TrimSpace(line) == "" {
+			if len(out) > 0 && out[len(out)-1] != "" {
+				out = append(out, "")
+			}
+			continue
+		}
+		if toolResultRow.MatchString(line) {
+			continue
+		}
+		if tr.isStructural(line) {
+			// A turn_end after content closes the turn: a notice printed
+			// below it (a plugin banner, an update note) is not the reply.
+			if started && tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
+				break
+			}
+			continue
+		}
+		if !started && strings.HasPrefix(raw, " ") {
+			// Still inside the prompt: a wrapped user_echo's own
+			// continuation rows are indented under it, and nothing else
+			// marks them. Only before the turn's first content row - a
+			// reply's own wrapped lines are indented the same way.
+			continue
+		}
+		started = true
+		out = append(out, line)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n")), true
 }
 
 // HasMessageStart reports whether the tool declared a message_start
