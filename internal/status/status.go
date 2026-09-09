@@ -41,6 +41,7 @@ type toolRules struct {
 	busyLine       *regexp.Regexp
 	limitLine      *regexp.Regexp
 	messageStart   *regexp.Regexp
+	toolResult     *regexp.Regexp
 	placeholder    *regexp.Regexp
 	userEcho       *regexp.Regexp
 	dialogFooter   *regexp.Regexp
@@ -79,6 +80,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.BusyLine, &tr.busyLine},
 			{tool.LimitLine, &tr.limitLine},
 			{tool.MessageStart, &tr.messageStart},
+			{tool.ToolResult, &tr.toolResult},
 			{tool.InputPlaceholder, &tr.placeholder},
 			{tool.UserEcho, &tr.userEcho},
 			{tool.DialogFooter, &tr.dialogFooter},
@@ -395,15 +397,10 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 	return strings.TrimSpace(strings.Join(parts, " ")), true, true
 }
 
-// toolResultRow matches the row a tool call's result is drawn under.
-// Only claude's own glyph: the box-drawing characters a table is built
-// from open rows too, and those are content.
-var toolResultRow = regexp.MustCompile(`^\s*⎿`)
-
-// isStructural reports whether line is chrome, a busy spinner, or a
-// turn-end summary rather than message content: the one check shared by
-// LastMessage's marker search and FullTurnText's whole-region copy, so a
-// rule added to one is never missed by the other.
+// isStructural reports whether line is the tool's own frame - chrome, a
+// spinner, a turn summary, a trailing note - rather than message content.
+// LastMessage and FullTurnText share it so a rule added to one is never
+// missed by the other.
 func (tr toolRules) isStructural(line string) bool {
 	if tr.chromeLine != nil && tr.chromeLine.MatchString(line) {
 		return true
@@ -420,20 +417,14 @@ func (tr toolRules) isStructural(line string) bool {
 	return tr.matchesWorkingRule(line)
 }
 
-// FullTurnText is the newest turn's prose: everything the agent wrote
-// after the last prompt, with tool calls, their results and the tool's
-// own chrome left out.
+// FullTurnText is the newest turn's prose with its paragraph breaks kept:
+// everything the agent wrote after the last prompt, without tool results
+// or the tool's own frame. LastMessage anchors to one message_start
+// marker, which drops every earlier paragraph of a reply that opened
+// several.
 //
-// The turn starts after the last user_echo (the prompt the tool echoed
-// back), or after the last turn_end for a tool that echoes nothing.
-// Without that bound this would return every turn still on screen, since
-// activityRegion is only bounded below, by the composer. A wrapped
-// prompt's continuation rows are dropped with it: user_echo only matches
-// the first row, so anything between it and the first real content row
-// belongs to the prompt too.
-//
-// ok is false under the same conditions as ActivityRegion: no
-// activity_cutoff configured, or none found in pane.
+// ok is false under the same conditions as ActivityRegion: the tool
+// declares no activity_cutoff, or the pane holds none.
 func (e *Engine) FullTurnText(tool, pane string) (text string, ok bool) {
 	tr, ok := e.tools[tool]
 	if !ok {
@@ -444,53 +435,166 @@ func (e *Engine) FullTurnText(tool, pane string) (text string, ok bool) {
 		return "", false
 	}
 	lines := strings.Split(region, "\n")
-	start := 0
-	sawPrompt := false
-	for i, raw := range lines {
-		line := strings.TrimRight(raw, " \t")
-		if tr.userEcho != nil && tr.userEcho.MatchString(line) {
-			start, sawPrompt = i+1, true
-			continue
-		}
-		if tr.userEcho == nil && tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
-			start = i + 1
+	body, afterEcho := tr.newestTurn(lines)
+	if text := tr.turnProse(body, afterEcho); text != "" {
+		return text, true
+	}
+	// A prompt sent while the last turn was still being read leaves the
+	// newest turn empty, and the answer the user is looking at is the one
+	// above it. Cut the prompt row itself with it, or the same empty turn
+	// comes back.
+	if start := len(lines) - len(body); start > 0 {
+		above, aboveEcho := tr.newestTurn(lines[:start-1])
+		return tr.turnProse(above, aboveEcho), true
+	}
+	return "", true
+}
+
+// turnProse is the reply inside one turn's rows: paragraph breaks kept,
+// tool results and the tool's own frame dropped. afterEcho says a prompt
+// sits above these rows, so the wrapped tail of it may still be among
+// them; where that trim would leave nothing, the rows were the reply.
+func (tr toolRules) turnProse(body []string, afterEcho bool) string {
+	// The reply's own opening marker beats guessing where the prompt
+	// ended, so take it whenever the turn's start is in frame.
+	if afterEcho {
+		if marked := tr.firstMessageIndex(body); marked >= 0 {
+			body, afterEcho = body[marked:], false
 		}
 	}
-	out := make([]string, 0, len(lines)-start)
-	// A reply long enough to outrun the capture leaves its prompt off the
-	// top of it. Nothing was skipped, so nothing below is prompt tail
-	// either: the region opens mid-reply and every row of it is content.
-	started := !sawPrompt
-	for _, raw := range lines[start:] {
+	// Indentation is all that marks a wrapped prompt's continuation rows,
+	// and only a tool whose replies open on a marker can be read that
+	// way: an unmarked reply here starts at the left edge.
+	trimPrompt := afterEcho && tr.messageStart != nil
+	out := tr.contentRows(body, trimPrompt)
+	if len(out) == 0 && trimPrompt {
+		out = tr.contentRows(body, false)
+	}
+	return strings.Join(out, "\n")
+}
+
+// contentRows is body without the tool's frame, its tool results and
+// their wrapped rows, stopping at the summary that closes the turn.
+// trimPrompt drops indented rows until the first row at the left edge.
+func (tr toolRules) contentRows(body []string, trimPrompt bool) []string {
+	out := make([]string, 0, len(body))
+	inResult := false
+	for _, raw := range body {
 		line := strings.TrimRight(raw, " \t")
 		if strings.TrimSpace(line) == "" {
+			inResult = false
 			if len(out) > 0 && out[len(out)-1] != "" {
 				out = append(out, "")
 			}
 			continue
 		}
-		if toolResultRow.MatchString(line) {
+		if tr.toolResult != nil && tr.toolResult.MatchString(line) {
+			inResult = true
 			continue
 		}
+		// A result runs past its own marker row onto the rows it wrapped
+		// onto, which carry no marker of their own.
+		if inResult && wrapsAbove(line) {
+			continue
+		}
+		inResult = false
 		if tr.isStructural(line) {
-			// A turn_end after content closes the turn: a notice printed
-			// below it (a plugin banner, an update note) is not the reply.
-			if started && tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
+			// A turn_end closes the turn, so a notice printed below it
+			// belongs to no reply.
+			if tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
 				break
 			}
 			continue
 		}
-		if !started && strings.HasPrefix(raw, " ") {
-			// Still inside the prompt: a wrapped user_echo's own
-			// continuation rows are indented under it, and nothing else
-			// marks them. Only before the turn's first content row - a
-			// reply's own wrapped lines are indented the same way.
+		if trimPrompt && len(out) == 0 && wrapsAbove(line) {
 			continue
 		}
-		started = true
 		out = append(out, line)
 	}
-	return strings.TrimSpace(strings.Join(out, "\n")), true
+	for len(out) > 0 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
+	}
+	return out
+}
+
+// newestTurn is the region past its newest prompt: the row after the
+// prompt the tool echoed, or after the last composer row for a tool that
+// echoes nothing (grok, hermes), whose cutoff draws every prompt it kept
+// on screen. With no prompt in frame either way, the summary that closed
+// the previous turn bounds it instead. afterEcho reports that a prompt
+// was found, so the rows under it can still be its wrapped tail.
+func (tr toolRules) newestTurn(lines []string) (body []string, afterEcho bool) {
+	if tr.userEcho != nil {
+		if i := tr.lastEchoIndex(lines); i >= 0 {
+			return lines[i+1:], true
+		}
+	} else {
+		for i := len(lines) - 1; i >= 0; i-- {
+			line := strings.TrimRight(lines[i], " \t")
+			if tr.inputRow(line) && !tr.matchesAnyRule(line) {
+				return lines[i+1:], true
+			}
+		}
+	}
+	if i := tr.previousTurnEndIndex(lines); i >= 0 {
+		return lines[i+1:], false
+	}
+	return lines, false
+}
+
+// previousTurnEndIndex is the turn summary that closed the turn before
+// the newest one, the bound left when no prompt is in frame: a tool that
+// keeps none (grok), or a prompt the capture cut off or a status rule
+// claimed. A running turn has drawn no summary of its own yet, so the
+// last one is that boundary; once it ends, the last summary is its own
+// and the one above it opens the turn. -1 when neither is in frame.
+func (tr toolRules) previousTurnEndIndex(lines []string) int {
+	if tr.turnEnd == nil {
+		return -1
+	}
+	previous, last := -1, -1
+	contentBelow := false
+	for i, raw := range lines {
+		line := strings.TrimRight(raw, " \t")
+		if tr.turnEnd.MatchString(line) {
+			previous, last, contentBelow = last, i, false
+			continue
+		}
+		if tr.isContent(line) {
+			contentBelow = true
+		}
+	}
+	if contentBelow {
+		return last
+	}
+	return previous
+}
+
+// firstMessageIndex is the first row opening a message the tool printed,
+// or -1 for a turn that rendered none.
+func (tr toolRules) firstMessageIndex(lines []string) int {
+	if tr.messageStart == nil {
+		return -1
+	}
+	for i, raw := range lines {
+		line := strings.TrimRight(raw, " \t")
+		if !tr.isContent(line) {
+			continue
+		}
+		if tr.messageStart.MatchString(line) {
+			return i
+		}
+	}
+	return -1
+}
+
+// isContent reports whether a row carries something the agent wrote,
+// rather than a blank, the tool's own frame, or a tool result.
+func (tr toolRules) isContent(line string) bool {
+	if strings.TrimSpace(line) == "" || tr.isStructural(line) {
+		return false
+	}
+	return tr.toolResult == nil || !tr.toolResult.MatchString(line)
 }
 
 // HasMessageStart reports whether the tool declared a message_start
@@ -523,20 +627,36 @@ func (e *Engine) LastUserEcho(tool, pane string) (string, bool) {
 		return "", false
 	}
 	lines := strings.Split(region, "\n")
+	i := tr.lastEchoIndex(lines)
+	if i < 0 {
+		return "", true
+	}
+	line := strings.TrimRight(lines[i], " \t")
+	loc := tr.userEcho.FindStringIndex(line)
+	return strings.TrimSpace(line[loc[1]:]), true
+}
+
+// lastEchoIndex is the row carrying the newest prompt the tool echoed, or
+// -1 when the region holds none.
+func (tr toolRules) lastEchoIndex(lines []string) int {
+	if tr.userEcho == nil {
+		return -1
+	}
+	end := len(lines)
 	// A composer drawn above the cutoff (opencode's ┃ gutter) is a run of
 	// input_prefix rows hugging the region's end; the echoes live higher,
 	// so the trailing run is the composer's, not a message.
 	if tr.inputPrefix != nil {
-		for len(lines) > 0 {
-			last := lines[len(lines)-1]
+		for end > 0 {
+			last := lines[end-1]
 			if strings.TrimSpace(last) == "" || tr.inputPrefix.MatchString(last) {
-				lines = lines[:len(lines)-1]
+				end--
 				continue
 			}
 			break
 		}
 	}
-	for i := len(lines) - 1; i >= 0; i-- {
+	for i := end - 1; i >= 0; i-- {
 		line := strings.TrimRight(lines[i], " \t")
 		loc := tr.userEcho.FindStringIndex(line)
 		if loc == nil {
@@ -555,9 +675,9 @@ func (e *Engine) LastUserEcho(tool, pane string) (string, bool) {
 		if tr.placeholder != nil && tr.placeholder.MatchString(echoed) {
 			continue
 		}
-		return echoed, true
+		return i
 	}
-	return "", true
+	return -1
 }
 
 func (tr toolRules) matchesAnyRule(line string) bool {

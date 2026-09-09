@@ -1583,9 +1583,13 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pasteSweepTickMsg:
 		return m, tea.Batch(m.sweepPastes, m.pasteSweepTick())
 
-	case copyLastOutputMsg:
+	case replyCopiedMsg:
+		if msg.unreadable {
+			m.errBar.text = "cannot read a reply from " + msg.name
+			return m, nil
+		}
 		if msg.chars == 0 {
-			m.errBar.text = "nothing to copy"
+			m.errBar.text = "nothing to copy from " + msg.name
 			return m, nil
 		}
 		m.reportDone(fmt.Sprintf("copied %d chars from %s", msg.chars, msg.name))

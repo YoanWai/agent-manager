@@ -129,8 +129,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.openGroupForm()
 	case keybind.Fork:
 		m.openFork()
-	case keybind.CopyReply:
-		return m.copyLastOutput()
 	case keybind.Revive:
 		return m.reviveSelected()
 	case keybind.MarkIdle:
@@ -151,6 +149,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.prepareDelete()
 	case keybind.Prompt:
 		m.openQuickMode()
+	case keybind.CopyReply:
+		return m.copyReplySelected()
 	case keybind.FoldAll:
 		m.toggleCollapseAll()
 	case keybind.Filter:
