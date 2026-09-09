@@ -207,6 +207,10 @@ const busyLineAgentsOnly = `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ backgro
 // banner beneath completed turns. Hand-edited patterns remain untouched.
 const oldClaudeChromeLine = `^\s*[─q]{4,}.*$|^[\s─q]*$`
 
+// The same pattern once the updater banner was added, but before Claude
+// started printing its "new task?" nudge above the composer.
+const oldClaudeChromeLineNoHint = `^\s*[─q]{4,}.*$|^[\s─q]*$|^\s*✔ Update installed · Restart to update\s*$`
+
 // The command-code matching rules #385 shipped, which no longer match the
 // shapes current Command Code draws. A stored config.toml carries these
 // verbatim and keeps them over any new default, so mergeTool rewrites
@@ -276,7 +280,7 @@ func mergeTool(name string, user, def Tool) Tool {
 		if user.BusyLine == busyLineAgentsOnly {
 			user.BusyLine = def.BusyLine
 		}
-		if user.ChromeLine == oldClaudeChromeLine {
+		if user.ChromeLine == oldClaudeChromeLine || user.ChromeLine == oldClaudeChromeLineNoHint {
 			user.ChromeLine = def.ChromeLine
 		}
 	}
@@ -426,7 +430,7 @@ status_source = "claude-hooks"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 turn_end = "^[✻✳✶✽✢·✦✧+*] \\S+ for \\d.*$"
-chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$|^\\s*✔ Update installed · Restart to update\\s*$"
+chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$|^\\s*✔ Update installed · Restart to update\\s*$|^\\s*new task\\? /clear to save .*$"
 blocked_line = "Interrupted ·"
 # recap blocks ("※ recap: …") render below the turn-end summary
 trailing_note = "^※"

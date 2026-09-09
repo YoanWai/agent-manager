@@ -356,39 +356,25 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 	return strings.TrimSpace(strings.Join(parts, " ")), anchored, ok
 }
 
-// LastMessageText is LastMessage with its line breaks intact: LastMessage
-// flattens a reply to one line for a row quote, this keeps it as the
-// agent wrote it for a full copy (auto-copy-on-finish and similar).
-func (e *Engine) LastMessageText(tool, pane string) (text string, anchored, ok bool) {
-	parts, anchored, ok := e.lastMessageParts(tool, pane)
-	if !ok || parts == nil {
-		return "", anchored, ok
-	}
-	return strings.TrimSpace(strings.Join(parts, "\n")), anchored, ok
-}
+// toolResultRow matches the row a tool call's result is drawn under.
+// Only claude's own glyph: the box-drawing characters a table is built
+// from open rows too, and those are content.
+var toolResultRow = regexp.MustCompile(`^\s*⎿`)
 
-// composerHint matches Claude Code's own "start a new task" nudge,
-// right-padded and printed near the input box once context use gets
-// high enough to suggest /clear - a UI element, not part of any reply,
-// but not covered by any tool's own chrome/busy/turn_end rules either
-// (it sits inside the activity_cutoff region, above the "❯" line those
-// rules are built around, not below it where the rest of the composer
-// chrome lives). Checked directly here rather than added to config.toml
-// since it names its own token count and so never repeats byte-for-byte.
-var composerHint = regexp.MustCompile(`new task\? /clear to save`)
-
-// FullTurnText is the whole turn's content above the input box, not just
-// the newest message_start block LastMessageText anchors to: a reply with
-// several marker-led paragraphs (Claude's bulleted sections, for example)
-// has several message_start matches, and LastMessageText only keeps the
-// last one. This keeps every line of the region instead, chrome, busy
-// spinners and turn_end markers dropped the same way isStructural drops
-// them for LastMessage, blank lines collapsed to single paragraph breaks.
-// A tool that echoes the submitted prompt back into its own transcript
-// (user_echo) has that line dropped too: LastMessage never needed to,
-// its marker anchor already starts past it, but nothing bounds this
-// method's start. ok is false under the same conditions as
-// ActivityRegion: no activity_cutoff configured, or none found in pane.
+// FullTurnText is the newest turn's prose: everything the agent wrote
+// after the last prompt, with tool calls, their results and the tool's
+// own chrome left out.
+//
+// The turn starts after the last user_echo (the prompt the tool echoed
+// back), or after the last turn_end for a tool that echoes nothing.
+// Without that bound this would return every turn still on screen, since
+// activityRegion is only bounded below, by the composer. A wrapped
+// prompt's continuation rows are dropped with it: user_echo only matches
+// the first row, so anything between it and the first real content row
+// belongs to the prompt too.
+//
+// ok is false under the same conditions as ActivityRegion: no
+// activity_cutoff configured, or none found in pane.
 func (e *Engine) FullTurnText(tool, pane string) (text string, ok bool) {
 	tr, ok := e.tools[tool]
 	if !ok {
@@ -399,8 +385,24 @@ func (e *Engine) FullTurnText(tool, pane string) (text string, ok bool) {
 		return "", false
 	}
 	lines := strings.Split(region, "\n")
-	out := make([]string, 0, len(lines))
-	for _, raw := range lines {
+	start := 0
+	sawPrompt := false
+	for i, raw := range lines {
+		line := strings.TrimRight(raw, " \t")
+		if tr.userEcho != nil && tr.userEcho.MatchString(line) {
+			start, sawPrompt = i+1, true
+			continue
+		}
+		if tr.userEcho == nil && tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
+			start = i + 1
+		}
+	}
+	out := make([]string, 0, len(lines)-start)
+	// A reply long enough to outrun the capture leaves its prompt off the
+	// top of it. Nothing was skipped, so nothing below is prompt tail
+	// either: the region opens mid-reply and every row of it is content.
+	started := !sawPrompt
+	for _, raw := range lines[start:] {
 		line := strings.TrimRight(raw, " \t")
 		if strings.TrimSpace(line) == "" {
 			if len(out) > 0 && out[len(out)-1] != "" {
@@ -408,15 +410,25 @@ func (e *Engine) FullTurnText(tool, pane string) (text string, ok bool) {
 			}
 			continue
 		}
+		if toolResultRow.MatchString(line) {
+			continue
+		}
 		if tr.isStructural(line) {
+			// A turn_end after content closes the turn: a notice printed
+			// below it (a plugin banner, an update note) is not the reply.
+			if started && tr.turnEnd != nil && tr.turnEnd.MatchString(line) {
+				break
+			}
 			continue
 		}
-		if tr.userEcho != nil && tr.userEcho.MatchString(line) {
+		if !started && strings.HasPrefix(raw, " ") {
+			// Still inside the prompt: a wrapped user_echo's own
+			// continuation rows are indented under it, and nothing else
+			// marks them. Only before the turn's first content row - a
+			// reply's own wrapped lines are indented the same way.
 			continue
 		}
-		if composerHint.MatchString(line) {
-			continue
-		}
+		started = true
 		out = append(out, line)
 	}
 	return strings.TrimSpace(strings.Join(out, "\n")), true
