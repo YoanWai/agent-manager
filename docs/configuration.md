@@ -6,7 +6,7 @@ It holds three things. `poll_interval` (default `"2s"`) sets how often panes are
 
 ## Agent CLIs
 
-Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Pi, Command Code, and Hermes Agent, plus the shell `T` opens. Each one's launch command, revive and fork commands, MCP registration, and status rules are built into the binary, so an upgrade brings the current version of all of them. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
+Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Pi, Command Code, Hermes Agent, and Muse Code, plus the shell `T` opens. Each one's launch command, revive and fork commands, MCP registration, and status rules are built into the binary, so an upgrade brings the current version of all of them. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
 
 The Pi support requires Pi 0.76.0 or later, because it launches sessions with `--session-id`.
 
@@ -63,3 +63,7 @@ State is stored next to the config in `state.db` (SQLite).
 ## Right-to-left text
 
 Hebrew and Arabic rows are painted as the cells they occupy, the same on every host. A terminal that runs its own bidirectional layout, iTerm2's right-to-left support or WezTerm's `bidi_enabled`, reorders those rows itself; turn that support off to read the frame in the columns Agent Manager paints.
+
+## Muse Code
+
+Select `muse` to launch Muse Code with its own defaults and configuration. Startup prompts are positional. Agent Manager reads the conversation ID from `${XDG_DATA_HOME:-$HOME/.local/share}/muse/sessions` so revive can run `muse resume <id>`. Without an ID, it opens `muse resume` for you to choose. Missing or unrecognized logs leave launch usable and fall back to the picker. Muse uses the Agent Manager shell subcommands for coordination. It does not register the Agent Manager MCP server. No fork command is configured because Muse does not expose one through its CLI.
