@@ -85,7 +85,7 @@ State is stored next to the config in `state.db` (SQLite).
 
 ## Muse Code
 
-Select `muse` to launch the `muse` CLI with its own defaults and configuration. Startup prompts are positional. Agent Manager reads the conversation ID from `${XDG_DATA_HOME:-$HOME/.local/share}/muse/sessions` so revive can run `muse resume <id>`; without an ID, it opens `muse resume` for you to choose. Missing or unrecognized logs leave launch usable and fall back to the picker. Muse uses the Agent Manager shell subcommands for coordination (`mcp = "none"`). No fork command is configured because Muse does not expose one through its CLI.
+Select `muse` to launch the `muse` CLI with its own defaults and configuration. Startup prompts are positional. Agent Manager reads the conversation ID from `${XDG_DATA_HOME:-$HOME/.local/share}/muse/sessions` so revive can run `muse resume <id>`; without an ID, it opens `muse resume` for you to choose. Missing or unrecognized logs leave launch usable and fall back to the picker. Muse does not register the Agent Manager MCP server (`mcp = "none"`). No fork command is configured because Muse does not expose one through its CLI.
 
 ## Right-to-left text
 
