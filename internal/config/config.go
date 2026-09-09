@@ -262,6 +262,13 @@ const (
 // working default.
 const oldPiOwnLineWorkingRule = `(?ms)^[ \t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\b[^\n]*\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + newPiFooterTail
 
+// The pi activity cutoff written before pi 0.85 moved the spinner into the
+// composer's top border. It knows only the plain rule as the input box's
+// edge, so the border with a spinner in it read as draft text and Left
+// stayed with the agent for the length of every turn. Hand-edited patterns
+// remain untouched.
+const oldPiActivityCutoff = `(?ms)\A.*^─{8,}[ \t]*$`
+
 // mergeTool returns user with any zero-value field filled from def.
 //
 // Shell is deliberately not among them. "terminal" is a plausible name for
@@ -334,6 +341,9 @@ func mergeTool(name string, user, def Tool) Tool {
 		}
 	}
 	if name == "pi" {
+		if user.ActivityCutoff == oldPiActivityCutoff {
+			user.ActivityCutoff = def.ActivityCutoff
+		}
 		for i, rule := range user.Rules {
 			switch rule.Pattern {
 			case oldPiIdleRule, oldPiErrorRule, oldPiRateLimitRule, oldPiQuestionRule:
@@ -748,8 +758,11 @@ default_status = "finished"
 # draft out.
 input_prefix = "^"
 # Start the activity region at the pane origin. Pane reflow then cannot look
-# like streaming output when Agent Manager attaches or detaches.
-activity_cutoff = "(?ms)\\A.*^─{8,}[ \\t]*$"
+# like streaming output when Agent Manager attaches or detaches. The rows
+# that bound the composer are the plain rule and, since pi 0.85, the top
+# one with the spinner drawn inside it ("── ⠹ Working ───"); the arrow-step
+# head check reads either as the input box's edge rather than a draft.
+activity_cutoff = "(?ms)\\A.*^(?:─+[ \\t]+[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+[^\\n]*?[ \\t]+)?─{8,}[ \\t]*$"
 chrome_line = "^[ \\t]*─{8,}[ \\t]*$"
 rules = [
   { state = "idle", pattern = "(?ms)^[ \\t]*Resumed session[ \\t]*\\n[ \\t]*\\n─{8,}[ \\t]*\\n(?:[ \\t]*\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
