@@ -746,6 +746,7 @@ func TestBuildLaunchCarriesSessionID(t *testing.T) {
 func TestSortedToolNamesOrder(t *testing.T) {
 	cfg := config.Config{Tools: map[string]config.Tool{
 		"grok":     {Command: "grok"},
+		"muse":     {Command: "muse"},
 		"gemini":   {Command: "gemini"},
 		"codex":    {Command: "codex"},
 		"claude":   {Command: "claude"},
@@ -755,7 +756,7 @@ func TestSortedToolNamesOrder(t *testing.T) {
 		"acme":     {Command: "acme"},
 	}}
 	got := sortedToolNames(cfg)
-	want := []string{"claude", "opencode", "codex", "grok", "gemini", "pi", "acme", "zephyr"}
+	want := []string{"claude", "opencode", "codex", "grok", "gemini", "pi", "muse", "acme", "zephyr"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("sortedToolNames = %v want %v", got, want)
 	}

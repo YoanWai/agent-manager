@@ -1,6 +1,6 @@
 // Package agentsession reads back the conversation id an agent CLI minted
 // for a session the manager launched, for tools that do not accept a
-// chosen id at launch (codex, opencode, gemini, hermes). Revive resumes that
+// chosen id at launch (codex, opencode, gemini, hermes, command-code, muse). Revive resumes that
 // exact id instead of the working directory's most recent conversation, which
 // is the wrong one whenever sessions share a directory.
 package agentsession
@@ -60,12 +60,15 @@ func resolvePath(p string) string {
 
 // Capture returns the conversation id a tool wrote for a session launched
 // in cwd at or after launchedAt. sessionStore selects the on-disk format
-// ("codex", "opencode", "gemini", "hermes" or "command-code"). claimed holds ids already
+// ("codex", "opencode", "gemini", "hermes", "command-code" or "muse"). claimed holds ids already
 // bound to other sessions, so two sessions started in one directory do not
 // capture the same conversation. It returns ok=false when no confident match
 // exists yet; the caller retries on the next poll.
 func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
 	switch sessionStore {
+	case "muse":
+		cands, _ := museCandidates(museRoot(), cwd, launchedAt.Add(-clockSlack), claimed)
+		return pickEarliest(cands)
 	case "codex":
 		return captureCodex(codexRoot(), cwd, launchedAt, claimed)
 	case "opencode":
@@ -89,6 +92,8 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 // relaunch proceeds without a snapshot and recapture refuses to guess.
 func Snapshot(sessionStore, cwd string) (map[string]int64, bool) {
 	switch sessionStore {
+	case "muse":
+		return snapshotCandidates(museCandidates(museRoot(), cwd, time.Time{}, nil))
 	case "codex":
 		return snapshotCodex(codexRoot(), cwd)
 	case "opencode":
@@ -117,6 +122,9 @@ func Recapture(sessionStore, cwd string, snapshot map[string]int64, claimed map[
 	}
 	var cands []candidate
 	switch sessionStore {
+	case "muse":
+		entries, err := museCandidates(museRoot(), cwd, time.Time{}, claimed)
+		cands = recaptureCandidates(entries, err, snapshot)
 	case "codex":
 		cands = recaptureCodex(codexRoot(), cwd, snapshot, claimed)
 	case "gemini":

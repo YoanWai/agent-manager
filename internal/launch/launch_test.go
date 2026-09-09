@@ -257,3 +257,24 @@ func TestAssembleCarriesTheDirectiveOverAPastedImagePath(t *testing.T) {
 		t.Fatal("a slash command must still open its own message")
 	}
 }
+
+func TestMuseLaunchAndRevive(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := cfg.Tools["muse"]
+	plan := Assemble("muse", tool, "fix the bug", false)
+	if !strings.HasPrefix(plan.Command, "muse '") || !strings.Contains(plan.Command, CoordinationNote) || !strings.Contains(plan.Command, "fix the bug") {
+		t.Fatalf("launch = %+v", plan)
+	}
+	if plan.AgentSessionID != "" || len(plan.PendingInputs) != 0 {
+		t.Fatalf("unexpected session flag or deferred prompt: %+v", plan)
+	}
+	if got := ReviveCommand(tool, "session-id"); got != "muse resume 'session-id'" {
+		t.Fatal(got)
+	}
+	if got := ReviveCommand(tool, ""); got != "muse resume" {
+		t.Fatal(got)
+	}
+}

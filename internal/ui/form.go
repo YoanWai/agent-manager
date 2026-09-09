@@ -216,7 +216,7 @@ func (m *Model) groupDefaultDir(group string) string {
 // toolDisplayOrder fixes the order tools appear in when creating a session and
 // when cycling the quick-spawn tool. Tools outside this list follow, sorted
 // alphabetically.
-var toolDisplayOrder = []string{"claude", "opencode", "codex", "grok", "gemini", "pi"}
+var toolDisplayOrder = []string{"claude", "opencode", "codex", "grok", "gemini", "pi", "muse"}
 
 // sortedToolNames is every configured agent CLI in picker order. A block
 // declaring shell = true is not a CLI to spawn agents with, so it is left

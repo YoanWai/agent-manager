@@ -1,6 +1,6 @@
 # Configuration
 
-Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux, with `XDG_CONFIG_HOME` honored when set) and is created on first run with defaults for Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Pi, Command Code, and Hermes Agent.
+Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux, with `XDG_CONFIG_HOME` honored when set) and is created on first run with defaults for Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Pi, Command Code, Hermes Agent, and Muse Code.
 
 The Pi defaults require Pi 0.76.0 or later because they use `--session-id`.
 
@@ -26,7 +26,7 @@ Rules match top-down against the visible pane text; first match wins, and `defau
 
 **Status detection.** Optional per-tool fields refine it: `activity_cutoff` (regex locating the tool's input box, everything above it is turn content), `turn_end` (a turn-summary line marking the turn as over), `busy_line` (work that outlives its turn, such as background agents and shells), `limit_line` (a usage or rate-limit banner; the session is `errored`), `dialog_footer` (a line only an open dialog draws under the input marker, so a dialog that reuses that marker for its selected option is not read as a typed draft), `chrome_line`, `blocked_line`, and `trailing_note`. One field serves the focus view's arrow step (`left` leaving focus at the prompt head): `input_prefix` declares the composer's own row for tools the cutoff cannot serve there: pi composes on a bare blank row between rules, and opencode on a gutter row whose bar its cutoff does not match. `composer_placeholder` serves the tools whose terminal cursor never enters the composer: it names the placeholder an empty composer paints (command-code parks the real cursor below its footer and draws its own), and left leaves focus only while that placeholder is on screen. `status_source = "claude-hooks"` switches status to Claude Code hook events (see [Status](usage.md#status)). The generated config's `claude`, `opencode` and `command-code` blocks show all of them in use.
 
-**Revive.** `resume_by_id_command` resumes one exact conversation, with `{id}` replaced by the session's captured agent id. That id comes either from launching under an id the manager mints (`session_id_flag`, e.g. `--session-id`) or from reading back an id the tool minted itself (`session_store = "codex" | "opencode" | "gemini" | "hermes" | "command-code"`). `resume_picker_command` launches the tool's own session picker when no id is available, so the user chooses the conversation in the pane (`claude --resume`, `codex resume`, `cmd --resume`, `pi --resume`, bare `grok`, `gemini -i /resume`, `hermes --cli sessions browse`) instead of the blind `revive_command` fallback (`claude --continue`). opencode's picker lives only inside the running TUI, so its default pairs the bare launch with `resume_picker_keys = "/sessions"`, which Agent Manager types at the composer once it shows. Agent Manager shell-quotes `{id}`, as it does for a fork, so write the placeholder bare: `codex resume {id}`.
+**Revive.** `resume_by_id_command` resumes one exact conversation, with `{id}` replaced by the session's captured agent id. That id comes either from launching under an id the manager mints (`session_id_flag`, e.g. `--session-id`) or from reading back an id the tool minted itself (`session_store = "codex" | "opencode" | "gemini" | "hermes" | "command-code" | "muse"`). `resume_picker_command` launches the tool's own session picker when no id is available, so the user chooses the conversation in the pane (`claude --resume`, `codex resume`, `cmd --resume`, `pi --resume`, bare `grok`, `gemini -i /resume`, `hermes --cli sessions browse`, `muse resume`) instead of the blind `revive_command` fallback (`claude --continue`). opencode's picker lives only inside the running TUI, so its default pairs the bare launch with `resume_picker_keys = "/sessions"`, which Agent Manager types at the composer once it shows. Agent Manager shell-quotes `{id}`, as it does for a fork, so write the placeholder bare: `codex resume {id}`.
 
 **Forks.** `fork_command` creates a conversation from an existing session. Agent Manager replaces and shell-quotes these placeholders:
 
@@ -82,6 +82,10 @@ Settings (`s` by default) edits both tables: the **keybindings** row opens one p
 The same table drives a full-screen attach, where the keys are tmux bindings on the `agentmgr` server, and focus mode, where the manager reads them itself; the session footer, the focus footer and the `?` key map all name whatever the table says. The bindings are reinstalled on every launch and every session create, so a change to the table takes effect when the manager next starts, running sessions included.
 
 State is stored next to the config in `state.db` (SQLite).
+
+## Muse Code
+
+Select `muse` to launch the `muse` CLI with its own defaults and configuration. Startup prompts are positional. Agent Manager reads the conversation ID from `${XDG_DATA_HOME:-$HOME/.local/share}/muse/sessions` so revive can run `muse resume <id>`; without an ID, it opens `muse resume` for you to choose. Missing or unrecognized logs leave launch usable and fall back to the picker. Muse does not register the Agent Manager MCP server (`mcp = "none"`). No fork command is configured because Muse does not expose one through its CLI.
 
 ## Right-to-left text
 

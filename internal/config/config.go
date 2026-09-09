@@ -50,7 +50,7 @@ type Tool struct {
 	ForkCommand string `toml:"fork_command"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex", "opencode",
-	// "gemini", "hermes" or "command-code").
+	// "gemini", "hermes", "command-code" or "muse").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
@@ -631,6 +631,27 @@ rules = [
   # shape keeps an answer that quotes "esc to interrupt" from looking active
   { state = "working", pattern = "(?m)^[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)?[ \\t\\n]*\\z" },
   { state = "errored", pattern = "(?im)^\\s*■.*\\berror\\b" },
+]
+
+[tools.muse]
+command = "muse"
+session_store = "muse"
+resume_by_id_command = "muse resume {id}"
+resume_picker_command = "muse resume"
+revive_command = "muse resume --last"
+# Muse has no CLI MCP registration interface; use the workspace subcommands.
+mcp = "none"
+default_status = "idle"
+activity_cutoff = "(?m)^⟩"
+chrome_line = "^\\s*─*\\s*$"
+message_start = "^◆ "
+input_placeholder = "^Type @ to search and insert workspace file paths$"
+user_echo = "^⟩ "
+rules = [
+  { state = "waiting", pattern = "(?m)^Do you trust this workspace\\?$" },
+  { state = "waiting", pattern = "(?m)^> \\d+  " },
+  { state = "working", pattern = "(?m)^[◇◈◆] [^\\n]*\\([\\dhms. ]+ · esc to interrupt\\)\\s*$" },
+  { state = "errored", pattern = "(?im)^\\s*error:" },
 ]
 
 [tools.grok]
