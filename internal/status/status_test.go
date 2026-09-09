@@ -1073,6 +1073,51 @@ func TestCommandCodeRowShapes(t *testing.T) {
 	}
 }
 
+func TestGrokLastMessageSkipsChrome(t *testing.T) {
+	engine := defaultEngine(t)
+
+	fullscreen := "    created pr?                                          2:14 AM\n" +
+		"    ◆ user_prompt_submit  [hooks: 1]\n" +
+		"    No PR yet. I'll commit the worktree branch and open one.  2:14 AM\n" +
+		"    COPIED (53 bytes, 1 line)\n" +
+		"    Worked for 1m27s\n" +
+		" Help improve Grok                               [Opt out] [Opt in]\n" +
+		" Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g., prompts,\n" +
+		" Read Terms and Privacy Policy.\n" +
+		" ╭────────────────────────────╮\n" +
+		" │ ❯                        │\n" +
+		" ╰──────────── Grok 4.6 (high) ─╯\n"
+	line, anchored, ok := engine.LastMessage("grok", fullscreen)
+	if !ok || anchored {
+		t.Fatalf("fullscreen grok: anchored=%v ok=%v, want unanchored ok", anchored, ok)
+	}
+	if line != "COPIED (53 bytes, 1 line)" {
+		t.Fatalf("fullscreen grok quote = %q, want the last reply line", line)
+	}
+
+	minimal := "◆ session_start\n" +
+		"      ✓ global/settings:session_start[0].hooks[0] (70ms)\n" +
+		"reply with the single word pong and nothing else\n" +
+		"◆ user_prompt_submit\n" +
+		"      ✓ global/computer-use:user_prompt_submit[0].hooks[0] (83ms)\n" +
+		"pong\n" +
+		"Worked for 3.7s\n" +
+		"minimal · /help\n" +
+		"❯\n" +
+		"Grok 4.6 (xhigh) · always-approve · 33K / 500K (7%) · ctrl+o transcript\n"
+	line, anchored, ok = engine.LastMessage("grok", minimal)
+	if !ok || anchored {
+		t.Fatalf("minimal grok: anchored=%v ok=%v, want unanchored ok", anchored, ok)
+	}
+	if line != "pong" {
+		t.Fatalf("minimal grok quote = %q, want the reply", line)
+	}
+
+	if echoed, ok := engine.LastUserEcho("grok", fullscreen); ok {
+		t.Fatalf("grok has no user_echo, LastUserEcho ok=%v echo=%q", ok, echoed)
+	}
+}
+
 // A degenerate cutoff like ^ matches every row at zero width. InputPrefix
 // refuses it for tools that did not declare a prefix, and the row-matcher
 // behind MatchesActivityCutoff refuses it just the same, so neither door

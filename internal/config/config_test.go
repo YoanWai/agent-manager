@@ -59,6 +59,12 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	if got := cfg.Tools["grok"].ActivityCutoff; got != `(?m)^(?:\s*│ )?❯` {
 		t.Fatalf("grok activity_cutoff = %q want boxed-or-minimal composer", got)
 	}
+	if !strings.Contains(cfg.Tools["grok"].ChromeLine, "Help improve Grok") {
+		t.Fatalf("grok chrome_line missing the opt-in card: %q", cfg.Tools["grok"].ChromeLine)
+	}
+	if got := cfg.Tools["grok"].TrailingNote; got != "^Worked for " {
+		t.Fatalf("grok trailing_note = %q want the duration line", got)
+	}
 	if _, ok := cfg.Tools["gemini"]; !ok {
 		t.Fatal("expected gemini tool in default config")
 	}
@@ -223,13 +229,14 @@ chrome_line = '` + oldClaudeChromeLine + `'
 	}
 }
 
-func TestLoadDirUpgradesLegacyGrokCutoff(t *testing.T) {
+func TestLoadDirUpgradesLegacyGrokRowPatterns(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	legacy := `
 [tools.grok]
 command = "grok"
 activity_cutoff = '` + grokBoxedCutoff + `'
+chrome_line = '` + oldGrokChromeLine + `'
 `
 	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
@@ -241,21 +248,32 @@ activity_cutoff = '` + grokBoxedCutoff + `'
 	if got := cfg.Tools["grok"].ActivityCutoff; got != `(?m)^(?:\s*│ )?❯` {
 		t.Fatalf("legacy grok activity_cutoff was not upgraded: %q", got)
 	}
+	if !strings.Contains(cfg.Tools["grok"].ChromeLine, "Help improve Grok") {
+		t.Fatalf("legacy grok chrome_line was not upgraded: %q", cfg.Tools["grok"].ChromeLine)
+	}
 }
 
-func TestLoadDirPreservesCustomGrokCutoff(t *testing.T) {
+func TestLoadDirPreservesCustomGrokRowPatterns(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	custom := `(?m)^GROK>`
-	if err := os.WriteFile(path, []byte("[tools.grok]\ncommand = \"grok\"\nactivity_cutoff = '"+custom+"'\n"), 0o644); err != nil {
+	custom := `
+[tools.grok]
+command = "grok"
+activity_cutoff = '(?m)^GROK>'
+chrome_line = 'my own chrome'
+`
+	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := LoadDir(dir)
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
-	if got := cfg.Tools["grok"].ActivityCutoff; got != custom {
+	if got := cfg.Tools["grok"].ActivityCutoff; got != `(?m)^GROK>` {
 		t.Fatalf("custom grok activity_cutoff was overwritten: %q", got)
+	}
+	if got := cfg.Tools["grok"].ChromeLine; got != "my own chrome" {
+		t.Fatalf("custom grok chrome_line was overwritten: %q", got)
 	}
 }
 
