@@ -1133,3 +1133,28 @@ func TestComposerIsEmpty(t *testing.T) {
 		t.Fatal("a tool without a declared placeholder took the parked-caret path")
 	}
 }
+
+func TestMuseStatus(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := NewEngine(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, pane, want string }{
+		{"idle", "Muse Code\n────────────────\n⟩\n────────────────\n", Idle},
+		{"trust", "Do you trust this workspace?\n> 1  Trust and continue\n  2  Quit", Waiting},
+		{"working", "◇ Working (0s · esc to interrupt)\n────────────────\n⟩\n", Working},
+		{"thinking", "◆ Thinking (1m 2s · esc to interrupt)\n────────────────\n⟩\n", Working},
+		{"quoted hint", "The shortcut is esc to interrupt.\n────────────────\n⟩\n", Idle},
+		{"error", "error: connection failed\n────────────────\n⟩\n", Errored},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, _ := engine.Match("muse", tc.pane); got != tc.want {
+				t.Fatalf("Match = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

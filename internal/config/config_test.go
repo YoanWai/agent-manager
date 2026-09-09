@@ -772,3 +772,21 @@ func TestLoadDirRefusesAKeyTableThatCannotWork(t *testing.T) {
 		}
 	}
 }
+
+func TestMuseDefaultsAndBackfill(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[tools.claude]\ncommand = 'claude'\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, ok := cfg.Tools["muse"]
+	if !ok || tool.Command != "muse" || tool.SessionStore != "muse" || tool.ResumeByIDCommand != "muse resume {id}" || tool.ResumePickerCommand != "muse resume" || tool.MCP != "none" {
+		t.Fatalf("Muse defaults = %+v", tool)
+	}
+	if tool.SessionIDFlag != "" || tool.ForkCommand != "" || tool.PromptFlag != "" {
+		t.Fatalf("unsupported Muse flags: %+v", tool)
+	}
+}
