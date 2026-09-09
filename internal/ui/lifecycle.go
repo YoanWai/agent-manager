@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -111,16 +110,21 @@ func (m *Model) reattach(id string, diffGen int) tea.Cmd {
 	}
 }
 
-// copyLastOutput copies the selected session's newest reply to the
-// system clipboard without attaching to it. Capture and clipboard write
-// both run inside the returned command: WriteText can block for seconds,
-// which would freeze Update.
-func (m *Model) copyLastOutput() (tea.Model, tea.Cmd) {
+// copyReplySelected puts the selected session's newest reply on the system
+// clipboard without entering it.
+func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedRow()
 	if !ok || entry.isGroup || m.engine == nil || m.tmux == nil {
 		return m, nil
 	}
 	sess := entry.sess
+	m.errBar.text = ""
+	// A shell has no reply, and its scrollback is the user's own commands
+	// and their output rather than anything an agent said.
+	if m.isShell(sess.Tool) {
+		m.errBar.text = shellPromptHint(sess.Name)
+		return m, nil
+	}
 	if !m.tmux.Exists(sess.ID) {
 		m.errBar.text = deadSessionHint
 		return m, nil
@@ -132,21 +136,25 @@ func (m *Model) copyLastOutput() (tea.Model, tea.Cmd) {
 			return errMsg{err}
 		}
 		text, ok := engine.FullTurnText(sess.Tool, ansi.Strip(pane))
-		if !ok || strings.TrimSpace(text) == "" {
-			return copyLastOutputMsg{}
+		if !ok {
+			return replyCopiedMsg{name: sess.Name, unreadable: true}
 		}
-		if err := clipboard.WriteText(text); err != nil {
-			return errMsg{err}
+		if strings.TrimSpace(text) == "" {
+			return replyCopiedMsg{name: sess.Name}
 		}
-		return copyLastOutputMsg{chars: len([]rune(text)), name: sess.Name}
+		return copyTextCmd(text, func(chars int) tea.Msg {
+			return replyCopiedMsg{chars: chars, name: sess.Name}
+		})()
 	}
 }
 
-// copyLastOutputMsg reports a finished y copy. A zero chars means the
-// turn held nothing to copy.
-type copyLastOutputMsg struct {
-	chars int
-	name  string
+// replyCopiedMsg reports a finished copy. No chars means the turn held
+// nothing; unreadable means the tool draws no region a reply can be read
+// from, which no amount of retrying will change.
+type replyCopiedMsg struct {
+	chars      int
+	name       string
+	unreadable bool
 }
 
 // reviveSelected relaunches a dead session's tmux session under the same

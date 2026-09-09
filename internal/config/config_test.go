@@ -229,6 +229,39 @@ chrome_line = '` + oldClaudeChromeLine + `'
 	}
 }
 
+// A config.toml stored before claude began printing its "new task?"
+// nudge carries the chrome rule of that release verbatim, and keeps it
+// over any new default unless the old wording is recognised.
+func TestLoadDirUpgradesClaudeChromeToTheComposerHint(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	stored := `
+[tools.claude]
+command = "claude"
+chrome_line = '` + oldClaudeChromeLineNoHint + `'
+`
+	if err := os.WriteFile(path, []byte(stored), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if !strings.Contains(cfg.Tools["claude"].ChromeLine, "new task") {
+		t.Fatalf("stored claude chrome_line was not upgraded: %q", cfg.Tools["claude"].ChromeLine)
+	}
+	// The rewrite only fires on the exact wording that shipped, so the
+	// constant has to stay the current default minus the nudge.
+	def, err := Default()
+	if err != nil {
+		t.Fatalf("built-in config: %v", err)
+	}
+	if !strings.HasPrefix(def.Tools["claude"].ChromeLine, oldClaudeChromeLineNoHint) {
+		t.Fatalf("oldClaudeChromeLineNoHint drifted from the default:\n%q\n%q",
+			oldClaudeChromeLineNoHint, def.Tools["claude"].ChromeLine)
+	}
+}
+
 func TestLoadDirUpgradesLegacyGrokRowPatterns(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")

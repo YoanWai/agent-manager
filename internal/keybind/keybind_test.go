@@ -337,3 +337,12 @@ func decodeSession(t *testing.T, text string) (Table, error) {
 	}
 	return SessionTable(file.Session)
 }
+// y copies the selected session's reply, and shares its key with nothing
+// else in the list.
+func TestCopyReplyIsBoundToY(t *testing.T) {
+	list := DefaultList()
+	action, ok := list.ActionFor("y")
+	if !ok || action != CopyReply {
+		t.Fatalf("y = %q ok=%v, want %q", action, ok, CopyReply)
+	}
+}

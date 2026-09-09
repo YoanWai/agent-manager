@@ -1926,3 +1926,59 @@ func TestConfirmedGroupArchiveHidesTheSubtreeAtOnce(t *testing.T) {
 		}
 	}
 }
+
+// y on a dead row names the way back, the way every other lifecycle key
+// does, instead of letting the capture fail with raw tmux stderr.
+func TestCopyReplyOnADeadSessionHints(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	if err := m.tmux.Kill(sess.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	m.selectSessionRow(t, "alpha")
+	_, cmd := m.copyReplySelected()
+	if cmd != nil {
+		t.Fatal("a dead session should not run a capture")
+	}
+	if m.errBar.text != deadSessionHint {
+		t.Fatalf("errBar = %q, want %q", m.errBar.text, deadSessionHint)
+	}
+}
+
+// A group has no reply of its own, so y on one does nothing at all.
+func TestCopyReplyIgnoresGroupRows(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("team", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "alpha", dir, "team")
+	m.selectGroupRow(t, "team")
+	_, cmd := m.copyReplySelected()
+	if cmd != nil {
+		t.Fatal("a group row should not run a capture")
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("errBar = %q, want no message", m.errBar.text)
+	}
+}
+
+// The copy reports what landed on the clipboard, and says so plainly when
+// the turn held nothing worth copying.
+func TestReplyCopiedMsgReports(t *testing.T) {
+	m := buildModel(t)
+	if _, cmd := m.Update(replyCopiedMsg{name: "alpha"}); cmd != nil {
+		t.Fatal("an empty copy should not queue more work")
+	}
+	if m.errBar.text != "nothing to copy from alpha" {
+		t.Fatalf("errBar = %q", m.errBar.text)
+	}
+	if _, cmd := m.Update(replyCopiedMsg{chars: 42, name: "alpha"}); cmd != nil {
+		t.Fatal("a finished copy should not queue more work")
+	}
+	if m.errBar.text != "copied 42 chars from alpha" || m.errBar.done != m.errBar.text {
+		t.Fatalf("errBar = %q done = %q", m.errBar.text, m.errBar.done)
+	}
+}

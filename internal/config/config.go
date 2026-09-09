@@ -76,6 +76,10 @@ type Tool struct {
 	// caller quoting the last reply starts at its beginning rather than
 	// its tail. Tools without one quote the newest content line instead.
 	MessageStart string `toml:"message_start"`
+	// ToolResult marks the row a tool call's result is drawn under, which
+	// a copied reply leaves out. Narrower than chrome_line, which every
+	// caller drops: the row quote keeps these.
+	ToolResult string `toml:"tool_result"`
 	// InputPlaceholder is the hint a composer paints on its empty input
 	// row; a draft matching it is the tool's wording, not the user's.
 	InputPlaceholder string `toml:"input_placeholder"`
@@ -219,8 +223,8 @@ const busyLineAgentsOnly = `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ backgro
 // banner beneath completed turns. Hand-edited patterns remain untouched.
 const oldClaudeChromeLine = `^\s*[─q]{4,}.*$|^[\s─q]*$`
 
-// The same pattern once the updater banner was added, but before Claude
-// started printing its "new task?" nudge above the composer.
+// This exact chrome pattern was written after Claude added its updater
+// banner, but before the "new task?" nudge above its composer.
 const oldClaudeChromeLineNoHint = `^\s*[─q]{4,}.*$|^[\s─q]*$|^\s*✔ Update installed · Restart to update\s*$`
 
 // This exact cutoff was written before grok's minimal mode, which draws a
@@ -309,6 +313,7 @@ func mergeTool(name string, user, def Tool) Tool {
 	fill(&user.BlockedLine, def.BlockedLine)
 	fill(&user.TrailingNote, def.TrailingNote)
 	fill(&user.MessageStart, def.MessageStart)
+	fill(&user.ToolResult, def.ToolResult)
 	fill(&user.InputPlaceholder, def.InputPlaceholder)
 	fill(&user.UserEcho, def.UserEcho)
 	fill(&user.BusyLine, def.BusyLine)
@@ -549,6 +554,9 @@ limit_line = "(?m)You've hit your .+limit"
 # every message and tool call opens on a bullet at the left edge; the
 # glyph is ⏺ on current Claude Code and ● on older releases
 message_start = "^[●⏺] "
+# a tool call's result is drawn under this glyph, Claude Code's alone:
+# the box-drawing characters a table is built from open content rows too
+tool_result = "^\\s*⎿"
 # a submitted prompt echoes into the transcript on its own ❯ line
 user_echo = "^❯ "
 rules = [
@@ -621,6 +629,8 @@ turn_end = "(?m)^(?:─+ Worked for [\\dhms. ]+─+|─+)$"
 chrome_line = "^\\s*─*\\s*$"
 # every message and tool call opens on a "• " bullet
 message_start = "^• "
+# a command's output is drawn under this glyph, on its own indented row
+tool_result = "^\\s*└ "
 input_placeholder = "^Ask Codex to do anything"
 # a submitted prompt echoes into the transcript on its own › line
 user_echo = "^› "

@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
@@ -531,11 +532,20 @@ func (m *Model) copySelectionCmd() tea.Cmd {
 		return nil
 	}
 	gen := m.copyGen
+	return copyTextCmd(text, func(chars int) tea.Msg {
+		return focusCopiedMsg{chars: chars, gen: gen}
+	})
+}
+
+// copyTextCmd writes text to the system clipboard off the update loop:
+// WriteText waits up to three seconds on the platform's copy command,
+// which would freeze the UI for that long.
+func copyTextCmd(text string, done func(chars int) tea.Msg) tea.Cmd {
 	return func() tea.Msg {
 		if err := clipboard.WriteText(text); err != nil {
 			return errMsg{err}
 		}
-		return focusCopiedMsg{chars: len([]rune(text)), gen: gen}
+		return done(utf8.RuneCountInString(text))
 	}
 }
 
