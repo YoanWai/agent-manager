@@ -125,12 +125,11 @@ func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
 		m.errBar.text = shellPromptHint(sess.Name)
 		return m, nil
 	}
-	if !m.tmux.Exists(sess.ID) {
-		m.errBar.text = deadSessionHint
-		return m, nil
-	}
 	engine, driver := m.engine, m.tmux
 	return m, func() tea.Msg {
+		if !driver.Exists(sess.ID) {
+			return errMsg{errors.New(deadSessionHint)}
+		}
 		pane, err := driver.CapturePaneHistory(sess.ID, quoteHistoryLines)
 		if err != nil {
 			return errMsg{err}

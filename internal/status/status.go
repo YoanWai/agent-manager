@@ -453,7 +453,7 @@ func (e *Engine) FullTurnText(tool, pane string) (text string, ok bool) {
 // turnProse is the reply inside one turn's rows: paragraph breaks kept,
 // tool results and the tool's own frame dropped. afterEcho says a prompt
 // sits above these rows, so the wrapped tail of it may still be among
-// them; where that trim would leave nothing, the rows were the reply.
+// them; a completed turn can also hold an entirely unmarked reply.
 func (tr toolRules) turnProse(body []string, afterEcho bool) string {
 	// The reply's own opening marker beats guessing where the prompt
 	// ended, so take it whenever the turn's start is in frame.
@@ -467,7 +467,7 @@ func (tr toolRules) turnProse(body []string, afterEcho bool) string {
 	// way: an unmarked reply here starts at the left edge.
 	trimPrompt := afterEcho && tr.messageStart != nil
 	out := tr.contentRows(body, trimPrompt)
-	if len(out) == 0 && trimPrompt {
+	if len(out) == 0 && trimPrompt && tr.turnEnd != nil && tr.lastTurnEndIndex(body) >= 0 {
 		out = tr.contentRows(body, false)
 	}
 	return strings.Join(out, "\n")
@@ -482,7 +482,6 @@ func (tr toolRules) contentRows(body []string, trimPrompt bool) []string {
 	for _, raw := range body {
 		line := strings.TrimRight(raw, " \t")
 		if strings.TrimSpace(line) == "" {
-			inResult = false
 			if len(out) > 0 && out[len(out)-1] != "" {
 				out = append(out, "")
 			}
