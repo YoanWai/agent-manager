@@ -1938,9 +1938,13 @@ func TestCopyReplyOnADeadSessionHints(t *testing.T) {
 	}
 	m.selectSessionRow(t, "alpha")
 	_, cmd := m.copyReplySelected()
-	if cmd != nil {
-		t.Fatal("a dead session should not run a capture")
+	if cmd == nil {
+		t.Fatal("checking the session should run asynchronously")
 	}
+	if m.errBar.text != "" {
+		t.Fatalf("copy reported %q before the command ran", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
 	if m.errBar.text != deadSessionHint {
 		t.Fatalf("errBar = %q, want %q", m.errBar.text, deadSessionHint)
 	}

@@ -1531,3 +1531,47 @@ func TestFullTurnTextPerTool(t *testing.T) {
 		})
 	}
 }
+
+func TestFullTurnTextPendingWrappedPrompt(t *testing.T) {
+	engine := defaultEngine(t)
+	for _, tc := range []struct {
+		tool, prompt, answer, end string
+	}{
+		{"claude", "❯ ", "⏺ Previous answer.", "✻ Crunched for 1s"},
+		{"codex", "› ", "• Previous answer.", "─── Worked for 2s ───"},
+		{"gemini", " > ", "✦ Previous answer.", ""},
+		{"command-code", "❯ ", "⠶ Previous answer.", ""},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			pending := tc.prompt + "new question that wraps\n  continuation of the new question\n" + tc.prompt
+			for _, answered := range []bool{false, true} {
+				pane, want := pending, ""
+				if answered {
+					pane = tc.prompt + "original question\n" + tc.answer + "\n" + tc.end + "\n" + pending
+					want = tc.answer
+				}
+				if got, ok := engine.FullTurnText(tc.tool, pane); !ok || got != want {
+					t.Fatalf("answered=%v: copied %q, ok=%v; want %q", answered, got, ok, want)
+				}
+			}
+		})
+	}
+}
+
+func TestFullTurnTextResultWithBlankLine(t *testing.T) {
+	engine := defaultEngine(t)
+	for _, tc := range []struct {
+		tool, prompt, call, result, answer string
+	}{
+		{"claude", "❯ ", "⏺ Read(file.go)", "  ⎿ first output line", "⏺ Answer."},
+		{"codex", "› ", "• Ran command", "  └ first output line", "• Answer."},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			pane := tc.prompt + "question\n" + tc.call + "\n" + tc.result + "\n\n    second output line\n" + tc.answer + "\n  reply continuation\n" + tc.prompt
+			want := tc.call + "\n\n" + tc.answer + "\n  reply continuation"
+			if got, ok := engine.FullTurnText(tc.tool, pane); !ok || got != want {
+				t.Fatalf("copied %q, ok=%v; want %q", got, ok, want)
+			}
+		})
+	}
+}

@@ -239,3 +239,36 @@ editor = "none"
 		t.Fatalf("the list table should be replaced in place:\n%s", saved)
 	}
 }
+
+func TestCopyReplyUpgradePreservesWrittenKeys(t *testing.T) {
+	dir, _ := writeConfig(t, `[keybindings.list]
+archive = "y"
+fork = "ctrl+f"
+rename = "ctrl+n"
+`)
+	loaded, err := LoadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action, _ := loaded.ListKeys.ActionFor("y"); action != keybind.Archive {
+		t.Fatalf("y = %q", action)
+	}
+	if len(loaded.ListKeys.Binding(keybind.CopyReply).Keys()) != 0 {
+		t.Fatal("copy_reply must yield y")
+	}
+	if err := SaveKeys(dir, loaded.ListKeys); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := LoadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.ListKeys.Equal(reloaded.ListKeys) {
+		t.Fatal("saving changed the resolved keys")
+	}
+	for key, want := range map[string]string{"ctrl+f": keybind.Fork, "ctrl+n": keybind.Rename, "y": keybind.Archive} {
+		if got, _ := reloaded.ListKeys.ActionFor(key); got != want {
+			t.Fatalf("%s = %q, want %q", key, got, want)
+		}
+	}
+}
