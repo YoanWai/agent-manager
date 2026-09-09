@@ -61,7 +61,11 @@ func museMeta(path string) (id, cwd string, created time.Time, ok bool) {
 	if err != nil {
 		return "", "", time.Time{}, false
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			ok = false
+		}
+	}()
 	scanner := bufio.NewScanner(io.LimitReader(f, 1024*1024))
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
