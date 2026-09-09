@@ -47,7 +47,7 @@ A `fork_command` references its source through `{id}` or `{session_file}`, so on
 
 ## Key bindings
 
-Two tables in config.toml name the keys: `[keybindings.session]` for the keys the manager keeps inside a session, and `[keybindings.list]` for the keys of its own list. Each action takes one key or a list of keys, `"none"` turns it off, and an action left out keeps its default. One key serves one action within a table.
+Two tables in config.toml name the keys: `[keybindings.session]` for the keys the manager keeps inside a session, and `[keybindings.list]` for the keys of its own list. Each action takes one key or a list of keys, `"none"` turns it off, and an action left out keeps its default. One key serves one action within a table: a key you name is yours, and an action that only held it by default gives it up and is left without one.
 
 ### Inside a session
 

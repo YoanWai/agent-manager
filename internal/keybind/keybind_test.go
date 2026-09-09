@@ -184,7 +184,6 @@ func TestSessionTableRefusesASharedKeyANoneDetachAndAPlainKey(t *testing.T) {
 		t.Fatalf("defaults: %v", err)
 	}
 	for _, tc := range []struct{ text, reason string }{
-		{`review = "ctrl+q"`, "ctrl+q is bound to both detach and review"},
 		{`detach = "none"`, "detach needs at least one key"},
 		{`editor = "o"`, `keybindings.session.editor: "o" is a plain key, which reaches the agent`},
 		{`detach = "enter"`, "plain key"},
@@ -259,7 +258,6 @@ prompt = ["space", "p"]
 	}
 
 	for _, tc := range []struct{ text, reason string }{
-		{`kill = "n"`, "n is bound to both new_session and kill"},
 		{`settings = "none"`, "settings needs at least one key"},
 		{`detach = "f9"`, `no action named "detach"`},
 	} {
@@ -282,4 +280,60 @@ func TestWithLeavesTheReceiverAlone(t *testing.T) {
 	if got, _ := moved.ActionFor("Q"); got != Quit {
 		t.Errorf("moved table should quit on Q, got %q", got)
 	}
+}
+
+// A key the file spends is the file's: the action that only held it by
+// default gives it up and is left unbound. Without that, the day an
+// action ships a default key every table that already spent it stops
+// the manager from opening, over a table its author could not have
+// written any other way.
+func TestAWrittenKeyTakesItFromADefault(t *testing.T) {
+	file, err := decode(t, "[list]\nkill = \"n\"\n")
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	list, err := ListTable(file.List)
+	if err != nil {
+		t.Fatalf("ListTable: %v", err)
+	}
+	if action, ok := list.ActionFor("n"); !ok || action != Kill {
+		t.Fatalf("n = %q ok=%v, want kill", action, ok)
+	}
+	if keys := list.Binding(NewSession).Keys(); len(keys) != 0 {
+		t.Fatalf("new_session = %v, want it to have yielded n", keys)
+	}
+	// Only the key it lost: an action with a second default keeps it.
+	session, err := decodeSession(t, "review = \"ctrl+q\"")
+	if err != nil {
+		t.Fatalf("SessionTable: %v", err)
+	}
+	if action, ok := session.ActionFor("ctrl+q"); !ok || action != Review {
+		t.Fatalf("ctrl+q = %q ok=%v, want review", action, ok)
+	}
+	if action, ok := session.ActionFor(`ctrl+\`); !ok || action != Detach {
+		t.Fatalf(`ctrl+\ = %q ok=%v, want detach to keep it`, action, ok)
+	}
+}
+
+// Yielding cannot empty an action the manager needs a key for: taking
+// every key detach holds is still refused, so there is always a way back
+// from a focused session.
+func TestYieldingCannotStrandTheUser(t *testing.T) {
+	file, err := decode(t, "[session]\nreview = \"ctrl+q\"\neditor = \"ctrl+\\\\\"\n")
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, err := SessionTable(file.Session); err == nil ||
+		!strings.Contains(err.Error(), "detach needs at least one key") {
+		t.Fatalf("err = %v, want detach to be protected", err)
+	}
+}
+
+func decodeSession(t *testing.T, text string) (Table, error) {
+	t.Helper()
+	file, err := decode(t, "[session]\n"+text)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return SessionTable(file.Session)
 }
