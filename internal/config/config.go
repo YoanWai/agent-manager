@@ -866,4 +866,22 @@ rules = [
   { state = "working", pattern = "(?m)^ [·○◇☆✧⌘] [^\\n]*?(?:esc to interrupt[ \\t]*•[ \\t]*[\\dhms. ]*[\\ds]| [\\dhms. ]*[\\ds])([ \\t]*•[ \\t]*[↓↑] [\\d.]+k?)?$" },
   { state = "errored", pattern = "(?im)^\\s*(?:⚠ )?Error:" },
 ]
+
+[tools.junie]
+command = "junie"
+# Junie is JetBrains' agentic coding CLI (https://junie.jetbrains.com). Its
+# interactive TUI offers the next prompt on a "> " composer row, streams a
+# "Working…" status while a turn runs, and asks to approve risky actions with
+# an "Always allow" option. These rules follow Junie's documented TUI
+# behaviour; refine them against a live session if the maintainers prefer.
+default_status = "idle"
+# the composer row: "> " when Junie is idle and ready for the next prompt
+activity_cutoff = "(?m)^\\s*> "
+input_prefix = "(?m)^\\s*> "
+rules = [
+  # permission prompt: Junie offers "Always allow" while it waits for approval
+  { state = "waiting", pattern = "Always allow" },
+  # active turn: Junie streams a "Working…" status while the agent runs
+  { state = "working", pattern = "Working(?:…|\\.\\.\\.)" },
+]
 `
