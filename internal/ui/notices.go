@@ -771,7 +771,7 @@ func (m *Model) noticeTail(notices []notice, inner int) []string {
 		tail = append(tail, lipgloss.NewStyle().Foreground(colorAccent).Render("↓ downloading "+m.update.latest+"…"))
 	}
 	if m.errBar.text != "" {
-		tail = append(tail, m.statusMessage("✕", "●"))
+		tail = append(tail, m.statusMessage("✕", "●", "▲"))
 	}
 	return tail
 }

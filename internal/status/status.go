@@ -2,6 +2,7 @@ package status
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -423,31 +424,61 @@ func (tr toolRules) isStructural(line string) bool {
 // marker, which drops every earlier paragraph of a reply that opened
 // several.
 //
-// ok is false under the same conditions as ActivityRegion: the tool
-// declares no activity_cutoff, or the pane holds none.
-func (e *Engine) FullTurnText(tool, pane string) (text string, ok bool) {
+// bounded says a prompt echo or a turn summary marked where the turn
+// began. Where neither is in frame the text is the whole region, which
+// can hold several turns: grok keeps no prompt in its transcript, and
+// any tool's summary can sit above the capture.
+//
+// ok is false where no reply can be read at all: the tool declares no
+// activity_cutoff, the pane holds none, or its region is frame only, as
+// pi's is by design.
+func (e *Engine) FullTurnText(tool, pane string) (text string, bounded, ok bool) {
 	tr, ok := e.tools[tool]
 	if !ok {
-		return "", false
+		return "", false, false
 	}
 	region, ok := tr.activityRegion(pane)
 	if !ok {
-		return "", false
+		return "", false, false
 	}
 	lines := strings.Split(region, "\n")
-	body, afterEcho := tr.newestTurn(lines)
-	if text := tr.turnProse(body, afterEcho); text != "" {
-		return text, true
+	fromPane := false
+	if !slices.ContainsFunc(lines, tr.isContent) {
+		// pi opens its region at the pane origin on purpose, so that a
+		// reflow can never read as fresh output. Nothing is there to copy,
+		// and the pane itself is what the user is looking at.
+		lines, fromPane = tr.paneAboveComposer(pane), true
+		if !slices.ContainsFunc(lines, tr.isContent) {
+			return "", false, false
+		}
 	}
+	body, afterEcho, bounded := tr.newestTurn(lines)
+	text = tr.turnProse(body, afterEcho)
 	// A prompt sent while the last turn was still being read leaves the
 	// newest turn empty, and the answer the user is looking at is the one
 	// above it. Cut the prompt row itself with it, or the same empty turn
 	// comes back.
-	if start := len(lines) - len(body); start > 0 {
-		above, aboveEcho := tr.newestTurn(lines[:start-1])
-		return tr.turnProse(above, aboveEcho), true
+	if start := len(lines) - len(body); text == "" && start > 0 {
+		body, afterEcho, bounded = tr.newestTurn(lines[:start-1])
+		text = tr.turnProse(body, afterEcho)
 	}
-	return "", true
+	return text, bounded && !fromPane, true
+}
+
+// paneAboveComposer is the pane without the composer its tool draws at the
+// bottom: everything above the last row of the tool's own frame. It is the
+// fallback for a tool whose activity region holds no content of its own.
+func (tr toolRules) paneAboveComposer(pane string) []string {
+	lines := strings.Split(pane, "\n")
+	if tr.chromeLine == nil {
+		return lines
+	}
+	for i := len(lines) - 1; i >= 0; i-- {
+		if tr.chromeLine.MatchString(strings.TrimRight(lines[i], " \t")) {
+			return lines[:i]
+		}
+	}
+	return lines
 }
 
 // turnProse is the reply inside one turn's rows: paragraph breaks kept,
@@ -522,23 +553,23 @@ func (tr toolRules) contentRows(body []string, trimPrompt bool) []string {
 // on screen. With no prompt in frame either way, the summary that closed
 // the previous turn bounds it instead. afterEcho reports that a prompt
 // was found, so the rows under it can still be its wrapped tail.
-func (tr toolRules) newestTurn(lines []string) (body []string, afterEcho bool) {
+func (tr toolRules) newestTurn(lines []string) (body []string, afterEcho, bounded bool) {
 	if tr.userEcho != nil {
 		if i := tr.lastEchoIndex(lines); i >= 0 {
-			return lines[i+1:], true
+			return lines[i+1:], true, true
 		}
 	} else {
 		for i := len(lines) - 1; i >= 0; i-- {
 			line := strings.TrimRight(lines[i], " \t")
 			if tr.inputRow(line) && !tr.matchesAnyRule(line) {
-				return lines[i+1:], true
+				return lines[i+1:], true, true
 			}
 		}
 	}
 	if i := tr.previousTurnEndIndex(lines); i >= 0 {
-		return lines[i+1:], false
+		return lines[i+1:], false, true
 	}
-	return lines, false
+	return lines, false, false
 }
 
 // previousTurnEndIndex is the turn summary that closed the turn before

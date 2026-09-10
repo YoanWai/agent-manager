@@ -161,7 +161,7 @@ func TestSessionNameCannotDriveTheTerminal(t *testing.T) {
 	}
 	m.diff.notice = ""
 	m.errBar.text = "rename failed for rev\x1b]0;PWNED\x07iew"
-	if stray := strayControl(m.statusMessage("✕", "●")); stray != "" {
+	if stray := strayControl(m.statusMessage("✕", "●", "▲")); stray != "" {
 		t.Errorf("the status bar leaks a control byte near %q", stray)
 	}
 }

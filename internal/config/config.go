@@ -236,6 +236,15 @@ const (
 	oldGrokChromeLine = `^\s*[┃❙│─╭╮╰╯█]*\s*$`
 )
 
+// The gemini approval-mode banner as it was matched before gemini began
+// drawing a right-aligned skills count on the same row.
+const oldGeminiChromeLine = `^\s*[╭╮╰╯│─▄▀█]*\s*$|^\s*\? for shortcuts\s*$|^\s*press tab twice for more\s*$|^\s*Press Ctrl\+O to show more lines.*$|(?i)^\s*(auto-accept edits |plan |yolo )?\S*tab\S* to (accept edits|manual|plan|auto-accept edits)\s*$`
+
+// The hermes frame as it was matched before its titled boxes - the
+// reasoning block, the reply block - were read as frame rather than as
+// something the agent wrote.
+const oldHermesChromeLine = `^\s*[─╭╮╰╯│]*\s*$|^\s*⚕ .*$`
+
 // Codex used to end every command-running turn with a timed divider. Current
 // builds can draw a bare divider instead, so stored defaults need the wider
 // shape while hand-edited rules remain untouched.
@@ -336,6 +345,12 @@ func mergeTool(name string, user, def Tool) Tool {
 		if user.ChromeLine == oldGrokChromeLine {
 			user.ChromeLine = def.ChromeLine
 		}
+	}
+	if name == "gemini" && user.ChromeLine == oldGeminiChromeLine {
+		user.ChromeLine = def.ChromeLine
+	}
+	if name == "hermes" && user.ChromeLine == oldHermesChromeLine {
+		user.ChromeLine = def.ChromeLine
 	}
 	if name == "codex" && user.TurnEnd == oldCodexTurnEnd {
 		user.TurnEnd = def.TurnEnd
@@ -704,7 +719,7 @@ activity_cutoff = "(?m)^\\s*[>!*] "
 # "? for shortcuts" hint (its ? must not read as a question) and the
 # approval-mode banner ("Shift+Tab to accept edits", "auto-accept edits
 # shift+tab to manual", ...) are all chrome above the composer
-chrome_line = "^\\s*[╭╮╰╯│─▄▀█]*\\s*$|^\\s*\\? for shortcuts\\s*$|^\\s*press tab twice for more\\s*$|^\\s*Press Ctrl\\+O to show more lines.*$|(?i)^\\s*(auto-accept edits |plan |yolo )?\\S*tab\\S* to (accept edits|manual|plan|auto-accept edits)\\s*$"
+chrome_line = "^\\s*[╭╮╰╯│─▄▀█]*\\s*$|^\\s*\\? for shortcuts\\s*$|^\\s*press tab twice for more\\s*$|^\\s*Press Ctrl\\+O to show more lines.*$|(?i)^\\s*(auto-accept edits |plan |yolo )?\\S*tab\\S* to (accept edits|manual|plan|auto-accept edits)\\b.*$"
 limit_line = "Usage limit reached"
 # model replies open on a "✦ " glyph
 message_start = "^\\s*✦ "
@@ -741,7 +756,10 @@ prompt_mode = "send"
 mcp = "hermes"
 default_status = "idle"
 activity_cutoff = "(?m)^\\s*(?:\\S+\\s+)?[❯>$#›»→]\\s"
-chrome_line = "^\\s*[─╭╮╰╯│]*\\s*$|^\\s*⚕ .*$"
+chrome_line = "^\\s*[─╭╮╰╯│┌┐└┘]*\\s*$|^\\s*⚕ .*$|^\\s*[┌╭]─+ .+ ─+[┐╮]\\s*$|^\\s*Initializing agent\\.\\.\\.\\s*$"
+# a submitted prompt echoes into the transcript on its own "● " row,
+# between the short rules hermes brackets it with
+user_echo = "^● "
 busy_line = "(?:▶|⚙|⛓) \\d+"
 limit_line = "(?i)Rate limited|usage limit reached|Nous Portal rate limit"
 rules = [

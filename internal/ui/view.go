@@ -166,7 +166,7 @@ func (m *Model) statusLine() string {
 	// Errors outrank the focus notices: a scrolled or focused pane must
 	// not hide a failure report.
 	case m.mode == modeFocus && m.errBar.text != "":
-		return m.statusMessage("✕", "●")
+		return m.statusMessage("✕", "●", "▲")
 	case m.scrolledBack():
 		return keyStyle.Render("scrolled ") +
 			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", m.focusScroll))
@@ -180,7 +180,7 @@ func (m *Model) statusLine() string {
 		}
 		return keyStyle.Render("resize ") + subtleStyle.Render(hint)
 	case m.errBar.text != "":
-		return m.statusMessage("✕", "●")
+		return m.statusMessage("✕", "●", "▲")
 	case m.diff.notice != "":
 		return doneStyle.Render("● " + escapeControlsInline(m.diff.notice))
 	default:
@@ -189,12 +189,16 @@ func (m *Model) statusLine() string {
 }
 
 // statusMessage styles whatever sits on the status bar: an action that went
-// through reads as an outcome, everything else as a failure, in the glyphs
-// the calling surface marks the two with.
-func (m *Model) statusMessage(fail, done string) string {
+// through reads as an outcome, one that went through with a caveat as a
+// warning, everything else as a failure, in the glyphs the calling surface
+// marks the three with.
+func (m *Model) statusMessage(fail, done, warn string) string {
 	text := escapeControlsInline(m.errBar.text)
-	if m.errBar.worked() {
+	switch {
+	case m.errBar.worked():
 		return doneStyle.Render(done + " " + text)
+	case m.errBar.warned():
+		return warnStyle.Render(warn + " " + text)
 	}
 	return errStyle.Render(fail + " " + text)
 }

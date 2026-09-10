@@ -41,6 +41,7 @@ var (
 	labelStyle  lipgloss.Style
 	errStyle    lipgloss.Style
 	doneStyle   lipgloss.Style
+	warnStyle   lipgloss.Style
 	keyStyle    lipgloss.Style
 
 	annotationStyle lipgloss.Style
@@ -72,6 +73,7 @@ func rebuildStyles() {
 	labelStyle = lipgloss.NewStyle().Foreground(colorSubtle)
 	errStyle = lipgloss.NewStyle().Foreground(colorErrored).Bold(true)
 	doneStyle = lipgloss.NewStyle().Foreground(colorFinished)
+	warnStyle = lipgloss.NewStyle().Foreground(colorWorking).Bold(true)
 	keyStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 
 	annotationStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
