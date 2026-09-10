@@ -20,8 +20,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// fakeHermesVersion puts a hermes on PATH whose --version prints the given
-// block, which is where the dialog reads the interpreter to install into.
 func fakeHermesVersion(t *testing.T, block string) {
 	t.Helper()
 	bin := t.TempDir()
