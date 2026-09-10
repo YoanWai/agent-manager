@@ -408,7 +408,7 @@ func TestShellRowLegendDropsTheConversationKeys(t *testing.T) {
 	}
 	for _, pair := range legend.pairs {
 		switch pair[0] {
-		case "space", "ctrl+r", "f":
+		case "space", "y", "ctrl+r", "f":
 			t.Fatalf("legend offers %q on a shell row, which refuses it", pair[0])
 		}
 	}
@@ -427,7 +427,7 @@ func TestAgentRowLegendKeepsTheConversationKeys(t *testing.T) {
 	if legend.title != "Session" {
 		t.Fatalf("legend title = %q, want Session", legend.title)
 	}
-	for _, key := range []string{"space", "ctrl+r", "f"} {
+	for _, key := range []string{"space", "y", "ctrl+r", "f"} {
 		if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == key }) {
 			t.Fatalf("legend should offer %q on an agent row", key)
 		}

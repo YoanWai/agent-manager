@@ -578,7 +578,7 @@ func (m *Model) rowLegend() legendSection {
 		return legendSection{title: "Group", pairs: legendPairsBound(pairs)}
 	}
 	title := "Session"
-	conversation := [][2]string{{k(keybind.Prompt), "prompt"}, {k(keybind.Review), "review"}, {k(keybind.Fork), "fork"}}
+	conversation := [][2]string{{k(keybind.Prompt), "prompt"}, {k(keybind.CopyReply), "copy"}, {k(keybind.Review), "review"}, {k(keybind.Fork), "fork"}}
 	if m.isShell(row.sess.Tool) {
 		// A shell has no conversation, so the keys that would prompt,
 		// review or fork one are left off rather than offered and refused.
