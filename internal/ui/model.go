@@ -318,6 +318,7 @@ type paneMirror struct {
 type errBar struct {
 	text  string
 	done  string
+	warn  string
 	shown string
 	age   int
 }
@@ -328,9 +329,20 @@ type errBar struct {
 // behind, so a message says it worked or reads as a failure.
 func (e errBar) worked() bool { return e.text != "" && e.text == e.done }
 
+// warned reports whether the message is an action that went through with
+// a caveat the reader has to see, which reads as neither outcome nor
+// failure.
+func (e errBar) warned() bool { return e.text != "" && e.text == e.warn }
+
 // reportDone puts an action that went through on the status bar.
 func (m *Model) reportDone(text string) {
 	m.errBar.text, m.errBar.done = text, text
+}
+
+// reportWarn puts an action that went through with a caveat on the status
+// bar.
+func (m *Model) reportWarn(text string) {
+	m.errBar.text, m.errBar.warn = text, text
 }
 
 // splitState is the horizontal sessions/sidebar split. ratio is the left
@@ -1585,11 +1597,16 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case replyCopiedMsg:
 		if msg.unreadable {
-			m.errBar.text = "cannot read a reply from " + msg.name
+			m.reportWarn(fmt.Sprintf("no reply to read in %s: a %s pane is not read that way", msg.name, msg.tool))
 			return m, nil
 		}
 		if msg.chars == 0 {
 			m.errBar.text = "nothing to copy from " + msg.name
+			return m, nil
+		}
+		if msg.unbounded {
+			m.reportWarn(fmt.Sprintf("copied %d chars from %s: %s marks no turn start here, so this is the whole pane",
+				msg.chars, msg.name, msg.tool))
 			return m, nil
 		}
 		m.reportDone(fmt.Sprintf("copied %d chars from %s", msg.chars, msg.name))

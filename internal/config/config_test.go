@@ -229,6 +229,50 @@ chrome_line = '` + oldClaudeChromeLine + `'
 	}
 }
 
+// A config.toml stored before hermes's titled boxes were read as frame
+// carries the narrower rule, which leaves those borders in a copied reply.
+func TestLoadDirUpgradesHermesChromeToItsTitledBoxes(t *testing.T) {
+	dir := t.TempDir()
+	stored := "\n[tools.hermes]\ncommand = \"hermes --cli\"\nchrome_line = '" + oldHermesChromeLine + "'\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(stored), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	border := "╭─ ⚕ Hermes ─────╮"
+	if !regexp.MustCompile(cfg.Tools["hermes"].ChromeLine).MatchString(border) {
+		t.Fatalf("stored hermes chrome_line was not upgraded: %q", cfg.Tools["hermes"].ChromeLine)
+	}
+	if regexp.MustCompile(oldHermesChromeLine).MatchString(border) {
+		t.Fatal("oldHermesChromeLine drifted: it already matches the row the upgrade exists for")
+	}
+}
+
+// A config.toml stored before gemini drew a skills count beside its
+// approval banner carries the narrower rule, which no longer matches the
+// row it was written for.
+func TestLoadDirUpgradesGeminiChromeToTheSkillsCount(t *testing.T) {
+	dir := t.TempDir()
+	stored := "\n[tools.gemini]\ncommand = \"gemini\"\nchrome_line = '" + oldGeminiChromeLine + "'\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(stored), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	banner := " Shift+Tab to accept edits                          2 skills"
+	rule := regexp.MustCompile(cfg.Tools["gemini"].ChromeLine)
+	if !rule.MatchString(banner) {
+		t.Fatalf("stored gemini chrome_line was not upgraded: %q", cfg.Tools["gemini"].ChromeLine)
+	}
+	if regexp.MustCompile(oldGeminiChromeLine).MatchString(banner) {
+		t.Fatal("oldGeminiChromeLine drifted: it already matches the row the upgrade exists for")
+	}
+}
+
 // A config.toml stored before claude began printing its "new task?"
 // nudge carries the chrome rule of that release verbatim, and keeps it
 // over any new default unless the old wording is recognised.

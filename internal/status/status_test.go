@@ -1201,7 +1201,7 @@ func TestFullTurnText(t *testing.T) {
 		"⏺ Second paragraph, a different topic.\n" +
 		"\n" +
 		"⏺ Third and final paragraph."
-	text, ok := engine.FullTurnText("claude", pane)
+	text, _, ok := engine.FullTurnText("claude", pane)
 	if !ok {
 		t.Fatal("claude has an activity cutoff, ok should be true")
 	}
@@ -1212,13 +1212,13 @@ func TestFullTurnText(t *testing.T) {
 		t.Fatalf("LastMessage = %q, want only the newest paragraph", line)
 	}
 
-	if text, _ := engine.FullTurnText("claude", "❯ the only question\n❯ "); text != "" {
+	if text, _, _ := engine.FullTurnText("claude", "❯ the only question\n❯ "); text != "" {
 		t.Fatalf("a prompt with no answer yet = %q, want empty", text)
 	}
-	if _, ok := engine.FullTurnText("no-such-tool", pane); ok {
+	if _, _, ok := engine.FullTurnText("no-such-tool", pane); ok {
 		t.Fatal("unknown tool should report it cannot tell")
 	}
-	if _, ok := engine.FullTurnText("claude", "just text, no input box"); ok {
+	if _, _, ok := engine.FullTurnText("claude", "just text, no input box"); ok {
 		t.Fatal("pane without the cutoff should report it cannot tell")
 	}
 }
@@ -1233,7 +1233,7 @@ func TestFullTurnTextStopsAtPreviousTurn(t *testing.T) {
 		"⏺ second answer\n" +
 		"✻ Crunched for 2s\n" +
 		"❯ "
-	text, ok := engine.FullTurnText("claude", pane)
+	text, _, ok := engine.FullTurnText("claude", pane)
 	if !ok {
 		t.Fatal("ok should be true")
 	}
@@ -1258,7 +1258,7 @@ func TestFullTurnTextDropsPromptTailAndToolRows(t *testing.T) {
 		"❯ "
 	want := "⏺ Read(internal/status/status.go)\n" +
 		"⏺ The answer itself."
-	text, ok := engine.FullTurnText("claude", pane)
+	text, _, ok := engine.FullTurnText("claude", pane)
 	if !ok {
 		t.Fatal("ok should be true")
 	}
@@ -1275,7 +1275,7 @@ func TestFullTurnTextDropsComposerHint(t *testing.T) {
 		"⏺ The answer.\n" +
 		"                          new task? /clear to save 421.3k tokens\n" +
 		"❯ "
-	text, ok := engine.FullTurnText("claude", pane)
+	text, _, ok := engine.FullTurnText("claude", pane)
 	if !ok {
 		t.Fatal("ok should be true")
 	}
@@ -1299,7 +1299,7 @@ func TestFullTurnTextKeepsUnmarkedReply(t *testing.T) {
 		"  its own wrapped continuation row.\n" +
 		"\n" +
 		"Docs. A second unmarked paragraph."
-	text, ok := engine.FullTurnText("claude", pane)
+	text, _, ok := engine.FullTurnText("claude", pane)
 	if !ok {
 		t.Fatal("ok should be true")
 	}
@@ -1318,7 +1318,7 @@ func TestFullTurnTextKeepsReplyThatOutrunsTheCapture(t *testing.T) {
 		"❯ "
 	want := "  a wrapped row of the reply, its marker scrolled away.\n" +
 		"⏺ A later paragraph of the same reply."
-	text, ok := engine.FullTurnText("claude", pane)
+	text, _, ok := engine.FullTurnText("claude", pane)
 	if !ok {
 		t.Fatal("ok should be true")
 	}
@@ -1346,7 +1346,7 @@ func TestFullTurnTextKeepsTableRows(t *testing.T) {
 		"  ├───────┼───────┤\n" +
 		"  │ 0.50  │ 23.00 │\n" +
 		"  └───────┴───────┘"
-	text, ok := engine.FullTurnText("claude", pane)
+	text, _, ok := engine.FullTurnText("claude", pane)
 	if !ok {
 		t.Fatal("ok should be true")
 	}
@@ -1402,6 +1402,16 @@ func TestFullTurnTextPerTool(t *testing.T) {
 				"                  ? for shortcuts\n" +
 				" >   Type your message or @path/to/file",
 			want: "✦ GEMINI ECHO TEST DONE.\n  a second row of the same reply.",
+		},
+		{
+			name: "gemini drops its approval banner beside a skills count",
+			tool: "gemini",
+			pane: " > Reply with exactly: GEMINI ECHO TEST DONE.\n" +
+				"✦ GEMINI ECHO TEST DONE.\n" +
+				"                  ? for shortcuts\n" +
+				" Shift+Tab to accept edits                          2 skills\n" +
+				" >   Type your message or @path/to/file",
+			want: "✦ GEMINI ECHO TEST DONE.",
 		},
 		{
 			name: "command-code keeps both rows of the reply",
@@ -1511,17 +1521,31 @@ func TestFullTurnTextPerTool(t *testing.T) {
 		{
 			name: "hermes stops at the newest prompt it drew",
 			tool: "hermes",
-			pane: "❯ first prompt\n" +
+			pane: "────────────────\n" +
+				"● first prompt\n" +
+				"────────────────\n" +
+				"╭─ ⚕ Hermes ─────╮\n" +
 				"first answer\n" +
-				"❯ second prompt\n" +
+				"╰────────────────╯\n" +
+				"────────────────\n" +
+				"● second prompt\n" +
+				"Initializing agent...\n" +
+				"────────────────\n" +
+				"┌─ Reasoning ────┐\n" +
+				"thinking about it\n" +
+				"└────────────────┘\n" +
+				"╭─ ⚕ Hermes ─────╮\n" +
 				"second answer\n" +
+				"╰────────────────╯\n" +
+				" ⚕ grok-4.6 │ 22.2K/500K │ 23s\n" +
+				"────────────────\n" +
 				"❯ ",
-			want: "second answer",
+			want: "thinking about it\nsecond answer",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			text, ok := engine.FullTurnText(tc.tool, tc.pane)
+			text, _, ok := engine.FullTurnText(tc.tool, tc.pane)
 			if !ok {
 				t.Fatalf("%s: ok should be true", tc.tool)
 			}
@@ -1529,6 +1553,43 @@ func TestFullTurnTextPerTool(t *testing.T) {
 				t.Fatalf("FullTurnText(%s) =\n%q\nwant\n%q", tc.tool, text, tc.want)
 			}
 		})
+	}
+}
+
+// Where nothing in the pane says the turn began - grok keeps no prompt in
+// its transcript, and its summary can sit above the capture - the text is
+// the whole region, and the caller is told so. pi draws no readable region
+// at all, so no reply can be read from it.
+func TestFullTurnTextReportsAnUnboundedCopy(t *testing.T) {
+	engine := defaultEngine(t)
+	bounded := "│ ❯ a prompt\nGrok answered it.\n│ ❯ "
+	if text, isBounded, ok := engine.FullTurnText("grok", bounded); !ok || !isBounded || text != "Grok answered it." {
+		t.Fatalf("bounded grok turn = %q bounded=%v ok=%v", text, isBounded, ok)
+	}
+	unbounded := "Grok answered something older.\nGrok answered this too.\n│ ❯ "
+	text, isBounded, ok := engine.FullTurnText("grok", unbounded)
+	if !ok {
+		t.Fatal("a grok pane with a composer has a region")
+	}
+	if isBounded {
+		t.Fatal("no prompt and no summary in frame is not a bounded turn")
+	}
+	if text != "Grok answered something older.\nGrok answered this too." {
+		t.Fatalf("unbounded grok copy = %q, want the whole region", text)
+	}
+
+	// pi opens its region at the pane origin, so the copy falls back to
+	// the pane above the composer rather than reporting nothing.
+	pi := "  a pi reply row\n────────────\n\n────────────\n/tmp (main)\n"
+	text, isBounded, ok = engine.FullTurnText("pi", pi)
+	if !ok {
+		t.Fatal("pi should copy the pane its region leaves empty")
+	}
+	if isBounded {
+		t.Fatal("a pane read without a turn boundary is not bounded")
+	}
+	if text != "  a pi reply row" {
+		t.Fatalf("pi copy = %q, want the reply row above the composer", text)
 	}
 }
 
@@ -1550,7 +1611,7 @@ func TestFullTurnTextPendingWrappedPrompt(t *testing.T) {
 					pane = tc.prompt + "original question\n" + tc.answer + "\n" + tc.end + "\n" + pending
 					want = tc.answer
 				}
-				if got, ok := engine.FullTurnText(tc.tool, pane); !ok || got != want {
+				if got, _, ok := engine.FullTurnText(tc.tool, pane); !ok || got != want {
 					t.Fatalf("answered=%v: copied %q, ok=%v; want %q", answered, got, ok, want)
 				}
 			}
@@ -1569,7 +1630,7 @@ func TestFullTurnTextResultWithBlankLine(t *testing.T) {
 		t.Run(tc.tool, func(t *testing.T) {
 			pane := tc.prompt + "question\n" + tc.call + "\n" + tc.result + "\n\n    second output line\n" + tc.answer + "\n  reply continuation\n" + tc.prompt
 			want := tc.call + "\n\n" + tc.answer + "\n  reply continuation"
-			if got, ok := engine.FullTurnText(tc.tool, pane); !ok || got != want {
+			if got, _, ok := engine.FullTurnText(tc.tool, pane); !ok || got != want {
 				t.Fatalf("copied %q, ok=%v; want %q", got, ok, want)
 			}
 		})

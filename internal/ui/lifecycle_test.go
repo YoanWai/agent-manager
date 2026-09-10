@@ -1986,3 +1986,26 @@ func TestReplyCopiedMsgReports(t *testing.T) {
 		t.Fatalf("errBar = %q done = %q", m.errBar.text, m.errBar.done)
 	}
 }
+
+// A copy the pane could not bound, and a pane no reply can be read from,
+// both name the tool behind the caveat and read as warnings rather than
+// as outcomes or failures.
+func TestReplyCopiedMsgWarnsOnAnUnboundedCopy(t *testing.T) {
+	m := buildModel(t)
+	m.Update(replyCopiedMsg{chars: 12426, name: "alpha", tool: "grok", unbounded: true})
+	if !strings.Contains(m.errBar.text, "grok marks no turn start here") {
+		t.Fatalf("errBar = %q, want the tool named", m.errBar.text)
+	}
+	if !m.errBar.warned() || m.errBar.worked() {
+		t.Fatalf("an unbounded copy should warn, not report success: %+v", m.errBar)
+	}
+
+	m = buildModel(t)
+	m.Update(replyCopiedMsg{name: "beta", tool: "pi", unreadable: true})
+	if !strings.Contains(m.errBar.text, "a pi pane is not read that way") {
+		t.Fatalf("errBar = %q, want the tool named", m.errBar.text)
+	}
+	if !m.errBar.warned() {
+		t.Fatalf("an unreadable pane should warn: %+v", m.errBar)
+	}
+}

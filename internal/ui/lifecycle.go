@@ -134,26 +134,30 @@ func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
 		if err != nil {
 			return errMsg{err}
 		}
-		text, ok := engine.FullTurnText(sess.Tool, ansi.Strip(pane))
+		text, bounded, ok := engine.FullTurnText(sess.Tool, ansi.Strip(pane))
 		if !ok {
-			return replyCopiedMsg{name: sess.Name, unreadable: true}
+			return replyCopiedMsg{name: sess.Name, tool: sess.Tool, unreadable: true}
 		}
 		if strings.TrimSpace(text) == "" {
-			return replyCopiedMsg{name: sess.Name}
+			return replyCopiedMsg{name: sess.Name, tool: sess.Tool}
 		}
 		return copyTextCmd(text, func(chars int) tea.Msg {
-			return replyCopiedMsg{chars: chars, name: sess.Name}
+			return replyCopiedMsg{chars: chars, name: sess.Name, tool: sess.Tool, unbounded: !bounded}
 		})()
 	}
 }
 
 // replyCopiedMsg reports a finished copy. No chars means the turn held
 // nothing; unreadable means the tool draws no region a reply can be read
-// from, which no amount of retrying will change.
+// from, which no amount of retrying will change; unbounded means nothing
+// in the pane said where the turn began, so the copy is the whole screen
+// rather than one answer.
 type replyCopiedMsg struct {
 	chars      int
 	name       string
+	tool       string
 	unreadable bool
+	unbounded  bool
 }
 
 // reviveSelected relaunches a dead session's tmux session under the same
