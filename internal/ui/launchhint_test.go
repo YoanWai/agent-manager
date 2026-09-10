@@ -20,7 +20,23 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// fakeHermesVersion puts a hermes on PATH whose --version prints the given
+// block, which is where the dialog reads the interpreter to install into.
+func fakeHermesVersion(t *testing.T, block string) {
+	t.Helper()
+	bin := t.TempDir()
+	script := "#!/bin/sh\ncat <<'EOF'\n" + block + "EOF\n"
+	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	fakeHermesVersion(t, "Hermes Agent v0.20.0 (2026.8.3)\nInstall directory: /opt/hermes/libexec/lib/python3.14/site-packages\n")
 	m := buildModel(t)
 
 	m.reportLaunchError(fmt.Errorf("launch: %w", mcpreg.ErrHermesMCPUnavailable), nil)
@@ -28,7 +44,11 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
 	}
-	if !strings.Contains(m.launchFix.text, "hermes setup") {
+	want := "'/opt/hermes/libexec/bin/python3' -m pip install mcp"
+	if m.launchFix.command != want {
+		t.Fatalf("command = %q, want %q", m.launchFix.command, want)
+	}
+	if !strings.Contains(m.launchFix.text, want) {
 		t.Fatalf("hint %q should name the install command", m.launchFix.text)
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
@@ -38,6 +58,31 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 	}
 	if m.launchFix.text != "" {
 		t.Fatalf("dismiss should clear the hint, got %q", m.launchFix.text)
+	}
+}
+
+func TestReportLaunchErrorLeavesHermesHintReadOnlyWithoutAnInterpreter(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	fakeHermesVersion(t, "Hermes Agent v0.20.0 (2026.8.3)\nPython: 3.14.7\n")
+	m := buildModel(t)
+
+	m.reportLaunchError(fmt.Errorf("launch: %w", mcpreg.ErrHermesMCPUnavailable), nil)
+
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
+	}
+	if m.launchFix.command != "" {
+		t.Fatalf("command = %q, want none when the interpreter cannot be resolved", m.launchFix.command)
+	}
+	if !strings.Contains(m.launchFix.text, "mcp package") {
+		t.Fatalf("hint %q should still name what has to be installed", m.launchFix.text)
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updated.(*Model)
+	if m.install != nil || m.mode != modeLaunchHint {
+		t.Fatalf("a read-only dialog should run nothing on i: install = %v, mode = %v", m.install, m.mode)
 	}
 }
 

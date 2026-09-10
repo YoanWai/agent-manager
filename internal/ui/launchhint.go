@@ -60,10 +60,15 @@ type launchCommandCopiedMsg struct {
 // nil when the caller has no way to repeat it.
 func (m *Model) reportLaunchError(err error, retry func() error) {
 	if errors.Is(err, mcpreg.ErrHermesMCPUnavailable) {
+		command := mcpreg.HermesPipCommand()
+		step := "Install the mcp package into the Python that runs Hermes, then spawn again."
+		if command != "" {
+			step = "Run `" + command + "` to add the mcp package to the Python that runs Hermes, then spawn again."
+		}
 		m.openLaunchHint(launchFix{
 			text: "Hermes sessions carry the agent-manager MCP tools, and this Hermes cannot load them: its MCP SDK is not installed.\n\n" +
-				"Run `hermes setup` to install MCP support, then spawn again.",
-			command: "hermes setup",
+				step,
+			command: command,
 			binary:  "hermes",
 			retry:   retry,
 		})

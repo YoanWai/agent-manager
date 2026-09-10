@@ -24,8 +24,9 @@ const serverName = "agent-manager"
 const StyleNone = "none"
 
 // ErrHermesMCPUnavailable reports a Hermes whose optional MCP SDK is not
-// installed, so no registration can succeed until `hermes setup` adds it.
-var ErrHermesMCPUnavailable = errors.New("hermes is missing MCP support: run hermes setup, then spawn again")
+// installed, so no registration can succeed until the package is added to
+// the environment Hermes runs in.
+var ErrHermesMCPUnavailable = errors.New("hermes is missing MCP support: install the mcp package into its Python, then spawn again")
 
 var knownStyles = map[string]bool{
 	"claude":       true,
@@ -253,6 +254,35 @@ func ensureHermesRegistered(exe, hooksDir string) error {
 		return err
 	}
 	return os.WriteFile(marker, []byte(exe), 0o644)
+}
+
+// HermesPipCommand is the command that installs Hermes's optional MCP SDK,
+// empty when the Python that runs Hermes cannot be resolved.
+func HermesPipCommand() string {
+	out, err := exec.Command("hermes", "--version").Output()
+	if err != nil {
+		return ""
+	}
+	return hermesPipCommand(string(out))
+}
+
+// hermesPipCommand reads the install directory `hermes --version` reports,
+// which is the site-packages of the environment Hermes runs in, so the
+// interpreter sits three levels above it.
+func hermesPipCommand(version string) string {
+	for _, line := range strings.Split(version, "\n") {
+		dir, found := strings.CutPrefix(strings.TrimSpace(line), "Install directory:")
+		if !found {
+			continue
+		}
+		dir = strings.TrimSpace(dir)
+		if filepath.Base(dir) != "site-packages" {
+			return ""
+		}
+		root := filepath.Dir(filepath.Dir(filepath.Dir(dir)))
+		return tmux.ShellQuote(filepath.Join(root, "bin", "python3")) + " -m pip install mcp"
+	}
+	return ""
 }
 
 // ensureRegisteredOnce runs a tool's own mcp-add command once per binary

@@ -307,6 +307,25 @@ exit 0
 	}
 }
 
+func TestHermesPipCommandReadsInstallDirectory(t *testing.T) {
+	version := "Hermes Agent v0.20.0 (2026.8.3)\n" +
+		"Install directory: /opt/homebrew/Cellar/hermes-agent/2026.8.3_1/libexec/lib/python3.14/site-packages\n" +
+		"Python: 3.14.7\n" +
+		"OpenAI SDK: 2.24.0\n"
+	want := "'/opt/homebrew/Cellar/hermes-agent/2026.8.3_1/libexec/bin/python3' -m pip install mcp"
+	if got := hermesPipCommand(version); got != want {
+		t.Fatalf("hermesPipCommand = %q, want %q", got, want)
+	}
+	bare := "Hermes Agent v0.20.0 (2026.8.3)\nPython: 3.14.7\n"
+	if got := hermesPipCommand(bare); got != "" {
+		t.Fatalf("version output naming no install directory = %q, want no command", got)
+	}
+	elsewhere := "Install directory: /opt/hermes/src\n"
+	if got := hermesPipCommand(elsewhere); got != "" {
+		t.Fatalf("install directory outside a python prefix = %q, want no command", got)
+	}
+}
+
 func TestEnsureHermesRegisteredWrapsExitError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake Hermes executable is a shell script")

@@ -550,7 +550,7 @@ revive_command = "hermes --cli --continue"
 prompt_mode = "send"
 # Hermes sessions carry the agent-manager MCP tools. Registration needs
 # Hermes's MCP SDK; when it is missing, the spawn stops and the manager
-# points at "hermes setup", which installs it.
+# offers the pip line that adds it to the Python that runs Hermes.
 mcp = "hermes"
 default_status = "idle"
 activity_cutoff = "(?m)^\\s*(?:\\S+\\s+)?[❯>$#›»→]\\s"
