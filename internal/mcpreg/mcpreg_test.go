@@ -302,26 +302,27 @@ exit 0
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	_, err := Apply("hermes", "/opt/bin/agent-manager", t.TempDir(), "hermes --cli", map[string]string{})
-	if !errors.Is(err, ErrHermesMCPUnavailable) {
-		t.Fatalf("err = %v, want ErrHermesMCPUnavailable", err)
+	var unavailable HermesMCPUnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("err = %v, want HermesMCPUnavailableError", err)
 	}
 }
 
-func TestHermesPipCommandReadsInstallDirectory(t *testing.T) {
+func TestPipCommandFromVersionReadsInstallDirectory(t *testing.T) {
 	version := "Hermes Agent v0.20.0 (2026.8.3)\n" +
 		"Install directory: /opt/homebrew/Cellar/hermes-agent/2026.8.3_1/libexec/lib/python3.14/site-packages\n" +
 		"Python: 3.14.7\n" +
 		"OpenAI SDK: 2.24.0\n"
 	want := "'/opt/homebrew/Cellar/hermes-agent/2026.8.3_1/libexec/bin/python3' -m pip install mcp"
-	if got := hermesPipCommand(version); got != want {
-		t.Fatalf("hermesPipCommand = %q, want %q", got, want)
+	if got := pipCommandFromVersion(version); got != want {
+		t.Fatalf("pipCommandFromVersion = %q, want %q", got, want)
 	}
 	bare := "Hermes Agent v0.20.0 (2026.8.3)\nPython: 3.14.7\n"
-	if got := hermesPipCommand(bare); got != "" {
+	if got := pipCommandFromVersion(bare); got != "" {
 		t.Fatalf("version output naming no install directory = %q, want no command", got)
 	}
 	elsewhere := "Install directory: /opt/hermes/src\n"
-	if got := hermesPipCommand(elsewhere); got != "" {
+	if got := pipCommandFromVersion(elsewhere); got != "" {
 		t.Fatalf("install directory outside a python prefix = %q, want no command", got)
 	}
 }

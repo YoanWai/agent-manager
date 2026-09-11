@@ -20,29 +20,15 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-func fakeHermesVersion(t *testing.T, block string) {
-	t.Helper()
-	bin := t.TempDir()
-	script := "#!/bin/sh\ncat <<'EOF'\n" + block + "EOF\n"
-	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-}
-
 func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake Hermes executable is a shell script")
-	}
-	fakeHermesVersion(t, "Hermes Agent v0.20.0 (2026.8.3)\nInstall directory: /opt/hermes/libexec/lib/python3.14/site-packages\n")
 	m := buildModel(t)
+	want := "'/opt/hermes/libexec/bin/python3' -m pip install mcp"
 
-	m.reportLaunchError(fmt.Errorf("launch: %w", mcpreg.ErrHermesMCPUnavailable), nil)
+	m.reportLaunchError(fmt.Errorf("launch: %w", mcpreg.HermesMCPUnavailableError{PipCommand: want}), nil)
 
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
 	}
-	want := "'/opt/hermes/libexec/bin/python3' -m pip install mcp"
 	if m.launchFix.command != want {
 		t.Fatalf("command = %q, want %q", m.launchFix.command, want)
 	}
@@ -60,13 +46,9 @@ func TestReportLaunchErrorOpensInstallHintForHermes(t *testing.T) {
 }
 
 func TestReportLaunchErrorLeavesHermesHintReadOnlyWithoutAnInterpreter(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake Hermes executable is a shell script")
-	}
-	fakeHermesVersion(t, "Hermes Agent v0.20.0 (2026.8.3)\nPython: 3.14.7\n")
 	m := buildModel(t)
 
-	m.reportLaunchError(fmt.Errorf("launch: %w", mcpreg.ErrHermesMCPUnavailable), nil)
+	m.reportLaunchError(fmt.Errorf("launch: %w", mcpreg.HermesMCPUnavailableError{}), nil)
 
 	if m.mode != modeLaunchHint {
 		t.Fatalf("mode = %v, want modeLaunchHint", m.mode)
