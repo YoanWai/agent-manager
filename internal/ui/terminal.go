@@ -17,17 +17,14 @@ import (
 // shells is this window plus the spawn.
 const terminalKeyWindow = 250 * time.Millisecond
 
-// shellTool finds the config block T spawns: the first one declaring
-// shell = true, by name so the pick is the same on every launch. Nothing
-// keys off the block being called "terminal", so a user who already has a
-// [tools.terminal] block of their own keeps it as the agent CLI they wrote.
-func (m *Model) shellTool() (string, config.Tool, bool) {
+// shellTool finds the tool T spawns: the one declaring shell = true.
+func (m *Model) shellTool() (string, config.Tool) {
 	return m.cfg.ShellTool()
 }
 
 // isShell reports whether a session's tool opens a shell rather than an
-// agent. A tool no longer in the config answers false: an unknown block is
-// not something we can claim runs a shell.
+// agent. A tool the binary no longer ships answers false: a name we cannot
+// resolve is not something we can claim runs a shell.
 func (m *Model) isShell(toolName string) bool {
 	return m.cfg.Tools[toolName].Shell
 }
@@ -55,11 +52,7 @@ func (m *Model) terminalKey() (tea.Model, tea.Cmd) {
 // shell, so no prompt, rename directive or MCP registration applies to a
 // session there is no agent to send them to.
 func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
-	toolName, tool, ok := m.shellTool()
-	if !ok {
-		m.errBar.text = `no shell configured: add a tool block with shell = true to config.toml`
-		return m, nil
-	}
+	toolName, tool := m.shellTool()
 	dir, ok := m.rowDir()
 	if !ok {
 		m.errBar.text = "no directory to open a terminal in: " + dir

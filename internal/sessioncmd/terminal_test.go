@@ -28,14 +28,6 @@ func newTerminalHarness(t *testing.T) *terminalHarness {
 		t.Skip("tmux not installed")
 	}
 	configDir := t.TempDir()
-	configText := `[tools.terminal]
-command = ""
-shell = true
-default_status = "idle"
-`
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(configText), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
 	driver, err := tmux.NewWithSocket("amtermtest-" + uuid.NewString()[:8])
 	if err != nil {
 		t.Fatalf("tmux driver: %v", err)

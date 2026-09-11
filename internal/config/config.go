@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"sort"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -18,11 +18,10 @@ type Rule struct {
 
 type Tool struct {
 	Command string `toml:"command"`
-	// Shell marks a block that opens a plain shell rather than an agent
+	// Shell marks the tool that opens a plain shell rather than an agent
 	// CLI: it is what T spawns, it stays out of the CLI pickers, and the
 	// keys that write into a pane refuse it, since a sentence typed at a
-	// shell is a command. Never inferred, so a tool block only means this
-	// when its author said so.
+	// shell is a command. Carried by the flag, never by the name.
 	Shell         bool   `toml:"shell"`
 	ReviveCommand string `toml:"revive_command"`
 	PromptFlag    string `toml:"prompt_flag"`
@@ -116,11 +115,14 @@ type Config struct {
 	// Editor is the command the o key opens a directory in, arguments
 	// included. Empty falls back to $AGENT_MANAGER_EDITOR, then a GUI
 	// editor found on PATH, then $VISUAL / $EDITOR.
-	Editor      string          `toml:"editor"`
-	Tools       map[string]Tool `toml:"tools"`
-	Keybindings Keybindings     `toml:"keybindings"`
-	SessionKeys keybind.Table   `toml:"-"`
-	ListKeys    keybind.Table   `toml:"-"`
+	Editor string `toml:"editor"`
+	// Tools is what the binary ships. The file is never decoded for it, so a
+	// [tools.<name>] block left there cannot fail the load.
+	Tools        map[string]Tool `toml:"-"`
+	IgnoredTools []string        `toml:"-"`
+	Keybindings  Keybindings     `toml:"keybindings"`
+	SessionKeys  keybind.Table   `toml:"-"`
+	ListKeys     keybind.Table   `toml:"-"`
 }
 
 type Keybindings struct {
@@ -171,17 +173,21 @@ func Load() (Config, error) {
 func LoadDir(dir string) (Config, error) {
 	path := filepath.Join(dir, "config.toml")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := writeDefault(path); err != nil {
+		if err := writeStarter(path); err != nil {
 			return Config{}, err
 		}
 	}
 	var cfg Config
-	if err := decodeInto(path, &cfg); err != nil {
+	meta, err := toml.DecodeFile(path, &cfg)
+	if err != nil {
 		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 	}
-	if err := cfg.backfillToolDefaults(); err != nil {
+	builtin, err := Default()
+	if err != nil {
 		return Config{}, err
 	}
+	cfg.IgnoredTools = declaredTools(meta)
+	cfg.Tools = builtin.Tools
 	cfg.applyDefaults()
 	if err := cfg.resolveKeys(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
@@ -189,238 +195,28 @@ func LoadDir(dir string) (Config, error) {
 	return cfg, nil
 }
 
-// backfillToolDefaults fills fields the built-in tools gained after a
-// user's config.toml was written: existing tools keep their values, but
-// any field left at its zero value inherits the built-in default, and
-// tools absent from the file are added. This lets older configs pick up
-// new capabilities (a new prompt_flag, extra rules) without a rewrite.
-func (c *Config) backfillToolDefaults() error {
-	if c.Tools == nil {
-		c.Tools = map[string]Tool{}
-	}
-	builtin, err := Default()
-	if err != nil {
-		return err
-	}
-	for name, def := range builtin.Tools {
-		user, ok := c.Tools[name]
-		if !ok {
-			c.Tools[name] = def
-			continue
-		}
-		c.Tools[name] = mergeTool(name, user, def)
-	}
-	return nil
-}
-
-// busyLineAgentsOnly is the busy_line claude shipped with before Claude
-// Code started reporting background shells the same way. A config carrying
-// it verbatim was written by an older release and takes the current
-// pattern; one edited by hand keeps what its author wrote.
-const busyLineAgentsOnly = `^[✻✳✶✽✢·✦✧+*] Waiting for \d+ background agents? to finish`
-
-// This exact chrome pattern was written before Claude added its updater
-// banner beneath completed turns. Hand-edited patterns remain untouched.
-const oldClaudeChromeLine = `^\s*[─q]{4,}.*$|^[\s─q]*$`
-
-// This exact chrome pattern was written after Claude added its updater
-// banner, but before the "new task?" nudge above its composer.
-const oldClaudeChromeLineNoHint = `^\s*[─q]{4,}.*$|^[\s─q]*$|^\s*✔ Update installed · Restart to update\s*$`
-
-// This exact cutoff was written before grok's minimal mode, which draws a
-// flush-left composer with no box. oldGrokChromeLine is the box-only chrome
-// from before the list row had to step over the opt-in card and the minimal
-// hint. Hand-edited patterns remain untouched.
-const (
-	grokBoxedCutoff   = `(?m)^\s*│ ❯`
-	oldGrokChromeLine = `^\s*[┃❙│─╭╮╰╯█]*\s*$`
-)
-
-// The gemini approval-mode banner as it was matched before gemini began
-// drawing a right-aligned skills count on the same row.
-const oldGeminiChromeLine = `^\s*[╭╮╰╯│─▄▀█]*\s*$|^\s*\? for shortcuts\s*$|^\s*press tab twice for more\s*$|^\s*Press Ctrl\+O to show more lines.*$|(?i)^\s*(auto-accept edits |plan |yolo )?\S*tab\S* to (accept edits|manual|plan|auto-accept edits)\s*$`
-
-// The hermes frame as it was matched before its titled boxes - the
-// reasoning block, the reply block - were read as frame rather than as
-// something the agent wrote.
-const oldHermesChromeLine = `^\s*[─╭╮╰╯│]*\s*$|^\s*⚕ .*$`
-
-// Codex used to end every command-running turn with a timed divider. Current
-// builds can draw a bare divider instead, so stored defaults need the wider
-// shape while hand-edited rules remain untouched.
-const oldCodexTurnEnd = `(?m)^─+ Worked for [\dhms. ]+─`
-
-// The command-code matching rules #385 shipped, which no longer match the
-// shapes current Command Code draws. A stored config.toml carries these
-// verbatim and keeps them over any new default, so mergeTool rewrites
-// exactly these stale values the way claude's busy line is rewritten.
-const (
-	oldCmdTurnEnd    = `^\s*✻ Worked for [\dhms. ]+$`
-	oldCmdWorking    = `(?m)^ [·○◇☆✧⌘] \S+.*(?:esc to interrupt| \d+)$`
-	oldCmdChromeLine = `^\s*[─]{4,}\s*$|^# .*$|^[ \t█]*$|^\s*\? for shortcuts.*$`
-)
-
-// The pi matching rules used to pin the pane tail at exactly two footer
-// lines under the composer, so a pi extension drawing a taller footer kept
-// every rule from matching in every state. A stored config.toml
-// carries these old strings verbatim and keeps them over any new default,
-// so mergeTool rewrites exactly these stale values the way the command-code
-// rules are rewritten.
-const (
-	oldPiIdleRule      = `(?ms)^[ \t]*Resumed session[ \t]*\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + oldPiFooterTail
-	oldPiErrorRule     = `(?ms)^[ \t]*Error:[^\n]*(?:\n[ \t]+[^ \t\n][^\n]*){0,8}\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + oldPiFooterTail
-	oldPiRateLimitRule = `(?ms)^[ \t]*[^\n]*rate limit reached[^\n]*\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + oldPiFooterTail
-	oldPiQuestionRule  = `(?ms)\?[ \t]*\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + oldPiFooterTail
-	oldPiWorkingRule   = `(?ms)^[ \t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\b[^\n]*\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + oldPiFooterTail
-
-	oldPiFooterTail = `\n[^\n]*\n[^\n]*[ \t]*(?:\n[ \t]*)*\z`
-	newPiFooterTail = `(?:\n[^\n]*){2,5}[ \t]*(?:\n[ \t]*)*\z`
-)
-
-// pi 0.85 moved the streaming indicator into the composer's top border, and
-// the working rule wanted the spinner on a line of its own above that
-// border. This is the widened-footer form a config written on 0.34 or 0.35
-// carries; it and the two-line form above are rewritten to the current
-// working default.
-const oldPiOwnLineWorkingRule = `(?ms)^[ \t]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\b[^\n]*\n[ \t]*\n─{8,}[ \t]*\n(?:[ \t]*\n)*─{8,}[ \t]*` + newPiFooterTail
-
-// The pi activity cutoff written before pi 0.85 moved the spinner into the
-// composer's top border. It knows only the plain rule as the input box's
-// edge, so the border with a spinner in it read as draft text and Left
-// stayed with the agent for the length of every turn. Hand-edited patterns
-// remain untouched.
-const oldPiActivityCutoff = `(?ms)\A.*^─{8,}[ \t]*$`
-
-// mergeTool returns user with any zero-value field filled from def.
-//
-// Shell is deliberately not among them. "terminal" is a plausible name for
-// a hand-rolled agent block, and backfilling the flag onto one would take
-// the user's own tool out of the pickers and refuse to prompt it, without
-// saying so. A block is a shell only where its author wrote that.
-func mergeTool(name string, user, def Tool) Tool {
-	fill := func(dst *string, src string) {
-		if *dst == "" {
-			*dst = src
+// declaredTools reads the [tools.<name>] headers off the key list, since
+// nothing under them is decoded.
+func declaredTools(meta toml.MetaData) []string {
+	var names []string
+	for _, key := range meta.Keys() {
+		if len(key) == 2 && key[0] == "tools" {
+			names = append(names, key[1])
 		}
 	}
-	fill(&user.Command, def.Command)
-	fill(&user.ReviveCommand, def.ReviveCommand)
-	fill(&user.PromptFlag, def.PromptFlag)
-	fill(&user.PromptMode, def.PromptMode)
-	fill(&user.SessionIDFlag, def.SessionIDFlag)
-	fill(&user.ResumeByIDCommand, def.ResumeByIDCommand)
-	fill(&user.ResumePickerCommand, def.ResumePickerCommand)
-	fill(&user.ResumePickerKeys, def.ResumePickerKeys)
-	fill(&user.ForkCommand, def.ForkCommand)
-	fill(&user.SessionStore, def.SessionStore)
-	fill(&user.MCP, def.MCP)
-	fill(&user.StatusSource, def.StatusSource)
-	fill(&user.DefaultStatus, def.DefaultStatus)
-	fill(&user.ActivityCutoff, def.ActivityCutoff)
-	fill(&user.TurnEnd, def.TurnEnd)
-	fill(&user.ChromeLine, def.ChromeLine)
-	fill(&user.BlockedLine, def.BlockedLine)
-	fill(&user.TrailingNote, def.TrailingNote)
-	fill(&user.MessageStart, def.MessageStart)
-	fill(&user.ToolResult, def.ToolResult)
-	fill(&user.InputPlaceholder, def.InputPlaceholder)
-	fill(&user.UserEcho, def.UserEcho)
-	fill(&user.BusyLine, def.BusyLine)
-	fill(&user.LimitLine, def.LimitLine)
-	fill(&user.DialogFooter, def.DialogFooter)
-	fill(&user.InputPrefix, def.InputPrefix)
-	fill(&user.ComposerPlaceholder, def.ComposerPlaceholder)
-	if name == "claude" {
-		if user.BusyLine == busyLineAgentsOnly {
-			user.BusyLine = def.BusyLine
-		}
-		if user.ChromeLine == oldClaudeChromeLine || user.ChromeLine == oldClaudeChromeLineNoHint {
-			user.ChromeLine = def.ChromeLine
-		}
-	}
-	if name == "grok" {
-		if user.ActivityCutoff == grokBoxedCutoff {
-			user.ActivityCutoff = def.ActivityCutoff
-		}
-		if user.ChromeLine == oldGrokChromeLine {
-			user.ChromeLine = def.ChromeLine
-		}
-	}
-	if name == "gemini" && user.ChromeLine == oldGeminiChromeLine {
-		user.ChromeLine = def.ChromeLine
-	}
-	if name == "hermes" && user.ChromeLine == oldHermesChromeLine {
-		user.ChromeLine = def.ChromeLine
-	}
-	if name == "codex" && user.TurnEnd == oldCodexTurnEnd {
-		user.TurnEnd = def.TurnEnd
-	}
-	if name == "command-code" {
-		if user.TurnEnd == oldCmdTurnEnd {
-			user.TurnEnd = def.TurnEnd
-		}
-		if user.ChromeLine == oldCmdChromeLine {
-			user.ChromeLine = def.ChromeLine
-		}
-		for i, rule := range user.Rules {
-			if rule.State != "working" || rule.Pattern != oldCmdWorking {
-				continue
-			}
-			for _, current := range def.Rules {
-				if current.State == "working" {
-					user.Rules[i] = current
-					break
-				}
-			}
-		}
-	}
-	if name == "pi" {
-		if user.ActivityCutoff == oldPiActivityCutoff {
-			user.ActivityCutoff = def.ActivityCutoff
-		}
-		for i, rule := range user.Rules {
-			switch rule.Pattern {
-			case oldPiIdleRule, oldPiErrorRule, oldPiRateLimitRule, oldPiQuestionRule:
-				user.Rules[i].Pattern = strings.Replace(rule.Pattern, oldPiFooterTail, newPiFooterTail, 1)
-			case oldPiWorkingRule, oldPiOwnLineWorkingRule:
-				for _, current := range def.Rules {
-					if current.State == "working" {
-						user.Rules[i].Pattern = current.Pattern
-						break
-					}
-				}
-			}
-		}
-	}
-	if len(user.Rules) == 0 {
-		user.Rules = def.Rules
-	} else if name == "codex" {
-		for i, rule := range user.Rules {
-			if rule.State != "working" || rule.Pattern != `(?m)esc to interrupt\b` {
-				continue
-			}
-			for _, current := range def.Rules {
-				if current.State == "working" {
-					user.Rules[i] = current
-					break
-				}
-			}
-		}
-	}
-	return user
-}
-
-func decodeInto(path string, cfg *Config) error {
-	_, err := toml.DecodeFile(path, cfg)
-	return err
+	sort.Strings(names)
+	return names
 }
 
 // Default returns the built-in configuration without touching the filesystem.
 func Default() (Config, error) {
-	var cfg Config
-	if _, err := toml.Decode(defaultConfig, &cfg); err != nil {
+	var shipped struct {
+		Tools map[string]Tool `toml:"tools"`
+	}
+	if _, err := toml.Decode(builtinTools, &shipped); err != nil {
 		return Config{}, err
 	}
+	cfg := Config{Tools: shipped.Tools}
 	cfg.applyDefaults()
 	if err := cfg.resolveKeys(); err != nil {
 		return Config{}, err
@@ -471,29 +267,28 @@ func (c Config) ToolNames() []string {
 	return names
 }
 
-// ShellTool returns the first shell block by name, making the choice stable
-// when a user configures more than one.
-func (c Config) ShellTool() (string, Tool, bool) {
+// ShellTool returns the shell tool, by name so the pick is stable. The
+// binary ships exactly one, so a loaded config always has it.
+func (c Config) ShellTool() (string, Tool) {
 	chosen := ""
 	for name, tool := range c.Tools {
 		if tool.Shell && (chosen == "" || name < chosen) {
 			chosen = name
 		}
 	}
-	if chosen == "" {
-		return "", Tool{}, false
-	}
-	return chosen, c.Tools[chosen], true
+	return chosen, c.Tools[chosen]
 }
 
-func writeDefault(path string) error {
+func writeStarter(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(defaultConfig), 0o644)
+	return os.WriteFile(path, []byte(starterConfig), 0o644)
 }
 
-const defaultConfig = `poll_interval = "2s"
+// starterConfig is the file a first run writes: what the manager reads
+// from it, and nothing else.
+const starterConfig = `poll_interval = "2s"
 
 # The editor "o" opens a directory in, arguments allowed: "code -n", or
 # "open -a 'Visual Studio Code'". Quotes group an argument that carries a
@@ -518,8 +313,11 @@ const defaultConfig = `poll_interval = "2s"
 # new_session = "N"
 # prompt = ["space", "p"]
 # quit = "none"
+`
 
-# Rules are matched top-down against the visible pane text (ANSI stripped);
+// builtinTools is the only source of tool definitions, so a release that
+// fixes a CLI's new screen fixes it for everyone on that release.
+const builtinTools = `# Rules are matched top-down against the visible pane text (ANSI stripped);
 # first match wins, except a matching waiting rule outranks a working match.
 # A limit_line match is errored even when a turn-end summary or a limit
 # dialog would otherwise settle the turn.

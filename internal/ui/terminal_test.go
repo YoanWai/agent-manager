@@ -312,35 +312,16 @@ func TestShellToolStaysOutOfPickers(t *testing.T) {
 	}
 }
 
-// Nothing keys off the name: a hand-rolled [tools.terminal] block that never
-// declared itself a shell stays an agent CLI, pickers included.
-func TestABlockNamedTerminalIsOnlyAShellWhenItSaysSo(t *testing.T) {
-	m := buildModel(t)
-	m.cfg = config.Config{Tools: map[string]config.Tool{
-		"claude":   {Command: "cat"},
-		"terminal": {Command: "my-own-cli"},
-	}}
-	if !slices.Contains(m.enabledToolNames(), "terminal") {
-		t.Fatalf("a user's own terminal block must stay a CLI: %v", m.enabledToolNames())
-	}
-	if m.isShell("terminal") {
-		t.Fatal("a block without shell = true is not a shell")
-	}
-	if _, _, ok := m.shellTool(); ok {
-		t.Fatal("no block declared shell = true, so T has nothing to spawn")
-	}
-}
-
-// The shipped block is found by its flag, whatever it is called.
+// The shell is found by its flag, whatever it is called.
 func TestShellToolIsFoundByItsFlag(t *testing.T) {
 	m := buildModel(t)
 	m.cfg = config.Config{Tools: map[string]config.Tool{
 		"claude": {Command: "cat"},
 		"zsh":    {Shell: true},
 	}}
-	name, tool, ok := m.shellTool()
-	if !ok || name != "zsh" || tool.Command != "" {
-		t.Fatalf("shellTool() = %q %+v %v, want the zsh block", name, tool, ok)
+	name, tool := m.shellTool()
+	if name != "zsh" || tool.Command != "" {
+		t.Fatalf("shellTool() = %q %+v, want the zsh block", name, tool)
 	}
 }
 

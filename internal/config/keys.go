@@ -14,9 +14,8 @@ import (
 )
 
 // SaveKeys rewrites one key table in the config file and leaves every
-// other line as it was. The file is the user's: it carries their tool
-// blocks and the comments they wrote around them, so the table is spliced
-// as text rather than the document being re-encoded.
+// other line as it was. The file is the user's, comments and all, so the
+// table is spliced as text rather than the document being re-encoded.
 func SaveKeys(dir string, keys keybind.Table) error {
 	if err := keys.Validate(); err != nil {
 		return err

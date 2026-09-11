@@ -89,6 +89,33 @@ func TestDismissPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
+func TestToolsRetiredNoticeNamesTheIgnoredBlocks(t *testing.T) {
+	st := noticeStore(t)
+	m := noticeModel(st, "v0.2.0")
+	if contains(noticeIDs(m.activeNotices()), noticeToolsRetired) {
+		t.Fatal("a file with no tool blocks has nothing to retire")
+	}
+	m.cfg.IgnoredTools = []string{"claude", "mytool"}
+	var retired notice
+	for _, n := range m.activeNotices() {
+		if n.id == noticeToolsRetired {
+			retired = n
+		}
+	}
+	if retired.id == "" {
+		t.Fatalf("want %s among %v", noticeToolsRetired, noticeIDs(m.activeNotices()))
+	}
+	if !contains(retired.body, "claude, mytool") {
+		t.Fatalf("the notice should name the ignored blocks: %q", retired.body)
+	}
+	m.dismissNotice(noticeToolsRetired)
+	reopened := noticeModel(st, "v0.2.0")
+	reopened.cfg.IgnoredTools = m.cfg.IgnoredTools
+	if contains(noticeIDs(reopened.activeNotices()), noticeToolsRetired) {
+		t.Fatal("dismissal did not survive restart")
+	}
+}
+
 func TestUpdateNoticePerRelease(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")

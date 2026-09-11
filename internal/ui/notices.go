@@ -28,6 +28,9 @@ const (
 	// noticeArrowStep introduces the beta ←→ pair; it ships in the binary
 	// and stays listed until dismissed, like the welcome.
 	noticeArrowStep = "arrow-step-beta"
+	// noticeToolsRetired shows while the loaded file still declares tool
+	// blocks, and stays until dismissed like the two above.
+	noticeToolsRetired = "tools-config-retired"
 
 	dismissedNoticesSetting = "dismissed_notices"
 	lastSeenVersionSetting  = "last_seen_version"
@@ -135,6 +138,31 @@ func (m *Model) activeNotices() []notice {
 			title: msg.Title,
 			body:  msg.Body,
 			url:   msg.URL,
+		})
+	}
+	if len(m.cfg.IgnoredTools) > 0 {
+		notices = append(notices, notice{
+			id:    noticeToolsRetired,
+			glyph: "⚙",
+			tint:  lipgloss.Color("#e2c044"),
+			title: "Tool blocks in your config.toml no longer apply",
+			body: []string{
+				"Every tool's command and status rules now come from Agent Manager",
+				"itself, so these blocks in your config.toml are no longer read:",
+				"",
+				strings.Join(m.cfg.IgnoredTools, ", "),
+				"",
+				"Nothing on disk changed. They are inert, and yours to delete.",
+				"",
+				"Each one was a copy of the defaults as they stood the day your file",
+				"was written, which is why a fix for a CLI's new screen stopped at",
+				"your copy instead of reaching you. Now it reaches you.",
+			},
+			after: []string{
+				"If a session reads its status wrong, Enter opens a report: the rules",
+				"are ours to fix, for everyone.",
+			},
+			url: bugReportURL(m.update.version),
 		})
 	}
 	notices = append(notices,
