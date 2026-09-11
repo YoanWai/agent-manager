@@ -368,7 +368,6 @@ func (d *Driver) installSessionUX(name string) error {
 	return err
 }
 
-// Reads a session-scoped option, falling back to the server's global value.
 // Tmux answers an un-overridden session option with an empty string rather than the global option.
 func (d *Driver) resolvedOption(name, option string) (string, error) {
 	value, err := d.run("show-options", "-t", name, "-v", option)

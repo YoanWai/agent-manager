@@ -616,10 +616,11 @@ func TestRefreshChromeKeepsLabelAndAddsSessionHints(t *testing.T) {
 	}
 }
 
-// restorePrefix snapshots and restores the server's global prefix, so a
-// test that sets one does not leak it into the next.
-func restorePrefix(t *testing.T) {
-	t.Helper()
+// A tmux.conf almost always sets the prefix with "set -g", which
+// TestRefreshChromeKeepsLabelAndAddsSessionHints never exercises (it
+// always overrides "-t <session>" directly).
+func TestRefreshChromeResolvesAGloballySetPrefix(t *testing.T) {
+	driver := requireTmux(t)
 	original, err := tmuxCmd("show-options", "-g", "-v", "prefix").CombinedOutput()
 	if err != nil {
 		t.Fatalf("show-options prefix: %v: %s", err, original)
@@ -630,14 +631,7 @@ func restorePrefix(t *testing.T) {
 			t.Errorf("restore prefix: %v: %s", err, out)
 		}
 	})
-}
 
-// A tmux.conf almost always sets the prefix with "set -g", which
-// TestRefreshChromeKeepsLabelAndAddsSessionHints never exercises (it
-// always overrides "-t <session>" directly).
-func TestRefreshChromeResolvesAGloballySetPrefix(t *testing.T) {
-	driver := requireTmux(t)
-	restorePrefix(t)
 	id := "globalprefix" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
 	if err := driver.Create(id, "/tmp", "", nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
