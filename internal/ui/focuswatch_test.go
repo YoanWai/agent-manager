@@ -400,3 +400,37 @@ func TestFocusWatchReportsALostClient(t *testing.T) {
 		}
 	}
 }
+
+// A session whose terminal is already gone is an expected state, not a
+// failure: selecting its row stays quiet and leaves the id unclaimed so a
+// later revive opens a fresh client.
+func TestFocusWatchSkipsMissingSession(t *testing.T) {
+	driver := requireFocusDriver(t)
+	id := "missing" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	msgs := make(chan tea.Msg, 8)
+	watch := newFocusWatch(driver, func(msg tea.Msg) { msgs <- msg })
+	t.Cleanup(watch.Close)
+
+	watch.setFocus(id)
+	deadline := time.After(2 * time.Second)
+	for {
+		watch.mu.Lock()
+		claimed, failed := watch.id, watch.failedID
+		watch.mu.Unlock()
+		if claimed == "" && failed == id {
+			break
+		}
+		select {
+		case msg := <-msgs:
+			t.Fatalf("missing session produced a notification: %#v", msg)
+		case <-deadline:
+			t.Fatalf("watcher still claims %q, backed off %q", claimed, failed)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	select {
+	case msg := <-msgs:
+		t.Fatalf("missing session produced a notification: %#v", msg)
+	default:
+	}
+}
