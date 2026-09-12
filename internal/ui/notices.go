@@ -27,9 +27,7 @@ const (
 	noticeWelcome = "welcome"
 	// noticeArrowStep introduces the beta ←→ pair; it ships in the binary
 	// and stays listed until dismissed, like the welcome.
-	noticeArrowStep = "arrow-step-beta"
-	// noticeToolsRetired shows while the loaded file still declares tool
-	// blocks, and stays until dismissed like the two above.
+	noticeArrowStep    = "arrow-step-beta"
 	noticeToolsRetired = "tools-config-retired"
 
 	dismissedNoticesSetting = "dismissed_notices"
