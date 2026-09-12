@@ -327,7 +327,7 @@ func toolLabel(toolName string) string {
 	if label, known := labels[toolName]; known {
 		return label
 	}
-	return "A custom tool from my config"
+	return "Not tool specific"
 }
 
 // operatingSystem spells the platform the way the bug form's dropdown does.

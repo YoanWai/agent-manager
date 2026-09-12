@@ -146,7 +146,7 @@ It asks to confirm first, and it works on a live session too: the running agent 
 
 The fork uses the source session's tool, group, working directory, and conversation history.
 
-Claude Code, OpenCode, Codex, Grok, Gemini CLI, Pi, and Command Code include default fork commands. A custom tool needs a `fork_command` in its configuration. The source session must have a captured conversation ID.
+Claude Code, OpenCode, Codex, Grok, Gemini CLI, Pi, and Command Code include default fork commands. The source session must have a captured conversation ID.
 
 A fork shares its source session's managed worktree. Agent Manager keeps the worktree until you delete the last session that uses it. You cannot rename the worktree while another session uses it.
 
@@ -237,8 +237,6 @@ Every one of these tools acts on the user's machine. Agents should treat `send_t
 Registration is per tool. Claude gets a generated `--mcp-config` file. Codex gets `-c mcp_servers...` overrides. OpenCode gets an `OPENCODE_CONFIG` merge file. Grok, Gemini, and Command Code each get a one-time `mcp add --scope user` entry on their first launch. Hermes gets its own one-time `mcp add` flow, which needs the MCP SDK its installer treats as optional: a Hermes still missing it refuses the spawn with a dialog pointing at `hermes setup`, so a Hermes session always carries these tools. A spawn whose CLI is not on PATH is refused the same way, with the vendor's portable installer for a built-in agent, or the package manager on this machine for anything else. When that command is the vendor's installer, `c` copies it and `i` runs it in a shell tab named after the CLI, where you can watch it and answer its prompts; when it exits 0 and puts the CLI on PATH the refused spawn goes ahead on its own, and a failure, or an installer that leaves the CLI somewhere PATH does not name, leaves the tab open with the output and the reason on the status line. A package-manager line stays a suggestion to read, since the package that carries a tool's name is yours to choose. The dialog also hands the mouse back to the terminal while it is up, so a drag over the command selects it.
 
 Pi does not include an MCP client. Its sessions reach the same workspace through the subcommands: `agent-manager --help` lists them, from `sessions`, `spawn`, `send` and `wait` to the shared task list, file reservations, terminals and the review declarations.
-
-A custom tool opts in with `mcp = "<style>"` in its config section. Set `mcp = "none"` to disable registration.
 
 ### Bugs and ideas
 
