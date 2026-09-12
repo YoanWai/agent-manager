@@ -456,7 +456,7 @@ func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 	for tool, want := range map[string]string{
 		"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "grok": "Grok Build",
 		"gemini": "Gemini CLI", "pi": "Pi", "hermes": "Hermes Agent", "command-code": "Command Code",
-		"my-agent": "A custom tool from my config",
+		"my-agent": "Not tool specific",
 	} {
 		if got := toolLabel(tool); got != want {
 			t.Errorf("toolLabel(%q) = %q, want %q", tool, got, want)
@@ -466,7 +466,7 @@ func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, label := range []string{"Claude Code", "Codex", "OpenCode", "Grok Build", "Gemini CLI", "Pi", "Hermes Agent", "Command Code", "A custom tool from my config"} {
+	for _, label := range []string{"Claude Code", "Codex", "OpenCode", "Grok Build", "Gemini CLI", "Pi", "Hermes Agent", "Command Code", "Not tool specific"} {
 		if !strings.Contains(string(form), "- "+label+"\n") {
 			t.Errorf("the bug form's dropdown has no %q option", label)
 		}

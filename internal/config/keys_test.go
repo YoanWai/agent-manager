@@ -123,8 +123,8 @@ command = "mine"
 	if got := loaded.SessionKeys.Binding(keybind.Detach).Label(); got != "ctrl+q" {
 		t.Fatalf("reloaded detach = %q", got)
 	}
-	if got := loaded.Tools["mine"].Command; got != "mine" {
-		t.Fatalf("the tool block should survive, command = %q", got)
+	if len(loaded.IgnoredTools) != 1 || loaded.IgnoredTools[0] != "mine" {
+		t.Fatalf("the surviving block should be reported as ignored, got %v", loaded.IgnoredTools)
 	}
 }
 

@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BurntSushi/toml"
+
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -81,6 +84,27 @@ default_status = "idle"
 review = "ctrl+g"
 `
 
+// testConfigLoader loads the harness config the manager would, with the
+// document's own tool blocks in place of the built-in CLIs, so a test gets
+// a pane it can predict.
+func testConfigLoader(t *testing.T, doc string) func(string) (config.Config, error) {
+	t.Helper()
+	var declared struct {
+		Tools map[string]config.Tool `toml:"tools"`
+	}
+	if _, err := toml.Decode(doc, &declared); err != nil {
+		t.Fatalf("decode the test tools: %v", err)
+	}
+	return func(dir string) (config.Config, error) {
+		cfg, err := config.LoadDir(dir)
+		if err != nil {
+			return cfg, err
+		}
+		cfg.Tools = declared.Tools
+		return cfg, nil
+	}
+}
+
 func newSessionHarness(t *testing.T) *sessionHarness {
 	t.Helper()
 	if _, err := exec.LookPath("tmux"); err != nil {
@@ -118,12 +142,17 @@ func newSessionHarness(t *testing.T) *sessionHarness {
 		t.Fatalf("create caller row: %v", err)
 	}
 	newDriver := func() (*tmux.Driver, error) { return driver, nil }
+	loadConfig := testConfigLoader(t, sessionConfig)
+	sessions := newSessions(configDir, MCPVocabulary(), newDriver, git.New)
+	sessions.loadConfig = loadConfig
+	terminals := newTerminals(configDir, MCPVocabulary(), newDriver)
+	terminals.loadConfig = loadConfig
 	h := &sessionHarness{
 		driver:    driver,
 		store:     st,
 		caller:    caller,
-		sessions:  newSessions(configDir, MCPVocabulary(), newDriver, git.New),
-		terminals: newTerminals(configDir, MCPVocabulary(), newDriver),
+		sessions:  sessions,
+		terminals: terminals,
 	}
 	t.Cleanup(func() {
 		sessions, _ := st.ListSessions(true)
@@ -479,7 +508,7 @@ func TestSendRefusesAToolTheManagerCannotReadReadinessFrom(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	if _, err := h.sessions.Send(h.caller.ID, created.ID, "rebase on main"); err == nil ||
-		!strings.Contains(err.Error(), "activity_cutoff") {
+		!strings.Contains(err.Error(), "marks no input box") {
 		t.Fatalf("send to a tool with no readiness marker = %v", err)
 	}
 }
@@ -727,8 +756,8 @@ func TestASenderIsToldWhenItsRecipientErrored(t *testing.T) {
 
 // A tool block can be deleted after a message was queued for a session
 // running that tool, which leaves the poller unable to read readiness.
-// The message stays queued: the hold lifts if the tool block returns.
-func TestASenderIsToldWhenTheRecipientsToolLeftTheConfig(t *testing.T) {
+// The message stays queued rather than being dropped.
+func TestASenderIsToldWhenTheRecipientsToolIsOneThisBuildDoesNotShip(t *testing.T) {
 	h := newSessionHarness(t)
 	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker"})
 	if err != nil {
@@ -750,8 +779,8 @@ func TestASenderIsToldWhenTheRecipientsToolLeftTheConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("heldReason: %v", err)
 	}
-	if !strings.Contains(reason, "activity_cutoff") || !strings.Contains(reason, worker.ID) {
-		t.Fatalf("a message whose tool left the config reads as %q", reason)
+	if !strings.Contains(reason, "not a CLI it supports") || !strings.Contains(reason, worker.ID) {
+		t.Fatalf("a message whose tool this build does not ship reads as %q", reason)
 	}
 	if sent.MessageID == 0 {
 		t.Fatalf("Send returned no message id")

@@ -11,18 +11,11 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 )
 
-func TestLoadWritesAndParsesDefault(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	if err := writeDefault(path); err != nil {
-		t.Fatalf("writeDefault: %v", err)
+func TestDefaultDefinesEveryShippedTool(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
 	}
-	var cfg Config
-	if err := decodeInto(path, &cfg); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	cfg.applyDefaults()
-
 	if cfg.PollInterval.Duration != 2*time.Second {
 		t.Fatalf("poll interval = %v want 2s", cfg.PollInterval.Duration)
 	}
@@ -165,283 +158,132 @@ func TestLoadWritesAndParsesDefault(t *testing.T) {
 	}
 }
 
-func TestLoadDirWritesDefaultInRequestedDirectory(t *testing.T) {
+// The file a first run leaves behind holds what the manager reads from it
+// and nothing else. Tools are not in it, because they are not read from it.
+func TestFirstRunWritesAStarterFileThatDeclaresNoTools(t *testing.T) {
 	dir := t.TempDir()
 	cfg, err := LoadDir(dir)
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
-	if _, ok := cfg.Tools["terminal"]; !ok {
-		t.Fatal("default terminal tool is missing")
-	}
-	if _, err := os.Stat(filepath.Join(dir, "config.toml")); err != nil {
+	written, err := os.ReadFile(filepath.Join(dir, "config.toml"))
+	if err != nil {
 		t.Fatalf("config file: %v", err)
 	}
-}
-
-func TestLoadDirUpgradesLegacyCodexWorkingRule(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	legacy := `
-[tools.codex]
-command = "codex"
-rules = [
-  { state = "working", pattern = "(?m)esc to interrupt\\b" },
-]
-`
-	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
-		t.Fatal(err)
+	if strings.Contains(string(written), "[tools.") {
+		t.Fatalf("the starter file should declare no tools:\n%s", written)
 	}
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
+	if len(cfg.IgnoredTools) != 0 {
+		t.Fatalf("a fresh file ignores nothing, got %v", cfg.IgnoredTools)
 	}
-	rule := cfg.Tools["codex"].Rules[0]
-	if rule.Pattern == `(?m)esc to interrupt\b` {
-		t.Fatal("legacy Codex working rule was not upgraded")
+	if _, ok := cfg.Tools["terminal"]; !ok {
+		t.Fatal("the built-in terminal tool is missing")
 	}
-	if !strings.Contains(rule.Pattern, `\z`) {
-		t.Fatalf("upgraded Codex working rule is not scoped to the activity-region tail: %q", rule.Pattern)
+	if cfg.PollInterval.Duration != 2*time.Second {
+		t.Fatalf("poll interval = %v want 2s", cfg.PollInterval.Duration)
 	}
 }
 
-func TestLoadDirUpgradesLegacyClaudeStatusPatterns(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	legacy := `
+// A file written by an older release carries every block it shipped that
+// day; they define nothing now, and their names feed the notice.
+func TestToolBlocksInTheFileAreIgnoredAndReported(t *testing.T) {
+	dir := writeConfigText(t, `
 [tools.claude]
-command = "claude"
-busy_line = '` + busyLineAgentsOnly + `'
-chrome_line = '` + oldClaudeChromeLine + `'
-`
-	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
-		t.Fatal(err)
-	}
+command = "not-claude"
+activity_cutoff = "nonsense"
+
+[tools.mine]
+command = "mine"
+`)
 	cfg, err := LoadDir(dir)
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
-	if !strings.Contains(cfg.Tools["claude"].BusyLine, "shells? still running") {
-		t.Fatalf("legacy claude busy_line was not upgraded: %q", cfg.Tools["claude"].BusyLine)
-	}
-	if !strings.Contains(cfg.Tools["claude"].ChromeLine, "Update installed") {
-		t.Fatalf("legacy claude chrome_line was not upgraded: %q", cfg.Tools["claude"].ChromeLine)
-	}
-}
-
-// A config.toml stored before hermes's titled boxes were read as frame
-// carries the narrower rule, which leaves those borders in a copied reply.
-func TestLoadDirUpgradesHermesChromeToItsTitledBoxes(t *testing.T) {
-	dir := t.TempDir()
-	stored := "\n[tools.hermes]\ncommand = \"hermes --cli\"\nchrome_line = '" + oldHermesChromeLine + "'\n"
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(stored), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := LoadDir(dir)
+	builtin, err := Default()
 	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
+		t.Fatalf("Default: %v", err)
 	}
-	border := "╭─ ⚕ Hermes ─────╮"
-	if !regexp.MustCompile(cfg.Tools["hermes"].ChromeLine).MatchString(border) {
-		t.Fatalf("stored hermes chrome_line was not upgraded: %q", cfg.Tools["hermes"].ChromeLine)
+	if got, want := cfg.Tools["claude"].Command, builtin.Tools["claude"].Command; got != want {
+		t.Fatalf("claude command = %q, want the built-in %q", got, want)
 	}
-	if regexp.MustCompile(oldHermesChromeLine).MatchString(border) {
-		t.Fatal("oldHermesChromeLine drifted: it already matches the row the upgrade exists for")
+	if got, want := cfg.Tools["claude"].ActivityCutoff, builtin.Tools["claude"].ActivityCutoff; got != want {
+		t.Fatalf("claude activity_cutoff = %q, want the built-in %q", got, want)
 	}
-}
-
-// A config.toml stored before gemini drew a skills count beside its
-// approval banner carries the narrower rule, which no longer matches the
-// row it was written for.
-func TestLoadDirUpgradesGeminiChromeToTheSkillsCount(t *testing.T) {
-	dir := t.TempDir()
-	stored := "\n[tools.gemini]\ncommand = \"gemini\"\nchrome_line = '" + oldGeminiChromeLine + "'\n"
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(stored), 0o644); err != nil {
-		t.Fatal(err)
+	if _, ok := cfg.Tools["mine"]; ok {
+		t.Fatal("a block the binary does not ship must not become a tool")
 	}
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	banner := " Shift+Tab to accept edits                          2 skills"
-	rule := regexp.MustCompile(cfg.Tools["gemini"].ChromeLine)
-	if !rule.MatchString(banner) {
-		t.Fatalf("stored gemini chrome_line was not upgraded: %q", cfg.Tools["gemini"].ChromeLine)
-	}
-	if regexp.MustCompile(oldGeminiChromeLine).MatchString(banner) {
-		t.Fatal("oldGeminiChromeLine drifted: it already matches the row the upgrade exists for")
+	if len(cfg.IgnoredTools) != 2 || cfg.IgnoredTools[0] != "claude" || cfg.IgnoredTools[1] != "mine" {
+		t.Fatalf("ignored blocks = %v, want claude and mine", cfg.IgnoredTools)
 	}
 }
 
-// A config.toml stored before claude began printing its "new task?"
-// nudge carries the chrome rule of that release verbatim, and keeps it
-// over any new default unless the old wording is recognised.
-func TestLoadDirUpgradesClaudeChromeToTheComposerHint(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	stored := `
+// A hand-edit that no longer fits the Tool shape is as inert as a
+// well-formed block, and an empty table still gets named.
+func TestAnIgnoredToolBlockCannotFailTheLoad(t *testing.T) {
+	dir := writeConfigText(t, `
+poll_interval = "3s"
+
 [tools.claude]
-command = "claude"
-chrome_line = '` + oldClaudeChromeLineNoHint + `'
-`
-	if err := os.WriteFile(path, []byte(stored), 0o644); err != nil {
-		t.Fatal(err)
-	}
+shell = "yes"
+rules = "not an array"
+
+[tools.empty]
+
+[keybindings.session]
+review = "ctrl+g"
+`)
 	cfg, err := LoadDir(dir)
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
-	if !strings.Contains(cfg.Tools["claude"].ChromeLine, "new task") {
-		t.Fatalf("stored claude chrome_line was not upgraded: %q", cfg.Tools["claude"].ChromeLine)
+	if got := cfg.IgnoredTools; len(got) != 2 || got[0] != "claude" || got[1] != "empty" {
+		t.Fatalf("ignored blocks = %v, want claude and empty", got)
 	}
-	// The rewrite only fires on the exact wording that shipped, so the
-	// constant has to stay the current default minus the nudge.
-	def, err := Default()
-	if err != nil {
-		t.Fatalf("built-in config: %v", err)
+	if cfg.PollInterval.Duration != 3*time.Second {
+		t.Fatalf("poll interval = %v, want the file's 3s", cfg.PollInterval.Duration)
 	}
-	if !strings.HasPrefix(def.Tools["claude"].ChromeLine, oldClaudeChromeLineNoHint) {
-		t.Fatalf("oldClaudeChromeLineNoHint drifted from the default:\n%q\n%q",
-			oldClaudeChromeLineNoHint, def.Tools["claude"].ChromeLine)
+	if got := cfg.SessionKeys.Binding(keybind.Review).Label(); got != "ctrl+g" {
+		t.Fatalf("review key = %q, want the file's ctrl+g", got)
+	}
+	if cfg.Tools["claude"].Shell {
+		t.Fatal("the built-in claude block is not a shell")
 	}
 }
 
-func TestLoadDirUpgradesLegacyGrokRowPatterns(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	legacy := `
-[tools.grok]
-command = "grok"
-activity_cutoff = '` + grokBoxedCutoff + `'
-chrome_line = '` + oldGrokChromeLine + `'
-`
-	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := LoadDir(dir)
+// Nothing types into a pane it cannot read, so every agent CLI has to mark
+// where its input box is. The shell is exempt: nothing types into it.
+func TestEveryAgentToolMarksItsInputBox(t *testing.T) {
+	cfg, err := Default()
 	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
+		t.Fatalf("Default: %v", err)
 	}
-	if got := cfg.Tools["grok"].ActivityCutoff; got != `(?m)^(?:\s*│ )?❯` {
-		t.Fatalf("legacy grok activity_cutoff was not upgraded: %q", got)
-	}
-	if !strings.Contains(cfg.Tools["grok"].ChromeLine, "Help improve Grok") {
-		t.Fatalf("legacy grok chrome_line was not upgraded: %q", cfg.Tools["grok"].ChromeLine)
+	for name, tool := range cfg.Tools {
+		if tool.Shell {
+			continue
+		}
+		if tool.ActivityCutoff == "" {
+			t.Errorf("tool %q declares no activity_cutoff", name)
+		}
 	}
 }
 
-func TestLoadDirPreservesCustomGrokRowPatterns(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	custom := `
-[tools.grok]
-command = "grok"
-activity_cutoff = '(?m)^GROK>'
-chrome_line = 'my own chrome'
-`
-	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := LoadDir(dir)
+func TestTheBinaryShipsOneShell(t *testing.T) {
+	cfg, err := Default()
 	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
+		t.Fatalf("Default: %v", err)
 	}
-	if got := cfg.Tools["grok"].ActivityCutoff; got != `(?m)^GROK>` {
-		t.Fatalf("custom grok activity_cutoff was overwritten: %q", got)
+	shells := 0
+	for _, tool := range cfg.Tools {
+		if tool.Shell {
+			shells++
+		}
 	}
-	if got := cfg.Tools["grok"].ChromeLine; got != "my own chrome" {
-		t.Fatalf("custom grok chrome_line was overwritten: %q", got)
+	if shells != 1 {
+		t.Fatalf("shell tools = %d, want exactly one", shells)
 	}
-}
-
-func TestLoadDirBackfillsLimitLine(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(path, []byte("[tools.claude]\ncommand = \"claude\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	if !strings.Contains(cfg.Tools["claude"].LimitLine, "You've hit your") {
-		t.Fatalf("claude limit_line was not backfilled: %q", cfg.Tools["claude"].LimitLine)
-	}
-	if !strings.Contains(cfg.Tools["codex"].LimitLine, "You've hit your usage limit") {
-		t.Fatalf("codex limit_line was not backfilled: %q", cfg.Tools["codex"].LimitLine)
-	}
-	if !strings.Contains(cfg.Tools["gemini"].LimitLine, "Usage limit reached") {
-		t.Fatalf("gemini limit_line was not backfilled: %q", cfg.Tools["gemini"].LimitLine)
-	}
-	if !strings.Contains(cfg.Tools["opencode"].LimitLine, "limit reached") {
-		t.Fatalf("opencode limit_line was not backfilled: %q", cfg.Tools["opencode"].LimitLine)
-	}
-	if !strings.Contains(cfg.Tools["grok"].LimitLine, "rate limit") {
-		t.Fatalf("grok limit_line was not backfilled: %q", cfg.Tools["grok"].LimitLine)
-	}
-	if !strings.Contains(cfg.Tools["hermes"].LimitLine, "Rate limited") {
-		t.Fatalf("hermes limit_line was not backfilled: %q", cfg.Tools["hermes"].LimitLine)
-	}
-}
-
-func TestLoadDirBackfillsDialogFooter(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(path, []byte("[tools.claude]\ncommand = \"claude\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	if !strings.Contains(cfg.Tools["claude"].DialogFooter, "Enter to select") {
-		t.Fatalf("claude dialog_footer was not backfilled: %q", cfg.Tools["claude"].DialogFooter)
-	}
-}
-
-func TestLoadDirPreservesCustomClaudeStatusPatterns(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	custom := `
-[tools.claude]
-command = "claude"
-busy_line = "my own busy signal"
-chrome_line = "my own chrome signal"
-`
-	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	if got := cfg.Tools["claude"].BusyLine; got != "my own busy signal" {
-		t.Fatalf("claude busy_line = %q want the user's own pattern", got)
-	}
-	if got := cfg.Tools["claude"].ChromeLine; got != "my own chrome signal" {
-		t.Fatalf("claude chrome_line = %q want the user's own pattern", got)
-	}
-}
-
-func TestLoadDirPreservesCustomCodexWorkingRule(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	custom := `
-[tools.codex]
-command = "codex"
-rules = [
-  { state = "working", pattern = "my private status signal" },
-]
-`
-	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	if got := cfg.Tools["codex"].Rules[0].Pattern; got != "my private status signal" {
-		t.Fatalf("custom Codex working rule = %q", got)
+	name, tool := cfg.ShellTool()
+	if name != "terminal" || tool.Command != "" {
+		t.Fatalf("ShellTool = %q %+v, want the terminal block on $SHELL", name, tool)
 	}
 }
 
@@ -451,9 +293,9 @@ func TestShellToolUsesFlagAndStableName(t *testing.T) {
 		"zsh":      {Command: "zsh", Shell: true},
 		"bash":     {Command: "bash", Shell: true},
 	}}
-	name, tool, ok := cfg.ShellTool()
-	if !ok || name != "bash" || tool.Command != "bash" {
-		t.Fatalf("ShellTool = %q %+v %v, want bash", name, tool, ok)
+	name, tool := cfg.ShellTool()
+	if name != "bash" || tool.Command != "bash" {
+		t.Fatalf("ShellTool = %q %+v, want bash", name, tool)
 	}
 }
 
@@ -482,115 +324,6 @@ func TestDefaultWaitingRulesPrecedeWorking(t *testing.T) {
 		if firstWorking >= 0 && lastWaiting > firstWorking {
 			t.Errorf("%s waiting rule at %d follows first working rule at %d", name, lastWaiting, firstWorking)
 		}
-	}
-}
-
-func TestBackfillToolDefaults(t *testing.T) {
-	cfg := Config{Tools: map[string]Tool{
-		"opencode": {Command: "opencode", ReviveCommand: "opencode --continue"},
-	}}
-	if err := cfg.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	if got := cfg.Tools["opencode"].PromptFlag; got != "--prompt" {
-		t.Fatalf("opencode prompt_flag = %q want --prompt (backfilled)", got)
-	}
-	if got := cfg.Tools["opencode"].ReviveCommand; got != "opencode --continue" {
-		t.Fatalf("opencode revive_command = %q want user value kept", got)
-	}
-	if _, ok := cfg.Tools["claude"]; !ok {
-		t.Fatal("expected claude tool added from built-in defaults")
-	}
-}
-
-// The arrow-unfocus fix needs per-tool input-line knowledge: pi declares
-// its blank composer row and opencode its gutter bar. Older configs written
-// before the field existed gain both on load, and a value the user wrote is
-// kept.
-func TestBackfillArrowUnfocusFields(t *testing.T) {
-	user := `^\s*┃\s+mine`
-	cfg := Config{Tools: map[string]Tool{
-		"pi":       {Command: "pi"},
-		"opencode": {Command: "opencode", InputPrefix: user},
-	}}
-	if err := cfg.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	if got := cfg.Tools["pi"].InputPrefix; got != "^" {
-		t.Fatalf("pi input_prefix = %q want ^ (backfilled)", got)
-	}
-	if got := cfg.Tools["opencode"].InputPrefix; got != user {
-		t.Fatalf("opencode input_prefix = %q want user value kept", got)
-	}
-	plain := Config{Tools: map[string]Tool{"opencode": {Command: "opencode"}}}
-	if err := plain.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	if got := plain.Tools["opencode"].InputPrefix; got != `(?m)^\s*┃` {
-		t.Fatalf("opencode input_prefix = %q want the gutter bar (backfilled)", got)
-	}
-}
-
-// Left could never leave a focused terminal: the shell block declared no
-// input marker, so the prompt head was unrecognisable. Older configs
-// written before the field existed gain the generic prompt matcher on
-// load, and a value the user wrote is kept.
-func TestBackfillTerminalInputPrefix(t *testing.T) {
-	cfg := Config{Tools: map[string]Tool{"terminal": {Shell: true}}}
-	if err := cfg.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	if got := cfg.Tools["terminal"].InputPrefix; got != `(?m)^\s*(?:\S+\s+){0,3}[❯>$#›»→%➜]\s` {
-		t.Fatalf("terminal input_prefix = %q want the generic prompt matcher (backfilled)", got)
-	}
-	user := `^\$ `
-	kept := Config{Tools: map[string]Tool{"terminal": {Shell: true, InputPrefix: user}}}
-	if err := kept.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	if got := kept.Tools["terminal"].InputPrefix; got != user {
-		t.Fatalf("terminal input_prefix = %q want user value kept", got)
-	}
-}
-
-func TestBackfillComposerPlaceholder(t *testing.T) {
-	plain := Config{Tools: map[string]Tool{"command-code": {Command: "cmd"}}}
-	if err := plain.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	if got := plain.Tools["command-code"].ComposerPlaceholder; got != "Ask your question..." {
-		t.Fatalf("composer_placeholder = %q want backfilled", got)
-	}
-	mine := Config{Tools: map[string]Tool{"command-code": {Command: "cmd", ComposerPlaceholder: "Type here"}}}
-	if err := mine.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	if got := mine.Tools["command-code"].ComposerPlaceholder; got != "Type here" {
-		t.Fatalf("composer_placeholder = %q want user value kept", got)
-	}
-}
-
-func TestBackfillHermesRequiresMCP(t *testing.T) {
-	cfg := Config{Tools: map[string]Tool{
-		"hermes": {Command: "hermes --cli"},
-	}}
-	if err := cfg.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	if got := cfg.Tools["hermes"].MCP; got != "hermes" {
-		t.Fatalf("hermes mcp = %q want hermes", got)
-	}
-}
-
-func TestBackfillHermesKeepsExplicitMCPOptOut(t *testing.T) {
-	cfg := Config{Tools: map[string]Tool{
-		"hermes": {Command: "hermes --cli", MCP: "none"},
-	}}
-	if err := cfg.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	if got := cfg.Tools["hermes"].MCP; got != "none" {
-		t.Fatalf("hermes mcp = %q want the explicit opt-out kept", got)
 	}
 }
 
@@ -667,156 +400,6 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 	}
 }
 
-func TestBackfillFillsResumeFields(t *testing.T) {
-	cfg := Config{Tools: map[string]Tool{
-		"claude":       {Command: "claude", ReviveCommand: "claude --continue"},
-		"command-code": {Command: "cmd"},
-	}}
-	if err := cfg.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	tool := cfg.Tools["claude"]
-	if tool.SessionIDFlag != "--session-id" {
-		t.Fatalf("claude session_id_flag = %q want backfilled --session-id", tool.SessionIDFlag)
-	}
-	if tool.ResumeByIDCommand != "claude --resume {id}" {
-		t.Fatalf("claude resume_by_id_command = %q want backfilled", tool.ResumeByIDCommand)
-	}
-	if tool.ResumePickerCommand != "claude --resume" {
-		t.Fatalf("claude resume_picker_command = %q want backfilled \"claude --resume\"", tool.ResumePickerCommand)
-	}
-	if tool.ForkCommand == "" {
-		t.Fatal("claude fork_command was not backfilled")
-	}
-	if got := cfg.Tools["command-code"].ForkCommand; got != "cmd --session {id} --fork-session --name {name}" {
-		t.Fatalf("command-code fork_command = %q want backfilled", got)
-	}
-}
-
-// A config.toml a #385-era release wrote carries the command-code patterns
-// of its day verbatim, and backfill only touches zero fields. The stale
-// shapes are rewritten to the current defaults, so the status fix reaches
-// existing installations instead of only fresh files.
-func TestMigratesStaleCommandCodePatterns(t *testing.T) {
-	cfg := Config{Tools: map[string]Tool{
-		"command-code": {
-			Command:    "cmd",
-			TurnEnd:    oldCmdTurnEnd,
-			ChromeLine: oldCmdChromeLine,
-			Rules:      []Rule{{State: "working", Pattern: oldCmdWorking}},
-		},
-	}}
-	if err := cfg.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	tool := cfg.Tools["command-code"]
-	if tool.TurnEnd == oldCmdTurnEnd {
-		t.Fatal("stale turn_end was not migrated")
-	}
-	if !strings.Contains(tool.TurnEnd, "Thought") {
-		t.Fatalf("migrated turn_end = %q, want the Thought/Worked shape", tool.TurnEnd)
-	}
-	if tool.ChromeLine == oldCmdChromeLine {
-		t.Fatal("stale chrome_line was not migrated")
-	}
-	if !strings.Contains(tool.ChromeLine, "»") {
-		t.Fatalf("migrated chrome_line = %q, want the » hint covered", tool.ChromeLine)
-	}
-	for _, rule := range tool.Rules {
-		if rule.State == "working" && rule.Pattern == oldCmdWorking {
-			t.Fatal("stale working rule was not migrated")
-		}
-	}
-}
-
-func TestMigratesStaleCodexTurnEnd(t *testing.T) {
-	cfg := Config{Tools: map[string]Tool{
-		"codex": {Command: "codex", TurnEnd: oldCodexTurnEnd},
-	}}
-	if err := cfg.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	if got := cfg.Tools["codex"].TurnEnd; got == oldCodexTurnEnd || !strings.Contains(got, "|─+") {
-		t.Fatalf("migrated turn_end = %q, want the bare divider shape", got)
-	}
-}
-
-// A config.toml written before the pi footer widened carries rules that pin
-// exactly two footer lines, so a pi extension drawing more keeps every rule
-// from matching. A config written on 0.34 or 0.35 carries the widened
-// working rule that still wants the spinner on a line of its own, which pi
-// 0.85 no longer draws. The stale strings are rewritten to the current
-// defaults; a rule the user edited by hand is kept as written.
-func TestMigratesStalePiFooterRules(t *testing.T) {
-	handEdited := `(?ms)my own waiting rule\z`
-	cfg := Config{Tools: map[string]Tool{
-		"pi": {
-			Command: "pi",
-			Rules: []Rule{
-				{State: "idle", Pattern: oldPiIdleRule},
-				{State: "errored", Pattern: oldPiErrorRule},
-				{State: "errored", Pattern: oldPiRateLimitRule},
-				{State: "waiting", Pattern: oldPiQuestionRule},
-				{State: "working", Pattern: oldPiWorkingRule},
-				{State: "working", Pattern: oldPiOwnLineWorkingRule},
-				{State: "waiting", Pattern: handEdited},
-			},
-		},
-	}}
-	if err := cfg.backfillToolDefaults(); err != nil {
-		t.Fatalf("backfill: %v", err)
-	}
-	def, err := Default()
-	if err != nil {
-		t.Fatalf("default: %v", err)
-	}
-	defaults := make(map[string]bool)
-	for _, rule := range def.Tools["pi"].Rules {
-		defaults[rule.Pattern] = true
-	}
-	tool := cfg.Tools["pi"]
-	for _, rule := range tool.Rules[:6] {
-		if !defaults[rule.Pattern] {
-			t.Fatalf("stale %s rule was not rewritten to the current default: %q", rule.State, rule.Pattern)
-		}
-	}
-	if got := tool.Rules[6].Pattern; got != handEdited {
-		t.Fatalf("hand-edited rule = %q, want kept as written", got)
-	}
-}
-
-// A config.toml written before pi 0.85 carries an activity_cutoff that
-// knows only the plain rule as the input box's edge, so the composer's top
-// border read as draft text for the length of every turn once the spinner
-// moved into it. The stale string is rewritten to the current default; a
-// hand-edited one is kept.
-func TestMigratesStalePiActivityCutoff(t *testing.T) {
-	def, err := Default()
-	if err != nil {
-		t.Fatalf("default: %v", err)
-	}
-	for _, c := range []struct {
-		name, stored, want string
-	}{
-		{"stale default", oldPiActivityCutoff, def.Tools["pi"].ActivityCutoff},
-		{"hand-edited", `(?m)^my own cutoff$`, `(?m)^my own cutoff$`},
-	} {
-		cfg := Config{Tools: map[string]Tool{"pi": {Command: "pi", ActivityCutoff: c.stored}}}
-		if err := cfg.backfillToolDefaults(); err != nil {
-			t.Fatalf("%s: backfill: %v", c.name, err)
-		}
-		if got := cfg.Tools["pi"].ActivityCutoff; got != c.want {
-			t.Fatalf("%s: activity_cutoff = %q, want %q", c.name, got, c.want)
-		}
-	}
-}
-
-// The shipped pi activity_cutoff, read against a single row, takes both
-// rules that bound the composer: the top one with or without the spinner pi
-// 0.85 draws inside it. The scroll indicator a tall draft puts on that
-// border is not an edge: the row under it is the middle of the draft, and
-// Left there belongs to pi. Read against a whole pane it still cuts at the
-// bottom rule, so the activity region stays anchored at the origin.
 func TestPiActivityCutoffReadsTheSpinnerBorder(t *testing.T) {
 	def, err := Default()
 	if err != nil {

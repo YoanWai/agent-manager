@@ -49,7 +49,7 @@ Not here yet: cost tracking and mouse-driven list navigation.
 
 ## Supported tools
 
-Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Pi**, **Command Code**, and **Hermes Agent** by default. Other CLI tools can run as sessions. Add a `[tools.<name>]` block to give another tool live status rules (see [Configuration](docs/configuration.md)).
+Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Pi**, **Command Code**, and **Hermes Agent**. Each one's launch, revive, fork, and status rules ship in the binary, so an upgrade brings the current version of all of them (see [Configuration](docs/configuration.md#agent-clis)). A CLI that is not on the list is a [feature request](https://github.com/YoanWai/agent-manager/issues/new/choose).
 
 ## Install
 
@@ -103,7 +103,7 @@ A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch
 
 ![review, side by side, with the changed lines tinted in full file context](docs/screenshot-review.png)
 
-Configuration (adding your own tools, status rules, revive commands) is in [docs/configuration.md](docs/configuration.md).
+Configuration (the editor `o` opens, the poll interval, and the key tables) is in [docs/configuration.md](docs/configuration.md).
 
 ## Development
 

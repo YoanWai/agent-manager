@@ -64,7 +64,7 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 
 `esc` closes the bar.
 
-The new-session form's optional `prompt` field launches an agent the same way. It takes `ctrl+v` and its chips too, since a first task is often the screenshot that explains it: paste the design to match or the crash to read, and the agent opens the file on its first turn. Leaving the form without creating the session releases the images it was holding, the way closing the bar does. Tools whose CLI takes the prompt behind a flag declare it with `prompt_flag`, while a persistent CLI with no startup-prompt argument uses `prompt_mode = "send"` (see [Configuration](configuration.md)).
+The new-session form's optional `prompt` field launches an agent the same way. It takes `ctrl+v` and its chips too, since a first task is often the screenshot that explains it: paste the design to match or the crash to read, and the agent opens the file on its first turn. Leaving the form without creating the session releases the images it was holding, the way closing the bar does. How the prompt reaches the agent depends on the CLI: most take it as a launch argument, and a persistent CLI that accepts none has it typed into its composer as soon as that composer is ready.
 
 ![answering a working Claude Code session from the prompt bar, without attaching](demo-space.gif)
 
@@ -86,13 +86,13 @@ Every configured tool is offered when you create a session, which is more than m
 
 `T` opens a shell tab: a session like any other (same list, same row keys, same `enter`, `x`, `v` and `R`) with your shell in the pane instead of an agent. On an agent, the new shell nests under that session, in that agent's group and directory. On a group, it lands in the group as an un-nested sibling, in the group's default path. On a nested shell it joins the same parent; on an un-nested shell it stays un-nested in that shell's group. Either way it opens in that shell's own directory, so a shell you have `cd`'d somewhere hands the next one the same place. A nested shell is named after the session it hangs under, `terminal-review-done` rather than `terminal-0ab5`, and the next one under that session counts up to `terminal-review-done-2`; a shell with no session over it keeps the generated name, and `r` renames any of them. Its status rests at idle throughout: turn tracking belongs to agents, and a shell has no turns.
 
-The shell is the `[tools.terminal]` block in [config.toml](configuration.md). It ships with no command, which leaves the pane on `$SHELL`; set one to open a different shell. What marks it as a shell is `shell = true`, not its name, so a `[tools.terminal]` block you wrote yourself stays the agent CLI you meant it to be.
+The pane opens on `$SHELL`, so it is the shell you already use everywhere else.
 
 Shells live in the tree with the agents they belong to, marked with `❯` where an agent carries its status dot. `m` on a terminal moves it onto an agent (nests under that session) or onto a group (un-nests into that group). A group's dots and counts describe its agents, so only agent work shows as in progress.
 
 **The keys that write into a pane refuse a shell.** `space` and the review screen's `C` both paste their text and press Enter, so on a shell a sentence meant for an agent would run as a command. Both say the row is a shell and send nothing; enter the session (`↵`) to type there, where what you type is plainly a command. `f` says the same, since a shell has no conversation to fork.
 
-A shell left on its empty command carries no session id, so `agent-manager rename` run inside one cannot find its session. Rename it from the list with `r`. Give the block a command and the pane gets an id like any other session.
+A shell carries no session id, so `agent-manager rename` run inside one cannot find its session. Rename it from the list with `r`.
 
 ## Opening the editor
 
@@ -146,7 +146,7 @@ It asks to confirm first, and it works on a live session too: the running agent 
 
 The fork uses the source session's tool, group, working directory, and conversation history.
 
-Claude Code, OpenCode, Codex, Grok, Gemini CLI, Pi, and Command Code include default fork commands. A custom tool needs a `fork_command` in its configuration. The source session must have a captured conversation ID.
+Claude Code, OpenCode, Codex, Grok, Gemini CLI, Pi, and Command Code include default fork commands. The source session must have a captured conversation ID.
 
 A fork shares its source session's managed worktree. Agent Manager keeps the worktree until you delete the last session that uses it. You cannot rename the worktree while another session uses it.
 
@@ -238,8 +238,6 @@ Registration is per tool. Claude gets a generated `--mcp-config` file. Codex get
 
 Pi does not include an MCP client. Its sessions reach the same workspace through the subcommands: `agent-manager --help` lists them, from `sessions`, `spawn`, `send` and `wait` to the shared task list, file reservations, terminals and the review declarations.
 
-A custom tool opts in with `mcp = "<style>"` in its config section. Set `mcp = "none"` to disable registration.
-
 ### Bugs and ideas
 
 `report_issue` files a bug report or a feature request on the agent-manager repository for the user, from inside the session where the problem showed up. `kind` is `bug` or `feature`, `title` is the one-line title and `body` the report in markdown. The tool adds the context the issue forms ask for on its own: the agent-manager version, the operating system, the tmux version, and the CLI the calling session runs with the version it reports.
@@ -285,7 +283,7 @@ Each point sent to the agent carries a stable comment id. After addressing it, a
 
 ![folding the tree, creating a nested group, reordering, and archiving one](demo-groups.gif)
 
-Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `enter` on its row, fold or unfold the whole tree with `F`, hide or restore empty groups visually with `e`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool. Quitting one CLI in a session's pane and starting another there moves the row onto that CLI on the next poll, with the status rules and the revive command that come with it. The move needs one answer: exactly one configured tool has to run the binary the pane is running, so two blocks of the same CLI, or a CLI whose process name is its runtime rather than itself (one installed as a node script, say), leave the row where it is and `tab` sets it by hand.
+Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `enter` on its row, fold or unfold the whole tree with `F`, hide or restore empty groups visually with `e`, and edit a group's name and default path with `r`. On a session, `r` renames it and `tab` cycles the tool. Quitting one CLI in a session's pane and starting another there moves the row onto that CLI on the next poll, with the status rules and the revive command that come with it. The move needs one answer: exactly one built-in CLI has to run the binary the pane is running, so a CLI whose process name is its runtime rather than itself (one installed as a node script, say) leaves the row where it is and `tab` sets it by hand.
 
 ## Status
 
@@ -303,7 +301,7 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 
 Every row carries its mark, and each state has its own color from the active theme, so a glance down the rail tells you who needs you. The key map (`?`) lists the marks under "the mark on a session row".
 
-A session stuck on the wrong mark is usually a rules question: the `[tools.<name>]` block in your own config is what the poller matches, and it keeps the rules it already has when a release ships better ones. [Configuration](configuration.md) has the two-line reset and how to read the pane the poller reads.
+A session stuck on the wrong mark is a rules question, and the rules are ours: they ship in the binary, so an upgrade is what moves them. [Configuration](configuration.md#agent-clis) has what to put in the issue and how to read the pane the poller reads.
 
 `w` narrows the list to sessions that need attention (`waiting`, `finished`, `errored`). Press again to show every status. An `ATTENTION` badge sits over the list with the key that clears it, and the session counts follow the filter; folds open so matches are not hidden. The archived view (`t`) and hidden empty groups (`e`) label themselves the same way. The badges take whatever room the rail has: padded away from the entries on a tall terminal, tight against them on a short one, and yielding to the entries once the list is down to its last rows.
 
@@ -313,7 +311,7 @@ Each row carries its status and tool inline, and a folded group keeps a count pe
 
 Detection matches per-tool regex rules against the visible pane, analyzes the newest turn to tell `finished` from `waiting`, and treats streaming output (content changing between polls) as `working`. A turn that ends without any turn-summary line still resolves: when a `working` pane goes quiet, the turn counts as `finished`, or `waiting` when it ends on a question. Work that outlives the turn which started it (background agents and shells) is matched by `busy_line`, so a turn-end summary keeps reading as `working` while that work runs. A usage or rate-limit banner (`limit_line`) is `errored`. Polling keeps running while you are inside a session, so statuses stay live. The selected session's pane tail renders in the preview panel, and moving the cursor fetches the preview immediately.
 
-For Claude Code, status comes first-hand from [hook events](https://docs.anthropic.com/en/docs/claude-code/hooks) instead of pane guessing: sessions launch with a generated `--settings` file whose hooks write the lifecycle state (`working`, `waiting`, `finished`, `idle`) to a per-session status file that the poller reads first. A `StopFailure` of `rate_limit` writes `errored`. Pane rules still refine it — hooks cannot see a plain-text question, an Esc interrupt, or an error line, so a matching pane verdict upgrades the hook status — and they take over fully as fallback when the hook file is missing or stale. Enabled per tool with `status_source = "claude-hooks"`.
+For Claude Code, built-in status detection reads [hook events](https://docs.anthropic.com/en/docs/claude-code/hooks): sessions launch with a generated `--settings` file whose hooks write the lifecycle state (`working`, `waiting`, `finished`, `idle`) to a per-session status file that the poller reads first. A `StopFailure` of `rate_limit` writes `errored`. Pane rules still refine it — hooks cannot see a plain-text question, an Esc interrupt, or an error line, so a matching pane verdict upgrades the hook status — and they take over fully as fallback when the hook file is missing or stale.
 
 ## Notifications
 

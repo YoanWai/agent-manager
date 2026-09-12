@@ -171,11 +171,7 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	fix := m.launchFix
-	toolName, tool, ok := m.shellTool()
-	if !ok {
-		m.errBar.text = `no shell configured: add a tool block with shell = true to config.toml`
-		return m, nil
-	}
+	toolName, tool := m.shellTool()
 	home, err := os.UserHomeDir()
 	if err != nil {
 		m.errBar.text = err.Error()

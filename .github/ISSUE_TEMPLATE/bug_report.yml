@@ -58,7 +58,6 @@ body:
         - Pi
         - Hermes Agent
         - Command Code
-        - A custom tool from my config
         - Not tool specific
 
   - type: input
@@ -72,7 +71,7 @@ body:
     id: config
     attributes:
       label: Relevant config
-      description: The `[tools.<name>]` block or other config lines involved, if any.
+      description: The lines from your config.toml involved, if any.
       render: toml
 
   - type: textarea

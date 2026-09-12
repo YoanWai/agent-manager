@@ -98,7 +98,7 @@ reviews:
       - name: "Tool and platform coverage"
         mode: warning
         instructions: >-
-          This project supports every agent CLI in defaultConfig
+          This project supports every agent CLI in builtinTools
           (internal/config/config.go) and every platform .goreleaser.yaml
           builds. Fail when new behavior reaches only some of them: a
           runtime.GOOS branch or a command that exists on one platform, a

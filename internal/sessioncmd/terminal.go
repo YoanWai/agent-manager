@@ -57,7 +57,7 @@ func NewTerminals(configDir string, words Vocabulary) *Terminals {
 }
 
 func newTerminals(configDir string, words Vocabulary, newDriver func() (*tmux.Driver, error)) *Terminals {
-	return &Terminals{commands: commands{configDir: configDir, words: words, newDriver: newDriver}}
+	return &Terminals{commands: commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.LoadDir}}
 }
 
 // commands is the shared plumbing of every managed-pane command: the
@@ -67,6 +67,8 @@ type commands struct {
 	configDir string
 	words     Vocabulary
 	newDriver func() (*tmux.Driver, error)
+	// loadConfig is config.LoadDir outside the tests, which inject fake CLIs.
+	loadConfig func(string) (config.Config, error)
 }
 
 type runtime struct {
@@ -89,7 +91,7 @@ func (r *runtime) createPane(id, cwd, command string, env map[string]string) err
 }
 
 func (c *commands) open() (*runtime, error) {
-	cfg, err := config.LoadDir(c.configDir)
+	cfg, err := c.loadConfig(c.configDir)
 	if err != nil {
 		return nil, err
 	}
@@ -226,10 +228,7 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if err != nil {
 		return Terminal{}, err
 	}
-	toolName, tool, ok := runtime.cfg.ShellTool()
-	if !ok {
-		return Terminal{}, errors.New("no shell configured; add a tool block with shell = true to config.toml")
-	}
+	toolName, tool := runtime.cfg.ShellTool()
 	nest := true
 	if opts.Nest != nil {
 		nest = *opts.Nest
