@@ -265,9 +265,8 @@ func ensureHermesRegistered(exe, hooksDir string) error {
 	return os.WriteFile(marker, []byte(exe), 0o644)
 }
 
-// hermesPipCommand is the pip line that adds the SDK to the Python that
-// runs Hermes, empty when that interpreter cannot be resolved or carries
-// no pip: pipx and uv build their environments without one.
+// pipx and uv build their environments without a pip module, so the line
+// is only offered where the interpreter has one.
 func hermesPipCommand() string {
 	out, err := exec.Command("hermes", "--version").Output()
 	if err != nil {
@@ -280,9 +279,8 @@ func hermesPipCommand() string {
 	return tmux.ShellQuote(python) + " -m pip install mcp"
 }
 
-// pythonFromVersion reads the install directory `hermes --version`
-// reports, which is the site-packages of the environment Hermes runs in,
-// so the interpreter sits three levels above it.
+// The install directory Hermes reports is its site-packages, so the
+// interpreter sits three levels above it.
 func pythonFromVersion(version string) string {
 	for _, line := range strings.Split(version, "\n") {
 		dir, found := strings.CutPrefix(strings.TrimSpace(line), "Install directory:")

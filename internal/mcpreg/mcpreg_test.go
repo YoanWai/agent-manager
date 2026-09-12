@@ -329,9 +329,6 @@ func TestPythonFromVersionReadsInstallDirectory(t *testing.T) {
 	}
 }
 
-// fakeHermesEnvironment puts a hermes on PATH whose --version names a
-// site-packages under root, and a python3 there that answers `-m pip
-// --version` with the given exit status.
 func fakeHermesEnvironment(t *testing.T, pipStatus int) string {
 	t.Helper()
 	root := t.TempDir()
