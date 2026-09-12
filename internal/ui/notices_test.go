@@ -108,6 +108,10 @@ func TestToolsRetiredNoticeNamesTheIgnoredBlocks(t *testing.T) {
 	if !contains(retired.body, "claude, mytool") {
 		t.Fatalf("the notice should name the ignored blocks: %q", retired.body)
 	}
+	joined := strings.Join(retired.body, " ")
+	if !strings.Contains(joined, "block you added") {
+		t.Fatalf("a custom block is not a shipped copy: %q", retired.body)
+	}
 	m.dismissNotice(noticeToolsRetired)
 	reopened := noticeModel(st, "v0.2.0")
 	reopened.cfg.IgnoredTools = m.cfg.IgnoredTools

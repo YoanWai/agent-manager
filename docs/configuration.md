@@ -12,7 +12,7 @@ The Pi support requires Pi 0.76.0 or later, because it launches sessions with `-
 
 Hermes is tested with Hermes Agent 0.20.0 and launches its classic REPL with `--cli`. This keeps the input, approval, and activity markers stable even when your Hermes preference selects its modern TUI.
 
-A config file written by an earlier release carries a `[tools.<name>]` block per CLI. Those blocks are no longer read. Each was a copy of the defaults as they stood the day your file was written, so a fix for a CLI's new screen stopped at your copy instead of reaching you. The manager says so the first time it opens a file that still has them, and they are yours to delete.
+A config file written by an earlier release still has `[tools.<name>]` blocks. They are no longer read, whether they were copies of the defaults that day or a block you added, so a fix for a CLI's new screen reaches you instead of stopping at a frozen copy. The manager says so the first time it opens a file that still has them, and they are yours to delete.
 
 **When a status looks wrong.** The rules are ours to fix, for everyone. [Open an issue](https://github.com/YoanWai/agent-manager/issues/new/choose) with the CLI and its version, plus the pane text it draws, which you can read the way the poller reads it. Replace `SESSION_ID` with the session id:
 

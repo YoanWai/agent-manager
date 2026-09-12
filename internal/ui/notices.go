@@ -152,9 +152,9 @@ func (m *Model) activeNotices() []notice {
 				"",
 				"Nothing on disk changed. They are inert, and yours to delete.",
 				"",
-				"Each one was a copy of the defaults as they stood the day your file",
-				"was written, which is why a fix for a CLI's new screen stopped at",
-				"your copy instead of reaching you. Now it reaches you.",
+				"Copies of the defaults from the day your file was written, and any",
+				"block you added, are ignored the same way. A fix for a CLI's new",
+				"screen now reaches you instead of stopping at a frozen copy.",
 			},
 			after: []string{
 				"If a session reads its status wrong, Enter opens a report: the rules",
