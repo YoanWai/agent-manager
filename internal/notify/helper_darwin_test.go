@@ -3,6 +3,7 @@
 package notify
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,60 @@ import (
 	"testing"
 	"time"
 )
+
+func TestInstallHelperSound(t *testing.T) {
+	for _, kind := range []Kind{Waiting, Finished, Errored} {
+		detail, _ := describe(kind)
+		t.Run(detail.macSound, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			name, err := installHelperSound(detail.macSound)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := "agent-manager-" + detail.macSound + ".aiff"; name != want {
+				t.Fatalf("sound name = %q, want %q", name, want)
+			}
+			path := filepath.Join(home, "Library", "Sounds", name)
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := os.ReadFile(filepath.Join("/System/Library/Sounds", detail.macSound+".aiff"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Fatal("installed sound differs from the system sound")
+			}
+			installed := time.Unix(1000, 0)
+			if err := os.Chtimes(path, installed, installed); err != nil {
+				t.Fatal(err)
+			}
+			if reused, err := installHelperSound(detail.macSound); err != nil || reused != name {
+				t.Fatalf("reuse sound = %q, %v", reused, err)
+			}
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !info.ModTime().Equal(installed) {
+				t.Fatal("existing sound was rewritten")
+			}
+		})
+	}
+}
+
+func TestInstallHelperSoundWriteFailure(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.WriteFile(filepath.Join(home, "Library"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := installHelperSound("Funk"); err == nil {
+		t.Fatal("install succeeded with a file blocking the sound directory")
+	}
+}
 
 // The bundle built by the live test holds a copy of this test binary, and
 // a clicked banner relaunches that copy with no arguments. Handing it to
@@ -40,8 +95,13 @@ func TestHelperPostsLiveBanner(t *testing.T) {
 	}
 	defer restore()()
 	configDir = func() (string, error) { return dir, nil }
-	if err := postThroughHelper("live-session", "live-test · codex", "● Finished", "Hero"); err != nil {
-		t.Fatalf("post through helper: %v", err)
+	for _, kind := range []Kind{Waiting, Finished, Errored} {
+		detail, _ := describe(kind)
+		t.Run(detail.macSound, func(t *testing.T) {
+			if err := postThroughHelper("live-session", "live-test · codex", detail.body, detail.macSound); err != nil {
+				t.Fatalf("post through helper: %v", err)
+			}
+		})
 	}
 	source, err := os.Executable()
 	if err != nil {

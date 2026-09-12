@@ -20,6 +20,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/YoanWai/agent-manager/internal/atomicfile"
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 )
@@ -53,8 +54,6 @@ const (
 	versionRetention = 7 * 24 * time.Hour
 )
 
-var helperSounds = []string{"Funk", "Hero", "Basso"}
-
 var materializeMu sync.Mutex
 
 func postThroughHelper(sessionID, subtitle, body, sound string) error {
@@ -74,6 +73,10 @@ func postThroughHelper(sessionID, subtitle, body, sound string) error {
 }
 
 func runHelper(dir, sessionID, subtitle, body, sound string) error {
+	soundName, err := installHelperSound(sound)
+	if err != nil {
+		return err
+	}
 	helper, err := materializeHelper(dir)
 	if err != nil {
 		return err
@@ -81,7 +84,7 @@ func runHelper(dir, sessionID, subtitle, body, sound string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), helperTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, helper, "post",
-		"agent-manager", subtitle, body, sound+".aiff", getenv("__CFBundleIdentifier"),
+		"agent-manager", subtitle, body, soundName, getenv("__CFBundleIdentifier"),
 		sessionID, strconv.Itoa(os.Getpid()))
 	err = cmd.Run()
 	var exit *exec.ExitError
@@ -89,6 +92,30 @@ func runHelper(dir, sessionID, subtitle, body, sound string) error {
 		return errDenied
 	}
 	return err
+}
+
+// Notification Center can resolve the bundle ID to an older helper, so
+// sounds live in the user's Library/Sounds independently of helper builds.
+func installHelperSound(sound string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	name := "agent-manager-" + sound + ".aiff"
+	path := filepath.Join(home, "Library", "Sounds", name)
+	if _, err := os.Stat(path); err == nil {
+		return name, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	data, err := os.ReadFile(filepath.Join("/System/Library/Sounds", sound+".aiff"))
+	if err != nil {
+		return "", err
+	}
+	if err := atomicfile.WriteFile(path, data, 0o644); err != nil {
+		return "", err
+	}
+	return name, nil
 }
 
 // helperHome keeps the builds of one installed binary apart from every
@@ -198,12 +225,6 @@ func buildHelper(bundle, source, stamp string) error {
 	}
 	if err := copyFile(source, filepath.Join(macos, helperExecutable), 0o755); err != nil {
 		return err
-	}
-	for _, sound := range helperSounds {
-		name := sound + ".aiff"
-		if err := copyFile(filepath.Join("/System/Library/Sounds", name), filepath.Join(resources, name), 0o644); err != nil {
-			return err
-		}
 	}
 	if err := os.WriteFile(filepath.Join(resources, "agent-manager.icns"), helperIcon, 0o644); err != nil {
 		return err
