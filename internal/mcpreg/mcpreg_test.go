@@ -3,6 +3,7 @@ package mcpreg
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 func TestStyleResolution(t *testing.T) {
@@ -302,8 +304,71 @@ exit 0
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	_, err := Apply("hermes", "/opt/bin/agent-manager", t.TempDir(), "hermes --cli", map[string]string{})
-	if !errors.Is(err, ErrHermesMCPUnavailable) {
-		t.Fatalf("err = %v, want ErrHermesMCPUnavailable", err)
+	var unavailable HermesMCPUnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("err = %v, want HermesMCPUnavailableError", err)
+	}
+}
+
+func TestPythonFromVersionReadsInstallDirectory(t *testing.T) {
+	version := "Hermes Agent v0.20.0 (2026.8.3)\n" +
+		"Install directory: /opt/homebrew/Cellar/hermes-agent/2026.8.3_1/libexec/lib/python3.14/site-packages\n" +
+		"Python: 3.14.7\n" +
+		"OpenAI SDK: 2.24.0\n"
+	want := "/opt/homebrew/Cellar/hermes-agent/2026.8.3_1/libexec/bin/python3"
+	if got := pythonFromVersion(version); got != want {
+		t.Fatalf("pythonFromVersion = %q, want %q", got, want)
+	}
+	bare := "Hermes Agent v0.20.0 (2026.8.3)\nPython: 3.14.7\n"
+	if got := pythonFromVersion(bare); got != "" {
+		t.Fatalf("version output naming no install directory = %q, want no interpreter", got)
+	}
+	elsewhere := "Install directory: /opt/hermes/src\n"
+	if got := pythonFromVersion(elsewhere); got != "" {
+		t.Fatalf("install directory outside a python prefix = %q, want no interpreter", got)
+	}
+}
+
+func fakeHermesEnvironment(t *testing.T, pipStatus int) string {
+	t.Helper()
+	root := t.TempDir()
+	sitePackages := filepath.Join(root, "lib", "python3.14", "site-packages")
+	if err := os.MkdirAll(sitePackages, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	python := fmt.Sprintf("#!/bin/sh\nexit %d\n", pipStatus)
+	if err := os.WriteFile(filepath.Join(root, "bin", "python3"), []byte(python), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	hermes := "#!/bin/sh\nprintf 'Install directory: %s\\n' " + tmux.ShellQuote(sitePackages) + "\n"
+	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(hermes), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return filepath.Join(root, "bin", "python3")
+}
+
+func TestHermesPipCommandNamesTheInterpreterThatHasPip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	python := fakeHermesEnvironment(t, 0)
+	if got, want := hermesPipCommand(), tmux.ShellQuote(python)+" -m pip install mcp"; got != want {
+		t.Fatalf("hermesPipCommand = %q, want %q", got, want)
+	}
+}
+
+func TestHermesPipCommandIsEmptyWithoutPip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Hermes executable is a shell script")
+	}
+	fakeHermesEnvironment(t, 1)
+	if got := hermesPipCommand(); got != "" {
+		t.Fatalf("hermesPipCommand = %q, want none when the interpreter has no pip", got)
 	}
 }
 

@@ -8,7 +8,6 @@ package mcpreg
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,9 +22,20 @@ const serverName = "agent-manager"
 
 const StyleNone = "none"
 
-// ErrHermesMCPUnavailable reports a Hermes whose optional MCP SDK is not
-// installed, so no registration can succeed until `hermes setup` adds it.
-var ErrHermesMCPUnavailable = errors.New("hermes is missing MCP support: run hermes setup, then spawn again")
+// HermesMCPUnavailableError reports a Hermes whose optional MCP SDK is not
+// installed, so no registration can succeed until the package is added to
+// the environment Hermes runs in. PipCommand installs it there, and is
+// empty when that interpreter cannot be resolved.
+type HermesMCPUnavailableError struct {
+	PipCommand string
+}
+
+func (e HermesMCPUnavailableError) Error() string {
+	if e.PipCommand == "" {
+		return "hermes is missing MCP support: install the mcp package into its Python, then spawn again"
+	}
+	return "hermes is missing MCP support: run " + e.PipCommand + ", then spawn again"
+}
 
 var knownStyles = map[string]bool{
 	"claude":       true,
@@ -240,7 +250,7 @@ func ensureHermesRegistered(exe, hooksDir string) error {
 	// Hermes without its optional SDK refuses to connect but still exits 0
 	// after the save-anyway prompt, so the message is the only signal.
 	if strings.Contains(string(out), "requires the 'mcp' Python SDK") {
-		return ErrHermesMCPUnavailable
+		return HermesMCPUnavailableError{PipCommand: hermesPipCommand()}
 	}
 	if err != nil {
 		return fmt.Errorf("hermes mcp add: %w: %s", err, out)
@@ -253,6 +263,38 @@ func ensureHermesRegistered(exe, hooksDir string) error {
 		return err
 	}
 	return os.WriteFile(marker, []byte(exe), 0o644)
+}
+
+// pipx and uv build their environments without a pip module, so the line
+// is only offered where the interpreter has one.
+func hermesPipCommand() string {
+	out, err := exec.Command("hermes", "--version").Output()
+	if err != nil {
+		return ""
+	}
+	python := pythonFromVersion(string(out))
+	if python == "" || exec.Command(python, "-m", "pip", "--version").Run() != nil {
+		return ""
+	}
+	return tmux.ShellQuote(python) + " -m pip install mcp"
+}
+
+// The install directory Hermes reports is its site-packages, so the
+// interpreter sits three levels above it.
+func pythonFromVersion(version string) string {
+	for _, line := range strings.Split(version, "\n") {
+		dir, found := strings.CutPrefix(strings.TrimSpace(line), "Install directory:")
+		if !found {
+			continue
+		}
+		dir = strings.TrimSpace(dir)
+		if filepath.Base(dir) != "site-packages" {
+			return ""
+		}
+		root := filepath.Dir(filepath.Dir(filepath.Dir(dir)))
+		return filepath.Join(root, "bin", "python3")
+	}
+	return ""
 }
 
 // ensureRegisteredOnce runs a tool's own mcp-add command once per binary
