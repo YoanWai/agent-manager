@@ -312,7 +312,6 @@ func TestShellToolStaysOutOfPickers(t *testing.T) {
 	}
 }
 
-// The shell is found by its flag, whatever it is called.
 func TestShellToolIsFoundByItsFlag(t *testing.T) {
 	m := buildModel(t)
 	m.cfg = config.Config{Tools: map[string]config.Tool{

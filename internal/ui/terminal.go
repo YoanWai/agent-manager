@@ -17,7 +17,6 @@ import (
 // shells is this window plus the spawn.
 const terminalKeyWindow = 250 * time.Millisecond
 
-// shellTool finds the tool T spawns: the one declaring shell = true.
 func (m *Model) shellTool() (string, config.Tool) {
 	return m.cfg.ShellTool()
 }
