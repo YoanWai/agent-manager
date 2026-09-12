@@ -1,18 +1,5 @@
 [
   {
-    "id": "tools-from-the-binary-v0370",
-    "banner": "new: tool rules come with the release",
-    "title": "v0.37.0: tool rules come with the release. Were you using a custom block?",
-    "body": [
-      "Command and status rules for every CLI now come from the release, not from [tools.*] in config.toml.",
-      "A leftover block is ignored and listed until you dismiss the notice. Nothing on disk is rewritten. T opens $SHELL.",
-      "The thread this entry opens is for people who had a custom tool block, or who want a CLI added.",
-      "Update with `agent-manager update`, `brew upgrade yoanwai/tap/agent-manager`, or your package manager."
-    ],
-    "url": "https://github.com/YoanWai/agent-manager/discussions/492",
-    "max_version": "0.37.0"
-  },
-  {
     "id": "keys-are-yours-v0360",
     "banner": "new: every key is configurable",
     "title": "v0.36.0: set your own keys, and tell us which defaults should change",
