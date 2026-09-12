@@ -1,5 +1,22 @@
 [
   {
+    "id": "v0370-release-highlights",
+    "banner": "v0.37.0 release highlights:",
+    "title": "v0.37.0 release highlights:",
+    "body": [
+      "Features:",
+      "• Tool settings now ship with the update; custom [tools.*] blocks are ignored. Thanks @pandysp.",
+      "• Pressing y copies the session's newest reply. Thanks @zavatskiy.",
+      "• Hermes without its MCP SDK gets a pip install offer.",
+      "• A key you set keeps working when new defaults arrive. Thanks @pandysp.",
+      "Bugs fixed:",
+      "• macOS notification sounds play again.",
+      "• Left leaves a working pi, and grok in minimal mode. Thanks @pandysp."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.37.0",
+    "max_version": "0.37.0"
+  },
+  {
     "id": "keys-are-yours-v0360",
     "banner": "new: every key is configurable",
     "title": "v0.36.0: set your own keys, and tell us which defaults should change",
