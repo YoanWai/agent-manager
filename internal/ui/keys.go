@@ -185,24 +185,33 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// moveCursor shifts the selection and schedules a debounced preview
-// fetch. Key-repeat only bumps the gen; a single capture runs after the
-// cursor settles so holding j/k cannot pile up tmux work.
+// moveCursor shifts the selection by delta, wrapping at either end, and
+// schedules a debounced preview fetch. Key-repeat only bumps the gen; a
+// single capture runs after the cursor settles so holding j/k cannot pile
+// up tmux work.
 func (m *Model) moveCursor(delta int) tea.Cmd {
 	if len(m.rows) == 0 {
 		return nil
 	}
-	previous := m.cursor
-	m.cursor += delta
-	if m.cursor < 0 {
-		m.cursor = len(m.rows) - 1
+	next := m.cursor + delta
+	if next < 0 {
+		next = len(m.rows) - 1
 	}
-	if m.cursor >= len(m.rows) {
-		m.cursor = 0
+	if next >= len(m.rows) {
+		next = 0
 	}
-	if m.cursor == previous {
+	return m.selectRow(next)
+}
+
+// selectRow moves the cursor straight to index, the shared tail moveCursor
+// and a row click both need: reset the stale preview and schedule a fresh
+// one. A click on the row already selected is a no-op, same as a wheel
+// notch that would not move the cursor.
+func (m *Model) selectRow(index int) tea.Cmd {
+	if index < 0 || index >= len(m.rows) || index == m.cursor {
 		return nil
 	}
+	m.cursor = index
 	m.preview = ""
 	m.proc = sysstat.ProcStat{}
 	m.procFor = ""
@@ -465,6 +474,11 @@ const focusKeySetting = "focus_key"
 // arrowStepSetting is the beta ←→ pair: "off" turns it off, anything else
 // leaves it on.
 const arrowStepSetting = "arrow_step_keys"
+
+// mouseSetting is app-wide mouse reporting: "off" gives the rail and
+// content column back to the terminal's own click-drag text selection,
+// anything else leaves it on (the default).
+const mouseSetting = "mouse_mode"
 
 const quickCloseSetting = "quick_prompt_close"
 

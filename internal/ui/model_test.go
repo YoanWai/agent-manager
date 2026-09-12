@@ -28,6 +28,40 @@ func TestPreviewSettleDropsStaleGen(t *testing.T) {
 	}
 }
 
+// A bare Model must default to mouse reporting on: mouseDisabled is named
+// for its off polarity precisely so a zero-valued struct, the shape most
+// tests build, does not silently disable the mouse everywhere.
+func TestSyncMouseCaptureDefaultsOn(t *testing.T) {
+	m := &Model{mode: modeList}
+	// Nothing has changed from the zero value's implied "captured" state,
+	// so there is nothing to tell the terminal.
+	if cmd := m.syncMouseCapture(); cmd != nil {
+		t.Fatal("default state should not re-announce mouse capture")
+	}
+	if m.mouseReleased {
+		t.Fatal("mouse should stay captured by default")
+	}
+}
+
+// The mouse-mode setting releases the mouse everywhere except focus mode,
+// whose own forwarding predates the setting and stays on regardless.
+func TestSyncMouseCaptureRespectsMouseDisabled(t *testing.T) {
+	m := &Model{mode: modeList, mouseDisabled: true}
+	if cmd := m.syncMouseCapture(); cmd == nil {
+		t.Fatal("turning the setting off should release the mouse")
+	}
+	if !m.mouseReleased {
+		t.Fatal("mouseReleased should follow the setting in list mode")
+	}
+	m.mode = modeFocus
+	if cmd := m.syncMouseCapture(); cmd == nil {
+		t.Fatal("entering focus mode should re-capture regardless of the setting")
+	}
+	if m.mouseReleased {
+		t.Fatal("focus mode must keep the mouse captured even with the setting off")
+	}
+}
+
 func TestPreviewCadenceIsIndependentFromStartupAnimation(t *testing.T) {
 	tests := []struct {
 		name string

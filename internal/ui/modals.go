@@ -308,6 +308,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.arrowStep {
 		arrowStep = "on"
 	}
+	mouseMode := "on"
+	if m.settings.mouseDisabled {
+		mouseMode = "off"
+	}
 	// The beta tag borrows the messages card's yellow, so the row reads as
 	// the one still under test.
 	betaTag := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Render(" beta")
@@ -370,6 +374,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldQuickClose, "after quick send", quickClose) + "\n" +
 		row(settingsFieldFocusKey, "session keys", focusKey) + "\n" +
 		row(settingsFieldArrowStep, "←→ step in/out", arrowStep) + betaTag + "\n" +
+		row(settingsFieldMouse, "mouse", mouseMode) + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
