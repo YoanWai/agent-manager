@@ -14,10 +14,10 @@ Hermes is tested with Hermes Agent 0.20.0 and launches its classic REPL with `--
 
 A config file written by an earlier release carries a `[tools.<name>]` block per CLI. Those blocks are no longer read. Each was a copy of the defaults as they stood the day your file was written, so a fix for a CLI's new screen stopped at your copy instead of reaching you. The manager says so the first time it opens a file that still has them, and they are yours to delete.
 
-**When a status looks wrong.** The rules are ours to fix, for everyone. [Open an issue](https://github.com/YoanWai/agent-manager/issues/new/choose) with the CLI and its version, plus the pane text it draws, which you can read the way the poller reads it:
+**When a status looks wrong.** The rules are ours to fix, for everyone. [Open an issue](https://github.com/YoanWai/agent-manager/issues/new/choose) with the CLI and its version, plus the pane text it draws, which you can read the way the poller reads it. Replace `SESSION_ID` with the session id:
 
 ```bash
-tmux -L agentmgr capture-pane -p -t am_<id>
+tmux -L agentmgr capture-pane -p -t am_SESSION_ID
 ```
 
 A CLI that is not on the list above is a feature request; the `CLIs` row in Settings ends with `request CLI support`, which opens one prefilled.
