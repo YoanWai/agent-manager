@@ -929,3 +929,95 @@ func TestQuickSendRecordsLastPrompt(t *testing.T) {
 		t.Fatalf("last prompt = %q, want the quick send", got.LastPrompt)
 	}
 }
+
+// seedTwoGroups gives the list two rows so a selection move is observable.
+func seedTwoGroups(t *testing.T, m *Model) {
+	t.Helper()
+	for _, name := range []string{"alpha", "beta"} {
+		if err := m.store.CreateGroup(name, t.TempDir()); err != nil {
+			t.Fatalf("create group: %v", err)
+		}
+	}
+	m.applyCmd(t, m.refreshCmd())
+	if len(m.rows) < 2 {
+		t.Fatalf("rows = %d, want at least 2", len(m.rows))
+	}
+}
+
+func TestQuickUpDownMoveTheCaretBetweenPromptRows(t *testing.T) {
+	m := buildModel(t)
+	seedTwoGroups(t, m)
+	m.cursor = 1
+	m.openQuickMode()
+	m.quick.input.SetWidth(40)
+	m.quick.input.SetHeight(quickBarMaxRows)
+	m.quick.input.SetValue("first\nsecond\nthird")
+
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
+	if m.quick.input.Line() != 1 || m.cursor != 1 {
+		t.Fatalf("up from the last row: caret line %d, selection %d; want caret 1, selection 1", m.quick.input.Line(), m.cursor)
+	}
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
+	if m.quick.input.Line() != 0 || m.cursor != 1 {
+		t.Fatalf("up from the middle row: caret line %d, selection %d; want caret 0, selection 1", m.quick.input.Line(), m.cursor)
+	}
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
+	if m.quick.input.Line() != 0 || m.cursor != 0 {
+		t.Fatalf("up from the first row: caret line %d, selection %d; want caret 0, selection 0", m.quick.input.Line(), m.cursor)
+	}
+
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.quick.input.Line() != 1 || m.cursor != 0 {
+		t.Fatalf("down from the first row: caret line %d, selection %d; want caret 1, selection 0", m.quick.input.Line(), m.cursor)
+	}
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.quick.input.Line() != 2 || m.cursor != 1 {
+		t.Fatalf("down from the last row: caret line %d, selection %d; want caret 2, selection 1", m.quick.input.Line(), m.cursor)
+	}
+}
+
+func TestQuickUpDownWalkSoftWrappedRows(t *testing.T) {
+	m := buildModel(t)
+	seedTwoGroups(t, m)
+	m.cursor = 1
+	m.openQuickMode()
+	m.quick.input.SetWidth(12)
+	m.quick.input.SetHeight(quickBarMaxRows)
+	m.quick.input.SetValue("one two three four five six seven")
+	if height := m.quick.input.LineInfo().Height; height < 3 {
+		t.Fatalf("value should soft-wrap over at least 3 rows, got %d", height)
+	}
+	last := m.quick.input.LineInfo().RowOffset
+
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
+	if got := m.quick.input.LineInfo().RowOffset; got != last-1 || m.cursor != 1 {
+		t.Fatalf("up inside a wrapped line: row %d, selection %d; want row %d, selection 1", got, m.cursor, last-1)
+	}
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
+	if got := m.quick.input.LineInfo().RowOffset; got != last || m.cursor != 1 {
+		t.Fatalf("down inside a wrapped line: row %d, selection %d; want row %d, selection 1", got, m.cursor, last)
+	}
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.cursor == 1 {
+		t.Fatal("down from the last wrapped row should move the selection")
+	}
+}
+
+func TestQuickOneRowPromptKeepsArrowsOnTheList(t *testing.T) {
+	m := buildModel(t)
+	seedTwoGroups(t, m)
+	m.cursor = 1
+	m.openQuickMode()
+	m.quick.input.SetWidth(40)
+	m.quick.input.SetValue("short answer")
+
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
+	if m.cursor != 0 {
+		t.Fatalf("up on a one-row prompt should move the selection, got %d", m.cursor)
+	}
+	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.cursor != 1 {
+		t.Fatalf("down on a one-row prompt should move the selection, got %d", m.cursor)
+	}
+}

@@ -211,6 +211,17 @@ func (c *composer) cursorColumn() int {
 	return info.StartColumn + info.ColumnOffset
 }
 
+// caretOnFirstRow / caretOnLastRow count soft-wrapped rows, so ↑↓ leave
+// the prompt only from its edge rows.
+func (c *composer) caretOnFirstRow() bool {
+	return c.input.Line() == 0 && c.input.LineInfo().RowOffset == 0
+}
+
+func (c *composer) caretOnLastRow() bool {
+	info := c.input.LineInfo()
+	return c.input.Line() == c.input.LineCount()-1 && info.RowOffset+1 >= info.Height
+}
+
 // tokenEndingAt / tokenStartingAt answer "is the caret against a chip",
 // which is what makes a chip delete and step as one unit.
 func (c *composer) tokenEndingAt(offset int) (tokenSpan, bool) {
