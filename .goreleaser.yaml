@@ -65,15 +65,15 @@ homebrew_casks:
       - agent-manager
     dependencies:
       - formula: tmux
-    # Casks quarantine what they download and Gatekeeper blocks an unsigned
-    # binary outright. The OS.mac? guard keeps Linux installs working, where
-    # system_command on a missing /usr/bin/xattr aborts the install.
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/agent-manager"]
-          end
+    # Strips Gatekeeper quarantine from the download. goreleaser renders hooks
+    # as the deprecated `postflight` block, so the declarative stanza goes
+    # through custom_block; the doubled braces survive its template pass.
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/agent-manager"]
+        end
+      end
 
 # git_url resolves to an empty string without AUR_KEY in the environment, and
 # goreleaser skips the publish on an empty url, so a release without the key
