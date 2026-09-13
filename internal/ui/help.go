@@ -165,7 +165,6 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 		{title: titledWith("quick prompt", list, keybind.Prompt), rows: [][2]string{
 			{"↵", "send"},
 			{"↑↓", "switch the target session, or step the caret in a taller prompt"},
-			{"ctrl+p / ctrl+n", "move the caret a row, whatever row it is on"},
 			{"tab", "switch the tool a spawn uses (alt+m too)"},
 			{"shift+tab", "toggle worktree for the spawned agent (alt+w too)"},
 			{"ctrl+v", "paste an image as a chip at the cursor"},
