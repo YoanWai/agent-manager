@@ -57,8 +57,9 @@ prebuilt binary from the releases page.
 
 A row is coloured `working`, `waiting`, `finished`, `idle` or `errored`. Claude Code reports
 through hook events; every other CLI is read from its pane with regexes. Eight CLIs ship with
-working profiles: Claude Code, Codex, OpenCode, Grok, Gemini, Pi, Command Code and Hermes. Any
-other CLI becomes a managed session with one `[tools.<name>]` block in `config.toml`.
+working profiles: Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Pi, Command Code and
+Hermes Agent. Any other CLI becomes a managed session with one `[tools.<name>]` block in
+`config.toml`.
 
 ## Driving it from inside an agent
 
