@@ -66,7 +66,8 @@ One case updates by hand: a pacman-owned install needs an AUR helper (`yay` or `
 The same commands work from a shell:
 
 ```bash
-brew upgrade agent-manager                                                                # Homebrew
+brew upgrade agent-manager                                                                # Homebrew formula
+brew upgrade --cask yoanwai/tap/agent-manager                                             # Homebrew cask
 curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh   # Install script
 mise upgrade --bump ubi:YoanWai/agent-manager                                             # mise
 go install github.com/YoanWai/agent-manager@latest                                        # Go
