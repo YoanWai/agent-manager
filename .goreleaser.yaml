@@ -39,7 +39,7 @@ release:
 
     ```bash
     # macOS / Linux
-    brew install yoanwai/tap/agent-manager
+    brew install agent-manager
     curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh
     mise use -g ubi:YoanWai/agent-manager
     go install github.com/YoanWai/agent-manager@latest

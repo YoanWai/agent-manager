@@ -35,7 +35,7 @@ Do not reach for it to *replace* a coding CLI. It starts the CLIs that are alrea
 macOS and Linux, amd64 and arm64. Windows runs it inside WSL2. Needs tmux 3.1+ and git.
 
 ```bash
-brew install yoanwai/tap/agent-manager
+brew install agent-manager
 ```
 
 Other routes: the install script, the AUR (`yay -S agent-manager-bin`), `mise use -g
