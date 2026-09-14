@@ -110,6 +110,24 @@ func TestHomebrewManagedFollowsSymlink(t *testing.T) {
 	}
 }
 
+func TestApplyAdviceFollowsTheCask(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "Caskroom", "agent-manager", "0.37.0", "agent-manager")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("old build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := Apply(context.Background(), "v9.9.9", target)
+	if !errors.Is(err, errHomebrewManaged) {
+		t.Fatalf("want errHomebrewManaged, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "brew upgrade --cask yoanwai/tap/agent-manager") {
+		t.Fatalf("a cask install should be told to upgrade the cask, got %v", err)
+	}
+}
+
 func TestApplyRejectsHomebrew(t *testing.T) {
 	orig := buildSource
 	buildSource = "Homebrew"
@@ -123,7 +141,7 @@ func TestApplyRejectsHomebrew(t *testing.T) {
 	if !errors.Is(err, errHomebrewManaged) {
 		t.Fatalf("want errHomebrewManaged, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "brew upgrade yoanwai/tap/agent-manager") {
+	if !strings.Contains(err.Error(), "brew upgrade agent-manager") {
 		t.Fatalf("error should name the brew upgrade command, got %v", err)
 	}
 	untouched, readErr := os.ReadFile(target)

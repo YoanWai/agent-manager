@@ -13,6 +13,14 @@ The two quickest routes are in the [README](../README.md#install): Homebrew and 
 
 The mise, `go install`, and prebuilt-binary routes install the binary alone, so install tmux and git with your package manager. When the manager starts without tmux, or the diff view cannot find git, it names the install command it detected, or tells you to use your package manager.
 
+## Homebrew cask
+
+```bash
+brew install --cask yoanwai/tap/agent-manager
+```
+
+Installs the released binary rather than building it, and pulls in tmux. The [README](../README.md#install) covers `brew install agent-manager`, the homebrew-core formula that builds from source.
+
 ## Arch Linux
 
 ```bash
@@ -58,7 +66,8 @@ One case updates by hand: a pacman-owned install needs an AUR helper (`yay` or `
 The same commands work from a shell:
 
 ```bash
-brew upgrade yoanwai/tap/agent-manager                                                    # Homebrew
+brew upgrade agent-manager                                                                # Homebrew formula
+brew upgrade --cask yoanwai/tap/agent-manager                                             # Homebrew cask
 curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh   # Install script
 mise upgrade --bump ubi:YoanWai/agent-manager                                             # mise
 go install github.com/YoanWai/agent-manager@latest                                        # Go

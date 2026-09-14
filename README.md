@@ -58,10 +58,10 @@ Runs on macOS and Linux, and on Windows inside [WSL2](docs/install.md#windows).
 ### Homebrew (macOS / Linux)
 
 ```bash
-brew install yoanwai/tap/agent-manager
+brew install agent-manager
 ```
 
-Installs tmux with it if missing, and Homebrew runs on git, so both dependencies are covered. The tap ships a cask, so an install from the older formula switches over with `brew uninstall agent-manager` followed by the command above.
+Installs tmux with it if missing, and Homebrew runs on git, so both dependencies are covered. This is the homebrew-core formula, which builds from source. For the prebuilt binary, `brew install --cask yoanwai/tap/agent-manager`.
 
 ### Install script (macOS / Linux)
 

@@ -34,7 +34,13 @@ const applyBudget = 2 * time.Minute
 // under 20MB.
 const binaryLimit = 200 << 20
 
-var errHomebrewManaged = errors.New("installed via Homebrew; upgrade with: brew upgrade yoanwai/tap/agent-manager")
+var errHomebrewManaged = errors.New("installed via Homebrew")
+
+// homebrewAdvice names the upgrade command for the tree the binary sits
+// in: the core formula and the tap's cask take different ones.
+func homebrewAdvice(execPath string) error {
+	return fmt.Errorf("%w; upgrade with: %s", errHomebrewManaged, DetectManager(execPath))
+}
 
 func homebrewManaged(source, execPath string) bool {
 	if source == "Homebrew" {
@@ -55,7 +61,7 @@ func homebrewManaged(source, execPath string) bool {
 // signature cache.
 func Apply(ctx context.Context, tag, execPath string) error {
 	if homebrewManaged(buildSource, execPath) {
-		return errHomebrewManaged
+		return homebrewAdvice(execPath)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, applyBudget)
