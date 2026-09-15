@@ -188,6 +188,16 @@ func storedHideStats(st *store.Store) bool {
 	return chosen == "on"
 }
 
+// storedMouseDisabled reads the persisted mouse-reporting choice. On is the
+// default; only an explicit "off" gives the rail back to the terminal.
+func storedMouseDisabled(st *store.Store) bool {
+	chosen, err := st.Setting(mouseSetting)
+	if err != nil {
+		return false
+	}
+	return chosen == "off"
+}
+
 // enterFocuses reports which key opens a session where. Enter focuses the
 // preview and A attaches full screen by default; a stored "attach" choice
 // swaps the pair. Cached on the model because the footer reads it every
@@ -252,6 +262,7 @@ func (m *Model) openSettings() {
 		fullLayout:      m.fullLayout,
 		hideHeader:      m.hideHeader,
 		hideStats:       m.hideStats,
+		mouseDisabled:   m.mouseDisabled,
 		worktreeDefault: m.defaultWorktree(),
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
@@ -390,6 +401,13 @@ func (m *Model) persistSettings() {
 	if err := m.store.SetSetting(hideStatsSetting, hideStats); err != nil {
 		m.errBar.text = err.Error()
 	}
+	mouseMode := "on"
+	if m.settings.mouseDisabled {
+		mouseMode = "off"
+	}
+	if err := m.store.SetSetting(mouseSetting, mouseMode); err != nil {
+		m.errBar.text = err.Error()
+	}
 	worktreeChoice := "off"
 	if m.settings.worktreeDefault {
 		worktreeChoice = "on"
@@ -417,6 +435,7 @@ func (m *Model) persistSettings() {
 	m.fullLayout = m.settings.fullLayout
 	m.hideHeader = m.settings.hideHeader
 	m.hideStats = m.settings.hideStats
+	m.mouseDisabled = m.settings.mouseDisabled
 }
 
 func (m *Model) openCLIPicker() {
@@ -550,6 +569,8 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.enterFocuses = !m.settings.enterFocuses
 	case settingsFieldArrowStep:
 		m.settings.arrowStep = !m.settings.arrowStep
+	case settingsFieldMouse:
+		m.settings.mouseDisabled = !m.settings.mouseDisabled
 	case settingsFieldWorktree:
 		m.settings.worktreeDefault = !m.settings.worktreeDefault
 	case settingsFieldNotify:

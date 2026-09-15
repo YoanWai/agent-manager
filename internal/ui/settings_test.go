@@ -118,6 +118,28 @@ func TestSettingsNotificationsPersist(t *testing.T) {
 	}
 }
 
+func TestSettingsMouseTogglePersists(t *testing.T) {
+	m := buildModel(t)
+	m.openSettings()
+	if m.settings.mouseDisabled {
+		t.Fatal("mouse should open on by default")
+	}
+	for m.settings.field != settingsFieldMouse {
+		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if chosen, err := m.store.Setting(mouseSetting); err != nil || chosen != "off" {
+		t.Fatalf("want stored off, got %q err %v", chosen, err)
+	}
+	if !m.mouseDisabled {
+		t.Fatal("model should carry the toggled value after save")
+	}
+	if loaded := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev"); !loaded.mouseDisabled {
+		t.Fatal("a fresh model should reload the persisted choice")
+	}
+}
+
 func TestSettingsShowsVersion(t *testing.T) {
 	m := &Model{
 		update:   updateInfo{version: "v0.9.0"},

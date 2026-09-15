@@ -169,6 +169,12 @@ type Model struct {
 	// read them every frame.
 	hideHeader bool
 	hideStats  bool
+	// mouseDisabled mirrors the persisted mouse-reporting setting: true gives
+	// the rail and content column back to the terminal's own click-drag text
+	// selection. Read on every Update via syncMouseCapture. Named for its off
+	// polarity, like hideHeader/hideStats, so a bare Model{} in a test still
+	// defaults to mouse reporting on.
+	mouseDisabled bool
 	// watchedGen is previewGen as of the last poll pass, so a selection
 	// that has not moved since can be recognised as at rest.
 	watchedGen        uint64
@@ -178,7 +184,13 @@ type Model struct {
 	// Deriving it from the cursor alone cannot hold still: rows are of
 	// uneven height, so every step would re-solve the window and slide the
 	// list under a highlight that should have simply moved down.
-	railTop         int
+	railTop int
+	// railHits maps each line railLines painted this frame to the m.rows
+	// index it belongs to, -1 for chrome (search field, badges, padding,
+	// meters) a click cannot select. Recorded by entryLines/railLines at
+	// paint time, the way m.pane.box is for the focused pane, so a click
+	// handler never has to re-derive the rail's layout and drift from it.
+	railHits        []int
 	mode            mode
 	showArchived    bool
 	hideEmptyGroups bool
@@ -451,6 +463,7 @@ type settingsState struct {
 	fullLayout      bool
 	hideHeader      bool
 	hideStats       bool
+	mouseDisabled   bool
 	worktreeDefault bool
 	notifications   bool
 	notifyFinished  bool
@@ -484,6 +497,7 @@ const (
 	settingsFieldQuickClose
 	settingsFieldFocusKey
 	settingsFieldArrowStep
+	settingsFieldMouse
 	settingsFieldWorktree
 	settingsFieldNotify
 	settingsFieldNotifyFinish
@@ -747,6 +761,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		fullLayout:          storedFullLayout(st),
 		hideHeader:          storedHideHeader(st),
 		hideStats:           storedHideStats(st),
+		mouseDisabled:       storedMouseDisabled(st),
 		imeCursor:           &cursorAnchor{},
 		mode:                modeList,
 		update:              updateInfo{version: version},
@@ -1354,9 +1369,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // syncMouseCapture hands the mouse to the terminal while the setup dialog
 // is up, so a drag over it selects the install command, and takes it back
-// when the dialog closes.
+// when the dialog closes. The mouse-mode setting does the same for anyone
+// who wants native click-drag selection back everywhere else, except in
+// focus mode: that pane's own mouse forwarding predates the setting and
+// stays on regardless, the way it always has.
 func (m *Model) syncMouseCapture() tea.Cmd {
-	release := m.mode == modeLaunchHint
+	release := m.mode == modeLaunchHint || (m.mouseDisabled && m.mode != modeFocus)
 	if release == m.mouseReleased {
 		return nil
 	}
