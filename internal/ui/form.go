@@ -340,6 +340,7 @@ func (m *Model) rebuildGroupOptions(selectPath string) {
 
 func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	dirSuggesting := m.form.focus == fieldDir && m.pathSugg.active()
+	promptFocused := m.form.focus == fieldPrompt
 	switch msg.String() {
 	case "esc":
 		if dirSuggesting {
@@ -362,6 +363,9 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.formFocus(-1)
 		return m, nil
 	case "up":
+		if promptFocused && !m.form.prompt.caretOnFirstRow() {
+			return m, m.form.prompt.typeKey(msg)
+		}
 		if dirSuggesting {
 			if !m.pathSugg.move(-1) {
 				m.formFocus(-1)
@@ -371,6 +375,9 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down":
+		if promptFocused && !m.form.prompt.caretOnLastRow() {
+			return m, m.form.prompt.typeKey(msg)
+		}
 		if dirSuggesting {
 			if !m.pathSugg.move(1) {
 				m.formFocus(1)
@@ -413,7 +420,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.submitForm()
 	}
 
-	if m.form.focus == fieldPrompt {
+	if promptFocused {
 		if cmd, handled := m.composerKey(composerForm, msg); handled {
 			return m, cmd
 		}

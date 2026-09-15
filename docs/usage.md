@@ -55,7 +55,7 @@ Navigation is keyboard-driven. The manager claims mouse reporting so the wheel s
 
 ## Quick prompt
 
-Press `space` to dock a prompt bar at the bottom of the sidebar. The target follows the cursor while the bar is open (`↑↓` still navigate):
+Press `space` to dock a prompt bar at the bottom of the sidebar. The target follows the cursor while the bar is open: `↑↓` still navigate the list from a one-row prompt, and in a taller one `↑` navigates from the top row and `↓` from the bottom row. Anywhere else they move the caret, so a prompt that wrapped or was pasted with line breaks edits like a multi-line editor.
 
 - On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar clears and stays open, ready for the next answer; Settings (`s`) can make it close instead.
 - On a **group** row, `enter` spawns a new agent in that group and submits the prompt at startup, using the group's default path. This is the shortest path to a fresh agent: `space`, type the task, `enter`, with no form and no name to invent. The spawn tool starts at the Settings default and `tab` (or `alt+m`) cycles it (claude ↔ opencode ↔ any configured tool); the footer shows the current pick. `shift+tab` (or `alt+w`) toggles whether the new agent spawns into its own git worktree, starting from the Settings default; the footer shows `worktree: on` or `worktree: off`, or `worktree: unavailable (not a git repo)` when the target directory cannot hold one. Answering an existing session ignores the toggle, since there is no new session to place in a worktree. The agent starts working on the prompt immediately.
@@ -64,7 +64,7 @@ Press `space` to dock a prompt bar at the bottom of the sidebar. The target foll
 
 `esc` closes the bar.
 
-The new-session form's optional `prompt` field launches an agent the same way. It takes `ctrl+v` and its chips too, since a first task is often the screenshot that explains it: paste the design to match or the crash to read, and the agent opens the file on its first turn. Leaving the form without creating the session releases the images it was holding, the way closing the bar does. How the prompt reaches the agent depends on the CLI: most take it as a launch argument, and a persistent CLI that accepts none has it typed into its composer as soon as that composer is ready.
+The new-session form's optional `prompt` field launches an agent the same way, and its `↑↓` move the caret between rows the same way, `↑` leaving the field only from its top row and `↓` only from its bottom row. It takes `ctrl+v` and its chips too, since a first task is often the screenshot that explains it: paste the design to match or the crash to read, and the agent opens the file on its first turn. Leaving the form without creating the session releases the images it was holding, the way closing the bar does. How the prompt reaches the agent depends on the CLI: most take it as a launch argument, and a persistent CLI that accepts none has it typed into its composer as soon as that composer is ready.
 
 ![answering a working Claude Code session from the prompt bar, without attaching](demo-space.gif)
 
