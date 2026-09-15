@@ -198,14 +198,12 @@ type Model struct {
 	install *pendingInstall
 	// mouseReleased is true while the setup dialog has handed the mouse
 	// back to the terminal, so a drag selects its text.
-	mouseReleased bool
-	rename        renameTarget
-	fork          forkState
-	quick         quickState
-	// lastSpawnWorktreeSet distinguishes "never spawned" from worktree off.
-	lastSpawnTool        string
-	lastSpawnWorktree    bool
-	lastSpawnWorktreeSet bool
+	mouseReleased     bool
+	rename            renameTarget
+	fork              forkState
+	quick             quickState
+	lastSpawnTool     string
+	lastSpawnWorktree bool
 	// composerSeq numbers the prompt boxes this run has opened.
 	composerSeq int
 	settings    settingsState

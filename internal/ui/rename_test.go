@@ -651,10 +651,10 @@ func TestGroupEditPersistsWorktreeChoice(t *testing.T) {
 	if len(groups) != 1 || groups[0].Worktree != "on" {
 		t.Fatalf("worktree choice should persist, got %+v", groups)
 	}
-	if !m.groupWorktree("grp") {
+	if !m.spawnWorktreeDefault("grp") {
 		t.Fatal("group worktree should resolve on")
 	}
-	if !m.groupWorktree("grp/child") {
+	if !m.spawnWorktreeDefault("grp/child") {
 		t.Fatal("child group should inherit the parent's worktree choice")
 	}
 }

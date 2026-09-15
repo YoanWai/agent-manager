@@ -600,6 +600,49 @@ func TestQuickRemembersLastSpawnWorktree(t *testing.T) {
 	}
 }
 
+func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	m := quickGroupModel(t, dir)
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	submitFormSession(t, m, "first")
+
+	installCommand := fakeInstallCommand(t)
+	tool := m.cfg.Tools["claude"]
+	tool.Command = "am-fake-cli"
+	m.cfg.Tools["claude"] = tool
+	m.selectGroupRow(t, "grp")
+	m.openQuickMode()
+	for i, name := range m.quick.toolNames {
+		if name == "claude" {
+			m.quick.toolIndex = i
+		}
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.quick.input.SetValue("do a thing")
+	m.submitQuick()
+
+	if m.mode != modeLaunchHint || m.launchFix.retry == nil {
+		t.Fatalf("expected a refused launch with retry, mode=%v err=%q", m.mode, m.errBar.text)
+	}
+	if m.lastSpawnTool != "ready-tool" || m.lastSpawnWorktree {
+		t.Fatalf("failed launch changed the last pick: %q, %v", m.lastSpawnTool, m.lastSpawnWorktree)
+	}
+	m.launchFix.command = installCommand
+	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
+	waitForInstallToSettle(t, m)
+
+	if m.lastSpawnTool != "claude" || !m.lastSpawnWorktree {
+		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.lastSpawnTool, m.lastSpawnWorktree, m.errBar.text)
+	}
+	m.selectGroupRow(t, "grp")
+	m.openQuickMode()
+	if m.quickTool() != "claude" || !m.quickWorktreeOn() {
+		t.Fatal("next quick bar should use the successful retry's tool and worktree")
+	}
+}
+
 func TestQuickCancelDoesNotRememberLastPick(t *testing.T) {
 	m := buildModel(t)
 	m.openQuickMode()

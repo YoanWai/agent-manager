@@ -79,22 +79,41 @@ func TestFormCancelDoesNotRememberLastPick(t *testing.T) {
 	}
 }
 
-func TestFormFailedSpawnDoesNotRememberLastPick(t *testing.T) {
+func TestFormRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
-	m.form.name.SetValue("flagged")
-	m.form.dir.SetValue(t.TempDir())
-	m.form.prompt.input.SetValue("--version")
-	m.submitForm()
-	if m.mode != modeForm {
-		t.Fatalf("rejected spawn should stay on the form, mode=%v", m.mode)
-	}
-	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
+	submitFormSession(t, m, "first")
 
+	installCommand := fakeInstallCommand(t)
+	tool := m.cfg.Tools["claude"]
+	tool.Command = "am-fake-cli"
+	m.cfg.Tools["claude"] = tool
+	dir := t.TempDir()
+	initGitRepo(t, dir)
 	m.openForm()
-	if got := m.form.toolNames[m.form.toolIndex]; got != "claude" {
-		t.Fatalf("failed spawn must not seed the next form, got %q", got)
+	pickFormTool(t, m, "claude")
+	m.form.name.SetValue("after-install")
+	m.form.dir.SetValue(dir)
+	m.toggleFormWorktree()
+	m.submitForm()
+
+	if m.mode != modeLaunchHint || m.launchFix.retry == nil {
+		t.Fatalf("expected a refused launch with retry, mode=%v err=%q", m.mode, m.errBar.text)
+	}
+	if m.lastSpawnTool != "ready-tool" || m.lastSpawnWorktree {
+		t.Fatalf("failed launch changed the last pick: %q, %v", m.lastSpawnTool, m.lastSpawnWorktree)
+	}
+	m.launchFix.command = installCommand
+	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
+	waitForInstallToSettle(t, m)
+
+	if m.lastSpawnTool != "claude" || !m.lastSpawnWorktree {
+		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.lastSpawnTool, m.lastSpawnWorktree, m.errBar.text)
+	}
+	m.openForm()
+	if m.form.toolNames[m.form.toolIndex] != "claude" || !m.form.worktree {
+		t.Fatal("next form should use the successful retry's tool and worktree")
 	}
 }
 

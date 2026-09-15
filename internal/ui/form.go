@@ -561,7 +561,6 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 func (m *Model) rememberSpawnPick(tool string, worktree bool) {
 	m.lastSpawnTool = tool
 	m.lastSpawnWorktree = worktree
-	m.lastSpawnWorktreeSet = true
 }
 
 // spawnSession creates the tmux session and its store record for both
