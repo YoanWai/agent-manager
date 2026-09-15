@@ -84,9 +84,7 @@ func (m *Model) defaultWorktree() bool {
 	return chosen == "on"
 }
 
-// groupWorktree resolves a group's spawn-in-worktree default: the nearest
-// ancestor with an explicit choice wins, else the global setting.
-func (m *Model) groupWorktree(group string) bool {
+func (m *Model) spawnWorktreeDefault(group string) bool {
 	for g := group; g != ""; g = parentGroup(g) {
 		switch m.groupWorktrees[g] {
 		case "on":
@@ -94,6 +92,9 @@ func (m *Model) groupWorktree(group string) bool {
 		case "off":
 			return false
 		}
+	}
+	if m.lastSpawnTool != "" {
+		return m.lastSpawnWorktree
 	}
 	return m.defaultWorktree()
 }

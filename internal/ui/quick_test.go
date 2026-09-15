@@ -540,6 +540,140 @@ func TestQuickSpawnUsesTabCycledTool(t *testing.T) {
 	}
 }
 
+func closeQuick(m *Model) {
+	if m.quick.active {
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+	}
+}
+
+func TestQuickRemembersLastSpawnTool(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+
+	m.openQuickMode()
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyTab})
+	if m.quickTool() != "claude-hooked" {
+		t.Fatalf("after tab, quick tool = %q want claude-hooked", m.quickTool())
+	}
+	m.quick.input.SetValue("build the api")
+	_, cmd := m.submitQuick()
+	if m.errBar.text != "" {
+		t.Fatalf("quick spawn: %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	closeQuick(m)
+
+	m.openQuickMode()
+	if got := m.quickTool(); got != "claude-hooked" {
+		t.Fatalf("next quick tool = %q, want last spawn", got)
+	}
+}
+
+func TestQuickRemembersLastSpawnWorktree(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	m := quickGroupModel(t, repo)
+	m.openQuickMode()
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if !m.quickWorktreeOn() {
+		t.Fatal("shift+tab should turn worktree on")
+	}
+	m.quick.input.SetValue("do a thing")
+	_, cmd := m.submitQuick()
+	if m.errBar.text != "" {
+		t.Fatalf("quick spawn: %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	closeQuick(m)
+
+	m.openQuickMode()
+	if !m.quickWorktreeOn() {
+		t.Fatal("next quick bar should seed worktree from the last spawn")
+	}
+}
+
+func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	m := quickGroupModel(t, dir)
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	submitFormSession(t, m, "first")
+
+	installCommand := fakeInstallCommand(t)
+	tool := m.cfg.Tools["claude"]
+	tool.Command = "am-fake-cli"
+	m.cfg.Tools["claude"] = tool
+	m.selectGroupRow(t, "grp")
+	m.openQuickMode()
+	for i, name := range m.quick.toolNames {
+		if name == "claude" {
+			m.quick.toolIndex = i
+		}
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.quick.input.SetValue("do a thing")
+	m.submitQuick()
+
+	if m.mode != modeLaunchHint || m.launchFix.retry == nil {
+		t.Fatalf("expected a refused launch with retry, mode=%v err=%q", m.mode, m.errBar.text)
+	}
+	if m.lastSpawnTool != "ready-tool" || m.lastSpawnWorktree {
+		t.Fatalf("failed launch changed the last pick: %q, %v", m.lastSpawnTool, m.lastSpawnWorktree)
+	}
+	m.launchFix.command = installCommand
+	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
+	waitForInstallToSettle(t, m)
+
+	if m.lastSpawnTool != "claude" || !m.lastSpawnWorktree {
+		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.lastSpawnTool, m.lastSpawnWorktree, m.errBar.text)
+	}
+	m.selectGroupRow(t, "grp")
+	m.openQuickMode()
+	if m.quickTool() != "claude" || !m.quickWorktreeOn() {
+		t.Fatal("next quick bar should use the successful retry's tool and worktree")
+	}
+}
+
+func TestQuickCancelDoesNotRememberLastPick(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyTab})
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+
+	m.openQuickMode()
+	if got := m.quickTool(); got != "claude" {
+		t.Fatalf("cancelled pick must not seed the next bar, got %q", got)
+	}
+}
+
+func TestQuickSeedsFromLastFormSpawn(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	submitFormSession(t, m, "first")
+
+	m.selectGroupRow(t, "backend")
+	m.openQuickMode()
+	if got := m.quickTool(); got != "ready-tool" {
+		t.Fatalf("quick tool = %q, want last form spawn", got)
+	}
+}
+
 func TestQuickCloseAfterSendDefaultsToStayingOpen(t *testing.T) {
 	m := buildModel(t)
 	if m.quickCloseAfterSend() {

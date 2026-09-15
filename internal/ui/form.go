@@ -265,7 +265,7 @@ func (m *Model) enabledToolNames() []string {
 }
 
 func (m *Model) openForm() {
-	tools, toolIndex := m.defaultToolSelection()
+	tools, toolIndex := m.spawnToolSelection()
 	if len(tools) == 0 {
 		m.errBar.text = "no CLIs enabled: open settings (s), then CLIs, to turn some on"
 		return
@@ -292,7 +292,7 @@ func (m *Model) openForm() {
 	m.forgetWorktreeCapability()
 	m.rebuildGroupOptions(m.contextGroup())
 	m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
-	m.form.worktree = m.groupWorktree(m.selectedGroupPath())
+	m.form.worktree = m.spawnWorktreeDefault(m.selectedGroupPath())
 	m.form.worktreeAuto = true
 	m.pathSugg.reset()
 	m.mode = modeForm
@@ -445,7 +445,7 @@ func (m *Model) moveGroupCursor(delta int) {
 		m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	}
 	if m.mode == modeForm && m.form.worktreeAuto {
-		m.form.worktree = m.groupWorktree(m.selectedGroupPath())
+		m.form.worktree = m.spawnWorktreeDefault(m.selectedGroupPath())
 	}
 	if m.mode == modeGroupForm && m.groupForm.pathAuto {
 		m.groupForm.path.SetValue(m.ancestorGroupDir(m.selectedGroupPath()))
@@ -535,14 +535,20 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	}
 
 	worktree := m.formWorktreeOn()
-	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree); err != nil {
+	pickWorktree := m.form.worktree
+	spawn := func() error {
+		if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree); err != nil {
+			return err
+		}
+		m.rememberSpawnPick(toolName, pickWorktree)
+		return nil
+	}
+	if err := spawn(); err != nil {
 		// A spawn the hint dialog refused takes the form off screen with
 		// it; the dialog releases its images once no install can still
 		// spawn it. An error reported in the bar leaves the form up, and
 		// the prompt still names them.
-		m.reportLaunchError(err, func() error {
-			return m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree)
-		})
+		m.reportLaunchError(err, spawn)
 		return m, nil
 	}
 	// New sessions start as starting, which attention excludes; clear so
@@ -550,6 +556,11 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	m.statusFilter = statusFilterAll
 	m.mode = modeList
 	return m, m.refreshCmd()
+}
+
+func (m *Model) rememberSpawnPick(tool string, worktree bool) {
+	m.lastSpawnTool = tool
+	m.lastSpawnWorktree = worktree
 }
 
 // spawnSession creates the tmux session and its store record for both
