@@ -99,16 +99,18 @@ func (m *Model) groupWorktree(group string) bool {
 }
 
 func (m *Model) spawnWorktreeDefault(group string) bool {
-	if !m.lastSpawnWorktreeSet {
-		return m.groupWorktree(group)
-	}
 	for g := group; g != ""; g = parentGroup(g) {
 		switch m.groupWorktrees[g] {
-		case "on", "off":
-			return m.groupWorktree(group)
+		case "on":
+			return true
+		case "off":
+			return false
 		}
 	}
-	return m.lastSpawnWorktree
+	if m.lastSpawnWorktreeSet {
+		return m.lastSpawnWorktree
+	}
+	return m.defaultWorktree()
 }
 
 // worktreeUnavailable is what the worktree toggle reads when the target
