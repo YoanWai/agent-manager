@@ -46,6 +46,7 @@ type toolRules struct {
 	placeholder    *regexp.Regexp
 	userEcho       *regexp.Regexp
 	dialogFooter   *regexp.Regexp
+	busyFooter     *regexp.Regexp
 	// composerPlaceholder is the literal text a tool paints inside its
 	// empty composer; a draft replaces it. Searched in a stripped row.
 	composerPlaceholder string
@@ -85,6 +86,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.InputPlaceholder, &tr.placeholder},
 			{tool.UserEcho, &tr.userEcho},
 			{tool.DialogFooter, &tr.dialogFooter},
+			{tool.BusyFooter, &tr.busyFooter},
 		}
 		for _, opt := range optional {
 			if opt.pattern == "" {
@@ -119,6 +121,9 @@ func (e *Engine) Match(tool, pane string) (string, bool) {
 		return Errored, true
 	}
 	if state, ok := tr.matchRules(tr.matchScope(pane)); ok {
+		if state == Working && tr.turnDied(pane) {
+			return Errored, true
+		}
 		return state, true
 	}
 	if tr.isBusy(pane) {
@@ -302,12 +307,34 @@ func wrapsAbove(row string) bool {
 	return body == "" || len(body) < len(row)
 }
 
-func (tr toolRules) hasWaitingFooter(cutoffTail string) bool {
-	lineEnd := strings.IndexByte(cutoffTail, '\n')
-	if lineEnd < 0 {
+// turnDied reports a working signal the tool no longer backs: it paints a
+// busy_footer for as long as a turn runs, and the footer has gone back to
+// its resting form while the working marker is still on screen.
+func (tr toolRules) turnDied(pane string) bool {
+	if tr.busyFooter == nil {
 		return false
 	}
-	footer := cutoffTail[lineEnd+1:]
+	region, ok := tr.activityRegion(pane)
+	if !ok {
+		return false
+	}
+	footer, ok := footerBelow(pane[len(region):])
+	return ok && !tr.busyFooter.MatchString(footer)
+}
+
+func footerBelow(cutoffTail string) (string, bool) {
+	lineEnd := strings.IndexByte(cutoffTail, '\n')
+	if lineEnd < 0 {
+		return "", false
+	}
+	return cutoffTail[lineEnd+1:], true
+}
+
+func (tr toolRules) hasWaitingFooter(cutoffTail string) bool {
+	footer, ok := footerBelow(cutoffTail)
+	if !ok {
+		return false
+	}
 	if tr.dialogFooter != nil && tr.dialogFooter.MatchString(footer) {
 		return true
 	}

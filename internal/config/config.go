@@ -91,6 +91,10 @@ type Tool struct {
 	// for its selected option from a draft typed at a resting composer, so
 	// the rows below the marker join what the rules read.
 	DialogFooter string `toml:"dialog_footer"`
+	// BusyFooter is a line the tool draws under its activity cutoff only
+	// while a turn runs. A working rule that matches without it belongs to
+	// a turn that died before printing its end marker, which is errored.
+	BusyFooter string `toml:"busy_footer"`
 	// InputPrefix locates the composer's input row for the arrow-step pair
 	// (Left leaving focus at the prompt head). It replaces the reuse of
 	// activity_cutoff for that check, for tools whose input line carries no
@@ -416,6 +420,9 @@ input_placeholder = "^Ask anything\\.\\.\\."
 # trimmed before the echo is read
 user_echo = "^\\s*┃\\s{2,}"
 limit_line = "(?i)requires more credits|(?:Usage|Free|Go) limit reached"
+# the footer swaps its path for a knight-rider spinner ("■■■⬝⬝⬝⬝⬝") only
+# while a turn runs, provider retries included
+busy_footer = "(?m)^\\s*[■⬝]+ "
 rules = [
   { state = "errored", pattern = "(?i)requires more credits" },
   { state = "errored", pattern = "(?im)^\\s*error\\b" },
