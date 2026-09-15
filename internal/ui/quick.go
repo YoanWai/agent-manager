@@ -9,7 +9,7 @@ import (
 )
 
 func (m *Model) openQuickMode() {
-	names, index := m.defaultToolSelection()
+	names, index := m.spawnToolSelection()
 	if len(names) == 0 {
 		m.errBar.text = "no CLIs enabled: open settings (s), then CLIs, to turn some on"
 		return
@@ -35,7 +35,7 @@ func (m *Model) openQuickMode() {
 		toolNames:      names,
 		toolIndex:      index,
 		closeAfterSend: m.quickCloseAfterSend(),
-		worktree:       m.defaultWorktree(),
+		worktree:       m.spawnWorktreeDefault(m.quickTargetGroup()),
 	}
 }
 
@@ -48,6 +48,21 @@ func (m *Model) defaultToolSelection() ([]string, int) {
 	for i, name := range names {
 		if name == current {
 			index = i
+		}
+	}
+	return names, index
+}
+
+// spawnToolSelection seeds n and the quick bar: the last confirmed spawn
+// when that CLI is still enabled, else the settings default.
+func (m *Model) spawnToolSelection() ([]string, int) {
+	names, index := m.defaultToolSelection()
+	if m.lastSpawnTool == "" {
+		return names, index
+	}
+	for i, name := range names {
+		if name == m.lastSpawnTool {
+			return names, i
 		}
 	}
 	return names, index
@@ -158,9 +173,13 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 	}
 	name := toolName + "-" + newID()[:4]
 	worktree := m.quickWorktreeOn()
-	if err := m.spawnSession(toolName, name, dir, group, prompt, true, worktree); err != nil {
+	pickWorktree := m.spawnWorktreeDefault(group)
+	if m.quick.worktreeTouched {
+		pickWorktree = m.quick.worktree
+	}
+	if err := m.spawnAndRemember(toolName, name, dir, group, prompt, true, worktree, pickWorktree); err != nil {
 		m.reportLaunchError(err, func() error {
-			return m.spawnSession(toolName, name, dir, group, prompt, true, worktree)
+			return m.spawnAndRemember(toolName, name, dir, group, prompt, true, worktree, pickWorktree)
 		})
 		// A spawn the hint dialog refused leaves nothing to send, so the
 		// bar closes instead of swallowing the list keys behind the dialog;
@@ -197,7 +216,7 @@ func (m *Model) quickWorktreeOn() bool {
 	if m.quick.worktreeTouched {
 		return m.quick.worktree
 	}
-	return m.groupWorktree(m.quickTargetGroup())
+	return m.spawnWorktreeDefault(m.quickTargetGroup())
 }
 
 // quickTargetGroup is the group a quick spawn would land in: the selected

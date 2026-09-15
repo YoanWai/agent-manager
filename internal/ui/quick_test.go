@@ -540,6 +540,114 @@ func TestQuickSpawnUsesTabCycledTool(t *testing.T) {
 	}
 }
 
+func closeQuick(m *Model) {
+	if m.quick.active {
+		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+	}
+}
+
+func TestQuickRemembersLastSpawnTool(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+
+	m.openQuickMode()
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyTab})
+	if m.quickTool() != "claude-hooked" {
+		t.Fatalf("after tab, quick tool = %q want claude-hooked", m.quickTool())
+	}
+	m.quick.input.SetValue("build the api")
+	_, cmd := m.submitQuick()
+	if m.errBar.text != "" {
+		t.Fatalf("quick spawn: %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	closeQuick(m)
+
+	m.openQuickMode()
+	if got := m.quickTool(); got != "claude-hooked" {
+		t.Fatalf("next quick tool = %q, want last spawn", got)
+	}
+}
+
+func TestQuickRemembersLastSpawnWorktree(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	m := quickGroupModel(t, repo)
+	m.openQuickMode()
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if !m.quickWorktreeOn() {
+		t.Fatal("shift+tab should turn worktree on")
+	}
+	m.quick.input.SetValue("do a thing")
+	_, cmd := m.submitQuick()
+	if m.errBar.text != "" {
+		t.Fatalf("quick spawn: %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	closeQuick(m)
+
+	m.openQuickMode()
+	if !m.quickWorktreeOn() {
+		t.Fatal("next quick bar should seed worktree from the last spawn")
+	}
+}
+
+func TestQuickCancelDoesNotRememberLastPick(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "backend")
+
+	m.openQuickMode()
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyTab})
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
+
+	m.openQuickMode()
+	if got := m.quickTool(); got != "claude" {
+		t.Fatalf("cancelled pick must not seed the next bar, got %q", got)
+	}
+}
+
+func TestQuickSeedsFromLastFormSpawn(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	m.form.worktree = true
+	submitFormSession(t, m, "first")
+
+	m.selectGroupRow(t, "backend")
+	m.openQuickMode()
+	if got := m.quickTool(); got != "ready-tool" {
+		t.Fatalf("quick tool = %q, want last form spawn", got)
+	}
+}
+
 func TestQuickCloseAfterSendDefaultsToStayingOpen(t *testing.T) {
 	m := buildModel(t)
 	if m.quickCloseAfterSend() {

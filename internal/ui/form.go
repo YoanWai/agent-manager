@@ -265,7 +265,7 @@ func (m *Model) enabledToolNames() []string {
 }
 
 func (m *Model) openForm() {
-	tools, toolIndex := m.defaultToolSelection()
+	tools, toolIndex := m.spawnToolSelection()
 	if len(tools) == 0 {
 		m.errBar.text = "no CLIs enabled: open settings (s), then CLIs, to turn some on"
 		return
@@ -292,7 +292,7 @@ func (m *Model) openForm() {
 	m.forgetWorktreeCapability()
 	m.rebuildGroupOptions(m.contextGroup())
 	m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
-	m.form.worktree = m.groupWorktree(m.selectedGroupPath())
+	m.form.worktree = m.spawnWorktreeDefault(m.selectedGroupPath())
 	m.form.worktreeAuto = true
 	m.pathSugg.reset()
 	m.mode = modeForm
@@ -445,7 +445,7 @@ func (m *Model) moveGroupCursor(delta int) {
 		m.form.dir.SetValue(m.groupDefaultDir(m.selectedGroupPath()))
 	}
 	if m.mode == modeForm && m.form.worktreeAuto {
-		m.form.worktree = m.groupWorktree(m.selectedGroupPath())
+		m.form.worktree = m.spawnWorktreeDefault(m.selectedGroupPath())
 	}
 	if m.mode == modeGroupForm && m.groupForm.pathAuto {
 		m.groupForm.path.SetValue(m.ancestorGroupDir(m.selectedGroupPath()))
@@ -535,13 +535,14 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	}
 
 	worktree := m.formWorktreeOn()
-	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree); err != nil {
+	pickWorktree := m.form.worktree
+	if err := m.spawnAndRemember(toolName, name, dir, group, prompt, autoNamed, worktree, pickWorktree); err != nil {
 		// A spawn the hint dialog refused takes the form off screen with
 		// it; the dialog releases its images once no install can still
 		// spawn it. An error reported in the bar leaves the form up, and
 		// the prompt still names them.
 		m.reportLaunchError(err, func() error {
-			return m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree)
+			return m.spawnAndRemember(toolName, name, dir, group, prompt, autoNamed, worktree, pickWorktree)
 		})
 		return m, nil
 	}
@@ -550,6 +551,16 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	m.statusFilter = statusFilterAll
 	m.mode = modeList
 	return m, m.refreshCmd()
+}
+
+func (m *Model) spawnAndRemember(toolName, name, dir, group, prompt string, autoNamed, worktree, pickWorktree bool) error {
+	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree); err != nil {
+		return err
+	}
+	m.lastSpawnTool = toolName
+	m.lastSpawnWorktree = pickWorktree
+	m.lastSpawnWorktreeSet = true
+	return nil
 }
 
 // spawnSession creates the tmux session and its store record for both

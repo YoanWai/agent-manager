@@ -98,6 +98,25 @@ func (m *Model) groupWorktree(group string) bool {
 	return m.defaultWorktree()
 }
 
+func (m *Model) groupHasExplicitWorktree(group string) bool {
+	for g := group; g != ""; g = parentGroup(g) {
+		switch m.groupWorktrees[g] {
+		case "on", "off":
+			return true
+		}
+	}
+	return false
+}
+
+// spawnWorktreeDefault seeds n and the quick bar: a group's explicit
+// on/off wins, else the last confirmed pick, else settings.
+func (m *Model) spawnWorktreeDefault(group string) bool {
+	if m.groupHasExplicitWorktree(group) || !m.lastSpawnWorktreeSet {
+		return m.groupWorktree(group)
+	}
+	return m.lastSpawnWorktree
+}
+
 // worktreeUnavailable is what the worktree toggle reads when the target
 // directory cannot host one.
 const worktreeUnavailable = "unavailable (not a git repo)"

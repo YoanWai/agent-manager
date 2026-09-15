@@ -29,6 +29,166 @@ func TestNewSessionFormUsesSettingsDefaultTool(t *testing.T) {
 	}
 }
 
+func pickFormTool(t *testing.T, m *Model, name string) {
+	t.Helper()
+	for i, candidate := range m.form.toolNames {
+		if candidate == name {
+			m.form.toolIndex = i
+			return
+		}
+	}
+	t.Fatalf("form missing tool %q: %v", name, m.form.toolNames)
+}
+
+func submitFormSession(t *testing.T, m *Model, name string) {
+	t.Helper()
+	m.form.name.SetValue(name)
+	m.form.dir.SetValue(t.TempDir())
+	_, cmd := m.submitForm()
+	if m.mode != modeList {
+		t.Fatalf("submit: mode=%v err=%q", m.mode, m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+}
+
+func TestFormRemembersLastSpawnTool(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	submitFormSession(t, m, "first")
+
+	m.openForm()
+	if got := m.form.toolNames[m.form.toolIndex]; got != "ready-tool" {
+		t.Fatalf("next form tool = %q, want last spawn", got)
+	}
+}
+
+func TestFormCancelDoesNotRememberLastPick(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	m.form.worktree = true
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
+
+	m.openForm()
+	if got := m.form.toolNames[m.form.toolIndex]; got != "claude" {
+		t.Fatalf("cancelled pick must not seed the next form, got %q", got)
+	}
+	if m.form.worktree {
+		t.Fatal("cancelled worktree pick must not seed the next form")
+	}
+}
+
+func TestFormFailedSpawnDoesNotRememberLastPick(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	m.form.name.SetValue("flagged")
+	m.form.dir.SetValue(t.TempDir())
+	m.form.prompt.input.SetValue("--version")
+	m.submitForm()
+	if m.mode != modeForm {
+		t.Fatalf("rejected spawn should stay on the form, mode=%v", m.mode)
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEsc})
+
+	m.openForm()
+	if got := m.form.toolNames[m.form.toolIndex]; got != "claude" {
+		t.Fatalf("failed spawn must not seed the next form, got %q", got)
+	}
+}
+
+func TestFormRemembersLastSpawnWorktree(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.worktree = true
+	submitFormSession(t, m, "first")
+
+	m.openForm()
+	if !m.form.worktree {
+		t.Fatal("next form should seed worktree from the last spawn")
+	}
+}
+
+func TestFormLastWorktreeYieldsToGroupDefault(t *testing.T) {
+	m := buildModel(t)
+	m.openForm()
+	m.form.worktree = true
+	submitFormSession(t, m, "first")
+
+	if err := m.store.CreateGroup("grp", t.TempDir()); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.store.SetGroupWorktree("grp", "off"); err != nil {
+		t.Fatalf("set worktree: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp")
+	m.openForm()
+	if m.form.worktree {
+		t.Fatal("a group's explicit worktree default must not follow the last pick")
+	}
+
+	if err := m.store.CreateGroup("grp/child", t.TempDir()); err != nil {
+		t.Fatalf("child group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp/child")
+	m.openForm()
+	if m.form.worktree {
+		t.Fatal("a child of an explicit-off group must not follow the last pick")
+	}
+
+	m.mode = modeList
+	m.selectSessionRow(t, "first")
+	m.openForm()
+	if !m.form.worktree {
+		t.Fatal("an inheriting group should still follow the last pick")
+	}
+}
+
+func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	submitFormSession(t, m, "first")
+	if err := m.store.SetSetting(hiddenToolsSetting, "ready-tool"); err != nil {
+		t.Fatal(err)
+	}
+
+	m.openForm()
+	if got := m.form.toolNames[m.form.toolIndex]; got != "claude" {
+		t.Fatalf("hidden last tool should fall back to settings, got %q", got)
+	}
+}
+
+func TestSettingsDefaultIgnoresLastSpawn(t *testing.T) {
+	m := buildModel(t)
+	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	submitFormSession(t, m, "first")
+
+	m.openSettings()
+	if got := m.settings.toolNames[m.settings.toolIndex]; got != "claude" {
+		t.Fatalf("settings default tool = %q, want stored default", got)
+	}
+}
+
 func TestNewSessionPreselectsContextGroup(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
