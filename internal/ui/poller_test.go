@@ -1684,6 +1684,40 @@ func TestPendingInputWaitsForTheLaunchPrompt(t *testing.T) {
 	}
 }
 
+func TestPendingInputWaitsForBetweenTurn(t *testing.T) {
+	m := buildModel(t)
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess, err := m.store.Get(m.sessionRows()[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sent, err := m.poller.maybeSendPendingInputWhenReady(sess, "❯ ", status.Working, true)
+	if err != nil {
+		t.Fatalf("send while working: %v", err)
+	}
+	if sent {
+		t.Fatal("pending input was delivered during a live turn")
+	}
+	queued, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queued.PendingInputs) == 0 {
+		t.Fatal("pending input was consumed during a live turn")
+	}
+
+	sent, err = m.poller.maybeSendPendingInputWhenReady(sess, "❯ ", status.Idle, true)
+	if err != nil {
+		t.Fatalf("send while idle: %v", err)
+	}
+	if !sent {
+		t.Fatal("pending input was not delivered between turns")
+	}
+}
+
 // A prompt that never reaches the pane, because it scrolled out or the agent
 // never drew it, must not hold pending input past the grace.
 func TestLaunchPromptTakenGivesUpAfterTheGrace(t *testing.T) {
