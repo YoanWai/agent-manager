@@ -202,9 +202,7 @@ type Model struct {
 	rename        renameTarget
 	fork          forkState
 	quick         quickState
-	// lastSpawnTool / lastSpawnWorktree are this process's last confirmed
-	// new-session pick, so n and the quick bar start there. Settings stay
-	// the fallback when there is no pick yet, or the last tool is hidden.
+	// lastSpawnWorktreeSet distinguishes "never spawned" from worktree off.
 	lastSpawnTool        string
 	lastSpawnWorktree    bool
 	lastSpawnWorktreeSet bool

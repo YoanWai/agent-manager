@@ -53,9 +53,6 @@ func submitFormSession(t *testing.T, m *Model, name string) {
 
 func TestFormRemembersLastSpawnTool(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
-		t.Fatal(err)
-	}
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
 	submitFormSession(t, m, "first")
@@ -68,9 +65,6 @@ func TestFormRemembersLastSpawnTool(t *testing.T) {
 
 func TestFormCancelDoesNotRememberLastPick(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
-		t.Fatal(err)
-	}
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
 	m.form.worktree = true
@@ -87,9 +81,6 @@ func TestFormCancelDoesNotRememberLastPick(t *testing.T) {
 
 func TestFormFailedSpawnDoesNotRememberLastPick(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
-		t.Fatal(err)
-	}
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
 	m.form.name.SetValue("flagged")
@@ -158,9 +149,6 @@ func TestFormLastWorktreeYieldsToGroupDefault(t *testing.T) {
 
 func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
-		t.Fatal(err)
-	}
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
 	submitFormSession(t, m, "first")
@@ -176,9 +164,6 @@ func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
 
 func TestSettingsDefaultIgnoresLastSpawn(t *testing.T) {
 	m := buildModel(t)
-	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
-		t.Fatal(err)
-	}
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
 	submitFormSession(t, m, "first")

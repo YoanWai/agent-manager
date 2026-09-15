@@ -552,9 +552,6 @@ func TestQuickRemembersLastSpawnTool(t *testing.T) {
 	if err := m.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
-	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
-		t.Fatal(err)
-	}
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "backend")
 
@@ -605,16 +602,6 @@ func TestQuickRemembersLastSpawnWorktree(t *testing.T) {
 
 func TestQuickCancelDoesNotRememberLastPick(t *testing.T) {
 	m := buildModel(t)
-	dir := t.TempDir()
-	if err := m.store.CreateGroup("backend", dir); err != nil {
-		t.Fatalf("create group: %v", err)
-	}
-	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
-		t.Fatal(err)
-	}
-	m.applyCmd(t, m.refreshCmd())
-	m.selectGroupRow(t, "backend")
-
 	m.openQuickMode()
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyTab})
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
@@ -631,14 +618,10 @@ func TestQuickSeedsFromLastFormSpawn(t *testing.T) {
 	if err := m.store.CreateGroup("backend", dir); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
-	if err := m.store.SetSetting("default_tool", "claude"); err != nil {
-		t.Fatal(err)
-	}
 	m.applyCmd(t, m.refreshCmd())
 
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
-	m.form.worktree = true
 	submitFormSession(t, m, "first")
 
 	m.selectGroupRow(t, "backend")

@@ -98,21 +98,15 @@ func (m *Model) groupWorktree(group string) bool {
 	return m.defaultWorktree()
 }
 
-func (m *Model) groupHasExplicitWorktree(group string) bool {
+func (m *Model) spawnWorktreeDefault(group string) bool {
+	if !m.lastSpawnWorktreeSet {
+		return m.groupWorktree(group)
+	}
 	for g := group; g != ""; g = parentGroup(g) {
 		switch m.groupWorktrees[g] {
 		case "on", "off":
-			return true
+			return m.groupWorktree(group)
 		}
-	}
-	return false
-}
-
-// spawnWorktreeDefault seeds n and the quick bar: a group's explicit
-// on/off wins, else the last confirmed pick, else settings.
-func (m *Model) spawnWorktreeDefault(group string) bool {
-	if m.groupHasExplicitWorktree(group) || !m.lastSpawnWorktreeSet {
-		return m.groupWorktree(group)
 	}
 	return m.lastSpawnWorktree
 }

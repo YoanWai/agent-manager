@@ -536,14 +536,19 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 
 	worktree := m.formWorktreeOn()
 	pickWorktree := m.form.worktree
-	if err := m.spawnAndRemember(toolName, name, dir, group, prompt, autoNamed, worktree, pickWorktree); err != nil {
+	spawn := func() error {
+		if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree); err != nil {
+			return err
+		}
+		m.rememberSpawnPick(toolName, pickWorktree)
+		return nil
+	}
+	if err := spawn(); err != nil {
 		// A spawn the hint dialog refused takes the form off screen with
 		// it; the dialog releases its images once no install can still
 		// spawn it. An error reported in the bar leaves the form up, and
 		// the prompt still names them.
-		m.reportLaunchError(err, func() error {
-			return m.spawnAndRemember(toolName, name, dir, group, prompt, autoNamed, worktree, pickWorktree)
-		})
+		m.reportLaunchError(err, spawn)
 		return m, nil
 	}
 	// New sessions start as starting, which attention excludes; clear so
@@ -553,14 +558,10 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	return m, m.refreshCmd()
 }
 
-func (m *Model) spawnAndRemember(toolName, name, dir, group, prompt string, autoNamed, worktree, pickWorktree bool) error {
-	if err := m.spawnSession(toolName, name, dir, group, prompt, autoNamed, worktree); err != nil {
-		return err
-	}
-	m.lastSpawnTool = toolName
-	m.lastSpawnWorktree = pickWorktree
+func (m *Model) rememberSpawnPick(tool string, worktree bool) {
+	m.lastSpawnTool = tool
+	m.lastSpawnWorktree = worktree
 	m.lastSpawnWorktreeSet = true
-	return nil
 }
 
 // spawnSession creates the tmux session and its store record for both

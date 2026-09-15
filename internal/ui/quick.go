@@ -53,13 +53,8 @@ func (m *Model) defaultToolSelection() ([]string, int) {
 	return names, index
 }
 
-// spawnToolSelection seeds n and the quick bar: the last confirmed spawn
-// when that CLI is still enabled, else the settings default.
 func (m *Model) spawnToolSelection() ([]string, int) {
 	names, index := m.defaultToolSelection()
-	if m.lastSpawnTool == "" {
-		return names, index
-	}
 	for i, name := range names {
 		if name == m.lastSpawnTool {
 			return names, i
@@ -177,10 +172,15 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 	if m.quick.worktreeTouched {
 		pickWorktree = m.quick.worktree
 	}
-	if err := m.spawnAndRemember(toolName, name, dir, group, prompt, true, worktree, pickWorktree); err != nil {
-		m.reportLaunchError(err, func() error {
-			return m.spawnAndRemember(toolName, name, dir, group, prompt, true, worktree, pickWorktree)
-		})
+	spawn := func() error {
+		if err := m.spawnSession(toolName, name, dir, group, prompt, true, worktree); err != nil {
+			return err
+		}
+		m.rememberSpawnPick(toolName, pickWorktree)
+		return nil
+	}
+	if err := spawn(); err != nil {
+		m.reportLaunchError(err, spawn)
 		// A spawn the hint dialog refused leaves nothing to send, so the
 		// bar closes instead of swallowing the list keys behind the dialog;
 		// the dialog releases its images once no install can still spawn it.
