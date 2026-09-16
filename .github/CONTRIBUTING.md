@@ -92,6 +92,7 @@ built binary on its own tmux socket instead and capture the frames it paints.
 ```bash
 go build -o /tmp/amcap/bin/agent-manager .   # build first, before HOME moves
 
+mkdir -p /tmp/amcap/home /tmp/amcap/sock
 export HOME=/tmp/amcap/home          # throwaway config and store
 export TMUX_TMPDIR=/tmp/amcap/sock   # keep it short, see AGENTS.md
 unset TMUX
@@ -99,9 +100,12 @@ tmux -L outer new-session -d -x 110 -y 30 /tmp/amcap/bin/agent-manager
 ```
 
 `unset TMUX` and a short `TMUX_TMPDIR` matter for the same reason they matter
-to the suite; see Build and test in [AGENTS.md](../AGENTS.md). The manager
-starts its own `agentmgr` server under that directory, so `tmux -L agentmgr`
-reaches the sessions it spawns without touching your own.
+to the suite; see Build and test in [AGENTS.md](../AGENTS.md). The socket
+directory also has to exist before tmux starts. When it does not, tmux falls
+back to your default socket without saying so, and the run lands on your real
+sessions. The manager starts its own `agentmgr` server under that directory,
+so `tmux -L agentmgr` reaches the sessions it spawns without touching your
+own.
 
 Keys go in with `send-keys`, mouse events as raw SGR bytes through `send-keys -H`:
 
