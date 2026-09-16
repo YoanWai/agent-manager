@@ -307,6 +307,12 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	}
 	toolName := strings.TrimSpace(opts.Tool)
 	if toolName == "" {
+		// A spawn with no tool named runs whatever the caller runs, which a
+		// terminal cannot supply: its tool is the user's shell. Guessing an
+		// agent for it would start a CLI nobody asked for.
+		if runtime.cfg.Tools[caller.Tool].Shell {
+			return Session{}, fmt.Errorf("a terminal runs a shell, not an agent CLI, so there is none to inherit; name one with %s (configured tools are %s)", runtime.words.SpawnTool, strings.Join(agentToolNames(runtime), ", "))
+		}
 		toolName = caller.Tool
 	}
 	tool, known := runtime.cfg.Tools[toolName]
