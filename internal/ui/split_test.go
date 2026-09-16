@@ -659,6 +659,53 @@ func TestKeyEndsADragWhoseReleaseNeverLands(t *testing.T) {
 	}
 }
 
+// A row click after a lost release must not be read as the end of the drag
+// the release belongs to. The divider would follow the click column and
+// persist there, so the stale drag ends before the press is resolved.
+func TestRowClickAfterALostReleaseLeavesTheDividerAlone(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	m.View()
+
+	y0, _ := m.bodyYRange()
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: m.dividerX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: m.dividerX() + 8, Y: y0, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if !m.split.dragging || !m.split.moved {
+		t.Fatal("test setup: the press and motion should have armed a live drag")
+	}
+	dragged := m.split.ratio
+
+	// The release never arrives. The next thing the mouse does is an
+	// ordinary click on a row, well left of the divider.
+	line := paintedRailLines(t, m, "beta")[0]
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: 2, Y: y0 + line, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+
+	if m.split.dragging || m.split.moved {
+		t.Fatal("the press should have ended the drag the lost release left open")
+	}
+	if m.split.ratio != dragged {
+		t.Fatalf("ratio = %v, the click moved the divider off %v", m.split.ratio, dragged)
+	}
+	if sess, ok := m.selected(); !ok || sess.Name != "beta" {
+		t.Fatalf("the click should have selected the row under it, got %q ok=%v", sess.Name, ok)
+	}
+}
+
 // A click that misses the divider while resize mode is armed from the
 // keyboard must not fall through to row selection: resize mode owns every
 // press until it exits.

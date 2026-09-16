@@ -229,6 +229,13 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Button != tea.MouseButtonLeft {
 		return m, nil
 	}
+	// A drag whose release never landed is still holding dragging, and the
+	// release of this press would be read as its own: the divider would
+	// jump to wherever this click is and persist there. End the stale one
+	// first, the way the next key does in handleKey.
+	if m.split.dragging && !m.split.resizeMode {
+		m.exitResizeMode(m.split.moved)
+	}
 	y0, y1 := m.bodyYRange()
 	// Full layout paints no divider; splitWidths still returns a ratio-based
 	// column, so without this check a click there would arm a drag instead
