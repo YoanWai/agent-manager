@@ -702,11 +702,18 @@ func TestStartupPreservesExistingPaneHeight(t *testing.T) {
 	}
 }
 
-func TestStartupPollErrorIsVisible(t *testing.T) {
-	m := shotModel()
+func TestStartupErrorStaysVisibleUntilFirstRefresh(t *testing.T) {
+	m := buildModel(t)
 	m.booting = true
 	m.Update(errMsg{errors.New("startup poll failed")})
+	if !m.booting {
+		t.Fatal("an error before the first refresh must not finish boot")
+	}
 	if !strings.Contains(ansi.Strip(m.View()), "startup poll failed") {
 		t.Fatal("startup error is hidden behind the boot loader")
+	}
+	m.Update(refreshMsg{listedAt: time.Now()})
+	if m.booting {
+		t.Fatal("the first successful refresh must finish boot")
 	}
 }

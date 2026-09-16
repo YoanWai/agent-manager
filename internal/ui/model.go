@@ -1752,7 +1752,6 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case errMsg:
-		m.booting = false
 		m.errBar.text = msg.err.Error()
 		return m, nil
 

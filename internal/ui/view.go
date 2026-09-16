@@ -23,7 +23,8 @@ func (m *Model) View() string {
 		for _, line := range ringLoader(m.width, m.height, "loading", m.startupPhase) {
 			lines = append(lines, paint(line, m.width, backdropHex()))
 		}
-		return m.syncCursorAnchor(clampFrame(strings.Join(lines, "\n"), m.height))
+		frame := m.overlayTopRight(strings.Join(lines, "\n"), m.statusToast(), 0)
+		return m.syncCursorAnchor(clampFrame(frame, m.height))
 	}
 	var frame string
 	switch m.mode {
