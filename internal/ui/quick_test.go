@@ -600,6 +600,36 @@ func TestQuickRemembersLastSpawnWorktree(t *testing.T) {
 	}
 }
 
+func TestQuickHiddenLastToolFallsBackToSettings(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repo)
+	m := quickGroupModel(t, repo)
+	m.openQuickMode()
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if !m.quickWorktreeOn() {
+		t.Fatal("shift+tab should turn worktree on")
+	}
+	m.quick.input.SetValue("do a thing")
+	_, cmd := m.submitQuick()
+	if m.errBar.text != "" {
+		t.Fatalf("quick spawn: %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	closeQuick(m)
+
+	if err := m.store.SetSetting(hiddenToolsSetting, m.lastSpawnTool); err != nil {
+		t.Fatal(err)
+	}
+
+	m.openQuickMode()
+	if m.quickWorktreeOn() {
+		t.Fatal("hidden last tool should fall back to the settings worktree default")
+	}
+}
+
 func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	dir := t.TempDir()
 	initGitRepo(t, dir)

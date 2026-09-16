@@ -93,8 +93,10 @@ func (m *Model) spawnWorktreeDefault(group string) bool {
 			return false
 		}
 	}
-	if m.lastSpawnTool != "" {
-		return m.lastSpawnWorktree
+	for _, name := range m.enabledToolNames() {
+		if name == m.lastSpawnTool {
+			return m.lastSpawnWorktree
+		}
 	}
 	return m.defaultWorktree()
 }

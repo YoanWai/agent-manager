@@ -170,6 +170,7 @@ func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
+	m.form.worktree = true
 	submitFormSession(t, m, "first")
 	if err := m.store.SetSetting(hiddenToolsSetting, "ready-tool"); err != nil {
 		t.Fatal(err)
@@ -178,6 +179,9 @@ func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
 	m.openForm()
 	if got := m.form.toolNames[m.form.toolIndex]; got != "claude" {
 		t.Fatalf("hidden last tool should fall back to settings, got %q", got)
+	}
+	if m.form.worktree {
+		t.Fatal("hidden last tool should fall back to the settings worktree default")
 	}
 }
 
