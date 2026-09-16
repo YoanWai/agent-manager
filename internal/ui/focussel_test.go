@@ -41,6 +41,29 @@ func press(m *Model, x, y int) {
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
 }
 
+func TestMouseBackLeavesFocus(t *testing.T) {
+	m := paneAt(t, "hello")
+	updated, _ := m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonBackward})
+	m = updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("mouse back should leave focus, mode = %v", m.mode)
+	}
+}
+
+func TestMouseBackLeavesFocusWhileForwarding(t *testing.T) {
+	m := paneAt(t, "hello")
+	m.pane.mouse = true
+	m.forwardingMouse = true
+	updated, _ := m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonBackward})
+	m = updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("mouse back should leave focus while a click is forwarded, mode = %v", m.mode)
+	}
+	if m.forwardingMouse {
+		t.Fatal("leaving focus should clear a forwarded click")
+	}
+}
+
 func drag(m *Model, x, y int) {
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft, X: x, Y: y})
 }

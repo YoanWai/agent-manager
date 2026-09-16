@@ -179,6 +179,9 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonBackward {
+		return m, m.leaveFocus()
+	}
 	if msg.Action == tea.MouseActionPress && msg.Alt && m.pane.mouse {
 		if row, col, inside := m.paneCell(msg.X, msg.Y); inside {
 			m.clearSelection()
