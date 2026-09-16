@@ -487,6 +487,21 @@ func paintedRailLines(t *testing.T, m *Model, name string) []int {
 	return lines
 }
 
+func paintedGroupLines(t *testing.T, m *Model, path string) []int {
+	t.Helper()
+	m.View()
+	var lines []int
+	for i, row := range m.railHits {
+		if row >= 0 && m.rows[row].isGroup && m.rows[row].group == path {
+			lines = append(lines, i)
+		}
+	}
+	if len(lines) == 0 {
+		t.Fatalf("test setup: group %q painted no rail line", path)
+	}
+	return lines
+}
+
 // A click on a session row selects it, reading the geometry the frame
 // recorded while painting rather than re-deriving it (#110).
 func TestClickSelectsRow(t *testing.T) {
@@ -507,6 +522,101 @@ func TestClickSelectsRow(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("selecting a different row should schedule a preview")
+	}
+	if m.mode != modeList {
+		t.Fatalf("first click should select, not open, mode = %v", m.mode)
+	}
+}
+
+// A press on the row already under the cursor is the second click: it
+// opens, the same as Enter. There is no double-click timer; the selected
+// row is the gesture.
+func TestClickOnSelectedRowOpensSession(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+
+	line := paintedRailLines(t, m, "alpha")[0]
+	y0, _ := m.bodyYRange()
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("click on the selected session should focus it, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+}
+
+func TestSecondClickOpensTheRowJustSelected(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "beta")
+
+	line := paintedRailLines(t, m, "alpha")[0]
+	y0, _ := m.bodyYRange()
+	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+	updated, _ := m.handleMouse(press)
+	m = updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("first click should select, mode = %v", m.mode)
+	}
+	updated, _ = m.handleMouse(press)
+	m = updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("second click should open alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+}
+
+func TestClickOnSelectedRowAttachesWhenEnterAttaches(t *testing.T) {
+	m := buildModel(t)
+	m.focusOnEnter = false
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+
+	line := paintedRailLines(t, m, "alpha")[0]
+	y0, _ := m.bodyYRange()
+	updated, cmd := m.handleMouse(tea.MouseMsg{
+		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("click should attach, not focus, mode = %v", m.mode)
+	}
+	if cmd == nil {
+		t.Fatalf("attach should return a command, err = %q", m.errBar.text)
+	}
+}
+
+func TestClickOnSelectedGroupTogglesCollapse(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("work", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "alpha", dir, "work")
+	m.selectGroupRow(t, "work")
+	if m.collapsed["work"] {
+		t.Fatal("test setup: work should start open")
+	}
+
+	line := paintedGroupLines(t, m, "work")[0]
+	y0, _ := m.bodyYRange()
+	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+	updated, _ := m.handleMouse(press)
+	m = updated.(*Model)
+	if !m.collapsed["work"] {
+		t.Fatal("click on the selected group should fold it")
+	}
+
+	line = paintedGroupLines(t, m, "work")[0]
+	y0, _ = m.bodyYRange()
+	press.Y = y0 + line
+	updated, _ = m.handleMouse(press)
+	m = updated.(*Model)
+	if m.collapsed["work"] {
+		t.Fatal("a second click should unfold it")
 	}
 }
 
@@ -969,6 +1079,36 @@ func TestClickSelectsRowWhileSearchingOrPrompting(t *testing.T) {
 			m = updated.(*Model)
 			if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
 				t.Fatalf("click should select alpha, got %q ok=%v", sess.Name, ok)
+			}
+		})
+	}
+}
+
+// Search and the quick bar own Enter, so a press on the selected row
+// stays a select: it must not steal the key those surfaces are waiting for.
+func TestClickOnSelectedRowDoesNotOpenWhileSearchingOrPrompting(t *testing.T) {
+	for _, name := range []string{"searching", "quick bar"} {
+		t.Run(name, func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "alpha", t.TempDir(), "")
+			m.selectSessionRow(t, "alpha")
+			if name == "searching" {
+				m.searching = true
+			} else {
+				m.openQuickMode()
+			}
+
+			line := paintedRailLines(t, m, "alpha")[0]
+			y0, _ := m.bodyYRange()
+			updated, _ := m.handleMouse(tea.MouseMsg{
+				X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+			})
+			m = updated.(*Model)
+			if m.mode != modeList {
+				t.Fatalf("click on the selected row must not open while %s, mode = %v", name, m.mode)
+			}
+			if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
+				t.Fatalf("selection should stay on alpha, got %q ok=%v", sess.Name, ok)
 			}
 		})
 	}

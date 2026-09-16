@@ -102,14 +102,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keybind.ReorderDown:
 		return m.reorderSelected(1)
 	case keybind.Open:
-		if entry, ok := m.selectedRow(); ok && entry.isGroup {
-			m.toggleCollapse()
-			return m, nil
-		}
-		if m.enterFocuses() {
-			return m.focusSelected()
-		}
-		return m.attachSelected()
+		return m.openSelected()
 	case keybind.StepIn:
 		if !m.arrowStep {
 			return m, nil
@@ -194,6 +187,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.openDiff()
 	}
 	return m, nil
+}
+
+func (m *Model) openSelected() (tea.Model, tea.Cmd) {
+	if entry, ok := m.selectedRow(); ok && entry.isGroup {
+		m.toggleCollapse()
+		return m, nil
+	}
+	if m.enterFocuses() {
+		return m.focusSelected()
+	}
+	return m.attachSelected()
 }
 
 // moveCursor shifts the selection by delta, wrapping at either end, and
