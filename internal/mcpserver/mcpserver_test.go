@@ -806,7 +806,7 @@ func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		"list_sessions":    {"Call first", "create_session"},
 		"create_session":   {"without waiting for the user", "worktree", "cannot see this conversation", "read_session"},
 		"read_session":     {"after create_session", "current screen"},
-		"send_session":     {"self-contained instruction", "read_session", "at rest", "another agent rather than from the user"},
+		"send_session":     {"self-contained instruction", "read_session", "at rest", "ordinary work"},
 		"message_status":   {"delivered", "queued"},
 		"wait_for_session": {"instead of calling read_session in a loop", "timeout is a normal answer", "reached false"},
 		"revive_session":   {"dead session"},
@@ -819,6 +819,9 @@ func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 				t.Errorf("%s description does not contain %q: %s", tool, want, descriptions[tool])
 			}
 		}
+	}
+	if strings.Contains(descriptions["send_session"], "cannot approve permissions") {
+		t.Errorf("send_session still tells the sender the recipient will refuse the work: %s", descriptions["send_session"])
 	}
 }
 
