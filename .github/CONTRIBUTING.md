@@ -83,6 +83,44 @@ evidence is not possible, say why. For example, a new UI may have no
 reproducible before state, while an internal refactor may have no meaningful
 visual state at all.
 
+## Capturing a TUI frame
+
+The manager draws full screen, so a photo of your own terminal carries
+everything else on your screen and cannot show a mouse gesture at all. Drive a
+built binary on its own tmux socket instead and capture the frames it paints.
+
+```bash
+go build -o /tmp/amcap/bin/agent-manager .   # build first, before HOME moves
+
+export HOME=/tmp/amcap/home          # throwaway config and store
+export TMUX_TMPDIR=/tmp/amcap/sock   # keep it short, see AGENTS.md
+unset TMUX
+tmux -L outer new-session -d -x 110 -y 30 /tmp/amcap/bin/agent-manager
+```
+
+`unset TMUX` and a short `TMUX_TMPDIR` matter for the same reason they matter
+to the suite; see Build and test in [AGENTS.md](../AGENTS.md). The manager
+starts its own `agentmgr` server under that directory, so `tmux -L agentmgr`
+reaches the sessions it spawns without touching your own.
+
+Keys go in with `send-keys`, mouse events as raw SGR bytes through `send-keys -H`:
+
+```bash
+sgr() { printf "\033[<%s;%s;%s%s" "$1" "$2" "$3" "$4" | od -An -tx1 | tr -d '\n'; }
+
+tmux -L outer send-keys -H $(sgr 0 34 5 M)    # left press at column 34, row 5
+tmux -L outer send-keys -H $(sgr 32 48 5 M)   # motion, dragging to column 48
+tmux -L outer send-keys -H $(sgr 0 48 5 m)    # release
+tmux -L outer send-keys -H $(sgr 65 10 6 M)   # wheel down, 64 for up
+```
+
+SGR columns and rows are 1-based while the model's are 0-based, which is the
+one thing that will cost you a run.
+
+Read a frame back with `tmux -L outer capture-pane -p`, or `-p -e` to keep the
+colors. Paste the before and after into the PR. Kill both servers before you
+delete the directory, or the daemon is left stranded.
+
 ## Licensing
 
 Contributions come in under the project's [Apache-2.0 license](../LICENSE), same as everything else here. There is nothing extra to sign: section 5 places any contribution you intentionally submit for inclusion under those terms unless you state otherwise.
