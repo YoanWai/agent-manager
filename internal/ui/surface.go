@@ -201,6 +201,11 @@ type contentLine struct {
 	raw  bool
 	rule bool
 	tone string
+	// row is the m.rows index a click on this line selects, one-based so
+	// a bare contentLine{} reads as chrome. Carrying it on the line is what
+	// keeps hit-testing in step with paint through the prepends, the
+	// truncation and the padding the rail's lines go through (#110).
+	row int
 }
 
 // paintContent paints a content column, leaving raw rows unfilled.

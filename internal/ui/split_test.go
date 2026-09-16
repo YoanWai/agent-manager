@@ -4,6 +4,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -466,6 +467,376 @@ func TestPressOffDividerDoesNotDrag(t *testing.T) {
 	}
 }
 
+// paintedRailLines paints the frame the real UI paints and returns the body
+// lines it put each named session on. Going through View() is the point: a
+// test that worked the rail's geometry out for itself would stay green the
+// day viewListFrame started passing entryLines something else, which is the
+// drift clickRow exists to rule out (#110).
+func paintedRailLines(t *testing.T, m *Model, name string) []int {
+	t.Helper()
+	m.View()
+	var lines []int
+	for i, row := range m.railHits {
+		if row >= 0 && !m.rows[row].isGroup && m.rows[row].sess.Name == name {
+			lines = append(lines, i)
+		}
+	}
+	if len(lines) == 0 {
+		t.Fatalf("test setup: %q painted no rail line", name)
+	}
+	return lines
+}
+
+// A click on a session row selects it, reading the geometry the frame
+// recorded while painting rather than re-deriving it (#110).
+func TestClickSelectsRow(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "beta")
+
+	line := paintedRailLines(t, m, "alpha")[0]
+	y0, _ := m.bodyYRange()
+	updated, cmd := m.handleMouse(tea.MouseMsg{
+		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	sess, ok := m.selected()
+	if !ok || sess.Name != "alpha" {
+		t.Fatalf("click should select alpha, got %q ok=%v", sess.Name, ok)
+	}
+	if cmd == nil {
+		t.Fatal("selecting a different row should schedule a preview")
+	}
+}
+
+// The rail's last painted column carries row text, so it belongs to the
+// row under it. The divider is resolved before the row is, so a hit target
+// that reached back over that column would cost every row its right edge.
+func TestClickOnRailLastColumnSelectsRow(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "beta")
+
+	line := paintedRailLines(t, m, "alpha")[0]
+	y0, _ := m.bodyYRange()
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: m.dividerX() - 1, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.split.dragging || m.split.resizeMode {
+		t.Fatal("the rail's own last column must not grab the divider")
+	}
+	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
+		t.Fatalf("click on the rail's last column should select alpha, got %q ok=%v", sess.Name, ok)
+	}
+}
+
+// A click past the divider, in the content column, must not steal the
+// selection: the rail is what click-to-select owns.
+func TestClickInContentColumnDoesNotSelect(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "beta")
+	before := m.cursor
+
+	m.View()
+	y0, _ := m.bodyYRange()
+	updated, cmd := m.handleMouse(tea.MouseMsg{
+		X: m.dividerX() + 5, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.cursor != before || cmd != nil {
+		t.Fatal("a click in the content column should not move the cursor")
+	}
+}
+
+// A press directly on the divider arms the drag on the spot: it must not
+// need `|` pressed first. It arms dragging alone, leaving resizeMode — the
+// keyboard's own gate — off, and it moves nothing until the pointer does.
+func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
+	m := &Model{listKeys: keybind.DefaultList(),
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: defaultSplitRatio},
+	}
+	if m.split.resizeMode {
+		t.Fatal("test setup: resize mode should start off")
+	}
+	div := m.dividerX()
+	y0, _ := m.bodyYRange()
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: div, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if !m.split.dragging {
+		t.Fatal("a press on the divider should arm the drag on its own")
+	}
+	if m.split.resizeMode {
+		t.Fatal("a mouse drag must not take the keyboard with it")
+	}
+	if left, _ := m.splitWidths(); left != div {
+		t.Fatalf("the press alone should move nothing, left = %d want %d", left, div)
+	}
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: 40, Y: y0, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if left, _ := m.splitWidths(); left != 40 {
+		t.Fatalf("motion should set left=40, got %d", left)
+	}
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: 40, Y: y0, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.split.dragging || m.split.resizeMode {
+		t.Fatal("release should end the drag it started without the keyboard")
+	}
+}
+
+// A press and release on the seam with nothing in between is a click, not a
+// resize: it must not persist a ratio nobody dragged to, nor reflow every
+// live pane for a frame that never changed.
+func TestDividerClickWithoutMotionCommitsNothing(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	m := &Model{listKeys: keybind.DefaultList(),
+		store:  st,
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: defaultSplitRatio},
+	}
+	div := m.dividerX()
+	y0, _ := m.bodyYRange()
+	for _, action := range []tea.MouseAction{tea.MouseActionPress, tea.MouseActionRelease} {
+		updated, _ := m.handleMouse(tea.MouseMsg{
+			X: div, Y: y0, Action: action, Button: tea.MouseButtonLeft,
+		})
+		m = updated.(*Model)
+	}
+	if m.split.dragging || m.split.resizeMode {
+		t.Fatal("the click should have ended the drag it armed")
+	}
+	if m.split.ratio != defaultSplitRatio {
+		t.Fatalf("ratio = %v want it untouched at %v", m.split.ratio, defaultSplitRatio)
+	}
+	if raw, err := st.Setting(splitRatioSetting); err != nil || raw != "" {
+		t.Fatalf("a click with no drag persisted %q (err %v)", raw, err)
+	}
+}
+
+// A press whose release never lands — dragging out of the window — must not
+// strand the list: the keyboard stays live, and the next key ends the drag.
+func TestKeyEndsADragWhoseReleaseNeverLands(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+
+	y0, _ := m.bodyYRange()
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: m.dividerX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if !m.split.dragging {
+		t.Fatal("test setup: the press should have armed the drag")
+	}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(*Model)
+	if m.split.dragging || m.split.resizeMode {
+		t.Fatal("a key should end a drag left open by a lost release")
+	}
+	if sess, ok := m.selected(); !ok || sess.Name != "beta" {
+		t.Fatalf("the key should have been handled normally, selection = %q ok=%v", sess.Name, ok)
+	}
+}
+
+// A click that misses the divider while resize mode is armed from the
+// keyboard must not fall through to row selection: resize mode owns every
+// press until it exits.
+func TestPressOffDividerWhileArmedDoesNotSelectRow(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "beta")
+	before := m.cursor
+
+	m.View()
+	updated, _ := m.enterResizeMode()
+	m = updated.(*Model)
+	y0, _ := m.bodyYRange()
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: 2, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.cursor != before {
+		t.Fatal("a miss while resize mode is armed should not select a row")
+	}
+	if !m.split.resizeMode {
+		t.Fatal("resize mode should stay armed, waiting for the divider")
+	}
+}
+
+// The full screen layout has no seam or content column: the whole width
+// is rail, and the quick bar can dock below it. Both still have to line up
+// with railHits the way the split layout does.
+func TestClickSelectsRowInFullLayout(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "beta")
+	m.fullLayout = true
+
+	line := paintedRailLines(t, m, "alpha")[0]
+	y0, _ := m.bodyYRange()
+	updated, cmd := m.handleMouse(tea.MouseMsg{
+		X: m.width - 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	sess, ok := m.selected()
+	if !ok || sess.Name != "alpha" {
+		t.Fatalf("click should select alpha, got %q ok=%v", sess.Name, ok)
+	}
+	if cmd == nil {
+		t.Fatal("selecting a different row should schedule a preview")
+	}
+}
+
+// splitWidths still returns a ratio-based column in full layout even though
+// no divider is painted there; a click at that phantom column must select
+// the rail row under it, not arm a drag over a seam that does not exist.
+func TestClickAtDividerXInFullLayoutSelectsRow(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "beta")
+	m.fullLayout = true
+
+	line := paintedRailLines(t, m, "alpha")[0]
+	y0, _ := m.bodyYRange()
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: m.dividerX(), Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.split.resizeMode || m.split.dragging {
+		t.Fatal("full layout has no divider to drag")
+	}
+	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
+		t.Fatalf("click at dividerX should select the row under it, got %q ok=%v", sess.Name, ok)
+	}
+}
+
+// A comfortable entry paints two or three lines; a click on any of them
+// should select the entry, not whatever railHits index that physical line
+// would be under a compact row.
+func TestClickSelectsRowAcrossComfortableLines(t *testing.T) {
+	m := buildModel(t)
+	m.comfortableRows = true
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+
+	alphaLines := paintedRailLines(t, m, "alpha")
+	if len(alphaLines) < 2 {
+		t.Fatalf("test setup: comfortable alpha should paint 2+ lines, got %d", len(alphaLines))
+	}
+	m.selectSessionRow(t, "beta")
+	alphaLines = paintedRailLines(t, m, "alpha")
+
+	y0, _ := m.bodyYRange()
+	last := alphaLines[len(alphaLines)-1]
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: 2, Y: y0 + last, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
+		t.Fatalf("clicking alpha's later line should still select alpha, got %q ok=%v", sess.Name, ok)
+	}
+}
+
+// A "N more" counter answers for the entry it is hiding: clicking it steps
+// the window onto that entry rather than handing back the same frame. The
+// rail's other chrome — the search field, the filter badges, the padding
+// and the meters — still picks nothing.
+func TestClickOnMoreCounterSelectsTheRowItHides(t *testing.T) {
+	m := buildModel(t)
+	for _, name := range []string{"one", "two", "three", "four", "five", "six", "seven"} {
+		createSession(t, m, name, t.TempDir(), "")
+	}
+	m.selectSessionRow(t, "one")
+	// A rail too short for seven sessions, so the window has to keep a
+	// counter for the ones it is leaving out.
+	m.height = 12
+	frame := splitLines(m.View())
+
+	y0, _ := m.bodyYRange()
+	counter, target := -1, -1
+	for i, row := range m.railHits {
+		if row >= 0 && strings.Contains(frame[y0+i], "more") {
+			counter, target = i, row
+		}
+	}
+	if counter < 0 {
+		t.Fatal("test setup: a short rail should paint a counter")
+	}
+	for i, row := range m.railHits {
+		if i != counter && row == target {
+			t.Fatalf("test setup: row %d is painted at line %d, so it is not hidden", target, i)
+		}
+	}
+
+	updated, cmd := m.handleMouse(tea.MouseMsg{
+		X: 2, Y: y0 + counter, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.cursor != target {
+		t.Fatalf("clicking the counter should select row %d, cursor = %d", target, m.cursor)
+	}
+	if cmd == nil {
+		t.Fatal("selecting a different row should schedule a preview")
+	}
+}
+
+// Chrome the rail paints for its own sake carries no row, so a click there
+// picks nothing rather than misattributing to whichever row happens to sit
+// at that index.
+func TestClickOnRailChromeDoesNotSelect(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "beta")
+	m.searching = true
+	before := m.cursor
+	m.View()
+
+	line := -1
+	for i, row := range m.railHits {
+		if row < 0 {
+			line = i
+			break
+		}
+	}
+	if line < 0 {
+		t.Fatal("test setup: the search field should paint chrome lines")
+	}
+	y0, _ := m.bodyYRange()
+	updated, cmd := m.handleMouse(tea.MouseMsg{
+		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.cursor != before || cmd != nil {
+		t.Fatal("clicking a chrome line should not move the cursor")
+	}
+}
+
 func TestNewLoadsPersistedSplitRatio(t *testing.T) {
 	m := buildModel(t)
 	if err := m.store.SetSetting(splitRatioSetting, "0.45"); err != nil {
@@ -478,9 +849,9 @@ func TestNewLoadsPersistedSplitRatio(t *testing.T) {
 }
 
 // Wheel events must be consumed by the app so the host terminal cannot
-// scroll the TUI away, and swallowed in the list: moving the cursor there
-// retargets every keystroke that follows (#110).
-func TestWheelSwallowedInList(t *testing.T) {
+// scroll the TUI away, and in the list moves the session cursor the same
+// way an arrow key would (#110).
+func TestWheelMovesListCursor(t *testing.T) {
 	m := &Model{listKeys: keybind.DefaultList(),
 		mode:   modeList,
 		cursor: 0,
@@ -488,17 +859,122 @@ func TestWheelSwallowedInList(t *testing.T) {
 		width:  80,
 		height: 24,
 	}
-	for _, button := range []tea.MouseButton{tea.MouseButtonWheelDown, tea.MouseButtonWheelUp} {
-		updated, cmd := m.handleMouse(tea.MouseMsg{
-			Button: button, Action: tea.MouseActionPress,
+	updated, cmd := m.handleMouse(tea.MouseMsg{
+		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
+	})
+	m = updated.(*Model)
+	if m.cursor != 1 {
+		t.Fatalf("wheel down: cursor = %d want 1", m.cursor)
+	}
+	if cmd == nil {
+		t.Fatal("wheel down should schedule the preview settle like moveCursor")
+	}
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress,
+	})
+	m = updated.(*Model)
+	if m.cursor != 0 {
+		t.Fatalf("wheel up: cursor = %d want 0", m.cursor)
+	}
+}
+
+// The wheel keeps moving the selection while the search field or the quick
+// prompt is open. Search otherwise narrows the list to rows none of the
+// pointer or the keyboard can reach, and the quick bar retargets on up/down
+// the way its own footer advertises.
+func TestWheelMovesCursorWhileSearchingOrPrompting(t *testing.T) {
+	for name, m := range map[string]*Model{
+		"searching": {mode: modeList, searching: true, cursor: 0, rows: []treeRow{{}, {}}, width: 80, height: 24},
+		"quick bar": {mode: modeList, quick: quickState{active: true}, cursor: 0, rows: []treeRow{{}, {}}, width: 80, height: 24},
+	} {
+		t.Run(name, func(t *testing.T) {
+			updated, _ := m.handleMouse(tea.MouseMsg{
+				Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
+			})
+			m := updated.(*Model)
+			if m.cursor != 1 {
+				t.Fatalf("wheel should have moved the cursor to 1, got %d", m.cursor)
+			}
+		})
+	}
+}
+
+// A click retargets the quick prompt the same way its up/down do. Search
+// keeps click-to-select for the same reason it keeps the wheel.
+func TestClickSelectsRowWhileSearchingOrPrompting(t *testing.T) {
+	for _, name := range []string{"searching", "quick bar"} {
+		t.Run(name, func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "alpha", t.TempDir(), "")
+			createSession(t, m, "beta", t.TempDir(), "")
+			m.selectSessionRow(t, "beta")
+			if name == "searching" {
+				m.searching = true
+			} else {
+				m.openQuickMode()
+			}
+
+			line := paintedRailLines(t, m, "alpha")[0]
+			y0, _ := m.bodyYRange()
+			updated, _ := m.handleMouse(tea.MouseMsg{
+				X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+			})
+			m = updated.(*Model)
+			if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
+				t.Fatalf("click should select alpha, got %q ok=%v", sess.Name, ok)
+			}
+		})
+	}
+}
+
+// Neither does a press on the divider arm a drag while they are open: the
+// mouse arms resize under the same conditions enterResizeMode does.
+func TestDividerPressBlockedWhileSearchingOrPrompting(t *testing.T) {
+	for name, m := range map[string]*Model{
+		"searching": {listKeys: keybind.DefaultList(), mode: modeList, searching: true, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}},
+		"quick bar": {listKeys: keybind.DefaultList(), mode: modeList, quick: quickState{active: true}, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			y0, _ := m.bodyYRange()
+			updated, _ := m.handleMouse(tea.MouseMsg{
+				X: m.dividerX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+			})
+			m := updated.(*Model)
+			if m.split.dragging {
+				t.Fatal("the divider should be held while the field owns the rail")
+			}
+		})
+	}
+}
+
+// One flick of the wheel is several notches, so the wheel clamps where the
+// keyboard wraps: going off the end must not fling the selection to the
+// far one and aim every key after it somewhere the user never looked.
+func TestWheelClampsAtBothEnds(t *testing.T) {
+	m := &Model{listKeys: keybind.DefaultList(), mode: modeList, cursor: 2, rows: []treeRow{{}, {}, {}}, width: 80, height: 24}
+	for i := 0; i < 3; i++ {
+		updated, _ := m.handleMouse(tea.MouseMsg{
+			Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
 		})
 		m = updated.(*Model)
-		if m.cursor != 0 {
-			t.Fatalf("wheel moved the list cursor to %d", m.cursor)
-		}
-		if cmd != nil {
-			t.Fatal("wheel in the list scheduled work")
-		}
+	}
+	if m.cursor != 2 {
+		t.Fatalf("wheel down off the bottom: cursor = %d want it held at 2", m.cursor)
+	}
+	m.cursor = 0
+	for i := 0; i < 3; i++ {
+		updated, _ := m.handleMouse(tea.MouseMsg{
+			Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress,
+		})
+		m = updated.(*Model)
+	}
+	if m.cursor != 0 {
+		t.Fatalf("wheel up off the top: cursor = %d want it held at 0", m.cursor)
+	}
+	// The keyboard still wraps: clamping is the wheel's alone.
+	m.moveCursor(-1)
+	if m.cursor != 2 {
+		t.Fatalf("arrow up should still wrap to 2, cursor = %d", m.cursor)
 	}
 }
 

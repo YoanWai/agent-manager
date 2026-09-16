@@ -60,6 +60,7 @@ func (m *Model) viewListFrame() string {
 	railWidth := leftWidth - 1
 	m.pane.columnX = leftWidth + 2
 	railRows := m.railLines(railWidth, bodyHeight)
+	m.recordRailHits(railRows)
 	contentRows := m.contentLines(bleedWidth, bodyHeight)
 	seam := make([]string, bodyHeight)
 	edge := make([]string, bodyHeight)
@@ -114,6 +115,7 @@ func (m *Model) viewFullListFrame() string {
 	quickRows := m.fullQuickLines(railWidth, bodyHeight)
 	railRows := m.railLines(railWidth, bodyHeight-len(quickRows))
 	railRows = append(railRows, quickRows...)
+	m.recordRailHits(railRows)
 	edge := make([]string, bodyHeight)
 	for i := range edge {
 		tone := panelHex()
@@ -228,6 +230,12 @@ func (m *Model) searchFieldLine(width int) string {
 // railLines is the sessions rail: the entry list on top, the machine
 // meters and the messages card docked at the bottom behind their seam.
 func (m *Model) railLines(width, height int) []contentLine {
+	var rows []contentLine
+	// chrome lays lines that carry no row, so a click landing on one of
+	// them picks nothing, unlike a line entryLines painted.
+	chrome := func(lines ...contentLine) {
+		rows = append(rows, lines...)
+	}
 	meters := m.railFootLines(width)
 	listHeight := height
 	if len(meters) > 0 {
@@ -236,7 +244,6 @@ func (m *Model) railLines(width, height int) []contentLine {
 	if listHeight < 3 {
 		listHeight, meters = height, nil
 	}
-	var rows []contentLine
 	// A banner costs the list the rows it paints plus its padding, so each one
 	// is only laid while entries still have room under it: a rail that is all
 	// banner says nothing about the fleet.
@@ -249,9 +256,9 @@ func (m *Model) railLines(width, height int) []contentLine {
 		field := contentLine{text: m.searchFieldLine(width)}
 		switch {
 		case room(railBannerRows):
-			rows = append(rows, contentLine{}, field, contentLine{})
+			chrome(contentLine{}, field, contentLine{})
 		case room(1):
-			rows = append(rows, field)
+			chrome(field)
 		}
 	}
 	// The list starts straight under the pane's top edge; the empty state
@@ -266,25 +273,38 @@ func (m *Model) railLines(width, height int) []contentLine {
 		}
 		switch {
 		case room(len(lines) + 2):
-			rows = append(rows, contentLine{})
-			rows = append(rows, lines...)
-			rows = append(rows, contentLine{})
+			chrome(contentLine{})
+			chrome(lines...)
+			chrome(contentLine{})
 		case room(len(lines)):
-			rows = append(rows, lines...)
+			chrome(lines...)
 		}
 	}
 	rows = append(rows, m.entryLines(m.rows, 0, width, max(listHeight-len(rows), 0))...)
 	for len(rows) < listHeight {
-		rows = append(rows, contentLine{})
+		chrome(contentLine{})
 	}
 	rows = rows[:listHeight]
 	if len(meters) > 0 {
-		rows = append(rows, contentLine{rule: true})
+		chrome(contentLine{rule: true})
 		for _, line := range meters {
-			rows = append(rows, contentLine{text: line})
+			chrome(contentLine{text: line})
 		}
 	}
 	return rows
+}
+
+// recordRailHits reads the row each rail line carries into m.railHits, so
+// a click resolves against the frame the rail actually painted instead of
+// re-deriving the layout in the mouse handler, where it would drift the
+// first time the layout moved (#110). Called once per frame, off the final
+// line slice, so whatever the frame prepended, truncated or padded is
+// already accounted for.
+func (m *Model) recordRailHits(lines []contentLine) {
+	m.railHits = m.railHits[:0]
+	for _, line := range lines {
+		m.railHits = append(m.railHits, line.row-1)
+	}
 }
 
 // filterBadgeLines is one badge per narrowing the rail is under, each next
@@ -321,7 +341,7 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 		var lines []contentLine
 		for i, entry := range rows {
 			for _, line := range splitLines(m.renderTreeRow(entry, m.cursor == offset+i, width, offset+i, panelHex())) {
-				lines = append(lines, contentLine{text: line})
+				lines = append(lines, contentLine{text: line, row: offset + i + 1})
 			}
 		}
 		for _, line := range m.emptyRailLines(width, height-len(lines)) {
@@ -345,18 +365,27 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 			tone = selectedHex()
 		}
 		for _, line := range splitLines(m.renderTreeRow(entry, selected, width, offset+i, tone)) {
-			lines = append(lines, contentLine{text: line, tone: tone})
+			lines = append(lines, contentLine{text: line, tone: tone, row: offset + i + 1})
 		}
 	}
 	// The window already held a row back for each counter, so the checks
 	// below only catch an entry that painted taller than entryHeight said.
+	// Each counter answers for the entry it is hiding, so clicking one
+	// steps the window onto that entry instead of returning the same frame.
 	spare := height - len(lines)
 	if start > 0 && spare > 0 {
-		lines = append([]contentLine{{text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↑ %d more", start))}}, lines...)
+		counter := contentLine{
+			text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↑ %d more", start)),
+			row:  offset + start,
+		}
+		lines = append([]contentLine{counter}, lines...)
 		spare--
 	}
 	if end < len(rows) && spare > 0 {
-		lines = append(lines, contentLine{text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↓ %d more", len(rows)-end))})
+		lines = append(lines, contentLine{
+			text: subtleStyle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↓ %d more", len(rows)-end)),
+			row:  offset + end + 1,
+		})
 	}
 	if len(lines) > height {
 		lines = lines[:height]

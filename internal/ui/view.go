@@ -173,7 +173,7 @@ func (m *Model) statusLine() string {
 	case m.mode == modeFocus && m.copied > 0:
 		return keyStyle.Render("copied ") +
 			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", m.copied))
-	case m.split.resizeMode:
+	case m.split.resizeMode || m.split.dragging:
 		hint := "←→ resize · drag divider · enter set · esc cancel"
 		if m.split.dragging {
 			hint = "release to set · esc cancels"
@@ -490,7 +490,7 @@ func (m *Model) viewFooter() string {
 			{"shift+tab", "worktree: " + worktreeHint}, {"esc", "close"},
 		}})
 	}
-	if m.split.resizeMode {
+	if m.split.resizeMode || m.split.dragging {
 		return m.transientFooter(legendSection{title: "Resize", pairs: [][2]string{
 			{"←→", "nudge"}, {"drag", "divider"}, {strings.TrimPrefix(m.listGlyph(keybind.Resize)+" / release", " / "), "commit"}, {"esc", "cancel"},
 		}})
