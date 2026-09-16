@@ -936,3 +936,39 @@ func (d *Driver) Panes() (map[string]Pane, error) {
 	}
 	return panes, nil
 }
+
+// SessionOfPane names the managed session a tmux pane belongs to, for a
+// caller that knows which pane it sits in but not which session it is.
+// A terminal the manager opens carries no launch command, so it gets no
+// launch script and the session id never reaches its environment; the
+// pane it runs in still says which session tmux filed it under.
+//
+// tmuxEnv is the caller's $TMUX, whose first field is the socket of the
+// server it is attached to. A pane on any other server belongs to some
+// other tmux, not to this manager, and answers empty rather than having
+// its session name read on a socket it does not live on.
+func (d *Driver) SessionOfPane(tmuxEnv, paneID string) (string, error) {
+	socket, _, _ := strings.Cut(tmuxEnv, ",")
+	if socket == "" || resolvedSocket(socket) != resolvedSocket(d.SocketPath()) {
+		return "", nil
+	}
+	out, err := d.run("display-message", "-p", "-t", paneID, "#{session_name}")
+	if err != nil {
+		return "", err
+	}
+	name := strings.TrimSpace(out)
+	if !strings.HasPrefix(name, prefix) {
+		return "", nil
+	}
+	return strings.TrimPrefix(name, prefix), nil
+}
+
+// resolvedSocket puts two socket paths in the same terms before they are
+// compared: macOS reports /private/tmp where the other side says /tmp, and
+// a temporary directory is routinely a symlink on either platform.
+func resolvedSocket(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return filepath.Clean(path)
+}

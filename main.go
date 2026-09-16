@@ -122,8 +122,44 @@ func withConfigDir(command func(args []string, sessionID, configDir string) erro
 		if err != nil {
 			return err
 		}
-		return command(args, os.Getenv(hooks.EnvSessionID), dir)
+		return command(args, callerSession(), dir)
 	}
+}
+
+// callerSession identifies the session a subcommand speaks for. The
+// environment variable stays authoritative: an MCP server launched under
+// Codex is handed that variable and nothing else of the pane's
+// environment, so a pane lookup could not stand in for it.
+//
+// Falling back to the pane is what makes a terminal a caller. A terminal
+// opens on the user's shell with no launch command, so tmux gets no launch
+// script to export the id from, and the shell would otherwise have no way
+// to say which session it is.
+func callerSession() string {
+	if id := os.Getenv(hooks.EnvSessionID); id != "" {
+		return id
+	}
+	return sessionFromPane()
+}
+
+// sessionFromPane asks the manager's tmux server which session owns the
+// pane this command runs in. Every failure answers empty: `update` and the
+// rest have to keep working outside tmux, and on a machine without tmux
+// installed at all.
+func sessionFromPane() string {
+	tmuxEnv, pane := os.Getenv("TMUX"), os.Getenv("TMUX_PANE")
+	if tmuxEnv == "" || pane == "" {
+		return ""
+	}
+	driver, err := tmux.New()
+	if err != nil {
+		return ""
+	}
+	id, err := driver.SessionOfPane(tmuxEnv, pane)
+	if err != nil {
+		return ""
+	}
+	return id
 }
 
 func run() error {

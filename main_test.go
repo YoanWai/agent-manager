@@ -11,6 +11,10 @@ import (
 	"runtime/debug"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 func TestPrintHelpDoesNotRequireATerminal(t *testing.T) {
@@ -164,5 +168,70 @@ func TestResolveVersion(t *testing.T) {
 				t.Fatalf("resolveVersion(%q, %q) = %q, want %q", tc.embedded, tc.moduleVersion, got, tc.want)
 			}
 		})
+	}
+}
+
+// The environment variable is what an agent's launch exports and what an
+// MCP server under Codex is handed, so it wins; a terminal pane, which
+// carries neither, names its session through tmux instead.
+func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+	// Short on purpose: tmux silently falls back to the default socket once
+	// TMUX_TMPDIR/tmux-<uid>/<socket> passes 104 characters.
+	tmpdir, err := os.MkdirTemp("/tmp", "amcaller")
+	if err != nil {
+		t.Fatalf("socket dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(tmpdir) })
+	t.Setenv("TMUX_TMPDIR", tmpdir)
+
+	driver, err := tmux.New()
+	if err != nil {
+		t.Fatalf("tmux driver: %v", err)
+	}
+	id := "ca11ab1e"
+	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
+		t.Fatalf("create the terminal pane: %v", err)
+	}
+	t.Cleanup(func() {
+		exec.Command("tmux", "-L", driver.SocketName(), "kill-server").Run()
+	})
+	out, err := exec.Command("tmux", "-L", driver.SocketName(), "display-message", "-p", "-t", tmux.PaneTarget(id), "#{pane_id}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("pane id: %v: %s", err, out)
+	}
+	t.Setenv("TMUX", driver.SocketPath()+",1234,0")
+	t.Setenv("TMUX_PANE", strings.TrimSpace(string(out)))
+
+	t.Setenv(hooks.EnvSessionID, "deadbeef")
+	if got := callerSession(); got != "deadbeef" {
+		t.Fatalf("callerSession with the variable set = %q, want deadbeef", got)
+	}
+
+	t.Setenv(hooks.EnvSessionID, "")
+	if got := callerSession(); got != id {
+		t.Fatalf("callerSession from the pane = %q, want %q", got, id)
+	}
+}
+
+// A subcommand run outside tmux, or on a machine without it, has no pane to
+// ask, and says which of the two ways to identify a caller failed.
+func TestCallerSessionOutsideTmuxLeavesTheCommandToExplainIt(t *testing.T) {
+	t.Setenv(hooks.EnvSessionID, "")
+	t.Setenv("TMUX", "")
+	t.Setenv("TMUX_PANE", "")
+	if got := callerSession(); got != "" {
+		t.Fatalf("callerSession outside tmux = %q, want empty", got)
+	}
+	_, err := sessioncmd.ReviewScope(t.TempDir(), callerSession(), "branch")
+	if err == nil {
+		t.Fatal("a command with no caller succeeded")
+	}
+	for _, want := range []string{"session or terminal", "AGENT_MANAGER_SESSION_ID is unset", "not one Agent Manager runs"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not mention %q", err, want)
+		}
 	}
 }
