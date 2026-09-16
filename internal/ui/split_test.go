@@ -524,14 +524,14 @@ func TestClickSelectsRow(t *testing.T) {
 		t.Fatal("selecting a different row should schedule a preview")
 	}
 	if m.mode != modeList {
-		t.Fatalf("first click should select, not open, mode = %v", m.mode)
+		t.Fatalf("first click should select, not focus, mode = %v", m.mode)
 	}
 }
 
 // A press on the row already under the cursor is the second click: it
-// opens, the same as Enter. There is no double-click timer; the selected
+// focuses the session. There is no double-click timer; the selected
 // row is the gesture.
-func TestClickOnSelectedRowOpensSession(t *testing.T) {
+func TestClickOnSelectedRowFocusesSession(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
@@ -547,7 +547,7 @@ func TestClickOnSelectedRowOpensSession(t *testing.T) {
 	}
 }
 
-func TestSecondClickOpensTheRowJustSelected(t *testing.T) {
+func TestSecondClickFocusesTheRowJustSelected(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
@@ -564,11 +564,11 @@ func TestSecondClickOpensTheRowJustSelected(t *testing.T) {
 	updated, _ = m.handleMouse(press)
 	m = updated.(*Model)
 	if m.mode != modeFocus {
-		t.Fatalf("second click should open alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+		t.Fatalf("second click should focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 }
 
-func TestClickOnSelectedRowAttachesWhenEnterAttaches(t *testing.T) {
+func TestClickOnSelectedRowFocusesWhenEnterAttaches(t *testing.T) {
 	m := buildModel(t)
 	m.focusOnEnter = false
 	createSession(t, m, "alpha", t.TempDir(), "")
@@ -576,15 +576,12 @@ func TestClickOnSelectedRowAttachesWhenEnterAttaches(t *testing.T) {
 
 	line := paintedRailLines(t, m, "alpha")[0]
 	y0, _ := m.bodyYRange()
-	updated, cmd := m.handleMouse(tea.MouseMsg{
+	updated, _ := m.handleMouse(tea.MouseMsg{
 		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
-	if m.mode != modeList {
-		t.Fatalf("click should attach, not focus, mode = %v", m.mode)
-	}
-	if cmd == nil {
-		t.Fatalf("attach should return a command, err = %q", m.errBar.text)
+	if m.mode != modeFocus {
+		t.Fatalf("click should focus even when Enter attaches, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 }
 

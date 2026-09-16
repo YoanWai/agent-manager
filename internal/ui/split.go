@@ -259,10 +259,14 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if row, ok := m.clickRow(msg.X, msg.Y); ok {
-		// Same row is the second click, which opens like Enter. Search
+		// Same row is the second click: it focuses a session. Search
 		// and the quick bar own Enter, so they skip this.
 		if row == m.cursor && !m.searching && !m.quick.active {
-			return m.openSelected()
+			if entry, ok := m.selectedRow(); ok && entry.isGroup {
+				m.toggleCollapse()
+				return m, nil
+			}
+			return m.focusSelected()
 		}
 		return m, m.selectRow(row)
 	}
