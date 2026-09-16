@@ -354,6 +354,23 @@ const previewSample = "\x1b[38;5;110m◆\x1b[0m claude \x1b[38;5;240m·\x1b[0m a
 	"\n" +
 	"\x1b[38;5;214m✳\x1b[0m Running tests… (14s · esc to interrupt)\n"
 
+func TestBootShowsFullScreenRing(t *testing.T) {
+	m := shotModel()
+	m.booting = true
+	body := ansi.Strip(m.View())
+	if strings.Contains(body, "add-rate-limiting") {
+		t.Fatalf("boot should hide the list:\n%s", body)
+	}
+	if !strings.Contains(body, "loading") {
+		t.Fatalf("boot should be the preview ring, got:\n%s", body)
+	}
+	m.booting = false
+	body = ansi.Strip(m.View())
+	if !strings.Contains(body, "add-rate-limiting") {
+		t.Fatalf("after boot the list should show:\n%s", body)
+	}
+}
+
 // A frame line wider than the terminal wraps, which pushes the whole
 // layout down a row and tears the panels. A frame with more rows than the
 // terminal loses its footer to the clamp. Both have to hold at every size

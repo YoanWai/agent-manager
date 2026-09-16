@@ -48,6 +48,27 @@ func TestPreviewCadenceIsIndependentFromStartupAnimation(t *testing.T) {
 	}
 }
 
+func TestStartupTickRunsWhileBooting(t *testing.T) {
+	m := &Model{booting: true}
+	if cmd := m.startStartupTick(); cmd == nil || !m.startupAnimating {
+		t.Fatal("boot should start the loader tick")
+	}
+	m.booting = false
+	_, cmd := m.Update(startupTickMsg{})
+	if cmd != nil || m.startupAnimating {
+		t.Fatal("loader tick kept running after boot settled")
+	}
+}
+
+func TestFirstRefreshClearsBootLoader(t *testing.T) {
+	m := &Model{booting: true, collapsed: map[string]bool{}}
+	updated, _ := m.Update(refreshMsg{listedAt: time.Now()})
+	got := updated.(*Model)
+	if got.booting {
+		t.Fatal("the first poller pass should end boot")
+	}
+}
+
 func TestStartupTickRunsOnlyWhileAStartingRowIsVisible(t *testing.T) {
 	m := &Model{}
 	if cmd := m.startStartupTick(); cmd != nil {
@@ -642,6 +663,43 @@ func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 
 // New hands the config's key table to the tmux driver, so a session the
 // manager creates is bound and labelled the same way focus reads its keys.
+func TestNewHydratesSessionsFromStore(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "already-here", t.TempDir(), "")
+	loaded := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
+	if !loaded.booting {
+		t.Fatal("New should keep the boot loader until the first poll")
+	}
+	found := false
+	for _, sess := range loaded.sessions {
+		if sess.Name == "already-here" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("New should list stored sessions before the first poll")
+	}
+	rail := ansi.Strip(strings.Join(splitLines(joinContentText(loaded.railLines(40, 20))), "\n"))
+	if !strings.Contains(rail, "already-here") {
+		t.Fatalf("hydrated rows should include the stored session, got:\n%s", rail)
+	}
+	if strings.Contains(rail, "no sessions yet") {
+		t.Fatalf("hydrated list should not show the empty state:\n%s", rail)
+	}
+}
+
+func TestFirstSessionAfterEmptyHydrateIsSelected(t *testing.T) {
+	m := buildModel(t)
+	if len(rowsBelowRoot(m.rows)) != 0 {
+		t.Fatal("empty hydrate should leave no session rows")
+	}
+	createSession(t, m, "first", t.TempDir(), "")
+	if m.rows[m.cursor].isGroup || m.rows[m.cursor].sess.Name != "first" {
+		t.Fatalf("the first spawned session should be selected, got %+v", m.rows[m.cursor])
+	}
+}
+
 func TestNewHandsTheKeyTableToTmux(t *testing.T) {
 	m := buildModel(t)
 	cfg := m.cfg

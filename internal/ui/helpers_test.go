@@ -135,6 +135,7 @@ func buildModel(t *testing.T) *Model {
 	m := New(cfg, st, driver, engine, hooks.NewManager(t.TempDir()), "dev")
 	m.width = 120
 	m.height = 40
+	m.booting = false
 	t.Cleanup(func() {
 		for _, s := range m.sessions {
 			driver.Kill(s.ID)

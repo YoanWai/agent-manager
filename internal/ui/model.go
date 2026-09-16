@@ -257,7 +257,12 @@ type Model struct {
 
 	startupPhase     int
 	startupAnimating bool
-	pendingTyped     *typedPromptCandidate
+	// booting is true until the first poller pass, so the preview ring
+	// can cover the terminal before the list has live state.
+	booting       bool
+	pollSend      func(tea.Msg)
+	pollerStarted bool
+	pendingTyped  *typedPromptCandidate
 
 	update updateInfo
 
@@ -613,7 +618,7 @@ func (m *Model) previewTick() tea.Cmd {
 }
 
 func (m *Model) needsLoaderTick() bool {
-	return m.hasStartingRow() || m.reviewNeedsLoader() || m.hasWorkingLoaderRow()
+	return m.booting || m.hasStartingRow() || m.reviewNeedsLoader() || m.hasWorkingLoaderRow()
 }
 
 // typedPromptCandidate is a composer draft snapshotted as enter went into
@@ -749,6 +754,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		hideStats:           storedHideStats(st),
 		imeCursor:           &cursorAnchor{},
 		mode:                modeList,
+		booting:             true,
 		update:              updateInfo{version: version},
 		dismissed:           loadDismissed(st),
 		whatsNewVersion:     loadWhatsNewVersion(st),
@@ -764,7 +770,41 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	}
 	model.openStartupNotice()
 	model.indexReleaseRanges()
+	model.hydrateFromStore()
 	return model
+}
+
+// hydrateFromStore fills the list from SQLite so the boot ring can
+// dismiss onto real rows instead of "no sessions yet".
+func (m *Model) hydrateFromStore() {
+	sessions, err := m.store.ListSessions(m.showArchived)
+	if err != nil {
+		return
+	}
+	groups, err := m.store.Groups()
+	if err != nil {
+		return
+	}
+	names := make([]string, len(groups))
+	paths := make(map[string]string, len(groups))
+	worktrees := make(map[string]string, len(groups))
+	archived := make(map[string]bool, len(groups))
+	for i, group := range groups {
+		names[i] = group.Name
+		paths[group.Name] = group.Path
+		if group.Worktree != "" {
+			worktrees[group.Name] = group.Worktree
+		}
+		if group.Archived {
+			archived[group.Name] = true
+		}
+	}
+	m.sessions = sessions
+	m.groups = names
+	m.groupPaths = paths
+	m.groupWorktrees = worktrees
+	m.archivedGroups = archived
+	m.rebuildRows()
 }
 
 // storedTheme reads the persisted theme name. A read failure falls back to
@@ -851,13 +891,20 @@ func (m *Model) persistCollapsed() {
 	}
 }
 
-// StartPoller launches the background polling loop. It runs outside the
-// bubbletea event loop so statuses keep updating while the TUI is
-// suspended inside a tmux attach.
+// StartPoller records the send function. The loop waits for the first
+// window size so the boot ring can paint before the first pass lands.
 func (m *Model) StartPoller(send func(tea.Msg)) {
+	m.pollSend = send
 	m.focus = newFocusWatch(m.tmux, send)
 	m.syncPollInput()
-	go m.poller.run(send)
+}
+
+func (m *Model) startPollerLoop() {
+	if m.pollerStarted || m.pollSend == nil {
+		return
+	}
+	m.pollerStarted = true
+	go m.poller.run(m.pollSend)
 }
 
 func (m *Model) syncPollInput() {
@@ -1393,6 +1440,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.mode == modeGroupForm {
 			m.syncGroupFormFieldWidths()
 		}
+		m.startPollerLoop()
 		return m, nil
 
 	case bannerTickMsg:
@@ -1431,6 +1479,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
 
 	case refreshMsg:
+		m.booting = false
 		m.ageError()
 		// The focused session can die or vanish under us; fall back to the
 		// list rather than typing into nothing.
@@ -1996,6 +2045,7 @@ func (m *Model) rebuildRows() {
 	if entry, ok := m.selectedRow(); ok {
 		previousKey = rowKey(entry)
 	}
+	fromEmptyList := len(rowsBelowRoot(m.rows)) == 0
 	query := strings.ToLower(strings.TrimSpace(m.search))
 	prunedView := query != "" || m.statusFilter.active()
 
@@ -2130,7 +2180,7 @@ func (m *Model) rebuildRows() {
 	}
 
 	m.rows = rows
-	if previousKey != "" {
+	if previousKey != "" && !fromEmptyList {
 		for i, entry := range rows {
 			if rowKey(entry) == previousKey {
 				m.cursor = i
