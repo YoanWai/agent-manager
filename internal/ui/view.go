@@ -19,7 +19,11 @@ func (m *Model) View() string {
 		return m.syncCursorAnchor("loading...")
 	}
 	if m.booting {
-		return m.syncCursorAnchor(clampFrame(m.viewBootLoader(), m.height))
+		var lines []string
+		for _, line := range ringLoader(m.width, m.height, "loading", m.startupPhase) {
+			lines = append(lines, paint(line, m.width, backdropHex()))
+		}
+		return m.syncCursorAnchor(clampFrame(strings.Join(lines, "\n"), m.height))
 	}
 	var frame string
 	switch m.mode {
@@ -49,14 +53,6 @@ func (m *Model) View() string {
 		frame = m.viewListFrame()
 	}
 	return m.syncCursorAnchor(clampFrame(frame, m.height))
-}
-
-func (m *Model) viewBootLoader() string {
-	var lines []string
-	for _, line := range ringLoader(m.width, m.height, "loading", m.startupPhase) {
-		lines = append(lines, paint(line, m.width, backdropHex()))
-	}
-	return strings.Join(lines, "\n")
 }
 
 // clampFrame pins a rendered frame to exactly height rows so the outer

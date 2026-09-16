@@ -18,8 +18,7 @@ func (m *Model) rail() string {
 func railRow(rail, needle string) int {
 	at := -1
 	for i, line := range strings.Split(rail, "\n") {
-		// Nested shells are named parent-2; a prefix match would hit both.
-		if !strings.Contains(line, needle) || strings.Contains(line, needle+"-") {
+		if !strings.Contains(line, needle) {
 			continue
 		}
 		if at >= 0 {

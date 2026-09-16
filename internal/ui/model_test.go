@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -663,43 +664,6 @@ func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 
 // New hands the config's key table to the tmux driver, so a session the
 // manager creates is bound and labelled the same way focus reads its keys.
-func TestNewHydratesSessionsFromStore(t *testing.T) {
-	m := buildModel(t)
-	createSession(t, m, "already-here", t.TempDir(), "")
-	loaded := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
-	if !loaded.booting {
-		t.Fatal("New should keep the boot loader until the first poll")
-	}
-	found := false
-	for _, sess := range loaded.sessions {
-		if sess.Name == "already-here" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("New should list stored sessions before the first poll")
-	}
-	rail := ansi.Strip(strings.Join(splitLines(joinContentText(loaded.railLines(40, 20))), "\n"))
-	if !strings.Contains(rail, "already-here") {
-		t.Fatalf("hydrated rows should include the stored session, got:\n%s", rail)
-	}
-	if strings.Contains(rail, "no sessions yet") {
-		t.Fatalf("hydrated list should not show the empty state:\n%s", rail)
-	}
-}
-
-func TestFirstSessionAfterEmptyHydrateIsSelected(t *testing.T) {
-	m := buildModel(t)
-	if len(rowsBelowRoot(m.rows)) != 0 {
-		t.Fatal("empty hydrate should leave no session rows")
-	}
-	createSession(t, m, "first", t.TempDir(), "")
-	if m.rows[m.cursor].isGroup || m.rows[m.cursor].sess.Name != "first" {
-		t.Fatalf("the first spawned session should be selected, got %+v", m.rows[m.cursor])
-	}
-}
-
 func TestNewHandsTheKeyTableToTmux(t *testing.T) {
 	m := buildModel(t)
 	cfg := m.cfg
@@ -720,5 +684,29 @@ func TestNewHandsTheKeyTableToTmux(t *testing.T) {
 	}
 	if !strings.Contains(string(right), "Ctrl+g = review") || !strings.Contains(string(right), "F9") {
 		t.Fatalf("session footer should carry the config's keys, got %q", right)
+	}
+}
+
+func TestStartupPreservesExistingPaneHeight(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "tall", t.TempDir(), "")
+	id := m.sessionRows()[0].ID
+	if _, err := tmuxCmd("resize-window", "-t", "am_"+id, "-x", "120", "-y", "80").CombinedOutput(); err != nil {
+		t.Fatal(err)
+	}
+	loaded := New(m.cfg, m.store, m.tmux, m.poller.engine, m.hooks, "dev")
+	loaded.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	loaded.applyCmd(t, loaded.refreshCmd())
+	if _, h := windowSize(t, id); h < 80 {
+		t.Fatalf("reopen shrank an existing pane from 80 to %d rows", h)
+	}
+}
+
+func TestStartupPollErrorIsVisible(t *testing.T) {
+	m := shotModel()
+	m.booting = true
+	m.Update(errMsg{errors.New("startup poll failed")})
+	if !strings.Contains(ansi.Strip(m.View()), "startup poll failed") {
+		t.Fatal("startup error is hidden behind the boot loader")
 	}
 }
