@@ -136,7 +136,11 @@ type Model struct {
 	// pending is a press in a mouse-tracking pane awaiting its verdict:
 	// selection drag or forwarded click.
 	pending pendingClick
-	pane    paneMirror
+	// listClickAt and listClickRow remember the last rail press so two
+	// presses on the same row inside multiClickWindow count as a double click.
+	listClickAt  time.Time
+	listClickRow int
+	pane         paneMirror
 	// cursorOn is the caret's blink phase while focused.
 	cursorOn bool
 	// imeCursor is shared with the terminal output writer so the host input

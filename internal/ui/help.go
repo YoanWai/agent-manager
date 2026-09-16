@@ -78,7 +78,8 @@ func listHelpRows(list keybind.Table, arrowStep bool) [][2]string {
 	h.fixed("", "Tell your agent to manage sessions and terminals in Agent Manager.")
 	h.action("move the cursor up", keybind.Up)
 	h.action("move the cursor down", keybind.Down)
-	h.fixed("click", "select the row; a second click focuses it")
+	h.fixed("click", "select the row")
+	h.fixed("double click", "focus it")
 	if arrowStep {
 		h.action("step in: focus the session, open the group", keybind.StepIn)
 		h.action("step out: close the group", keybind.StepOut)

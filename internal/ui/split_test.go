@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -528,10 +529,7 @@ func TestClickSelectsRow(t *testing.T) {
 	}
 }
 
-// A press on the row already under the cursor is the second click: it
-// focuses the session. There is no double-click timer; the selected
-// row is the gesture.
-func TestClickOnSelectedRowFocusesSession(t *testing.T) {
+func TestClickOnSelectedRowDoesNotFocus(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
@@ -542,12 +540,12 @@ func TestClickOnSelectedRowFocusesSession(t *testing.T) {
 		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
-	if m.mode != modeFocus {
-		t.Fatalf("click on the selected session should focus it, mode = %v, err = %q", m.mode, m.errBar.text)
+	if m.mode != modeList {
+		t.Fatalf("one click on the selected session should not focus, mode = %v", m.mode)
 	}
 }
 
-func TestSecondClickFocusesTheRowJustSelected(t *testing.T) {
+func TestDoubleClickFocusesTheRowJustSelected(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
@@ -564,11 +562,11 @@ func TestSecondClickFocusesTheRowJustSelected(t *testing.T) {
 	updated, _ = m.handleMouse(press)
 	m = updated.(*Model)
 	if m.mode != modeFocus {
-		t.Fatalf("second click should focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+		t.Fatalf("double click should focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 }
 
-func TestClickOnSelectedRowFocusesWhenEnterAttaches(t *testing.T) {
+func TestDoubleClickFocusesWhenEnterAttaches(t *testing.T) {
 	m := buildModel(t)
 	m.focusOnEnter = false
 	createSession(t, m, "alpha", t.TempDir(), "")
@@ -576,12 +574,31 @@ func TestClickOnSelectedRowFocusesWhenEnterAttaches(t *testing.T) {
 
 	line := paintedRailLines(t, m, "alpha")[0]
 	y0, _ := m.bodyYRange()
-	updated, _ := m.handleMouse(tea.MouseMsg{
-		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
-	})
+	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+	updated, _ := m.handleMouse(press)
+	m = updated.(*Model)
+	updated, _ = m.handleMouse(press)
 	m = updated.(*Model)
 	if m.mode != modeFocus {
-		t.Fatalf("click should focus even when Enter attaches, mode = %v, err = %q", m.mode, m.errBar.text)
+		t.Fatalf("double click should focus even when Enter attaches, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+}
+
+func TestSlowSecondClickDoesNotFocus(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+
+	line := paintedRailLines(t, m, "alpha")[0]
+	y0, _ := m.bodyYRange()
+	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+	updated, _ := m.handleMouse(press)
+	m = updated.(*Model)
+	m.listClickAt = time.Now().Add(-multiClickWindow - time.Millisecond)
+	updated, _ = m.handleMouse(press)
+	m = updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("a slow second click should not focus, mode = %v", m.mode)
 	}
 }
 
@@ -603,8 +620,10 @@ func TestClickOnSelectedGroupTogglesCollapse(t *testing.T) {
 	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 	updated, _ := m.handleMouse(press)
 	m = updated.(*Model)
+	updated, _ = m.handleMouse(press)
+	m = updated.(*Model)
 	if !m.collapsed["work"] {
-		t.Fatal("click on the selected group should fold it")
+		t.Fatal("double click on the selected group should fold it")
 	}
 
 	line = paintedGroupLines(t, m, "work")[0]
@@ -612,8 +631,10 @@ func TestClickOnSelectedGroupTogglesCollapse(t *testing.T) {
 	press.Y = y0 + line
 	updated, _ = m.handleMouse(press)
 	m = updated.(*Model)
+	updated, _ = m.handleMouse(press)
+	m = updated.(*Model)
 	if m.collapsed["work"] {
-		t.Fatal("a second click should unfold it")
+		t.Fatal("a second double click should unfold it")
 	}
 }
 
@@ -1081,9 +1102,9 @@ func TestClickSelectsRowWhileSearchingOrPrompting(t *testing.T) {
 	}
 }
 
-// Search and the quick bar own Enter, so a press on the selected row
-// stays a select: it must not steal the key those surfaces are waiting for.
-func TestClickOnSelectedRowDoesNotOpenWhileSearchingOrPrompting(t *testing.T) {
+// Search and the quick bar own Enter, so a double click stays a select:
+// it must not steal the key those surfaces are waiting for.
+func TestDoubleClickDoesNotFocusWhileSearchingOrPrompting(t *testing.T) {
 	for _, name := range []string{"searching", "quick bar"} {
 		t.Run(name, func(t *testing.T) {
 			m := buildModel(t)
@@ -1097,12 +1118,13 @@ func TestClickOnSelectedRowDoesNotOpenWhileSearchingOrPrompting(t *testing.T) {
 
 			line := paintedRailLines(t, m, "alpha")[0]
 			y0, _ := m.bodyYRange()
-			updated, _ := m.handleMouse(tea.MouseMsg{
-				X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
-			})
+			press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+			updated, _ := m.handleMouse(press)
+			m = updated.(*Model)
+			updated, _ = m.handleMouse(press)
 			m = updated.(*Model)
 			if m.mode != modeList {
-				t.Fatalf("click on the selected row must not open while %s, mode = %v", name, m.mode)
+				t.Fatalf("double click must not focus while %s, mode = %v", name, m.mode)
 			}
 			if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
 				t.Fatalf("selection should stay on alpha, got %q ok=%v", sess.Name, ok)

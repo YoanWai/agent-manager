@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strconv"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -259,9 +260,10 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if row, ok := m.clickRow(msg.X, msg.Y); ok {
-		// Same row is the second click: it focuses a session. Search
-		// and the quick bar own Enter, so they skip this.
-		if row == m.cursor && !m.searching && !m.quick.active {
+		double := !m.listClickAt.IsZero() && m.listClickRow == row && time.Since(m.listClickAt) < multiClickWindow
+		m.listClickAt, m.listClickRow = time.Now(), row
+		if double && !m.searching && !m.quick.active {
+			m.listClickAt = time.Time{} // consume the pair so a third press starts a new run
 			if entry, ok := m.selectedRow(); ok && entry.isGroup {
 				m.toggleCollapse()
 				return m, nil
