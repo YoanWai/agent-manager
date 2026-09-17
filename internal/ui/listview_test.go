@@ -65,6 +65,50 @@ func TestComputerLinesTemperatures(t *testing.T) {
 	}
 }
 
+func TestComputerLinesBattery(t *testing.T) {
+	cases := []struct {
+		name string
+		snap sysstat.Snapshot
+		want string
+	}{
+		{
+			name: "discharging",
+			snap: sysstat.Snapshot{BatteryOK: true, BatteryPercent: 84},
+			want: "batt " + strings.Repeat("━", 10) + " 84%",
+		},
+		{
+			name: "charging",
+			snap: sysstat.Snapshot{BatteryOK: true, BatteryPercent: 50, BatteryCharging: true},
+			want: "batt " + strings.Repeat("━", 10) + " 50% charging",
+		},
+		{
+			name: "no battery",
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &Model{width: 120, height: 34, snap: tc.snap}
+			var batt string
+			for _, line := range m.computerLines(40) {
+				plain := strings.TrimSpace(ansi.Strip(line))
+				if strings.HasPrefix(plain, "batt") {
+					batt = strings.Join(strings.Fields(plain), " ")
+				}
+			}
+			if tc.want == "" {
+				if batt != "" {
+					t.Fatalf("expected no battery row, got %q", batt)
+				}
+				return
+			}
+			if batt != tc.want {
+				t.Fatalf("battery row = %q, want %q", batt, tc.want)
+			}
+		})
+	}
+}
+
 // The separator carries its own reset, so a reading cannot inherit color.
 func TestTemperatureReadingsEachKeepTheirColor(t *testing.T) {
 	forceANSI256(t)

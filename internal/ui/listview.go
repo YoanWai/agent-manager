@@ -985,6 +985,13 @@ func (m *Model) computerLines(width int) []string {
 			valueStyle.Render("↓ "+humanBytes(m.net.down)+"/s")+
 			subtleStyle.Render("  ↑ "+humanBytes(m.net.up)+"/s"))
 	}
+	if snap.BatteryOK {
+		extra := ""
+		if snap.BatteryCharging {
+			extra = "charging"
+		}
+		lines = append(lines, meter("batt", snap.BatteryPercent, true, extra))
+	}
 	return append(lines, "")
 }
 
