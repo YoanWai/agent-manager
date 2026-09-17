@@ -176,7 +176,7 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 			{"wheel", "focused: scroll the pane's history, type to catch up"},
 			{"drag", "focused: select pane text and copy it"},
 			{"click the list", "focused: back to the manager"},
-			{"back", "focused: back to the manager"},
+			{"mouse back", "focused: back to the manager"},
 			{"double click", "focused: copy the word"},
 			{"triple click", "focused: copy the line"},
 			{"click", "focused: open the link under it, else a tracking agent gets it"},

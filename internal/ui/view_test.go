@@ -515,6 +515,15 @@ func TestFooterInFocusMode(t *testing.T) {
 	if strings.Contains(footer, "agent UI") {
 		t.Fatalf("a plain focused pane should not offer mouse pass-through:\n%s", footer)
 	}
+	// Full screen focus paints no list, so the gesture that needs one goes.
+	m.fullLayout = true
+	full := ansi.Strip(m.viewFooter())
+	if strings.Contains(full, "click list") {
+		t.Fatalf("full screen focus has no list to click:\n%s", full)
+	}
+	if !strings.Contains(full, "mouse back") {
+		t.Fatalf("the button still leaves a full screen session:\n%s", full)
+	}
 
 	m.pane.mouse = true
 	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "click / alt+drag") || !strings.Contains(footer, "agent UI") {
