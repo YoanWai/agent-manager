@@ -30,7 +30,9 @@ func updateSection(version string) section {
 				name:  "update",
 				usage: usageUpdate,
 				about: "bring agent-manager to its newest release, through its package manager or in place",
-				run:   configCommand(runUpdate(version)),
+				run: func(args []string, _ func() string, configDir string) error {
+					return runUpdate(version)(os.Stdout, args, configDir)
+				},
 			},
 		},
 	}
@@ -43,8 +45,8 @@ type updateReport struct {
 	UpToDate bool   `json:"up_to_date,omitempty"`
 }
 
-func runUpdate(version string) func(out io.Writer, args []string, sessionID, configDir string) error {
-	return func(out io.Writer, args []string, sessionID, configDir string) error {
+func runUpdate(version string) func(out io.Writer, args []string, configDir string) error {
+	return func(out io.Writer, args []string, configDir string) error {
 		set := newFlagSet(usageUpdate)
 		asJSON := jsonFlag(set)
 		if _, err := parseCommand(out, set, args, 0, 0); err != nil {

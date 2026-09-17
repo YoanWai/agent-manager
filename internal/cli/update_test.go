@@ -23,7 +23,7 @@ func swapUpdateSeams(t *testing.T, execPath string, manager update.Manager, resu
 
 func TestUpdateShowsUsageOnHelp(t *testing.T) {
 	var out bytes.Buffer
-	err := runUpdate("0.31.0")(&out, []string{"-h"}, "", t.TempDir())
+	err := runUpdate("0.31.0")(&out, []string{"-h"}, t.TempDir())
 	if !errors.Is(err, ErrUsageShown) {
 		t.Fatalf("update -h returned %v, want ErrUsageShown", err)
 	}
@@ -33,7 +33,7 @@ func TestUpdateShowsUsageOnHelp(t *testing.T) {
 }
 
 func TestUpdateRejectsOperands(t *testing.T) {
-	if err := runUpdate("0.31.0")(&bytes.Buffer{}, []string{"extra"}, "", t.TempDir()); err == nil {
+	if err := runUpdate("0.31.0")(&bytes.Buffer{}, []string{"extra"}, t.TempDir()); err == nil {
 		t.Fatal("update with an operand returned a nil error")
 	}
 }
@@ -42,7 +42,7 @@ func TestUpdateReportsAdviceOnlyManagers(t *testing.T) {
 	swapUpdateSeams(t, "agent-manager",
 		update.Manager{Name: "pacman", Advice: "install an AUR helper first, then: yay -S agent-manager-bin"},
 		update.Result{}, nil)
-	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, "", t.TempDir())
+	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "AUR helper") {
 		t.Fatalf("update with advice returned %v", err)
 	}
@@ -51,7 +51,7 @@ func TestUpdateReportsAdviceOnlyManagers(t *testing.T) {
 func TestUpdateDelegatedRunsTheManagerCommand(t *testing.T) {
 	swapUpdateSeams(t, "agent-manager", update.Manager{Name: "true", Command: []string{"true"}}, update.Result{}, nil)
 	var out bytes.Buffer
-	if err := runUpdate("0.31.0")(&out, nil, "", t.TempDir()); err != nil {
+	if err := runUpdate("0.31.0")(&out, nil, t.TempDir()); err != nil {
 		t.Fatalf("delegated update: %v", err)
 	}
 	if !strings.Contains(out.String(), "updated with true") {
@@ -61,7 +61,7 @@ func TestUpdateDelegatedRunsTheManagerCommand(t *testing.T) {
 
 func TestUpdateDelegatedReportsFailure(t *testing.T) {
 	swapUpdateSeams(t, "agent-manager", update.Manager{Name: "false", Command: []string{"false"}}, update.Result{}, nil)
-	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, "", t.TempDir())
+	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "false:") {
 		t.Fatalf("failed delegated update returned %v", err)
 	}
@@ -71,7 +71,7 @@ func TestUpdateReportsUpToDate(t *testing.T) {
 	swapUpdateSeams(t, "agent-manager", update.Manager{},
 		update.Result{Releases: []update.Release{{Version: "v0.31.0"}}}, nil)
 	var out bytes.Buffer
-	if err := runUpdate("0.31.0")(&out, nil, "", t.TempDir()); err != nil {
+	if err := runUpdate("0.31.0")(&out, nil, t.TempDir()); err != nil {
 		t.Fatalf("up-to-date update: %v", err)
 	}
 	if !strings.Contains(out.String(), "already up to date") {
@@ -88,7 +88,7 @@ func TestUpdateRefusesNonReleaseBuilds(t *testing.T) {
 		return update.Result{}, nil
 	}
 	t.Cleanup(func() { updateRefresh = oldRefresh })
-	err := runUpdate("dev")(&bytes.Buffer{}, nil, "", t.TempDir())
+	err := runUpdate("dev")(&bytes.Buffer{}, nil, t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "not a release") {
 		t.Fatalf("dev build update returned %v", err)
 	}
@@ -107,7 +107,7 @@ func TestUpdateSwapsTheBinaryForTheLatestRelease(t *testing.T) {
 	}
 	t.Cleanup(func() { updateApply = oldApply })
 	var out bytes.Buffer
-	if err := runUpdate("0.31.0")(&out, nil, "", t.TempDir()); err != nil {
+	if err := runUpdate("0.31.0")(&out, nil, t.TempDir()); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	if appliedTag != "v0.32.0" || appliedPath != "/bin/agent-manager" {
@@ -127,7 +127,7 @@ func TestUpdateJSONReportsTheVersion(t *testing.T) {
 	updateApply = func(context.Context, string, string) error { return nil }
 	t.Cleanup(func() { updateApply = oldApply })
 	var out bytes.Buffer
-	if err := runUpdate("0.31.0")(&out, []string{"--json"}, "", t.TempDir()); err != nil {
+	if err := runUpdate("0.31.0")(&out, []string{"--json"}, t.TempDir()); err != nil {
 		t.Fatalf("update --json: %v", err)
 	}
 	if !strings.Contains(out.String(), `"version": "v0.32.0"`) {
@@ -140,7 +140,7 @@ func TestUpdateJSONReportsTheVersion(t *testing.T) {
 
 func TestUpdateReportsRefreshFailures(t *testing.T) {
 	swapUpdateSeams(t, "agent-manager", update.Manager{}, update.Result{}, errors.New("github unreachable"))
-	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, "", t.TempDir())
+	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, t.TempDir())
 	if err == nil || err.Error() != "update: could not reach GitHub: github unreachable" {
 		t.Fatalf("refresh failure returned %v", err)
 	}
@@ -151,7 +151,7 @@ func TestUpdateReportsApplyFailures(t *testing.T) {
 	oldApply := updateApply
 	updateApply = func(context.Context, string, string) error { return errors.New("disk full") }
 	t.Cleanup(func() { updateApply = oldApply })
-	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, "", t.TempDir())
+	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, t.TempDir())
 	if err == nil || err.Error() != "update: disk full" {
 		t.Fatalf("apply failure returned %v", err)
 	}
@@ -161,7 +161,7 @@ func TestUpdateExecutableFailureReachesTheCaller(t *testing.T) {
 	oldExec := updateExecutable
 	updateExecutable = func() (string, error) { return "", errors.New("no executable") }
 	t.Cleanup(func() { updateExecutable = oldExec })
-	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, "", t.TempDir())
+	err := runUpdate("0.31.0")(&bytes.Buffer{}, nil, t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "no executable") {
 		t.Fatalf("executable failure returned %v", err)
 	}
@@ -171,7 +171,7 @@ func TestUpdateUpToDateJSONReportsIt(t *testing.T) {
 	swapUpdateSeams(t, "agent-manager", update.Manager{},
 		update.Result{Releases: []update.Release{{Version: "v0.31.0"}}}, nil)
 	var out bytes.Buffer
-	if err := runUpdate("0.31.0")(&out, []string{"--json"}, "", t.TempDir()); err != nil {
+	if err := runUpdate("0.31.0")(&out, []string{"--json"}, t.TempDir()); err != nil {
 		t.Fatalf("up-to-date --json: %v", err)
 	}
 	if !strings.Contains(out.String(), `"up_to_date": true`) {
@@ -183,7 +183,7 @@ func TestUpdateDelegatedJSONKeepsTheRecordClean(t *testing.T) {
 	swapUpdateSeams(t, "agent-manager",
 		update.Manager{Name: "echo", Command: []string{"echo", "progress-line"}}, update.Result{}, nil)
 	var out bytes.Buffer
-	if err := runUpdate("0.31.0")(&out, []string{"--json"}, "", t.TempDir()); err != nil {
+	if err := runUpdate("0.31.0")(&out, []string{"--json"}, t.TempDir()); err != nil {
 		t.Fatalf("delegated --json: %v", err)
 	}
 	if !strings.Contains(out.String(), `"delegate": "echo progress-line"`) {
@@ -205,7 +205,7 @@ func TestUpdateReportsProgressWriteFailures(t *testing.T) {
 	oldApply := updateApply
 	updateApply = func(context.Context, string, string) error { applied = true; return nil }
 	t.Cleanup(func() { updateApply = oldApply })
-	err := runUpdate("0.31.0")(failingWriter{}, nil, "", t.TempDir())
+	err := runUpdate("0.31.0")(failingWriter{}, nil, t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "write failed") {
 		t.Fatalf("progress write failure returned %v", err)
 	}

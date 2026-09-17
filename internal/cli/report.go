@@ -2,7 +2,9 @@ package cli
 
 import (
 	"io"
+	"os"
 
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/report"
 )
 
@@ -21,9 +23,18 @@ func reportSection(version string) section {
 	return section{
 		title: "Bugs and ideas",
 		commands: []command{
-			{name: "issue", usage: usageIssue, about: "file a bug report on agent-manager's GitHub repo; without --confirm it only prints the preview to show the user", run: bind(open, runIssue)},
-			{name: "feature", usage: usageFeature, about: "file a feature request the same way; --confirm takes the preview id and posts through gh, or prints the prefilled form url when gh is not logged in", run: bind(open, runFeature)},
+			{name: "issue", usage: usageIssue, about: "file a bug report on agent-manager's GitHub repo; without --confirm it only prints the preview to show the user", run: reportCommand(open, runIssue)},
+			{name: "feature", usage: usageFeature, about: "file a feature request the same way; --confirm takes the preview id and posts through gh, or prints the prefilled form url when gh is not logged in", run: reportCommand(open, runFeature)},
 		},
+	}
+}
+
+// reportCommand reads the caller from the variable alone. A caller only the
+// pane can name is a terminal, and a report leaves a shell's tool out of its
+// context, so asking tmux would add nothing to what gets filed.
+func reportCommand(open func(configDir string) issueReporter, run func(io.Writer, issueReporter, []string, string) error) Command {
+	return func(args []string, _ func() string, configDir string) error {
+		return run(os.Stdout, open(configDir), args, os.Getenv(hooks.EnvSessionID))
 	}
 }
 

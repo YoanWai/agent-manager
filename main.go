@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/YoanWai/agent-manager/internal/cli"
@@ -106,8 +107,8 @@ func printHelp(w io.Writer) error {
 
 func subcommands() map[string]func(args []string) error {
 	table := map[string]func(args []string) error{
-		"mcp": withConfigDir(func(args []string, sessionID, configDir string) error {
-			return mcpserver.Run(configDir, sessionID, version)
+		"mcp": withConfigDir(func(args []string, caller func() string, configDir string) error {
+			return mcpserver.Run(configDir, caller(), version)
 		}),
 	}
 	for name, command := range cli.Commands(version) {
@@ -116,13 +117,13 @@ func subcommands() map[string]func(args []string) error {
 	return table
 }
 
-func withConfigDir(command func(args []string, sessionID, configDir string) error) func([]string) error {
+func withConfigDir(command cli.Command) func([]string) error {
 	return func(args []string) error {
 		dir, err := config.Dir()
 		if err != nil {
 			return err
 		}
-		return command(args, callerSession(), dir)
+		return command(args, sync.OnceValue(callerSession), dir)
 	}
 }
 

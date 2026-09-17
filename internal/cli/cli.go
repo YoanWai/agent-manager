@@ -15,7 +15,10 @@ import (
 	"strings"
 )
 
-type Command func(args []string, sessionID, configDir string) error
+// Command takes its caller as a function so a command that acts as no
+// session never pays for resolving one, which from a terminal means asking
+// tmux.
+type Command func(args []string, caller func() string, configDir string) error
 
 // ErrUsageShown reports that -h already printed the usage, so the caller
 // exits without an error line.
@@ -91,8 +94,8 @@ func groupSection(title, name, about string, verbs []command) section {
 		usage: name + " <" + strings.Join(verbNames(verbs), "|") + ">",
 		about: about,
 		verbs: verbs,
-		run: func(args []string, sessionID, configDir string) error {
-			return dispatch(os.Stdout, name, verbs, args, sessionID, configDir)
+		run: func(args []string, caller func() string, configDir string) error {
+			return dispatch(os.Stdout, name, verbs, args, caller, configDir)
 		},
 	}
 	return section{title: title, commands: []command{group}}
@@ -106,7 +109,7 @@ func verbNames(verbs []command) []string {
 	return names
 }
 
-func dispatch(out io.Writer, group string, verbs []command, args []string, sessionID, configDir string) error {
+func dispatch(out io.Writer, group string, verbs []command, args []string, caller func() string, configDir string) error {
 	names := verbNames(verbs)
 	if len(args) == 0 {
 		return fmt.Errorf("usage: agent-manager %s <%s>", group, strings.Join(names, "|"))
@@ -117,7 +120,7 @@ func dispatch(out io.Writer, group string, verbs []command, args []string, sessi
 	}
 	for _, verb := range verbs {
 		if verb.name == args[0] {
-			return verb.run(args[1:], sessionID, configDir)
+			return verb.run(args[1:], caller, configDir)
 		}
 	}
 	return fmt.Errorf("%s has no %q command; it takes %s", group, args[0], strings.Join(names, ", "))
@@ -126,14 +129,14 @@ func dispatch(out io.Writer, group string, verbs []command, args []string, sessi
 // bind hands a subcommand the layer it drives, which tests replace with a
 // fake so no handler reaches the manager's live tmux socket.
 func bind[Layer any](open func(configDir string) Layer, run func(io.Writer, Layer, []string, string) error) Command {
-	return func(args []string, sessionID, configDir string) error {
-		return run(os.Stdout, open(configDir), args, sessionID)
+	return func(args []string, caller func() string, configDir string) error {
+		return run(os.Stdout, open(configDir), args, caller())
 	}
 }
 
 func configCommand(run func(out io.Writer, args []string, sessionID, configDir string) error) Command {
-	return func(args []string, sessionID, configDir string) error {
-		return run(os.Stdout, args, sessionID, configDir)
+	return func(args []string, caller func() string, configDir string) error {
+		return run(os.Stdout, args, caller(), configDir)
 	}
 }
 
