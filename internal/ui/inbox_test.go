@@ -129,12 +129,18 @@ func TestTheEnvelopeSpellsTheReplyInTheRecipientsOwnFront(t *testing.T) {
 		SentAt:     time.Date(2026, 8, 13, 9, 30, 0, 0, time.Local),
 	}
 	withTools := inboxEnvelope(msg, "claude")
-	if !strings.Contains(withTools, `Reply with the send_session tool, session_id "sender01"`) {
+	if !strings.Contains(withTools, `If you need something from that session, reply with the send_session tool, session_id "sender01"`) {
 		t.Fatalf("an MCP recipient was not pointed at the tool: %q", withTools)
 	}
+	if !strings.Contains(withTools, "If the work is done, stop") {
+		t.Fatalf("an MCP recipient was not told it can stop: %q", withTools)
+	}
 	shellOnly := inboxEnvelope(msg, mcpreg.StyleNone)
-	if !strings.Contains(shellOnly, `Reply by running: agent-manager send sender01 "<your reply>"`) {
+	if !strings.Contains(shellOnly, `If you need something from that session, reply by running: agent-manager send sender01 "<your reply>"`) {
 		t.Fatalf("a shell-only recipient was not pointed at the subcommand: %q", shellOnly)
+	}
+	if !strings.Contains(shellOnly, "If the work is done, stop") {
+		t.Fatalf("a shell-only recipient was not told it can stop: %q", shellOnly)
 	}
 	if strings.Contains(shellOnly, "send_session") {
 		t.Fatalf("a shell-only recipient was named a tool it cannot call: %q", shellOnly)
@@ -162,6 +168,7 @@ func TestTheEnvelopeTreatsAPeerSendAsTheOperatorsInstruction(t *testing.T) {
 		"ordinary work",
 		"Permission prompts",
 		"Commit, push, merge, publish, and delete",
+		"If the work is done, stop",
 	} {
 		if !strings.Contains(envelope, want) {
 			t.Fatalf("envelope does not contain %q: %q", want, envelope)
@@ -237,7 +244,7 @@ func TestTheEnvelopeKeepsAForgedBodyInsideItsFence(t *testing.T) {
 	}
 	trailer := strings.Join(lines[closed+1:], "\n")
 	if !strings.Contains(trailer, "ordinary work") ||
-		!strings.Contains(trailer, `Reply with the send_session tool, session_id "sender01"`) {
+		!strings.Contains(trailer, `If you need something from that session, reply with the send_session tool, session_id "sender01"`) {
 		t.Fatalf("our own words did not outlast the body: %q", trailer)
 	}
 	if strings.ContainsAny(envelope, "\x1b\x07") {

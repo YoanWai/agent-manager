@@ -105,6 +105,44 @@ func TestEnqueueGuardsAgainstLoops(t *testing.T) {
 	}
 }
 
+func pairMessage(from, to, body string, at time.Time) InboxMessage {
+	return InboxMessage{
+		SessionID:   to,
+		SenderID:    from,
+		SenderName:  from,
+		Body:        body,
+		Fingerprint: body,
+		SentAt:      at,
+	}
+}
+
+func TestEnqueueGuardsAPingPongBetweenAPair(t *testing.T) {
+	st := newTestStore(t)
+	now := time.Now()
+	ping := func(from, to string, n int) InboxMessage {
+		body := from + "->" + to + ":" + string(rune('a'+n))
+		return pairMessage(from, to, body, now)
+	}
+	for i := range 4 {
+		if _, err := st.Enqueue(ping("sessA", "sessB", i), DefaultInboxLimits); err != nil {
+			t.Fatalf("A->B %d: %v", i, err)
+		}
+		if _, err := st.Enqueue(ping("sessB", "sessA", i), DefaultInboxLimits); err != nil {
+			t.Fatalf("B->A %d: %v", i, err)
+		}
+	}
+	if _, err := st.Enqueue(ping("sessA", "sessB", 4), DefaultInboxLimits); !errors.Is(err, ErrInboxPairLimited) {
+		t.Fatalf("9th between the pair = %v, want ErrInboxPairLimited", err)
+	}
+	if _, err := st.Enqueue(ping("sessA", "sessC", 0), DefaultInboxLimits); err != nil {
+		t.Fatalf("A->C should not count against A<->B: %v", err)
+	}
+	later := pairMessage("sessA", "sessB", "after-window", now.Add(11*time.Minute))
+	if _, err := st.Enqueue(later, DefaultInboxLimits); err != nil {
+		t.Fatalf("after the pair window: %v", err)
+	}
+}
+
 func TestInboxIsScopedPerRecipientAndSweptWhenDelivered(t *testing.T) {
 	st := newTestStore(t)
 	now := time.Now()

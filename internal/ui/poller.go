@@ -1047,9 +1047,9 @@ func oneLine(name string) string {
 // tool, so naming one at it points at something it does not have.
 func replyInstruction(senderID, mcpStyle string) string {
 	if mcpStyle == mcpreg.StyleNone {
-		return fmt.Sprintf("Reply by running: %s %s \"<your reply>\".", sessioncmd.CLIVocabulary().Send, senderID)
+		return fmt.Sprintf("If you need something from that session, reply by running: %s %s \"<your reply>\". If the work is done, stop.", sessioncmd.CLIVocabulary().Send, senderID)
 	}
-	return fmt.Sprintf("Reply with the %s tool, session_id %q.", sessioncmd.MCPVocabulary().Send, senderID)
+	return fmt.Sprintf("If you need something from that session, reply with the %s tool, session_id %q. If the work is done, stop.", sessioncmd.MCPVocabulary().Send, senderID)
 }
 
 // launchPromptGrace releases pending input for a session whose prompt

@@ -33,6 +33,8 @@ type InboxLimits struct {
 	RateCap      int
 	RateWindow   time.Duration
 	DedupeWindow time.Duration
+	PairCap      int
+	PairWindow   time.Duration
 }
 
 var DefaultInboxLimits = InboxLimits{
@@ -40,6 +42,8 @@ var DefaultInboxLimits = InboxLimits{
 	RateCap:      5,
 	RateWindow:   time.Minute,
 	DedupeWindow: 10 * time.Minute,
+	PairCap:      8,
+	PairWindow:   10 * time.Minute,
 }
 
 // PollerHeartbeatKey is stamped by the manager while it polls. A session
@@ -126,6 +130,7 @@ var (
 	ErrInboxFull        = errors.New("the recipient's queue is full; wait for it to read what is already queued")
 	ErrInboxRateLimited = errors.New("too many messages to this session in the last minute")
 	ErrInboxDuplicate   = errors.New("an identical message is already queued or was just sent")
+	ErrInboxPairLimited = errors.New("these two sessions have exchanged too many messages recently; wait before sending again")
 )
 
 // Enqueue appends one message. Every limit rides the INSERT itself, so a
@@ -134,6 +139,7 @@ func (s *Store) Enqueue(msg InboxMessage, limits InboxLimits) (int64, error) {
 	sentAt := encodeTime(msg.SentAt)
 	rateFrom := encodeTime(msg.SentAt.Add(-limits.RateWindow))
 	dedupeFrom := encodeTime(msg.SentAt.Add(-limits.DedupeWindow))
+	pairFrom := encodeTime(msg.SentAt.Add(-limits.PairWindow))
 	res, err := s.db.Exec(`
 INSERT INTO session_inbox (session_id, sender_id, sender_name, body, fingerprint, sent_at)
 SELECT ?, ?, ?, ?, ?, ?
@@ -142,11 +148,17 @@ WHERE (SELECT COUNT(*) FROM session_inbox WHERE session_id = ? AND delivered_at 
   AND NOT EXISTS (
     SELECT 1 FROM session_inbox
      WHERE session_id = ? AND sender_id = ? AND fingerprint = ? AND sent_at >= ?
-  )`,
+  )
+  AND (? < 1 OR (
+    SELECT COUNT(*) FROM session_inbox
+     WHERE sent_at >= ?
+       AND ((session_id = ? AND sender_id = ?) OR (session_id = ? AND sender_id = ?))
+  ) < ?)`,
 		msg.SessionID, msg.SenderID, msg.SenderName, msg.Body, msg.Fingerprint, sentAt,
 		msg.SessionID, limits.QueueCap,
 		msg.SessionID, msg.SenderID, rateFrom, limits.RateCap,
-		msg.SessionID, msg.SenderID, msg.Fingerprint, dedupeFrom)
+		msg.SessionID, msg.SenderID, msg.Fingerprint, dedupeFrom,
+		limits.PairCap, pairFrom, msg.SessionID, msg.SenderID, msg.SenderID, msg.SessionID, limits.PairCap)
 	if err != nil {
 		return 0, err
 	}
@@ -187,6 +199,20 @@ func (s *Store) rejectedEnqueue(msg InboxMessage, limits InboxLimits) error {
 	}
 	if duplicate > 0 {
 		return ErrInboxDuplicate
+	}
+	if limits.PairCap > 0 {
+		var pair int
+		if err := s.db.QueryRow(
+			`SELECT COUNT(*) FROM session_inbox
+			  WHERE sent_at >= ?
+			    AND ((session_id = ? AND sender_id = ?) OR (session_id = ? AND sender_id = ?))`,
+			encodeTime(msg.SentAt.Add(-limits.PairWindow)),
+			msg.SessionID, msg.SenderID, msg.SenderID, msg.SessionID).Scan(&pair); err != nil {
+			return err
+		}
+		if pair >= limits.PairCap {
+			return ErrInboxPairLimited
+		}
 	}
 	return errors.New("message was not queued")
 }
