@@ -198,12 +198,13 @@ func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
 	t.Cleanup(func() {
 		exec.Command("tmux", "-L", driver.SocketName(), "kill-server").Run()
 	})
-	out, err := exec.Command("tmux", "-L", driver.SocketName(), "display-message", "-p", "-t", tmux.PaneTarget(id), "#{pane_id}").CombinedOutput()
+	out, err := exec.Command("tmux", "-L", driver.SocketName(), "display-message", "-p", "-t", tmux.PaneTarget(id), "#{socket_path},#{pid},0 #{pane_id}").CombinedOutput()
 	if err != nil {
 		t.Fatalf("pane id: %v: %s", err, out)
 	}
-	t.Setenv("TMUX", driver.SocketPath()+",1234,0")
-	t.Setenv("TMUX_PANE", strings.TrimSpace(string(out)))
+	tmuxEnv, pane, _ := strings.Cut(strings.TrimSpace(string(out)), " ")
+	t.Setenv("TMUX", tmuxEnv)
+	t.Setenv("TMUX_PANE", pane)
 
 	t.Setenv(hooks.EnvSessionID, "deadbeef")
 	if got := callerSession(); got != "deadbeef" {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -943,24 +944,63 @@ func (d *Driver) Panes() (map[string]Pane, error) {
 // launch script and the session id never reaches its environment; the
 // pane it runs in still says which session tmux filed it under.
 //
-// tmuxEnv is the caller's $TMUX, whose first field is the socket of the
-// server it is attached to. A pane on any other server belongs to some
-// other tmux, not to this manager, and answers empty rather than having
-// its session name read on a socket it does not live on.
+// tmuxEnv is the caller's $TMUX, socket,server_pid,session_id. A pane on any
+// other server belongs to some other tmux, not to this manager, and answers
+// empty. The socket alone cannot tell servers apart: it keeps its path across
+// a restart while pane ids start again at %0, so an environment inherited from
+// a previous server would name whichever session owns that id now. The pid
+// is what differs.
 func (d *Driver) SessionOfPane(tmuxEnv, paneID string) (string, error) {
-	socket, _, _ := strings.Cut(tmuxEnv, ",")
-	if socket == "" || resolvedSocket(socket) != resolvedSocket(d.SocketPath()) {
+	// tmux resolves a target it cannot parse to the current session and
+	// exits 0, which would answer for a session this pane is not in.
+	if !paneIDPattern.MatchString(paneID) {
 		return "", nil
 	}
-	out, err := d.run("display-message", "-p", "-t", paneID, "#{session_name}")
+	socket, pid, ok := socketAndPid(tmuxEnv)
+	if !ok {
+		return "", nil
+	}
+	out, err := d.run("display-message", "-p", "-t", paneID, "#{socket_path} #{pid} #{session_name}")
 	if err != nil {
 		return "", err
 	}
-	name := strings.TrimSpace(out)
+	serverSocket, serverPid, name := splitPaneInfo(strings.TrimRight(out, "\n"))
+	if resolvedSocket(socket) != resolvedSocket(serverSocket) || pid != serverPid {
+		return "", nil
+	}
 	if !strings.HasPrefix(name, prefix) {
 		return "", nil
 	}
 	return strings.TrimPrefix(name, prefix), nil
+}
+
+var paneIDPattern = regexp.MustCompile(`^%[0-9]+$`)
+
+// socketAndPid reads $TMUX from the right, since the socket path is the one
+// field free to contain a comma.
+func socketAndPid(tmuxEnv string) (socket, pid string, ok bool) {
+	rest, _, found := cutLast(tmuxEnv, ",")
+	if !found {
+		return "", "", false
+	}
+	socket, pid, found = cutLast(rest, ",")
+	return socket, pid, found && socket != "" && pid != ""
+}
+
+// splitPaneInfo reads the name and the pid off the end, so a socket path
+// with spaces in it stays whole. An unknown pane leaves the name empty.
+func splitPaneInfo(out string) (socket, pid, name string) {
+	rest, name, _ := cutLast(out, " ")
+	socket, pid, _ = cutLast(rest, " ")
+	return socket, pid, name
+}
+
+func cutLast(s, sep string) (before, after string, found bool) {
+	i := strings.LastIndex(s, sep)
+	if i < 0 {
+		return s, "", false
+	}
+	return s[:i], s[i+len(sep):], true
 }
 
 // resolvedSocket puts two socket paths in the same terms before they are

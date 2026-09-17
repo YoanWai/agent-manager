@@ -1473,8 +1473,7 @@ func TestSessionOfPaneResolvesAManagedPane(t *testing.T) {
 	t.Cleanup(func() { driver.Kill(id) })
 
 	pane := paneID(t, id)
-	socket := driver.SocketPath()
-	got, err := driver.SessionOfPane(socket+",1234,0", pane)
+	got, err := driver.SessionOfPane(tmuxEnv(t, driver), pane)
 	if err != nil {
 		t.Fatalf("SessionOfPane: %v", err)
 	}
@@ -1484,7 +1483,7 @@ func TestSessionOfPaneResolvesAManagedPane(t *testing.T) {
 
 	// A $TMUX naming another server belongs to the user's own tmux, whose
 	// pane ids mean nothing here.
-	got, err = driver.SessionOfPane("/tmp/tmux-999/somebody-else,1234,0", pane)
+	got, err = driver.SessionOfPane("/tmp/tmux-999/somebody-else,"+serverPid(t)+",0", pane)
 	if err != nil {
 		t.Fatalf("SessionOfPane on a foreign socket: %v", err)
 	}
@@ -1512,7 +1511,7 @@ func TestSessionOfPaneIgnoresAnUnmanagedSession(t *testing.T) {
 		t.Fatalf("pane id: %v: %s", err, out)
 	}
 	pane := strings.TrimSpace(string(out))
-	got, err := driver.SessionOfPane(driver.SocketPath()+",1234,0", pane)
+	got, err := driver.SessionOfPane(tmuxEnv(t, driver), pane)
 	if err != nil {
 		t.Fatalf("SessionOfPane: %v", err)
 	}
@@ -1538,13 +1537,70 @@ func TestSessionOfPaneMatchesASymlinkedSocketPath(t *testing.T) {
 		t.Fatalf("symlink the socket directory: %v", err)
 	}
 	through := filepath.Join(link, filepath.Base(socket))
-	got, err := driver.SessionOfPane(through+",1234,0", paneID(t, id))
+	got, err := driver.SessionOfPane(through+","+serverPid(t)+",0", paneID(t, id))
 	if err != nil {
 		t.Fatalf("SessionOfPane: %v", err)
 	}
 	if got != id {
 		t.Fatalf("SessionOfPane through a symlink = %q, want %q", got, id)
 	}
+}
+
+// tmux reads a target it cannot parse as the current session and exits 0,
+// so anything that is not a pane id has to answer empty before tmux sees it.
+func TestSessionOfPaneRejectsAMalformedPaneID(t *testing.T) {
+	driver := requireTmux(t)
+	id := "bad" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	for _, pane := range []string{"", "-X", ".", ":", "%", "%1x", "am_" + id} {
+		got, err := driver.SessionOfPane(tmuxEnv(t, driver), pane)
+		if err != nil || got != "" {
+			t.Fatalf("pane %q resolved to %q, err %v", pane, got, err)
+		}
+	}
+}
+
+// A restarted server keeps its socket path but numbers panes from %0 again,
+// so a $TMUX left over from the previous server must not name a session on
+// this one.
+func TestSessionOfPaneIgnoresAnotherServerOnTheSameSocket(t *testing.T) {
+	driver := requireTmux(t)
+	id := "pid" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	pid, err := strconv.Atoi(serverPid(t))
+	if err != nil {
+		t.Fatalf("server pid: %v", err)
+	}
+	stale := driver.SocketPath() + "," + strconv.Itoa(pid+1) + ",0"
+	got, err := driver.SessionOfPane(stale, paneID(t, id))
+	if err != nil {
+		t.Fatalf("SessionOfPane: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("a $TMUX from another server resolved to %q", got)
+	}
+}
+
+func tmuxEnv(t *testing.T, driver *Driver) string {
+	t.Helper()
+	return driver.SocketPath() + "," + serverPid(t) + ",0"
+}
+
+func serverPid(t *testing.T) string {
+	t.Helper()
+	out, err := tmuxCmd("display-message", "-p", "#{pid}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("server pid: %v: %s", err, out)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func paneID(t *testing.T, id string) string {
