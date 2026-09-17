@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1120,8 +1121,16 @@ func TestSessionsCreateFromATerminalAsksForATool(t *testing.T) {
 			t.Fatalf("error %q does not mention %q", err, want)
 		}
 	}
-	if strings.Contains(err.Error(), "terminal,") || strings.HasSuffix(err.Error(), "terminal") {
-		t.Fatalf("the error offers the shell tool as a choice: %v", err)
+	runtime, openErr := h.sessions.open()
+	if openErr != nil {
+		t.Fatalf("open: %v", openErr)
+	}
+	shell, _ := runtime.cfg.ShellTool()
+	runtime.store.Close()
+	_, listed, _ := strings.Cut(err.Error(), "(configured tools are ")
+	offered := strings.Split(strings.TrimSuffix(listed, ")"), ", ")
+	if slices.Contains(offered, shell) {
+		t.Fatalf("the error offers the shell tool %q as a choice: %v", shell, err)
 	}
 
 	created, err := h.sessions.Create(terminal.ID, CreateSessionOptions{Tool: "echoer", Prompt: "ship the fix"})
