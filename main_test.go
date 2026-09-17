@@ -195,9 +195,7 @@ func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
 	if err := driver.Create(id, "/tmp", "", nil, 80, 24); err != nil {
 		t.Fatalf("create the terminal pane: %v", err)
 	}
-	t.Cleanup(func() {
-		exec.Command("tmux", "-L", driver.SocketName(), "kill-server").Run()
-	})
+	t.Cleanup(func() { driver.Kill(id) })
 	out, err := exec.Command("tmux", "-L", driver.SocketName(), "display-message", "-p", "-t", tmux.PaneTarget(id), "#{socket_path},#{pid},0 #{pane_id}").CombinedOutput()
 	if err != nil {
 		t.Fatalf("pane id: %v: %s", err, out)
