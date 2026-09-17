@@ -176,10 +176,16 @@ func (m *Model) onDivider(x int) bool {
 }
 
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// Focus mode owns the mouse: clicks build a selection over the pane
-	// instead of moving the list cursor, which would silently retarget
-	// every following keystroke.
 	if m.mode == modeFocus {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			if _, _, inPane := m.paneCell(msg.X, msg.Y); !inPane {
+				// A press off the pane leaves focus so the same click can
+				// select a row. The split still paints the list beside the
+				// session; full-screen focus has no list, so this is chrome.
+				m.leaveFocus()
+				return m.handleMousePress(msg)
+			}
+		}
 		return m.handleFocusMouse(msg)
 	}
 

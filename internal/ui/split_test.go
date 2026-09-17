@@ -545,6 +545,77 @@ func TestClickOnSelectedRowDoesNotFocus(t *testing.T) {
 	}
 }
 
+func TestClickOnListLeavesFocus(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	updated, _ := m.focusSelected()
+	m = updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+
+	line := paintedRailLines(t, m, "beta")[0]
+	y0, _ := m.bodyYRange()
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("click on the list should leave focus, mode = %v", m.mode)
+	}
+	if sess, ok := m.selected(); !ok || sess.Name != "beta" {
+		t.Fatalf("click should select beta, got %q ok=%v", sess.Name, ok)
+	}
+}
+
+func TestClickOnFocusedSessionRowLeavesFocus(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	updated, _ := m.focusSelected()
+	m = updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+
+	line := paintedRailLines(t, m, "alpha")[0]
+	y0, _ := m.bodyYRange()
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("click on the focused row should leave focus, mode = %v", m.mode)
+	}
+	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
+		t.Fatalf("selection should stay on alpha, got %q ok=%v", sess.Name, ok)
+	}
+}
+
+func TestClickInFocusedPaneStaysFocused(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	updated, _ := m.focusSelected()
+	m = updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	m.View()
+	if !m.pane.box.ok {
+		t.Fatal("test setup: focused pane has no box")
+	}
+	updated, _ = m.handleMouse(tea.MouseMsg{
+		X: m.pane.box.x, Y: m.pane.box.y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	m = updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("click in the pane should stay focused, mode = %v", m.mode)
+	}
+}
+
 func TestDoubleClickFocusesTheRowJustSelected(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")
