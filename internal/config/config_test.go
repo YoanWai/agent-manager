@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -284,6 +285,18 @@ func TestTheBinaryShipsOneShell(t *testing.T) {
 	name, tool := cfg.ShellTool()
 	if name != "terminal" || tool.Command != "" {
 		t.Fatalf("ShellTool = %q %+v, want the terminal block on $SHELL", name, tool)
+	}
+}
+
+func TestToolNamesAreSorted(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	for range 5 {
+		if names := cfg.ToolNames(); !sort.StringsAreSorted(names) || len(names) != len(cfg.Tools) {
+			t.Fatalf("ToolNames = %v", names)
+		}
 	}
 }
 

@@ -263,11 +263,14 @@ func (c *Config) applyDefaults() {
 	}
 }
 
+// ToolNames lists the configured tools by name, so a sentence naming them
+// reads the same on every run.
 func (c Config) ToolNames() []string {
 	names := make([]string, 0, len(c.Tools))
 	for name := range c.Tools {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
 
