@@ -522,7 +522,7 @@ func (m *Model) viewFooter() string {
 	if m.mode == modeFocus {
 		pairs := [][2]string{
 			{"typing", "to agent"},
-			{m.keys.Binding(keybind.Detach).Label(), "back"},
+			{m.keys.Binding(keybind.Detach).Label() + " / click list / mouse back", "back"},
 		}
 		if m.arrowStep {
 			pairs = append(pairs, [2]string{"←", "prompt start: back"})
@@ -579,6 +579,9 @@ func (m *Model) rowLegend() legendSection {
 			foldAction = "unfold"
 		}
 		pairs := [][2]string{{k(keybind.Open), foldAction}}
+		if !m.mouseDisabled {
+			pairs = append(pairs, [2]string{"double click", foldAction})
+		}
 		if m.arrowStep {
 			pairs = append(pairs, m.legendPair(keybind.StepOut, "close", keybind.StepIn, "open"))
 		}
@@ -597,6 +600,9 @@ func (m *Model) rowLegend() legendSection {
 		title, conversation = "Shell", nil
 	}
 	pairs := [][2]string{{k(keybind.Open), enterHint}, {k(keybind.Attach), attachHint}}
+	if !m.mouseDisabled {
+		pairs = append(pairs, [2]string{"double click", "focus"})
+	}
 	if m.arrowStep {
 		pairs = append(pairs, [2]string{k(keybind.StepIn), "focus"})
 	}
@@ -672,6 +678,9 @@ func (m *Model) viewLegend() legendSection {
 	// something, the filters, then the keys a user already knows to look for.
 	k := m.listGlyph
 	pairs := [][2]string{{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"}}
+	if !m.mouseDisabled {
+		pairs = append(pairs, [2]string{"click", "select"})
+	}
 	pairs = append(pairs, [][2]string{
 		{k(keybind.NewSession), "new"}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {k(keybind.EmptyGroups), emptyGroupsAction},

@@ -395,6 +395,9 @@ func TestShellRowLegendDropsTheConversationKeys(t *testing.T) {
 	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "R" }) {
 		t.Fatal("legend should still offer the keys a shell answers, R included")
 	}
+	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "double click" && pair[1] == "focus" }) {
+		t.Fatal("legend should offer double click to focus when the mouse is on")
+	}
 }
 
 // An agent row keeps the full set.
@@ -411,5 +414,19 @@ func TestAgentRowLegendKeepsTheConversationKeys(t *testing.T) {
 		if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == key }) {
 			t.Fatalf("legend should offer %q on an agent row", key)
 		}
+	}
+	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "double click" && pair[1] == "focus" }) {
+		t.Fatal("legend should offer double click to focus when the mouse is on")
+	}
+}
+
+func TestRowLegendHidesDoubleClickWhenMouseOff(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "agent", t.TempDir(), "")
+	m.selectSessionRow(t, "agent")
+	m.mouseDisabled = true
+	legend := m.rowLegend()
+	if slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "double click" }) {
+		t.Fatal("legend should hide double click when the mouse is off")
 	}
 }

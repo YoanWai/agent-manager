@@ -494,22 +494,24 @@ func TestUpdateTickReArms(t *testing.T) {
 // the manager — stay out.
 func TestFooterInFocusMode(t *testing.T) {
 	m := buildModel(t)
+	createSession(t, m, "focused", t.TempDir(), "")
 	m.mode = modeFocus
 	footer := ansi.Strip(m.viewFooter())
 	if !strings.Contains(footer, "Focused") {
 		t.Fatalf("the tier should name the mode it describes:\n%s", footer)
 	}
-	if !strings.Contains(footer, "ctrl+q / ctrl+\\ back") || !strings.Contains(footer, "typing to agent") {
-		t.Fatalf("focus footer should carry the reserved keys:\n%s", footer)
+	if !strings.Contains(footer, "ctrl+q / ctrl+\\") || !strings.Contains(footer, "click list") || !strings.Contains(footer, "mouse back") || !strings.Contains(footer, "typing to agent") {
+		t.Fatalf("focus footer should carry the reserved keys and mouse leave:\n%s", footer)
+	}
+	listH := lipgloss.Height(m.listFooter())
+	if lipgloss.Height(m.viewFooter()) != listH {
+		t.Fatalf("focus footer must keep the list footer's height %d, got %d:\n%s", listH, lipgloss.Height(m.viewFooter()), footer)
 	}
 	if strings.Contains(footer, "navigate") || strings.Contains(footer, "View") {
 		t.Fatalf("app-wide keys go to the agent while focused, so the tier must go:\n%s", footer)
 	}
 	// Blank rows below hold the list footer's height so focusing never
-	// resizes the pane.
-	if lines := strings.Split(strings.TrimRight(footer, "\n"), "\n"); len(lines) != 1 {
-		t.Fatalf("focus footer should be one row of keys, got %d:\n%s", len(lines), footer)
-	}
+	// resizes the pane. The keys themselves may wrap inside that budget.
 	if strings.Contains(footer, "agent UI") {
 		t.Fatalf("a plain focused pane should not offer mouse pass-through:\n%s", footer)
 	}
@@ -764,7 +766,7 @@ func TestFooterInFocusModeNamesTheKeyTable(t *testing.T) {
 	useSessionKeys(t, m, []string{"f9"}, nil, []string{"alt+e"})
 	m.mode = modeFocus
 	footer := ansi.Strip(m.viewFooter())
-	if !strings.Contains(footer, "f9 back") || !strings.Contains(footer, "alt+e editor") {
+	if !strings.Contains(footer, "f9 / click list / mouse back") || !strings.Contains(footer, "alt+e editor") {
 		t.Fatalf("focus footer should name the configured keys:\n%s", footer)
 	}
 	if strings.Contains(footer, "review") || strings.Contains(footer, "ctrl+q") {

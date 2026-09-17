@@ -20,6 +20,9 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `f` | Fork the selected conversation into a named session in the same group and directory |
 | `g` | New group (name, parent, default path, worktree default) |
 | `enter` | Focus session in place (keys go to the agent, list stays) / fold group |
+| click | Select the row |
+| double click | Focus the session / fold the group |
+| click the list / mouse back | Focused: back to the list |
 | `A` | Attach session full screen (Settings can swap it with `enter`) |
 | `.` | Mark a finished session idle without entering it |
 | `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available. `ctrl+r`, `F3` and this pair move with `[keybindings.session]` in config.toml, and every key of the list itself moves with `[keybindings.list]` (see [Key bindings](configuration.md#key-bindings)) |
@@ -76,7 +79,7 @@ Session rows read the same way in either layout, and the list density setting pi
 
 Sessions size themselves to the layout that shows them: the full-screen layout pins their tmux windows to the whole terminal body, so an opened or attached session spans the full width, and switching back to the split re-pins the width while a pane that grew taller keeps its height and is cropped on screen instead.
 
-Opening a session (`enter`, or `→`) takes the whole body too, through the same pipeline focus mode uses in the split: keys go to the agent, `ctrl+r`, `F3` and the footer stay alive, and `ctrl+q`, or `←` with the caret at the start of the agent's prompt, returns to the list. `A` still hands the terminal over with a real tmux attach. Every footer that replaces the key legend for a moment, the quick prompt's, focus's, rename's, resize's, takes a single row in this layout and leaves the rest to the body; in the split those rows are held so the preview box beside them stays where it is. A line of its own says which session you are in, a hairline holding it off the header band above and the pane below: its state dot and name, the tool, the state and how long it has held it on the left, then its directory, its worktree branch, its own cpu and memory, how long ago it started, and a queued count when messages are waiting, against the right edge. The keys are in the footer under the pane. As the terminal narrows the readings give way one at a time, the least telling first, so what fits still shows.
+Opening a session (`enter`, or `→`) takes the whole body too, through the same pipeline focus mode uses in the split: keys go to the agent, `ctrl+r`, `F3` and the footer stay alive, and `ctrl+q`, a click on the list, the mouse back button, or `←` with the caret at the start of the agent's prompt, returns to the list. `A` still hands the terminal over with a real tmux attach. Every footer that replaces the key legend for a moment, the quick prompt's, focus's, rename's, resize's, takes a single row in this layout and leaves the rest to the body; in the split those rows are held so the preview box beside them stays where it is. A line of its own says which session you are in, a hairline holding it off the header band above and the pane below: its state dot and name, the tool, the state and how long it has held it on the left, then its directory, its worktree branch, its own cpu and memory, how long ago it started, and a queued count when messages are waiting, against the right edge. The keys are in the footer under the pane. As the terminal narrows the readings give way one at a time, the least telling first, so what fits still shows.
 
 ## Which CLIs you get offered
 
