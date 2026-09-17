@@ -273,7 +273,7 @@ func (m *Model) leaveFocus() tea.Cmd {
 	m.mode = modeList
 	m.clearSelection()
 	m.pending = pendingClick{}
-	m.clearForwardingMouse()
+	m.endForwardedGesture()
 	m.flushPendingNotice()
 	return nil
 }

@@ -319,6 +319,20 @@ func (m *Model) forwardClick(button, row, col int) {
 	m.sendFocusReport(press + release)
 }
 
+// endForwardedGesture closes a gesture the pane's application is still
+// holding, for the paths that leave focus between a forwarded press and
+// its release, which would leave it tracking a button nobody is holding.
+func (m *Model) endForwardedGesture() {
+	if !m.forwardingMouse {
+		return
+	}
+	paneRow := m.forwardingRow + m.paneRowOffset(m.pane.box.height)
+	if release, ok := m.mouseReport(m.forwardingButton, true, m.forwardingCol, paneRow); ok {
+		m.sendFocusReport(release)
+	}
+	m.clearForwardingMouse()
+}
+
 func (m *Model) clearForwardingMouse() {
 	m.forwardingMouse = false
 	m.forwardingButton = leftButton
