@@ -130,6 +130,7 @@ func markHelpRows(list keybind.Table) [][2]string {
 		{"○ idle", "nothing running"},
 		{"✕ errored", "the tool reported an error, or the session is dead"},
 		{"◌ starting", "the pane is still launching"},
+		{"✉N", "messages from another agent, held until this one is at rest"},
 	}
 	if filter := list.Binding(keybind.Filter).Glyph(" / "); filter != "" {
 		rows = append(rows, [2]string{"", filter + " filters the list down to the marks that need you"})

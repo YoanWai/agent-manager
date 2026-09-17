@@ -89,6 +89,21 @@ func TestHelpSectionListsAKeyOnce(t *testing.T) {
 	}
 }
 
+func TestHelpNamesTheInboxBadgeOnASessionRow(t *testing.T) {
+	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
+		if section.title != "the mark on a session row" {
+			continue
+		}
+		for _, row := range section.rows {
+			if strings.Contains(row[0], "✉") && strings.Contains(row[1], "another agent") {
+				return
+			}
+		}
+		t.Fatal("the mark section does not name the inbox badge")
+	}
+	t.Fatal("no mark section")
+}
+
 func TestHelpEveryRowHasADescription(t *testing.T) {
 	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
 		if len(section.rows) == 0 {

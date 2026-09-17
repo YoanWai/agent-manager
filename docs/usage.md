@@ -206,7 +206,7 @@ Each field falls back the way the form does. The CLI defaults to the one the cal
 
 ### Messages between agents
 
-`send_session` queues a message rather than typing it immediately. Several agent CLIs keep their input line drawn underneath an approval dialog, so a message written at that moment would answer the dialog instead of being read. The manager holds it and types it in on the first poll where the target is at rest: its input region is drawn, its status is not mid-turn, its own rules report no dialog on screen, and nobody has a line part way written at its prompt. Delivery is at most once, and a message the manager cannot prove reached the pane is retired as `dropped` rather than repeated, so its sender knows to send it again.
+`send_session` queues a message rather than typing it immediately. Several agent CLIs keep their input line drawn underneath an approval dialog, so a message written at that moment would answer the dialog instead of being read. The manager holds it and types it in on the first poll where the target is at rest: its input region is drawn, its status is not mid-turn, its own rules report no dialog on screen, and nobody has a line part way written at its prompt. Delivery is at most once, and a message the manager cannot prove reached the pane is retired as `dropped` rather than repeated, so its sender knows to send it again. The list shows `✉` and the waiting count on the recipient's row until that paste lands.
 
 The gate is the recipient tool's own rules, because text typed onto a dialog picks an option: while one is on screen the queue waits, and `message_status` reports those messages as `held`, naming the session to go and answer. A question the agent left at a resting prompt trips no rule, and a message goes in there as an ordinary turn would, labelled as coming from another agent. `held` also covers a recipient the manager will never type into as things stand, a session archived or stopped since the message was queued, and says which it is.
 
@@ -300,6 +300,8 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 | `◌` | `starting` | The pane is still launching |
 
 Every row carries its mark, and each state has its own color from the active theme, so a glance down the rail tells you who needs you. The key map (`?`) lists the marks under "the mark on a session row".
+
+A session with messages from another agent waiting to be typed in wears `✉` and the count next to its name. The count clears when the manager delivers them.
 
 A session stuck on the wrong mark is a rules question, and the rules are ours: they ship in the binary, so an upgrade is what moves them. [Configuration](configuration.md#agent-clis) has what to put in the issue and how to read the pane the poller reads.
 
