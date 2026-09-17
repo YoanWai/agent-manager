@@ -828,9 +828,7 @@ func (p *poller) clearRecaptureSeen(sessID string) {
 	p.mu.Unlock()
 }
 
-// A durable claim makes automatic delivery at-most-once: after a process or
-// database failure, an ambiguous input is dropped and surfaced rather than
-// risking the same task or slash command running twice.
+// Claimed rows bypass the rest gate so crash recovery also runs during a live turn.
 func (p *poller) maybeSendPendingInputWhenReady(sess store.Session, pane, derived string, agentAlive bool) (bool, error) {
 	if !sess.PendingInputClaimed && !inboxDeliverable(derived) {
 		return false, nil
@@ -838,6 +836,9 @@ func (p *poller) maybeSendPendingInputWhenReady(sess store.Session, pane, derive
 	return p.maybeSendPendingInput(sess, pane, agentAlive)
 }
 
+// A durable claim makes automatic delivery at-most-once: after a process or
+// database failure, an ambiguous input is dropped and surfaced rather than
+// risking the same task or slash command running twice.
 func (p *poller) maybeSendPendingInput(sess store.Session, pane string, agentAlive bool) (bool, error) {
 	if len(sess.PendingInputs) == 0 {
 		return false, nil
@@ -859,6 +860,10 @@ func (p *poller) maybeSendPendingInput(sess store.Session, pane string, agentAli
 	clean := ansi.Strip(pane)
 	if p.engine.TypingHold(sess.Tool, clean) != "" {
 		return false, nil
+	}
+	typing, err := p.promptCarriesTypedText(sess, clean)
+	if err != nil || typing {
+		return false, err
 	}
 	region, ready := p.engine.ActivityRegion(sess.Tool, clean)
 	if !ready {

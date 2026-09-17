@@ -1685,37 +1685,96 @@ func TestPendingInputWaitsForTheLaunchPrompt(t *testing.T) {
 }
 
 func TestPendingInputWaitsForBetweenTurn(t *testing.T) {
+	for _, signal := range []string{"rule", "busy line"} {
+		t.Run(signal, func(t *testing.T) {
+			m := buildModel(t)
+			tool := m.cfg.Tools["ready-tool"]
+			tool.Command = `sh -c 'printf "\033[2J\033[H❯ /compact\n⠋ working\n❯ "; IFS= read -r line; printf "\033[2J\033[H❯ /compact\n❯ "; while IFS= read -r line; do printf "\n❯ "; done'`
+			if signal == "rule" {
+				tool.Rules = []config.Rule{{State: status.Working, Pattern: "⠋ working"}}
+			} else {
+				tool.BusyLine = "^⠋ working$"
+			}
+			m.cfg.Tools["ready-tool"] = tool
+			engine, err := status.NewEngine(m.cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.poller.engine = engine
+			if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "/compact", true, false); err != nil {
+				t.Fatal(err)
+			}
+			sess := m.sessionRows()[0]
+			pane := settledPane(t, m, sess.ID, "⠋ working", "❯ /compact")
+			region, ready := engine.ActivityRegion(sess.Tool, ansi.Strip(pane))
+			if !ready || !launchPromptTaken(sess, region) {
+				t.Fatal("fixture must have a cutoff and an already-taken launch prompt")
+			}
+			for range 3 {
+				m.applyCmd(t, m.refreshCmd())
+				current, err := m.store.Get(sess.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if current.Status != status.Working {
+					t.Fatalf("refresh status = %q, want working", current.Status)
+				}
+				if len(current.PendingInputs) == 0 || current.PendingInputClaimed {
+					t.Fatal("refresh claimed or delivered pending input during a live turn")
+				}
+			}
+			if err := m.tmux.SendKeys(sess.ID, "Enter"); err != nil {
+				t.Fatal(err)
+			}
+			deadline := time.Now().Add(5 * time.Second)
+			for sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
+				if time.Now().After(deadline) {
+					t.Fatal("pending input never delivered after the pane became idle")
+				}
+				time.Sleep(50 * time.Millisecond)
+				m.applyCmd(t, m.refreshCmd())
+			}
+			settledPane(t, m, sess.ID, "agent-manager rename")
+		})
+	}
+}
+
+func TestPendingInputWaitsForTypedText(t *testing.T) {
 	m := buildModel(t)
 	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false); err != nil {
-		t.Fatalf("spawn: %v", err)
+		t.Fatal(err)
 	}
 	sess, err := m.store.Get(m.sessionRows()[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	sent, err := m.poller.maybeSendPendingInputWhenReady(sess, "❯ ", status.Working, true)
-	if err != nil {
-		t.Fatalf("send while working: %v", err)
+	settledPane(t, m, sess.ID, "❯")
+	if err := m.tmux.Paste(sess.ID, "USERTEXT-in-progress"); err != nil {
+		t.Fatal(err)
 	}
-	if sent {
-		t.Fatal("pending input was delivered during a live turn")
+	pane := settledPane(t, m, sess.ID, "USERTEXT-in-progress")
+	if sent, err := m.poller.maybeSendPendingInput(sess, pane, true); err != nil || sent {
+		t.Fatalf("pending input sent onto a draft: sent=%v err=%v", sent, err)
 	}
-	queued, err := m.store.Get(sess.ID)
+	current, err := m.store.Get(sess.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(queued.PendingInputs) == 0 {
-		t.Fatal("pending input was consumed during a live turn")
+	if len(current.PendingInputs) == 0 || current.PendingInputClaimed {
+		t.Fatal("typed text must leave pending input unclaimed")
 	}
-
-	sent, err = m.poller.maybeSendPendingInputWhenReady(sess, "❯ ", status.Idle, true)
-	if err != nil {
-		t.Fatalf("send while idle: %v", err)
+	if err := m.tmux.SendKeys(sess.ID, "C-u"); err != nil {
+		t.Fatal(err)
 	}
-	if !sent {
-		t.Fatal("pending input was not delivered between turns")
+	deadline := time.Now().Add(5 * time.Second)
+	for sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
+		if time.Now().After(deadline) {
+			t.Fatal("pending input never delivered after clearing the draft")
+		}
+		time.Sleep(50 * time.Millisecond)
+		m.applyCmd(t, m.refreshCmd())
 	}
+	settledPane(t, m, sess.ID, "agent-manager rename")
 }
 
 // A prompt that never reaches the pane, because it scrolled out or the agent
