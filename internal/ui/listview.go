@@ -948,16 +948,19 @@ func (m *Model) computerLines(width int) []string {
 		barWidth = 10
 	}
 
-	meter := func(label string, percent float64, ok bool, extra string) string {
-		if !ok {
-			return pad + labelStyle.Width(5).Render(label) + subtleStyle.Render("n/a")
-		}
-		line := pad + labelStyle.Width(5).Render(label) + gauge(percent, barWidth) +
+	render := func(label string, percent float64, extra, bar string) string {
+		line := pad + labelStyle.Width(5).Render(label) + bar +
 			valueStyle.Render(fmt.Sprintf(" %3.0f%%", percent))
 		if extra != "" {
 			line += subtleStyle.Render(" " + extra)
 		}
 		return line
+	}
+	meter := func(label string, percent float64, ok bool, extra string) string {
+		if !ok {
+			return pad + labelStyle.Width(5).Render(label) + subtleStyle.Render("n/a")
+		}
+		return render(label, percent, extra, gauge(percent, barWidth, false))
 	}
 
 	lines := []string{pad + subtleStyle.Render("computer")}
@@ -982,7 +985,8 @@ func (m *Model) computerLines(width int) []string {
 		if snap.BatteryCharging {
 			extra = "charging"
 		}
-		lines = append(lines, meter("batt", snap.BatteryPercent, true, extra))
+		lines = append(lines, render("batt", snap.BatteryPercent, extra,
+			gauge(snap.BatteryPercent, barWidth, true)))
 	}
 	if temps := tempReadings(snap); temps != "" {
 		lines = append(lines, pad+labelStyle.Width(5).Render("temp")+temps)

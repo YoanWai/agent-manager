@@ -190,8 +190,10 @@ const (
 
 // gauge renders a meter for a 0-100 percentage: a colored run over a muted
 // track, the color ramping from calm to alarming as it fills, with a
-// half-width cap so small changes still move the bar.
-func gauge(percent float64, width int) string {
+// half-width cap so small changes still move the bar. invert flips which
+// end of the scale reads as alarming — a full disk is bad, but a full
+// battery is exactly what you want, so battery colors off how empty it is.
+func gauge(percent float64, width int, invert bool) string {
 	if width < 1 {
 		width = 1
 	}
@@ -208,7 +210,11 @@ func gauge(percent float64, width int) string {
 	}
 	half := units-float64(filled) >= 0.5
 
-	color := lipgloss.Color(gaugeRamp(percent))
+	colorPercent := percent
+	if invert {
+		colorPercent = 100 - percent
+	}
+	color := lipgloss.Color(gaugeRamp(colorPercent))
 	bar := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat(gaugeGlyph, filled))
 	rest := width - filled
 	if half && rest > 0 {

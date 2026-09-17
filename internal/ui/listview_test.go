@@ -109,6 +109,28 @@ func TestComputerLinesBattery(t *testing.T) {
 	}
 }
 
+// A battery gauge colors off how empty it is, the opposite of every other
+// meter: low charge should read as alarming, a full battery as calm.
+func TestGaugeInvertFlipsTheColorRamp(t *testing.T) {
+	forceANSI256(t)
+
+	lowCharge := sgrOf(gauge(5, 10, true))
+	highUsage := sgrOf(gauge(95, 10, false))
+	if lowCharge != highUsage {
+		t.Fatalf("5%% inverted = %q, want the same alarm color as 95%% uninverted %q", lowCharge, highUsage)
+	}
+
+	highCharge := sgrOf(gauge(95, 10, true))
+	lowUsage := sgrOf(gauge(5, 10, false))
+	if highCharge != lowUsage {
+		t.Fatalf("95%% inverted = %q, want the same calm color as 5%% uninverted %q", highCharge, lowUsage)
+	}
+
+	if lowCharge == highCharge {
+		t.Fatal("low and high battery charge rendered the same color")
+	}
+}
+
 // The separator carries its own reset, so a reading cannot inherit color.
 func TestTemperatureReadingsEachKeepTheirColor(t *testing.T) {
 	forceANSI256(t)
