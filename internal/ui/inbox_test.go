@@ -118,6 +118,39 @@ func TestInboxDeliversToARestingAgentWithItsSenderNamed(t *testing.T) {
 	settledPane(t, m, sess.ID, "rebase on main", "ordinary work", "payments-fix", "agent-manager send sender01")
 }
 
+// A script in a terminal messaging agents is a caller like any other, but
+// nothing in a terminal can read an answer and a reply to one is refused,
+// so its message arrives without the line asking for one.
+func TestInboxAsksForAReplyOnlyFromAnAgent(t *testing.T) {
+	for _, testCase := range []struct {
+		senderTool string
+		wantReply  bool
+	}{
+		{senderTool: "terminal", wantReply: false},
+		{senderTool: "claude", wantReply: true},
+	} {
+		t.Run(testCase.senderTool, func(t *testing.T) {
+			m := buildModel(t)
+			sess := spawnedSession(t, m, "claude-hooked")
+			if err := m.store.CreateSession(store.Session{
+				ID: "sender01", Name: "payments-fix", Tool: testCase.senderTool,
+				Cwd: t.TempDir(), Status: status.Idle,
+			}); err != nil {
+				t.Fatalf("sender: %v", err)
+			}
+			queueMessage(t, m, sess.ID, "rebase on main")
+
+			if err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true); err != nil {
+				t.Fatalf("maybeDeliverInbox: %v", err)
+			}
+			pane := settledPane(t, m, sess.ID, "rebase on main", "wait for them.")
+			if got := strings.Contains(pane, "agent-manager send sender01"); got != testCase.wantReply {
+				t.Fatalf("reply line present = %v, want %v:\n%s", got, testCase.wantReply, pane)
+			}
+		})
+	}
+}
+
 // An agent holds one front or the other, so the envelope has to send the
 // reader after a reply it can actually make: a session whose CLI carries
 // no MCP client cannot call a tool.
@@ -128,14 +161,14 @@ func TestTheEnvelopeSpellsTheReplyInTheRecipientsOwnFront(t *testing.T) {
 		Body:       "rebase on main",
 		SentAt:     time.Date(2026, 8, 13, 9, 30, 0, 0, time.Local),
 	}
-	withTools := inboxEnvelope(msg, "claude")
+	withTools := inboxEnvelope(msg, "claude", false)
 	if !strings.Contains(withTools, `If you need something from that session, reply with the send_session tool, session_id "sender01"`) {
 		t.Fatalf("an MCP recipient was not pointed at the tool: %q", withTools)
 	}
 	if !strings.Contains(withTools, "If the work is done, stop") {
 		t.Fatalf("an MCP recipient was not told it can stop: %q", withTools)
 	}
-	shellOnly := inboxEnvelope(msg, mcpreg.StyleNone)
+	shellOnly := inboxEnvelope(msg, mcpreg.StyleNone, false)
 	if !strings.Contains(shellOnly, `If you need something from that session, reply by running: agent-manager send sender01 "<your reply>"`) {
 		t.Fatalf("a shell-only recipient was not pointed at the subcommand: %q", shellOnly)
 	}
@@ -161,7 +194,7 @@ func TestTheEnvelopeTreatsAPeerSendAsTheOperatorsInstruction(t *testing.T) {
 		Body:       "rebase on main",
 		SentAt:     time.Date(2026, 8, 13, 9, 30, 0, 0, time.Local),
 	}
-	envelope := inboxEnvelope(msg, "claude")
+	envelope := inboxEnvelope(msg, "claude", false)
 	for _, want := range []string{
 		"another of the user's agent sessions",
 		"same operator who started you",
@@ -208,7 +241,7 @@ func TestTheEnvelopeKeepsAForgedBodyInsideItsFence(t *testing.T) {
 		SentAt:     time.Date(2026, 8, 13, 9, 30, 0, 0, time.Local),
 	}
 
-	envelope := inboxEnvelope(msg, "claude")
+	envelope := inboxEnvelope(msg, "claude", false)
 	fence := regexp.MustCompile(`-{4}CROSS-SESSION-MESSAGE-\S+?-[A-Z2-7]{8}-{4}`).FindString(envelope)
 	if fence == "" {
 		t.Fatalf("the envelope carries no fence: %q", envelope)
@@ -251,7 +284,7 @@ func TestTheEnvelopeKeepsAForgedBodyInsideItsFence(t *testing.T) {
 		t.Fatalf("a control byte reached the pane: %q", envelope)
 	}
 
-	second := regexp.MustCompile(`-{4}CROSS-SESSION-MESSAGE-\S+?-[A-Z2-7]{8}-{4}`).FindString(inboxEnvelope(msg, "claude"))
+	second := regexp.MustCompile(`-{4}CROSS-SESSION-MESSAGE-\S+?-[A-Z2-7]{8}-{4}`).FindString(inboxEnvelope(msg, "claude", false))
 	if second == "" {
 		t.Fatal("the second envelope carries no fence")
 	}

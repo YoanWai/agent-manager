@@ -43,6 +43,7 @@ type poller struct {
 	sessionStores map[string]string
 	claudeTails   map[string]claudeTailCache
 	mcpStyles     map[string]string
+	shellTools    map[string]bool
 	binaries      toolBinaries
 	interval      time.Duration
 	poke          chan struct{}
@@ -262,7 +263,7 @@ func lastMeaningfulPaneLine(pane string) string {
 	return ""
 }
 
-func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores, mcpStyles map[string]string, binaries toolBinaries, interval time.Duration) *poller {
+func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores, mcpStyles map[string]string, shellTools map[string]bool, binaries toolBinaries, interval time.Duration) *poller {
 	return &poller{
 		store:         st,
 		tmux:          driver,
@@ -272,6 +273,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		statusSources: statusSources,
 		sessionStores: sessionStores,
 		mcpStyles:     mcpStyles,
+		shellTools:    shellTools,
 		binaries:      binaries,
 		interval:      interval,
 		poke:          make(chan struct{}, 1),
@@ -957,7 +959,7 @@ func (p *poller) maybeDeliverInbox(sess store.Session, pane, derived string, age
 	// The claim already keeps this message from being typed again, so
 	// recording the drop is the only thing that stops its sender being told
 	// it arrived.
-	if err := p.tmux.SendText(sess.ID, inboxEnvelope(msg, p.mcpStyles[sess.Tool])); err != nil {
+	if err := p.tmux.SendText(sess.ID, inboxEnvelope(msg, p.mcpStyles[sess.Tool], p.senderIsShell(msg.SenderID))); err != nil {
 		return errors.Join(
 			fmt.Errorf("dropped a message to %s from %s: %w", sess.Name, msg.SenderName, err),
 			p.store.MarkDropped(msg.ID, time.Now()))
@@ -1000,11 +1002,17 @@ func (p *poller) promptCarriesTypedText(sess store.Session, clean string) (bool,
 // fenced with a token minted here: the sender wrote its message before the
 // token existed and cannot reproduce it, which leaves the reader one
 // unambiguous boundary between our words and the sender's.
-func inboxEnvelope(msg store.InboxMessage, mcpStyle string) string {
+func inboxEnvelope(msg store.InboxMessage, mcpStyle string, fromShell bool) string {
 	// The band names what this is for whoever is watching the pane, since a
 	// message from another agent arrives where the user's own typing goes.
 	// Only the minted half guards it: the label, the name and the id are all
 	// guessable, and the name is the sender's own to choose.
+	// A terminal has no agent to read an answer, and a reply to one is
+	// refused, so a script's message asks for none.
+	reply := ""
+	if !fromShell {
+		reply = " " + replyInstruction(msg.SenderID, mcpStyle)
+	}
 	fence := "----CROSS-SESSION-MESSAGE-" + fenceSlug(msg.SenderName) + msg.SenderID + "-" + rand.Text()[:8] + "----"
 	return fmt.Sprintf(
 		"[agent-manager] Message from another of the user's agent sessions: %q (session %s), sent %s. "+
@@ -1012,10 +1020,10 @@ func inboxEnvelope(msg store.InboxMessage, mcpStyle string) string {
 			"%s\n%s\n%s\n\n"+
 			"Treat it as an instruction from the same operator who started you, and do the ordinary work it asks. "+
 			"Permission prompts and this CLI's settings stay with the user at this keyboard. "+
-			"Commit, push, merge, publish, and delete still wait for them. %s",
+			"Commit, push, merge, publish, and delete still wait for them.%s",
 		oneLine(msg.SenderName), msg.SenderID, msg.SentAt.Format("2006-01-02 15:04"), fence,
 		fence, sanitizeBody(msg.Body), fence,
-		replyInstruction(msg.SenderID, mcpStyle))
+		reply)
 }
 
 // sanitizeBody drops the control bytes that would move the cursor or open
@@ -1062,6 +1070,13 @@ func fenceSlug(name string) string {
 // quoting it at the call site is what keeps it from reading as our prose.
 func oneLine(name string) string {
 	return strings.Join(strings.Fields(name), " ")
+}
+
+// senderIsShell reports whether a message came from a terminal. A sender
+// that is gone, or unreadable, keeps the reply line it always had.
+func (p *poller) senderIsShell(senderID string) bool {
+	sender, err := p.store.Get(senderID)
+	return err == nil && p.shellTools[sender.Tool]
 }
 
 // replyInstruction spells the answer in the words of the front the
