@@ -977,6 +977,13 @@ func (m *Model) computerLines(width int) []string {
 	} else {
 		lines = append(lines, meter("disk", 0, false, ""))
 	}
+	if snap.BatteryOK {
+		extra := ""
+		if snap.BatteryCharging {
+			extra = "charging"
+		}
+		lines = append(lines, meter("batt", snap.BatteryPercent, true, extra))
+	}
 	if temps := tempReadings(snap); temps != "" {
 		lines = append(lines, pad+labelStyle.Width(5).Render("temp")+temps)
 	}
@@ -984,13 +991,6 @@ func (m *Model) computerLines(width int) []string {
 		lines = append(lines, pad+labelStyle.Width(5).Render("net")+
 			valueStyle.Render("↓ "+humanBytes(m.net.down)+"/s")+
 			subtleStyle.Render("  ↑ "+humanBytes(m.net.up)+"/s"))
-	}
-	if snap.BatteryOK {
-		extra := ""
-		if snap.BatteryCharging {
-			extra = "charging"
-		}
-		lines = append(lines, meter("batt", snap.BatteryPercent, true, extra))
 	}
 	return append(lines, "")
 }
