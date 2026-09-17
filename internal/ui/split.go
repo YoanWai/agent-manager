@@ -178,12 +178,13 @@ func (m *Model) onDivider(x int) bool {
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.mode == modeFocus {
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-			if _, _, inPane := m.paneCell(msg.X, msg.Y); !inPane {
-				// A press off the pane leaves focus so the same click can
-				// select a row. The split still paints the list beside the
-				// session; full-screen focus has no list, so this is chrome.
-				m.leaveFocus()
-				return m.handleMousePress(msg)
+			// A press on a rail row leaves focus so the same click can
+			// select that row. Only a rail row: the pane's own blank tail,
+			// the chrome, and a full screen session all keep the keyboard.
+			if _, onRail := m.clickRow(msg.X, msg.Y); onRail {
+				left := m.leaveFocus()
+				model, cmd := m.handleMousePress(msg)
+				return model, tea.Batch(left, cmd)
 			}
 		}
 		return m.handleFocusMouse(msg)
@@ -266,17 +267,26 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if row, ok := m.clickRow(msg.X, msg.Y); ok {
-		double := !m.listClickAt.IsZero() && m.listClickRow == row && time.Since(m.listClickAt) < multiClickWindow
-		m.listClickAt, m.listClickRow = time.Now(), row
-		if double && !m.searching && !m.quick.active {
-			m.listClickAt = time.Time{} // consume the pair so a third press starts a new run
-			if entry, ok := m.selectedRow(); ok && entry.isGroup {
-				m.toggleCollapse()
-				return m, nil
-			}
-			return m.focusSelected()
+		// Matched on the row's identity: the poll rebuilds m.rows between
+		// the presses, so one index can name two different rows.
+		key := rowKey(m.rows[row])
+		double := !m.listClickAt.IsZero() && m.listClickKey == key && time.Since(m.listClickAt) < multiClickWindow
+		m.listClickAt, m.listClickKey = time.Now(), key
+		// Both gestures act on the row under the pointer, so the cursor
+		// goes there first: a wheel notch or a key between the presses
+		// leaves it somewhere else.
+		cmd := m.selectRow(row)
+		if !double || m.searching || m.quick.active {
+			return m, cmd
 		}
-		return m, m.selectRow(row)
+		m.listClickAt = time.Time{} // consume the pair so a third press starts a new run
+		if entry, ok := m.selectedRow(); ok && entry.isGroup {
+			m.toggleCollapse()
+			return m, nil
+		}
+		// Focus owns m.preview from here, so the preview that select
+		// scheduled is dropped rather than left to land on it.
+		return m.focusSelected()
 	}
 	return m, nil
 }
@@ -298,7 +308,9 @@ func (m *Model) clickRow(x, y int) (int, bool) {
 		return 0, false
 	}
 	row := m.railHits[idx]
-	if row < 0 {
+	// A rebuild between the paint and the press can shrink m.rows under
+	// the hits this frame recorded.
+	if row < 0 || row >= len(m.rows) {
 		return 0, false
 	}
 	return row, true

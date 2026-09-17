@@ -144,6 +144,9 @@ func (m *Model) viewFullFocusFrame() string {
 	footer := m.viewFooter()
 	bodyHeight := m.listBodyHeight()
 	m.pane.columnX = 0
+	// This frame paints no rail, so a click lands on no row: the list
+	// frame's hits would otherwise select a row nobody pointed at.
+	m.recordRailHits(nil)
 	frame := []string{}
 	for _, line := range m.viewHeaderRows() {
 		frame = append(frame, paint(line, m.width, backdropHex()))
