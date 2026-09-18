@@ -1777,6 +1777,41 @@ func TestPendingInputWaitsForTypedText(t *testing.T) {
 	settledPane(t, m, sess.ID, "agent-manager rename")
 }
 
+func TestPendingInputLandsOnAnErroredPane(t *testing.T) {
+	m := buildModel(t)
+	tool := m.cfg.Tools["ready-tool"]
+	tool.Command = `sh -c 'printf "error: boom\n❯ "; while IFS= read -r line; do printf "\n❯ "; done'`
+	tool.Rules = []config.Rule{{State: status.Errored, Pattern: "error: boom"}}
+	m.cfg.Tools["ready-tool"] = tool
+	engine, err := status.NewEngine(m.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.poller.engine = engine
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false); err != nil {
+		t.Fatal(err)
+	}
+	sess := m.sessionRows()[0]
+	settledPane(t, m, sess.ID, "error: boom", "❯")
+	m.applyCmd(t, m.refreshCmd())
+	current, err := m.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != status.Errored {
+		t.Fatalf("refresh status = %q, want errored", current.Status)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for sessionHasPendingInput(t, m, sess.ID, launch.DeferredRenameDirective) {
+		if time.Now().After(deadline) {
+			t.Fatal("pending input never delivered to a resting errored pane")
+		}
+		time.Sleep(50 * time.Millisecond)
+		m.applyCmd(t, m.refreshCmd())
+	}
+	settledPane(t, m, sess.ID, "agent-manager rename")
+}
+
 // A prompt that never reaches the pane, because it scrolled out or the agent
 // never drew it, must not hold pending input past the grace.
 func TestLaunchPromptTakenGivesUpAfterTheGrace(t *testing.T) {

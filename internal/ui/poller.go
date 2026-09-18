@@ -828,9 +828,15 @@ func (p *poller) clearRecaptureSeen(sessID string) {
 	p.mu.Unlock()
 }
 
+// An errored pane joins the inbox rest states here: the turn that printed the
+// error is over, and a queue held there has nothing left to release it.
+func pendingDeliverable(derived string) bool {
+	return inboxDeliverable(derived) || derived == status.Errored
+}
+
 // Claimed rows bypass the rest gate so crash recovery also runs during a live turn.
 func (p *poller) maybeSendPendingInputWhenReady(sess store.Session, pane, derived string, agentAlive bool) (bool, error) {
-	if !sess.PendingInputClaimed && !inboxDeliverable(derived) {
+	if !sess.PendingInputClaimed && !pendingDeliverable(derived) {
 		return false, nil
 	}
 	return p.maybeSendPendingInput(sess, pane, agentAlive)
