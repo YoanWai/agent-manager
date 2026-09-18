@@ -36,6 +36,7 @@ var lightThemeNames = map[string]bool{
 	"gruvbox light":    true,
 	"rosé pine dawn":   true,
 	"paper":            true,
+	"kanagawa lotus":   true,
 }
 
 func TestLightBackdropClassification(t *testing.T) {
@@ -54,6 +55,7 @@ func TestLightThemesPresent(t *testing.T) {
 		"gruvbox light",
 		"rosé pine dawn",
 		"paper",
+		"kanagawa lotus",
 	} {
 		if themes[themeIndex(name)].Name != name {
 			t.Errorf("theme %q missing from the built-in set", name)
