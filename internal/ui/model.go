@@ -183,10 +183,7 @@ type Model struct {
 	// that has not moved since can be recognised as at rest.
 	watchedGen        uint64
 	previewBodyOffset int
-	// quickRowBudget is the rows the full screen frame can spare the docked
-	// prompt, zero where the layout does not bound it.
-	quickRowBudget int
-	cursor         int
+	cursor            int
 	// railTop is the entry the rail paints first, carried between frames.
 	// Deriving it from the cursor alone cannot hold still: rows are of
 	// uneven height, so every step would re-solve the window and slide the

@@ -177,7 +177,6 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 	if !m.quick.active {
 		return nil
 	}
-	m.quickRowBudget = height - quickBarChrome
 	gutter := strings.Repeat(" ", contentGutter)
 	inner := width - 2*contentGutter
 	if inner < 1 {
@@ -190,7 +189,7 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 		}
 		return out
 	}
-	lines := append([]contentLine{{rule: true}}, inset(splitLines(m.viewQuickBar(inner)))...)
+	lines := append([]contentLine{{rule: true}}, inset(splitLines(m.viewQuickBar(inner, height-quickBarChrome)))...)
 	if len(lines) > height {
 		lines = lines[len(lines)-height:]
 	}
@@ -1020,7 +1019,7 @@ func (m *Model) contentLines(width, height int) []contentLine {
 
 	var bar []contentLine
 	if m.quick.active {
-		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(inner)))...)
+		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(inner, quickBarMaxRows)))...)
 	}
 	body := ours(splitLines(m.viewDetail(inner)))
 	rest := height - len(body) - len(bar) - 1
@@ -1519,7 +1518,7 @@ func lastActivity(sess store.Session) time.Time {
 
 // viewQuickBar is the docked prompt: enter answers the selected session, or
 // spawns a fresh agent when a group is selected.
-func (m *Model) viewQuickBar(width int) string {
+func (m *Model) viewQuickBar(width, maxRows int) string {
 	label := func(text string) string { return labelStyle.Render(padRight(text, detailLabelWidth)) }
 	target := rowColumns(label("target")+mutedStyle.Render("no selection"), "", width)
 	if entry, ok := m.selectedRow(); ok {
@@ -1548,7 +1547,7 @@ func (m *Model) viewQuickBar(width int) string {
 	}
 	// The rows the frame can spare become the box's own cap, so a keystroke
 	// repositions the viewport inside the rows that are actually on screen.
-	m.quick.maxRows = m.quickBarRows(width - 2)
+	m.quick.maxRows = m.quickBarRows(width-2, maxRows)
 	m.quick.input.SetWidth(width)
 	m.quick.input.SetHeight(m.quick.maxRows)
 	// Chips are tokens inside the typed text, so they wrap and reflow with

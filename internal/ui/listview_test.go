@@ -739,7 +739,7 @@ func TestEveryReadingOfASessionStandsInForAnAwaitedName(t *testing.T) {
 	m.selectSessionRow(t, generated)
 	readings = append(readings, reading{"detail", strings.Split(ansi.Strip(m.viewDetail(112)), "\n")[0]})
 	m.openQuickMode()
-	readings = append(readings, reading{"quick bar", ansi.Strip(m.viewQuickBar(112))})
+	readings = append(readings, reading{"quick bar", ansi.Strip(m.viewQuickBar(112, quickBarMaxRows))})
 
 	// The prompt the spawn was given is what every reading wears until the
 	// agent answers with a name of its own.
@@ -1678,5 +1678,55 @@ func TestSearchLightsTheQueryInsideAGroupName(t *testing.T) {
 	}
 	if !strings.Contains(ansi.Strip(row), "backend") {
 		t.Fatalf("group name lost text around the lit span:\n%q", ansi.Strip(row))
+	}
+}
+
+// The docked bar is bounded by the full screen frame, so a prompt taller
+// than the rows it can spare still shows the row the caret is on.
+func TestFullQuickLinesKeepTheCaretRowOnScreen(t *testing.T) {
+	m := buildModel(t)
+	seedTwoGroups(t, m)
+	m.cursor = 1
+	m.fullLayout = true
+	m.width = 56
+	m.height = 9
+	m.openQuickMode()
+
+	body := m.listBodyHeight()
+	painted := func() string {
+		var out strings.Builder
+		for _, line := range m.fullQuickLines(m.width-1, body) {
+			out.WriteString(ansi.Strip(line.text) + "\n")
+		}
+		return out.String()
+	}
+	painted()
+	m = applyMsg(t, m, pasteTextMsg{
+		target: composerQuick,
+		gen:    m.quick.gen,
+		inner: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(
+			"FIRSTROWMARK " + strings.Repeat("filler word ", 20) + "LASTROWMARK")},
+	})
+	if rows := m.fullQuickLines(m.width-1, body); len(rows) > body {
+		t.Fatalf("the quick bar painted %d rows into a %d row frame", len(rows), body)
+	}
+
+	for i := 0; i < 40 && !m.quick.caretOnFirstRow(); i++ {
+		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
+		painted()
+	}
+	if !m.quick.caretOnFirstRow() {
+		t.Fatal("up never reached the prompt's first row")
+	}
+	if !strings.Contains(painted(), "FIRSTROWMARK") {
+		t.Fatal("the frame clipped the prompt's first row")
+	}
+
+	for i := 0; i < 40 && !m.quick.caretOnLastRow(); i++ {
+		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
+		painted()
+	}
+	if !strings.Contains(painted(), "LASTROWMARK") {
+		t.Fatal("the frame clipped the prompt's last row")
 	}
 }

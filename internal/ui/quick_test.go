@@ -796,7 +796,7 @@ func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
 	if hint := m.viewFooter(); !strings.Contains(hint, worktreeUnavailable) {
 		t.Fatalf("footer should mark worktree unavailable, got %q", hint)
 	}
-	if bar := m.viewQuickBar(120); !strings.Contains(bar, "worktree "+worktreeUnavailable) {
+	if bar := m.viewQuickBar(120, quickBarMaxRows); !strings.Contains(bar, "worktree "+worktreeUnavailable) {
 		t.Fatalf("quick bar should name worktree as what is unavailable, got %q", bar)
 	}
 	m.quick.input.SetValue("do a thing")
@@ -1047,55 +1047,5 @@ func TestQuickUpStepsOffTheRowWhenAChipIsInTheWay(t *testing.T) {
 		if m.cursor != 1 {
 			t.Fatal("up inside the prompt should not move the selection")
 		}
-	}
-}
-
-// A prompt taller than the frame can hold still shows the row the caret is
-// on, whichever row that is.
-func TestQuickTallPromptKeepsTheCaretRowOnScreen(t *testing.T) {
-	m := buildModel(t)
-	seedTwoGroups(t, m)
-	m.cursor = 1
-	m.fullLayout = true
-	m.width = 56
-	m.height = 9
-	m.openQuickMode()
-
-	body := m.listBodyHeight()
-	painted := func() string {
-		var out strings.Builder
-		for _, line := range m.fullQuickLines(m.width-1, body) {
-			out.WriteString(ansi.Strip(line.text) + "\n")
-		}
-		return out.String()
-	}
-	painted()
-	m = applyMsg(t, m, pasteTextMsg{
-		target: composerQuick,
-		gen:    m.quick.gen,
-		inner: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(
-			"FIRSTROWMARK " + strings.Repeat("filler word ", 20) + "LASTROWMARK")},
-	})
-	if rows := m.fullQuickLines(m.width-1, body); len(rows) > body {
-		t.Fatalf("the quick bar painted %d rows into a %d row frame", len(rows), body)
-	}
-
-	for i := 0; i < 40 && !m.quick.caretOnFirstRow(); i++ {
-		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
-		painted()
-	}
-	if !m.quick.caretOnFirstRow() {
-		t.Fatal("up never reached the prompt's first row")
-	}
-	if !strings.Contains(painted(), "FIRSTROWMARK") {
-		t.Fatal("the frame clipped the prompt's first row")
-	}
-
-	for i := 0; i < 40 && !m.quick.caretOnLastRow(); i++ {
-		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
-		painted()
-	}
-	if !strings.Contains(painted(), "LASTROWMARK") {
-		t.Fatal("the frame clipped the prompt's last row")
 	}
 }
