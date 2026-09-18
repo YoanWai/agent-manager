@@ -198,7 +198,8 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 			{"esc", "save and close"},
 		}},
 		{title: titledWith("dialogs", list, keybind.NewSession, keybind.NewGroup, keybind.Rename, keybind.Fork, keybind.Move), rows: [][2]string{
-			{"tab / ↑↓", "next field, or step the caret in a taller prompt"},
+			{"tab", "next field"},
+			{"↑↓", "next field, or step the caret in a taller New Session prompt"},
 			{"ctrl+v", "in a prompt field, paste an image as a chip"},
 			{"←→", "change a picker's value"},
 			{"↵", "confirm"},
