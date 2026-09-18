@@ -1306,6 +1306,63 @@ func TestClickSelectsRowWhileSearchingOrPrompting(t *testing.T) {
 	}
 }
 
+// Entering a session ends the list's click run: the press that comes back
+// here would otherwise pair with the one that opened it and focus again.
+func TestClickLeavingFocusDoesNotRefocus(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+
+	line := paintedRailLines(t, m, "alpha")[0]
+	y0, _ := m.bodyYRange()
+	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+
+	updated, _ := m.handleMouse(press)
+	m = updated.(*Model)
+	updated, _ = m.focusSelected()
+	m = updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	m.View()
+
+	updated, _ = m.handleMouse(press)
+	m = updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("the click that leaves focus must not focus again, mode = %v", m.mode)
+	}
+}
+
+// A press those surfaces swallow opens no run, so the first press after
+// they close is a plain select rather than the second half of a pair.
+func TestClickWhileSearchingOpensNoClickRun(t *testing.T) {
+	for _, name := range []string{"searching", "quick bar"} {
+		t.Run(name, func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "alpha", t.TempDir(), "")
+			m.selectSessionRow(t, "alpha")
+			if name == "searching" {
+				m.searching = true
+			} else {
+				m.openQuickMode()
+			}
+
+			line := paintedRailLines(t, m, "alpha")[0]
+			y0, _ := m.bodyYRange()
+			press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+			updated, _ := m.handleMouse(press)
+			m = updated.(*Model)
+
+			m.searching, m.quick.active = false, false
+			updated, _ = m.handleMouse(press)
+			m = updated.(*Model)
+			if m.mode != modeList {
+				t.Fatalf("one press after %s closes must not focus, mode = %v", name, m.mode)
+			}
+		})
+	}
+}
+
 // Search and the quick bar own Enter, so a double click stays a select:
 // it must not steal the key those surfaces are waiting for.
 func TestDoubleClickDoesNotFocusWhileSearchingOrPrompting(t *testing.T) {

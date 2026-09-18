@@ -90,7 +90,7 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `n` | New session (name, tool, directory, optional starting prompt, group) |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `enter` | Focus the session in place; keys go to the agent while the list stays |
-| click / double click | Select the row / focus it |
+| click / double click | Select the row / focus a session, fold or unfold a group |
 | click the list / mouse back | Focused: back to the list, the click selecting the row it landed on |
 | `→` / `←` | Step in and out: `→` focuses the session or opens the group, `←` closes the group and, at the start of a focused agent's prompt, comes back to the list. In beta, and Settings can turn the pair off |
 | `ctrl+r` | Review the session's changes as full-file diffs; `c` comments a line, `C` sends a numbered review round, and sent comments stay visible as open or handled |

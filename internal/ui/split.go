@@ -267,6 +267,13 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if row, ok := m.clickRow(msg.X, msg.Y); ok {
+		// Search and the quick bar own Enter, so a press there selects and
+		// opens no run: one left standing would pair with the first press
+		// after the surface closes.
+		if m.searching || m.quick.active {
+			m.listClickAt = time.Time{}
+			return m, m.selectRow(row)
+		}
 		// Matched on the row's identity: the poll rebuilds m.rows between
 		// the presses, so one index can name two different rows.
 		key := rowKey(m.rows[row])
@@ -276,7 +283,7 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		// goes there first: a wheel notch or a key between the presses
 		// leaves it somewhere else.
 		cmd := m.selectRow(row)
-		if !double || m.searching || m.quick.active {
+		if !double {
 			return m, cmd
 		}
 		m.listClickAt = time.Time{} // consume the pair so a third press starts a new run

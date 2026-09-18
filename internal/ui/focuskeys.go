@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -273,6 +274,9 @@ func (m *Model) leaveFocus() tea.Cmd {
 	m.mode = modeList
 	m.clearSelection()
 	m.pending = pendingClick{}
+	// A run opened before the session was entered would pair with the very
+	// click that comes back here, focusing it again instead of leaving.
+	m.listClickAt = time.Time{}
 	m.endForwardedGesture()
 	m.flushPendingNotice()
 	return nil
