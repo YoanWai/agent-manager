@@ -1515,3 +1515,26 @@ func TestRailTopCarriesBetweenFrames(t *testing.T) {
 		t.Fatalf("stepping back to the first entry left the rail at %d", m.railTop)
 	}
 }
+
+// A session open full screen owns the whole body, so the frame paints no
+// rail line and leaves no hit behind for a click to resolve against.
+func TestFullFocusFrameRecordsNoRailHits(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	m.View()
+	if len(m.railHits) == 0 {
+		t.Fatal("test setup: the list frame should record the rail's hits")
+	}
+
+	m.fullLayout = true
+	updated, _ := m.focusSelected()
+	m = updated.(*Model)
+	if !m.fullFocus() {
+		t.Fatalf("test setup: focus alpha full screen, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	m.View()
+	if len(m.railHits) != 0 {
+		t.Fatalf("full focus paints no rail, got %d hits", len(m.railHits))
+	}
+}

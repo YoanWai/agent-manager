@@ -79,7 +79,7 @@ func listHelpRows(list keybind.Table, arrowStep bool) [][2]string {
 	h.action("move the cursor up", keybind.Up)
 	h.action("move the cursor down", keybind.Down)
 	h.fixed("click", "select the row")
-	h.fixed("double click", "focus it")
+	h.fixed("double click", "focus a session, fold or unfold a group")
 	if arrowStep {
 		h.action("step in: focus the session, open the group", keybind.StepIn)
 		h.action("step out: close the group", keybind.StepOut)
