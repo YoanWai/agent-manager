@@ -527,9 +527,10 @@ func (m *Model) viewFooter() string {
 		if !m.fullLayout {
 			back += " / click list"
 		}
+		back += " / mouse back"
 		pairs := [][2]string{
 			{"typing", "to agent"},
-			{back + " / mouse back", "back"},
+			{back, "back"},
 		}
 		if m.arrowStep {
 			pairs = append(pairs, [2]string{"←", "prompt start: back"})
