@@ -76,13 +76,13 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quick.release()
 		return m, nil
 	case "up":
-		if !m.quick.caretOnFirstRow() {
-			return m, m.quick.typeKey(msg)
+		if cmd, stepped := m.quick.stepRow(msg); stepped {
+			return m, cmd
 		}
 		return m, m.moveCursor(-1)
 	case "down":
-		if !m.quick.caretOnLastRow() {
-			return m, m.quick.typeKey(msg)
+		if cmd, stepped := m.quick.stepRow(msg); stepped {
+			return m, cmd
 		}
 		return m, m.moveCursor(1)
 	case "tab", "alt+m":

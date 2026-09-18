@@ -363,8 +363,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.formFocus(-1)
 		return m, nil
 	case "up":
-		if promptFocused && !m.form.prompt.caretOnFirstRow() {
-			return m, m.form.prompt.typeKey(msg)
+		if promptFocused {
+			if cmd, stepped := m.form.prompt.stepRow(msg); stepped {
+				return m, cmd
+			}
 		}
 		if dirSuggesting {
 			if !m.pathSugg.move(-1) {
@@ -375,8 +377,10 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down":
-		if promptFocused && !m.form.prompt.caretOnLastRow() {
-			return m, m.form.prompt.typeKey(msg)
+		if promptFocused {
+			if cmd, stepped := m.form.prompt.stepRow(msg); stepped {
+				return m, cmd
+			}
 		}
 		if dirSuggesting {
 			if !m.pathSugg.move(1) {

@@ -796,7 +796,7 @@ func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
 	if hint := m.viewFooter(); !strings.Contains(hint, worktreeUnavailable) {
 		t.Fatalf("footer should mark worktree unavailable, got %q", hint)
 	}
-	if bar := m.viewQuickBar(120); !strings.Contains(bar, "worktree "+worktreeUnavailable) {
+	if bar := m.viewQuickBar(120, quickBarMaxRows); !strings.Contains(bar, "worktree "+worktreeUnavailable) {
 		t.Fatalf("quick bar should name worktree as what is unavailable, got %q", bar)
 	}
 	m.quick.input.SetValue("do a thing")
@@ -989,6 +989,9 @@ func TestQuickUpDownWalkSoftWrappedRows(t *testing.T) {
 		t.Fatalf("value should soft-wrap over at least 3 rows, got %d", height)
 	}
 	last := m.quick.input.LineInfo().RowOffset
+	if height := m.quick.input.LineInfo().Height; last != height-1 {
+		t.Fatalf("the caret starts on row %d of %d, want the last wrapped row", last, height)
+	}
 
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
 	if got := m.quick.input.LineInfo().RowOffset; got != last-1 || m.cursor != 1 {
@@ -1019,5 +1022,66 @@ func TestQuickOneRowPromptKeepsArrowsOnTheList(t *testing.T) {
 	_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
 	if m.cursor != 1 {
 		t.Fatalf("down on a one-row prompt should move the selection, got %d", m.cursor)
+	}
+}
+
+// A chip the caret lands inside snaps toward the step's direction, so ↑
+// always leaves the row it started on instead of reading as a dead key.
+func TestQuickUpStepsOffTheRowWhenAChipIsInTheWay(t *testing.T) {
+	m := buildModel(t)
+	seedTwoGroups(t, m)
+	m.cursor = 1
+	m.openQuickMode()
+	m.quick.attachments = []imageAttachment{{id: 1, path: "/tmp/a.png"}}
+	m.quick.input.SetWidth(21)
+	m.quick.input.SetHeight(quickBarMaxRows)
+	m.quick.input.SetValue("aaaa bbbb " + imageToken(1) + " cccc dddd eeee ffff")
+	m.quick.input.SetCursor(33)
+
+	for !m.quick.caretOnFirstRow() {
+		before := m.quick.input.LineInfo().RowOffset
+		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
+		if got := m.quick.input.LineInfo().RowOffset; got >= before {
+			t.Fatalf("up left the caret on row %d, want a row above %d", got, before)
+		}
+		if m.cursor != 1 {
+			t.Fatal("up inside the prompt should not move the selection")
+		}
+	}
+}
+
+// A prompt taller than the frame can hold still shows the row the caret is
+// on, whichever row that is.
+func TestQuickTallPromptKeepsTheCaretRowOnScreen(t *testing.T) {
+	m := buildModel(t)
+	seedTwoGroups(t, m)
+	m.cursor = 1
+	m.fullLayout = true
+	m.width = 90
+	m.height = 9
+	m.openQuickMode()
+	m.quick.input.SetValue("FIRSTROWMARK " + strings.Repeat("filler word ", 40))
+
+	body := m.listBodyHeight()
+	painted := func() string {
+		var out strings.Builder
+		for _, line := range m.fullQuickLines(m.width-1, body) {
+			out.WriteString(ansi.Strip(line.text) + "\n")
+		}
+		return out.String()
+	}
+	painted()
+	for i := 0; i < 40 && !m.quick.caretOnFirstRow(); i++ {
+		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyUp})
+		painted()
+	}
+	if !m.quick.caretOnFirstRow() {
+		t.Fatal("up never reached the prompt's first row")
+	}
+	if rows := m.fullQuickLines(m.width-1, body); len(rows) > body {
+		t.Fatalf("the quick bar painted %d rows into a %d row frame", len(rows), body)
+	}
+	if !strings.Contains(painted(), "FIRSTROWMARK") {
+		t.Fatal("the frame clipped the prompt row the caret is on")
 	}
 }

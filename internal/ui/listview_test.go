@@ -739,7 +739,7 @@ func TestEveryReadingOfASessionStandsInForAnAwaitedName(t *testing.T) {
 	m.selectSessionRow(t, generated)
 	readings = append(readings, reading{"detail", strings.Split(ansi.Strip(m.viewDetail(112)), "\n")[0]})
 	m.openQuickMode()
-	readings = append(readings, reading{"quick bar", ansi.Strip(m.viewQuickBar(112))})
+	readings = append(readings, reading{"quick bar", ansi.Strip(m.viewQuickBar(112, quickBarMaxRows))})
 
 	// The prompt the spawn was given is what every reading wears until the
 	// agent answers with a name of its own.
