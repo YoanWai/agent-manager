@@ -2,6 +2,8 @@ package sessioncmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -804,6 +806,26 @@ func TestSendRefusesAMessageTooLargeToPasteIntoAPrompt(t *testing.T) {
 	}
 	if _, err := h.sessions.Send(h.caller.ID, worker.ID, strings.Repeat("x", maxMessageBytes)); err != nil {
 		t.Fatalf("a message at the limit was refused: %v", err)
+	}
+}
+
+func TestSendRefusesAPingPongBetweenAPair(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	for i := range 4 {
+		if _, err := h.sessions.Send(h.caller.ID, worker.ID, fmt.Sprintf("from-caller-%d", i)); err != nil {
+			t.Fatalf("caller -> worker %d: %v", i, err)
+		}
+		if _, err := h.sessions.Send(worker.ID, h.caller.ID, fmt.Sprintf("from-worker-%d", i)); err != nil {
+			t.Fatalf("worker -> caller %d: %v", i, err)
+		}
+	}
+	_, err = h.sessions.Send(h.caller.ID, worker.ID, "ninth")
+	if !errors.Is(err, store.ErrInboxPairLimited) {
+		t.Fatalf("9th between the pair = %v, want ErrInboxPairLimited", err)
 	}
 }
 
