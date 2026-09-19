@@ -285,8 +285,8 @@ const quickBarMaxRows = 5
 // capped so the bar never swallows the sidebar. Single-line values (the
 // normal case) count exact soft-wrap rows; pasted multi-line values are
 // estimated, with the textarea scrolling to keep the cursor visible.
-func (m *Model) quickBarRows(textWidth int) int {
-	return textareaRows(m.quick.input, textWidth, quickBarMaxRows)
+func (m *Model) quickBarRows(textWidth, maxRows int) int {
+	return textareaRows(m.quick.input, textWidth, max(min(maxRows, quickBarMaxRows), 1))
 }
 
 func textareaRows(input textarea.Model, textWidth, maxRows int) int {
@@ -498,7 +498,7 @@ func (m *Model) viewFooter() string {
 			worktreeHint = "on"
 		}
 		return m.transientFooter(legendSection{title: "Prompt", pairs: [][2]string{
-			{"↵", "send"}, {"↑↓", "switch target"}, {"tab", "tool: " + m.quickTool()},
+			{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool: " + m.quickTool()},
 			{"shift+tab", "worktree: " + worktreeHint}, {"esc", "close"},
 		}})
 	}

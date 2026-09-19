@@ -171,26 +171,44 @@ func TestComposerSetValueLeavesTheCaretWhereItWasAsked(t *testing.T) {
 	}
 }
 
+func TestComposerSnapCursorOutOfTokenFollowsAStepsDirection(t *testing.T) {
+	c := newComposer("go " + imageToken(1) + " now")
+	c.attachments = []imageAttachment{{id: 1, path: "/tmp/a.png"}}
+	span := c.tokenSpans()[0]
+
+	setCursorAt(t, c, span.end-2)
+	c.snapCursorOutOfToken(snapBack)
+	if got := c.cursorOffset(); got != span.start {
+		t.Fatalf("caret at %d, want the chip's start at %d", got, span.start)
+	}
+
+	setCursorAt(t, c, span.start+2)
+	c.snapCursorOutOfToken(snapForward)
+	if got := c.cursorOffset(); got != span.end {
+		t.Fatalf("caret at %d, want the chip's end at %d", got, span.end)
+	}
+}
+
 func TestComposerSnapCursorOutOfTokenTakesTheNearerEdge(t *testing.T) {
 	c := newComposer("go " + imageToken(1) + " now")
 	c.attachments = []imageAttachment{{id: 1, path: "/tmp/a.png"}}
 	span := c.tokenSpans()[0]
 
 	setCursorAt(t, c, span.start+2)
-	c.snapCursorOutOfToken()
+	c.snapCursorOutOfToken(snapNearest)
 	if got := c.cursorOffset(); got != span.start {
 		t.Fatalf("caret at %d, want the chip's start at %d", got, span.start)
 	}
 
 	setCursorAt(t, c, span.end-2)
-	c.snapCursorOutOfToken()
+	c.snapCursorOutOfToken(snapNearest)
 	if got := c.cursorOffset(); got != span.end {
 		t.Fatalf("caret at %d, want the chip's end at %d", got, span.end)
 	}
 
 	// A caret outside every chip is left alone.
 	setCursorAt(t, c, 1)
-	c.snapCursorOutOfToken()
+	c.snapCursorOutOfToken(snapNearest)
 	if got := c.cursorOffset(); got != 1 {
 		t.Fatalf("caret moved to %d from outside a chip", got)
 	}

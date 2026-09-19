@@ -211,6 +211,17 @@ func (c *composer) cursorColumn() int {
 	return info.StartColumn + info.ColumnOffset
 }
 
+// caretOnFirstRow / caretOnLastRow count soft-wrapped rows, so ↑↓ leave
+// the prompt only from its edge rows.
+func (c *composer) caretOnFirstRow() bool {
+	return c.input.Line() == 0 && c.input.LineInfo().RowOffset == 0
+}
+
+func (c *composer) caretOnLastRow() bool {
+	info := c.input.LineInfo()
+	return c.input.Line() == c.input.LineCount()-1 && info.RowOffset+1 >= info.Height
+}
+
 // tokenEndingAt / tokenStartingAt answer "is the caret against a chip",
 // which is what makes a chip delete and step as one unit.
 func (c *composer) tokenEndingAt(offset int) (tokenSpan, bool) {
@@ -325,16 +336,31 @@ func (c *composer) insertToken(att *imageAttachment) {
 
 func isSpaceRune(r rune) bool { return r == ' ' || r == '\t' || r == '\n' }
 
+// snapEdge is the side of a chip the caret leaves by. A row step names its
+// own direction: leaving by the nearer edge can put the caret back on the
+// row the step just left, which reads as a dead key.
+type snapEdge int
+
+const (
+	snapNearest snapEdge = iota
+	snapBack
+	snapForward
+)
+
 // snapCursorOutOfToken keeps the caret off the inside of a chip, so the
 // next keystroke can never land in the middle of one.
-func (c *composer) snapCursorOutOfToken() {
+func (c *composer) snapCursorOutOfToken(edge snapEdge) {
 	offset := c.cursorOffset()
 	for _, span := range c.tokenSpans() {
 		if offset <= span.start || offset >= span.end {
 			continue
 		}
+		back := edge == snapBack
+		if edge == snapNearest {
+			back = offset-span.start <= span.end-offset
+		}
 		column := c.cursorColumn()
-		if offset-span.start <= span.end-offset {
+		if back {
 			c.input.SetCursor(column - (offset - span.start))
 		} else {
 			c.input.SetCursor(column + (span.end - offset))
@@ -384,8 +410,34 @@ func (c *composer) typeKey(msg tea.KeyMsg) tea.Cmd {
 	var cmd tea.Cmd
 	c.input, cmd = c.input.Update(msg)
 	c.prune()
-	c.snapCursorOutOfToken()
+	c.snapCursorOutOfToken(snapNearest)
 	return cmd
+}
+
+// stepRow moves the caret one rendered row, soft-wrapped rows included, and
+// reports whether the prompt had a row to move to. The false return is an
+// edge row, which is where ↑↓ go back to meaning the list or the next field.
+func (c *composer) stepRow(msg tea.KeyMsg) (tea.Cmd, bool) {
+	var edge snapEdge
+	switch msg.String() {
+	case "up":
+		if c.caretOnFirstRow() {
+			return nil, false
+		}
+		edge = snapBack
+	case "down":
+		if c.caretOnLastRow() {
+			return nil, false
+		}
+		edge = snapForward
+	default:
+		return nil, false
+	}
+	c.input.SetHeight(c.maxRows)
+	var cmd tea.Cmd
+	c.input, cmd = c.input.Update(msg)
+	c.snapCursorOutOfToken(edge)
+	return cmd, true
 }
 
 // paste reserves a chip at the caret and starts the clipboard read off the
@@ -533,6 +585,6 @@ func (m *Model) handlePasteTextMsg(msg pasteTextMsg) (tea.Model, tea.Cmd) {
 	c.input.SetHeight(c.maxRows)
 	cmd := c.updateInput(msg.inner)
 	c.prune()
-	c.snapCursorOutOfToken()
+	c.snapCursorOutOfToken(snapNearest)
 	return m, cmd
 }

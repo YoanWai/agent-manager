@@ -178,7 +178,7 @@ func (m *Model) viewForm() string {
 
 	hint := [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	if m.form.focus == fieldPrompt {
-		hint = [][2]string{{"ctrl+v", "paste an image"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
+		hint = [][2]string{{"ctrl+v", "paste an image"}, {"tab", "move"}, {"↑↓", "caret or move"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
 	if m.form.focus == fieldGroup {
 		hint = [][2]string{{"←→", "pick group"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
