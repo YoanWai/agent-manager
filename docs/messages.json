@@ -1,5 +1,22 @@
 [
   {
+    "id": "v0380-mouse-support",
+    "banner": "Mouse support is here!",
+    "title": "v0.38.0: mouse support is here!",
+    "body": [
+      "Click a row to select, scroll with the wheel, double click to focus, and the mouse back button leaves. Thanks @fruch.",
+      "A click on the messages card opens it, the divider drags, and Settings has a mouse toggle, on by default.",
+      "• Search lights up: the open field takes a fill and the query glows inside matching names.",
+      "• Kanagawa wave and lotus join the theme picker. Thanks @dmitrydoni.",
+      "• The new-session form remembers the last tool and worktree you picked.",
+      "• A queued message waits for the turn to end, and an errored pane at rest takes it. Thanks @atirna.",
+      "• Archive confirm stays closed on a row that is already archived. Thanks @Michaelnogh.",
+      "• An opencode turn that died on a provider error reads as errored."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.38.0",
+    "max_version": "0.38.0"
+  },
+  {
     "id": "v0370-release-highlights",
     "banner": "v0.37.0 release highlights:",
     "title": "v0.37.0 release highlights:",
