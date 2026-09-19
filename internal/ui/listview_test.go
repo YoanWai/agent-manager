@@ -65,6 +65,72 @@ func TestComputerLinesTemperatures(t *testing.T) {
 	}
 }
 
+func TestComputerLinesBattery(t *testing.T) {
+	cases := []struct {
+		name string
+		snap sysstat.Snapshot
+		want string
+	}{
+		{
+			name: "discharging",
+			snap: sysstat.Snapshot{BatteryOK: true, BatteryPercent: 84},
+			want: "batt " + strings.Repeat("━", 10) + " 84%",
+		},
+		{
+			name: "charging",
+			snap: sysstat.Snapshot{BatteryOK: true, BatteryPercent: 50, BatteryCharging: true},
+			want: "batt " + strings.Repeat("━", 10) + " 50% charging",
+		},
+		{
+			name: "no battery",
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &Model{width: 120, height: 34, snap: tc.snap}
+			var batt string
+			for _, line := range m.computerLines(40) {
+				plain := strings.TrimSpace(ansi.Strip(line))
+				if strings.HasPrefix(plain, "batt") {
+					batt = strings.Join(strings.Fields(plain), " ")
+				}
+			}
+			if tc.want == "" {
+				if batt != "" {
+					t.Fatalf("expected no battery row, got %q", batt)
+				}
+				return
+			}
+			if batt != tc.want {
+				t.Fatalf("battery row = %q, want %q", batt, tc.want)
+			}
+		})
+	}
+}
+
+// A battery gauge colors off how empty it is, the opposite of every other
+// meter: low charge should read as alarming, a full battery as calm.
+func TestGaugeInvertFlipsTheColorRamp(t *testing.T) {
+	forceANSI256(t)
+
+	lowCharge := sgrOf(gauge(5, 10, true))
+	highUsage := sgrOf(gauge(95, 10, false))
+	if lowCharge != highUsage {
+		t.Fatalf("5%% inverted = %q, want the same alarm color as 95%% uninverted %q", lowCharge, highUsage)
+	}
+
+	highCharge := sgrOf(gauge(95, 10, true))
+	lowUsage := sgrOf(gauge(5, 10, false))
+	if highCharge != lowUsage {
+		t.Fatalf("95%% inverted = %q, want the same calm color as 5%% uninverted %q", highCharge, lowUsage)
+	}
+
+	if lowCharge == highCharge {
+		t.Fatal("low and high battery charge rendered the same color")
+	}
+}
+
 // The separator carries its own reset, so a reading cannot inherit color.
 func TestTemperatureReadingsEachKeepTheirColor(t *testing.T) {
 	forceANSI256(t)

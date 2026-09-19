@@ -17,30 +17,33 @@ import (
 )
 
 type Snapshot struct {
-	CPUPercent  float64
-	CPUOK       bool
-	MemUsed     uint64
-	MemTotal    uint64
-	MemPercent  float64
-	MemOK       bool
-	SwapUsed    uint64
-	SwapTotal   uint64
-	SwapPercent float64
-	SwapOK      bool
-	DiskUsed    uint64
-	DiskFree    uint64
-	DiskTotal   uint64
-	DiskPercent float64
-	DiskOK      bool
-	NetSent     uint64
-	NetRecv     uint64
-	NetOK       bool
-	CPUTemp     float64
-	CPUTempOK   bool
-	GPUTemp     float64
-	GPUTempOK   bool
-	SoCTemp     float64
-	SoCTempOK   bool
+	CPUPercent      float64
+	CPUOK           bool
+	MemUsed         uint64
+	MemTotal        uint64
+	MemPercent      float64
+	MemOK           bool
+	SwapUsed        uint64
+	SwapTotal       uint64
+	SwapPercent     float64
+	SwapOK          bool
+	DiskUsed        uint64
+	DiskFree        uint64
+	DiskTotal       uint64
+	DiskPercent     float64
+	DiskOK          bool
+	NetSent         uint64
+	NetRecv         uint64
+	NetOK           bool
+	CPUTemp         float64
+	CPUTempOK       bool
+	GPUTemp         float64
+	GPUTempOK       bool
+	SoCTemp         float64
+	SoCTempOK       bool
+	BatteryPercent  float64
+	BatteryCharging bool
+	BatteryOK       bool
 }
 
 type ProcStat struct {
@@ -76,6 +79,7 @@ func Sample(diskPath string) Snapshot {
 	sampleDisk(&snap, diskPath)
 	sampleNet(&snap)
 	sampleTemps(&snap)
+	sampleBattery(&snap)
 	startHostSampler()
 	overlayHost(&snap)
 
