@@ -63,6 +63,31 @@ func TestLightThemesPresent(t *testing.T) {
 	}
 }
 
+// TestThemeCounterpartsPair keeps every pairing two-sided: a counterpart
+// must exist, sit on the opposite polarity, and name the theme back.
+func TestThemeCounterpartsPair(t *testing.T) {
+	byName := map[string]Theme{}
+	for _, theme := range themes {
+		byName[theme.Name] = theme
+	}
+	for _, theme := range themes {
+		if theme.Counterpart == "" {
+			continue
+		}
+		other, ok := byName[theme.Counterpart]
+		if !ok {
+			t.Errorf("%s: counterpart %q is not a built-in theme", theme.Name, theme.Counterpart)
+			continue
+		}
+		if other.lightBackdrop() == theme.lightBackdrop() {
+			t.Errorf("%s: counterpart %q sits on the same side", theme.Name, other.Name)
+		}
+		if other.Counterpart != theme.Name {
+			t.Errorf("%s: counterpart %q points back to %q", theme.Name, other.Name, other.Counterpart)
+		}
+	}
+}
+
 func TestThemeTextContrast(t *testing.T) {
 	for _, theme := range themes {
 		checks := []struct {
