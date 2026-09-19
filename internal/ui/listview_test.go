@@ -1538,3 +1538,66 @@ func TestFullFocusFrameRecordsNoRailHits(t *testing.T) {
 		t.Fatalf("full focus paints no rail, got %d hits", len(m.railHits))
 	}
 }
+
+func TestPlaceNoticeHitMapsTheFootRowsAndCardColumns(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 120, 34
+	frame := strings.Split(ansi.Strip(m.View()), "\n")
+	y0, _ := m.bodyYRange()
+	rail := m.railLines(m.dividerX()-1, m.listBodyHeight())
+	footIndex := len(rail)
+	for i, line := range rail {
+		if line.rule {
+			footIndex = i + 1
+		}
+	}
+	footLines := len(rail) - footIndex
+	if footLines == 0 {
+		t.Fatal("test setup: the rail painted no foot")
+	}
+	hit := m.noticeHit
+	if !hit.ok || hit.y0 != y0+footIndex || hit.y1 != hit.y0+footLines {
+		t.Fatalf("hit rows %d..%d, want %d..%d: %+v", hit.y0, hit.y1, y0+footIndex, y0+footIndex+footLines, hit)
+	}
+	col := strings.Index(frame[hit.y0], "messages")
+	if col < hit.x0 || col >= hit.x1 || hit.x1 > m.dividerX() {
+		t.Fatalf("legend at column %d outside hit columns %d..%d (divider %d)", col, hit.x0, hit.x1, m.dividerX())
+	}
+	if meters := strings.Index(frame[hit.y0+1], "cpu"); meters >= hit.x0 {
+		t.Fatalf("meters at column %d fall inside the card's columns %d..%d", meters, hit.x0, hit.x1)
+	}
+}
+
+func TestPlaceNoticeHitClearsAStaleBox(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 120, 34
+	m.View()
+	if !m.noticeHit.ok {
+		t.Fatal("test setup: the card painted no hit")
+	}
+	x, y := m.noticeHit.x0, m.noticeHit.y0
+
+	m.hideStats = true
+	for _, n := range m.activeNotices() {
+		m.dismissed[n.id] = true
+	}
+	m.View()
+	if m.noticeHit.ok {
+		t.Fatalf("a rail with no foot must drop the box, got %+v", m.noticeHit)
+	}
+	if m = leftPress(m, x, y); m.mode != modeList {
+		t.Fatalf("a press where the card was should do nothing, mode = %v", m.mode)
+	}
+
+	m.hideStats = false
+	m.dismissed = map[string]bool{}
+	m.View()
+	if !m.noticeHit.ok {
+		t.Fatal("test setup: the card is back")
+	}
+	m.width = 40
+	m.View()
+	if m.noticeHit.ok {
+		t.Fatalf("a rail too narrow for the card must drop the box, got %+v", m.noticeHit)
+	}
+}
