@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type memSettings map[string]string
@@ -1460,5 +1461,85 @@ func TestWheelSwallowedInResizeMode(t *testing.T) {
 	m = updated.(*Model)
 	if m.cursor != 0 {
 		t.Fatalf("resize mode should swallow wheel, cursor = %d", m.cursor)
+	}
+}
+
+// messagesCell finds the column and screen row the word "messages" was
+// painted on in the last frame: the card's legend in the split, the badge
+// in full screen.
+func messagesCell(t *testing.T, m *Model) (x, y int) {
+	t.Helper()
+	for row, line := range strings.Split(ansi.Strip(m.View()), "\n") {
+		if col := strings.Index(line, "messages"); col >= 0 {
+			return col, row
+		}
+	}
+	t.Fatal("test setup: the frame painted no messages card or badge")
+	return 0, 0
+}
+
+func leftPress(m *Model, x, y int) *Model {
+	updated, _ := m.handleMouse(tea.MouseMsg{
+		X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+	})
+	return updated.(*Model)
+}
+
+func TestClickOnMessagesCardOpensNotices(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 120, 34
+	x, y := messagesCell(t, m)
+	if m = leftPress(m, x, y); m.mode != modeNotices {
+		t.Fatalf("click on the card should open messages, mode = %v", m.mode)
+	}
+}
+
+func TestClickOnMetersBesideTheCardDoesNothing(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 120, 34
+	_, y := messagesCell(t, m)
+	if m = leftPress(m, 2, y); m.mode != modeList {
+		t.Fatalf("click on the meters should stay on the list, mode = %v", m.mode)
+	}
+}
+
+func TestClickOnFullScreenBadgeOpensNotices(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 120, 34
+	m.fullLayout = true
+	x, y := messagesCell(t, m)
+	if m = leftPress(m, x, y); m.mode != modeNotices {
+		t.Fatalf("click on the badge should open messages, mode = %v", m.mode)
+	}
+	m.mode = modeList
+	if m = leftPress(m, 2, y); m.mode != modeList {
+		t.Fatalf("click on the readings should stay on the list, mode = %v", m.mode)
+	}
+}
+
+func TestClickOnMessagesCardWhileSearchingKeepsTheField(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 120, 34
+	m.searching = true
+	x, y := messagesCell(t, m)
+	if m = leftPress(m, x, y); m.mode != modeList || !m.searching {
+		t.Fatalf("search owns the click, mode = %v searching = %v", m.mode, m.searching)
+	}
+}
+
+func TestClickOnMessagesCardWhileFocusedIsLeftToFocus(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 200, 34
+	createSession(t, m, "alpha", t.TempDir(), "")
+	x, y := messagesCell(t, m)
+	m.selectSessionRow(t, "alpha")
+	updated, _ := m.focusSelected()
+	m = updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	m.View()
+	if m = leftPress(m, x, y); m.mode == modeNotices {
+		t.Fatal("a click while focused must not open messages")
 	}
 }

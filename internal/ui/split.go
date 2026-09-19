@@ -266,6 +266,10 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.split.resizeMode || m.mode != modeList {
 		return m, nil
 	}
+	if m.noticeHit.contains(msg.X, msg.Y) && m.listReadyForNotice() {
+		m.openNotices("")
+		return m, nil
+	}
 	if row, ok := m.clickRow(msg.X, msg.Y); ok {
 		// Search and the quick bar own Enter, so a press there selects and
 		// opens no run: one left standing would pair with the first press

@@ -297,16 +297,35 @@ func noticeBorderStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Subtle, "#e2c044", 0.45)))
 }
 
+// noticeTitleStyle is the warm bold tone the card's legend and the full
+// screen badge share, so a message reads the same in either layout.
+func noticeTitleStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Bright, "#e2c044", 0.5))).Bold(true)
+}
+
 // noticeLegend is the card's title, set into the border: lowercase, warm,
 // no fill, so it reads as a fieldset legend rather than a badge.
 func noticeLegend() string {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current.Bright, "#e2c044", 0.5))).Bold(true).Render(" messages ")
+	return noticeTitleStyle().Render(" messages ")
+}
+
+// noticeHit is the rail columns and screen rows the messages card or
+// badge covered on the last frame, so a click resolves against what was
+// painted, the way railHits does for rows.
+type noticeHit struct {
+	x0, x1, y0, y1 int
+	ok             bool
+}
+
+func (h noticeHit) contains(x, y int) bool {
+	return h.ok && x >= h.x0 && x < h.x1 && y >= h.y0 && y < h.y1
 }
 
 // railFootLines is the rail's foot: the machine meters with the messages
 // card docked to their right when both notices and width exist. The card
 // hugs its content behind a rule that separates the two blocks.
 func (m *Model) railFootLines(width int) []string {
+	m.noticeHit = noticeHit{}
 	if m.fullLayout {
 		return m.fullFootLine(width)
 	}
@@ -316,6 +335,7 @@ func (m *Model) railFootLines(width int) []string {
 		if len(notices) == 0 {
 			return nil
 		}
+		m.noticeHit = noticeHit{x0: 0, x1: width, ok: true}
 		return m.noticeCardLines(notices, width, len(meters))
 	}
 	metersWidth := maxLineWidth(meters)
@@ -323,6 +343,7 @@ func (m *Model) railFootLines(width int) []string {
 	if len(notices) == 0 || room < noticePanelMin {
 		return meters
 	}
+	m.noticeHit = noticeHit{x0: metersWidth + 3, x1: width, ok: true}
 
 	card := m.noticeCardLines(notices, room, len(meters))
 	separator := subtleStyle.Render("│")
@@ -343,7 +364,7 @@ func (m *Model) railFootLines(width int) []string {
 func (m *Model) fullFootLine(width int) []string {
 	badge := ""
 	if count := len(m.activeNotices()); count > 0 {
-		badge = valueStyle.Render(fmt.Sprintf("messages %d", count)) + "  " + keyCap("M", "open")
+		badge = noticeTitleStyle().Render(fmt.Sprintf("messages %d", count)) + "  " + keyCap("M", "open")
 	}
 	if m.hideStats {
 		if badge == "" {
@@ -355,6 +376,7 @@ func (m *Model) fullFootLine(width int) []string {
 		}
 		badge = ansi.Truncate(badge, available, "…")
 		indent := max(width-railInset-ansi.StringWidth(badge), railInset)
+		m.noticeHit = noticeHit{x0: indent, x1: indent + ansi.StringWidth(badge), ok: true}
 		return []string{strings.Repeat(" ", indent) + badge}
 	}
 	reading := func(label, value string, ok bool) string {
@@ -393,6 +415,7 @@ func (m *Model) fullFootLine(width int) []string {
 		gap := width - railInset - ansi.StringWidth(line) - ansi.StringWidth(badge)
 		if gap >= 2 {
 			line += strings.Repeat(" ", gap) + badge
+			m.noticeHit = noticeHit{x0: ansi.StringWidth(line) - ansi.StringWidth(badge), x1: ansi.StringWidth(line), ok: true}
 		}
 	}
 	return []string{line}

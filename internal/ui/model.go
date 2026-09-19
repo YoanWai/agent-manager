@@ -196,6 +196,7 @@ type Model struct {
 	// click handler never has to re-derive the rail's layout and drift
 	// from it.
 	railHits        []int
+	noticeHit       noticeHit
 	mode            mode
 	showArchived    bool
 	hideEmptyGroups bool

@@ -1691,3 +1691,17 @@ func TestWelcomeBodyFollowsTheListTable(t *testing.T) {
 		}
 	}
 }
+
+func TestFullLayoutBadgeWearsTheCardYellow(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 120, 34
+	m.fullLayout = true
+	foot := strings.Join(m.railFootLines(m.width-1), "\n")
+	want := noticeTitleStyle().Render(fmt.Sprintf("messages %d", len(m.activeNotices())))
+	if !strings.Contains(foot, want) {
+		t.Fatalf("badge should carry the card's tone %q:\n%q", want, foot)
+	}
+	if !m.noticeHit.ok || m.noticeHit.x1 > m.width-1 {
+		t.Fatalf("badge should record its columns inside the rail, got %+v", m.noticeHit)
+	}
+}
