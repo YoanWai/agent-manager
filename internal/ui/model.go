@@ -811,8 +811,8 @@ func themeAutoEnabled(st *store.Store) bool {
 
 // resolveStartupTheme picks the boot theme: the stored choice, unless
 // auto-detect is on and the environment's scheme disagrees with that
-// choice's polarity — then the default theme of the detected side takes
-// over, and an undetectable scheme changes nothing.
+// choice's polarity — then its counterpart, or the default theme of the
+// detected side, takes over, and an undetectable scheme changes nothing.
 func resolveStartupTheme(st *store.Store) string {
 	stored := storedTheme(st)
 	if !themeAutoEnabled(st) {
@@ -822,15 +822,19 @@ func resolveStartupTheme(st *store.Store) string {
 }
 
 // autoThemeName keeps the stored theme whenever it already sits on the
-// detected side, so auto-detect corrects polarity without discarding a
-// palette the user picked.
+// detected side, and otherwise prefers its counterpart, so auto-detect
+// corrects polarity without discarding the family the user picked.
 func autoThemeName(stored string, scheme systheme.Scheme) string {
 	if scheme == systheme.SchemeUnknown {
 		return stored
 	}
 	wantLight := scheme == systheme.SchemeLight
-	if themes[themeIndex(stored)].lightBackdrop() == wantLight {
+	theme := themes[themeIndex(stored)]
+	if theme.lightBackdrop() == wantLight {
 		return stored
+	}
+	if theme.Counterpart != "" {
+		return theme.Counterpart
 	}
 	if wantLight {
 		return "solarized light"
