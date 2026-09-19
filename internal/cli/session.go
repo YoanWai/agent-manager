@@ -83,7 +83,7 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 	set := newFlagSet(usageSpawn)
 	name := set.String("name", "", "kebab-case name naming the work it will do; the new agent names itself when this is empty")
 	prompt := set.String("prompt", "", "first task to hand it, written as a full instruction, since it cannot see your conversation")
-	tool := set.String("tool", "", "agent CLI to run; defaults to the CLI this session runs")
+	tool := set.String("tool", "", "agent CLI to run; defaults to the caller's CLI, and is required when the caller is a terminal")
 	group := set.String("group", "", "existing group path to file it under; pass an empty string for the root group")
 	directory := set.String("directory", "", "existing directory it works in; defaults to yours, or to the group's inherited path")
 	worktree := set.Bool("worktree", false, "give it its own git worktree and branch, which is what keeps parallel agents off each other's files")
