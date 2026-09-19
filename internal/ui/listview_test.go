@@ -1601,3 +1601,82 @@ func TestPlaceNoticeHitClearsAStaleBox(t *testing.T) {
 		t.Fatalf("a rail too narrow for the card must drop the box, got %+v", m.noticeHit)
 	}
 }
+
+func TestSearchFieldFillsOnlyWhileSearching(t *testing.T) {
+	m := shotModel()
+	m.search = "note"
+	fieldLine := func() contentLine {
+		for _, line := range m.railLines(40, 14) {
+			if strings.Contains(ansi.Strip(line.text), "⌕") {
+				return line
+			}
+		}
+		t.Fatal("rail painted no search field")
+		return contentLine{}
+	}
+
+	m.searching = true
+	open := fieldLine()
+	if open.tone != searchFieldHex() {
+		t.Fatalf("open field tone = %q, want %q", open.tone, searchFieldHex())
+	}
+	if !strings.Contains(open.text, bgSeq(searchFieldHex())) {
+		t.Fatalf("open field line carries no fill:\n%q", open.text)
+	}
+
+	m.searching = false
+	closed := fieldLine()
+	if closed.tone != "" {
+		t.Fatalf("closed field with a query applied should keep the panel tone, got %q", closed.tone)
+	}
+	if strings.Contains(closed.text, bgSeq(searchFieldHex())) {
+		t.Fatalf("closed field line should not be filled:\n%q", closed.text)
+	}
+}
+
+func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
+	forceANSI256(t)
+	entry := treeRow{sess: store.Session{
+		ID: "s1", Name: "alpha-build", Tool: "grok", Status: status.Idle, CreatedAt: time.Now(),
+	}}
+	lit := searchMatchStyle.Render("bui")
+
+	m := &Model{search: "BUI"}
+	row := m.renderTreeRow(entry, false, 80, 0, panelHex())
+	if !strings.Contains(row, lit) {
+		t.Fatalf("query should light its span in the name's own case:\n%q", row)
+	}
+	if !strings.Contains(ansi.Strip(row), "alpha-build") {
+		t.Fatalf("name lost text around the lit span:\n%q", ansi.Strip(row))
+	}
+
+	selected := m.renderTreeRow(entry, true, 80, 0, selectedHex())
+	bright := lipgloss.NewStyle().Foreground(colorBright).Bold(true)
+	if !strings.Contains(selected, bright.Render("alpha-")) || !strings.Contains(selected, lit) {
+		t.Fatalf("selected row should keep its bright name around the lit span:\n%q", selected)
+	}
+
+	m.search = "grok"
+	row = m.renderTreeRow(entry, false, 80, 0, panelHex())
+	if strings.Contains(row, sgrOf(lit)) {
+		t.Fatalf("a match on the tool alone should leave the name plain:\n%q", row)
+	}
+
+	m.search = ""
+	row = m.renderTreeRow(entry, false, 80, 0, panelHex())
+	if !strings.Contains(row, valueStyle.Render("alpha-build")) {
+		t.Fatalf("no query should render the plain name:\n%q", row)
+	}
+}
+
+func TestSearchLightsTheQueryInsideAGroupName(t *testing.T) {
+	forceANSI256(t)
+	m := &Model{search: "END"}
+	row := m.renderTreeRow(treeRow{isGroup: true, group: "work/backend"}, false, 80, 0, panelHex())
+	if !strings.Contains(row, searchMatchStyle.Render("end")) {
+		t.Fatalf("group name should light the query:\n%q", row)
+	}
+	if !strings.Contains(ansi.Strip(row), "backend") {
+		t.Fatalf("group name lost text around the lit span:\n%q", ansi.Strip(row))
+	}
+}

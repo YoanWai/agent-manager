@@ -44,11 +44,12 @@ var (
 	warnStyle   lipgloss.Style
 	keyStyle    lipgloss.Style
 
-	annotationStyle lipgloss.Style
-	scopeBadgeStyle lipgloss.Style
-	focusBadgeStyle lipgloss.Style
-	inboxBadgeStyle lipgloss.Style
-	focusEdgeStyle  lipgloss.Style
+	annotationStyle  lipgloss.Style
+	scopeBadgeStyle  lipgloss.Style
+	focusBadgeStyle  lipgloss.Style
+	inboxBadgeStyle  lipgloss.Style
+	searchMatchStyle lipgloss.Style
+	focusEdgeStyle   lipgloss.Style
 
 	chipStyle             lipgloss.Style
 	imageChipStyle        lipgloss.Style
@@ -79,6 +80,7 @@ func rebuildStyles() {
 	annotationStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	scopeBadgeStyle = lipgloss.NewStyle().Foreground(colorBg).Background(colorAccent2).Bold(true).Padding(0, 1)
 	focusBadgeStyle = lipgloss.NewStyle().Foreground(colorBg).Background(colorAccent).Bold(true)
+	searchMatchStyle = lipgloss.NewStyle().Foreground(colorBg).Background(colorAccent)
 	// Foreground only: a fill would punch a chip through the band a selected
 	// row paints behind it.
 	inboxBadgeStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)

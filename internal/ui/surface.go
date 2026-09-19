@@ -29,6 +29,9 @@ func blockHex() string { return mix(current.Bg, current.Surface, 0.35) }
 // selectedHex is the band under the cursor's entry.
 func selectedHex() string { return current.Surface }
 
+// searchFieldHex is the band under the open search field.
+func searchFieldHex() string { return mix(panelHex(), current.Accent, 0.2) }
+
 // ruleHex is the hairline tone: lifted just far enough off the backdrop to
 // draw a seam without becoming a border.
 func ruleHex() string { return mix(current.Bg, current.Text, 0.22) }

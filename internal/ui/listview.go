@@ -191,6 +191,24 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 	return lines
 }
 
+func (m *Model) highlightQuery(name string, base lipgloss.Style) string {
+	query := []rune(strings.TrimSpace(m.search))
+	runes := []rune(name)
+	if len(query) == 0 {
+		return base.Render(name)
+	}
+	for start := 0; start+len(query) <= len(runes); start++ {
+		end := start + len(query)
+		if !strings.EqualFold(string(runes[start:end]), string(query)) {
+			continue
+		}
+		return base.Render(string(runes[:start])) +
+			searchMatchStyle.Render(string(runes[start:end])) +
+			base.Render(string(runes[end:]))
+	}
+	return base.Render(name)
+}
+
 // searchFieldLine is the live filter at the head of the rail: the typed
 // query with a caret, and the key that closes it when there is room. With
 // the field closed and a query still applied it drops the caret and offers
@@ -258,6 +276,10 @@ func (m *Model) railLines(width, height int) []contentLine {
 	// for the padded block keeps the bare field rather than dropping it.
 	if m.searching || m.search != "" {
 		field := contentLine{text: m.searchFieldLine(width)}
+		if m.searching {
+			field.tone = searchFieldHex()
+			field.text = paint(field.text, width, field.tone)
+		}
 		switch {
 		case room(railBannerRows):
 			chrome(contentLine{}, field, contentLine{})
@@ -716,7 +738,7 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	if selected {
 		nameStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 	}
-	head := pad + guides + dot + " " + nameStyle.Render(m.displayName(sess))
+	head := pad + guides + dot + " " + m.highlightQuery(m.displayName(sess), nameStyle)
 	focused := selected && m.mode == modeFocus
 	if focused {
 		head += " " + focusBadgeStyle.Render(" FOCUS ")
@@ -895,7 +917,7 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, g
 			nameStyle = nameStyle.Foreground(lipgloss.Color(mix(current.Accent2, current.Subtle, 0.5)))
 		}
 	}
-	head := pad + guides + subtleStyle.Render(marker) + " " + nameStyle.Render(name)
+	head := pad + guides + subtleStyle.Render(marker) + " " + m.highlightQuery(name, nameStyle)
 
 	// What the group is doing rides on the same line as its name, so a
 	// folded group still reports its subtree without being opened. It is
