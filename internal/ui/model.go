@@ -743,7 +743,9 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 	statusSources := make(map[string]string, len(cfg.Tools))
 	sessionStores := make(map[string]string, len(cfg.Tools))
 	mcpStyles := make(map[string]string, len(cfg.Tools))
+	shellTools := make(map[string]bool, len(cfg.Tools))
 	for name, tool := range cfg.Tools {
+		shellTools[name] = tool.Shell
 		statusSources[name] = tool.StatusSource
 		sessionStores[name] = tool.SessionStore
 		mcpStyles[name] = mcpreg.Style(name, tool.MCP)
@@ -763,7 +765,7 @@ func New(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status
 		gitDrv:              gitDriver,
 		engine:              engine,
 		setSnapshot:         st.SetSnapshot,
-		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, newToolBinaries(cfg), cfg.PollInterval.Duration),
+		poller:              newPoller(st, driver, engine, hookManager, gitDriver, statusSources, sessionStores, mcpStyles, shellTools, newToolBinaries(cfg), cfg.PollInterval.Duration),
 		collapsed:           loadCollapsed(st),
 		split:               splitState{ratio: loadSplitRatio(st)},
 		focusOnEnter:        storedFocusOnEnter(st),

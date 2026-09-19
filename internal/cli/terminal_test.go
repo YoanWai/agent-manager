@@ -56,7 +56,7 @@ func TestTerminalVerbsDispatch(t *testing.T) {
 		t.Fatalf("terminal close got %q, printed %q", fake.closedID, closed.String())
 	}
 
-	if err := dispatch(&bytes.Buffer{}, "terminal", terminalVerbs(), []string{"tail"}, "cafe0001", t.TempDir()); err == nil {
+	if err := dispatch(&bytes.Buffer{}, "terminal", terminalVerbs(), []string{"tail"}, func() string { return "cafe0001" }, t.TempDir()); err == nil {
 		t.Fatal("an unknown terminal verb should not dispatch")
 	}
 }

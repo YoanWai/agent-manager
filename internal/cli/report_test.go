@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/report"
 )
 
@@ -133,5 +135,31 @@ func TestReportLayerFailureReachesTheCaller(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "body is empty") || out.Len() != 0 {
 			t.Fatalf("issue %v = %v, printed %q", args, err, out.String())
 		}
+	}
+}
+
+func TestReportCommandForwardsTheExportedSessionAndNeverResolvesACaller(t *testing.T) {
+	t.Setenv(hooks.EnvSessionID, "sess-from-env")
+	sentinel := errors.New("run failed")
+	var gotSession string
+	command := reportCommand(
+		func(string) issueReporter { return &fakeReporter{} },
+		func(_ io.Writer, _ issueReporter, _ []string, sessionID string) error {
+			gotSession = sessionID
+			return sentinel
+		},
+	)
+	resolver := func() string {
+		t.Fatal("reportCommand resolved a caller; it reads the variable alone")
+		return ""
+	}
+
+	err := command([]string{"title"}, resolver, t.TempDir())
+
+	if gotSession != "sess-from-env" {
+		t.Fatalf("run got session %q, want the exported one", gotSession)
+	}
+	if err != sentinel {
+		t.Fatalf("error = %v, want the run's error unchanged", err)
 	}
 }

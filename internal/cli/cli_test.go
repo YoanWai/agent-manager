@@ -336,7 +336,7 @@ func TestHelpFlagPrintsUsageAndStops(t *testing.T) {
 	}
 
 	group := &bytes.Buffer{}
-	if err := dispatch(group, "task", taskVerbs(), []string{"-h"}, "cafe0001", t.TempDir()); !errors.Is(err, ErrUsageShown) {
+	if err := dispatch(group, "task", taskVerbs(), []string{"-h"}, func() string { return "cafe0001" }, t.TempDir()); !errors.Is(err, ErrUsageShown) {
 		t.Fatalf("task -h should return ErrUsageShown, got %v", err)
 	}
 	if !strings.Contains(group.String(), usageTaskClaim) {
@@ -345,7 +345,7 @@ func TestHelpFlagPrintsUsageAndStops(t *testing.T) {
 }
 
 func TestTaskGroupRejectsAnUnknownVerb(t *testing.T) {
-	err := dispatch(&bytes.Buffer{}, "task", taskVerbs(), []string{"finnish", "t1"}, "cafe0001", t.TempDir())
+	err := dispatch(&bytes.Buffer{}, "task", taskVerbs(), []string{"finnish", "t1"}, func() string { return "cafe0001" }, t.TempDir())
 	if err == nil {
 		t.Fatal("an unknown verb should not dispatch")
 	}
@@ -354,7 +354,7 @@ func TestTaskGroupRejectsAnUnknownVerb(t *testing.T) {
 		t.Fatalf("error = %q, want %q", err, want)
 	}
 
-	bare := dispatch(&bytes.Buffer{}, "task", taskVerbs(), nil, "cafe0001", t.TempDir())
+	bare := dispatch(&bytes.Buffer{}, "task", taskVerbs(), nil, func() string { return "cafe0001" }, t.TempDir())
 	if bare == nil || bare.Error() != "usage: agent-manager task <list|create|claim|finish|release|delete>" {
 		t.Fatalf("a bare group should print its verbs, got %v", bare)
 	}
@@ -430,7 +430,7 @@ func TestJSONIsPromisedOnlyWhereTheCommandTakesIt(t *testing.T) {
 		{usageUpdate, func(out *bytes.Buffer, args []string) error {
 			swapUpdateSeams(t, "agent-manager", update.Manager{},
 				update.Result{Releases: []update.Release{{Version: "v0.31.0"}}}, nil)
-			return runUpdate("0.31.0")(out, args, "", t.TempDir())
+			return runUpdate("0.31.0")(out, args, t.TempDir())
 		}},
 	}
 	for _, testCase := range cases {
@@ -463,6 +463,21 @@ func TestAFrontReportsWhatTheLayerDecided(t *testing.T) {
 	}
 	if !strings.HasPrefix(archived.String(), "restored ") {
 		t.Fatalf("archive --restore output = %q", archived.String())
+	}
+}
+
+// Resolving a caller from a terminal asks tmux, which update, issue and
+// feature have no use for.
+func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
+	table := Commands("dev")
+	resolve := func() string {
+		t.Fatal("the caller was resolved")
+		return ""
+	}
+	for _, name := range []string{"update", "issue", "feature"} {
+		if err := table[name]([]string{"-h"}, resolve, t.TempDir()); !errors.Is(err, ErrUsageShown) {
+			t.Fatalf("%s -h: %v", name, err)
+		}
 	}
 }
 

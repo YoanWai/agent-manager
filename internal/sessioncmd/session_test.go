@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1100,4 +1101,44 @@ func TestSessionHarnessCleanupRemovesSocket(t *testing.T) {
 	if _, err := os.Stat(socket); !os.IsNotExist(err) {
 		t.Fatalf("socket %q survived harness cleanup: %v", socket, err)
 	}
+}
+
+// A terminal is a caller like any session now that the CLI resolves one
+// from its pane, but its tool is the user's shell: a spawn from a terminal
+// has no agent CLI to inherit and has to be told which one to run.
+func TestSessionsCreateFromATerminalAsksForATool(t *testing.T) {
+	h := newSessionHarness(t)
+	terminal, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("Create terminal: %v", err)
+	}
+	_, err = h.sessions.Create(terminal.ID, CreateSessionOptions{Prompt: "ship the fix"})
+	if err == nil {
+		t.Fatal("a toolless spawn from a terminal succeeded")
+	}
+	for _, want := range []string{"create_session tool", "echoer"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not mention %q", err, want)
+		}
+	}
+	runtime, openErr := h.sessions.open()
+	if openErr != nil {
+		t.Fatalf("open: %v", openErr)
+	}
+	shell, _ := runtime.cfg.ShellTool()
+	runtime.store.Close()
+	_, listed, _ := strings.Cut(err.Error(), "(configured tools are ")
+	offered := strings.Split(strings.TrimSuffix(listed, ")"), ", ")
+	if slices.Contains(offered, shell) {
+		t.Fatalf("the error offers the shell tool %q as a choice: %v", shell, err)
+	}
+
+	created, err := h.sessions.Create(terminal.ID, CreateSessionOptions{Tool: "echoer", Prompt: "ship the fix"})
+	if err != nil {
+		t.Fatalf("Create with a tool named: %v", err)
+	}
+	if created.Tool != "echoer" || created.Group != terminal.Group || !created.Running {
+		t.Fatalf("created from a terminal = %+v, terminal = %+v", created, terminal)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "ship the fix")
 }

@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/YoanWai/agent-manager/internal/cli"
@@ -106,8 +107,8 @@ func printHelp(w io.Writer) error {
 
 func subcommands() map[string]func(args []string) error {
 	table := map[string]func(args []string) error{
-		"mcp": withConfigDir(func(args []string, sessionID, configDir string) error {
-			return mcpserver.Run(configDir, sessionID, version)
+		"mcp": withConfigDir(func(args []string, caller func() string, configDir string) error {
+			return mcpserver.Run(configDir, caller(), version)
 		}),
 	}
 	for name, command := range cli.Commands(version) {
@@ -116,14 +117,50 @@ func subcommands() map[string]func(args []string) error {
 	return table
 }
 
-func withConfigDir(command func(args []string, sessionID, configDir string) error) func([]string) error {
+func withConfigDir(command cli.Command) func([]string) error {
 	return func(args []string) error {
 		dir, err := config.Dir()
 		if err != nil {
 			return err
 		}
-		return command(args, os.Getenv(hooks.EnvSessionID), dir)
+		return command(args, sync.OnceValue(callerSession), dir)
 	}
+}
+
+// callerSession identifies the session a subcommand speaks for. The
+// environment variable stays authoritative: an MCP server launched under
+// Codex is handed that variable and nothing else of the pane's
+// environment, so a pane lookup could not stand in for it.
+//
+// Falling back to the pane is what makes a terminal a caller. A terminal
+// opens on the user's shell with no launch command, so tmux gets no launch
+// script to export the id from, and the shell would otherwise have no way
+// to say which session it is.
+func callerSession() string {
+	if id := os.Getenv(hooks.EnvSessionID); id != "" {
+		return id
+	}
+	return sessionFromPane()
+}
+
+// sessionFromPane asks the manager's tmux server which session owns the
+// pane this command runs in. Every failure answers empty: `update` and the
+// rest have to keep working outside tmux, and on a machine without tmux
+// installed at all.
+func sessionFromPane() string {
+	tmuxEnv, pane := os.Getenv("TMUX"), os.Getenv("TMUX_PANE")
+	if tmuxEnv == "" || pane == "" {
+		return ""
+	}
+	driver, err := tmux.New()
+	if err != nil {
+		return ""
+	}
+	id, err := driver.SessionOfPane(tmuxEnv, pane)
+	if err != nil {
+		return ""
+	}
+	return id
 }
 
 func run() error {

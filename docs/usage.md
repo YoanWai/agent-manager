@@ -95,7 +95,7 @@ Shells live in the tree with the agents they belong to, marked with `❯` where 
 
 **The keys that write into a pane refuse a shell.** `space` and the review screen's `C` both paste their text and press Enter, so on a shell a sentence meant for an agent would run as a command. Both say the row is a shell and send nothing; enter the session (`↵`) to type there, where what you type is plainly a command. `f` says the same, since a shell has no conversation to fork.
 
-A shell carries no session id, so `agent-manager rename` run inside one cannot find its session. Rename it from the list with `r`.
+`agent-manager rename` run in a `T` terminal renames that terminal's own row: the manager finds the row from the tmux pane the command runs in. `r` in the list is how you rename any other row.
 
 ## Opening the editor
 
@@ -239,7 +239,7 @@ Every one of these tools acts on the user's machine. Agents should treat `send_t
 
 Registration is per tool. Claude gets a generated `--mcp-config` file. Codex gets `-c mcp_servers...` overrides. OpenCode gets an `OPENCODE_CONFIG` merge file. Grok, Gemini, and Command Code each get a one-time `mcp add --scope user` entry on their first launch. Hermes gets its own one-time `mcp add` flow, which needs the MCP SDK its installer treats as optional: a Hermes still missing it refuses the spawn with a dialog offering the `pip install mcp` line for the Python that runs Hermes, read from `hermes --version`, so a Hermes session always carries these tools. A spawn whose CLI is not on PATH is refused the same way, with the vendor's portable installer for a built-in agent, or the package manager on this machine for anything else. When that command is the vendor's installer, `c` copies it and `i` runs it in a shell tab named after the CLI, where you can watch it and answer its prompts; when it exits 0 and puts the CLI on PATH the refused spawn goes ahead on its own, and a failure, or an installer that leaves the CLI somewhere PATH does not name, leaves the tab open with the output and the reason on the status line. A package-manager line stays a suggestion to read, since the package that carries a tool's name is yours to choose. The dialog also hands the mouse back to the terminal while it is up, so a drag over the command selects it.
 
-Pi does not include an MCP client. Its sessions reach the same workspace through the subcommands: `agent-manager --help` lists them, from `sessions`, `spawn`, `send` and `wait` to the shared task list, file reservations, terminals and the review declarations.
+Pi does not include an MCP client. Its sessions reach the same workspace through the subcommands: `agent-manager --help` lists them, from `sessions`, `spawn`, `send` and `wait` to the shared task list, file reservations, terminals and the review declarations. `update` needs no caller at all, and `issue` and `feature` use only the session id the launch exported. Every other subcommand acts as the session or terminal it runs in, resolved from that environment or, for a [terminal tab](#terminal-tabs) that has none, from the tmux pane, so the same subcommands work from a shell you opened with `T`.
 
 ### Bugs and ideas
 

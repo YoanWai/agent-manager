@@ -25,7 +25,7 @@ var reviewCommentIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
 func validSession(sessionID string) error {
 	if sessionID == "" {
-		return fmt.Errorf("not inside an agent-manager session (%s is unset)", hooks.EnvSessionID)
+		return fmt.Errorf("not inside an Agent Manager session or terminal (%s is unset and this pane is not one Agent Manager runs)", hooks.EnvSessionID)
 	}
 	if !sessionIDPattern.MatchString(sessionID) {
 		return fmt.Errorf("invalid session id %q", sessionID)
