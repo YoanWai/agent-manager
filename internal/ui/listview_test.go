@@ -1726,6 +1726,9 @@ func TestFullQuickLinesKeepTheCaretRowOnScreen(t *testing.T) {
 		_, _ = m.handleQuickKey(tea.KeyMsg{Type: tea.KeyDown})
 		painted()
 	}
+	if !m.quick.caretOnLastRow() {
+		t.Fatal("down never reached the prompt's last row")
+	}
 	if !strings.Contains(painted(), "LASTROWMARK") {
 		t.Fatal("the frame clipped the prompt's last row")
 	}
