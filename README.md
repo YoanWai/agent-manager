@@ -103,6 +103,10 @@ A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch
 
 ![the session tree, with a waiting agent's permission prompt in the preview](docs/screenshot-sessions.png)
 
+![the session list taking the whole terminal, one-line rows with the messages badge on the foot, then a session focused full screen](docs/demo-fullscreen.gif)
+
+![the same full-screen list at the comfortable density: every session on three lines, its task and the agent's last message under the name](docs/demo-fullscreen-comfortable.gif)
+
 ![review, side by side, with the changed lines tinted in full file context](docs/screenshot-review.png)
 
 Configuration (the editor `o` opens, the poll interval, and the key tables) is in [docs/configuration.md](docs/configuration.md).
