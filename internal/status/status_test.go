@@ -954,6 +954,9 @@ func TestInputDraft(t *testing.T) {
 	if _, ok := engine.InputDraft("claude", "● Done.\n\n❯ "); ok {
 		t.Fatal("empty composer should carry no draft")
 	}
+	if _, ok := engine.InputDraft("claude", "● Done.\n\n❯ Press up to edit queued messages"); ok {
+		t.Fatal("the queued composer's placeholder should not read as a draft")
+	}
 	if _, ok := engine.InputDraft("codex", "› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev"); ok {
 		t.Fatal("codex placeholder should not read as a draft")
 	}
@@ -994,6 +997,22 @@ func TestLastUserEchoAndScrolledMarker(t *testing.T) {
 	}
 	if line != "tail of a reply that scrolled its bullet away." {
 		t.Fatalf("scrolled fallback = %q", line)
+	}
+
+	frames := []struct {
+		name, pane, want string
+		anchored         bool
+	}{
+		{"queued dialog", "⏺ Red or blue?\n\n❯ Also tell me a fun fact about tmux after that.\n────────────\n ☐ Color\n\nRed or blue?\n\n❯ 1. Red\n     Red\n  2. Blue", "Red or blue?", true},
+		{"bullet-less dialog", "  Cat or dog?\n────────────\n ☐ Pet pref\n\nCat or dog?\n\n❯ 1. Cat", "Cat or dog?", false},
+		{"queued running turn", "  Running python3 -c 'time.sleep(30)' (ctrl+b ctrl+b (twice) to run in background)\n❯ Run this exact shell command once, then continue.\n  ctrl+x ctrl+s to send now\n✻ Razzmatazz… (1m 25s · ↓ 147 tokens)\n\n❯ Press up to edit queued messages", "Running python3 -c 'time.sleep(30)' (ctrl+b ctrl+b (twice) to run in background)", false},
+		{"badge and hints", "  Done with the rename.\n◐ medium · /effort\ntmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking\n❯ ", "Done with the rename.", false},
+	}
+	for _, f := range frames {
+		line, anchored, ok := engine.LastMessage("claude", f.pane)
+		if !ok || anchored != f.anchored || line != f.want {
+			t.Fatalf("%s: line=%q anchored=%v ok=%v, want %q anchored=%v", f.name, line, anchored, ok, f.want, f.anchored)
+		}
 	}
 	if !engine.HasMessageStart("claude") || engine.HasMessageStart("opencode") {
 		t.Fatal("HasMessageStart should be true for claude, false for opencode")

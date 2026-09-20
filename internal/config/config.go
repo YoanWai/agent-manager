@@ -356,7 +356,11 @@ status_source = "claude-hooks"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 turn_end = "^[✻✳✶✽✢·✦✧+*] \\S+ for \\d.*$"
-chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$|^\\s*✔ Update installed · Restart to update\\s*$|^\\s*new task\\? /clear to save .*$"
+# the frame rows a quote steps over: separators and banners; a prompt echo
+# or queued message on its own ❯ row at the left edge, where the reply ends
+# so the queued text never reads as agent output; the send-now hint under a
+# queued message; and the effort badge and tmux hints a running turn prints
+chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$|^\\s*✔ Update installed · Restart to update\\s*$|^\\s*new task\\? /clear to save .*$|^❯ |^\\s*ctrl\\+x ctrl\\+s to send now\\s*$|^[●◐◑◒◓○] \\S+ · /|^tmux (?:\\S+ )+off · "
 blocked_line = "Interrupted ·"
 # recap blocks ("※ recap: …") render below the turn-end summary
 trailing_note = "^※"
@@ -379,6 +383,9 @@ message_start = "^[●⏺] "
 tool_result = "^\\s*⎿"
 # a submitted prompt echoes into the transcript on its own ❯ line
 user_echo = "^❯ "
+# the composer's placeholder while messages sit queued; without it the
+# wording reads back as a typed draft
+input_placeholder = "^Press up to edit queued messages"
 rules = [
   # selection dialogs (trust prompt, permission asks, questions) block on the user
   { state = "waiting", pattern = "Enter to confirm" },
