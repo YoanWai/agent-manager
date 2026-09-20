@@ -103,6 +103,8 @@ A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch
 
 ![the session tree, with a waiting agent's permission prompt in the preview](docs/screenshot-sessions.png)
 
+![the mouse in the list: the wheel moves the cursor, a click selects a row, a double click focuses it, a click on the list comes back, the divider drags, and a click on the messages card opens it](docs/demo-mouse.gif)
+
 ![the session list taking the whole terminal, one-line rows with the messages badge on the foot, then a session focused full screen](docs/demo-fullscreen.gif)
 
 ![the same full-screen list at the comfortable density: every session on three lines, its task and the agent's last message under the name](docs/demo-fullscreen-comfortable.gif)
