@@ -41,6 +41,10 @@ Instead of hunting through terminal tabs to see which agent is done and which is
 
 Press `f` on a session to continue its conversation in a separate named fork.
 
+The mouse works across the whole manager. The wheel moves the cursor, a click selects a row, a double click focuses it, and a click on the list or the mouse back button brings you back. The divider between the list and the preview drags, and a click on the messages card opens it. In a focused pane a drag selects and copies text, and a click on a link opens it in your browser. Settings has a mouse toggle for terminals where you want native selection back.
+
+![the mouse in the list: the wheel moves the cursor, a click selects a row, a double click focuses it, a click on the list comes back, the divider drags, and a click on the messages card opens it](docs/demo-mouse.gif)
+
 The tools you use alongside agents live in the same list: `T` opens a shell under the selected agent, or in the selected group, for builds, Git, and one-off commands. An agent can spawn another, send it a message, and wait until it is done: every MCP-capable session carries those tools on launch.
 
 Not here yet: cost tracking.
@@ -102,8 +106,6 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch `am/<name>`), toggled on the `n` form, with `alt+w` in the quick prompt, or by default in Settings.
 
 ![the session tree, with a waiting agent's permission prompt in the preview](docs/screenshot-sessions.png)
-
-![the mouse in the list: the wheel moves the cursor, a click selects a row, a double click focuses it, a click on the list comes back, the divider drags, and a click on the messages card opens it](docs/demo-mouse.gif)
 
 ![the session list taking the whole terminal, one-line rows with the messages badge on the foot, then a session focused full screen](docs/demo-fullscreen.gif)
 
