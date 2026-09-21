@@ -102,6 +102,19 @@ func TestSampleBatteryReadError(t *testing.T) {
 	}
 }
 
+func TestSampleBatteryPartialResultWithError(t *testing.T) {
+	withBatterySource(t, []*battery.Battery{
+		{Current: 30, Full: 40, State: battery.State{Raw: battery.Discharging}},
+	}, errors.New("boom"))
+
+	var snap Snapshot
+	sampleBattery(&snap)
+
+	if snap.BatteryOK {
+		t.Fatal("expected BatteryOK false when the source returns an error alongside entries")
+	}
+}
+
 func TestSampleBatterySkipsUnreadableEntries(t *testing.T) {
 	withBatterySource(t, []*battery.Battery{
 		nil,

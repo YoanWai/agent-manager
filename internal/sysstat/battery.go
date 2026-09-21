@@ -9,7 +9,10 @@ var batterySource = battery.GetAll
 // (no battery present, or a platform read failure) leaves BatteryOK false
 // so the caller hides the line rather than showing a placeholder or zero.
 func sampleBattery(snap *Snapshot) {
-	batteries, _ := batterySource()
+	batteries, err := batterySource()
+	if err != nil {
+		return
+	}
 	applyBatteries(snap, batteries)
 }
 
