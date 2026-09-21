@@ -131,7 +131,29 @@ func guardedMouseCommand(sessID, report string) (string, []string) {
 
 func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 	sess, ok := m.selected()
-	if !ok || m.mode != modeFocus || m.focus == nil {
+	if !ok || m.mode != modeFocus {
+		return nil
+	}
+	if ref, remote := m.remoteRef(sess.ID); remote {
+		if m.pane.mouse {
+			row, col, inside := m.paneCell(x, y)
+			if !inside {
+				return nil
+			}
+			report, ok := m.wheelReport(up, col, row+m.paneRowOffset(m.pane.box.height))
+			if !ok {
+				return nil
+			}
+			m.federation.inputQueue = append(m.federation.inputQueue, remoteInput{ref: ref, text: report, mouse: true})
+			return m.nextRemoteInput()
+		}
+		delta := 1
+		if up {
+			delta = -1
+		}
+		return m.scrollFocus(delta)
+	}
+	if m.focus == nil {
 		return nil
 	}
 	if m.pane.mouse {
@@ -183,7 +205,14 @@ func (m *Model) forwardFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // pane, preferring the live control pipe over a forked tmux call.
 func (m *Model) sendFocusReport(report string) {
 	sess, ok := m.selected()
-	if !ok || m.focus == nil {
+	if !ok {
+		return
+	}
+	if ref, remote := m.remoteRef(sess.ID); remote {
+		m.federation.inputQueue = append(m.federation.inputQueue, remoteInput{ref: ref, text: report, mouse: true})
+		return
+	}
+	if m.focus == nil {
 		return
 	}
 	command, args := guardedMouseCommand(sess.ID, report)
@@ -276,6 +305,9 @@ func (m *Model) requestFocusRegion(sessID string) tea.Cmd {
 // history top, so a shallow history just yields a shorter frame.
 func (m *Model) focusRegionCmd(sessID string, offset int) tea.Cmd {
 	rows := m.focusPaneRows()
+	if ref, remote := m.remoteRef(sessID); remote {
+		return m.remoteRegion(sessID, ref, offset, rows)
+	}
 	command := fmt.Sprintf(`capture-pane -p -e -t %s -S %d -E -`,
 		tmux.PaneTarget(sessID), -(offset + rows))
 	watch := m.focus

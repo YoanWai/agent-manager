@@ -107,6 +107,26 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if ref, remote := m.remoteRef(sess.ID); remote {
+		if err := m.remoteAvailable(ref.Host); err != nil {
+			m.errBar.text = err.Error()
+			return m, nil
+		}
+		m.mode = modeFocus
+		m.clearSelection()
+		m.cursorOn = true
+		m.focusScroll = 0
+		m.focusFetchInFlight = false
+		if m.pane.forID != sess.ID {
+			m.pane.mouse = false
+			m.pane.motion = false
+			m.pane.sgr = false
+			m.pane.history = 0
+			m.pane.cursor = paneCursor{}
+		}
+		m.previewGen++
+		return m, tea.Batch(tea.EnableMouseCellMotion, m.cursorBlink(), m.previewCmd(sess, m.previewGen))
+	}
 	if sess.Archived {
 		return m.attachSelected()
 	}
@@ -293,6 +313,9 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
 	if !ok {
 		return m, m.leaveFocus()
+	}
+	if ref, remote := m.remoteRef(sess.ID); remote {
+		return m.remoteFocusKey(ref, msg)
 	}
 	// A windowed editor leaves the focus where it is; one that draws in the
 	// terminal takes it back on exit.

@@ -35,6 +35,7 @@ type reviewCommentArgs struct {
 type listTerminalsArgs struct{}
 
 type createTerminalArgs struct {
+	Host      string  `json:"host,omitempty" jsonschema:"configured execution host; omit for local, or use a host-qualified group from list_groups"`
 	Group     *string `json:"group,omitempty" jsonschema:"existing group path for the new terminal; pass an empty string for the root group; defaults to this agent's group"`
 	Directory string  `json:"directory,omitempty" jsonschema:"existing directory to open; defaults to the selected group's inherited path, then this agent's current directory"`
 	Nest      *bool   `json:"nest,omitempty" jsonschema:"when true or omitted, nest under this session, or beside it under the same parent when this session is itself a terminal; false places an un-nested terminal in group"`
@@ -53,6 +54,7 @@ type readTerminalArgs struct {
 type listSessionsArgs struct{}
 
 type createSessionArgs struct {
+	Host      string  `json:"host,omitempty" jsonschema:"configured execution host; omit for local, or use a host-qualified group from list_groups"`
 	Name      string  `json:"name,omitempty" jsonschema:"kebab-case name for the new session, 2-4 words naming the work it will do (e.g. payments-retry-fix); leave empty only when the task is unknown, and the new agent will name itself"`
 	Prompt    string  `json:"prompt,omitempty" jsonschema:"first task to hand the new agent, written as a full instruction; it starts idle when empty"`
 	Tool      string  `json:"tool,omitempty" jsonschema:"agent CLI to run, such as claude, codex, opencode, gemini or grok; defaults to the CLI this session runs; call list_sessions to see which are in use"`
@@ -99,6 +101,7 @@ type listReservationsArgs struct{}
 type listGroupsArgs struct{}
 
 type createGroupArgs struct {
+	Host      string `json:"host,omitempty" jsonschema:"configured host on which to create the group; omit for local"`
 	Path      string `json:"path" jsonschema:"full group path, slash separated for nesting (e.g. work/payments); every parent except the last segment must already exist"`
 	Directory string `json:"directory,omitempty" jsonschema:"default working directory sessions created in this group inherit"`
 }
@@ -112,11 +115,13 @@ type closeTerminalArgs struct {
 }
 
 type listTerminalsOutput struct {
-	Terminals []sessioncmd.Terminal `json:"terminals"`
+	Terminals   []sessioncmd.Terminal `json:"terminals"`
+	Unavailable string                `json:"unavailable,omitempty" jsonschema:"hosts whose state could not be read; absent rows from these hosts are unknown, not dead"`
 }
 
 type listSessionsOutput struct {
-	Sessions []sessioncmd.Session `json:"sessions"`
+	Sessions    []sessioncmd.Session `json:"sessions"`
+	Unavailable string               `json:"unavailable,omitempty" jsonschema:"hosts whose state could not be read; absent rows from these hosts are unknown, not dead"`
 }
 
 type taskOutput struct {
@@ -129,7 +134,8 @@ type listReservationsOutput struct {
 }
 
 type listGroupsOutput struct {
-	Groups []sessioncmd.Group `json:"groups"`
+	Groups      []sessioncmd.Group `json:"groups"`
+	Unavailable string             `json:"unavailable,omitempty" jsonschema:"hosts whose groups could not be read"`
 }
 
 type releaseFilesOutput struct {
@@ -143,7 +149,8 @@ type waitSessionArgs struct {
 }
 
 type messageStatusArgs struct {
-	MessageID int64 `json:"message_id" jsonschema:"message id returned by send_session"`
+	Host      string `json:"host,omitempty" jsonschema:"host of the session messaged; required for a remote message id because numeric message ids are host-local"`
+	MessageID int64  `json:"message_id" jsonschema:"message id returned by send_session"`
 }
 
 type reportIssueArgs struct {
@@ -210,7 +217,8 @@ Everything here acts on the user's machine: create_session and create_terminal s
 // Split from Run so tests can connect an in-process client.
 func NewServer(configDir, sessionID, version string) *mcp.Server {
 	words := sessioncmd.MCPVocabulary()
-	return newServer(configDir, sessionID, version, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessions(configDir, words), report.New(configDir, version))
+	sessions, terminals := federate(configDir, sessioncmd.NewSessions(configDir, words), sessioncmd.NewTerminals(configDir, words))
+	return newServer(configDir, sessionID, version, terminals, sessions, report.New(configDir, version))
 }
 
 func newServer(configDir, sessionID, version string, terminals terminalCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
@@ -295,10 +303,14 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, listSessionsOutput, error) {
 		listed, err := sessions.List(sessionID)
-		if err != nil {
+		if err != nil && listed == nil {
 			return nil, listSessionsOutput{}, err
 		}
-		return textContent(sessioncmd.FormatSessionList(listed)), listSessionsOutput{Sessions: listed}, nil
+		warning := ""
+		if err != nil {
+			warning = err.Error()
+		}
+		return textContent(sessioncmd.FormatSessionList(listed) + "\n" + warning), listSessionsOutput{Sessions: listed, Unavailable: warning}, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -310,10 +322,19 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			"Follow it with read_session and send_session; use create_terminal instead for a plain shell.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
+		if args.Host != "" {
+			if _, ok := sessions.(*fleetSessions); !ok {
+				return nil, sessioncmd.Session{}, fmt.Errorf("no fleet hosts configured")
+			}
+		}
+		group, routeErr := routedGroup(args.Host, args.Group)
+		if routeErr != nil {
+			return nil, sessioncmd.Session{}, routeErr
+		}
 		created, err := sessions.Create(sessionID, sessioncmd.CreateSessionOptions{
 			Tool:      args.Tool,
 			Name:      args.Name,
-			Group:     args.Group,
+			Group:     group,
 			Directory: args.Directory,
 			Prompt:    args.Prompt,
 			Worktree:  args.Worktree,
@@ -353,7 +374,11 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		if err != nil {
 			return nil, sessioncmd.SendResult{}, err
 		}
-		return textContent(sessioncmd.FormatSendResult(result, args.SessionID)), result, nil
+		message := sessioncmd.FormatSendResult(result, args.SessionID)
+		if host, _, ok := strings.Cut(args.SessionID, "::"); ok {
+			message += "\nFor message_status, pass host: " + host
+		}
+		return textContent(message), result, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -364,7 +389,17 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			"Dropped means it never reached the prompt and will not be retried, so send it again.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args messageStatusArgs) (*mcp.CallToolResult, sessioncmd.MessageState, error) {
-		state, err := sessions.MessageStatus(sessionID, args.MessageID)
+		var state sessioncmd.MessageState
+		var err error
+		if args.Host != "" {
+			if fleet, ok := sessions.(*fleetSessions); ok {
+				state, err = fleet.MessageStatusHost(sessionID, args.Host, args.MessageID)
+			} else {
+				err = fmt.Errorf("no fleet hosts configured")
+			}
+		} else {
+			state, err = sessions.MessageStatus(sessionID, args.MessageID)
+		}
 		if err != nil {
 			return nil, sessioncmd.MessageState{}, err
 		}
@@ -531,10 +566,14 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listGroupsArgs) (*mcp.CallToolResult, listGroupsOutput, error) {
 		listed, err := sessions.Groups(sessionID)
-		if err != nil {
+		if err != nil && listed == nil {
 			return nil, listGroupsOutput{}, err
 		}
-		return textContent(sessioncmd.FormatGroupList(listed)), listGroupsOutput{Groups: listed}, nil
+		warning := ""
+		if err != nil {
+			warning = err.Error()
+		}
+		return textContent(sessioncmd.FormatGroupList(listed) + "\n" + warning), listGroupsOutput{Groups: listed, Unavailable: warning}, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -544,7 +583,16 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			"Nest with a slash path such as work/payments, whose parent must already exist.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createGroupArgs) (*mcp.CallToolResult, sessioncmd.Group, error) {
-		created, err := sessions.CreateGroup(sessionID, args.Path, args.Directory)
+		if args.Host != "" {
+			if _, ok := sessions.(*fleetSessions); !ok {
+				return nil, sessioncmd.Group{}, fmt.Errorf("no fleet hosts configured")
+			}
+		}
+		path, routeErr := routedGroup(args.Host, &args.Path)
+		if routeErr != nil {
+			return nil, sessioncmd.Group{}, routeErr
+		}
+		created, err := sessions.CreateGroup(sessionID, *path, args.Directory)
 		if err != nil {
 			return nil, sessioncmd.Group{}, err
 		}
@@ -573,11 +621,15 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listTerminalsArgs) (*mcp.CallToolResult, listTerminalsOutput, error) {
 		listed, err := terminals.List(sessionID)
-		if err != nil {
+		if err != nil && listed == nil {
 			return nil, listTerminalsOutput{}, err
 		}
-		output := listTerminalsOutput{Terminals: listed}
-		return textContent(sessioncmd.FormatTerminalList(listed)), output, nil
+		warning := ""
+		if err != nil {
+			warning = err.Error()
+		}
+		output := listTerminalsOutput{Terminals: listed, Unavailable: warning}
+		return textContent(sessioncmd.FormatTerminalList(listed) + "\n" + warning), output, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -587,8 +639,17 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 			"Then call send_terminal with the returned id; use create_session instead for another agent CLI. Call close_terminal when the job is finished and the terminal is not being left for the user.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createTerminalArgs) (*mcp.CallToolResult, sessioncmd.Terminal, error) {
+		if args.Host != "" {
+			if _, ok := terminals.(*fleetTerminals); !ok {
+				return nil, sessioncmd.Terminal{}, fmt.Errorf("no fleet hosts configured")
+			}
+		}
+		group, routeErr := routedGroup(args.Host, args.Group)
+		if routeErr != nil {
+			return nil, sessioncmd.Terminal{}, routeErr
+		}
 		created, err := terminals.Create(sessionID, sessioncmd.CreateTerminalOptions{
-			Group:     args.Group,
+			Group:     group,
 			Directory: args.Directory,
 			Nest:      args.Nest,
 		})

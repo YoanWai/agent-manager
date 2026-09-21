@@ -84,6 +84,11 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "shift+tab", "alt+w":
+		if _, _, remote := m.remoteGroup(m.quickTargetGroup()); remote {
+			m.quick.worktree = !m.quick.worktree
+			m.quick.worktreeTouched = true
+			return m, nil
+		}
 		dir := m.quickTargetDir()
 		if !m.worktreeCapable(dir) {
 			m.errBar.text = "worktree sessions need a git repository: " + dir + " is not one"
@@ -128,6 +133,17 @@ func (m *Model) submitQuick() (tea.Model, tea.Cmd) {
 		m.errBar.text = shellPromptHint(entry.sess.Name)
 		return m, nil
 	}
+	if ref, remote := m.remoteRef(entry.sess.ID); remote {
+		if m.federation.promptBusy {
+			m.errBar.text = "Previous message is still being queued."
+			return m, nil
+		}
+		if len(m.quick.attachments) > 0 {
+			m.errBar.text = "Pasted images must be copied to the remote host before sending."
+			return m, nil
+		}
+		return m, m.remoteSend(ref, text)
+	}
 	if !m.tmux.Exists(entry.sess.ID) {
 		m.errBar.text = deadSessionHint
 		return m, nil
@@ -160,6 +176,15 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 	if toolName == "" {
 		m.errBar.text = "no tools configured"
 		return m, nil
+	}
+	if host, remoteGroup, remote := m.remoteGroup(group); remote {
+		if len(m.quick.attachments) > 0 {
+			m.errBar.text = "Pasted images must be copied to the remote host before spawning."
+			return m, nil
+		}
+		cmd := m.remoteSpawn(host, remoteGroup, toolName, "", m.groupPaths[group], prompt, m.quick.worktree)
+		m.clearQuickAfterSend()
+		return m, cmd
 	}
 	dir, ok := resolveExistingDir(m.groupPaths[group], m.groupDefaultDir(group))
 	if !ok {
@@ -210,6 +235,9 @@ func (m *Model) clearQuickAfterSend() {
 // with: the target group's default until shift+tab overrides it, and off
 // whenever the target directory cannot host a worktree.
 func (m *Model) quickWorktreeOn() bool {
+	if _, _, remote := m.remoteGroup(m.quickTargetGroup()); remote {
+		return m.quick.worktree
+	}
 	if !m.worktreeCapable(m.quickTargetDir()) {
 		return false
 	}

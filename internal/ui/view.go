@@ -715,6 +715,9 @@ func displayGroup(path string) string {
 // relSince is relTime worded as a moment in the past, for columns that
 // answer "when did this last happen" rather than "how long has this run".
 func relSince(t time.Time) string {
+	if t.IsZero() {
+		return "time unknown"
+	}
 	return relTime(t) + " ago"
 }
 

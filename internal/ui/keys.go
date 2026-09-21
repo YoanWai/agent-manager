@@ -90,6 +90,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.clearSearch()
 	}
 	action, _ := m.listKeys.ActionFor(keybind.Normalize(msg.String()))
+	if m.federation != nil && (action == keybind.KillAll || action == keybind.ReviveAll) {
+		m.errBar.text = "Select individual sessions when managing multiple hosts."
+		return m, nil
+	}
+	if handled, cmd := m.guardRemoteAction(action); handled {
+		return m, cmd
+	}
 	switch action {
 	case keybind.Quit:
 		return m, tea.Quit
@@ -379,7 +386,7 @@ func (m *Model) toggleCollapse() {
 	if !entry.isGroup {
 		path = entry.sess.Group
 	}
-	if path == "" {
+	if path == "" && m.federation == nil {
 		return
 	}
 	m.collapsed[path] = !m.collapsed[path]

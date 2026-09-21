@@ -913,8 +913,22 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, g
 	if entry.isRoot() {
 		// Nothing nests under root, so the marker is a blank that holds the column.
 		marker, name = " ", "root"
+		if m.federation != nil {
+			name = m.federation.localName
+			marker = "▾"
+			if m.collapsed[""] {
+				marker = "▸"
+			}
+		}
 		if !selected {
 			nameStyle = nameStyle.Foreground(lipgloss.Color(mix(current.Accent2, current.Subtle, 0.5)))
+		}
+	}
+	if m.federation != nil {
+		for _, host := range m.federation.hosts {
+			if entry.group == host.Name && host.Error != "" {
+				name += " · unreachable"
+			}
 		}
 	}
 	head := pad + guides + subtleStyle.Render(marker) + " " + m.highlightQuery(name, nameStyle)
@@ -955,7 +969,11 @@ func (m *Model) computerLines(width int) []string {
 		return line
 	}
 
-	lines := []string{pad + subtleStyle.Render("computer")}
+	computer := "computer"
+	if m.federation != nil {
+		computer = m.federation.localName + " resources"
+	}
+	lines := []string{pad + subtleStyle.Render(computer)}
 	lines = append(lines,
 		meter("cpu", snap.CPUPercent, snap.CPUOK, ""),
 		meter("mem", snap.MemPercent, snap.MemOK, humanBytes(snap.MemUsed)+"/"+humanBytes(snap.MemTotal)),
@@ -1613,7 +1631,11 @@ func (m *Model) headerAgents() string {
 	if m.agents.count == 0 {
 		return ""
 	}
-	title := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render("agents total usage:")
+	label := "agents total usage:"
+	if m.federation != nil {
+		label = m.federation.localName + " agents usage:"
+	}
+	title := lipgloss.NewStyle().Foreground(colorBright).Bold(true).Render(label)
 	return title + " " +
 		labelStyle.Render("cpu ") + valueStyle.Render(fmt.Sprintf("%.0f%%", m.agents.cpu)) +
 		subtleStyle.Render(" · ") + labelStyle.Render("ram ") +

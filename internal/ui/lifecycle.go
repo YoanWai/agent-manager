@@ -33,6 +33,9 @@ func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if ref, remote := m.remoteRef(sess.ID); remote {
+		return m.remoteAttach(sess, ref)
+	}
 	if !m.tmux.Exists(sess.ID) {
 		m.errBar.text = deadSessionHint
 		return m, nil
@@ -1043,6 +1046,11 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}()
 	switch msg.String() {
 	case "y", "enter":
+		if len(m.confirm.sessions) > 0 {
+			if _, remote := m.remoteRef(m.confirm.sessions[0].ID); remote {
+				return m, m.remoteLifecycle(m.confirm.sessions, m.confirm.action)
+			}
+		}
 		switch m.confirm.action {
 		case actionArchive:
 			if err := m.snapshotLive(m.confirm.sessions); err != nil {

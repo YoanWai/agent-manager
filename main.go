@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -10,9 +13,12 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/federation"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
 	"github.com/YoanWai/agent-manager/internal/notify"
@@ -106,6 +112,37 @@ func printHelp(w io.Writer) error {
 
 func subcommands() map[string]func(args []string) error {
 	table := map[string]func(args []string) error{
+		"review-data": func(args []string) error {
+			flags := flag.NewFlagSet("review-data", flag.ContinueOnError)
+			directory := flags.String("directory", "", "repository directory on this host")
+			scope := flags.Int("scope", 0, "0 uncommitted, 1 branch, 2 last commit, 3 staged")
+			base := flags.String("base", "", "base ref")
+			repo := flags.String("repo", "", "selected repository")
+			file := flags.String("file", "", "changed file to load")
+			if err := flags.Parse(args); err != nil {
+				return err
+			}
+			if *directory == "" || *scope < 0 || *scope > 3 || flags.NArg() != 0 {
+				return fmt.Errorf("review-data requires --directory and a scope from 0 to 3")
+			}
+			data, err := federation.BuildReview(*directory, git.Scope(*scope), *base, *repo, *file)
+			if err != nil {
+				return err
+			}
+			return json.NewEncoder(os.Stdout).Encode(data)
+		},
+		"hosts": withConfigDir(func(args []string, sessionID, configDir string) error {
+			if len(args) == 1 && args[0] == "--json" {
+				client, err := federation.Load(configDir)
+				if err != nil {
+					return err
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				defer cancel()
+				return json.NewEncoder(os.Stdout).Encode(client.Snapshot(ctx))
+			}
+			return fmt.Errorf("usage: agent-manager hosts --json")
+		}),
 		"mcp": withConfigDir(func(args []string, sessionID, configDir string) error {
 			return mcpserver.Run(configDir, sessionID, version)
 		}),
@@ -156,6 +193,9 @@ func run() error {
 	defer st.Close()
 
 	model := ui.New(cfg, st, driver, engine, hooks.NewManager(dir), version)
+	if err := model.EnableFederation(dir); err != nil {
+		return err
+	}
 	// Mouse reporting claims the wheel for the app, so a notch neither
 	// scrolls the host's scrollback out from under the manager nor arrives
 	// as an arrow key that walks the session cursor. Alternate scroll is

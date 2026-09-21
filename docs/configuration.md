@@ -60,6 +60,46 @@ The same table drives a full-screen attach, where the keys are tmux bindings on 
 
 State is stored next to the config in `state.db` (SQLite).
 
+## Remote hosts
+
+Create an optional `fleet.json` beside `config.toml` to project sessions from
+configured Agent Manager hosts into the normal tree. The file is not merged
+with another host's database. Each host remains authoritative for its sessions,
+groups, terminals, paths and worktrees.
+
+```json
+{
+  "hosts": [
+    {"name": "Mac"},
+    {
+      "name": "build-host",
+      "ssh": "user@host",
+      "controller": "existing-session-id",
+      "binary": "/path/to/agent-manager",
+      "review_binary": "/path/to/agent-manager-native-review"
+    }
+  ]
+}
+```
+
+Use one local host at most. Remote host names cannot contain `/`, `::`, control
+characters or surrounding whitespace. Remote session IDs appear as
+`host::session-id`; remote group paths appear below the host name. The manager
+uses non-interactive SSH with agent and forwarding disabled, bounded connection
+timeouts and shell-quoted arguments.
+
+The remote manager must be running for queued messages and lifecycle commands.
+If a host is unavailable, the tree keeps its last known rows marked
+unreachable and refuses mutations until the host returns. Remote review reads
+the repository through the optional `review_binary` helper and is read-only.
+Remote rename, move, delete, restart, fork, editor and bulk lifecycle controls
+remain unavailable until the remote capability protocol supports them.
+
+Remote rows are held in memory and are never inserted into the local SQLite
+store. Tasks, file reservations and self-directed review declarations remain
+caller-local. Treat `fleet.json` as a trusted administrator file because it
+grants the manager authority to run commands on the configured hosts.
+
 ## Right-to-left text
 
 Hebrew and Arabic rows are painted as the cells they occupy, the same on every host. A terminal that runs its own bidirectional layout, iTerm2's right-to-left support or WezTerm's `bidi_enabled`, reorders those rows itself; turn that support off to read the frame in the columns Agent Manager paints.
