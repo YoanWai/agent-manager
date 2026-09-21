@@ -1,0 +1,331 @@
+package federation
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
+)
+
+func fixture(t *testing.T, hosts []Host) *Client {
+	t.Helper()
+	dir := t.TempDir()
+	b, _ := json.Marshal(struct {
+		Hosts []Host `json:"hosts"`
+	}{hosts})
+	if err := os.WriteFile(filepath.Join(dir, "fleet.json"), b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+func TestCapturePreservesTerminalColors(t *testing.T) {
+	c := fixture(t, []Host{{Name: "remote", SSH: "host", Controller: "ctl"}})
+	want := "\x1b[31mred\x1b[0m\n"
+	c.run = func(_ context.Context, cmd *exec.Cmd) ([]byte, error) {
+		script := cmd.Args[len(cmd.Args)-1]
+		if !strings.Contains(script, "'capture-pane' '-p' '-e' '-t' 'am_target:^.0'") {
+			t.Fatalf("capture must preserve ANSI colours: %s", script)
+		}
+		return []byte(want), nil
+	}
+	got, err := c.Capture(context.Background(), Ref{"remote", "target"})
+	if err != nil || got != want {
+		t.Fatalf("capture = %q, %v; want %q", got, err, want)
+	}
+}
+func TestSSHQuotesEveryArgument(t *testing.T) {
+	text := "hello 'there'\n$(echo BAD) `echo BAD`; --option"
+	cmd := remote(context.Background(), Host{SSH: "agent@host", Controller: "abc", Binary: "printf"}, false, "%s", text)
+	script := cmd.Args[len(cmd.Args)-1]
+	out, err := exec.Command("sh", "-c", script).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != text {
+		t.Fatalf("argument changed: %q", out)
+	}
+}
+func TestSnapshotNamespacesCollidingIDsAndKeepsTerminals(t *testing.T) {
+	c := fixture(t, []Host{{Name: "a", SSH: "a", Controller: "ctl"}, {Name: "b", SSH: "b", Controller: "ctl"}})
+	c.run = func(_ context.Context, cmd *exec.Cmd) ([]byte, error) {
+		s := cmd.Args[len(cmd.Args)-1]
+		if !strings.Contains(s, "'snapshot'") {
+			t.Fatalf("unexpected command: %s", s)
+		}
+		return []byte(`{"version":1,"sessions":[{"id":"same","name":"agent","running":true}],"terminals":[{"id":"term","name":"rails","parent_id":"same","running":true}],"groups":[{"path":"empty"}]}`), nil
+	}
+	snap := c.Snapshot(context.Background())
+	if len(snap) != 2 || snap[0].Error != "" || snap[1].Error != "" {
+		t.Fatalf("snapshot: %+v", snap)
+	}
+	if snap[0].Rows[0].Ref == snap[1].Rows[0].Ref {
+		t.Fatal("host identity lost")
+	}
+	if !snap[0].Rows[1].Terminal || snap[0].Rows[1].ParentID != "same" {
+		t.Fatal("terminal nesting lost")
+	}
+	if len(snap[0].Groups) != 1 {
+		t.Fatal("empty group missing")
+	}
+}
+
+func TestRemoteSnapshotUsesOneAtomicRPC(t *testing.T) {
+	c := fixture(t, []Host{{Name: "remote", SSH: "host", Controller: "ctl"}})
+	calls := 0
+	c.run = func(_ context.Context, cmd *exec.Cmd) ([]byte, error) {
+		calls++
+		if script := cmd.Args[len(cmd.Args)-1]; !strings.Contains(script, "'snapshot' '--json'") {
+			t.Fatalf("unexpected remote command: %s", script)
+		}
+		return []byte(`{"version":1,"sessions":[{"id":"agent","name":"worker","group":"work","running":true}],"terminals":[{"id":"term","name":"shell","group":"work","parent_id":"agent","running":true}],"groups":[{"path":"work","directory":"/srv/work"}]}`), nil
+	}
+	s := c.Snapshot(context.Background())[0]
+	if s.Error != "" || calls != 1 || len(s.Rows) != 2 || !s.Rows[1].Terminal || s.GroupPaths["work"] != "/srv/work" {
+		t.Fatalf("snapshot=%+v calls=%d", s, calls)
+	}
+}
+
+func TestRemoteUsesPrivateMultiplexedConnection(t *testing.T) {
+	c := fixture(t, []Host{{Name: "remote", SSH: "host", Controller: "ctl"}})
+	h, err := c.host("remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := remote(context.Background(), h, false, "sessions").Args
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"ControlMaster=auto", "ControlPersist=60", "ControlPath="} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("ssh args missing %s: %v", want, args)
+		}
+	}
+	if expanded := strings.Replace(h.ControlPath, "%C", strings.Repeat("a", 40), 1); len(expanded) >= 104 {
+		t.Fatalf("expanded control path is too long (%d): %s", len(expanded), expanded)
+	}
+}
+
+func TestRemoteCallsAreSerializedPerHost(t *testing.T) {
+	c := fixture(t, []Host{{Name: "remote", SSH: "host", Controller: "ctl"}})
+	var active, maximum int32
+	c.run = func(context.Context, *exec.Cmd) ([]byte, error) {
+		now := atomic.AddInt32(&active, 1)
+		for {
+			seen := atomic.LoadInt32(&maximum)
+			if now <= seen || atomic.CompareAndSwapInt32(&maximum, seen, now) {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+		atomic.AddInt32(&active, -1)
+		return []byte(`{}`), nil
+	}
+	h, _ := c.host("remote")
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = c.rpc(context.Background(), h, "noop")
+		}()
+	}
+	wg.Wait()
+	if maximum != 1 {
+		t.Fatalf("maximum concurrent calls to one host = %d", maximum)
+	}
+}
+func TestOfflineHostIsErrorNotDead(t *testing.T) {
+	c := fixture(t, []Host{{Name: "remote", SSH: "host", Controller: "ctl"}})
+	c.run = func(context.Context, *exec.Cmd) ([]byte, error) { return nil, errors.New("connection refused") }
+	s := c.Snapshot(context.Background())[0]
+	if s.Error == "" || s.Rows != nil {
+		t.Fatalf("offline looked like sessions: %+v", s)
+	}
+}
+func TestSendRejectsTerminalWithoutSending(t *testing.T) {
+	c := fixture(t, []Host{{Name: "remote", SSH: "host", Controller: "ctl"}})
+	calls := 0
+	c.run = func(_ context.Context, cmd *exec.Cmd) ([]byte, error) {
+		calls++
+		s := cmd.Args[len(cmd.Args)-1]
+		if strings.Contains(s, "'terminal'") {
+			return []byte(`[{"id":"term"}]`), nil
+		}
+		if strings.Contains(s, "'send'") {
+			t.Fatal("typed into terminal")
+		}
+		return []byte(`[]`), nil
+	}
+	if _, err := c.Send(context.Background(), Ref{"remote", "term"}, "explain"); err == nil {
+		t.Fatal("accepted terminal")
+	}
+	if calls != 2 {
+		t.Fatal(calls)
+	}
+}
+func TestSendRoutesThroughRemoteQueue(t *testing.T) {
+	c := fixture(t, []Host{{Name: "remote", SSH: "actual-host", Controller: "ctl"}})
+	c.run = func(_ context.Context, cmd *exec.Cmd) ([]byte, error) {
+		s := cmd.Args[len(cmd.Args)-1]
+		if cmd.Args[len(cmd.Args)-2] != "actual-host" {
+			t.Fatal(cmd.Args)
+		}
+		if strings.Contains(s, "'send'") {
+			if !strings.Contains(s, "'AGENT_MANAGER_SESSION_ID=ctl'") || !strings.Contains(s, "'target' 'please work'") {
+				t.Fatal(s)
+			}
+			return []byte(`{"message_id":42}`), nil
+		}
+		if strings.Contains(s, "'terminal'") {
+			return []byte(`[]`), nil
+		}
+		return []byte(`[{"id":"target"}]`), nil
+	}
+	out, err := c.Send(context.Background(), Ref{"remote", "target"}, "please work")
+	if err != nil || !strings.Contains(out, "42") {
+		t.Fatalf("%s %v", out, err)
+	}
+}
+func TestLocalSnapshotDoesNotNeedCallerOrWriteState(t *testing.T) {
+	c := fixture(t, []Host{{Name: "mac"}})
+	st, err := store.Open(filepath.Join(c.dir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSession(store.Session{ID: "local-agent", Name: "local", Tool: "pi", Cwd: "/tmp", Group: "work", Status: "idle"}); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	before, err := os.ReadFile(filepath.Join(c.dir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.run = func(context.Context, *exec.Cmd) ([]byte, error) { return nil, errors.New("no server running") }
+	s := c.Snapshot(context.Background())[0]
+	if s.Error != "" || len(s.Rows) != 1 || s.Rows[0].Ref.Host != "mac" || s.Rows[0].Status != "dead" {
+		t.Fatalf("%+v", s)
+	}
+	after, _ := os.ReadFile(filepath.Join(c.dir, "state.db"))
+	if string(before) != string(after) {
+		t.Fatal("snapshot changed database")
+	}
+}
+
+func TestLocalSnapshotReportsTmuxProbeFailures(t *testing.T) {
+	c := fixture(t, []Host{{Name: "mac"}})
+	st, err := store.Open(filepath.Join(c.dir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSession(store.Session{ID: "local-agent", Name: "local", Tool: "pi", Cwd: "/tmp", Group: "work", Status: "idle"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c.run = func(context.Context, *exec.Cmd) ([]byte, error) {
+		return nil, errors.New(`exec: "tmux": executable file not found in $PATH`)
+	}
+	s := c.Snapshot(context.Background())[0]
+	if s.Error == "" || s.Rows != nil {
+		t.Fatalf("probe failure was hidden: %+v", s)
+	}
+}
+
+func TestLoadRejectsSSHOptionsAndDuplicateHosts(t *testing.T) {
+	for _, raw := range []string{`{"hosts":[{"name":"a","ssh":"-oProxyCommand=evil","controller":"ctl"}]}`, `{"hosts":[{"name":"a","ssh":"host;evil","controller":"ctl"}]}`, `{"hosts":[{"name":"a"},{"name":"a"}]}`} {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "fleet.json"), []byte(raw), 0600)
+		if _, err := Load(dir); err == nil {
+			t.Fatal(raw)
+		}
+	}
+}
+
+func TestLoadRejectsAmbiguousHostNamespaces(t *testing.T) {
+	for _, name := range []string{"", " ", " Mac", "Mac ", "foo/bar", "foo::bar", "foo\nbar", "foo\x00bar", "foo\tbar"} {
+		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
+			dir := t.TempDir()
+			raw, _ := json.Marshal(struct {
+				Hosts []Host `json:"hosts"`
+			}{[]Host{{Name: name}}})
+			if err := os.WriteFile(filepath.Join(dir, "fleet.json"), raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(dir); err == nil {
+				t.Fatalf("accepted ambiguous name %q", name)
+			}
+		})
+	}
+}
+func TestLoadRejectsMultipleLocalHosts(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fleet.json"), []byte(`{"hosts":[{"name":"Mac"},{"name":"Other"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "one local host") {
+		t.Fatalf("expected local host validation, got %v", err)
+	}
+}
+func TestStderrDoesNotContaminateJSON(t *testing.T) {
+	out, err := run(context.Background(), exec.Command("sh", "-c", "printf warning >&2; printf '[]'"))
+	if err != nil || string(out) != "[]" {
+		t.Fatalf("%q %v", out, err)
+	}
+}
+
+func TestFocusedTextAndPasteAreNotInterpretedAsKeys(t *testing.T) {
+	c := fixture(t, []Host{{Name: "remote", SSH: "host", Controller: "ctl"}})
+	var commands []string
+	c.run = func(_ context.Context, cmd *exec.Cmd) ([]byte, error) {
+		s := cmd.Args[len(cmd.Args)-1]
+		commands = append(commands, s)
+		if cmd.Stdin != nil {
+			b, _ := io.ReadAll(cmd.Stdin)
+			if string(b) != "first\nsecond" {
+				t.Fatalf("paste changed %q", b)
+			}
+		}
+		return nil, nil
+	}
+	if err := c.SendText(context.Background(), Ref{"remote", "pane"}, "Enter", false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(commands[0], "'send-keys' '-l'") {
+		t.Fatal(commands)
+	}
+	if err := c.SendText(context.Background(), Ref{"remote", "pane"}, "first\nsecond", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(commands) != 3 || !strings.Contains(commands[2], "'paste-buffer' '-d' '-p'") {
+		t.Fatal(commands)
+	}
+}
+func TestTerminalCreateUsesSelectedAgentAsCaller(t *testing.T) {
+	c := fixture(t, []Host{{Name: "remote", SSH: "host", Controller: "ctl"}})
+	c.run = func(_ context.Context, cmd *exec.Cmd) ([]byte, error) {
+		s := cmd.Args[len(cmd.Args)-1]
+		if !strings.Contains(s, "'AGENT_MANAGER_SESSION_ID=selected'") {
+			t.Fatal(s)
+		}
+		return []byte(`{"id":"term","parent_id":"selected"}`), nil
+	}
+	v, err := c.TerminalCreateFor(context.Background(), "remote", "selected", sessioncmd.CreateTerminalOptions{})
+	if err != nil || v.ParentID != "selected" {
+		t.Fatalf("%+v %v", v, err)
+	}
+}

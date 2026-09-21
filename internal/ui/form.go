@@ -193,7 +193,8 @@ func (m *Model) contextGroup() string {
 // from the group to the root; empty when no ancestor has one.
 func (m *Model) ancestorGroupDir(group string) string {
 	for g := group; g != ""; g = parentGroup(g) {
-		if p := m.groupPaths[g]; p != "" && isDir(p) {
+		_, _, remote := m.remoteGroup(g)
+		if p := m.groupPaths[g]; p != "" && (remote || isDir(p)) {
 			return p
 		}
 	}
@@ -205,6 +206,9 @@ func (m *Model) ancestorGroupDir(group string) string {
 func (m *Model) groupDefaultDir(group string) string {
 	if p := m.ancestorGroupDir(group); p != "" {
 		return p
+	}
+	if _, _, remote := m.remoteGroup(group); remote {
+		return ""
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -426,7 +430,9 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case fieldDir:
 		m.form.dir, cmd = m.form.dir.Update(msg)
 		m.form.dirAuto = false
-		m.pathSugg.recompute(m.form.dir.Value())
+		if _, _, remote := m.remoteGroup(m.selectedGroupPath()); !remote {
+			m.pathSugg.recompute(m.form.dir.Value())
+		}
 	case fieldPrompt:
 		cmd = m.form.prompt.typeKey(msg)
 	}
@@ -486,12 +492,20 @@ func (m *Model) formSpawnDir() string {
 // formWorktreeOn is the worktree state the form shows and spawns with: the
 // toggle, unless the chosen directory cannot host a worktree.
 func (m *Model) formWorktreeOn() bool {
+	if _, _, remote := m.remoteGroup(m.selectedGroupPath()); remote {
+		return m.form.worktree
+	}
 	return m.form.worktree && m.worktreeCapable(m.formSpawnDir())
 }
 
 // toggleFormWorktree flips the toggle, or explains why the chosen
 // directory rules a worktree out.
 func (m *Model) toggleFormWorktree() {
+	if _, _, remote := m.remoteGroup(m.selectedGroupPath()); remote {
+		m.form.worktree = !m.form.worktree
+		m.form.worktreeAuto = false
+		return
+	}
 	dir := m.formSpawnDir()
 	if !m.worktreeCapable(dir) {
 		m.errBar.text = "worktree sessions need a git repository: " + dir + " is not one"
@@ -518,6 +532,14 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	autoNamed := name == ""
 	if autoNamed {
 		name = toolName + "-" + newID()[:4]
+	}
+	if host, group, remote := m.remoteGroup(m.selectedGroupPath()); remote {
+		if len(m.form.prompt.attachments) > 0 {
+			m.errBar.text = "Pasted images must be copied to the remote host before spawning."
+			return m, nil
+		}
+		m.mode = modeList
+		return m, m.remoteSpawn(host, group, toolName, name, strings.TrimSpace(m.form.dir.Value()), m.form.prompt.message(), m.form.worktree)
 	}
 	cwd, _ := os.Getwd()
 	dir, ok := resolveExistingDir(m.form.dir.Value(), cwd)
@@ -719,7 +741,9 @@ func (m *Model) handleGroupFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case gfPath:
 		m.groupForm.path, cmd = m.groupForm.path.Update(msg)
 		m.groupForm.pathAuto = false
-		m.pathSugg.recompute(m.groupForm.path.Value())
+		if _, _, remote := m.remoteGroup(m.selectedGroupPath()); !remote {
+			m.pathSugg.recompute(m.groupForm.path.Value())
+		}
 	}
 	return m, cmd
 }
@@ -745,6 +769,17 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	parent := m.selectedGroupPath()
+	if host, group, remote := m.remoteGroup(parent); remote {
+		if m.groupForm.worktreeIndex != 0 {
+			m.errBar.text = "Remote group worktree defaults are not supported yet; choose inherit."
+			return m, nil
+		}
+		if group != "" {
+			name = group + "/" + name
+		}
+		m.mode = modeList
+		return m, m.remoteCreateGroup(host, name, strings.TrimSpace(m.groupForm.path.Value()))
+	}
 	full := name
 	if parent != "" {
 		full = parent + "/" + name

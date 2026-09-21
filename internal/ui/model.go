@@ -60,14 +60,15 @@ type treeRow struct {
 }
 
 type Model struct {
-	cfg      config.Config
-	store    *store.Store
-	tmux     *tmux.Driver
-	hooks    *hooks.Manager
-	gitDrv   *git.Driver
-	engine   *status.Engine
-	keys     keybind.Table
-	listKeys keybind.Table
+	federation *nativeFederation
+	cfg        config.Config
+	store      *store.Store
+	tmux       *tmux.Driver
+	hooks      *hooks.Manager
+	gitDrv     *git.Driver
+	engine     *status.Engine
+	keys       keybind.Table
+	listKeys   keybind.Table
 	// configDir is resolved once, at New, so the settings screen writes
 	// keys back to the config.toml the manager loaded.
 	configDir string
@@ -891,8 +892,11 @@ func (m *Model) syncPollInput() {
 	selectedID := ""
 	focusID := ""
 	if sess, ok := m.selected(); ok {
-		selectedID = sess.ID
-		if !sess.Archived {
+		_, remote := m.remoteRef(sess.ID)
+		if !remote {
+			selectedID = sess.ID
+		}
+		if !sess.Archived && !remote {
 			focusID = sess.ID
 		}
 	}
@@ -914,7 +918,8 @@ func (m *Model) watchSelection() {
 		return
 	}
 	sess, ok := m.selected()
-	if !ok || sess.Archived {
+	_, remote := m.remoteRef(sess.ID)
+	if !ok || sess.Archived || remote {
 		m.focus.setFocus("")
 		return
 	}
@@ -930,7 +935,7 @@ func (m *Model) requestRefresh() {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick())
+	return tea.Batch(m.federationRefresh(), m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick())
 }
 
 // updateMsg carries the result of a GitHub release check. A failed check may
@@ -1049,6 +1054,13 @@ func (m *Model) fetchFeed(force bool) tea.Msg {
 // created before an update still gets the current key bindings (the
 // server-global Ctrl+R review key) and footer.
 func (m *Model) refreshExistingSessionUX() tea.Msg {
+	panes, err := m.tmux.Panes()
+	if err != nil {
+		return errMsg{err}
+	}
+	if len(panes) == 0 {
+		return nil
+	}
 	if err := m.tmux.EnsureBindings(); err != nil {
 		return errMsg{err}
 	}
@@ -1163,6 +1175,9 @@ func (m *Model) schedulePreview() tea.Cmd {
 // Size pins stay on resizeSessions / create / attach — not on every look —
 // so a settle capture is one capture-pane, not resize+capture+pid storms.
 func (m *Model) previewCmd(sess store.Session, gen uint64) tea.Cmd {
+	if ref, ok := m.remoteRef(sess.ID); ok {
+		return m.remotePreview(sess, ref, gen)
+	}
 	return func() tea.Msg {
 		msg := previewMsg{sessID: sess.ID, gen: gen}
 		if sess.Archived || !m.tmux.Exists(sess.ID) {
@@ -1228,6 +1243,9 @@ func (m *Model) resizeSessions() {
 	var todo []target
 	var ids []string
 	for _, sess := range m.sessions {
+		if _, remote := m.remoteRef(sess.ID); remote {
+			continue
+		}
 		if sess.Archived || sess.ID == fullFocusID {
 			continue
 		}
@@ -1278,6 +1296,9 @@ func (m *Model) resizeSessions() {
 // shrinking it back would cost a Codex agent its scrollback (#369), and
 // paneWindow already crops a taller pane from its bottom.
 func (m *Model) pinFullFocusPane(id string) {
+	if _, remote := m.remoteRef(id); remote {
+		return
+	}
 	width, height := m.width, m.listBodyHeight()
 	if width <= 0 || height <= 0 {
 		return
@@ -1374,7 +1395,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.handleMsg(msg)
 	if mm, ok := model.(*Model); ok {
 		mm.flushPendingNotice()
-		return mm, tea.Batch(cmd, mm.syncMouseCapture())
+		return mm, tea.Batch(cmd, mm.syncMouseCapture(), mm.nextRemoteInput())
 	}
 	return model, tea.Batch(cmd, m.syncMouseCapture())
 }
@@ -1399,6 +1420,59 @@ func (m *Model) syncMouseCapture() tea.Cmd {
 
 func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case remotePaneMsg:
+		if msg.gen != 0 && msg.gen != m.previewGen {
+			return m, nil
+		}
+		sess, ok := m.selected()
+		if !ok || sess.ID != msg.id {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.errBar.text = msg.err.Error()
+			return m, nil
+		}
+		m.queueRemoteResize(msg.id, msg.state)
+		return m.handleMsg(focusPreviewMsg{sessID: msg.id, preview: msg.state.Output, cursorX: msg.state.CursorX, cursorY: msg.state.CursorY, cursorOK: msg.state.CursorVisible, paneStateOK: true, paneMouse: msg.state.Mouse, paneMotion: msg.state.Motion, paneSGR: msg.state.SGR, historySize: msg.state.History})
+	case remotePromptResultMsg:
+		m.federation.promptBusy = false
+		if msg.err != nil {
+			m.errBar.text = msg.err.Error()
+			return m, nil
+		}
+		if m.quick.message() == msg.text {
+			m.clearQuickAfterSend()
+		}
+		m.errBar.text = ""
+		return m, m.federationRefresh()
+	case remoteInputDoneMsg:
+		m.federation.inputBusy = false
+		if msg.err != nil {
+			m.federation.inputQueue = nil
+			m.errBar.text = msg.err.Error()
+			return m, nil
+		}
+		var preview tea.Cmd
+		if sess, ok := m.selected(); ok {
+			if _, remote := m.remoteRef(sess.ID); remote {
+				preview = m.previewCmd(sess, m.previewGen)
+			}
+		}
+		return m, tea.Batch(m.nextRemoteInput(), preview)
+	case nativeSnapshotMsg:
+		m.acceptRemoteSnapshots(msg)
+		m.federation.refreshing = false
+		return m, tea.Batch(m.refreshCmd(), nativeTick())
+	case nativeTickMsg:
+		return m, m.federationRefresh()
+	case nativeResultMsg:
+		SyncTerminalBackground()
+		if msg.err != nil {
+			m.errBar.text = msg.err.Error()
+		} else {
+			m.errBar.text = ""
+		}
+		return m, m.federationRefresh()
 	case tea.WindowSizeMsg:
 		// Resuming from a tmux attach re-sends the current size unchanged; only
 		// a real resize needs the per-session tmux resize calls, so an
@@ -1461,6 +1535,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.previewCmd(sess, m.previewGen), m.previewTick())
 
 	case refreshMsg:
+		m.mergeFederation(&msg)
 		m.booting = false
 		m.ageError()
 		// The focused session can die or vanish under us; fall back to the
@@ -2124,6 +2199,11 @@ func (m *Model) rebuildRows() {
 		// off. Ancestors of groups with visible sessions stay in the tree.
 		paths = pathsWithSessions(paths, sessionsByGroup)
 	}
+	if m.federation != nil && !prunedView && !m.showArchived {
+		for host := range m.federation.remoteNames {
+			paths[host] = true
+		}
+	}
 	children := childIndex(paths, m.groups)
 
 	// Folds are a browsing convenience for the active tree; the archived,
@@ -2160,6 +2240,7 @@ func (m *Model) rebuildRows() {
 		walk(root, 0)
 	}
 
+	rows = m.arrangeHostRows(rows)
 	m.rows = rows
 	if previousKey != "" {
 		for i, entry := range rows {

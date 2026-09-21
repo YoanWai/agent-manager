@@ -470,7 +470,7 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev")
 	registered := []string{
 		"sessions", "spawn", "send", "read", "wait", "message-status", "kill", "revive", "archive",
-		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
+		"groups", "create-group", "delete-group", "snapshot", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "update",
 	}
 	for _, name := range registered {
@@ -483,7 +483,7 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	}
 
 	help := Help("dev")
-	for _, line := range []string{usageSessions, usageReserve, usageTerminalSend, usageRename, usageReviewComment, usageIssue, usageFeature, usageUpdate, "task <list|create|claim|finish|release|delete>"} {
+	for _, line := range []string{usageSessions, usageSnapshot, usageReserve, usageTerminalSend, usageRename, usageReviewComment, usageIssue, usageFeature, usageUpdate, "task <list|create|claim|finish|release|delete>"} {
 		if !strings.Contains(help, line) {
 			t.Fatalf("help is missing %q:\n%s", line, help)
 		}

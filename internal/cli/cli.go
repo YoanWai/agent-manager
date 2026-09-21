@@ -40,6 +40,7 @@ type section struct {
 func sections(version string) []section {
 	return []section{
 		sessionSection(),
+		snapshotSection(),
 		taskSection(),
 		fileSection(),
 		terminalSection(),

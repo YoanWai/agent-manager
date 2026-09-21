@@ -51,6 +51,9 @@ func (m *Model) terminalKey() (tea.Model, tea.Cmd) {
 // shell, so no prompt, rename directive or MCP registration applies to a
 // session there is no agent to send them to.
 func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
+	if host, group, remote := m.remoteGroup(m.contextGroup()); remote {
+		return m, m.remoteTerminal(host, group)
+	}
 	toolName, tool := m.shellTool()
 	dir, ok := m.rowDir()
 	if !ok {

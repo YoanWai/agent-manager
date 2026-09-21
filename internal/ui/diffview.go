@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/YoanWai/agent-manager/internal/deps"
@@ -196,6 +198,9 @@ type reviewSendRequest struct {
 
 // repoWant is matched by path so the selection survives ResolveRepos re-ranking between loads.
 func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWant string, refresh bool) tea.Cmd {
+	if _, remote := m.remoteRef(sess.ID); remote {
+		return m.remoteDiffCmd(sess, scope, gen, repoWant, "", refresh)
+	}
 	driver := m.gitDrv
 	stor := m.store
 	// Restoring happens once per repo, so a reload that would only have its
@@ -263,6 +268,9 @@ func finishDiffMsg(driver *git.Driver, scope git.Scope, gen int, gitRoot, overri
 }
 
 func (m *Model) diffReloadCmd(sess store.Session, scope git.Scope, gen int, gitRoot, override string, repoRoots []string) tea.Cmd {
+	if _, remote := m.remoteRef(sess.ID); remote {
+		return m.remoteDiffCmd(sess, scope, gen, gitRoot, override, false)
+	}
 	driver := m.gitDrv
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen}
@@ -275,6 +283,9 @@ func (m *Model) diffReloadCmd(sess store.Session, scope git.Scope, gen int, gitR
 // base itself: the single store connection can wait behind the poller, and
 // Update is not the place to wait for it.
 func (m *Model) diffRebaseCmd(sess store.Session, scope git.Scope, gen int, gitRoot string, repoRoots []string) tea.Cmd {
+	if _, remote := m.remoteRef(sess.ID); remote {
+		return m.remoteDiffCmd(sess, scope, gen, gitRoot, m.diff.set.BaseOverride, false)
+	}
 	driver, stor := m.gitDrv, m.store
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, repoRoots: repoRoots, repoRoot: gitRoot}
@@ -295,6 +306,20 @@ func (m *Model) diffHLCmd(fd diff.FileDiff, key hlKey) tea.Cmd {
 }
 
 func (m *Model) diffFileLoadCmd(set diff.Set, sessID string, scope git.Scope, gen, index int, path string) tea.Cmd {
+	if ref, remote := m.remoteRef(sessID); remote {
+		client := m.federation.client
+		return func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			review, err := client.Review(ctx, ref.Host, set.Repo.Root, scope, set.BaseOverride, set.Repo.Root, path)
+			fd := diff.BuildFile(nil, nil, set.Files[0].File, set.Files[0].Stat)
+			fd.Err = err
+			if err == nil && review.File != nil {
+				fd = *review.File
+			}
+			return diffFileLoadedMsg{sessID: sessID, scope: scope, gen: gen, repoRoot: set.Repo.Root, index: index, path: path, fd: fd}
+		}
+	}
 	driver := m.gitDrv
 	return func() tea.Msg {
 		return diffFileLoadedMsg{
@@ -328,6 +353,19 @@ func diffFilesLoadCmd(cmds []tea.Cmd) tea.Cmd {
 }
 
 func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
+	if ref, remote := m.remoteRef(sess.ID); remote {
+		client, root, base := m.federation.client, m.diff.set.Repo.Root, m.diff.set.BaseOverride
+		return func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			review, err := client.Review(ctx, ref.Host, root, scope, base, root, "")
+			fp := review.Fingerprint
+			if err != nil {
+				fp = 0
+			}
+			return diffProbeMsg{sessID: sess.ID, scope: scope, repoRoot: root, fp: fp}
+		}
+	}
 	driver := m.gitDrv
 	// The override is keyed by the raw selection while the git operations run
 	// against the resolved toplevel - the same split diffLoadCmd uses, so probe
@@ -372,6 +410,8 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 	m.diff.reanchor = nil
 	if picked, ok := m.pickedRepos[sess.ID]; ok {
 		m.diff.repoSel = picked
+	} else if _, remote := m.remoteRef(sess.ID); remote {
+		m.diff.notice = "remote review: read-only; comments and editor actions are unavailable"
 	} else if declared, err := m.store.ReviewRepo(sess.ID); err != nil {
 		m.errBar.text = err.Error()
 	} else if declared != "" {
@@ -381,6 +421,9 @@ func (m *Model) retargetDiff(sess store.Session) tea.Cmd {
 }
 
 func (m *Model) applyStoredScope(sessionID string) {
+	if _, remote := m.remoteRef(sessionID); remote {
+		return
+	}
 	if m.store == nil {
 		return
 	}
@@ -583,6 +626,9 @@ func (m *Model) chainReviewWrite(run func() tea.Msg) tea.Cmd {
 }
 
 func (m *Model) saveReviewStateCmd() tea.Cmd {
+	if _, remote := m.remoteRef(m.diff.sessID); remote {
+		return nil
+	}
 	if m.store == nil || m.diff.sessID == "" || m.diff.repoSel == "" {
 		return nil
 	}
@@ -1219,6 +1265,13 @@ func (m *Model) diffPaneWidths() (fileWidth, codeWidth int) {
 // handleDiffKey owns the whole keymap in fullscreen review mode.
 func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.diff.notice = ""
+	if _, remote := m.remoteRef(m.diff.sessID); remote {
+		switch msg.String() {
+		case "b", "B", " ", "space", "c", "d", "C", "o", "f3":
+			m.diff.notice = "remote review is read-only; comments, branch changes and editor actions are unavailable"
+			return m, nil
+		}
+	}
 	if m.diff.annotating {
 		return m.handleAnnotateKey(msg)
 	}
