@@ -4,6 +4,7 @@ package federation
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -29,11 +30,29 @@ type Row struct {
 	Archived                                       bool
 }
 type HostSnapshot struct {
-	Name       string
-	Rows       []Row
-	Groups     []string
-	GroupPaths map[string]string
-	Error      string
+	Name                string
+	Rows                []Row
+	Groups              []string
+	GroupPaths          map[string]string
+	Error               string
+	Reachability        Reachability
+	Stale               bool
+	ConsecutiveFailures int
+	LastSuccess         time.Time
+}
+type Reachability uint8
+
+const (
+	Healthy Reachability = iota
+	Suspect
+	Unreachable
+)
+
+type SnapshotEnvelope struct {
+	Version   int                   `json:"version"`
+	Sessions  []sessioncmd.Session  `json:"sessions"`
+	Terminals []sessioncmd.Terminal `json:"terminals"`
+	Groups    []sessioncmd.Group    `json:"groups"`
 }
 type Host struct {
 	Name         string `json:"name"`
@@ -41,11 +60,14 @@ type Host struct {
 	Controller   string `json:"controller"`
 	Binary       string `json:"binary"`
 	ReviewBinary string `json:"review_binary,omitempty"`
+	ControlPath  string `json:"-"`
 }
 type Client struct {
-	dir   string
-	hosts []Host
-	run   func(context.Context, *exec.Cmd) ([]byte, error)
+	dir       string
+	hosts     []Host
+	run       func(context.Context, *exec.Cmd) ([]byte, error)
+	globalRPC chan struct{}
+	hostRPC   map[string]chan struct{}
 }
 
 var safeTarget = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9_.@:-]*$`)
@@ -98,7 +120,29 @@ func Load(configDir string) (*Client, error) {
 	if len(cfg.Hosts) == 0 {
 		return nil, fmt.Errorf("fleet.json has no hosts")
 	}
-	return &Client{dir: configDir, hosts: cfg.Hosts, run: run}, nil
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(configDir)))[:8]
+	// OpenSSH limits Unix control-socket paths to roughly 104 bytes. macOS's
+	// os.TempDir lives under /var/folders and leaves too little room for %C's
+	// 40-character expansion, so use the system's short, private subdirectory.
+	tempRoot := os.TempDir()
+	if info, err := os.Stat("/tmp"); err == nil && info.IsDir() {
+		tempRoot = "/tmp"
+	}
+	controlDir := filepath.Join(tempRoot, "am-ssh-"+hash)
+	if err := os.MkdirAll(controlDir, 0700); err != nil {
+		return nil, fmt.Errorf("create SSH control directory: %w", err)
+	}
+	if err := os.Chmod(controlDir, 0700); err != nil {
+		return nil, fmt.Errorf("secure SSH control directory: %w", err)
+	}
+	hostRPC := make(map[string]chan struct{}, len(cfg.Hosts))
+	for i := range cfg.Hosts {
+		if cfg.Hosts[i].SSH != "" {
+			cfg.Hosts[i].ControlPath = filepath.Join(controlDir, "%C")
+			hostRPC[cfg.Hosts[i].Name] = make(chan struct{}, 1)
+		}
+	}
+	return &Client{dir: configDir, hosts: cfg.Hosts, run: run, globalRPC: make(chan struct{}, 4), hostRPC: hostRPC}, nil
 }
 func run(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 	var out, stderr bytes.Buffer
@@ -126,6 +170,9 @@ func remote(ctx context.Context, h Host, tty bool, args ...string) *exec.Cmd {
 		words[i] = quote(words[i])
 	}
 	flags := []string{"-o", "BatchMode=yes", "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes", "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2", "-T"}
+	if h.ControlPath != "" {
+		flags = append(flags[:len(flags)-1], "-o", "ControlMaster=auto", "-o", "ControlPersist=60", "-o", "ControlPath="+h.ControlPath, flags[len(flags)-1])
+	}
 	if tty {
 		flags[len(flags)-1] = "-t"
 	}
@@ -133,6 +180,21 @@ func remote(ctx context.Context, h Host, tty bool, args ...string) *exec.Cmd {
 	return exec.CommandContext(ctx, "ssh", flags...)
 }
 func (c *Client) rpc(ctx context.Context, h Host, args ...string) ([]byte, error) {
+	if h.SSH != "" {
+		select {
+		case c.globalRPC <- struct{}{}:
+			defer func() { <-c.globalRPC }()
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		permit := c.hostRPC[h.Name]
+		select {
+		case permit <- struct{}{}:
+			defer func() { <-permit }()
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	return c.run(ctx, remote(ctx, h, false, args...))
 }
 func (c *Client) Snapshot(ctx context.Context) []HostSnapshot {
@@ -144,10 +206,15 @@ func (c *Client) Snapshot(ctx context.Context) []HostSnapshot {
 			defer wg.Done()
 			bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
-			rows, err := c.rows(bounded, h)
-			result[i] = HostSnapshot{Name: h.Name, Rows: rows}
-			if err == nil {
-				result[i].Groups, result[i].GroupPaths, err = c.groups(bounded, h)
+			var err error
+			result[i] = HostSnapshot{Name: h.Name}
+			if h.SSH != "" {
+				result[i], err = c.remoteSnapshot(bounded, h)
+			} else {
+				result[i].Rows, err = c.rows(bounded, h)
+				if err == nil {
+					result[i].Groups, result[i].GroupPaths, err = c.groups(bounded, h)
+				}
 			}
 			if err != nil {
 				result[i].Error = err.Error()
@@ -157,6 +224,34 @@ func (c *Client) Snapshot(ctx context.Context) []HostSnapshot {
 	}
 	wg.Wait()
 	return result
+}
+
+func (c *Client) remoteSnapshot(ctx context.Context, h Host) (HostSnapshot, error) {
+	b, err := c.rpc(ctx, h, "snapshot", "--json")
+	if err != nil {
+		return HostSnapshot{Name: h.Name}, err
+	}
+	var envelope SnapshotEnvelope
+	if err := json.Unmarshal(b, &envelope); err != nil {
+		return HostSnapshot{Name: h.Name}, fmt.Errorf("snapshot JSON: %w", err)
+	}
+	if envelope.Version != 1 {
+		return HostSnapshot{Name: h.Name}, fmt.Errorf("unsupported snapshot version %d", envelope.Version)
+	}
+	result := HostSnapshot{Name: h.Name, GroupPaths: map[string]string{}}
+	for _, s := range envelope.Sessions {
+		result.Rows = append(result.Rows, Row{Ref: Ref{h.Name, s.ID}, Name: s.Name, Tool: s.Tool, Group: s.Group, Directory: s.Directory, Status: s.Status, Running: s.Running, Archived: s.Archived})
+	}
+	for _, s := range envelope.Terminals {
+		result.Rows = append(result.Rows, Row{Ref: Ref{h.Name, s.ID}, Name: s.Name, Tool: "terminal", Group: s.Group, Directory: s.Directory, Status: s.Status, Running: s.Running, Terminal: true, ParentID: s.ParentID})
+	}
+	for _, g := range envelope.Groups {
+		if !g.Archived {
+			result.Groups = append(result.Groups, g.Path)
+			result.GroupPaths[g.Path] = g.Directory
+		}
+	}
+	return result, nil
 }
 func (c *Client) groups(ctx context.Context, h Host) ([]string, map[string]string, error) {
 	if h.SSH != "" {

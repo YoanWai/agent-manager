@@ -10,7 +10,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -62,14 +65,10 @@ func TestSnapshotNamespacesCollidingIDsAndKeepsTerminals(t *testing.T) {
 	c := fixture(t, []Host{{Name: "a", SSH: "a", Controller: "ctl"}, {Name: "b", SSH: "b", Controller: "ctl"}})
 	c.run = func(_ context.Context, cmd *exec.Cmd) ([]byte, error) {
 		s := cmd.Args[len(cmd.Args)-1]
-		switch {
-		case strings.Contains(s, "'terminal'"):
-			return []byte(`[{"id":"term","name":"rails","parent_id":"same","running":true}]`), nil
-		case strings.Contains(s, "'groups'"):
-			return []byte(`[{"path":"empty"}]`), nil
-		default:
-			return []byte(`[{"id":"same","name":"agent","running":true}]`), nil
+		if !strings.Contains(s, "'snapshot'") {
+			t.Fatalf("unexpected command: %s", s)
 		}
+		return []byte(`{"version":1,"sessions":[{"id":"same","name":"agent","running":true}],"terminals":[{"id":"term","name":"rails","parent_id":"same","running":true}],"groups":[{"path":"empty"}]}`), nil
 	}
 	snap := c.Snapshot(context.Background())
 	if len(snap) != 2 || snap[0].Error != "" || snap[1].Error != "" {
@@ -83,6 +82,70 @@ func TestSnapshotNamespacesCollidingIDsAndKeepsTerminals(t *testing.T) {
 	}
 	if len(snap[0].Groups) != 1 {
 		t.Fatal("empty group missing")
+	}
+}
+
+func TestRemoteSnapshotUsesOneAtomicRPC(t *testing.T) {
+	c := fixture(t, []Host{{Name: "remote", SSH: "host", Controller: "ctl"}})
+	calls := 0
+	c.run = func(_ context.Context, cmd *exec.Cmd) ([]byte, error) {
+		calls++
+		if script := cmd.Args[len(cmd.Args)-1]; !strings.Contains(script, "'snapshot' '--json'") {
+			t.Fatalf("unexpected remote command: %s", script)
+		}
+		return []byte(`{"version":1,"sessions":[{"id":"agent","name":"worker","group":"work","running":true}],"terminals":[{"id":"term","name":"shell","group":"work","parent_id":"agent","running":true}],"groups":[{"path":"work","directory":"/srv/work"}]}`), nil
+	}
+	s := c.Snapshot(context.Background())[0]
+	if s.Error != "" || calls != 1 || len(s.Rows) != 2 || !s.Rows[1].Terminal || s.GroupPaths["work"] != "/srv/work" {
+		t.Fatalf("snapshot=%+v calls=%d", s, calls)
+	}
+}
+
+func TestRemoteUsesPrivateMultiplexedConnection(t *testing.T) {
+	c := fixture(t, []Host{{Name: "remote", SSH: "host", Controller: "ctl"}})
+	h, err := c.host("remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := remote(context.Background(), h, false, "sessions").Args
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"ControlMaster=auto", "ControlPersist=60", "ControlPath="} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("ssh args missing %s: %v", want, args)
+		}
+	}
+	if expanded := strings.Replace(h.ControlPath, "%C", strings.Repeat("a", 40), 1); len(expanded) >= 104 {
+		t.Fatalf("expanded control path is too long (%d): %s", len(expanded), expanded)
+	}
+}
+
+func TestRemoteCallsAreSerializedPerHost(t *testing.T) {
+	c := fixture(t, []Host{{Name: "remote", SSH: "host", Controller: "ctl"}})
+	var active, maximum int32
+	c.run = func(context.Context, *exec.Cmd) ([]byte, error) {
+		now := atomic.AddInt32(&active, 1)
+		for {
+			seen := atomic.LoadInt32(&maximum)
+			if now <= seen || atomic.CompareAndSwapInt32(&maximum, seen, now) {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+		atomic.AddInt32(&active, -1)
+		return []byte(`{}`), nil
+	}
+	h, _ := c.host("remote")
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = c.rpc(context.Background(), h, "noop")
+		}()
+	}
+	wg.Wait()
+	if maximum != 1 {
+		t.Fatalf("maximum concurrent calls to one host = %d", maximum)
 	}
 }
 func TestOfflineHostIsErrorNotDead(t *testing.T) {

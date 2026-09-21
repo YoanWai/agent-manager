@@ -51,17 +51,32 @@ func TestNativeFederationKeepsLocalIDsAndRemoteParentsSeparate(t *testing.T) {
 	}
 }
 
-func TestNativeFederationKeepsOfflineRowsAndRefusesActions(t *testing.T) {
+func TestNativeFederationKeepsStaleRowsBeforeDeclaringHostUnreachable(t *testing.T) {
 	m := buildModel(t)
 	nativeFixture(m)
-	m.acceptRemoteSnapshots([]federation.HostSnapshot{{Name: "floripa", Error: "connection refused"}})
-	if len(m.federation.hosts[0].Rows) != 2 || m.federation.hosts[0].Rows[0].Status != "unreachable" {
-		t.Fatal("offline rows lost or shown as fresh")
+	failed := []federation.HostSnapshot{{Name: "floripa", Error: "connection refused"}}
+	for attempt := 1; attempt <= 2; attempt++ {
+		m.acceptRemoteSnapshots(failed)
+		got := m.federation.hosts[0]
+		if len(got.Rows) != 2 || got.Rows[0].Status != "idle" || !got.Stale || got.Reachability == federation.Unreachable {
+			t.Fatalf("attempt %d discarded usable state: %+v", attempt, got)
+		}
+		if err := m.remoteAvailable("floripa"); err != nil {
+			t.Fatalf("attempt %d blocked host: %v", attempt, err)
+		}
+	}
+	m.acceptRemoteSnapshots(failed)
+	if m.federation.hosts[0].Reachability != federation.Unreachable {
+		t.Fatalf("third failure did not mark host unreachable: %+v", m.federation.hosts[0])
 	}
 	m.rows = []treeRow{{sess: store.Session{ID: "floripa::same", Group: "floripa/property"}}}
 	handled, cmd := m.guardRemoteAction(keybind.Revive)
 	if !handled || cmd != nil || !strings.Contains(m.errBar.text, "unreachable") {
 		t.Fatal("offline action not refused")
+	}
+	m.acceptRemoteSnapshots([]federation.HostSnapshot{{Name: "floripa", Rows: m.federation.hosts[0].Rows}})
+	if m.federation.hosts[0].Reachability != federation.Healthy || m.federation.hosts[0].Stale {
+		t.Fatal("successful refresh did not recover host")
 	}
 }
 

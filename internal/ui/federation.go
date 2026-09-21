@@ -297,7 +297,7 @@ func (m *Model) remoteCreateGroup(host, group, path string) tea.Cmd {
 
 func (m *Model) remoteAvailable(host string) error {
 	for _, snapshot := range m.federation.hosts {
-		if snapshot.Name == host && snapshot.Error != "" {
+		if snapshot.Name == host && snapshot.Reachability == federation.Unreachable {
 			return fmt.Errorf("%s unreachable: %s", host, snapshot.Error)
 		}
 	}
@@ -426,19 +426,31 @@ func (m *Model) remoteRegion(id string, ref federation.Ref, offset, rows int) te
 }
 
 func (m *Model) acceptRemoteSnapshots(snapshots []federation.HostSnapshot) {
+	// The caller may reuse its message slice in tests or adapters. Keep the
+	// accepted health state independent so the next failure can compare with
+	// the previous pass instead of mutating it in place.
+	snapshots = append([]federation.HostSnapshot(nil), snapshots...)
 	for i := range snapshots {
 		if snapshots[i].Error == "" {
+			snapshots[i].Reachability = federation.Healthy
+			snapshots[i].LastSuccess = time.Now()
 			continue
 		}
+		snapshots[i].Reachability = federation.Unreachable
+		snapshots[i].Stale = true
+		snapshots[i].ConsecutiveFailures = 1
 		for _, old := range m.federation.hosts {
 			if old.Name != snapshots[i].Name {
 				continue
 			}
 			snapshots[i].Rows = append([]federation.Row(nil), old.Rows...)
 			snapshots[i].Groups, snapshots[i].GroupPaths = old.Groups, old.GroupPaths
-			for j := range snapshots[i].Rows {
-				snapshots[i].Rows[j].Status = "unreachable"
-				snapshots[i].Rows[j].Running = false
+			snapshots[i].LastSuccess = old.LastSuccess
+			snapshots[i].ConsecutiveFailures = old.ConsecutiveFailures + 1
+			snapshots[i].Stale = true
+			snapshots[i].Reachability = federation.Suspect
+			if snapshots[i].ConsecutiveFailures >= 3 {
+				snapshots[i].Reachability = federation.Unreachable
 			}
 		}
 	}
