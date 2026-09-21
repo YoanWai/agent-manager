@@ -161,6 +161,28 @@ func TestLocalSnapshotDoesNotNeedCallerOrWriteState(t *testing.T) {
 		t.Fatal("snapshot changed database")
 	}
 }
+
+func TestLocalSnapshotReportsTmuxProbeFailures(t *testing.T) {
+	c := fixture(t, []Host{{Name: "mac"}})
+	st, err := store.Open(filepath.Join(c.dir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSession(store.Session{ID: "local-agent", Name: "local", Tool: "pi", Cwd: "/tmp", Group: "work", Status: "idle"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c.run = func(context.Context, *exec.Cmd) ([]byte, error) {
+		return nil, errors.New(`exec: "tmux": executable file not found in $PATH`)
+	}
+	s := c.Snapshot(context.Background())[0]
+	if s.Error == "" || s.Rows != nil {
+		t.Fatalf("probe failure was hidden: %+v", s)
+	}
+}
+
 func TestLoadRejectsSSHOptionsAndDuplicateHosts(t *testing.T) {
 	for _, raw := range []string{`{"hosts":[{"name":"a","ssh":"-oProxyCommand=evil","controller":"ctl"}]}`, `{"hosts":[{"name":"a","ssh":"host;evil","controller":"ctl"}]}`, `{"hosts":[{"name":"a"},{"name":"a"}]}`} {
 		dir := t.TempDir()

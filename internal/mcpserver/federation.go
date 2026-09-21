@@ -14,8 +14,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 )
 
-// Wrappers keep the native services authoritative for this host. Only explicitly
-// host-qualified targets cross SSH; remote commands use the host's CLI directly.
 type fleetSessions struct {
 	sessionCommands
 	fleet   *federation.Client

@@ -5,7 +5,6 @@ import (
 	"errors"
 )
 
-// The loading flags and diagnostic are part of a remote review snapshot too.
 func (f FileDiff) MarshalJSON() ([]byte, error) {
 	type plain FileDiff
 	copy := f

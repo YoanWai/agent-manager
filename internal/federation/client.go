@@ -267,7 +267,7 @@ func (c *Client) localRows(ctx context.Context, h Host) ([]Row, error) {
 	// One read-only tmux query distinguishes an absent server from a failed probe.
 	cmd := exec.CommandContext(ctx, "tmux", "-L", "agentmgr", "list-sessions", "-F", "#{session_name}")
 	b, err := c.run(ctx, cmd)
-	if err != nil && !strings.Contains(err.Error(), "no server running") && !strings.Contains(err.Error(), "No such file or directory") {
+	if err != nil && !strings.Contains(err.Error(), "no server running") && !strings.Contains(err.Error(), "error connecting to") {
 		return nil, err
 	}
 	live := map[string]bool{}
