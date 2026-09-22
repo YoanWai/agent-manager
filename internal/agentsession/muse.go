@@ -26,6 +26,15 @@ func captureMuse(root, cwd string, launchedAt time.Time, claimed map[string]bool
 	return pickEarliest(cands)
 }
 
+func snapshotMuse(root, cwd string) (map[string]int64, bool) {
+	return snapshotCandidates(museCandidates(root, cwd, time.Time{}, nil))
+}
+
+func recaptureMuse(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
+	cands, err := museCandidates(root, cwd, time.Time{}, claimed)
+	return recaptureCandidates(cands, err, snapshot)
+}
+
 func museCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) ([]candidate, error) {
 	if root == "" {
 		return nil, os.ErrNotExist

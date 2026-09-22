@@ -1,8 +1,8 @@
 // Package agentsession reads back the conversation id an agent CLI minted
 // for a session the manager launched, for tools that do not accept a
-// chosen id at launch (codex, opencode, gemini, hermes, command-code, muse). Revive resumes that
-// exact id instead of the working directory's most recent conversation, which
-// is the wrong one whenever sessions share a directory.
+// chosen id at launch (codex, opencode, gemini, hermes, command-code, muse).
+// Revive resumes that exact id instead of the working directory's most recent
+// conversation, which is the wrong one whenever sessions share a directory.
 package agentsession
 
 import (
@@ -66,8 +66,6 @@ func resolvePath(p string) string {
 // exists yet; the caller retries on the next poll.
 func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
 	switch sessionStore {
-	case "muse":
-		return captureMuse(museRoot(), cwd, launchedAt, claimed)
 	case "codex":
 		return captureCodex(codexRoot(), cwd, launchedAt, claimed)
 	case "opencode":
@@ -78,6 +76,8 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 		return captureHermes(hermesStateDB(), cwd, launchedAt, claimed)
 	case "command-code":
 		return captureCommandCode(commandCodeRoot(), cwd, launchedAt, claimed)
+	case "muse":
+		return captureMuse(museRoot(), cwd, launchedAt, claimed)
 	default:
 		return "", false
 	}
@@ -91,8 +91,6 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 // relaunch proceeds without a snapshot and recapture refuses to guess.
 func Snapshot(sessionStore, cwd string) (map[string]int64, bool) {
 	switch sessionStore {
-	case "muse":
-		return snapshotMuse(museRoot(), cwd)
 	case "codex":
 		return snapshotCodex(codexRoot(), cwd)
 	case "opencode":
@@ -103,6 +101,8 @@ func Snapshot(sessionStore, cwd string) (map[string]int64, bool) {
 		return snapshotHermes(hermesStateDB(), cwd)
 	case "command-code":
 		return snapshotCommandCode(commandCodeRoot(), cwd)
+	case "muse":
+		return snapshotMuse(museRoot(), cwd)
 	default:
 		return nil, false
 	}
@@ -121,8 +121,6 @@ func Recapture(sessionStore, cwd string, snapshot map[string]int64, claimed map[
 	}
 	var cands []candidate
 	switch sessionStore {
-	case "muse":
-		cands = recaptureMuse(museRoot(), cwd, snapshot, claimed)
 	case "codex":
 		cands = recaptureCodex(codexRoot(), cwd, snapshot, claimed)
 	case "gemini":
@@ -133,6 +131,8 @@ func Recapture(sessionStore, cwd string, snapshot map[string]int64, claimed map[
 		cands = recaptureOpencode(cwd, snapshot, claimed)
 	case "hermes":
 		return recaptureHermes(hermesStateDB(), cwd, snapshot, claimed)
+	case "muse":
+		cands = recaptureMuse(museRoot(), cwd, snapshot, claimed)
 	default:
 		return "", false
 	}
@@ -920,13 +920,4 @@ func geminiSessionFileIn(root, id string) (string, error) {
 		return "", fmt.Errorf("no gemini session file found for conversation %s", id)
 	}
 	return found, nil
-}
-
-func snapshotMuse(root, cwd string) (map[string]int64, bool) {
-	return snapshotCandidates(museCandidates(root, cwd, time.Time{}, nil))
-}
-
-func recaptureMuse(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
-	cands, err := museCandidates(root, cwd, time.Time{}, claimed)
-	return recaptureCandidates(cands, err, snapshot)
 }
