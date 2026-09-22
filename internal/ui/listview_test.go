@@ -1733,3 +1733,14 @@ func TestFullQuickLinesKeepTheCaretRowOnScreen(t *testing.T) {
 		t.Fatal("the frame clipped the prompt's last row")
 	}
 }
+
+func TestQuickBarMeasuresRowsAtTheWidthItJustSet(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	m.quick.input.SetWidth(80)
+	m.quick.input.SetValue("one two three four five six seven eight nine ten")
+	m.viewQuickBar(14, quickBarMaxRows)
+	if m.quick.maxRows < 2 {
+		t.Fatalf("rows = %d, want the wrap at width 14, not the previous width", m.quick.maxRows)
+	}
+}

@@ -1547,8 +1547,9 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 	}
 	// The rows the frame can spare become the box's own cap, so a keystroke
 	// repositions the viewport inside the rows that are actually on screen.
-	m.quick.maxRows = m.quickBarRows(width-2, maxRows)
+	// LineInfo counts wraps at the width already stored on the box.
 	m.quick.input.SetWidth(width)
+	m.quick.maxRows = m.quickBarRows(width-2, maxRows)
 	m.quick.input.SetHeight(m.quick.maxRows)
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
