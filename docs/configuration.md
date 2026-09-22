@@ -12,6 +12,8 @@ The Pi support requires Pi 0.76.0 or later, because it launches sessions with `-
 
 Hermes is tested with Hermes Agent 0.20.0 and launches its classic REPL with `--cli`. This keeps the input, approval, and activity markers stable even when your Hermes preference selects its modern TUI.
 
+Muse Code is tested with Muse 1.3.0. Muse offers no MCP registration or fork command, so its sessions coordinate through the `agent-manager` shell subcommands.
+
 A config file written by an earlier release still has `[tools.<name>]` blocks. They are no longer read, whether they were copies of the defaults that day or a block you added, so a fix for a CLI's new screen reaches you instead of stopping at a frozen copy. The manager says so the first time it opens a file that still has them, and they are yours to delete.
 
 **When a status looks wrong.** The rules are ours to fix, for everyone. [Open an issue](https://github.com/YoanWai/agent-manager/issues/new/choose) with the CLI and its version, plus the pane text it draws, which you can read the way the poller reads it. Replace `SESSION_ID` with the session id:
@@ -63,7 +65,3 @@ State is stored next to the config in `state.db` (SQLite).
 ## Right-to-left text
 
 Hebrew and Arabic rows are painted as the cells they occupy, the same on every host. A terminal that runs its own bidirectional layout, iTerm2's right-to-left support or WezTerm's `bidi_enabled`, reorders those rows itself; turn that support off to read the frame in the columns Agent Manager paints.
-
-## Muse Code
-
-Select `muse` to launch Muse Code with its own defaults and configuration. Startup prompts are positional. Agent Manager reads the conversation ID from `${XDG_DATA_HOME:-$HOME/.local/share}/muse/sessions` so revive can run `muse resume <id>`. Without an ID, it opens `muse resume` for you to choose. Missing or unrecognized logs leave launch usable and fall back to the picker. Muse uses the Agent Manager shell subcommands for coordination. It does not register the Agent Manager MCP server. No fork command is configured because Muse does not expose one through its CLI.
