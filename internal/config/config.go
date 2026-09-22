@@ -473,19 +473,20 @@ session_store = "muse"
 resume_by_id_command = "muse resume {id}"
 resume_picker_command = "muse resume"
 revive_command = "muse resume --last"
-# Muse has no CLI MCP registration interface; use the workspace subcommands.
+# Muse has no CLI interface for registering MCP servers.
 mcp = "none"
 default_status = "idle"
-activity_cutoff = "(?m)^⟩"
-chrome_line = "^\\s*─*\\s*$"
+activity_cutoff = "(?m)^❯"
+chrome_line = "^\\s*─+(?: .*)?$|^\\s*$"
 message_start = "^◆ "
 input_placeholder = "^Type @ to search and insert workspace file paths$"
-user_echo = "^⟩ "
+user_echo = "^❯ "
 rules = [
+  { state = "waiting", pattern = "(?m)^\\s*Resume a previous session\\s*$" },
   { state = "waiting", pattern = "(?m)^Do you trust this workspace\\?$" },
   { state = "waiting", pattern = "(?m)^> \\d+  " },
   { state = "working", pattern = "(?m)^[◇◈◆] [^\\n]*\\([\\dhms. ]+ · esc to interrupt\\)\\s*$" },
-  { state = "errored", pattern = "(?im)^\\s*error:" },
+  { state = "errored", pattern = "(?m)^retained session not found: session [^\\n]+ has no saved log(?:\\n[ \\t]*)*\\z" },
 ]
 
 [tools.grok]

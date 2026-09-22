@@ -58,6 +58,7 @@ body:
         - Pi
         - Hermes Agent
         - Command Code
+        - Muse Code
         - Not tool specific
 
   - type: input

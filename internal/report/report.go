@@ -323,6 +323,7 @@ func toolLabel(toolName string) string {
 		"pi":           "Pi",
 		"hermes":       "Hermes Agent",
 		"command-code": "Command Code",
+		"muse":         "Muse Code",
 	}
 	if label, known := labels[toolName]; known {
 		return label

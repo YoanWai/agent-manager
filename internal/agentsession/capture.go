@@ -67,8 +67,7 @@ func resolvePath(p string) string {
 func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
 	switch sessionStore {
 	case "muse":
-		cands, _ := museCandidates(museRoot(), cwd, launchedAt.Add(-clockSlack), claimed)
-		return pickEarliest(cands)
+		return captureMuse(museRoot(), cwd, launchedAt, claimed)
 	case "codex":
 		return captureCodex(codexRoot(), cwd, launchedAt, claimed)
 	case "opencode":
@@ -93,7 +92,7 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 func Snapshot(sessionStore, cwd string) (map[string]int64, bool) {
 	switch sessionStore {
 	case "muse":
-		return snapshotCandidates(museCandidates(museRoot(), cwd, time.Time{}, nil))
+		return snapshotMuse(museRoot(), cwd)
 	case "codex":
 		return snapshotCodex(codexRoot(), cwd)
 	case "opencode":
@@ -123,8 +122,7 @@ func Recapture(sessionStore, cwd string, snapshot map[string]int64, claimed map[
 	var cands []candidate
 	switch sessionStore {
 	case "muse":
-		entries, err := museCandidates(museRoot(), cwd, time.Time{}, claimed)
-		cands = recaptureCandidates(entries, err, snapshot)
+		cands = recaptureMuse(museRoot(), cwd, snapshot, claimed)
 	case "codex":
 		cands = recaptureCodex(codexRoot(), cwd, snapshot, claimed)
 	case "gemini":
@@ -922,4 +920,13 @@ func geminiSessionFileIn(root, id string) (string, error) {
 		return "", fmt.Errorf("no gemini session file found for conversation %s", id)
 	}
 	return found, nil
+}
+
+func snapshotMuse(root, cwd string) (map[string]int64, bool) {
+	return snapshotCandidates(museCandidates(root, cwd, time.Time{}, nil))
+}
+
+func recaptureMuse(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
+	cands, err := museCandidates(root, cwd, time.Time{}, claimed)
+	return recaptureCandidates(cands, err, snapshot)
 }

@@ -507,7 +507,7 @@ func TestLoadDirRefusesAKeyTableThatCannotWork(t *testing.T) {
 	}
 }
 
-func TestMuseDefaultsAndBackfill(t *testing.T) {
+func TestMuseDefaultsOnLoad(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[tools.claude]\ncommand = 'claude'\n"), 0600); err != nil {
 		t.Fatal(err)

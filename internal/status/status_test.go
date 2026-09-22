@@ -1647,27 +1647,53 @@ func TestFullTurnTextResultWithBlankLine(t *testing.T) {
 	}
 }
 
+// Muse 1.3.0 pane shapes captured with the offline echo provider.
 func TestMuseStatus(t *testing.T) {
-	cfg, err := config.Default()
-	if err != nil {
-		t.Fatal(err)
-	}
-	engine, err := NewEngine(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	engine := defaultEngine(t)
+	composer := "── Voice input (⌥ + v to start) ────────────\n❯\n────────────────\n  echo · /work · Auto-review\n"
 	for _, tc := range []struct{ name, pane, want string }{
-		{"idle", "Muse Code\n────────────────\n⟩\n────────────────\n", Idle},
+		{"idle", "Muse Code\n" + composer, Idle},
 		{"trust", "Do you trust this workspace?\n> 1  Trust and continue\n  2  Quit", Waiting},
-		{"working", "◇ Working (0s · esc to interrupt)\n────────────────\n⟩\n", Working},
-		{"thinking", "◆ Thinking (1m 2s · esc to interrupt)\n────────────────\n⟩\n", Working},
-		{"quoted hint", "The shortcut is esc to interrupt.\n────────────────\n⟩\n", Idle},
-		{"error", "error: connection failed\n────────────────\n⟩\n", Errored},
+		{"working", "❯ hello\n◇ Thinking (12s · esc to interrupt)\n" + composer, Working},
+		{"thinking", "◆ Thinking (1m 2s · esc to interrupt)\n" + composer, Working},
+		{"quoted hint", "◆ The shortcut is esc to interrupt.\n" + composer, Idle},
+		{"picker", "  Resume a previous session\n❯ just now    blush-polaris · hello\n  1 / 3 · 34%  enter resume  esc exit", Waiting},
+		{"empty picker", "  Resume a previous session\n  No sessions for this workspace.\n  0 / 0 · 0%  enter resume  esc exit", Waiting},
+		{"draft", "❯ check this output\n  error: boom happened\n  > 1  pick me\n  done\n────────────────\n", Idle},
+		{"quoted error", "❯ explain this\n◆ error: boom happened\n" + composer, Idle},
+		{"missing session", "retained session not found: session 00000000-0000-4000-8000-000000000001 has no saved log\n\n", Errored},
+		{"quoted missing session", "❯ explain this\n◆ retained session not found: session missing has no saved log\n" + composer, Idle},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got, _ := engine.Match("muse", tc.pane); got != tc.want {
 				t.Fatalf("Match = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestMusePromptAndReply(t *testing.T) {
+	engine := defaultEngine(t)
+	for _, divider := range []string{"────────────────", "── Voice input (⌥ + v to start) ────────────"} {
+		pane := "❯ earlier prompt\n◆ earlier reply\n❯ hello muse\n\n◆ echo: hello muse\n\n" + divider + "\n❯\n────────────────\n  echo · /work · Auto-review\n"
+		if _, ok := engine.ActivityRegion("muse", pane); !ok {
+			t.Fatal("composer did not bound the activity region")
+		}
+		if got := engine.TypingHold("muse", pane); got != "" {
+			t.Fatalf("resting prompt held as %q", got)
+		}
+		if got, ok := engine.LastUserEcho("muse", pane); !ok || got != "hello muse" {
+			t.Fatalf("LastUserEcho = %q, %v", got, ok)
+		}
+		if got, anchored, ok := engine.LastMessage("muse", pane); !ok || !anchored || got != "echo: hello muse" {
+			t.Fatalf("LastMessage = %q, %v, %v", got, anchored, ok)
+		}
+		if got, bounded, ok := engine.FullTurnText("muse", pane); !ok || !bounded || got != "◆ echo: hello muse" {
+			t.Fatalf("FullTurnText = %q, %v, %v", got, bounded, ok)
+		}
+	}
+	picker := "  Resume a previous session\n❯ just now    blush-polaris · hello\n  1 / 3 · 34%  enter resume  esc exit"
+	if got := engine.TypingHold("muse", picker); got != Waiting {
+		t.Fatalf("picker TypingHold = %q", got)
 	}
 }

@@ -21,6 +21,11 @@ func museRoot() string {
 	return filepath.Join(root, "muse", "sessions")
 }
 
+func captureMuse(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
+	cands, _ := museCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed)
+	return pickEarliest(cands)
+}
+
 func museCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) ([]candidate, error) {
 	if root == "" {
 		return nil, os.ErrNotExist
@@ -54,8 +59,7 @@ func museCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool)
 	return cands, err
 }
 
-// Permission records precede metadata. Bound the scan so an incomplete or
-// incompatible log never makes the poller read an entire conversation.
+// Permission records can precede the session metadata.
 func museMeta(path string) (id, cwd string, created time.Time, ok bool) {
 	f, err := os.Open(path)
 	if err != nil {

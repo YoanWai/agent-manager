@@ -455,7 +455,7 @@ func TestTheOperatingSystemIsSpelledLikeTheFormDropdown(t *testing.T) {
 func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 	for tool, want := range map[string]string{
 		"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "grok": "Grok Build",
-		"gemini": "Gemini CLI", "pi": "Pi", "hermes": "Hermes Agent", "command-code": "Command Code",
+		"gemini": "Gemini CLI", "pi": "Pi", "hermes": "Hermes Agent", "command-code": "Command Code", "muse": "Muse Code",
 		"my-agent": "Not tool specific",
 	} {
 		if got := toolLabel(tool); got != want {
