@@ -2,7 +2,19 @@
 
 Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux, with `XDG_CONFIG_HOME` honored when set) and is created on first run.
 
-It holds three things. `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats. `editor` is the command `o` opens a directory in, arguments included (`editor = "code -n"`, `editor = "open -a 'Visual Studio Code'"`); it is run directly rather than through a shell, and quotes group an argument carrying a space. Left unset, Agent Manager falls back to `$AGENT_MANAGER_EDITOR`, then a GUI editor on `PATH`, then `$VISUAL` / `$EDITOR` (see [Opening the editor](usage.md#opening-the-editor)). The two key tables are below.
+It holds four things. `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats. `editor` is the command `o` opens a directory in, arguments included (`editor = "code -n"`, `editor = "open -a 'Visual Studio Code'"`); it is run directly rather than through a shell, and quotes group an argument carrying a space. Left unset, Agent Manager falls back to `$AGENT_MANAGER_EDITOR`, then a GUI editor on `PATH`, then `$VISUAL` / `$EDITOR` (see [Opening the editor](usage.md#opening-the-editor)). `coordination` is below. The two key tables are below that.
+
+## Coordination
+
+Sessions know about each other by default: an MCP-capable CLI is given the tools that list, spawn, read, drive and wait on the other sessions, share a task list and reserve files, and a CLI without an MCP client is told in its first prompt that `agent-manager help` lists the same subcommands. That is what makes one agent hand work to another.
+
+Set `coordination = "off"` to keep every session to its own task:
+
+```toml
+coordination = "off"
+```
+
+The cross-session tools are not registered, the launch note is not sent, and the instructions the agent reads never mention the sessions beside it. What acts on the session itself stays: auto-naming through `rename`, the review declarations, the terminals `T` opens under it, and `report_issue`. Only the exact `"off"` turns it off, so a typo leaves the default in place. Sessions read the setting when they launch, so the ones already running keep what they were given.
 
 ## Agent CLIs
 
