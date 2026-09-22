@@ -286,7 +286,7 @@ const quickBarMaxRows = 5
 // normal case) count exact soft-wrap rows; pasted multi-line values are
 // estimated, with the textarea scrolling to keep the cursor visible.
 func (m *Model) quickBarRows(textWidth, maxRows int) int {
-	return textareaRows(m.quick.input, textWidth, max(min(maxRows, quickBarMaxRows), 1))
+	return textareaRows(m.quick.input, textWidth, min(maxRows, quickBarMaxRows))
 }
 
 func textareaRows(input textarea.Model, textWidth, maxRows int) int {
