@@ -176,6 +176,12 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 		return "", nil, err
 	}
 	env := map[string]string{hooks.EnvSessionID: id}
+	// Grok only accepts the terminal theme from its config file. That theme leaves the terminal background unpainted.
+	if toolName == "grok" {
+		if err := ensureGrokTerminalTheme(); err != nil {
+			return "", nil, err
+		}
+	}
 	command, err := mcpreg.Apply(mcpreg.Style(toolName, tool.MCP), Executable(), manager.Dir(), baseCommand, env)
 	if err != nil {
 		return "", nil, err
