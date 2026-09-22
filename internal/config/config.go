@@ -114,12 +114,25 @@ type Tool struct {
 	Rules               []Rule `toml:"rules"`
 }
 
+// Coordination values for the top-level coordination key.
+const (
+	CoordinationOn  = "on"
+	CoordinationOff = "off"
+)
+
 type Config struct {
 	PollInterval Duration `toml:"poll_interval"`
 	// Editor is the command the o key opens a directory in, arguments
 	// included. Empty falls back to $AGENT_MANAGER_EDITOR, then a GUI
 	// editor found on PATH, then $VISUAL / $EDITOR.
 	Editor string `toml:"editor"`
+	// Coordination says whether a session is told about the other sessions
+	// beside it: "on" (the default) leaves the cross-session tools and the
+	// launch note in place, "off" keeps every session to its own task, with
+	// only the tools that act on itself. A user who wants one agent per task
+	// turns it off; the manager's own features (rename, review, terminals)
+	// are unaffected.
+	Coordination string `toml:"coordination"`
 	// Tools is what the binary ships. The file is never decoded for it, so a
 	// [tools.<name>] block left there cannot fail the load.
 	Tools        map[string]Tool `toml:"-"`
@@ -252,6 +265,9 @@ func (c *Config) applyDefaults() {
 	if c.PollInterval.Duration <= 0 {
 		c.PollInterval.Duration = 2 * time.Second
 	}
+	if c.Coordination == "" {
+		c.Coordination = CoordinationOn
+	}
 	if c.Tools == nil {
 		c.Tools = map[string]Tool{}
 	}
@@ -261,6 +277,13 @@ func (c *Config) applyDefaults() {
 			c.Tools[name] = tool
 		}
 	}
+}
+
+// CoordinationEnabled reports whether sessions learn about each other.
+// Only the exact "off" turns it off, so a typo leaves the default in
+// place rather than silently isolating every session.
+func (c Config) CoordinationEnabled() bool {
+	return c.Coordination != CoordinationOff
 }
 
 func (c Config) ToolNames() []string {
@@ -300,6 +323,14 @@ const starterConfig = `poll_interval = "2s"
 # Agent Manager takes $AGENT_MANAGER_EDITOR, then the first GUI editor on
 # PATH (code, cursor, windsurf, zed, subl, idea), then $VISUAL or $EDITOR.
 # editor = "code"
+
+# Sessions know about each other by default: MCP-capable CLIs get the
+# tools that list, spawn, read and drive the other sessions, share a task
+# list and reserve files, and the rest are pointed at the same
+# subcommands in their first prompt. "off" keeps every session to its own
+# task; what acts on the session itself (rename, review, its terminals,
+# report_issue) stays either way.
+# coordination = "off"
 
 # The keys the manager keeps for itself inside a session; every other key
 # reaches the agent. An action takes one key or a list, written as

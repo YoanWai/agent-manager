@@ -351,7 +351,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		}
 	}
 
-	plan := launch.Assemble(toolName, tool, prompt, autoNamed)
+	plan := launch.Assemble(toolName, tool, prompt, autoNamed, runtime.cfg.CoordinationEnabled())
 	manager := hooks.NewManager(s.configDir)
 	command, env, err := launch.Environment(manager, toolName, tool, plan.Command, id)
 	if err != nil {

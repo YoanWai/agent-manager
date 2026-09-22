@@ -33,10 +33,14 @@ const RenameAvailableNote = `This session is already named. You can rename it la
 
 // CoordinationNote points a session at the subcommands. Only tools whose
 // agent has no MCP client get it; the rest are told the same thing by the
-// tool descriptions the MCP server registers.
+// tool descriptions the MCP server registers. A configuration with
+// coordination off drops it, so the session hears about no other session.
 const CoordinationNote = `Other agent sessions may be running beside you in Agent Manager: run "agent-manager help" in your shell for the subcommands that list them, message them, share a task list and reserve the files you are about to edit.`
 
-func coordinationNote(toolName string, tool config.Tool) string {
+func coordinationNote(toolName string, tool config.Tool, coordination bool) string {
+	if !coordination {
+		return ""
+	}
 	if mcpreg.Style(toolName, tool.MCP) != mcpreg.StyleNone {
 		return ""
 	}
@@ -111,14 +115,16 @@ type Plan struct {
 	LaunchPrompt string
 }
 
-// Assemble resolves a session's first prompt into a launch plan. A prompt
+// Assemble resolves a session's first prompt into a launch plan. coordination
+// carries the configured setting: with it off the session is told nothing
+// about the sessions beside it. A prompt
 // rides the command line when the tool takes one, and is typed into the
 // pane when the tool's prompt mode is "send". Tools that accept a chosen
 // session id launch with one, so a later revive resumes this exact
 // conversation rather than the directory's most recent one; tools without
 // the flag mint their own id, captured after launch by the poller.
-func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed bool) Plan {
-	note := coordinationNote(toolName, tool)
+func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed bool, coordination bool) Plan {
+	note := coordinationNote(toolName, tool, coordination)
 	carried := DirectiveEmbeddable(rawPrompt)
 	prompt := Prompt(note, rawPrompt, autoNamed)
 	plan := Plan{Command: WithPrompt(tool, tool.Command, prompt)}

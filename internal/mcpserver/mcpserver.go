@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/report"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -206,17 +207,61 @@ Bugs and ideas. When the user hits a bug in the manager itself or asks for somet
 
 Everything here acts on the user's machine: create_session and create_terminal start real processes, send_terminal runs commands, and kill_session ends a running agent. Treat them with the care and approval normal shell execution needs.`
 
-// NewServer builds the MCP server with every session tool registered.
-// Split from Run so tests can connect an in-process client.
-func NewServer(configDir, sessionID, version string) *mcp.Server {
-	words := sessioncmd.MCPVocabulary()
-	return newServer(configDir, sessionID, version, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessions(configDir, words), report.New(configDir, version))
+// soloInstructions replace serverInstructions where the user turned
+// coordination off: the session keeps the tools that act on itself and
+// on its own terminals, and is told nothing about the sessions beside
+// it, so it spends its tokens on the task it was given.
+const soloInstructions = `Agent Manager runs this conversation in one of the user's managed tmux sessions. These tools operate that session. Use them whenever the conditions below apply, without waiting to be asked.
+
+Shell work the user should see. Open a terminal when the user should watch, attach or take over, as with SSH into a host. Keep one-shot local commands in your normal tools. Call list_terminals first and reuse a running terminal when possible. Use send_terminal and read_terminal, and close_terminal when that job is done unless it is left for the user.
+
+Bugs and ideas. When the user hits a bug in the manager itself or asks for something it lacks, offer report_issue: it previews first and files only once the user approves.
+
+Everything here acts on the user's machine: create_terminal starts a real process and send_terminal runs commands. Treat them with the care and approval normal shell execution needs.`
+
+// crossSessionTools reach beyond the calling session: they list, spawn,
+// read, drive and end the other sessions, and share the task list and
+// file reservations between them. Coordination off removes exactly
+// these, leaving the tools that act on this session alone (rename,
+// review, the terminals nested under it, report_issue) and the groups
+// those terminals are filed in.
+var crossSessionTools = []string{
+	"list_sessions",
+	"create_session",
+	"read_session",
+	"send_session",
+	"message_status",
+	"wait_for_session",
+	"revive_session",
+	"kill_session",
+	"archive_session",
+	"task",
+	"reserve_files",
+	"release_files",
+	"list_reservations",
 }
 
-func newServer(configDir, sessionID, version string, terminals terminalCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
+// instructions picks the block the agent reads before any tool call.
+func instructions(coordination bool) string {
+	if coordination {
+		return serverInstructions
+	}
+	return soloInstructions
+}
+
+// NewServer builds the MCP server with every session tool registered.
+// Split from Run so tests can connect an in-process client. coordination
+// carries the configured setting; with it off the cross-session tools are
+// left out and the instructions never mention the other sessions.
+func NewServer(configDir, sessionID, version string, coordination bool) *mcp.Server {
+	words := sessioncmd.MCPVocabulary()
+	return newServer(configDir, sessionID, version, coordination, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessions(configDir, words), report.New(configDir, version))
+}
+
+func newServer(configDir, sessionID, version string, coordination bool, terminals terminalCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "agent-manager", Version: version},
-		&mcp.ServerOptions{Instructions: serverInstructions},
+		&mcp.ServerOptions{Instructions: instructions(coordination)},
 	)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -662,6 +707,13 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		return textContent(report.FormatFiled(filed)), filed, nil
 	})
 
+	// Registration stays one linear list so a new tool lands next to its
+	// neighbours; the tools a solo session must not see are taken back off
+	// here, from the single list that names them.
+	if !coordination {
+		server.RemoveTools(crossSessionTools...)
+	}
+
 	return server
 }
 
@@ -704,7 +756,14 @@ func textResult(message string, err error) (*mcp.CallToolResult, any, error) {
 // client that drops the pipe without the shutdown handshake surfaces as
 // EOF, which is a normal exit, not a failure.
 func Run(configDir, sessionID, version string) error {
-	err := NewServer(configDir, sessionID, version).Run(context.Background(), &mcp.StdioTransport{})
+	// A config that cannot be read leaves coordination on, which is the
+	// default: an unreadable file must not silently change what the
+	// session is offered.
+	coordination := true
+	if cfg, err := config.LoadDir(configDir); err == nil {
+		coordination = cfg.CoordinationEnabled()
+	}
+	err := NewServer(configDir, sessionID, version, coordination).Run(context.Background(), &mcp.StdioTransport{})
 	// The SDK reports an abrupt pipe close as an internal "server is
 	// closing" wire error that wraps EOF without errors.Is support.
 	if err != nil && (errors.Is(err, io.EOF) || strings.Contains(err.Error(), "server is closing")) {
