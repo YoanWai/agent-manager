@@ -54,7 +54,7 @@ Not here yet: cost tracking.
 
 ## Supported tools
 
-Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Pi**, **Command Code**, **Hermes Agent**, and **Muse Code**. Each one's launch, revive, fork, and status rules ship in the binary, so an upgrade brings the current version of all of them (see [Configuration](docs/configuration.md#agent-clis)). A CLI that is not on the list is a [feature request](https://github.com/YoanWai/agent-manager/issues/new/choose).
+Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Pi**, **Command Code**, **Hermes Agent**, and **Muse Code**. Each one's launch, revive, fork, and status rules ship in the binary (Hermes has no fork), so an upgrade brings the current version of all of them (see [Configuration](docs/configuration.md#agent-clis)). A CLI that is not on the list is a [feature request](https://github.com/YoanWai/agent-manager/issues/new/choose).
 
 ## Install
 

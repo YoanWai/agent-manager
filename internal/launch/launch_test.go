@@ -265,7 +265,8 @@ func TestMuseLaunchAndRevive(t *testing.T) {
 	}
 	tool := cfg.Tools["muse"]
 	plan := Assemble("muse", tool, "fix the bug", false)
-	if !strings.HasPrefix(plan.Command, "muse '") || !strings.Contains(plan.Command, CoordinationNote) || !strings.Contains(plan.Command, "fix the bug") {
+	// Muse carries the MCP tools, whose descriptions stand in for the note.
+	if !strings.HasPrefix(plan.Command, "muse '") || strings.Contains(plan.Command, CoordinationNote) || !strings.Contains(plan.Command, "fix the bug") {
 		t.Fatalf("launch = %+v", plan)
 	}
 	if plan.AgentSessionID != "" || len(plan.PendingInputs) != 0 {

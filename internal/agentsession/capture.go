@@ -143,6 +143,18 @@ func Recapture(sessionStore, cwd string, snapshot map[string]int64, claimed map[
 	return cands[0].id, true
 }
 
+// ForkedFrom returns the conversation a tool forked from sourceID at or after
+// since, for a fork made inside the running source (fork_keys) whose id only
+// the store records.
+func ForkedFrom(sessionStore, sourceID string, since time.Time) (string, bool) {
+	switch sessionStore {
+	case "muse":
+		return museForkedFrom(museRoot(), sourceID, since)
+	default:
+		return "", false
+	}
+}
+
 // afterSnapshot reports whether the conversation's activity postdates what
 // the pre-launch snapshot recorded: a conversation the snapshot never saw
 // was minted since, and a seen one must have moved since it was recorded.
