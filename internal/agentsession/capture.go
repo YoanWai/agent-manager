@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -159,6 +160,13 @@ func snapshotCandidates(cands []candidate, err error) (map[string]int64, bool) {
 		snapshot[cand.id] = cand.modTime.UnixNano()
 	}
 	return snapshot, true
+}
+
+func captureCandidates(cands []candidate, err error) (string, bool) {
+	if err != nil {
+		return "", false
+	}
+	return pickEarliest(cands)
 }
 
 func recaptureCandidates(cands []candidate, err error, snapshot map[string]int64) []candidate {
@@ -354,8 +362,7 @@ func commandCodeRoot() string {
 // the id and the working directory, so capture walks the per-project folders
 // instead of guessing cmd's project folder naming.
 func captureCommandCode(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	cands, _ := commandCodeCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed)
-	return pickEarliest(cands)
+	return captureCandidates(commandCodeCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
 }
 
 func commandCodeCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) ([]candidate, error) {
@@ -382,8 +389,11 @@ func commandCodeCandidates(root, cwd string, cutoff time.Time, claimed map[strin
 		if info.ModTime().Before(cutoff) {
 			return nil
 		}
-		id, sessionCwd, ok := commandCodeMeta(path)
-		if !ok || resolvePath(sessionCwd) != wantCwd || claimed[id] {
+		id, sessionCwd, err := commandCodeMeta(path)
+		if err != nil {
+			return err
+		}
+		if id == "" || resolvePath(sessionCwd) != wantCwd || claimed[id] {
 			return nil
 		}
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
@@ -392,16 +402,10 @@ func commandCodeCandidates(root, cwd string, cutoff time.Time, claimed map[strin
 	return cands, err
 }
 
-func commandCodeMeta(path string) (id, cwd string, ok bool) {
-	file, err := os.Open(path)
+func commandCodeMeta(path string) (id, cwd string, err error) {
+	first, err := firstLine(path)
 	if err != nil {
-		return "", "", false
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	if !scanner.Scan() {
-		return "", "", false
+		return "", "", err
 	}
 	var line struct {
 		Type      string `json:"type"`
@@ -409,22 +413,19 @@ func commandCodeMeta(path string) (id, cwd string, ok bool) {
 		SessionID string `json:"sessionId"`
 		Cwd       string `json:"cwd"`
 	}
-	if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
-		return "", "", false
-	}
-	if line.Type != "session" {
-		return "", "", false
+	if json.Unmarshal(first, &line) != nil || line.Type != "session" {
+		return "", "", nil
 	}
 	// A forked transcript keeps the parent's id in "id" and mints its own in
 	// "sessionId" (cmd 1.32.2); prefer it so a fork is never mistaken for its
 	// parent, whose id is already claimed.
 	if sessionIDPattern.MatchString(line.SessionID) {
-		return line.SessionID, line.Cwd, true
+		return line.SessionID, line.Cwd, nil
 	}
 	if !sessionIDPattern.MatchString(line.ID) {
-		return "", "", false
+		return "", "", nil
 	}
-	return line.ID, line.Cwd, true
+	return line.ID, line.Cwd, nil
 }
 
 func hermesStateDB() string {
@@ -688,12 +689,40 @@ func pickEarliest(cands []candidate) (string, bool) {
 	return best.id, true
 }
 
+// firstLine reads a store file's header line. A read failure is an error, so
+// the scan reports a store it could not fully read instead of skipping it.
+func firstLine(path string) (line []byte, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+	}()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	if scanner.Scan() {
+		return scanner.Bytes(), nil
+	}
+	return nil, scanErr(scanner)
+}
+
+// An oversized line is a record the scan cannot parse, not a file it cannot
+// read, so it is skipped like any other malformed record.
+func scanErr(scanner *bufio.Scanner) error {
+	if errors.Is(scanner.Err(), bufio.ErrTooLong) {
+		return nil
+	}
+	return scanner.Err()
+}
+
 // captureCodex scans rollout-*.jsonl files, each whose first line is a
 // session_meta record carrying the session id and the directory it ran
 // in. A file older than the launch cannot be this session's.
 func captureCodex(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	cands, _ := codexCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed)
-	return pickEarliest(cands)
+	return captureCandidates(codexCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
 }
 
 func codexCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) ([]candidate, error) {
@@ -720,8 +749,11 @@ func codexCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool
 		if info.ModTime().Before(cutoff) {
 			return nil
 		}
-		id, metaCwd, ok := codexMeta(path)
-		if !ok || resolvePath(metaCwd) != wantCwd || claimed[id] {
+		id, metaCwd, err := codexMeta(path)
+		if err != nil {
+			return err
+		}
+		if id == "" || resolvePath(metaCwd) != wantCwd || claimed[id] {
 			return nil
 		}
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
@@ -731,16 +763,10 @@ func codexCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool
 }
 
 // codexMeta reads the session id and cwd from a rollout's first line.
-func codexMeta(path string) (id, cwd string, ok bool) {
-	file, err := os.Open(path)
+func codexMeta(path string) (id, cwd string, err error) {
+	first, err := firstLine(path)
 	if err != nil {
-		return "", "", false
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	if !scanner.Scan() {
-		return "", "", false
+		return "", "", err
 	}
 	var line struct {
 		Type    string `json:"type"`
@@ -749,13 +775,10 @@ func codexMeta(path string) (id, cwd string, ok bool) {
 			Cwd       string `json:"cwd"`
 		} `json:"payload"`
 	}
-	if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
-		return "", "", false
+	if json.Unmarshal(first, &line) != nil || line.Type != "session_meta" || !sessionIDPattern.MatchString(line.Payload.SessionID) {
+		return "", "", nil
 	}
-	if line.Type != "session_meta" || !sessionIDPattern.MatchString(line.Payload.SessionID) {
-		return "", "", false
-	}
-	return line.Payload.SessionID, line.Payload.Cwd, true
+	return line.Payload.SessionID, line.Payload.Cwd, nil
 }
 
 // captureOpencode finds the conversation opencode minted for a session
@@ -806,28 +829,19 @@ func geminiProjectHash(cwd string) string {
 
 // geminiSessionMeta reads the session id and project hash from a gemini
 // session file's first line.
-func geminiSessionMeta(path string) (id, projectHash string, ok bool) {
-	file, err := os.Open(path)
+func geminiSessionMeta(path string) (id, projectHash string, err error) {
+	first, err := firstLine(path)
 	if err != nil {
-		return "", "", false
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	if !scanner.Scan() {
-		return "", "", false
+		return "", "", err
 	}
 	var header struct {
 		SessionID   string `json:"sessionId"`
 		ProjectHash string `json:"projectHash"`
 	}
-	if err := json.Unmarshal(scanner.Bytes(), &header); err != nil {
-		return "", "", false
+	if json.Unmarshal(first, &header) != nil || !sessionIDPattern.MatchString(header.SessionID) {
+		return "", "", nil
 	}
-	if !sessionIDPattern.MatchString(header.SessionID) {
-		return "", "", false
-	}
-	return header.SessionID, header.ProjectHash, true
+	return header.SessionID, header.ProjectHash, nil
 }
 
 // captureGemini finds the conversation gemini minted for a session launched
@@ -835,8 +849,7 @@ func geminiSessionMeta(path string) (id, projectHash string, ok bool) {
 // is located by matching the project hash gemini records for cwd among
 // session files written at or after launch.
 func captureGemini(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	cands, _ := geminiCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed)
-	return pickEarliest(cands)
+	return captureCandidates(geminiCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
 }
 
 func geminiCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool) ([]candidate, error) {
@@ -863,8 +876,11 @@ func geminiCandidates(root, cwd string, cutoff time.Time, claimed map[string]boo
 		if info.ModTime().Before(cutoff) {
 			return nil
 		}
-		id, hash, ok := geminiSessionMeta(path)
-		if !ok || hash != wantHash || claimed[id] {
+		id, hash, err := geminiSessionMeta(path)
+		if err != nil {
+			return err
+		}
+		if id == "" || hash != wantHash || claimed[id] {
 			return nil
 		}
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
@@ -911,7 +927,7 @@ func geminiSessionFileIn(root, id string) (string, error) {
 		if !strings.Contains(name, prefix) {
 			return nil
 		}
-		if sessionID, _, ok := geminiSessionMeta(path); ok && sessionID == id {
+		if sessionID, _, _ := geminiSessionMeta(path); sessionID == id {
 			found = path
 		}
 		return nil

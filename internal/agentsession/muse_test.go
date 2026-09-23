@@ -89,8 +89,8 @@ func TestMuseMissingAndMalformedStore(t *testing.T) {
 		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, _, ok := museMeta(path); ok {
-			t.Fatalf("accepted %q", data)
+		if id, _, _, err := museMeta(path); err != nil || id != "" {
+			t.Fatalf("museMeta(%q) = %q, %v; want a skipped record", data, id, err)
 		}
 	}
 }

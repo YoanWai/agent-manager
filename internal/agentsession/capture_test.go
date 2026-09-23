@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -541,6 +542,77 @@ func TestFileStoreSnapshotsDistinguishEmptyFromUnavailable(t *testing.T) {
 			got, ok = tc.snapshot(filepath.Join(root, "missing"), t.TempDir())
 			if ok || got != nil {
 				t.Fatalf("unavailable store snapshot = %v, %v; want nil, false", got, ok)
+			}
+		})
+	}
+}
+
+type fileStore struct {
+	name     string
+	write    func(t *testing.T, root, cwd, id string, at time.Time) string
+	snapshot func(root, cwd string) (map[string]int64, bool)
+	capture  func(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool)
+}
+
+var fileStores = []fileStore{
+	{"codex", func(t *testing.T, root, cwd, id string, at time.Time) string {
+		path := filepath.Join(root, "a", "rollout-"+id+".jsonl")
+		writeFile(t, path, codexRollout(id, cwd), at)
+		return path
+	}, snapshotCodex, captureCodex},
+	{"command-code", func(t *testing.T, root, cwd, id string, at time.Time) string {
+		path := filepath.Join(root, "project", id+".jsonl")
+		writeFile(t, path, commandCodeSession(id, cwd), at)
+		return path
+	}, snapshotCommandCode, captureCommandCode},
+	{"gemini", func(t *testing.T, root, cwd, id string, at time.Time) string {
+		path := filepath.Join(root, "project", "chats", "session-"+id+".jsonl")
+		writeFile(t, path, geminiSessionFixture(id, geminiProjectHash(cwd)), at)
+		return path
+	}, snapshotGemini, captureGemini},
+	{"muse", func(t *testing.T, root, cwd, id string, at time.Time) string {
+		return writeMuseSession(t, root, id, id, cwd, at, at)
+	}, snapshotMuse, captureMuse},
+}
+
+// A conversation the scan cannot open may be the one a relaunch picks, and a
+// snapshot that left it out would let recapture bind it as new.
+func TestFileStoresRefuseAnUnreadableConversation(t *testing.T) {
+	for _, store := range fileStores {
+		t.Run(store.name, func(t *testing.T) {
+			root, cwd := t.TempDir(), t.TempDir()
+			launch := time.Now()
+			unreadable := store.write(t, root, cwd, "unreadable", launch)
+			store.write(t, root, cwd, "readable", launch.Add(time.Second))
+			if snapshot, ok := store.snapshot(root, cwd); !ok || len(snapshot) != 2 {
+				t.Fatalf("readable snapshot = %v, %v; want both conversations", snapshot, ok)
+			}
+			if err := os.Chmod(unreadable, 0); err != nil {
+				t.Fatal(err)
+			}
+			if snapshot, ok := store.snapshot(root, cwd); ok {
+				t.Fatalf("snapshot = %v past an unreadable conversation; want unavailable", snapshot)
+			}
+			if id, ok := store.capture(root, cwd, launch, map[string]bool{}); ok {
+				t.Fatalf("captured %q past an unreadable conversation", id)
+			}
+		})
+	}
+}
+
+// An oversized line is a record the scan cannot parse, not a store it cannot
+// read, so the store still snapshots.
+func TestFileStoresSkipAnOversizedRecord(t *testing.T) {
+	for _, store := range fileStores {
+		t.Run(store.name, func(t *testing.T) {
+			root, cwd := t.TempDir(), t.TempDir()
+			path := store.write(t, root, cwd, "first", time.Now())
+			oversized := strings.Repeat("x", 1024*1024+1) + "\n"
+			if err := os.WriteFile(path, []byte(oversized), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if snapshot, ok := store.snapshot(root, cwd); !ok || len(snapshot) != 0 {
+				t.Fatalf("snapshot = %v, %v; want empty, true", snapshot, ok)
 			}
 		})
 	}

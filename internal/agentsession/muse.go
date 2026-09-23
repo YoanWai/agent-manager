@@ -22,8 +22,7 @@ func museRoot() string {
 }
 
 func captureMuse(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	cands, _ := museCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed)
-	return pickEarliest(cands)
+	return captureCandidates(museCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed))
 }
 
 func snapshotMuse(root, cwd string) (map[string]int64, bool) {
@@ -58,8 +57,11 @@ func museCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool)
 		if info.ModTime().Before(cutoff) {
 			return nil
 		}
-		id, workspace, created, ok := museMeta(path)
-		if !ok || created.Before(cutoff) || resolvePath(workspace) != wantCwd || claimed[id] {
+		id, workspace, created, err := museMeta(path)
+		if err != nil {
+			return err
+		}
+		if id == "" || created.Before(cutoff) || resolvePath(workspace) != wantCwd || claimed[id] {
 			return nil
 		}
 		cands = append(cands, candidate{id: id, modTime: info.ModTime()})
@@ -69,14 +71,14 @@ func museCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool)
 }
 
 // Permission records can precede the session metadata.
-func museMeta(path string) (id, cwd string, created time.Time, ok bool) {
+func museMeta(path string) (id, cwd string, created time.Time, err error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", "", time.Time{}, false
+		return "", "", time.Time{}, err
 	}
 	defer func() {
-		if err := f.Close(); err != nil {
-			ok = false
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
 		}
 	}()
 	scanner := bufio.NewScanner(io.LimitReader(f, 1024*1024))
@@ -102,9 +104,9 @@ func museMeta(path string) (id, cwd string, created time.Time, ok bool) {
 			continue
 		}
 		if record.Stream.Kind != "session" || record.Stream.ID == "" || record.Payload.Record.Workspace == "" || record.RecordedAt <= 0 {
-			return "", "", time.Time{}, false
+			return "", "", time.Time{}, nil
 		}
-		return record.Stream.ID, record.Payload.Record.Workspace, time.UnixMicro(record.RecordedAt), true
+		return record.Stream.ID, record.Payload.Record.Workspace, time.UnixMicro(record.RecordedAt), nil
 	}
-	return "", "", time.Time{}, false
+	return "", "", time.Time{}, scanErr(scanner)
 }
