@@ -689,8 +689,8 @@ func pickEarliest(cands []candidate) (string, bool) {
 	return best.id, true
 }
 
-// firstLine reads a store file's header line. A read failure is an error, so
-// the scan reports a store it could not fully read instead of skipping it.
+// A read failure fails the scan: a skipped file could hide the conversation
+// a snapshot has to record.
 func firstLine(path string) (line []byte, err error) {
 	file, err := os.Open(path)
 	if err != nil {
