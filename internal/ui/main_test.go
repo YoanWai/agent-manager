@@ -25,6 +25,9 @@ func TestMain(m *testing.M) {
 	if notify.LaunchedAsHelper() {
 		os.Exit(notify.HelperMain(os.Args[1:]))
 	}
+	// The suite runs as if at the machine it runs on, even when the
+	// developer reached it over SSH.
+	remoteTerminal = localTerminal
 	// kill-server fails whenever no server is up, which is the normal case.
 	tmuxCmd("kill-server").Run()
 	// Without tmux the run still starts: each test skips through its own

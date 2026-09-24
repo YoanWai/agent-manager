@@ -1,5 +1,6 @@
 // Package termseq writes control sequences to whatever terminal is actually
-// drawing this process, tunnelling them past a hosting tmux when there is one.
+// drawing this process, tunnelling them past a hosting tmux when there is one,
+// and tells whether that terminal is on this machine at all.
 package termseq
 
 import (
@@ -42,4 +43,28 @@ func EnablePassthrough() {
 		return
 	}
 	_ = exec.Command("tmux", "set-option", "-p", "allow-passthrough", "on").Run()
+}
+
+var (
+	getenv = os.Getenv
+	// tmuxSSHConnection reads SSH_CONNECTION from the session hosting this
+	// pane, as "SSH_CONNECTION=…" or "-SSH_CONNECTION" once removed.
+	tmuxSSHConnection = func() (string, error) {
+		out, err := exec.Command("tmux", "show-environment", "SSH_CONNECTION").Output()
+		return string(out), err
+	}
+)
+
+// Remote reports whether the terminal drawing this process sits on another
+// machine at the far end of an SSH session, where this host's browser,
+// clipboard and desktop are out of the user's reach.
+func Remote() bool {
+	if inTmux() {
+		// tmux refreshes the variable from every client that attaches, while
+		// this process kept the value its pane was started with.
+		if line, err := tmuxSSHConnection(); err == nil {
+			return strings.HasPrefix(line, "SSH_CONNECTION=")
+		}
+	}
+	return getenv("SSH_CONNECTION") != ""
 }

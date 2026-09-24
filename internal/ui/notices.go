@@ -549,6 +549,9 @@ type browserOpenMsg struct {
 
 func openLink(target string) tea.Cmd {
 	return func() tea.Msg {
+		if remoteTerminal() {
+			return linkPageMsg{url: target}
+		}
 		err := openBrowser(target)
 		if err == nil {
 			return browserOpenMsg{target: target}

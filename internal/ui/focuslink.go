@@ -84,6 +84,9 @@ type linkOpenErrMsg struct{ err error }
 // the error bar rather than swallowing it.
 func openLinkCmd(url string) tea.Cmd {
 	return func() tea.Msg {
+		if remoteTerminal() {
+			return linkPageMsg{url: url}
+		}
 		if err := openURL(url); err != nil {
 			return linkOpenErrMsg{err: fmt.Errorf("open link: %w", err)}
 		}
