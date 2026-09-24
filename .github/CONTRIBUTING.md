@@ -23,7 +23,7 @@ tools; a maintained list of model names does not belong in agent-manager.
 
 ## Setup
 
-You need Go 1.26+ and tmux.
+You need Go 1.27+ and tmux.
 
 ```bash
 git clone https://github.com/YoanWai/agent-manager.git
