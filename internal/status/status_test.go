@@ -954,8 +954,15 @@ func TestInputDraft(t *testing.T) {
 	if _, ok := engine.InputDraft("claude", "● Done.\n\n❯ "); ok {
 		t.Fatal("empty composer should carry no draft")
 	}
-	if _, ok := engine.InputDraft("claude", "● Done.\n\n❯ Press up to edit queued messages"); ok {
-		t.Fatal("the queued composer's placeholder should not read as a draft")
+	for _, placeholder := range []string{
+		"Press up to edit queued messages",
+		"Press up to edit queued messages, Enter to send them immediately",
+		"Press up to select a queued message to edit, or Enter to send them now",
+		"Press up to select a queued message, then Enter to edit it",
+	} {
+		if _, ok := engine.InputDraft("claude", "● Done.\n\n❯ "+placeholder); ok {
+			t.Fatalf("the queued composer's placeholder %q should not read as a draft", placeholder)
+		}
 	}
 	if _, ok := engine.InputDraft("codex", "› Ask Codex to do anything\n  gpt-5.6-terra medium · /home/dev"); ok {
 		t.Fatal("codex placeholder should not read as a draft")
@@ -999,14 +1006,27 @@ func TestLastUserEchoAndScrolledMarker(t *testing.T) {
 		t.Fatalf("scrolled fallback = %q", line)
 	}
 
-	frames := []struct {
+	running := "  Running python3 -c \"import time; time.sleep(25); print(1)\"\n\n"
+	composer := "\n\n────────────\n❯ "
+	type frame struct {
 		name, pane, want string
 		anchored         bool
-	}{
+	}
+	frames := []frame{
 		{"queued dialog", "⏺ Red or blue?\n\n❯ Also tell me a fun fact about tmux after that.\n────────────\n ☐ Color\n\nRed or blue?\n\n❯ 1. Red\n     Red\n  2. Blue", "Red or blue?", true},
 		{"bullet-less dialog", "  Cat or dog?\n────────────\n ☐ Pet pref\n\nCat or dog?\n\n❯ 1. Cat", "Cat or dog?", false},
 		{"queued running turn", "  Running python3 -c 'time.sleep(30)' (ctrl+b ctrl+b (twice) to run in background)\n❯ Run this exact shell command once, then continue.\n  ctrl+x ctrl+s to send now\n✻ Razzmatazz… (1m 25s · ↓ 147 tokens)\n\n❯ Press up to edit queued messages", "Running python3 -c 'time.sleep(30)' (ctrl+b ctrl+b (twice) to run in background)", false},
-		{"badge and hints", "  Done with the rename.\n◐ medium · /effort\ntmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking\n❯ ", "Done with the rename.", false},
+		{"wrapped queued message", running + "❯ Also, after that finishes, tell me in one plain sentence what a terminal multiplexer is, keeping it short and simple, and please do not use any\n  tools at all for this follow-up question, thanks a lot.\n  ctrl+x ctrl+s to send now\n\n✳ Scurrying… (25s · ↓ 98 tokens)\n\n────────────\n❯ Press up to edit queued messages", "Running python3 -c \"import time; time.sleep(25); print(1)\"", false},
+		{"nothing said yet", "\n ▐▛███▛█   Claude Code v2.1.281\n▝▜██████▀  Sonnet 5 with medium effort · Claude Max\n  ▝▝ ▝▝    /home/dev/project · /rc\n\n❯ Use the AskUserQuestion tool right away to ask me whether I prefer red or blue. Nothing else.\n\n❯ Also tell me a fun fact about tmux after that.\n\n✶ Galloping… (running UserPromptSubmit hooks… 0/3 · 1s)\n" + strings.Repeat(" ", 130) + "◐ medium · /effort\n────────────\n❯ Press up to edit queued messages", "", false},
+		{"badge over a typed prompt", "\n ▐▛███▛█   Claude Code v2.1.281\n▝▜██████▀  Sonnet 5 with medium effort · Claude Max\n  ▝▝ ▝▝    /home/dev/project · /rc\n\n" + strings.Repeat(" ", 130) + "◐ medium · /effort\n────────────\n❯ Use the AskUserQuestion tool right away to ask me which pet I prefer, cat or dog. Nothing else.", "", false},
+	}
+	for _, notice := range []string{
+		strings.Repeat(" ", 130) + "◐ medium · /effort",
+		strings.Repeat(" ", 48) + "tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking",
+		strings.Repeat(" ", 72) + "You've used 78% of your weekly limit · resets Sep 26 at 1am (Asia/Jerusalem)",
+		"  ⎿  Tip: Using a Slack MCP? With Claude Tag you can @Claude directly in Slack — run /install-slack-app or share claude.com/product/tag with your org\n     owner",
+	} {
+		frames = append(frames, frame{"notice under the spinner: " + strings.TrimSpace(notice), running + "✽ Scurrying… (17s · ↓ 98 tokens)\n" + notice + composer, "Running python3 -c \"import time; time.sleep(25); print(1)\"", false})
 	}
 	for _, f := range frames {
 		line, anchored, ok := engine.LastMessage("claude", f.pane)

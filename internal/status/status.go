@@ -37,6 +37,7 @@ type toolRules struct {
 	inputPrefix    *regexp.Regexp
 	turnEnd        *regexp.Regexp
 	chromeLine     *regexp.Regexp
+	chromeBlock    *regexp.Regexp
 	blockedLine    *regexp.Regexp
 	trailingNote   *regexp.Regexp
 	busyLine       *regexp.Regexp
@@ -77,6 +78,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.InputPrefix, &tr.inputPrefix},
 			{tool.TurnEnd, &tr.turnEnd},
 			{tool.ChromeLine, &tr.chromeLine},
+			{tool.ChromeBlock, &tr.chromeBlock},
 			{tool.BlockedLine, &tr.blockedLine},
 			{tool.TrailingNote, &tr.trailingNote},
 			{tool.BusyLine, &tr.busyLine},
@@ -388,10 +390,11 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 		return "", false, false
 	}
 	lines := strings.Split(region, "\n")
+	inBlock := tr.chromeBlockRows(lines)
 	start, lastContent := -1, -1
 	for i, raw := range lines {
 		line := strings.TrimRight(raw, " \t")
-		if strings.TrimSpace(line) == "" || tr.isStructural(line) {
+		if strings.TrimSpace(line) == "" || inBlock[i] || tr.isStructural(line) {
 			continue
 		}
 		lastContent = i
@@ -412,17 +415,37 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 	marker := tr.messageStart.FindStringIndex(first)
 	first = first[marker[1]:]
 	parts := []string{strings.TrimSpace(first)}
-	for _, raw := range lines[start+1:] {
-		line := strings.TrimRight(raw, " \t")
+	for i := start + 1; i < len(lines); i++ {
+		line := strings.TrimRight(lines[i], " \t")
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if tr.isStructural(line) {
+		if inBlock[i] || tr.isStructural(line) {
 			break
 		}
 		parts = append(parts, strings.TrimSpace(line))
 	}
 	return strings.TrimSpace(strings.Join(parts, " ")), true, true
+}
+
+// chromeBlockRows marks the rows of each chrome_block: the matching row and
+// every row drawn straight under it, up to the next blank row.
+func (tr toolRules) chromeBlockRows(lines []string) []bool {
+	inBlock := make([]bool, len(lines))
+	if tr.chromeBlock == nil {
+		return inBlock
+	}
+	open := false
+	for i, raw := range lines {
+		line := strings.TrimRight(raw, " \t")
+		if strings.TrimSpace(line) == "" {
+			open = false
+			continue
+		}
+		open = open || tr.chromeBlock.MatchString(line)
+		inBlock[i] = open
+	}
+	return inBlock
 }
 
 // isStructural reports whether line is the tool's own frame - chrome, a
@@ -536,13 +559,17 @@ func (tr toolRules) turnProse(body []string, afterEcho bool) string {
 // trimPrompt drops indented rows until the first row at the left edge.
 func (tr toolRules) contentRows(body []string, trimPrompt bool) []string {
 	out := make([]string, 0, len(body))
+	inBlock := tr.chromeBlockRows(body)
 	inResult := false
-	for _, raw := range body {
+	for i, raw := range body {
 		line := strings.TrimRight(raw, " \t")
 		if strings.TrimSpace(line) == "" {
 			if len(out) > 0 && out[len(out)-1] != "" {
 				out = append(out, "")
 			}
+			continue
+		}
+		if inBlock[i] {
 			continue
 		}
 		if tr.toolResult != nil && tr.toolResult.MatchString(line) {

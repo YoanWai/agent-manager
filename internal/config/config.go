@@ -63,6 +63,10 @@ type Tool struct {
 	ChromeLine     string `toml:"chrome_line"`
 	BlockedLine    string `toml:"blocked_line"`
 	TrailingNote   string `toml:"trailing_note"`
+	// ChromeBlock marks a row that owns the rows drawn straight under it,
+	// up to the next blank row. A quote steps over the whole block, which
+	// covers frame rows whose wording varies or wraps.
+	ChromeBlock string `toml:"chrome_block"`
 	// BusyLine marks work that outlives the turn which started it, such as
 	// background agents and shells. Matching it in the newest turn keeps a
 	// turn-end summary from resolving to finished while that work runs.
@@ -356,11 +360,12 @@ status_source = "claude-hooks"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 turn_end = "^[✻✳✶✽✢·✦✧+*] \\S+ for \\d.*$"
-# the frame rows a quote steps over: separators and banners; a prompt echo
-# or queued message on its own ❯ row at the left edge, where the reply ends
-# so the queued text never reads as agent output; the send-now hint under a
-# queued message; and the effort badge and tmux hints a running turn prints
-chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$|^\\s*✔ Update installed · Restart to update\\s*$|^\\s*new task\\? /clear to save .*$|^❯ |^\\s*ctrl\\+x ctrl\\+s to send now\\s*$|^[●◐◑◒◓○] \\S+ · /|^tmux (?:\\S+ )+off · "
+# the effort badge sits right-aligned above the composer while a prompt is typed
+chrome_line = "^\\s*[─q]{4,}.*$|^[\\s─q]*$|^\\s*✔ Update installed · Restart to update\\s*$|^\\s*new task\\? /clear to save .*$|^\\s*(?:[○◐●◉◈]|effort:) \\S+ · /effort$|^\\s*(?:✦|effort:) ultracode · "
+# a prompt echo or queued message owns its wrapped rows and the send-now
+# hint; the spinner owns the tip, effort badge and notices drawn under it;
+# the welcome logo owns the version, model and directory beside it
+chrome_block = "^❯ |^[✻✳✶✽✢·✦✧+*] \\S+…|^\\s*▐▛███▛█ "
 blocked_line = "Interrupted ·"
 # recap blocks ("※ recap: …") render below the turn-end summary
 trailing_note = "^※"
@@ -385,7 +390,7 @@ tool_result = "^\\s*⎿"
 user_echo = "^❯ "
 # the composer's placeholder while messages sit queued; without it the
 # wording reads back as a typed draft
-input_placeholder = "^Press up to edit queued messages"
+input_placeholder = "^Press up to (?:edit queued messages|select a queued message)"
 rules = [
   # selection dialogs (trust prompt, permission asks, questions) block on the user
   { state = "waiting", pattern = "Enter to confirm" },
