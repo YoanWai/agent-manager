@@ -349,7 +349,10 @@ func writeLaunchScript(id string, env map[string]string, command, colorFgBg stri
 	if colorFgBg != "" {
 		header = "export COLORFGBG=" + ShellQuote(colorFgBg) + "\n"
 	}
-	body := "#!/bin/sh\n" + header + exportLines(env) + command + "\n" +
+	// set -m puts the agent in its own process group, so tmux reports the
+	// agent's cwd as pane_current_path rather than this script's, which
+	// never moves.
+	body := "#!/bin/sh\nset -m\n" + header + exportLines(env) + command + "\n" +
 		"printf '%s\\n' " + ShellQuote(relaunchHint) + "\n" +
 		"exec " + ShellQuote(shell) + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
@@ -897,14 +900,16 @@ func noServer(out string) bool {
 }
 
 // Pane is a managed session's agent pane: the process running in it, the
-// size the preview draws it at, and how many panes share its window. A
-// count above one means the agent split the window itself, leaving its own
-// pane a fraction of the geometry the manager pinned.
+// size the preview draws it at, how many panes share its window, and the
+// directory the agent sits in now. A count above one means the agent split
+// the window itself, leaving its own pane a fraction of the geometry the
+// manager pinned.
 type Pane struct {
 	PID    int
 	Width  int
 	Height int
 	Panes  int
+	Path   string
 }
 
 // Panes returns every managed session's agent pane in a single tmux call,
@@ -913,7 +918,7 @@ type Pane struct {
 // session whose agent split the window reports the agent's own process and
 // the size the preview draws, never a teammate's.
 func (d *Driver) Panes() (map[string]Pane, error) {
-	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_pid} #{pane_width} #{pane_height} #{window_panes}")...).CombinedOutput()
+	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_pid} #{pane_width} #{pane_height} #{window_panes} #{pane_current_path}")...).CombinedOutput()
 	if err != nil {
 		if noServer(string(out)) {
 			return map[string]Pane{}, nil
@@ -921,7 +926,9 @@ func (d *Driver) Panes() (map[string]Pane, error) {
 		return nil, fmt.Errorf("tmux list-panes: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	panes := map[string]Pane{}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	// Only the final line break is trimmed: the last line may end in a
+	// space that is its path, or the separator before an empty one.
+	for _, line := range strings.Split(strings.TrimSuffix(string(out), "\n"), "\n") {
 		name, geometry, ok := strings.Cut(line, " ")
 		if !ok || !strings.HasPrefix(name, prefix) {
 			continue
@@ -930,8 +937,12 @@ func (d *Driver) Panes() (map[string]Pane, error) {
 		if _, taken := panes[id]; taken {
 			continue
 		}
-		var pane Pane
-		if _, err := fmt.Sscanf(geometry, "%d %d %d %d", &pane.PID, &pane.Width, &pane.Height, &pane.Panes); err == nil {
+		fields := strings.SplitN(geometry, " ", 5)
+		if len(fields) < 5 {
+			continue
+		}
+		pane := Pane{Path: fields[4]}
+		if _, err := fmt.Sscanf(strings.Join(fields[:4], " "), "%d %d %d %d", &pane.PID, &pane.Width, &pane.Height, &pane.Panes); err == nil {
 			panes[id] = pane
 		}
 	}

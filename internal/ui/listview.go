@@ -1061,7 +1061,7 @@ func (m *Model) focusFactsLine(width int) string {
 	// The facts give way one at a time as the terminal narrows, the least
 	// telling first, so a tight line still carries what it has room for
 	// rather than dropping the lot.
-	facts := []focusFact{{text: valueStyle.Render(truncateTail(shortHome(sess.Cwd), focusFactsDirCap)), spare: 3}}
+	facts := []focusFact{{text: valueStyle.Render(truncateTail(shortHome(m.sessionDir(sess)), focusFactsDirCap)), spare: 3}}
 	if sess.WorktreeBranch != "" {
 		facts = append(facts, focusFact{text: subtleStyle.Render("⑂ ") + valueStyle.Render(sess.WorktreeBranch), spare: 2})
 	}
@@ -1348,7 +1348,8 @@ func (m *Model) viewDetail(width int) string {
 	}
 	started := subtleStyle.Render("started " + relSince(sess.CreatedAt))
 	group := lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(sess.Group))
-	dir := func(room int) string { return mutedStyle.Render(truncateTail(sess.Cwd, room)) }
+	cwd := m.sessionDir(sess)
+	dir := func(room int) string { return mutedStyle.Render(truncateTail(cwd, room)) }
 	return fitColumns(heads, []string{state}, width) + "\n" +
 		factRow("group", plainValue(group), started, width) + "\n" +
 		factRow("dir", dir, usage, width)

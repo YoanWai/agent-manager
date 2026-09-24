@@ -1018,6 +1018,37 @@ func TestCreateNamesTheWayBackWhenTheAgentExits(t *testing.T) {
 	waitForPane(t, driver, id, relaunchHint)
 }
 
+// An agent that changes directory mid-session, as Claude Code's /cd and
+// EnterWorktree do, is a child of the launch script, and tmux reports the
+// directory of the pane's foreground process group.
+func TestPanesFollowsTheAgentIntoANewDirectory(t *testing.T) {
+	driver := requireTmux(t)
+	id := "cwd" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	moved := filepath.Join(t.TempDir(), "moved dir")
+	if err := os.Mkdir(moved, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := filepath.EvalSymlinks(moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Create(id, "/tmp", "sh -c "+ShellQuote("cd "+ShellQuote(moved)+" && exec sleep 30"), nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	var got string
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		panes, err := driver.Panes()
+		if err != nil {
+			t.Fatalf("Panes: %v", err)
+		}
+		if got = panes[id].Path; got == moved {
+			return
+		}
+	}
+	t.Fatalf("Panes path = %q, want %q", got, moved)
+}
+
 func TestExportEnvPrefixesTheCommand(t *testing.T) {
 	env := map[string]string{"B": "second", "A": "fir st"}
 	want := `export A='fir st'; export B='second'; claude --resume 7`
