@@ -85,6 +85,16 @@ func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
 	return m, m.refreshCmd()
 }
 
+// sessionDir is where the session's agent sits now, which follows a /cd or
+// a worktree the agent entered, falling back to its launch directory once
+// the pane is gone.
+func (m *Model) sessionDir(sess store.Session) string {
+	if path := m.panes[sess.ID].Path; path != "" && isDir(path) {
+		return path
+	}
+	return sess.Cwd
+}
+
 // rowDir is the directory the cursor points at: a live session's pane
 // directory, which follows wherever its shell or agent moved, falling back
 // to the directory it was created in; for a group, its default path. Both
