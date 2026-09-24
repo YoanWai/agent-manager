@@ -394,6 +394,13 @@ func (m *Model) fullFootLine(width int) []string {
 		parts = append(parts, reading("swap", fmt.Sprintf("%.0f%% %s/%s", snap.SwapPercent, humanBytes(snap.SwapUsed), humanBytes(snap.SwapTotal)), true))
 	}
 	parts = append(parts, reading("disk", fmt.Sprintf("%.0f%% %s free", snap.DiskPercent, humanBytes(snap.DiskFree)), snap.DiskOK))
+	if snap.BatteryOK {
+		value := fmt.Sprintf("%.0f%%", snap.BatteryPercent)
+		if snap.BatteryCharging {
+			value += " charging"
+		}
+		parts = append(parts, reading("batt", value, true))
+	}
 	if temps := tempReadings(snap); temps != "" {
 		parts = append(parts, labelStyle.Render("temp ")+temps)
 	}

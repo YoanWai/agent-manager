@@ -496,3 +496,22 @@ func TestFocusFactsWriteHomeAsTilde(t *testing.T) {
 		t.Fatalf("the home prefix should not survive:\n%s", facts)
 	}
 }
+
+func TestFullFootShowsBattery(t *testing.T) {
+	m := shotModel()
+	m.fullLayout = true
+	m.snap.BatteryOK, m.snap.BatteryPercent = true, 33
+	foot := ansi.Strip(strings.Join(m.fullFootLine(m.width), "\n"))
+	if !strings.Contains(foot, "batt 33%") || strings.Contains(foot, "charging") {
+		t.Fatalf("foot lacks the battery reading:\n%s", foot)
+	}
+	m.snap.BatteryCharging = true
+	foot = ansi.Strip(strings.Join(m.fullFootLine(m.width), "\n"))
+	if !strings.Contains(foot, "batt 33% charging") {
+		t.Fatalf("foot lacks the charging suffix:\n%s", foot)
+	}
+	m.snap.BatteryOK = false
+	if foot = ansi.Strip(strings.Join(m.fullFootLine(m.width), "\n")); strings.Contains(foot, "batt") {
+		t.Fatalf("foot shows a battery the machine lacks:\n%s", foot)
+	}
+}

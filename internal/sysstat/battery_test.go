@@ -132,3 +132,27 @@ func TestSampleBatterySkipsUnreadableEntries(t *testing.T) {
 		t.Fatalf("percent = %v, want %v", snap.BatteryPercent, want)
 	}
 }
+
+func TestSampleBatteryKeepsLaptopBesideMouse(t *testing.T) {
+	withBatterySource(t, []*battery.Battery{
+		{Current: 30, Full: 40},
+		{},
+	}, battery.Errors{nil, battery.ErrPartial{Design: errors.New("x"), Voltage: errors.New("x")}})
+
+	var snap Snapshot
+	sampleBattery(&snap)
+	if !snap.BatteryOK || snap.BatteryPercent != 75 {
+		t.Fatalf("got ok=%v percent=%v, want 75", snap.BatteryOK, snap.BatteryPercent)
+	}
+}
+
+func TestSampleBatteryDropsUnreadableCharge(t *testing.T) {
+	withBatterySource(t, []*battery.Battery{{Full: 40}},
+		battery.Errors{battery.ErrPartial{Current: errors.New("x")}})
+
+	var snap Snapshot
+	sampleBattery(&snap)
+	if snap.BatteryOK {
+		t.Fatal("a failed Current read must hide the row")
+	}
+}

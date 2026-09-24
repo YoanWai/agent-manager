@@ -2,18 +2,38 @@ package sysstat
 
 import "github.com/distatus/battery"
 
-// batterySource is swappable in tests for a fake battery source.
-var batterySource = battery.GetAll
-
 // sampleBattery reads charge percent and charging state. A read error
 // (no battery present, or a platform read failure) leaves BatteryOK false
 // so the caller hides the line rather than showing a placeholder or zero.
 func sampleBattery(snap *Snapshot) {
 	batteries, err := batterySource()
+	var perBattery battery.Errors
 	if err != nil {
-		return
+		readErrors, ok := err.(battery.Errors)
+		if !ok {
+			return
+		}
+		perBattery = readErrors
 	}
-	applyBatteries(snap, batteries)
+	var readable []*battery.Battery
+	for index, entry := range batteries {
+		if index < len(perBattery) && !chargeReadable(perBattery[index]) {
+			continue
+		}
+		readable = append(readable, entry)
+	}
+	applyBatteries(snap, readable)
+}
+
+// chargeReadable keeps a battery whose only gaps are fields the gauge does
+// not use: a wireless mouse on Linux reports capacity but no energy files,
+// and must not hide the laptop's own battery.
+func chargeReadable(err error) bool {
+	if err == nil {
+		return true
+	}
+	partial, ok := err.(battery.ErrPartial)
+	return ok && partial.Current == nil && partial.Full == nil
 }
 
 // applyBatteries sums current and full capacity across every battery
