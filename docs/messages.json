@@ -7,7 +7,7 @@
       "I've noticed some people miss this one.",
       "Put the cursor on root or a group, press space, type the prompt, enter.",
       "A new agent spawns there, no form to fill, and names itself from the task. / commands work too.",
-      "tab picks the CLI, shift+tab puts the agent in its own git worktree.",
+      "tab picks the CLI, shift+tab turns its own git worktree on or off.",
       "The bar stays open for the next prompt. Settings (s), after quick send, can close it instead."
     ],
     "url": "https://github.com/YoanWai/agent-manager/blob/main/docs/usage.md#quick-prompt",
