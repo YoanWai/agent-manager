@@ -164,9 +164,13 @@ reviews:
         tea.Cmd.
     - path: "internal/config/**"
       instructions: |
-        Existing installs keep their stored config.toml, so editing a
-        defaultConfig value never reaches current users. A behavior change that
-        must reach them needs a new field, not an edited default.
+        builtinTools is the only source of tool definitions and loads on every
+        start, so an edited tool pattern or command reaches every install on
+        that release and needs no migration. A [tools.*] block in a user's
+        config.toml is ignored. starterConfig is written once, when no
+        config.toml exists, so editing it reaches new installs only. Flag a
+        change that relies on starterConfig text to reach existing users. A
+        default belongs in code, where every unset field picks it up.
     - path: "internal/store/**"
       instructions: |
         The migrations slice is append-only. Editing or reordering an existing

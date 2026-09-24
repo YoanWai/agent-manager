@@ -11,7 +11,7 @@ required behavior, and why this approach. Compare the diff against it, and
 report behavior, public surface, or state that it does not ask for.
 
 A change holds on every agent CLI and every platform this project supports:
-the tools in `defaultConfig` in `internal/config/config.go`, and the platforms
+the tools in `builtinTools` in `internal/config/config.go`, and the platforms
 `.goreleaser.yaml` builds. Verify it on all of them, or name the values you
 left out and what supporting them would take, and let the maintainer decide.
 Opening the pull request first and settling that in review is the right order.
