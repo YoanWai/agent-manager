@@ -600,8 +600,8 @@ func TestWriteTextNativeFailureFallsBackToOSC52(t *testing.T) {
 }
 
 // Over SSH this host's clipboard is not the user's. Only an X display that
-// ssh forwarded back through the session reaches their screen, and only an
-// X writer can use it; everything else leaves the copy to the terminal.
+// ssh forwarded back reaches their screen, through an X writer. Everything
+// else leaves the copy to the terminal.
 func TestCopyCommandOverSSH(t *testing.T) {
 	cases := []struct {
 		name     string

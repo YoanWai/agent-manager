@@ -50,7 +50,8 @@ var (
 	// tmuxSSHConnection reads SSH_CONNECTION from the session hosting this
 	// pane, as "SSH_CONNECTION=…" or "-SSH_CONNECTION" once removed.
 	tmuxSSHConnection = func() (string, error) {
-		out, err := exec.Command("tmux", "show-environment", "SSH_CONNECTION").Output()
+		socket, _, _ := strings.Cut(os.Getenv("TMUX"), ",")
+		out, err := exec.Command("tmux", "-S", socket, "show-environment", "SSH_CONNECTION").Output()
 		return string(out), err
 	}
 )

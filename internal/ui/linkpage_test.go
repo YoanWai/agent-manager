@@ -90,7 +90,23 @@ func TestLinkPageHoldsUntilEnter(t *testing.T) {
 	}
 }
 
-// Ctrl+D at the prompt closes the input instead of sending Enter; the user
+type brokenTerminal struct{}
+
+func (brokenTerminal) Write([]byte) (int, error) { return 0, errors.New("input/output error") }
+
+// A terminal that took none of the page, as after the ssh link dropped, is a
+// failure for the manager to report, not a page the user saw.
+func TestLinkPageReportsAFailedWrite(t *testing.T) {
+	stubLinkCopy(t, nil)
+	page := &linkPage{url: "https://example.com/manual"}
+	page.SetStdin(strings.NewReader("\n"))
+	page.SetStdout(brokenTerminal{})
+	if err := page.Run(); err == nil || !strings.Contains(err.Error(), "input/output error") {
+		t.Fatalf("Run() = %v, want the write failure", err)
+	}
+}
+
+// Ctrl+D at the prompt closes the input rather than sending Enter. The user
 // is just as done with the page.
 func TestLinkPageClosedInputReturns(t *testing.T) {
 	stubLinkCopy(t, nil)

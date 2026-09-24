@@ -41,11 +41,13 @@ func (p *linkPage) SetStdout(w io.Writer) { p.stdout = w }
 func (p *linkPage) SetStderr(io.Writer)   {}
 
 func (p *linkPage) Run() error {
-	copied := "It is on your clipboard too, if your terminal accepts clipboard writes."
+	clipboardNote := "It is on your clipboard too, if your terminal accepts clipboard writes."
 	if err := copyBrowserURL(p.url); err != nil {
-		copied = fmt.Sprintf("Copying it to your clipboard failed: %v", err)
+		clipboardNote = fmt.Sprintf("Copying it to your clipboard failed: %v", err)
 	}
-	fmt.Fprintf(p.stdout, "\nOpen this link in a browser on your computer:\n\n%s\n\n%s\nPress Enter to go back.", p.url, copied)
+	if _, err := fmt.Fprintf(p.stdout, "\nOpen this link in a browser on your computer:\n\n%s\n\n%s\nPress Enter to go back.", p.url, clipboardNote); err != nil {
+		return err
+	}
 	_, err := bufio.NewReader(p.stdin).ReadString('\n')
 	if errors.Is(err, io.EOF) {
 		return nil
