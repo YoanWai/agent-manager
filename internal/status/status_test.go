@@ -1108,6 +1108,7 @@ func TestLastMessageQuotesAnOpenDialogsQuestion(t *testing.T) {
 	for name, pane := range map[string]string{
 		"first option selected":  above + "❯ 1. Cats\n     You prefer cats\n  2. Dogs\n     You prefer dogs\n" + below,
 		"second option selected": above + "  1. Cats\n     You prefer cats\n❯ 2. Dogs\n     You prefer dogs\n" + below,
+		"option under the rule":  above + "  1. Cats\n     You prefer cats\n  2. Dogs\n     You prefer dogs\n  3. Type something.\n────────────\n❯ 4. Chat about this\n\nEnter to select · ↑/↓ to navigate · Esc to cancel",
 	} {
 		quote, anchored, _ := engine.LastMessage("claude", pane)
 		if !anchored || quote != "Do you prefer cats or dogs?" {

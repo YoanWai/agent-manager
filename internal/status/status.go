@@ -444,20 +444,18 @@ func (tr toolRules) dialogOpen(cutoffTail string) bool {
 	return ok && tr.dialogFooter != nil && tr.dialogFooter.MatchString(footer)
 }
 
-// dialogQuestion is the newest left-edge row below the dialog's top rule.
-// Rows under the question, once the selection moves down, are the options
-// above it and their descriptions, all indented.
+// dialogQuestion is the newest left-edge row of the dialog. Rows under the
+// question, once the selection moves down, are the options above it, their
+// descriptions and the rule some options sit under; a message above the
+// dialog means it asks nothing at the left edge.
 func (tr toolRules) dialogQuestion(lines []string, inBlock []bool) string {
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimRight(lines[i], " \t")
-		if strings.TrimSpace(line) == "" {
+		if strings.TrimSpace(line) == "" || inBlock[i] || wrapsAbove(line) || tr.isStructural(line) {
 			continue
 		}
-		if tr.chromeLine != nil && tr.chromeLine.MatchString(line) {
+		if tr.messageStart != nil && tr.messageStart.MatchString(line) {
 			return ""
-		}
-		if inBlock[i] || wrapsAbove(line) || tr.isStructural(line) {
-			continue
 		}
 		return line
 	}
