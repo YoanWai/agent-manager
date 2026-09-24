@@ -165,7 +165,7 @@ func isManagerEcho(line string) bool {
 // anchor scrolled off it, the recovery is the tool's own transcript for
 // Claude Code (which repaints in place, so tmux holds no history for
 // it), and a deeper pane capture for everything else.
-func (p *poller) rowLines(sess store.Session, pane string) (quote, prompt string) {
+func (p *poller) rowLines(sess store.Session, pane, dir string) (quote, prompt string) {
 	clean := p.engine.Plain(sess.Tool, pane)
 	quote, anchored, ok := p.engine.LastMessage(sess.Tool, clean)
 	if !ok {
@@ -178,7 +178,7 @@ func (p *poller) rowLines(sess store.Session, pane string) (quote, prompt string
 	quoteAdrift := ok && !anchored && p.engine.HasMessageStart(sess.Tool)
 	promptAdrift := echoOK && prompt == ""
 	if (quoteAdrift || promptAdrift) && p.mcpStyles[sess.Tool] == "claude" && sess.AgentSessionID != "" {
-		tailPrompt, tailReply := p.claudeTail(sess)
+		tailPrompt, tailReply := p.claudeTail(sess, dir)
 		if quoteAdrift && tailReply != "" {
 			quote = tailReply
 		}
@@ -209,14 +209,25 @@ type claudeTailCache struct {
 }
 
 // claudeTail is the newest prompt and reply in a Claude Code session's
-// own transcript, flattened to single lines.
-func (p *poller) claudeTail(sess store.Session) (prompt, reply string) {
-	path, err := agentsession.ClaudeTranscriptPath(sess.Cwd, sess.AgentSessionID)
-	if err != nil {
-		return "", ""
+// own transcript, flattened to single lines. Claude moves the transcript
+// with a session that changes directory, so dir, where the agent sits now,
+// is tried before the launch directory.
+func (p *poller) claudeTail(sess store.Session, dir string) (prompt, reply string) {
+	var info os.FileInfo
+	for _, candidate := range []string{dir, sess.Cwd} {
+		if candidate == "" {
+			continue
+		}
+		path, err := agentsession.ClaudeTranscriptPath(candidate, sess.AgentSessionID)
+		if err != nil {
+			continue
+		}
+		if info, err = os.Stat(path); err == nil {
+			dir = candidate
+			break
+		}
 	}
-	info, err := os.Stat(path)
-	if err != nil {
+	if info == nil {
 		return "", ""
 	}
 	if cached, ok := p.claudeTails[sess.ID]; ok && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
@@ -229,7 +240,7 @@ func (p *poller) claudeTail(sess store.Session) (prompt, reply string) {
 		}
 		return cleaned
 	}
-	tailPrompt, tailReply, ok := agentsession.ClaudeTranscriptTail(sess.Cwd, sess.AgentSessionID, cleanUser)
+	tailPrompt, tailReply, ok := agentsession.ClaudeTranscriptTail(dir, sess.AgentSessionID, cleanUser)
 	if !ok {
 		return "", ""
 	}
@@ -428,6 +439,12 @@ func (p *poller) refreshOnce() tea.Msg {
 	if err != nil {
 		return errMsg{err}
 	}
+	for id, pane := range panes {
+		if pane.Path != "" && !isDir(pane.Path) {
+			pane.Path = ""
+			panes[id] = pane
+		}
+	}
 	var livePIDs []int
 	for _, sess := range sessions {
 		if !sess.Archived && panes[sess.ID].PID > 0 {
@@ -528,7 +545,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
-				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(sess, pane)
+				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(sess, pane, panes[sess.ID].Path)
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
 				if err != nil {
 					return errMsg{err}

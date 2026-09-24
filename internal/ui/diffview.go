@@ -201,9 +201,10 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, gen int, repoWa
 	// Restoring happens once per repo, so a reload that would only have its
 	// state discarded reads nothing and cannot migrate over a chained write.
 	restored := maps.Clone(m.diff.stateLoaded)
+	cwd := m.sessionDir(sess)
 	return func() tea.Msg {
 		msg := diffLoadedMsg{sessID: sess.ID, scope: scope, gen: gen, refresh: refresh}
-		roots, err := driver.ResolveRepos(sess.Cwd)
+		roots, err := driver.ResolveRepos(cwd)
 		if err != nil {
 			msg.err = err
 			return msg
