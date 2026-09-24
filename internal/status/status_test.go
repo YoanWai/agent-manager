@@ -259,15 +259,19 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 			"✻ Waiting for 2 background agents to finish\n※ recap: goal was X; next is Y.\n────\n❯ \n────", Working},
 		{"claude background wait superseded by a newer turn", "claude",
 			"✻ Waiting for 2 background agents to finish\n⏺ all agents reported\n✻ Worked for 5s\n────\n❯ \n────", Finished},
-		// 2026-08-14 real capture: a turn that leaves background shells
-		// running says so in its own summary line, the same way the agent
-		// wait line does.
+		// 2026-08-14 and 2026-09-24 real captures: a background shell or
+		// monitor can outlive its use (a wait loop whose job already ended, a
+		// dev server), so the turn that leaves one running has still ended,
+		// and a question it ended on still waits.
 		{"claude turn end with one background shell (real capture)", "claude",
-			"⏺ ok\n✻ Worked for 3s · 1 shell still running\n────\n❯ \n────\n  ⏵⏵ bypass permissions on · 1 shell", Working},
+			"⏺ ok\n✻ Worked for 3s · 1 shell still running\n────\n❯ \n────\n  ⏵⏵ bypass permissions on · 1 shell", Finished},
 		{"claude turn end with two background shells (real capture)", "claude",
-			"  Ran 2 shell commands\n⏺ ok\n✻ Cooked for 4s · 2 shells still running\n────\n❯ \n────\n  ⏵⏵ bypass permissions on · 2 shells", Working},
-		{"claude background shells drained by a newer turn", "claude",
-			"⏺ ok\n✻ Worked for 3s · 1 shell still running\n⏺ done\n✻ Cooked for 1s\n────\n❯ \n────", Finished},
+			"  Ran 2 shell commands\n⏺ ok\n✻ Cooked for 4s · 2 shells still running\n────\n❯ \n────\n  ⏵⏵ bypass permissions on · 2 shells", Finished},
+		{"claude turn end with a shell and a monitor (real capture)", "claude",
+			"⏺ ok\n✻ Worked for 8s · done 20:11 · 1 shell, 1 monitor still running\n────\n❯ \n────\n  ⏵⏵ auto mode on · 1 shell, 1 monitor · ← for agents · ↓ to manage", Finished},
+		{"claude question with a stray background shell (real capture)", "claude",
+			"⏺ The fix is in scratchpad/wt-fix, branch fix/549-claude-chrome-blocks, based on his commit. Should I push it as a second commit on his PR branch? He keeps his commit and credit, and a rebase-merge lands both.\n\n" +
+				"✻ Churned for 27m 47s · done 19:17 · 12 messages hidden (/focus to show) · 1 shell still running\n\n────\n❯\u00a0\n────\n  ⏵⏵ bypass permissions on · 1 shell", Waiting},
 		// 2026-08-14 real capture: transient banners render under the busy
 		// line and say nothing about whether the work drained.
 		{"claude background wait under a plugin banner (real capture)", "claude",

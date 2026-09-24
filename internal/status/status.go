@@ -214,13 +214,13 @@ func (e *Engine) TypingHold(tool, pane string) string {
 }
 
 // isBusy reports whether the newest turn is still running work that
-// outlives it. Background agents and background shells keep going after
-// the turn that spawned them ends, and the line saying so carries the same
-// shape as a turn-end summary, so turnState would otherwise read the turn
-// as over while the session is still busy. Only a turn that ended below the
-// busy line proves that work drained; transient banners under it say nothing
-// either way. Without turn_end there is no later turn to read, so the line
-// stands until the tool stops drawing it.
+// outlives it. Background agents keep going after the turn that spawned
+// them ends, and the line saying so carries the same shape as a turn-end
+// summary, so turnState would otherwise read the turn as over while the
+// session is still busy. Only a turn that ended below the busy line proves
+// that work drained; transient banners under it say nothing either way.
+// Without turn_end there is no later turn to read, so the line stands until
+// the tool stops drawing it.
 func (tr toolRules) isBusy(pane string) bool {
 	if tr.busyLine == nil {
 		return false

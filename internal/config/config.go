@@ -64,8 +64,8 @@ type Tool struct {
 	BlockedLine    string `toml:"blocked_line"`
 	TrailingNote   string `toml:"trailing_note"`
 	// BusyLine marks work that outlives the turn which started it, such as
-	// background agents and shells. Matching it in the newest turn keeps a
-	// turn-end summary from resolving to finished while that work runs.
+	// background agents. Matching it in the newest turn keeps a turn-end
+	// summary from resolving to finished while that work runs.
 	BusyLine string `toml:"busy_line"`
 	// LimitLine is a usage or rate-limit banner. Matching it in the newest
 	// turn is errored even when a turn-end summary or a limit dialog would
@@ -364,11 +364,12 @@ trailing_note = "^※"
 # ("❯ 1. Spaces"), where a numbered draft would sit; this footer under it
 # is what tells the two apart
 dialog_footer = "(?m)^\\s*Enter to select\\b"
-# background agents and shells keep running after the turn that spawned them
-# ends, and the line saying so carries the same shape as a turn-end summary:
-# "✻ Waiting for 2 background agents to finish" / "✻ Cooked for 4s · 2 shells
-# still running"
-busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for \\d+ background agents? to finish|.*· \\d+ shells? still running)"
+# background agents keep running after the turn that spawned them ends, and
+# the line saying so carries the same shape as a turn-end summary:
+# "✻ Waiting for 2 background agents to finish". Shells and monitors left
+# running ("· 1 shell still running") can outlive their use, so they do not
+# count.
+busy_line = "^[✻✳✶✽✢·✦✧+*] Waiting for \\d+ background agents? to finish"
 # a usage/rate-limit banner sits above the turn-end summary
 limit_line = "(?m)You've hit your .+limit"
 # every message and tool call opens on a bullet at the left edge; the
