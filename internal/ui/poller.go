@@ -263,6 +263,10 @@ func lastMeaningfulPaneLine(pane string) string {
 	return ""
 }
 
+// postNotification is the desktop notification seam: tests swap it so a
+// run never posts a real banner.
+var postNotification = notify.Notify
+
 func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores, mcpStyles map[string]string, shellTools map[string]bool, binaries toolBinaries, interval time.Duration) *poller {
 	return &poller{
 		store:         st,
@@ -281,7 +285,7 @@ func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hook
 		claudeTails:   map[string]claudeTailCache{},
 		quietSince:    map[string]quietTimer{},
 		recaptureSeen: map[string]recaptureSighting{},
-		notifyFn:      notify.Notify,
+		notifyFn:      postNotification,
 		takeFocus:     takeNotifyFocus,
 	}
 }

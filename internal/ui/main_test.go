@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/notify"
 )
 
 // testSocket is an isolated tmux server for this package's tests, so they
@@ -30,6 +32,9 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 	}
+	// On macOS a real banner relaunches this test binary as the notifier
+	// helper, which runs the whole suite again and posts another.
+	postNotification = func(notify.Event) {}
 	code := m.Run()
 	tmuxCmd("kill-server").Run()
 	os.Exit(code)
