@@ -1,8 +1,12 @@
 package tmux
 
 import (
+	"bufio"
+	"errors"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -400,6 +404,39 @@ func TestControlAttachSurvivesAnotherClientLeaving(t *testing.T) {
 	requireServer(t, pid)
 }
 
+// An agent's MCP calls and a second manager reach tmux from processes of their own.
+func TestControlAttachSurvivesAnotherProcess(t *testing.T) {
+	for _, action := range []string{"paste", "attach"} {
+		t.Run(action, func(t *testing.T) {
+			driver := requireTmux(t)
+			id := "gatexproc" + action + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+			if err := driver.Create(id, "/tmp", "cat >/dev/null", nil, 80, 24); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			t.Cleanup(func() { driver.Kill(id) })
+			pid := serverPid(t)
+
+			select {
+			case err := <-startOtherProcess(t, driver, action, id):
+				if err != nil {
+					t.Fatalf("other process: %v", err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatalf("other process never managed one %s", action)
+			}
+			for range attachRaces {
+				control, err := driver.OpenControl(id)
+				if err != nil {
+					t.Errorf("OpenControl: %v", err)
+					break
+				}
+				control.Close()
+			}
+			requireServer(t, pid)
+		})
+	}
+}
+
 func requireServer(t *testing.T, pid string) {
 	t.Helper()
 	out, err := tmuxCmd("display-message", "-p", "#{pid}").CombinedOutput()
@@ -453,6 +490,58 @@ func TestAttachGateOrdersCallsAroundControlClients(t *testing.T) {
 	want := []string{"attach", "greeted", "send-keys", "leaving", "left", "attach", "greeted"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("tmux calls = %q, want %q", got, want)
+	}
+}
+
+func TestAttachGateHoldsAnotherProcess(t *testing.T) {
+	driver, calls, release := stubTmux(t)
+
+	var control *Control
+	opened := make(chan error, 1)
+	go func() {
+		var err error
+		control, err = driver.OpenControl("first")
+		opened <- err
+	}()
+	waitForCall(t, calls, "attach")
+	pasted := startOtherProcess(t, driver, "paste", "first")
+	requireHeld(t, pasted, "another process pasted while a control client was connecting")
+	release("greet")
+	if err := <-opened; err != nil {
+		t.Fatalf("OpenControl: %v", err)
+	}
+	if err := <-pasted; err != nil {
+		t.Fatalf("other process: %v", err)
+	}
+	release("leave")
+	control.Close()
+
+	got := readCalls(t, calls)
+	if want := []string{"attach", "greeted", "load-buffer"}; len(got) < len(want) || !slices.Equal(got[:len(want)], want) {
+		t.Fatalf("tmux calls = %q, want them to start %q", got, want)
+	}
+}
+
+// tmux flocks a file beside the socket while it starts a server.
+func TestCreateStartsAServer(t *testing.T) {
+	requireTmux(t)
+	socket := testSocket + "start"
+	driver, err := NewWithSocket(socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	killServer := func() { exec.Command("tmux", "-L", socket, "kill-server").Run() }
+	killServer()
+	t.Cleanup(killServer)
+	created := make(chan error, 1)
+	go func() { created <- driver.Create("first", "/tmp", "", nil, 80, 24) }()
+	select {
+	case err := <-created:
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Create hung starting the server")
 	}
 }
 
@@ -522,6 +611,86 @@ func requireHeld(t *testing.T, done <-chan error, failure string) {
 	case <-done:
 		t.Fatal(failure)
 	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// otherProcessEnv names the action a rerun of this test binary repeats.
+const otherProcessEnv = "AM_TMUX_TEST_OTHER_PROCESS"
+
+// startOtherProcess runs this test binary again as another agent-manager
+// process that repeats action on the session until the test ends. It returns
+// just before the first one, and the channel reports how that one went.
+func startOtherProcess(t *testing.T, driver *Driver, action, id string) <-chan error {
+	t.Helper()
+	other := exec.Command(os.Args[0], driver.bin, id)
+	other.Env = append(os.Environ(), otherProcessEnv+"="+action)
+	stdin, err := other.StdinPipe()
+	if err != nil {
+		t.Fatalf("other process stdin: %v", err)
+	}
+	stdout, err := other.StdoutPipe()
+	if err != nil {
+		t.Fatalf("other process stdout: %v", err)
+	}
+	var stderr strings.Builder
+	other.Stderr = &stderr
+	if err := other.Start(); err != nil {
+		t.Fatalf("start other process: %v", err)
+	}
+	t.Cleanup(func() {
+		stdin.Close()
+		if err := other.Wait(); err != nil {
+			t.Errorf("other process: %v: %s", err, stderr.String())
+		}
+	})
+	lines := bufio.NewScanner(stdout)
+	if !lines.Scan() {
+		t.Fatal("other process exited before starting")
+	}
+	first := make(chan error, 1)
+	go func() {
+		if lines.Scan() {
+			first <- nil
+			return
+		}
+		first <- errors.New("exited before its first " + action + " finished")
+	}()
+	return first
+}
+
+// repeatUntilStdinCloses is the process startOtherProcess runs. It pastes
+// the way an agent's send_terminal call does, or attaches the way a second
+// manager's preview does.
+func repeatUntilStdinCloses(driver *Driver, action, id string) int {
+	act := func() error { return driver.Paste(id, "x") }
+	if action == "attach" {
+		act = func() error {
+			control, err := driver.OpenControl(id)
+			if err != nil {
+				return err
+			}
+			return control.Close()
+		}
+	}
+	stdinClosed := make(chan struct{})
+	go func() {
+		io.Copy(io.Discard, os.Stdin)
+		close(stdinClosed)
+	}()
+	fmt.Println("starting")
+	for first := true; ; first = false {
+		if err := act(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if first {
+			fmt.Println("done")
+		}
+		select {
+		case <-stdinClosed:
+			return 0
+		default:
+		}
 	}
 }
 

@@ -80,6 +80,7 @@ func tearDownHarness(t *testing.T, driver *tmux.Driver, st *store.Store) {
 		_ = driver.Kill(sess.ID)
 	}
 	_ = os.Remove(driver.SocketPath())
+	_ = os.Remove(driver.SocketPath() + ".attach-gate")
 	_ = st.Close()
 }
 

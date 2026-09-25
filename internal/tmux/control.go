@@ -15,7 +15,8 @@ import (
 // commands ride the same pipe, so a focused preview needs no per-tick
 // process forks and no polling: wait for Events, then Command a capture.
 type Control struct {
-	cmd *exec.Cmd
+	cmd    *exec.Cmd
+	socket string
 
 	// writeMu serializes stdin writes and, held across the queue append,
 	// keeps write order identical to waiter order. Writes never run under
@@ -47,12 +48,38 @@ type reply struct {
 	err  error
 }
 
-// tmux before 3.7 crashes if a control client is notified mid-handshake (tmux/tmux#4980).
+// tmux before 3.7 crashes if a control client is notified mid-handshake
+// (tmux/tmux#4980). attachGate orders this process, and a lock file beside
+// the socket orders every agent-manager process on that server.
 var attachGate sync.RWMutex
+
+// enterGate lets a tmux command run beside others until release. Exclusive,
+// it holds off every agent-manager command on the server instead.
+func enterGate(socket string, exclusive bool) (release func(), err error) {
+	lock, unlock := attachGate.RLock, attachGate.RUnlock
+	if exclusive {
+		lock, unlock = attachGate.Lock, attachGate.Unlock
+	}
+	lock()
+	unlockServer, err := lockServer(socket, exclusive)
+	if err != nil {
+		unlock()
+		return nil, err
+	}
+	return func() {
+		unlockServer()
+		unlock()
+	}, nil
+}
 
 // OpenControl attaches a control-mode client to a live session. It returns
 // once tmux has greeted the client or the client has exited.
 func (d *Driver) OpenControl(id string) (*Control, error) {
+	release, err := enterGate(d.socket, true)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	cmd := exec.Command(d.bin, d.args("-C", "attach-session", "-t", sessionName(id))...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -62,13 +89,12 @@ func (d *Driver) OpenControl(id string) (*Control, error) {
 	if err != nil {
 		return nil, fmt.Errorf("control stdout: %w", err)
 	}
-	attachGate.Lock()
-	defer attachGate.Unlock()
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("control attach: %w", err)
 	}
 	control := newControl(stdin, stdout)
 	control.cmd = cmd
+	control.socket = d.socket
 	go func() {
 		<-control.done
 		cmd.Wait()
@@ -184,9 +210,12 @@ func (c *Control) Close() error {
 	if closed {
 		return nil
 	}
-	// Leaving notifies every other control client.
-	attachGate.RLock()
-	defer attachGate.RUnlock()
+	// Leaving notifies every other control client. The client leaves even
+	// when the gate fails, and Close reports the failure.
+	release, err := enterGate(c.socket, false)
+	if err == nil {
+		defer release()
+	}
 	c.stdin.Close()
 	timeout := time.NewTimer(commandTimeout)
 	defer timeout.Stop()
@@ -198,7 +227,7 @@ func (c *Control) Close() error {
 		}
 		<-c.done
 	}
-	return nil
+	return err
 }
 
 func (c *Control) readLoop(stdout io.Reader) {
