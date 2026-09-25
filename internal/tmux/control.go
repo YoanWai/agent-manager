@@ -50,7 +50,8 @@ type reply struct {
 // tmux before 3.7 crashes if a control client is notified mid-handshake (tmux/tmux#4980).
 var attachGate sync.RWMutex
 
-// OpenControl attaches a control-mode client to a live session.
+// OpenControl attaches a control-mode client to a live session. It returns
+// once tmux has greeted the client or the client has exited.
 func (d *Driver) OpenControl(id string) (*Control, error) {
 	cmd := exec.Command(d.bin, d.args("-C", "attach-session", "-t", sessionName(id))...)
 	stdin, err := cmd.StdinPipe()
@@ -72,12 +73,10 @@ func (d *Driver) OpenControl(id string) (*Control, error) {
 		<-control.done
 		cmd.Wait()
 	}()
-	timeout := time.NewTimer(commandTimeout)
-	defer timeout.Stop()
+	// Killing a client mid-handshake crashes tmux before 3.7 too, so wait it out.
 	select {
 	case <-control.ready:
 	case <-control.done:
-	case <-timeout.C:
 	}
 	return control, nil
 }
