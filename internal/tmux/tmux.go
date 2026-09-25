@@ -651,7 +651,8 @@ func (d *Driver) paste(target, text string) error {
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("paste temp close: %w", err)
 	}
-	buf := fmt.Sprintf("am_paste_%d", pasteSeq.Add(1))
+	// tmux buffers are server-wide, and every agent's MCP process pastes too.
+	buf := fmt.Sprintf("am_paste_%d_%d", os.Getpid(), pasteSeq.Add(1))
 	if _, err := d.run("load-buffer", "-b", buf, path); err != nil {
 		return err
 	}
