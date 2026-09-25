@@ -766,7 +766,7 @@ func (d *Driver) RenameWorktreeBranch(root, path, branch, newName string) (strin
 
 // RemoveWorktreeIfClean removes a session's worktree and its am/ branch
 // only when nothing would be lost: no uncommitted or untracked files, and
-// no commits missing from the base branch. A kept worktree is not an error.
+// no commits that exist nowhere else. A kept worktree is not an error.
 func (d *Driver) RemoveWorktreeIfClean(root, path, branch string) (bool, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return false, nil
@@ -786,11 +786,28 @@ func (d *Driver) RemoveWorktreeIfClean(root, path, branch string) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	if ahead != "0" {
-		return false, nil
+	inBase := ahead == "0"
+	if !inBase {
+		// The base ref only moves on fetch, so a branch that is pushed, and
+		// often already merged, still counts as ahead. Commits that exist on
+		// a remote are not work this would lose.
+		unpushed, err := d.run(path, "rev-list", "--count", "HEAD", "--not", "--remotes")
+		if err != nil {
+			return false, err
+		}
+		if unpushed != "0" {
+			return false, nil
+		}
 	}
 	if _, err := d.run(root, "worktree", "remove", path); err != nil {
 		return false, err
+	}
+	// Remote-tracking refs are a local cache, so a branch deleted or
+	// force-pushed elsewhere can read as saved until the next fetch. The
+	// branch ref costs nothing and keeps those commits reachable, so only
+	// commits already in the base earn deleting it.
+	if !inBase {
+		return true, nil
 	}
 	if _, err := d.run(root, "branch", "-D", branch); err != nil {
 		return false, err
