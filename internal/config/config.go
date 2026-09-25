@@ -79,6 +79,10 @@ type Tool struct {
 	// caller quoting the last reply starts at its beginning rather than
 	// its tail. Tools without one quote the newest content line instead.
 	MessageStart string `toml:"message_start"`
+	// BlinkingMarker is the message_start glyph a tool blinks on a step
+	// still running. Its off frame captures that cell as a styled blank,
+	// which a read of the pane fills back in with this glyph.
+	BlinkingMarker string `toml:"blinking_marker"`
 	// ToolResult marks the row a tool call's result is drawn under, which
 	// a copied reply leaves out. Narrower than chrome_line, which every
 	// caller drops: the row quote keeps these.
@@ -384,6 +388,8 @@ limit_line = "(?m)You've hit your .+limit"
 # every message and tool call opens on a bullet at the left edge; the
 # glyph is ⏺ on current Claude Code and ● on older releases
 message_start = "^[●⏺] "
+# the bullet of a step still running blinks, and its off frame is a blank cell
+blinking_marker = "⏺"
 # a tool call's result is drawn under this glyph, Claude Code's alone:
 # the box-drawing characters a table is built from open content rows too
 tool_result = "^\\s*⎿"

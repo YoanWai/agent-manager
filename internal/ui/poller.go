@@ -166,7 +166,7 @@ func isManagerEcho(line string) bool {
 // Claude Code (which repaints in place, so tmux holds no history for
 // it), and a deeper pane capture for everything else.
 func (p *poller) rowLines(sess store.Session, pane string) (quote, prompt string) {
-	clean := ansi.Strip(pane)
+	clean := p.engine.Plain(sess.Tool, pane)
 	quote, anchored, ok := p.engine.LastMessage(sess.Tool, clean)
 	if !ok {
 		quote = lastMeaningfulPaneLine(clean)
@@ -187,7 +187,7 @@ func (p *poller) rowLines(sess store.Session, pane string) (quote, prompt string
 		}
 	} else if quoteAdrift || promptAdrift {
 		if deep, err := p.tmux.CapturePaneHistory(sess.ID, quoteHistoryLines); err == nil {
-			cleanDeep := ansi.Strip(deep)
+			cleanDeep := p.engine.Plain(sess.Tool, deep)
 			if line, anchored, ok := p.engine.LastMessage(sess.Tool, cleanDeep); ok && anchored {
 				quote = line
 			}

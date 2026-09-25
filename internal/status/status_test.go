@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 )
 
@@ -1043,6 +1045,75 @@ func TestLastUserEchoAndScrolledMarker(t *testing.T) {
 	}
 	if echoed, ok := engine.LastUserEcho("claude", "⏺ Only replies here.\n❯ "); !ok || echoed != "" {
 		t.Fatalf("echoless pane: echo=%q ok=%v, want empty and true", echoed, ok)
+	}
+}
+
+// Claude blinks the bullet of a step that is still running: its off frame
+// paints the bullet cell blank, which reads as a previous turn's message
+// being the newest one. Rows as captured with capture-pane -e from Claude
+// Code v2.1.282 on 2026-09-25.
+func TestPlainRestoresClaudesBlinkedBullet(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := func(bullet string) string {
+		return "\x1b[38;5;231m\x1b[49m⏺\x1b[39m Tea, good choice.\n" +
+			"\n" +
+			"\x1b[38;5;246m✻\x1b[39m \x1b[38;5;246mWorked for 3s · done 1:41 AM\x1b[39m\n" +
+			"\n" +
+			"\x1b[38;5;239m\x1b[48;5;237m❯ \x1b[38;5;231mUse the Bash tool to run python3 -c \"import time; time.sleep(20)\" in the foreground, then reply with one short sentence.\x1b[39m\n" +
+			"\n" +
+			"\x1b[38;5;246m\x1b[49m" + bullet + "\x1b[39m Sleeping 20 seconds via python\n" +
+			"\x1b[38;5;246m  ⎿  $ python3 -c \"import time; time.sleep(20)\"\x1b[39m\n" +
+			"\n" +
+			"\x1b[38;5;174m✶\x1b[39m \x1b[38;5;216mFrosting…\x1b[38;5;174m \x1b[38;5;246m(2s · ↓\x1b[39m \x1b[38;5;246m23 tokens)\x1b[39m\n" +
+			"\x1b[38;5;244m────────────\n" +
+			"\x1b[38;5;246m❯\u00a0\x1b[39m"
+	}
+	lit, blinked := engine.Plain("claude", pane("⏺")), engine.Plain("claude", pane(" "))
+	if blinked != lit {
+		t.Fatalf("blinked frame reads\n%s\nwant the lit frame\n%s", blinked, lit)
+	}
+	quote, anchored, _ := engine.LastMessage("claude", blinked)
+	if want := `Sleeping 20 seconds via python ⎿  $ python3 -c "import time; time.sleep(20)"`; !anchored || quote != want {
+		t.Fatalf("quote = %q anchored=%v, want %q", quote, anchored, want)
+	}
+	if text, _, _ := engine.FullTurnText("claude", blinked); text != "⏺ Sleeping 20 seconds via python" {
+		t.Fatalf("copied text = %q, want the running step", text)
+	}
+	if got, want := engine.Plain("codex", pane(" ")), ansi.Strip(pane(" ")); got != want {
+		t.Fatalf("codex declares no blinking marker, Plain = %q want %q", got, want)
+	}
+}
+
+// An open question dialog draws its question where the reply would be,
+// with no message of its own, so the newest message above it belongs to an
+// earlier turn. Frame from a live Claude Code v2.1.281 session.
+func TestLastMessageQuotesAnOpenDialogsQuestion(t *testing.T) {
+	engine := defaultEngine(t)
+	above := "⏺ Tea, good choice.\n" +
+		"\n" +
+		"✻ Brewed for 1s · done 12:59 AM\n" +
+		"\n" +
+		"❯ Use the AskUserQuestion tool right away to ask me whether I prefer cats or dogs. Nothing else.\n" +
+		"  ⎿  8 skills available\n" +
+		"────────────\n" +
+		" ☐ Pet pref\n" +
+		"\n" +
+		"Do you prefer cats or dogs?\n" +
+		"\n"
+	below := "  3. Type something.\n" +
+		"────────────\n" +
+		"  4. Chat about this\n" +
+		"\n" +
+		"Enter to select · ↑/↓ to navigate · Esc to cancel"
+	for name, pane := range map[string]string{
+		"first option selected":  above + "❯ 1. Cats\n     You prefer cats\n  2. Dogs\n     You prefer dogs\n" + below,
+		"second option selected": above + "  1. Cats\n     You prefer cats\n❯ 2. Dogs\n     You prefer dogs\n" + below,
+		"option under the rule":  above + "  1. Cats\n     You prefer cats\n  2. Dogs\n     You prefer dogs\n  3. Type something.\n────────────\n❯ 4. Chat about this\n\nEnter to select · ↑/↓ to navigate · Esc to cancel",
+	} {
+		quote, anchored, _ := engine.LastMessage("claude", pane)
+		if !anchored || quote != "Do you prefer cats or dogs?" {
+			t.Fatalf("%s: quote = %q anchored=%v, want the dialog's question", name, quote, anchored)
+		}
 	}
 }
 

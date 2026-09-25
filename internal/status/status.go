@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 )
 
@@ -51,6 +53,7 @@ type toolRules struct {
 	// composerPlaceholder is the literal text a tool paints inside its
 	// empty composer; a draft replaces it. Searched in a stripped row.
 	composerPlaceholder string
+	blinkingMarker      string
 	rules               []rule
 }
 
@@ -69,7 +72,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 		if def == "" {
 			def = Idle
 		}
-		tr := toolRules{defaultStatus: def, composerPlaceholder: tool.ComposerPlaceholder, rules: compiled}
+		tr := toolRules{defaultStatus: def, composerPlaceholder: tool.ComposerPlaceholder, blinkingMarker: tool.BlinkingMarker, rules: compiled}
 		optional := []struct {
 			pattern string
 			target  **regexp.Regexp
@@ -333,12 +336,12 @@ func footerBelow(cutoffTail string) (string, bool) {
 }
 
 func (tr toolRules) hasWaitingFooter(cutoffTail string) bool {
+	if tr.dialogOpen(cutoffTail) {
+		return true
+	}
 	footer, ok := footerBelow(cutoffTail)
 	if !ok {
 		return false
-	}
-	if tr.dialogFooter != nil && tr.dialogFooter.MatchString(footer) {
-		return true
 	}
 	for _, r := range tr.rules {
 		if r.state == Waiting && r.re.MatchString(footer) {
@@ -375,11 +378,14 @@ func (e *Engine) ActivityRegion(tool, pane string) (string, bool) {
 // on, joined in order — so a caller quoting the reply starts at its
 // beginning and fits as much of it as the row can hold. Chrome, busy
 // spinners and turn_end markers are stepped over, and a tool without a
-// marker yields its newest content line alone. anchored reports that a
-// marker was found — false means the quote is the newest content line,
-// which for a marker tool is the sign the message start scrolled out of
-// the captured text. ok is false when the tool has no activity_cutoff to
-// find the box with, or the cutoff is absent from the pane.
+// marker yields its newest content line alone. An open question dialog
+// draws its question in place of a message, so the question is the quote.
+// anchored reports that the quote opens where its message does, on a
+// marker or a dialog's question — false means the quote is the newest
+// content line, which for a marker tool is the sign the message start
+// scrolled out of the captured text. ok is false when the tool has no
+// activity_cutoff to find the box with, or the cutoff is absent from the
+// pane.
 func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool) {
 	tr, ok := e.tools[tool]
 	if !ok {
@@ -391,6 +397,11 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 	}
 	lines := strings.Split(region, "\n")
 	inBlock := tr.chromeBlockRows(lines)
+	if tr.dialogOpen(pane[len(region):]) {
+		if question := tr.dialogQuestion(lines, inBlock); question != "" {
+			return question, true, true
+		}
+	}
 	start, lastContent := -1, -1
 	for i, raw := range lines {
 		line := strings.TrimRight(raw, " \t")
@@ -426,6 +437,48 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 		parts = append(parts, strings.TrimSpace(line))
 	}
 	return strings.TrimSpace(strings.Join(parts, " ")), true, true
+}
+
+func (tr toolRules) dialogOpen(cutoffTail string) bool {
+	footer, ok := footerBelow(cutoffTail)
+	return ok && tr.dialogFooter != nil && tr.dialogFooter.MatchString(footer)
+}
+
+// dialogQuestion is the newest left-edge row of the dialog. Rows under the
+// question, once the selection moves down, are the options above it, their
+// descriptions and the rule some options sit under; a message above the
+// dialog means it asks nothing at the left edge.
+func (tr toolRules) dialogQuestion(lines []string, inBlock []bool) string {
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimRight(lines[i], " \t")
+		if strings.TrimSpace(line) == "" || inBlock[i] || wrapsAbove(line) || tr.isStructural(line) {
+			continue
+		}
+		if tr.messageStart != nil && tr.messageStart.MatchString(line) {
+			return ""
+		}
+		return line
+	}
+	return ""
+}
+
+// blankedMarker is a row opening on one styled cell captured as a space,
+// the shape a blinking marker's off frame takes under capture-pane -e.
+var blankedMarker = regexp.MustCompile(`^((?:\x1b\[[0-9;:]*m)+) (\x1b\[39m )`)
+
+// Plain is a captured pane without its escape sequences. A tool whose
+// message marker blinks gets the marker written back into the cell its off
+// frame left blank, so a running step reads the same in both frames.
+func (e *Engine) Plain(tool, pane string) string {
+	tr, ok := e.tools[tool]
+	if !ok || tr.blinkingMarker == "" {
+		return ansi.Strip(pane)
+	}
+	lines := strings.Split(pane, "\n")
+	for i, line := range lines {
+		lines[i] = blankedMarker.ReplaceAllString(line, "${1}"+tr.blinkingMarker+"${2}")
+	}
+	return ansi.Strip(strings.Join(lines, "\n"))
 }
 
 // chromeBlockRows marks the rows of each chrome_block: the matching row and

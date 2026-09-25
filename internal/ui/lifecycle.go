@@ -12,7 +12,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
 )
 
@@ -134,7 +133,7 @@ func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
 		if err != nil {
 			return errMsg{err}
 		}
-		text, bounded, ok := engine.FullTurnText(sess.Tool, ansi.Strip(pane))
+		text, bounded, ok := engine.FullTurnText(sess.Tool, engine.Plain(sess.Tool, pane))
 		if !ok {
 			return replyCopiedMsg{name: sess.Name, tool: sess.Tool, unreadable: true}
 		}
