@@ -1033,6 +1033,15 @@ func (m *Model) restoreFromArchive(sess store.Session, isGroup bool) error {
 }
 
 func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// The card advertises y/enter and n/esc; anything else leaves it up rather
+	// than dismissing the question the user has not answered.
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "y", "enter", "n", "esc":
+	default:
+		return m, nil
+	}
 	// A relaunch the manager refused opened the hint dialog; every other
 	// answer falls back to the list.
 	defer func() {
