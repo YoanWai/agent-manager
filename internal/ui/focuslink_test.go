@@ -127,6 +127,22 @@ func TestFocusClickOpensTheLink(t *testing.T) {
 	}
 }
 
+func TestFocusLinkOverSSHShowsThePage(t *testing.T) {
+	overSSH(t)
+	opened := ""
+	prev := openURL
+	openURL = func(url string) error { opened = url; return nil }
+	t.Cleanup(func() { openURL = prev })
+
+	msg := openLinkCmd("https://example.com/docs")()
+	if opened != "" {
+		t.Fatalf("the remote host opened %q", opened)
+	}
+	if msg != (linkPageMsg{url: "https://example.com/docs"}) {
+		t.Fatalf("openLinkCmd() = %#v, want the page", msg)
+	}
+}
+
 func TestLinkOpenFailureReachesTheErrorBar(t *testing.T) {
 	prev := openURL
 	openURL = func(string) error { return errors.New("no opener") }

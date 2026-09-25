@@ -1673,6 +1673,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errBar.text = msg.err.Error()
 		return m, nil
 
+	case linkPageMsg:
+		return m, showLinkPage(msg.url)
+
 	case launchCommandCopiedMsg:
 		m.handleLaunchCommandCopied(msg)
 		return m, nil

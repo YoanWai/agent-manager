@@ -706,6 +706,27 @@ func TestNoticesEnterOpensURL(t *testing.T) {
 	}
 }
 
+// Over SSH the opener would start a browser on the remote host, out of the
+// user's sight, so the link goes to the page instead.
+func TestOpenLinkOverSSHShowsThePage(t *testing.T) {
+	overSSH(t)
+	opened := ""
+	openBrowser = func(url string) error {
+		opened = url
+		return nil
+	}
+	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+
+	target := "https://example.com/issues/new?template=bug_report.yml"
+	msg := openLink(target)()
+	if opened != "" {
+		t.Fatalf("the remote host opened %q", opened)
+	}
+	if msg != (linkPageMsg{url: target}) {
+		t.Fatalf("openLink() = %#v, want the page for %q", msg, target)
+	}
+}
+
 func TestBrowserCommandsHonorBrowserCandidates(t *testing.T) {
 	target := "https://example.com/search?q=a b;still-an-argument"
 	commands := browserCommands("linux", `missing:'/opt/Remote Browser/bin/open' --new-tab=%s:remote`, target)
