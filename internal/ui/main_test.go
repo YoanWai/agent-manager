@@ -18,8 +18,7 @@ const testSocket = "amuitest"
 // The anchor session then holds the server up for the whole run: tests kill
 // their sessions in cleanup, and a server whose last session dies begins an
 // exit-empty shutdown that takes the next test's fresh session down with it
-// ("server exited unexpectedly", the recurring CI failure in
-// TestFocusWatchReportsCursor).
+// ("server exited unexpectedly").
 func TestMain(m *testing.M) {
 	// A copy of this binary launched as the notifier helper must act as
 	// one, or it reruns the whole suite and kills the parent run's server.

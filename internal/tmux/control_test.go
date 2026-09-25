@@ -2,6 +2,9 @@ package tmux
 
 import (
 	"io"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -320,6 +323,163 @@ func TestControlLiveCaptureAndEvents(t *testing.T) {
 			t.Fatalf("capture never showed pane text: %q", text)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+const attachRaces = 200
+
+// Each paste sends two notifications, which crash tmux before 3.7 when they reach a client mid-attach.
+func TestControlAttachSurvivesConcurrentPastes(t *testing.T) {
+	driver := requireTmux(t)
+	id := "gatepaste" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "cat >/dev/null", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	pid := serverPid(t)
+
+	stop := make(chan struct{})
+	var pasteErr error
+	var pasting sync.WaitGroup
+	pasting.Add(1)
+	go func() {
+		defer pasting.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if pasteErr = driver.Paste(id, "x"); pasteErr != nil {
+				return
+			}
+		}
+	}()
+	for range attachRaces {
+		control, err := driver.OpenControl(id)
+		if err != nil {
+			t.Errorf("OpenControl: %v", err)
+			break
+		}
+		control.Close()
+	}
+	close(stop)
+	pasting.Wait()
+	if pasteErr != nil {
+		t.Fatalf("Paste while control clients attached: %v", pasteErr)
+	}
+	requireServer(t, pid)
+}
+
+// A focus switch closes one control client while it opens the next.
+func TestControlAttachSurvivesAnotherClientLeaving(t *testing.T) {
+	driver := requireTmux(t)
+	id := "gateleave" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "cat >/dev/null", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	pid := serverPid(t)
+
+	var attaching sync.WaitGroup
+	for range 2 {
+		attaching.Add(1)
+		go func() {
+			defer attaching.Done()
+			for range attachRaces {
+				control, err := driver.OpenControl(id)
+				if err != nil {
+					t.Errorf("OpenControl: %v", err)
+					return
+				}
+				control.Close()
+			}
+		}()
+	}
+	attaching.Wait()
+	requireServer(t, pid)
+}
+
+func requireServer(t *testing.T, pid string) {
+	t.Helper()
+	out, err := tmuxCmd("display-message", "-p", "#{pid}").CombinedOutput()
+	if got := strings.TrimSpace(string(out)); err != nil || got != pid {
+		t.Fatalf("tmux server %s died, display-message answered %q (%v)", pid, got, err)
+	}
+}
+
+// tmux 3.7 survives without the gate, so a stub that logs its calls checks the order on any version.
+func TestAttachGateOrdersCallsAroundControlClients(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	script := strings.ReplaceAll(`#!/bin/sh
+case "$*" in
+*attach-session*)
+	echo attach >> CALLS; sleep 0.1; echo greeted >> CALLS
+	printf '%%begin 1 1 0\n%%end 1 1 0\n'
+	cat >/dev/null
+	echo leaving >> CALLS; sleep 0.1; echo left >> CALLS ;;
+*) echo "$3" >> CALLS ;;
+esac
+`, "CALLS", ShellQuote(calls))
+	stub := filepath.Join(dir, "tmux")
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	var first *Control
+	opened := make(chan error, 1)
+	go func() {
+		var err error
+		first, err = driver.OpenControl("first")
+		opened <- err
+	}()
+	waitForCall(t, calls, "attach")
+	if err := driver.SendKeys("first", "x"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+	if err := <-opened; err != nil {
+		t.Fatalf("OpenControl: %v", err)
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		first.Close()
+		close(closed)
+	}()
+	waitForCall(t, calls, "leaving")
+	second, err := driver.OpenControl("second")
+	if err != nil {
+		t.Fatalf("OpenControl: %v", err)
+	}
+	<-closed
+	got := readCalls(t, calls)
+	second.Close()
+
+	want := []string{"attach", "greeted", "send-keys", "leaving", "left", "attach", "greeted"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("tmux calls = %q, want %q", got, want)
+	}
+}
+
+func readCalls(t *testing.T, path string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("read calls: %v", err)
+	}
+	return strings.Fields(string(data))
+}
+
+func waitForCall(t *testing.T, path, call string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !slices.Contains(readCalls(t, path), call) {
+		if time.Now().After(deadline) {
+			t.Fatalf("stub tmux never logged %q, calls: %q", call, readCalls(t, path))
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

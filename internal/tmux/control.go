@@ -35,6 +35,8 @@ type Control struct {
 	// events coalesces %output notifications: it holds at most one signal,
 	// so a burst of pane writes reads as "something changed" once.
 	events chan struct{}
+	// ready closes once tmux has answered the attach with its greeting block.
+	ready chan struct{}
 	// done closes when the control client exits (detach, kill, or error).
 	done    chan struct{}
 	exitErr error
@@ -44,6 +46,9 @@ type reply struct {
 	text string
 	err  error
 }
+
+// tmux before 3.7 crashes if a control client is notified mid-handshake (tmux/tmux#4980).
+var attachGate sync.RWMutex
 
 // OpenControl attaches a control-mode client to a live session.
 func (d *Driver) OpenControl(id string) (*Control, error) {
@@ -56,6 +61,8 @@ func (d *Driver) OpenControl(id string) (*Control, error) {
 	if err != nil {
 		return nil, fmt.Errorf("control stdout: %w", err)
 	}
+	attachGate.Lock()
+	defer attachGate.Unlock()
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("control attach: %w", err)
 	}
@@ -65,6 +72,13 @@ func (d *Driver) OpenControl(id string) (*Control, error) {
 		<-control.done
 		cmd.Wait()
 	}()
+	timeout := time.NewTimer(commandTimeout)
+	defer timeout.Stop()
+	select {
+	case <-control.ready:
+	case <-control.done:
+	case <-timeout.C:
+	}
 	return control, nil
 }
 
@@ -74,6 +88,7 @@ func newControl(stdin io.WriteCloser, stdout io.Reader) *Control {
 	control := &Control{
 		stdin:  stdin,
 		events: make(chan struct{}, 1),
+		ready:  make(chan struct{}),
 		done:   make(chan struct{}),
 	}
 	go control.readLoop(stdout)
@@ -170,6 +185,9 @@ func (c *Control) Close() error {
 	if closed {
 		return nil
 	}
+	// Leaving notifies every other control client.
+	attachGate.RLock()
+	defer attachGate.RUnlock()
 	c.stdin.Close()
 	timeout := time.NewTimer(commandTimeout)
 	defer timeout.Stop()
@@ -246,6 +264,7 @@ func (c *Control) resolve(text string, isError bool) {
 	if !c.greeted {
 		c.greeted = true
 		c.mu.Unlock()
+		close(c.ready)
 		return
 	}
 	var waiter chan reply

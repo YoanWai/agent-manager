@@ -203,6 +203,8 @@ func (d *Driver) args(a ...string) []string {
 }
 
 func (d *Driver) run(args ...string) (string, error) {
+	attachGate.RLock()
+	defer attachGate.RUnlock()
 	out, err := exec.Command(d.bin, d.args(args...)...).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("tmux %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
