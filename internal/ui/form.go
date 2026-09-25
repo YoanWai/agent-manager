@@ -218,14 +218,14 @@ func (m *Model) groupDefaultDir(group string) string {
 // alphabetically.
 var toolDisplayOrder = []string{"claude", "opencode", "codex", "grok", "gemini", "pi"}
 
-// sortedToolNames is every configured agent CLI in picker order. A block
-// declaring shell = true is not a CLI to spawn agents with, so it is left
-// out; its own key launches it, and a rename still keeps a shell session
-// on it.
+// sortedToolNames is every configured agent CLI in picker order, each
+// followed by the profiles built on it. A block declaring shell = true is
+// not a CLI to spawn agents with, so it is left out; its own key launches
+// it, and a rename still keeps a shell session on it.
 func sortedToolNames(cfg config.Config) []string {
 	names := make([]string, 0, len(cfg.Tools))
 	for _, name := range cfg.ToolNames() {
-		if !cfg.Tools[name].Shell {
+		if !cfg.Tools[name].Shell && cfg.Profiles[name] == "" {
 			names = append(names, name)
 		}
 	}
@@ -244,7 +244,18 @@ func sortedToolNames(cfg config.Config) []string {
 		}
 		return names[i] < names[j]
 	})
-	return names
+	byBase := map[string][]string{}
+	for _, profile := range cfg.ToolNames() {
+		if base := cfg.Profiles[profile]; base != "" {
+			byBase[base] = append(byBase[base], profile)
+		}
+	}
+	ordered := make([]string, 0, len(cfg.Tools))
+	for _, name := range names {
+		ordered = append(ordered, name)
+		ordered = append(ordered, byBase[name]...)
+	}
+	return ordered
 }
 
 // enabledToolNames is the create-session picker: configured tools minus any

@@ -930,6 +930,26 @@ func TestSortedToolNamesOrder(t *testing.T) {
 	}
 }
 
+// A profile is picked beside the CLI it launches, not wherever its name
+// would sort, so a picker reads as "pi, then the ways to run pi".
+func TestSortedToolNamesKeepProfilesAfterTheirBase(t *testing.T) {
+	cfg := config.Config{
+		Tools: map[string]config.Tool{
+			"claude": {Command: "claude"},
+			"pi":     {Command: "pi"},
+			"aa-pi":  {Command: "pi --model a"},
+			"zz-pi":  {Command: "pi --model z"},
+			"sonnet": {Command: "claude --model sonnet"},
+		},
+		Profiles: map[string]string{"aa-pi": "pi", "zz-pi": "pi", "sonnet": "claude"},
+	}
+	got := sortedToolNames(cfg)
+	want := []string{"claude", "sonnet", "pi", "aa-pi", "zz-pi"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("sortedToolNames = %v want %v", got, want)
+	}
+}
+
 func initGitRepo(t *testing.T, dir string) {
 	t.Helper()
 	for _, args := range [][]string{
