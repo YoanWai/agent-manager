@@ -230,6 +230,21 @@ func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 		t.Fatalf("a tool with no MCP style should launch untouched, got %q", command)
 	}
 
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	grok := config.Tool{Command: "cat"}
+	_, env, err = Environment(manager, "grok", grok, grok.Command, "abcd1234")
+	if err != nil {
+		t.Fatalf("Environment grok: %v", err)
+	}
+	written, err := os.ReadFile(filepath.Join(home, ".grok", "config.toml"))
+	if err != nil {
+		t.Fatalf("grok config: %v", err)
+	}
+	if !strings.Contains(string(written), "theme = \"terminal\"") || !strings.Contains(string(written), "terminal_theme = true") {
+		t.Fatalf("grok config = %q", written)
+	}
+
 	hooked := config.Tool{Command: "cat", StatusSource: hooks.StatusSourceClaude, MCP: "claude"}
 	command, env, err = Environment(manager, "hooked", hooked, hooked.Command, "abcd1234")
 	if err != nil {
