@@ -26,6 +26,11 @@ const testSocket = "amtmuxtest"
 // exit-empty shutdown that takes the next test's fresh session down with it
 // ("server exited unexpectedly").
 func TestMain(m *testing.M) {
+	// startOtherProcess runs this binary again as a second agent-manager
+	// process, with the tmux binary and the session as its arguments.
+	if action := os.Getenv(otherProcessEnv); action != "" {
+		os.Exit(repeatUntilStdinCloses(&Driver{bin: os.Args[1], socket: testSocket}, action, os.Args[2]))
+	}
 	// kill-server fails whenever no server is up, which is the normal case.
 	tmuxCmd("kill-server").Run()
 	// Without tmux the run still starts: each test skips through its own
@@ -1299,6 +1304,19 @@ func TestSocketPathFromRelativeTmpdirIsAbsolute(t *testing.T) {
 	}
 	want := filepath.Join(resolved, fmt.Sprintf("tmux-%d", os.Getuid()), testSocket)
 	if got != want {
+		t.Fatalf("socket path = %q, want %q", got, want)
+	}
+}
+
+// tmux skips a TMUX_TMPDIR it cannot resolve and puts its socket under /tmp.
+func TestSocketPathFromMissingTmpdirFallsBackToTmp(t *testing.T) {
+	t.Setenv("TMUX_TMPDIR", filepath.Join(t.TempDir(), "missing"))
+	tmp, err := filepath.EvalSymlinks("/tmp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(tmp, fmt.Sprintf("tmux-%d", os.Getuid()), testSocket)
+	if got := socketPathFromEnv(testSocket); got != want {
 		t.Fatalf("socket path = %q, want %q", got, want)
 	}
 }

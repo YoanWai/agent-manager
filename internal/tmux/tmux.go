@@ -154,13 +154,16 @@ func (d *Driver) SocketPath() string {
 	return path
 }
 
-// socketPathFromEnv rebuilds what tmux resolves -L to while no server is
-// running to answer for itself. tmux reports the path with its symlinks
+// socketPathFromEnv rebuilds what tmux resolves -L to, without asking a
+// server that may not be running. tmux reports the path with its symlinks
 // resolved, so this does too and the two agree once a server exists.
 func socketPathFromEnv(socket string) string {
-	dir := os.Getenv("TMUX_TMPDIR")
-	if dir == "" {
-		dir = "/tmp"
+	dir := "/tmp"
+	// tmux skips a TMUX_TMPDIR it cannot resolve.
+	if custom := os.Getenv("TMUX_TMPDIR"); custom != "" {
+		if _, err := os.Stat(custom); err == nil {
+			dir = custom
+		}
 	}
 	// tmux takes a relative TMUX_TMPDIR from its own working directory and
 	// reports the resolved path, so the same absolute form is what a session
@@ -203,8 +206,11 @@ func (d *Driver) args(a ...string) []string {
 }
 
 func (d *Driver) run(args ...string) (string, error) {
-	attachGate.RLock()
-	defer attachGate.RUnlock()
+	release, err := enterGate(d.socket, false)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	out, err := exec.Command(d.bin, d.args(args...)...).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("tmux %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
