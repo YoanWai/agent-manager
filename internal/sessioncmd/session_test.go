@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -103,8 +104,11 @@ func testConfigLoader(t *testing.T, doc string) func(string) (config.Config, err
 		if err != nil {
 			return cfg, err
 		}
-		cfg.Tools = declared.Tools
-		return cfg, nil
+		cfg.Tools = maps.Clone(declared.Tools)
+		// A profile on a test tool, resolved the way Load resolves one on
+		// a built-in: the harness swaps the tools in after the load.
+		cfg.ProfileDefs = map[string]config.Profile{"loud-echoer": {Tool: "echoer", Args: []string{"--volume", "eleven"}}}
+		return cfg, cfg.ResolveProfiles()
 	}
 }
 
@@ -216,6 +220,33 @@ func TestSessionsCreateCarriesNamePromptAndTargetWithRealTmux(t *testing.T) {
 	// echo prints what the launch command handed it, so the pane proves the
 	// prompt rode the command line rather than being dropped.
 	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "fix the retry backoff")
+}
+
+// A profile is picked by its name like a CLI and launches its base with
+// the arguments in front of the prompt; a revive carries them again, since
+// the row holds the profile's name rather than the base's.
+func TestSessionsCreateOnAProfileCarriesItsArgumentsThroughRevive(t *testing.T) {
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "loud", Tool: "loud-echoer", Prompt: "say it"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.Tool != "loud-echoer" {
+		t.Fatalf("created tool = %q, want the profile's name", created.Tool)
+	}
+	screen := waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "say it")
+	if !strings.Contains(screen.Output, "--volume eleven") {
+		t.Fatalf("the launch dropped the profile's arguments: %q", screen.Output)
+	}
+	waitForAgentGone(t, h.driver, created.ID)
+
+	if _, err := h.sessions.Revive(h.caller.ID, created.ID); err != nil {
+		t.Fatalf("Revive: %v", err)
+	}
+	screen = waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "resumed --volume eleven")
+	if got := strings.Count(screen.Output, "--volume eleven"); got != 2 {
+		t.Fatalf("want the arguments on the launch and again on the revive, got %d in %q", got, screen.Output)
+	}
 }
 
 func TestSessionsCreateAutoNamesAndAsksForARename(t *testing.T) {

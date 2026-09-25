@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
 type Rule struct {
@@ -122,6 +124,13 @@ type Tool struct {
 	Rules               []Rule `toml:"rules"`
 }
 
+// Profile is a built-in tool launched with extra arguments, under a name
+// of the user's.
+type Profile struct {
+	Tool string   `toml:"tool"`
+	Args []string `toml:"args"`
+}
+
 type Config struct {
 	PollInterval Duration `toml:"poll_interval"`
 	// Editor is the command the o key opens a directory in, arguments
@@ -132,9 +141,14 @@ type Config struct {
 	// [tools.<name>] block left there cannot fail the load.
 	Tools        map[string]Tool `toml:"-"`
 	IgnoredTools []string        `toml:"-"`
-	Keybindings  Keybindings     `toml:"keybindings"`
-	SessionKeys  keybind.Table   `toml:"-"`
-	ListKeys     keybind.Table   `toml:"-"`
+	// ProfileDefs is what the file declares under [profiles.<name>]; Load
+	// resolves each into a Tools entry of that name and records the base
+	// it came from in Profiles.
+	ProfileDefs map[string]Profile `toml:"profiles"`
+	Profiles    map[string]string  `toml:"-"`
+	Keybindings Keybindings        `toml:"keybindings"`
+	SessionKeys keybind.Table      `toml:"-"`
+	ListKeys    keybind.Table      `toml:"-"`
 }
 
 type Keybindings struct {
@@ -201,10 +215,76 @@ func LoadDir(dir string) (Config, error) {
 	cfg.IgnoredTools = declaredTools(meta)
 	cfg.Tools = builtin.Tools
 	cfg.applyDefaults()
+	if err := cfg.ResolveProfiles(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
 	if err := cfg.resolveKeys(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// ResolveProfiles turns each declared profile into a tool of its own name:
+// the base tool with the arguments appended to every line that launches
+// it, so a session on the profile keeps them through revive, restart and
+// fork. Everything else, the status rules above all, is the base tool's,
+// so a fix for its screen reaches the profile too. Load runs it once the
+// tools are in place; a loader that swaps the tools out runs it again.
+func (c *Config) ResolveProfiles() error {
+	names := make([]string, 0, len(c.ProfileDefs))
+	for name := range c.ProfileDefs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	c.Profiles = map[string]string{}
+	for _, name := range names {
+		def := c.ProfileDefs[name]
+		if _, taken := c.Tools[name]; taken {
+			return fmt.Errorf("profile %q shadows the built-in tool of that name", name)
+		}
+		base, known := c.Tools[def.Tool]
+		if _, onAProfile := c.ProfileDefs[def.Tool]; !known || onAProfile {
+			var clis []string
+			for _, cli := range c.ToolNames() {
+				if _, isProfile := c.ProfileDefs[cli]; !isProfile && !c.Tools[cli].Shell {
+					clis = append(clis, cli)
+				}
+			}
+			return fmt.Errorf("profile %q: tool %q is not a CLI it supports; the CLIs are %s", name, def.Tool, strings.Join(clis, ", "))
+		}
+		if base.Shell {
+			return fmt.Errorf("profile %q: tool %q opens a shell, not an agent", name, def.Tool)
+		}
+		var quoted strings.Builder
+		for _, arg := range def.Args {
+			quoted.WriteString(" " + tmux.ShellQuote(arg))
+		}
+		suffix := quoted.String()
+		tool := base
+		tool.Command += suffix
+		// A line the base leaves empty stays empty, so the fallbacks that
+		// read emptiness still take the same path.
+		if base.ReviveCommand != "" {
+			tool.ReviveCommand += suffix
+		}
+		if base.ResumeByIDCommand != "" {
+			tool.ResumeByIDCommand += suffix
+		}
+		if base.ResumePickerCommand != "" {
+			tool.ResumePickerCommand += suffix
+		}
+		if base.ForkCommand != "" {
+			tool.ForkCommand += suffix
+		}
+		// MCP registration keys on the tool's name when the block names no
+		// style, and the profile's name is nobody's.
+		if tool.MCP == "" {
+			tool.MCP = def.Tool
+		}
+		c.Tools[name] = tool
+		c.Profiles[name] = def.Tool
+	}
+	return nil
 }
 
 // declaredTools reads the [tools.<name>] headers off the key list, since
@@ -328,6 +408,14 @@ const starterConfig = `poll_interval = "2s"
 # new_session = "N"
 # prompt = ["space", "p"]
 # quit = "none"
+
+# A profile starts one of the built-in CLIs with extra arguments, under a
+# name of your own; it is offered beside the CLIs wherever one is picked,
+# and a session started on it keeps the arguments through restart, revive
+# and fork. Each argument is one list entry, quoted for the shell as is.
+# [profiles.claude-sonnet]
+# tool = "claude"
+# args = ["--model", "sonnet"]
 `
 
 // builtinTools is the only source of tool definitions, so a release that
