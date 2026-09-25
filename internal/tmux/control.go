@@ -35,6 +35,8 @@ type Control struct {
 	// events coalesces %output notifications: it holds at most one signal,
 	// so a burst of pane writes reads as "something changed" once.
 	events chan struct{}
+	// ready closes once tmux has answered the attach with its greeting block.
+	ready chan struct{}
 	// done closes when the control client exits (detach, kill, or error).
 	done    chan struct{}
 	exitErr error
@@ -45,7 +47,11 @@ type reply struct {
 	err  error
 }
 
-// OpenControl attaches a control-mode client to a live session.
+// tmux before 3.7 crashes if a control client is notified mid-handshake (tmux/tmux#4980).
+var attachGate sync.RWMutex
+
+// OpenControl attaches a control-mode client to a live session. It returns
+// once tmux has greeted the client or the client has exited.
 func (d *Driver) OpenControl(id string) (*Control, error) {
 	cmd := exec.Command(d.bin, d.args("-C", "attach-session", "-t", sessionName(id))...)
 	stdin, err := cmd.StdinPipe()
@@ -56,6 +62,8 @@ func (d *Driver) OpenControl(id string) (*Control, error) {
 	if err != nil {
 		return nil, fmt.Errorf("control stdout: %w", err)
 	}
+	attachGate.Lock()
+	defer attachGate.Unlock()
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("control attach: %w", err)
 	}
@@ -65,6 +73,11 @@ func (d *Driver) OpenControl(id string) (*Control, error) {
 		<-control.done
 		cmd.Wait()
 	}()
+	// Killing a client mid-handshake crashes tmux before 3.7 too, so wait it out.
+	select {
+	case <-control.ready:
+	case <-control.done:
+	}
 	return control, nil
 }
 
@@ -74,6 +87,7 @@ func newControl(stdin io.WriteCloser, stdout io.Reader) *Control {
 	control := &Control{
 		stdin:  stdin,
 		events: make(chan struct{}, 1),
+		ready:  make(chan struct{}),
 		done:   make(chan struct{}),
 	}
 	go control.readLoop(stdout)
@@ -170,6 +184,9 @@ func (c *Control) Close() error {
 	if closed {
 		return nil
 	}
+	// Leaving notifies every other control client.
+	attachGate.RLock()
+	defer attachGate.RUnlock()
 	c.stdin.Close()
 	timeout := time.NewTimer(commandTimeout)
 	defer timeout.Stop()
@@ -246,6 +263,7 @@ func (c *Control) resolve(text string, isError bool) {
 	if !c.greeted {
 		c.greeted = true
 		c.mu.Unlock()
+		close(c.ready)
 		return
 	}
 	var waiter chan reply
