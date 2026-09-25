@@ -72,7 +72,10 @@ func tearDownHarness(t *testing.T, driver *tmux.Driver, st *store.Store) {
 		t.Errorf("kill test tmux server: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 	// With the server gone, Kill only removes each session's launch script.
-	sessions, _ := st.ListSessions(true)
+	sessions, err := st.ListSessions(true)
+	if err != nil {
+		t.Errorf("list harness sessions: %v", err)
+	}
 	for _, sess := range sessions {
 		_ = driver.Kill(sess.ID)
 	}
