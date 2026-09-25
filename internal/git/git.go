@@ -782,21 +782,28 @@ func (d *Driver) RemoveWorktreeIfClean(root, path, branch string) (bool, error) 
 	if base == "" {
 		return false, fmt.Errorf("no base ref in %s to compare %s against", root, branch)
 	}
-	ahead, err := d.run(path, "rev-list", "--count", base+"..HEAD")
+	// Only HEAD is read in the worktree: a base of HEAD means the root's checkout.
+	head, err := d.run(path, "rev-parse", "HEAD")
 	if err != nil {
 		return false, err
 	}
-	inBase := ahead == "0"
-	if !inBase {
-		// The base ref only moves on fetch, so a branch that is pushed, and
-		// often already merged, still counts as ahead. Commits that exist on
-		// a remote are not work this would lose.
-		unpushed, err := d.run(path, "rev-list", "--count", "HEAD", "--not", "--remotes")
-		if err != nil {
+	branchTip, err := d.localBranchTip(root, branch)
+	if err != nil {
+		return false, err
+	}
+	// A worktree can leave its branch, so its HEAD and the branch each hold work.
+	tips := []string{head}
+	if branchTip != "" && branchTip != head {
+		tips = append(tips, branchTip)
+	}
+	branchMerged := false
+	for _, tip := range tips {
+		merged, saved, err := d.tipSaved(root, base, tip)
+		if err != nil || !saved {
 			return false, err
 		}
-		if unpushed != "0" {
-			return false, nil
+		if tip == branchTip {
+			branchMerged = merged
 		}
 	}
 	if _, err := d.run(root, "worktree", "remove", path); err != nil {
@@ -805,14 +812,75 @@ func (d *Driver) RemoveWorktreeIfClean(root, path, branch string) (bool, error) 
 	// Remote-tracking refs are a local cache, so a branch deleted or
 	// force-pushed elsewhere can read as saved until the next fetch. The
 	// branch ref costs nothing and keeps those commits reachable, so only
-	// commits already in the base earn deleting it.
-	if !inBase {
+	// a branch the base already holds earns deleting it.
+	if !branchMerged {
 		return true, nil
 	}
 	if _, err := d.run(root, "branch", "-D", branch); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// localBranchTip resolves a local branch, or returns "" when it no longer
+// exists, as after a rename by hand.
+func (d *Driver) localBranchTip(root, branch string) (string, error) {
+	tip, err := d.run(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+	if err != nil {
+		// --verify --quiet exits 1 when the ref is absent; anything else is a real failure.
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+			return "", err
+		}
+		return "", nil
+	}
+	return tip, nil
+}
+
+// tipSaved reports whether tip's commits outlive the worktree: merged when
+// the base holds them, saved when the base or a remote does.
+func (d *Driver) tipSaved(root, base, tip string) (merged, saved bool, err error) {
+	merged, err = d.mergedInto(root, base, tip)
+	if err != nil || merged {
+		return merged, merged, err
+	}
+	// The base ref only moves on fetch, so a branch that is pushed, and
+	// often already merged, still counts as ahead. Commits that exist on
+	// a remote are not work this would lose.
+	unpushed, err := d.run(root, "rev-list", "--count", tip, "--not", "--remotes")
+	if err != nil {
+		return false, false, err
+	}
+	return false, unpushed == "0", nil
+}
+
+// mergedInto reports whether base already holds tip's changes, as the same
+// commits or, after a squash or rebase merge, as the same content.
+func (d *Driver) mergedInto(root, base, tip string) (bool, error) {
+	ahead, err := d.run(root, "rev-list", "--count", base+".."+tip)
+	if err != nil {
+		return false, err
+	}
+	if ahead == "0" {
+		return true, nil
+	}
+	// Merging tip into base leaves base's tree untouched when tip adds nothing.
+	mergedTree, err := d.run(root, "merge-tree", "--write-tree", base, tip)
+	if err != nil {
+		// Exit 1 is a conflict, so base lacks the change; git before 2.38
+		// has no --write-tree and cannot tell.
+		var exitErr *exec.ExitError
+		conflicted := errors.As(err, &exitErr) && exitErr.ExitCode() == 1
+		if conflicted || strings.Contains(err.Error(), "unknown rev --write-tree") {
+			return false, nil
+		}
+		return false, err
+	}
+	baseTree, err := d.run(root, "rev-parse", base+"^{tree}")
+	if err != nil {
+		return false, err
+	}
+	return mergedTree == baseTree, nil
 }
 
 func (d *Driver) IsRepoRoot(dir string) bool {

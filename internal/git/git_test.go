@@ -660,12 +660,17 @@ func withRemote(t *testing.T, dir string) string {
 
 func gitFailingOn(t *testing.T, arg string) string {
 	t.Helper()
+	return gitShim(t, arg, "exit 1")
+}
+
+func gitShim(t *testing.T, arg, action string) string {
+	t.Helper()
 	real, err := exec.LookPath("git")
 	if err != nil {
 		t.Skip("git not installed")
 	}
 	shim := filepath.Join(t.TempDir(), "git")
-	script := "#!/bin/sh\ncase \" $* \" in *' " + arg + " '*) exit 1 ;; esac\nexec " + real + " \"$@\"\n"
+	script := "#!/bin/sh\ncase \" $* \" in *' " + arg + " '*) " + action + " ;; esac\nexec " + real + " \"$@\"\n"
 	if err := os.WriteFile(shim, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -778,6 +783,228 @@ func TestRemoveWorktreeIfCleanKeepsUnpushedCommits(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("kept worktree should still be on disk: %v", err)
 	}
+}
+
+func revParse(t *testing.T, driver *Driver, dir, ref string) string {
+	t.Helper()
+	sha, err := driver.run(dir, "rev-parse", "--verify", "--quiet", ref)
+	if err != nil {
+		t.Fatalf("%s does not resolve in %s: %v", ref, dir, err)
+	}
+	return sha
+}
+
+func TestRemoveWorktreeIfCleanKeepsUnpushedCommitsWithoutDefaultBranch(t *testing.T) {
+	driver, dir := testRepo(t)
+	gitIn(t, dir, "checkout", "-q", "-b", "trunk")
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "trunk-work")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	write(t, path, "b.txt", "work")
+	commit(t, path, "work")
+	head := revParse(t, driver, path, "HEAD")
+
+	removed, err := driver.RemoveWorktreeIfClean(dir, path, branch)
+	if err != nil || removed {
+		t.Fatalf("the commit is neither on trunk nor on a remote: removed=%v err=%v", removed, err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("kept worktree should still be on disk: %v", err)
+	}
+	if tip := revParse(t, driver, dir, "refs/heads/"+branch); tip != head {
+		t.Fatalf("branch should still point at the work: got %s, want %s", tip, head)
+	}
+}
+
+func TestRemoveWorktreeIfCleanRemovesMergedWorkWithoutDefaultBranch(t *testing.T) {
+	driver, dir := testRepo(t)
+	gitIn(t, dir, "checkout", "-q", "-b", "trunk")
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "trunk-merged")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	write(t, path, "b.txt", "work")
+	commit(t, path, "work")
+	gitIn(t, dir, "merge", "-q", "--ff-only", branch)
+
+	removed, err := driver.RemoveWorktreeIfClean(dir, path, branch)
+	if err != nil || !removed {
+		t.Fatalf("work merged into trunk is not lost: removed=%v err=%v", removed, err)
+	}
+	if _, err := driver.run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		t.Fatal("branch should be deleted")
+	}
+}
+
+func TestRemoveWorktreeIfCleanKeepsBranchTheWorktreeLeft(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "left")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	write(t, path, "b.txt", "work")
+	commit(t, path, "work")
+	head := revParse(t, driver, path, "HEAD")
+	gitIn(t, path, "switch", "-q", "--detach", "main")
+
+	removed, err := driver.RemoveWorktreeIfClean(dir, path, branch)
+	if err != nil || removed {
+		t.Fatalf("the branch holds a commit in neither the base nor a remote: removed=%v err=%v", removed, err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("kept worktree should still be on disk: %v", err)
+	}
+	if tip := revParse(t, driver, dir, "refs/heads/"+branch); tip != head {
+		t.Fatalf("branch should still point at the work: got %s, want %s", tip, head)
+	}
+}
+
+func TestRemoveWorktreeIfCleanKeepsDetachedCommits(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "detached")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	gitIn(t, path, "switch", "-q", "--detach")
+	write(t, path, "b.txt", "work")
+	commit(t, path, "work")
+
+	removed, err := driver.RemoveWorktreeIfClean(dir, path, branch)
+	if err != nil || removed {
+		t.Fatalf("a detached commit lives only in the worktree: removed=%v err=%v", removed, err)
+	}
+}
+
+func TestRemoveWorktreeIfCleanRemovesWorktreeOnPushedBranchOfItsOwn(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	withRemote(t, dir)
+	path, branch, err := driver.AddWorktree(dir, "own-branch")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	gitIn(t, path, "switch", "-q", "-c", "fix/typo")
+	write(t, path, "b.txt", "work")
+	commit(t, path, "work")
+	gitIn(t, path, "push", "-q", "origin", "fix/typo")
+
+	removed, err := driver.RemoveWorktreeIfClean(dir, path, branch)
+	if err != nil || !removed {
+		t.Fatalf("pushed work on another branch is not lost: removed=%v err=%v", removed, err)
+	}
+	if _, err := driver.run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		t.Fatal("the am/ branch never left the base and should be deleted")
+	}
+	revParse(t, driver, dir, "refs/heads/fix/typo")
+}
+
+func TestRemoveWorktreeIfCleanRemovesWorktreeWhoseBranchWasRenamed(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "renamed")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	gitIn(t, path, "branch", "-m", "hand-named")
+
+	removed, err := driver.RemoveWorktreeIfClean(dir, path, branch)
+	if err != nil || !removed {
+		t.Fatalf("a clean worktree whose branch was renamed by hand should remove: removed=%v err=%v", removed, err)
+	}
+	revParse(t, driver, dir, "refs/heads/hand-named")
+}
+
+func TestRemoveWorktreeIfCleanRemovesSquashMergedWork(t *testing.T) {
+	for name, fetch := range map[string][]string{
+		"remote branch pruned":       {"fetch", "-q", "--prune"},
+		"remote branch still cached": {"fetch", "-q"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			driver, dir := testRepo(t)
+			write(t, dir, "a.txt", "x")
+			commit(t, dir, "seed")
+			remote := withRemote(t, dir)
+			gitIn(t, dir, "remote", "set-head", "origin", "main")
+			path, branch, err := driver.AddWorktree(dir, "squashed")
+			if err != nil {
+				t.Fatalf("add: %v", err)
+			}
+			write(t, path, "b.txt", "one")
+			commit(t, path, "one")
+			write(t, path, "c.txt", "two")
+			commit(t, path, "two")
+			gitIn(t, path, "push", "-q", "origin", branch)
+			gitIn(t, dir, "merge", "-q", "--squash", branch)
+			commit(t, dir, "squash")
+			write(t, dir, "a.txt", "moved on")
+			commit(t, dir, "later")
+			gitIn(t, dir, "push", "-q", "origin", "main")
+			gitIn(t, remote, "branch", "-D", branch)
+			gitIn(t, dir, fetch...)
+
+			removed, err := driver.RemoveWorktreeIfClean(dir, path, branch)
+			if err != nil || !removed {
+				t.Fatalf("the base holds every change the branch made: removed=%v err=%v", removed, err)
+			}
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Fatal("worktree directory still on disk")
+			}
+			if _, err := driver.run(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+				t.Fatal("branch should be deleted once its changes are in the base")
+			}
+		})
+	}
+}
+
+func TestRemoveWorktreeIfCleanKeepsWorkThatConflictsWithBase(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	path, branch, err := driver.AddWorktree(dir, "conflict")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	write(t, path, "a.txt", "worktree")
+	commit(t, path, "work")
+	write(t, dir, "a.txt", "base")
+	commit(t, dir, "base moved")
+
+	removed, err := driver.RemoveWorktreeIfClean(dir, path, branch)
+	if err != nil || removed {
+		t.Fatalf("a branch that conflicts with the base is not in it: removed=%v err=%v", removed, err)
+	}
+}
+
+func TestRemoveWorktreeIfCleanOnGitWithoutMergeTreeWriteTree(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	withRemote(t, dir)
+	path, branch, err := driver.AddWorktree(dir, "old-git")
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	write(t, path, "b.txt", "work")
+	commit(t, path, "work")
+	gitIn(t, path, "push", "-q", "origin", branch)
+
+	driver.bin = gitShim(t, "merge-tree", "echo 'fatal: unknown rev --write-tree' >&2; exit 128")
+	removed, err := driver.RemoveWorktreeIfClean(dir, path, branch)
+	if err != nil || !removed {
+		t.Fatalf("git before 2.38 still removes pushed work: removed=%v err=%v", removed, err)
+	}
+	revParse(t, driver, dir, "refs/heads/"+branch)
 }
 
 func TestRenameWorktreeBranchKeepsDirectory(t *testing.T) {
