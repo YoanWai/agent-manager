@@ -1789,6 +1789,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errBar.text = msg.err.Error()
 		return m, nil
 
+	case forkedInSourceMsg:
+		return m.handleForkedInSource(msg)
+
 	case pasteImageMsg:
 		return m.handlePasteImageMsg(msg)
 

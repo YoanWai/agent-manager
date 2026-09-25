@@ -899,6 +899,43 @@ func (p *poller) maybeSendPendingInput(sess store.Session, pane string, agentAli
 	return consumed, nil
 }
 
+// typeForkKeys types a tool's fork keys under the gate a queued message waits
+// for, and refuses rather than waits: the user is watching for the fork now.
+func (p *poller) typeForkKeys(sess store.Session, keys string) error {
+	p.runMu.Lock()
+	defer p.runMu.Unlock()
+	running, err := sessioncmd.AgentRunning(p.tmux, sess.ID)
+	if err != nil {
+		return err
+	}
+	if !running {
+		return fmt.Errorf("%s is not running; revive it to fork", sess.Name)
+	}
+	current, err := p.store.Get(sess.ID)
+	if err != nil {
+		return err
+	}
+	if !inboxDeliverable(current.Status) {
+		return fmt.Errorf("%s is busy; fork it once it rests", sess.Name)
+	}
+	pane, err := p.tmux.CapturePane(sess.ID)
+	if err != nil {
+		return err
+	}
+	clean := ansi.Strip(pane)
+	if p.engine.TypingHold(sess.Tool, clean) != "" {
+		return fmt.Errorf("%s is waiting on a prompt; answer it before forking", sess.Name)
+	}
+	typing, err := p.promptCarriesTypedText(sess, clean)
+	if err != nil {
+		return err
+	}
+	if typing {
+		return fmt.Errorf("%s has text typed at its prompt; clear it before forking", sess.Name)
+	}
+	return p.tmux.SendText(sess.ID, keys)
+}
+
 const (
 	// inboxPruneEvery keeps the delivered-message sweep off the hot path;
 	// at the default 2s interval this is roughly every ten minutes.

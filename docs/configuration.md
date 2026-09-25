@@ -6,13 +6,13 @@ It holds three things. `poll_interval` (default `"2s"`) sets how often panes are
 
 ## Agent CLIs
 
-Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Pi, Command Code, Hermes Agent, and Muse Code, plus the shell `T` opens. Each one's launch command, revive and fork commands, MCP registration, and status rules are built into the binary, so an upgrade brings the current version of all of them. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
+Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Pi, Command Code, Hermes Agent, and Muse Code, plus the shell `T` opens. Each one's launch command, revive and fork commands, MCP registration, and status rules are built into the binary, so an upgrade brings the current version of all of them. Hermes has no fork, and Pi gets no MCP registration. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
 
 The Pi support requires Pi 0.76.0 or later, because it launches sessions with `--session-id`.
 
 Hermes is tested with Hermes Agent 0.20.0 and launches its classic REPL with `--cli`. This keeps the input, approval, and activity markers stable even when your Hermes preference selects its modern TUI.
 
-Muse Code is tested with Muse 1.3.0. Muse offers no MCP registration or fork command, so its sessions coordinate through the `agent-manager` shell subcommands.
+Muse Code is tested with Muse 1.3.0. Muse reads MCP servers only from its settings file, so the first Muse launch adds the `agent-manager` server to `~/.config/muse/settings.json` (under `$XDG_CONFIG_HOME` when set) and leaves the rest of the file as it was. Muse starts that server with none of the session's environment, so the server finds its session through its process tree, which needs the manager's tmux server at the default `TMUX_TMPDIR`. Muse forks only from inside a running session: `f` types `/fork` into the source and opens the fork in its own pane.
 
 A config file written by an earlier release still has `[tools.<name>]` blocks. They are no longer read, whether they were copies of the defaults that day or a block you added, so a fix for a CLI's new screen reaches you instead of stopping at a frozen copy. The manager says so the first time it opens a file that still has them, and they are yours to delete.
 

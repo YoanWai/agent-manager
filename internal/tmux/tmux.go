@@ -984,6 +984,56 @@ func (d *Driver) SessionOfPane(tmuxEnv, paneID string) (string, error) {
 
 var paneIDPattern = regexp.MustCompile(`^%[0-9]+$`)
 
+// SessionOfProcess names the managed session whose pane process is pid or
+// one of its ancestors. It serves a process that inherited neither $TMUX nor
+// $TMUX_PANE, such as an MCP server a CLI starts with a scrubbed environment.
+func (d *Driver) SessionOfProcess(pid int) (string, error) {
+	out, err := d.run("list-panes", "-a", "-F", "#{pane_pid} #{session_name}")
+	if err != nil {
+		return "", err
+	}
+	sessions := map[int]string{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		panePID, name, _ := strings.Cut(line, " ")
+		if id, err := strconv.Atoi(panePID); err == nil && strings.HasPrefix(name, prefix) {
+			sessions[id] = strings.TrimPrefix(name, prefix)
+		}
+	}
+	parents, err := processParents()
+	if err != nil {
+		return "", err
+	}
+	// The step bound stops a parent loop, which a racing ps snapshot can
+	// produce when a pid is reused mid-listing.
+	for steps := 0; pid > 1 && steps <= len(parents); steps++ {
+		if name, ok := sessions[pid]; ok {
+			return name, nil
+		}
+		pid = parents[pid]
+	}
+	return "", nil
+}
+
+func processParents() (map[int]int, error) {
+	out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=").Output()
+	if err != nil {
+		return nil, fmt.Errorf("list processes: %w", err)
+	}
+	parents := map[int]int{}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		pid, pidErr := strconv.Atoi(fields[0])
+		ppid, ppidErr := strconv.Atoi(fields[1])
+		if pidErr == nil && ppidErr == nil {
+			parents[pid] = ppid
+		}
+	}
+	return parents, nil
+}
+
 // socketAndPid reads $TMUX from the right, since the socket path is the one
 // field free to contain a comma.
 func socketAndPid(tmuxEnv string) (socket, pid string, ok bool) {

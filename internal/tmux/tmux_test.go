@@ -1515,6 +1515,39 @@ func TestSessionOfPaneResolvesAManagedPane(t *testing.T) {
 	}
 }
 
+// Muse starts an MCP server with none of the pane's environment, so the
+// server can only find its session by walking up to the pane's process.
+func TestSessionOfProcessWalksUpToAManagedPane(t *testing.T) {
+	driver := requireTmux(t)
+	id := "proc" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "sleep 60", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	out, err := tmuxCmd("display-message", "-p", "-t", PaneTarget(id), "#{pane_pid}").CombinedOutput()
+	if err != nil {
+		t.Fatalf("pane pid: %v: %s", err, out)
+	}
+	panePID := strings.TrimSpace(string(out))
+	var child int
+	for deadline := time.Now().Add(5 * time.Second); child == 0 && time.Now().Before(deadline); {
+		out, _ := exec.Command("pgrep", "-P", panePID, "sleep").Output()
+		child, _ = strconv.Atoi(strings.TrimSpace(string(out)))
+		time.Sleep(50 * time.Millisecond)
+	}
+	if child == 0 {
+		t.Fatalf("no sleep process under pane pid %s", panePID)
+	}
+
+	if got, err := driver.SessionOfProcess(child); err != nil || got != id {
+		t.Fatalf("SessionOfProcess(pane child) = %q, %v; want %q", got, err, id)
+	}
+	if got, err := driver.SessionOfProcess(os.Getpid()); err != nil || got != "" {
+		t.Fatalf("SessionOfProcess(test process) = %q, %v; want no session", got, err)
+	}
+}
+
 // A session outside the am_ namespace is one the user started on this
 // server themselves, not a managed session the CLI may act as.
 func TestSessionOfPaneIgnoresAnUnmanagedSession(t *testing.T) {

@@ -530,10 +530,13 @@ func TestMuseDefaultsOnLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	tool, ok := cfg.Tools["muse"]
-	if !ok || tool.Command != "muse" || tool.SessionStore != "muse" || tool.ResumeByIDCommand != "muse resume {id}" || tool.ResumePickerCommand != "muse resume" || tool.MCP != "none" {
+	if !ok || tool.Command != "muse" || tool.SessionStore != "muse" || tool.ResumeByIDCommand != "muse resume {id}" || tool.ResumePickerCommand != "muse resume" || tool.MCP != "" {
 		t.Fatalf("Muse defaults = %+v", tool)
 	}
-	if tool.SessionIDFlag != "" || tool.ForkCommand != "" || tool.PromptFlag != "" {
+	if tool.ForkKeys != "/fork" || tool.ForkCommand != "muse resume {new_id}" {
+		t.Fatalf("Muse fork = %q then %q", tool.ForkKeys, tool.ForkCommand)
+	}
+	if tool.SessionIDFlag != "" || tool.PromptFlag != "" {
 		t.Fatalf("unsupported Muse flags: %+v", tool)
 	}
 }

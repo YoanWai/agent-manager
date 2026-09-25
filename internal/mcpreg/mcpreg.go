@@ -7,13 +7,17 @@
 package mcpreg
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/atomicfile"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
@@ -45,6 +49,7 @@ var knownStyles = map[string]bool{
 	"gemini":       true,
 	"hermes":       true,
 	"command-code": true,
+	"muse":         true,
 	StyleNone:      true,
 }
 
@@ -113,6 +118,11 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 			return "", err
 		}
 		return command, nil
+	case "muse":
+		if err := ensureMuseRegistered(exe); err != nil {
+			return "", err
+		}
+		return command, nil
 	default:
 		return command, nil
 	}
@@ -166,6 +176,85 @@ func writeConfig(dir, name string, content []byte) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+type museServer struct {
+	Type    string   `json:"type"`
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+	// optional keeps a server that fails to start from blocking Muse's startup.
+	Mode string `json:"mode"`
+}
+
+func museSettingsPath() (string, error) {
+	config := os.Getenv("XDG_CONFIG_HOME")
+	if config == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		config = filepath.Join(home, ".config")
+	}
+	return filepath.Join(config, "muse", "settings.json"), nil
+}
+
+// Muse has no command that adds a server, so the entry goes into its settings
+// file. It carries no session id: Muse passes a server none of the session's
+// environment, so the server finds its session from its process ancestry.
+func ensureMuseRegistered(exe string) error {
+	path, err := museSettingsPath()
+	if err != nil {
+		return err
+	}
+	settings := map[string]json.RawMessage{}
+	perm := os.FileMode(0o600)
+	data, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		settings["schema_version"] = json.RawMessage("1")
+	case err != nil:
+		return err
+	default:
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return fmt.Errorf("muse settings %s: %w", path, err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		perm = info.Mode().Perm()
+	}
+	// Muse ignores every server when both spellings are present, so the entry
+	// joins whichever one the file already uses.
+	key := "mcpServers"
+	if _, current := settings[key]; !current {
+		if _, legacy := settings["mcp_servers"]; legacy {
+			key = "mcp_servers"
+		}
+	}
+	servers := map[string]json.RawMessage{}
+	if raw, ok := settings[key]; ok {
+		if err := json.Unmarshal(raw, &servers); err != nil {
+			return fmt.Errorf("muse settings %s: %s: %w", path, key, err)
+		}
+	}
+	entry, err := json.Marshal(museServer{Type: "stdio", Command: exe, Args: []string{"mcp"}, Mode: "optional"})
+	if err != nil {
+		return err
+	}
+	var existing bytes.Buffer
+	if json.Compact(&existing, servers[serverName]) == nil && bytes.Equal(existing.Bytes(), entry) {
+		return nil
+	}
+	servers[serverName] = entry
+	if settings[key], err = json.Marshal(servers); err != nil {
+		return err
+	}
+	out, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	return atomicfile.WriteFile(path, append(out, '\n'), perm)
 }
 
 // Command Code overlays stored env onto process.env without expanding ${VAR}.

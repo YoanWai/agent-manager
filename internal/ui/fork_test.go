@@ -509,3 +509,111 @@ func TestForkRefusesAShellInItsOwnTerms(t *testing.T) {
 		t.Fatalf("err = %q should not name a config field", m.errBar.text)
 	}
 }
+
+// forkInSourceModel sets up a resting source whose tool forks from inside
+// itself, the way muse's /fork does, with the fork read back from a muse store.
+func forkInSourceModel(t *testing.T) (*Model, store.Session, string) {
+	t.Helper()
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	m := buildModel(t)
+	source := spawnedSession(t, m, "ready-tool")
+	if err := m.store.SetAgentSessionID(source.ID, "source-conversation"); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); !inboxDeliverable(source.Status); {
+		if time.Now().After(deadline) {
+			t.Fatalf("source never came to rest: %q", source.Status)
+		}
+		time.Sleep(50 * time.Millisecond)
+		m.applyCmd(t, m.refreshCmd())
+		var err error
+		if source, err = m.store.Get(source.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m.selectSessionRow(t, source.Name)
+
+	argsFile := filepath.Join(t.TempDir(), "fork-args")
+	tool := m.cfg.Tools[source.Tool]
+	tool.SessionStore = "muse"
+	tool.ForkKeys = "/fork"
+	tool.ForkCommand = "printf '%s\\n' {new_id} > " + tmux.ShellQuote(argsFile) + "; cat"
+	m.cfg.Tools[source.Tool] = tool
+	return m, source, argsFile
+}
+
+// Plays the tool's side of /fork: once the keys land in the source pane, the
+// store records a fork of the source conversation.
+func recordForkWhenTyped(t *testing.T, m *Model, source store.Session, forkID string) {
+	t.Helper()
+	go func() {
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			pane, err := m.tmux.CapturePane(source.ID)
+			if err != nil || !strings.Contains(pane, "/fork") {
+				continue
+			}
+			path := filepath.Join(os.Getenv("XDG_DATA_HOME"), "muse", "sessions", forkID, "session.jsonl")
+			record := `{"payload_type":"session.fork.created","payload":{"fork_session_id":"` + forkID +
+				`","source_session_id":"` + source.AgentSessionID + `"}}` + "\n"
+			if os.MkdirAll(filepath.Dir(path), 0o755) == nil {
+				_ = os.WriteFile(path, []byte(record), 0o600)
+			}
+			return
+		}
+	}()
+}
+
+func TestForkInSourceOpensTheForkTheSourceMade(t *testing.T) {
+	m, source, argsFile := forkInSourceModel(t)
+	recordForkWhenTyped(t, m, source, "fork-conversation")
+
+	m.openFork()
+	m.fork.name.SetValue("child fork")
+	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	if m.mode != modeList {
+		t.Fatalf("after submit: mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
+		t.Fatalf("fork error = %q", m.errBar.text)
+	}
+
+	var forked store.Session
+	for _, sess := range m.sessionRows() {
+		if sess.Name == "child fork" {
+			forked = sess
+		}
+	}
+	if forked.ID == "" || forked.AgentSessionID != "fork-conversation" {
+		t.Fatalf("forked session = %+v, want it bound to fork-conversation", forked)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	raw, err := os.ReadFile(argsFile)
+	for err != nil && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+		raw, err = os.ReadFile(argsFile)
+	}
+	if err != nil || strings.TrimSpace(string(raw)) != "fork-conversation" {
+		t.Fatalf("fork command args = %q, err = %v; want fork-conversation", raw, err)
+	}
+}
+
+// Typing into a source mid-turn would land the keys in its reply stream.
+func TestForkInSourceRefusesABusySource(t *testing.T) {
+	m, source, _ := forkInSourceModel(t)
+	if err := m.store.UpdateStatus(source.ID, status.Working); err != nil {
+		t.Fatal(err)
+	}
+	m.openFork()
+	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	m.applyCmd(t, cmd)
+	if !strings.Contains(m.errBar.text, "fork it once it rests") {
+		t.Fatalf("busy source error = %q", m.errBar.text)
+	}
+	pane, err := m.tmux.CapturePane(source.ID)
+	if err != nil || strings.Contains(pane, "/fork") {
+		t.Fatalf("pane = %q, err = %v; want nothing typed into a busy source", pane, err)
+	}
+}

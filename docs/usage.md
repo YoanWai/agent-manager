@@ -155,7 +155,9 @@ It asks to confirm first, and it works on a live session too: the running agent 
 
 The fork uses the source session's tool, group, working directory, and conversation history.
 
-Claude Code, OpenCode, Codex, Grok, Gemini CLI, Pi, and Command Code include default fork commands. The source session must have a captured conversation ID.
+Claude Code, OpenCode, Codex, Grok, Gemini CLI, Pi, Command Code, and Muse Code include default fork commands. The source session must have a captured conversation ID.
+
+Muse forks only from inside the running source, so `f` types `/fork` into the source session and opens the fork Muse records in a new pane. The source has to be running and at rest with nothing typed at its prompt. Otherwise `f` says what to do first and types nothing.
 
 A fork shares its source session's managed worktree. Agent Manager keeps the worktree until you delete the last session that uses it. You cannot rename the worktree while another session uses it.
 

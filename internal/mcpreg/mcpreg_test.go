@@ -27,6 +27,7 @@ func TestStyleResolution(t *testing.T) {
 		{"gemini", "", "gemini"},
 		{"hermes", "", "hermes"},
 		{"command-code", "", "command-code"},
+		{"muse", "", "muse"},
 		{"pi", "", "none"},
 		{"aider", "", "none"},
 		{"command-code", "none", "none"},
@@ -459,6 +460,107 @@ func TestEnsureRegisteredOnceNamesFailedCommand(t *testing.T) {
 	}
 	if !strings.HasPrefix(err.Error(), "gemini mcp add: ") {
 		t.Fatalf("error = %q, want it to name the tool's add command", err)
+	}
+}
+
+func readMuseSettings(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	return settings
+}
+
+func museSettingsFixture(t *testing.T, content string) string {
+	t.Helper()
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+	path := filepath.Join(config, "muse", "settings.json")
+	if content != "" {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return path
+}
+
+var wantMuseEntry = map[string]any{
+	"type": "stdio", "command": "/opt/bin/agent-manager", "args": []any{"mcp"}, "mode": "optional",
+}
+
+func TestApplyMuseAddsServerAndKeepsSettings(t *testing.T) {
+	path := museSettingsFixture(t, `{"schema_version": 1, "theme": "dark",
+  "mcpServers": {"github": {"type": "stdio", "command": "npx"}}}`)
+	env := map[string]string{}
+	command, err := Apply("muse", "/opt/bin/agent-manager", t.TempDir(), "muse", env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != "muse" || len(env) != 0 {
+		t.Fatalf("command = %q, env = %v; want both untouched", command, env)
+	}
+	settings := readMuseSettings(t, path)
+	if settings["theme"] != "dark" || settings["schema_version"] != float64(1) {
+		t.Fatalf("settings = %v, want the user's keys kept", settings)
+	}
+	servers := settings["mcpServers"].(map[string]any)
+	if fmt.Sprint(servers["github"]) != fmt.Sprint(map[string]any{"type": "stdio", "command": "npx"}) {
+		t.Fatalf("github server = %v, want it kept", servers["github"])
+	}
+	if fmt.Sprint(servers["agent-manager"]) != fmt.Sprint(wantMuseEntry) {
+		t.Fatalf("agent-manager server = %v, want %v", servers["agent-manager"], wantMuseEntry)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("settings mode = %v, err = %v; want 0600 kept", info.Mode().Perm(), err)
+	}
+}
+
+func TestApplyMuseCreatesSettings(t *testing.T) {
+	path := museSettingsFixture(t, "")
+	if _, err := Apply("muse", "/opt/bin/agent-manager", t.TempDir(), "muse", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	settings := readMuseSettings(t, path)
+	servers := settings["mcpServers"].(map[string]any)
+	if settings["schema_version"] != float64(1) || fmt.Sprint(servers["agent-manager"]) != fmt.Sprint(wantMuseEntry) {
+		t.Fatalf("settings = %v", settings)
+	}
+}
+
+// Muse drops every server when both spellings are present.
+func TestApplyMuseKeepsTheLegacyServersKey(t *testing.T) {
+	path := museSettingsFixture(t, `{"mcp_servers": {"github": {"command": "npx"}}}`)
+	if _, err := Apply("muse", "/opt/bin/agent-manager", t.TempDir(), "muse", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	settings := readMuseSettings(t, path)
+	if _, both := settings["mcpServers"]; both {
+		t.Fatalf("settings = %v, want no mcpServers next to mcp_servers", settings)
+	}
+	servers := settings["mcp_servers"].(map[string]any)
+	if servers["github"] == nil || fmt.Sprint(servers["agent-manager"]) != fmt.Sprint(wantMuseEntry) {
+		t.Fatalf("mcp_servers = %v", servers)
+	}
+}
+
+func TestApplyMuseRefusesUnreadableSettings(t *testing.T) {
+	const content = "{ not json"
+	path := museSettingsFixture(t, content)
+	if _, err := Apply("muse", "/opt/bin/agent-manager", t.TempDir(), "muse", map[string]string{}); err == nil {
+		t.Fatal("expected an error for settings that do not parse")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != content {
+		t.Fatalf("settings = %q, err = %v; want them left untouched", data, err)
 	}
 }
 

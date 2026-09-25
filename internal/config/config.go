@@ -47,13 +47,18 @@ type Tool struct {
 	// can use {id}, {session_file}, {new_id}, and {name}; Agent Manager quotes
 	// each value. {session_file} needs SessionStore to keep one ("gemini").
 	ForkCommand string `toml:"fork_command"`
+	// ForkKeys forks from inside the running source, for a tool that can only
+	// fork there (muse's /fork). They are typed into the source once it rests,
+	// the fork's id is read back from SessionStore, and ForkCommand opens the
+	// fork through {new_id}.
+	ForkKeys string `toml:"fork_keys"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex", "opencode",
 	// "gemini", "hermes", "command-code" or "muse").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
-	// "hermes", "command-code" or "none".
+	// "hermes", "command-code", "muse" or "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP            string `toml:"mcp"`
 	StatusSource   string `toml:"status_source"`
@@ -495,8 +500,10 @@ session_store = "muse"
 resume_by_id_command = "muse resume {id}"
 resume_picker_command = "muse resume"
 revive_command = "muse resume --last"
-# Muse has no CLI interface for registering MCP servers.
-mcp = "none"
+# A second process cannot open a running session, so the fork is made inside
+# the source by /fork and opens in its own pane by id.
+fork_keys = "/fork"
+fork_command = "muse resume {new_id}"
 default_status = "idle"
 activity_cutoff = "(?m)^❯"
 chrome_line = "^\\s*─+(?: .*)?$|^\\s*$"
