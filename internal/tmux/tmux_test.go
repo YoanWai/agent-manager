@@ -206,6 +206,9 @@ func TestSendText(t *testing.T) {
 	}
 }
 
+// pasteReady follows the paste-mode request, so a pane showing it has bracketed paste on.
+const pasteReady = "paste-ready"
+
 func TestSendTextKeepsEnterOutsideBracketedPaste(t *testing.T) {
 	driver := requireTmux(t)
 	id := "bracket" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
@@ -214,16 +217,14 @@ func TestSendTextKeepsEnterOutsideBracketedPaste(t *testing.T) {
 
 	text := "hello world"
 	want := "\x1b[200~" + text + "\x1b[201~\r"
-	command := "stty raw -echo; printf '\\033[?2004h'; dd bs=1 count=" +
+	command := "stty raw -echo; printf '\\033[?2004h" + pasteReady + "'; dd bs=1 count=" +
 		strconv.Itoa(len(want)) + " of=" + ShellQuote(marker) + " 2>/dev/null"
 	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
 
-	// Let tmux observe the application's bracketed-paste mode request before
-	// delivering the message.
-	time.Sleep(100 * time.Millisecond)
+	waitForPane(t, driver, id, pasteReady)
 	if err := driver.SendText(id, text); err != nil {
 		t.Fatalf("SendText: %v", err)
 	}
@@ -253,7 +254,7 @@ func TestSendTextSubmitsIntoAPaneThatReadsLate(t *testing.T) {
 	text := "\nhello world"
 	// Stalls before its first read, then logs each read between pipes and
 	// echoes it back so the pane shows what it took.
-	command := "stty raw -echo; printf '\\033[?2004h'; sleep 0.4; " +
+	command := "stty raw -echo; printf '\\033[?2004h" + pasteReady + "'; sleep 0.4; " +
 		"while :; do dd bs=4096 count=1 2>/dev/null | tee -a " + ShellQuote(reads) +
 		"; printf '|' >> " + ShellQuote(reads) + "; done"
 	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
@@ -261,7 +262,7 @@ func TestSendTextSubmitsIntoAPaneThatReadsLate(t *testing.T) {
 	}
 	t.Cleanup(func() { driver.Kill(id) })
 
-	time.Sleep(100 * time.Millisecond)
+	waitForPane(t, driver, id, pasteReady)
 	if err := driver.SendText(id, text); err != nil {
 		t.Fatalf("SendText: %v", err)
 	}
@@ -325,14 +326,14 @@ func TestPasteDeliversWithoutSubmitting(t *testing.T) {
 	// paste-buffer converts newlines to carriage returns, the same bytes a
 	// terminal emits when pasting; composers read them as line breaks.
 	want := "\x1b[200~first line\rsecond line\r\x1b[201~"
-	command := "stty raw -echo; printf '\\033[?2004h'; dd bs=1 count=" +
+	command := "stty raw -echo; printf '\\033[?2004h" + pasteReady + "'; dd bs=1 count=" +
 		strconv.Itoa(len(want)+1) + " of=" + ShellQuote(marker) + " 2>/dev/null"
 	if err := driver.Create(id, "/tmp", command, nil, 0, 0); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
 
-	time.Sleep(100 * time.Millisecond)
+	waitForPane(t, driver, id, pasteReady)
 	if err := driver.Paste(id, text); err != nil {
 		t.Fatalf("Paste: %v", err)
 	}
