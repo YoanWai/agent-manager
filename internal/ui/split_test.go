@@ -1,12 +1,13 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/keybind"
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"

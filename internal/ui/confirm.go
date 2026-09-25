@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -88,4 +89,25 @@ func splitConfirmLabel(label string) (string, string) {
 		return label[:mark+1], strings.TrimSpace(label[mark+2:])
 	}
 	return label, ""
+}
+
+// confirmTarget.action values; the zero value means delete.
+const (
+	actionDelete  = ""
+	actionArchive = "archive"
+	actionRestore = "restore"
+	actionKill    = "kill"
+	actionRestart = "restart"
+	actionRevive  = "revive"
+)
+
+type confirmTarget struct {
+	isGroup bool
+	// archivedOnly marks a group delete issued from the archived view,
+	// which clears the group's archive instead of the group itself.
+	archivedOnly bool
+	path         string
+	label        string
+	sessions     []store.Session
+	action       string
 }

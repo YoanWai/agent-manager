@@ -391,3 +391,15 @@ func (m *Model) relabelSubtree(path string) {
 		m.relabelSession(sess.ID)
 	}
 }
+
+type renameTarget struct {
+	isGroup       bool
+	path          string
+	sessID        string
+	input         textinput.Model
+	dir           textinput.Model
+	worktreeIndex int
+	focus         int
+	toolNames     []string
+	toolIndex     int
+}

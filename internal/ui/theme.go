@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/systheme"
 	"github.com/YoanWai/agent-manager/internal/termseq"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
@@ -554,4 +556,52 @@ func mix(a, b string, ratio float64) string {
 		return int(float64(x)*(1-ratio) + float64(y)*ratio + 0.5)
 	}
 	return fmt.Sprintf("#%02x%02x%02x", blend(ar, br), blend(ag, bg), blend(ab, bb))
+}
+
+// storedTheme reads the persisted theme name. A read failure falls back to
+// the default theme: the UI still paints, just not in the chosen palette.
+func storedTheme(st *store.Store) string {
+	name, err := st.Setting(themeSetting)
+	if err != nil {
+		return ""
+	}
+	return name
+}
+
+func themeAutoEnabled(st *store.Store) bool {
+	value, err := st.Setting(themeAutoSetting)
+	return err == nil && value == "on"
+}
+
+// resolveStartupTheme picks the boot theme: the stored choice, unless
+// auto-detect is on and the environment's scheme disagrees with that
+// choice's polarity — then its counterpart, or the default theme of the
+// detected side, takes over, and an undetectable scheme changes nothing.
+func resolveStartupTheme(st *store.Store) string {
+	stored := storedTheme(st)
+	if !themeAutoEnabled(st) {
+		return stored
+	}
+	return autoThemeName(stored, systheme.Detect())
+}
+
+// autoThemeName keeps the stored theme whenever it already sits on the
+// detected side, and otherwise prefers its counterpart, so auto-detect
+// corrects polarity without discarding the family the user picked.
+func autoThemeName(stored string, scheme systheme.Scheme) string {
+	if scheme == systheme.SchemeUnknown {
+		return stored
+	}
+	wantLight := scheme == systheme.SchemeLight
+	theme := themes[themeIndex(stored)]
+	if theme.lightBackdrop() == wantLight {
+		return stored
+	}
+	if theme.Counterpart != "" {
+		return theme.Counterpart
+	}
+	if wantLight {
+		return "solarized light"
+	}
+	return "classic"
 }

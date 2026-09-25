@@ -267,3 +267,20 @@ func (m *Model) quickCloseAfterSend() bool {
 	}
 	return chosen == "close"
 }
+
+// quickState is the inline prompt bar docked under the preview: active
+// across cursor moves, so the target follows the selection. The tool is
+// the spawn CLI for group targets, cycled with tab. A pasted image lands
+// at the caret as an "[Image #N]" token that renders as a chip and steps,
+// deletes, and wraps as one unit; on submit each token becomes its path.
+type quickState struct {
+	active bool
+	composer
+	toolNames      []string
+	toolIndex      int
+	closeAfterSend bool
+	worktree       bool
+	// worktreeTouched marks an explicit toggle this run; until then the
+	// hint and spawn follow the target group's default.
+	worktreeTouched bool
+}

@@ -2,11 +2,12 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	"os"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/keybind"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/charmbracelet/bubbles/textarea"

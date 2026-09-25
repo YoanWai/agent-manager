@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	tea "github.com/charmbracelet/bubbletea"
@@ -583,3 +584,68 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 	}
 	return nil
 }
+
+// repoAnswer is one directory's git-repo verdict and when it was taken.
+type repoAnswer struct {
+	capable bool
+	at      time.Time
+}
+
+type settingsState struct {
+	toolNames       []string
+	toolIndex       int
+	themeIndex      int
+	field           int
+	layoutSplit     bool
+	quickCloseSend  bool
+	enterFocuses    bool
+	arrowStep       bool
+	comfortableRows bool
+	fullLayout      bool
+	hideHeader      bool
+	hideStats       bool
+	mouseDisabled   bool
+	worktreeDefault bool
+	notifications   bool
+	notifyFinished  bool
+	themeAuto       bool
+	// manualTheme is the persisted choice the theme key keeps while
+	// auto-detect drives the live palette, so turning auto off returns
+	// to it.
+	manualTheme string
+	// cliPicker is the sub-panel for which CLIs appear when creating sessions.
+	cliPicker  bool
+	cliNames   []string
+	cliHidden  map[string]bool
+	cliCursor  int
+	keyPicker  bool
+	tables     []keybind.Table
+	keyCursor  int
+	keyCapture bool
+	keyAppend  bool
+	keyReset   bool
+}
+
+const (
+	settingsFieldTool = iota
+	settingsFieldTheme
+	settingsFieldThemeAuto
+	settingsFieldDensity
+	settingsFieldSessionLayout
+	settingsFieldHeader
+	settingsFieldStats
+	settingsFieldLayout
+	settingsFieldQuickClose
+	settingsFieldFocusKey
+	settingsFieldArrowStep
+	settingsFieldMouse
+	settingsFieldWorktree
+	settingsFieldNotify
+	settingsFieldNotifyFinish
+	settingsFieldKeybindings
+	settingsFieldCLIs
+	settingsFieldBugReport
+	settingsFieldFeatureRequest
+	settingsFieldUpdate
+	settingsFieldCount
+)

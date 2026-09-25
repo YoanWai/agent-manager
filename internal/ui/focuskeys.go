@@ -2,10 +2,11 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/YoanWai/agent-manager/internal/keybind"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"

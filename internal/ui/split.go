@@ -358,3 +358,15 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+// splitState is the horizontal sessions/sidebar split. ratio is the left
+// panel's share of the terminal width; resizeMode arms keyboard divider
+// nudging, dragging holds a divider drag whichever armed it, and moved
+// separates a drag from a plain click on the seam, which commits nothing.
+type splitState struct {
+	ratio       float64
+	ratioBefore float64
+	resizeMode  bool
+	dragging    bool
+	moved       bool
+}

@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/YoanWai/agent-manager/internal/keybind"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
