@@ -61,18 +61,26 @@ func newTerminalHarness(t *testing.T) *terminalHarness {
 		caller: caller,
 	}
 	h.terminals = newTerminals(configDir, MCPVocabulary(), func() (*tmux.Driver, error) { return driver, nil })
-	t.Cleanup(func() {
-		sessions, _ := st.ListSessions(true)
-		for _, sess := range sessions {
-			_ = driver.Kill(sess.ID)
-		}
-		if out, err := exec.Command("tmux", "-L", driver.SocketName(), "kill-server").CombinedOutput(); err != nil && !strings.Contains(string(out), "no server running") {
-			t.Errorf("kill test tmux server: %v: %s", err, strings.TrimSpace(string(out)))
-		}
-		_ = os.Remove(driver.SocketPath())
-		_ = st.Close()
-	})
+	t.Cleanup(func() { tearDownHarness(t, driver, st) })
 	return h
+}
+
+func tearDownHarness(t *testing.T, driver *tmux.Driver, st *store.Store) {
+	t.Helper()
+	// tmux exits once its last session dies, and a kill-server that lands mid-exit fails.
+	if out, err := exec.Command("tmux", "-L", driver.SocketName(), "kill-server").CombinedOutput(); err != nil {
+		t.Errorf("kill test tmux server: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	// With the server gone, Kill only removes each session's launch script.
+	sessions, err := st.ListSessions(true)
+	if err != nil {
+		t.Errorf("list harness sessions: %v", err)
+	}
+	for _, sess := range sessions {
+		_ = driver.Kill(sess.ID)
+	}
+	_ = os.Remove(driver.SocketPath())
+	_ = st.Close()
 }
 
 func waitForTerminalOutput(t *testing.T, terminals *Terminals, callerID, terminalID, marker string) TerminalScreen {
