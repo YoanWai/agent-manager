@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 )
 
 func TestWaitReturnsAsSoonAsTheSessionRests(t *testing.T) {
@@ -181,5 +182,102 @@ func TestWaitSeparatesADeathFromATimeout(t *testing.T) {
 	}
 	if result.Reached || result.Outcome != WaitDied {
 		t.Fatalf("a session that died before the awaited state = %+v", result)
+	}
+}
+
+// A message is typed in only once its recipient rests, and the turn it
+// starts shows a poll after that. The rest the row reads until then belongs
+// to the turn before, so the sender's wait for its handoff must look past it.
+func TestWaitLooksPastTheRestItsOwnQueuedMessageIsAboutToEnd(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, worker.ID, "❯")
+	if err := h.store.UpdateStatus(worker.ID, status.Finished); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "run the migration")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	result, err := h.sessions.Wait(context.Background(), h.caller.ID, worker.ID, nil, 300*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if result.Reached || result.Outcome != WaitTimedOut || result.Session.Status != status.Finished {
+		t.Fatalf("the wait took the rest before its own message was typed in: %+v", result)
+	}
+
+	// Typed in, and the turn it started has ended.
+	if err := h.store.MarkDelivered(sent.MessageID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	result, err = h.sessions.Wait(context.Background(), h.caller.ID, worker.ID, nil, 5*time.Second)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if !result.Reached || result.Session.Status != status.Finished {
+		t.Fatalf("a delivered message still held the wait: %+v", result)
+	}
+}
+
+// Only the caller's own message says its handoff has not landed. Another
+// session's traffic to the same recipient is for that session to wait on.
+func TestWaitTakesTheRestWhileAnotherSendersMessageIsQueued(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, worker.ID, "❯")
+	if err := h.store.UpdateStatus(worker.ID, status.Finished); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.Enqueue(store.InboxMessage{
+		SessionID:   worker.ID,
+		SenderID:    "other001",
+		SenderName:  "another-coordinator",
+		Body:        "run the migration",
+		Fingerprint: "run the migration",
+		SentAt:      time.Now(),
+	}, store.DefaultInboxLimits); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := h.sessions.Wait(context.Background(), h.caller.ID, worker.ID, nil, 5*time.Second)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if !result.Reached || result.Session.Status != status.Finished {
+		t.Fatalf("another sender's message held this caller's wait: %+v", result)
+	}
+}
+
+// A message the manager will not type in never starts the turn the wait
+// would look past, so the recipient's state is the answer: here, the dialog
+// the caller has to get answered first.
+func TestWaitTakesTheDialogThatHoldsItsOwnMessage(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "dialog", Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, worker.ID, "Enter to confirm")
+	if err := h.store.UpdateStatus(worker.ID, status.Waiting); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.sessions.Send(h.caller.ID, worker.ID, "run the migration"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	result, err := h.sessions.Wait(context.Background(), h.caller.ID, worker.ID, nil, 5*time.Second)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if !result.Reached || result.Session.Status != status.Waiting {
+		t.Fatalf("a message held by a dialog kept the wait from the dialog: %+v", result)
 	}
 }

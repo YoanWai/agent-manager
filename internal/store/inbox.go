@@ -312,6 +312,16 @@ func (s *Store) QueuedCount(sessionID string) (int, error) {
 	return queued, err
 }
 
+// HasQueuedFrom reports whether one sender still has a message waiting to be
+// typed into a session.
+func (s *Store) HasQueuedFrom(sessionID, senderID string) (bool, error) {
+	var queued bool
+	err := s.db.QueryRow(
+		`SELECT EXISTS(SELECT 1 FROM session_inbox WHERE session_id = ? AND sender_id = ? AND delivered_at = 0)`,
+		sessionID, senderID).Scan(&queued)
+	return queued, err
+}
+
 // QueuedCounts is every session's waiting count in one query, for the
 // poller's per-tick refresh.
 func (s *Store) QueuedCounts() (map[string]int, error) {
