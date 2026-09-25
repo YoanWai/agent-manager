@@ -361,6 +361,31 @@ func TestPasteDeliversWithoutSubmitting(t *testing.T) {
 	}
 }
 
+// tmux keeps paste buffers per server, where the manager and every agent's MCP
+// process paste side by side.
+func TestPasteBufferNamesDifferAcrossProcesses(t *testing.T) {
+	dir := t.TempDir()
+	callLog := dir + "/calls"
+	stub := dir + "/tmux"
+	script := "#!/bin/sh\ncase \"$3\" in load-buffer) echo \"$5\" >> " + callLog + ";; esac\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+	for range 2 {
+		if err := <-startOtherProcess(t, driver, "paste", "x1"); err != nil {
+			t.Fatalf("other process: %v", err)
+		}
+	}
+	loaded := map[string]bool{}
+	for _, name := range readCalls(t, callLog) {
+		if loaded[name] {
+			t.Fatalf("two pastes loaded buffer %s", name)
+		}
+		loaded[name] = true
+	}
+}
+
 // Create used to type the launch line with send-keys, which silently
 // truncates around 1024 bytes and left long first prompts as a broken
 // shell command. paste-buffer must deliver the full line.
