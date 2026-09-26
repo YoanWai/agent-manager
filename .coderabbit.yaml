@@ -99,13 +99,19 @@ reviews:
         mode: warning
         instructions: >-
           This project supports every agent CLI in builtinTools
-          (internal/config/config.go) and every platform .goreleaser.yaml
-          builds. Fail when new behavior reaches only some of them: a
-          runtime.GOOS branch or a command that exists on one platform, a
-          path built from one platform's separator or home layout, a switch
-          or lookup keyed on tool name that handles a subset of the tools it
-          affects, or a field or status rule added to one [tools.*] block
-          that the others need too. A PR description that names the excluded
+          (internal/config/config.go), every platform .goreleaser.yaml
+          builds plus WSL2 (internal/wsl), and every terminal the manager
+          runs in, locally or over SSH, on tmux 3.1 and later. Fail when new
+          behavior reaches only some of them: a runtime.GOOS branch or a
+          command that exists on one platform, a Linux branch that assumes a
+          desktop WSL2 lacks, a path built from one platform's separator or
+          home layout, a feature that talks to the terminal (clipboard,
+          links, notifications, theme, mouse) and works only when
+          TERM_PROGRAM, TERM, or SSH_CONNECTION matches, a tmux feature gated
+          on a version newer than 3.1 with no fallback, a switch or lookup
+          keyed on tool name that handles a subset of the tools it affects,
+          or a field or status rule added to one [tools.*] block that the
+          others need too. A PR description that names the excluded
           values and what supporting them would take passes. Adding support
           for a new tool is itself coverage, so pass it. Return Inconclusive
           when the diff carries no evidence either way.

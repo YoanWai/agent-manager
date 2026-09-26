@@ -20,7 +20,8 @@ not mean mirroring its feature set; prefer workspace features shared across tool
 
 A feature, a tool, or a fix is done when it holds on the whole matrix. The
 matrix is every CLI in `builtinTools` (`internal/config/config.go`), every
-platform `.goreleaser.yaml` builds, and both input methods. A change that
+platform `.goreleaser.yaml` builds plus WSL2, every terminal that reaches
+the manager, local or over SSH, and both input methods. A change that
 covers a subset names what it leaves out in the PR description and what
 covering the rest would take; [REVIEW.md](REVIEW.md) says how a review treats
 that.
@@ -44,7 +45,18 @@ that.
   block is added to every tool it applies to, in the same PR.
 - **Every platform.** A `runtime.GOOS` branch, a platform-only command, or
   a path built from one platform's layout needs its counterpart, or the
-  description names the platform it skips.
+  description names the platform it skips. WSL2 is a platform of its own:
+  the binary is the Linux one, but the clipboard, notifications, and host
+  stats go through Windows interop (`internal/wsl` detects it), so a Linux
+  branch is checked there too.
+- **Every terminal.** The manager draws through tmux into whatever terminal
+  the user runs, and over SSH that terminal is on another machine. A
+  feature that talks to the terminal (clipboard, links, notifications,
+  themes, mouse) works on the plain path first, and a branch keyed on
+  `TERM_PROGRAM`, `TERM`, or `SSH_CONNECTION` is an addition to that path,
+  never the only way the feature works. A tmux version gate names the
+  version and keeps the feature usable on tmux 3.1, the oldest
+  [docs/install.md](docs/install.md) supports.
 
 The reason is maintenance. One binary serves every user, and a value frozen
 in code or in a user's file stops receiving fixes the day it is written.

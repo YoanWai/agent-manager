@@ -22,9 +22,9 @@ For example, a model picker needs reliable dynamic discovery across supported
 tools; a maintained list of model names does not belong in agent-manager.
 
 A change is done when it holds on the whole matrix: every supported CLI, every
-platform we build, keyboard and mouse. A setting a user can change lives on a
-Settings row that the manager stores, never in a file or variable the user
-edits by hand. [AGENTS.md](../AGENTS.md#what-every-change-covers) spells out
+platform we build plus WSL2, every terminal including over SSH, keyboard and
+mouse. A setting a user can change lives on a Settings row that the manager
+stores, never in a file or variable the user edits by hand. [AGENTS.md](../AGENTS.md#what-every-change-covers) spells out
 each of these with the reason behind it.
 
 ## Setup
