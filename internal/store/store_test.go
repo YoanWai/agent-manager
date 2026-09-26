@@ -1942,6 +1942,17 @@ func TestPlaceSessionBeforeReordersWithinItsOwnGroup(t *testing.T) {
 	}
 }
 
+func TestPlaceSessionBeforeAGoneSessionSaysSo(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("mover", "g")); err != nil {
+		t.Fatalf("mover: %v", err)
+	}
+	err := st.PlaceSessionBefore("mover", "vanished")
+	if !errors.Is(err, ErrSessionGone) {
+		t.Fatalf("PlaceSessionBefore(gone) = %v, want ErrSessionGone", err)
+	}
+}
+
 // A move the store refuses leaves the list exactly as it was: the placement
 // and the ordering commit together or not at all.
 func TestPlaceSessionBeforeRefusedMovesNothing(t *testing.T) {

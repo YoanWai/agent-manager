@@ -779,20 +779,27 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	}
 	lead := pad + guides + dot + " "
 	handle := m.rowHandle(entry, selected)
-	var badges string
+	var focus, inbox string
 	if selected && m.mode == modeFocus {
-		badges += " " + focusBadgeStyle.Render(" FOCUS ")
+		focus = " " + focusBadgeStyle.Render(" FOCUS ")
 	}
 	if queued := m.queuedMessages[sess.ID]; queued > 0 {
-		badges += " " + inboxBadge(queued)
+		inbox = " " + inboxBadge(queued)
 	}
 	// A rail too narrow for the whole head shortens the name before it
-	// loses a badge: a waiting message shows nowhere else on the row.
+	// loses a badge: a waiting message shows nowhere else on the row. With
+	// no room left for any name, the focus badge goes instead: the pane
+	// beside the rail already shows what is focused.
 	name := m.displayName(sess)
-	if room := width - railGutter - ansi.StringWidth(lead+handle+badges); room > 0 && ansi.StringWidth(name) > room {
-		name = ansi.Truncate(name, room, "…")
+	room := width - railGutter - ansi.StringWidth(lead+handle+focus+inbox)
+	if room <= 0 {
+		room += ansi.StringWidth(focus)
+		focus = ""
 	}
-	head := lead + handle + m.highlightQuery(name, nameStyle) + badges
+	if ansi.StringWidth(name) > room {
+		name = ansi.Truncate(name, max(room, 0), "…")
+	}
+	head := lead + handle + m.highlightQuery(name, nameStyle) + focus + inbox
 
 	metaStyle := subtleStyle
 	if selected {

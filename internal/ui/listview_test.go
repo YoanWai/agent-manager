@@ -941,6 +941,27 @@ func gitRepoWithManyFiles(t *testing.T, n int) string {
 
 // Every filter the list is under names itself over the list, beside the key
 // that lifts it, and the header stops repeating them.
+// A focused session nested three groups deep at the narrowest split rail
+// keeps its inbox badge: the name goes first, then the focus badge, since
+// the pane beside the rail already shows what is focused.
+func TestInboxBadgeOutlivesTheNameAndTheFocusBadge(t *testing.T) {
+	for _, width := range []int{29, 27} {
+		m := buildModel(t)
+		m.groupPaths = map[string]string{"a/b/c": "/tmp"}
+		m.sessions = []store.Session{{ID: "x", Name: "some-long-session-name", Tool: "claude", Group: "a/b/c"}}
+		m.rebuildRows()
+		m.cursor = len(m.rows) - 1
+		m.mode = modeFocus
+		m.queuedMessages = map[string]int{"x": 2}
+
+		rows := railTextAt(m, width)
+		row := rows[lineWith(t, rows, "✉2")]
+		if strings.Contains(row, "FOCUS") {
+			t.Errorf("width %d: the focus badge outlived the name: %q", width, row)
+		}
+	}
+}
+
 func TestFilterBadgesStackOverTheList(t *testing.T) {
 	m := shotModel()
 	m.width, m.height = 120, 40

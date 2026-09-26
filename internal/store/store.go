@@ -1495,7 +1495,11 @@ func (s *Store) PlaceSessionBefore(id, beforeID string) error {
 	}
 	defer tx.Rollback()
 	var group, parentID string
-	if err := tx.QueryRow(`SELECT group_name, parent_id FROM sessions WHERE id = ?`, beforeID).Scan(&group, &parentID); err != nil {
+	err = tx.QueryRow(`SELECT group_name, parent_id FROM sessions WHERE id = ?`, beforeID).Scan(&group, &parentID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("session %s: %w", beforeID, ErrSessionGone)
+	}
+	if err != nil {
 		return err
 	}
 	if err := placeSession(tx, id, group, parentID); err != nil {
