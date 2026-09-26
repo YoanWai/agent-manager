@@ -473,6 +473,9 @@ turn_end = "(?m)^(?:─+ Worked for [\\dhms. ]+─+|─+|  (?:Worked for [\\dhms
 # hint rows (usage warning, tip, scroll and copy notices) sit right-aligned
 # between the transcript and the composer
 chrome_line = "^\\s*─*\\s*$|^\\s+(?:⚠|↓|Tip: |Copied )"
+# a message queued during a turn is drawn under the running step, with its
+# edit hint, until the turn picks it up
+chrome_block = "^• Queued follow-up inputs"
 # every message and tool call opens on a "• " bullet
 message_start = "^• "
 # a command's output is drawn under this glyph, on its own indented row
