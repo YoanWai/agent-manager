@@ -147,6 +147,10 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 		m.pane.sgr = false
 		m.pane.history = 0
 	}
+	// A caret from another session would crop this pane to the wrong row.
+	if m.pane.forID != sess.ID {
+		m.pane.cursor = paneCursor{}
+	}
 	// Mouse reporting makes the pane a closed window: clicks land here
 	// instead of the host terminal, so a drag selects pane text alone and
 	// never the rail beside it.
