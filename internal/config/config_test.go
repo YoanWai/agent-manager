@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -535,5 +536,118 @@ func TestMuseDefaultsOnLoad(t *testing.T) {
 	}
 	if tool.SessionIDFlag != "" || tool.ForkCommand != "" || tool.PromptFlag != "" {
 		t.Fatalf("unsupported Muse flags: %+v", tool)
+	}
+}
+
+// A profile is the base tool under a new name with its arguments on every
+// line that launches it, and nothing else of its own: the status rules are
+// the base's, so a fix for the base's screen reaches the profile too.
+func TestProfileIsTheBaseToolWithArgumentsOnEveryLaunchLine(t *testing.T) {
+	dir := writeConfigText(t, `
+[profiles.pi-sol]
+tool = "pi"
+args = ["--model", "openai-codex/gpt-6-sol:xhigh", "--thinking", "it's high"]
+`)
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	profile, ok := cfg.Tools["pi-sol"]
+	if !ok {
+		t.Fatal("expected pi-sol tool")
+	}
+	base := cfg.Tools["pi"]
+	suffix := ` '--model' 'openai-codex/gpt-6-sol:xhigh' '--thinking' 'it'\''s high'`
+	for _, tc := range []struct{ field, base, got string }{
+		{"command", base.Command, profile.Command},
+		{"revive_command", base.ReviveCommand, profile.ReviveCommand},
+		{"resume_by_id_command", base.ResumeByIDCommand, profile.ResumeByIDCommand},
+		{"resume_picker_command", base.ResumePickerCommand, profile.ResumePickerCommand},
+		{"fork_command", base.ForkCommand, profile.ForkCommand},
+	} {
+		if tc.base == "" {
+			t.Fatalf("pi %s is empty; the test needs a base line to append to", tc.field)
+		}
+		if want := tc.base + suffix; tc.got != want {
+			t.Errorf("pi-sol %s = %q, want %q", tc.field, tc.got, want)
+		}
+	}
+	if !reflect.DeepEqual(profile.Rules, base.Rules) || profile.ActivityCutoff != base.ActivityCutoff || profile.SessionIDFlag != base.SessionIDFlag {
+		t.Errorf("pi-sol reads its screen differently from pi:\n%+v\n%+v", profile, base)
+	}
+	if got := cfg.Profiles["pi-sol"]; got != "pi" {
+		t.Errorf("Profiles[pi-sol] = %q, want pi", got)
+	}
+	if got := cfg.Tools["pi"].Command; got != "pi" {
+		t.Errorf("the base tool changed: pi command = %q", got)
+	}
+}
+
+// A base whose block leaves a launch line empty keeps it empty on the
+// profile, so the fallbacks that read emptiness take the same path; and the
+// MCP style keys on the base's name, since the profile's is nobody's.
+func TestProfileKeepsTheBaseFallbacksAndMCPStyle(t *testing.T) {
+	dir := writeConfigText(t, `
+[profiles.claude-sonnet]
+tool = "claude"
+args = ["--model", "sonnet"]
+
+[profiles.muse-quiet]
+tool = "muse"
+args = []
+`)
+	cfg, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if got := cfg.Tools["claude-sonnet"].MCP; got != "claude" {
+		t.Errorf("claude-sonnet mcp = %q, want claude", got)
+	}
+	if got := cfg.Tools["muse-quiet"].MCP; got != cfg.Tools["muse"].MCP {
+		t.Errorf("muse-quiet mcp = %q, want the base's %q", got, cfg.Tools["muse"].MCP)
+	}
+	if cfg.Tools["muse"].ForkCommand != "" {
+		t.Fatal("the test needs a base without a fork command")
+	}
+	if got := cfg.Tools["muse-quiet"].ForkCommand; got != "" {
+		t.Errorf("muse-quiet fork_command = %q, want empty like the base", got)
+	}
+	if got := cfg.Tools["muse-quiet"].Command; got != "muse" {
+		t.Errorf("muse-quiet command = %q, want muse with no arguments", got)
+	}
+}
+
+func TestLoadDirRefusesAProfileThatCannotLaunch(t *testing.T) {
+	for _, tc := range []struct{ text, reason string }{
+		{"[profiles.pi]\ntool = \"pi\"\n", `profile "pi" shadows the built-in tool`},
+		{"[profiles.mine]\ntool = \"nope\"\n", `profile "mine": tool "nope" is not a CLI it supports; the CLIs are claude, codex, command-code`},
+		{"[profiles.mine]\n", `profile "mine": tool "" is not a CLI`},
+		{"[profiles.mine]\ntool = \"terminal\"\n", `profile "mine": tool "terminal" opens a shell`},
+		{"[profiles.a]\ntool = \"pi\"\n[profiles.b]\ntool = \"a\"\n", `profile "b": tool "a" is not a CLI`},
+	} {
+		dir := writeConfigText(t, tc.text)
+		_, err := LoadDir(dir)
+		if err == nil || !strings.Contains(err.Error(), tc.reason) {
+			t.Errorf("%s: err = %v, want %q", tc.text, err, tc.reason)
+		}
+	}
+}
+
+// The built-in config and a file without profiles name none, and a
+// [tools.*] block stays as ignored as before beside one.
+func TestNoProfilesIsAnEmptyMap(t *testing.T) {
+	def, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	if len(def.Profiles) != 0 {
+		t.Fatalf("Default profiles = %v", def.Profiles)
+	}
+	cfg, err := LoadDir(writeConfigText(t, "[tools.pi]\ncommand = \"x\"\n[profiles.p]\ntool = \"pi\"\n"))
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if len(cfg.Profiles) != 1 || cfg.IgnoredTools[0] != "pi" || cfg.Tools["p"].Command != "pi" {
+		t.Fatalf("profiles = %v ignored = %v p = %q", cfg.Profiles, cfg.IgnoredTools, cfg.Tools["p"].Command)
 	}
 }

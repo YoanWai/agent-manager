@@ -2,7 +2,7 @@
 
 Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux, with `XDG_CONFIG_HOME` honored when set) and is created on first run.
 
-It holds three things. `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats. `editor` is the command `o` opens a directory in, arguments included (`editor = "code -n"`, `editor = "open -a 'Visual Studio Code'"`); it is run directly rather than through a shell, and quotes group an argument carrying a space. Left unset, Agent Manager falls back to `$AGENT_MANAGER_EDITOR`, then a GUI editor on `PATH`, then `$VISUAL` / `$EDITOR` (see [Opening the editor](usage.md#opening-the-editor)). The two key tables are below.
+It holds four things. `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats. `editor` is the command `o` opens a directory in, arguments included (`editor = "code -n"`, `editor = "open -a 'Visual Studio Code'"`); it is run directly rather than through a shell, and quotes group an argument carrying a space. Left unset, Agent Manager falls back to `$AGENT_MANAGER_EDITOR`, then a GUI editor on `PATH`, then `$VISUAL` / `$EDITOR` (see [Opening the editor](usage.md#opening-the-editor)). The [profiles](#profiles) and the two key tables are below.
 
 ## Agent CLIs
 
@@ -23,6 +23,24 @@ tmux -L agentmgr capture-pane -p -t am_SESSION_ID
 ```
 
 A CLI that is not on the list above is a feature request; the `CLIs` row in Settings ends with `request CLI support`, which opens one prefilled.
+
+## Profiles
+
+A profile starts one of the CLIs above with extra arguments, under a name of your own.
+
+```toml
+[profiles.claude-sonnet]
+tool = "claude"
+args = ["--model", "sonnet"]
+
+[profiles.pi-fast]
+tool = "pi"
+args = ["--model", "openai-codex/gpt-6-sol:xhigh", "--thinking", "low"]
+```
+
+`tool` names a CLI the binary ships, and `args` is a list, one argument per entry, each quoted for the shell as written. The profile is offered beside its CLI wherever one is picked: the `n` form, the quick prompt's `tab` cycle, `spawn --tool`, the MCP `spawn` tool, and the `CLIs` checklist in Settings. A session started on it carries the arguments on every launch: the first one, restart (`R`), revive (`v`) and fork (`f`). The row shows the profile's name where it shows the CLI's. Everything else is the CLI's own, the status rules above all, so a release that fixes the CLI's screen fixes the profile too.
+
+The load refuses a profile that takes a CLI's name, builds on another profile, or builds on the shell, and says which. A profile removed from the file leaves its sessions in the list; their next restart or revive says the tool is no longer configured, as for a CLI the binary stopped shipping.
 
 ## Key bindings
 
