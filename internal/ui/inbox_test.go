@@ -185,41 +185,53 @@ func TestInboxAsksForAReplyOnlyFromAnAgent(t *testing.T) {
 }
 
 // Typing a message in is what starts the recipient's next turn. The pass that
-// types it has to read the row that way already: the next capture is a poll
-// away, and until then a wait for the handoff takes the rest of the turn
-// before.
+// types it has to read the row that way already, stamped after the message
+// went in: the next capture is a poll away, and until then a wait for the
+// handoff takes the rest of the turn before. A message queued behind a turn
+// goes in on the pass that sees that turn end, with the row still working.
 func TestInboxDeliveryReadsTheRecipientAsWorking(t *testing.T) {
-	m := buildModel(t)
-	sess := spawnedSession(t, m, "ready-tool")
-	settledPane(t, m, sess.ID, "❯")
-	// A launch input is typed ahead of anything queued, so the one the spawn
-	// left goes first, the way it did long ago in a session at rest.
-	for _, input := range sess.PendingInputs {
-		if claimed, err := m.store.ClaimPendingInput(sess.ID, input); err != nil || !claimed {
-			t.Fatalf("claim launch input: claimed=%v err=%v", claimed, err)
-		}
-		if _, err := m.store.ConsumeClaimedPendingInput(sess.ID, input); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := m.store.UpdateStatus(sess.ID, status.Finished); err != nil {
-		t.Fatal(err)
-	}
-	queueMessage(t, m, sess.ID, "rebase on main")
+	for _, stored := range []string{status.Finished, status.Working} {
+		t.Run(stored, func(t *testing.T) {
+			disableQuietEndGrace(t)
+			m := buildModel(t)
+			sess := spawnedSession(t, m, "ready-tool")
+			pane := settledPane(t, m, sess.ID, "❯")
+			// A launch input is typed ahead of anything queued, so the one the
+			// spawn left goes first, the way it did long ago in a session at rest.
+			for _, input := range sess.PendingInputs {
+				if claimed, err := m.store.ClaimPendingInput(sess.ID, input); err != nil || !claimed {
+					t.Fatalf("claim launch input: claimed=%v err=%v", claimed, err)
+				}
+				if _, err := m.store.ConsumeClaimedPendingInput(sess.ID, input); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := m.store.UpdateStatus(sess.ID, stored); err != nil {
+				t.Fatal(err)
+			}
+			seedRegionHash(t, m, sess, pane)
+			id := queueMessage(t, m, sess.ID, "rebase on main")
 
-	if msg, failed := m.poller.refreshOnce().(errMsg); failed {
-		t.Fatalf("refreshOnce: %v", msg.err)
-	}
+			if msg, failed := m.poller.refreshOnce().(errMsg); failed {
+				t.Fatalf("refreshOnce: %v", msg.err)
+			}
 
-	if queued, _ := m.store.QueuedCount(sess.ID); queued != 0 {
-		t.Fatal("the pass never typed the message in, so it proves nothing")
-	}
-	got, err := m.store.Get(sess.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != status.Working {
-		t.Fatalf("status after the pass that typed the message in = %q, want %q", got.Status, status.Working)
+			sent, err := m.store.Message(id, "sender01")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sent.DeliveredAt.IsZero() {
+				t.Fatal("the pass never typed the message in, so it proves nothing")
+			}
+			got, err := m.store.Get(sess.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != status.Working || !got.LastStatusAt.After(sent.DeliveredAt) {
+				t.Fatalf("after the pass that typed the message in: status %q written at %s, message in at %s; want working written after it",
+					got.Status, got.LastStatusAt, sent.DeliveredAt)
+			}
+		})
 	}
 }
 

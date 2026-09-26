@@ -461,7 +461,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			continue
 		}
 		live := panes[sess.ID].PID > 0
-		claimed := false
+		claimed, delivered := false, false
 		if sess.TmuxSocket == "" {
 			// Sessions that predate the column are the leading manager's to
 			// speak for until one of them shows a pane here to claim.
@@ -562,7 +562,7 @@ func (p *poller) refreshOnce() tea.Msg {
 				// waits for the next capture rather than landing on a pane
 				// that is already starting a turn.
 				if !sent && len(sessions[i].PendingInputs) == 0 {
-					delivered, err := p.maybeDeliverInbox(sess, pane, derived, agentAlive)
+					delivered, err = p.maybeDeliverInbox(sess, pane, derived, agentAlive)
 					if err != nil {
 						return errMsg{err}
 					}
@@ -587,7 +587,8 @@ func (p *poller) refreshOnce() tea.Msg {
 		// move, because the row was anyone's until the claim: a manager that
 		// cannot see this pane may have stamped it dead since this pass read
 		// the list, and that stamp is corrected here rather than a poll later.
-		if newStatus != sess.Status || claimed {
+		// A delivery rewrites it too, stamping the status after the message.
+		if newStatus != sess.Status || claimed || delivered {
 			// The row can be claimed by the manager that can see its pane
 			// between this pass listing it and reaching here, and a status
 			// derived without that pane must not land on top of the claim.
