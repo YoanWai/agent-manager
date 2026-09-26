@@ -155,6 +155,23 @@ func TestResolvedOptionPropagatesTheGlobalFallbackError(t *testing.T) {
 	}
 }
 
+// With no server up, list-keys still answers from a server that exits
+// straight after, and only the command list finds none. That is not an
+// error: Create installs the bindings once a session starts the server.
+func TestEnsureBindingsIgnoresAMissingServer(t *testing.T) {
+	dir := t.TempDir()
+	stub := dir + "/tmux"
+	script := "#!/bin/sh\ncase \"$*\" in *list-keys*) exit 0;; esac\necho 'no server running on /tmp/agentmgr' >&2; exit 1\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	if err := driver.EnsureBindings(); err != nil {
+		t.Fatalf("EnsureBindings with no server: %v", err)
+	}
+}
+
 func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	driver := requireTmux(t)
 	id := "lbl" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
