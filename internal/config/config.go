@@ -592,6 +592,53 @@ rules = [
   { state = "errored", pattern = "(?m)^✕ " },
 ]
 
+# Antigravity CLI (agy), Google's successor to Gemini CLI: near-identical
+# box-drawing chrome, but its own composer, footer wording and dialogs.
+[tools.antigravity]
+command = "agy"
+# agy has no positional prompt argument at all ("Prompts are read only from
+# -p/--print, -i/--prompt-interactive, or stdin" - confirmed by trying);
+# -i keeps the session interactive afterward, unlike -p which exits
+prompt_flag = "-i"
+# no --session-id flag exists (checked agy --help), so ids can't be minted
+# at launch; revive falls back to the picker or "continue most recent".
+# --conversation *does* resume a specific id when one is known some other
+# way (a resume_by_id_command target, kept for that), but nothing here
+# captures agy's own minted id back the way session_store does for gemini
+# et al., so this path is not reachable yet through a plain spawn/revive -
+# that capture is the natural next step, not attempted in this change
+resume_by_id_command = "agy --conversation {id}"
+# /resume opens agy's own saved-conversation picker (confirmed live)
+resume_picker_command = "agy -i /resume"
+revive_command = "agy -c"
+default_status = "idle"
+# the composer's marker is "> " (gemini's shape), but an empty composer is
+# a bare ">" with no trailing space - a required trailing space here (as
+# gemini's cutoff has) leaves ActivityRegion never resolving on an empty
+# prompt, which silently wedges message delivery forever (TypingHold reads
+# "not ready" as permanently "working", so it never settles at rest).
+# Other-mode prefixes ("!" / "*") are unverified, borrowed from gemini's
+# shape; agy may not even have those modes.
+activity_cutoff = "(?m)^\\s*[>!*]\\s?"
+# plain "─" box borders, "▄▀" logo art, "? for shortcuts" footer
+chrome_line = "^\\s*[─▄▀█]*\\s*$|^\\s*\\? for shortcuts\\s*$"
+# unverified guess, never triggered a real rate-limit banner
+limit_line = "Usage limit reached"
+# agent replies open on a "▸ " glyph ("▸ Thought for 3s, ...")
+message_start = "^\\s*▸ "
+# turn-completion summary; the same line doubles as message_start
+turn_end = "^\\s*▸ .*tokens\\s*$"
+# a sent prompt echoes into the transcript on its own "> " line
+user_echo = "^\\s*> "
+rules = [
+  # tool-permission dialog ("Run this command? > 1. Yes, ..."); its footer
+  # also says "esc to cancel" like the busy state, so this must come first
+  { state = "waiting", pattern = "(?m)^Run this command\\?\\s*$" },
+  { state = "waiting", pattern = "(?m)^>\\s*\\d+\\.\\s" },
+  # busy footer reads "esc to cancel" (not gemini's "esc to interrupt")
+  { state = "working", pattern = "esc to cancel" },
+]
+
 [tools.hermes]
 # The classic REPL exposes stable prompt markers for status and prompt delivery.
 command = "hermes --cli"
