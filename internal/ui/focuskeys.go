@@ -136,20 +136,20 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	m.focusScroll = 0
 	m.focusFetchInFlight = false
 	// Pane state from a previously watched session must not route this
-	// one's wheel or crop to its caret; a fresh watcher's first pushed
-	// capture reports the real values. When the watcher is already
-	// streaming this session and the cache came from its own capture, it
-	// stays: a quiet pane pushes nothing, so a reset here would leave the
-	// wheel routed as a plain pane with no history until the agent next
-	// paints.
-	if m.pane.forID != sess.ID {
-		m.pane.cursor = paneCursor{}
-	}
+	// one's wheel; a fresh watcher's first pushed capture reports the real
+	// values. When the watcher is already streaming this session and the
+	// cache came from its own capture, it stays: a quiet pane pushes
+	// nothing, so a reset here would leave the wheel routed as a plain
+	// pane with no history until the agent next paints.
 	if m.focus == nil || !m.focus.serving(sess.ID) || m.pane.forID != sess.ID {
 		m.pane.mouse = false
 		m.pane.motion = false
 		m.pane.sgr = false
 		m.pane.history = 0
+	}
+	// A caret from another session would crop this pane to the wrong row.
+	if m.pane.forID != sess.ID {
+		m.pane.cursor = paneCursor{}
 	}
 	// Mouse reporting makes the pane a closed window: clicks land here
 	// instead of the host terminal, so a drag selects pane text alone and
