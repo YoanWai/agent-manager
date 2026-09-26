@@ -465,10 +465,14 @@ fork_command = "codex fork {id}"
 revive_command = "codex resume --last"
 default_status = "idle"
 activity_cutoff = "(?m)^›"
-# a completed turn closes with either a "─ Worked for 12s ─" or bare divider
-# above the input box
-turn_end = "(?m)^(?:─+ Worked for [\\dhms. ]+─+|─+)$"
-chrome_line = "^\\s*─*\\s*$"
+# a completed turn closes on a dim label ("  02:41", "  done 2:41 AM",
+# "  Worked for 1m 5s · 02:41", "  Sep 3 at 02:41"), with the opt-in runtime
+# metrics after it ("· Local tools: 2 calls (1.2s) • Inference: ..."); releases
+# before 0.154 drew a "─ Worked for 12s ─" or bare divider instead
+turn_end = "(?m)^(?:─+ Worked for [\\dhms. ]+─+|─+|  (?:Worked for [\\dhms ]+ · )?(?:done )?(?:[A-Z][a-z]{2} \\d{1,2}(?:, \\d{4})? at )?\\d{1,2}:\\d{2}(?: [AP]M)?(?: · (?:Local tools: |Inference: |WebSocket: |Streams?: |\\d+ events received |Responses API |TTFT: |TBT: )[^\\n]*)?)$"
+# hint rows (usage warning, tip, scroll and copy notices) sit right-aligned
+# between the transcript and the composer
+chrome_line = "^\\s*─*\\s*$|^\\s+(?:⚠|↓|Tip: |Copied )"
 # every message and tool call opens on a "• " bullet
 message_start = "^• "
 # a command's output is drawn under this glyph, on its own indented row
@@ -483,9 +487,10 @@ rules = [
   { state = "waiting", pattern = "(?m)^\\s*›\\s+\\d+\\." },
   { state = "waiting", pattern = "(?m)Press enter to (confirm|continue)\\b" },
   { state = "waiting", pattern = "(?m)enter to submit answer\\b" },
+  { state = "waiting", pattern = "(?m)^\\s*enter select · esc back\\b" },
   # active status row is the final row above the input box; anchoring its full
   # shape keeps an answer that quotes "esc to interrupt" from looking active
-  { state = "working", pattern = "(?m)^[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)?[ \\t\\n]*\\z" },
+  { state = "working", pattern = "(?m)^[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)?(?:[ \\t]*\\n|[ \\t]+(?:⚠|↓|Tip: |Copied )[^\\n]*\\n)*[ \\t\\n]*\\z" },
   { state = "errored", pattern = "(?im)^\\s*■.*\\berror\\b" },
 ]
 
