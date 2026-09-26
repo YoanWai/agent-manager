@@ -312,6 +312,16 @@ func (s *Store) QueuedCount(sessionID string) (int, error) {
 	return queued, err
 }
 
+// HandoffFrom reports the messages from one sender that a session's status,
+// written at statusAt, cannot describe yet: still queued, or typed in since.
+func (s *Store) HandoffFrom(sessionID, senderID string, statusAt time.Time) (queued, typedSince bool, err error) {
+	err = s.db.QueryRow(`
+SELECT EXISTS(SELECT 1 FROM session_inbox WHERE session_id = ? AND sender_id = ? AND delivered_at = 0),
+       EXISTS(SELECT 1 FROM session_inbox WHERE session_id = ? AND sender_id = ? AND dropped_at = 0 AND delivered_at > ?)`,
+		sessionID, senderID, sessionID, senderID, encodeTime(statusAt)).Scan(&queued, &typedSince)
+	return queued, typedSince, err
+}
+
 // QueuedCounts is every session's waiting count in one query, for the
 // poller's per-tick refresh.
 func (s *Store) QueuedCounts() (map[string]int, error) {

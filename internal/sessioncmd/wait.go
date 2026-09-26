@@ -139,18 +139,27 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 		if !running {
 			state = status.Dead
 		}
+		reached := wanted[state]
+		if reached && running {
+			pending, err := runtime.awaitsDelivery(caller.ID, current)
+			if err != nil {
+				return WaitResult{}, err
+			}
+			reached = !pending
+		}
 		// A death ends the wait as surely as an awaited state does: the
 		// status of a session with no pane will never move again.
-		if wanted[state] || !running || !time.Now().Before(deadline) {
+		if reached || !running || !time.Now().Before(deadline) {
 			// The cheap ticks trust the stored status; the answer we hand
 			// back is worth one more fork to get right.
 			running = runtime.driver.Exists(current.ID)
 			if !running {
 				state = status.Dead
+				reached = wanted[state]
 			}
 			outcome := WaitTimedOut
 			switch {
-			case wanted[state]:
+			case reached:
 				outcome = WaitReached
 			case !running:
 				outcome = WaitDied
@@ -164,6 +173,17 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 		case <-expiry.C:
 		}
 	}
+}
+
+// awaitsDelivery reports a message from the caller that target's status
+// predates, which leaves that status on the turn before the message.
+func (r *runtime) awaitsDelivery(callerID string, target store.Session) (bool, error) {
+	queued, typedSince, err := r.store.HandoffFrom(target.ID, callerID, target.LastStatusAt)
+	if err != nil || typedSince || !queued {
+		return typedSince, err
+	}
+	held, err := r.heldReason(target.ID)
+	return held == "", err
 }
 
 func (r *runtime) waitResult(sess store.Session, running bool, state string, started time.Time, outcome string) (WaitResult, error) {

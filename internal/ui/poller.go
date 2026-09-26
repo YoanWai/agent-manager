@@ -461,7 +461,7 @@ func (p *poller) refreshOnce() tea.Msg {
 			continue
 		}
 		live := panes[sess.ID].PID > 0
-		claimed := false
+		claimed, delivered := false, false
 		if sess.TmuxSocket == "" {
 			// Sessions that predate the column are the leading manager's to
 			// speak for until one of them shows a pane here to claim.
@@ -562,8 +562,13 @@ func (p *poller) refreshOnce() tea.Msg {
 				// waits for the next capture rather than landing on a pane
 				// that is already starting a turn.
 				if !sent && len(sessions[i].PendingInputs) == 0 {
-					if err := p.maybeDeliverInbox(sess, pane, derived, agentAlive); err != nil {
+					delivered, err = p.maybeDeliverInbox(sess, pane, derived, agentAlive)
+					if err != nil {
 						return errMsg{err}
+					}
+					// Typing it in starts a turn only the next capture can show.
+					if delivered {
+						newStatus = status.Working
 					}
 				}
 				// Any real transition re-arms the finished alert.
@@ -582,7 +587,8 @@ func (p *poller) refreshOnce() tea.Msg {
 		// move, because the row was anyone's until the claim: a manager that
 		// cannot see this pane may have stamped it dead since this pass read
 		// the list, and that stamp is corrected here rather than a poll later.
-		if newStatus != sess.Status || claimed {
+		// A delivery rewrites it too, stamping the status after the message.
+		if newStatus != sess.Status || claimed || delivered {
 			// The row can be claimed by the manager that can see its pane
 			// between this pass listing it and reaching here, and a status
 			// derived without that pane must not land on top of the claim.
@@ -926,50 +932,50 @@ func inboxDeliverable(derived string) bool {
 // prompt does not, which is the difference TypingHold checks. What the
 // rules cannot see is a person: the paste ends in Enter, so a line someone
 // is part way through writing holds the queue for another poll.
-func (p *poller) maybeDeliverInbox(sess store.Session, pane, derived string, agentAlive bool) error {
+func (p *poller) maybeDeliverInbox(sess store.Session, pane, derived string, agentAlive bool) (bool, error) {
 	if !agentAlive || !inboxDeliverable(derived) {
-		return nil
+		return false, nil
 	}
 	clean := ansi.Strip(pane)
 	if p.engine.TypingHold(sess.Tool, clean) != "" {
-		return nil
+		return false, nil
 	}
 	msg, queued, err := p.store.HeadMessage(sess.ID)
 	if err != nil || !queued {
-		return err
+		return false, err
 	}
 	// A claim this old with no delivery means the manager died between the
 	// claim and the send. Whether it reached the pane is unknowable, so it
 	// is retired rather than risking the same instruction twice.
 	if !msg.ClaimedAt.IsZero() {
 		if time.Since(msg.ClaimedAt) < inboxClaimGrace {
-			return nil
+			return false, nil
 		}
 		if err := p.store.MarkDropped(msg.ID, time.Now()); err != nil {
-			return err
+			return false, err
 		}
-		return fmt.Errorf("dropped an unconfirmed message to %s from %s to avoid delivering it twice", sess.Name, msg.SenderName)
+		return false, fmt.Errorf("dropped an unconfirmed message to %s from %s to avoid delivering it twice", sess.Name, msg.SenderName)
 	}
 	typing, err := p.promptCarriesTypedText(sess, clean)
 	if err != nil || typing {
-		return err
+		return false, err
 	}
 	claimed, err := p.store.ClaimMessage(msg.ID, time.Now())
 	if err != nil || !claimed {
-		return err
+		return false, err
 	}
 	// The claim already keeps this message from being typed again, so
 	// recording the drop is the only thing that stops its sender being told
 	// it arrived.
 	if err := p.tmux.SendText(sess.ID, inboxEnvelope(msg, p.mcpStyles[sess.Tool], p.senderIsShell(msg.SenderID))); err != nil {
-		return errors.Join(
+		return false, errors.Join(
 			fmt.Errorf("dropped a message to %s from %s: %w", sess.Name, msg.SenderName, err),
 			p.store.MarkDropped(msg.ID, time.Now()))
 	}
 	if err := ignoreDeletedSession(p.store.SetLastPrompt(sess.ID, msg.Body)); err != nil {
-		return err
+		return false, err
 	}
-	return p.store.MarkDelivered(msg.ID, time.Now())
+	return true, p.store.MarkDelivered(msg.ID, time.Now())
 }
 
 // promptCarriesTypedText reports whether someone has a line part way

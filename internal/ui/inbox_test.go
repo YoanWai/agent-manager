@@ -55,7 +55,7 @@ func TestInboxHoldsAMessageWhileTheAgentSitsOnADialog(t *testing.T) {
 	if _, ready := m.poller.engine.ActivityRegion(sess.Tool, dialog); !ready {
 		t.Fatal("fixture no longer reproduces the hazard: the region must read ready")
 	}
-	if err := m.poller.maybeDeliverInbox(sess, dialog, status.Waiting, true); err != nil {
+	if _, err := m.poller.maybeDeliverInbox(sess, dialog, status.Waiting, true); err != nil {
 		t.Fatalf("maybeDeliverInbox: %v", err)
 	}
 	queued, err := m.store.QueuedCount(sess.ID)
@@ -79,14 +79,14 @@ func TestInboxHoldsAMessageWhileTheAgentIsWorking(t *testing.T) {
 	sess := spawnedSession(t, m, "claude-hooked")
 	queueMessage(t, m, sess.ID, "rebase on main")
 
-	if err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Working, true); err != nil {
+	if _, err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Working, true); err != nil {
 		t.Fatalf("maybeDeliverInbox: %v", err)
 	}
 	if queued, _ := m.store.QueuedCount(sess.ID); queued != 1 {
 		t.Fatal("a message was delivered mid-turn")
 	}
 	// A dead agent cannot read anything either.
-	if err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, false); err != nil {
+	if _, err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, false); err != nil {
 		t.Fatalf("maybeDeliverInbox dead: %v", err)
 	}
 	if queued, _ := m.store.QueuedCount(sess.ID); queued != 1 {
@@ -99,7 +99,7 @@ func TestInboxDeliversToARestingAgentWithItsSenderNamed(t *testing.T) {
 	sess := spawnedSession(t, m, "claude-hooked")
 	id := queueMessage(t, m, sess.ID, "rebase on main")
 
-	if err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true); err != nil {
+	if _, err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true); err != nil {
 		t.Fatalf("maybeDeliverInbox: %v", err)
 	}
 	if queued, _ := m.store.QueuedCount(sess.ID); queued != 0 {
@@ -151,7 +151,7 @@ func TestInboxAsksForAReplyOnlyFromAnAgent(t *testing.T) {
 			}
 			queueMessage(t, m, sess.ID, "rebase on main")
 
-			if err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true); err != nil {
+			if _, err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true); err != nil {
 				t.Fatalf("maybeDeliverInbox: %v", err)
 			}
 			pane := settledPane(t, m, sess.ID, "rebase on main", "wait for them.", testCase.marker)
@@ -179,6 +179,57 @@ func TestInboxAsksForAReplyOnlyFromAnAgent(t *testing.T) {
 				if !strings.Contains(envelope, want) {
 					t.Fatalf("the terminal envelope does not say %q: %q", want, envelope)
 				}
+			}
+		})
+	}
+}
+
+// Typing a message in is what starts the recipient's next turn. The pass that
+// types it has to read the row that way already, stamped after the message
+// went in: the next capture is a poll away, and until then a wait for the
+// handoff takes the rest of the turn before. A message queued behind a turn
+// goes in on the pass that sees that turn end, with the row still working.
+func TestInboxDeliveryReadsTheRecipientAsWorking(t *testing.T) {
+	for _, stored := range []string{status.Finished, status.Working} {
+		t.Run(stored, func(t *testing.T) {
+			disableQuietEndGrace(t)
+			m := buildModel(t)
+			sess := spawnedSession(t, m, "ready-tool")
+			pane := settledPane(t, m, sess.ID, "❯")
+			// A launch input is typed ahead of anything queued, so the one the
+			// spawn left goes first, the way it did long ago in a session at rest.
+			for _, input := range sess.PendingInputs {
+				if claimed, err := m.store.ClaimPendingInput(sess.ID, input); err != nil || !claimed {
+					t.Fatalf("claim launch input: claimed=%v err=%v", claimed, err)
+				}
+				if _, err := m.store.ConsumeClaimedPendingInput(sess.ID, input); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := m.store.UpdateStatus(sess.ID, stored); err != nil {
+				t.Fatal(err)
+			}
+			seedRegionHash(t, m, sess, pane)
+			id := queueMessage(t, m, sess.ID, "rebase on main")
+
+			if msg, failed := m.poller.refreshOnce().(errMsg); failed {
+				t.Fatalf("refreshOnce: %v", msg.err)
+			}
+
+			sent, err := m.store.Message(id, "sender01")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sent.DeliveredAt.IsZero() {
+				t.Fatal("the pass never typed the message in, so it proves nothing")
+			}
+			got, err := m.store.Get(sess.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != status.Working || !got.LastStatusAt.After(sent.DeliveredAt) {
+				t.Fatalf("after the pass that typed the message in: status %q written at %s, message in at %s; want working written after it",
+					got.Status, got.LastStatusAt, sent.DeliveredAt)
 			}
 		})
 	}
@@ -351,7 +402,7 @@ func TestInboxRetiresAMessageItCannotProveWasDelivered(t *testing.T) {
 		t.Fatalf("claim: %v, claimed=%v", err, claimed)
 	}
 
-	err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true)
+	_, err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true)
 	if err == nil || !strings.Contains(err.Error(), "unconfirmed message") {
 		t.Fatalf("reconcile error = %v", err)
 	}
@@ -388,7 +439,7 @@ func TestInboxLeavesAClaimAnotherManagerIsStillPasting(t *testing.T) {
 		t.Fatalf("claim: %v, claimed=%v", err, claimed)
 	}
 
-	if err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true); err != nil {
+	if _, err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true); err != nil {
 		t.Fatalf("a claim being pasted right now was reported as a problem: %v", err)
 	}
 	state, err := m.store.Message(id, "sender01")
@@ -415,7 +466,7 @@ func TestInboxHoldsAMessageWhileSomeoneIsTypingAtThePrompt(t *testing.T) {
 	}
 	pane := settledPane(t, m, sess.ID, "USERTEXT-in-progress")
 
-	if err := m.poller.maybeDeliverInbox(sess, pane, status.Idle, true); err != nil {
+	if _, err := m.poller.maybeDeliverInbox(sess, pane, status.Idle, true); err != nil {
 		t.Fatalf("maybeDeliverInbox: %v", err)
 	}
 	if queued, _ := m.store.QueuedCount(sess.ID); queued != 1 {
@@ -450,7 +501,7 @@ func TestInboxRecordsAMessageItCouldNotTypeAsDropped(t *testing.T) {
 		t.Fatalf("kill pane: %v", err)
 	}
 
-	err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true)
+	_, err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true)
 	if err == nil || !strings.Contains(err.Error(), "dropped a message") {
 		t.Fatalf("a failed send reported %v", err)
 	}
@@ -551,7 +602,7 @@ func TestRefreshReplacesTheQueuedCountsWholesale(t *testing.T) {
 	queueMessage(t, m, sess.ID, "rebase on main")
 	m.queuedMessages = map[string]int{sess.ID: 1}
 
-	if err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true); err != nil {
+	if _, err := m.poller.maybeDeliverInbox(sess, "❯ ", status.Idle, true); err != nil {
 		t.Fatalf("maybeDeliverInbox: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -752,7 +803,7 @@ func TestInboxDeliversWhenARuleReportsARestingState(t *testing.T) {
 	if state, matched := m.poller.engine.RuleMatch(sess.Tool, resting); !matched || state == status.Working || state == status.Waiting {
 		t.Fatalf("fixture no longer reproduces the case: rule match = %q, %v", state, matched)
 	}
-	if err := m.poller.maybeDeliverInbox(sess, resting, status.Idle, true); err != nil {
+	if _, err := m.poller.maybeDeliverInbox(sess, resting, status.Idle, true); err != nil {
 		t.Fatalf("maybeDeliverInbox: %v", err)
 	}
 	if queued, _ := m.store.QueuedCount(sess.ID); queued != 0 {

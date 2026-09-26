@@ -376,6 +376,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		Description: "Park until another session stops working, instead of calling read_session in a loop. " +
 			"Call it after handing an agent a task when your next step depends on its result. " +
 			"By default it returns once the session reaches any state that means it stopped (finished, waiting, idle, errored or dead); pass until to wait for particular states. " +
+			"It counts from your own handoff. While a message you sent that session is still queued, its state describes the turn before, so the wait carries on until that message goes in and its turn ends. " +
 			"A timeout is a normal answer, not a failure: the result carries reached false and the actual state, and outcome says whether it reached, timed_out or died. " +
 			"Follow it with read_session to see what the agent produced.",
 		Annotations: toolAnnotations(true, false, false),
