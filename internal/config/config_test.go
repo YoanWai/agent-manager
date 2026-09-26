@@ -59,6 +59,9 @@ func TestDefaultDefinesEveryShippedTool(t *testing.T) {
 	if got := cfg.Tools["grok"].TrailingNote; got != "^Worked for " {
 		t.Fatalf("grok trailing_note = %q want the duration line", got)
 	}
+	if !cfg.Tools["grok"].FitsHeight {
+		t.Fatal("grok fits_height = false want true")
+	}
 	if _, ok := cfg.Tools["gemini"]; !ok {
 		t.Fatal("expected gemini tool in default config")
 	}
