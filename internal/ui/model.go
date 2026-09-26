@@ -1205,9 +1205,9 @@ func (m *Model) refreshCmd() tea.Cmd {
 // on the UI path. Width changes and height growth pin eagerly; a box that
 // lost rows, to transient chrome or a shorter terminal, leaves the pane
 // tall and lets paneWindow crop the view instead, because a height shrink
-// makes Codex clear the pane's entire scrollback (#369). The one crop this
-// leaves, a too-tall alt-screen TUI missing its top rows, heals on attach,
-// which sizes the window to the terminal and re-pins on detach.
+// makes Codex clear the pane's entire scrollback (#369). A pane on the
+// alternate screen holds no scrollback for a shrink to clear, so it follows
+// the box down and a full-screen TUI keeps its top rows in view.
 func (m *Model) resizeSessions() {
 	width, height := m.paneTargetSize()
 	if width <= 0 || height <= 0 {
@@ -1239,13 +1239,14 @@ func (m *Model) resizeSessions() {
 		}
 		wanted := height
 		if last, ok := m.pane.geom[sess.ID]; ok {
-			if last[0] == width && last[1] >= height {
+			keepsHeight := last[1] > height && !m.panes[sess.ID].AltScreen
+			if last[0] == width && (last[1] == height || keepsHeight) {
 				continue
 			}
 			// A width re-pin of a taller pane keeps its height: shrinking
 			// it would clear a Codex scrollback (#369); the painted view
 			// crops instead.
-			if last[1] > wanted {
+			if keepsHeight {
 				wanted = last[1]
 			}
 		}
