@@ -1660,7 +1660,7 @@ func TestClicksWorkWhileTheQuickBarIsOpen(t *testing.T) {
 	updated, _ := m.handleMouse(tea.MouseMsg{X: m.railWidth, Y: beta, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
 	if !m.menu.active || !m.quick.active {
-		t.Fatalf("⋯ should open the menu over the open quick bar, menu = %v quick = %v", m.menu.active, m.quick.active)
+		t.Fatalf("%s should open the menu over the open quick bar, menu = %v quick = %v", rowMenuGlyph, m.menu.active, m.quick.active)
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	if m.menu.active || !m.quick.active {

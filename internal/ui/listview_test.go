@@ -1858,8 +1858,8 @@ func TestMouseOffPaintsNoHandleOrMenuButton(t *testing.T) {
 	m.mouseDisabled = true
 	for _, line := range m.entryLines(m.rows, 0, 44, 20) {
 		text := ansi.Strip(line.text)
-		if strings.Contains(text, reorderGrip) || strings.Contains(text, "⋯") {
-			t.Fatalf("mouse off should paint no handle or ⋯: %q", text)
+		if strings.Contains(text, reorderGrip) || strings.Contains(text, rowMenuGlyph) {
+			t.Fatalf("mouse off should paint no handle or %s: %q", rowMenuGlyph, text)
 		}
 	}
 	m.mouseDisabled = false

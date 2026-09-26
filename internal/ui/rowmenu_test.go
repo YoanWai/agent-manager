@@ -26,18 +26,18 @@ func TestMenuStaysOpenAfterTheDotsRelease(t *testing.T) {
 	frame := strings.Split(ansi.Strip(m.View()), "\n")
 	y0, _ := m.bodyYRange()
 	y := y0 + paintedRailLines(t, m, "alpha")[0]
-	if !strings.Contains(frame[y], "⋯") {
+	if !strings.Contains(frame[y], "[…]") {
 		t.Fatalf("the selected row should paint its menu button: %q", frame[y])
 	}
 	updated, _ := m.handleMouse(tea.MouseMsg{X: m.railWidth, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
 	if !m.menu.active {
-		t.Fatal("a click on ⋯ should open the row menu")
+		t.Fatal("a click on […] should open the row menu")
 	}
 	updated, _ = m.handleMouse(tea.MouseMsg{X: m.railWidth, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
 	if !m.menu.active || m.mode != modeList {
-		t.Fatalf("the release after ⋯ should leave the menu up and unfocused, menu = %v mode = %v", m.menu.active, m.mode)
+		t.Fatalf("the release after […] should leave the menu up and unfocused, menu = %v mode = %v", m.menu.active, m.mode)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestDotsOnAnUnselectedRowOpenItsMenuAtOnce(t *testing.T) {
 	updated, _ := m.handleMouse(tea.MouseMsg{X: m.railWidth, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
 	if sess, ok := m.selected(); !m.menu.active || !ok || sess.Name != "beta" {
-		t.Fatalf("⋯ on beta should open beta's menu in one click, menu = %v selected = %q", m.menu.active, sess.Name)
+		t.Fatalf("[…] on beta should open beta's menu in one click, menu = %v selected = %q", m.menu.active, sess.Name)
 	}
 }
 

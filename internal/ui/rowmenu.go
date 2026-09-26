@@ -20,9 +20,9 @@ const (
 	// menuKeyGap the least room between an entry's label and its key.
 	menuChrome = 4
 	menuKeyGap = 3
-	// menuButtonWidth is the gap and glyph every row keeps at its end for
-	// its menu button.
-	menuButtonWidth = 2
+	// menuButtonWidth is the gap and the button every row keeps at its end.
+	menuButtonWidth = 4
+	rowMenuGlyph    = "[…]"
 )
 
 func menuButton(selected bool, bg string) string {
@@ -30,7 +30,7 @@ func menuButton(selected bool, bg string) string {
 	if selected {
 		style = keyStyle
 	}
-	return paint(" "+style.Render("⋯"), menuButtonWidth, bg)
+	return paint(" "+style.Render(rowMenuGlyph), menuButtonWidth, bg)
 }
 
 // onMenuButton reports whether (x, y) lands on a row's menu button: the
@@ -47,7 +47,7 @@ type menuItem struct {
 	danger bool
 }
 
-// rowMenu is the row's actions, opened by its ⋯ button or a right click.
+// rowMenu is the row's actions, opened by its button or a right click.
 // Its box is where the last frame painted it, so clicks resolve against
 // what the user saw.
 type rowMenu struct {
