@@ -480,6 +480,30 @@ func TestAltScreenPaneShrinksWithTheBox(t *testing.T) {
 	}
 }
 
+// A tool whose scrollback survives a height shrink opts in with
+// fits_height, so its normal-screen pane follows the box down too.
+func TestFitsHeightToolShrinksWithTheBox(t *testing.T) {
+	m := buildModel(t)
+	tool := m.cfg.Tools["quietchat"]
+	tool.FitsHeight = true
+	m.cfg.Tools["quietchat"] = tool
+	createSessionOn(t, m, "inline", "quietchat", t.TempDir())
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "inline")
+	sess := m.rows[m.cursor].sess
+	pinned := windowHeight(t, sess.ID)
+
+	m.height -= 4
+	shrunk := m.previewPaneHeight()
+	if shrunk >= pinned {
+		t.Fatal("test setup did not shrink the preview box")
+	}
+	m.applyCmd(t, m.refreshCmd())
+	if got := windowHeight(t, sess.ID); got != shrunk {
+		t.Fatalf("fits_height pane height after the box shrank = %d, want %d", got, shrunk)
+	}
+}
+
 // windowHeight is the tmux window height a session is currently pinned to.
 func windowHeight(t *testing.T, id string) int {
 	t.Helper()

@@ -1206,8 +1206,9 @@ func (m *Model) refreshCmd() tea.Cmd {
 // lost rows, to transient chrome or a shorter terminal, leaves the pane
 // tall and lets paneWindow crop the view instead, because a height shrink
 // makes Codex clear the pane's entire scrollback (#369). A pane on the
-// alternate screen holds no scrollback for a shrink to clear, so it follows
-// the box down and a full-screen TUI keeps its top rows in view.
+// alternate screen holds no scrollback for a shrink to clear, and a tool
+// with fits_height keeps its own, so those follow the box down and a
+// full-screen TUI keeps its top rows in view.
 func (m *Model) resizeSessions() {
 	width, height := m.paneTargetSize()
 	if width <= 0 || height <= 0 {
@@ -1239,7 +1240,8 @@ func (m *Model) resizeSessions() {
 		}
 		wanted := height
 		if last, ok := m.pane.geom[sess.ID]; ok {
-			keepsHeight := last[1] > height && !m.panes[sess.ID].AltScreen
+			fitsHeight := m.panes[sess.ID].AltScreen || m.cfg.Tools[sess.Tool].FitsHeight
+			keepsHeight := last[1] > height && !fitsHeight
 			if last[0] == width && (last[1] == height || keepsHeight) {
 				continue
 			}

@@ -120,6 +120,10 @@ type Tool struct {
 	// prompt. Left unfocuses only while the placeholder is on screen.
 	ComposerPlaceholder string `toml:"composer_placeholder"`
 	Rules               []Rule `toml:"rules"`
+	// FitsHeight lets the manager shrink a normal-screen pane to the
+	// preview's height, not only grow it. A tool opts in once a height
+	// shrink is measured to keep its scrollback. Codex clears it (#369).
+	FitsHeight bool `toml:"fits_height"`
 }
 
 type Config struct {
@@ -518,6 +522,9 @@ rules = [
 
 [tools.grok]
 command = "grok"
+# runs inline while the manager's control client is attached, and keeps its
+# scrollback through a height shrink
+fits_height = true
 session_id_flag = "--session-id"
 resume_by_id_command = "grok --resume {id}"
 fork_command = "grok --resume {id} --fork-session --session-id {new_id}"
