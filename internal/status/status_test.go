@@ -450,6 +450,51 @@ func TestCodexRealPanes(t *testing.T) {
 			"  Choose an option.\n\n  › 1. Option 1  First choice.\n    2. Option 2  Second choice.\n\n  tab to add notes | enter to submit answer | esc to interrupt", Waiting},
 		{"codex usage limit", "codex",
 			"■ You've hit your usage limit. Upgrade to Plus to continue using Codex, or try again at Jul 22nd, 2026 10:42 AM.\n\n› Ask Codex to do anything", Errored},
+		// 2026-09-26 real captures, codex 0.155.1 and 0.157.0: a completed
+		// turn closes on a dim timestamp label rather than a divider, and
+		// 0.157 parks hint rows (usage, tips, scroll) between the transcript
+		// and the composer.
+		{"codex working with a usage hint above the composer (0.157 real capture)", "codex",
+			"› WAIT 6 say PONG\n• Working (3s • esc to interrupt)\n\n" +
+				"                                                    ⚠ 5h limit: 8% left · resets at 03:42 · /status\n" +
+				"› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work · ⠋", Working},
+		{"codex working with a tip above the composer", "codex",
+			"• Working (2s • esc to interrupt)\n\n                     Tip: Run /review to get a code review of your current changes.\n" +
+				"› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work · ⠇", Working},
+		{"codex working scrolled up in the fullscreen transcript", "codex",
+			"• Working (0s • esc to interrupt)\n\n                             ↓ Back to bottom · esc\n\n› draft stays here\n\n  GPT-5.6-Sol default · /tmp/project", Working},
+		{"codex finished on a timestamp label (0.157 real capture)", "codex",
+			"› WAIT 8 SLOW 12 say PONG\n• PONG\n  02:41\n" +
+				"                                     Tip: Run /review to get a code review of your current changes.\n" +
+				"› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work", Finished},
+		{"codex finished on a done label (0.155 real capture)", "codex",
+			"› WAIT 8 SLOW 12 say PONG\n• PONG\n  done 2:41 AM\n› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work", Finished},
+		{"codex finished on a worked-for label", "codex",
+			"• Final response.\n  Worked for 1m 5s · 02:41\n\n› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work", Finished},
+		{"codex finished on a dated label", "codex",
+			"• Final response.\n  Sep 3 at 02:41\n\n› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work", Finished},
+		{"codex question closed by a timestamp label (0.157 real capture)", "codex",
+			"› ASK me\n• Which one do you want?\n  02:42\n" +
+				"                          Tip: Start a fresh idea with /new; the previous session stays in history.\n" +
+				"› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work", Waiting},
+		{"codex finished with a usage hint below the label (0.157 real capture)", "codex",
+			"› WAIT 6 say PONG\n• PONG\n  02:42\n" +
+				"                                                    ⚠ 5h limit: 8% left · resets at 03:42 · /status\n" +
+				"› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work", Finished},
+		{"codex new turn below a timestamp label", "codex",
+			"• PONG\n  02:41\n› LONG answer\n• Working (3s • esc to interrupt)\n› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work · ⠇", Working},
+		{"codex rate-limit model switch dialog (0.157 real capture)", "codex",
+			"• PONG\n⚠ Heads up, you have less than 10% of your 5h limit left. Run /status for a breakdown.\n  06:43\n" +
+				"  Approaching rate limits\n  Switch to gpt-6-luna for lower credit usage?\n" +
+				"› 1. Switch to gpt-6-luna                   Fast and affordable model for easier tasks.\n" +
+				"  2. Keep current model\n  3. Keep current model (never show again)  Hide future rate limit reminders about switching models\n" +
+				"  enter select · esc back", Waiting},
+		{"codex finished on a label with runtime metrics", "codex",
+			"• Final response.\n  02:41 · Local tools: 2 calls (1.2s) • Inference: 1 call (3.4s)\n\n› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work", Finished},
+		{"codex question on a worked-for label with runtime metrics", "codex",
+			"• Which one do you want?\n  Worked for 1m 5s · 02:41 · Responses API overhead: 120ms • TTFT: 0.8s (service)\n\n› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work", Waiting},
+		{"codex timestamp-shaped reply row is not a turn end", "codex",
+			"• Plan:\n  10:30 standup, then review\n› Ask Codex to do anything\n  gpt-5.1-codex default · /private/tmp/am586/work", Idle},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1137,6 +1182,18 @@ func TestLastUserEchoPerTool(t *testing.T) {
 	}
 	if line, anchored, ok := engine.LastMessage("codex", codexPane); !ok || !anchored || line != "CODEX ECHO TEST DONE." {
 		t.Fatalf("codex reply = %q anchored=%v ok=%v", line, anchored, ok)
+	}
+
+	// 2026-09-26 real capture, codex 0.157.0: the timestamp label and the
+	// tip row above the composer are the tool's frame, not the reply.
+	codexHintPane := "› ASK me\n" +
+		"• Which one do you want?\n" +
+		"  02:42\n" +
+		"                          Tip: Start a fresh idea with /new; the previous session stays in history.\n" +
+		"› Ask Codex to do anything\n" +
+		"  gpt-5.1-codex default · /private/tmp/am586/work"
+	if line, anchored, ok := engine.LastMessage("codex", codexHintPane); !ok || !anchored || line != "Which one do you want?" {
+		t.Fatalf("codex reply under hint rows = %q anchored=%v ok=%v", line, anchored, ok)
 	}
 
 	geminiPane := " > Reply with exactly: GEMINI ECHO TEST DONE.\n" +
