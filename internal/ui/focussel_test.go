@@ -37,6 +37,27 @@ func TestCaretRowSurvivesTallPaneCrop(t *testing.T) {
 	}
 }
 
+// Focus can paint before the newly focused session pushes its first
+// frame, and until then the cached caret is the last session's. Followed
+// into this pane's blank tail it would crop away every painted row.
+func TestFocusDropsTheLastSessionsCaret(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	m.pane.forID = "another-session"
+	m.pane.cursor = paneCursor{x: 0, y: 25, ok: true}
+	updated, _ := m.focusSelected()
+	m = updated.(*Model)
+	if m.mode != modeFocus {
+		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+	m.preview = "one\ntwo" + strings.Repeat("\n", 38)
+	rows := paneExact(m.preview, 10, 40, m.paneCaretRow())
+	if len(rows) != 2 || rows[0] != "one" {
+		t.Fatalf("focused pane = %q, want the painted rows", rows)
+	}
+}
+
 func press(m *Model, x, y int) {
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
 }
