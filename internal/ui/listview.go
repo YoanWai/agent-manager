@@ -382,14 +382,15 @@ func (m *Model) filterBadgeLines() []string {
 // rather than rows. Each line carries the tone its entry painted, which the
 // edge column matches.
 func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentLine {
+	m.railWidth = width
+	m.handleX = map[string]int{}
 	// Root alone is still an empty list: it says what the rail holds, not
 	// what to do about it being empty.
 	if rest := rowsBelowRoot(rows); len(rest) == 0 {
+		m.railTop, m.railEnd = 0, len(rows)
 		var lines []contentLine
 		for i, entry := range rows {
-			for _, line := range splitLines(m.renderTreeRow(entry, m.cursor == offset+i, width, offset+i, panelHex())) {
-				lines = append(lines, contentLine{text: line, row: offset + i + 1})
-			}
+			lines = append(lines, m.entryRowLines(entry, offset+i, width, panelHex())...)
 		}
 		for _, line := range m.emptyRailLines(width, height-len(lines)) {
 			lines = append(lines, contentLine{text: line})
@@ -400,20 +401,23 @@ func (m *Model) entryLines(rows []treeRow, offset, width, height int) []contentL
 	for i := range heights {
 		heights[i] = m.entryHeight(rows[i])
 	}
-	start, end := railWindow(heights, m.cursor-offset, height, m.railTop)
-	m.railTop = start
+	start, end := railWindow(heights, m.railAnchor()-offset, height, m.railTop)
+	m.railTop, m.railEnd = start, end
 
 	var lines []contentLine
 	for i := start; i < end; i++ {
 		selected := offset+i == m.cursor
 		entry := rows[i]
 		tone := panelHex()
-		if selected || m.renamingRow(entry) {
+		switch {
+		case m.liftedRow(entry):
+			tone = liftedHex()
+		case m.dropRow(entry):
+			tone = dropHex()
+		case selected || m.renamingRow(entry):
 			tone = selectedHex()
 		}
-		for _, line := range splitLines(m.renderTreeRow(entry, selected, width, offset+i, tone)) {
-			lines = append(lines, contentLine{text: line, tone: tone, row: offset + i + 1})
-		}
+		lines = append(lines, m.entryRowLines(entry, offset+i, width, tone)...)
 	}
 	// The window already held a row back for each counter, so the checks
 	// below only catch an entry that painted taller than entryHeight said.
@@ -624,6 +628,36 @@ func (m *Model) slotContinues(index, slot int) bool {
 	return false
 }
 
+// entryRowLines paints one entry, its lines tagged with the row a click on
+// them selects and ended by the entry's menu button. With the mouse off
+// nothing on the row answers a click, so it keeps those cells for itself.
+// The handle's column is read off the painted head, where the row's tree
+// depth put it. The rail starts one column in, past its edge cell.
+func (m *Model) entryRowLines(entry treeRow, index, width int, tone string) []contentLine {
+	selected := index == m.cursor
+	button := !m.renamingRow(entry) && !m.mouseDisabled
+	rowWidth := width
+	if button {
+		rowWidth -= menuButtonWidth
+	}
+	var lines []contentLine
+	for n, line := range splitLines(m.renderTreeRow(entry, selected, rowWidth, index, tone)) {
+		if n == 0 {
+			if plain := ansi.Strip(line); strings.Contains(plain, reorderGrip) {
+				m.handleX[rowKey(entry)] = 1 + ansi.StringWidth(plain[:strings.Index(plain, reorderGrip)])
+			}
+		}
+		switch {
+		case button && n == 0:
+			line += menuButton(selected, tone)
+		case button:
+			line += paint("", menuButtonWidth, tone)
+		}
+		lines = append(lines, contentLine{text: line, tone: tone, row: index + 1})
+	}
+	return lines
+}
+
 // renderTreeRow paints one entry: a status dot, the name, and what the
 // entry is doing set against the row's far edge. The selected entry lifts
 // onto its own band instead of wearing a marker.
@@ -743,14 +777,22 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	if selected {
 		nameStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 	}
-	head := pad + guides + dot + " " + m.highlightQuery(m.displayName(sess), nameStyle)
-	focused := selected && m.mode == modeFocus
-	if focused {
-		head += " " + focusBadgeStyle.Render(" FOCUS ")
+	lead := pad + guides + dot + " "
+	handle := m.rowHandle(entry, selected)
+	var badges string
+	if selected && m.mode == modeFocus {
+		badges += " " + focusBadgeStyle.Render(" FOCUS ")
 	}
 	if queued := m.queuedMessages[sess.ID]; queued > 0 {
-		head += " " + inboxBadge(queued)
+		badges += " " + inboxBadge(queued)
 	}
+	// A rail too narrow for the whole head shortens the name before it
+	// loses a badge: a waiting message shows nowhere else on the row.
+	name := m.displayName(sess)
+	if room := width - railGutter - ansi.StringWidth(lead+handle+badges); room > 0 && ansi.StringWidth(name) > room {
+		name = ansi.Truncate(name, room, "…")
+	}
+	head := lead + handle + m.highlightQuery(name, nameStyle) + badges
 
 	metaStyle := subtleStyle
 	if selected {
@@ -767,7 +809,8 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 	meta += metaStyle.Render(" · " + relSince(lastActivity(sess)) + m.elsewhereNote(sess))
 
 	if m.comfortableRows {
-		return m.tallRow(sess, head, meta, metaIndent(pad, trail), selected, width, bg)
+		indent := metaIndent(pad, trail) + strings.Repeat(" ", ansi.StringWidth(handle))
+		return m.tallRow(sess, head, meta, indent, selected, width, bg)
 	}
 	return m.compactRow(sess, head, meta, selected, width, bg)
 }
@@ -922,7 +965,8 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, g
 			nameStyle = nameStyle.Foreground(lipgloss.Color(mix(current.Accent2, current.Subtle, 0.5)))
 		}
 	}
-	head := pad + guides + subtleStyle.Render(marker) + " " + m.highlightQuery(name, nameStyle)
+	lead := pad + guides + subtleStyle.Render(marker) + " "
+	head := lead + m.rowHandle(entry, selected) + m.highlightQuery(name, nameStyle)
 
 	// What the group is doing rides on the same line as its name, so a
 	// folded group still reports its subtree without being opened. It is

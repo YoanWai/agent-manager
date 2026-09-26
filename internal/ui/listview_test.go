@@ -439,7 +439,7 @@ func TestRowsWithoutMessagesRenderUnchanged(t *testing.T) {
 
 // A rail too narrow for the whole row gives up the tool and the age before
 // the badge: those readings are on the row beside it, a waiting message is
-// nowhere else.
+// nowhere else. Past that the name shortens before the badge goes.
 func TestInboxBadgeOutlivesTheRowMeta(t *testing.T) {
 	for _, width := range []int{28, 30, 36, 44, 60} {
 		m := shotModel()
@@ -452,7 +452,11 @@ func TestInboxBadgeOutlivesTheRowMeta(t *testing.T) {
 		}
 		rows := railTextAt(m, width)
 		row := rows[lineWith(t, rows, "✉2")]
-		if !strings.Contains(row, "add-rate-limiting") {
+		name := "add-rate-limiting"
+		if width < 36 {
+			name = "add-rate"
+		}
+		if !strings.Contains(row, name) {
 			t.Errorf("width %d: the badge cost the name: %q", width, row)
 		}
 	}
@@ -1823,5 +1827,26 @@ func TestQuickBarMeasuresRowsAtTheWidthItJustSet(t *testing.T) {
 	m.viewQuickBar(14, quickBarMaxRows)
 	if m.quick.maxRows < 2 {
 		t.Fatalf("rows = %d, want the wrap at width 14, not the previous width", m.quick.maxRows)
+	}
+}
+
+// With the mouse off nothing on a row answers a click, so the rail paints
+// no handle and no menu button, and the name keeps their cells.
+func TestMouseOffPaintsNoHandleOrMenuButton(t *testing.T) {
+	m := shotModel()
+	m.mouseDisabled = true
+	for _, line := range m.entryLines(m.rows, 0, 44, 20) {
+		text := ansi.Strip(line.text)
+		if strings.Contains(text, reorderGrip) || strings.Contains(text, "⋯") {
+			t.Fatalf("mouse off should paint no handle or ⋯: %q", text)
+		}
+	}
+	m.mouseDisabled = false
+	painted := false
+	for _, line := range m.entryLines(m.rows, 0, 44, 20) {
+		painted = painted || strings.Contains(ansi.Strip(line.text), reorderGrip)
+	}
+	if !painted {
+		t.Fatal("test setup: the mouse on should paint handles")
 	}
 }

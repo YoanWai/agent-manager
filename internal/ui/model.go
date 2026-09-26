@@ -140,7 +140,23 @@ type Model struct {
 	// presses on the same row inside multiClickWindow count as a double click.
 	listClickAt  time.Time
 	listClickKey string
-	pane         paneMirror
+	// clickFocusKey is the split rail session row a press landed on; its
+	// release on that same row focuses it, so a drag can still claim it.
+	clickFocusKey string
+	reorder       reorderState
+	// lifts numbers each row lift, so a tick one drag scheduled is not
+	// taken for the next drag's.
+	lifts int
+	// railWidth is the rail content width the last frame painted, which
+	// places every row's menu button.
+	railWidth int
+	// railEnd is one past the last row the rail window painted.
+	railEnd int
+	// handleX is the screen column of each row's drag handle as the last
+	// frame painted it; the handle's place follows the row's tree depth.
+	handleX map[string]int
+	menu    rowMenu
+	pane    paneMirror
 	// cursorOn is the caret's blink phase while focused.
 	cursorOn bool
 	// imeCursor is shared with the terminal output writer so the host input
@@ -217,6 +233,7 @@ type Model struct {
 	// mouseReleased is true while the setup dialog has handed the mouse
 	// back to the terminal, so a drag selects its text.
 	mouseReleased     bool
+	mouseHover        bool
 	rename            renameTarget
 	fork              forkState
 	quick             quickState
@@ -1392,14 +1409,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // who wants native click-drag selection back everywhere else, except in
 // focus mode: that pane's own mouse forwarding predates the setting and
 // stays on regardless, the way it always has.
+//
+// An open row menu asks for every motion, pressed or not, so hovering an
+// entry can light it up.
 func (m *Model) syncMouseCapture() tea.Cmd {
 	release := m.mode == modeLaunchHint || (m.mouseDisabled && m.mode != modeFocus)
-	if release == m.mouseReleased {
+	hover := !release && m.mode == modeList && m.menu.active
+	if release == m.mouseReleased && hover == m.mouseHover {
 		return nil
 	}
-	m.mouseReleased = release
-	if release {
+	leavingHover := m.mouseHover && !hover
+	m.mouseReleased, m.mouseHover = release, hover
+	switch {
+	case release:
 		return tea.DisableMouse
+	case hover:
+		return tea.EnableMouseAllMotion
+	case leavingHover:
+		// Any-motion tracking is a private mode of its own, and button
+		// tracking does not reset it: DisableMouse does, before button
+		// tracking comes back.
+		return tea.Sequence(tea.DisableMouse, tea.EnableMouseCellMotion)
 	}
 	return tea.EnableMouseCellMotion
 }
@@ -1927,6 +1957,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
+
+	case autoscrollMsg:
+		return m.handleAutoscroll(msg)
 
 	case tea.KeyMsg:
 		model, cmd := m.handleKey(msg)

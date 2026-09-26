@@ -467,3 +467,22 @@ func bindingOf(t *testing.T, specs ...string) keybind.Binding {
 	}
 	return keybind.Keys(keys...)
 }
+
+func railMouse(t *testing.T, m *Model, name string, action tea.MouseAction, button tea.MouseButton) *Model {
+	t.Helper()
+	y0, _ := m.bodyYRange()
+	line := paintedRailLines(t, m, name)[0]
+	updated, _ := m.handleMouse(tea.MouseMsg{X: 2, Y: y0 + line, Action: action, Button: button})
+	return updated.(*Model)
+}
+
+func sessionRow(t *testing.T, m *Model, name string) treeRow {
+	t.Helper()
+	for _, row := range m.rows {
+		if !row.isGroup && row.sess.Name == name {
+			return row
+		}
+	}
+	t.Fatalf("no row %s", name)
+	return treeRow{}
+}

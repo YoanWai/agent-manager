@@ -51,7 +51,7 @@ func (m *Model) View() string {
 	case modeNotices:
 		frame = m.viewNotices()
 	default:
-		frame = m.viewListFrame()
+		frame = m.overlayRowMenu(m.viewListFrame())
 	}
 	return m.syncCursorAnchor(clampFrame(frame, m.height))
 }
@@ -489,6 +489,9 @@ func padToHeight(s string, height int) string {
 // on, then a quieter tier for the keys that always apply. A transient mode
 // (quick prompt, rename, resize) owns the legend alone while it is up.
 func (m *Model) viewFooter() string {
+	if m.reorder.active {
+		return m.reorderFooter()
+	}
 	if m.quick.active {
 		worktreeHint := "off"
 		switch {
@@ -520,12 +523,12 @@ func (m *Model) viewFooter() string {
 	// title, carries the few keys the manager keeps, and drops the app-wide
 	// tier, which would name keys the agent receives.
 	if m.mode == modeFocus {
-		// Clicking the list only leaves focus where a list is painted, so
-		// the full screen layout, which hands the whole body to the pane,
-		// names the button and the key alone.
+		// Clicking the session's own row only leaves focus where the list
+		// is painted, so the full screen layout names the button and the
+		// key alone.
 		back := m.keys.Binding(keybind.Detach).Label()
 		if !m.fullLayout {
-			back += " / click list"
+			back += " / click its row"
 		}
 		back += " / mouse back"
 		pairs := [][2]string{
@@ -609,7 +612,11 @@ func (m *Model) rowLegend() legendSection {
 	}
 	pairs := [][2]string{{k(keybind.Open), enterHint}, {k(keybind.Attach), attachHint}}
 	if !m.mouseDisabled {
-		pairs = append(pairs, [2]string{"double click", "focus"})
+		gesture := "double click"
+		if !m.fullLayout {
+			gesture = "click"
+		}
+		pairs = append(pairs, [2]string{gesture, "focus"})
 	}
 	if m.arrowStep {
 		pairs = append(pairs, [2]string{k(keybind.StepIn), "focus"})

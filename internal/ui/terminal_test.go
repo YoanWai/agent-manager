@@ -395,8 +395,8 @@ func TestShellRowLegendDropsTheConversationKeys(t *testing.T) {
 	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "R" }) {
 		t.Fatal("legend should still offer the keys a shell answers, R included")
 	}
-	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "double click" && pair[1] == "focus" }) {
-		t.Fatal("legend should offer double click to focus when the mouse is on")
+	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "click" && pair[1] == "focus" }) {
+		t.Fatal("legend should offer click to focus when the mouse is on")
 	}
 }
 
@@ -415,8 +415,8 @@ func TestAgentRowLegendKeepsTheConversationKeys(t *testing.T) {
 			t.Fatalf("legend should offer %q on an agent row", key)
 		}
 	}
-	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "double click" && pair[1] == "focus" }) {
-		t.Fatal("legend should offer double click to focus when the mouse is on")
+	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "click" && pair[1] == "focus" }) {
+		t.Fatal("legend should offer click to focus when the mouse is on")
 	}
 }
 
@@ -426,7 +426,7 @@ func TestRowLegendHidesDoubleClickWhenMouseOff(t *testing.T) {
 	m.selectSessionRow(t, "agent")
 	m.mouseDisabled = true
 	legend := m.rowLegend()
-	if slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[0] == "double click" }) {
-		t.Fatal("legend should hide double click when the mouse is off")
+	if slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return strings.HasSuffix(pair[0], "click") }) {
+		t.Fatal("legend should hide the click gestures when the mouse is off")
 	}
 }
