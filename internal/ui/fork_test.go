@@ -514,7 +514,11 @@ func TestForkRefusesAShellInItsOwnTerms(t *testing.T) {
 // itself, the way muse's /fork does, with the fork read back from a muse store.
 func forkInSourceModel(t *testing.T) (*Model, store.Session, string) {
 	t.Helper()
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	dataHome := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	if err := os.MkdirAll(filepath.Join(dataHome, "muse", "sessions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	m := buildModel(t)
 	source := spawnedSession(t, m, "ready-tool")
 	if err := m.store.SetAgentSessionID(source.ID, "source-conversation"); err != nil {
@@ -542,6 +546,16 @@ func forkInSourceModel(t *testing.T) (*Model, store.Session, string) {
 	return m, source, argsFile
 }
 
+func writeMuseFork(forkID, sourceID string) error {
+	path := filepath.Join(os.Getenv("XDG_DATA_HOME"), "muse", "sessions", forkID, "session.jsonl")
+	record := `{"payload_type":"session.fork.created","payload":{"fork_session_id":"` + forkID +
+		`","source_session_id":"` + sourceID + `"}}` + "\n"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(record), 0o600)
+}
+
 // Plays the tool's side of /fork: once the keys land in the source pane, the
 // store records a fork of the source conversation.
 func recordForkWhenTyped(t *testing.T, m *Model, source store.Session, forkID string) {
@@ -552,19 +566,19 @@ func recordForkWhenTyped(t *testing.T, m *Model, source store.Session, forkID st
 			if err != nil || !strings.Contains(pane, "/fork") {
 				continue
 			}
-			path := filepath.Join(os.Getenv("XDG_DATA_HOME"), "muse", "sessions", forkID, "session.jsonl")
-			record := `{"payload_type":"session.fork.created","payload":{"fork_session_id":"` + forkID +
-				`","source_session_id":"` + source.AgentSessionID + `"}}` + "\n"
-			if os.MkdirAll(filepath.Dir(path), 0o755) == nil {
-				_ = os.WriteFile(path, []byte(record), 0o600)
-			}
+			_ = writeMuseFork(forkID, source.AgentSessionID)
 			return
 		}
 	}()
 }
 
+// An earlier fork still in use has a fresh log too; only the fork the keys
+// made may open.
 func TestForkInSourceOpensTheForkTheSourceMade(t *testing.T) {
 	m, source, argsFile := forkInSourceModel(t)
+	if err := writeMuseFork("earlier-fork", source.AgentSessionID); err != nil {
+		t.Fatal(err)
+	}
 	recordForkWhenTyped(t, m, source, "fork-conversation")
 
 	m.openFork()
@@ -615,5 +629,25 @@ func TestForkInSourceRefusesABusySource(t *testing.T) {
 	pane, err := m.tmux.CapturePane(source.ID)
 	if err != nil || strings.Contains(pane, "/fork") {
 		t.Fatalf("pane = %q, err = %v; want nothing typed into a busy source", pane, err)
+	}
+}
+
+// Without the forks the source already had, any of them could pass for the
+// new one, so the keys are never typed.
+func TestForkInSourceRefusesAnUnreadableStore(t *testing.T) {
+	m, source, _ := forkInSourceModel(t)
+	if err := os.RemoveAll(filepath.Join(os.Getenv("XDG_DATA_HOME"), "muse")); err != nil {
+		t.Fatal(err)
+	}
+	m.openFork()
+	updated, cmd := m.handleForkKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(*Model)
+	m.applyCmd(t, cmd)
+	if !strings.Contains(m.errBar.text, "cannot read the forks") {
+		t.Fatalf("unreadable store error = %q", m.errBar.text)
+	}
+	pane, err := m.tmux.CapturePane(source.ID)
+	if err != nil || strings.Contains(pane, "/fork") {
+		t.Fatalf("pane = %q, err = %v; want nothing typed", pane, err)
 	}
 }

@@ -206,6 +206,13 @@ func ensureMuseRegistered(exe string) error {
 	if err != nil {
 		return err
 	}
+	// The atomic rename would replace a symlinked file (a dotfiles repo's)
+	// rather than write through it.
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 	settings := map[string]json.RawMessage{}
 	perm := os.FileMode(0o600)
 	data, err := os.ReadFile(path)

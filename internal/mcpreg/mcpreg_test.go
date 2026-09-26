@@ -552,6 +552,32 @@ func TestApplyMuseKeepsTheLegacyServersKey(t *testing.T) {
 	}
 }
 
+// A dotfiles manager may link settings.json into its own repo.
+func TestApplyMuseWritesThroughASymlinkedSettingsFile(t *testing.T) {
+	path := museSettingsFixture(t, "")
+	target := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(target, []byte(`{"theme": "dark"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply("muse", "/opt/bin/agent-manager", t.TempDir(), "muse", map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("settings path mode = %v, err = %v; want the symlink kept", info.Mode(), err)
+	}
+	settings := readMuseSettings(t, target)
+	servers := settings["mcpServers"].(map[string]any)
+	if settings["theme"] != "dark" || fmt.Sprint(servers["agent-manager"]) != fmt.Sprint(wantMuseEntry) {
+		t.Fatalf("linked settings = %v", settings)
+	}
+}
+
 func TestApplyMuseRefusesUnreadableSettings(t *testing.T) {
 	const content = "{ not json"
 	path := museSettingsFixture(t, content)

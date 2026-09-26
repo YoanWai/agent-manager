@@ -171,13 +171,10 @@ func TestResolveVersion(t *testing.T) {
 	}
 }
 
-// The environment variable is what an agent's launch exports and what an
-// MCP server under Codex is handed, so it wins; a terminal pane, which
-// carries neither, names its session through tmux instead.
-func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
-	}
+// isolateTmux points the manager's socket at an empty server, so a test run
+// from inside a managed pane cannot find that pane.
+func isolateTmux(t *testing.T) {
+	t.Helper()
 	// Short on purpose: tmux silently falls back to the default socket once
 	// TMUX_TMPDIR/tmux-<uid>/<socket> passes 104 characters.
 	tmpdir, err := os.MkdirTemp("/tmp", "amcaller")
@@ -186,6 +183,16 @@ func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(tmpdir) })
 	t.Setenv("TMUX_TMPDIR", tmpdir)
+}
+
+// The environment variable is what an agent's launch exports and what an
+// MCP server under Codex is handed, so it wins; a terminal pane, which
+// carries neither, names its session through tmux instead.
+func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+	isolateTmux(t)
 
 	driver, err := tmux.New()
 	if err != nil {
@@ -218,6 +225,7 @@ func TestCallerSessionPrefersTheEnvironmentOverThePane(t *testing.T) {
 // A subcommand run outside tmux, or on a machine without it, has no pane to
 // ask, and says which of the two ways to identify a caller failed.
 func TestCallerSessionOutsideTmuxLeavesTheCommandToExplainIt(t *testing.T) {
+	isolateTmux(t)
 	t.Setenv(hooks.EnvSessionID, "")
 	t.Setenv("TMUX", "")
 	t.Setenv("TMUX_PANE", "")

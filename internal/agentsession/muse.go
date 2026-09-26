@@ -111,14 +111,13 @@ func museMeta(path string) (id, cwd string, created time.Time, err error) {
 	return "", "", time.Time{}, scanErr(scanner)
 }
 
-// The fork is the newest match: the slack that absorbs the filesystem clock
-// can also admit an earlier fork of the same source.
-func museForkedFrom(root, sourceID string, since time.Time) (string, bool) {
+// The session.fork.created record that opens a fork's log carries no time, so
+// the cutoff falls on the log's mtime.
+func museForks(root, sourceID string, cutoff time.Time) ([]string, error) {
 	if root == "" {
-		return "", false
+		return nil, os.ErrNotExist
 	}
-	cutoff := since.Add(-clockSlack)
-	var newest candidate
+	var forks []string
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -133,7 +132,7 @@ func museForkedFrom(root, sourceID string, since time.Time) (string, bool) {
 		if err != nil {
 			return err
 		}
-		if info.ModTime().Before(cutoff) || info.ModTime().Before(newest.modTime) {
+		if info.ModTime().Before(cutoff) {
 			return nil
 		}
 		first, err := firstLine(path)
@@ -151,11 +150,8 @@ func museForkedFrom(root, sourceID string, since time.Time) (string, bool) {
 			record.Payload.Source != sourceID || record.Payload.Fork == "" {
 			return nil
 		}
-		newest = candidate{id: record.Payload.Fork, modTime: info.ModTime()}
+		forks = append(forks, record.Payload.Fork)
 		return nil
 	})
-	if err != nil || newest.id == "" {
-		return "", false
-	}
-	return newest.id, true
+	return forks, err
 }

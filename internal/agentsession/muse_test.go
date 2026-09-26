@@ -132,14 +132,39 @@ func TestMuseForkedFromReadsTheForkOfTheSource(t *testing.T) {
 	writeMuseFork(t, root, "earlier-fork", "source", forked.Add(-time.Hour))
 	writeMuseFork(t, root, "other-fork", "other-source", forked)
 	writeMuseSession(t, root, "2026/09/23/plain", "plain", t.TempDir(), forked, forked)
-	if id, ok := ForkedFrom("muse", "source", forked); ok {
+	earlier, ok := Forks("muse", "source")
+	if !ok || len(earlier) != 1 || !earlier["earlier-fork"] {
+		t.Fatalf("Forks = %v, %v; want only earlier-fork", earlier, ok)
+	}
+	if id, ok := ForkedFrom("muse", "source", forked, earlier); ok {
 		t.Fatalf("ForkedFrom before the fork = %q; want none", id)
 	}
 	writeMuseFork(t, root, "new-fork", "source", forked.Add(time.Second))
-	if id, ok := ForkedFrom("muse", "source", forked); !ok || id != "new-fork" {
+	if id, ok := ForkedFrom("muse", "source", forked, earlier); !ok || id != "new-fork" {
 		t.Fatalf("ForkedFrom = %q, %v; want new-fork", id, ok)
 	}
-	if id, ok := ForkedFrom("codex", "source", forked); ok {
-		t.Fatalf("ForkedFrom(codex) = %q; want none", id)
+	if _, ok := Forks("codex", "source"); ok {
+		t.Fatal("Forks(codex) succeeded; want no fork store")
+	}
+}
+
+// A fork still in use keeps writing its log, so its mtime says nothing about
+// when it was made.
+func TestMuseForkedFromSkipsAnEarlierForkStillInUse(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	root := museRoot()
+	forked := time.Now()
+	writeMuseFork(t, root, "busy-fork", "source", forked.Add(-time.Hour))
+	earlier, ok := Forks("muse", "source")
+	if !ok {
+		t.Fatal("Forks failed")
+	}
+	writeMuseFork(t, root, "busy-fork", "source", forked.Add(time.Second))
+	if id, ok := ForkedFrom("muse", "source", forked, earlier); ok {
+		t.Fatalf("ForkedFrom = %q; want the busy fork skipped", id)
+	}
+	writeMuseFork(t, root, "new-fork", "source", forked.Add(time.Second))
+	if id, ok := ForkedFrom("muse", "source", forked, earlier); !ok || id != "new-fork" {
+		t.Fatalf("ForkedFrom = %q, %v; want new-fork", id, ok)
 	}
 }

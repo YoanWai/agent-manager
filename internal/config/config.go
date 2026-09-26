@@ -48,9 +48,9 @@ type Tool struct {
 	// each value. {session_file} needs SessionStore to keep one ("gemini").
 	ForkCommand string `toml:"fork_command"`
 	// ForkKeys forks from inside the running source, for a tool that can only
-	// fork there (muse's /fork). They are typed into the source once it rests,
-	// the fork's id is read back from SessionStore, and ForkCommand opens the
-	// fork through {new_id}.
+	// fork there (muse's /fork). They are typed into the resting source, the
+	// fork's id is read back from SessionStore, and ForkCommand opens the fork
+	// through {new_id}.
 	ForkKeys string `toml:"fork_keys"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex", "opencode",

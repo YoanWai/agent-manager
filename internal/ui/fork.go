@@ -180,12 +180,16 @@ const forkInSourceWait = 10 * time.Second
 func (m *Model) forkInSourceCmd(source store.Session, tool config.Tool, name string) tea.Cmd {
 	poller := m.poller
 	return func() tea.Msg {
+		earlier, ok := agentsession.Forks(tool.SessionStore, source.AgentSessionID)
+		if !ok {
+			return forkedInSourceMsg{err: fmt.Errorf("cannot read the forks %s recorded of %s", source.Tool, source.Name)}
+		}
 		since := time.Now()
 		if err := poller.typeForkKeys(source, tool.ForkKeys); err != nil {
 			return forkedInSourceMsg{err: err}
 		}
 		for deadline := since.Add(forkInSourceWait); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
-			if id, ok := agentsession.ForkedFrom(tool.SessionStore, source.AgentSessionID, since); ok {
+			if id, ok := agentsession.ForkedFrom(tool.SessionStore, source.AgentSessionID, since, earlier); ok {
 				return forkedInSourceMsg{source: source, name: name, forkID: id}
 			}
 		}
