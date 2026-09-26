@@ -23,10 +23,11 @@ answers both in a sentence.
 
 - [ ] `gofmt -l .` prints nothing
 - [ ] `go vet ./...` passes
-- [ ] `go test -race ./...` passes
+- [ ] `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test -race ./...` passes
 - [ ] `go build ./...` passes
 - [ ] Ran it against real sessions
 - [ ] Holds for every supported agent CLI and platform, or the description names what it leaves out
+- [ ] Every new action works by keyboard and by mouse, and every new setting lives on a Settings row
 
 ## Visual evidence
 

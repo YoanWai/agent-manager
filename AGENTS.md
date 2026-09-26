@@ -16,22 +16,110 @@ including shared controls, capability discovery, and status detection.
 Provider-specific features multiply ongoing maintenance. Supporting a TUI does
 not mean mirroring its feature set; prefer workspace features shared across tools.
 
+## What every change covers
+
+A feature, a tool, or a fix is done when it holds on the whole matrix. The
+matrix is every CLI in `builtinTools` (`internal/config/config.go`), every
+platform `.goreleaser.yaml` builds, and both input methods. A change that
+covers a subset names what it leaves out in the PR description and what
+covering the rest would take; [REVIEW.md](REVIEW.md) says how a review treats
+that.
+
+- **Keyboard and mouse.** Every action a key performs is reachable with the
+  mouse, and every clickable surface has a key. A new row, panel, button,
+  or handle ships with both, and the footer and the `?` key map name the key.
+- **Dynamic over hardcoded.** Anything that varies by tool, version, or user
+  is discovered at runtime or read from the tool itself: models, thinking
+  modes, capabilities, prompts, screens. A maintained list of values that an
+  upstream release can change is a defect. Where discovery has no stable,
+  documented interface, the feature stays in the underlying TUI.
+- **Configurable in the UI, or not configurable.** A setting a user can
+  change lives in Settings (`s`), is stored by the manager, and takes effect
+  from the picker, the way the keybindings row does. The manager owns
+  config.toml: the picker writes it, and a user never has to open it for a
+  feature to work. A new per-user file, environment variable, or hand-edited
+  block is the wrong shape; put the choice on a Settings row or pick a
+  default in code.
+- **Every tool.** A field, status rule, or command added to one `[tools.*]`
+  block is added to every tool it applies to, in the same PR.
+- **Every platform.** A `runtime.GOOS` branch, a platform-only command, or
+  a path built from one platform's layout needs its counterpart, or the
+  description names the platform it skips.
+
+The reason is maintenance. One binary serves every user, and a value frozen
+in code or in a user's file stops receiving fixes the day it is written.
+
 ## Build and test
 
 ```bash
 go run .                                        # run the TUI
 go build ./...
-env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./...
+env -u TMUX TMUX_TMPDIR=/tmp/amtest go test -race ./...
 ```
 
 The suite drives a real tmux server. When your own shell already runs inside
 tmux, `$TMUX` overrides `TMUX_TMPDIR` and the tests land on the live socket,
 so `env -u TMUX` is mandatory, never a bare `go test`. Keep the socket dir
 short: `TMUX_TMPDIR/tmux-<uid>/default` must stay under 104 characters or
-tmux silently falls back to the default socket. Never run `tmux kill-server`
-or `kill-session` against the default socket; kill stray processes by PID.
+tmux silently falls back to the default socket. The directory must exist
+before tmux starts, for the same reason. Never run `tmux kill-server` or
+`kill-session` against the default socket; kill stray processes by PID.
 
 Before finishing: `gofmt -l .` prints nothing, `go vet ./...` is clean.
+
+A change to the UI, the poller, or a tool's status rules is verified against
+real sessions before the PR says so: build the binary, run it under a
+throwaway `HOME` on its own socket (see Capturing a TUI frame in
+[CONTRIBUTING.md](.github/CONTRIBUTING.md)), drive a real CLI in it, and read
+the frames back. A green suite is not that.
+
+## Invariants
+
+Rules the code depends on that no compiler checks. Each one has broken a
+release or a user's sessions before.
+
+- **Every tmux call names its socket.** Go through `Driver` in
+  `internal/tmux`, whose `args` pins `-L agentmgr`. A bare
+  `exec.Command("tmux", ...)` resolves through `$TMUX` to the developer's own
+  server. A global option, `kill-session`, or `set-hook` on a socket this
+  process does not own is data loss.
+- **`pane-base-index` stays 0.** `EnsureBindings` pins it so `.0` is the
+  agent's pane. A CLI that splits its window (Claude Code teammates run as
+  splits of the managed window) leaves the agent in pane 0, and a target
+  that names the session instead of the pane lands on the wrong one.
+- **Read panes through `Engine.Plain`, not `capture-pane -e`.** A running
+  step's marker blinks; its off frame is a styled blank cell only the
+  escape-preserving capture shows, and a rule matched on it flaps.
+- **`Update` never blocks.** Bubble Tea runs one `Model`; synchronous I/O,
+  exec, or a sleep on the update path goes into a `tea.Cmd`.
+- **The migrations slice in `internal/store` is append-only.** The loop
+  swallows "duplicate column", so an edited or reordered entry reaches fresh
+  installs only while upgraded databases keep the old shape. New schema is a
+  new entry at the end, written so re-running it is harmless.
+- **`builtinTools` is the only source of tool definitions.** It loads on
+  every start, so an edited pattern reaches every install on that release.
+  `starterConfig` is written once, when no config.toml exists, so text there
+  reaches new installs only; a default belongs in code.
+- **`internal/update` verifies the checksum before anything is renamed over
+  the running binary.** No redirect to another host, no wider permissions on
+  the staged file, no write outside the staging directory.
+- **Workflow actions are pinned to a release tag** and bumped by dependabot.
+  A branch ref or a missing ref is a defect.
+- **No speculative branches.** A fallback or nil-guard for a shape that
+  cannot occur here is a defect, not safety. Verify the real shape first.
+  Guards on external input are correct.
+
+## Pitfalls
+
+- `git stash` is repo-wide across worktrees. With several sessions on one
+  checkout, a pop lands on someone else's work. Commit to the branch instead.
+- Every entry in `docs/messages.json` sets `max_version` to the release it
+  announces; an unbounded entry shows to every user forever.
+- Release notes: a `## Highlights` or `## Thank you` bullet past 120 raw
+  characters, backticks included, is cut mid-word in the messages panel.
+- A tmux `send-keys` stops around 1024 bytes; paste through `load-buffer`,
+  which `Driver` already does, with a buffer name that carries the pid so
+  the manager, the MCP server, and the CLI never swap text between panes.
 
 ## Concurrent sessions
 
@@ -42,20 +130,22 @@ else's commit. Branch from `origin/main` after a fetch, not from the local
 
 ## Releases
 
-Cut from a clean worktree at the tag, with goreleaser run locally; there is
-no release workflow in CI.
+A push of a `v*` tag runs `.github/workflows/release.yml`: goreleaser on
+Actions with the `RELEASE_TOKEN` and `AUR_KEY` secrets, then build
+provenance attested over `dist/checksums.txt`. Only the admin role can push
+the tag.
 
 ```bash
 tag=v0.30.0                       # the release being cut
-git tag "$tag" && git push origin "$tag"
-git worktree add /tmp/amrel "$tag"
-cd /tmp/amrel && GITHUB_TOKEN="$(gh auth token)" AUR_KEY="$HOME/.ssh/aur_agent_manager" \
-  goreleaser release --clean
+git tag "$tag" origin/main && git push origin "$tag"
+gh run watch "$(gh run list --workflow release.yml --limit 1 --json databaseId -q '.[0].databaseId')" --exit-status
 ```
 
-`AUR_KEY` is what publishes the Arch package: without it `git_url` templates
-to empty, goreleaser skips that step, and the release still reports success
-while the AUR package goes stale.
+Without `AUR_KEY` the AUR step silently skips and the release still reports
+success while the Arch package goes stale, so the run log must show the
+release published, the Homebrew cask pushed, and both AUR pushes. A failed
+run after the release was created is retried from a clean tag:
+`gh release delete "$tag" --cleanup-tag`, fix the cause, push the tag again.
 
 The notes carry more than the generated list of pull requests:
 
@@ -79,13 +169,10 @@ The notes carry more than the generated list of pull requests:
   builds on, too, when it extends someone else's work. A range with nobody
   outside the maintainer omits the section.
 
-`--release-notes=notes.md` replaces the generated list of pull requests
-rather than sitting above it, so a file passed that way has to carry the
-list itself. Publishing first and then editing is the simpler order: take
-what goreleaser published with `gh release view <tag> --json body -q .body`,
-put the summary, the highlights and the thanks above its `## What's Changed`,
-and send it back with `gh release edit <tag> --notes-file notes.md`. The
-header and footer from `.goreleaser.yaml` come along either way.
+Publish first, then edit: take what the workflow published with
+`gh release view <tag> --json body -q .body`, put the summary, the
+highlights and the thanks above its `## What's Changed`, and send it back
+with `gh release edit <tag> --notes-file notes.md`.
 
 ## Layout
 
@@ -103,10 +190,5 @@ header and footer from `.goreleaser.yaml` come along either way.
 ## Style
 
 - Comments are rare and explain a non-obvious why, never what the code does.
-- No speculative branches for inputs that cannot occur; verify the real
-  shape first.
 - Tests live next to the file they cover: a test for `listview.go` belongs
   in `listview_test.go`.
-- A change holds for every tool in `builtinTools` and every platform
-  `.goreleaser.yaml` builds; [REVIEW.md](REVIEW.md) says what to do when one
-  of them is left out.

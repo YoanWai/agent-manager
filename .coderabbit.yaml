@@ -109,6 +109,18 @@ reviews:
           values and what supporting them would take passes. Adding support
           for a new tool is itself coverage, so pass it. Return Inconclusive
           when the diff carries no evidence either way.
+      - name: "Input and configuration surface"
+        mode: warning
+        instructions: >-
+          Fail when the diff adds a UI action, row, panel, or handle that
+          works by keyboard only or by mouse only; each new action has both,
+          and the footer or key map names the key. Fail when the diff adds a
+          user-facing setting that is read from a hand-edited file, a
+          config.toml block, or an environment variable instead of a
+          Settings row the manager stores. Fail when the diff adds a list of
+          values an upstream release can change (model names, thinking
+          modes, capabilities, prompts) instead of discovering them at
+          runtime. Pass when the change touches none of these surfaces.
       - name: "No speculative fallbacks"
         mode: warning
         instructions: >-
