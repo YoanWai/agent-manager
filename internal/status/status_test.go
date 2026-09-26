@@ -336,6 +336,103 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 	}
 }
 
+func TestOpenCodeDialogRulesDoNotReadOldTranscript(t *testing.T) {
+	engine := defaultEngine(t)
+	cases := []struct {
+		name string
+		old  string
+	}{
+		{"permission title", "  ┃  △ Permission required was shown earlier\n"},
+		{"question footer", "  ┃  ⇆ tab  enter submit  esc dismiss\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pane := tc.old +
+				"     ▣  Build · GLM-5.2 · 4.2s\n" +
+				"  ┃\n" +
+				"  ╹▀▀▀▀\n" +
+				"  /home/dev  ctrl+p commands"
+			if got, matched := engine.Match("opencode", pane); got != Finished || !matched {
+				t.Fatalf("Match() = (%q, %t) want (%q, true)", got, matched, Finished)
+			}
+			if got, matched := engine.RuleMatch("opencode", pane); matched {
+				t.Fatalf("RuleMatch() = (%q, %t) want no dialog rule", got, matched)
+			}
+			if hold := engine.TypingHold("opencode", pane); hold != "" {
+				t.Fatalf("TypingHold() = %q want no hold", hold)
+			}
+		})
+	}
+}
+
+func TestOpenCodeDialogsClassifyAsWaiting(t *testing.T) {
+	engine := defaultEngine(t)
+	cases := []struct {
+		name string
+		pane string
+	}{
+		{"permission request", "     ▣  Build · Big Pickle\n" +
+			"  ┃  △ Permission required\n" +
+			"  ┃    # Shell command\n" +
+			"  ┃  $ ls -la .\n" +
+			"  ┃   Allow once   Allow always   Reject          ctrl+f fullscreen  ⇆ select  enter confirm"},
+		{"always allow confirmation", "     ▣  Build · Big Pickle\n" +
+			"  ┃  △ Always allow\n" +
+			"  ┃  This will allow bash until OpenCode is restarted.\n" +
+			"  ┃   Confirm   Cancel                         ⇆ select  enter confirm"},
+		{"permission rejection explanation", "     ▣  Build · Big Pickle\n" +
+			"  ┃  △ Reject permission\n" +
+			"  ┃  Tell OpenCode what to do differently\n" +
+			"  ┃                                             enter confirm  esc cancel"},
+		{"permission title clipped in a narrow pane", "     ▣  Build · Big Pickle\n" +
+			"  ┃\n" +
+			"  ┃  △Permissio\n" +
+			"  ┃   n require\n" +
+			"  ┃   d"},
+		{"single-select question", "     → Asked 1 question\n" +
+			"  ┃  What should the new line be?\n" +
+			"  ┃  1. Race-enabled test command\n" +
+			"  ┃  2. Type your own answer\n" +
+			"  ┃  ↑↓ select  enter submit  esc dismiss\n" +
+			"  ┃"},
+		{"multi-select question", "     → Asked 2 questions\n" +
+			"  ┃  Scope\n" +
+			"  ┃  Which checks should run? (select all that apply)\n" +
+			"  ┃  1. [ ] Race tests\n" +
+			"  ┃  ⇆ tab  ↑↓ select  enter toggle  esc dismiss\n" +
+			"  ┃"},
+		{"multi-question confirmation", "     → Asked 2 questions\n" +
+			"  ┃  First: Race tests\n" +
+			"  ┃  Second: Linux\n" +
+			"  ┃  ⇆ tab  enter submit  esc dismiss\n" +
+			"  ┃"},
+		{"question footer wrapped in a narrow pane", "     → Asked 2 questions\n" +
+			"  ┃  Review\n" +
+			"  ┃  ⇆   enter    esc\n" +
+			"  ┃  tab submit   dismiss\n" +
+			"  ┃"},
+		{"custom answer editor", "     → Asked 1 question\n" +
+			"  ┃  What should change?\n" +
+			"  ┃  3. Type your own answer\n" +
+			"  ┃     Cover every dialog state\n" +
+			"  ┃  ↑↓ select  enter submit  esc dismiss\n" +
+			"  ┃"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, matched := engine.Match("opencode", tc.pane); got != Waiting || !matched {
+				t.Fatalf("Match() = (%q, %t) want (%q, true)", got, matched, Waiting)
+			}
+			if got, matched := engine.RuleMatch("opencode", tc.pane); got != Waiting || !matched {
+				t.Fatalf("RuleMatch() = (%q, %t) want (%q, true)", got, matched, Waiting)
+			}
+			if hold := engine.TypingHold("opencode", tc.pane); hold != Waiting {
+				t.Fatalf("TypingHold() = %q want %q", hold, Waiting)
+			}
+		})
+	}
+}
+
 // Fixtures below are captured from real grok Build panes (2026-07-18).
 func TestGrokRealPanes(t *testing.T) {
 	engine := defaultEngine(t)
@@ -921,6 +1018,7 @@ func TestTypingHold(t *testing.T) {
 	}{
 		{"no input line drawn yet", "starting up...", Working},
 		{"mid-turn spinner", "thinking... (esc to interrupt)\n> ", Working},
+		{"dialog replaced input line", "Do you want to proceed?\n ❯ 1. Yes\n   2. No", Waiting},
 		{"dialog on screen", "Do you want to proceed?\n ❯ 1. Yes\n   2. No\n> ", Waiting},
 		{"resting prompt takes the text", "all done here\n> ", ""},
 		{"errored is not a hold", "Error: something broke\n> ", ""},

@@ -209,10 +209,15 @@ func (tr toolRules) isLimit(pane string) bool {
 // states hold, since a tool whose rules also classify resting frames (pi
 // marks a resumed session idle) would otherwise never take anything again.
 func (e *Engine) TypingHold(tool, pane string) string {
+	state, matched := e.RuleMatch(tool, pane)
+	// A dialog may replace the input line entirely. Its specific waiting
+	// signal is more useful than the generic missing-input working hold.
+	if matched && state == Waiting {
+		return Waiting
+	}
 	if _, ready := e.ActivityRegion(tool, pane); !ready {
 		return Working
 	}
-	state, matched := e.RuleMatch(tool, pane)
 	if !matched || (state != Working && state != Waiting) {
 		return ""
 	}

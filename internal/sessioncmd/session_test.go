@@ -57,6 +57,13 @@ default_status = "idle"
 activity_cutoff = "(?m)^❯"
 rules = [{ state = "waiting", pattern = "Enter to confirm" }]
 
+# Stands in for a dialog that replaces the composer's input line.
+[tools.dialog-hidden-composer]
+command = "printf 'Do you want to proceed?\\n  1. Yes\\n  2. No\\nEnter to confirm\\n' && cat"
+default_status = "idle"
+activity_cutoff = "(?m)^❯"
+rules = [{ state = "waiting", pattern = "Enter to confirm" }]
+
 [tools.resting]
 command = "printf '❯ ' && cat"
 default_status = "idle"
@@ -669,6 +676,27 @@ func TestASenderSeesAMessageHeldByARecipientOnADialog(t *testing.T) {
 	}
 	if state.State != "queued" || state.Reason != "" {
 		t.Fatalf("a recipient the manager will type into was reported as holding its queue: %+v", state)
+	}
+}
+
+func TestASenderSeesAMessageHeldWhenTheDialogReplacesTheComposer(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "dialog-hidden-composer", Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, worker.ID, "Enter to confirm")
+
+	state, err := h.sessions.MessageStatus(h.caller.ID, sent.MessageID)
+	if err != nil {
+		t.Fatalf("MessageStatus: %v", err)
+	}
+	if state.State != "held" || !strings.Contains(state.Reason, "dialog") {
+		t.Fatalf("a message behind a composer-replacing dialog reads as %+v", state)
 	}
 }
 
