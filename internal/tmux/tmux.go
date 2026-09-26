@@ -915,10 +915,11 @@ func noServer(out string) bool {
 // count above one means the agent split the window itself, leaving its own
 // pane a fraction of the geometry the manager pinned.
 type Pane struct {
-	PID    int
-	Width  int
-	Height int
-	Panes  int
+	PID       int
+	Width     int
+	Height    int
+	Panes     int
+	AltScreen bool
 }
 
 // Panes returns every managed session's agent pane in a single tmux call,
@@ -927,7 +928,7 @@ type Pane struct {
 // session whose agent split the window reports the agent's own process and
 // the size the preview draws, never a teammate's.
 func (d *Driver) Panes() (map[string]Pane, error) {
-	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_pid} #{pane_width} #{pane_height} #{window_panes}")...).CombinedOutput()
+	out, err := exec.Command(d.bin, d.args("list-panes", "-a", "-f", "#{==:#{pane_index},0}", "-F", "#{session_name} #{pane_pid} #{pane_width} #{pane_height} #{window_panes} #{alternate_on}")...).CombinedOutput()
 	if err != nil {
 		if noServer(string(out)) {
 			return map[string]Pane{}, nil
@@ -945,7 +946,9 @@ func (d *Driver) Panes() (map[string]Pane, error) {
 			continue
 		}
 		var pane Pane
-		if _, err := fmt.Sscanf(geometry, "%d %d %d %d", &pane.PID, &pane.Width, &pane.Height, &pane.Panes); err == nil {
+		var altScreen int
+		if _, err := fmt.Sscanf(geometry, "%d %d %d %d %d", &pane.PID, &pane.Width, &pane.Height, &pane.Panes, &altScreen); err == nil {
+			pane.AltScreen = altScreen == 1
 			panes[id] = pane
 		}
 	}

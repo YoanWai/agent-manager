@@ -441,6 +441,45 @@ func TestAdoptedTallerPaneIsNotShrunk(t *testing.T) {
 	}
 }
 
+// A pane on the alternate screen keeps no scrollback for a shrink to
+// clear, so it follows the box down: a full-screen TUI left taller than
+// the box would lose its top rows to the crop.
+func TestAltScreenPaneShrinksWithTheBox(t *testing.T) {
+	m := buildModel(t)
+	createSessionOn(t, m, "fullscreen", "quietchat", t.TempDir())
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "fullscreen")
+	sess := m.rows[m.cursor].sess
+	pinned := windowHeight(t, sess.ID)
+
+	// cat writes the enter sequence back to the pane, which tmux applies.
+	waitForPaneChild(t, m, sess.ID, "cat")
+	if out, err := tmuxCmd("send-keys", "-t", "am_"+sess.ID, "-l", "\x1b[?1049h\n").CombinedOutput(); err != nil {
+		t.Fatalf("send-keys: %v: %s", err, out)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		out, _ := tmuxCmd("display-message", "-p", "-t", "am_"+sess.ID, "#{alternate_on}").CombinedOutput()
+		if strings.TrimSpace(string(out)) == "1" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("test setup: the pane never entered the alternate screen")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	m.height -= 4
+	shrunk := m.previewPaneHeight()
+	if shrunk >= pinned {
+		t.Fatal("test setup did not shrink the preview box")
+	}
+	m.applyCmd(t, m.refreshCmd())
+	if got := windowHeight(t, sess.ID); got != shrunk {
+		t.Fatalf("alt-screen pane height after the box shrank = %d, want %d", got, shrunk)
+	}
+}
+
 // windowHeight is the tmux window height a session is currently pinned to.
 func windowHeight(t *testing.T, id string) int {
 	t.Helper()
