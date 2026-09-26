@@ -631,6 +631,8 @@ func (m *Model) slotContinues(index, slot int) bool {
 // entryRowLines paints one entry, its lines tagged with the row a click on
 // them selects and ended by the entry's menu button. With the mouse off
 // nothing on the row answers a click, so it keeps those cells for itself.
+// The handle's column is read off the painted head, where the row's tree
+// depth put it. The rail starts one column in, past its edge cell.
 func (m *Model) entryRowLines(entry treeRow, index, width int, tone string) []contentLine {
 	selected := index == m.cursor
 	button := !m.renamingRow(entry) && !m.mouseDisabled
@@ -640,6 +642,11 @@ func (m *Model) entryRowLines(entry treeRow, index, width int, tone string) []co
 	}
 	var lines []contentLine
 	for n, line := range splitLines(m.renderTreeRow(entry, selected, rowWidth, index, tone)) {
+		if n == 0 {
+			if plain := ansi.Strip(line); strings.Contains(plain, reorderGrip) {
+				m.handleX[rowKey(entry)] = 1 + ansi.StringWidth(plain[:strings.Index(plain, reorderGrip)])
+			}
+		}
 		switch {
 		case button && n == 0:
 			line += menuButton(selected, tone)
@@ -771,7 +778,7 @@ func (m *Model) renderSessionEntry(entry treeRow, selected bool, width int, pad,
 		nameStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 	}
 	lead := pad + guides + dot + " "
-	handle := m.rowHandle(entry, selected, lead)
+	handle := m.rowHandle(entry, selected)
 	var badges string
 	if selected && m.mode == modeFocus {
 		badges += " " + focusBadgeStyle.Render(" FOCUS ")
@@ -959,7 +966,7 @@ func (m *Model) renderGroupEntry(entry treeRow, selected bool, width int, pad, g
 		}
 	}
 	lead := pad + guides + subtleStyle.Render(marker) + " "
-	head := lead + m.rowHandle(entry, selected, lead) + m.highlightQuery(name, nameStyle)
+	head := lead + m.rowHandle(entry, selected) + m.highlightQuery(name, nameStyle)
 
 	// What the group is doing rides on the same line as its name, so a
 	// folded group still reports its subtree without being opened. It is

@@ -4,7 +4,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
 // reorderGrip is the drag handle every movable row carries beside its name.
@@ -31,16 +30,12 @@ func (m *Model) onHandle(x, y, row int) bool {
 	return ok && x >= handle-1 && x <= handle+1 && m.onRowHead(y, row)
 }
 
-// rowHandle paints the grip that follows lead on a movable row and records
-// where it landed. The rail starts one column in, past its edge cell.
-func (m *Model) rowHandle(entry treeRow, selected bool, lead string) string {
+// rowHandle is the grip a movable row carries after lead. The row hides it
+// while renamed and while the mouse is off.
+func (m *Model) rowHandle(entry treeRow, selected bool) string {
 	if entry.isRoot() || m.renamingRow(entry) || m.mouseDisabled {
 		return ""
 	}
-	if m.handleX == nil {
-		m.handleX = map[string]int{}
-	}
-	m.handleX[rowKey(entry)] = 1 + ansi.StringWidth(lead)
 	return m.handleGlyph(entry, selected) + " "
 }
 

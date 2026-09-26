@@ -77,59 +77,68 @@ func (m *Model) openRowMenu(row, x, y int) tea.Cmd {
 }
 
 func (m *Model) rowMenuItems(entry treeRow) []menuItem {
-	separator := menuItem{}
 	create := []menuItem{
 		{label: "New session", action: keybind.NewSession},
 		{label: "New terminal", action: keybind.Terminal},
 	}
-	manage := []menuItem{
-		{label: "Open in editor", action: keybind.Editor},
-		{label: "Rename", action: keybind.Rename},
-		{label: "Move to group", action: keybind.Move},
-	}
+	editor := menuItem{label: "Open in editor", action: keybind.Editor}
+	manage := []menuItem{editor, {label: "Rename", action: keybind.Rename}, {label: "Move to group", action: keybind.Move}}
+	revive := menuItem{label: "Revive", action: keybind.Revive}
+	kill := menuItem{label: "Kill", action: keybind.Kill, danger: true}
+	remove := menuItem{label: "Delete", action: keybind.Delete, danger: true}
 	if entry.isRoot() {
-		return append(create, menuItem{label: "Open in editor", action: keybind.Editor})
+		return append(create, editor)
 	}
 	if entry.isGroup {
-		items := append(append(append(create, separator), manage...), separator)
 		live, dead := m.groupLiveAndDead(entry.group)
+		var end []menuItem
 		if dead {
-			items = append(items, menuItem{label: "Revive", action: keybind.Revive})
+			end = append(end, revive)
 		}
-		items = append(items, m.archiveMenuItem())
+		end = append(end, m.archiveMenuItem())
 		if live {
-			items = append(items, menuItem{label: "Kill", action: keybind.Kill, danger: true})
+			end = append(end, kill)
 		}
-		return append(items, menuItem{label: "Delete", action: keybind.Delete, danger: true})
+		return menuSections(create, manage, append(end, remove))
 	}
 	sess := entry.sess
 	if sess.Archived {
-		return []menuItem{
-			{label: "Restore", action: keybind.Restore},
-			{label: "Delete", action: keybind.Delete, danger: true},
-		}
+		return []menuItem{{label: "Restore", action: keybind.Restore}, remove}
 	}
 	if sess.Status == status.Dead {
-		return append(append(manage, separator),
-			menuItem{label: "Revive", action: keybind.Revive},
-			m.archiveMenuItem(),
-			menuItem{label: "Delete", action: keybind.Delete, danger: true})
+		return menuSections(manage, []menuItem{revive, m.archiveMenuItem(), remove})
 	}
-	items := []menuItem{{label: "Attach", action: menuAttach}, separator}
+	var agent []menuItem
 	if !m.isShell(sess.Tool) {
-		items = append(items,
-			menuItem{label: "Prompt", action: keybind.Prompt},
-			menuItem{label: "Copy last reply", action: keybind.CopyReply},
-			menuItem{label: "Review changes", action: keybind.Review},
-			menuItem{label: "Fork", action: keybind.Fork},
-			menuItem{label: "New terminal", action: keybind.Terminal},
-			separator)
+		agent = []menuItem{
+			{label: "Prompt", action: keybind.Prompt},
+			{label: "Copy last reply", action: keybind.CopyReply},
+			{label: "Review changes", action: keybind.Review},
+			{label: "Fork", action: keybind.Fork},
+			{label: "New terminal", action: keybind.Terminal},
+		}
 	}
-	return append(append(append(items, manage...), separator),
-		menuItem{label: "Restart", action: keybind.Restart},
-		m.archiveMenuItem(),
-		menuItem{label: "Kill", action: keybind.Kill, danger: true},
-		menuItem{label: "Delete", action: keybind.Delete, danger: true})
+	return menuSections(
+		[]menuItem{{label: "Attach", action: menuAttach}},
+		agent, manage,
+		[]menuItem{{label: "Restart", action: keybind.Restart}, m.archiveMenuItem(), kill, remove},
+	)
+}
+
+// menuSections joins the sections that hold anything, a separator between
+// each pair.
+func menuSections(sections ...[]menuItem) []menuItem {
+	var items []menuItem
+	for _, section := range sections {
+		if len(section) == 0 {
+			continue
+		}
+		if len(items) > 0 {
+			items = append(items, menuItem{})
+		}
+		items = append(items, section...)
+	}
+	return items
 }
 
 // groupLiveAndDead reports whether the group holds a session to kill and
@@ -317,21 +326,21 @@ func (m *Model) renderRowMenu() []string {
 			continue
 		}
 		glyph := glyphs[i]
-		gap := max(inner-ansi.StringWidth(item.label)-ansi.StringWidth(glyph), 1)
+		gap := strings.Repeat(" ", max(inner-ansi.StringWidth(item.label)-ansi.StringWidth(glyph), 1))
+		var line string
 		if i == m.menu.index {
 			ink := lipgloss.NewStyle().Foreground(colorBg).Background(colorAccent).Bold(true)
 			if item.danger {
 				ink = ink.Background(colorErrored)
 			}
-			line := ink.Render(" " + item.label + strings.Repeat(" ", gap) + glyph + " ")
-			rows = append(rows, paint(edge+line+edge, width, blockHex()))
-			continue
+			line = ink.Render(" " + item.label + gap + glyph + " ")
+		} else {
+			ink := lipgloss.NewStyle().Foreground(colorText)
+			if item.danger {
+				ink = ink.Foreground(colorErrored)
+			}
+			line = " " + ink.Render(item.label) + gap + subtleStyle.Render(glyph) + " "
 		}
-		label := lipgloss.NewStyle().Foreground(colorText).Render(item.label)
-		if item.danger {
-			label = lipgloss.NewStyle().Foreground(colorErrored).Render(item.label)
-		}
-		line := " " + label + strings.Repeat(" ", gap) + subtleStyle.Render(glyph) + " "
 		rows = append(rows, paint(edge+line+edge, width, blockHex()))
 	}
 	return append(rows, paint(border.Render("╰"+strings.Repeat("─", width-2)+"╯"), width, blockHex()))
