@@ -1726,3 +1726,20 @@ func TestFullLayoutBadgeWearsTheCardYellow(t *testing.T) {
 		t.Fatalf("badge should record its columns inside the rail, got %+v", m.noticeHit)
 	}
 }
+
+// A notice opening mid-drag would swallow the release and strand the
+// lifted row, and one over the row menu would bury it, so both wait.
+func TestNoticesWaitForADragOrTheRowMenu(t *testing.T) {
+	m := &Model{mode: modeList}
+	if !m.listReadyForNotice() {
+		t.Fatal("test setup: a plain list takes a notice")
+	}
+	m.reorder.active = true
+	if m.listReadyForNotice() {
+		t.Fatal("a lifted row should hold notices back")
+	}
+	m.reorder.active, m.menu.active = false, true
+	if m.listReadyForNotice() {
+		t.Fatal("an open row menu should hold notices back")
+	}
+}

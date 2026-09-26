@@ -175,19 +175,48 @@ func (m *Model) onDivider(x int) bool {
 	return x >= div && x <= div+splitHitSlop
 }
 
+// handleMouse also closes the quick bar when a click took the app out of
+// the list: the bar and its legend belong to the list alone.
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	model, cmd := m.handleMouseEvent(msg)
+	m.closeQuickOffTheList()
+	return model, cmd
+}
+
+func (m *Model) closeQuickOffTheList() {
+	if m.quick.active && m.mode != modeList {
+		m.quick.active = false
+		m.quick.release()
+	}
+}
+
+func (m *Model) handleMouseEvent(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.mode == modeFocus {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		railPress := msg.Action == tea.MouseActionPress &&
+			(msg.Button == tea.MouseButtonLeft || msg.Button == tea.MouseButtonRight)
+		if railPress {
 			// A press on a rail row leaves focus so the same click can
-			// select that row. Only a rail row: the pane's own blank tail,
+			// act on that row. Only a rail row: the pane's own blank tail,
 			// the chrome, and a full screen session all keep the keyboard.
-			if _, onRail := m.clickRow(msg.X, msg.Y); onRail {
+			if row, onRail := m.clickRow(msg.X, msg.Y); onRail {
+				focused := m.cursor
 				left := m.leaveFocus()
 				model, cmd := m.handleMousePress(msg)
+				// The focused session's own row is the way back: its
+				// release must not focus it again.
+				if row == focused {
+					m.clickFocusKey = ""
+				}
 				return model, tea.Batch(left, cmd)
 			}
 		}
 		return m.handleFocusMouse(msg)
+	}
+	if m.mode == modeList && m.reorder.active {
+		return m.handleReorderMouse(msg)
+	}
+	if m.mode == modeList && m.menu.active {
+		return m.handleMenuMouse(msg)
 	}
 
 	// Mouse events are always consumed so the host terminal / outer tmux
@@ -201,6 +230,9 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.handleMousePress(msg)
 
 	case tea.MouseActionMotion:
+		if m.clickFocusKey != "" && m.rowKeyAt(msg.X, msg.Y) != m.clickFocusKey {
+			m.clickFocusKey = ""
+		}
 		if !m.split.dragging {
 			return m, nil
 		}
@@ -211,6 +243,9 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseActionRelease:
+		if m.clickFocusKey != "" {
+			return m.releaseClickFocus(msg)
+		}
 		if !m.split.dragging {
 			return m, nil
 		}
@@ -234,9 +269,13 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // mode is already armed but off the divider is left alone, waiting, exactly
 // as it did before the mouse could arm it too.
 func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Button == tea.MouseButtonRight {
+		return m.handleRightPress(msg)
+	}
 	if msg.Button != tea.MouseButtonLeft {
 		return m, nil
 	}
+	m.clickFocusKey = ""
 	// A drag whose release never landed is still holding dragging, and the
 	// release of this press would be read as its own: the divider would
 	// jump to wherever this click is and persist there. End the stale one
@@ -247,10 +286,9 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	y0, y1 := m.bodyYRange()
 	// Full layout paints no divider; splitWidths still returns a ratio-based
 	// column, so without this check a click there would arm a drag instead
-	// of landing on the rail row it's actually over. The search field and
-	// the quick bar hold the divider too, so the mouse arms it under the
-	// same conditions the keyboard does in enterResizeMode.
-	onDivider := m.mode == modeList && !m.fullLayout && !m.searching && !m.quick.active &&
+	// of landing on the rail row it's actually over. The search field
+	// holds the divider too, as it does for the keyboard in enterResizeMode.
+	onDivider := m.mode == modeList && !m.fullLayout && !m.searching &&
 		msg.Y >= y0 && msg.Y < y1 && m.onDivider(msg.X)
 	if onDivider {
 		// A mouse drag arms dragging alone. resizeMode is the keyboard's
@@ -266,15 +304,15 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.split.resizeMode || m.mode != modeList {
 		return m, nil
 	}
-	if m.noticeHit.contains(msg.X, msg.Y) && m.listReadyForNotice() {
+	if m.noticeHit.contains(msg.X, msg.Y) && !m.searching {
 		m.openNotices("")
 		return m, nil
 	}
 	if row, ok := m.clickRow(msg.X, msg.Y); ok {
-		// Search and the quick bar own Enter, so a press there selects and
-		// opens no run: one left standing would pair with the first press
-		// after the surface closes.
-		if m.searching || m.quick.active {
+		// Search owns Enter, and a "more" counter only steps the window onto
+		// the row it hides, so neither opens a click run: one left standing
+		// would pair with the next press.
+		if m.searching || !m.inRailWindow(row) {
 			m.listClickAt = time.Time{}
 			return m, m.selectRow(row)
 		}
@@ -283,23 +321,96 @@ func (m *Model) handleMousePress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		key := rowKey(m.rows[row])
 		double := !m.listClickAt.IsZero() && m.listClickKey == key && time.Since(m.listClickAt) < multiClickWindow
 		m.listClickAt, m.listClickKey = time.Now(), key
+		if m.onHandle(msg.X, msg.Y, row) {
+			cmd := m.selectRow(row)
+			m.listClickAt = time.Time{}
+			m.enterReorder(key)
+			return m, cmd
+		}
+		if m.onMenuButton(msg.X, msg.Y, row) {
+			m.listClickAt = time.Time{}
+			cmd := m.openRowMenu(row, msg.X, msg.Y)
+			m.menu.held = true
+			return m, cmd
+		}
 		// Both gestures act on the row under the pointer, so the cursor
 		// goes there first: a wheel notch or a key between the presses
 		// leaves it somewhere else.
 		cmd := m.selectRow(row)
+		entry := m.rows[row]
+		if !m.fullLayout && !entry.isGroup {
+			if !entry.sess.Archived {
+				m.clickFocusKey = key
+			}
+			return m, cmd
+		}
 		if !double {
 			return m, cmd
 		}
 		m.listClickAt = time.Time{} // consume the pair so a third press starts a new run
-		if entry, ok := m.selectedRow(); ok && entry.isGroup {
+		if entry.isGroup {
 			m.toggleCollapse()
 			return m, nil
+		}
+		if entry.sess.Archived {
+			return m, cmd
 		}
 		// Focus owns m.preview from here, so the preview that select
 		// scheduled is dropped rather than left to land on it.
 		return m.focusSelected()
 	}
 	return m, nil
+}
+
+// handleRightPress opens the row menu on the rail row under the pointer.
+func (m *Model) handleRightPress(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.mode != modeList || m.split.resizeMode || m.split.dragging || m.searching {
+		return m, nil
+	}
+	if row, ok := m.clickRow(msg.X, msg.Y); ok {
+		return m, m.openRowMenu(row, msg.X, msg.Y)
+	}
+	return m, nil
+}
+
+// releaseClickFocus focuses the session a split rail press armed, provided
+// the release lands back on that row.
+func (m *Model) releaseClickFocus(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	key := m.clickFocusKey
+	m.clickFocusKey = ""
+	if m.mode != modeList || m.searching || m.rowKeyAt(msg.X, msg.Y) != key {
+		return m, nil
+	}
+	row, _ := m.clickRow(msg.X, msg.Y)
+	// Focus owns m.preview, so a preview this select schedules is dropped.
+	m.selectRow(row)
+	return m.focusSelected()
+}
+
+// rowKeyAt names the rail row under (x, y), or "" off the rows.
+func (m *Model) rowKeyAt(x, y int) string {
+	row, ok := m.clickRow(x, y)
+	if !ok {
+		return ""
+	}
+	return rowKey(m.rows[row])
+}
+
+// inRailWindow reports whether row is painted in the rail's window. A
+// "more" counter answers for a row outside it.
+func (m *Model) inRailWindow(row int) bool {
+	return row >= m.railTop && row < m.railEnd
+}
+
+// onRowHead reports whether y is the first line row painted, where its
+// handle and menu button sit.
+func (m *Model) onRowHead(y, row int) bool {
+	if !m.inRailWindow(row) {
+		return false
+	}
+	y0, _ := m.bodyYRange()
+	line := y - y0
+	return line == 0 || m.railHits[line-1] != row
 }
 
 // clickRow reports which m.rows index a press at (x, y) selects, reading

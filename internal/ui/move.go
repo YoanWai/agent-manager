@@ -127,22 +127,30 @@ func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) moveGroupTo(parent string) (tea.Model, tea.Cmd) {
-	newPath := baseName(m.movePath)
-	if parent != "" {
-		newPath = parent + "/" + newPath
-	}
-	if newPath == m.movePath {
-		m.mode = modeList
-		return m, nil
-	}
-	if err := m.store.MoveGroup(m.movePath, parent); err != nil {
+	if err := m.moveGroupUnder(m.movePath, parent); err != nil {
 		m.errBar.text = err.Error()
 		return m, nil
 	}
-	m.renameGroupLocally(m.movePath, newPath, m.groupPaths[m.movePath], m.groupWorktrees[m.movePath])
+	m.mode = modeList
+	return m, nil
+}
+
+// moveGroupUnder moves a group, with its whole subtree, under parent and
+// mirrors the new paths locally so the list redraws before the next poll.
+func (m *Model) moveGroupUnder(path, parent string) error {
+	newPath := baseName(path)
+	if parent != "" {
+		newPath = parent + "/" + newPath
+	}
+	if newPath == path {
+		return nil
+	}
+	if err := m.store.MoveGroup(path, parent); err != nil {
+		return err
+	}
+	m.renameGroupLocally(path, newPath, m.groupPaths[path], m.groupWorktrees[path])
 	m.relabelSubtree(newPath)
 	m.rebuildRows()
-	m.mode = modeList
 	m.requestRefresh()
-	return m, nil
+	return nil
 }

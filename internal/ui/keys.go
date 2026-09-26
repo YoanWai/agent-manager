@@ -76,6 +76,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleHelpKey(msg)
 	}
 
+	// A lifted row and an open menu sit on top of the quick bar, so they
+	// take the keys first.
+	if m.reorder.active {
+		return m.handleReorderKey(msg)
+	}
+	if m.menu.active {
+		model, cmd := m.handleMenuKey(msg)
+		m.closeQuickOffTheList()
+		return model, cmd
+	}
 	if m.searching {
 		return m.handleSearchKey(msg)
 	}
@@ -90,6 +100,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.clearSearch()
 	}
 	action, _ := m.listKeys.ActionFor(keybind.Normalize(msg.String()))
+	return m.runListAction(action)
+}
+
+// runListAction does what a list key bound to action does, so the row
+// menu runs exactly what the key would.
+func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 	switch action {
 	case keybind.Quit:
 		return m, tea.Quit
@@ -244,6 +260,17 @@ func (m *Model) selectRow(index int) tea.Cmd {
 	return m.schedulePreview()
 }
 
+// selectRowByKey moves the cursor to the row with this identity, reporting
+// false once a rebuild has dropped it from the list.
+func (m *Model) selectRowByKey(key string) bool {
+	index := m.rowIndexByKey(key)
+	if index < 0 {
+		return false
+	}
+	m.selectRow(index)
+	return true
+}
+
 // reorderSelected moves the selected session among its group siblings,
 // or the selected group among the groups sharing its parent.
 func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
@@ -268,7 +295,17 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 		m.errBar.text = fmt.Sprintf("%s already at the %s of its level", what, edge)
 		return m, nil
 	}
+	if err := m.swapRows(entry, target); err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
+	m.errBar.text = ""
+	return m, nil
+}
 
+// swapRows trades places between a row and a visible sibling, in the store
+// and in memory.
+func (m *Model) swapRows(entry, target treeRow) error {
 	var err error
 	var groupSiblings []string
 	if entry.isGroup {
@@ -278,8 +315,7 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 		err = m.store.SwapSessionOrder(entry.sess.ID, target.sess.ID)
 	}
 	if err != nil {
-		m.errBar.text = err.Error()
-		return m, nil
+		return err
 	}
 	// Mirror the swap in memory so the list redraws instantly; the next
 	// poll re-reads the authoritative order from the store.
@@ -289,10 +325,9 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 	} else {
 		m.swapSessionLocal(entry.sess.ID, target.sess.ID)
 	}
-	m.errBar.text = ""
 	m.rebuildRows()
 	m.requestRefresh()
-	return m, nil
+	return nil
 }
 
 // visibleReorderTarget finds the next rendered sibling. Filters and archive

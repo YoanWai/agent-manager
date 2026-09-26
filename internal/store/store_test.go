@@ -1900,3 +1900,73 @@ func TestPaneSizeRoundTripsAndRefusesJunk(t *testing.T) {
 		}
 	}
 }
+
+func TestPlaceSessionBeforeLandsAheadOfItsNewSibling(t *testing.T) {
+	st := newTestStore(t)
+	for _, id := range []string{"a", "b", "c"} {
+		if err := st.CreateSession(sample(id, "g2")); err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+	}
+	if err := st.CreateSession(sample("mover", "g1")); err != nil {
+		t.Fatalf("mover: %v", err)
+	}
+	if err := st.PlaceSessionBefore("mover", "b"); err != nil {
+		t.Fatalf("place: %v", err)
+	}
+	got, err := siblingOrder(st.db, "g2", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"a", "mover", "b", "c"}; !slices.Equal(got, want) {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+}
+
+func TestPlaceSessionBeforeReordersWithinItsOwnGroup(t *testing.T) {
+	st := newTestStore(t)
+	for _, id := range []string{"a", "b", "c"} {
+		if err := st.CreateSession(sample(id, "g")); err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+	}
+	if err := st.PlaceSessionBefore("c", "a"); err != nil {
+		t.Fatalf("place: %v", err)
+	}
+	got, err := siblingOrder(st.db, "g", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"c", "a", "b"}; !slices.Equal(got, want) {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+}
+
+// A move the store refuses leaves the list exactly as it was: the placement
+// and the ordering commit together or not at all.
+func TestPlaceSessionBeforeRefusedMovesNothing(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("agent", "g1")); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	kid := sample("kid", "g1")
+	kid.ParentID = "agent"
+	if err := st.CreateSession(kid); err != nil {
+		t.Fatalf("kid: %v", err)
+	}
+	if err := st.CreateSession(sample("host", "g2")); err != nil {
+		t.Fatalf("host: %v", err)
+	}
+	nested := sample("nested", "g2")
+	nested.ParentID = "host"
+	if err := st.CreateSession(nested); err != nil {
+		t.Fatalf("nested: %v", err)
+	}
+	if err := st.PlaceSessionBefore("agent", "nested"); err == nil {
+		t.Fatal("an agent with terminals of its own cannot nest under another")
+	}
+	got, err := st.Get("agent")
+	if err != nil || got.Group != "g1" || got.ParentID != "" {
+		t.Fatalf("agent moved anyway: %+v err %v", got, err)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1052,12 +1053,19 @@ func validParent(tx *sql.Tx, id, parentID string) (string, error) {
 }
 
 func (s *Store) PlaceSession(id, group, parentID string) error {
-	parentID = strings.TrimSpace(parentID)
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if err := placeSession(tx, id, group, parentID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func placeSession(tx *sql.Tx, id, group, parentID string) error {
+	parentID = strings.TrimSpace(parentID)
 	if parentID != "" {
 		parentGroup, err := validParent(tx, id, parentID)
 		if err != nil {
@@ -1098,7 +1106,7 @@ func (s *Store) PlaceSession(id, group, parentID string) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *Store) MoveSession(id, group string) error {
@@ -1466,36 +1474,77 @@ func (s *Store) SwapSessionOrder(id, targetID string) error {
 		return fmt.Errorf("sessions %s and %s are not siblings", id, targetID)
 	}
 
-	rows, err := s.db.Query(
-		`SELECT id FROM sessions WHERE group_name = ? AND parent_id = ?
-		 ORDER BY sort_order, created_at`, sess.Group, sess.ParentID)
+	ids, err := siblingOrder(s.db, sess.Group, sess.ParentID)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	var ids []string
-	current, targetIndex := -1, -1
-	for rows.Next() {
-		var siblingID string
-		if err := rows.Scan(&siblingID); err != nil {
-			return err
-		}
-		switch siblingID {
-		case id:
-			current = len(ids)
-		case targetID:
-			targetIndex = len(ids)
-		}
-		ids = append(ids, siblingID)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
+	current, targetIndex := slices.Index(ids, id), slices.Index(ids, targetID)
 	if current < 0 || targetIndex < 0 {
 		return fmt.Errorf("session order changed while reordering")
 	}
 	ids[current], ids[targetIndex] = ids[targetIndex], ids[current]
 	return s.persistSessionOrder(ids)
+}
+
+// PlaceSessionBefore moves a session in beside another one, into its group
+// and under its parent, and orders it right ahead of it, in one transaction.
+func (s *Store) PlaceSessionBefore(id, beforeID string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var group, parentID string
+	if err := tx.QueryRow(`SELECT group_name, parent_id FROM sessions WHERE id = ?`, beforeID).Scan(&group, &parentID); err != nil {
+		return err
+	}
+	if err := placeSession(tx, id, group, parentID); err != nil {
+		return err
+	}
+	ids, err := siblingOrder(tx, group, parentID)
+	if err != nil {
+		return err
+	}
+	ordered := make([]string, 0, len(ids))
+	for _, sibling := range ids {
+		if sibling == beforeID {
+			ordered = append(ordered, id)
+		}
+		if sibling != id {
+			ordered = append(ordered, sibling)
+		}
+	}
+	if err := writeSessionOrder(tx, ordered); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// rowsQuerier is the read half of database/sql, satisfied by both *sql.DB
+// and *sql.Tx.
+type rowsQuerier interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
+// siblingOrder lists the sessions sharing a group and parent, in the order
+// the list shows them.
+func siblingOrder(q rowsQuerier, group, parentID string) ([]string, error) {
+	rows, err := q.Query(
+		`SELECT id FROM sessions WHERE group_name = ? AND parent_id = ?
+		 ORDER BY sort_order, created_at`, group, parentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (s *Store) persistSessionOrder(ids []string) error {
@@ -1504,12 +1553,19 @@ func (s *Store) persistSessionOrder(ids []string) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := writeSessionOrder(tx, ids); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func writeSessionOrder(ex executor, ids []string) error {
 	for i, id := range ids {
-		if _, err := tx.Exec(`UPDATE sessions SET sort_order = ? WHERE id = ?`, i, id); err != nil {
+		if _, err := ex.Exec(`UPDATE sessions SET sort_order = ? WHERE id = ?`, i, id); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // ReorderGroup moves a group one step among the groups sharing its

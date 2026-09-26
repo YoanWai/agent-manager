@@ -32,6 +32,18 @@ func selectedHex() string { return current.Surface }
 // searchFieldHex is the band under the open search field.
 func searchFieldHex() string { return mix(panelHex(), current.Accent, 0.2) }
 
+// liftedHex is the band under a row lifted for reordering: the selection
+// tone pulled toward the accent, so the row reads as picked up.
+func liftedHex() string { return mix(current.Surface, current.Accent, 0.3) }
+
+// dropHex is the band under the row a drag would land on: the selection
+// tone pulled toward the second accent, apart from the lifted row's.
+func dropHex() string { return mix(current.Surface, current.Accent2, 0.3) }
+
+// restingMarkHex is a row handle's and menu button's tone away from the
+// cursor: present, but quieter than the row's text.
+func restingMarkHex() string { return mix(current.Bg, current.Text, 0.3) }
+
 // ruleHex is the hairline tone: lifted just far enough off the backdrop to
 // draw a seam without becoming a border.
 func ruleHex() string { return mix(current.Bg, current.Text, 0.22) }
