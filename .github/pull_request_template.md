@@ -23,7 +23,7 @@ answers both in a sentence.
 
 - [ ] `gofmt -l .` prints nothing
 - [ ] `go vet ./...` passes
-- [ ] `env -u TMUX TMUX_TMPDIR=/tmp/amtest go test -race ./...` passes
+- [ ] `mkdir -p /tmp/amtest && env -u TMUX TMUX_TMPDIR=/tmp/amtest go test -race ./...` passes
 - [ ] `go build ./...` passes
 - [ ] Ran it against real sessions
 - [ ] Holds for every supported agent CLI and platform, or the description names what it leaves out

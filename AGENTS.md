@@ -54,7 +54,7 @@ in code or in a user's file stops receiving fixes the day it is written.
 ```bash
 go run .                                        # run the TUI
 go build ./...
-env -u TMUX TMUX_TMPDIR=/tmp/amtest go test -race ./...
+mkdir -p /tmp/amtest && env -u TMUX TMUX_TMPDIR=/tmp/amtest go test -race ./...
 ```
 
 The suite drives a real tmux server. When your own shell already runs inside
@@ -144,8 +144,10 @@ gh run watch "$(gh run list --workflow release.yml --limit 1 --json databaseId -
 Without `AUR_KEY` the AUR step silently skips and the release still reports
 success while the Arch package goes stale, so the run log must show the
 release published, the Homebrew cask pushed, and both AUR pushes. A failed
-run after the release was created is retried from a clean tag:
-`gh release delete "$tag" --cleanup-tag`, fix the cause, push the tag again.
+run after the release was created is retried from a clean tag. Fix the cause
+on `origin/main`, then `gh release delete "$tag" --cleanup-tag`, which
+removes the remote tag and leaves the local one on the old commit, so
+recreate it: `git tag -f "$tag" origin/main && git push origin "$tag"`.
 
 The notes carry more than the generated list of pull requests:
 
