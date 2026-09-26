@@ -211,8 +211,21 @@ func TestWaitLooksPastTheRestItsOwnQueuedMessageIsAboutToEnd(t *testing.T) {
 		t.Fatalf("the wait took the rest before its own message was typed in: %+v", result)
 	}
 
-	// Typed in, and the turn it started has ended.
+	// Typed in, with the pass that did it yet to write the status: the row
+	// still holds the rest it read before typing.
 	if err := h.store.MarkDelivered(sent.MessageID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	result, err = h.sessions.Wait(context.Background(), h.caller.ID, worker.ID, nil, 300*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if result.Reached || result.Outcome != WaitTimedOut {
+		t.Fatalf("the wait took a status written before its message was typed in: %+v", result)
+	}
+
+	// The turn it started has ended.
+	if err := h.store.UpdateStatus(worker.ID, status.Finished); err != nil {
 		t.Fatal(err)
 	}
 	result, err = h.sessions.Wait(context.Background(), h.caller.ID, worker.ID, nil, 5*time.Second)
@@ -221,6 +234,34 @@ func TestWaitLooksPastTheRestItsOwnQueuedMessageIsAboutToEnd(t *testing.T) {
 	}
 	if !result.Reached || result.Session.Status != status.Finished {
 		t.Fatalf("a delivered message still held the wait: %+v", result)
+	}
+}
+
+// A message the manager gave up on never reached the prompt, so it started
+// no turn for the wait to look past.
+func TestWaitTakesTheRestAfterItsOwnMessageWasDropped(t *testing.T) {
+	h := newSessionHarness(t)
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := h.store.UpdateStatus(worker.ID, status.Finished); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "run the migration")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if err := h.store.MarkDropped(sent.MessageID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := h.sessions.Wait(context.Background(), h.caller.ID, worker.ID, nil, 5*time.Second)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if !result.Reached || result.Session.Status != status.Finished {
+		t.Fatalf("a dropped message held the wait: %+v", result)
 	}
 }
 

@@ -141,7 +141,7 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 		}
 		reached := wanted[state]
 		if reached && running {
-			pending, err := runtime.awaitsDelivery(caller.ID, current.ID)
+			pending, err := runtime.awaitsDelivery(caller.ID, current)
 			if err != nil {
 				return WaitResult{}, err
 			}
@@ -175,14 +175,14 @@ func (s *Sessions) Wait(ctx context.Context, sessionID, targetID string, until [
 	}
 }
 
-// awaitsDelivery reports a message from the caller that the manager has yet
-// to type into target, which leaves target's status on the turn before it.
-func (r *runtime) awaitsDelivery(callerID, targetID string) (bool, error) {
-	queued, err := r.store.HasQueuedFrom(targetID, callerID)
-	if err != nil || !queued {
-		return false, err
+// awaitsDelivery reports a message from the caller that target's status
+// predates, which leaves that status on the turn before the message.
+func (r *runtime) awaitsDelivery(callerID string, target store.Session) (bool, error) {
+	queued, typedSince, err := r.store.HandoffFrom(target.ID, callerID, target.LastStatusAt)
+	if err != nil || typedSince || !queued {
+		return typedSince, err
 	}
-	held, err := r.heldReason(targetID)
+	held, err := r.heldReason(target.ID)
 	return held == "", err
 }
 
