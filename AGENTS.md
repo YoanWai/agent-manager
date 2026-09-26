@@ -138,12 +138,12 @@ the tag.
 ```bash
 tag=v0.30.0                       # the release being cut
 git tag "$tag" origin/main && git push origin "$tag"
-gh run watch "$(gh run list --workflow release.yml --limit 1 --json databaseId -q '.[0].databaseId')" --exit-status
+gh run watch "$(gh run list --workflow release.yml --branch "$tag" --limit 1 --json databaseId -q '.[0].databaseId')" --exit-status
 ```
 
 Without `AUR_KEY` the AUR step silently skips and the release still reports
 success while the Arch package goes stale, so the run log must show the
-release published, the Homebrew cask pushed, and both AUR pushes. A failed
+release published, the Homebrew cask pushed, and the AUR push. A failed
 run after the release was created is retried from a clean tag. Fix the cause
 on `origin/main`, then `gh release delete "$tag" --cleanup-tag`, which
 removes the remote tag and leaves the local one on the old commit, so
