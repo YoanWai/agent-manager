@@ -129,6 +129,14 @@ type Tool struct {
 	// preview's height, not only grow it. A tool opts in once a height
 	// shrink is measured to keep its scrollback. Codex clears it (#369).
 	FitsHeight bool `toml:"fits_height"`
+	// SidePanel matches the transcript's horizontal frame. Its rendered
+	// width bounds a panel drawn alongside it, independent of panel text.
+	SidePanel string `toml:"side_panel"`
+	// EchoTurnBoundary separates turns whose tool output shares user_echo.
+	// The first complete gutter block in each turn carries the prompt.
+	EchoTurnBoundary string `toml:"echo_turn_boundary"`
+	// EchoTool identifies a tool block that otherwise looks like a prompt.
+	EchoTool string `toml:"echo_tool"`
 }
 
 type Config struct {
@@ -434,6 +442,12 @@ revive_command = "opencode --continue"
 # session prompt travels behind this flag
 prompt_flag = "--prompt"
 default_status = "idle"
+# opencode draws a right-hand session panel beside the transcript on wide
+# panes. The composer rule bounds the transcript without guessing from
+# indented text. All assistant footers, including interrupted turns, bound
+# prompt echoes even when tool output shares their gutter.
+side_panel = "^[ \\t]*╹▀+"
+echo_turn_boundary = "^[ \\t]*▣ {2}[^·\\n]+ · [^·\\n]+"
 activity_cutoff = "(?m)^\\s*╹"
 # The composer is the gutter row the caret sits on: opencode keeps the caret
 # on the draft's own text row (live-verified, caret tracking every keystroke),
@@ -450,6 +464,8 @@ input_placeholder = "^Ask anything\\.\\.\\."
 # the composer draws; the composer's own block hugs the cutoff and is
 # trimmed before the echo is read
 user_echo = "^\\s*┃\\s{2,}"
+# Foreground shell blocks open with a command or its running spinner.
+echo_tool = "^\\s*┃\\s+(?:\\$ |[\\x{2800}-\\x{28ff}] )"
 limit_line = "(?i)requires more credits|(?:Usage|Free|Go) limit reached"
 # the footer swaps its path for a knight-rider spinner ("■■■⬝⬝⬝⬝⬝") only
 # while a turn runs, provider retries included

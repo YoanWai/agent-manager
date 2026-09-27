@@ -55,6 +55,11 @@ type toolRules struct {
 	composerPlaceholder string
 	blinkingMarker      string
 	rules               []rule
+	// sidePanel tells the engine to detect and strip a right-hand panel
+	// drawn by the tool on wide panes.
+	sidePanel        *regexp.Regexp
+	echoTurnBoundary *regexp.Regexp
+	echoTool         *regexp.Regexp
 }
 
 func NewEngine(cfg config.Config) (*Engine, error) {
@@ -78,6 +83,9 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			target  **regexp.Regexp
 		}{
 			{tool.ActivityCutoff, &tr.activityCutoff},
+			{tool.SidePanel, &tr.sidePanel},
+			{tool.EchoTurnBoundary, &tr.echoTurnBoundary},
+			{tool.EchoTool, &tr.echoTool},
 			{tool.InputPrefix, &tr.inputPrefix},
 			{tool.TurnEnd, &tr.turnEnd},
 			{tool.ChromeLine, &tr.chromeLine},
@@ -106,6 +114,92 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 		engine.tools[name] = tr
 	}
 	return engine, nil
+}
+
+// normalize clips the transcript at its own frame, not at an inferred text
+// column: indentation, tables and right-aligned prose are not panel evidence.
+func (tr toolRules) normalize(pane string) string {
+	if tr.sidePanel == nil {
+		return pane
+	}
+	lines := strings.Split(pane, "\n")
+	border, width := -1, 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		if frame := tr.sidePanel.FindString(lines[i]); frame != "" {
+			border, width = i, ansi.StringWidth(frame)
+			break
+		}
+	}
+	if border < 0 {
+		return pane
+	}
+	// A nonblank cell on the boundary contradicts the frame geometry.
+	// Preserve ambiguous captures, including history from a wider pane.
+	panel := false
+	for _, line := range lines[:border] {
+		lineWidth := ansi.StringWidth(line)
+		if lineWidth <= width {
+			continue
+		}
+		// A grapheme crossing the frame edge is not a blank separator:
+		// Truncate omits it rather than splitting it.
+		if ansi.StringWidth(ansi.Truncate(line, width, "")) < width {
+			return pane
+		}
+		tail := ansi.Cut(line, width, lineWidth)
+		if strings.TrimSpace(tail) == "" {
+			continue
+		}
+		if !strings.HasPrefix(tail, " ") {
+			return pane
+		}
+		panel = true
+	}
+	if !panel {
+		return pane
+	}
+	for i := range lines[:border] {
+		lines[i] = strings.TrimRight(ansi.Truncate(lines[i], width, ""), " \t")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// Footer names can wrap before their duration or even their separator.
+// Rejoin only recognized metadata blocks, preserving row indices for the caret.
+func (tr toolRules) unwrapTurnBoundaries(pane string) string {
+	if tr.echoTurnBoundary == nil {
+		return pane
+	}
+	lines := strings.Split(pane, "\n")
+	for i := 0; i < len(lines); {
+		line := strings.TrimRight(lines[i], " \t")
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		parts := []string{line}
+		end := i + 1
+		if line != "" {
+			for end < len(lines) {
+				next := strings.TrimRight(lines[end], " \t")
+				if next == "" || len(next)-len(strings.TrimLeft(next, " \t")) != indent || tr.echoTurnBoundary.MatchString(next) {
+					break
+				}
+				if (tr.inputPrefix != nil && tr.inputPrefix.MatchString(next)) ||
+					(tr.activityCutoff != nil && tr.activityCutoff.MatchString(next)) {
+					break
+				}
+				parts = append(parts, next[indent:])
+				end++
+			}
+		}
+		joined := strings.Join(parts, " ")
+		if tr.echoTurnBoundary.MatchString(joined) {
+			lines[i] = joined
+			for j := i + 1; j < end; j++ {
+				lines[j] = ""
+			}
+		}
+		i = end
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Match derives a status and reports whether any signal matched, so the
@@ -477,19 +571,22 @@ func (tr toolRules) dialogQuestion(lines []string, inBlock []bool) string {
 // the shape a blinking marker's off frame takes under capture-pane -e.
 var blankedMarker = regexp.MustCompile(`^((?:\x1b\[[0-9;:]*m)+) (\x1b\[39m )`)
 
-// Plain is a captured pane without its escape sequences. A tool whose
-// message marker blinks gets the marker written back into the cell its off
-// frame left blank, so a running step reads the same in both frames.
+// Plain prepares one full capture for all status and transcript queries.
+// It restores blinking markers before stripping escapes, then removes side
+// panels using the full frame's geometry. Keep the raw capture for previews.
 func (e *Engine) Plain(tool, pane string) string {
 	tr, ok := e.tools[tool]
-	if !ok || tr.blinkingMarker == "" {
+	if !ok {
 		return ansi.Strip(pane)
 	}
-	lines := strings.Split(pane, "\n")
-	for i, line := range lines {
-		lines[i] = blankedMarker.ReplaceAllString(line, "${1}"+tr.blinkingMarker+"${2}")
+	if tr.blinkingMarker != "" {
+		lines := strings.Split(pane, "\n")
+		for i, line := range lines {
+			lines[i] = blankedMarker.ReplaceAllString(line, "${1}"+tr.blinkingMarker+"${2}")
+		}
+		pane = strings.Join(lines, "\n")
 	}
-	return ansi.Strip(strings.Join(lines, "\n"))
+	return tr.unwrapTurnBoundaries(tr.normalize(ansi.Strip(pane)))
 }
 
 // chromeBlockRows marks the rows of each chrome_block: the matching row and
@@ -527,6 +624,9 @@ func (tr toolRules) chromeBlockRows(lines []string) []bool {
 // LastMessage and FullTurnText share it so a rule added to one is never
 // missed by the other.
 func (tr toolRules) isStructural(line string) bool {
+	if tr.echoTurnBoundary != nil && tr.echoTurnBoundary.MatchString(line) {
+		return true
+	}
 	if tr.chromeLine != nil && tr.chromeLine.MatchString(line) {
 		return true
 	}
@@ -789,9 +889,7 @@ func (e *Engine) LastUserEcho(tool, pane string) (string, bool) {
 	if i < 0 {
 		return "", true
 	}
-	line := strings.TrimRight(lines[i], " \t")
-	loc := tr.userEcho.FindStringIndex(line)
-	return strings.TrimSpace(line[loc[1]:]), true
+	return tr.echoedText(lines, i), true
 }
 
 // lastEchoIndex is the row carrying the newest prompt the tool echoed, or
@@ -801,41 +899,130 @@ func (tr toolRules) lastEchoIndex(lines []string) int {
 		return -1
 	}
 	end := len(lines)
-	// A composer drawn above the cutoff (opencode's ┃ gutter) is a run of
-	// input_prefix rows hugging the region's end; the echoes live higher,
-	// so the trailing run is the composer's, not a message.
+	// The composer is one contiguous gutter block against the cutoff.
+	// A blank transcript row separates it from a just-submitted prompt.
 	if tr.inputPrefix != nil {
-		for end > 0 {
-			last := lines[end-1]
-			if strings.TrimSpace(last) == "" || tr.inputPrefix.MatchString(last) {
-				end--
-				continue
-			}
-			break
+		for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
+			end--
+		}
+		for end > 0 && tr.inputPrefix.MatchString(lines[end-1]) {
+			end--
 		}
 	}
+	if tr.echoTurnBoundary != nil {
+		previous, last := -1, -1
+		for i, line := range lines[:end] {
+			if tr.echoTurnBoundary.MatchString(line) {
+				previous, last = last, i
+			}
+		}
+		// A new prompt below the latest footer opens a turn immediately,
+		// before the assistant has emitted any prose or working marker.
+		if last >= 0 {
+			for _, line := range lines[last+1 : end] {
+				if strings.TrimSpace(line) != "" {
+					return tr.firstEchoBlock(lines, last+1, end)
+				}
+			}
+			return tr.firstEchoBlock(lines, previous+1, last)
+		}
+		return tr.firstEchoBlock(lines, 0, end)
+	}
 	for i := end - 1; i >= 0; i-- {
+		if tr.isEchoRow(lines[i]) {
+			return i
+		}
+	}
+	return -1
+}
+
+// firstEchoBlock refuses a capture starting in an assistant's output. A
+// complete opening gutter and no preceding prose are required when the
+// preceding turn boundary has scrolled away; a missing echo lets the poller
+// retain the last known prompt instead of replacing it with a tool result.
+func (tr toolRules) firstEchoBlock(lines []string, start, end int) int {
+	candidate, opening := -1, start > 0
+	for i := start; i < end; {
+		line := strings.TrimRight(lines[i], " \t")
+		if strings.TrimSpace(line) == "" {
+			i++
+			continue
+		}
+		if tr.inputPrefix == nil || !tr.inputPrefix.MatchString(line) {
+			break
+		}
+		// A tool's optional heading precedes its command. Classify the
+		// entire gutter block before allowing it to replace the prompt.
+		block := -1
+		for i < end && tr.inputPrefix.MatchString(lines[i]) {
+			line = strings.TrimRight(lines[i], " \t")
+			if opening && tr.echoTool != nil && tr.echoTool.MatchString(line) {
+				return candidate
+			}
+			if !tr.isEchoRow(line) {
+				opening = true
+			} else {
+				if block < 0 {
+					if !opening {
+						return candidate
+					}
+					block = i
+				}
+				opening = false
+			}
+			i++
+		}
+		if block >= 0 {
+			candidate = block
+		}
+		opening = false
+	}
+	return candidate
+}
+
+// isEchoRow reports whether line is a valid user echo for this tool.
+func (tr toolRules) isEchoRow(line string) bool {
+	line = strings.TrimRight(line, " \t")
+	loc := tr.userEcho.FindStringIndex(line)
+	if loc == nil {
+		return false
+	}
+	// A dialog draws its option rows behind the same marker the
+	// composer uses (codex's "› 1. Yes, continue"), so a line any
+	// status rule recognises is the tool's frame, not an echo.
+	if tr.matchesAnyRule(line) {
+		return false
+	}
+	echoed := strings.TrimSpace(line[loc[1]:])
+	if echoed == "" {
+		return false
+	}
+	if tr.placeholder != nil && tr.placeholder.MatchString(echoed) {
+		return false
+	}
+	return true
+}
+
+// echoedText returns the full echoed prompt starting at start, joining
+// contiguous wrapped echo rows.
+func (tr toolRules) echoedText(lines []string, start int) string {
+	var parts []string
+	for i := start; i < len(lines); i++ {
 		line := strings.TrimRight(lines[i], " \t")
 		loc := tr.userEcho.FindStringIndex(line)
 		if loc == nil {
-			continue
+			break
 		}
-		// A dialog draws its option rows behind the same marker the
-		// composer uses (codex's "› 1. Yes, continue"), so a line any
-		// status rule recognises is the tool's frame, not an echo.
 		if tr.matchesAnyRule(line) {
-			continue
+			break
 		}
 		echoed := strings.TrimSpace(line[loc[1]:])
-		if echoed == "" {
-			continue
+		if echoed == "" || (tr.placeholder != nil && tr.placeholder.MatchString(echoed)) {
+			break
 		}
-		if tr.placeholder != nil && tr.placeholder.MatchString(echoed) {
-			continue
-		}
-		return i
+		parts = append(parts, echoed)
 	}
-	return -1
+	return strings.Join(parts, " ")
 }
 
 func (tr toolRules) matchesAnyRule(line string) bool {

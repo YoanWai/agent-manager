@@ -1,0 +1,38 @@
+  ┃
+
+     ▣  Build · MiMo-V2.6-Flash Free · interrupted
+
+  ┃
+  ┃  Run only the shell command `sleep 12; echo FOURTH-594-DONE`, then reply with exactly: FOURTH-594-OK.
+  ┃
+
+     + Thought: 362ms
+
+  ┃
+  ┃  $ sleep 12; echo FOURTH-594-DONE
+  ┃
+  ┃  FOURTH-594-DONE
+  ┃
+
+     + Thought: 223ms
+
+     FOURTH-594-OK
+
+     ▣  Build · MiMo-V2.6-Flash Free · 22.2s
+
+  ┃
+  ┃  Reply with exactly: QUEUED-594-OK. Do not use tools.
+  ┃
+
+     + Thought: 229ms
+
+     QUEUED-594-OK
+
+     ▣  Build · MiMo-V2.6-Flash Free · 2.8s
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · MiMo-V2.6-Flash Free OpenCode Zen
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /workspace/project                                                                                                         14.4K (7%)  ctrl+p commands

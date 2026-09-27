@@ -1,0 +1,44 @@
+
+  ┃                                                                                                           New session - 2026-09-27T16:56:48.
+  ┃  Run the shell command \`sleep 2; echo second-done\` in the foreground and wait for it to finish,         056Z
+  ┃  then reply with one short sentence.
+  ┃                                                                                                           Context
+                                                                                                              0 tokens
+     ▣  Build · MiMo-V2.6-Flash Free                                                                          0% used
+                                                                                                              $0.00 spent
+
+                                                                                                              MCP
+                                                                                                              • agent-manager Connected
+
+                                                                                                              LSP
+                                                                                                              LSPs are disabled
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ┃
+  ┃
+  ┃                                                                                                           ~/private/tmp/work/wt-sidebar-fix-xy
+  ┃  Build · MiMo-V2.6-Flash Free Personal / OpenCode                                                         xx-594:main-abcd
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ■■■■■⬝⬝⬝  esc interrupt                                                     tab agents  ctrl+p commands    • OpenCode 1.18.32

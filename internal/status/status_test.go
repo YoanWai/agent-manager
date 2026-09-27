@@ -1,6 +1,8 @@
 package status
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -2103,5 +2105,281 @@ func TestMusePromptAndReply(t *testing.T) {
 	picker := "  Resume a previous session\n❯ just now    blush-polaris · hello\n  1 / 3 · 34%  enter resume  esc exit"
 	if got := engine.TypingHold("muse", picker); got != Waiting {
 		t.Fatalf("picker TypingHold = %q", got)
+	}
+}
+
+// TestOpencodeWidePaneSidebar verifies that opencode's right-hand session
+// panel is stripped before status rules or quotes see the pane, and that
+// the prompt line stays on the user's prompt during and after a foreground
+// shell command.
+func TestOpencodeWidePaneSidebar(t *testing.T) {
+	engine := defaultEngine(t)
+
+	load := func(name string) string {
+		t.Helper()
+		b, err := os.ReadFile(filepath.Join("testdata", name))
+		if err != nil {
+			t.Fatalf("read fixture %s: %v", name, err)
+		}
+		return string(b)
+	}
+
+	during := engine.Plain("opencode", load("opencode_wide_during.txt"))
+	after := engine.Plain("opencode", load("opencode_wide_after2.txt"))
+
+	prompt := "Run the shell command \\`sleep 2; echo second-done\\` in the foreground and wait for it to finish, then reply with one short sentence."
+
+	if got, _ := engine.Match("opencode", during); got != Working {
+		t.Fatalf("Match(during) = %q, want working", got)
+	}
+	if got, _ := engine.Match("opencode", after); got != Finished {
+		t.Fatalf("Match(after) = %q, want finished", got)
+	}
+
+	if got, ok := engine.LastUserEcho("opencode", during); !ok || got != prompt {
+		t.Fatalf("LastUserEcho(during) = %q ok=%v, want prompt", got, ok)
+	}
+	if got, ok := engine.LastUserEcho("opencode", after); !ok || got != prompt {
+		t.Fatalf("LastUserEcho(after) = %q ok=%v, want prompt", got, ok)
+	}
+
+	for _, label := range []string{"$0.00 spent", "LSPs are disabled", "Context", "20,616 tokens", "10% used"} {
+		if got, _, _ := engine.LastMessage("opencode", after); strings.Contains(got, label) {
+			t.Fatalf("LastMessage(after) contains sidebar %q: %q", label, got)
+		}
+	}
+
+	if got, _, _ := engine.LastMessage("opencode", after); got != "The command finished and printed second-done." {
+		t.Fatalf("LastMessage(after) = %q, want reply", got)
+	}
+
+	text, _, ok := engine.FullTurnText("opencode", after)
+	if !ok {
+		t.Fatal("FullTurnText(after) not ok")
+	}
+	if strings.Contains(text, "$0.00 spent") || strings.Contains(text, "LSPs are disabled") {
+		t.Fatalf("FullTurnText(after) contains sidebar: %q", text)
+	}
+	if strings.Contains(text, "$ sleep 2") || strings.Contains(text, "\nsecond-done") {
+		t.Fatalf("FullTurnText(after) contains shell command/output: %q", text)
+	}
+	if !strings.Contains(text, "The command finished and printed second-done.") {
+		t.Fatalf("FullTurnText(after) missing reply: %q", text)
+	}
+}
+
+// Captured under OpenCode 1.18.33 at 159x40, 159x16 and 100x20. The
+// sidebar includes onboarding content as well as the session statistics.
+func TestOpencodeCapturedTransitions(t *testing.T) {
+	engine := defaultEngine(t)
+	second := "Run the shell command `sleep 12; echo SECOND-594-DONE` in the foreground, wait for it to finish, then reply with one short sentence. Do not run any other commands."
+	fourth := "Run only the shell command `sleep 12; echo FOURTH-594-DONE`, then reply with exactly: FOURTH-594-OK."
+	queued := "Reply with exactly: QUEUED-594-OK. Do not use tools."
+	for _, tc := range []struct {
+		name, prompt, reply, state string
+	}{
+		{"second_submitted", second, "FIRST-594-OK", Working},
+		{"second_tool", second, "+ Thought: 136ms", Working},
+		{"second_finished", second, "The command completed and printed SECOND-594-DONE.", Finished},
+		{"interrupted", "Run only the shell command `sleep 30; echo INTERRUPT-594-DONE` in the foreground, then give a short reply.", "+ Thought: 301ms", Idle},
+		{"after_interrupted", fourth, "+ Thought: 362ms", Working},
+		{"queued", queued, "QUEUED-594-OK", Finished},
+		{"unicode", "Reply with exactly one line: 日本語 👩‍💻   café — UNICODE-594-OK. Do not use tools.", "日本語 👩‍💻   café — UNICODE-594-OK", Finished},
+		{"sidebar_hidden", queued, "QUEUED-594-OK", Finished},
+		{"narrow_short", queued, "QUEUED-594-OK", Finished},
+		// The opening gutter scrolled out; keep the known prompt rather
+		// than accepting an arbitrary tool row at the top of a capture.
+		{"wide_short", "", "QUEUED-594-OK", Finished},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("testdata", "opencode_"+tc.name+".txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			pane := engine.Plain("opencode", string(raw))
+			if got, ok := engine.LastUserEcho("opencode", pane); !ok || got != tc.prompt {
+				t.Fatalf("prompt = %q, %v; want %q", got, ok, tc.prompt)
+			}
+			if got, _, ok := engine.LastMessage("opencode", pane); !ok || got != tc.reply {
+				t.Fatalf("reply = %q, %v; want %q", got, ok, tc.reply)
+			}
+			if got, _ := engine.Match("opencode", pane); got != tc.state {
+				t.Fatalf("status = %q; want %q", got, tc.state)
+			}
+			text, _, _ := engine.FullTurnText("opencode", pane)
+			for _, sidebar := range []string{"Context", "tokens", "spent", "Getting started", "Claude, GPT", "LSPs are disabled"} {
+				if strings.Contains(text, sidebar) {
+					t.Errorf("transcript contains sidebar %q: %q", sidebar, text)
+				}
+			}
+		})
+	}
+}
+
+// OpenCode 1.18.33 rendered these imported sessions at 100x40 and 40x40.
+func TestOpencodeCapturedPromptBlocks(t *testing.T) {
+	engine := defaultEngine(t)
+	for _, tc := range []struct {
+		name, prompt, reply, transcript string
+	}{
+		{"shell_workdir", "Run the tests in the subdirectory.", "Tests passed.", "     Tests passed."},
+		{"wrapped_footer", "Current prompt", "Answer.", "     Answer."},
+		{"literal_square", "Explain these symbols.", "□ Unselected entry", "     Here are the symbols:\n\n     ▣ Selected entry\n\n     □ Unselected entry"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("testdata", "opencode_"+tc.name+".txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			pane := engine.Plain("opencode", string(raw))
+			rows, rawRows := strings.Split(pane, "\n"), strings.Split(string(raw), "\n")
+			if len(rows) != len(rawRows) {
+				t.Fatalf("normalization changed row count: %d, want %d", len(rows), len(rawRows))
+			}
+			for i, row := range rawRows {
+				if _, input := engine.InputPrefix("opencode", row); input && rows[i] != row {
+					t.Errorf("input row %d moved or changed: %q, want %q", i, rows[i], row)
+				}
+			}
+			if got, ok := engine.LastUserEcho("opencode", pane); !ok || got != tc.prompt {
+				t.Errorf("prompt = %q, %v; want %q", got, ok, tc.prompt)
+			}
+			if got, _, ok := engine.LastMessage("opencode", pane); !ok || got != tc.reply {
+				t.Errorf("reply = %q, %v; want %q", got, ok, tc.reply)
+			}
+			if got, bounded, ok := engine.FullTurnText("opencode", pane); !ok || !bounded || got != tc.transcript {
+				t.Errorf("transcript = %q, bounded=%v, ok=%v; want %q", got, bounded, ok, tc.transcript)
+			}
+			if got, _ := engine.Match("opencode", pane); got != Finished {
+				t.Errorf("status = %q; want finished", got)
+			}
+		})
+	}
+}
+
+func TestOpencodeShellBlockWithHeading(t *testing.T) {
+	engine := defaultEngine(t)
+	composer := "\n\n  ┃\n  ┃  Build · Test\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n"
+	prompt := "  ┃\n  ┃  Run tests\n  ┃\n\n"
+	for _, command := range []string{"$ go test ./...", "⠙ go test ./..."} {
+		tool := "  ┃\n  ┃  # Running in subdir\n  ┃\n  ┃  " + command + "\n  ┃\n  ┃  output\n  ┃\n\n     ▣  Build · Test"
+		for _, prefix := range []string{"", prompt} {
+			pane := engine.Plain("opencode", prefix+tool+composer)
+			want := ""
+			if prefix != "" {
+				want = "Run tests"
+			}
+			if got, _ := engine.LastUserEcho("opencode", pane); got != want {
+				t.Errorf("prompt with %q and prefix %q = %q; want %q", command, prefix, got, want)
+			}
+		}
+	}
+	pane := "  ┃\n  ┃  Explain this command:\n  ┃  $ go test ./...\n  ┃\n\n     ▣  Build · Test" + composer
+	if got, _ := engine.LastUserEcho("opencode", engine.Plain("opencode", pane)); got != "Explain this command: $ go test ./..." {
+		t.Errorf("prompt containing a command = %q", got)
+	}
+}
+
+func TestOpencodeWrappedPreviousFooter(t *testing.T) {
+	engine := defaultEngine(t)
+	composer := "\n\n  ┃\n  ┃  Build · Test\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n"
+	for _, footer := range []string{
+		"     ▣  Build · A long model\n     display name · 1s",
+		"     ▣  An agent whose name\n     wraps · Test · interrupted",
+	} {
+		pane := "     Earlier reply.\n\n" + footer + "\n\n  ┃\n  ┃  Current prompt\n  ┃\n\n     Current reply.\n\n     ▣  Build · Test · 1s" + composer
+		plain := engine.Plain("opencode", pane)
+		if got, _ := engine.LastUserEcho("opencode", plain); got != "Current prompt" {
+			t.Errorf("prompt after %q = %q", footer, got)
+		}
+		if got, _, _ := engine.FullTurnText("opencode", plain); got != "     Current reply." {
+			t.Errorf("transcript after %q = %q", footer, got)
+		}
+	}
+}
+
+func TestOpencodePromptBeforeAssistantOutput(t *testing.T) {
+	engine := defaultEngine(t)
+	composer := "\n\n  ┃\n  ┃  Build · Test\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n"
+	first := "  ┃\n  ┃  First prompt\n  ┃\n\n     First reply.\n     ▣  Build · Test · 1s\n\n"
+	second := "  ┃\n  ┃  Second prompt\n  ┃\n"
+	for _, ending := range []string{"", "\n     ▣  Build · Test", "\n     + Thought: 1ms\n\n  ┃\n  ┃  ⠙ sleep 2\n  ┃\n\n     ▣  Build · Test", "\n     Second reply.\n     ▣  Build · Test · 1s"} {
+		pane := engine.Plain("opencode", first+second+ending+composer)
+		if got, _ := engine.LastUserEcho("opencode", pane); got != "Second prompt" {
+			t.Fatalf("prompt before %q = %q", ending, got)
+		}
+	}
+	// Two submitted blocks before an assistant footer are distinct prompts.
+	pane := engine.Plain("opencode", first+second+"\n  ┃\n  ┃  Queued prompt\n  ┃\n\n     ▣  Build · Test"+composer)
+	if got, _ := engine.LastUserEcho("opencode", pane); got != "Queued prompt" {
+		t.Fatalf("queued prompt = %q", got)
+	}
+	for _, output := range []string{
+		"  ┃  output cropped at pane top\n  ┃",
+		"  ┃\n  ┃  $ sleep 2\n  ┃\n  ┃  shell output\n  ┃",
+		"  ┃\n  ┃  ⠙ sleep 2\n  ┃",
+		"     + Thought: 1ms\n\n  ┃\n  ┃  arbitrary tool content\n  ┃",
+	} {
+		pane := engine.Plain("opencode", output+"\n\n     ▣  Build · Test"+composer)
+		if got, _ := engine.LastUserEcho("opencode", pane); got != "" {
+			t.Errorf("scrolled output became prompt: %q", got)
+		}
+	}
+}
+
+func TestOpencodePanelGeometry(t *testing.T) {
+	engine := defaultEngine(t)
+	frame := func(body string, width int) string {
+		return body + "\n\n  ┃\n  ┃  Build · Test\n  ╹" + strings.Repeat("▀", width-3) + "\n   footer"
+	}
+	for _, body := range []string{
+		"     Reply\n" + strings.Repeat(" ", 40) + "code();\n" + strings.Repeat(" ", 40) + "more();\n" + strings.Repeat(" ", 40) + "done();",
+		"     Reply\n" + strings.Repeat(" ", 40) + "┌──┐\n" + strings.Repeat(" ", 40) + "│表│\n" + strings.Repeat(" ", 40) + "└──┘",
+		strings.Repeat(" ", 60) + "right aligned\n" + strings.Repeat(" ", 60) + "second row\n" + strings.Repeat(" ", 60) + "third row",
+		"     left     table column\n     next     another column\n     last     final column",
+	} {
+		pane := frame(body, 90)
+		if got := engine.Plain("opencode", pane); got != pane {
+			t.Fatalf("sidebar-free transcript changed:\n%s", got)
+		}
+	}
+	for _, width := range []int{70, 106, 115} {
+		// Every transcript row is occupied; panel labels and indentation
+		// vary, leaving no repeated candidate column to count.
+		left := []string{"  ┃", "  ┃  Explain 👩🏽‍💻 and 中文", "  ┃", "     👨‍👩‍👧‍👦 é 🇯🇵 reply", "     ▣  Build · Test · 1s"}
+		right := []string{"any title", "    nested row", "another section", "        second candidate", "custom content"}
+		withPanel := make([]string, len(left))
+		for i := range left {
+			withPanel[i] = left[i] + strings.Repeat(" ", width+4-ansi.StringWidth(left[i])) + right[i]
+		}
+		pane, want := frame(strings.Join(withPanel, "\n"), width), frame(strings.Join(left, "\n"), width)
+		for i := 0; i < 50; i++ {
+			if got := engine.Plain("opencode", pane); got != want {
+				t.Fatalf("width %d normalization differs:\n%s", width, got)
+			}
+		}
+		if got := engine.Plain("opencode", want); got != want {
+			t.Fatal("hiding sidebar changed transcript")
+		}
+		if got := engine.Plain("codex", pane); got != pane {
+			t.Fatal("panel parsing applied to another tool")
+		}
+	}
+	// A single sidebar row is enough when the frame supplies the boundary.
+	pane := frame("     Reply"+strings.Repeat(" ", 70)+"one panel row", 70)
+	if got := engine.Plain("opencode", pane); strings.Contains(got, "panel row") {
+		t.Fatal("short panel was not removed")
+	}
+	// No complete frame, or content crossing its boundary, is not proof.
+	for _, pane := range []string{
+		"     Reply" + strings.Repeat(" ", 70) + "one panel row",
+		frame("     "+strings.Repeat("x", 100), 70),
+		frame(strings.Repeat(" ", 69)+"中\n"+strings.Repeat(" ", 74)+"panel", 70),
+		frame(strings.Repeat(" ", 70)+"中\n"+strings.Repeat(" ", 74)+"panel", 70),
+		frame(strings.Repeat(" ", 69)+"👩🏽‍💻\n"+strings.Repeat(" ", 74)+"panel", 70),
+	} {
+		if got := engine.Plain("opencode", pane); got != pane {
+			t.Fatal("ambiguous geometry deleted content")
+		}
 	}
 }

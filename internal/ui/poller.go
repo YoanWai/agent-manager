@@ -165,8 +165,7 @@ func isManagerEcho(line string) bool {
 // anchor scrolled off it, the recovery is the tool's own transcript for
 // Claude Code (which repaints in place, so tmux holds no history for
 // it), and a deeper pane capture for everything else.
-func (p *poller) rowLines(sess store.Session, pane string) (quote, prompt string) {
-	clean := p.engine.Plain(sess.Tool, pane)
+func (p *poller) rowLines(sess store.Session, clean string) (quote, prompt string) {
 	quote, anchored, ok := p.engine.LastMessage(sess.Tool, clean)
 	if !ok {
 		quote = lastMeaningfulPaneLine(clean)
@@ -528,8 +527,9 @@ func (p *poller) refreshOnce() tea.Msg {
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
-				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(sess, pane)
-				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
+				clean := p.engine.Plain(sess.Tool, pane)
+				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(sess, clean)
+				derived, err := p.derivePaneStatus(sess, clean, agentAlive, paneHashes)
 				if err != nil {
 					return errMsg{err}
 				}
@@ -542,7 +542,7 @@ func (p *poller) refreshOnce() tea.Msg {
 					time.Since(sess.LaunchTime()) < startingGrace {
 					newStatus = status.Starting
 				}
-				sent, err := p.maybeSendPendingInputWhenReady(sess, pane, newStatus, agentAlive)
+				sent, err := p.maybeSendPendingInputWhenReady(sess, clean, newStatus, agentAlive)
 				if err != nil {
 					return errMsg{err}
 				}
@@ -562,7 +562,7 @@ func (p *poller) refreshOnce() tea.Msg {
 				// waits for the next capture rather than landing on a pane
 				// that is already starting a turn.
 				if !sent && len(sessions[i].PendingInputs) == 0 {
-					delivered, err = p.maybeDeliverInbox(sess, pane, derived, agentAlive)
+					delivered, err = p.maybeDeliverInbox(sess, clean, derived, agentAlive)
 					if err != nil {
 						return errMsg{err}
 					}
@@ -856,7 +856,7 @@ func (p *poller) maybeSendPendingInputWhenReady(sess store.Session, pane, derive
 // A durable claim makes automatic delivery at-most-once: after a process or
 // database failure, an ambiguous input is dropped and surfaced rather than
 // risking the same task or slash command running twice.
-func (p *poller) maybeSendPendingInput(sess store.Session, pane string, agentAlive bool) (bool, error) {
+func (p *poller) maybeSendPendingInput(sess store.Session, clean string, agentAlive bool) (bool, error) {
 	if len(sess.PendingInputs) == 0 {
 		return false, nil
 	}
@@ -874,7 +874,6 @@ func (p *poller) maybeSendPendingInput(sess store.Session, pane string, agentAli
 	if !agentAlive {
 		return false, nil
 	}
-	clean := ansi.Strip(pane)
 	if p.engine.TypingHold(sess.Tool, clean) != "" {
 		return false, nil
 	}
@@ -929,7 +928,7 @@ func (p *poller) typeForkKeys(sess store.Session, keys string) error {
 	if err != nil {
 		return err
 	}
-	clean := ansi.Strip(pane)
+	clean := p.engine.Plain(sess.Tool, pane)
 	if p.engine.TypingHold(sess.Tool, clean) != "" {
 		return fmt.Errorf("%s is waiting on a prompt; answer it before forking", sess.Name)
 	}
@@ -970,11 +969,10 @@ func inboxDeliverable(derived string) bool {
 // prompt does not, which is the difference TypingHold checks. What the
 // rules cannot see is a person: the paste ends in Enter, so a line someone
 // is part way through writing holds the queue for another poll.
-func (p *poller) maybeDeliverInbox(sess store.Session, pane, derived string, agentAlive bool) (bool, error) {
+func (p *poller) maybeDeliverInbox(sess store.Session, clean, derived string, agentAlive bool) (bool, error) {
 	if !agentAlive || !pendingDeliverable(derived) {
 		return false, nil
 	}
-	clean := ansi.Strip(pane)
 	if p.engine.TypingHold(sess.Tool, clean) != "" {
 		return false, nil
 	}
@@ -1261,8 +1259,8 @@ func (p *poller) reflowSessions(ids []string, reflow func()) {
 }
 
 // derivePaneStatus turns one captured pane into a session status. The
-// capture carries ANSI escapes for the preview; rules match against the
-// stripped text. Streaming output often renders without any spinner, so
+// caller prepares the capture with Engine.Plain and retains the raw ANSI
+// for the preview. Streaming output often renders without any spinner, so
 // when no rule matches but the content region above the input box changed
 // since the previous poll, the session counts as working. The reverse
 // transition closes marker-less turns: a session that was mid-turn whose
@@ -1277,8 +1275,7 @@ func (p *poller) reflowSessions(ids []string, reflow func()) {
 // A missing prior hash (first observation, or post-resize rebaseline)
 // never invents working and never collapses finished/waiting to the tool
 // default: the stored status holds until the next poll has a baseline.
-func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
-	text := ansi.Strip(pane)
+func (p *poller) derivePaneStatus(sess store.Session, text string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
 	region, hasRegion := p.engine.ActivityRegion(sess.Tool, text)
 	var regionHash uint64
 	if hasRegion {

@@ -617,7 +617,7 @@ func (r *runtime) heldReason(sessionID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if engine.TypingHold(target.Tool, ansi.Strip(pane)) != status.Waiting {
+	if engine.TypingHold(target.Tool, engine.Plain(target.Tool, pane)) != status.Waiting {
 		return "", nil
 	}
 	return fmt.Sprintf("session %s is sitting on a dialog, and nothing is typed into a session while one is on its screen; read that screen and answer it", sessionID), nil

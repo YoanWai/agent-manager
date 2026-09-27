@@ -1,0 +1,44 @@
+
+  ┃                                                                                                           New session - 2026-09-27T16:56:48.
+  ┃  Run the shell command \`sleep 2; echo second-done\` in the foreground and wait for it to finish,         056Z
+  ┃  then reply with one short sentence.
+  ┃                                                                                                           Context
+                                                                                                              20,616 tokens
+     + Thought: 121ms                                                                                         10% used
+                                                                                                              $0.00 spent
+  ┃
+  ┃  $ sleep 2; echo second-done                                                                              MCP
+  ┃                                                                                                           • agent-manager Connected
+  ┃  second-done
+  ┃                                                                                                           LSP
+                                                                                                              LSPs are disabled
+     + Thought: 818ms
+
+     The command finished and printed second-done.
+
+     ▣  Build · MiMo-V2.6-Flash Free · 21.8s
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ┃
+  ┃
+  ┃                                                                                                           ~/private/tmp/work/wt-sidebar-fix-xy
+  ┃  Build · MiMo-V2.6-Flash Free Personal / OpenCode                                                         xx-594:main-abcd
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /private/tmp/work/wt-sidebar-fix-594-abcdefghij                            20.6K (10%)  ctrl+p commands    • OpenCode 1.18.32

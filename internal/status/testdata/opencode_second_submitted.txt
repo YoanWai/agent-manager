@@ -1,0 +1,38 @@
+
+  ┃                                                                                                                    Conversation acknowledgment check
+  ┃  Reply with exactly: FIRST-594-OK. Do not use tools.
+  ┃                                                                                                                    Context
+                                                                                                                       14,009 tokens
+     + Thought: 63ms                                                                                                   7% used
+                                                                                                                       $0.00 spent
+     FIRST-594-OK
+                                                                                                                       MCP
+     ▣  Build · MiMo-V2.6-Flash Free · 2.9s                                                                            • agent-manager Connected
+
+  ┃                                                                                                                    LSP
+  ┃  Run the shell command `sleep 12; echo SECOND-594-DONE` in the foreground, wait for it to finish, then reply       LSPs are disabled
+  ┃  with one short sentence. Do not run any other commands.
+  ┃
+
+     ▣  Build · MiMo-V2.6-Flash Free
+
+
+
+
+
+
+                                                                                                                         ⬖ Getting started                ✕
+
+                                                                                                                           OpenCode includes free models
+                                                                                                                           so you can start immediately.
+
+                                                                                                                           Connect from 75+ providers to
+                                                                                                                           use other models, including
+                                                                                                                           Claude, GPT, Gemini etc
+
+  ┃                                                                                                                        Connect provider        /connect
+  ┃
+  ┃
+  ┃  Build · MiMo-V2.6-Flash Free OpenCode Zen                                                                         /workspace/project
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ⬝⬝⬝⬝⬝■■■  esc interrupt                                                              14.0K (7%)  ctrl+p commands    • OpenCode 1.18.33

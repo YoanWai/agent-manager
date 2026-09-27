@@ -1,0 +1,39 @@
+
+  ┃
+  ┃  Current prompt
+  ┃
+
+     Answer.
+
+     ▣  Build · A model with a
+     sufficiently long descriptive
+     display name · 1.0s
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Bui ·A model with a           R
+  ┃  ld   sufficiently long        e
+  ┃       descriptive display name v
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/am658-review/   2  ctrl+p
+   live/work               commands

@@ -1,0 +1,16 @@
+  ┃  Reply with exactly: QUEUED-594-OK. Do not use tools.
+  ┃                                                                                                                    Conversation acknowledgment check
+
+     + Thought: 229ms                                                                                                    ⬖ Getting started                ✕
+
+     QUEUED-594-OK                                                                                                         OpenCode includes free models
+                                                                                                                           so you can start immediately.
+     ▣  Build · MiMo-V2.6-Flash Free · 2.8s
+                                                                                                                           Connect from 75+ providers to
+  ┃                                                                                                                        use other models, including
+  ┃                                                                                                                        Claude, GPT, Gemini etc
+  ┃
+  ┃  Build · MiMo-V2.6-Flash Free OpenCode Zen                                                                             Connect provider        /connect
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /workspace/project                                                               14.4K (7%)  ctrl+p commands
+                                                                                                                       /workspace/project

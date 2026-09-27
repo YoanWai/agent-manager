@@ -1,0 +1,39 @@
+
+  ┃
+  ┃  Explain these symbols.
+  ┃
+
+     Here are the symbols:
+
+     ▣ Selected entry
+
+     □ Unselected entry
+
+     ▣  Build · Short model · 1.0s
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Short model Review provider
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/am658-review/live/work                                                  2  ctrl+p commands

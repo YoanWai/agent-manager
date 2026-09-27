@@ -1,0 +1,39 @@
+
+  ┃
+  ┃  Run the tests in the subdirectory.
+  ┃
+
+  ┃
+  ┃  # Running in subdir
+  ┃
+  ┃  $ go test ./...
+  ┃
+  ┃  PASS
+  ┃
+
+     Tests passed.
+
+     ▣  Build · Short model · 1.0s
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Short model Review provider
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /tmp/am658-review/live/work                                                  2  ctrl+p commands

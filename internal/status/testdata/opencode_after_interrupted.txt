@@ -1,0 +1,38 @@
+     ▣  Build · MiMo-V2.6-Flash Free · 22.8s
+                                                                                                                       Conversation acknowledgment check
+  ┃
+  ┃  Run only the shell command `sleep 30; echo INTERRUPT-594-DONE` in the foreground, then give a short reply.        Context
+  ┃                                                                                                                    14,150 tokens
+                                                                                                                       7% used
+     + Thought: 301ms                                                                                                  $0.00 spent
+
+  ┃                                                                                                                    MCP
+  ┃  $ sleep 30; echo INTERRUPT-594-DONE                                                                               • agent-manager Connected
+  ┃
+  ┃  (no output)                                                                                                       LSP
+  ┃                                                                                                                    LSPs are disabled
+  ┃  <shell_metadata>
+  ┃  User aborted the command
+  ┃  </shell_metadata>
+  ┃
+
+     ▣  Build · MiMo-V2.6-Flash Free · interrupted
+
+  ┃
+  ┃  Run only the shell command `sleep 12; echo FOURTH-594-DONE`, then reply with exactly: FOURTH-594-OK.
+  ┃
+                                                                                                                         ⬖ Getting started                ✕
+     + Thought: 362ms
+                                                                                                                           OpenCode includes free models
+  ┃                                                                                                                        so you can start immediately.
+  ┃  ⠙ sleep 12; echo FOURTH-594-DONE
+  ┃                                                                                                                        Connect from 75+ providers to
+                                                                                                                           use other models, including
+     ▣  Build · MiMo-V2.6-Flash Free                                                                                       Claude, GPT, Gemini etc
+
+  ┃                                                                                                                        Connect provider        /connect
+  ┃
+  ┃
+  ┃  Build · MiMo-V2.6-Flash Free OpenCode Zen                                                                         /workspace/project
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ■■■⬝⬝⬝⬝⬝  esc interrupt                                                              14.2K (7%)  ctrl+p commands    • OpenCode 1.18.33

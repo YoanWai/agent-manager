@@ -444,7 +444,7 @@ func writeHookStatus(t *testing.T, m *Model, id, state string) {
 
 func deriveStatus(t *testing.T, m *Model, sess store.Session, pane string, agentAlive bool) string {
 	t.Helper()
-	got, err := m.poller.derivePaneStatus(sess, pane, agentAlive, map[string]uint64{})
+	got, err := m.poller.derivePaneStatus(sess, m.poller.engine.Plain(sess.Tool, pane), agentAlive, map[string]uint64{})
 	if err != nil {
 		t.Fatalf("derivePaneStatus: %v", err)
 	}
@@ -2006,5 +2006,36 @@ func TestLastMeaningfulPaneLineSkipsChrome(t *testing.T) {
 	}
 	if got := lastMeaningfulPaneLine("\n╭──╮\n│  │\n╰──╯\n"); got != "" {
 		t.Fatalf("a pane of borders should yield nothing, got %q", got)
+	}
+}
+
+func TestOpencodeSidebarDoesNotChangeActivity(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	raw, err := os.ReadFile(filepath.Join("..", "status", "testdata", "opencode_second_finished.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := store.Session{ID: "sidebar-hash", Tool: "opencode", Status: status.Finished}
+	var previous uint64
+	for i, pane := range []string{
+		string(raw),
+		strings.ReplaceAll(string(raw), "14,150 tokens", "99,999 tokens"),
+		strings.ReplaceAll(string(raw), "LSPs are disabled", "error: server failed"),
+	} {
+		clean := m.poller.engine.Plain(sess.Tool, pane)
+		hashes := map[string]uint64{}
+		got, err := m.poller.derivePaneStatus(sess, clean, true, hashes)
+		if err != nil || got != status.Finished {
+			t.Fatalf("sidebar changed status to %q: %v", got, err)
+		}
+		if i > 0 && hashes[sess.ID] != previous {
+			t.Fatal("sidebar update changed the activity hash")
+		}
+		previous = hashes[sess.ID]
+		quote, prompt := m.poller.rowLines(sess, clean)
+		if quote != "The command completed and printed SECOND-594-DONE." || !strings.HasPrefix(prompt, "Run the shell command `sleep 12;") {
+			t.Fatalf("row = %q / %q", quote, prompt)
+		}
 	}
 }
