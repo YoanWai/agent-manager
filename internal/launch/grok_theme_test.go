@@ -48,6 +48,11 @@ func TestEnsureGrokTerminalThemeFile(t *testing.T) {
 			want: "[ui]\ntheme = \"terminal\"\n\n[features]\nterminal_theme = true\n",
 		},
 		{
+			name: "a quoted table name is the same table",
+			in:   "[\"ui\"]\ntheme = \"groknight\"\n\n['features']\nterminal_theme = false\n",
+			want: "[\"ui\"]\ntheme = \"terminal\"\n\n['features']\nterminal_theme = true\n",
+		},
+		{
 			name: "leaves a finished file alone",
 			in:   "[ui]\ntheme = \"terminal\"\n\n[features]\nterminal_theme = true\n",
 			want: "[ui]\ntheme = \"terminal\"\n\n[features]\nterminal_theme = true\n",

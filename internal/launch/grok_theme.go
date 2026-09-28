@@ -83,7 +83,8 @@ func tomlSection(line string) (string, bool) {
 	if !strings.HasPrefix(trim, "[") || !strings.HasSuffix(trim, "]") {
 		return "", false
 	}
-	return strings.TrimSpace(strings.Trim(trim, "[]")), true
+	name := strings.TrimSpace(strings.Trim(trim, "[]"))
+	return strings.Trim(name, `"'`), true
 }
 
 func tomlKey(line, key string) bool {
