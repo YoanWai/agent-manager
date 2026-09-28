@@ -1,10 +1,15 @@
 package launch
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 )
 
 func ensureGrokTerminalTheme() error {
@@ -29,10 +34,40 @@ func ensureGrokTerminalThemeFile(path string) error {
 	if updated == string(data) {
 		return nil
 	}
+	if err := checkOnlyThemeChanged(string(data), updated); err != nil {
+		return fmt.Errorf(`cannot set Grok's terminal theme in %s, set theme = "terminal" under [ui] and terminal_theme = true under [features] by hand: %w`, path, err)
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(path, []byte(updated), 0o644)
+}
+
+// setTomlKey edits lines, so the result must decode to the old config plus the two keys and nothing else.
+func checkOnlyThemeChanged(before, after string) error {
+	want := map[string]any{}
+	if _, err := toml.Decode(before, &want); err != nil {
+		return err
+	}
+	got := map[string]any{}
+	if _, err := toml.Decode(after, &got); err != nil {
+		return err
+	}
+	setTomlValue(want, "ui", "theme", "terminal")
+	setTomlValue(want, "features", "terminal_theme", true)
+	if !reflect.DeepEqual(want, got) {
+		return errors.New("the file declares them in a form this edit would change")
+	}
+	return nil
+}
+
+func setTomlValue(doc map[string]any, table, key string, value any) {
+	section, ok := doc[table].(map[string]any)
+	if !ok {
+		section = map[string]any{}
+		doc[table] = section
+	}
+	section[key] = value
 }
 
 func setTomlKey(text, section, key, value string) string {

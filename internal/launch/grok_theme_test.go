@@ -83,3 +83,29 @@ func TestEnsureGrokTerminalThemeFile(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureGrokTerminalThemeFileRefusesAnEditItCannotMake(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"dotted keys":      "ui.theme = \"groknight\"\n",
+		"multiline string": "[agent]\nnotes = \"\"\"\n[ui]\ntheme = \"keep\"\n\"\"\"\n\n[ui]\ntheme = \"groknight\"\n",
+	}
+	for name, in := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte(in), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := ensureGrokTerminalThemeFile(path); err == nil {
+				t.Fatal("want an error for a config the edit cannot express")
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != in {
+				t.Fatalf("config changed to\n%s", got)
+			}
+		})
+	}
+}
