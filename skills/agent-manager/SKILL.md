@@ -56,11 +56,11 @@ prebuilt binary from the releases page.
 ## Status colours
 
 A row is coloured `working`, `waiting`, `finished`, `idle` or `errored`. Claude Code reports
-through hook events; every other CLI is read from its pane with regexes. Eight CLIs ship with
-working profiles: Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Pi, Command Code and
-Hermes Agent. Every profile ships in the binary, so an upgrade brings the current rules for
-all of them. A CLI outside that list is a feature request, and the `CLIs` row in Settings ends
-with `request CLI support`, which opens one prefilled.
+through hook events; every other CLI is read from its pane with regexes. Nine CLIs ship with
+working profiles: Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Pi, Command Code,
+Hermes Agent and Muse Code. Every profile ships in the binary, so an upgrade brings the
+current rules for all of them. A CLI outside that list is a feature request, and the `CLIs`
+row in Settings ends with `request CLI support`, which opens one prefilled.
 
 ## Driving it from inside an agent
 

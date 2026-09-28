@@ -32,7 +32,7 @@ changelog:
 
 release:
   header: |
-    Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, Grok, Gemini CLI, and Pi run side by side, each in its own tmux session, with live status, a project tree, quick prompts, and full-file diff review. Runs on macOS and Linux, and on Windows inside WSL2. [See it running](https://github.com/YoanWai/agent-manager#agent-manager).
+    Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, Grok Build, Gemini CLI, Pi, Command Code, Hermes Agent, and Muse Code run side by side, each in its own tmux session, with live status, a project tree, quick prompts, and full-file diff review. Runs on macOS and Linux, and on Windows inside WSL2. [See it running](https://github.com/YoanWai/agent-manager#agent-manager).
 
   footer: |
     ## Install
@@ -58,8 +58,8 @@ homebrew_casks:
   - repository:
       owner: YoanWai
       name: homebrew-tap
-    homepage: https://github.com/YoanWai/agent-manager
-    description: Terminal UI to manage AI coding-agent tmux sessions
+    homepage: https://agent-manager.dev/
+    description: Run Claude Code, Codex, OpenCode and other AI coding agents in tmux
     license: Apache-2.0
     binaries:
       - agent-manager
@@ -80,8 +80,8 @@ homebrew_casks:
 # still succeeds.
 aurs:
   - name: agent-manager-bin
-    homepage: https://github.com/YoanWai/agent-manager
-    description: Terminal UI to manage AI coding-agent tmux sessions
+    homepage: https://agent-manager.dev/
+    description: Run Claude Code, Codex, OpenCode and other AI coding agents in tmux
     license: Apache-2.0
     maintainers:
       - Yoan Wai <106609173+YoanWai@users.noreply.github.com>
