@@ -457,11 +457,11 @@ busy_footer = "(?m)^\\s*[■⬝]+ "
 rules = [
   { state = "errored", pattern = "(?i)requires more credits" },
   { state = "errored", pattern = "(?im)^\\s*error\\b" },
-  # permission and question overlays replace the composer. Permission
-  # stages keep a warning triangle; question footers keep a selector and esc.
+  # dialog signals sit at the pane tail with only gutter rows below them;
+  # requiring that tail keeps quoted prompts and command output from matching.
   # Perm is the title prefix left before narrow panes wrap Permission mid-word.
-  { state = "waiting", pattern = "(?m)^[ \\t]*┃[ \\t]+△[ \\t]*(?:Perm|Always|Reject)" },
-  { state = "waiting", pattern = "(?m)^[ \\t]*┃[^\\n]*(?:⇆|↑↓)[^\\n]*\\besc\\b" },
+  { state = "waiting", pattern = "(?m)^[ \\t]*┃[ \\t]+△[ \\t]*(?:Perm|Always|Reject)[^\\n]*(?:\\n[ \\t]*┃[^\\n]*)*(?:\\n[ \\t]*)*\\z" },
+  { state = "waiting", pattern = "(?m)^[ \\t]*┃[^\\n]*(?:⇆|↑↓)[^\\n]*\\besc\\b[^\\n]*(?:\\n[ \\t]*┃[^\\n]*)*(?:\\n[ \\t]*)*\\z" },
   # spinner row while running: "▣  Build · GLM-5.2" (a finished turn
   # gains a duration: "▣  Build · GLM-5.2 · 22.0s")
   { state = "working", pattern = "(?m)^\\s*▣ +[^·\\n]+· [^·\\n]+$" },

@@ -365,6 +365,38 @@ func TestOpenCodeDialogRulesDoNotReadOldTranscript(t *testing.T) {
 	}
 }
 
+func TestOpenCodeDialogRulesDoNotReadWorkingToolOutput(t *testing.T) {
+	engine := defaultEngine(t)
+	cases := []struct {
+		name   string
+		output string
+	}{
+		{"permission title", "  ┃  2:\"  ┃  △ Permission required\\n\" +\n"},
+		{"question footer", "  ┃  1:\"  ┃  ↑↓ select  enter submit  esc dismiss\\n\" +\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pane := "  ┃  ⠼ grep dialog text\n" +
+				tc.output +
+				"  ┃\n\n" +
+				"     ▣  Build · Big Pickle\n\n" +
+				"  ┃\n" +
+				"  ┃  Build auto · Big Pickle OpenCode Zen\n" +
+				"  ╹▀▀▀▀\n" +
+				"   ⬝⬝⬝⬝■■■■  esc interrupt"
+			if got, matched := engine.Match("opencode", pane); got != Working || !matched {
+				t.Fatalf("Match() = (%q, %t) want (%q, true)", got, matched, Working)
+			}
+			if got, matched := engine.RuleMatch("opencode", pane); got != Working || !matched {
+				t.Fatalf("RuleMatch() = (%q, %t) want (%q, true)", got, matched, Working)
+			}
+			if hold := engine.TypingHold("opencode", pane); hold != Working {
+				t.Fatalf("TypingHold() = %q want %q", hold, Working)
+			}
+		})
+	}
+}
+
 func TestOpenCodeDialogsClassifyAsWaiting(t *testing.T) {
 	engine := defaultEngine(t)
 	cases := []struct {
