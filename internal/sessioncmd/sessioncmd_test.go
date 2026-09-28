@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -66,6 +67,285 @@ func reviewCommentInASecondRepo(t *testing.T, configDir string) {
 	}
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type testGitRepo struct {
+	root    string
+	baseRef string
+}
+
+func isolateGitEnvironment(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"GIT_DIR",
+		"GIT_WORK_TREE",
+		"GIT_COMMON_DIR",
+		"GIT_OBJECT_DIRECTORY",
+		"GIT_INDEX_FILE",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	} {
+		value, present := os.LookupEnv(key)
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("unset %s: %v", key, err)
+		}
+		t.Cleanup(func() {
+			if present {
+				if err := os.Setenv(key, value); err != nil {
+					t.Errorf("restore %s: %v", key, err)
+				}
+				return
+			}
+			if err := os.Unsetenv(key); err != nil {
+				t.Errorf("restore %s: %v", key, err)
+			}
+		})
+	}
+}
+
+func newTestGitRepo(t *testing.T, dir string) testGitRepo {
+	t.Helper()
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), "git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	for _, args := range [][]string{
+		{"init"},
+		{"config", "user.email", "test@test"},
+		{"config", "user.name", "test"},
+		{"commit", "--allow-empty", "--no-gpg-sign", "-m", "initial commit"},
+		{"branch", "test-base"},
+	} {
+		run(args...)
+	}
+	return testGitRepo{
+		root:    run("rev-parse", "--show-toplevel"),
+		baseRef: "test-base",
+	}
+}
+
+func TestReviewRepo(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := newTestGitRepo(t, t.TempDir())
+	nested := filepath.Join(repo.root, "nested")
+	if err := os.Mkdir(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	umbrella := t.TempDir()
+	nestedRepoDir := filepath.Join(umbrella, "repo")
+	if err := os.Mkdir(nestedRepoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	newTestGitRepo(t, nestedRepoDir)
+
+	for _, tc := range []struct {
+		name    string
+		session string
+		target  string
+		wantMsg string
+		wantErr string
+	}{
+		{name: "nested directory", session: "abc123", target: " " + nested + " ", wantMsg: "review repo set to " + repo.root},
+		{name: "blank path", session: "abc123", target: "  ", wantErr: "path is empty"},
+		{name: "invalid session", session: "not-a-session", target: repo.root, wantErr: "invalid session id"},
+		{name: "outside a repo", session: "abc123", target: outside, wantErr: "is not inside a git repository"},
+		{name: "umbrella is not a repo", session: "abc123", target: umbrella, wantErr: "is not inside a git repository"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configDir := t.TempDir()
+			got, err := ReviewRepo(configDir, tc.session, tc.target)
+			path := hooks.NewManager(configDir).ReviewRepoFile(tc.session)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error = %v, want one containing %q", err, tc.wantErr)
+				}
+				if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("failed request wrote a mailbox: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.wantMsg {
+				t.Fatalf("message = %q, want %q", got, tc.wantMsg)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != repo.root {
+				t.Fatalf("mailbox = %q, want %q", data, repo.root)
+			}
+		})
+	}
+}
+
+func TestReviewBase(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := newTestGitRepo(t, t.TempDir())
+	subdir := filepath.Join(repo.root, "nested")
+	if err := os.Mkdir(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	nonRepo := t.TempDir()
+
+	for _, tc := range []struct {
+		name        string
+		session     string
+		cwd         string
+		ref         string
+		wantMsg     string
+		wantMailbox string
+		wantErr     string
+	}{
+		{
+			name:        "branch from a nested directory",
+			session:     "abc123",
+			cwd:         subdir,
+			ref:         repo.baseRef,
+			wantMsg:     "review base set to test-base",
+			wantMailbox: repo.root + "\n" + repo.baseRef + "\n",
+		},
+		{
+			name:        "trim ref",
+			session:     "abc123",
+			cwd:         repo.root,
+			ref:         " " + repo.baseRef + " ",
+			wantMsg:     "review base set to test-base",
+			wantMailbox: repo.root + "\n" + repo.baseRef + "\n",
+		},
+		{
+			name:        "clear",
+			session:     "abc123",
+			cwd:         repo.root,
+			ref:         "  ",
+			wantMsg:     "review base cleared for " + repo.root,
+			wantMailbox: repo.root + "\n\n",
+		},
+		{name: "invalid session", session: "not-a-session", cwd: repo.root, ref: repo.baseRef, wantErr: "invalid session id"},
+		{name: "outside a repo", session: "abc123", cwd: nonRepo, ref: repo.baseRef, wantErr: "not inside a git repository"},
+		{name: "unknown ref", session: "abc123", cwd: repo.root, ref: "missing-ref", wantErr: `ref "missing-ref" does not resolve to a commit`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configDir := t.TempDir()
+			got, err := ReviewBase(configDir, tc.session, tc.cwd, tc.ref)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error = %v, want one containing %q", err, tc.wantErr)
+				}
+				if _, err := os.Stat(hooks.NewManager(configDir).ReviewBaseFile(tc.session)); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("failed request wrote a mailbox: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.wantMsg {
+				t.Fatalf("message = %q, want %q", got, tc.wantMsg)
+			}
+			path := hooks.NewManager(configDir).ReviewBaseFile(tc.session)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != tc.wantMailbox {
+				t.Fatalf("mailbox = %q, want %q", data, tc.wantMailbox)
+			}
+		})
+	}
+}
+
+func TestReviewScope(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		session   string
+		scope     string
+		wantScope string
+		wantErr   string
+	}{
+		{name: "uncommitted", session: "abc123", scope: "uncommitted", wantScope: "uncommitted"},
+		{name: "branch trimmed", session: "abc123", scope: " branch ", wantScope: "branch"},
+		{name: "last commit", session: "abc123", scope: "last_commit", wantScope: "last_commit"},
+		{name: "staged", session: "abc123", scope: "staged", wantScope: "staged"},
+		{name: "unknown", session: "abc123", scope: "workspace", wantErr: "unknown scope"},
+		{name: "invalid session", session: "not-a-session", scope: "branch", wantErr: "invalid session id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configDir := t.TempDir()
+			got, err := ReviewScope(configDir, tc.session, tc.scope)
+			path := hooks.NewManager(configDir).ReviewScopeFile(tc.session)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error = %v, want one containing %q", err, tc.wantErr)
+				}
+				if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("failed request wrote a mailbox: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantMsg := "review scope set to " + tc.wantScope
+			if got != wantMsg {
+				t.Fatalf("message = %q, want %q", got, wantMsg)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != tc.wantScope {
+				t.Fatalf("mailbox = %q, want %q", data, tc.wantScope)
+			}
+		})
+	}
+}
+
+func TestPathWithin(t *testing.T) {
+	container := t.TempDir()
+	root := filepath.Join(container, "root")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(root, "child")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sibling := root + "-other"
+	if err := os.Mkdir(sibling, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(container, "root-link")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		path string
+		root string
+		want bool
+	}{
+		{name: "root", path: root, root: root, want: true},
+		{name: "child", path: child, root: root, want: true},
+		{name: "symlinked root", path: filepath.Join(alias, "child"), root: root, want: true},
+		{name: "sibling", path: sibling, root: root, want: false},
+		{name: "shared prefix", path: filepath.Join(root+"-suffix", "child"), root: root, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pathWithin(tc.path, tc.root); got != tc.want {
+				t.Fatalf("pathWithin(%q, %q) = %t, want %t", tc.path, tc.root, got, tc.want)
+			}
+		})
 	}
 }
 
