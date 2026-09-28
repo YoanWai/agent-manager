@@ -78,7 +78,8 @@ func setTomlKey(text, section, key, value string) string {
 }
 
 func tomlSection(line string) (string, bool) {
-	trim := strings.TrimSpace(line)
+	header, _, _ := strings.Cut(line, "#")
+	trim := strings.TrimSpace(header)
 	if !strings.HasPrefix(trim, "[") || !strings.HasSuffix(trim, "]") {
 		return "", false
 	}
@@ -86,6 +87,11 @@ func tomlSection(line string) (string, bool) {
 }
 
 func tomlKey(line, key string) bool {
-	rest, found := strings.CutPrefix(strings.TrimSpace(line), key)
-	return found && strings.HasPrefix(strings.TrimSpace(rest), "=")
+	trim := strings.TrimSpace(line)
+	for _, spelling := range []string{key, `"` + key + `"`, "'" + key + "'"} {
+		if rest, found := strings.CutPrefix(trim, spelling); found && strings.HasPrefix(strings.TrimSpace(rest), "=") {
+			return true
+		}
+	}
+	return false
 }

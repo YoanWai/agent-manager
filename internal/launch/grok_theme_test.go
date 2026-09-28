@@ -38,6 +38,16 @@ func TestEnsureGrokTerminalThemeFile(t *testing.T) {
 			want: "[features]\ntelemetry = false\nterminal_theme = true\n\n[[marketplace.sources]]\nname = \"official\"\n\n[ui]\ntheme = \"terminal\"\n",
 		},
 		{
+			name: "a header comment keeps its table",
+			in:   "[ui] # appearance\ntheme = \"groknight\"\n\n[features]\nterminal_theme = true\n",
+			want: "[ui] # appearance\ntheme = \"terminal\"\n\n[features]\nterminal_theme = true\n",
+		},
+		{
+			name: "a quoted key is the same key",
+			in:   "[ui]\n\"theme\" = \"groknight\"\n\n[features]\n'terminal_theme' = false\n",
+			want: "[ui]\ntheme = \"terminal\"\n\n[features]\nterminal_theme = true\n",
+		},
+		{
 			name: "leaves a finished file alone",
 			in:   "[ui]\ntheme = \"terminal\"\n\n[features]\nterminal_theme = true\n",
 			want: "[ui]\ntheme = \"terminal\"\n\n[features]\nterminal_theme = true\n",
