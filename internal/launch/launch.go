@@ -176,7 +176,7 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 		return "", nil, err
 	}
 	env := map[string]string{hooks.EnvSessionID: id}
-	// Grok only accepts the terminal theme from its config file. That theme leaves the terminal background unpainted.
+	// Grok's terminal theme leaves row backgrounds unpainted, and only its config file selects it.
 	if toolName == "grok" {
 		if err := ensureGrokTerminalTheme(); err != nil {
 			return "", nil, err

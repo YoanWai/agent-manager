@@ -10,6 +10,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/mcpreg"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
@@ -230,21 +231,6 @@ func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 		t.Fatalf("a tool with no MCP style should launch untouched, got %q", command)
 	}
 
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	grok := config.Tool{Command: "cat"}
-	_, env, err = Environment(manager, "grok", grok, grok.Command, "abcd1234")
-	if err != nil {
-		t.Fatalf("Environment grok: %v", err)
-	}
-	written, err := os.ReadFile(filepath.Join(home, ".grok", "config.toml"))
-	if err != nil {
-		t.Fatalf("grok config: %v", err)
-	}
-	if !strings.Contains(string(written), "theme = \"terminal\"") || !strings.Contains(string(written), "terminal_theme = true") {
-		t.Fatalf("grok config = %q", written)
-	}
-
 	hooked := config.Tool{Command: "cat", StatusSource: hooks.StatusSourceClaude, MCP: "claude"}
 	command, env, err = Environment(manager, "hooked", hooked, hooked.Command, "abcd1234")
 	if err != nil {
@@ -255,6 +241,32 @@ func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 	}
 	if !strings.Contains(command, "--mcp-config '") || !strings.Contains(command, "--settings '") {
 		t.Fatalf("hooked command = %q", command)
+	}
+}
+
+func TestEnvironmentSetsGrokTerminalTheme(t *testing.T) {
+	for _, source := range []string{"HOME", "GROK_HOME"} {
+		t.Run(source, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("GROK_HOME", "")
+			dir := filepath.Join(home, ".grok")
+			if source == "GROK_HOME" {
+				dir = t.TempDir()
+				t.Setenv("GROK_HOME", dir)
+			}
+			grok := config.Tool{Command: "cat", MCP: mcpreg.StyleNone}
+			if _, _, err := Environment(hooks.NewManager(t.TempDir()), "grok", grok, grok.Command, "abcd1234"); err != nil {
+				t.Fatalf("Environment grok: %v", err)
+			}
+			written, err := os.ReadFile(filepath.Join(dir, "config.toml"))
+			if err != nil {
+				t.Fatalf("grok config: %v", err)
+			}
+			if !strings.Contains(string(written), "theme = \"terminal\"") || !strings.Contains(string(written), "terminal_theme = true") {
+				t.Fatalf("grok config = %q", written)
+			}
+		})
 	}
 }
 

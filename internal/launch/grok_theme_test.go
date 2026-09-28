@@ -33,6 +33,11 @@ func TestEnsureGrokTerminalThemeFile(t *testing.T) {
 			want: "[ui]\nscreen_mode = \"fullscreen\"\ntheme = \"terminal\"\n\n[ui.display_refresh]\nauto_cadence_enabled = true\n\n[features]\ntelemetry = false\nterminal_theme = true\n",
 		},
 		{
+			name: "an array table ends the section above it",
+			in:   "[features]\ntelemetry = false\n\n[[marketplace.sources]]\nname = \"official\"\n",
+			want: "[features]\ntelemetry = false\nterminal_theme = true\n\n[[marketplace.sources]]\nname = \"official\"\n\n[ui]\ntheme = \"terminal\"\n",
+		},
+		{
 			name: "leaves a finished file alone",
 			in:   "[ui]\ntheme = \"terminal\"\n\n[features]\nterminal_theme = true\n",
 			want: "[ui]\ntheme = \"terminal\"\n\n[features]\nterminal_theme = true\n",

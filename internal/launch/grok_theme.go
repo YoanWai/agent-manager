@@ -3,39 +3,43 @@ package launch
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
 func ensureGrokTerminalTheme() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
+	dir := os.Getenv("GROK_HOME")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		dir = filepath.Join(home, ".grok")
 	}
-	return ensureGrokTerminalThemeFile(filepath.Join(home, ".grok", "config.toml"))
+	return ensureGrokTerminalThemeFile(filepath.Join(dir, "config.toml"))
 }
 
 func ensureGrokTerminalThemeFile(path string) error {
 	data, err := os.ReadFile(path)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return err
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return err
-		}
-		body := "[ui]\ntheme = \"terminal\"\n\n[features]\nterminal_theme = true\n"
-		return os.WriteFile(path, []byte(body), 0o644)
+	if err != nil && !os.IsNotExist(err) {
+		return err
 	}
 	updated := setTomlKey(string(data), "ui", "theme", `"terminal"`)
 	updated = setTomlKey(updated, "features", "terminal_theme", "true")
 	if updated == string(data) {
 		return nil
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 	return os.WriteFile(path, []byte(updated), 0o644)
 }
 
 func setTomlKey(text, section, key, value string) string {
-	lines := strings.Split(text, "\n")
+	var lines []string
+	if text != "" {
+		lines = strings.Split(text, "\n")
+	}
 	var out []string
 	current := ""
 	seen := false
@@ -48,9 +52,7 @@ func setTomlKey(text, section, key, value string) string {
 		for at > 0 && out[at-1] == "" {
 			at--
 		}
-		out = append(out, "")
-		copy(out[at+1:], out[at:])
-		out[at] = key + " = " + value
+		out = slices.Insert(out, at, key+" = "+value)
 		wrote = true
 	}
 	for _, line := range lines {
@@ -77,21 +79,13 @@ func setTomlKey(text, section, key, value string) string {
 
 func tomlSection(line string) (string, bool) {
 	trim := strings.TrimSpace(line)
-	if !strings.HasPrefix(trim, "[") || !strings.HasSuffix(trim, "]") || strings.HasPrefix(trim, "[[") {
+	if !strings.HasPrefix(trim, "[") || !strings.HasSuffix(trim, "]") {
 		return "", false
 	}
-	name := strings.TrimSpace(trim[1 : len(trim)-1])
-	if name == "" || strings.Contains(name, "[") {
-		return "", false
-	}
-	return name, true
+	return strings.TrimSpace(strings.Trim(trim, "[]")), true
 }
 
 func tomlKey(line, key string) bool {
-	trim := strings.TrimSpace(line)
-	if strings.HasPrefix(trim, "#") || !strings.HasPrefix(trim, key) {
-		return false
-	}
-	rest := strings.TrimSpace(trim[len(key):])
-	return strings.HasPrefix(rest, "=")
+	rest, found := strings.CutPrefix(strings.TrimSpace(line), key)
+	return found && strings.HasPrefix(strings.TrimSpace(rest), "=")
 }
