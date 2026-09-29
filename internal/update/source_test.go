@@ -97,6 +97,12 @@ func TestDetectManager(t *testing.T) {
 			wantAdvice:  true,
 		},
 		{
+			label:      "nix store is updated through nix",
+			path:       "/nix/store/0c1s7yb9hv2y1wkgvyd4jp3spdcyv0b0-agent-manager-0.39.0/bin/agent-manager",
+			wantName:   "Nix",
+			wantAdvice: true,
+		},
+		{
 			label: "another ubi tool is direct",
 			path:  "/home/user/.local/share/mise/installs/ubi-other-user-agent-manager/1.0.0/agent-manager",
 		},
