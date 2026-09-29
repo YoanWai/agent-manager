@@ -2,20 +2,81 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"flag"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
+
+// prepareMainProcess recognizes tests re-executed by mainTestCommand and
+// replaces test flags with the agent-manager arguments following "--".
+func prepareMainProcess() bool {
+	if os.Getenv("AGENT_MANAGER_MAIN_TEST") != "1" {
+		return false
+	}
+	for i, arg := range os.Args {
+		if arg == "--" {
+			os.Args = append([]string{"agent-manager"}, os.Args[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+func mainTestCommand(t *testing.T, args ...string) *exec.Cmd {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	t.Cleanup(cancel)
+	commandArgs := []string{"-test.run=^" + t.Name() + "$"}
+	if coverDir := testCoverDir(); coverDir != "" {
+		commandArgs = append(commandArgs, "-test.gocoverdir="+coverDir)
+	}
+	commandArgs = append(commandArgs, "--")
+	commandArgs = append(commandArgs, args...)
+	cmd := exec.CommandContext(ctx, os.Args[0], commandArgs...)
+	cmd.Env = append(os.Environ(), "AGENT_MANAGER_MAIN_TEST=1")
+	cmd.WaitDelay = time.Second
+	return cmd
+}
+
+func replaceEnv(env []string, values ...string) []string {
+	replacements := make(map[string]string, len(values)/2)
+	for i := 0; i < len(values); i += 2 {
+		replacements[values[i]] = values[i+1]
+	}
+	result := make([]string, 0, len(env)+len(replacements))
+	for _, entry := range env {
+		key, _, _ := strings.Cut(entry, "=")
+		if _, replaced := replacements[key]; !replaced && key != "TMUX" {
+			result = append(result, entry)
+		}
+	}
+	for key, value := range replacements {
+		result = append(result, key+"="+value)
+	}
+	return result
+}
+
+func testCoverDir() string {
+	if coverFlag := flag.Lookup("test.gocoverdir"); coverFlag != nil {
+		return coverFlag.Value.String()
+	}
+	return ""
+}
 
 func TestPrintHelpDoesNotRequireATerminal(t *testing.T) {
 	var out bytes.Buffer
@@ -47,31 +108,92 @@ func TestPrintHelpReturnsWriteError(t *testing.T) {
 }
 
 func TestMainPrintsHelpWithoutStartingTUI(t *testing.T) {
-	if os.Getenv("AGENT_MANAGER_HELP_TEST") == "1" {
-		flag := os.Args[len(os.Args)-1]
-		os.Args = []string{"agent-manager", flag}
+	if prepareMainProcess() {
 		main()
 		return
 	}
-	for _, flag := range []string{"--help", "-h"} {
-		t.Run(flag, func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=TestMainPrintsHelpWithoutStartingTUI", "--", flag)
-			cmd.Env = append(os.Environ(), "AGENT_MANAGER_HELP_TEST=1")
+	for _, helpFlag := range []string{"--help", "-h"} {
+		t.Run(helpFlag, func(t *testing.T) {
+			cmd := mainTestCommand(t, helpFlag)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
-				t.Fatalf("agent-manager %s: %v\n%s", flag, err, out)
+				t.Fatalf("agent-manager %s: %v\n%s", helpFlag, err, out)
 			}
 			if !strings.Contains(string(out), "Usage: agent-manager [command]") {
-				t.Fatalf("agent-manager %s did not print help:\n%s", flag, out)
+				t.Fatalf("agent-manager %s did not print help:\n%s", helpFlag, out)
 			}
 		})
 	}
 }
 
-// Startup is the only place the alternate-scroll reset goes out, and it
-// cannot be exercised headlessly: run() takes over the terminal. Reading
-// the call out of the syntax tree still fails if it is dropped, which is
-// what would put wheel notches back on the session cursor (#110).
+func TestMainDispatchesNonInteractiveCommands(t *testing.T) {
+	if prepareMainProcess() {
+		main()
+		return
+	}
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"version", []string{"--version"}, "agent-manager dev"},
+		{"subcommand help", []string{"sessions", "-h"}, "usage: agent-manager sessions"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := mainTestCommand(t, tt.args...).CombinedOutput()
+			if err != nil {
+				t.Fatalf("agent-manager %s: %v\n%s", strings.Join(tt.args, " "), err, out)
+			}
+			if !strings.Contains(string(out), tt.want) {
+				t.Fatalf("agent-manager %s output does not contain %q:\n%s", strings.Join(tt.args, " "), tt.want, out)
+			}
+		})
+	}
+}
+
+func TestMainReportsHeadlessStartupFailure(t *testing.T) {
+	if prepareMainProcess() {
+		main()
+		return
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+	root, err := os.MkdirTemp("/tmp", "ammain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(root); err != nil {
+			t.Errorf("remove startup test directory: %v", err)
+		}
+	})
+	for _, dir := range []string{"home", "config", "tmux"} {
+		if err := os.Mkdir(filepath.Join(root, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cmd := mainTestCommand(t)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Env = replaceEnv(cmd.Env,
+		"HOME", filepath.Join(root, "home"),
+		"XDG_CONFIG_HOME", filepath.Join(root, "config"),
+		"TMUX_TMPDIR", filepath.Join(root, "tmux"),
+	)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("agent-manager unexpectedly started without a controlling terminal:\n%s", out)
+	}
+	if !strings.Contains(string(out), "could not open a new TTY") {
+		t.Fatalf("agent-manager reported the wrong startup failure:\n%s", out)
+	}
+}
+
+// Startup is the only place the alternate-scroll reset goes out. Reading
+// the call out of the syntax tree fails if it is dropped, which is what
+// would put wheel notches back on the session cursor (#110).
 func TestStartupDisablesAlternateScroll(t *testing.T) {
 	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
 	if err != nil {
