@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -30,6 +31,21 @@ func headlessLinux() {
 	goos = "linux"
 	wslProbe = func() bool { return false }
 	getenv = func(string) string { return "" }
+}
+
+func requirePastesDirEmpty(t *testing.T) {
+	t.Helper()
+	entries, err := os.ReadDir(pastesDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		names := make([]string, len(entries))
+		for i, entry := range entries {
+			names[i] = entry.Name()
+		}
+		t.Fatalf("paste files remain: %v", names)
+	}
 }
 
 func TestSaveImageDarwinPrefersNative(t *testing.T) {
@@ -186,6 +202,78 @@ func TestSaveImageLinuxNoTool(t *testing.T) {
 	}
 }
 
+func TestSaveImageLinuxPrefersNative(t *testing.T) {
+	defer restore()()
+	t.Setenv("TMPDIR", t.TempDir())
+	goos = "linux"
+	wslProbe = func() bool { return false }
+	want := []byte("native-linux-png")
+	readNativeImage = func() ([]byte, error) { return want, nil }
+	lookPath = func(string) (string, error) {
+		t.Fatal("native image should skip clipboard tools")
+		return "", errors.New("unreachable")
+	}
+
+	path, err := SaveImage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, want) {
+		t.Fatalf("image = %q, want %q", data, want)
+	}
+}
+
+func TestSaveImageLinuxReportsNoImageAfterToolsFail(t *testing.T) {
+	defer restore()()
+	t.Setenv("TMPDIR", t.TempDir())
+	goos = "linux"
+	wslProbe = func() bool { return false }
+	readNativeImage = nil
+	lookPath = func(name string) (string, error) {
+		if name == "wl-paste" || name == "xclip" {
+			return "/usr/bin/" + name, nil
+		}
+		return "", errors.New("not found")
+	}
+	var commands []string
+	runCmdToFile = func(_ string, name string, _ ...string) error {
+		commands = append(commands, name)
+		return errors.New("clipboard is empty")
+	}
+
+	if _, err := SaveImage(); !errors.Is(err, ErrNoImage) {
+		t.Fatalf("SaveImage error = %v, want ErrNoImage", err)
+	}
+	if got, want := strings.Join(commands, ","), "wl-paste,xclip"; got != want {
+		t.Fatalf("clipboard commands = %q, want %q", got, want)
+	}
+	requirePastesDirEmpty(t)
+}
+
+func TestSaveImageLinuxRejectsEmptyToolOutput(t *testing.T) {
+	defer restore()()
+	t.Setenv("TMPDIR", t.TempDir())
+	goos = "linux"
+	wslProbe = func() bool { return false }
+	readNativeImage = nil
+	lookPath = func(name string) (string, error) {
+		if name == "wl-paste" {
+			return "/usr/bin/wl-paste", nil
+		}
+		return "", errors.New("not found")
+	}
+	runCmdToFile = func(string, string, ...string) error { return nil }
+
+	if _, err := SaveImage(); !errors.Is(err, ErrNoImage) {
+		t.Fatalf("SaveImage error = %v, want ErrNoImage", err)
+	}
+	requirePastesDirEmpty(t)
+}
+
 func TestSaveImageWSLUsesWindowsClipboard(t *testing.T) {
 	defer restore()()
 	t.Setenv("TMPDIR", t.TempDir())
@@ -296,6 +384,135 @@ func TestSaveImageWSLFallsBackWhenNativeMisses(t *testing.T) {
 	data, _ := os.ReadFile(path)
 	if string(data) != "from-windows" {
 		t.Fatalf("want Windows clipboard fallback, got %q", data)
+	}
+}
+
+func TestSaveImageWSLRequiresPowerShell(t *testing.T) {
+	defer restore()()
+	t.Setenv("TMPDIR", t.TempDir())
+	goos = "linux"
+	wslProbe = func() bool { return true }
+	readNativeImage = nil
+	lookPath = func(string) (string, error) { return "", errors.New("not found") }
+
+	_, err := SaveImage()
+	if err == nil || errors.Is(err, ErrNoImage) || !strings.Contains(err.Error(), "powershell.exe") {
+		t.Fatalf("SaveImage error = %v, want missing PowerShell guidance", err)
+	}
+}
+
+func TestSaveImageWSLReportsAnEmptyWindowsClipboard(t *testing.T) {
+	defer restore()()
+	t.Setenv("TMPDIR", t.TempDir())
+	goos = "linux"
+	wslProbe = func() bool { return true }
+	readNativeImage = nil
+	lookPath = func(name string) (string, error) {
+		switch name {
+		case "powershell.exe":
+			return "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", nil
+		case "wslpath":
+			return "/usr/bin/wslpath", nil
+		default:
+			return "", errors.New("not found")
+		}
+	}
+	runCmd = func(name string, args ...string) ([]byte, error) {
+		if name == "wslpath" {
+			return []byte(`C:\tmp\paste.png`), nil
+		}
+		return nil, errors.New("clipboard is empty")
+	}
+
+	if _, err := SaveImage(); !errors.Is(err, ErrNoImage) {
+		t.Fatalf("SaveImage error = %v, want ErrNoImage", err)
+	}
+	requirePastesDirEmpty(t)
+}
+
+func TestSaveImageWSLReportsPathConversionFailure(t *testing.T) {
+	defer restore()()
+	t.Setenv("TMPDIR", t.TempDir())
+	goos = "linux"
+	wslProbe = func() bool { return true }
+	readNativeImage = nil
+	lookPath = func(name string) (string, error) {
+		if name == "powershell.exe" {
+			return "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", nil
+		}
+		return "", errors.New("not found")
+	}
+	runCmd = func(name string, args ...string) ([]byte, error) {
+		if name != "wslpath" {
+			t.Fatalf("unexpected command %q", name)
+		}
+		return nil, errors.New("conversion failed")
+	}
+
+	_, err := SaveImage()
+	if err == nil || !strings.Contains(err.Error(), "wslpath") {
+		t.Fatalf("SaveImage error = %v, want wslpath failure", err)
+	}
+	requirePastesDirEmpty(t)
+}
+
+func TestSaveImageDarwinRejectsEmptyJXAOutput(t *testing.T) {
+	defer restore()()
+	t.Setenv("TMPDIR", t.TempDir())
+	goos = "darwin"
+	readNativeImage = nil
+	runCmd = func(string, ...string) ([]byte, error) { return nil, nil }
+
+	if _, err := SaveImage(); !errors.Is(err, ErrNoImage) {
+		t.Fatalf("SaveImage error = %v, want ErrNoImage", err)
+	}
+	requirePastesDirEmpty(t)
+}
+
+func TestSaveImageRejectsUnsupportedPlatform(t *testing.T) {
+	defer restore()()
+	goos = "plan9"
+	if _, err := SaveImage(); err == nil || !strings.Contains(err.Error(), "not supported on plan9") {
+		t.Fatalf("SaveImage error = %v, want unsupported platform", err)
+	}
+}
+
+func TestIsPastePath(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	if !IsPastePath(filepath.Join(pastesDir(), "paste-image.png")) {
+		t.Fatal("paste path was not recognized")
+	}
+	if IsPastePath(filepath.Join(t.TempDir(), "paste-image.png")) {
+		t.Fatal("path outside the paste directory was accepted")
+	}
+}
+
+func TestCommandSeams(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Fatal("sh is required on supported platforms")
+	}
+	out, err := runCmd(sh, "-c", "printf command-output")
+	if err != nil {
+		t.Fatalf("runCmd: %v", err)
+	}
+	if string(out) != "command-output" {
+		t.Fatalf("runCmd output = %q", out)
+	}
+
+	path := filepath.Join(t.TempDir(), "output")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmdToFile(path, sh, "-c", "printf file-output"); err != nil {
+		t.Fatalf("runCmdToFile: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "file-output" {
+		t.Fatalf("runCmdToFile output = %q", data)
 	}
 }
 
@@ -416,6 +633,39 @@ func TestWriteTextHeadlessUsesOSC52(t *testing.T) {
 	want := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte("hello")) + "\x07"
 	if emitted != want {
 		t.Fatalf("emitted = %q, want %q", emitted, want)
+	}
+}
+
+func TestWriteTextSendsExactTextToPlatformWriter(t *testing.T) {
+	defer restore()()
+	goos = "darwin"
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Fatal("sh is required on supported platforms")
+	}
+	cat, err := exec.LookPath("cat")
+	if err != nil {
+		t.Fatal("cat is required on supported platforms")
+	}
+	output := filepath.Join(t.TempDir(), "clipboard")
+	t.Setenv("CLIPBOARD_TEST_OUTPUT", output)
+	t.Setenv("CLIPBOARD_TEST_CAT", cat)
+	binDir := t.TempDir()
+	script := "#!" + sh + "\n\"$CLIPBOARD_TEST_CAT\" > \"$CLIPBOARD_TEST_OUTPUT\"\n"
+	if err := os.WriteFile(filepath.Join(binDir, "pbcopy"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	if err := WriteText("A─😀"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "A─😀" {
+		t.Fatalf("clipboard text = %q", data)
 	}
 }
 
