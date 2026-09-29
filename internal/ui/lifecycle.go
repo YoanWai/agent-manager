@@ -162,14 +162,29 @@ type replyCopiedMsg struct {
 // reviveSelected relaunches a dead session's tmux session under the same
 // id, keeping its name, group, and history. Tools with a revive_command
 // resume where they left off (e.g. claude --continue). On a group row it
-// revives the whole subtree, mirroring the group kill.
+// revives the whole subtree, mirroring the group kill, and asks first when
+// more than one session there is dead.
 func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedRow()
 	if !ok {
 		return m, nil
 	}
 	if entry.isGroup {
-		return m.reviveMany(m.sessionsInGroup(entry.group), "no dead sessions to revive in "+entry.group)
+		sessions := m.sessionsInGroup(entry.group)
+		if dead := deadSessions(sessions); len(dead) > 1 {
+			m.confirm = confirmTarget{
+				isGroup:  true,
+				path:     entry.group,
+				action:   actionRevive,
+				batch:    true,
+				sessions: dead,
+				label: fmt.Sprintf("revive group %s (%d dead sessions)? brings them back.",
+					displayGroup(entry.group), len(dead)),
+			}
+			m.mode = modeConfirmDelete
+			return m, nil
+		}
+		return m.reviveMany(sessions, "no dead sessions to revive in "+entry.group)
 	}
 	set, err := m.sessionAndChildren(entry.sess)
 	if err != nil {
@@ -215,9 +230,21 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 }
 
 // reviveAllDead relaunches every dead session in the current view, resuming
-// each by its captured id where one exists.
+// each by its captured id where one exists, and asks first when that is
+// more than one session.
 func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
-	return m.reviveMany(m.listedSessions(), "no dead sessions to revive")
+	sessions := m.listedSessions()
+	if dead := deadSessions(sessions); len(dead) > 1 {
+		m.confirm = confirmTarget{
+			action:   actionRevive,
+			batch:    true,
+			sessions: dead,
+			label:    fmt.Sprintf("revive every dead session (%d)? brings them back.", len(dead)),
+		}
+		m.mode = modeConfirmDelete
+		return m, nil
+	}
+	return m.reviveMany(sessions, "no dead sessions to revive")
 }
 
 // reviveMany relaunches every dead session in the list. It revives what it
@@ -226,10 +253,7 @@ func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
 func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Model, tea.Cmd) {
 	revived, degraded := 0, 0
 	var firstErr string
-	for _, sess := range sessions {
-		if sess.Status != status.Dead {
-			continue
-		}
+	for _, sess := range deadSessions(sessions) {
 		if err := m.reviveSession(sess); err != nil {
 			if firstErr == "" {
 				firstErr = err.Error()
@@ -253,6 +277,16 @@ func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Mo
 	}
 	m.requestRefresh()
 	return m, nil
+}
+
+func deadSessions(sessions []store.Session) []store.Session {
+	var dead []store.Session
+	for _, sess := range sessions {
+		if sess.Status == status.Dead {
+			dead = append(dead, sess)
+		}
+	}
+	return dead
 }
 
 // sessionsInGroup lists the sessions the current view shows at or below a
@@ -1104,6 +1138,16 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errBar.text = ""
 			m.rebuildRows()
 		case actionRevive:
+			if m.confirm.batch {
+				var stillDead []store.Session
+				for _, sess := range m.confirm.sessions {
+					if !m.tmux.Exists(sess.ID) {
+						stillDead = append(stillDead, sess)
+					}
+				}
+				m.confirm = confirmTarget{}
+				return m.reviveMany(stillDead, "")
+			}
 			for _, sess := range m.confirm.sessions {
 				if m.tmux.Exists(sess.ID) {
 					continue

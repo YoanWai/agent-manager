@@ -843,8 +843,20 @@ func TestReviveAllRecreatesEveryDeadSession(t *testing.T) {
 	}
 	// A refresh marks the pane-less sessions dead so revive-all picks them up.
 	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "running", dir, "")
 
-	if _, _ = m.reviveAllDead(); m.errBar.text != "" {
+	if _, _ = m.reviveAllDead(); m.mode != modeConfirmDelete {
+		t.Fatalf("reviving two dead sessions should ask first, mode = %v err = %q", m.mode, m.errBar.text)
+	}
+	if want := "revive every dead session (2)? brings them back."; m.confirm.label != want {
+		t.Fatalf("label = %q, want %q", m.confirm.label, want)
+	}
+	if len(m.confirm.sessions) != 2 {
+		t.Fatalf("confirm targets = %+v, want the two dead sessions", m.confirm.sessions)
+	}
+	_, cmd := m.handleConfirmKey(namedKey(tea.KeyEnter))
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
 		t.Fatalf("revive all: %q", m.errBar.text)
 	}
 	for _, sess := range m.visibleSessions() {
@@ -1265,14 +1277,154 @@ func TestReviveGroupBringsBackEverySessionInside(t *testing.T) {
 	m.selectGroupRow(t, "work")
 	m.killSelected()
 	confirmKill(t, m)
+	createSession(t, m, "running", dir, "work")
 
 	m.selectGroupRow(t, "work")
-	if _, _ = m.reviveSelected(); m.errBar.text != "" {
+	if _, _ = m.reviveSelected(); m.mode != modeConfirmDelete {
+		t.Fatalf("reviving a group of two dead sessions should ask first, mode = %v err = %q", m.mode, m.errBar.text)
+	}
+	if title := m.confirmTitle(); title != "◆ Revive group" {
+		t.Fatalf("title = %q, want ◆ Revive group", title)
+	}
+	if want := "revive group work (2 dead sessions)? brings them back."; m.confirm.label != want {
+		t.Fatalf("label = %q, want %q", m.confirm.label, want)
+	}
+	if len(m.confirm.sessions) != 2 {
+		t.Fatalf("confirm targets = %+v, want the two dead sessions", m.confirm.sessions)
+	}
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "" {
 		t.Fatalf("revive group: %q", m.errBar.text)
 	}
 	for _, sess := range m.visibleSessions() {
 		if !m.tmux.Exists(sess.ID) {
 			t.Fatalf("revive group should have brought back %s", sess.Name)
+		}
+	}
+}
+
+func TestReviveGroupConfirmedRevivesWhatItCan(t *testing.T) {
+	m := buildModel(t)
+	gone, kept := t.TempDir(), t.TempDir()
+	seedGroups(t, m, "work")
+	createSession(t, m, "homeless", gone, "work")
+	createSession(t, m, "housed", kept, "work")
+	m.selectGroupRow(t, "work")
+	m.killSelected()
+	confirmKill(t, m)
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatalf("remove dir: %v", err)
+	}
+
+	m.selectGroupRow(t, "work")
+	if _, _ = m.reviveSelected(); m.mode != modeConfirmDelete {
+		t.Fatalf("mode = %v, want the revive card (err %q)", m.mode, m.errBar.text)
+	}
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+
+	if !strings.HasPrefix(m.errBar.text, "revived 1, first error: working directory no longer exists") {
+		t.Fatalf("status = %q, want the count revived and the first failure", m.errBar.text)
+	}
+	if m.mode != modeList {
+		t.Fatalf("mode = %v, want the list", m.mode)
+	}
+	if !m.tmux.Exists(sessionRow(t, m, "housed").sess.ID) {
+		t.Fatal("a failed revive must not keep the rest of the group dead")
+	}
+}
+
+func TestReviveBatchCancelLeavesEverySessionDead(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		key  tea.KeyMsg
+	}{
+		{"n", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}},
+		{"esc", namedKey(tea.KeyEsc)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := buildModel(t)
+			dir := t.TempDir()
+			seedGroups(t, m, "work")
+			createSession(t, m, "alpha", dir, "work")
+			createSession(t, m, "beta", dir, "work")
+			m.selectGroupRow(t, "work")
+			m.killSelected()
+			confirmKill(t, m)
+
+			for _, key := range []string{"v", "V"} {
+				m.selectGroupRow(t, "work")
+				m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+				if m.mode != modeConfirmDelete {
+					t.Fatalf("%s: mode = %v, want the revive card (err %q)", key, m.mode, m.errBar.text)
+				}
+				m.handleKey(tc.key)
+				if m.mode != modeList {
+					t.Fatalf("%s: mode = %v, want the list after %s", key, m.mode, tc.name)
+				}
+				for _, sess := range m.visibleSessions() {
+					if m.tmux.Exists(sess.ID) {
+						t.Fatalf("%s then %s brought back %s", key, tc.name, sess.Name)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestReviveBatchSkipsASessionBackBeforeTheAnswer(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	seedGroups(t, m, "work")
+	createSession(t, m, "alpha", dir, "work")
+	createSession(t, m, "beta", dir, "work")
+	m.selectGroupRow(t, "work")
+	m.killSelected()
+	confirmKill(t, m)
+
+	m.selectGroupRow(t, "work")
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	if m.mode != modeConfirmDelete {
+		t.Fatalf("mode = %v, want the revive card (err %q)", m.mode, m.errBar.text)
+	}
+	alpha := sessionRow(t, m, "alpha").sess
+	if err := m.reviveSession(alpha); err != nil {
+		t.Fatalf("revive alpha while the card is open: %v", err)
+	}
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+
+	if m.errBar.text != "" {
+		t.Fatalf("status = %q, want no error for a session that came back on its own", m.errBar.text)
+	}
+	for _, name := range []string{"alpha", "beta"} {
+		if !m.tmux.Exists(sessionRow(t, m, name).sess.ID) {
+			t.Fatalf("%s should be running", name)
+		}
+	}
+}
+
+func TestReviveOneDeadSessionSkipsTheCard(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	seedGroups(t, m, "work")
+	createSession(t, m, "alpha", dir, "work")
+	// beta stays live, leaving two rows in scope and only one of them dead.
+	createSession(t, m, "beta", dir, "work")
+	alpha := sessionRow(t, m, "alpha").sess
+
+	for _, key := range []string{"v", "V"} {
+		if err := m.tmux.Kill(alpha.ID); err != nil {
+			t.Fatalf("kill alpha: %v", err)
+		}
+		m.applyCmd(t, m.refreshCmd())
+		m.selectGroupRow(t, "work")
+		m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		if m.mode != modeList {
+			t.Fatalf("%s with one dead session: mode = %v, want it revived without a card", key, m.mode)
+		}
+		if !m.tmux.Exists(alpha.ID) {
+			t.Fatalf("%s should revive the one dead session at once, err = %q", key, m.errBar.text)
 		}
 	}
 }

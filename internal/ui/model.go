@@ -441,6 +441,7 @@ type confirmTarget struct {
 	label        string
 	sessions     []store.Session
 	action       string
+	batch        bool
 }
 
 type renameTarget struct {
