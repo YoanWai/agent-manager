@@ -11,11 +11,15 @@ import (
 // WriteFile writes data to a temporary sibling, syncs it, then renames it over
 // path. The destination directory is created when needed.
 func WriteFile(path string, data []byte, perm fs.FileMode) error {
+	return writeFile(path, data, perm, os.CreateTemp)
+}
+
+func writeFile(path string, data []byte, perm fs.FileMode, createTemp func(string, string) (*os.File, error)) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+"-*")
+	tmp, err := createTemp(dir, "."+filepath.Base(path)+"-*")
 	if err != nil {
 		return err
 	}
