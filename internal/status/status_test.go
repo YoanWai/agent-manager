@@ -1295,8 +1295,9 @@ func TestLastMessageSkipsCodexPendingMessages(t *testing.T) {
 	}
 
 	for name, text := range map[string]struct{ body, want string }{
-		"one line": {"• Messages to be retried go to the dead-letter queue.\n", "Messages to be retried go to the dead-letter queue."},
-		"wrapped":  {"• Messages to\n  be retried go to the DLQ.\n", "Messages to be retried go to the DLQ."},
+		"one line":  {"• Messages to be retried go to the dead-letter queue.\n", "Messages to be retried go to the dead-letter queue."},
+		"wrapped":   {"• Messages to\n  be retried go to the DLQ.\n", "Messages to be retried go to the DLQ."},
+		"submitted": {"• Messages to be submitted soon are batched.\n", "Messages to be submitted soon are batched."},
 	} {
 		pane := "› Status?\n\n" + text.body + "  done 12:59 AM\n\n" + composer
 		if line, _, ok := engine.LastMessage("codex", pane); !ok || line != text.want {
