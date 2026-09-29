@@ -1139,9 +1139,14 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.rebuildRows()
 		case actionRevive:
 			if m.confirm.batch {
+				panes, err := m.tmux.Panes()
+				if err != nil {
+					m.errBar.text = err.Error()
+					return m, nil
+				}
 				var stillDead []store.Session
 				for _, sess := range m.confirm.sessions {
-					if !m.tmux.Exists(sess.ID) {
+					if panes[sess.ID].PID == 0 {
 						stillDead = append(stillDead, sess)
 					}
 				}
