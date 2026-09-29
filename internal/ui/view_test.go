@@ -811,6 +811,39 @@ func TestFooterInFocusModeNamesTheKeyTable(t *testing.T) {
 	}
 }
 
+func TestRowLegendDropsRestoreInActiveView(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+
+	if err := m.store.CreateGroup("zone", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "alpha", dir, "zone")
+
+	m.selectSessionRow(t, "alpha")
+	legend := m.rowLegend()
+	for _, pair := range legend.pairs {
+		if strings.Contains(pair[1], "restore") {
+			t.Fatalf("session legend in active view should not offer restore, got %+v", pair)
+		}
+	}
+	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[1] == "archive" }) {
+		t.Fatal("session legend in active view should still offer archive")
+	}
+
+	m.selectGroupRow(t, "zone")
+	legend = m.rowLegend()
+	for _, pair := range legend.pairs {
+		if strings.Contains(pair[1], "restore") {
+			t.Fatalf("group legend in active view should not offer restore, got %+v", pair)
+		}
+	}
+	if !slices.ContainsFunc(legend.pairs, func(pair [2]string) bool { return pair[1] == "archive" }) {
+		t.Fatal("group legend in active view should still offer archive")
+	}
+}
+
 // In the archived view, archiveSelected no-ops, so the legend should offer
 // only restore, on both a session row and a group row.
 func TestRowLegendDropsArchiveInArchivedView(t *testing.T) {

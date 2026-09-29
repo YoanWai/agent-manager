@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
 )
 
@@ -122,6 +123,121 @@ func TestArchiveSelectedNoopInArchivedView(t *testing.T) {
 	m.archiveSelected()
 	if m.mode == modeConfirmDelete {
 		t.Fatal("archiveSelected should not open a confirm dialog for a group row in the archived view")
+	}
+}
+
+func seedRestoreScenario(t *testing.T, m *Model, group string) (live, sleeper, stash store.Session) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range []string{"live", "sleeper", "stash"} {
+		createSession(t, m, name, dir, group)
+	}
+	live, sleeper, stash = sessionRow(t, m, "live").sess, sessionRow(t, m, "sleeper").sess, sessionRow(t, m, "stash").sess
+	m.selectSessionRow(t, "sleeper")
+	m.killSelected()
+	confirmKill(t, m)
+	m.selectSessionRow(t, "stash")
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+	return live, sleeper, stash
+}
+
+func TestRestoreSelectedNoopInActiveView(t *testing.T) {
+	m := buildModel(t)
+	seedGroups(t, m, "zone")
+	_, sleeper, stash := seedRestoreScenario(t, m, "zone")
+	press := func(key string) {
+		m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	}
+
+	m.selectGroupRow(t, "zone")
+	press("u")
+	if m.mode == modeConfirmDelete {
+		t.Errorf("u on a group opened %q in the active view", m.confirm.label)
+	}
+	press("y")
+	if m.tmux.Exists(sleeper.ID) {
+		t.Fatal("sleeper was killed on purpose and came back")
+	}
+	if got, err := m.store.Get(stash.ID); err != nil || !got.Archived || m.tmux.Exists(stash.ID) {
+		t.Fatalf("stash left the archive: archived=%v err=%v", got.Archived, err)
+	}
+
+	m.selectSessionRow(t, "live")
+	press("u")
+	if m.mode == modeConfirmDelete {
+		t.Fatalf("u on a session opened %q in the active view", m.confirm.label)
+	}
+}
+
+func TestRestoreGroupBringsBackOnlyItsArchivedSessions(t *testing.T) {
+	m := buildModel(t)
+	seedGroups(t, m, "zone")
+	live, sleeper, stash := seedRestoreScenario(t, m, "zone")
+
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "zone")
+	m.restoreSelected()
+	if len(m.confirm.sessions) != 1 || m.confirm.sessions[0].ID != stash.ID {
+		t.Errorf("restore targets %d sessions, want stash alone", len(m.confirm.sessions))
+	}
+	if want := "restore group zone (1 archived sessions)? brings them back."; m.confirm.label != want {
+		t.Errorf("label = %q, want %q", m.confirm.label, want)
+	}
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+
+	if m.tmux.Exists(sleeper.ID) {
+		t.Fatal("the group restore revived sleeper, which was never archived")
+	}
+	if !m.tmux.Exists(live.ID) || !m.tmux.Exists(stash.ID) {
+		t.Fatal("live and stash should both be running")
+	}
+	if got, err := m.store.Get(stash.ID); err != nil || got.Archived {
+		t.Fatalf("stash is still filed as archived: archived=%v err=%v", got.Archived, err)
+	}
+	m.showArchived = false
+	m.applyCmd(t, m.refreshCmd())
+	if names := strings.Join(sessionNames(m), " "); names != "live sleeper stash" {
+		t.Fatalf("active view = %q, want all of zone back", names)
+	}
+}
+
+func TestArchiveAndRestoreRefuseTheRootRow(t *testing.T) {
+	for _, tc := range []struct {
+		action, key, next string
+		archived          bool
+	}{
+		{"archive", "a", "live", false},
+		{"restore", "u", "stash", true},
+	} {
+		t.Run(tc.action, func(t *testing.T) {
+			m := buildModel(t)
+			live, sleeper, stash := seedRestoreScenario(t, m, rootGroup)
+			m.showArchived = tc.archived
+			m.applyCmd(t, m.refreshCmd())
+			m.selectGroupRow(t, rootGroup)
+
+			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tc.key)})
+			if want := "root is the top level, not a group to " + tc.action; m.mode != modeList || m.errBar.text != want {
+				t.Errorf("mode = %v, errBar = %q, want the list and %q", m.mode, m.errBar.text, want)
+			}
+			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+			if !m.tmux.Exists(live.ID) || m.tmux.Exists(sleeper.ID) || m.tmux.Exists(stash.ID) {
+				t.Fatalf("%s on root touched its sessions", tc.action)
+			}
+			if got, err := m.store.Get(stash.ID); err != nil || !got.Archived {
+				t.Fatalf("stash left the archive: archived=%v err=%v", got.Archived, err)
+			}
+
+			m.selectSessionRow(t, tc.next)
+			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tc.key)})
+			if card := ansi.Strip(m.View()); !strings.Contains(card, tc.action+" "+tc.next+"?") || strings.Contains(card, "root is the top level") {
+				t.Errorf("the %s card on %s should drop the root refusal:\n%s", tc.action, tc.next, card)
+			}
+		})
 	}
 }
 
@@ -1625,6 +1741,44 @@ func TestRestoreAgentUnarchivesEveryChild(t *testing.T) {
 		if !m.tmux.Exists(id) {
 			t.Fatalf("%s not running", id)
 		}
+	}
+}
+
+func TestRestoreAgentBringsBackOnlyItsArchivedTerminals(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	shell := spawnTerminal(t, m)
+	agent := m.sessionRows()[0]
+	m.selectSessionRow(t, "coder")
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.applyCmd(t, cmd)
+	m.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, shell.Name)
+	m.restoreSelected()
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.applyCmd(t, cmd)
+	if err := m.tmux.Kill(shell.ID); err != nil {
+		t.Fatalf("kill terminal: %v", err)
+	}
+
+	m.selectSessionRow(t, "coder")
+	m.restoreSelected()
+	if want := "restore coder? brings it back."; m.confirm.label != want {
+		t.Errorf("label = %q, want %q", m.confirm.label, want)
+	}
+	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.applyCmd(t, cmd)
+	if !m.tmux.Exists(agent.ID) || m.tmux.Exists(shell.ID) {
+		t.Fatalf("coder running=%v, terminal running=%v; want coder back and the terminal left dead",
+			m.tmux.Exists(agent.ID), m.tmux.Exists(shell.ID))
 	}
 }
 

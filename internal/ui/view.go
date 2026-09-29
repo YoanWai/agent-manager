@@ -635,14 +635,12 @@ func (m *Model) rowLegend() legendSection {
 	return legendSection{title: title, pairs: legendPairsBound(pairs)}
 }
 
-// archiveRestoreLegend drops archive from the pair in the archived view: the
-// key is bound there but archiveSelected no-ops on an already-archived row,
-// so offering it would name a dead key.
+// archiveRestoreLegend leaves out the key of the pair that no-ops in this view.
 func (m *Model) archiveRestoreLegend() [2]string {
 	if m.showArchived {
 		return [2]string{m.listGlyph(keybind.Restore), "restore"}
 	}
-	return m.legendPair(keybind.Archive, "archive", keybind.Restore, "restore")
+	return [2]string{m.listGlyph(keybind.Archive), "archive"}
 }
 
 func (m *Model) legendPair(first, firstLabel, second, secondLabel string) [2]string {

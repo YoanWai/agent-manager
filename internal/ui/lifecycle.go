@@ -655,6 +655,10 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if entry.isRoot() {
+		m.errBar.text = "root is the top level, not a group to archive"
+		return m, nil
+	}
 	if entry.isGroup {
 		subtree, err := m.store.SessionsInSubtree(entry.group)
 		if err != nil {
@@ -683,12 +687,20 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		}
 	}
 	m.mode = modeConfirmDelete
+	m.errBar.text = ""
 	return m, nil
 }
 
 func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
+	if !m.showArchived {
+		return m, nil
+	}
 	entry, ok := m.selectedRow()
 	if !ok {
+		return m, nil
+	}
+	if entry.isRoot() {
+		m.errBar.text = "root is the top level, not a group to restore"
 		return m, nil
 	}
 	if entry.isGroup {
@@ -697,12 +709,13 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
+		archived := archivedSessions(subtree)
 		m.confirm = confirmTarget{
 			isGroup:  true,
 			path:     entry.group,
 			action:   actionRestore,
-			sessions: subtree,
-			label:    fmt.Sprintf("restore group %s (%d sessions)? brings them back.", entry.group, len(subtree)),
+			sessions: archived,
+			label:    fmt.Sprintf("restore group %s (%d archived sessions)? brings them back.", entry.group, len(archived)),
 		}
 	} else {
 		sessions, err := m.sessionAndChildren(entry.sess)
@@ -710,6 +723,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 			m.errBar.text = err.Error()
 			return m, nil
 		}
+		sessions = archivedSessions(sessions)
 		m.confirm = confirmTarget{
 			action:   actionRestore,
 			sessions: sessions,
@@ -719,6 +733,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 		}
 	}
 	m.mode = modeConfirmDelete
+	m.errBar.text = ""
 	return m, nil
 }
 
@@ -995,12 +1010,7 @@ func (m *Model) wholeGroupDelete(path string, subtree []store.Session) confirmTa
 // itself belong to the active view and survive; the group row goes only
 // once nothing is left beneath it.
 func archivedGroupDelete(path string, subtree []store.Session) confirmTarget {
-	var archived []store.Session
-	for _, sess := range subtree {
-		if sess.Archived {
-			archived = append(archived, sess)
-		}
-	}
+	archived := archivedSessions(subtree)
 	return confirmTarget{
 		isGroup:      true,
 		archivedOnly: true,
@@ -1009,6 +1019,16 @@ func archivedGroupDelete(path string, subtree []store.Session) confirmTarget {
 		label: fmt.Sprintf("delete %s from the archive (%d archived sessions)? kills their tmux sessions, live ones stay.",
 			path, len(archived)),
 	}
+}
+
+func archivedSessions(sessions []store.Session) []store.Session {
+	var archived []store.Session
+	for _, sess := range sessions {
+		if sess.Archived {
+			archived = append(archived, sess)
+		}
+	}
+	return archived
 }
 
 // restoreFromArchive brings one session back and takes it out of the
