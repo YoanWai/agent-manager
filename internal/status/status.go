@@ -49,6 +49,7 @@ type toolRules struct {
 	placeholder    *regexp.Regexp
 	userEcho       *regexp.Regexp
 	dialogFooter   *regexp.Regexp
+	dialogAsks     *regexp.Regexp
 	busyFooter     *regexp.Regexp
 	// composerPlaceholder is the literal text a tool paints inside its
 	// empty composer; a draft replaces it. Searched in a stripped row.
@@ -91,6 +92,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			{tool.InputPlaceholder, &tr.placeholder},
 			{tool.UserEcho, &tr.userEcho},
 			{tool.DialogFooter, &tr.dialogFooter},
+			{tool.DialogQuestion, &tr.dialogAsks},
 			{tool.BusyFooter, &tr.busyFooter},
 		}
 		for _, opt := range optional {
@@ -405,6 +407,11 @@ func (e *Engine) LastMessage(tool, pane string) (line string, anchored, ok bool)
 	region, ok := tr.activityRegion(pane)
 	if !ok {
 		return "", false, false
+	}
+	if tr.dialogAsks != nil {
+		if m := tr.dialogAsks.FindStringSubmatch(pane[len(region):]); m != nil {
+			return strings.TrimSpace(m[1]), true, true
+		}
 	}
 	lines := strings.Split(region, "\n")
 	inBlock := tr.chromeBlockRows(lines)
