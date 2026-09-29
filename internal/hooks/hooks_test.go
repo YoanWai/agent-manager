@@ -122,6 +122,33 @@ func TestStatusFilePath(t *testing.T) {
 	}
 }
 
+func TestWriteInstallScriptCreatesAnExecutableScript(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	body := "#!/bin/sh\nprintf 'installed\\n'\n"
+
+	path, err := manager.WriteInstallScript("abcd1234", body)
+	if err != nil {
+		t.Fatalf("WriteInstallScript: %v", err)
+	}
+	if want := filepath.Join(manager.Dir(), "abcd1234.install.sh"); path != want {
+		t.Fatalf("path = %q, want %q", path, want)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read script: %v", err)
+	}
+	if string(data) != body {
+		t.Fatalf("script = %q, want %q", data, body)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat script: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("script permissions = %o, want 700", got)
+	}
+}
+
 func TestReadWhitelist(t *testing.T) {
 	manager := NewManager(t.TempDir())
 	if err := os.MkdirAll(filepath.Dir(manager.StatusFile("x")), 0o755); err != nil {
@@ -254,6 +281,29 @@ func TestReviewBaseMailbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, _, found := manager.ReadReviewBase("abc"); found {
+		t.Fatal("mailbox should be gone after removal")
+	}
+}
+
+func TestReviewScopeMailbox(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	if _, found := manager.ReadReviewScope("abc"); found {
+		t.Fatal("no mailbox should exist yet")
+	}
+	path := manager.ReviewScopeFile("abc")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("  last_commit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if scope, found := manager.ReadReviewScope("abc"); !found || scope != "last_commit" {
+		t.Fatalf("read = %q, %v; want last_commit, true", scope, found)
+	}
+	if err := manager.RemoveReviewScope("abc"); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := manager.ReadReviewScope("abc"); found {
 		t.Fatal("mailbox should be gone after removal")
 	}
 }
