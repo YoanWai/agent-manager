@@ -162,8 +162,7 @@ type replyCopiedMsg struct {
 // reviveSelected relaunches a dead session's tmux session under the same
 // id, keeping its name, group, and history. Tools with a revive_command
 // resume where they left off (e.g. claude --continue). On a group row it
-// revives the whole subtree, mirroring the group kill, and asks first when
-// more than one session there is dead.
+// revives the whole subtree, mirroring the group kill.
 func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedRow()
 	if !ok {
@@ -230,8 +229,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 }
 
 // reviveAllDead relaunches every dead session in the current view, resuming
-// each by its captured id where one exists, and asks first when that is
-// more than one session.
+// each by its captured id where one exists.
 func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
 	sessions := m.listedSessions()
 	if dead := deadSessions(sessions); len(dead) > 1 {
