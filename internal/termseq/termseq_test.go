@@ -2,6 +2,8 @@ package termseq
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -41,6 +43,37 @@ func TestEmitWrapsOnlyUnderTmux(t *testing.T) {
 	}
 	if got := sink.String(); got != "\x1bPtmux;\x1b\x1b]111\x07\x1b\\" {
 		t.Fatalf("tmux emit = %q", got)
+	}
+}
+
+func TestEnablePassthroughOnlyRunsUnderTmux(t *testing.T) {
+	origTmux := inTmux
+	t.Cleanup(func() { inTmux = origTmux })
+
+	binDir := t.TempDir()
+	argsFile := filepath.Join(t.TempDir(), "args")
+	t.Setenv("TERMSEQ_TMUX_ARGS", argsFile)
+	t.Setenv("PATH", binDir)
+	// The failing fake records any invocation, making both sides of the guard observable.
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$TERMSEQ_TMUX_ARGS\"\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(binDir, "tmux"), []byte(script), 0o700); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+
+	inTmux = func() bool { return false }
+	EnablePassthrough()
+	if _, err := os.Stat(argsFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("tmux ran outside tmux: %v", err)
+	}
+
+	inTmux = func() bool { return true }
+	EnablePassthrough()
+	args, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read tmux arguments: %v", err)
+	}
+	if got, want := string(args), "set-option\n-p\nallow-passthrough\non\n"; got != want {
+		t.Fatalf("tmux arguments = %q, want %q", got, want)
 	}
 }
 
