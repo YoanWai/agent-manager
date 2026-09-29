@@ -40,14 +40,14 @@ func timedRun(name string, args ...string) ([]byte, error) {
 // authoritative, the terminal background answers where no desktop setting
 // is reachable, and SchemeUnknown means the caller keeps its own default.
 func Detect() Scheme {
-	if scheme := osScheme(timedRun); scheme != SchemeUnknown {
+	if scheme := osScheme(runtime.GOOS, timedRun); scheme != SchemeUnknown {
 		return scheme
 	}
 	return terminalScheme(queryTerminalBg, os.Getenv)
 }
 
-func osScheme(run runner) Scheme {
-	switch runtime.GOOS {
+func osScheme(goos string, run runner) Scheme {
+	switch goos {
 	case "darwin":
 		return darwinScheme(run)
 	case "linux":
