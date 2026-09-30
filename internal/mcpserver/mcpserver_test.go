@@ -858,6 +858,7 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 	created := callTool(t, session, "create_session", map[string]any{
 		"name": "payments-retry-fix", "prompt": "fix the retry backoff",
 		"tool": "codex", "group": group, "directory": "/work", "worktree": worktree,
+		"model": "gpt-6-sol", "effort": "xhigh", "profile": "work",
 	})
 	if created.IsError || created.StructuredContent == nil {
 		t.Fatalf("create_session = %+v", created)
@@ -871,6 +872,9 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 	}
 	if opts.Worktree == nil || !*opts.Worktree {
 		t.Fatalf("worktree flag = %v", opts.Worktree)
+	}
+	if opts.Model != "gpt-6-sol" || opts.Effort != "xhigh" || opts.Profile != "work" {
+		t.Fatalf("create choice = %+v", opts)
 	}
 
 	if text, isError := callText(t, session, "send_session", map[string]any{

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -38,6 +38,9 @@ type sessionHarness struct {
 const sessionConfig = `[tools.echoer]
 command = "echo"
 revive_command = "echo resumed"
+catalog = "stand-in"
+model_args = "--model {model}"
+effort_args = "--effort {effort}"
 default_status = "idle"
 activity_cutoff = "(?m)^\u276f"
 
@@ -112,11 +115,8 @@ func testConfigLoader(t *testing.T, doc string) func(string) (config.Config, err
 		if err != nil {
 			return cfg, err
 		}
-		cfg.Tools = maps.Clone(declared.Tools)
-		// A profile on a test tool, resolved the way Load resolves one on
-		// a built-in: the harness swaps the tools in after the load.
-		cfg.ProfileDefs = map[string]config.Profile{"loud-echoer": {Tool: "echoer", Args: []string{"--volume", "eleven"}}}
-		return cfg, cfg.ResolveProfiles()
+		cfg.Tools = declared.Tools
+		return cfg, nil
 	}
 }
 
@@ -160,6 +160,12 @@ func newSessionHarness(t *testing.T) *sessionHarness {
 	loadConfig := testConfigLoader(t, sessionConfig)
 	sessions := newSessions(configDir, MCPVocabulary(), newDriver, git.New)
 	sessions.loadConfig = loadConfig
+	sessions.loadCatalog = func(string, string, config.Tool) (catalog.Catalog, error) {
+		return catalog.Catalog{Models: []catalog.Model{
+			{ID: "small", Default: true},
+			{ID: "big", Efforts: []string{"low", "high"}},
+		}}, nil
+	}
 	terminals := newTerminals(configDir, MCPVocabulary(), newDriver)
 	terminals.loadConfig = loadConfig
 	h := &sessionHarness{
@@ -215,30 +221,66 @@ func TestSessionsCreateCarriesNamePromptAndTargetWithRealTmux(t *testing.T) {
 	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "fix the retry backoff")
 }
 
-// A profile is picked by its name like a CLI and launches its base with
-// the arguments in front of the prompt; a revive carries them again, since
-// the row holds the profile's name rather than the base's.
-func TestSessionsCreateOnAProfileCarriesItsArgumentsThroughRevive(t *testing.T) {
-	h := newSessionHarness(t)
-	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "loud", Tool: "loud-echoer", Prompt: "say it"})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
+// A session's model and effort ride its launch in front of the prompt, and
+// a revive carries them again on either pane path, since the row keeps the
+// choice.
+func TestSessionsCreateCarriesItsChoiceThroughRevive(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		kill bool
+	}{
+		{"create pane", true},
+		{"surviving pane", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newSessionHarness(t)
+			created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "loud", Prompt: "say it", Model: "big", Effort: "high"})
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			screen := waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "say it")
+			if !strings.HasPrefix(screen.Output, "--model big --effort high ") {
+				t.Fatalf("the launch dropped the choice: %q", screen.Output)
+			}
+			if tc.kill {
+				if _, err := h.sessions.Kill(h.caller.ID, created.ID); err != nil {
+					t.Fatalf("Kill: %v", err)
+				}
+			} else {
+				waitForAgentGone(t, h.driver, created.ID)
+			}
+			if _, err := h.sessions.Revive(h.caller.ID, created.ID); err != nil {
+				t.Fatalf("Revive: %v", err)
+			}
+			waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "resumed --model big --effort high")
+		})
 	}
-	if created.Tool != "loud-echoer" {
-		t.Fatalf("created tool = %q, want the profile's name", created.Tool)
-	}
-	screen := waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "say it")
-	if !strings.Contains(screen.Output, "--volume eleven") {
-		t.Fatalf("the launch dropped the profile's arguments: %q", screen.Output)
-	}
-	waitForAgentGone(t, h.driver, created.ID)
+}
 
-	if _, err := h.sessions.Revive(h.caller.ID, created.ID); err != nil {
-		t.Fatalf("Revive: %v", err)
+// A spawn picks only what the CLI lists, the way the form offers only listed
+// values, and a CLI that lists nothing takes no choice at all.
+func TestSessionsCreateChecksTheChoiceAgainstTheCLI(t *testing.T) {
+	h := newSessionHarness(t)
+	for _, tc := range []struct {
+		opts   CreateSessionOptions
+		reason string
+	}{
+		{CreateSessionOptions{Model: "huge"}, `model "huge" is not one echoer lists; it lists small, big`},
+		{CreateSessionOptions{Model: "big", Effort: "max"}, `effort "max" is not one big takes; it takes low, high`},
+		{CreateSessionOptions{Effort: "high"}, "small takes no reasoning effort"},
+		{CreateSessionOptions{Profile: "work"}, "echoer has no profiles"},
+		{CreateSessionOptions{Tool: "blind", Model: "big"}, "blind does not report its models"},
+	} {
+		if _, err := h.sessions.Create(h.caller.ID, tc.opts); err == nil || !strings.Contains(err.Error(), tc.reason) {
+			t.Errorf("%+v: err = %v, want %q", tc.opts, err, tc.reason)
+		}
 	}
-	screen = waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "resumed --volume eleven")
-	if got := strings.Count(screen.Output, "--volume eleven"); got != 2 {
-		t.Fatalf("want the arguments on the launch and again on the revive, got %d in %q", got, screen.Output)
+	sessions, err := h.store.ListSessions(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("a refused choice still spawned: %d rows", len(sessions))
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -61,11 +62,18 @@ type CreateSessionOptions struct {
 	// Nil inherits the group's spawn-in-worktree choice, then the global
 	// setting.
 	Worktree *bool
+	// Model, Effort and Profile launch the CLI on those instead of its own
+	// defaults, and every later launch of the session keeps them.
+	Model   string
+	Effort  string
+	Profile string
 }
 
 type Sessions struct {
 	commands
 	newGit func() (*git.Driver, error)
+	// loadCatalog asks a CLI what it offers; the tests stand one in.
+	loadCatalog func(configDir, toolName string, tool config.Tool) (catalog.Catalog, error)
 }
 
 func NewSessions(configDir string, words Vocabulary) *Sessions {
@@ -74,8 +82,9 @@ func NewSessions(configDir string, words Vocabulary) *Sessions {
 
 func newSessions(configDir string, words Vocabulary, newDriver func() (*tmux.Driver, error), newGit func() (*git.Driver, error)) *Sessions {
 	return &Sessions{
-		commands: commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.LoadDir},
-		newGit:   newGit,
+		commands:    commands{configDir: configDir, words: words, newDriver: newDriver, loadConfig: config.LoadDir},
+		newGit:      newGit,
+		loadCatalog: loadCatalog,
 	}
 }
 
@@ -326,6 +335,10 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	if err != nil {
 		return Session{}, err
 	}
+	choice, err := s.choose(runtime.words, toolName, tool, opts)
+	if err != nil {
+		return Session{}, err
+	}
 	prompt := strings.TrimSpace(opts.Prompt)
 	if strings.HasPrefix(prompt, "-") && tool.PromptFlag == "" {
 		return Session{}, fmt.Errorf(`prompt cannot start with "-" for %s, which takes its prompt as a bare argument and would read it as a flag`, toolName)
@@ -361,7 +374,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		}
 	}
 
-	plan := launch.Assemble(toolName, tool, prompt, autoNamed, proactive)
+	plan := launch.Assemble(toolName, tool.WithChoice(choice), prompt, autoNamed, proactive)
 	manager := hooks.NewManager(s.configDir)
 	command, env, err := launch.Environment(manager, toolName, tool, plan.Command, id)
 	if err != nil {
@@ -380,6 +393,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		WorktreeBranch: worktree.branch,
 		PendingInputs:  plan.PendingInputs,
 		LaunchPrompt:   plan.LaunchPrompt,
+		Choice:         choice,
 	}
 	if err := runtime.createPane(sess.ID, sess.Cwd, command, env); err != nil {
 		discard()
@@ -764,7 +778,7 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 	if err := SnapshotRelaunch(runtime.store, target, tool, target.AgentSessionID); err != nil {
 		return Session{}, err
 	}
-	base := launch.ReviveCommand(tool, target.AgentSessionID)
+	base := launch.ReviveCommand(tool.WithChoice(target.Choice), target.AgentSessionID)
 	command, env, err := launch.Environment(hooks.NewManager(s.configDir), target.Tool, tool, base, target.ID)
 	if err != nil {
 		return Session{}, err

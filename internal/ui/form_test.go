@@ -702,10 +702,10 @@ func TestSpawnAwaitsARenameOnlyWhenItAsksForOne(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "do things", true, false); err != nil {
+	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "do things", true, false, config.Choice{}); err != nil {
 		t.Fatalf("auto-named spawn: %v", err)
 	}
-	if err := m.spawnSession("claude", "custom", dir, "", "do things", false, false); err != nil {
+	if err := m.spawnSession("claude", "custom", dir, "", "do things", false, false, config.Choice{}); err != nil {
 		t.Fatalf("custom spawn: %v", err)
 	}
 	for _, sess := range m.sessions {
@@ -723,7 +723,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "/compact", true, false); err != nil {
+	if err := m.spawnSession("claude", "claude-aaaa", dir, "", "/compact", true, false, config.Choice{}); err != nil {
 		t.Fatalf("slash spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -732,10 +732,10 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 		t.Fatal("slash-prompt spawn should defer the directive")
 	}
 
-	if err := m.spawnSession("claude", "claude-bbbb", dir, "", "do things", true, false); err != nil {
+	if err := m.spawnSession("claude", "claude-bbbb", dir, "", "do things", true, false, config.Choice{}); err != nil {
 		t.Fatalf("plain spawn: %v", err)
 	}
-	if err := m.spawnSession("claude", "custom", dir, "", "/compact", false, false); err != nil {
+	if err := m.spawnSession("claude", "custom", dir, "", "/compact", false, false, config.Choice{}); err != nil {
 		t.Fatalf("custom spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -751,7 +751,7 @@ func TestSpawnMarksDeferredDirective(t *testing.T) {
 
 func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false); err != nil {
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -780,7 +780,7 @@ func TestDeferredDirectiveSentWhenPaneReady(t *testing.T) {
 
 func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do the work", false, false); err != nil {
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do the work", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess := m.sessionRows()[0]
@@ -810,7 +810,7 @@ func TestSendModePromptSurvivesPollerRestart(t *testing.T) {
 
 func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do not resend", false, false); err != nil {
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "do not resend", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess := m.sessionRows()[0]
@@ -841,7 +841,7 @@ func TestSendModeReconcilesAmbiguousDeliveryWithoutResending(t *testing.T) {
 
 func TestSendModeSurfacesSendFailureAndDoesNotRetry(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "cannot deliver", false, false); err != nil {
+	if err := m.spawnSession("send-tool", "custom", t.TempDir(), "", "cannot deliver", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess, err := m.store.Get(m.sessionRows()[0].ID)
@@ -925,26 +925,6 @@ func TestSortedToolNamesOrder(t *testing.T) {
 	}}
 	got := sortedToolNames(cfg)
 	want := []string{"claude", "opencode", "codex", "grok", "gemini", "pi", "acme", "muse", "zephyr"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("sortedToolNames = %v want %v", got, want)
-	}
-}
-
-// A profile is picked beside the CLI it launches, not wherever its name
-// would sort, so a picker reads as "pi, then the ways to run pi".
-func TestSortedToolNamesKeepProfilesAfterTheirBase(t *testing.T) {
-	cfg := config.Config{
-		Tools: map[string]config.Tool{
-			"claude": {Command: "claude"},
-			"pi":     {Command: "pi"},
-			"aa-pi":  {Command: "pi --model a"},
-			"zz-pi":  {Command: "pi --model z"},
-			"sonnet": {Command: "claude --model sonnet"},
-		},
-		Profiles: map[string]string{"aa-pi": "pi", "zz-pi": "pi", "sonnet": "claude"},
-	}
-	got := sortedToolNames(cfg)
-	want := []string{"claude", "sonnet", "pi", "aa-pi", "zz-pi"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("sortedToolNames = %v want %v", got, want)
 	}
@@ -1068,7 +1048,7 @@ func TestSpawnWorktreeSessionCreatesWorktree(t *testing.T) {
 	}
 	initGitRepo(t, repo)
 
-	if err := m.spawnSession("claude", "wt-feat", repo, "", "", false, true); err != nil {
+	if err := m.spawnSession("claude", "wt-feat", repo, "", "", false, true, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sessions, err := m.store.ListSessions(true)
@@ -1091,7 +1071,7 @@ func TestSpawnWorktreeSessionCreatesWorktree(t *testing.T) {
 func TestSpawnWorktreeInNonRepoBlocks(t *testing.T) {
 	m := buildModel(t)
 	plain := t.TempDir()
-	err := m.spawnSession("claude", "wt-fail", plain, "", "", false, true)
+	err := m.spawnSession("claude", "wt-fail", plain, "", "", false, true, config.Choice{})
 	if err == nil {
 		t.Fatal("non-repo dir must block the spawn")
 	}
@@ -1120,7 +1100,7 @@ func TestSpawnWorktreeRollsBackWhenLaunchBuildFails(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(hooksDir, 0o755) })
 
-	err := m.spawnSession("claude", "wt-launchfail", repo, "", "", false, true)
+	err := m.spawnSession("claude", "wt-launchfail", repo, "", "", false, true, config.Choice{})
 	if err == nil {
 		t.Fatal("launch-build failure must block the spawn")
 	}
@@ -1176,10 +1156,10 @@ func TestSpawnStoresOnlyACommandLinePrompt(t *testing.T) {
 	m := buildModel(t)
 	dir := t.TempDir()
 
-	if err := m.spawnSession("ready-tool", "ready-tool-abcd", dir, "", "/compact", true, false); err != nil {
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", dir, "", "/compact", true, false, config.Choice{}); err != nil {
 		t.Fatalf("command-line spawn: %v", err)
 	}
-	if err := m.spawnSession("send-tool", "send-tool-abcd", dir, "", "/compact", true, false); err != nil {
+	if err := m.spawnSession("send-tool", "send-tool-abcd", dir, "", "/compact", true, false, config.Choice{}); err != nil {
 		t.Fatalf("send spawn: %v", err)
 	}
 

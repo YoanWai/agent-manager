@@ -120,7 +120,7 @@ func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Man
 	if err := SnapshotRelaunch(st, sess, tool, sess.AgentSessionID); err != nil {
 		return time.Time{}, err
 	}
-	base := launch.ReviveCommand(tool, sess.AgentSessionID)
+	base := launch.ReviveCommand(tool.WithChoice(sess.Choice), sess.AgentSessionID)
 	command, env, err := launch.Environment(hookManager, sess.Tool, tool, base, sess.ID)
 	if err != nil {
 		return time.Time{}, err

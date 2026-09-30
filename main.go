@@ -12,6 +12,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/cli"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -240,6 +241,7 @@ func run() error {
 	ui.SyncTerminalBackground()
 	model.StartPoller(program.Send)
 	final, runErr := program.Run()
+	catalog.StopAll()
 	ui.ResetTerminalBackground()
 	if runErr == nil {
 		if finished, ok := final.(*ui.Model); ok && finished.RestartPath() != "" {

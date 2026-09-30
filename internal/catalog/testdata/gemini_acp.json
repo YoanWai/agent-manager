@@ -1,0 +1,32 @@
+{
+ "session_new": {
+  "sessionId": "268cdd64-7baf-409f-9dbc-385804ad2771",
+  "models": {
+   "currentModelId": "auto",
+   "availableModels": [
+    {
+     "modelId": "auto",
+     "name": "Auto",
+     "description": "Let Gemini CLI decide the best model for the task: gemini-3.1-pro-preview, gemini-3.8-flash"
+    },
+    {
+     "modelId": "gemini-3.1-pro-preview",
+     "name": "gemini-3.1-pro-preview"
+    },
+    {
+     "modelId": "gemini-3.8-flash",
+     "name": "gemini-3.8-flash"
+    }
+   ]
+  },
+  "modes": {
+   "currentModeId": "default",
+   "availableModes": [
+    {
+     "id": "default",
+     "name": "Default"
+    }
+   ]
+  }
+ }
+}

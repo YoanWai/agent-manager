@@ -118,7 +118,7 @@ func TestSettingsCoordinationBriefsTheNextSpawn(t *testing.T) {
 
 	// ready-tool has no MCP client, so the mode reaches it as the note its
 	// first prompt opens with.
-	if err := m.spawnSession("ready-tool", "api-build", t.TempDir(), "", "build the api", false, false); err != nil {
+	if err := m.spawnSession("ready-tool", "api-build", t.TempDir(), "", "build the api", false, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess, err := m.store.Get(m.sessionRows()[0].ID)

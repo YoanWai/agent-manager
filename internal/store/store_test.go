@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/config"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -882,6 +884,28 @@ func TestLaunchPromptRoundTrip(t *testing.T) {
 	}
 	if list[0].LaunchPrompt != prompt {
 		t.Fatalf("list dropped the launch prompt: %+v", list[0])
+	}
+}
+
+func TestChoiceRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	choice := config.Choice{Provider: "xai-oauth", Model: "grok-4.6", Effort: "high", Profile: "work"}
+	if err := s.CreateSession(Session{ID: "c1", Name: "hermes-1ff0", Tool: "hermes", Cwd: "/tmp", Choice: choice}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.Get("c1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Choice != choice {
+		t.Fatalf("choice = %+v, want %+v", got.Choice, choice)
+	}
+	list, err := s.ListSessions(true)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if list[0].Choice != choice {
+		t.Fatalf("list dropped the choice: %+v", list[0])
 	}
 }
 

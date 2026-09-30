@@ -2,13 +2,13 @@
 
 Config lives in your OS user config dir (`~/Library/Application Support/agent-manager/config.toml` on macOS, `~/.config/agent-manager/config.toml` on Linux, with `XDG_CONFIG_HOME` honored when set) and is created on first run.
 
-It holds four things. `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats. `editor` is the command `o` opens a directory in, arguments included (`editor = "code -n"`, `editor = "open -a 'Visual Studio Code'"`); it is run directly rather than through a shell, and quotes group an argument carrying a space. Left unset, Agent Manager falls back to `$AGENT_MANAGER_EDITOR`, then a GUI editor on `PATH`, then `$VISUAL` / `$EDITOR` (see [Opening the editor](usage.md#opening-the-editor)). The [profiles](#profiles) and the two key tables are below.
+It holds three things. `poll_interval` (default `"2s"`) sets how often panes are polled for status, preview, and stats. `editor` is the command `o` opens a directory in, arguments included (`editor = "code -n"`, `editor = "open -a 'Visual Studio Code'"`); it is run directly rather than through a shell, and quotes group an argument carrying a space. Left unset, Agent Manager falls back to `$AGENT_MANAGER_EDITOR`, then a GUI editor on `PATH`, then `$VISUAL` / `$EDITOR` (see [Opening the editor](usage.md#opening-the-editor)). The two key tables are below.
 
 ## Agent CLIs
 
-Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, and Muse Code, plus the shell `T` opens. Each one's launch command, revive and fork commands, MCP registration, and status rules are built into the binary, so an upgrade brings the current version of all of them. Hermes and Antigravity have no fork, and Pi gets no MCP registration. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
+Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, and Muse Code, plus the shell `T` opens. Each one's launch command, revive and fork commands, MCP registration, status rules, and the flags a session's model, effort and profile launch with are built into the binary, so an upgrade brings the current version of all of them. The models, efforts and profiles themselves are read from each CLI when you create a session (see [Model, effort and profile](usage.md#model-effort-and-profile)). Hermes and Antigravity have no fork, and Pi gets no MCP registration. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
 
-The Pi support requires Pi 0.76.0 or later, because it launches sessions with `--session-id`.
+The Pi support requires Pi 0.76.0 or later, because it launches sessions with `--session-id`. Its model list needs Pi 0.84.3 or later, because earlier releases save every model they are asked about as your default.
 
 Hermes is tested with Hermes Agent 0.20.0 and launches its classic REPL with `--cli`. This keeps the input, approval, and activity markers stable even when your Hermes preference selects its modern TUI.
 
@@ -25,24 +25,6 @@ tmux -L agentmgr capture-pane -p -t am_SESSION_ID
 ```
 
 A CLI that is not on the list above is a feature request; the `CLIs` row in Settings ends with `request CLI support`, which opens one prefilled.
-
-## Profiles
-
-A profile starts one of the CLIs above with extra arguments, under a name of your own.
-
-```toml
-[profiles.claude-sonnet]
-tool = "claude"
-args = ["--model", "sonnet"]
-
-[profiles.pi-fast]
-tool = "pi"
-args = ["--model", "openai-codex/gpt-6-sol:xhigh", "--thinking", "low"]
-```
-
-`tool` names a CLI the binary ships, and `args` is a list, one argument per entry, each quoted for the shell as written. The profile is offered beside its CLI wherever one is picked: the `n` form, the quick prompt's `tab` cycle, `spawn --tool`, the MCP `spawn` tool, and the `CLIs` checklist in Settings. A session started on it carries the arguments on every launch: the first one, restart (`R`), revive (`v`) and fork (`f`). The row shows the profile's name where it shows the CLI's. Everything else is the CLI's own, the status rules above all, so a release that fixes the CLI's screen fixes the profile too.
-
-The load refuses a profile that takes a CLI's name, builds on another profile, or builds on the shell, and says which. A profile removed from the file leaves its sessions in the list; their next restart or revive says the tool is no longer configured, as for a CLI the binary stopped shipping.
 
 ## Key bindings
 

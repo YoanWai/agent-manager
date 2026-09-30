@@ -131,13 +131,30 @@ type Tool struct {
 	// preview's height, not only grow it. A tool opts in once a height
 	// shrink is measured to keep its scrollback. Codex clears it (#369).
 	FitsHeight bool `toml:"fits_height"`
+	// Catalog names the built-in reader that asks the CLI, over the machine
+	// interface CatalogCommand starts, for the models, effort levels and
+	// profiles a session can launch with: "claude", "codex", "acp", "pi",
+	// "muse", "opencode" or "hermes". Empty leaves those choices to the CLI.
+	Catalog        string `toml:"catalog"`
+	CatalogCommand string `toml:"catalog_command"`
+	// ModelArgs, EffortArgs and ProfileArgs are the flags a session's Choice
+	// launches with. {provider}, {model}, {effort} and {profile} take the
+	// values, and a launch line holding {choice} takes the flags there
+	// instead of at its end.
+	ModelArgs   string `toml:"model_args"`
+	EffortArgs  string `toml:"effort_args"`
+	ProfileArgs string `toml:"profile_args"`
 }
 
-// Profile is a built-in tool launched with extra arguments, under a name
-// of the user's.
-type Profile struct {
-	Tool string   `toml:"tool"`
-	Args []string `toml:"args"`
+// Choice is the model, reasoning effort and profile a session launches its
+// CLI with. An empty field keeps the CLI's own default.
+type Choice struct {
+	// Provider routes Model for a CLI that picks a model per provider
+	// (hermes); it rides along with Model and is never chosen alone.
+	Provider string
+	Model    string
+	Effort   string
+	Profile  string
 }
 
 type Config struct {
@@ -150,14 +167,9 @@ type Config struct {
 	// [tools.<name>] block left there cannot fail the load.
 	Tools        map[string]Tool `toml:"-"`
 	IgnoredTools []string        `toml:"-"`
-	// ProfileDefs is what the file declares under [profiles.<name>]; Load
-	// resolves each into a Tools entry of that name and records the base
-	// it came from in Profiles.
-	ProfileDefs map[string]Profile `toml:"profiles"`
-	Profiles    map[string]string  `toml:"-"`
-	Keybindings Keybindings        `toml:"keybindings"`
-	SessionKeys keybind.Table      `toml:"-"`
-	ListKeys    keybind.Table      `toml:"-"`
+	Keybindings  Keybindings     `toml:"keybindings"`
+	SessionKeys  keybind.Table   `toml:"-"`
+	ListKeys     keybind.Table   `toml:"-"`
 }
 
 type Keybindings struct {
@@ -224,76 +236,61 @@ func LoadDir(dir string) (Config, error) {
 	cfg.IgnoredTools = declaredTools(meta)
 	cfg.Tools = builtin.Tools
 	cfg.applyDefaults()
-	if err := cfg.ResolveProfiles(); err != nil {
-		return Config{}, fmt.Errorf("config %s: %w", path, err)
-	}
 	if err := cfg.resolveKeys(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	return cfg, nil
 }
 
-// ResolveProfiles turns each declared profile into a tool of its own name:
-// the base tool with the arguments appended to every line that launches
-// it, so a session on the profile keeps them through revive, restart and
-// fork. Everything else, the status rules above all, is the base tool's,
-// so a fix for its screen reaches the profile too. Load runs it once the
-// tools are in place; a loader that swaps the tools out runs it again.
-func (c *Config) ResolveProfiles() error {
-	names := make([]string, 0, len(c.ProfileDefs))
-	for name := range c.ProfileDefs {
-		names = append(names, name)
+// WithChoice returns the tool with the choice's flags on every line that
+// launches it, so a session keeps its model through the first launch,
+// restart, revive and fork. Everything else, the status rules above all, is
+// the tool's own. A line the tool leaves empty stays empty, so the
+// fallbacks that read emptiness still take the same path.
+func (t Tool) WithChoice(choice Choice) Tool {
+	flags := choice.flags(t)
+	t.Command = placeChoice(t.Command, flags)
+	t.ReviveCommand = placeChoice(t.ReviveCommand, flags)
+	t.ResumeByIDCommand = placeChoice(t.ResumeByIDCommand, flags)
+	t.ResumePickerCommand = placeChoice(t.ResumePickerCommand, flags)
+	t.ForkCommand = placeChoice(t.ForkCommand, flags)
+	return t
+}
+
+// choicePlaceholder marks where a launch line takes the choice's flags when
+// they cannot go at its end, ahead of a subcommand that would refuse them.
+const choicePlaceholder = "{choice}"
+
+func placeChoice(line, flags string) string {
+	if line == "" {
+		return ""
 	}
-	sort.Strings(names)
-	c.Profiles = map[string]string{}
-	for _, name := range names {
-		def := c.ProfileDefs[name]
-		if _, taken := c.Tools[name]; taken {
-			return fmt.Errorf("profile %q shadows the built-in tool of that name", name)
-		}
-		base, known := c.Tools[def.Tool]
-		if _, onAProfile := c.ProfileDefs[def.Tool]; !known || onAProfile {
-			var clis []string
-			for _, cli := range c.ToolNames() {
-				if _, isProfile := c.ProfileDefs[cli]; !isProfile && !c.Tools[cli].Shell {
-					clis = append(clis, cli)
-				}
-			}
-			return fmt.Errorf("profile %q: tool %q is not a CLI it supports; the CLIs are %s", name, def.Tool, strings.Join(clis, ", "))
-		}
-		if base.Shell {
-			return fmt.Errorf("profile %q: tool %q opens a shell, not an agent", name, def.Tool)
-		}
-		var quoted strings.Builder
-		for _, arg := range def.Args {
-			quoted.WriteString(" " + tmux.ShellQuote(arg))
-		}
-		suffix := quoted.String()
-		tool := base
-		tool.Command += suffix
-		// A line the base leaves empty stays empty, so the fallbacks that
-		// read emptiness still take the same path.
-		if base.ReviveCommand != "" {
-			tool.ReviveCommand += suffix
-		}
-		if base.ResumeByIDCommand != "" {
-			tool.ResumeByIDCommand += suffix
-		}
-		if base.ResumePickerCommand != "" {
-			tool.ResumePickerCommand += suffix
-		}
-		if base.ForkCommand != "" {
-			tool.ForkCommand += suffix
-		}
-		// MCP registration keys on the tool's name when the block names no
-		// style, and the profile's name is nobody's.
-		if tool.MCP == "" {
-			tool.MCP = def.Tool
-		}
-		c.Tools[name] = tool
-		c.Profiles[name] = def.Tool
+	if before, after, found := strings.Cut(line, choicePlaceholder); found {
+		return strings.TrimRight(before, " ") + flags + after
 	}
-	return nil
+	return line + flags
+}
+
+// flags expands the tool's flag templates for the fields the choice sets,
+// each value quoted for the shell.
+func (c Choice) flags(t Tool) string {
+	values := strings.NewReplacer(
+		"{provider}", tmux.ShellQuote(c.Provider),
+		"{model}", tmux.ShellQuote(c.Model),
+		"{effort}", tmux.ShellQuote(c.Effort),
+		"{profile}", tmux.ShellQuote(c.Profile),
+	)
+	var flags strings.Builder
+	for _, arg := range []struct{ template, value string }{
+		{t.ProfileArgs, c.Profile},
+		{t.ModelArgs, c.Model},
+		{t.EffortArgs, c.Effort},
+	} {
+		if arg.template != "" && arg.value != "" {
+			flags.WriteString(" " + values.Replace(arg.template))
+		}
+	}
+	return flags.String()
 }
 
 // declaredTools reads the [tools.<name>] headers off the key list, since
@@ -417,14 +414,6 @@ const starterConfig = `poll_interval = "2s"
 # new_session = "N"
 # prompt = ["space", "p"]
 # quit = "none"
-
-# A profile starts one of the built-in CLIs with extra arguments, under a
-# name of your own; it is offered beside the CLIs wherever one is picked,
-# and a session started on it keeps the arguments through restart, revive
-# and fork. Each argument is one list entry, quoted for the shell as is.
-# [profiles.claude-sonnet]
-# tool = "claude"
-# args = ["--model", "sonnet"]
 `
 
 // builtinTools is the only source of tool definitions, so a release that
@@ -456,6 +445,12 @@ resume_picker_command = "claude --resume"
 fork_command = "claude --resume {id} --fork-session --session-id {new_id} --name {name}"
 # fallback when a session predates id tracking: resumes the last conversation there
 revive_command = "claude --continue"
+# the Agent SDK's initialize request lists the models and the effort levels
+# each one takes; safe mode keeps hooks and MCP servers out of the probe
+catalog = "claude"
+catalog_command = "claude -p --input-format stream-json --output-format stream-json --verbose --safe-mode --no-session-persistence"
+model_args = "--model {model}"
+effort_args = "--effort {effort}"
 # hooks report status events directly; the pane rules below stay as fallback
 status_source = "claude-hooks"
 default_status = "idle"
@@ -518,6 +513,11 @@ fork_command = "opencode --session {id} --fork"
 resume_picker_command = "opencode"
 resume_picker_keys = "/sessions"
 revive_command = "opencode --continue"
+# the headless server lists every provider's models without opening a
+# session; its ACP server would leave one in the global session list
+catalog = "opencode"
+catalog_command = "opencode serve --port 0"
+model_args = "-m {model}"
 # opencode's positional argument is the project path, so the optional
 # session prompt travels behind this flag
 prompt_flag = "--prompt"
@@ -565,6 +565,11 @@ resume_picker_command = "codex resume"
 fork_command = "codex fork {id}"
 # fallback: resumes the most recent session in the working directory
 revive_command = "codex resume --last"
+# the app server's model/list carries each model's effort levels and default
+catalog = "codex"
+catalog_command = "codex app-server"
+model_args = "-m {model}"
+effort_args = "-c model_reasoning_effort={effort}"
 default_status = "idle"
 activity_cutoff = "(?m)^›"
 # a completed turn closes on a dim label ("  02:41", "  done 2:41 AM",
@@ -605,6 +610,11 @@ session_store = "muse"
 resume_by_id_command = "muse resume {id}"
 resume_picker_command = "muse resume"
 revive_command = "muse resume --last"
+# muse serve's model/list carries each model's effort variants
+catalog = "muse"
+catalog_command = "muse serve --no-session-log"
+model_args = "--model {model}"
+effort_args = "--reasoning-effort {effort}"
 # A second process cannot open a running session, so the fork is made inside
 # the source by /fork and opens in its own pane by id.
 fork_keys = "/fork"
@@ -636,6 +646,11 @@ fork_command = "grok --resume {id} --fork-session --session-id {new_id}"
 resume_picker_command = "grok"
 # fallback: resumes the most recent session for the working directory
 revive_command = "grok --continue"
+# an ACP session lists the models and, per model, its thought levels
+catalog = "acp"
+catalog_command = "grok agent stdio"
+model_args = "-m {model}"
+effort_args = "--reasoning-effort {effort}"
 default_status = "idle"
 # boxed fullscreen and flush-left minimal; indented transcript prompt lines stay out
 activity_cutoff = "(?m)^(?:\\s*│ )?❯"
@@ -676,6 +691,10 @@ resume_picker_command = "gemini -i /resume"
 # fallback when a session predates id tracking: resumes the project's most
 # recent session
 revive_command = "gemini --resume latest"
+# an ACP session lists the models; gemini takes no effort flag
+catalog = "acp"
+catalog_command = "gemini --acp"
+model_args = "-m {model}"
 default_status = "idle"
 # the composer line: "> " normally, "! " in shell mode, "* " in yolo mode
 activity_cutoff = "(?m)^\\s*[>!*] "
@@ -746,9 +765,18 @@ command = "hermes --cli"
 # Hermes creates its session id on first input and records it in state.db.
 session_store = "hermes"
 resume_by_id_command = "hermes --cli --resume {id}"
-# the interactive session browser; Enter on a row resumes it
-resume_picker_command = "hermes --cli sessions browse"
+# the interactive session browser; Enter on a row resumes it, carrying the
+# flags given before the subcommand, which refuses them after it
+resume_picker_command = "hermes --cli {choice} sessions browse"
 revive_command = "hermes --cli --continue"
+# hermes serve lists the profiles and, per profile, every logged-in
+# provider's models with whether each reasons; it lists no effort levels,
+# so the effort is typed
+catalog = "hermes"
+catalog_command = "hermes serve --skip-build --port 0"
+model_args = "--provider {provider} -m {model}"
+effort_args = "--reasoning {effort}"
+profile_args = "-p {profile}"
 # Hermes only accepts startup text through chat -q, which is one-shot and
 # exits. Start the real REPL, then submit the prompt when its composer appears.
 prompt_mode = "send"
@@ -794,6 +822,11 @@ resume_by_id_command = "pi --session {id}"
 fork_command = "pi --fork {id} --session-id {new_id}"
 resume_picker_command = "pi --resume"
 revive_command = "pi --continue"
+# RPC mode lists the models, and the thinking levels of each once it is set
+catalog = "pi"
+catalog_command = "pi --mode rpc --no-session"
+model_args = "--model {model}"
+effort_args = "--thinking {effort}"
 # Pi shows a spinner for active work. A resting pane is a finished turn until
 # the user acknowledges it; a resumed conversation is already acknowledged.
 default_status = "finished"

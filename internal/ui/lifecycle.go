@@ -324,6 +324,7 @@ func (m *Model) reviveSession(sess store.Session) error {
 	if !ok {
 		return fmt.Errorf("tool %s is no longer configured", sess.Tool)
 	}
+	tool = tool.WithChoice(sess.Choice)
 	if !isDir(sess.Cwd) {
 		return fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
@@ -474,6 +475,7 @@ func (m *Model) restartSession(sess store.Session) error {
 	if err := m.killSession(sess); err != nil {
 		return err
 	}
+	tool = tool.WithChoice(sess.Choice)
 	baseCommand, agentSessionID := restartLaunch(tool)
 	if err := sessioncmd.SnapshotRelaunch(m.store, sess, tool, agentSessionID); err != nil {
 		return err

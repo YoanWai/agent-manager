@@ -394,7 +394,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		{"command-code", "cmd --resume"},
 		{"grok", "grok"},
 		{"gemini", "gemini -i /resume"},
-		{"hermes", "hermes --cli sessions browse"},
+		{"hermes", "hermes --cli {choice} sessions browse"},
 		{"pi", "pi --resume"},
 	} {
 		if got := cfg.Tools[tc.name].ResumePickerCommand; got != tc.want {
@@ -552,115 +552,107 @@ func TestMuseDefaultsOnLoad(t *testing.T) {
 	}
 }
 
-// A profile is the base tool under a new name with its arguments on every
-// line that launches it, and nothing else of its own: the status rules are
-// the base's, so a fix for the base's screen reaches the profile too.
-func TestProfileIsTheBaseToolWithArgumentsOnEveryLaunchLine(t *testing.T) {
-	dir := writeConfigText(t, `
-[profiles.pi-sol]
-tool = "pi"
-args = ["--model", "openai-codex/gpt-6-sol:xhigh", "--thinking", "it's high"]
-`)
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	profile, ok := cfg.Tools["pi-sol"]
-	if !ok {
-		t.Fatal("expected pi-sol tool")
-	}
-	base := cfg.Tools["pi"]
-	suffix := ` '--model' 'openai-codex/gpt-6-sol:xhigh' '--thinking' 'it'\''s high'`
-	for _, tc := range []struct{ field, base, got string }{
-		{"command", base.Command, profile.Command},
-		{"revive_command", base.ReviveCommand, profile.ReviveCommand},
-		{"resume_by_id_command", base.ResumeByIDCommand, profile.ResumeByIDCommand},
-		{"resume_picker_command", base.ResumePickerCommand, profile.ResumePickerCommand},
-		{"fork_command", base.ForkCommand, profile.ForkCommand},
-	} {
-		if tc.base == "" {
-			t.Fatalf("pi %s is empty; the test needs a base line to append to", tc.field)
-		}
-		if want := tc.base + suffix; tc.got != want {
-			t.Errorf("pi-sol %s = %q, want %q", tc.field, tc.got, want)
-		}
-	}
-	if !reflect.DeepEqual(profile.Rules, base.Rules) || profile.ActivityCutoff != base.ActivityCutoff || profile.SessionIDFlag != base.SessionIDFlag {
-		t.Errorf("pi-sol reads its screen differently from pi:\n%+v\n%+v", profile, base)
-	}
-	if got := cfg.Profiles["pi-sol"]; got != "pi" {
-		t.Errorf("Profiles[pi-sol] = %q, want pi", got)
-	}
-	if got := cfg.Tools["pi"].Command; got != "pi" {
-		t.Errorf("the base tool changed: pi command = %q", got)
-	}
-}
-
-// A base whose block leaves a launch line empty keeps it empty on the
-// profile, so the fallbacks that read emptiness take the same path; and the
-// MCP style keys on the base's name, since the profile's is nobody's.
-func TestProfileKeepsTheBaseFallbacksAndMCPStyle(t *testing.T) {
-	dir := writeConfigText(t, `
-[profiles.claude-sonnet]
-tool = "claude"
-args = ["--model", "sonnet"]
-
-[profiles.hermes-quiet]
-tool = "hermes"
-args = []
-`)
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	if got := cfg.Tools["claude-sonnet"].MCP; got != "claude" {
-		t.Errorf("claude-sonnet mcp = %q, want claude", got)
-	}
-	if got := cfg.Tools["hermes-quiet"].MCP; got != cfg.Tools["hermes"].MCP {
-		t.Errorf("hermes-quiet mcp = %q, want the base's %q", got, cfg.Tools["hermes"].MCP)
-	}
-	if cfg.Tools["hermes"].ForkCommand != "" {
-		t.Fatal("the test needs a base without a fork command")
-	}
-	if got := cfg.Tools["hermes-quiet"].ForkCommand; got != "" {
-		t.Errorf("hermes-quiet fork_command = %q, want empty like the base", got)
-	}
-	if got := cfg.Tools["hermes-quiet"].Command; got != "hermes --cli" {
-		t.Errorf("hermes-quiet command = %q, want hermes --cli with no arguments", got)
-	}
-}
-
-func TestLoadDirRefusesAProfileThatCannotLaunch(t *testing.T) {
-	for _, tc := range []struct{ text, reason string }{
-		{"[profiles.pi]\ntool = \"pi\"\n", `profile "pi" shadows the built-in tool`},
-		{"[profiles.mine]\ntool = \"nope\"\n", `profile "mine": tool "nope" is not a CLI it supports; the CLIs are antigravity, claude, codex`},
-		{"[profiles.mine]\n", `profile "mine": tool "" is not a CLI`},
-		{"[profiles.mine]\ntool = \"terminal\"\n", `profile "mine": tool "terminal" opens a shell`},
-		{"[profiles.a]\ntool = \"pi\"\n[profiles.b]\ntool = \"a\"\n", `profile "b": tool "a" is not a CLI`},
-	} {
-		dir := writeConfigText(t, tc.text)
-		_, err := LoadDir(dir)
-		if err == nil || !strings.Contains(err.Error(), tc.reason) {
-			t.Errorf("%s: err = %v, want %q", tc.text, err, tc.reason)
-		}
-	}
-}
-
-// The built-in config and a file without profiles name none, and a
-// [tools.*] block stays as ignored as before beside one.
-func TestNoProfilesIsAnEmptyMap(t *testing.T) {
-	def, err := Default()
+// A choice puts its flags on every line that launches the tool, quoted for
+// the shell, and changes nothing else: the status rules stay the tool's.
+func TestWithChoiceFlagsEveryLaunchLine(t *testing.T) {
+	cfg, err := Default()
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	if len(def.Profiles) != 0 {
-		t.Fatalf("Default profiles = %v", def.Profiles)
+	base := cfg.Tools["pi"]
+	chosen := base.WithChoice(Choice{Model: "openai-codex/gpt-6-sol", Effort: "it's high"})
+	suffix := ` --model 'openai-codex/gpt-6-sol' --thinking 'it'\''s high'`
+	for _, tc := range []struct{ field, base, got string }{
+		{"command", base.Command, chosen.Command},
+		{"revive_command", base.ReviveCommand, chosen.ReviveCommand},
+		{"resume_by_id_command", base.ResumeByIDCommand, chosen.ResumeByIDCommand},
+		{"resume_picker_command", base.ResumePickerCommand, chosen.ResumePickerCommand},
+		{"fork_command", base.ForkCommand, chosen.ForkCommand},
+	} {
+		if tc.base == "" {
+			t.Fatalf("pi %s is empty; the test needs a line to flag", tc.field)
+		}
+		if want := tc.base + suffix; tc.got != want {
+			t.Errorf("%s = %q, want %q", tc.field, tc.got, want)
+		}
 	}
-	cfg, err := LoadDir(writeConfigText(t, "[tools.pi]\ncommand = \"x\"\n[profiles.p]\ntool = \"pi\"\n"))
+	if !reflect.DeepEqual(chosen.Rules, base.Rules) || chosen.ActivityCutoff != base.ActivityCutoff || chosen.SessionIDFlag != base.SessionIDFlag {
+		t.Errorf("the choice changed how pi's screen is read:\n%+v\n%+v", chosen, base)
+	}
+}
+
+// Hermes takes the profile, the provider with its model, and the effort, in
+// that order; its session browser takes them ahead of the subcommand, and
+// the fork line it does not have stays empty.
+func TestWithChoicePlacesFlagsAtTheChoiceMark(t *testing.T) {
+	cfg, err := Default()
 	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
+		t.Fatalf("Default: %v", err)
 	}
-	if len(cfg.Profiles) != 1 || cfg.IgnoredTools[0] != "pi" || cfg.Tools["p"].Command != "pi" {
-		t.Fatalf("profiles = %v ignored = %v p = %q", cfg.Profiles, cfg.IgnoredTools, cfg.Tools["p"].Command)
+	chosen := cfg.Tools["hermes"].WithChoice(Choice{Provider: "xai-oauth", Model: "grok-4.6", Effort: "high", Profile: "work"})
+	flags := ` -p 'work' --provider 'xai-oauth' -m 'grok-4.6' --reasoning 'high'`
+	if want := "hermes --cli" + flags; chosen.Command != want {
+		t.Errorf("command = %q, want %q", chosen.Command, want)
+	}
+	if want := "hermes --cli" + flags + " sessions browse"; chosen.ResumePickerCommand != want {
+		t.Errorf("resume_picker_command = %q, want %q", chosen.ResumePickerCommand, want)
+	}
+	if chosen.ForkCommand != "" {
+		t.Errorf("fork_command = %q, want empty like hermes's own", chosen.ForkCommand)
+	}
+	for line, want := range map[string]string{
+		"cli {choice}":     "cli -m 'x'",
+		"cli{choice} sub":  "cli -m 'x' sub",
+		"cli {choice} sub": "cli -m 'x' sub",
+	} {
+		if got := placeChoice(line, " -m 'x'"); got != want {
+			t.Errorf("placeChoice(%q) = %q, want %q", line, got, want)
+		}
+	}
+}
+
+// With nothing chosen every line launches as the tool ships it, the choice
+// mark gone.
+func TestWithAnEmptyChoiceLaunchesAsShipped(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	for name, tool := range cfg.Tools {
+		plain := tool.WithChoice(Choice{})
+		for _, line := range []string{plain.Command, plain.ReviveCommand, plain.ResumeByIDCommand, plain.ResumePickerCommand, plain.ForkCommand} {
+			if strings.Contains(line, "{choice}") || strings.Contains(line, "  ") {
+				t.Errorf("%s launches %q", name, line)
+			}
+		}
+	}
+	if got := cfg.Tools["hermes"].WithChoice(Choice{}).ResumePickerCommand; got != "hermes --cli sessions browse" {
+		t.Errorf("hermes resume_picker_command = %q", got)
+	}
+}
+
+// Every CLI that can be asked for its models says how, and takes the model
+// it answers with; the ones asked for effort levels take an effort too.
+func TestEveryCatalogToolTakesWhatItLists(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	for name, tool := range cfg.Tools {
+		if tool.Catalog == "" {
+			if tool.ModelArgs != "" || tool.EffortArgs != "" || tool.ProfileArgs != "" {
+				t.Errorf("%s takes a choice nothing can list", name)
+			}
+			continue
+		}
+		if tool.CatalogCommand == "" || !strings.Contains(tool.ModelArgs, "{model}") {
+			t.Errorf("%s catalog %q command %q model_args %q", name, tool.Catalog, tool.CatalogCommand, tool.ModelArgs)
+		}
+		if tool.EffortArgs != "" && !strings.Contains(tool.EffortArgs, "{effort}") {
+			t.Errorf("%s effort_args = %q", name, tool.EffortArgs)
+		}
+		if tool.ProfileArgs != "" && !strings.Contains(tool.ProfileArgs, "{profile}") {
+			t.Errorf("%s profile_args = %q", name, tool.ProfileArgs)
+		}
 	}
 }

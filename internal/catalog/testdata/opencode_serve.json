@@ -1,0 +1,49 @@
+{
+ "providers": {
+  "providers": [
+   {
+    "id": "google",
+    "name": "Google",
+    "models": {
+     "deep-research-max-preview-04-2026": {
+      "id": "deep-research-max-preview-04-2026",
+      "name": "Deep Research Max Preview (Apr-21-2026)",
+      "providerID": "google"
+     },
+     "deep-research-preview-04-2026": {
+      "id": "deep-research-preview-04-2026",
+      "name": "Deep Research Preview (Apr-21-2026)",
+      "providerID": "google"
+     }
+    }
+   },
+   {
+    "id": "opencode",
+    "name": "OpenCode Zen",
+    "models": {
+     "big-pickle": {
+      "id": "big-pickle",
+      "name": "Big Pickle",
+      "providerID": "opencode"
+     },
+     "ling-3.0-flash-fin-free": {
+      "id": "ling-3.0-flash-fin-free",
+      "name": "Ling 3.0 Flash Fin Free",
+      "providerID": "opencode"
+     }
+    }
+   }
+  ],
+  "default": {
+   "google": "gemini-3-pro-image-preview",
+   "openrouter": "google/gemini-3-pro-image-preview",
+   "zai-coding-plan": "glm-5.3-highspeed",
+   "deepseek": "deepseek-v4-pro",
+   "openai": "gpt-5.6-terra-fast",
+   "opencode": "big-pickle"
+  }
+ },
+ "config": {
+  "model": "opencode/big-pickle"
+ }
+}

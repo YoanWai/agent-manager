@@ -14,7 +14,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 
 | Key | Action |
 |-----|--------|
-| `n` | New session (name, tool, directory, worktree toggle, optional starting prompt, group picker) |
+| `n` | New session (name, tool, the model, effort and profile the tool offers, directory, worktree toggle, optional starting prompt, group picker) |
 | `T` | New terminal tab: a shell under the selected agent, or in the selected group |
 | `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
@@ -65,7 +65,7 @@ Navigation is keyboard-driven, but the mouse works too. The manager claims mouse
 Press `space` to dock a prompt bar at the bottom of the sidebar. The target follows the cursor while the bar is open: `↑↓` still navigate the list from a one-row prompt, and in a taller one `↑` navigates from the top row and `↓` from the bottom row. Anywhere else they move the caret, so a prompt that wrapped or was pasted with line breaks edits like a multi-line editor.
 
 - On a **session** row, `enter` sends the typed text straight into the session's pane, so the agent gets it as a user message without you attaching. The bar clears and stays open, ready for the next answer; Settings (`s`) can make it close instead.
-- On a **group** row, `enter` spawns a new agent in that group and submits the prompt at startup, using the group's default path. This is the shortest path to a fresh agent: `space`, type the task, `enter`, with no form and no name to invent. The spawn tool starts on the tool of the last session you created in this run, and on the Settings default before that. `tab` (or `alt+m`) steps it forward (claude ↔ opencode ↔ any configured tool), `shift+tab` steps it back one, and the footer shows the current pick. `ctrl+t` (or `alt+w`) toggles whether the new agent spawns into its own git worktree, starting from that last session's pick, or the Settings default before any. The footer shows `worktree: on` or `worktree: off`, or `worktree: unavailable (not a git repo)` when the target directory cannot hold one. Answering an existing session ignores the toggle, since there is no new session to place in a worktree. The agent starts working on the prompt immediately.
+- On a **group** row, `enter` spawns a new agent in that group and submits the prompt at startup, using the group's default path. This is the shortest path to a fresh agent: `space`, type the task, `enter`, with no form and no name to invent. The spawn tool starts on the tool of the last session you created in this run, and on the Settings default before that. `tab` (or `alt+m`) steps it forward (claude ↔ opencode ↔ any configured tool), `shift+tab` steps it back one, and the footer shows the current pick. `ctrl+l` opens the list of models the tool reports, where typing filters and `enter` picks, `ctrl+x` steps the reasoning effort through the levels that model takes, and `ctrl+y` steps the profile of a tool that has profiles (see [Model, effort and profile](#model-effort-and-profile)). The line under the target shows all of them, and a click on one does what its key does. `ctrl+t` (or `alt+w`) toggles whether the new agent spawns into its own git worktree, starting from that last session's pick, or the Settings default before any. The footer shows `worktree: on` or `worktree: off`, or `worktree: unavailable (not a git repo)` when the target directory cannot hold one. Answering an existing session ignores the toggle, since there is no new session to place in a worktree. The agent starts working on the prompt immediately.
 
 `ctrl+v` pastes an image from the system clipboard as an `[Image #1]` chip at the caret. The image is saved under `agent-manager-pastes` in your temp directory, and on send each chip is swapped back for its path, so the paths reach the agent in the order and the places you pasted them. `backspace` next to a chip removes the whole chip, and an edit that swallows one releases its image. A clipboard holding text rather than an image pastes as text. Pasted images older than seven days are cleared at startup and once a day while the manager runs, so an agent can still open one from an earlier session while temp stays tidy.
 
@@ -92,6 +92,29 @@ Opening a session (`enter`, or `→`) takes the whole body too, through the same
 ## Which CLIs you get offered
 
 Every configured tool is offered when you create a session, which is more than most people run. Settings (`s`) has a `CLIs` row: `enter` opens a checklist, `space` or `enter` unchecks the tool under the cursor, `esc` saves, and the ones left checked are what the `n` form's `tool` picker and the quick prompt's `tab` cycle through. The last checked tool cannot be unchecked, since a picker with nothing in it could not create a session. It only narrows the pickers, so a session already on an unchecked tool keeps running and revives on that same tool. The last row, `request CLI support`, opens an issue for a CLI we do not ship rules for yet.
+
+## Model, effort and profile
+
+The `n` form has `model` and `effort` rows under `tool`, and a `profile` row above them for a tool that has profiles. The quick prompt has the same choices on `ctrl+l`, `ctrl+x` and `ctrl+y`, and `agent-manager spawn` takes `--model`, `--effort` and `--profile`. Every value comes from the CLI itself. The manager asks it through the interface it offers programs, so a model that ships next week shows up in the list without an Agent Manager release.
+
+Left alone, each row keeps the CLI's own default, which is whatever you set up in that CLI. The model list filters as you type, the way `dir` suggests paths, the arrows scroll through every model the CLI lists, and only a listed model can be picked. Your last picks for that CLI come first. The effort row offers the levels the chosen model takes, or the levels of the model the CLI starts on while none is picked, and it leaves the form for a model that takes none. The choice is saved on the session, so restart (`R`), revive (`v`), a relaunch inside its pane and fork (`f`) all run on it.
+
+| CLI | Asked through | Model | Effort | Profile |
+| --- | --- | --- | --- | --- |
+| Claude Code | the Agent SDK `initialize` request | yes | per model | · |
+| Codex | `codex app-server` | yes | per model, with its default | not supported |
+| Grok Build | ACP over `grok agent stdio` | yes | per model | · |
+| Pi | `pi --mode rpc` | yes | per model | · |
+| Muse Code | `muse serve` | yes | per model | · |
+| OpenCode | `opencode serve` | yes | not supported | · |
+| Gemini CLI | ACP over `gemini --acp` | yes | not supported | · |
+| Hermes Agent | `hermes serve` | per profile, with the provider | typed | yes |
+| Antigravity CLI | not asked yet | not supported | not supported | · |
+| Command Code | nothing a program can ask | not supported | not supported | · |
+
+A row the CLI cannot fill reads "not supported". OpenCode and Gemini CLI take no effort when they launch. Codex's `-p` reads `<name>.config.toml` files that none of its interfaces list, so it has no profile row. Hermes says which models reason but not their levels, so its effort is typed, and only a model that reasons shows the row. Pi's list needs Pi 0.84.3 or later, because earlier releases save every model they are asked about as your default. When a CLI fails to answer, the model row says why, the session launches on the CLI's defaults, and the next form asks again once half a minute has passed.
+
+The answer is kept under `catalogs` in the config directory for six hours, and an upgraded CLI is asked again at once. The manager asks from its own `catalogs/work` directory, because some of these interfaces open a session to answer, and that session must never land in a directory a real session works in. Gemini CLI records a short chat for that directory each time it answers.
 
 ## Terminal tabs
 
@@ -217,7 +240,7 @@ The `coordination` row in Settings (`s`) sets how far agents go with the other s
 
 `create_session` gives an agent the same spawn the `n` form gives a human: a name, a CLI, a group, a working directory, a first prompt and a worktree choice. A session created this way is a normal row in the list, and the manager picks it up on its next poll, so it attaches, revives, forks and reviews like any other.
 
-Each field falls back the way the form does. The CLI defaults to the one the calling agent runs, the group and directory default to the caller's, an explicit group uses that group's nearest inherited default path, and an explicit directory wins over both. A name is the agent's to choose and should describe the work; leaving it empty generates a placeholder and asks the new session to rename itself, exactly as a promptless spawn from the form does. Passing `worktree: true` adds a git worktree and branch off the directory's repo, which is what keeps several agents working in one project from editing the same checkout; omitting it inherits the group's default, then the global setting.
+Each field falls back the way the form does. The CLI defaults to the one the calling agent runs, the group and directory default to the caller's, an explicit group uses that group's nearest inherited default path, and an explicit directory wins over both. A name is the agent's to choose and should describe the work; leaving it empty generates a placeholder and asks the new session to rename itself, exactly as a promptless spawn from the form does. Passing `worktree: true` adds a git worktree and branch off the directory's repo, which is what keeps several agents working in one project from editing the same checkout; omitting it inherits the group's default, then the global setting. `model`, `effort` and `profile` launch the CLI on values it lists instead of its defaults, the way the form's rows do (see [Model, effort and profile](#model-effort-and-profile)). A value the CLI does not list is refused with the ones it does.
 
 `read_session` returns the target's current screen, and its last captured screen once the session has stopped. `kill_session` ends the process and leaves the row dead with its last screen, `revive_session` brings it back on the conversation it held, and `archive_session` files a finished row away or restores it. An agent that quit while its window stayed open is relaunched inside that pane, so the row keeps the screen its last life left there.
 

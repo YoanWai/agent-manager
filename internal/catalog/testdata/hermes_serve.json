@@ -1,0 +1,72 @@
+{
+ "profiles": {
+  "profiles": [
+   {
+    "name": "default",
+    "is_default": true,
+    "model": "grok-4.6",
+    "provider": "xai-oauth",
+    "description": "",
+    "display_name": ""
+   }
+  ]
+ },
+ "options": {
+  "providers": [
+   {
+    "slug": "anthropic",
+    "name": "Anthropic",
+    "is_current": false,
+    "authenticated": true,
+    "models": [
+     "claude-fable-5.1",
+     "claude-fable-5",
+     "claude-opus-5"
+    ],
+    "total_models": 3,
+    "capabilities": {
+     "claude-fable-5.1": {
+      "fast": false,
+      "reasoning": true
+     },
+     "claude-fable-5": {
+      "fast": false,
+      "reasoning": true
+     },
+     "claude-opus-5": {
+      "fast": true,
+      "reasoning": true
+     }
+    }
+   },
+   {
+    "slug": "xai-oauth",
+    "name": "xAI Grok OAuth (SuperGrok / Premium+)",
+    "is_current": true,
+    "authenticated": true,
+    "models": [
+     "grok-4.6",
+     "grok-4.7",
+     "grok-4.20-0309-non-reasoning"
+    ],
+    "total_models": 3,
+    "capabilities": {
+     "grok-4.6": {
+      "fast": true,
+      "reasoning": true
+     },
+     "grok-4.7": {
+      "fast": false,
+      "reasoning": true
+     },
+     "grok-4.20-0309-non-reasoning": {
+      "fast": false,
+      "reasoning": false
+     }
+    }
+   }
+  ],
+  "model": "grok-4.6",
+  "provider": "xai-oauth"
+ }
+}

@@ -1,0 +1,54 @@
+{
+ "models": [
+  {
+   "id": "claude-haiku-4-5",
+   "name": "Claude Haiku 4.5 (latest)",
+   "provider": "anthropic",
+   "reasoning": true
+  },
+  {
+   "id": "claude-opus-5",
+   "name": "Claude Opus 5",
+   "provider": "anthropic",
+   "reasoning": true
+  },
+  {
+   "id": "claude-sonnet-5",
+   "name": "Claude Sonnet 5",
+   "provider": "anthropic",
+   "reasoning": true
+  }
+ ],
+ "state_model": {
+  "id": "claude-opus-5",
+  "name": "Claude Opus 5",
+  "provider": "anthropic",
+  "reasoning": true
+ },
+ "levels": {
+  "anthropic/claude-haiku-4-5": [
+   "off",
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "anthropic/claude-opus-5": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh",
+   "max"
+  ],
+  "anthropic/claude-sonnet-5": [
+   "off",
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh",
+   "max"
+  ]
+ }
+}

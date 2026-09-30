@@ -239,6 +239,12 @@ type Model struct {
 	quick             quickState
 	lastSpawnTool     string
 	lastSpawnWorktree bool
+	// catalogs is what each CLI said it offers, asked the first time a
+	// prompt needs it.
+	catalogs map[string]*catalogState
+	// cardTop, cardLeft and cardRight place the last card painted, which a
+	// click on a card resolves against.
+	cardTop, cardLeft, cardRight int
 	// composerSeq numbers the prompt boxes this run has opened.
 	composerSeq int
 	settings    settingsState
@@ -471,6 +477,14 @@ type quickState struct {
 	// worktreeTouched marks an explicit toggle this run; until then the
 	// hint and spawn follow the target group's default.
 	worktreeTouched bool
+	choice          choice
+	// picking is the list open above the prompt (pickModel, pickEffort),
+	// which takes the typing while it is up.
+	picking int
+	// hits and the origin are where the last frame painted the bar's
+	// clickable stretches, relative to the bar's first line.
+	hits             []quickHit
+	originX, originY int
 }
 
 // repoAnswer is one directory's git-repo verdict and when it was taken.
@@ -1939,6 +1953,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(resume, m.reattach(id, m.diff.gen))
 		}
 		return m, resume
+
+	case catalogMsg:
+		return m, m.handleCatalog(msg)
 
 	case relaunchedMsg:
 		if msg.err != nil {

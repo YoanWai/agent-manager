@@ -799,7 +799,7 @@ func TestEveryReadingOfASessionStandsInForAnAwaitedName(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	const generated = "claude-ab12"
-	if err := m.spawnSession("claude", generated, dir, "backend", "do things", true, false); err != nil {
+	if err := m.spawnSession("claude", generated, dir, "backend", "do things", true, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 

@@ -833,6 +833,28 @@ func TestRestartLaunchesAFreshConversation(t *testing.T) {
 	}
 }
 
+// A restart starts a fresh conversation on the model the session chose.
+func TestRestartKeepsTheSessionChoice(t *testing.T) {
+	m := buildModel(t)
+	tool := m.cfg.Tools["claude"]
+	tool.ModelArgs = "--model {model}"
+	tool.EffortArgs = "--effort {effort}"
+	m.cfg.Tools["claude"] = tool
+	if err := m.spawnSession("claude", "phoenix", t.TempDir(), "", "", false, false, config.Choice{Model: "sonnet", Effort: "high"}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess := m.sessionRows()[0]
+	argsFile := filepath.Join(t.TempDir(), "launch-args")
+	tool.Command = argCaptureCommand(argsFile)
+	m.cfg.Tools["claude"] = tool
+	if err := m.restartSession(sess); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	if args := readWhenWritten(t, argsFile); !strings.Contains(args, "--model\nsonnet\n--effort\nhigh") {
+		t.Fatalf("restart launch arguments = %q, want the session's model and effort", args)
+	}
+}
+
 // A tool that mints its own conversation id has nothing to
 // hand the launch, so restart clears the binding and leaves the id for the
 // poller to capture once the new conversation lands.
@@ -1607,7 +1629,7 @@ func TestDeleteRemovesCleanWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	initGitRepo(t, repo)
-	if err := m.spawnSession("claude", "wt-clean", repo, "", "", false, true); err != nil {
+	if err := m.spawnSession("claude", "wt-clean", repo, "", "", false, true, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sessions, _ := m.store.ListSessions(true)
@@ -1623,7 +1645,7 @@ func TestDeleteRemovesCleanWorktree(t *testing.T) {
 func TestDeleteKeepsWorktreeUntilLastSharingSession(t *testing.T) {
 	m := buildModel(t)
 	repo := seedRepo(t)
-	if err := m.spawnSession("claude", "owner", repo, "", "", false, true); err != nil {
+	if err := m.spawnSession("claude", "owner", repo, "", "", false, true, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sessions, err := m.store.ListSessions(true)
@@ -1670,7 +1692,7 @@ func TestDeleteKeepsDirtyWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	initGitRepo(t, repo)
-	if err := m.spawnSession("claude", "wt-dirty", repo, "", "", false, true); err != nil {
+	if err := m.spawnSession("claude", "wt-dirty", repo, "", "", false, true, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sessions, _ := m.store.ListSessions(true)

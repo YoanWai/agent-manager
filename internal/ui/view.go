@@ -493,21 +493,7 @@ func (m *Model) viewFooter() string {
 		return m.reorderFooter()
 	}
 	if m.quick.active {
-		worktreeHint := "off"
-		switch {
-		case !m.worktreeCapable(m.quickTargetDir()):
-			worktreeHint = worktreeUnavailable
-		case m.quickWorktreeOn():
-			worktreeHint = "on"
-		}
-		pairs := [][2]string{
-			{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool: " + m.quickTool()},
-		}
-		if len(m.quick.toolNames) > 1 {
-			pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
-		}
-		pairs = append(pairs, [2]string{"ctrl+t", "worktree: " + worktreeHint}, [2]string{"esc", "close"})
-		return m.transientFooter(legendSection{title: "Prompt", pairs: pairs})
+		return m.transientFooter(legendSection{title: "Prompt", pairs: m.quickLegend()})
 	}
 	if m.split.resizeMode || m.split.dragging {
 		return m.transientFooter(legendSection{title: "Resize", pairs: [][2]string{

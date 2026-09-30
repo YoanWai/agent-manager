@@ -1668,7 +1668,7 @@ func TestThePollLeavesTheHeartbeatAloneBetweenStamps(t *testing.T) {
 // before then is discarded and has to wait for the prompt to reach output.
 func TestPendingInputWaitsForTheLaunchPrompt(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("slow-take-tool", "slow-take-tool-abcd", t.TempDir(), "", "/compact", true, false); err != nil {
+	if err := m.spawnSession("slow-take-tool", "slow-take-tool-abcd", t.TempDir(), "", "/compact", true, false, config.Choice{}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -1720,7 +1720,7 @@ func TestPendingInputWaitsForBetweenTurn(t *testing.T) {
 				t.Fatal(err)
 			}
 			m.poller.engine = engine
-			if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "/compact", true, false); err != nil {
+			if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "/compact", true, false, config.Choice{}); err != nil {
 				t.Fatal(err)
 			}
 			sess := m.sessionRows()[0]
@@ -1760,7 +1760,7 @@ func TestPendingInputWaitsForBetweenTurn(t *testing.T) {
 
 func TestPendingInputWaitsForTypedText(t *testing.T) {
 	m := buildModel(t)
-	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false); err != nil {
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false, config.Choice{}); err != nil {
 		t.Fatal(err)
 	}
 	sess, err := m.store.Get(m.sessionRows()[0].ID)
@@ -1807,7 +1807,7 @@ func TestPendingInputLandsOnAnErroredPane(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.poller.engine = engine
-	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false); err != nil {
+	if err := m.spawnSession("ready-tool", "ready-tool-abcd", t.TempDir(), "", "", true, false, config.Choice{}); err != nil {
 		t.Fatal(err)
 	}
 	sess := m.sessionRows()[0]

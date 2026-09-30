@@ -59,6 +59,9 @@ type createSessionArgs struct {
 	Group     *string `json:"group,omitempty" jsonschema:"existing group path to file the session under; pass an empty string for the root group; defaults to this agent's group; call list_groups for the existing ones"`
 	Directory string  `json:"directory,omitempty" jsonschema:"existing directory the session works in; defaults to this agent's own directory, or to the selected group's inherited path when group is set"`
 	Worktree  *bool   `json:"worktree,omitempty" jsonschema:"true gives the session its own git worktree and branch off the directory's repo, which is what keeps parallel agents from overwriting each other; omit to inherit the group's default"`
+	Model     string  `json:"model,omitempty" jsonschema:"model to run the CLI on, one it lists; omit to keep the CLI's own default, which is what the user set up; a wrong name is refused with the models the CLI lists"`
+	Effort    string  `json:"effort,omitempty" jsonschema:"reasoning effort, one the chosen model takes; omit to keep the CLI's own"`
+	Profile   string  `json:"profile,omitempty" jsonschema:"profile to launch the CLI under, for a CLI that has them (hermes); omit for the CLI's active one"`
 }
 
 type sessionTargetArgs struct {
@@ -340,6 +343,9 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			Directory: args.Directory,
 			Prompt:    args.Prompt,
 			Worktree:  args.Worktree,
+			Model:     args.Model,
+			Effort:    args.Effort,
+			Profile:   args.Profile,
 		})
 		if err != nil {
 			return nil, sessioncmd.Session{}, err

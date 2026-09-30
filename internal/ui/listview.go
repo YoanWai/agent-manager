@@ -114,6 +114,10 @@ func (m *Model) viewFullListFrame() string {
 	}
 	quickRows := m.fullQuickLines(railWidth, bodyHeight)
 	railRows := m.railLines(railWidth, bodyHeight-len(quickRows))
+	if m.quick.active {
+		y0, _ := m.bodyYRange()
+		m.quick.originY += y0 + len(railRows)
+	}
 	railRows = append(railRows, quickRows...)
 	m.recordRailHits(railRows)
 	edge := make([]string, bodyHeight)
@@ -190,7 +194,11 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 		return out
 	}
 	lines := append([]contentLine{{rule: true}}, inset(splitLines(m.viewQuickBar(inner, height-quickBarChrome)))...)
+	// The bar's own lines start under the rule, less whatever the cap cuts
+	// off the top.
+	m.quick.originX, m.quick.originY = 1+contentGutter, 1
 	if len(lines) > height {
+		m.quick.originY -= len(lines) - height
 		lines = lines[len(lines)-height:]
 	}
 	return lines
@@ -1087,6 +1095,13 @@ func (m *Model) contentLines(width, height int) []contentLine {
 	var bar []contentLine
 	if m.quick.active {
 		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(inner, quickBarMaxRows)))...)
+		y0, _ := m.bodyYRange()
+		// The bar's lines follow the blank that parts it from the pane, less
+		// whatever a bar taller than the column gives up off its top.
+		m.quick.originX, m.quick.originY = m.pane.columnX+contentGutter, y0+height-len(bar)+1
+		if len(bar) > height {
+			bar = bar[len(bar)-height:]
+		}
 	}
 	body := ours(splitLines(m.viewDetail(inner)))
 	rest := height - len(body) - len(bar) - 1
@@ -1589,21 +1604,15 @@ func lastActivity(sess store.Session) time.Time {
 func (m *Model) viewQuickBar(width, maxRows int) string {
 	label := func(text string) string { return labelStyle.Render(padRight(text, detailLabelWidth)) }
 	target := rowColumns(label("target")+mutedStyle.Render("no selection"), "", width)
+	var lines []string
+	m.quick.hits = m.quick.hits[:0]
 	if entry, ok := m.selectedRow(); ok {
 		if entry.isGroup {
-			// Spawning: the tool and the worktree choice decide what gets
+			// Spawning: the CLI and what it launches with decide what gets
 			// created, so they sit where the eye lands before typing.
-			worktree := subtleStyle.Render("worktree off")
-			switch {
-			case !m.worktreeCapable(m.quickTargetDir()):
-				worktree = subtleStyle.Render("worktree " + worktreeUnavailable)
-			case m.quickWorktreeOn():
-				worktree = lipgloss.NewStyle().Foreground(colorAccent2).Render("worktree on")
-			}
-			tool := chipStyle.Render(m.quickTool())
-			target = fitColumns(
-				[]string{label("new") + lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(entry.group))},
-				[]string{tool + " " + worktree, tool, ""}, width)
+			target = rowColumns(label("new")+lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(entry.group)), "", width)
+			lines = append(lines, m.quickChoiceLine(width, 1))
+			lines = append(lines, m.quickPickLines(width, 2)...)
 		} else {
 			sess := entry.sess
 			state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
@@ -1617,11 +1626,112 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 	// repositions the viewport inside the rows that are actually on screen.
 	// LineInfo counts wraps at the width already stored on the box.
 	m.quick.input.SetWidth(width)
-	m.quick.maxRows = m.quickBarRows(width-2, maxRows)
+	m.quick.maxRows = m.quickBarRows(width-2, maxRows-len(lines))
 	m.quick.input.SetHeight(m.quick.maxRows)
 	// Chips are tokens inside the typed text, so they wrap and reflow with
 	// the words around them; painting happens on the rendered prompt.
-	return target + "\n" + m.quick.renderChips(textAreaView(m.quick.input))
+	lines = append([]string{target}, lines...)
+	return strings.Join(append(lines, m.quick.renderChips(textAreaView(m.quick.input))), "\n")
+}
+
+// quickHit is a stretch of a quick bar line a click acts on: a choice to
+// step, or an entry of the open list.
+type quickHit struct {
+	line, x0, x1 int
+	action       int
+	entry        int
+}
+
+const (
+	quickClickTool = iota
+	quickClickModel
+	quickClickEffort
+	quickClickProfile
+	quickClickWorktree
+	quickClickEntry
+)
+
+// quickChoiceLine is what a spawn from the bar launches: the CLI, its
+// model, effort and profile where it has them, and the worktree toggle,
+// each a stretch a click steps the way its key does.
+func (m *Model) quickChoiceLine(width, line int) string {
+	toolName, ch := m.quickTool(), &m.quick.choice
+	type segment struct {
+		text   string
+		action int
+	}
+	segments := []segment{{chipStyle.Render(toolName), quickClickTool}}
+	if note, listed := m.modelRowNote(toolName); !listed {
+		segments = append(segments, segment{"model " + note, quickClickModel})
+	} else {
+		model := subtleStyle.Render("default")
+		if ch.model != "" {
+			model = valueStyle.Render(ch.model)
+		}
+		segments = append(segments, segment{subtleStyle.Render("model ") + model, quickClickModel})
+		if value, shown, active := m.effortRow(toolName, ch); shown {
+			effort := subtleStyle.Render("default")
+			switch level := m.choiceEffort(toolName, ch); {
+			case !active:
+				effort = value
+			case level != "":
+				effort = valueStyle.Render(level)
+			}
+			if m.effortTyped(toolName, ch) {
+				effort += subtleStyle.Render(" (typed)")
+			}
+			segments = append(segments, segment{subtleStyle.Render("effort ") + effort, quickClickEffort})
+		}
+	}
+	if _, shown := m.profileRow(toolName, ch); shown {
+		profile := subtleStyle.Render("default")
+		if name := m.choiceProfileName(toolName, ch); name != "" {
+			profile = valueStyle.Render(name)
+		}
+		segments = append(segments, segment{subtleStyle.Render("profile ") + profile, quickClickProfile})
+	}
+	worktree := subtleStyle.Render("worktree off")
+	switch {
+	case !m.worktreeCapable(m.quickTargetDir()):
+		worktree = subtleStyle.Render("worktree " + worktreeUnavailable)
+	case m.quickWorktreeOn():
+		worktree = lipgloss.NewStyle().Foreground(colorAccent2).Render("worktree on")
+	}
+	segments = append(segments, segment{worktree, quickClickWorktree})
+	var b strings.Builder
+	x := 0
+	for i, seg := range segments {
+		if i > 0 {
+			b.WriteString("   ")
+			x += 3
+		}
+		w := ansi.StringWidth(seg.text)
+		m.quick.hits = append(m.quick.hits, quickHit{line: line, x0: x, x1: x + w, action: seg.action, entry: -1})
+		b.WriteString(seg.text)
+		x += w
+	}
+	return ansi.Truncate(b.String(), width, "…")
+}
+
+// quickPickLines is the list open above the prompt: the models narrowed by
+// what was typed, or the typed effort of a CLI that lists no levels.
+func (m *Model) quickPickLines(width, first int) []string {
+	toolName, ch := m.quickTool(), &m.quick.choice
+	switch m.quick.picking {
+	case pickEffort:
+		return []string{ansi.Truncate(subtleStyle.Render("effort ")+textInputView(ch.typedEffort)+"  "+subtleStyle.Render("typed · "+toolName+" lists no levels"), width, "…")}
+	case pickModel:
+		lines := []string{subtleStyle.Render("model ") + textInputView(ch.filter)}
+		list, entries := m.viewModelSuggestions(toolName, ch, ch.query(), 0, width)
+		for i, line := range list {
+			if entries[i] >= 0 {
+				m.quick.hits = append(m.quick.hits, quickHit{line: first + len(lines), x0: 0, x1: width, action: quickClickEntry, entry: entries[i]})
+			}
+			lines = append(lines, line)
+		}
+		return lines
+	}
+	return nil
 }
 
 // viewHeaderRows is the full-width band over both columns: the wordmark

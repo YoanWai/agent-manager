@@ -151,7 +151,7 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 		}
 		return m.focusSelected()
 	case keybind.NewSession:
-		m.openForm()
+		return m, m.openForm()
 	case keybind.NewGroup:
 		m.openGroupForm()
 	case keybind.Fork:
@@ -175,7 +175,7 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 	case keybind.Delete:
 		m.prepareDelete()
 	case keybind.Prompt:
-		m.openQuickMode()
+		return m, m.openQuickMode()
 	case keybind.CopyReply:
 		return m.copyReplySelected()
 	case keybind.FoldAll:

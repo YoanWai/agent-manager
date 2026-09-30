@@ -6,7 +6,6 @@
 package report
 
 import (
-	"cmp"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -286,7 +285,7 @@ func (r *Reporter) gather(sessionID string) (Context, error) {
 	if tool.Shell {
 		return gathered, nil
 	}
-	gathered.Tool = toolLabel(cmp.Or(cfg.Profiles[toolName], toolName))
+	gathered.Tool = toolLabel(toolName)
 	// A CLI that will not name its version is context missing, not a failure.
 	if fields := strings.Fields(tool.Command); len(fields) > 0 {
 		if probed, err := runCommand(fields[0], "--version"); err == nil {

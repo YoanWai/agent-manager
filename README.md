@@ -92,7 +92,7 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 
 | Key | Action |
 |-----|--------|
-| `n` | New session (name, tool, directory, optional starting prompt, group) |
+| `n` | New session (name, tool, the model, effort and profile the tool reports, directory, optional starting prompt, group) |
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `enter` | Focus the session in place; keys go to the agent while the list stays |
 | click / double click | Focus a session / fold or unfold a group. The full-screen layout selects on a click and focuses on a double click |
@@ -107,6 +107,8 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `?` | The key map for the current screen; review shows only review bindings |
 
 A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch `am/<name>`), toggled on the `n` form, with `ctrl+t` in the quick prompt, or by default in Settings.
+
+A session can start on a model, reasoning effort and profile of its own, picked on the `n` form, with `ctrl+l`, `ctrl+x` and `ctrl+y` in the quick prompt, or with `spawn --model --effort --profile`. The lists come from each CLI at runtime, so a new model shows up the day the CLI ships it, and restart, revive and fork keep the choice (see [Model, effort and profile](docs/usage.md#model-effort-and-profile)).
 
 ![the session tree, with a waiting agent's permission prompt in the preview](docs/screenshot-sessions.png)
 
