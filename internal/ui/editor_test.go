@@ -153,7 +153,7 @@ func TestReviewOpensCurrentFileInEditor(t *testing.T) {
 	if fd == nil {
 		t.Fatal("review has no selected file")
 	}
-	want := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
+	want := filepath.Join(m.review.Snapshot().Set.Repo.Root, fd.File.Path)
 	_, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	if cmd == nil {
 		t.Fatalf("o returned no command, err = %q", m.errBar.text)
@@ -176,7 +176,7 @@ func TestReviewRefusesToOpenAFileThatIsGone(t *testing.T) {
 	if fd == nil {
 		t.Fatal("review has no selected file")
 	}
-	path := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
+	path := filepath.Join(m.review.Snapshot().Set.Repo.Root, fd.File.Path)
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestReviewReportsFileCheckErrors(t *testing.T) {
 	if fd == nil {
 		t.Fatal("review has no selected file")
 	}
-	path := filepath.Join(m.diff.set.Repo.Root, fd.File.Path)
+	path := filepath.Join(m.review.Snapshot().Set.Repo.Root, fd.File.Path)
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}

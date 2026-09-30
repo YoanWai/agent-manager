@@ -3,7 +3,7 @@ package review
 import (
 	"strings"
 
-	"github.com/YoanWai/agent-manager/internal/diff"
+	diff "github.com/YoanWai/agent-manager/internal/diff/model"
 )
 
 func (m *Model) ToggleReviewed() Requests {
@@ -211,6 +211,8 @@ func annotationLine(line diff.Line) (int, bool) {
 	return line.NewNum, false
 }
 
+func AnnotationLine(line diff.Line) (int, bool) { return annotationLine(line) }
+
 func (m Model) annotationOccupies(file string, line int, deleted bool, self int) bool {
 	for i, note := range m.annotations[m.reviewKey()] {
 		if i != self && note.file == file && note.line == line && note.deleted == deleted {
@@ -227,3 +229,5 @@ func excerptOf(text string) string {
 	}
 	return excerpt
 }
+
+func Excerpt(text string) string { return excerptOf(text) }

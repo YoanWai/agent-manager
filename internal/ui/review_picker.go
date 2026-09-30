@@ -2,8 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/diff"
-	"github.com/YoanWai/agent-manager/internal/git"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"path/filepath"
@@ -37,21 +35,23 @@ type repoPickState struct {
 }
 
 func (m *Model) openRepoPick() {
-	if len(m.diff.repoRoots) == 0 {
+	state := m.review.Snapshot()
+	if len(state.RepoRoots) == 0 {
 		return
 	}
-	rows := make([]pickRow, len(m.diff.repoRoots))
-	for i, root := range m.diff.repoRoots {
+	rows := make([]pickRow, len(state.RepoRoots))
+	for i, root := range state.RepoRoots {
 		rows[i] = pickRow{label: filepath.Base(root), root: root}
 	}
-	m.openPick(rows, "⌥ Review repo", pickRepo, m.diff.repoSel)
+	m.openPick(rows, "⌥ Review repo", pickRepo, state.RepoSelected)
 }
 
 // openBranchPick lists the currently selected repo's worktrees, one branch per
 // row, so the user can retarget review to another worktree. Listing shells out
 // synchronously; a failure stays in review with the error shown.
 func (m *Model) openBranchPick() tea.Cmd {
-	root := m.diff.set.Repo.Root
+	state := m.review.Snapshot()
+	root := state.Set.Repo.Root
 	if m.services.gitDrv == nil || root == "" {
 		m.errBar.text = "no repo under review"
 		return nil
@@ -65,7 +65,7 @@ func (m *Model) openBranchPick() tea.Cmd {
 	for i, wt := range worktrees {
 		rows[i] = pickRow{label: wt.Branch, root: wt.Root}
 	}
-	m.openPick(rows, "⌥ Review branch", pickRepo, m.diff.repoSel)
+	m.openPick(rows, "⌥ Review branch", pickRepo, state.RepoSelected)
 	return nil
 }
 
@@ -76,7 +76,7 @@ func (m *Model) openBasePick() tea.Cmd {
 	// Key off the raw selection, not the resolved toplevel: the toplevel is
 	// empty after a bad base errors the load, which would make the one control
 	// that clears the bad base unreachable exactly when it is needed.
-	root := m.diff.repoSel
+	root := m.review.Snapshot().RepoSelected
 	if m.services.gitDrv == nil || root == "" {
 		m.errBar.text = "no repo under review"
 		return nil
@@ -194,21 +194,15 @@ func (m *Model) selectRepo(root string) tea.Cmd {
 		m.errBar.text = "session is gone"
 		return nil
 	}
-	m.diff.repoSel = root
 	if m.ledger.pickedRepos == nil {
 		m.ledger.pickedRepos = map[string]string{}
 	}
 	m.ledger.pickedRepos[sess.ID] = root
-	m.diff.gen++
-	m.diff.loading = true
-	m.diff.errText = ""
-	m.diff.set = diff.Set{}
-	m.diff.fileIdx = 0
-	m.diff.scroll = 0
-	m.diff.cursorLine = 0
-	m.diff.fileLoading = nil
-	m.diff.reanchor = nil
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
+	request, ok := m.review.SelectRepo(root)
+	if !ok {
+		return nil
+	}
+	return m.reviewLoadCmd(request)
 }
 
 // selectBase persists the chosen base for the current repo ("" clears to auto)
@@ -221,24 +215,15 @@ func (m *Model) selectBase(ref string) tea.Cmd {
 		return nil
 	}
 	// Resolve symlinks so the key matches the CLI's symlink-expanded toplevel.
-	if err := m.services.store.SetReviewBase(sess.ID, resolveSymlinksOrSelf(m.diff.repoSel), ref); err != nil {
+	if err := m.services.store.SetReviewBase(sess.ID, resolveSymlinksOrSelf(m.review.Snapshot().RepoSelected), ref); err != nil {
 		m.errBar.text = err.Error()
 		return nil
 	}
-	m.diff.scope = git.ScopeBranch
-	m.diff.gen++
-	m.diff.loading = true
-	m.diff.errText = ""
-	m.diff.set = diff.Set{}
-	m.diff.fileIdx = 0
-	m.diff.scroll = 0
-	m.diff.cursorLine = 0
-	m.diff.fileLoading = nil
-	m.diff.reanchor = nil
-	if m.diff.repoSel != "" && len(m.diff.repoRoots) > 0 {
-		return m.diffReloadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, ref, m.diff.repoRoots)
+	request, ok := m.review.SelectBase(ref)
+	if !ok {
+		return nil
 	}
-	return m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false)
+	return m.reviewLoadCmd(request)
 }
 
 func (m *Model) repoPickWindow(count int) (start, end int) {

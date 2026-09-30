@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode"
 
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -43,15 +44,6 @@ var (
 	}
 )
 
-// Waiting for this result prevents a failed launch from being reported as open.
-type diffFileCheckedMsg struct {
-	sessID   string
-	repoRoot string
-	gen      int
-	path     string
-	err      error
-}
-
 type editorDoneMsg struct {
 	name       string
 	path       string
@@ -72,46 +64,23 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) openDiffFile() (tea.Model, tea.Cmd) {
-	fd := m.currentFileDiff()
-	if fd == nil || m.diffFileHidden(fd) || m.diff.set.Repo.Root == "" {
+	request := m.review.OpenFileRequest()
+	if request == nil {
 		return m, nil
 	}
-	return m, diffFileCheckCmd(diffFileCheckedMsg{
-		sessID:   m.diff.sessID,
-		repoRoot: m.diff.repoSel,
-		gen:      m.diff.gen,
-		path:     filepath.Join(m.diff.set.Repo.Root, fd.File.Path),
-	})
+	return m, reviewFileCheckCmd(*request)
 }
 
-// Reading the filesystem is I/O, which Update must not do: a slow stat
-// would hold the next keystroke.
-func diffFileCheckCmd(msg diffFileCheckedMsg) tea.Cmd {
-	return func() tea.Msg {
-		_, msg.err = os.Stat(msg.path)
-		return msg
-	}
-}
-
-func (m *Model) handleDiffFileChecked(msg diffFileCheckedMsg) (tea.Model, tea.Cmd) {
-	// A review closed, retargeted, or moved to another file while the stat
-	// ran asked for a file the screen no longer shows.
-	if !m.diff.active || msg.sessID != m.diff.sessID || msg.repoRoot != m.diff.repoSel || msg.gen != m.diff.gen {
+func (m *Model) handleDiffFileChecked(result uireview.FileCheckResult) (tea.Model, tea.Cmd) {
+	path, accepted := m.review.ApplyFileCheck(result)
+	if !accepted {
 		return m, nil
 	}
-	fd := m.currentFileDiff()
-	if fd == nil || filepath.Join(m.diff.set.Repo.Root, fd.File.Path) != msg.path {
+	if result.Err != nil {
+		m.errBar.text = reviewOpenPathError(path, result.Err)
 		return m, nil
 	}
-	if msg.err != nil {
-		if os.IsNotExist(msg.err) {
-			m.errBar.text = "file no longer exists: " + msg.path
-		} else {
-			m.errBar.text = "checking file " + msg.path + ": " + msg.err.Error()
-		}
-		return m, nil
-	}
-	return m.launchEditor(msg.path)
+	return m.launchEditor(path)
 }
 
 func (m *Model) launchEditor(path string) (tea.Model, tea.Cmd) {

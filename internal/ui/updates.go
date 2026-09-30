@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.handleMsg(msg)
 	if mm, ok := model.(*Model); ok {
+		mm.prepareReviewLayout()
 		mm.flushPendingNotice()
 		return mm, tea.Batch(cmd, mm.syncMouseCapture())
 	}
@@ -354,43 +356,39 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case diffLoadedMsg:
-		return m, m.handleDiffLoaded(msg)
+	case uireview.LoadResult:
+		return m, m.handleReviewLoad(msg)
 
-	case diffFileLoadedMsg:
-		return m, m.handleDiffFileLoaded(msg)
+	case uireview.FileResult:
+		return m, m.handleReviewFile(msg)
 
-	case diffFilesLoadedMsg:
+	case reviewFilesResult:
 		var cmds []tea.Cmd
 		for _, loaded := range msg {
-			if cmd := m.handleDiffFileLoaded(loaded); cmd != nil {
+			if cmd := m.handleReviewFile(loaded); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 		}
 		return m, tea.Batch(cmds...)
 
-	case diffHLMsg:
-		m.handleDiffHL(msg)
+	case uireview.HighlightResult:
+		m.review.ApplyHighlight(msg)
 		return m, nil
 
-	case diffProbeMsg:
-		return m, m.handleDiffProbe(msg)
+	case uireview.ProbeResult:
+		return m, m.handleReviewProbe(msg)
 
-	case reviewStatusesLoadedMsg:
-		m.handleReviewStatusesLoaded(msg)
-		return m, nil
+	case uireview.StatusResult:
+		return m, m.handleReviewStatus(msg)
 
-	case reviewStateSavedMsg:
-		m.handleReviewStateSaved(msg)
-		return m, nil
+	case uireview.SaveResult:
+		return m, m.handleReviewSave(msg)
 
-	case reviewCommentHandledMsg:
-		m.handleReviewCommentHandled(msg)
-		return m, nil
+	case uireview.HandleCommentResult:
+		return m, m.handleReviewComment(msg)
 
-	case reviewSendFinishedMsg:
-		m.handleReviewSendFinished(msg)
-		return m, nil
+	case uireview.SendResult:
+		return m, m.handleReviewSend(msg)
 
 	case errMsg:
 		m.errBar.text = msg.err.Error()
@@ -460,7 +458,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tmux.RequestReview:
 				cmd := m.openDiff()
 				if m.mode == modeDiff {
-					m.diff.reattachID = sess.ID
+					m.reviewReturn = reviewReturn{kind: reviewReturnAttach, sessionID: sess.ID}
 				}
 				return m, cmd
 			case tmux.RequestEditor:
@@ -478,7 +476,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.requestRefresh()
 		return m, nil
 
-	case diffFileCheckedMsg:
+	case uireview.FileCheckResult:
 		return m.handleDiffFileChecked(msg)
 
 	case editorDoneMsg:
@@ -504,7 +502,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if id := m.editorReturnID; id != "" {
 			m.editorReturnID = ""
-			return m, tea.Batch(resume, m.reattach(id, m.diff.gen))
+			return m, tea.Batch(resume, m.reattach(id, m.review.Generation()))
 		}
 		return m, resume
 
@@ -519,7 +517,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case reattachPreparedMsg:
-		if msg.diffGen != m.diff.gen || m.diff.active {
+		if msg.diffGen != m.review.Generation() || m.review.Active() {
 			return m, nil
 		}
 		if msg.err != nil {

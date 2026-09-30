@@ -4,8 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -27,7 +30,7 @@ func TestHelpAdapterPreservesQuitCommand(t *testing.T) {
 func TestHelpAdapterRestoresReviewBeforeRestartingLoader(t *testing.T) {
 	m := helpModel()
 	m.mode = modeDiff
-	m.diff = diffState{active: true, loading: true}
+	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	m.openHelp()
 	if m.helpReturnMode != modeDiff {
 		t.Fatalf("opened review help with return mode %v", m.helpReturnMode)

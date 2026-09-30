@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/YoanWai/agent-manager/internal/diff"
-	"github.com/YoanWai/agent-manager/internal/git"
+	diff "github.com/YoanWai/agent-manager/internal/diff/model"
+	git "github.com/YoanWai/agent-manager/internal/git/value"
 	"github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )

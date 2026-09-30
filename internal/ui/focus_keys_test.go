@@ -395,11 +395,11 @@ func TestFocusCtrlROpensReviewAndReturns(t *testing.T) {
 	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlR})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
-	if m.mode != modeDiff || !m.diff.active {
+	if m.mode != modeDiff || !m.review.Snapshot().Active {
 		t.Fatalf("ctrl+r in focus should open review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	if len(m.diff.set.Files) == 0 {
-		t.Fatalf("review opened empty, err = %q", m.diff.errText)
+	if len(m.review.Snapshot().Set.Files) == 0 {
+		t.Fatalf("review opened empty, err = %q", m.review.Snapshot().Error)
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
@@ -1342,7 +1342,7 @@ func TestFocusModeRemappedReviewAndEditorKeys(t *testing.T) {
 	updated, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g"), Alt: true})
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
-	if m.mode != modeDiff || !m.diff.active {
+	if m.mode != modeDiff || !m.review.Snapshot().Active {
 		t.Fatalf("alt+g should open review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})

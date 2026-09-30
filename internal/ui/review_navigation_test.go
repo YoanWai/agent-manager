@@ -2,10 +2,12 @@ package ui
 
 import (
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"testing"
+
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // The cursor's line has to be inside the rows review actually paints. A
@@ -18,15 +20,15 @@ func TestDiffCursorStaysOnScreen(t *testing.T) {
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
 	m.drainCmds(t, m.openDiff())
-	if m.diff.loading || len(m.diff.set.Files) == 0 {
-		t.Fatalf("diff did not load: %q", m.diff.errText)
+	if m.review.Snapshot().Loading || len(m.review.Snapshot().Set.Files) == 0 {
+		t.Fatalf("diff did not load: %q", m.review.Snapshot().Error)
 	}
 
 	for _, size := range []struct{ w, h int }{{80, 24}, {100, 30}, {120, 40}, {160, 50}} {
 		m.width, m.height = size.w, size.h
-		m.diff.scroll = 0
-		m.diff.cursorLine = 0
+		m.review.First()
 		m.moveDiffCursor(lines*2, m.diffCodeHeight())
+		m.prepareReviewLayout()
 
 		fd := m.currentFileDiff()
 		if fd == nil {
@@ -60,10 +62,10 @@ func TestDiffReviewReachesLastLine(t *testing.T) {
 			createSession(t, m, "coder", dir, "")
 			m.selectSessionRow(t, "coder")
 			m.drainCmds(t, m.openDiff())
-			if m.diff.loading || len(m.diff.set.Files) == 0 {
-				t.Fatalf("diff did not load: %q", m.diff.errText)
+			if m.review.Snapshot().Loading || len(m.review.Snapshot().Set.Files) == 0 {
+				t.Fatalf("diff did not load: %q", m.review.Snapshot().Error)
 			}
-			m.diff.sideBySide = layout.split
+			setReviewSideBySide(m, layout.split)
 
 			last := fmt.Sprintf("line-%03d", lines)
 			view := ansi.Strip(m.View())
@@ -74,6 +76,7 @@ func TestDiffReviewReachesLastLine(t *testing.T) {
 			// G jumps to the end; the final line must be painted, not merely
 			// selected, and the cursor must sit on it.
 			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+			m.prepareReviewLayout()
 			view = ansi.Strip(m.View())
 			if !strings.Contains(view, last) {
 				t.Fatalf("G should paint the last line %q, got:\n%s", last, view)
@@ -100,13 +103,14 @@ func TestDiffReviewStepsDownToTheEnd(t *testing.T) {
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
 	m.drainCmds(t, m.openDiff())
-	if m.diff.loading || len(m.diff.set.Files) == 0 {
-		t.Fatalf("diff did not load: %q", m.diff.errText)
+	if m.review.Snapshot().Loading || len(m.review.Snapshot().Set.Files) == 0 {
+		t.Fatalf("diff did not load: %q", m.review.Snapshot().Error)
 	}
 
 	for i := 0; i < lines*2; i++ {
 		m.handleDiffKey(tea.KeyMsg{Type: tea.KeyDown})
 	}
+	m.prepareReviewLayout()
 	last := fmt.Sprintf("line-%03d", lines)
 	if view := ansi.Strip(m.View()); !strings.Contains(view, last) {
 		t.Fatalf("stepping down should reach the last line %q, got:\n%s", last, view)
@@ -129,13 +133,14 @@ func TestDiffReviewReachesEndWithWrappedLines(t *testing.T) {
 			createSession(t, m, "coder", dir, "")
 			m.selectSessionRow(t, "coder")
 			m.drainCmds(t, m.openDiff())
-			if m.diff.loading || len(m.diff.set.Files) == 0 {
-				t.Fatalf("diff did not load: %q", m.diff.errText)
+			if m.review.Snapshot().Loading || len(m.review.Snapshot().Set.Files) == 0 {
+				t.Fatalf("diff did not load: %q", m.review.Snapshot().Error)
 			}
 			m.width, m.height = 120, 34
-			m.diff.sideBySide = layout.split
+			setReviewSideBySide(m, layout.split)
 
 			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+			m.prepareReviewLayout()
 			last := fmt.Sprintf("wide-%03d", lines)
 			if view := ansi.Strip(m.View()); !strings.Contains(view, last) {
 				t.Fatalf("G should paint the last line %q, got:\n%s", last, view)
@@ -145,6 +150,7 @@ func TestDiffReviewReachesEndWithWrappedLines(t *testing.T) {
 			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 			for i := 0; i < lines+5; i++ {
 				m.handleDiffKey(tea.KeyMsg{Type: tea.KeyDown})
+				m.prepareReviewLayout()
 				fd := m.currentFileDiff()
 				lineIdx := m.cursorDiffLine()
 				if fd == nil || lineIdx >= len(fd.Lines) {
@@ -167,15 +173,15 @@ func TestSpaceAdvanceKeepsHighlight(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "hl", gitRepoWithTwoChangedFiles(t))
-	if len(m.diff.set.Files) != 2 {
-		t.Fatalf("want 2 files, got %d (err=%q)", len(m.diff.set.Files), m.diff.errText)
+	if len(m.review.Snapshot().Set.Files) != 2 {
+		t.Fatalf("want 2 files, got %d (err=%q)", len(m.review.Snapshot().Set.Files), m.review.Snapshot().Error)
 	}
 	if m.currentHL() == nil {
 		t.Fatal("first file should be highlighted after open")
 	}
 	m.pressDiffKey(t, ' ')
-	if m.diff.fileIdx != 1 {
-		t.Fatalf("space should advance to the next file, idx = %d", m.diff.fileIdx)
+	if m.review.Snapshot().FileIndex != 1 {
+		t.Fatalf("space should advance to the next file, idx = %d", m.review.Snapshot().FileIndex)
 	}
 	if m.currentHL() == nil {
 		t.Error("advanced file lost its highlight: switch command was dropped")
@@ -191,8 +197,8 @@ func TestScrollDoesNotLeakAcrossSessions(t *testing.T) {
 	}
 	dir := gitRepoWithTwoChangedFiles(t)
 	openReviewOn(t, m, "one", dir)
-	firstFile := m.diff.set.Files[0].File.Path
-	m.diff.scroll = 2
+	firstFile := m.review.Snapshot().Set.Files[0].File.Path
+	m.review.SetCursorDiffLine(2, 1)
 	m.drainCmds(t, m.switchDiffFile(1)) // persists scroll for file one
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -203,8 +209,8 @@ func TestScrollDoesNotLeakAcrossSessions(t *testing.T) {
 	if fd := m.currentFileDiff(); fd == nil || fd.File.Path != firstFile {
 		t.Fatalf("expected to land back on %q", firstFile)
 	}
-	if m.diff.scroll != 0 {
-		t.Errorf("session two inherited session one's scroll: %d", m.diff.scroll)
+	if m.review.Snapshot().Scroll != 0 {
+		t.Errorf("session two inherited session one's scroll: %d", m.review.Snapshot().Scroll)
 	}
 }
 
@@ -217,13 +223,13 @@ func TestNonCodePathNamesCompiledArtifacts(t *testing.T) {
 		"go.sum", "Cargo.lock", "web/package-lock.json", "vendor/lib.so",
 	}
 	for _, path := range hidden {
-		if !nonCodePath(path) {
+		if !uireview.IsNonCodePath(path) {
 			t.Errorf("%q should be filtered out of a code-only review", path)
 		}
 	}
 	shown := []string{"main.go", "Main.java", "mod.py", "readme.md", "classy.go"}
 	for _, path := range shown {
-		if nonCodePath(path) {
+		if uireview.IsNonCodePath(path) {
 			t.Errorf("%q is source and should stay in the review", path)
 		}
 	}
@@ -239,24 +245,24 @@ func TestReviewCodeOnlyHidesBinaryFiles(t *testing.T) {
 	openReviewOn(t, m, "filter", gitRepoWithBinaryBetweenTextFiles(t))
 
 	binary := -1
-	for i := range m.diff.set.Files {
-		if m.diff.set.Files[i].File.Path == "b.dat" {
+	for i := range m.review.Snapshot().Set.Files {
+		if m.review.Snapshot().Set.Files[i].File.Path == "b.dat" {
 			binary = i
 		}
 	}
 	if binary < 0 {
-		t.Fatalf("b.dat missing from the diff set: %+v", m.diff.set.Files)
+		t.Fatalf("b.dat missing from the diff set: %+v", m.review.Snapshot().Set.Files)
 	}
-	if !m.diff.set.Files[binary].Stat.Binary {
+	if !m.review.Snapshot().Set.Files[binary].Stat.Binary {
 		t.Fatal("numstat should mark b.dat binary before its content is read")
 	}
-	m.diff.fileIdx = binary
+	m.drainCmds(t, selectReviewFile(m, binary))
 
 	m.pressFilterKey(t)
-	if !m.diff.codeOnly {
+	if !m.review.Snapshot().CodeOnly {
 		t.Fatal("f should turn the code-only filter on")
 	}
-	if m.diff.fileIdx == binary {
+	if m.review.Snapshot().FileIndex == binary {
 		t.Fatal("the selection should leave a file the filter hides")
 	}
 	list := ansi.Strip(m.viewDiffFileList(60, 20))
@@ -267,22 +273,22 @@ func TestReviewCodeOnlyHidesBinaryFiles(t *testing.T) {
 		t.Fatalf("the code files should stay listed:\n%s", list)
 	}
 
-	for i := range m.diff.set.Files {
-		if m.diff.set.Files[i].File.Path == "a.go" {
-			m.diff.fileIdx = i
+	for i := range m.review.Snapshot().Set.Files {
+		if m.review.Snapshot().Set.Files[i].File.Path == "a.go" {
+			m.drainCmds(t, selectReviewFile(m, i))
 		}
 	}
 	m.drainCmds(t, m.switchDiffFile(1))
-	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "c.go" {
+	if got := m.review.Snapshot().Set.Files[m.review.Snapshot().FileIndex].File.Path; got != "c.go" {
 		t.Fatalf("the file after a.go = %q, want c.go", got)
 	}
 	m.drainCmds(t, m.switchDiffFile(-1))
-	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "a.go" {
+	if got := m.review.Snapshot().Set.Files[m.review.Snapshot().FileIndex].File.Path; got != "a.go" {
 		t.Fatalf("the file before c.go = %q, want a.go", got)
 	}
 
 	m.pressFilterKey(t)
-	if m.diff.codeOnly {
+	if m.review.Snapshot().CodeOnly {
 		t.Fatal("f again should show the binary files")
 	}
 	if list := ansi.Strip(m.viewDiffFileList(60, 20)); !strings.Contains(list, "b.dat") {
@@ -314,7 +320,7 @@ func TestReviewCodeOnlyHidesUntrackedAndLockFiles(t *testing.T) {
 
 	untracked := m.fileDiffByPath("z.png")
 	if untracked == nil {
-		t.Fatalf("z.png missing from the diff set: %+v", m.diff.set.Files)
+		t.Fatalf("z.png missing from the diff set: %+v", m.review.Snapshot().Set.Files)
 	}
 	if untracked.Loaded() {
 		t.Fatal("an untracked file the cursor never reached should stay unloaded")
@@ -337,17 +343,10 @@ func TestReviewCodeOnlyHidesUntrackedAndLockFiles(t *testing.T) {
 	// load it schedules is drained afterwards: the list is rendered between the
 	// two, and a cursor parked on a hidden row draws no cursor at all.
 	writeRepoFile(t, dir, "a.go", "package a\n\nfunc A() int { return 1 }\n")
-	sess, ok := m.diffSession()
-	if !ok {
-		t.Fatal("no diff session")
-	}
-	m.diff.gen++
-	updated, cmd := m.Update(m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, true)())
-	*m = *updated.(*Model)
-	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "src.go" {
+	m.refreshDiff(t)
+	if got := m.review.Snapshot().Set.Files[m.review.Snapshot().FileIndex].File.Path; got != "src.go" {
 		t.Fatalf("the reload should settle the selection itself, landed on %q", got)
 	}
-	m.drainCmds(t, cmd)
 	if list := ansi.Strip(m.viewDiffFileList(60, 20)); strings.Contains(list, "z.png") {
 		t.Fatalf("the filter should survive a silent reload:\n%s", list)
 	}
@@ -378,24 +377,23 @@ func TestReviewCodeOnlyCarriesCursorOffASniffedBlob(t *testing.T) {
 			"blob.dat": "\x00\x01\x02new",
 		})
 	openReviewOn(t, m, "sniff", dir)
-	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "a.txt" {
+	if got := m.review.Snapshot().Set.Files[m.review.Snapshot().FileIndex].File.Path; got != "a.txt" {
 		t.Fatalf("review should open on a.txt, got %q", got)
 	}
 
 	m.pressFilterKey(t)
-	m.diff.scroll = 150
-	m.diff.cursorLine = 150
+	m.review.SetCursorDiffLine(150, 1)
 	m.drainCmds(t, m.switchDiffFile(1))
-	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "c.go" {
+	if got := m.review.Snapshot().Set.Files[m.review.Snapshot().FileIndex].File.Path; got != "c.go" {
 		t.Fatalf("the file after a.txt = %q, want c.go", got)
 	}
 
 	m.pressDiffKey(t, 'J')
-	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "a.txt" {
+	if got := m.review.Snapshot().Set.Files[m.review.Snapshot().FileIndex].File.Path; got != "a.txt" {
 		t.Fatalf("the load should carry the cursor off blob.dat, landed on %q", got)
 	}
-	if m.diff.scroll != 150 {
-		t.Fatalf("a.txt scroll = %d, want the 150 it was left at", m.diff.scroll)
+	if m.review.Snapshot().Scroll != 150 {
+		t.Fatalf("a.txt scroll = %d, want the 150 it was left at", m.review.Snapshot().Scroll)
 	}
 }
 
@@ -419,9 +417,9 @@ func TestReviewCodeOnlySpaceSkipsHiddenFile(t *testing.T) {
 			"c.go":  "package a\n\nfunc C() int { return 30 }\n",
 			"d.go":  "package a\n\nfunc D() int { return 40 }\n",
 		}))
-	paths := make([]string, len(m.diff.set.Files))
-	for i := range m.diff.set.Files {
-		paths[i] = m.diff.set.Files[i].File.Path
+	paths := make([]string, len(m.review.Snapshot().Set.Files))
+	for i := range m.review.Snapshot().Set.Files {
+		paths[i] = m.review.Snapshot().Set.Files[i].File.Path
 	}
 	want := []string{"a.go", "b.png", "c.go", "d.go"}
 	if strings.Join(paths, ",") != strings.Join(want, ",") {
@@ -435,12 +433,12 @@ func TestReviewCodeOnlySpaceSkipsHiddenFile(t *testing.T) {
 		t.Fatal("space should mark c.go reviewed")
 	}
 	m.drainCmds(t, m.switchDiffFile(-3))
-	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "a.go" {
+	if got := m.review.Snapshot().Set.Files[m.review.Snapshot().FileIndex].File.Path; got != "a.go" {
 		t.Fatalf("the cursor should be back on a.go, got %q", got)
 	}
 
 	m.pressDiffKey(t, ' ')
-	if got := m.diff.set.Files[m.diff.fileIdx].File.Path; got != "d.go" {
+	if got := m.review.Snapshot().Set.Files[m.review.Snapshot().FileIndex].File.Path; got != "d.go" {
 		t.Fatalf("space should walk past the hidden b.png and the reviewed c.go to d.go, landed on %q", got)
 	}
 }
@@ -476,17 +474,17 @@ func TestReviewCodeOnlyWithNoCodeFiles(t *testing.T) {
 	}
 
 	m.pressDiffKey(t, 'J')
-	if m.diff.fileIdx != 0 {
-		t.Fatalf("tab should not walk the selection through hidden files, fileIdx = %d", m.diff.fileIdx)
+	if m.review.Snapshot().FileIndex != 0 {
+		t.Fatalf("tab should not walk the selection through hidden files, fileIdx = %d", m.review.Snapshot().FileIndex)
 	}
 
-	path := m.diff.set.Files[m.diff.fileIdx].File.Path
+	path := m.review.Snapshot().Set.Files[m.review.Snapshot().FileIndex].File.Path
 	m.pressDiffKey(t, ' ')
 	if m.fileReviewed(path) {
 		t.Fatal("space should not mark a file the filter is hiding")
 	}
 	m.pressDiffKey(t, 'c')
-	if m.diff.annotating {
+	if m.review.Snapshot().Annotating {
 		t.Fatal("c should not comment a file the filter is hiding")
 	}
 }
@@ -495,14 +493,14 @@ func TestDiffPageKeysMoveAViewport(t *testing.T) {
 	m := buildModel(t)
 	dir := gitRepoWithLongFile(t, 80)
 	openReviewOn(t, m, "pager", dir)
-	before := m.diff.cursorLine
+	before := m.review.Snapshot().CursorLine
 	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyPgDown})
-	if m.diff.cursorLine <= before {
-		t.Fatalf("pgdown left cursor at %d", m.diff.cursorLine)
+	if m.review.Snapshot().CursorLine <= before {
+		t.Fatalf("pgdown left cursor at %d", m.review.Snapshot().CursorLine)
 	}
 	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyPgUp})
-	if m.diff.cursorLine != before {
-		t.Fatalf("pgup should return to %d, got %d", before, m.diff.cursorLine)
+	if m.review.Snapshot().CursorLine != before {
+		t.Fatalf("pgup should return to %d, got %d", before, m.review.Snapshot().CursorLine)
 	}
 }
 

@@ -19,8 +19,11 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 			return KeyResult{Navigation: NavigationQuit, Consumed: true}
 		case "enter", "y":
 			m.sendConfirm = false
-			if ctx.IsShell {
-				return KeyResult{Error: "review comments cannot be sent to a shell session", Consumed: true}
+			if ctx.SendError != "" {
+				return KeyResult{Error: ctx.SendError, Consumed: true}
+			}
+			if !ctx.PersistenceAvailable {
+				return KeyResult{Error: "review state is unavailable", Consumed: true}
 			}
 			result := m.BeginSend()
 			return KeyResult{Requests: result.Requests, Error: result.Error, Consumed: true}
@@ -82,7 +85,7 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 	case "f":
 		result.Requests = m.ToggleCodeOnly()
 	case " ", "space":
-		if !ctx.IsShell && m.repoSel == "" {
+		if !ctx.PersistenceAvailable {
 			result.Error = "review state is unavailable"
 		} else {
 			result.Requests = m.ToggleReviewed()
@@ -90,7 +93,7 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 	case "c":
 		m.OpenAnnotation()
 	case "d":
-		result.Requests = m.DiscardOrToggle()
+		result.Requests, result.Error = m.DiscardOrToggle(ctx.PersistenceAvailable)
 	case "C":
 		if m.DraftCount() == 0 {
 			result.Error = "no comments to send - press c on a line first"
@@ -98,14 +101,19 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 			m.sendConfirm = true
 		}
 	case "o", "f3":
-		if fd := m.currentFile(); fd != nil && !m.fileHidden(fd) && m.set.Repo.Root != "" {
-			request := FileCheckRequest{TargetID: m.target.ID, RepoRoot: m.repoSel, Generation: m.gen, Path: filepath.Join(m.set.Repo.Root, fd.File.Path)}
-			result.Requests.FileCheck = &request
-		}
+		result.Requests.FileCheck = m.OpenFileRequest()
 	default:
 		result.Consumed = false
 	}
 	return result
+}
+
+func (m Model) OpenFileRequest() *FileCheckRequest {
+	fd := m.currentFile()
+	if fd == nil || m.fileHidden(fd) || m.set.Repo.Root == "" {
+		return nil
+	}
+	return &FileCheckRequest{TargetID: m.target.ID, RepoRoot: m.repoSel, Generation: m.gen, Path: filepath.Join(m.set.Repo.Root, fd.File.Path)}
 }
 
 func (m *Model) ApplyFileCheck(result FileCheckResult) (string, bool) {

@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 	"testing"
 )
@@ -17,13 +20,22 @@ func TestReviewCtrlCQuitsFromSubmodes(t *testing.T) {
 	if _, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
 		t.Fatal("ctrl+c should quit while annotating")
 	}
-	m.diff.annotating = false
-	m.diff.sendConfirm = true
+	m.review.AnnotationKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.review.SetSendConfirm(true)
 	if _, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
 		t.Fatal("ctrl+c should quit from the send-confirm prompt")
 	}
-	m.diff.sendConfirm = false
-	m.diff.repoRoots = []string{"/tmp/one", "/tmp/two"}
+	m.review.SetSendConfirm(false)
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("review session disappeared")
+	}
+	target := reviewTarget(sess)
+	request := seedReviewForTest(m, target, m.review.Snapshot().Scope, "/tmp/one", diff.Set{}, false)
+	m.review.ApplyLoad(uireview.LoadResult{
+		TargetID: target.ID, Scope: request.Scope, Generation: request.Generation,
+		RepoRoot: "/tmp/one", RepoRoots: []string{"/tmp/one", "/tmp/two"}, Set: diff.Set{},
+	})
 	m.openRepoPick()
 	if _, cmd := m.handleRepoPickKey(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
 		t.Fatal("ctrl+c should quit while the repo picker is open")
@@ -54,19 +66,19 @@ func TestDiffHelpReturnsToReview(t *testing.T) {
 	if m.mode != modeHelp {
 		t.Fatalf("? should open the key map, mode = %v", m.mode)
 	}
-	if !m.diff.active {
+	if !m.review.Snapshot().Active {
 		t.Fatal("opening help must not close the review")
 	}
 	m.handleHelpKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.mode != modeDiff || !m.diff.active {
-		t.Fatalf("esc should return to review, mode = %v active = %v", m.mode, m.diff.active)
+	if m.mode != modeDiff || !m.review.Snapshot().Active {
+		t.Fatalf("esc should return to review, mode = %v active = %v", m.mode, m.review.Snapshot().Active)
 	}
 }
 
 func TestDiffHelpRestartsLoaderOnReturn(t *testing.T) {
 	m := helpModel()
 	m.mode = modeDiff
-	m.diff = diffState{active: true, loading: true}
+	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	if cmd := m.startStartupTick(); cmd == nil {
 		t.Fatal("loading review should start the loader")
 	}

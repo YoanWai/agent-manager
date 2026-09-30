@@ -2,15 +2,18 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/diff"
-	"github.com/YoanWai/agent-manager/internal/git"
-	"github.com/charmbracelet/x/ansi"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestWrapTintedPreservesText(t *testing.T) {
@@ -125,11 +128,11 @@ func TestHighlightFileBothSides(t *testing.T) {
 		[]byte("package a\n\nfunc A() int { return 1 }\n"),
 		git.ChangedFile{Path: "a.go", OldPath: "a.go", Status: git.Modified}, git.FileStat{})
 	hl := highlightFile(&fd)
-	if hl == nil || len(hl.lines) != len(fd.Lines) {
-		t.Fatalf("hl lines = %d, want %d", len(hl.lines), len(fd.Lines))
+	if hl == nil {
+		t.Fatal("highlight is nil")
 	}
-	if !strings.Contains(hl.lines[0], "\x1b[") {
-		t.Fatalf("go source should highlight: %q", hl.lines[0])
+	if first := hl.Line(0, ""); !strings.Contains(first, "\x1b[") {
+		t.Fatalf("go source should highlight: %q", first)
 	}
 	assertHighlightMatchesText(t, &fd, hl)
 }
@@ -142,7 +145,11 @@ func TestHighlightFileHunkModel(t *testing.T) {
 		t.Fatalf("want a hunk model opening with a gap, got %d lines", len(fd.Lines))
 	}
 	hl := highlightFile(&fd)
-	if !strings.Contains(strings.Join(hl.lines, ""), "\x1b[") {
+	var highlighted strings.Builder
+	for i := range fd.Lines {
+		highlighted.WriteString(hl.Line(i, ""))
+	}
+	if !strings.Contains(highlighted.String(), "\x1b[") {
 		t.Fatal("go source should highlight")
 	}
 	assertHighlightMatchesText(t, &fd, hl)
@@ -152,14 +159,11 @@ func TestHighlightFileHunkModel(t *testing.T) {
 // whole-file model still reaches the screen.
 func TestReviewRendersHunksForBigFile(t *testing.T) {
 	fd := bigEditedFile(t)
-	m := &Model{
-		width:  100,
-		height: 30,
-		mode:   modeDiff,
-		diff:   diffState{active: true, sessID: "s", hl: newHLCache(), set: diff.Set{Files: []diff.FileDiff{fd}}},
-	}
+	m := &Model{width: 100, height: 30, mode: modeDiff}
+	seedReviewForTest(m, uireview.Target{ID: "s"}, git.ScopeUncommitted, "/repo",
+		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{fd}}, true)
 	for _, split := range []bool{false, true} {
-		m.diff.sideBySide = split
+		setReviewSideBySide(m, split)
 		code := ansi.Strip(m.viewDiffCode(160, 20))
 		if !strings.Contains(code, `var name11000 = "edited"`) || !strings.Contains(code, "11002") {
 			t.Fatalf("split=%v: the edit and its line number should render, got:\n%s", split, code)
@@ -194,19 +198,9 @@ func bigEditedFile(t *testing.T) diff.FileDiff {
 func assertHighlightMatchesText(t *testing.T, fd *diff.FileDiff, hl *fileHL) {
 	t.Helper()
 	for i, line := range fd.Lines {
-		if got := ansi.Strip(hl.hlLine(line, i)); got != line.Text {
+		if got := ansi.Strip(hl.Line(i, line.Text)); got != line.Text {
 			t.Fatalf("line %d highlight drifted: %q vs %q", i, got, line.Text)
 		}
-	}
-}
-
-func TestHLCacheEvicts(t *testing.T) {
-	cache := newHLCache()
-	for i := 0; i < highlightCacheCap+3; i++ {
-		cache.put(hlKey{path: string(rune('a' + i))}, &fileHL{})
-	}
-	if len(cache.entries) != highlightCacheCap {
-		t.Fatalf("cache size = %d", len(cache.entries))
 	}
 }
 
@@ -228,7 +222,7 @@ func TestReviewHeaderShowsRepoBranchAndBase(t *testing.T) {
 		t.Fatalf("header should show the branch, got %q", header)
 	}
 
-	for m.diff.scope != git.ScopeBranch {
+	for m.review.Snapshot().Scope != git.ScopeBranch {
 		m.drainCmds(t, m.cycleDiffScope())
 	}
 	header = m.viewDiffHeader("hdr")
@@ -253,7 +247,7 @@ func TestReviewHeaderTargetLabelCleanAndKeyed(t *testing.T) {
 	if !ok {
 		t.Fatal("no diff session")
 	}
-	for m.diff.scope != git.ScopeBranch {
+	for m.review.Snapshot().Scope != git.ScopeBranch {
 		m.drainCmds(t, m.cycleDiffScope())
 	}
 
@@ -268,17 +262,19 @@ func TestReviewHeaderTargetLabelCleanAndKeyed(t *testing.T) {
 		t.Fatalf("auto-detected target should be marked, got %q", header)
 	}
 
-	if err := m.services.store.SetReviewBase(sess.ID, m.diff.repoSel, "feature"); err != nil {
+	if err := m.services.store.SetReviewBase(sess.ID, m.review.Snapshot().RepoSelected, "feature"); err != nil {
 		t.Fatal(err)
 	}
-	m.diff.set.BaseOverride = "feature"
-	m.diff.set.BaseDesc = "feature@deadbee"
-	m.diff.set.Repo.Branch = "feature"
+	request, accepted := m.review.SelectBase("feature")
+	if !accepted {
+		t.Fatal("explicit base request was rejected")
+	}
+	m.drainCmds(t, m.reviewLoadCmd(request))
 	header = ansi.Strip(m.viewDiffHeader("hdr"))
 	if strings.Contains(header, "(auto)") {
 		t.Fatalf("explicit target should not be marked auto, got %q", header)
 	}
-	if !strings.Contains(header, "feature → feature") {
+	if !strings.Contains(header, "feature → main") {
 		t.Fatalf("header should show the cleaned target → branch, got %q", header)
 	}
 }
@@ -336,11 +332,11 @@ func TestDiffScopeCycleAndLayout(t *testing.T) {
 	m.drainCmds(t, m.openDiff())
 
 	m.applyCmd(t, m.cycleDiffScope())
-	if m.diff.scope.String() != "vs target" {
-		t.Fatalf("scope = %q", m.diff.scope)
+	if m.review.Snapshot().Scope.String() != "vs target" {
+		t.Fatalf("scope = %q", m.review.Snapshot().Scope)
 	}
 
-	m.diff.sideBySide = true
+	setReviewSideBySide(m, true)
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "split") {
 		t.Fatalf("split pill missing:\n%s", view)
 	}
@@ -356,8 +352,8 @@ func TestDiffFrameFitsTerminal(t *testing.T) {
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
 	m.drainCmds(t, m.openDiff())
-	if m.diff.loading || len(m.diff.set.Files) == 0 {
-		t.Fatalf("diff did not load: %q", m.diff.errText)
+	if m.review.Snapshot().Loading || len(m.review.Snapshot().Set.Files) == 0 {
+		t.Fatalf("diff did not load: %q", m.review.Snapshot().Error)
 	}
 
 	// Narrow widths matter as much as short ones: the footer wraps onto
@@ -371,11 +367,13 @@ func TestDiffFrameFitsTerminal(t *testing.T) {
 		for _, annotating := range []bool{false, true} {
 			for _, size := range sizes {
 				m.width, m.height = size.w, size.h
-				m.diff.sideBySide = split
-				m.diff.annotating = false
+				setReviewSideBySide(m, split)
+				if m.review.Snapshot().Annotating {
+					m.review.AnnotationKey(tea.KeyMsg{Type: tea.KeyEsc})
+				}
 				if annotating {
 					m.openAnnotate()
-					m.diff.annInput.SetValue("note")
+					typeReviewAnnotation(m, "note")
 				}
 
 				raw := strings.Split(m.viewDiffFull(), "\n")
@@ -423,7 +421,11 @@ func TestHeaderMarksUncountedFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.diff.set = set
+	state := m.review.Snapshot()
+	m.review.ApplyLoad(uireview.LoadResult{
+		TargetID: state.SessionID, Scope: state.Scope, Generation: state.Generation,
+		RepoRoot: state.RepoSelected, RepoRoots: state.RepoRoots, Set: set,
+	})
 	if !strings.Contains(m.viewDiffHeader("counted"), "+?") {
 		t.Fatalf("header should mark the uncounted file, got %q", m.viewDiffHeader("counted"))
 	}
@@ -442,7 +444,13 @@ func TestDiffHeaderKeepsCountsWhenNarrow(t *testing.T) {
 func TestDiffFileListTruncatesAtSlash(t *testing.T) {
 	m := buildModel(t)
 	openReviewOn(t, m, "paths", gitTestRepo(t))
-	m.diff.set.Files[0].File.Path = "internal/api/handlers/sessions.go"
+	set := m.review.SetCopy()
+	set.Files[0].File.Path = "internal/api/handlers/sessions.go"
+	state := m.review.Snapshot()
+	m.review.ApplyLoad(uireview.LoadResult{
+		TargetID: state.SessionID, Scope: state.Scope, Generation: state.Generation,
+		RepoRoot: state.RepoSelected, RepoRoots: state.RepoRoots, Set: set,
+	})
 	list := ansi.Strip(m.viewDiffFileList(28, 8))
 	if strings.Contains(list, "ternal") {
 		t.Fatalf("file list cut mid-segment:\n%s", list)
@@ -460,17 +468,16 @@ func TestDiffFileListCursorAlwaysPainted(t *testing.T) {
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
 	m.drainCmds(t, m.openDiff())
-	if m.diff.loading || len(m.diff.set.Files) < 2 {
-		t.Fatalf("diff did not load: %q", m.diff.errText)
+	if m.review.Snapshot().Loading || len(m.review.Snapshot().Set.Files) < 2 {
+		t.Fatalf("diff did not load: %q", m.review.Snapshot().Error)
 	}
 
-	last := len(m.diff.set.Files) - 1
+	last := len(m.review.Snapshot().Set.Files) - 1
 	for _, size := range []struct{ w, h int }{{80, 20}, {100, 30}, {140, 44}} {
 		m.width, m.height = size.w, size.h
-		m.diff.fileIdx = last
-		m.drainCmds(t, m.loadCurrentDiffFile())
+		m.drainCmds(t, selectReviewFile(m, last))
 		view := ansi.Strip(m.viewDiffFull())
-		name := m.diff.set.Files[last].File.Path
+		name := m.review.Snapshot().Set.Files[last].File.Path
 		if !strings.Contains(view, name) {
 			t.Errorf("%dx%d: file %q is selected but never painted:\n%s", size.w, size.h, name, view)
 		}

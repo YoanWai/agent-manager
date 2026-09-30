@@ -3,9 +3,8 @@ package review
 import (
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/diff"
-	"github.com/YoanWai/agent-manager/internal/git"
-	"github.com/charmbracelet/bubbles/textarea"
+	diff "github.com/YoanWai/agent-manager/internal/diff/model"
+	git "github.com/YoanWai/agent-manager/internal/git/value"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -45,8 +44,33 @@ type SavedState struct {
 	Round    Round
 }
 
+// FileSummary is the immutable, line-free file metadata used by list and
+// header renderers. Full file content is available through CurrentFile.
+type FileSummary struct {
+	File      git.ChangedFile
+	Stat      git.FileStat
+	Binary    bool
+	Truncated bool
+	Err       error
+	HasStat   bool
+	IsLoaded  bool
+	Hidden    bool
+}
+
+func (f FileSummary) StatKnown() bool { return f.HasStat }
+func (f FileSummary) Loaded() bool    { return f.IsLoaded }
+
+type SetSummary struct {
+	Repo         git.Repo
+	Scope        git.Scope
+	BaseDesc     string
+	BaseRef      string
+	BaseOverride string
+	Files        []FileSummary
+}
+
 type Worktree struct {
-	Path   string
+	Root   string
 	Branch string
 }
 
@@ -57,14 +81,13 @@ type Snapshot struct {
 	Generation   int
 	Loading      bool
 	Error        string
-	Set          diff.Set
+	Set          SetSummary
 	FileIndex    int
 	Scroll       int
 	CursorLine   int
 	SideBySide   bool
 	CodeOnly     bool
 	Annotating   bool
-	Annotation   textarea.Model
 	SendConfirm  bool
 	Notice       string
 	Fingerprint  uint64
@@ -75,14 +98,16 @@ type Snapshot struct {
 }
 
 type LoadRequest struct {
-	Target     Target
-	Scope      git.Scope
-	Generation int
-	RepoWanted string
-	RepoRoot   string
-	RepoRoots  []string
-	Refresh    bool
-	Resolve    bool
+	Target       Target
+	Scope        git.Scope
+	Generation   int
+	RepoWanted   string
+	RepoRoot     string
+	RepoRoots    []string
+	Refresh      bool
+	Resolve      bool
+	Restored     map[string]bool
+	BaseOverride *string
 }
 
 type LoadResult struct {
@@ -155,7 +180,7 @@ func NewHighlight(lines []string) *Highlight {
 }
 
 func (h *Highlight) Line(index int, fallback string) string {
-	if h == nil || index < 0 || index >= len(h.lines) {
+	if h == nil || index < 0 || index >= len(h.lines) || h.lines[index] == "" {
 		return fallback
 	}
 	return h.lines[index]
@@ -266,11 +291,12 @@ type Requests struct {
 }
 
 type ApplyResult struct {
-	Accepted bool
-	Requests Requests
-	Error    string
-	Notice   string
-	Refresh  bool
+	Accepted            bool
+	Requests            Requests
+	Error               string
+	Notice              string
+	Refresh             bool
+	ForgetPreferredRepo string
 }
 
 type Navigation int
@@ -287,10 +313,12 @@ const (
 )
 
 type KeyContext struct {
-	CodeHeight int
-	Now        time.Time
-	Target     Target
-	IsShell    bool
+	CodeHeight           int
+	Now                  time.Time
+	Target               Target
+	IsShell              bool
+	PersistenceAvailable bool
+	SendError            string
 }
 
 type KeyResult struct {

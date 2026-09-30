@@ -5,8 +5,8 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/YoanWai/agent-manager/internal/diff"
-	"github.com/YoanWai/agent-manager/internal/git"
+	diff "github.com/YoanWai/agent-manager/internal/diff/model"
+	git "github.com/YoanWai/agent-manager/internal/git/value"
 	"github.com/charmbracelet/bubbles/textarea"
 )
 
@@ -126,7 +126,7 @@ func (m *Model) retarget(target Target, preferredRepo string, refresh bool) Load
 	m.repoSel = preferredRepo
 	m.fileLoading = make(map[int]bool)
 	m.reanchor = nil
-	return LoadRequest{Target: target, Scope: m.scope, Generation: m.gen, RepoWanted: preferredRepo, Refresh: refresh, Resolve: true}
+	return LoadRequest{Target: target, Scope: m.scope, Generation: m.gen, RepoWanted: preferredRepo, Refresh: refresh, Resolve: true, Restored: maps.Clone(m.stateLoaded)}
 }
 
 func (m *Model) Close() int {
@@ -159,14 +159,27 @@ func (m Model) SessionID() string { return m.target.ID }
 func (m Model) Scope() git.Scope  { return m.scope }
 
 func (m Model) Snapshot() Snapshot {
+	files := make([]FileSummary, len(m.set.Files))
+	for i := range m.set.Files {
+		fd := &m.set.Files[i]
+		files[i] = FileSummary{
+			File: fd.File, Stat: fd.Stat, Binary: fd.Binary, Truncated: fd.Truncated,
+			Err: fd.Err, HasStat: fd.HasStat, IsLoaded: fd.IsLoaded,
+			Hidden: m.fileHidden(fd),
+		}
+	}
 	return Snapshot{
 		Active: m.active, Scope: m.scope, SessionID: m.target.ID,
 		Generation: m.gen, Loading: m.loading, Error: m.errText,
-		Set: m.set, FileIndex: m.fileIdx, Scroll: m.scroll,
+		Set: SetSummary{
+			Repo: m.set.Repo, Scope: m.set.Scope, BaseDesc: m.set.BaseDesc,
+			BaseRef: m.set.BaseRef, BaseOverride: m.set.BaseOverride, Files: files,
+		},
+		FileIndex: m.fileIdx, Scroll: m.scroll,
 		CursorLine: m.cursorLine, SideBySide: m.sideBySide,
 		CodeOnly: m.codeOnly, Annotating: m.annotationOpen,
-		Annotation: m.annotating, SendConfirm: m.sendConfirm,
-		Notice: m.notice, Fingerprint: m.fingerprint,
+		SendConfirm: m.sendConfirm,
+		Notice:      m.notice, Fingerprint: m.fingerprint,
 		RepoRoots: slices.Clone(m.repoRoots), RepoSelected: m.repoSel,
 		Worktrees: slices.Clone(m.worktrees), SendPending: m.sendPending,
 	}
@@ -243,8 +256,12 @@ func (m Model) CurrentFile() (diff.FileDiff, bool) {
 	if fd == nil {
 		return diff.FileDiff{}, false
 	}
-	return *fd, true
+	return fd.Clone(), true
 }
+
+// SetCopy returns an owned copy for adapters and tests that need the complete
+// data set. Routine rendering should use Snapshot and CurrentFile.
+func (m Model) SetCopy() diff.Set { return m.set.Clone() }
 
 func (m Model) CurrentHighlight() *Highlight {
 	fd := m.currentFile()

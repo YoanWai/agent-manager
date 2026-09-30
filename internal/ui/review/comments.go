@@ -7,11 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/diff"
-	"github.com/YoanWai/agent-manager/internal/git"
+	diff "github.com/YoanWai/agent-manager/internal/diff/model"
+	git "github.com/YoanWai/agent-manager/internal/git/value"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m *Model) OpenAnnotation() bool {
@@ -52,6 +53,69 @@ func (m *Model) PrepareAnnotation(width, height int) {
 	m.annotating.SetHeight(height)
 }
 
+func (m Model) AnnotationValue() string { return m.annotating.Value() }
+
+// AnnotationView renders the owned editor without exposing its mutable Bubbles
+// model. cursorMarker follows the root IME marker convention.
+func (m Model) AnnotationView(cursorMarker string) string {
+	input := m.annotating
+	if !input.Focused() {
+		return input.View()
+	}
+	marked := input
+	marked.Cursor.Blink = false
+	style := marked.Cursor.Style
+	transform := style.GetTransform()
+	marked.Cursor.Style = style.Transform(func(value string) string {
+		if transform != nil {
+			value = transform(value)
+		}
+		return cursorMarker + value
+	})
+	markedView := marked.View()
+	if !input.Cursor.Blink {
+		return markedView
+	}
+	return insertMarkerAtCursor(input.View(), markedView, cursorMarker)
+}
+
+func insertMarkerAtCursor(normal, marked, marker string) string {
+	index := strings.Index(marked, marker)
+	if index < 0 {
+		return normal
+	}
+	prefix := marked[:index]
+	row := strings.Count(prefix, "\n")
+	if newline := strings.LastIndexByte(prefix, '\n'); newline >= 0 {
+		prefix = prefix[newline+1:]
+	}
+	column := ansi.StringWidth(prefix)
+	lines := strings.Split(normal, "\n")
+	if row >= len(lines) {
+		return normal
+	}
+	line := lines[row]
+	cell, state := 0, ansi.NormalState
+	for offset := 0; offset < len(line); {
+		_, width, size, nextState := ansi.GraphemeWidth.DecodeSequenceInString(line[offset:], state, nil)
+		if size <= 0 {
+			break
+		}
+		if width > 0 && cell+width > column {
+			lines[row] = line[:offset] + marker + line[offset:]
+			return strings.Join(lines, "\n")
+		}
+		cell += width
+		offset += size
+		state = nextState
+	}
+	if cell == column {
+		lines[row] += marker
+		return strings.Join(lines, "\n")
+	}
+	return normal
+}
+
 func (m *Model) AnnotationKey(msg tea.KeyMsg) KeyResult {
 	switch msg.String() {
 	case "ctrl+c":
@@ -82,7 +146,8 @@ func (m *Model) saveAnnotation() Requests {
 	num, deleted := annotationLine(line)
 	if existing := m.annotationAt(fd.File.Path, line); existing != nil {
 		if text == "" {
-			return m.DiscardOrToggle()
+			requests, _ := m.DiscardOrToggle(true)
+			return requests
 		}
 		existing.text = text
 		existing.hash = ContentHash(fd)
@@ -150,14 +215,14 @@ func (m Model) DraftCount() int {
 	return count
 }
 
-func (m *Model) DiscardOrToggle() Requests {
+func (m *Model) DiscardOrToggle(persistenceAvailable bool) (Requests, string) {
 	fd := m.currentFile()
 	if fd == nil {
-		return Requests{}
+		return Requests{}, ""
 	}
 	lineIdx := m.CursorDiffLine()
 	if lineIdx < 0 || lineIdx >= len(fd.Lines) {
-		return Requests{}
+		return Requests{}, ""
 	}
 	num, deleted := annotationLine(fd.Lines[lineIdx])
 	key := m.reviewKey()
@@ -165,7 +230,7 @@ func (m *Model) DiscardOrToggle() Requests {
 	for i := range notes {
 		if notes[i].round == 0 && notes[i].file == fd.File.Path && notes[i].line == num && notes[i].deleted == deleted {
 			m.annotations[key] = append(notes[:i], notes[i+1:]...)
-			return Requests{Save: m.saveRequest()}
+			return Requests{Save: m.saveRequest()}, ""
 		}
 	}
 	latestOpen, latestHandled := -1, -1
@@ -186,7 +251,10 @@ func (m *Model) DiscardOrToggle() Requests {
 		target = latestHandled
 	}
 	if target < 0 {
-		return Requests{}
+		return Requests{}, ""
+	}
+	if !persistenceAvailable {
+		return Requests{}, "review state is unavailable"
 	}
 	previous := notes[target].handled
 	handled := !previous
@@ -196,7 +264,7 @@ func (m *Model) DiscardOrToggle() Requests {
 	return Requests{Handle: &HandleCommentRequest{
 		TargetID: m.target.ID, RepoRoot: m.repoSel, CommentID: notes[target].id,
 		Handled: handled, Previous: previous,
-	}}
+	}}, ""
 }
 
 func (m *Model) ApplyHandle(result HandleCommentResult) ApplyResult {
@@ -327,6 +395,30 @@ func shortID() string {
 	return hex.EncodeToString(buf)
 }
 
+// NormalizeSavedState owns the backward-compatible comment identity and point
+// migration. The root adapter persists the returned value when changed.
+func NormalizeSavedState(state SavedState) (SavedState, bool) {
+	highest := make(map[int]int)
+	for _, note := range state.Comments {
+		if note.Round > 0 && note.Point > highest[note.Round] {
+			highest[note.Round] = note.Point
+		}
+	}
+	changed := false
+	for i := range state.Comments {
+		if state.Comments[i].ID == "" {
+			state.Comments[i].ID = newCommentID()
+			changed = true
+		}
+		if state.Comments[i].Round > 0 && state.Comments[i].Point == 0 {
+			highest[state.Comments[i].Round]++
+			state.Comments[i].Point = highest[state.Comments[i].Round]
+			changed = true
+		}
+	}
+	return state, changed
+}
+
 func scopePhrase(scope git.Scope) string {
 	switch scope {
 	case git.ScopeBranch:
@@ -346,3 +438,5 @@ func commentNoun(count int) string {
 	}
 	return "comments"
 }
+
+func CommentNoun(count int) string { return commentNoun(count) }

@@ -1,11 +1,14 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/git"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 )
 
 func TestReviewedMarkClearsOnContentChange(t *testing.T) {
@@ -15,10 +18,10 @@ func TestReviewedMarkClearsOnContentChange(t *testing.T) {
 	}
 	dir := gitRepoWithTwoChangedFiles(t)
 	openReviewOn(t, m, "reset", dir)
-	if len(m.diff.set.Files) == 0 {
+	if len(m.review.Snapshot().Set.Files) == 0 {
 		t.Fatal("want at least one changed file")
 	}
-	path := m.diff.set.Files[0].File.Path
+	path := m.review.Snapshot().Set.Files[0].File.Path
 
 	m.drainCmds(t, m.toggleReviewed())
 	if !m.fileReviewed(path) {
@@ -58,10 +61,9 @@ func TestAScopeMissingAFileKeepsItsReviewedMark(t *testing.T) {
 		t.Fatalf("%s was not marked reviewed", path)
 	}
 
-	m.diff.set.Files = nil
-	if clearStaleReviewedMarks(m) {
-		t.Fatal("a file the scope does not list counted as a stale mark")
-	}
+	state := m.review.SavedState()
+	seedReviewStateForTest(m, uireview.Target{ID: "scopemarks"}, git.ScopeUncommitted, "/repo",
+		diff.Set{Repo: git.Repo{Root: "/repo"}}, state)
 	if !m.fileReviewed(path) {
 		t.Fatalf("the mark for %s did not survive a scope without it", path)
 	}
@@ -93,15 +95,15 @@ func TestScopeCycleKeepsReviewedMark(t *testing.T) {
 	}
 	openReviewOn(t, m, "scopecycle", dir)
 	target := -1
-	for i, fd := range m.diff.set.Files {
+	for i, fd := range m.review.Snapshot().Set.Files {
 		if fd.File.Path == "main.go" {
 			target = i
 		}
 	}
 	if target < 0 {
-		t.Fatalf("main.go missing from the uncommitted scope: %+v", m.diff.set.Files)
+		t.Fatalf("main.go missing from the uncommitted scope: %+v", m.review.Snapshot().Set.Files)
 	}
-	m.drainCmds(t, m.switchDiffFile(target-m.diff.fileIdx))
+	m.drainCmds(t, m.switchDiffFile(target-m.review.Snapshot().FileIndex))
 	m.drainCmds(t, m.toggleReviewed())
 	if !m.fileReviewed("main.go") {
 		t.Fatal("main.go was not marked reviewed")
@@ -109,12 +111,12 @@ func TestScopeCycleKeepsReviewedMark(t *testing.T) {
 
 	for cycle := 0; cycle < 4; cycle++ {
 		m.drainCmds(t, m.cycleDiffScope())
-		if m.diff.scope != git.ScopeUncommitted && m.fileReviewed("main.go") {
-			t.Fatalf("a mark taken under uncommitted read as reviewed under %q", m.diff.scope)
+		if m.review.Snapshot().Scope != git.ScopeUncommitted && m.fileReviewed("main.go") {
+			t.Fatalf("a mark taken under uncommitted read as reviewed under %q", m.review.Snapshot().Scope)
 		}
 	}
-	if m.diff.scope != git.ScopeUncommitted {
-		t.Fatalf("four cycles should return to uncommitted, got %q", m.diff.scope)
+	if m.review.Snapshot().Scope != git.ScopeUncommitted {
+		t.Fatalf("four cycles should return to uncommitted, got %q", m.review.Snapshot().Scope)
 	}
 	if !m.fileReviewed("main.go") {
 		t.Fatal("cycling scopes destroyed the reviewed mark")

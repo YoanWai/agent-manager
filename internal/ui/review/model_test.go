@@ -2,10 +2,11 @@ package review_test
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
-	"github.com/YoanWai/agent-manager/internal/diff"
-	"github.com/YoanWai/agent-manager/internal/git"
+	diff "github.com/YoanWai/agent-manager/internal/diff/model"
+	git "github.com/YoanWai/agent-manager/internal/git/value"
 	"github.com/YoanWai/agent-manager/internal/ui/review"
 )
 
@@ -138,5 +139,27 @@ func TestApplyFileRejectsThePreviousGeneration(t *testing.T) {
 	}
 	if current, _ := model.CurrentFile(); current.Loaded() {
 		t.Fatal("stale result replaced the current file")
+	}
+}
+
+func TestHighlightCacheEvictsOldestEntry(t *testing.T) {
+	model := review.New(false)
+	target := review.Target{ID: "s1"}
+	request := model.Open(target, git.ScopeUncommitted, "/repo")
+	file := diff.BuildFile(nil, []byte("line\n"), git.ChangedFile{Path: "a.go"}, git.FileStat{})
+	model.ApplyLoad(review.LoadResult{
+		TargetID: target.ID, Scope: request.Scope, Generation: request.Generation,
+		RepoRoot: "/repo", Set: diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{file}},
+	})
+	key := review.HighlightKey{TargetID: target.ID, Scope: request.Scope, Path: "a.go", Hash: review.ContentHash(&file)}
+	model.ApplyHighlight(review.HighlightResult{Key: key, Highlight: review.NewHighlight([]string{"first"})})
+	for i := 0; i < 20; i++ {
+		model.ApplyHighlight(review.HighlightResult{
+			Key:       review.HighlightKey{TargetID: target.ID, Scope: request.Scope, Path: fmt.Sprintf("other-%d.go", i), Hash: uint64(i + 1)},
+			Highlight: review.NewHighlight([]string{"other"}),
+		})
+	}
+	if model.CurrentHighlight() != nil {
+		t.Fatal("oldest highlight remained after cache capacity was exceeded")
 	}
 }

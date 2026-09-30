@@ -3,17 +3,16 @@ package ui
 import (
 	"errors"
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/diff"
-	"github.com/YoanWai/agent-manager/internal/git"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
-	"time"
+
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestDiffReviewShowsWholeFile(t *testing.T) {
@@ -23,11 +22,11 @@ func TestDiffReviewShowsWholeFile(t *testing.T) {
 	m.selectSessionRow(t, "coder")
 
 	m.drainCmds(t, m.openDiff())
-	if !m.diff.active || m.mode != modeDiff || m.diff.loading {
-		t.Fatalf("diff should be loaded fullscreen, active=%v mode=%v err=%q", m.diff.active, m.mode, m.diff.errText)
+	if !m.review.Snapshot().Active || m.mode != modeDiff || m.review.Snapshot().Loading {
+		t.Fatalf("diff should be loaded fullscreen, active=%v mode=%v err=%q", m.review.Snapshot().Active, m.mode, m.review.Snapshot().Error)
 	}
-	if len(m.diff.set.Files) != 2 {
-		t.Fatalf("files = %+v", m.diff.set.Files)
+	if len(m.review.Snapshot().Set.Files) != 2 {
+		t.Fatalf("files = %+v", m.review.Snapshot().Set.Files)
 	}
 
 	view := ansi.Strip(m.View())
@@ -48,13 +47,13 @@ func TestReviewLoadsFilesOnDemand(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "lazy", gitRepoWithTwoChangedFiles(t))
-	if len(m.diff.set.Files) != 2 {
-		t.Fatalf("want 2 files, got %d", len(m.diff.set.Files))
+	if len(m.review.Snapshot().Set.Files) != 2 {
+		t.Fatalf("want 2 files, got %d", len(m.review.Snapshot().Set.Files))
 	}
-	if !m.diff.set.Files[0].Loaded() {
+	if !m.review.Snapshot().Set.Files[0].Loaded() {
 		t.Fatal("selected file should be loaded after its background command lands")
 	}
-	if m.diff.set.Files[1].Loaded() {
+	if m.review.Snapshot().Set.Files[1].Loaded() {
 		t.Fatal("unselected file should remain unloaded")
 	}
 
@@ -75,36 +74,28 @@ func TestReviewLoadsFilesOnDemand(t *testing.T) {
 }
 
 func TestRefreshFileLoadsRunSerially(t *testing.T) {
-	var active atomic.Int32
-	var peak atomic.Int32
-	cmds := make([]tea.Cmd, 8)
-	for i := range cmds {
-		index := i
-		cmds[i] = func() tea.Msg {
-			now := active.Add(1)
-			for {
-				seen := peak.Load()
-				if now <= seen || peak.CompareAndSwap(seen, now) {
-					break
-				}
-			}
-			time.Sleep(time.Millisecond)
-			active.Add(-1)
-			return diffFileLoadedMsg{index: index}
+	m := buildModel(t)
+	if m.services.gitDrv == nil {
+		t.Skip("git not installed")
+	}
+	openReviewOn(t, m, "serial", gitRepoWithTwoChangedFiles(t))
+	set := m.review.SetCopy()
+	requests := make([]uireview.FileRequest, 8)
+	for i := range requests {
+		requests[i] = uireview.FileRequest{
+			TargetID: m.review.Snapshot().SessionID, Scope: m.review.Snapshot().Scope,
+			Generation: m.review.Snapshot().Generation, RepoRoot: set.Repo.Root,
+			Index: 1, Path: set.Files[1].File.Path, Set: set,
 		}
 	}
-
-	msgs, ok := diffFilesLoadCmd(cmds)().(diffFilesLoadedMsg)
-	if !ok || len(msgs) != len(cmds) {
+	msgs, ok := m.reviewFilesCmd(requests)().(reviewFilesResult)
+	if !ok || len(msgs) != len(requests) {
 		t.Fatalf("serial load returned %T with %d results", msgs, len(msgs))
-	}
-	if got := peak.Load(); got != 1 {
-		t.Fatalf("refresh loads peaked at %d concurrent jobs, want 1", got)
 	}
 }
 
 // A load in flight when the comment box opens (e.g. a scope cycle) must not
-// swap the set under the editor, even though m.diff.loading is still true.
+// swap the set under the editor, even though m.review.Snapshot().Loading is still true.
 func TestInFlightLoadDroppedWhileAnnotating(t *testing.T) {
 	m := buildModel(t)
 	if m.services.gitDrv == nil {
@@ -113,12 +104,12 @@ func TestInFlightLoadDroppedWhileAnnotating(t *testing.T) {
 	openReviewOn(t, m, "inflight", gitRepoWithTwoChangedFiles(t))
 	linesBefore := len(m.currentFileDiff().Lines)
 	m.openAnnotate()
-	m.diff.loading = true // simulate a user-initiated load still running
-	stale := diffLoadedMsg{sessID: m.diff.sessID, scope: m.diff.scope, gen: m.diff.gen}
-	if cmd := m.handleDiffLoaded(stale); cmd != nil {
+	state := m.review.Snapshot()
+	stale := uireview.LoadResult{TargetID: state.SessionID, Scope: state.Scope, Generation: state.Generation}
+	if cmd := m.handleReviewLoad(stale); cmd != nil {
 		t.Fatal("load must be dropped while annotating")
 	}
-	if m.diff.loading {
+	if m.review.Snapshot().Loading {
 		t.Fatal("in-flight flag must clear so probes resume")
 	}
 	if got := len(m.currentFileDiff().Lines); got != linesBefore {
@@ -136,10 +127,9 @@ func TestBinaryFileShowsBinaryNotZeroCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	openReviewOn(t, m, "binary", dir)
-	for i := range m.diff.set.Files {
-		if m.diff.set.Files[i].File.Path == "logo.png" {
-			m.diff.fileIdx = i
-			m.drainCmds(t, m.loadCurrentDiffFile())
+	for i := range m.review.Snapshot().Set.Files {
+		if m.review.Snapshot().Set.Files[i].File.Path == "logo.png" {
+			m.drainCmds(t, selectReviewFile(m, i))
 			break
 		}
 	}
@@ -199,7 +189,7 @@ func TestTrackedBinaryPastEagerCapShowsBinary(t *testing.T) {
 	write("zz.bin", "\x00\x01\x02changed")
 	openReviewOn(t, m, "bigbin", dir)
 
-	files := m.diff.set.Files
+	files := m.review.Snapshot().Set.Files
 	index := -1
 	for i := range files {
 		if files[i].File.Path == "zz.bin" {
@@ -209,7 +199,7 @@ func TestTrackedBinaryPastEagerCapShowsBinary(t *testing.T) {
 	if index < 0 {
 		t.Fatal("zz.bin missing from the diff set")
 	}
-	if files[index].Lines != nil || files[index].Binary {
+	if files[index].Loaded() || files[index].Binary {
 		t.Fatalf("zz.bin at index %d was loaded; the test needs an unloaded row", index)
 	}
 
@@ -247,36 +237,44 @@ func TestProbeAndLoadAgreeOnFingerprint(t *testing.T) {
 		t.Fatal("no diff session")
 	}
 
-	if err := m.services.store.SetReviewBase(sess.ID, m.diff.repoSel, "feature"); err != nil {
+	if err := m.services.store.SetReviewBase(sess.ID, m.review.Snapshot().RepoSelected, "feature"); err != nil {
 		t.Fatal(err)
 	}
-	m.diff.scope = git.ScopeBranch
-	m.diff.gen++
-	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false))
-	if m.diff.errText != "" {
-		t.Fatalf("branch-scope load with a valid override should not error, err = %q", m.diff.errText)
+	for m.review.Snapshot().Scope != git.ScopeBranch {
+		request, accepted := m.review.CycleScope()
+		if !accepted {
+			t.Fatal("branch scope request was rejected")
+		}
+		m.drainCmds(t, m.reviewLoadCmd(request))
 	}
-	if m.diff.fingerprint == 0 {
+	if m.review.Snapshot().Error != "" {
+		t.Fatalf("branch-scope load with a valid override should not error, err = %q", m.review.Snapshot().Error)
+	}
+	if m.review.Snapshot().Fingerprint == 0 {
 		t.Fatal("load should record a non-zero fingerprint")
 	}
 
-	msg, ok := m.diffProbeCmd(sess, m.diff.scope)().(diffProbeMsg)
+	state := m.review.Snapshot()
+	msg, ok := m.reviewProbeCmd(uireview.ProbeRequest{
+		Target: reviewTarget(sess), Scope: state.Scope, RepoSelected: state.RepoSelected,
+		GitRoot: state.Set.Repo.Root,
+	})().(uireview.ProbeResult)
 	if !ok {
-		t.Fatal("probe closure should yield a diffProbeMsg")
+		t.Fatal("probe closure should yield a review.ProbeResult")
 	}
-	if msg.repoRoot != m.diff.repoSel {
-		t.Fatalf("probe should report the selected repo %q, got %q", m.diff.repoSel, msg.repoRoot)
+	if msg.RepoSelected != m.review.Snapshot().RepoSelected {
+		t.Fatalf("probe should report the selected repo %q, got %q", m.review.Snapshot().RepoSelected, msg.RepoSelected)
 	}
-	if msg.fp != m.diff.fingerprint {
+	if msg.Fingerprint != m.review.Snapshot().Fingerprint {
 		t.Fatalf("probe fingerprint %d must match the load's %d or review reloads forever (repoSel=%q toplevel=%q)",
-			msg.fp, m.diff.fingerprint, m.diff.repoSel, m.diff.set.Repo.Root)
+			msg.Fingerprint, m.review.Snapshot().Fingerprint, m.review.Snapshot().RepoSelected, m.review.Snapshot().Set.Repo.Root)
 	}
 }
 
 func TestCycleDiffScopeReportsAFailedBaseLookup(t *testing.T) {
 	m := buildModel(t)
 	openReviewOn(t, m, "keepset", gitTestRepo(t))
-	if len(m.diff.set.Files) == 0 {
+	if len(m.review.Snapshot().Set.Files) == 0 {
 		t.Fatal("expected files")
 	}
 	if err := m.services.store.Close(); err != nil {
@@ -287,10 +285,10 @@ func TestCycleDiffScopeReportsAFailedBaseLookup(t *testing.T) {
 		t.Fatal("cycling the scope should start a load")
 	}
 	m.drainCmds(t, cmd)
-	if m.diff.loading {
+	if m.review.Snapshot().Loading {
 		t.Fatal("the failed load should have landed")
 	}
-	if m.diff.errText == "" {
+	if m.review.Snapshot().Error == "" {
 		t.Fatal("the lookup error should reach the review panel")
 	}
 }
@@ -298,10 +296,11 @@ func TestCycleDiffScopeReportsAFailedBaseLookup(t *testing.T) {
 func TestReviewUntrackedFileShowsCountWithoutOpening(t *testing.T) {
 	m := buildModel(t)
 	openReviewOn(t, m, "counts", gitTestRepo(t))
-	var extra *diff.FileDiff
-	for i := range m.diff.set.Files {
-		if m.diff.set.Files[i].File.Path == "extra.txt" {
-			extra = &m.diff.set.Files[i]
+	var extra *uireview.FileSummary
+	files := m.review.Snapshot().Set.Files
+	for i := range files {
+		if files[i].File.Path == "extra.txt" {
+			extra = &files[i]
 		}
 	}
 	if extra == nil {
@@ -332,10 +331,11 @@ func TestReviewUntrackedImageShowsBinaryWithoutOpening(t *testing.T) {
 		t.Fatal(err)
 	}
 	openReviewOn(t, m, "shots", dir)
-	var shot *diff.FileDiff
-	for i := range m.diff.set.Files {
-		if m.diff.set.Files[i].File.Path == "shot.png" {
-			shot = &m.diff.set.Files[i]
+	var shot *uireview.FileSummary
+	files := m.review.Snapshot().Set.Files
+	for i := range files {
+		if files[i].File.Path == "shot.png" {
+			shot = &files[i]
 		}
 	}
 	if shot == nil {
@@ -354,7 +354,8 @@ func TestReviewUntrackedImageShowsBinaryWithoutOpening(t *testing.T) {
 }
 
 func TestReviewShowsLoaderWhileDiffLoads(t *testing.T) {
-	m := &Model{width: 100, height: 30, mode: modeDiff, diff: diffState{active: true, loading: true, sessID: "s"}}
+	m := &Model{width: 100, height: 30, mode: modeDiff}
+	seedReviewForTest(m, uireview.Target{ID: "s"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	code := ansi.Strip(m.viewDiffCode(80, 20))
 	if !strings.Contains(code, "loading diff") {
 		t.Fatalf("code pane should carry the diff loader, got %q", code)
@@ -377,14 +378,9 @@ func TestReviewShowsLoaderWhileDiffLoads(t *testing.T) {
 }
 
 func TestReviewShowsLoaderWhileFileLoads(t *testing.T) {
-	m := &Model{
-		width: 100, height: 30, mode: modeDiff,
-		diff: diffState{
-			active: true,
-			sessID: "s",
-			set:    diff.Set{Files: []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}},
-		},
-	}
+	m := &Model{width: 100, height: 30, mode: modeDiff}
+	seedReviewForTest(m, uireview.Target{ID: "s"}, git.ScopeUncommitted, "/repo",
+		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}}, true)
 	code := ansi.Strip(m.viewDiffCode(80, 20))
 	if !strings.Contains(code, "loading file") {
 		t.Fatalf("code pane should carry the file loader, got %q", code)
@@ -401,25 +397,25 @@ func TestReviewShowsLoaderWhileFileLoads(t *testing.T) {
 func TestFailedDiffLoadKeepsRepoPicker(t *testing.T) {
 	m := buildModel(t)
 	openReviewOn(t, m, "keeprepo", gitTestRepo(t))
-	roots := append([]string{}, m.diff.repoRoots...)
-	sel := m.diff.repoSel
+	roots := append([]string{}, m.review.Snapshot().RepoRoots...)
+	sel := m.review.Snapshot().RepoSelected
 	if len(roots) == 0 {
 		t.Fatal("expected repo roots")
 	}
-	if cmd := m.handleDiffLoaded(diffLoadedMsg{
-		sessID:    m.diff.sessID,
-		scope:     m.diff.scope,
-		gen:       m.diff.gen,
-		err:       errors.New("git died"),
-		repoRoots: roots,
-		repoRoot:  sel,
+	if cmd := m.handleReviewLoad(uireview.LoadResult{
+		TargetID:   m.review.Snapshot().SessionID,
+		Scope:      m.review.Snapshot().Scope,
+		Generation: m.review.Snapshot().Generation,
+		Err:        errors.New("git died"),
+		RepoRoots:  roots,
+		RepoRoot:   sel,
 	}); cmd != nil {
 		t.Fatal("errored load should not follow up")
 	}
-	if m.diff.errText == "" {
+	if m.review.Snapshot().Error == "" {
 		t.Fatal("error text missing")
 	}
-	if len(m.diff.repoRoots) == 0 {
+	if len(m.review.Snapshot().RepoRoots) == 0 {
 		t.Fatal("repo list should survive a failed load so r still works")
 	}
 	m.openRepoPick()

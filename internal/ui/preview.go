@@ -155,10 +155,11 @@ func (m *Model) hasWorkingLoaderRow() bool {
 }
 
 func (m *Model) reviewNeedsLoader() bool {
-	if m.mode != modeDiff || !m.diff.active {
+	state := m.review.Snapshot()
+	if m.mode != modeDiff || !state.Active {
 		return false
 	}
-	if m.diff.loading && len(m.diff.set.Files) == 0 {
+	if state.Loading && len(state.Set.Files) == 0 {
 		return true
 	}
 	fd := m.currentFileDiff()

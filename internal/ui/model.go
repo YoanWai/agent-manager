@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -51,7 +52,9 @@ type Model struct {
 	notices      noticesState
 	poller       *poller
 	mode         mode
-	diff         diffState
+	review       uireview.Model
+	reviewFX     reviewAdapter
+	reviewReturn reviewReturn
 	form         form
 	groupForm    groupForm
 	pathSugg     pathComplete
@@ -186,6 +189,7 @@ func newView(deps Dependencies, version string) *Model {
 	}
 	model.openStartupNotice()
 	model.indexReleaseRanges()
+	model.review = uireview.New(model.defaultSplitLayout())
 	return model
 }
 

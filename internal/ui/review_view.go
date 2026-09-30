@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"hash/fnv"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -18,7 +18,6 @@ import (
 
 const (
 	maxHighlightBytes = 256 << 10
-	highlightCacheCap = 8
 
 	bgAdd     = "\x1b[48;2;22;42;22m"
 	bgDel     = "\x1b[48;2;48;24;24m"
@@ -44,49 +43,10 @@ func brightCommentStyle() *chroma.Style {
 // fileHL holds one file's syntax-highlighted lines, indexed the same way
 // as the diff's own line model: a hunk-only model skips file lines, so a
 // line's number is not its position.
-type fileHL struct {
-	lines []string
-}
-
-type hlKey struct {
-	sessID string
-	scope  git.Scope
-	path   string
-	hash   uint64
-}
-
-type hlCache struct {
-	entries map[hlKey]*fileHL
-	order   []hlKey
-}
-
-func newHLCache() *hlCache {
-	return &hlCache{entries: map[hlKey]*fileHL{}}
-}
-
-func (c *hlCache) get(key hlKey) *fileHL {
-	return c.entries[key]
-}
-
-func (c *hlCache) put(key hlKey, hl *fileHL) {
-	if _, ok := c.entries[key]; !ok {
-		c.order = append(c.order, key)
-		if len(c.order) > highlightCacheCap {
-			delete(c.entries, c.order[0])
-			c.order = c.order[1:]
-		}
-	}
-	c.entries[key] = hl
-}
+type fileHL = uireview.Highlight
 
 func contentHash(fd *diff.FileDiff) uint64 {
-	hash := fnv.New64a()
-	for _, line := range fd.Lines {
-		hash.Write([]byte{byte(line.Kind)})
-		hash.Write([]byte(line.Text))
-		hash.Write([]byte{'\n'})
-	}
-	return hash.Sum64()
+	return uireview.ContentHash(fd)
 }
 
 // highlightFile syntax-highlights both sides of a file diff. Deleted
@@ -94,17 +54,17 @@ func contentHash(fd *diff.FileDiff) uint64 {
 func highlightFile(fd *diff.FileDiff) *fileHL {
 	oldText, newText := sideTexts(fd)
 	if len(oldText)+len(newText) > maxHighlightBytes {
-		return &fileHL{}
+		return uireview.NewHighlight(nil)
 	}
 	lexer := lexers.Match(fd.File.Path)
 	if lexer == nil {
 		lexer = lexers.Analyse(newText)
 	}
 	if lexer == nil {
-		return &fileHL{}
+		return uireview.NewHighlight(nil)
 	}
 	lexer = chroma.Coalesce(lexer)
-	return &fileHL{lines: alignSides(fd, highlightSide(lexer, oldText), highlightSide(lexer, newText))}
+	return uireview.NewHighlight(alignSides(fd, highlightSide(lexer, oldText), highlightSide(lexer, newText)))
 }
 
 // alignSides walks the model in the order sideTexts wrote the two sides,
@@ -182,12 +142,12 @@ func highlightSide(lexer chroma.Lexer, text string) []string {
 
 // hlLine returns the highlighted text for a diff line, falling back to
 // the raw text when highlighting is unavailable.
-func (hl *fileHL) hlLine(line diff.Line, index int) string {
+func highlightedLine(hl *fileHL, line diff.Line, index int) string {
 	if line.Kind == diff.Gap {
 		return mutedStyle.Render(escapeControls(line.Text))
 	}
-	if hl != nil && index < len(hl.lines) && hl.lines[index] != "" {
-		return hl.lines[index]
+	if highlighted := hl.Line(index, ""); highlighted != "" {
+		return highlighted
 	}
 	return escapeControls(line.Text)
 }
@@ -387,27 +347,27 @@ func wrapTinted(highlighted string, spans []diff.Span, baseBg, spanBg string, wi
 
 func (m *Model) annotationRows(fd *diff.FileDiff, lineIdx, width int) []string {
 	var rows []string
-	for _, note := range m.annotationsAt(fd.File.Path, fd.Lines[lineIdx]) {
+	for _, note := range m.review.AnnotationsAt(fd.File.Path, fd.Lines[lineIdx]) {
 		label := "¶"
 		style := annotationStyle
 		background := annotationBg()
-		if note.round > 0 {
-			label = fmt.Sprintf("Review round %d", note.round)
-			if note.point > 0 {
-				label += fmt.Sprintf(" · point %d", note.point)
+		if note.Round > 0 {
+			label = fmt.Sprintf("Review round %d", note.Round)
+			if note.Point > 0 {
+				label += fmt.Sprintf(" · point %d", note.Point)
 			}
 		}
-		if note.handled {
+		if note.Resolved {
 			label += " · handled"
 			style = doneStyle
 			background = handledAnnotationBg()
-		} else if note.round > 0 {
+		} else if note.Round > 0 {
 			label += " · open"
 		}
-		if note.outdated {
+		if note.Outdated {
 			label += " · outdated"
 		}
-		comment := style.Render("  " + label + " " + note.text)
+		comment := style.Render("  " + label + " " + note.Text)
 		rows = append(rows, wrapTinted(comment, nil, background, background, width)...)
 	}
 	return rows
@@ -423,14 +383,15 @@ func (m *Model) reviewSpinnerLine(label string) string {
 }
 
 func (m *Model) diffEmptyText() string {
-	if m.diff.errText != "" {
-		return errStyle.Render("✖ " + escapeControls(m.diff.errText))
+	state := m.review.Snapshot()
+	if state.Error != "" {
+		return errStyle.Render("✖ " + escapeControls(state.Error))
 	}
-	if m.diff.sessID == "" {
+	if state.SessionID == "" {
 		return mutedStyle.Render("(select a session to diff)")
 	}
-	if len(m.diff.set.Files) == 0 {
-		return mutedStyle.Render(fmt.Sprintf("✓ no changes (%s)", m.diff.scope)) + "\n" +
+	if len(state.Set.Files) == 0 {
+		return mutedStyle.Render(fmt.Sprintf("✓ no changes (%s)", state.Scope)) + "\n" +
 			subtleStyle.Render("s cycles scope")
 	}
 	return ""
@@ -480,10 +441,10 @@ func (m *Model) renderDiffRow(fd *diff.FileDiff, hl *fileHL, index, width int, c
 	if textWidth < 4 {
 		textWidth = 4
 	}
-	textRows := wrapTinted(hl.hlLine(line, index), escapeSpans(line.Text, line.Spans), baseBg, spanBg, textWidth)
+	textRows := wrapTinted(highlightedLine(hl, line, index), escapeSpans(line.Text, line.Spans), baseBg, spanBg, textWidth)
 
 	marker := " "
-	if len(m.annotationsAt(fd.File.Path, line)) > 0 {
+	if len(m.review.AnnotationsAt(fd.File.Path, line)) > 0 {
 		marker = lipgloss.NewStyle().Foreground(colorAccent).Render("¶")
 	}
 	signCell := sign
@@ -516,7 +477,8 @@ func (m *Model) renderDiffRow(fd *diff.FileDiff, hl *fileHL, index, width int, c
 // comments render on their own indented rows beneath the marked line.
 func (m *Model) unifiedRows(fd *diff.FileDiff, hl *fileHL, width, height int) []string {
 	total := len(fd.Lines)
-	scroll := m.diff.scroll
+	state := m.review.Snapshot()
+	scroll := state.Scroll
 	if scroll > total-1 {
 		scroll = total - 1
 	}
@@ -530,7 +492,7 @@ func (m *Model) unifiedRows(fd *diff.FileDiff, hl *fileHL, width, height int) []
 	}
 	i := scroll
 	for ; i < total && len(rows) < height; i++ {
-		rows = append(rows, m.renderDiffRow(fd, hl, i, width, i == m.diff.cursorLine)...)
+		rows = append(rows, m.renderDiffRow(fd, hl, i, width, i == state.CursorLine)...)
 		rows = append(rows, m.annotationRows(fd, i, width)...)
 	}
 	if i < total {
@@ -624,31 +586,32 @@ func stripBaseHash(desc string) string {
 }
 
 func (m *Model) viewDiffHeader(sessName string) string {
+	state := m.review.Snapshot()
 	layout := "unified"
-	if m.diff.sideBySide {
+	if state.SideBySide {
 		layout = "split"
 	}
 	left := "  " + lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("review · "+escapeControlsInline(sessName)) + "  " +
-		keyPill("s", m.diff.scope.String(), colorAccent2) + "  " +
+		keyPill("s", state.Scope.String(), colorAccent2) + "  " +
 		keyPill("u", layout, colorAccent)
-	if m.diff.codeOnly {
+	if state.CodeOnly {
 		left += "  " + keyPill("f", "code only", colorAccent)
 	}
-	if root := m.diff.set.Repo.Root; root != "" {
-		name := filepath.Base(m.diff.repoSel)
+	if root := state.Set.Repo.Root; root != "" {
+		name := filepath.Base(state.RepoSelected)
 		if name == "" || name == "." {
 			name = filepath.Base(root)
 		}
 		name = escapeControlsInline(name)
-		if len(m.diff.repoRoots) > 1 {
-			name = fmt.Sprintf("%s · %d repos", name, len(m.diff.repoRoots))
+		if len(state.RepoRoots) > 1 {
+			name = fmt.Sprintf("%s · %d repos", name, len(state.RepoRoots))
 		}
 		left += "  " + keyPill("r", name, colorAccent)
-		branch := escapeControlsInline(m.diff.set.Repo.Branch)
-		if m.diff.scope == git.ScopeBranch && m.diff.set.BaseDesc != "" && branch != "" {
-			target := escapeControlsInline(stripBaseHash(m.diff.set.BaseDesc))
+		branch := escapeControlsInline(state.Set.Repo.Branch)
+		if state.Scope == git.ScopeBranch && state.Set.BaseDesc != "" && branch != "" {
+			target := escapeControlsInline(stripBaseHash(state.Set.BaseDesc))
 			summary := target + " → " + branch
-			if m.diff.set.BaseOverride == "" {
+			if state.Set.BaseOverride == "" {
 				summary += " " + subtleStyle.Render("(auto)")
 			}
 			left += "  " + keyPill("B", summary, colorAccent)
@@ -660,9 +623,9 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	adds, dels := 0, 0
 	shown := 0
 	uncounted := false
-	for i := range m.diff.set.Files {
-		fd := &m.diff.set.Files[i]
-		if m.diffFileHidden(fd) {
+	for i := range state.Set.Files {
+		fd := &state.Set.Files[i]
+		if fd.Hidden {
 			continue
 		}
 		shown++
@@ -679,13 +642,13 @@ func (m *Model) viewDiffHeader(sessName string) string {
 	if uncounted {
 		right += " " + mutedStyle.Render("+?")
 	}
-	if count := m.draftAnnotationCount(); count > 0 {
+	if count := m.review.DraftCount(); count > 0 {
 		right += subtleStyle.Render(" · ") + lipgloss.NewStyle().Foreground(colorAccent).Render(fmt.Sprintf("¶%d", count))
 	}
-	if round := m.diff.rounds[m.reviewKey()]; round.Number > 0 {
+	if round := m.review.Round(); round.Number > 0 {
 		label := fmt.Sprintf("Review round %d", round.Number)
-		if !m.diff.loading && round.Fingerprint != 0 &&
-			(round.Scope != m.diff.scope.String() || round.Fingerprint != m.diff.fingerprint) {
+		if !state.Loading && round.Fingerprint != 0 &&
+			(round.Scope != state.Scope.String() || round.Fingerprint != state.Fingerprint) {
 			label += " · changed"
 		}
 		right += subtleStyle.Render(" · ") + annotationStyle.Render(label)
@@ -712,16 +675,17 @@ func (m *Model) diffCodeTitle() string {
 }
 
 func (m *Model) viewDiffFileList(width, height int) string {
-	if m.diff.loading && len(m.diff.set.Files) == 0 {
+	state := m.review.Snapshot()
+	if state.Loading && len(state.Set.Files) == 0 {
 		return m.reviewSpinnerLine("loading diff")
 	}
 	if empty := m.diffEmptyText(); empty != "" {
 		return empty
 	}
-	files := m.diff.set.Files
+	files := state.Set.Files
 	shown := make([]int, 0, len(files))
 	for i := range files {
-		if !m.diffFileHidden(&files[i]) {
+		if !files[i].Hidden {
 			shown = append(shown, i)
 		}
 	}
@@ -730,7 +694,7 @@ func (m *Model) viewDiffFileList(width, height int) string {
 	}
 	cursor := 0
 	for pos, i := range shown {
-		if i == m.diff.fileIdx {
+		if i == state.FileIndex {
 			cursor = pos
 			break
 		}
@@ -741,20 +705,20 @@ func (m *Model) viewDiffFileList(width, height int) string {
 		b.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
 	}
 	notes := map[string]int{}
-	for _, note := range m.diff.annotations[m.reviewKey()] {
-		if !note.handled {
-			notes[note.file]++
+	for _, note := range m.review.Annotations() {
+		if !note.Resolved {
+			notes[note.File]++
 		}
 	}
 	for pos := start; pos < end; pos++ {
 		i := shown[pos]
 		fd := files[i]
 		glyph := subtleStyle.Render("○")
-		if m.fileReviewed(fd.File.Path) {
+		if m.review.FileReviewed(fd.File.Path) {
 			glyph = lipgloss.NewStyle().Foreground(colorFinished).Render("✔")
 		}
 		bar := " "
-		if i == m.diff.fileIdx {
+		if i == state.FileIndex {
 			bar = lipgloss.NewStyle().Foreground(colorAccent).Render("▎")
 		}
 		counts := lipgloss.NewStyle().Foreground(colorFinished).Render(fmt.Sprintf("+%d", fd.Stat.Adds)) +
@@ -779,7 +743,7 @@ func (m *Model) viewDiffFileList(width, height int) string {
 			gap = 1
 		}
 		row := padRight(left+strings.Repeat(" ", gap)+counts, width)
-		if i == m.diff.fileIdx {
+		if i == state.FileIndex {
 			row = renderSelectedRow(row)
 		}
 		b.WriteString(row + "\n")
@@ -791,7 +755,8 @@ func (m *Model) viewDiffFileList(width, height int) string {
 }
 
 func (m *Model) viewDiffCode(width, height int) string {
-	if m.diff.loading && len(m.diff.set.Files) == 0 {
+	state := m.review.Snapshot()
+	if state.Loading && len(state.Set.Files) == 0 {
 		return m.reviewRing("loading diff", width, height)
 	}
 	if empty := m.diffEmptyText(); empty != "" {
@@ -806,12 +771,10 @@ func (m *Model) viewDiffCode(width, height int) string {
 	}
 
 	var bar string
-	if m.diff.annotating {
+	if state.Annotating {
 		fdLine := fd.Lines[m.cursorDiffLine()]
-		num, _ := annotationLine(fdLine)
-		m.diff.annInput.SetWidth(width)
-		m.diff.annInput.SetHeight(m.annotationInputHeight(width))
-		bar = divider(fmt.Sprintf("Comment · %s:%d", escapeControlsInline(fd.File.Path), num), width) + "\n" + textAreaView(m.diff.annInput)
+		num, _ := uireview.AnnotationLine(fdLine)
+		bar = divider(fmt.Sprintf("Comment · %s:%d", escapeControlsInline(fd.File.Path), num), width) + "\n" + m.review.AnnotationView(cursorAnchorMarker)
 		height -= lipgloss.Height(bar) + 1
 		if height < 3 {
 			height = 3
@@ -819,9 +782,8 @@ func (m *Model) viewDiffCode(width, height int) string {
 	}
 
 	hl := m.currentHL()
-	m.ensureDiffCursorVisible(fd, hl, width, height)
 	var b strings.Builder
-	if m.diff.sideBySide {
+	if state.SideBySide {
 		m.renderSideBySide(&b, fd, hl, width, height)
 	} else {
 		b.WriteString(strings.Join(m.unifiedRows(fd, hl, width, height), "\n"))
@@ -840,12 +802,12 @@ func (m *Model) viewDiffCode(width, height int) string {
 // painted rows, and a comment adds more below its line; sizing the window
 // by line count alone lets the cursor walk below the last painted row, so
 // the end of a wrapped file is selected but never on screen.
-func (m *Model) ensureDiffCursorVisible(fd *diff.FileDiff, hl *fileHL, width, height int) {
+func (m *Model) prepareDiffCursorVisible(fd *diff.FileDiff, hl *fileHL, width, height int) {
 	total := len(fd.Lines)
 	span := func(i int) int {
 		return len(m.renderDiffRow(fd, hl, i, width, false)) + len(m.annotationRows(fd, i, width))
 	}
-	if m.diff.sideBySide && m.mode == modeDiff {
+	if m.review.Snapshot().SideBySide && m.mode == modeDiff {
 		rows := fd.SideBySideRows()
 		total = len(rows)
 		half := (width - 1) / 2
@@ -865,41 +827,11 @@ func (m *Model) ensureDiffCursorVisible(fd *diff.FileDiff, hl *fileHL, width, he
 		}
 	}
 
-	cursor := m.diff.cursorLine
-	if cursor > total-1 {
-		cursor = total - 1
+	spans := make([]int, total)
+	for i := range spans {
+		spans[i] = span(i)
 	}
-	if cursor < 0 {
-		return
-	}
-	if m.diff.scroll > cursor {
-		m.diff.scroll = cursor
-	}
-	if m.diff.scroll < 0 {
-		m.diff.scroll = 0
-	}
-	for m.diff.scroll < cursor {
-		// Each overflow indicator takes a row of the same budget.
-		used := 0
-		if m.diff.scroll > 0 {
-			used++
-		}
-		if cursor < total-1 {
-			used++
-		}
-		fits := true
-		for i := m.diff.scroll; i <= cursor; i++ {
-			used += span(i)
-			if used > height {
-				fits = false
-				break
-			}
-		}
-		if fits {
-			break
-		}
-		m.diff.scroll++
-	}
+	m.review.PrepareViewport(spans, height)
 }
 
 func (m *Model) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *fileHL, width, height int) {
@@ -907,7 +839,8 @@ func (m *Model) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *file
 	half := (width - 1) / 2
 	sep := subtleStyle.Render("│")
 
-	scroll := m.diff.scroll
+	state := m.review.Snapshot()
+	scroll := state.Scroll
 	if scroll > len(rows)-1 {
 		scroll = len(rows) - 1
 	}
@@ -938,7 +871,7 @@ func (m *Model) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *file
 				rightCell = right[r]
 			}
 			line := leftCell + sep + rightCell
-			if i == m.diff.cursorLine {
+			if i == state.CursorLine {
 				line = renderSelectedRow(padRight(line, width))
 			}
 			out = append(out, line)
@@ -991,7 +924,7 @@ func (m *Model) renderSideCell(fd *diff.FileDiff, hl *fileHL, index, width int, 
 	if textWidth < 4 {
 		textWidth = 4
 	}
-	textRows := wrapTinted(hl.hlLine(line, index), escapeSpans(line.Text, line.Spans), baseBg, spanBg, textWidth)
+	textRows := wrapTinted(highlightedLine(hl, line, index), escapeSpans(line.Text, line.Spans), baseBg, spanBg, textWidth)
 	blankGutter := strings.Repeat(" ", gutterWidth)
 	out := make([]string, len(textRows))
 	for i, text := range textRows {
@@ -1005,42 +938,44 @@ func (m *Model) renderSideCell(fd *diff.FileDiff, hl *fileHL, index, width int, 
 }
 
 func (m *Model) viewDiffStatus() string {
+	state := m.review.Snapshot()
 	if m.errBar.text != "" {
 		return padRight(m.statusMessage(" ✖", " ✔", " ▲"), m.width)
 	}
-	if m.diff.notice != "" {
-		return padRight(doneStyle.Render(" ✔ "+escapeControlsInline(m.diff.notice)), m.width)
+	if state.Notice != "" {
+		return padRight(doneStyle.Render(" ✔ "+escapeControlsInline(state.Notice)), m.width)
 	}
-	if m.diff.sendConfirm {
-		count := m.draftAnnotationCount()
-		return padRight(errStyle.Render(fmt.Sprintf(" ¶ send %d %s to the agent?", count, commentNoun(count)))+
+	if state.SendConfirm {
+		count := m.review.DraftCount()
+		return padRight(errStyle.Render(fmt.Sprintf(" ¶ send %d %s to the agent?", count, uireview.CommentNoun(count)))+
 			subtleStyle.Render("  ↵/y send · esc cancel"), m.width)
 	}
 	return ""
 }
 
 func (m *Model) viewDiffFooter() string {
-	if m.diff.annotating {
+	state := m.review.Snapshot()
+	if state.Annotating {
 		return legendBar([]legendSection{{title: "Comment", pairs: [][2]string{
 			{"↵", "save"}, {"esc", "cancel"},
 		}}}, m.width)
 	}
 	repo := "repo"
-	if len(m.diff.repoRoots) > 0 {
-		repo = "repo: " + escapeControlsInline(filepath.Base(m.diff.repoSel))
+	if len(state.RepoRoots) > 0 {
+		repo = "repo: " + escapeControlsInline(filepath.Base(state.RepoSelected))
 	}
 	send := "send"
-	if count := m.draftAnnotationCount(); count > 0 {
+	if count := m.review.DraftCount(); count > 0 {
 		send = fmt.Sprintf("send %d", count)
 	}
 	filter := "code only"
-	if m.diff.codeOnly {
+	if state.CodeOnly {
 		filter = "all files"
 	}
 	return legendBar([]legendSection{
 		{title: "Review", pairs: [][2]string{
 			{"c", "comment"}, {"d", "remove/handle"}, {"C", send}, {"space", "reviewed"},
-			{"s", "scope: " + m.diff.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
+			{"s", "scope: " + state.Scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
 		}},
 		{title: "Move", quiet: true, pairs: [][2]string{
 			{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"pgup/pgdn", "page"},

@@ -1,5 +1,7 @@
 package review
 
+import "maps"
+
 func (m *Model) CycleScope() (LoadRequest, bool) {
 	if !m.active || m.target.ID == "" {
 		return LoadRequest{}, false
@@ -19,6 +21,7 @@ func (m *Model) CycleScope() (LoadRequest, bool) {
 		RepoWanted: m.repoSel, RepoRoot: m.repoSel,
 		RepoRoots: append([]string(nil), m.repoRoots...),
 		Resolve:   m.repoSel == "" || len(m.repoRoots) == 0,
+		Restored:  maps.Clone(m.stateLoaded),
 	}
 	return request, true
 }
@@ -37,10 +40,10 @@ func (m *Model) SelectRepo(root string) (LoadRequest, bool) {
 	m.cursorLine = 0
 	m.fileLoading = make(map[int]bool)
 	m.reanchor = nil
-	return LoadRequest{Target: m.target, Scope: m.scope, Generation: m.gen, RepoWanted: root, Resolve: true}, true
+	return LoadRequest{Target: m.target, Scope: m.scope, Generation: m.gen, RepoWanted: root, Resolve: true, Restored: maps.Clone(m.stateLoaded)}, true
 }
 
-func (m *Model) SelectBase() (LoadRequest, bool) {
+func (m *Model) SelectBase(ref string) (LoadRequest, bool) {
 	if !m.active || m.target.ID == "" {
 		return LoadRequest{}, false
 	}
@@ -58,6 +61,7 @@ func (m *Model) SelectBase() (LoadRequest, bool) {
 		Target: m.target, Scope: m.scope, Generation: m.gen,
 		RepoWanted: m.repoSel, RepoRoot: m.repoSel,
 		RepoRoots: append([]string(nil), m.repoRoots...), Resolve: m.repoSel == "" || len(m.repoRoots) == 0,
+		Restored: maps.Clone(m.stateLoaded), BaseOverride: &ref,
 	}, true
 }
 
@@ -81,5 +85,5 @@ func (m *Model) ApplyProbe(result ProbeResult) (LoadRequest, bool) {
 	}
 	m.gen++
 	m.loading = true
-	return LoadRequest{Target: m.target, Scope: m.scope, Generation: m.gen, RepoWanted: m.repoSel, Refresh: true, Resolve: true}, true
+	return LoadRequest{Target: m.target, Scope: m.scope, Generation: m.gen, RepoWanted: m.repoSel, Refresh: true, Resolve: true, Restored: maps.Clone(m.stateLoaded)}, true
 }

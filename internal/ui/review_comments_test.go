@@ -1,20 +1,21 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/diff"
-	"github.com/YoanWai/agent-manager/internal/git"
-	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/store"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func TestDiffAnnotateAndSend(t *testing.T) {
@@ -23,11 +24,11 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
 	m.drainCmds(t, m.openDiff())
-	m.diff.sideBySide = false
+	setReviewSideBySide(m, false)
 
-	for i, fd := range m.diff.set.Files {
+	for i, fd := range m.review.Snapshot().Set.Files {
 		if fd.File.Path == "main.go" {
-			m.diff.fileIdx = i
+			m.drainCmds(t, selectReviewFile(m, i))
 		}
 	}
 	m.drainCmds(t, m.loadCurrentDiffFile())
@@ -41,44 +42,32 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	if target < 0 {
 		t.Fatalf("no add line found: %+v", fd.Lines)
 	}
-	m.diff.cursorLine = target
+	m.review.SetCursorDiffLine(target, m.diffCodeHeight())
 	m.openAnnotate()
-	m.diff.annInput.SetValue("use fmt.Println here")
+	typeReviewAnnotation(m, "use fmt.Println here")
 	m.applyCmd(t, m.saveAnnotation())
-	if len(m.diff.annotations[m.reviewKey()]) != 1 {
-		t.Fatalf("annotations = %+v", m.diff.annotations)
+	if notes := m.review.Annotations(); len(notes) != 1 {
+		t.Fatalf("annotations = %+v", notes)
 	}
 
 	_, cmd := m.sendAnnotations()
 	m.applyCmd(t, cmd)
-	notes := m.diff.annotations[m.reviewKey()]
-	if len(notes) != 1 || notes[0].round != 1 || notes[0].point != 1 || len(notes[0].id) != 16 {
+	notes := m.review.Annotations()
+	if len(notes) != 1 || notes[0].Round != 1 || notes[0].Point != 1 || len(notes[0].ID) != 16 {
 		t.Fatalf("sent annotations = %+v, want one comment in round 1", notes)
 	}
-	if !strings.Contains(m.diff.notice, "review round 1 (1 comment)") {
-		t.Fatalf("notice = %q (err=%q)", m.diff.notice, m.errBar.text)
+	if !strings.Contains(m.review.Snapshot().Notice, "review round 1 (1 comment)") {
+		t.Fatalf("notice = %q (err=%q)", m.review.Snapshot().Notice, m.errBar.text)
 	}
 	sess := m.sessionRows()[0]
-	state, err := m.services.store.ReviewState(sess.ID, m.diff.repoSel)
+	state, err := m.services.store.ReviewState(sess.ID, m.review.Snapshot().RepoSelected)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Round.Number != 1 || state.Round.Fingerprint != m.diff.fingerprint ||
-		len(state.Comments) != 1 || state.Comments[0].Round != 1 || state.Comments[0].Point != 1 || state.Comments[0].ID != notes[0].id {
+	if state.Round.Number != 1 || state.Round.Fingerprint != m.review.Snapshot().Fingerprint ||
+		len(state.Comments) != 1 || state.Comments[0].Round != 1 || state.Comments[0].Point != 1 || state.Comments[0].ID != notes[0].ID {
 		t.Fatalf("persisted review round = %+v", state)
 	}
-	originalFingerprint := m.diff.fingerprint
-	m.diff.fingerprint++
-	if header := ansi.Strip(m.viewDiffHeader(sess.Name)); !strings.Contains(header, "Review round 1 · changed") {
-		t.Fatalf("changed-since-round marker missing: %q", header)
-	}
-	m.diff.fingerprint = originalFingerprint
-	originalScope := m.diff.scope
-	m.diff.scope = originalScope.Next()
-	if header := ansi.Strip(m.viewDiffHeader(sess.Name)); !strings.Contains(header, "Review round 1 · changed") {
-		t.Fatalf("scope change did not mark the round changed: %q", header)
-	}
-	m.diff.scope = originalScope
 	// Join wrapped lines so the delivery check does not depend on where the
 	// pane's width breaks the prompt; the session sizes to the model width.
 	out, err := tmuxCmd("capture-pane", "-p", "-J", "-t", "am_"+sess.ID).CombinedOutput()
@@ -87,25 +76,47 @@ func TestDiffAnnotateAndSend(t *testing.T) {
 	}
 	pane := string(out)
 	if !strings.Contains(pane, "use fmt.Println here") || !strings.Contains(pane, "main.go:3") ||
-		!strings.Contains(pane, "[comment "+notes[0].id+"]") || !strings.Contains(pane, "review_comment") {
+		!strings.Contains(pane, "[comment "+notes[0].ID+"]") || !strings.Contains(pane, "review_comment") {
 		t.Fatalf("prompt not delivered:\n%s", pane)
 	}
 
 	m.openAnnotate()
-	m.diff.annInput.SetValue("second pass")
+	typeReviewAnnotation(m, "second pass")
 	m.applyCmd(t, m.saveAnnotation())
 	_, cmd = m.sendAnnotations()
 	m.applyCmd(t, cmd)
-	notes = m.diff.annotations[m.reviewKey()]
-	if len(notes) != 2 || notes[0].round != 1 || notes[1].round != 2 {
+	notes = m.review.Annotations()
+	if len(notes) != 2 || notes[0].Round != 1 || notes[1].Round != 2 {
 		t.Fatalf("review history = %+v, want rounds 1 and 2", notes)
 	}
-	state, err = m.services.store.ReviewState(sess.ID, m.diff.repoSel)
+	state, err = m.services.store.ReviewState(sess.ID, m.review.Snapshot().RepoSelected)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if state.Round.Number != 2 || len(state.Comments) != 2 {
 		t.Fatalf("second persisted review round = %+v", state)
+	}
+	current := m.review.Snapshot()
+	m.review.ApplyLoad(uireview.LoadResult{
+		TargetID: current.SessionID, Scope: current.Scope, Generation: current.Generation,
+		RepoRoot: current.RepoSelected, RepoRoots: current.RepoRoots, Set: m.review.SetCopy(),
+		Fingerprint: current.Fingerprint + 1,
+	})
+	if header := ansi.Strip(m.viewDiffHeader(sess.Name)); !strings.Contains(header, "Review round 2 · changed") {
+		t.Fatalf("changed-since-round marker missing: %q", header)
+	}
+	set := m.review.SetCopy()
+	request, ok := m.review.CycleScope()
+	if !ok {
+		t.Fatal("scope cycle was rejected")
+	}
+	m.review.ApplyLoad(uireview.LoadResult{
+		TargetID: request.Target.ID, Scope: request.Scope, Generation: request.Generation,
+		RepoRoot: current.RepoSelected, RepoRoots: current.RepoRoots, Set: set,
+		Fingerprint: current.Fingerprint + 1,
+	})
+	if header := ansi.Strip(m.viewDiffHeader(sess.Name)); !strings.Contains(header, "Review round 2 · changed") {
+		t.Fatalf("scope change did not mark the round changed: %q", header)
 	}
 }
 
@@ -114,7 +125,7 @@ func TestSendAnnotationsDoesNotDeliverAnUnpersistedRound(t *testing.T) {
 	openReviewOn(t, m, "persist-first", gitRepoWithTwoChangedFiles(t))
 	m.pressDiffKey(t, 'n')
 	m.openAnnotate()
-	m.diff.annInput.SetValue("do not deliver without durable state")
+	typeReviewAnnotation(m, "do not deliver without durable state")
 	m.applyCmd(t, m.saveAnnotation())
 	if err := m.services.store.Close(); err != nil {
 		t.Fatal(err)
@@ -122,12 +133,12 @@ func TestSendAnnotationsDoesNotDeliverAnUnpersistedRound(t *testing.T) {
 
 	_, cmd := m.sendAnnotations()
 	m.applyCmd(t, cmd)
-	notes := m.diff.annotations[m.reviewKey()]
-	if len(notes) != 1 || notes[0].round != 0 || m.diff.rounds[m.reviewKey()].Number != 0 {
-		t.Fatalf("failed send did not restore the draft: notes=%+v round=%+v", notes, m.diff.rounds[m.reviewKey()])
+	notes := m.review.Annotations()
+	if len(notes) != 1 || notes[0].Round != 0 || m.review.Round().Number != 0 {
+		t.Fatalf("failed send did not restore the draft: notes=%+v round=%+v", notes, m.review.Round())
 	}
-	if m.diff.reviewSendPending || m.diff.notice != "" || !strings.Contains(m.errBar.text, "saving review round") {
-		t.Fatalf("failed send state: pending=%v notice=%q err=%q", m.diff.reviewSendPending, m.diff.notice, m.errBar.text)
+	if m.review.Snapshot().SendPending || m.review.Snapshot().Notice != "" || !strings.Contains(m.errBar.text, "saving review round") {
+		t.Fatalf("failed send state: pending=%v notice=%q err=%q", m.review.Snapshot().SendPending, m.review.Snapshot().Notice, m.errBar.text)
 	}
 	sess, ok := m.diffSession()
 	if !ok {
@@ -148,29 +159,29 @@ func TestDiffCommentVisibleInBothLayouts(t *testing.T) {
 	createSession(t, m, "coder", dir, "")
 	m.selectSessionRow(t, "coder")
 	m.drainCmds(t, m.openDiff())
-	m.diff.sideBySide = false
+	setReviewSideBySide(m, false)
 
-	for i, fd := range m.diff.set.Files {
+	for i, fd := range m.review.Snapshot().Set.Files {
 		if fd.File.Path == "main.go" {
-			m.diff.fileIdx = i
+			m.drainCmds(t, selectReviewFile(m, i))
 		}
 	}
 	m.drainCmds(t, m.loadCurrentDiffFile())
 	fd := m.currentFileDiff()
 	for i, line := range fd.Lines {
 		if line.NewNum > 0 && strings.Contains(line.Text, "println") {
-			m.diff.cursorLine = i
+			m.review.SetCursorDiffLine(i, m.diffCodeHeight())
 		}
 	}
 	m.openAnnotate()
-	m.diff.annInput.SetValue("use fmt.Println here")
+	typeReviewAnnotation(m, "use fmt.Println here")
 	m.applyCmd(t, m.saveAnnotation())
 
-	m.diff.sideBySide = false
+	setReviewSideBySide(m, false)
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
 		t.Fatalf("comment missing in unified layout:\n%s", view)
 	}
-	m.diff.sideBySide = true
+	setReviewSideBySide(m, true)
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
 		t.Fatalf("comment missing in split layout:\n%s", view)
 	}
@@ -180,16 +191,13 @@ func TestHandledCommentsStayVisibleWithAMutedColor(t *testing.T) {
 	previous := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
-	m := &Model{diff: diffState{
-		sessID: "abc123", repoSel: "/repo",
-		annotations: map[string][]annotation{
-			"abc123\x00/repo": {
-				{id: "0123456789abcdef", file: "main.go", line: 1, text: "still open", round: 2, point: 1},
-				{id: "fedcba9876543210", file: "main.go", line: 1, text: "already fixed", round: 1, point: 3, handled: true},
-			},
-		},
-	}}
+	m := &Model{}
 	fd := &diff.FileDiff{File: git.ChangedFile{Path: "main.go"}, Lines: []diff.Line{{NewNum: 1, Text: "line"}}}
+	seedReviewStateForTest(m, uireview.Target{ID: "abc123"}, git.ScopeUncommitted, "/repo",
+		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{*fd}}, uireview.SavedState{Comments: []uireview.Comment{
+			{ID: "0123456789abcdef", File: "main.go", Line: 1, Text: "still open", Round: 2, Point: 1},
+			{ID: "fedcba9876543210", File: "main.go", Line: 1, Text: "already fixed", Round: 1, Point: 3, Resolved: true},
+		}})
 	rows := m.annotationRows(fd, 0, 80)
 	rendered := strings.Join(rows, "\n")
 	plain := ansi.Strip(rendered)
@@ -217,10 +225,10 @@ func TestAnnotationsReanchorAfterRefresh(t *testing.T) {
 	openReviewOn(t, m, "anchor", dir)
 	m.pressDiffKey(t, 'n') // jump to the changed line (return 10)
 	m.openAnnotate()
-	m.diff.annInput.SetValue("note")
+	typeReviewAnnotation(m, "note")
 	m.applyCmd(t, m.saveAnnotation())
-	notes := m.diff.annotations[m.reviewKey()]
-	if len(notes) != 1 || notes[0].line != 3 {
+	notes := m.review.Annotations()
+	if len(notes) != 1 || notes[0].Line != 3 {
 		t.Fatalf("annotation = %+v, want line 3", notes)
 	}
 
@@ -229,7 +237,7 @@ func TestAnnotationsReanchorAfterRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.refreshDiff(t)
-	if notes = m.diff.annotations[m.reviewKey()]; len(notes) != 1 || notes[0].line != 4 {
+	if notes = m.review.Annotations(); len(notes) != 1 || notes[0].Line != 4 {
 		t.Fatalf("annotation after refresh = %+v, want line 4", notes)
 	}
 }
@@ -243,7 +251,7 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 	openReviewOn(t, m, "rounds", dir)
 	m.pressDiffKey(t, 'n')
 	m.openAnnotate()
-	m.diff.annInput.SetValue("verify this return value")
+	typeReviewAnnotation(m, "verify this return value")
 	m.applyCmd(t, m.saveAnnotation())
 	_, cmd := m.sendAnnotations()
 	m.applyCmd(t, cmd)
@@ -253,8 +261,8 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.refreshDiff(t)
-	notes := m.diff.annotations[m.reviewKey()]
-	if len(notes) != 1 || notes[0].line != 4 || notes[0].outdated {
+	notes := m.review.Annotations()
+	if len(notes) != 1 || notes[0].Line != 4 || notes[0].Outdated {
 		t.Fatalf("re-anchored round comment = %+v", notes)
 	}
 
@@ -263,8 +271,8 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.refreshDiff(t)
-	notes = m.diff.annotations[m.reviewKey()]
-	if !notes[0].outdated {
+	notes = m.review.Annotations()
+	if !notes[0].Outdated {
 		t.Fatalf("changed comment should be outdated: %+v", notes[0])
 	}
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "Review round 1 · point 1 · open · outdated") {
@@ -273,16 +281,16 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 
 	fd := m.currentFileDiff()
 	for i, line := range fd.Lines {
-		if line.NewNum == notes[0].line && !notes[0].deleted {
+		if line.NewNum == notes[0].Line && !notes[0].Deleted {
 			m.setCursorDiffLine(i)
 			break
 		}
 	}
 	m.applyCmd(t, m.discardOrToggleAnnotation())
-	if !m.diff.annotations[m.reviewKey()][0].handled {
+	if !m.review.Annotations()[0].Resolved {
 		t.Fatal("d should mark a sent comment handled")
 	}
-	state, err := m.services.store.ReviewState(m.diff.sessID, m.diff.repoSel)
+	state, err := m.services.store.ReviewState(m.review.Snapshot().SessionID, m.review.Snapshot().RepoSelected)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,12 +298,12 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 		t.Fatalf("persisted handled comment = %+v", state.Comments)
 	}
 
-	note := m.diff.annotations[m.reviewKey()][0]
-	m.handleReviewCommentHandled(reviewCommentHandledMsg{
-		sessID: m.diff.sessID, repoRoot: m.diff.repoSel,
-		commentID: note.id, handled: note.handled, previous: false,
+	note := m.review.Annotations()[0]
+	m.handleReviewComment(uireview.HandleCommentResult{
+		TargetID: m.review.Snapshot().SessionID, RepoRoot: m.review.Snapshot().RepoSelected,
+		CommentID: note.ID, Handled: note.Resolved, Previous: false,
 	})
-	if m.diff.annotations[m.reviewKey()][0].handled {
+	if m.review.Annotations()[0].Resolved {
 		t.Fatal("a comment the store no longer holds should drop back to open")
 	}
 	if m.errBar.text == "" {
@@ -311,20 +319,21 @@ func TestAgentHandledUpdateReloadsWithoutDroppingTheComment(t *testing.T) {
 	openReviewOn(t, m, "handled", gitRepoWithTwoChangedFiles(t))
 	m.pressDiffKey(t, 'n')
 	m.openAnnotate()
-	m.diff.annInput.SetValue("fix this")
+	typeReviewAnnotation(m, "fix this")
 	m.applyCmd(t, m.saveAnnotation())
 	_, cmd := m.sendAnnotations()
 	m.applyCmd(t, cmd)
-	note := m.diff.annotations[m.reviewKey()][0]
-	if found, err := m.services.store.SetReviewCommentHandled(m.diff.sessID, note.id, true); err != nil || !found {
+	note := m.review.Annotations()[0]
+	if found, err := m.services.store.SetReviewCommentHandled(m.review.Snapshot().SessionID, note.ID, true); err != nil || !found {
 		t.Fatalf("agent update = %v, %v", found, err)
 	}
-	m.diff.annotations[m.reviewKey()] = append(m.diff.annotations[m.reviewKey()], annotation{
-		id: "localdraft000001", file: note.file, line: note.line, text: "keep this draft",
-	})
+	m.review.SetCursorDiffLine(m.review.CursorDiffLine(), m.diffCodeHeight())
+	m.openAnnotate()
+	typeReviewAnnotation(m, "keep this draft")
+	m.applyCmd(t, m.saveAnnotation())
 	m.applyCmd(t, m.reviewStatusesCmd())
-	notes := m.diff.annotations[m.reviewKey()]
-	if len(notes) != 2 || !notes[0].handled || notes[0].round != 1 || notes[0].point != 1 || notes[1].text != "keep this draft" {
+	notes := m.review.Annotations()
+	if len(notes) != 2 || !notes[0].Resolved || notes[0].Round != 1 || notes[0].Point != 1 || notes[1].Text != "keep this draft" {
 		t.Fatalf("reloaded history = %+v", notes)
 	}
 }
@@ -332,53 +341,54 @@ func TestAgentHandledUpdateReloadsWithoutDroppingTheComment(t *testing.T) {
 // An ambiguous excerpt (blank line, or several identical lines) never moves the
 // comment, and re-anchoring never stacks two comments onto one line.
 func TestReanchorKeepsAmbiguousAndAvoidsCollapse(t *testing.T) {
-	m := buildModel(t)
-	if m.services.gitDrv == nil {
-		t.Skip("git not installed")
-	}
-	m.diff.sessID = "s1"
-	m.diff.annotations = map[string][]annotation{m.reviewKey(): {
-		{file: "f.go", line: 2, excerpt: "", text: "blank"},
-		{file: "f.go", line: 5, excerpt: "}", text: "first brace"},
-		{file: "f.go", line: 9, excerpt: "}", text: "second brace"},
-		{file: "f.go", line: 12, excerpt: "unique()", text: "moves"},
-	}}
+	m := &Model{}
 	lineOf := func(kind diff.LineKind, num int, text string) diff.Line {
 		return diff.Line{Kind: kind, NewNum: num, Text: text}
 	}
-	m.diff.set = diff.Set{Files: []diff.FileDiff{{
+	set := diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{{
 		File: git.ChangedFile{Path: "f.go"},
-		Lines: []diff.Line{
-			lineOf(diff.Same, 1, ""),
-			lineOf(diff.Same, 2, "}"), // one of the two braces survived
-			lineOf(diff.Same, 3, "unique()"),
-		},
 	}}}
-	m.reanchorAnnotationsFor("")
-	notes := m.diff.annotations[m.reviewKey()]
-	if notes[0].line != 2 {
-		t.Errorf("blank excerpt should not move: line=%d", notes[0].line)
+	request := seedReviewStateForTest(m, uireview.Target{ID: "s1"}, git.ScopeUncommitted, "/repo", set, uireview.SavedState{Comments: []uireview.Comment{
+		{File: "f.go", Line: 2, Text: "blank"},
+		{File: "f.go", Line: 5, Excerpt: "}", Text: "first brace"},
+		{File: "f.go", Line: 9, Excerpt: "}", Text: "second brace"},
+		{File: "f.go", Line: 12, Excerpt: "unique()", Text: "moves"},
+	}})
+	m.review.ApplyFile(uireview.FileResult{
+		TargetID: "s1", Scope: git.ScopeUncommitted, Generation: request.Generation,
+		RepoRoot: "/repo", Index: 0, Path: "f.go", File: diff.FileDiff{
+			File:     git.ChangedFile{Path: "f.go"},
+			IsLoaded: true,
+			Lines: []diff.Line{
+				lineOf(diff.Same, 1, ""),
+				lineOf(diff.Same, 2, "}"), // one of the two braces survived
+				lineOf(diff.Same, 3, "unique()"),
+			},
+		}})
+	notes := m.review.Annotations()
+	if notes[0].Line != 2 {
+		t.Errorf("blank excerpt should not move: line=%d", notes[0].Line)
 	}
 	// Two '}' notes, one surviving brace: unique match, but the second must not
 	// collapse onto the first's new anchor.
-	if notes[1].line == notes[2].line {
-		t.Errorf("two comments collapsed onto line %d", notes[1].line)
+	if notes[1].Line == notes[2].Line {
+		t.Errorf("two comments collapsed onto line %d", notes[1].Line)
 	}
-	if notes[3].line != 3 {
-		t.Errorf("unique excerpt should move to line 3: line=%d", notes[3].line)
+	if notes[3].Line != 3 {
+		t.Errorf("unique excerpt should move to line 3: line=%d", notes[3].Line)
 	}
 }
 
 func TestExcerptKeepsRuneBoundary(t *testing.T) {
 	line := "  " + strings.Repeat("ש", 70)
-	excerpt := excerptOf(line)
+	excerpt := uireview.Excerpt(line)
 	if !utf8.ValidString(excerpt) {
 		t.Fatalf("excerpt split a rune: %q", excerpt)
 	}
 	if got := len([]rune(excerpt)); got != 60 {
 		t.Fatalf("excerpt rune count = %d, want 60", got)
 	}
-	if short := excerptOf("  short  "); short != "short" {
+	if short := uireview.Excerpt("  short  "); short != "short" {
 		t.Fatalf("short excerpt = %q", short)
 	}
 }
@@ -398,53 +408,59 @@ func TestSendAnnotationsRefusesAShell(t *testing.T) {
 	m.selectSessionRow(t, sess.Name)
 	m.drainCmds(t, m.openDiff())
 
-	m.diff.annotations[m.reviewKey()] = []annotation{{file: "main.go", line: 3, text: "use fmt.Println here"}}
-	if _, cmd := m.sendAnnotations(); cmd != nil {
+	fd := m.currentFileDiff()
+	for i, line := range fd.Lines {
+		if line.Kind != diff.Gap {
+			m.review.SetCursorDiffLine(i, m.diffCodeHeight())
+			break
+		}
+	}
+	m.openAnnotate()
+	typeReviewAnnotation(m, "use fmt.Println here")
+	m.applyCmd(t, m.saveAnnotation())
+	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'C'}})
+	if _, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
 		t.Fatal("a refused send must not return a command")
 	}
 	if m.errBar.text != shellPromptHint(sess.Name) {
 		t.Fatalf("err = %q, want the shell refusal", m.errBar.text)
 	}
-	if len(m.diff.annotations[m.reviewKey()]) != 1 {
+	if len(m.review.Annotations()) != 1 {
 		t.Fatal("a refused send should keep the comments")
 	}
 }
 
 func TestDiffSendConfirmIgnoresMotionKeys(t *testing.T) {
-	m := &Model{
-		mode: modeDiff,
-		diff: diffState{
-			active:      true,
-			sendConfirm: true,
-			annotations: map[string][]annotation{
-				"\x00": {{file: "main.go", line: 1, text: "keep me"}},
-			},
-		},
-	}
+	m := &Model{mode: modeDiff}
+	seedReviewStateForTest(m, uireview.Target{ID: "s1"}, git.ScopeUncommitted, "/repo",
+		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{diff.BuildFile(nil, []byte("line\n"), git.ChangedFile{Path: "main.go"}, git.FileStat{})}},
+		uireview.SavedState{Comments: []uireview.Comment{{File: "main.go", Line: 1, Text: "keep me"}}})
+	m.review.SetSendConfirm(true)
 	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	if !m.diff.sendConfirm {
+	if !m.review.Snapshot().SendConfirm {
 		t.Fatal("j should leave the send prompt up")
 	}
-	if len(m.diff.annotations[m.reviewKey()]) != 1 {
+	if len(m.review.Annotations()) != 1 {
 		t.Fatal("j must not send or drop comments")
 	}
 	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.diff.sendConfirm {
+	if m.review.Snapshot().SendConfirm {
 		t.Fatal("esc should cancel the send prompt")
 	}
-	if len(m.diff.annotations[m.reviewKey()]) != 1 {
+	if len(m.review.Annotations()) != 1 {
 		t.Fatal("cancel should keep the comments")
 	}
 }
 
 func TestDiffCommentBoxGrowsWithText(t *testing.T) {
 	m := &Model{width: 100, height: 30, mode: modeDiff}
-	m.diff.annInput = textarea.New()
-	m.diff.annotating = true
+	seedReviewForTest(m, uireview.Target{ID: "s1"}, git.ScopeUncommitted, "/repo",
+		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{diff.BuildFile(nil, []byte("line\n"), git.ChangedFile{Path: "main.go"}, git.FileStat{})}}, true)
+	m.openAnnotate()
 	if m.annotationInputHeight(40) != 1 {
 		t.Fatal("empty comment should stay one row")
 	}
-	m.diff.annInput.SetValue(strings.Repeat("word ", 40))
+	typeReviewAnnotation(m, strings.Repeat("word ", 40))
 	got := m.annotationInputHeight(40)
 	if got <= 1 {
 		t.Fatalf("long comment stayed %d rows", got)
@@ -455,28 +471,19 @@ func TestDiffCommentBoxGrowsWithText(t *testing.T) {
 }
 
 func TestAnotherScopeDoesNotOutdateARoundsComments(t *testing.T) {
-	m := buildModel(t)
-	if m.services.gitDrv == nil {
-		t.Skip("git not installed")
-	}
-	openReviewOn(t, m, "scopeoutdated", gitRepoWithTwoChangedFiles(t))
-	key := m.reviewKey()
-	m.diff.annotations[key] = []annotation{{
-		id: "0123456789abcdef", file: "gone-from-this-scope.go", line: 1,
-		text: "look at this", round: 1, point: 1,
-	}}
-	m.diff.rounds[key] = store.ReviewRound{Number: 1, Scope: m.diff.scope.String()}
-
-	if !m.markMissingRoundCommentsOutdated() {
+	m := &Model{}
+	target := uireview.Target{ID: "scopeoutdated"}
+	comment := uireview.Comment{ID: "0123456789abcdef", File: "gone-from-this-scope.go", Line: 1, Text: "look at this", Round: 1, Point: 1}
+	seedReviewStateForTest(m, target, git.ScopeUncommitted, "/repo", diff.Set{Repo: git.Repo{Root: "/repo"}}, uireview.SavedState{
+		Comments: []uireview.Comment{comment}, Round: uireview.Round{Number: 1, Scope: git.ScopeUncommitted.String()},
+	})
+	if !m.review.Annotations()[0].Outdated {
 		t.Fatal("a file missing from the scope the round was sent in should read outdated")
 	}
-	m.diff.annotations[key][0].outdated = false
-
-	m.diff.rounds[key] = store.ReviewRound{Number: 1, Scope: m.diff.scope.Next().String()}
-	if m.markMissingRoundCommentsOutdated() {
-		t.Fatal("another scope's file list marked the round outdated")
-	}
-	if m.diff.annotations[key][0].outdated {
+	seedReviewStateForTest(m, target, git.ScopeUncommitted, "/repo", diff.Set{Repo: git.Repo{Root: "/repo"}}, uireview.SavedState{
+		Comments: []uireview.Comment{comment}, Round: uireview.Round{Number: 1, Scope: git.ScopeBranch.String()},
+	})
+	if m.review.Annotations()[0].Outdated {
 		t.Fatal("the comment was labelled outdated by a scope it was not sent in")
 	}
 }
@@ -485,28 +492,19 @@ func TestAnotherScopeDoesNotOutdateARoundsComments(t *testing.T) {
 // an older round from another scope stays untouched even when the latest
 // round was sent in the current scope.
 func TestOlderRoundFromAnotherScopeIsNotOutdated(t *testing.T) {
-	m := buildModel(t)
-	if m.services.gitDrv == nil {
-		t.Skip("git not installed")
-	}
-	openReviewOn(t, m, "roundscopes", gitRepoWithTwoChangedFiles(t))
-	key := m.reviewKey()
-	m.diff.annotations[key] = []annotation{
-		{id: "aaaaaaaaaaaaaaa1", file: "gone-from-this-scope.go", line: 1,
-			text: "older round", round: 1, point: 1, scope: m.diff.scope.Next().String()},
-		{id: "aaaaaaaaaaaaaaa2", file: "also-gone.go", line: 1,
-			text: "latest round", round: 2, point: 1, scope: m.diff.scope.String()},
-	}
-	m.diff.rounds[key] = store.ReviewRound{Number: 2, Scope: m.diff.scope.String()}
-
-	if !m.markMissingRoundCommentsOutdated() {
-		t.Fatal("the current scope's round comment on a missing file should read outdated")
-	}
-	notes := m.diff.annotations[key]
-	if notes[0].outdated {
+	m := &Model{}
+	seedReviewStateForTest(m, uireview.Target{ID: "roundscopes"}, git.ScopeUncommitted, "/repo", diff.Set{Repo: git.Repo{Root: "/repo"}}, uireview.SavedState{
+		Comments: []uireview.Comment{
+			{ID: "aaaaaaaaaaaaaaa1", File: "gone-from-this-scope.go", Line: 1, Text: "older round", Round: 1, Point: 1, Scope: git.ScopeBranch.String()},
+			{ID: "aaaaaaaaaaaaaaa2", File: "also-gone.go", Line: 1, Text: "latest round", Round: 2, Point: 1, Scope: git.ScopeUncommitted.String()},
+		},
+		Round: uireview.Round{Number: 2, Scope: git.ScopeUncommitted.String()},
+	})
+	notes := m.review.Annotations()
+	if notes[0].Outdated {
 		t.Fatal("a round sent in another scope was outdated by this scope's file list")
 	}
-	if !notes[1].outdated {
+	if !notes[1].Outdated {
 		t.Fatal("the current scope's round comment kept its standing")
 	}
 }
@@ -514,22 +512,22 @@ func TestOlderRoundFromAnotherScopeIsNotOutdated(t *testing.T) {
 // A scope cycle re-judges the arriving scope's comments even without a
 // refresh: a comment whose file that scope no longer lists reads outdated.
 func TestScopeCycleOutdatesTheArrivingScopesComments(t *testing.T) {
-	m := buildModel(t)
-	if m.services.gitDrv == nil {
-		t.Skip("git not installed")
+	m := &Model{}
+	seedReviewStateForTest(m, uireview.Target{ID: "cycleoutdate"}, git.ScopeUncommitted, "/repo", diff.Set{Repo: git.Repo{Root: "/repo"}}, uireview.SavedState{
+		Comments: []uireview.Comment{{ID: "aaaaaaaaaaaaaaa1", File: "gone.go", Line: 1, Text: "from staged", Round: 1, Point: 1, Scope: git.ScopeStaged.String()}},
+		Round:    uireview.Round{Number: 1, Scope: git.ScopeStaged.String()},
+	})
+	for m.review.Snapshot().Scope != git.ScopeStaged {
+		request, ok := m.review.CycleScope()
+		if !ok {
+			t.Fatal("scope cycle rejected")
+		}
+		m.review.ApplyLoad(uireview.LoadResult{
+			TargetID: request.Target.ID, Scope: request.Scope, Generation: request.Generation,
+			RepoRoot: "/repo", RepoRoots: []string{"/repo"}, Set: diff.Set{Repo: git.Repo{Root: "/repo"}},
+		})
 	}
-	openReviewOn(t, m, "cycleoutdate", gitTestRepo(t))
-	key := m.reviewKey()
-	m.diff.annotations[key] = []annotation{{
-		id: "aaaaaaaaaaaaaaa1", file: "gone.go", line: 1,
-		text: "from staged", round: 1, point: 1, scope: git.ScopeStaged.String(),
-	}}
-	m.diff.rounds[key] = store.ReviewRound{Number: 1, Scope: git.ScopeStaged.String()}
-
-	for m.diff.scope != git.ScopeStaged {
-		m.drainCmds(t, m.cycleDiffScope())
-	}
-	if !m.diff.annotations[key][0].outdated {
+	if !m.review.Annotations()[0].Outdated {
 		t.Fatal("arriving at staged should outdate its round comment on a missing file")
 	}
 }
@@ -538,25 +536,21 @@ func TestScopeCycleOutdatesTheArrivingScopesComments(t *testing.T) {
 // scope renders the same file differently, so its comment keeps the line
 // and hash it was made against.
 func TestRefreshDoesNotReanchorOtherScopesComments(t *testing.T) {
-	m := buildModel(t)
-	if m.services.gitDrv == nil {
-		t.Skip("git not installed")
-	}
-	openReviewOn(t, m, "scopereanchor", gitTestRepo(t))
-	key := m.reviewKey()
-	other := m.diff.scope.Next().String()
-	m.diff.annotations[key] = []annotation{{
-		id: "aaaaaaaaaaaaaaa1", file: "main.go", line: 999,
-		excerpt: "func main() { println(1) }", text: "from another scope",
-		round: 1, point: 1, scope: other, hash: 12345,
-	}}
-	m.diff.rounds[key] = store.ReviewRound{Number: 1, Scope: other}
-
-	if m.reanchorAnnotationsFor("main.go") {
-		t.Fatal("a refresh in this scope re-anchored another scope's comment")
-	}
-	if note := m.diff.annotations[key][0]; note.line != 999 || note.hash != 12345 {
-		t.Fatalf("the comment moved: line=%d hash=%d", note.line, note.hash)
+	m := &Model{}
+	other := git.ScopeBranch.String()
+	request := seedReviewStateForTest(m, uireview.Target{ID: "scopereanchor"}, git.ScopeUncommitted, "/repo",
+		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}},
+		uireview.SavedState{
+			Comments: []uireview.Comment{{ID: "aaaaaaaaaaaaaaa1", File: "main.go", Line: 999, Excerpt: "func main() { println(1) }", Text: "from another scope", Round: 1, Point: 1, Scope: other, ContentHash: 12345}},
+			Round:    uireview.Round{Number: 1, Scope: other},
+		})
+	m.review.ApplyFile(uireview.FileResult{
+		TargetID: request.Target.ID, Scope: request.Scope, Generation: request.Generation,
+		RepoRoot: "/repo", Index: 0, Path: "main.go",
+		File: diff.BuildFile(nil, []byte("func main() { println(1) }\n"), git.ChangedFile{Path: "main.go"}, git.FileStat{}),
+	})
+	if note := m.review.Annotations()[0]; note.Line != 999 || note.ContentHash != 12345 {
+		t.Fatalf("the comment moved: line=%d hash=%d", note.Line, note.ContentHash)
 	}
 }
 
@@ -592,34 +586,36 @@ func TestMigratedPointsNeverRepeatWithinARound(t *testing.T) {
 
 func TestAnnotationsDropControlBytes(t *testing.T) {
 	const escape = "\x1b[31mred\x07\x1b]0;title\x07"
-	if got := withoutControlBytes(escape); strings.ContainsFunc(got, func(r rune) bool {
+	if got := uireview.SanitizeText(escape); strings.ContainsFunc(got, func(r rune) bool {
 		return r != '\n' && unicode.IsControl(r)
 	}) {
 		t.Fatalf("control bytes survived: %q", got)
 	}
-	if got := withoutControlBytes("keep\tthe\nshape"); got != "keep the\nshape" {
+	if got := uireview.SanitizeText("keep\tthe\nshape"); got != "keep the\nshape" {
 		t.Fatalf("tab and newline handling = %q", got)
 	}
-	if got := excerptOf("\x1b[2Jfunc main() {"); got != "[2Jfunc main() {" {
+	if got := uireview.Excerpt("\x1b[2Jfunc main() {"); got != "[2Jfunc main() {" {
 		t.Fatalf("excerpt = %q, want the escape introducer gone", got)
 	}
 }
 
 func TestAnnotateSkipsHunkGaps(t *testing.T) {
 	fd := bigEditedFile(t)
-	m := &Model{diff: diffState{active: true, set: diff.Set{Files: []diff.FileDiff{fd}}}}
+	m := &Model{}
+	seedReviewForTest(m, uireview.Target{ID: "s1"}, git.ScopeUncommitted, "/repo",
+		diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{fd}}, true)
 	for _, split := range []bool{false, true} {
-		m.diff.sideBySide = split
-		m.diff.cursorLine = 0
+		setReviewSideBySide(m, split)
+		m.review.SetCursorDiffLine(0, 10)
 		m.openAnnotate()
-		if m.diff.annotating {
+		if m.review.Snapshot().Annotating {
 			t.Fatalf("split=%v: gap marker must not accept comments", split)
 		}
-		m.diff.cursorLine = 1
+		m.review.SetCursorDiffLine(1, 10)
 		m.openAnnotate()
-		if !m.diff.annotating {
+		if !m.review.Snapshot().Annotating {
 			t.Fatalf("split=%v: real context line should accept comments", split)
 		}
-		m.diff.annotating = false
+		m.review.AnnotationKey(tea.KeyMsg{Type: tea.KeyEsc})
 	}
 }

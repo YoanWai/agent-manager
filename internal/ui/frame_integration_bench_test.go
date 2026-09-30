@@ -2,9 +2,11 @@ package ui
 
 import (
 	"fmt"
+	"testing"
+
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
-	"testing"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 )
 
 func BenchmarkListFrame(b *testing.B) {
@@ -26,9 +28,7 @@ func BenchmarkCloseLargeReview(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		m.mode = modeDiff
-		m.diff.active = true
-		m.diff.sessID = "bench"
-		m.diff.set = diff.Set{Files: files}
+		seedReviewForTest(m, uireview.Target{ID: "bench"}, git.ScopeUncommitted, "/repo", diff.Set{Files: files}, true)
 		b.StartTimer()
 		m.closeDiff()
 	}

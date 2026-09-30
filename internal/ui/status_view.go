@@ -28,8 +28,8 @@ func (m *Model) statusLine() string {
 		return keyStyle.Render("resize ") + subtleStyle.Render(hint)
 	case m.errBar.text != "":
 		return m.statusMessage("✕", "●", "▲")
-	case m.diff.notice != "":
-		return doneStyle.Render("● " + escapeControlsInline(m.diff.notice))
+	case m.review.Snapshot().Notice != "":
+		return doneStyle.Render("● " + escapeControlsInline(m.review.Snapshot().Notice))
 	default:
 		return ""
 	}

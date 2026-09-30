@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/YoanWai/agent-manager/internal/diff"
+	diff "github.com/YoanWai/agent-manager/internal/diff/model"
 )
 
 var nonCodeExts = map[string]bool{
@@ -23,8 +23,12 @@ var nonCodeNames = map[string]bool{
 }
 
 func isNonCode(fd *diff.FileDiff) bool {
-	name := filepath.Base(fd.File.Path)
-	return fd.Binary || fd.Stat.Binary || nonCodeNames[name] || nonCodeExts[strings.ToLower(filepath.Ext(name))]
+	return fd.Binary || fd.Stat.Binary || IsNonCodePath(fd.File.Path)
+}
+
+func IsNonCodePath(path string) bool {
+	name := filepath.Base(path)
+	return nonCodeNames[name] || nonCodeExts[strings.ToLower(filepath.Ext(name))]
 }
 
 func (m Model) scrollKey(path string) string {

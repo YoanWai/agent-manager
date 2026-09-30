@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/YoanWai/agent-manager/internal/diff"
+	diff "github.com/YoanWai/agent-manager/internal/diff/model"
 )
 
 // ApplyLoad is the only way a load can replace Review's target data. The
@@ -43,12 +43,13 @@ func (m *Model) ApplyLoad(result LoadResult) ApplyResult {
 	}
 	if result.MissingRepo != "" {
 		accepted.Error = fmt.Sprintf("picked or declared repo %s is no longer under the session directory", filepath.Base(result.MissingRepo))
+		accepted.ForgetPreferredRepo = result.MissingRepo
 	}
 	previousPath := ""
 	if fd := m.currentFile(); fd != nil {
 		previousPath = fd.File.Path
 	}
-	m.set = result.Set
+	m.set = result.Set.Clone()
 	stateChanged := m.clearStaleMarks()
 	stateChanged = m.markMissingCommentsOutdated() || stateChanged
 	m.fileLoading = make(map[int]bool)
@@ -108,7 +109,7 @@ func (m *Model) ApplyFile(result FileResult) ApplyResult {
 		return ApplyResult{}
 	}
 	delete(m.fileLoading, result.Index)
-	m.set.Files[result.Index] = result.File
+	m.set.Files[result.Index] = result.File.Clone()
 	stateChanged := m.clearStaleMark(result.Path)
 	if m.reanchor[result.Path] {
 		stateChanged = m.reanchorAnnotations(result.Path) || stateChanged
@@ -186,7 +187,19 @@ func (m *Model) requestHighlight() (HighlightRequest, bool) {
 		return HighlightRequest{}, false
 	}
 	m.highlightPending = key
-	return HighlightRequest{Key: key, File: *fd}, true
+	return HighlightRequest{Key: key, File: fd.Clone()}, true
+}
+
+func (m *Model) EnsureHighlight() (HighlightRequest, bool) { return m.requestHighlight() }
+
+func (m *Model) EnsureCurrentFile() Requests {
+	requests := Requests{}
+	if request, ok := m.requestFile(m.fileIdx); ok {
+		requests.Files = append(requests.Files, request)
+	} else if request, ok := m.requestHighlight(); ok {
+		requests.Highlight = &request
+	}
+	return requests
 }
 
 func (m *Model) requestFile(index int) (FileRequest, bool) {
@@ -204,8 +217,8 @@ func (m *Model) requestFile(index int) (FileRequest, bool) {
 		return FileRequest{}, false
 	}
 	m.fileLoading[index] = true
-	snapshot := m.set
-	snapshot.Files = []diff.FileDiff{*fd}
+	snapshot := m.set.Clone()
+	snapshot.Files = []diff.FileDiff{fd.Clone()}
 	return FileRequest{
 		TargetID: m.target.ID, Scope: m.scope, Generation: m.gen,
 		RepoRoot: m.set.Repo.Root, Index: index, Path: fd.File.Path, Set: snapshot,

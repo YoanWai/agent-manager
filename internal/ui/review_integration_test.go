@@ -2,13 +2,15 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/git"
-	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/git"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func gitTestRepo(t *testing.T) string {
@@ -257,7 +259,7 @@ func TestNoReloadWhileAnnotating(t *testing.T) {
 	linesBefore := len(m.currentFileDiff().Lines)
 
 	m.openAnnotate()
-	if !m.diff.annotating {
+	if !m.review.Snapshot().Annotating {
 		t.Fatal("openAnnotate should enter annotating mode")
 	}
 	for i := 0; i < 4; i++ {
@@ -266,16 +268,17 @@ func TestNoReloadWhileAnnotating(t *testing.T) {
 		}
 	}
 	// An in-flight reload from before the comment box opened is dropped.
-	stale := diffLoadedMsg{sessID: m.diff.sessID, scope: m.diff.scope, gen: m.diff.gen}
-	if cmd := m.handleDiffLoaded(stale); cmd != nil {
+	state := m.review.Snapshot()
+	stale := uireview.LoadResult{TargetID: state.SessionID, Scope: state.Scope, Generation: state.Generation}
+	if cmd := m.handleReviewLoad(stale); cmd != nil {
 		t.Fatal("stale reload should be dropped without follow-up")
 	}
 	if got := len(m.currentFileDiff().Lines); got != linesBefore {
 		t.Errorf("reload replaced the diff under the comment box: %d -> %d lines", linesBefore, got)
 	}
 
-	m.diff.annotating = false
-	m.diff.sendConfirm = true
+	m.review.AnnotationKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.review.SetSendConfirm(true)
 	if cmd := m.diffRefreshCmd(); cmd != nil {
 		t.Fatal("probe must pause while confirming a send")
 	}
@@ -285,12 +288,15 @@ func TestNoReloadWhileAnnotating(t *testing.T) {
 // the only reload that re-anchors comments.
 func (m *Model) refreshDiff(t *testing.T) {
 	t.Helper()
-	sess, ok := m.diffSession()
+	state := m.review.Snapshot()
+	request, ok := m.review.ApplyProbe(uireview.ProbeResult{
+		TargetID: state.SessionID, Scope: state.Scope, RepoSelected: state.RepoSelected,
+		Fingerprint: state.Fingerprint + 1,
+	})
 	if !ok {
-		t.Fatal("no diff session")
+		t.Fatal("review refresh request was rejected")
 	}
-	m.diff.gen++
-	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, true))
+	m.drainCmds(t, m.reviewLoadCmd(request))
 }
 
 // A scope cycle loads a different file set; it must not re-anchor a comment's
@@ -303,12 +309,12 @@ func TestScopeCycleDoesNotReanchor(t *testing.T) {
 	openReviewOn(t, m, "scoped", gitRepoWithTwoChangedFiles(t))
 	m.pressDiffKey(t, 'n')
 	m.openAnnotate()
-	m.diff.annInput.SetValue("note")
+	typeReviewAnnotation(m, "note")
 	m.applyCmd(t, m.saveAnnotation())
-	before := m.diff.annotations[m.reviewKey()][0].line
+	before := m.review.Annotations()[0].Line
 
 	m.drainCmds(t, m.cycleDiffScope())
-	if got := m.diff.annotations[m.reviewKey()][0].line; got != before {
+	if got := m.review.Annotations()[0].Line; got != before {
 		t.Fatalf("scope cycle rewrote the comment line: %d -> %d", before, got)
 	}
 }
@@ -513,22 +519,41 @@ func TestCLIReviewBaseReachesLoadAcrossSymlinkBoundary(t *testing.T) {
 		t.Fatal("no diff session")
 	}
 
-	resolvedRoot := resolveSymlinksOrSelf(m.diff.repoSel)
-	if resolvedRoot == m.diff.repoSel {
+	resolvedRoot := resolveSymlinksOrSelf(m.review.Snapshot().RepoSelected)
+	if resolvedRoot == m.review.Snapshot().RepoSelected {
 		t.Skip("temp dir is not symlinked, so there is no raw/resolved boundary to cross")
 	}
 
 	branchReload := func() {
-		m.diff.scope = git.ScopeBranch
-		m.diff.gen++
-		m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false))
-		if m.diff.errText != "" {
-			t.Fatalf("branch-scope load should not error, err = %q", m.diff.errText)
+		state := m.review.Snapshot()
+		var request uireview.LoadRequest
+		var accepted bool
+		if state.Scope != git.ScopeBranch {
+			for m.review.Snapshot().Scope != git.ScopeBranch {
+				request, accepted = m.review.CycleScope()
+				if !accepted {
+					t.Fatal("branch scope request was rejected")
+				}
+				m.drainCmds(t, m.reviewLoadCmd(request))
+			}
+		} else {
+			state = m.review.Snapshot()
+			request, accepted = m.review.ApplyProbe(uireview.ProbeResult{
+				TargetID: state.SessionID, Scope: state.Scope, RepoSelected: state.RepoSelected,
+				Fingerprint: state.Fingerprint + 1,
+			})
+			if !accepted {
+				t.Fatal("branch reload request was rejected")
+			}
+			m.drainCmds(t, m.reviewLoadCmd(request))
+		}
+		if m.review.Snapshot().Error != "" {
+			t.Fatalf("branch-scope load should not error, err = %q", m.review.Snapshot().Error)
 		}
 	}
 
 	branchReload()
-	autoFingerprint := m.diff.fingerprint
+	autoFingerprint := m.review.Snapshot().Fingerprint
 
 	// Mirror the CLI exactly: OpenRepo yields the same symlink-resolved toplevel
 	// the review-base subcommand stores, so the mailbox holds the resolved root.
@@ -549,11 +574,11 @@ func TestCLIReviewBaseReachesLoadAcrossSymlinkBoundary(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 
 	branchReload()
-	if m.diff.fingerprint == autoFingerprint {
+	if m.review.Snapshot().Fingerprint == autoFingerprint {
 		t.Fatalf("the CLI-declared feature base never reached the load: fingerprint stayed at the auto value %d (base keyed under %q was read under %q)",
-			autoFingerprint, resolvedRoot, m.diff.repoSel)
+			autoFingerprint, resolvedRoot, m.review.Snapshot().RepoSelected)
 	}
-	if len(m.diff.set.Files) == 0 {
+	if len(m.review.Snapshot().Set.Files) == 0 {
 		t.Fatal("the feature base should surface the diverging file in review")
 	}
 }
@@ -561,30 +586,30 @@ func TestCLIReviewBaseReachesLoadAcrossSymlinkBoundary(t *testing.T) {
 func TestDiffProbeSetsLoadingSoItDoesNotStack(t *testing.T) {
 	m := buildModel(t)
 	openReviewOn(t, m, "probe-load", gitTestRepo(t))
-	gen := m.diff.gen
-	fp := m.diff.fingerprint
+	gen := m.review.Snapshot().Generation
+	fp := m.review.Snapshot().Fingerprint
 	if fp == 0 {
 		t.Fatal("loaded review should have a fingerprint")
 	}
-	cmd := m.handleDiffProbe(diffProbeMsg{
-		sessID: m.diff.sessID, scope: m.diff.scope, repoRoot: m.diff.repoSel, fp: fp + 1,
+	cmd := m.handleReviewProbe(uireview.ProbeResult{
+		TargetID: m.review.Snapshot().SessionID, Scope: m.review.Snapshot().Scope, RepoSelected: m.review.Snapshot().RepoSelected, Fingerprint: fp + 1,
 	})
 	if cmd == nil {
 		t.Fatal("a changed fingerprint should start a reload")
 	}
-	if !m.diff.loading {
+	if !m.review.Snapshot().Loading {
 		t.Fatal("reload must set loading so the next probe cannot cancel it")
 	}
-	if m.diff.gen != gen+1 {
-		t.Fatalf("gen = %d, want %d", m.diff.gen, gen+1)
+	if m.review.Snapshot().Generation != gen+1 {
+		t.Fatalf("gen = %d, want %d", m.review.Snapshot().Generation, gen+1)
 	}
-	if stacked := m.handleDiffProbe(diffProbeMsg{
-		sessID: m.diff.sessID, scope: m.diff.scope, repoRoot: m.diff.repoSel, fp: fp + 2,
+	if stacked := m.handleReviewProbe(uireview.ProbeResult{
+		TargetID: m.review.Snapshot().SessionID, Scope: m.review.Snapshot().Scope, RepoSelected: m.review.Snapshot().RepoSelected, Fingerprint: fp + 2,
 	}); stacked != nil {
 		t.Fatal("a probe while loading must not start another reload")
 	}
-	if m.diff.gen != gen+1 {
-		t.Fatalf("stacked probe bumped gen to %d", m.diff.gen)
+	if m.review.Snapshot().Generation != gen+1 {
+		t.Fatalf("stacked probe bumped gen to %d", m.review.Snapshot().Generation)
 	}
 	if m.diffRefreshCmd() != nil {
 		t.Fatal("refresh must wait until the in-flight load lands")

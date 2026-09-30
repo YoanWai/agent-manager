@@ -20,4 +20,6 @@ func stripControls(text string) string {
 	}, text)
 }
 
+func SanitizeText(text string) string { return stripControls(text) }
+
 func containsNUL(s string) bool { return strings.Contains(s, "\x00") }

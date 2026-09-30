@@ -2,14 +2,16 @@ package ui
 
 import (
 	"errors"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	"github.com/charmbracelet/x/ansi"
-	"strings"
-	"testing"
-	"time"
 )
 
 func TestStartupTickRunsWhileBooting(t *testing.T) {
@@ -53,20 +55,25 @@ func TestStartupTickRunsOnlyWhileAStartingRowIsVisible(t *testing.T) {
 }
 
 func TestStartupTickRunsWhileReviewLoads(t *testing.T) {
-	m := &Model{mode: modeDiff, diff: diffState{active: true, loading: true}}
+	m := &Model{mode: modeDiff}
+	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	if cmd := m.startStartupTick(); cmd == nil || !m.startup.startupAnimating {
 		t.Fatal("a loading review should start the loader tick")
 	}
-	m.diff.loading = false
+	state := m.review.Snapshot()
+	m.review.ApplyLoad(uireview.LoadResult{
+		TargetID: state.SessionID, Scope: state.Scope, Generation: state.Generation,
+		RepoRoot: "/repo", RepoRoots: []string{"/repo"}, Set: diff.Set{}, SavedLoaded: true,
+	})
 	_, cmd := m.Update(startupTickMsg{})
 	if cmd != nil || m.startup.startupAnimating {
 		t.Fatal("loader tick kept running after the review load settled")
 	}
-	m.diff.set.Files = []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}
+	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{Files: []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}}, true)
 	if cmd := m.startStartupTick(); cmd == nil || !m.startup.startupAnimating {
 		t.Fatal("an unloaded selected file should start the loader tick")
 	}
-	m.diff.set.Files[0] = diff.BuildFile(nil, nil, git.ChangedFile{Path: "main.go"}, git.FileStat{})
+	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{Files: []diff.FileDiff{diff.BuildFile(nil, nil, git.ChangedFile{Path: "main.go"}, git.FileStat{})}}, true)
 	_, cmd = m.Update(startupTickMsg{})
 	if cmd != nil || m.startup.startupAnimating {
 		t.Fatal("loader tick kept running after the selected file loaded")

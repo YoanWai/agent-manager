@@ -1,10 +1,14 @@
 package ui
 
 import (
+	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
-	"testing"
 )
 
 // Ctrl+R inside a session opens review and remembers the session, so leaving
@@ -31,8 +35,8 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	if m.mode != modeDiff {
 		t.Fatalf("marker set should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	if m.diff.reattachID != sess.ID {
-		t.Fatalf("review origin = %q, want %q", m.diff.reattachID, sess.ID)
+	if m.reviewReturn.kind != reviewReturnAttach || m.reviewReturn.sessionID != sess.ID {
+		t.Fatalf("review origin = %+v, want attach %q", m.reviewReturn, sess.ID)
 	}
 
 	// esc leaves review; the live origin session re-attaches.
@@ -41,8 +45,8 @@ func TestInSessionReviewRemembersOriginAndReattaches(t *testing.T) {
 	if m.mode != modeList {
 		t.Fatalf("esc should leave review, mode = %v", m.mode)
 	}
-	if m.diff.reattachID != "" {
-		t.Fatalf("reattach origin should be consumed, got %q", m.diff.reattachID)
+	if m.reviewReturn != (reviewReturn{}) {
+		t.Fatalf("reattach origin should be consumed, got %+v", m.reviewReturn)
 	}
 	if cmd == nil {
 		t.Fatal("esc from in-session review should re-attach the session, got nil command")
@@ -63,8 +67,8 @@ func TestListReviewLeavesToListWithoutReattach(t *testing.T) {
 	if m.mode != modeDiff {
 		t.Fatalf("openDiff should enter review, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	if m.diff.reattachID != "" {
-		t.Fatalf("list review should not set a reattach origin, got %q", m.diff.reattachID)
+	if m.reviewReturn.kind != reviewReturnList || m.reviewReturn.sessionID != "" {
+		t.Fatalf("list review should return to list, got %+v", m.reviewReturn)
 	}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -126,13 +130,14 @@ func TestReattachAcknowledgesFinished(t *testing.T) {
 }
 
 func TestStaleReattachDoesNotInterruptReopenedReview(t *testing.T) {
-	m := &Model{mode: modeDiff, diff: diffState{active: true, gen: 9}}
-	updated, cmd := m.Update(reattachPreparedMsg{sessID: "old", diffGen: 8})
+	m := &Model{mode: modeDiff}
+	seedReviewForTest(m, uireview.Target{ID: "new"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
+	updated, cmd := m.Update(reattachPreparedMsg{sessID: "old", diffGen: 0})
 	m = updated.(*Model)
 	if cmd != nil {
 		t.Fatal("stale re-attach should not return an attach command")
 	}
-	if m.mode != modeDiff || !m.diff.active {
+	if m.mode != modeDiff || !m.review.Snapshot().Active {
 		t.Fatal("stale re-attach should leave the reopened review untouched")
 	}
 }
@@ -151,18 +156,18 @@ func TestReviewCloseReleasesStateAndIgnoresLateLoad(t *testing.T) {
 	if cmd := m.closeDiff(); cmd != nil {
 		t.Fatal("list-opened review should close without re-attaching")
 	}
-	if m.mode != modeList || m.diff.active || m.diff.sessID != "" {
+	if m.mode != modeList || m.review.Snapshot().Active || m.review.Snapshot().SessionID != "" {
 		t.Fatalf("review did not close cleanly: mode=%v active=%v session=%q",
-			m.mode, m.diff.active, m.diff.sessID)
+			m.mode, m.review.Snapshot().Active, m.review.Snapshot().SessionID)
 	}
-	if len(m.diff.set.Files) != 0 || m.diff.hlPending != (hlKey{}) {
+	if len(m.review.Snapshot().Set.Files) != 0 || m.review.CurrentHighlight() != nil {
 		t.Fatal("close should release diff and pending highlight state immediately")
 	}
 
 	late := load()
 	updated, next := m.Update(late)
 	*m = *updated.(*Model)
-	if next != nil || len(m.diff.set.Files) != 0 || m.diff.active {
+	if next != nil || len(m.review.Snapshot().Set.Files) != 0 || m.review.Snapshot().Active {
 		t.Fatal("a file load landing after close must be ignored")
 	}
 }
@@ -181,7 +186,7 @@ func TestCtrlRFromListOpensReview(t *testing.T) {
 	if m.mode != modeDiff {
 		t.Fatalf("ctrl+r from the list should open review, mode = %v (err=%q)", m.mode, m.errBar.text)
 	}
-	if m.diff.reattachID != "" {
+	if m.reviewReturn.kind != reviewReturnList || m.reviewReturn.sessionID != "" {
 		t.Fatal("review opened from the list should return to the list, not re-attach")
 	}
 }

@@ -290,7 +290,7 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// the list.
 		cmd := m.openDiff()
 		if m.mode == modeDiff {
-			m.diff.refocus = true
+			m.reviewReturn = reviewReturn{kind: reviewReturnFocus, sessionID: sess.ID}
 		}
 		return m, cmd
 	}

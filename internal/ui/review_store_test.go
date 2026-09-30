@@ -1,9 +1,11 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/store"
 	"path/filepath"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/store"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 )
 
 // A reviewed mark placed on a path in one repo must not bleed onto a
@@ -15,7 +17,7 @@ func TestReviewMarksIsolatedPerRepo(t *testing.T) {
 	}
 	umbrella, dirtyName := umbrellaWithTwoRepos(t)
 	openReviewOn(t, m, "umbrella", umbrella)
-	if got := filepath.Base(m.diff.repoSel); got != dirtyName {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != dirtyName {
 		t.Fatalf("want %q selected, got %q", dirtyName, got)
 	}
 	if fd := m.currentFileDiff(); fd == nil || fd.File.Path != "a.go" {
@@ -27,8 +29,8 @@ func TestReviewMarksIsolatedPerRepo(t *testing.T) {
 	}
 
 	m.pickRepo(t, "alpha")
-	if filepath.Base(m.diff.repoSel) != "alpha" {
-		t.Fatalf("picker should select alpha, got %q", m.diff.repoSel)
+	if filepath.Base(m.review.Snapshot().RepoSelected) != "alpha" {
+		t.Fatalf("picker should select alpha, got %q", m.review.Snapshot().RepoSelected)
 	}
 	if m.fileReviewed("a.go") {
 		t.Fatal("a.go reviewed mark leaked into the sibling repo")
@@ -51,30 +53,24 @@ func TestRepoSelectionSurvivesReload(t *testing.T) {
 	openReviewOn(t, m, "umbrella", umbrella)
 
 	m.pickRepo(t, "alpha")
-	if filepath.Base(m.diff.repoSel) != "alpha" {
-		t.Fatalf("want alpha selected, got %q", m.diff.repoSel)
+	if filepath.Base(m.review.Snapshot().RepoSelected) != "alpha" {
+		t.Fatalf("want alpha selected, got %q", m.review.Snapshot().RepoSelected)
 	}
 	// A scope cycle reloads through ResolveRepos, which ranks the dirty repo
 	// first; the path pin must keep alpha selected regardless.
 	m.pressDiffKey(t, 's')
-	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "alpha" {
 		t.Fatalf("reload should keep alpha pinned, got %q", got)
 	}
-	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "alpha" {
 		t.Fatalf("repoSel should track the pinned repo after re-rank, got %q", got)
 	}
 }
 
 func TestSavedReviewRoundsGainStableIDsAndPointNumbers(t *testing.T) {
 	m := buildModel(t)
-	m.diff.sessID = "abc123"
-	m.diff.repoSel = "/repo"
-	// A synthetic session skips openDiff, which is what lays these out.
-	m.diff.reviewed = map[string]map[string]uint64{}
-	m.diff.annotations = map[string][]annotation{}
-	m.diff.rounds = map[string]store.ReviewRound{}
-	m.diff.stateLoaded = map[string]bool{}
-	if err := m.services.store.SetReviewState(m.diff.sessID, m.diff.repoSel, store.ReviewState{
+	const sessionID, repo = "abc123", "/repo"
+	if err := m.services.store.SetReviewState(sessionID, repo, store.ReviewState{
 		Comments: []store.ReviewComment{
 			{File: "a.go", Line: 2, Text: "first", Round: 3},
 			{File: "b.go", Line: 4, Text: "second", Round: 3},
@@ -83,19 +79,16 @@ func TestSavedReviewRoundsGainStableIDsAndPointNumbers(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	state, err := readReviewState(m.services.store, m.diff.sessID, m.diff.repoSel)
+	state, err := readReviewState(m.services.store, sessionID, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !m.restoreReviewState(state) {
-		t.Fatal("saved review state was not loaded")
-	}
-	notes := m.diff.annotations[m.reviewKey()]
-	if len(notes) != 2 || len(notes[0].id) != 16 || len(notes[1].id) != 16 ||
-		notes[0].id == notes[1].id || notes[0].point != 1 || notes[1].point != 2 {
+	notes := state.Comments
+	if len(notes) != 2 || len(notes[0].ID) != 16 || len(notes[1].ID) != 16 ||
+		notes[0].ID == notes[1].ID || notes[0].Point != 1 || notes[1].Point != 2 {
 		t.Fatalf("migrated comments = %+v", notes)
 	}
-	state, err = m.services.store.ReviewState(m.diff.sessID, m.diff.repoSel)
+	state, err = m.services.store.ReviewState(sessionID, repo)
 	if err != nil || state.Comments[0].ID == "" || state.Comments[1].Point != 2 {
 		t.Fatalf("persisted migration = %+v, %v", state.Comments, err)
 	}
@@ -109,32 +102,30 @@ func TestReviewProgressAndDraftsRestoreFromStore(t *testing.T) {
 	openReviewOn(t, m, "restore", gitRepoWithTwoChangedFiles(t))
 	m.pressDiffKey(t, 'n')
 	m.openAnnotate()
-	m.diff.annInput.SetValue("keep this feedback")
+	typeReviewAnnotation(m, "keep this feedback")
 	m.applyCmd(t, m.saveAnnotation())
 	path := m.currentFileDiff().File.Path
 	m.drainCmds(t, m.toggleReviewed())
-	wantHash := m.diff.reviewed[m.reviewKey()][m.reviewedMarkKey(path)]
+	wantHash := m.review.SavedState().Reviewed[m.reviewedMarkKey(path)]
 	if wantHash == 0 {
 		t.Fatal("reviewed hash was not recorded")
 	}
 
-	key := m.reviewKey()
-	delete(m.diff.reviewed, key)
-	delete(m.diff.annotations, key)
-	delete(m.diff.rounds, key)
-	delete(m.diff.stateLoaded, key)
-	state, err := readReviewState(m.services.store, m.diff.sessID, m.diff.repoSel)
+	snapshot := m.review.Snapshot()
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("review session disappeared")
+	}
+	state, err := readReviewState(m.services.store, snapshot.SessionID, snapshot.RepoSelected)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !m.restoreReviewState(state) {
-		t.Fatal("review state was not restored")
-	}
-	if got := m.diff.reviewed[key][m.reviewedMarkKey(path)]; got != wantHash {
+	seedReviewStateForTest(m, reviewTarget(sess), snapshot.Scope, snapshot.RepoSelected, m.review.SetCopy(), reviewStateFromStore(state))
+	if got := m.review.SavedState().Reviewed[m.reviewedMarkKey(path)]; got != wantHash {
 		t.Fatalf("restored reviewed hash = %d, want %d", got, wantHash)
 	}
-	notes := m.diff.annotations[key]
-	if len(notes) != 1 || notes[0].text != "keep this feedback" || notes[0].round != 0 {
+	notes := m.review.Annotations()
+	if len(notes) != 1 || notes[0].Text != "keep this feedback" || notes[0].Round != 0 {
 		t.Fatalf("restored draft = %+v", notes)
 	}
 }
@@ -148,13 +139,13 @@ func TestRestoreDropsPreScopeReviewedMarks(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	openReviewOn(t, m, "baremarks", gitTestRepo(t))
-	key := m.reviewKey()
-	delete(m.diff.reviewed, key)
-	delete(m.diff.stateLoaded, key)
-	if !m.restoreReviewState(store.ReviewState{Reviewed: map[string]uint64{"main.go": 42}}) {
-		t.Fatal("review state was not restored")
+	snapshot := m.review.Snapshot()
+	sess, ok := m.diffSession()
+	if !ok {
+		t.Fatal("review session disappeared")
 	}
-	if len(m.diff.reviewed[key]) != 0 {
-		t.Fatalf("a bare-path mark survived restore: %v", m.diff.reviewed[key])
+	seedReviewStateForTest(m, reviewTarget(sess), snapshot.Scope, snapshot.RepoSelected, m.review.SetCopy(), uireview.SavedState{Reviewed: map[string]uint64{"main.go": 42}})
+	if marks := m.review.SavedState().Reviewed; len(marks) != 0 {
+		t.Fatalf("a bare-path mark survived restore: %v", marks)
 	}
 }

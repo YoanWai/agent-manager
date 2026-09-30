@@ -2,15 +2,27 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/deps"
-	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// diffSession resolves the session the diff is pinned to.
+type reviewReturnKind uint8
+
+const (
+	reviewReturnList reviewReturnKind = iota
+	reviewReturnFocus
+	reviewReturnAttach
+)
+
+type reviewReturn struct {
+	kind      reviewReturnKind
+	sessionID string
+}
+
 func (m *Model) diffSession() (store.Session, bool) {
 	for _, sess := range m.workspace.sessions {
-		if sess.ID == m.diff.sessID {
+		if sess.ID == m.review.SessionID() {
 			return sess, true
 		}
 	}
@@ -18,43 +30,21 @@ func (m *Model) diffSession() (store.Session, bool) {
 }
 
 func (m *Model) closeDiff() tea.Cmd {
-	reattachID := m.diff.reattachID
-	refocus := m.diff.refocus
-	m.diff.refocus = false
+	ret := m.reviewReturn
+	m.reviewReturn = reviewReturn{}
+	gen := m.review.Close()
 	m.mode = modeList
-	m.diff.active = false
-	m.diff.gen++
-	m.diff.loading = false
-	m.diff.errText = ""
-	m.diff.set = diff.Set{}
-	m.diff.sessID = ""
-	m.diff.fileIdx = 0
-	m.diff.scroll = 0
-	m.diff.cursorLine = 0
-	m.diff.fingerprint = 0
-	m.diff.repoRoots = nil
-	m.diff.repoSel = ""
-	m.diff.worktrees = nil
-	m.diff.fileLoading = nil
-	m.diff.reanchor = nil
-	m.diff.hlPending = hlKey{}
-	m.diff.hl = nil
-	m.diff.annotating = false
-	m.diff.sendConfirm = false
-	m.diff.reattachID = ""
-	if reattachID != "" {
-		return m.reattach(reattachID, m.diff.gen)
-	}
-	if refocus {
+	switch ret.kind {
+	case reviewReturnAttach:
+		return m.reattach(ret.sessionID, gen)
+	case reviewReturnFocus:
 		_, cmd := m.focusSelected()
 		return cmd
+	default:
+		return nil
 	}
-	return nil
 }
 
-// openDiff enters the full-screen review for the selected session,
-// loading its diff. The whole review takes over the screen so the
-// content scrolls freely instead of sharing the narrow sidebar.
 func (m *Model) openDiff() tea.Cmd {
 	if m.services.gitDrv == nil {
 		m.errBar.text = "git not found in PATH, " + deps.Hint("git")
@@ -65,31 +55,38 @@ func (m *Model) openDiff() tea.Cmd {
 		m.errBar.text = "select a session to diff"
 		return nil
 	}
-	if m.diff.scrollByFile == nil {
-		m.diff.scrollByFile = map[string]int{}
-		m.diff.sideBySide = m.defaultSplitLayout()
+	scope := m.storedReviewScope(sess.ID)
+	preferred := ""
+	if picked, ok := m.ledger.pickedRepos[sess.ID]; ok {
+		preferred = picked
+	} else if declared, err := m.services.store.ReviewRepo(sess.ID); err != nil {
+		m.errBar.text = err.Error()
+	} else {
+		preferred = declared
 	}
-	if m.diff.reviewed == nil {
-		m.diff.reviewed = map[string]map[string]uint64{}
-	}
-	if m.diff.annotations == nil {
-		m.diff.annotations = map[string][]annotation{}
-	}
-	if m.diff.rounds == nil {
-		m.diff.rounds = map[string]store.ReviewRound{}
-	}
-	if m.diff.stateLoaded == nil {
-		m.diff.stateLoaded = map[string]bool{}
-	}
-	if m.diff.hl == nil {
-		m.diff.hl = newHLCache()
-	}
-	m.diff.active = true
+	m.reviewReturn = reviewReturn{kind: reviewReturnList}
 	m.mode = modeDiff
 	m.errBar.text = ""
-	// Default to returning to the list; the in-session Ctrl+R path sets this
-	// afterward when review should return to the session instead.
-	m.diff.reattachID = ""
-	m.applyStoredScope(sess.ID)
-	return tea.Batch(m.retargetDiff(sess), m.startStartupTick())
+	request := m.review.Open(reviewTarget(sess), scope, preferred)
+	return tea.Batch(m.reviewLoadCmd(request), m.startStartupTick())
+}
+
+func (m *Model) storedReviewScope(sessionID string) git.Scope {
+	if m.services.store == nil {
+		return git.ScopeUncommitted
+	}
+	stored, err := m.services.store.ReviewScope(sessionID)
+	if err != nil {
+		return git.ScopeUncommitted
+	}
+	switch stored {
+	case "branch":
+		return git.ScopeBranch
+	case "last_commit":
+		return git.ScopeLastCommit
+	case "staged":
+		return git.ScopeStaged
+	default:
+		return git.ScopeUncommitted
+	}
 }

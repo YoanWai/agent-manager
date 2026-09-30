@@ -322,14 +322,15 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, m.scrollCursor(1)
 		}
 	case modeDiff:
-		if m.diff.annotating || m.diff.sendConfirm {
+		state := m.review.Snapshot()
+		if state.Annotating || state.SendConfirm {
 			return m, nil
 		}
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
-			m.moveDiffCursor(-1, m.diffCodeHeight())
+			m.review.Wheel(-1, m.diffCodeHeight())
 		case tea.MouseButtonWheelDown:
-			m.moveDiffCursor(1, m.diffCodeHeight())
+			m.review.Wheel(1, m.diffCodeHeight())
 		}
 	}
 	return m, nil

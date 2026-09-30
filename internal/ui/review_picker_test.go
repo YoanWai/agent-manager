@@ -2,13 +2,16 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/git"
-	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // A session whose cwd is an umbrella of several repos opens review on the
@@ -21,10 +24,10 @@ func TestReviewPicksRepoUnderUmbrella(t *testing.T) {
 	umbrella, dirtyName := umbrellaWithTwoRepos(t)
 	openReviewOn(t, m, "umbrella", umbrella)
 
-	if len(m.diff.repoRoots) != 2 {
-		t.Fatalf("want 2 repos resolved, got %v (err=%q)", m.diff.repoRoots, m.diff.errText)
+	if len(m.review.Snapshot().RepoRoots) != 2 {
+		t.Fatalf("want 2 repos resolved, got %v (err=%q)", m.review.Snapshot().RepoRoots, m.review.Snapshot().Error)
 	}
-	if got := filepath.Base(m.diff.repoSel); got != dirtyName {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != dirtyName {
 		t.Fatalf("want dirty repo %q selected first, got %q", dirtyName, got)
 	}
 	if !strings.Contains(m.viewDiffHeader("umbrella"), dirtyName) {
@@ -32,14 +35,14 @@ func TestReviewPicksRepoUnderUmbrella(t *testing.T) {
 	}
 
 	m.pickRepo(t, "alpha")
-	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "alpha" {
 		t.Fatalf("picker should select the other repo, got %q", got)
 	}
 	if !strings.Contains(m.viewDiffHeader("umbrella"), "alpha") {
 		t.Fatal("header should follow the picked repo")
 	}
 	m.pickRepo(t, dirtyName)
-	if got := filepath.Base(m.diff.repoSel); got != dirtyName {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != dirtyName {
 		t.Fatalf("picker should select back, got %q", got)
 	}
 }
@@ -51,7 +54,7 @@ func TestRepoPickerFiltersAndSelects(t *testing.T) {
 	}
 	umbrella, dirtyName := umbrellaWithTwoRepos(t)
 	openReviewOn(t, m, "picker", umbrella)
-	if filepath.Base(m.diff.repoSel) != dirtyName {
+	if filepath.Base(m.review.Snapshot().RepoSelected) != dirtyName {
 		t.Fatalf("expected to start on %q", dirtyName)
 	}
 
@@ -71,7 +74,7 @@ func TestRepoPickerFiltersAndSelects(t *testing.T) {
 	if m.mode != modeDiff {
 		t.Fatalf("enter should return to review, mode = %v", m.mode)
 	}
-	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "alpha" {
 		t.Fatalf("enter should select alpha, got %q", got)
 	}
 }
@@ -83,7 +86,7 @@ func TestRepoPickerEscapeKeepsRepo(t *testing.T) {
 	}
 	umbrella, dirtyName := umbrellaWithTwoRepos(t)
 	openReviewOn(t, m, "escpick", umbrella)
-	before := m.diff.repoSel
+	before := m.review.Snapshot().RepoSelected
 
 	m.pressDiffKey(t, 'r')
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -91,8 +94,8 @@ func TestRepoPickerEscapeKeepsRepo(t *testing.T) {
 	if m.mode != modeDiff {
 		t.Fatalf("esc should return to review, mode = %v", m.mode)
 	}
-	if m.diff.repoSel != before || filepath.Base(m.diff.repoSel) != dirtyName {
-		t.Fatalf("esc should not change the repo, got %q", m.diff.repoSel)
+	if m.review.Snapshot().RepoSelected != before || filepath.Base(m.review.Snapshot().RepoSelected) != dirtyName {
+		t.Fatalf("esc should not change the repo, got %q", m.review.Snapshot().RepoSelected)
 	}
 }
 
@@ -127,9 +130,9 @@ func TestBranchPickerListsWorktreesAndSwitches(t *testing.T) {
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmdSel)
 	resolved, _ := filepath.EvalSymlinks(outside)
-	sel, _ := filepath.EvalSymlinks(m.diff.repoSel)
+	sel, _ := filepath.EvalSymlinks(m.review.Snapshot().RepoSelected)
 	if sel != resolved {
-		t.Fatalf("enter should switch to the worktree, got %q", m.diff.repoSel)
+		t.Fatalf("enter should switch to the worktree, got %q", m.review.Snapshot().RepoSelected)
 	}
 }
 
@@ -173,8 +176,8 @@ func TestBranchPickerSeedsCursorForSymlinkedWorktree(t *testing.T) {
 	if m.errBar.text != "" {
 		t.Fatalf("declared worktree must not be reported missing, err = %q", m.errBar.text)
 	}
-	if m.diff.repoSel != rawWorktree {
-		t.Fatalf("repoSel should stay the raw declared path, got %q", m.diff.repoSel)
+	if m.review.Snapshot().RepoSelected != rawWorktree {
+		t.Fatalf("repoSel should stay the raw declared path, got %q", m.review.Snapshot().RepoSelected)
 	}
 
 	m.pressDiffKey(t, 'b')
@@ -217,7 +220,7 @@ func TestReviewOpensOnDeclaredRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.drainCmds(t, m.openDiff())
-	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "alpha" {
 		t.Fatalf("review should open on the declared repo, got %q (ranking prefers %q)", got, dirtyName)
 	}
 }
@@ -240,12 +243,12 @@ func TestHandPickedRepoOutlivesReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.drainCmds(t, m.openDiff())
-	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "alpha" {
 		t.Fatalf("review should open on the declared repo, got %q", got)
 	}
 
 	m.pickRepo(t, "bravo")
-	if got := filepath.Base(m.diff.repoSel); got != "bravo" {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "bravo" {
 		t.Fatalf("picking bravo should load it, got %q", got)
 	}
 
@@ -256,7 +259,7 @@ func TestHandPickedRepoOutlivesReopen(t *testing.T) {
 		t.Fatalf("esc should leave review, mode = %v", m.mode)
 	}
 	m.drainCmds(t, m.openDiff())
-	if got := filepath.Base(m.diff.repoSel); got != "bravo" {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "bravo" {
 		t.Fatalf("the hand-picked repo should win over the declared one on reopen, got %q", got)
 	}
 }
@@ -281,7 +284,7 @@ func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 	}
 	m.drainCmds(t, m.openDiff())
 	m.pickRepo(t, "bravo")
-	if got := filepath.Base(m.diff.repoSel); got != "bravo" {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "bravo" {
 		t.Fatalf("picking bravo should load it, got %q", got)
 	}
 
@@ -289,8 +292,11 @@ func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.errBar.text = ""
-	m.diff.gen++
-	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false))
+	request, accepted := m.review.SelectRepo(m.review.Snapshot().RepoSelected)
+	if !accepted {
+		t.Fatal("repo reload was rejected")
+	}
+	m.drainCmds(t, m.reviewLoadCmd(request))
 
 	if !strings.Contains(m.errBar.text, "bravo") {
 		t.Fatalf("a vanished hand-picked repo must be surfaced, got err %q", m.errBar.text)
@@ -306,7 +312,7 @@ func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 	*m = *updated.(*Model)
 	m.drainCmds(t, cmd)
 	m.drainCmds(t, m.openDiff())
-	if got := filepath.Base(m.diff.repoSel); got != "alpha" {
+	if got := filepath.Base(m.review.Snapshot().RepoSelected); got != "alpha" {
 		t.Fatalf("reopening should land on the declared repo, got %q", got)
 	}
 }
@@ -338,12 +344,12 @@ func TestDeclaredWorktreeOutsideCwdIsAccepted(t *testing.T) {
 		t.Fatalf("declared worktree must not be reported missing, err = %q", m.errBar.text)
 	}
 	resolved, _ := filepath.EvalSymlinks(outside)
-	sel, _ := filepath.EvalSymlinks(m.diff.repoSel)
+	sel, _ := filepath.EvalSymlinks(m.review.Snapshot().RepoSelected)
 	if sel != resolved {
-		t.Fatalf("review should open on the declared worktree, got %q", m.diff.repoSel)
+		t.Fatalf("review should open on the declared worktree, got %q", m.review.Snapshot().RepoSelected)
 	}
 	found := false
-	for _, root := range m.diff.repoRoots {
+	for _, root := range m.review.Snapshot().RepoRoots {
 		if r, _ := filepath.EvalSymlinks(root); r == resolved {
 			found = true
 		}
@@ -378,7 +384,7 @@ func TestDeclaredRepoOutsideCwdIsReported(t *testing.T) {
 	if !strings.Contains(m.viewDiffStatus(), m.errBar.text) {
 		t.Fatalf("review status should show %q", m.errBar.text)
 	}
-	if len(m.diff.repoRoots) < 2 {
+	if len(m.review.Snapshot().RepoRoots) < 2 {
 		t.Fatal("the picker must stay usable so the user can recover")
 	}
 }
@@ -392,7 +398,7 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 	}
 	umbrella, _ := umbrellaWithTwoRepos(t)
 	openReviewOn(t, m, "gone", umbrella)
-	before := m.diff.repoSel
+	before := m.review.Snapshot().RepoSelected
 
 	m.pressDiffKey(t, 'r')
 	if m.mode != modeRepoPick {
@@ -412,8 +418,8 @@ func TestRepoPickerReportsMissingSession(t *testing.T) {
 	if m.errBar.text == "" {
 		t.Fatal("picking a repo for a missing session must surface an error")
 	}
-	if m.diff.repoSel != before {
-		t.Fatalf("repo should not change when the session is gone, got %q", m.diff.repoSel)
+	if m.review.Snapshot().RepoSelected != before {
+		t.Fatalf("repo should not change when the session is gone, got %q", m.review.Snapshot().RepoSelected)
 	}
 	if !strings.Contains(m.viewDiffStatus(), m.errBar.text) {
 		t.Fatalf("review status should show the error %q", m.errBar.text)
@@ -432,13 +438,15 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	umbrella, _ := umbrellaWithTwoRepos(t)
 	openReviewOn(t, m, "shrink", umbrella)
 
-	realRoots := append([]string(nil), m.diff.repoRoots...)
+	realRoots := append([]string(nil), m.review.Snapshot().RepoRoots...)
 	if len(realRoots) != 2 {
 		t.Fatalf("want 2 real repos, got %v", realRoots)
 	}
+	expanded := append([]string(nil), realRoots...)
 	for i := len(realRoots); i < 20; i++ {
-		m.diff.repoRoots = append(m.diff.repoRoots, filepath.Join(umbrella, fmt.Sprintf("repo-%02d", i)))
+		expanded = append(expanded, filepath.Join(umbrella, fmt.Sprintf("repo-%02d", i)))
 	}
+	replaceReviewRootsForTest(m, expanded, m.review.Snapshot().RepoSelected)
 
 	m.pressDiffKey(t, 'r')
 	if m.mode != modeRepoPick {
@@ -451,7 +459,7 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	onScreen := m.filteredRows()[m.repoPick.cursor].root
 
 	// A reload lands carrying only the repos that still exist, re-ranked.
-	m.diff.repoRoots = []string{realRoots[1], realRoots[0]}
+	replaceReviewRootsForTest(m, []string{realRoots[1], realRoots[0]}, m.review.Snapshot().RepoSelected)
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
@@ -463,19 +471,21 @@ func TestRepoPickerSurvivesShrinkingRootList(t *testing.T) {
 	if m.repoPick.cursor >= len(m.repoPick.rows) {
 		t.Fatalf("cursor should stay inside the snapshot, got %d", m.repoPick.cursor)
 	}
-	if m.diff.repoSel != onScreen {
-		t.Fatalf("enter should load the repo on the cursor row %q, got %q", onScreen, m.diff.repoSel)
+	if m.review.Snapshot().RepoSelected != onScreen {
+		t.Fatalf("enter should load the repo on the cursor row %q, got %q", onScreen, m.review.Snapshot().RepoSelected)
 	}
 }
 
 func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 	m := buildModel(t)
 	m.width, m.height = 80, 24
+	roots := make([]string, 0, 20)
 	for i := 0; i < 20; i++ {
-		m.diff.repoRoots = append(m.diff.repoRoots,
+		roots = append(roots,
 			fmt.Sprintf("/home/someone/very/long/parent/path/for/wrapping/umbrella/repo-%02d", i))
 	}
-	m.diff.repoSel = m.diff.repoRoots[0]
+	seedReviewForTest(m, uireview.Target{ID: "picker"}, git.ScopeUncommitted, roots[0], diff.Set{}, false)
+	replaceReviewRootsForTest(m, roots, roots[0])
 	m.openRepoPick()
 
 	view := m.viewRepoPick()
@@ -486,16 +496,16 @@ func TestRepoPickerFitsTerminalHeight(t *testing.T) {
 		t.Fatal("the cursor row should be visible at the top of the list")
 	}
 	shown := strings.Count(view, "repo-")
-	if shown == 0 || shown >= len(m.diff.repoRoots) {
-		t.Fatalf("expected a windowed subset of the repos, %d of %d rendered", shown, len(m.diff.repoRoots))
+	if shown == 0 || shown >= len(m.review.Snapshot().RepoRoots) {
+		t.Fatalf("expected a windowed subset of the repos, %d of %d rendered", shown, len(m.review.Snapshot().RepoRoots))
 	}
-	if want := fmt.Sprintf("+%d more", len(m.diff.repoRoots)-shown); !strings.Contains(view, want) {
+	if want := fmt.Sprintf("+%d more", len(m.review.Snapshot().RepoRoots)-shown); !strings.Contains(view, want) {
 		t.Fatalf("hidden count should match the %d rows actually rendered, want %q in view", shown, want)
 	}
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	*m = *updated.(*Model)
-	if m.repoPick.cursor != len(m.diff.repoRoots)-1 {
+	if m.repoPick.cursor != len(m.review.Snapshot().RepoRoots)-1 {
 		t.Fatalf("up from the top should wrap to the last repo, cursor = %d", m.repoPick.cursor)
 	}
 	view = m.viewRepoPick()
@@ -520,7 +530,7 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	if !ok {
 		t.Fatal("no diff session")
 	}
-	if m.diff.scope == git.ScopeBranch {
+	if m.review.Snapshot().Scope == git.ScopeBranch {
 		t.Fatal("precondition: scope should start off vs target so the switch is observable")
 	}
 
@@ -540,10 +550,10 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	if m.mode != modeDiff {
 		t.Fatalf("enter should return to review, mode = %v", m.mode)
 	}
-	if m.diff.scope != git.ScopeBranch {
-		t.Errorf("picking a base should switch scope to vs target, got %v", m.diff.scope)
+	if m.review.Snapshot().Scope != git.ScopeBranch {
+		t.Errorf("picking a base should switch scope to vs target, got %v", m.review.Snapshot().Scope)
 	}
-	got, err := m.services.store.ReviewBase(sess.ID, m.diff.repoSel)
+	got, err := m.services.store.ReviewBase(sess.ID, m.review.Snapshot().RepoSelected)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,7 +566,7 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 	if err := m.services.store.SetReviewBase(sess.ID, repoB, "main"); err != nil {
 		t.Fatal(err)
 	}
-	baseA, err := m.services.store.ReviewBase(sess.ID, m.diff.repoSel)
+	baseA, err := m.services.store.ReviewBase(sess.ID, m.review.Snapshot().RepoSelected)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -576,7 +586,7 @@ func TestBasePickerPersistsSwitchesScopeAndClears(t *testing.T) {
 		t.Fatalf("B should reopen the base picker, mode = %v", m.mode)
 	}
 	m.typeAndEnter(t, "auto")
-	cleared, err := m.services.store.ReviewBase(sess.ID, m.diff.repoSel)
+	cleared, err := m.services.store.ReviewBase(sess.ID, m.review.Snapshot().RepoSelected)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,17 +611,21 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 		t.Fatal("no diff session")
 	}
 
-	if err := m.services.store.SetReviewBase(sess.ID, m.diff.repoSel, "gone-ref"); err != nil {
+	if err := m.services.store.SetReviewBase(sess.ID, m.review.Snapshot().RepoSelected, "gone-ref"); err != nil {
 		t.Fatal(err)
 	}
-	m.diff.scope = git.ScopeBranch
-	m.diff.gen++
-	m.drainCmds(t, m.diffLoadCmd(sess, m.diff.scope, m.diff.gen, m.diff.repoSel, false))
-	if m.diff.errText == "" {
+	for m.review.Snapshot().Scope != git.ScopeBranch {
+		request, accepted := m.review.CycleScope()
+		if !accepted {
+			t.Fatal("branch scope request was rejected")
+		}
+		m.drainCmds(t, m.reviewLoadCmd(request))
+	}
+	if m.review.Snapshot().Error == "" {
 		t.Fatal("an unresolvable stored base must error the load")
 	}
-	if m.diff.set.Repo.Root != "" {
-		t.Fatalf("the errored load should clear the diff set, root = %q", m.diff.set.Repo.Root)
+	if m.review.Snapshot().Set.Repo.Root != "" {
+		t.Fatalf("the errored load should clear the diff set, root = %q", m.review.Snapshot().Set.Repo.Root)
 	}
 
 	m.drainCmds(t, m.openBasePick())
@@ -627,17 +641,17 @@ func TestInvalidStoredBaseStillOpensPickerAndRecovers(t *testing.T) {
 	}
 
 	m.typeAndEnter(t, "auto")
-	base, err := m.services.store.ReviewBase(sess.ID, m.diff.repoSel)
+	base, err := m.services.store.ReviewBase(sess.ID, m.review.Snapshot().RepoSelected)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if base != "" {
 		t.Fatalf("auto should clear the bad base, got %q", base)
 	}
-	if m.diff.errText != "" {
-		t.Fatalf("clearing the base should let the reload succeed, err = %q", m.diff.errText)
+	if m.review.Snapshot().Error != "" {
+		t.Fatalf("clearing the base should let the reload succeed, err = %q", m.review.Snapshot().Error)
 	}
-	if m.diff.set.Repo.Root == "" {
+	if m.review.Snapshot().Set.Repo.Root == "" {
 		t.Fatal("the recovery reload should rebuild the diff set")
 	}
 }

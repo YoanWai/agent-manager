@@ -6,8 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -29,12 +32,12 @@ func TestReviewHelpOnlyShowsReviewBindingsAndSetupGuidance(t *testing.T) {
 		width:  120,
 		height: 30,
 		mode:   modeDiff,
-		diff:   diffState{active: true},
 		services: services{
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),
 		},
 	}
+	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, true)
 	m.openHelp()
 	frame := ansi.Strip(m.View())
 	for _, want := range []string{"Review keys", "Tell your agent what to review", "comment on the line"} {
