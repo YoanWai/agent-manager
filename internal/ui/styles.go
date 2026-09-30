@@ -136,26 +136,6 @@ func statusColor(s string) lipgloss.Color {
 	}
 }
 
-// statusGlyph is one geometric mark per state, all from the same weight
-// family so a column of them reads as a single scale rather than a mix of
-// punctuation. Shape carries the state; color reinforces it.
-func statusGlyph(s string) string {
-	switch s {
-	case status.Working:
-		return "◐"
-	case status.Starting:
-		return "◌"
-	case status.Waiting:
-		return "◆"
-	case status.Finished:
-		return "●"
-	case status.Errored, status.Dead:
-		return "✕"
-	default:
-		return "○"
-	}
-}
-
 // statusLabel is the human text for a status; most match the raw value, but
 // the transient launch state reads better spelled out.
 func statusLabel(s string) string {
@@ -245,7 +225,7 @@ func pill(text string, fg lipgloss.Color) string {
 // inboxBadge marks a session another agent has messages waiting for, in
 // the manager's own accent so it cannot be read as a state the agent is in.
 func inboxBadge(count int) string {
-	return inboxBadgeStyle.Render("✉" + strconv.Itoa(count))
+	return inboxBadgeStyle.Render(inboxGlyph + strconv.Itoa(count))
 }
 
 // keyPill renders a chip with the key that changes it dimmed in front, so

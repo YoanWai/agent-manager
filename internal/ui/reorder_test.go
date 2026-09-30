@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -54,6 +55,98 @@ func TestEveryMovableRowPaintsItsHandle(t *testing.T) {
 		if !strings.Contains(row, reorderGrip+" "+name) {
 			t.Fatalf("%s should carry the handle right before its name, got %q", name, row)
 		}
+	}
+}
+
+func TestHiddenHandlesCannotBeCreatedByRowText(t *testing.T) {
+	for _, mode := range []string{"mouse off", "rename session", "rename group"} {
+		t.Run(mode, func(t *testing.T) {
+			m := shotModel()
+			entry := m.rows[0]
+			entry.sess.Name = "notes " + reorderGrip + " = λ 界"
+			if mode == "rename group" {
+				entry = treeRow{isGroup: true, group: entry.sess.Name}
+			}
+			m.rows = []treeRow{entry}
+			m.cursor = 0
+			if mode != "mouse off" {
+				m.mode = modeRename
+				m.rename = renameTarget{sessID: entry.sess.ID, isGroup: entry.isGroup, path: entry.group, input: textField("name", 60)}
+				m.rename.input.SetValue("rename " + reorderGrip + " = λ 界")
+			} else {
+				m.mouseDisabled = true
+			}
+			m.entryLines(m.rows, 0, 80, 20)
+			if len(m.handleX) != 0 {
+				t.Fatalf("row text created a hidden drag target: %v", m.handleX)
+			}
+		})
+	}
+}
+
+func TestHandleGeometrySurvivesNestingAndClipping(t *testing.T) {
+	for _, comfortable := range []bool{false, true} {
+		for _, group := range []bool{false, true} {
+			for _, depth := range []int{0, 1, 2, 8} {
+				for _, width := range []int{8, 9, 10, 11, 12, 16, 24, 28, 44, 80} {
+					t.Run(fmt.Sprintf("comfortable=%t/group=%t/depth=%d/width=%d", comfortable, group, depth, width), func(t *testing.T) {
+						m := shotModel()
+						m.comfortableRows = comfortable
+						entry := m.rows[0]
+						entry.depth = depth
+						entry.sess.Name = "界e\u0301=notes " + reorderGrip
+						if group {
+							entry.isGroup, entry.group = true, "界e\u0301=group "+reorderGrip
+						}
+						m.rows, m.cursor = []treeRow{entry}, 0
+						lines := m.entryLines(m.rows, 0, width, 20)
+						x, hasHandle := m.handleX[rowKey(entry)]
+						head := ansi.Strip(lines[0].text)
+						if hasHandle {
+							if got := ansi.Cut(head, x-1, x); got != reorderGrip {
+								t.Fatalf("drag target at %d points to %q in %q", x, got, head)
+							}
+							if x >= width-menuButtonWidth {
+								t.Fatalf("drag target %d overlaps the menu in width %d", x, width)
+							}
+						} else if width == 80 {
+							t.Fatalf("wide row lost its handle: %q", head)
+						}
+						for _, line := range lines {
+							if got := ansi.StringWidth(line.text); got != width {
+								t.Fatalf("row uses %d cells, want %d: %q", got, width, ansi.Strip(line.text))
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+func TestNamesContainingTheHandleStillSelectAndDrag(t *testing.T) {
+	m := buildModel(t)
+	name := "界e\u0301 " + reorderGrip + " notes"
+	createSession(t, m, name, t.TempDir(), "")
+	createSession(t, m, "other", t.TempDir(), "")
+	m.View()
+	line := paintedRailLines(t, m, name)[0]
+	y0, _ := m.bodyYRange()
+	frame := strings.Split(ansi.Strip(m.View()), "\n")
+	head := frame[y0+line]
+	nameAt := strings.Index(head, name)
+	if nameAt < 0 {
+		t.Fatalf("row lost its Unicode name: %q", head)
+	}
+	x := ansi.StringWidth(head[:nameAt]) + ansi.StringWidth("界e\u0301 ")
+	m.handleMouse(tea.MouseMsg{X: x, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.reorder.active {
+		t.Fatal("clicking punctuation in the name lifted the row")
+	}
+	m.handleMouse(tea.MouseMsg{X: x, Y: y0 + line, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft})
+	m = liftByHandle(t, m, name)
+	if m.reorder.key != rowKey(sessionRow(t, m, name)) {
+		t.Fatalf("the real handle lifted %s", m.reorder.key)
 	}
 }
 

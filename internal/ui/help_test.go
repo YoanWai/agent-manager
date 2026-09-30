@@ -95,7 +95,7 @@ func TestHelpNamesTheInboxBadgeOnASessionRow(t *testing.T) {
 			continue
 		}
 		for _, row := range section.rows {
-			if strings.Contains(row[0], "✉") && strings.Contains(row[1], "another agent") {
+			if strings.Contains(row[0], inboxGlyph) && strings.Contains(row[1], "another agent") {
 				return
 			}
 		}

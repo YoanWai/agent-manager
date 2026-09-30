@@ -187,9 +187,12 @@ func paint(s string, width int, bg string) string {
 	}
 	fill := bgSeq(bg)
 	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+fill)
-	if w := ansi.StringWidth(s); w > width {
+	w := ansi.StringWidth(s)
+	if w > width {
 		s = ansi.Truncate(s, width, "…")
-	} else if w < width {
+		w = ansi.StringWidth(s)
+	}
+	if w < width {
 		s += strings.Repeat(" ", width-w)
 	}
 	return fill + s + "\x1b[0m"
@@ -199,9 +202,12 @@ func paint(s string, width int, bg string) string {
 // background showing through. Captured agent output is drawn this way so a
 // session's CLI looks exactly as it does inside the session.
 func plain(s string, width int) string {
-	if w := ansi.StringWidth(s); w > width {
+	w := ansi.StringWidth(s)
+	if w > width {
 		s = ansi.Truncate(s, width, "")
-	} else if w < width {
+		w = ansi.StringWidth(s)
+	}
+	if w < width {
 		s += strings.Repeat(" ", width-w)
 	}
 	return "\x1b[0m" + s + "\x1b[0m"

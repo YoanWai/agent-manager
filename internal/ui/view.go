@@ -174,7 +174,7 @@ func (m *Model) statusLine() string {
 	// Errors outrank the focus notices: a scrolled or focused pane must
 	// not hide a failure report.
 	case m.mode == modeFocus && m.errBar.text != "":
-		return m.statusMessage("✕", "●", "▲")
+		return m.statusMessage(erroredGlyph, finishedGlyph, "▲")
 	case m.scrolledBack():
 		return keyStyle.Render("scrolled ") +
 			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", m.focusScroll))
@@ -188,9 +188,9 @@ func (m *Model) statusLine() string {
 		}
 		return keyStyle.Render("resize ") + subtleStyle.Render(hint)
 	case m.errBar.text != "":
-		return m.statusMessage("✕", "●", "▲")
+		return m.statusMessage(erroredGlyph, finishedGlyph, "▲")
 	case m.diff.notice != "":
-		return doneStyle.Render("● " + escapeControlsInline(m.diff.notice))
+		return doneStyle.Render(finishedGlyph + " " + escapeControlsInline(m.diff.notice))
 	default:
 		return ""
 	}
@@ -258,7 +258,7 @@ func (m *Model) renamingRow(entry treeRow) bool {
 // renameRowInput renders the inline name editor in place of the row's
 // label, keeping the row's glyph so the edit reads in context.
 func (m *Model) renameRowInput(entry treeRow, width int) string {
-	lead := subtleStyle.Render("▾")
+	lead := subtleStyle.Render(m.groupGlyph(entry))
 	if !entry.isGroup {
 		lead = m.sessionGlyph(entry.sess)
 	}

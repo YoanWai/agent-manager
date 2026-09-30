@@ -42,7 +42,7 @@ Instead of hunting through terminal tabs to see which agent is done and which is
 
 Press `f` on a session to continue its conversation in a separate named fork.
 
-The mouse works across the whole manager. The wheel moves the cursor, a click on a session focuses it, and a click on its row or the mouse back button brings you back. Drag a row by its `⠿` handle to reorder it or move it into another group, and the `[…]` at the end of every row opens its actions. The divider between the list and the preview drags, and a click on the messages card opens it. In a focused pane a drag selects and copies text, and a click on a link opens it in your browser. Settings has a mouse toggle for terminals where you want native selection back.
+The mouse works across the whole manager. The wheel moves the cursor, a click on a session focuses it, and a click on its row or the mouse back button brings you back. Drag a row by its `=` handle to reorder it or move it into another group, and the `[…]` at the end of every row opens its actions. The divider between the list and the preview drags, and a click on the messages card opens it. In a focused pane a drag selects and copies text, and a click on a link opens it in your browser. Settings has a mouse toggle for terminals where you want native selection back.
 
 ![the mouse in the list: the wheel moves the cursor, a click focuses a session, a click on its row comes back, the ⠿ handle drags a row within its group and into another one, and […] opens the row's actions](docs/demo-mouse.gif)
 
@@ -96,7 +96,7 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `space` | Quick prompt: answer the selected session, or spawn an agent in the selected group |
 | `enter` | Focus the session in place; keys go to the agent while the list stays |
 | click / double click | Focus a session / fold or unfold a group. The full-screen layout selects on a click and focuses on a double click |
-| drag `⠿` | Reorder a row, drop it into another group, or nest a terminal under an agent |
+| drag `=` | Reorder a row, drop it into another group, or nest a terminal under an agent |
 | `[…]` / right click | The row's actions: attach, prompt, review, fork, rename, move, archive, kill, delete and more |
 | click its row / mouse back | Focused: back to the list. A click on another row focuses that one |
 | `→` / `←` | Step in and out: `→` focuses the session or opens the group, `←` closes the group and, at the start of a focused agent's prompt, comes back to the list. In beta, and Settings can turn the pair off |

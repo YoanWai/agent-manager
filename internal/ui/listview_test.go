@@ -319,7 +319,7 @@ func TestComfortableGroupRowStacks(t *testing.T) {
 
 	lines := railText(t, m)
 	head := lineWith(t, lines, "fleet")
-	if !strings.Contains(lines[head], "●") && !strings.Contains(lines[head], "○") && !strings.Contains(lines[head], "◐") {
+	if !strings.Contains(lines[head], finishedGlyph) && !strings.Contains(lines[head], idleGlyph) && !strings.Contains(lines[head], workingGlyph) {
 		t.Fatalf("group row should carry its dots inline: %q", lines[head])
 	}
 }
@@ -401,11 +401,11 @@ func TestInboxBadgeRidesTheRowWithMessages(t *testing.T) {
 
 		rows := railText(t, m)
 		badged := lineWith(t, rows, "add-rate-limiting")
-		if !strings.Contains(rows[badged], "✉2") {
+		if !strings.Contains(rows[badged], inboxGlyph+"2") {
 			t.Fatalf("comfortable=%v: row lost its badge: %q", comfortable, rows[badged])
 		}
 		for i, row := range rows {
-			if i != badged && strings.Contains(row, "✉") {
+			if i != badged && strings.Contains(row, inboxGlyph) {
 				t.Errorf("comfortable=%v: line %d wears a badge it has no messages for: %q",
 					comfortable, i, row)
 			}
@@ -424,14 +424,14 @@ func TestRowsWithoutMessagesRenderUnchanged(t *testing.T) {
 	if len(bare) != len(marked) {
 		t.Fatalf("badge changed the row count: %d then %d", len(bare), len(marked))
 	}
-	at := lineWith(t, marked, "✉2")
+	at := lineWith(t, marked, inboxGlyph+"2")
 	for i := range bare {
 		if i != at && bare[i] != marked[i] {
 			t.Errorf("line %d moved for a badge it does not carry:\n%q\n%q", i, bare[i], marked[i])
 		}
 	}
 	for _, row := range bare {
-		if strings.Contains(row, "✉") {
+		if strings.Contains(row, inboxGlyph) {
 			t.Errorf("a rail with no queued messages drew a badge: %q", row)
 		}
 	}
@@ -451,7 +451,7 @@ func TestInboxBadgeOutlivesTheRowMeta(t *testing.T) {
 			}
 		}
 		rows := railTextAt(m, width)
-		row := rows[lineWith(t, rows, "✉2")]
+		row := rows[lineWith(t, rows, inboxGlyph+"2")]
 		name := "add-rate-limiting"
 		if width < 36 {
 			name = "add-rate"
@@ -464,7 +464,7 @@ func TestInboxBadgeOutlivesTheRowMeta(t *testing.T) {
 	m := shotModel()
 	m.queuedMessages = map[string]int{"add-rate-limiting": 2}
 	rows := railTextAt(m, 30)
-	row := rows[lineWith(t, rows, "✉2")]
+	row := rows[lineWith(t, rows, inboxGlyph+"2")]
 	if strings.Contains(row, "ago") {
 		t.Fatalf("30 columns still fit the age, so the row shed nothing: %q", row)
 	}
@@ -570,7 +570,7 @@ func TestRootRowIsDimmerThanNamedGroups(t *testing.T) {
 	if len(m.rows) == 0 {
 		t.Fatal("no rows, want root")
 	}
-	root := m.renderTreeRow(m.rows[0], false, 40, 0, panelHex())
+	root := m.renderTreeRow(m.rows[0], false, 40, 0, panelHex()).text
 	dimmed := strings.TrimPrefix(fgSeq(mix(current.Accent2, current.Subtle, 0.5)), "\x1b[")
 	if !strings.Contains(root, dimmed) {
 		t.Fatalf("root is not painted in the dimmed tone: %q", root)
@@ -669,8 +669,8 @@ func TestSelectedRowMetaUsesBrightNotSubtle(t *testing.T) {
 			CreatedAt: time.Now().Add(-3 * time.Hour),
 		},
 	}
-	selected := m.renderTreeRow(entry, true, 80, 0, selectedHex())
-	unselected := m.renderTreeRow(entry, false, 80, 0, panelHex())
+	selected := m.renderTreeRow(entry, true, 80, 0, selectedHex()).text
+	unselected := m.renderTreeRow(entry, false, 80, 0, panelHex()).text
 
 	if !strings.Contains(selected, "\x1b[") {
 		t.Fatal("selected row has no SGR; color profile not active")
@@ -707,15 +707,15 @@ func TestSessionRowCarriesTheCapturedConversationIDInMeta(t *testing.T) {
 		CreatedAt: time.Now().Add(-3 * time.Hour),
 	}}
 
-	row := ansi.Strip(comfortable.renderTreeRow(withID, false, 120, 0, panelHex()))
+	row := ansi.Strip(comfortable.renderTreeRow(withID, false, 120, 0, panelHex()).text)
 	if !strings.Contains(row, conversation) {
 		t.Fatalf("the comfortable row should carry the captured id in its meta:\n%s", row)
 	}
-	row = ansi.Strip(compact.renderTreeRow(withID, false, 120, 0, panelHex()))
+	row = ansi.Strip(compact.renderTreeRow(withID, false, 120, 0, panelHex()).text)
 	if strings.Contains(row, conversation) {
 		t.Fatalf("the compact row has no room for the id:\n%s", row)
 	}
-	row = ansi.Strip(comfortable.renderTreeRow(withoutID, false, 120, 0, panelHex()))
+	row = ansi.Strip(comfortable.renderTreeRow(withoutID, false, 120, 0, panelHex()).text)
 	if strings.Contains(row, conversation) {
 		t.Fatalf("a session with no captured id must not show one:\n%s", row)
 	}
@@ -768,7 +768,7 @@ func TestSessionRowStandsInForAnAwaitedName(t *testing.T) {
 			if tc.awaited {
 				m.awaitedRenames = map[string]awaitedRename{tc.sess.ID: {generated: generated}}
 			}
-			row := ansi.Strip(m.renderTreeRow(treeRow{sess: tc.sess}, false, 80, 0, panelHex()))
+			row := ansi.Strip(m.renderTreeRow(treeRow{sess: tc.sess}, false, 80, 0, panelHex()).text)
 			if !strings.Contains(row, tc.want) {
 				t.Fatalf("row is missing %q:\n%s", tc.want, row)
 			}
@@ -955,7 +955,7 @@ func TestInboxBadgeOutlivesTheNameAndTheFocusBadge(t *testing.T) {
 		m.queuedMessages = map[string]int{"x": 2}
 
 		rows := railTextAt(m, width)
-		row := rows[lineWith(t, rows, "✉2")]
+		row := rows[lineWith(t, rows, inboxGlyph+"2")]
 		if strings.Contains(row, "FOCUS") {
 			t.Errorf("width %d: the focus badge outlived the name: %q", width, row)
 		}
@@ -1123,7 +1123,7 @@ func TestPreviewLoaderIsCenteredAndMovesOnThePreviewTick(t *testing.T) {
 	if len(painted) != 6 || painted[0] != 3 || painted[5] != 8 {
 		t.Fatalf("loader rows = %v, want the middle of a 12-row preview", painted)
 	}
-	if strings.Count(first, "●") != 1 || strings.Count(first, "•") != 1 {
+	if strings.Count(first, workingGlyph) != 1 || strings.Count(first, "•") != 1 {
 		t.Fatalf("loader should show one head and one trailing dot, got %q", first)
 	}
 	for _, row := range painted {
@@ -1283,7 +1283,7 @@ func TestRowHeightsFollowDensity(t *testing.T) {
 	if got := m.entryHeight(m.rows[2]); got != 1 {
 		t.Fatalf("group entry height = %d, want 1", got)
 	}
-	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()).text)
 	if len(lines) != 1 {
 		t.Fatalf("compact row painted %d lines, want 1", len(lines))
 	}
@@ -1301,7 +1301,7 @@ func TestRowHeightsFollowDensity(t *testing.T) {
 	if got := m.entryHeight(row); got != 3 {
 		t.Fatalf("comfortable session entry height = %d, want 3", got)
 	}
-	lines = splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	lines = splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()).text)
 	if len(lines) != 3 {
 		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
 	}
@@ -1327,7 +1327,7 @@ func TestRowHeightsFollowDensity(t *testing.T) {
 	if got := m.entryHeight(row); got != 1 {
 		t.Fatalf("split compact session entry height = %d, want 1", got)
 	}
-	narrow := splitLines(m.renderTreeRow(row, false, 60, 4, panelHex()))
+	narrow := splitLines(m.renderTreeRow(row, false, 60, 4, panelHex()).text)
 	if len(narrow) != 1 {
 		t.Fatalf("split compact row painted %d lines, want 1", len(narrow))
 	}
@@ -1343,7 +1343,7 @@ func TestRowWaitingReplyWearsTheStateColor(t *testing.T) {
 	m.comfortableRows = true
 	question := "Allow edits to router.go?"
 	m.paneLines = map[string]string{"db-migrations": question}
-	lines := splitLines(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()))
+	lines := splitLines(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()).text)
 	if len(lines) != 3 {
 		t.Fatalf("waiting row painted %d lines, want 3", len(lines))
 	}
@@ -1359,12 +1359,12 @@ func TestRowQuotesEveryStateAndDashesWhenSilent(t *testing.T) {
 	m.fullLayout = true
 	m.comfortableRows = true
 	m.paneLines = map[string]string{"notes": "All quiet, nothing queued."}
-	lines := splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
+	lines := splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()).text)
 	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "↳ All quiet, nothing queued." {
 		t.Fatalf("idle reply line = %q, want the last message", reply)
 	}
 	m.paneLines = nil
-	lines = splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()))
+	lines = splitLines(m.renderTreeRow(m.rows[1], false, m.width-1, 1, panelHex()).text)
 	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "-" {
 		t.Fatalf("silent idle reply line = %q, want a dash", reply)
 	}
@@ -1377,7 +1377,7 @@ func TestRowLongPromptTruncates(t *testing.T) {
 	width := 80
 	row := m.rows[1]
 	row.sess.LastPrompt = strings.Repeat("triage the flaky integration suite and report ", 10)
-	rendered := m.renderTreeRow(row, false, width, 1, panelHex())
+	rendered := m.renderTreeRow(row, false, width, 1, panelHex()).text
 	for _, line := range splitLines(rendered) {
 		if got := ansi.StringWidth(line); got > width {
 			t.Fatalf("row line is %d wide, row is %d:\n%s", got, width, ansi.Strip(line))
@@ -1424,7 +1424,7 @@ func TestCompactCellIsStatePicked(t *testing.T) {
 	}
 	idle := m.rows[1]
 	idle.sess.LastPrompt = "verify the staging deploy is healthy"
-	line := ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()))
+	line := ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()).text)
 	if !strings.Contains(line, "↳ All quiet, nothing queued.") {
 		t.Fatalf("an idle session that has spoken should quote its reply:\n%s", line)
 	}
@@ -1433,12 +1433,12 @@ func TestCompactCellIsStatePicked(t *testing.T) {
 	}
 
 	m.paneLines = map[string]string{"db-migrations": "Allow edits to router.go?"}
-	line = ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()))
+	line = ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()).text)
 	if !strings.Contains(line, "❯ verify the staging deploy is healthy") {
 		t.Fatalf("a silent idle session should name its task:\n%s", line)
 	}
 
-	line = ansi.Strip(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()))
+	line = ansi.Strip(m.renderTreeRow(m.rows[0], false, m.width-1, 0, panelHex()).text)
 	if !strings.Contains(line, "↳ Allow edits to router.go?") {
 		t.Fatalf("waiting compact row should quote its question:\n%s", line)
 	}
@@ -1451,7 +1451,7 @@ func TestArchivedRowReadsDead(t *testing.T) {
 	m.fullLayout = true
 	row := m.rows[4]
 	row.sess.Archived = true
-	line := ansi.Strip(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
+	line := ansi.Strip(m.renderTreeRow(row, false, m.width-1, 4, panelHex()).text)
 	if !strings.Contains(line, statusLabel(status.Dead)) {
 		t.Fatalf("archived row should read dead:\n%s", line)
 	}
@@ -1473,7 +1473,7 @@ func TestShellRowSkipsThePromptLine(t *testing.T) {
 	if got := m.entryHeight(shell); got != 2 {
 		t.Fatalf("comfortable shell entry height = %d, want 2", got)
 	}
-	lines := splitLines(m.renderTreeRow(shell, false, m.width-1, 4, panelHex()))
+	lines := splitLines(m.renderTreeRow(shell, false, m.width-1, 4, panelHex()).text)
 	if len(lines) != 2 {
 		t.Fatalf("comfortable shell row painted %d lines, want 2:\n%s", len(lines), strings.Join(lines, "\n"))
 	}
@@ -1489,7 +1489,7 @@ func TestShellRowSkipsThePromptLine(t *testing.T) {
 	if got := m.entryHeight(agent); got != 3 {
 		t.Fatalf("comfortable agent entry height = %d, want 3", got)
 	}
-	if got := len(splitLines(m.renderTreeRow(agent, false, m.width-1, 4, panelHex()))); got != 3 {
+	if got := len(splitLines(m.renderTreeRow(agent, false, m.width-1, 4, panelHex()).text)); got != 3 {
 		t.Fatalf("comfortable agent row painted %d lines, want 3", got)
 	}
 
@@ -1748,7 +1748,7 @@ func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
 	lit := searchMatchStyle.Render("bui")
 
 	m := &Model{search: "BUI"}
-	row := m.renderTreeRow(entry, false, 80, 0, panelHex())
+	row := m.renderTreeRow(entry, false, 80, 0, panelHex()).text
 	if !strings.Contains(row, lit) {
 		t.Fatalf("query should light its span in the name's own case:\n%q", row)
 	}
@@ -1756,20 +1756,20 @@ func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
 		t.Fatalf("name lost text around the lit span:\n%q", ansi.Strip(row))
 	}
 
-	selected := m.renderTreeRow(entry, true, 80, 0, selectedHex())
+	selected := m.renderTreeRow(entry, true, 80, 0, selectedHex()).text
 	bright := lipgloss.NewStyle().Foreground(colorBright).Bold(true)
 	if !strings.Contains(selected, bright.Render("alpha-")) || !strings.Contains(selected, lit) {
 		t.Fatalf("selected row should keep its bright name around the lit span:\n%q", selected)
 	}
 
 	m.search = "grok"
-	row = m.renderTreeRow(entry, false, 80, 0, panelHex())
+	row = m.renderTreeRow(entry, false, 80, 0, panelHex()).text
 	if strings.Contains(row, sgrOf(lit)) {
 		t.Fatalf("a match on the tool alone should leave the name plain:\n%q", row)
 	}
 
 	m.search = ""
-	row = m.renderTreeRow(entry, false, 80, 0, panelHex())
+	row = m.renderTreeRow(entry, false, 80, 0, panelHex()).text
 	if !strings.Contains(row, valueStyle.Render("alpha-build")) {
 		t.Fatalf("no query should render the plain name:\n%q", row)
 	}
@@ -1778,7 +1778,7 @@ func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
 func TestSearchLightsTheQueryInsideAGroupName(t *testing.T) {
 	forceANSI256(t)
 	m := &Model{search: "END"}
-	row := m.renderTreeRow(treeRow{isGroup: true, group: "work/backend"}, false, 80, 0, panelHex())
+	row := m.renderTreeRow(treeRow{isGroup: true, group: "work/backend"}, false, 80, 0, panelHex()).text
 	if !strings.Contains(row, searchMatchStyle.Render("end")) {
 		t.Fatalf("group name should light the query:\n%q", row)
 	}
@@ -1869,5 +1869,100 @@ func TestMouseOffPaintsNoHandleOrMenuButton(t *testing.T) {
 	}
 	if !painted {
 		t.Fatal("test setup: the mouse on should paint handles")
+	}
+}
+
+func TestPortableMarksPreserveRowTextAcrossThemes(t *testing.T) {
+	previous := current
+	t.Cleanup(func() { applyTheme(previous) })
+	const text = "◐◌◆●○✕ ⠿ ✉ ⑂ ⠋ 界e\u0301"
+	for _, theme := range themes {
+		t.Run(theme.Name, func(t *testing.T) {
+			applyTheme(theme)
+			m := shotModel()
+			m.comfortableRows = true
+			entry := m.rows[0]
+			entry.sess.Name, entry.sess.Status = text, status.Working
+			m.rows, m.cursor = []treeRow{entry}, 0
+			m.queuedMessages = map[string]int{entry.sess.ID: 12}
+			m.panePrompts = map[string]string{entry.sess.ID: "prompt " + text}
+			m.paneLines = map[string]string{entry.sess.ID: "reply " + text}
+			lines := splitLines(ansi.Strip(m.renderTreeRow(entry, true, 180, 0, selectedHex()).text))
+			for i, want := range []string{text, "prompt " + text, "reply " + text} {
+				if !strings.Contains(lines[i], want) {
+					t.Fatalf("line %d changed user text: %q, want %q", i, lines[i], want)
+				}
+			}
+			if !strings.HasPrefix(strings.TrimSpace(lines[0]), workingGlyph+" "+reorderGrip+" ") || !strings.Contains(lines[0], inboxGlyph+"12") {
+				t.Fatalf("row lost its portable state, handle or inbox mark: %q", lines[0])
+			}
+			preview := previewModel(status.Idle, text+"\n")
+			if got := previewText(preview); !strings.Contains(got, text) {
+				t.Fatalf("preview changed the CLI's symbols: %q", got)
+			}
+		})
+	}
+}
+
+func TestSpinnerKeepsRowsAndHandlesStill(t *testing.T) {
+	for _, comfortable := range []bool{false, true} {
+		m := shotModel()
+		m.comfortableRows = comfortable
+		m.rows = m.rows[:1]
+		m.rows[0].sess.Status = status.Starting
+		m.cursor = 0
+		var firstNameX, firstHandleX int
+		for phase := 0; phase < len(startupFrames)*3; phase++ {
+			m.startupPhase = phase
+			rows := m.entryLines(m.rows, 0, 44, 20)
+			head := ansi.Strip(rows[0].text)
+			nameAt := strings.Index(head, m.rows[0].sess.Name)
+			if nameAt < 0 {
+				t.Fatalf("phase %d lost the name: %q", phase, head)
+			}
+			nameX := ansi.StringWidth(head[:nameAt])
+			handleX, ok := m.handleX[rowKey(m.rows[0])]
+			if !ok {
+				t.Fatalf("phase %d lost the handle", phase)
+			}
+			if phase == 0 {
+				firstNameX, firstHandleX = nameX, handleX
+			} else if nameX != firstNameX || handleX != firstHandleX {
+				t.Fatalf("phase %d moved the name/handle from %d/%d to %d/%d", phase, firstNameX, firstHandleX, nameX, handleX)
+			}
+			for _, row := range rows {
+				if width := ansi.StringWidth(row.text); width != 44 {
+					t.Fatalf("phase %d paints %d cells, want 44", phase, width)
+				}
+			}
+		}
+	}
+}
+
+func TestGroupMarkKeepsItsFoldStateDuringRename(t *testing.T) {
+	for _, group := range []string{"", "parent/界=child"} {
+		for _, collapsed := range []bool{false, true} {
+			m := shotModel()
+			entry := treeRow{isGroup: true, group: group}
+			m.rows, m.cursor = []treeRow{entry}, 0
+			m.collapsed[group] = collapsed
+			want := groupOpenGlyph
+			if collapsed {
+				want = groupClosedGlyph
+			}
+			if group == "" {
+				want = " "
+			}
+			before := ansi.Strip(m.renderTreeRow(entry, true, 80, 0, selectedHex()).text)
+			m.mode = modeRename
+			m.rename = renameTarget{isGroup: true, path: group, input: textField("name", 60)}
+			m.rename.input.SetValue("rename = child")
+			after := ansi.Strip(m.renderTreeRow(entry, true, 80, 0, selectedHex()).text)
+			for _, row := range []string{before, after} {
+				if got := ansi.Cut(row, railInset, railInset+1); got != want {
+					t.Fatalf("group %q collapsed=%t: mark %q, want %q: %q", group, collapsed, got, want, row)
+				}
+			}
+		}
 	}
 }
