@@ -373,7 +373,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		t.Fatalf("pi resume_by_id_command = %q want \"pi --session {id}\"", got)
 	}
 	// Tools that mint their own id declare a store to capture it from.
-	for _, name := range []string{"codex", "opencode", "hermes", "command-code"} {
+	for _, name := range []string{"codex", "opencode", "hermes", "command-code", "antigravity"} {
 		tool := cfg.Tools[name]
 		if tool.SessionStore != name {
 			t.Fatalf("%s session_store = %q want %q", name, tool.SessionStore, name)
@@ -408,6 +408,13 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 	}
 	if got := cfg.Tools["opencode"].ResumePickerKeys; got != "/sessions" {
 		t.Fatalf("opencode resume_picker_keys = %q want \"/sessions\"", got)
+	}
+	// agy -i /resume would hand "/resume" to the model as a prompt.
+	if got := cfg.Tools["antigravity"].ResumePickerCommand; got != "agy" {
+		t.Fatalf("antigravity resume_picker_command = %q want \"agy\"", got)
+	}
+	if got := cfg.Tools["antigravity"].ResumePickerKeys; got != "/resume" {
+		t.Fatalf("antigravity resume_picker_keys = %q want \"/resume\"", got)
 	}
 	for _, name := range []string{"claude", "codex", "command-code", "grok", "gemini", "hermes", "pi"} {
 		if got := cfg.Tools[name].ResumePickerKeys; got != "" {

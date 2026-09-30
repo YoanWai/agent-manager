@@ -455,7 +455,7 @@ func TestTheOperatingSystemIsSpelledLikeTheFormDropdown(t *testing.T) {
 func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 	for tool, want := range map[string]string{
 		"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "grok": "Grok Build",
-		"gemini": "Gemini CLI", "pi": "Pi", "hermes": "Hermes Agent", "command-code": "Command Code", "muse": "Muse Code",
+		"gemini": "Gemini CLI", "antigravity": "Antigravity CLI", "pi": "Pi", "hermes": "Hermes Agent", "command-code": "Command Code", "muse": "Muse Code",
 		"my-agent": "Not tool specific",
 	} {
 		if got := toolLabel(tool); got != want {
@@ -466,7 +466,7 @@ func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, label := range []string{"Claude Code", "Codex", "OpenCode", "Grok Build", "Gemini CLI", "Pi", "Hermes Agent", "Command Code", "Not tool specific"} {
+	for _, label := range []string{"Claude Code", "Codex", "OpenCode", "Grok Build", "Gemini CLI", "Antigravity CLI", "Pi", "Hermes Agent", "Command Code", "Not tool specific"} {
 		if !strings.Contains(string(form), "- "+label+"\n") {
 			t.Errorf("the bug form's dropdown has no %q option", label)
 		}

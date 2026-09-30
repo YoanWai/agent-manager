@@ -28,6 +28,7 @@ func TestStyleResolution(t *testing.T) {
 		{"hermes", "", "hermes"},
 		{"command-code", "", "command-code"},
 		{"muse", "", "muse"},
+		{"antigravity", "", "antigravity"},
 		{"pi", "", "none"},
 		{"aider", "", "none"},
 		{"command-code", "none", "none"},
@@ -447,6 +448,53 @@ exit 1
 		t.Fatalf("cmd mcp add overlaid an env placeholder: %q", args)
 	}
 	marker, err := os.ReadFile(filepath.Join(dir, "mcp-command-code-registered"))
+	if err != nil || string(marker) != exe {
+		t.Fatalf("marker = %q err=%v", marker, err)
+	}
+}
+
+// agy leaves ${VAR} in a server's env unexpanded and hands the server its
+// own environment instead, so the entry carries no env overlay.
+func TestApplyAntigravityRegistersWithoutEnvOverlay(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake agy executable is a shell script")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+if [ "$1" = "mcp" ] && [ "$2" = "add" ]; then
+  printf '%s\n' "$@" > "$FAKE_AGY_ARGS"
+  exit 0
+fi
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(bin, "agy"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	argsPath := filepath.Join(dir, "args")
+	exe := "/opt/bin/agent-manager"
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_AGY_ARGS", argsPath)
+
+	env := map[string]string{hooks.EnvSessionID: "sess-abcd"}
+	command, err := Apply("antigravity", exe, dir, "agy", env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != "agy" || env[hooks.EnvSessionID] != "sess-abcd" || len(env) != 1 {
+		t.Fatalf("command = %q, env = %v", command, env)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "mcp\nadd\nagent-manager\n--\n/opt/bin/agent-manager\nmcp\n"; string(args) != want {
+		t.Fatalf("agy args = %q want %q", args, want)
+	}
+	marker, err := os.ReadFile(filepath.Join(dir, "mcp-antigravity-registered"))
 	if err != nil || string(marker) != exe {
 		t.Fatalf("marker = %q err=%v", marker, err)
 	}

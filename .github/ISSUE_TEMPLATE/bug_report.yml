@@ -55,6 +55,7 @@ body:
         - OpenCode
         - Grok Build
         - Gemini CLI
+        - Antigravity CLI
         - Pi
         - Hermes Agent
         - Command Code

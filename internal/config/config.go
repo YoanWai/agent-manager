@@ -54,11 +54,11 @@ type Tool struct {
 	ForkKeys string `toml:"fork_keys"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex", "opencode",
-	// "gemini", "hermes", "command-code" or "muse").
+	// "gemini", "hermes", "command-code", "muse" or "antigravity").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
-	// "hermes", "command-code", "muse" or "none".
+	// "hermes", "command-code", "muse", "antigravity" or "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP            string `toml:"mcp"`
 	StatusSource   string `toml:"status_source"`
@@ -612,6 +612,44 @@ rules = [
   { state = "working", pattern = "esc to cancel" },
   # error messages render with a "✕ " prefix
   { state = "errored", pattern = "(?m)^✕ " },
+]
+
+# Antigravity CLI (agy), Google's successor to Gemini CLI
+[tools.antigravity]
+command = "agy"
+# agy reads a startup prompt only from -p, which exits after one turn, or -i
+prompt_flag = "-i"
+# agy mints its own conversation id; capture it after launch and resume it
+session_store = "antigravity"
+resume_by_id_command = "agy --conversation {id}"
+# agy -i /resume hands "/resume" to the model as a prompt; typed at the
+# composer it opens the conversation picker
+resume_picker_command = "agy"
+resume_picker_keys = "/resume"
+revive_command = "agy -c"
+default_status = "idle"
+# the composer row: ">" at rest, "!" in bash mode
+activity_cutoff = "(?m)^[>!]"
+# blanks, rules, and the logo rows with the account and model beside them
+chrome_line = "^\\s*─*\\s*$|^\\s*[▄▀]{2}"
+# a thinking summary and a queued message both open on ▸ and own the rows
+# drawn under them
+chrome_block = "^▸ "
+# accept-edits and plan modes name themselves inside the empty composer
+input_placeholder = "^\\S+ mode: .+ \\(shift\\+tab to cycle\\)$"
+# a submitted prompt echoes into the transcript on its own ">" row; replies
+# carry no marker of their own
+user_echo = "^> "
+rules = [
+  # dialogs, the slash-command menu and the /resume picker draw this hint in
+  # their footer, which the resting composer never does; anchoring it to the
+  # pane's tail keeps a reply quoting it from reading as a dialog
+  { state = "waiting", pattern = "(?m)^[ \\t]*(?:Keyboard: )?↑/↓ Navigate\\b[^\\n]*(?:\\n[^\\n]*){0,3}(?:\\n[ \\t]*)*\\z" },
+  # the spinner row of a running turn ("⣻  Generating..."), which stays up
+  # while a queued message swaps the footer below for its own hint
+  { state = "working", pattern = "(?m)^[\\x{2800}-\\x{28FF}][ \\t]+\\S" },
+  # the footer of a running turn; bash mode's footer indents the same words
+  { state = "working", pattern = "(?m)^esc to cancel\\b" },
 ]
 
 [tools.hermes]
