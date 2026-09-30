@@ -8,17 +8,18 @@ import (
 // errors. It floats in a card over the frame rather than taking a row, so the
 // body keeps its height whether or not a notice is up.
 func (m *Model) statusLine() string {
+	focusStatus := m.focusPane.Status()
 	switch {
 	// Errors outrank the focus notices: a scrolled or focused pane must
 	// not hide a failure report.
 	case m.mode == modeFocus && m.errBar.text != "":
 		return m.statusMessage("✕", "●", "▲")
-	case m.scrolledBack():
+	case m.focusPane.ScrolledBack():
 		return keyStyle.Render("scrolled ") +
-			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", m.focusPane.focusScroll))
-	case m.mode == modeFocus && m.focusPane.copied > 0:
+			subtleStyle.Render(fmt.Sprintf("%d lines back · wheel down or type to catch up", focusStatus.ScrollOffset))
+	case m.mode == modeFocus && focusStatus.CopiedChars > 0:
 		return keyStyle.Render("copied ") +
-			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", m.focusPane.copied))
+			subtleStyle.Render(fmt.Sprintf("%d chars to clipboard", focusStatus.CopiedChars))
 	case m.split.resizeMode || m.split.dragging:
 		hint := "←→ resize · drag divider · enter set · esc cancel"
 		if m.split.dragging {

@@ -59,16 +59,16 @@ func (a *cursorAnchor) get() (col, row int, ok bool) {
 // uses its recorded pane box as a fallback because its caret is painted over
 // captured terminal output rather than by a Bubbles input widget.
 func (m *Model) syncCursorAnchor(frame string) string {
-	if m.focusPane.imeCursor == nil {
+	if m.focusRuntime.imeCursor == nil {
 		return strings.ReplaceAll(frame, cursorAnchorMarker, "")
 	}
 	if m.mode == modeFocus {
 		col, row, ok := m.focusCursorAnchor()
-		m.focusPane.imeCursor.set(col, row, ok)
+		m.focusRuntime.imeCursor.set(col, row, ok)
 		return strings.ReplaceAll(frame, cursorAnchorMarker, "")
 	}
 	frame, col, row, ok := cursorMarkerPosition(frame)
-	m.focusPane.imeCursor.set(col, row, ok)
+	m.focusRuntime.imeCursor.set(col, row, ok)
 	return frame
 }
 
@@ -162,20 +162,14 @@ func insertMarkerAtCursor(view, markedView string) string {
 }
 
 func (m *Model) focusCursorAnchor() (col, row int, ok bool) {
-	if m.mode != modeFocus || m.scrolledBack() || !m.focusPane.pane.box.ok || !m.focusPane.pane.cursor.ok {
+	if m.mode != modeFocus {
 		return 0, 0, false
 	}
 	sess, selected := m.selected()
-	if !selected || m.focusPane.pane.forID != sess.ID {
+	if !selected {
 		return 0, 0, false
 	}
-	box := m.focusPane.pane.box
-	row = m.focusPane.pane.cursor.y - m.paneRowOffset(box.height)
-	if row < 0 || row >= box.height {
-		return 0, 0, false
-	}
-	col = min(max(m.focusPane.pane.cursor.x, 0), box.width-1)
-	return box.x + col + 1, box.y + row + 1, true
+	return m.focusPane.CursorAnchor(sess.ID)
 }
 
 // cursorOutputWriter appends the active input position after each Bubble Tea
@@ -266,14 +260,14 @@ func (w *cursorTTYOutput) WriteString(s string) (int, error) {
 // CursorOutput keeps native TTY detection and terminal sizing while placing
 // the host cursor at the active input caret after each rendered frame.
 func (m *Model) CursorOutput(output *os.File) io.Writer {
-	if m.focusPane.imeCursor == nil {
-		m.focusPane.imeCursor = &cursorAnchor{}
+	if m.focusRuntime.imeCursor == nil {
+		m.focusRuntime.imeCursor = &cursorAnchor{}
 	}
 	return &cursorTTYOutput{
 		File: output,
 		writer: &cursorOutputWriter{
 			out:    output,
-			anchor: m.focusPane.imeCursor,
+			anchor: m.focusRuntime.imeCursor,
 		},
 	}
 }

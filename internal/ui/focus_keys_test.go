@@ -132,11 +132,10 @@ func TestCaretKeepsRowColours(t *testing.T) {
 	raw := "\x1b[48;5;237m\x1b[38;5;231mprompt text here\x1b[0m"
 	width := 30
 	m := paneAt(t, raw)
-	m.focusPane.pane.cursor = paneCursor{x: 3, y: 0, ok: true}
-	m.focusPane.cursorOn = true
+	setFocusCursor(m, paneCursor{x: 3, y: 0, ok: true})
 
 	plainRow := previewLine(raw, width)
-	withCaret := m.renderPaneRow(0, raw, width)
+	withCaret := prepareFocusFrame(m, raw+"\n", width, 1, 0, 0, 0).Rows[0]
 
 	if ansi.Strip(withCaret) != ansi.Strip(plainRow) {
 		t.Fatalf("caret changed the row text: %q vs %q", ansi.Strip(withCaret), ansi.Strip(plainRow))
@@ -162,13 +161,13 @@ func TestCursorBlinks(t *testing.T) {
 	m.selectSessionRow(t, "blinker")
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
-	if !m.focusPane.cursorOn {
+	if !m.focusPane.CursorOn() {
 		t.Fatal("caret starts hidden")
 	}
 
 	updated, cmd := m.Update(cursorBlinkMsg{})
 	*m = *updated.(*Model)
-	if m.focusPane.cursorOn {
+	if m.focusPane.CursorOn() {
 		t.Fatal("caret did not blink off")
 	}
 	if cmd == nil {
@@ -178,7 +177,7 @@ func TestCursorBlinks(t *testing.T) {
 	// Typing must show the caret again immediately.
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	*m = *updated.(*Model)
-	if !m.focusPane.cursorOn {
+	if !m.focusPane.CursorOn() {
 		t.Fatal("typing left the caret hidden")
 	}
 
@@ -300,8 +299,8 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 	m.selectSessionRow(t, "focus-arrows")
 	sess := m.rail.rows[m.rail.cursor].sess
 	quitAgent(t, m, sess.ID)
-	m.focusPane.focus = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	t.Cleanup(m.focusPane.focus.Close)
+	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	t.Cleanup(m.focusRuntime.watch.Close)
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
@@ -309,7 +308,7 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	deadline := time.Now().Add(5 * time.Second)
-	for !m.focusPane.focus.serving(sess.ID) {
+	for !m.focusRuntime.watch.serving(sess.ID) {
 		if time.Now().After(deadline) {
 			t.Fatal("focus control client never became ready")
 		}
@@ -496,9 +495,6 @@ func TestFocusExitKeepsMouse(t *testing.T) {
 	if exitCmd != nil && batchContains(exitCmd(), tea.DisableMouse()) {
 		t.Fatal("leaving focus released mouse reporting to the terminal")
 	}
-	if m.focusPane.sel.active {
-		t.Fatal("selection survived leaving focus")
-	}
 }
 
 // The rail marks which session is focused, so the mode is readable from
@@ -629,8 +625,7 @@ func caretModel(t *testing.T, cursor paneCursor, rows ...string) *Model {
 		},
 	}
 	m.workspace.preview = strings.Join(rows, "\n") + "\n"
-	m.focusPane.pane.forID = "s1"
-	m.focusPane.pane.cursor = cursor
+	setFocusPaneFacts(m, "s1", false, false, false, 0, cursor)
 	return m
 }
 
@@ -707,8 +702,7 @@ func TestCaretOnGrokComposer(t *testing.T) {
 			},
 		}
 		m.workspace.preview = strings.Join(rows, "\n") + "\n"
-		m.focusPane.pane.forID = "s1"
-		m.focusPane.pane.cursor = paneCursor{x: x, y: y, ok: true}
+		setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: x, y: y, ok: true})
 		return m
 	}
 
@@ -762,8 +756,7 @@ func TestCaretOnPisBareComposerRow(t *testing.T) {
 			},
 		}
 		m.workspace.preview = strings.Join(rows, "\n") + "\n"
-		m.focusPane.pane.forID = "s1"
-		m.focusPane.pane.cursor = paneCursor{x: x, y: y, positionOK: true}
+		setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: x, y: y, positionOK: true})
 		return m
 	}
 
@@ -804,8 +797,7 @@ func TestCaretOnPisComposerRowWhileWorking(t *testing.T) {
 			},
 		}
 		m.workspace.preview = strings.Join(rows, "\n") + "\n"
-		m.focusPane.pane.forID = "s1"
-		m.focusPane.pane.cursor = paneCursor{x: x, y: 2, positionOK: true}
+		setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: x, y: 2, positionOK: true})
 		return m
 	}
 
@@ -846,8 +838,7 @@ func TestCaretOnOpencodesMultiLineDraftWithShippedDefaults(t *testing.T) {
 		},
 	}
 	m.workspace.preview = strings.Join([]string{"", "  ┃  first line", "  ┃", "  ┃", "  ┃  Build · model", "  ╹▀▀▀▀▀▀"}, "\n") + "\n"
-	m.focusPane.pane.forID = "s1"
-	m.focusPane.pane.cursor = paneCursor{x: 5, y: 2, ok: true}
+	setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: 5, y: 2, ok: true})
 	if m.caretAtInputStart("s1", "opencode") {
 		t.Fatal("a multi-line draft's continuation row was read as input start")
 	}
@@ -864,7 +855,7 @@ func TestCaretAtInputStartNeedsCurrentPane(t *testing.T) {
 	if m.caretAtInputStart("other", "claude") {
 		t.Fatal("another session's pane mirror decided the caret")
 	}
-	m.focusPane.focusScroll = 3
+	setFocusScrollOffset(t, m, "s1", 3, 1)
 	if m.caretAtInputStart("s1", "claude") {
 		t.Fatal("a scrolled-back pane decided the caret")
 	}
@@ -884,8 +875,7 @@ func TestFocusLeftUnfocusesAtPromptHead(t *testing.T) {
 	}
 	sess := m.rail.rows[m.rail.cursor].sess
 	m.rail.rows[m.rail.cursor].sess.Tool = "claude-hooked"
-	m.focusPane.pane.forID = sess.ID
-	m.focusPane.pane.cursor = paneCursor{x: 4, y: 0, ok: true}
+	setFocusPaneFacts(m, sess.ID, false, false, false, 0, paneCursor{x: 4, y: 0, ok: true})
 	m.workspace.preview = "❯ hi\n"
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
@@ -897,7 +887,7 @@ func TestFocusLeftUnfocusesAtPromptHead(t *testing.T) {
 		t.Fatalf("forwarding left set err: %q", m.errBar.text)
 	}
 
-	m.focusPane.pane.cursor = paneCursor{x: 2, y: 0, ok: true}
+	setFocusCursor(m, paneCursor{x: 2, y: 0, ok: true})
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
 	if m.mode != modeList {
@@ -919,9 +909,9 @@ func TestFocusLeftUnfocusesTerminalAtPromptHead(t *testing.T) {
 	}
 	sess := m.rail.rows[m.rail.cursor].sess
 	m.rail.rows[m.rail.cursor].sess.Tool = "terminal"
-	m.focusPane.pane.forID = sess.ID
+	setFocusPaneID(m, sess.ID)
 	m.workspace.preview = "$ make test\n"
-	m.focusPane.pane.cursor = paneCursor{x: 11, y: 0, ok: true}
+	setFocusCursor(m, paneCursor{x: 11, y: 0, ok: true})
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
@@ -939,9 +929,9 @@ func TestFocusLeftUnfocusesTerminalAtPromptHead(t *testing.T) {
 		// restart the live watcher, whose pushed capture races the fixture
 		// pane set below.
 		m.mode = modeFocus
-		m.focusPane.pane.forID = sess.ID
+		setFocusPaneID(m, sess.ID)
 		m.workspace.preview = prompt + "\n"
-		m.focusPane.pane.cursor = paneCursor{x: len([]rune(prompt)), y: 0, ok: true}
+		setFocusCursor(m, paneCursor{x: len([]rune(prompt)), y: 0, ok: true})
 		updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 		*m = *updated.(*Model)
 		if m.mode != modeList {
@@ -981,8 +971,7 @@ func TestArrowStepSettingDisablesThePair(t *testing.T) {
 	}
 	sess := m.rail.rows[m.rail.cursor].sess
 	m.rail.rows[m.rail.cursor].sess.Tool = "claude-hooked"
-	m.focusPane.pane.forID = sess.ID
-	m.focusPane.pane.cursor = paneCursor{x: 2, y: 0, ok: true}
+	setFocusPaneFacts(m, sess.ID, false, false, false, 0, paneCursor{x: 2, y: 0, ok: true})
 	m.workspace.preview = "❯ hi\n"
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
@@ -1001,8 +990,7 @@ func TestFocusAltLeftStaysWithTheAgent(t *testing.T) {
 	*m = *updated.(*Model)
 	sess := m.rail.rows[m.rail.cursor].sess
 	m.rail.rows[m.rail.cursor].sess.Tool = "claude-hooked"
-	m.focusPane.pane.forID = sess.ID
-	m.focusPane.pane.cursor = paneCursor{x: 2, y: 0, ok: true}
+	setFocusPaneFacts(m, sess.ID, false, false, false, 0, paneCursor{x: 2, y: 0, ok: true})
 	m.workspace.preview = "❯ hi\n"
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft, Alt: true})
@@ -1033,8 +1021,9 @@ func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
 			cursorX: x, cursorY: 1, paneStateOK: true,
 		})
 		*m = *updated.(*Model)
-		if m.focusPane.pane.cursor.ok || !m.focusPane.pane.cursor.positionOK {
-			t.Fatalf("hidden pi cursor state = %+v, want known position without a visible cursor", m.focusPane.pane.cursor)
+		cursor := m.focusPane.Pane().Cursor
+		if cursor.Visible || !cursor.PositionKnown {
+			t.Fatalf("hidden pi cursor state = %+v, want known position without a visible cursor", cursor)
 		}
 	}
 	setHiddenPane(2, "────────────\nxy\n────────────\n")
@@ -1077,8 +1066,7 @@ func TestCaretOnOpencodesGutterComposer(t *testing.T) {
 			},
 		}
 		m.workspace.preview = strings.Join(rows, "\n") + "\n"
-		m.focusPane.pane.forID = "s1"
-		m.focusPane.pane.cursor = paneCursor{x: x, y: y, ok: true}
+		setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: x, y: y, ok: true})
 		return m
 	}
 
@@ -1148,8 +1136,7 @@ func TestCaretParkedBelowCommandCodesComposer(t *testing.T) {
 			},
 		}
 		m.workspace.preview = strings.Join(rows, "\n") + "\n"
-		m.focusPane.pane.forID = "s1"
-		m.focusPane.pane.cursor = paneCursor{x: x, y: y, positionOK: true}
+		setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: x, y: y, positionOK: true})
 		return m
 	}
 	footer := "  » accept edits on [shift+tab]\n  ? for shortcuts · taste on"
@@ -1222,8 +1209,9 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	applyPaneState(&hidden, "0,6,0,000,0,0,0")
 	updated, _ = m.Update(hidden)
 	*m = *updated.(*Model)
-	if m.focusPane.pane.cursor.ok || !m.focusPane.pane.cursor.positionOK {
-		t.Fatalf("hidden cursor state = %+v, want known position without a visible caret", m.focusPane.pane.cursor)
+	cursor := m.focusPane.Pane().Cursor
+	if cursor.Visible || !cursor.PositionKnown {
+		t.Fatalf("hidden cursor state = %+v, want known position without a visible caret", cursor)
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
@@ -1237,7 +1225,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("after re-enter, mode = %v", m.mode)
 	}
-	m.focusPane.pane.cursor = paneCursor{x: 0, y: 6, positionOK: true}
+	setFocusCursor(m, paneCursor{x: 0, y: 6, positionOK: true})
 	m.workspace.preview = "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ z\n────────────\n  ? for shortcuts\n\n\n\n"
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
@@ -1255,7 +1243,7 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("after re-enter, mode = %v", m.mode)
 	}
-	m.focusPane.pane.cursor = paneCursor{x: 0, y: 9, positionOK: true}
+	setFocusCursor(m, paneCursor{x: 0, y: 9, positionOK: true})
 	m.workspace.preview = "❯ did you forget about peerlist?\n" +
 		"⠶ No, it is queued.\n" +
 		" ✻ Worked for 19m 16s\n" +
@@ -1380,13 +1368,13 @@ func TestFocusKeyRetriesADeadWatcher(t *testing.T) {
 	}
 	sess := m.rail.rows[m.rail.cursor].sess
 
-	m.focusPane.focus = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	t.Cleanup(m.focusPane.focus.Close)
-	m.focusPane.focus.mu.Lock()
-	m.focusPane.focus.failedID, m.focusPane.focus.failedAt = sess.ID, time.Now()
-	m.focusPane.focus.mu.Unlock()
-	m.focusPane.focus.setFocus(sess.ID)
-	if m.focusPane.focus.watching() != "" {
+	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	t.Cleanup(m.focusRuntime.watch.Close)
+	m.focusRuntime.watch.mu.Lock()
+	m.focusRuntime.watch.failedID, m.focusRuntime.watch.failedAt = sess.ID, time.Now()
+	m.focusRuntime.watch.mu.Unlock()
+	m.focusRuntime.watch.setFocus(sess.ID)
+	if m.focusRuntime.watch.watching() != "" {
 		t.Fatal("backoff did not hold before the keystroke")
 	}
 
@@ -1395,8 +1383,8 @@ func TestFocusKeyRetriesADeadWatcher(t *testing.T) {
 	if m.errBar.text != "" {
 		t.Fatalf("forwarding set err: %q", m.errBar.text)
 	}
-	if m.focusPane.focus.watching() != sess.ID {
-		t.Fatalf("keystroke left the watcher on %q, want %q", m.focusPane.focus.watching(), sess.ID)
+	if m.focusRuntime.watch.watching() != sess.ID {
+		t.Fatalf("keystroke left the watcher on %q, want %q", m.focusRuntime.watch.watching(), sess.ID)
 	}
 }
 
@@ -1410,8 +1398,8 @@ func TestKillingTheFocusedSessionReportsNoLoss(t *testing.T) {
 	sess := m.rail.rows[m.rail.cursor].sess
 
 	msgs := make(chan tea.Msg, 64)
-	m.focusPane.focus = newFocusWatch(m.services.tmux, func(msg tea.Msg) { msgs <- msg })
-	t.Cleanup(m.focusPane.focus.Close)
+	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(msg tea.Msg) { msgs <- msg })
+	t.Cleanup(m.focusRuntime.watch.Close)
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	waitFocusPreview(t, msgs, sess.ID, "")

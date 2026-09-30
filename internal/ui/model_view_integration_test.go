@@ -199,7 +199,7 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	}
 	sess := m.rail.rows[m.rail.cursor].sess
 	want := [2]int{m.width, m.listBodyHeight()}
-	if got := m.focusPane.pane.geom[sess.ID]; got != want {
+	if got := m.focusRuntime.geom[sess.ID]; got != want {
 		t.Fatalf("focused pane pinned to %v, want %v", got, want)
 	}
 	panes, err := m.services.tmux.Panes()
@@ -218,12 +218,13 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	if !strings.Contains(frame, sess.Name) {
 		t.Fatalf("the focus rule should name the session %q:\n%s", sess.Name, frame)
 	}
-	if !m.focusPane.pane.box.ok || m.focusPane.pane.box.x != 0 || m.focusPane.pane.box.width != m.width {
-		t.Fatalf("pane box = %+v, want the whole width at column 0", m.focusPane.pane.box)
+	box := m.focusPane.FrameBox()
+	if !box.Valid || box.X != 0 || box.Width != m.width {
+		t.Fatalf("pane box = %+v, want the whole width at column 0", box)
 	}
 	wantPaneY := m.listChromeRows() + m.listBodyHeight() - 1
-	if m.focusPane.pane.box.y != wantPaneY {
-		t.Fatalf("pane box starts at row %d, want compact content at the bottom row %d", m.focusPane.pane.box.y, wantPaneY)
+	if box.Y != wantPaneY {
+		t.Fatalf("pane box starts at row %d, want compact content at the bottom row %d", box.Y, wantPaneY)
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
@@ -249,10 +250,10 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	sess := m.rail.rows[m.rail.cursor].sess
-	pinned := m.focusPane.pane.geom[sess.ID]
+	pinned := m.focusRuntime.geom[sess.ID]
 	m.rail.rows[m.rail.cursor].sess.Tool = "claude-hooked"
-	m.focusPane.pane.forID = sess.ID
-	m.focusPane.pane.cursor = paneCursor{x: 4, y: 0, ok: true}
+	setFocusPaneID(m, sess.ID)
+	setFocusCursor(m, paneCursor{x: 4, y: 0, ok: true})
 	m.workspace.preview = "❯ hi\n"
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
@@ -261,7 +262,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 		t.Fatalf("left inside a typed prompt left focus, mode = %v", m.mode)
 	}
 
-	m.focusPane.pane.cursor = paneCursor{x: 2, y: 0, ok: true}
+	setFocusCursor(m, paneCursor{x: 2, y: 0, ok: true})
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
 	if m.mode != modeList {
@@ -270,7 +271,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	if !m.fullRows() {
 		t.Fatal("returning should land on the full screen list")
 	}
-	if got := m.focusPane.pane.geom[sess.ID]; got != pinned {
+	if got := m.focusRuntime.geom[sess.ID]; got != pinned {
 		t.Fatalf("returning resized the pane to %v, want %v kept", got, pinned)
 	}
 }
@@ -350,7 +351,7 @@ func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
 
 	m.prefs.fullLayout = true
 	m.startup.sessionsSized = false
-	m.focusPane.pane.geom = nil
+	m.focusRuntime.geom = nil
 	m.applyCmd(t, m.refreshCmd())
 	fullW, fullH := m.paneTargetSize()
 	if w, h := windowSize(t, id); w != fullW || h < fullH {

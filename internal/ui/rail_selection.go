@@ -49,7 +49,7 @@ func (m *Model) selectRow(index int) tea.Cmd {
 	if _, ok := m.selected(); !ok {
 		return nil
 	}
-	m.focusPane.previewGen++
+	m.focusPane.MovePreview()
 	return m.schedulePreview()
 }
 

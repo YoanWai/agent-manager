@@ -81,8 +81,8 @@ func (m *Model) restartSession(sess store.Session) error {
 	}
 	m.markFreshPane(sess.ID)
 	m.bindRestartLocally(sess.ID, result.Conversation, result.LaunchedAt)
-	if m.focusPane.focus != nil {
-		m.focusPane.focus.retryNow()
+	if m.focusRuntime.watch != nil {
+		m.focusRuntime.watch.retryNow()
 	}
 	return result.LabelError
 }

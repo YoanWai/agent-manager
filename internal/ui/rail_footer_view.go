@@ -69,7 +69,7 @@ func (m *Model) viewFooter() string {
 		// The word and line gestures stay in the key map, where there is
 		// room to name all three.
 		pairs = append(pairs, [2]string{"drag / click", "copy"})
-		if m.focusPane.pane.mouse {
+		if m.focusPane.Pane().Mouse {
 			pairs = append(pairs, [2]string{"click / alt+drag", "agent UI"})
 		}
 		return m.transientFooter(legendSection{title: "Focused", pairs: pairs})

@@ -15,7 +15,6 @@ import (
 func (m *Model) viewFullFocusFrame() string {
 	footer := m.viewFooter()
 	bodyHeight := m.listBodyHeight()
-	m.focusPane.pane.columnX = 0
 	// This frame paints no rail, so a click lands on no row: the list
 	// frame's hits would otherwise select a row nobody pointed at.
 	m.recordRailHits(nil)
@@ -27,7 +26,6 @@ func (m *Model) viewFullFocusFrame() string {
 	frame = append(frame, paint(hrule(m.width), m.width, backdropHex()))
 	frame = append(frame, paint(m.focusFactsLine(m.width), m.width, backdropHex()))
 	frame = append(frame, paint(m.focusEdge(m.width), m.width, backdropHex()))
-	m.focusPane.previewBodyOffset = 0
 	paneRows := m.previewLines(m.width, bodyHeight, strings.Repeat(" ", contentGutter))
 	frame = append(frame, paintContent(paneRows, m.width, bodyHeight, backdropHex())...)
 	frame = append(frame, paint(m.focusEdge(m.width), m.width, backdropHex()))
@@ -111,7 +109,7 @@ func dropSparest(facts []focusFact) []focusFact {
 // focusEdge is the hairline holding the full screen pane off what sits
 // above and below it, in the pane's own tone once it has a box to trace.
 func (m *Model) focusEdge(width int) string {
-	if m.focusPane.pane.box.ok {
+	if m.focusPane.FrameBox().Valid {
 		return focusEdgeStyle.Render(strings.Repeat("─", max(width, 0)))
 	}
 	return hrule(width)

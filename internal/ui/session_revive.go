@@ -181,8 +181,8 @@ func (m *Model) reviveSession(sess store.Session) error {
 	}
 	m.markFreshPane(sess.ID)
 	m.bindReviveLocally(sess.ID, result.LaunchedAt)
-	if m.focusPane.focus != nil {
-		m.focusPane.focus.retryNow()
+	if m.focusRuntime.watch != nil {
+		m.focusRuntime.watch.retryNow()
 	}
 	m.rebuildRows()
 	return result.LabelError

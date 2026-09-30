@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
@@ -125,30 +126,14 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	}
 	// Focusing is deliberate, so the client opens now rather than waiting
 	// for the cursor to settle, and any failure backoff is lifted.
-	if m.focusPane.focus != nil {
-		m.focusPane.focus.retryNow()
+	if m.focusRuntime.watch != nil {
+		m.focusRuntime.watch.retryNow()
 	}
 	m.watchSelection()
-	m.clearSelection()
-	m.focusPane.cursorOn = true
-	m.focusPane.focusScroll = 0
-	m.focusPane.focusFetchInFlight = false
-	// Pane state from a previously watched session must not route this
-	// one's wheel; a fresh watcher's first pushed capture reports the real
-	// values. When the watcher is already streaming this session and the
-	// cache came from its own capture, it stays: a quiet pane pushes
-	// nothing, so a reset here would leave the wheel routed as a plain
-	// pane with no history until the agent next paints.
-	if m.focusPane.focus == nil || !m.focusPane.focus.serving(sess.ID) || m.focusPane.pane.forID != sess.ID {
-		m.focusPane.pane.mouse = false
-		m.focusPane.pane.motion = false
-		m.focusPane.pane.sgr = false
-		m.focusPane.pane.history = 0
-	}
-	// A caret from another session would crop this pane to the wrong row.
-	if m.focusPane.pane.forID != sess.ID {
-		m.focusPane.pane.cursor = paneCursor{}
-	}
+	pane := m.focusPane.Pane()
+	keepPaneFacts := m.focusRuntime.watch != nil &&
+		m.focusRuntime.watch.serving(sess.ID) && pane.SessionID == sess.ID
+	m.focusPane.Enter(uifocus.EnterContext{SessionID: sess.ID, KeepPaneFacts: keepPaneFacts})
 	// Mouse reporting makes the pane a closed window: clicks land here
 	// instead of the host terminal, so a drag selects pane text alone and
 	// never the rail beside it.
@@ -176,27 +161,28 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 // painted cursor is the only thing locating that row, so tmux's position
 // stays meaningful when the application hides the terminal cursor.
 func (m *Model) caretAtInputStart(sessID, tool string) bool {
-	if m.services.engine == nil || m.focusPane.pane.forID != sessID || m.scrolledBack() {
+	pane := m.focusPane.Pane()
+	if m.services.engine == nil || pane.SessionID != sessID || m.focusPane.ScrolledBack() {
 		return false
 	}
 	_, bareInput := m.services.engine.InputPrefix(tool, "")
-	caretCellKnown := m.focusPane.pane.cursor.ok ||
-		(m.focusPane.pane.cursor.positionOK && (m.services.engine.ParksItsCaret(tool) || bareInput))
+	caretCellKnown := pane.Cursor.Visible ||
+		(pane.Cursor.PositionKnown && (m.services.engine.ParksItsCaret(tool) || bareInput))
 	if !caretCellKnown {
 		return false
 	}
 	rows := strings.Split(strings.TrimSuffix(m.workspace.preview, "\n"), "\n")
-	if m.focusPane.pane.cursor.y < 0 || m.focusPane.pane.cursor.y >= len(rows) {
+	if pane.Cursor.Y < 0 || pane.Cursor.Y >= len(rows) {
 		return false
 	}
-	row := ansi.Strip(rows[m.focusPane.pane.cursor.y])
+	row := ansi.Strip(rows[pane.Cursor.Y])
 	prefix, ok := m.services.engine.InputPrefix(tool, row)
 	if !ok {
 		return m.caretParksAndComposerIsEmpty(tool, rows)
 	}
-	if !status.HasTextBeforeCaret(m.services.engine, tool, row, m.focusPane.pane.cursor.x) &&
-		m.focusPane.pane.cursor.x >= ansi.StringWidth(prefix) {
-		return m.caretRowEndsAPromptHead(tool, rows, m.focusPane.pane.cursor.y)
+	if !status.HasTextBeforeCaret(m.services.engine, tool, row, pane.Cursor.X) &&
+		pane.Cursor.X >= ansi.StringWidth(prefix) {
+		return m.caretRowEndsAPromptHead(tool, rows, pane.Cursor.Y)
 	}
 	return false
 }
@@ -209,13 +195,14 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 // A caret cell that is not parked on a blank row is none of this path's
 // business: the marker rules decide it as usual.
 func (m *Model) caretParksAndComposerIsEmpty(tool string, rows []string) bool {
+	cursor := m.focusPane.Pane().Cursor
 	// The parking spot is a blank corner cell: column zero on a row with
 	// nothing painted on it. A cursor at column zero over any other
 	// content is not the park, whatever sits above it.
-	if m.focusPane.pane.cursor.x != 0 || strings.TrimSpace(ansi.Strip(rows[m.focusPane.pane.cursor.y])) != "" {
+	if cursor.X != 0 || strings.TrimSpace(ansi.Strip(rows[cursor.Y])) != "" {
 		return false
 	}
-	for y := m.focusPane.pane.cursor.y - 1; y >= 0; y-- {
+	for y := cursor.Y - 1; y >= 0; y-- {
 		row := ansi.Strip(rows[y])
 		if _, ok := m.services.engine.InputPrefix(tool, row); !ok {
 			continue
@@ -255,13 +242,17 @@ func (m *Model) caretRowEndsAPromptHead(tool string, rows []string, y int) bool 
 // to the terminal here would let a wheel notch scroll the manager out of
 // view, so the list swallows the wheel instead.
 func (m *Model) leaveFocus() tea.Cmd {
+	if report := m.focusPane.Leave(); report != "" {
+		m.sendFocusReport(report)
+	}
+	return m.leaveFocusMode()
+}
+
+func (m *Model) leaveFocusMode() tea.Cmd {
 	m.mode = modeList
-	m.clearSelection()
-	m.focusPane.pending = pendingClick{}
 	// A run opened before the session was entered would pair with the very
 	// click that comes back here, focusing it again instead of leaving.
 	m.rail.listClickAt = time.Time{}
-	m.endForwardedGesture()
 	m.flushPendingNotice()
 	return nil
 }
@@ -271,44 +262,46 @@ func (m *Model) leaveFocus() tea.Cmd {
 // returns to the list, review opens the diff and editor the directory.
 // Every plain character - q included - reaches the agent.
 func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.services.keys.Binding(keybind.Detach).Has(msg.String()) {
-		return m, m.leaveFocus()
-	}
 	sess, ok := m.selected()
 	if !ok {
 		return m, m.leaveFocus()
 	}
-	// A windowed editor leaves the focus where it is; one that draws in the
-	// terminal takes it back on exit.
-	if m.services.keys.Binding(keybind.Editor).Has(msg.String()) {
+	result := m.focusPane.Key(msg, uifocus.KeyContext{
+		SessionID:   sess.ID,
+		Rows:        m.focusPaneRows(),
+		Detach:      m.services.keys.Binding(keybind.Detach).Has(msg.String()),
+		Editor:      m.services.keys.Binding(keybind.Editor).Has(msg.String()),
+		Review:      m.services.keys.Binding(keybind.Review).Has(msg.String()),
+		ArrowStep:   m.prefs.arrowStep,
+		AtInputHead: msg.Type == tea.KeyLeft && !msg.Alt && m.caretAtInputStart(sess.ID, sess.Tool),
+	})
+	switch result.Action {
+	case uifocus.LeaveFocus:
+		if result.SendReport != "" {
+			m.sendFocusReport(result.SendReport)
+		}
+		return m, m.leaveFocusMode()
+	case uifocus.OpenEditor:
+		// A windowed editor leaves the focus where it is; one that draws in the
+		// terminal takes it back on exit.
 		return m.openEditor()
-	}
-	// Closing the review focuses the session again rather than landing in
-	// the list.
-	if m.services.keys.Binding(keybind.Review).Has(msg.String()) {
-		m.clearSelection()
+	case uifocus.OpenReview:
+		// Closing the review focuses the session again rather than landing in
+		// the list.
 		cmd := m.openDiff()
 		if m.mode == modeDiff {
 			m.diff.refocus = true
 		}
 		return m, cmd
 	}
-	if msg.Type == tea.KeyLeft && !msg.Alt && m.prefs.arrowStep && m.caretAtInputStart(sess.ID, sess.Tool) {
-		return m, m.leaveFocus()
-	}
 	// Enter is how a drafted prompt leaves the composer, so the draft is
 	// snapshotted on its way in; alt+enter only breaks the line.
-	if msg.Type == tea.KeyEnter && !msg.Alt {
+	if result.Submit {
 		m.stashTypedPrompt(sess)
 	}
-	// Typing puts the cursor back on: a caret that blinks out mid-keystroke
-	// reads as a dropped character.
-	m.focusPane.cursorOn = true
-	// Keystrokes land at the live bottom, so the view follows them there.
 	var resume tea.Cmd
-	if m.scrolledBack() {
-		m.focusPane.focusScroll = 0
-		resume = m.requestFocusRegion(sess.ID)
+	if result.Region != nil {
+		resume = m.focusRegionRequestCmd(*result.Region)
 	}
 	if msg.Paste {
 		if err := pasteFocused(m.services.tmux, sess.ID, string(msg.Runes)); err != nil {
@@ -320,7 +313,7 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, resume
 	}
-	if m.focusPane.focus == nil || !m.focusPane.focus.attempt(command) {
+	if m.focusRuntime.watch == nil || !m.focusRuntime.watch.attempt(command) {
 		// Nothing went over the pipe; one forked send-keys keeps the key
 		// from being swallowed.
 		if err := m.services.tmux.SendRaw(command); err != nil {
@@ -329,8 +322,8 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Without the client the echo only shows on the poll cadence, a
 		// second or more after each key. Typing is as deliberate as
 		// focusing, so it lifts the failure backoff and reopens now.
-		if m.focusPane.focus != nil {
-			m.focusPane.focus.retryNow()
+		if m.focusRuntime.watch != nil {
+			m.focusRuntime.watch.retryNow()
 			m.watchSelection()
 		}
 	}

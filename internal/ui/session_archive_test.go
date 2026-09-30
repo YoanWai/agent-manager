@@ -389,8 +389,8 @@ func TestArchivedSessionKeepsPaneSnapshot(t *testing.T) {
 	}
 
 	m.workspace.preview = ""
-	m.focusPane.previewGen++
-	m.applyCmd(t, m.previewCmd(m.rail.rows[m.rail.cursor].sess, m.focusPane.previewGen))
+	gen := m.focusPane.MovePreview()
+	m.applyCmd(t, m.previewCmd(m.rail.rows[m.rail.cursor].sess, gen))
 	if !strings.Contains(m.workspace.preview, "snapshot-marker") {
 		t.Fatalf("previewCmd should serve the snapshot for an archived session, preview = %q", m.workspace.preview)
 	}

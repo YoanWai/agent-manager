@@ -102,8 +102,8 @@ func (m *Model) liveSessions(sessions []store.Session) ([]store.Session, error) 
 // unwatch stops the focus watcher before a session is killed on purpose:
 // the client going away then is the plan, not a loss to report.
 func (m *Model) unwatch(id string) {
-	if m.focusPane.focus != nil {
-		m.focusPane.focus.unwatch(id)
+	if m.focusRuntime.watch != nil {
+		m.focusRuntime.watch.unwatch(id)
 	}
 }
 

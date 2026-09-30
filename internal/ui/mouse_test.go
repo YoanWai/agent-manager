@@ -357,11 +357,12 @@ func TestClickInFocusedPaneStaysFocused(t *testing.T) {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	m.View()
-	if !m.focusPane.pane.box.ok {
+	box := m.focusPane.FrameBox()
+	if !box.Valid {
 		t.Fatal("test setup: focused pane has no box")
 	}
 	updated, _ = m.handleMouse(tea.MouseMsg{
-		X: m.focusPane.pane.box.x, Y: m.focusPane.pane.box.y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+		X: box.X, Y: box.Y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
 	if m.mode != modeFocus {
@@ -464,7 +465,7 @@ func TestClickInTheFocusedColumnStaysFocused(t *testing.T) {
 			m.View()
 			y0, _ := m.bodyYRange()
 			updated, _ := m.handleMouse(tea.MouseMsg{
-				X: m.paneOriginX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+				X: m.focusPaneOriginX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 			})
 			m = updated.(*Model)
 			if m.mode != modeFocus {

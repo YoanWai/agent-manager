@@ -10,7 +10,10 @@ import (
 )
 
 func TestPreviewSettleDropsStaleGen(t *testing.T) {
-	m := &Model{mode: modeList, width: 120, height: 40, focusPane: focusPaneState{previewGen: 3}}
+	m := &Model{mode: modeList, width: 120, height: 40}
+	for range 3 {
+		m.focusPane.MovePreview()
+	}
 	updated, cmd := m.Update(previewSettleMsg{gen: 2})
 	m = updated.(*Model)
 	if cmd != nil {
@@ -56,8 +59,8 @@ func TestMoveCursorDebouncesPreview(t *testing.T) {
 	if m.rail.cursor != 1 {
 		t.Fatalf("cursor = %d want 1", m.rail.cursor)
 	}
-	if m.focusPane.previewGen != 1 {
-		t.Fatalf("previewGen = %d want 1", m.focusPane.previewGen)
+	if got := m.focusPane.PreviewGeneration(); got != 1 {
+		t.Fatalf("previewGen = %d want 1", got)
 	}
 	if cmd == nil {
 		t.Fatal("move should schedule a settle tick")
@@ -66,8 +69,8 @@ func TestMoveCursorDebouncesPreview(t *testing.T) {
 	msg := previewSettleMsg{gen: 1}
 	// A second move bumps gen; the first settle is now stale.
 	m.moveCursor(-1)
-	if m.focusPane.previewGen != 2 {
-		t.Fatalf("previewGen = %d want 2", m.focusPane.previewGen)
+	if got := m.focusPane.PreviewGeneration(); got != 2 {
+		t.Fatalf("previewGen = %d want 2", got)
 	}
 	updated, next := m.Update(msg)
 	m = updated.(*Model)
@@ -75,7 +78,7 @@ func TestMoveCursorDebouncesPreview(t *testing.T) {
 		t.Fatal("stale settle after second move must not capture")
 	}
 	// Fresh settle for the current gen with a session should schedule previewCmd.
-	_, next = m.Update(previewSettleMsg{gen: m.focusPane.previewGen})
+	_, next = m.Update(previewSettleMsg{gen: m.focusPane.PreviewGeneration()})
 	if next == nil {
 		t.Fatal("current settle should schedule a capture")
 	}

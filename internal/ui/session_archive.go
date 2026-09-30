@@ -158,8 +158,8 @@ func (m *Model) restoreConfirmed() error {
 		m.markFreshPane(sess.ID)
 		m.bindReviveLocally(sess.ID, sess.AgentLaunchedAt)
 	}
-	if revived && m.focusPane.focus != nil {
-		m.focusPane.focus.retryNow()
+	if revived && m.focusRuntime.watch != nil {
+		m.focusRuntime.watch.retryNow()
 	}
 	if err != nil {
 		return err

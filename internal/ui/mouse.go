@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+// multiClickWindow also governs rail double-clicks; Focus keeps its own
+// private copy for pane selection runs.
+const multiClickWindow = 400 * time.Millisecond
+
 // syncMouseCapture hands the mouse to the terminal while the setup dialog
 // is up, so a drag over it selects the install command, and takes it back
 // when the dialog closes. The mouse-mode setting does the same for anyone

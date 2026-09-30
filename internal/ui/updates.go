@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -73,10 +74,10 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// A session with a control client already pushes every frame; a
 		// tick capture on top of that is work whose result is discarded.
-		if m.focusPane.focus != nil && m.focusPane.focus.serving(sess.ID) {
+		if m.focusRuntime.watch != nil && m.focusRuntime.watch.serving(sess.ID) {
 			return m, m.previewTick()
 		}
-		return m, tea.Batch(m.previewCmd(sess, m.focusPane.previewGen), m.previewTick())
+		return m, tea.Batch(m.previewCmd(sess, m.focusPane.PreviewGeneration()), m.previewTick())
 
 	case refreshMsg:
 		m.startup.booting = false
@@ -153,18 +154,17 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// preview; resync and fetch it directly.
 		if sess, ok := m.selected(); ok && sess.ID != msg.procFor {
 			m.syncPollInput()
-			m.focusPane.previewGen++
-			return m, tea.Batch(focusExit, m.previewCmd(sess, m.focusPane.previewGen), m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
+			gen := m.focusPane.MovePreview()
+			return m, tea.Batch(focusExit, m.previewCmd(sess, gen), m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
 		}
 		m.workspace.proc = msg.proc
 		m.workspace.procFor = msg.procFor
 		m.setPreview(msg.procFor, msg.preview)
 		// A selection that has not moved since the last pass is at rest,
 		// so this covers the startup case where no settle ever fired.
-		if m.focusPane.previewGen == m.focusPane.watchedGen {
+		if m.focusPane.ObservePoll() {
 			m.watchSelection()
 		}
-		m.focusPane.watchedGen = m.focusPane.previewGen
 		return m, tea.Batch(focusExit, m.diffRefreshCmd(), reviewStatuses, m.startStartupTick())
 
 	case updateMsg:
@@ -262,7 +262,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case previewSettleMsg:
-		if msg.gen != m.focusPane.previewGen {
+		if !m.focusPane.PreviewSettled(msg.gen) {
 			return m, nil
 		}
 		sess, ok := m.selected()
@@ -278,7 +278,7 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode != modeFocus {
 			return m, nil
 		}
-		m.focusPane.cursorOn = !m.focusPane.cursorOn
+		m.focusPane.Blink()
 		return m, m.cursorBlink()
 
 	case linkOpenErrMsg:
@@ -296,63 +296,55 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The clipboard writer runs off the update loop and can take
 		// hundreds of milliseconds, long enough for a click elsewhere to
 		// drop the highlight this count belongs to.
-		if msg.gen != m.focusPane.copyGen {
+		if !m.focusPane.ApplyCopied(msg.gen, msg.chars) {
 			return m, nil
 		}
 		m.errBar.text = ""
-		m.focusPane.copied = msg.chars
 		return m, nil
 
 	case focusScrollMsg:
-		sess, ok := m.selected()
-		if !ok || sess.ID != msg.sessID {
-			m.focusPane.focusFetchInFlight = false
-			return m, nil
+		currentID := ""
+		if sess, ok := m.selected(); ok {
+			currentID = sess.ID
 		}
-		if msg.offset != m.focusPane.focusScroll || msg.rows != m.focusPaneRows() {
-			// The wheel or a resize moved the target while this capture was
-			// in flight. Fetch just that final viewport; the in-flight guard
-			// stays up so the notches that keep arriving ride this fetch.
-			return m, m.focusRegionCmd(sess.ID, m.focusPane.focusScroll)
+		result := m.focusPane.ApplyRegion(uifocus.RegionResult{
+			SessionID: msg.sessID,
+			Offset:    msg.offset,
+			Rows:      msg.rows,
+			Preview:   msg.preview,
+			OK:        msg.ok,
+		}, currentID, m.focusPaneRows())
+		if result.Next != nil {
+			return m, m.focusRegionRequestCmd(*result.Next)
 		}
-		m.focusPane.focusFetchInFlight = false
-		if msg.ok {
-			m.workspace.preview = msg.preview
+		if result.Apply {
+			m.workspace.preview = result.Preview
 		}
 		return m, nil
 
 	case focusPreviewMsg:
-		sess, ok := m.selected()
-		if !ok || sess.ID != msg.sessID {
-			return m, nil
+		currentID := ""
+		if sess, ok := m.selected(); ok {
+			currentID = sess.ID
 		}
-		m.focusPane.pane.forID = msg.sessID
-		m.focusPane.pane.mouse = msg.paneMouse
-		m.focusPane.pane.motion = msg.paneMotion
-		m.focusPane.pane.sgr = msg.paneSGR
-		m.focusPane.pane.history = msg.historySize
-		// Once the app owns the wheel, nothing can walk a leftover offset
-		// back down, and holding it would freeze the view for good. A
-		// mouse-tracking agent keeps no tmux history, though, so history
-		// beside a wheel claim is the cached flag trailing an app that
-		// just left mouse mode, and the offset stays reachable.
-		if m.focusPane.pane.mouse && m.focusPane.focusScroll != 0 && m.focusPane.pane.history == 0 {
-			m.focusPane.focusScroll = 0
-		}
-		// A scrolled-back pane holds still: live frames would yank the
-		// view back to the bottom mid-read.
-		if m.scrolledBack() {
-			return m, nil
-		}
-		m.workspace.preview = msg.preview
-		m.focusPane.pane.cursor = paneCursor{
-			x: msg.cursorX, y: msg.cursorY,
-			ok: msg.cursorOK, positionOK: msg.paneStateOK,
+		result := m.focusPane.ApplyPane(uifocus.PaneUpdate{
+			SessionID: msg.sessID,
+			Mouse:     msg.paneMouse,
+			Motion:    msg.paneMotion,
+			SGR:       msg.paneSGR,
+			History:   msg.historySize,
+			Cursor: uifocus.Cursor{
+				X: msg.cursorX, Y: msg.cursorY,
+				Visible: msg.cursorOK, PositionKnown: msg.paneStateOK,
+			},
+		}, currentID)
+		if result.UsePreview {
+			m.workspace.preview = msg.preview
 		}
 		return m, nil
 
 	case previewMsg:
-		if msg.gen != 0 && msg.gen != m.focusPane.previewGen {
+		if !m.focusPane.AcceptPreview(msg.gen) {
 			return m, nil
 		}
 		if sess, ok := m.selected(); ok && sess.ID == msg.sessID {
@@ -421,17 +413,17 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; pin it back to the current layout's
 		// box so the capture is not clipped on the right.
-		if m.focusPane.pane.geom != nil {
-			delete(m.focusPane.pane.geom, msg.sessID)
+		if m.focusRuntime.geom != nil {
+			delete(m.focusRuntime.geom, msg.sessID)
 		}
 		width, height := m.paneTargetSize()
 		m.poller.reflowSessions([]string{msg.sessID}, func() {
 			_ = m.services.tmux.Resize(msg.sessID, width, height)
 		})
-		if m.focusPane.pane.geom == nil {
-			m.focusPane.pane.geom = map[string][2]int{}
+		if m.focusRuntime.geom == nil {
+			m.focusRuntime.geom = map[string][2]int{}
 		}
-		m.focusPane.pane.geom[msg.sessID] = [2]int{width, height}
+		m.focusRuntime.geom[msg.sessID] = [2]int{width, height}
 		if msg.err != nil {
 			m.errBar.text = msg.err.Error()
 			m.requestRefresh()

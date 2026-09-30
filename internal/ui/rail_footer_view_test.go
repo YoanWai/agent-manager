@@ -44,7 +44,7 @@ func TestFooterInFocusMode(t *testing.T) {
 		t.Fatalf("the button still leaves a full screen session:\n%s", full)
 	}
 
-	m.focusPane.pane.mouse = true
+	setFocusPaneFacts(m, m.rail.rows[m.rail.cursor].sess.ID, true, false, false, 0, paneCursor{})
 	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "click / alt+drag") || !strings.Contains(footer, "agent UI") {
 		t.Fatalf("a mouse-tracking pane should advertise pass-through:\n%s", footer)
 	}

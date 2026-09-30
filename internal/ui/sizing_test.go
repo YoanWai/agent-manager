@@ -38,7 +38,7 @@ func TestFirstRefreshResizesExistingSessions(t *testing.T) {
 	}
 
 	m.startup.sessionsSized = false
-	m.focusPane.pane.geom = nil
+	m.focusRuntime.geom = nil
 	m.applyCmd(t, m.refreshCmd())
 	if w, _ := windowSize(t, id); w != m.previewPaneWidth() {
 		t.Fatalf("after first refresh, window width = %d, want %d", w, m.previewPaneWidth())

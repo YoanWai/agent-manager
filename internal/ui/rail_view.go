@@ -51,7 +51,6 @@ func (m *Model) viewListFrame() string {
 	// background and the fill's corners land exactly on the cell grid.
 	bleedWidth := contentWidth - 1
 	railWidth := leftWidth - 1
-	m.focusPane.pane.columnX = leftWidth + 2
 	railRows := m.railLines(railWidth, bodyHeight)
 	m.recordRailHits(railRows)
 	contentRows := m.contentLines(bleedWidth, bodyHeight)
@@ -74,7 +73,7 @@ func (m *Model) viewListFrame() string {
 		paintContent(contentRows, bleedWidth, bodyHeight, backdropHex()),
 	)...)
 	bottom := m.boundedRuleRow(leftWidth+1, m.width, "▄")
-	if m.mode == modeFocus && m.focusPane.pane.box.ok {
+	if m.mode == modeFocus && m.focusPane.FrameBox().Valid {
 		bottom = m.focusBottomRule(leftWidth+1, m.width)
 	}
 	frame = append(frame, bottom)

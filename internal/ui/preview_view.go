@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
@@ -41,8 +42,7 @@ func (m *Model) contentLines(width, height int) []contentLine {
 				separator = contentLine{text: focusTopRule(width, m.services.keys), raw: true}
 			}
 			body = append(body, separator)
-			m.focusPane.previewBodyOffset = len(body)
-			body = append(body, m.previewLines(width, rest, gutter)...)
+			body = append(body, m.previewLines(width, rest, gutter, m.listChromeRows()+len(body))...)
 		}
 	}
 	for len(body)+len(bar) < height {
@@ -69,14 +69,50 @@ func (m *Model) listHint(action, label string) string {
 // painting our backdrop behind an agent's own CLI colors would replace the
 // background it drew itself, and insetting its output would put a margin
 // around a terminal that has its own.
-func (m *Model) previewLines(width, height int, gutter string) []contentLine {
+func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...int) []contentLine {
 	var lines []contentLine
 	loader := m.startupLoader(width, height)
+	if m.mode == modeFocus {
+		originY := m.listChromeRows()
+		if len(frameOrigin) > 0 {
+			originY = frameOrigin[0]
+		}
+		rendered := m.focusPane.PrepareFrame(uifocus.FrameContext{
+			Preview:        m.workspace.preview,
+			Width:          width,
+			Height:         height,
+			OriginX:        m.focusPaneOriginX(),
+			OriginY:        originY,
+			CaretRow:       m.paneCaretRow(),
+			CursorStyle:    lipgloss.NewStyle().Foreground(colorBg).Background(colorAccent),
+			SelectionStyle: lipgloss.NewStyle().Foreground(colorBg).Background(colorAccent2),
+		})
+		if !rendered.HasPane {
+			if loader != nil {
+				for _, line := range loader {
+					lines = append(lines, contentLine{text: previewLine(line, width), raw: true})
+				}
+				return lines
+			}
+			return append(lines, contentLine{text: gutter + mutedStyle.Render("(no output yet)")})
+		}
+		for len(lines) < rendered.TopPadding {
+			lines = append(lines, contentLine{raw: true})
+		}
+		for i, line := range rendered.Rows {
+			screenRow := rendered.TopPadding + i
+			if screenRow < len(loader) && loader[screenRow] != "" {
+				line = previewLine(loader[screenRow], width)
+			}
+			lines = append(lines, contentLine{text: line, raw: true})
+		}
+		for len(lines) < height {
+			lines = append(lines, contentLine{raw: true})
+		}
+		return lines
+	}
 	pane := paneExact(m.workspace.preview, height, width, m.paneCaretRow())
 	if len(pane) == 0 {
-		// No rows painted means nothing to hit-test: a box left over from
-		// the previous session would catch clicks on empty space.
-		m.focusPane.pane.box = paneBox{}
 		if loader != nil {
 			for _, line := range loader {
 				lines = append(lines, contentLine{text: previewLine(line, width), raw: true})
@@ -89,22 +125,13 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 	for len(lines) < topPadding {
 		lines = append(lines, contentLine{raw: true})
 	}
-	// Record where these rows land so mouse hit-testing reads the same
-	// geometry the paint used.
-	m.focusPane.pane.box = paneBox{
-		x:      m.paneOriginX(),
-		y:      m.listChromeRows() + m.focusPane.previewBodyOffset + topPadding,
-		width:  width,
-		height: len(pane),
-		ok:     true,
-	}
 	for i, line := range pane {
 		screenRow := topPadding + i
 		if screenRow < len(loader) && loader[screenRow] != "" {
 			lines = append(lines, contentLine{text: previewLine(loader[screenRow], width), raw: true})
 			continue
 		}
-		lines = append(lines, contentLine{text: m.renderPaneRow(i, line, width), raw: true})
+		lines = append(lines, contentLine{text: previewLine(line, width), raw: true})
 	}
 	// Rows past the capture stay raw too: a painted tail under unpainted
 	// output would read as a box drawn around the agent's last line.
@@ -112,6 +139,14 @@ func (m *Model) previewLines(width, height int, gutter string) []contentLine {
 		lines = append(lines, contentLine{raw: true})
 	}
 	return lines
+}
+
+func (m *Model) focusPaneOriginX() int {
+	if m.fullFocus() {
+		return 0
+	}
+	leftWidth, _ := m.splitWidths()
+	return leftWidth + 2
 }
 
 // detailLabelWidth is the column every fact label in the content head is

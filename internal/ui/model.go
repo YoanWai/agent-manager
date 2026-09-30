@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,22 +40,23 @@ const (
 )
 
 type Model struct {
-	services  services
-	workspace workspace
-	rail      railState
-	focusPane focusPaneState
-	prefs     preferences
-	ledger    launchLedger
-	startup   startupState
-	notices   noticesState
-	poller    *poller
-	mode      mode
-	diff      diffState
-	form      form
-	groupForm groupForm
-	pathSugg  pathComplete
-	confirm   confirmTarget
-	launchFix launchFix
+	services     services
+	workspace    workspace
+	rail         railState
+	focusPane    uifocus.Model
+	focusRuntime focusRuntimeState
+	prefs        preferences
+	ledger       launchLedger
+	startup      startupState
+	notices      noticesState
+	poller       *poller
+	mode         mode
+	diff         diffState
+	form         form
+	groupForm    groupForm
+	pathSugg     pathComplete
+	confirm      confirmTarget
+	launchFix    launchFix
 	// install is the setup-dialog install still running in a shell tab,
 	// nil when none is.
 	install *pendingInstall
@@ -154,7 +156,7 @@ func newView(deps Dependencies, version string) *Model {
 		rail: railState{
 			collapsed: loadCollapsed(st),
 		},
-		focusPane: focusPaneState{
+		focusRuntime: focusRuntimeState{
 			imeCursor: &cursorAnchor{},
 		},
 		prefs: preferences{

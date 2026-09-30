@@ -50,7 +50,7 @@ func (m *Model) afterListFilter(previousKey string) tea.Cmd {
 	m.workspace.preview = ""
 	m.workspace.proc = sysstat.ProcStat{}
 	m.workspace.procFor = ""
-	m.focusPane.previewGen++
+	m.focusPane.MovePreview()
 	m.syncPollInput()
 	if _, ok := m.selected(); ok {
 		return m.schedulePreview()

@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -150,19 +151,16 @@ func previewText(m *Model) string {
 
 func TestPreviewBottomAlignsCompactPane(t *testing.T) {
 	m := previewModel(status.Finished, "todo\ncomposer"+strings.Repeat("\n", 10))
+	m.mode = modeFocus
+	m.focusPane.Enter(uifocus.EnterContext{SessionID: "boot"})
 	lines := strings.Split(previewText(m), "\n")
 	if strings.TrimSpace(lines[10]) != "todo" || strings.TrimSpace(lines[11]) != "composer" {
 		t.Fatalf("compact pane was not bottom aligned: %q", lines)
 	}
 	wantY := m.listChromeRows() + 10
-	if !m.focusPane.pane.box.ok || m.focusPane.pane.box.y != wantY || m.focusPane.pane.box.height != 2 {
-		t.Fatalf("pane box = %+v, want two rows starting at %d", m.focusPane.pane.box, wantY)
-	}
-	if _, _, ok := m.paneCell(m.focusPane.pane.box.x, m.focusPane.pane.box.y-1); ok {
-		t.Fatal("padding above a compact pane became hit-testable")
-	}
-	if row, _, ok := m.paneCell(m.focusPane.pane.box.x, m.focusPane.pane.box.y); !ok || row != 0 {
-		t.Fatalf("first compact pane row maps to (%d,%v), want pane row zero", row, ok)
+	box := m.focusPane.FrameBox()
+	if !box.Valid || box.Y != wantY || box.Height != 2 {
+		t.Fatalf("pane box = %+v, want two rows starting at %d", box, wantY)
 	}
 }
 
@@ -173,9 +171,6 @@ func TestPreviewShowsLoaderWhileSessionStarts(t *testing.T) {
 	m := previewModel(status.Starting, blankCapture)
 	if got := previewText(m); !strings.Contains(got, "starting up") {
 		t.Fatalf("preview should carry the launch loader, got %q", got)
-	}
-	if !m.focusPane.pane.box.ok || m.focusPane.pane.box.height != len(paneExact(blankCapture, 12, 80, -1)) {
-		t.Fatalf("the loader must not cost the pane its geometry, box = %+v", m.focusPane.pane.box)
 	}
 }
 
@@ -190,9 +185,6 @@ func TestPreviewShowsLoaderBeforeTheFirstCapture(t *testing.T) {
 	if strings.Contains(got, "(no output yet)") {
 		t.Fatalf("a starting session should not read as empty, got %q", got)
 	}
-	if m.focusPane.pane.box.ok {
-		t.Fatalf("no pane rows painted means nothing to hit-test, box = %+v", m.focusPane.pane.box)
-	}
 }
 
 func TestPreviewLoaderClearsOnFirstFrame(t *testing.T) {
@@ -204,9 +196,6 @@ func TestPreviewLoaderClearsOnFirstFrame(t *testing.T) {
 	if !strings.Contains(got, "hello") {
 		t.Fatalf("preview should paint the captured frame, got %q", got)
 	}
-	if !m.focusPane.pane.box.ok {
-		t.Fatalf("captured rows must stay hit-testable, box = %+v", m.focusPane.pane.box)
-	}
 }
 
 // Only the launch state spins: a session that is up with a cleared pane, and
@@ -215,9 +204,6 @@ func TestPreviewSkipsLoaderForSettledSessions(t *testing.T) {
 	live := previewModel(status.Idle, blankCapture)
 	if got := previewText(live); strings.Contains(got, "starting up") {
 		t.Fatalf("an idle session must not spin, got %q", got)
-	}
-	if !live.focusPane.pane.box.ok {
-		t.Fatalf("an idle session keeps its pane rows, box = %+v", live.focusPane.pane.box)
 	}
 	gone := previewModel(status.Dead, "")
 	if got := previewText(gone); !strings.Contains(got, "(no output yet)") {
@@ -278,10 +264,10 @@ func TestPreviewLeavesTheFocusedPaneAlone(t *testing.T) {
 
 	m := previewModel(status.Starting, blankCapture)
 	m.mode = modeFocus
-	m.focusPane.cursorOn = true
-	m.focusPane.pane.cursor = paneCursor{ok: true}
+	m.focusPane.Enter(uifocus.EnterContext{SessionID: "boot"})
+	setFocusCursor(m, paneCursor{ok: true})
 	lines := m.previewLines(80, 12, "  ")
-	first := lines[m.focusPane.pane.box.y-m.listChromeRows()].text
+	first := lines[m.focusPane.FrameBox().Y-m.listChromeRows()].text
 	if strings.Contains(ansi.Strip(first), "starting up") {
 		t.Fatalf("the loader took the focused pane's first row: %q", first)
 	}

@@ -127,7 +127,7 @@ func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
 		{name: "narrow_error", model: helpModel()},
 	}
 	tests[1].model.width, tests[1].model.height = 100, 28
-	tests[1].model.focusPane.imeCursor = &cursorAnchor{}
+	tests[1].model.focusRuntime.imeCursor = &cursorAnchor{}
 	typeHelpSearch(tests[1].model, "中文", false)
 	tests[2].model.help = uihelp.New(uihelp.Review)
 	tests[2].model.helpReturnMode = modeDiff
@@ -147,7 +147,7 @@ func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
 				t.Fatalf("help content and layout changed from 560a463:\nwant:\n%s\n\ngot:\n%s", want, got)
 			}
 			if test.assertCursor {
-				if _, _, ok := test.model.focusPane.imeCursor.get(); !ok {
+				if _, _, ok := test.model.focusRuntime.imeCursor.get(); !ok {
 					t.Fatal("search frame did not publish its IME cursor")
 				}
 			}
