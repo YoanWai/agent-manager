@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -2006,5 +2007,52 @@ func TestLastMeaningfulPaneLineSkipsChrome(t *testing.T) {
 	}
 	if got := lastMeaningfulPaneLine("\n╭──╮\n│  │\n╰──╯\n"); got != "" {
 		t.Fatalf("a pane of borders should yield nothing, got %q", got)
+	}
+}
+
+// A session that moves reads its transcript under the new directory, and two
+// transcripts that happen to share a size and a modification time are still
+// two different conversations.
+func TestClaudeTailFollowsTheLiveTranscript(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	launchDir, liveDir := t.TempDir(), t.TempDir()
+	stamp := time.Now().Add(-time.Hour)
+	write := func(cwd, reply string) string {
+		t.Helper()
+		path, err := agentsession.ClaudeTranscriptPath(cwd, "abc")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		line := `{"type":"assistant","message":{"content":[{"type":"text","text":"` + reply + `"}]}}` + "\n"
+		if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	sess := store.Session{ID: "s", Cwd: launchDir, AgentSessionID: "abc"}
+	p := &poller{claudeTails: map[string]claudeTailCache{}}
+
+	write(launchDir, "launch reply")
+	if _, reply := p.claudeTail(sess, liveDir); reply != "launch reply" {
+		t.Fatalf("reply = %q, want the launch transcript while the live one is absent", reply)
+	}
+	livePath := write(liveDir, "moved reply!")
+	if _, reply := p.claudeTail(sess, liveDir); reply != "moved reply!" {
+		t.Fatalf("reply = %q, want the live transcript over a cached one of the same size and time", reply)
+	}
+
+	liveProject := filepath.Dir(livePath)
+	if err := os.Chmod(liveProject, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(liveProject, 0o755) })
+	if _, reply := p.claudeTail(sess, liveDir); reply != "" {
+		t.Fatalf("reply = %q, want nothing while the live transcript cannot be read", reply)
 	}
 }

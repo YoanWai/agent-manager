@@ -202,6 +202,7 @@ func (p *poller) rowLines(sess store.Session, pane, dir string) (quote, prompt s
 // claudeTailCache keeps one transcript's extraction keyed to its file
 // stats, so an unchanged transcript is not re-read every tick.
 type claudeTailCache struct {
+	path    string
 	size    int64
 	modTime time.Time
 	prompt  string
@@ -214,23 +215,30 @@ type claudeTailCache struct {
 // is tried before the launch directory.
 func (p *poller) claudeTail(sess store.Session, dir string) (prompt, reply string) {
 	var info os.FileInfo
+	var path string
 	for _, candidate := range []string{dir, sess.Cwd} {
 		if candidate == "" {
 			continue
 		}
-		path, err := agentsession.ClaudeTranscriptPath(candidate, sess.AgentSessionID)
+		candidatePath, err := agentsession.ClaudeTranscriptPath(candidate, sess.AgentSessionID)
 		if err != nil {
-			continue
+			return "", ""
 		}
-		if info, err = os.Stat(path); err == nil {
-			dir = candidate
+		info, err = os.Stat(candidatePath)
+		if err == nil {
+			dir, path = candidate, candidatePath
 			break
 		}
+		// A launch directory copy is only the transcript when the live one
+		// is absent; one that exists but cannot be read may be newer.
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", ""
+		}
 	}
-	if info == nil {
+	if path == "" {
 		return "", ""
 	}
-	if cached, ok := p.claudeTails[sess.ID]; ok && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
+	if cached, ok := p.claudeTails[sess.ID]; ok && cached.path == path && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
 		return cached.prompt, cached.reply
 	}
 	cleanUser := func(text string) string {
@@ -246,7 +254,7 @@ func (p *poller) claudeTail(sess store.Session, dir string) (prompt, reply strin
 	}
 	prompt = oneLine(tailPrompt)
 	reply = oneLine(tailReply)
-	p.claudeTails[sess.ID] = claudeTailCache{size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
+	p.claudeTails[sess.ID] = claudeTailCache{path: path, size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
 	return prompt, reply
 }
 
