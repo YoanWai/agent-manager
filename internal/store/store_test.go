@@ -1901,6 +1901,21 @@ func TestPaneSizeRoundTripsAndRefusesJunk(t *testing.T) {
 	}
 }
 
+func TestCoordinationWaitsForTheUserUntilSetProactive(t *testing.T) {
+	st := newTestStore(t)
+	if proactive, err := st.ProactiveCoordination(); err != nil || proactive {
+		t.Fatalf("an unset store is proactive = %v, err = %v; want on request", proactive, err)
+	}
+	for _, want := range []bool{true, false} {
+		if err := st.SetProactiveCoordination(want); err != nil {
+			t.Fatalf("SetProactiveCoordination(%v): %v", want, err)
+		}
+		if proactive, err := st.ProactiveCoordination(); err != nil || proactive != want {
+			t.Fatalf("proactive = %v, err = %v; want %v", proactive, err, want)
+		}
+	}
+}
+
 func TestPlaceSessionBeforeLandsAheadOfItsNewSibling(t *testing.T) {
 	st := newTestStore(t)
 	for _, id := range []string{"a", "b", "c"} {

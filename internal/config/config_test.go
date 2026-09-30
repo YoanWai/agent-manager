@@ -543,29 +543,3 @@ func TestMuseDefaultsOnLoad(t *testing.T) {
 		t.Fatalf("unsupported Muse flags: %+v", tool)
 	}
 }
-
-func TestLoadDirReadsCoordination(t *testing.T) {
-	dir := writeConfigText(t, "coordination = \"off\"\n")
-	cfg, err := LoadDir(dir)
-	if err != nil {
-		t.Fatalf("LoadDir: %v", err)
-	}
-	if cfg.CoordinationEnabled() {
-		t.Error("coordination = \"off\" should reach the loaded config")
-	}
-}
-
-func TestCoordinationDefaultsOnAndOnlyOffTurnsItOff(t *testing.T) {
-	cfg := Config{}
-	cfg.applyDefaults()
-	if cfg.Coordination != CoordinationOn || !cfg.CoordinationEnabled() {
-		t.Fatalf("an unset key keeps sessions coordinating, got %q", cfg.Coordination)
-	}
-	if off := (Config{Coordination: CoordinationOff}); off.CoordinationEnabled() {
-		t.Fatal(`"off" must turn coordination off`)
-	}
-	// A typo is not a request to isolate every session.
-	if typo := (Config{Coordination: "noo"}); !typo.CoordinationEnabled() {
-		t.Fatal("an unknown value keeps the default")
-	}
-}

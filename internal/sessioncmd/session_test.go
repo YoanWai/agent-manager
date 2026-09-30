@@ -16,6 +16,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -220,6 +221,35 @@ func TestSessionsCreateAutoNamesAndAsksForARename(t *testing.T) {
 		t.Fatalf("auto-named session = %q", created.Name)
 	}
 	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "build the api")
+}
+
+// An agent spawning another hands on the user's coordination mode, so a
+// session it starts is briefed the way one started from the list would be.
+func TestSessionsCreateBriefsTheSpawnInTheStoredCoordinationMode(t *testing.T) {
+	h := newSessionHarness(t)
+	for _, mode := range []struct {
+		proactive bool
+		name      string
+		note      string
+	}{
+		{proactive: false, name: "api-on-request", note: launch.OnRequestCoordinationNote},
+		{proactive: true, name: "api-proactive", note: launch.ProactiveCoordinationNote},
+	} {
+		if err := h.store.SetProactiveCoordination(mode.proactive); err != nil {
+			t.Fatal(err)
+		}
+		created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: mode.name, Prompt: "build the api"})
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		stored, err := h.store.Get(created.ID)
+		if err != nil {
+			t.Fatalf("stored session: %v", err)
+		}
+		if !strings.HasPrefix(stored.LaunchPrompt, mode.note) {
+			t.Fatalf("proactive %v launched with %q, want its note first", mode.proactive, stored.LaunchPrompt)
+		}
+	}
 }
 
 func TestSessionsCreateRejectsShellsUnknownToolsAndFlagPrompts(t *testing.T) {

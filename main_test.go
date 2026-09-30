@@ -80,7 +80,7 @@ func testCoverDir() string {
 
 func TestPrintHelpDoesNotRequireATerminal(t *testing.T) {
 	var out bytes.Buffer
-	if err := printHelp(&out); err != nil {
+	if err := printHelp(&out, t.TempDir()); err != nil {
 		t.Fatalf("printHelp: %v", err)
 	}
 	for _, want := range []string{
@@ -102,7 +102,7 @@ func (failingHelpWriter) Write([]byte) (int, error) {
 }
 
 func TestPrintHelpReturnsWriteError(t *testing.T) {
-	if err := printHelp(failingHelpWriter{}); err == nil {
+	if err := printHelp(failingHelpWriter{}, t.TempDir()); err == nil {
 		t.Fatal("printHelp succeeded after the writer failed")
 	}
 }
@@ -115,6 +115,8 @@ func TestMainPrintsHelpWithoutStartingTUI(t *testing.T) {
 	for _, helpFlag := range []string{"--help", "-h"} {
 		t.Run(helpFlag, func(t *testing.T) {
 			cmd := mainTestCommand(t, helpFlag)
+			home := t.TempDir()
+			cmd.Env = replaceEnv(cmd.Env, "HOME", home, "XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("agent-manager %s: %v\n%s", helpFlag, err, out)

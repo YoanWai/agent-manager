@@ -918,13 +918,18 @@ func (m *Model) rowPrompt(sess store.Session) string {
 }
 
 // typedPrompt is a delivered prompt with the launch notes peeled off: the
-// rename directives and the coordination note are the manager's words, not
+// rename directives and the coordination notes are the manager's words, not
 // a task, and a note delivered on its own leaves nothing typed at all.
 func typedPrompt(text string) string {
-	if text == launch.DeferredRenameDirective || text == launch.CoordinationNote {
+	if text == launch.DeferredRenameDirective {
 		return ""
 	}
-	text = strings.TrimPrefix(text, launch.CoordinationNote+"\n\n")
+	for _, note := range []string{launch.ProactiveCoordinationNote, launch.OnRequestCoordinationNote} {
+		if text == note {
+			return ""
+		}
+		text = strings.TrimPrefix(text, note+"\n\n")
+	}
 	text = strings.TrimPrefix(text, launch.RenameDirective+"\n\n")
 	text = strings.TrimPrefix(text, launch.RenameAvailableNote+"\n\n")
 	return text

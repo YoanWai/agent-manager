@@ -353,6 +353,28 @@ func (s *Store) PaneSize() (int, int, error) {
 	return width, height, nil
 }
 
+// coordinationSetting says how sessions treat each other. The manager, the
+// CLI and the MCP server each launch or brief sessions, so all of them read
+// it here.
+const coordinationSetting = "coordination"
+
+const coordinationProactive = "proactive"
+
+// ProactiveCoordination reports whether agents delegate and coordinate on
+// their own. The default waits for the user to ask.
+func (s *Store) ProactiveCoordination() (bool, error) {
+	value, err := s.Setting(coordinationSetting)
+	return value == coordinationProactive, err
+}
+
+func (s *Store) SetProactiveCoordination(proactive bool) error {
+	value := "on-request"
+	if proactive {
+		value = coordinationProactive
+	}
+	return s.SetSetting(coordinationSetting, value)
+}
+
 func (s *Store) SetSetting(key, value string) error {
 	_, err := s.db.Exec(
 		`INSERT INTO settings (key, value) VALUES (?, ?)

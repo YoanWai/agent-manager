@@ -84,6 +84,16 @@ func (m *Model) defaultWorktree() bool {
 	return chosen == "on"
 }
 
+// proactiveCoordination reads how sessions treat each other for the
+// settings row. A store error is surfaced but still yields the default.
+func (m *Model) proactiveCoordination() bool {
+	proactive, err := m.store.ProactiveCoordination()
+	if err != nil {
+		m.errBar.text = "reading coordination setting: " + err.Error()
+	}
+	return proactive
+}
+
 func (m *Model) spawnWorktreeDefault(group string) bool {
 	for g := group; g != ""; g = parentGroup(g) {
 		switch m.groupWorktrees[g] {
@@ -267,6 +277,7 @@ func (m *Model) openSettings() {
 		hideStats:       m.hideStats,
 		mouseDisabled:   m.mouseDisabled,
 		worktreeDefault: m.defaultWorktree(),
+		proactive:       m.proactiveCoordination(),
 		notifications:   storedNotifications(m.store),
 		notifyFinished:  storedNotifyFinished(m.store),
 		themeAuto:       themeAutoEnabled(m.store),
@@ -416,6 +427,9 @@ func (m *Model) persistSettings() {
 		worktreeChoice = "on"
 	}
 	if err := m.store.SetSetting(worktreeSetting, worktreeChoice); err != nil {
+		m.errBar.text = err.Error()
+	}
+	if err := m.store.SetProactiveCoordination(m.settings.proactive); err != nil {
 		m.errBar.text = err.Error()
 	}
 	notifications := "off"
@@ -576,6 +590,8 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.mouseDisabled = !m.settings.mouseDisabled
 	case settingsFieldWorktree:
 		m.settings.worktreeDefault = !m.settings.worktreeDefault
+	case settingsFieldCoordination:
+		m.settings.proactive = !m.settings.proactive
 	case settingsFieldNotify:
 		m.settings.notifications = !m.settings.notifications
 	case settingsFieldNotifyFinish:

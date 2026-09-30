@@ -163,6 +163,22 @@ func managerAwake(configDir string) (bool, time.Duration, error) {
 	return awake, cfg.PollInterval.Duration, err
 }
 
+// ProactiveCoordination reads the coordination mode the user picked in
+// Settings. A config dir without a store has never run the manager, as on
+// a fresh install asked for help, so it keeps the default.
+func ProactiveCoordination(configDir string) (bool, error) {
+	path := filepath.Join(configDir, "state.db")
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	st, err := store.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer st.Close()
+	return st.ProactiveCoordination()
+}
+
 // ReviewRepo records the repo a session is working in, so review opens
 // there instead of guessing from the working directory.
 func ReviewRepo(configDir, sessionID, target string) (string, error) {

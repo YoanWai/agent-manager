@@ -304,6 +304,10 @@ func (m *Model) viewSettings() string {
 	if m.settings.worktreeDefault {
 		worktreeDefault = "on"
 	}
+	coordination := "on request"
+	if m.settings.proactive {
+		coordination = "proactive"
+	}
 	arrowStep := "off"
 	if m.settings.arrowStep {
 		arrowStep = "on"
@@ -376,6 +380,7 @@ func (m *Model) viewSettings() string {
 		row(settingsFieldArrowStep, "←→ step in/out", arrowStep) + betaTag + "\n" +
 		row(settingsFieldMouse, "mouse", mouseMode) + "\n" +
 		row(settingsFieldWorktree, "spawn in worktree", worktreeDefault) + "\n" +
+		row(settingsFieldCoordination, "coordination", coordination) + "\n" +
 		row(settingsFieldNotify, "notifications", notifications) + "\n" +
 		row(settingsFieldNotifyFinish, "notify on finish", notifyFinished) + "\n" +
 		actionRow(settingsFieldKeybindings, "keybindings", keybindingsSummary(m.keys, m.listKeys)) + "\n" +

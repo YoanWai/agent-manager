@@ -87,40 +87,48 @@ func TestAssembleRoutesPromptAndDirective(t *testing.T) {
 }
 
 func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
-	noClient := config.Tool{Command: "pi", PromptFlag: "-p"}
-	carried := Assemble("pi", noClient, "build the api", false, true)
-	if !strings.Contains(carried.Command, CoordinationNote) {
-		t.Fatalf("a tool with no MCP client should be pointed at the subcommands, got %q", carried.Command)
-	}
-	if len(carried.PendingInputs) != 0 {
-		t.Fatalf("a note the prompt carried needs no pending input, got %v", carried.PendingInputs)
-	}
+	for _, mode := range []struct {
+		proactive bool
+		note      string
+	}{
+		{proactive: true, note: ProactiveCoordinationNote},
+		{proactive: false, note: OnRequestCoordinationNote},
+	} {
+		noClient := config.Tool{Command: "pi", PromptFlag: "-p"}
+		carried := Assemble("pi", noClient, "build the api", false, mode.proactive)
+		if !strings.Contains(carried.Command, mode.note) {
+			t.Fatalf("a tool with no MCP client should be pointed at the subcommands, got %q", carried.Command)
+		}
+		if len(carried.PendingInputs) != 0 {
+			t.Fatalf("a note the prompt carried needs no pending input, got %v", carried.PendingInputs)
+		}
 
-	withClient := config.Tool{Command: "claude", PromptFlag: "-p"}
-	if plan := Assemble("claude", withClient, "build the api", false, true); strings.Contains(plan.Command, CoordinationNote) {
-		t.Fatalf("a tool whose MCP tool descriptions say this already must not repeat it, got %q", plan.Command)
-	}
+		withClient := config.Tool{Command: "claude", PromptFlag: "-p"}
+		if plan := Assemble("claude", withClient, "build the api", false, mode.proactive); strings.Contains(plan.Command, mode.note) {
+			t.Fatalf("a tool whose MCP tool descriptions say this already must not repeat it, got %q", plan.Command)
+		}
 
-	commandCode := Assemble("command-code", config.Tool{Command: "cmd"}, "build the api", false, true)
-	if strings.Contains(commandCode.Command, CoordinationNote) {
-		t.Fatalf("command-code registers MCP on spawn, so it must not get the subcommand note, got %q", commandCode.Command)
-	}
+		commandCode := Assemble("command-code", config.Tool{Command: "cmd"}, "build the api", false, mode.proactive)
+		if strings.Contains(commandCode.Command, mode.note) {
+			t.Fatalf("command-code registers MCP on spawn, so it must not get the subcommand note, got %q", commandCode.Command)
+		}
 
-	// A slash command carries neither, so both queue, and the order is what
-	// the agent reads: the directive ends on "Then continue.", and the note
-	// is what it continues into.
-	deferred := Assemble("pi", noClient, "/compact the notes", true, true)
-	if len(deferred.PendingInputs) != 2 ||
-		deferred.PendingInputs[0] != DeferredRenameDirective || deferred.PendingInputs[1] != CoordinationNote {
-		t.Fatalf("a launch needing both should queue them in reading order, got %v", deferred.PendingInputs)
-	}
+		// A slash command carries neither, so both queue, and the order is what
+		// the agent reads: the directive ends on "Then continue.", and the note
+		// is what it continues into.
+		deferred := Assemble("pi", noClient, "/compact the notes", true, mode.proactive)
+		if len(deferred.PendingInputs) != 2 ||
+			deferred.PendingInputs[0] != DeferredRenameDirective || deferred.PendingInputs[1] != mode.note {
+			t.Fatalf("a launch needing both should queue them in reading order, got %v", deferred.PendingInputs)
+		}
 
-	promptless := Assemble("pi", noClient, "", false, true)
-	if promptless.Command != noClient.Command {
-		t.Fatalf("a promptless launch command should stay clean, got %q", promptless.Command)
-	}
-	if len(promptless.PendingInputs) != 1 || promptless.PendingInputs[0] != CoordinationNote {
-		t.Fatalf("a prompt that cannot carry the note should queue it, got %v", promptless.PendingInputs)
+		promptless := Assemble("pi", noClient, "", false, mode.proactive)
+		if promptless.Command != noClient.Command {
+			t.Fatalf("a promptless launch command should stay clean, got %q", promptless.Command)
+		}
+		if len(promptless.PendingInputs) != 1 || promptless.PendingInputs[0] != mode.note {
+			t.Fatalf("a prompt that cannot carry the note should queue it, got %v", promptless.PendingInputs)
+		}
 	}
 }
 
@@ -293,7 +301,7 @@ func TestMuseLaunchAndRevive(t *testing.T) {
 	tool := cfg.Tools["muse"]
 	plan := Assemble("muse", tool, "fix the bug", false, true)
 	// Muse carries the MCP tools, whose descriptions stand in for the note.
-	if !strings.HasPrefix(plan.Command, "muse '") || strings.Contains(plan.Command, CoordinationNote) || !strings.Contains(plan.Command, "fix the bug") {
+	if !strings.HasPrefix(plan.Command, "muse '") || strings.Contains(plan.Command, ProactiveCoordinationNote) || !strings.Contains(plan.Command, "fix the bug") {
 		t.Fatalf("launch = %+v", plan)
 	}
 	if plan.AgentSessionID != "" || len(plan.PendingInputs) != 0 {
@@ -304,31 +312,5 @@ func TestMuseLaunchAndRevive(t *testing.T) {
 	}
 	if got := ReviveCommand(tool, ""); got != "muse resume" {
 		t.Fatal(got)
-	}
-}
-
-// Coordination off is the whole point of the setting: a session launched
-// under it hears nothing about the sessions beside it, whether the note
-// would have ridden the prompt or been typed in afterwards.
-func TestAssembleDropsTheCoordinationNoteWhenCoordinationIsOff(t *testing.T) {
-	noClient := config.Tool{Command: "pi", PromptFlag: "-p"}
-	carried := Assemble("pi", noClient, "build the api", false, false)
-	if strings.Contains(carried.Command, CoordinationNote) {
-		t.Fatalf("coordination off must not point the session at the other sessions, got %q", carried.Command)
-	}
-	if len(carried.PendingInputs) != 0 {
-		t.Fatalf("nothing is left to type in, got %v", carried.PendingInputs)
-	}
-
-	promptless := Assemble("pi", noClient, "", false, false)
-	if len(promptless.PendingInputs) != 0 {
-		t.Fatalf("a promptless launch has no note to queue, got %v", promptless.PendingInputs)
-	}
-
-	// The rename directive is the manager naming its own row, not
-	// coordination, so it still fires.
-	renamed := Assemble("pi", noClient, "/compact the notes", true, false)
-	if len(renamed.PendingInputs) != 1 || renamed.PendingInputs[0] != DeferredRenameDirective {
-		t.Fatalf("auto-naming survives coordination off, got %v", renamed.PendingInputs)
 	}
 }

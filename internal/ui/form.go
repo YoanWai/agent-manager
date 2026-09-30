@@ -589,6 +589,10 @@ func (m *Model) discardWorktree(repo, path, branch string) {
 
 func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool) error {
 	tool := m.cfg.Tools[toolName]
+	proactive, err := m.store.ProactiveCoordination()
+	if err != nil {
+		return err
+	}
 	id := newID()
 	worktreeRepo, worktreeBranch := "", ""
 	if worktree {
@@ -606,7 +610,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 		dir = path
 		worktreeRepo, worktreeBranch = root, branch
 	}
-	plan := launch.Assemble(toolName, tool, prompt, autoNamed, m.cfg.CoordinationEnabled())
+	plan := launch.Assemble(toolName, tool, prompt, autoNamed, proactive)
 	if err := m.launchNewSession(store.Session{
 		ID:    id,
 		Name:  name,

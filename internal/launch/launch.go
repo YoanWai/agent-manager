@@ -31,20 +31,22 @@ const DeferredRenameDirective = `Run this exact shell command once, replacing <n
 // later use without asking it to rename now.
 const RenameAvailableNote = `This session is already named. You can rename it later with agent-manager rename "<name>" only if the user asks. Do not rename it now. Then do the task:`
 
-// CoordinationNote points a session at the subcommands. Only tools whose
-// agent has no MCP client get it; the rest are told the same thing by the
-// tool descriptions the MCP server registers. A configuration with
-// coordination off drops it, so the session hears about no other session.
-const CoordinationNote = `Other agent sessions may be running beside you in Agent Manager: run "agent-manager help" in your shell for the subcommands that list them, message them, share a task list and reserve the files you are about to edit.`
+// The coordination notes point a session at the subcommands, in the mode
+// the user picked. Only tools whose agent has no MCP client get one; the
+// rest hear the same from the MCP server's instructions. Both open alike,
+// which is how the poller tells either echo for the manager's own words.
+const ProactiveCoordinationNote = `Other agent sessions may be running beside you in Agent Manager: run "agent-manager help" in your shell for the subcommands that list them, message them, share a task list and reserve the files you are about to edit.`
 
-func coordinationNote(toolName string, tool config.Tool, coordination bool) string {
-	if !coordination {
-		return ""
-	}
+const OnRequestCoordinationNote = `Other agent sessions may be running beside you in Agent Manager. Work with them only when the user asks: on your own, do not list, message, spawn or wait on sessions, or claim tasks from the shared list. When the user does ask, run "agent-manager help" in your shell for the subcommands.`
+
+func coordinationNote(toolName string, tool config.Tool, proactive bool) string {
 	if mcpreg.Style(toolName, tool.MCP) != mcpreg.StyleNone {
 		return ""
 	}
-	return CoordinationNote
+	if proactive {
+		return ProactiveCoordinationNote
+	}
+	return OnRequestCoordinationNote
 }
 
 // DirectiveEmbeddable reports whether a launch note can ride the
@@ -115,16 +117,14 @@ type Plan struct {
 	LaunchPrompt string
 }
 
-// Assemble resolves a session's first prompt into a launch plan. coordination
-// carries the configured setting: with it off the session is told nothing
-// about the sessions beside it. A prompt
+// Assemble resolves a session's first prompt into a launch plan. A prompt
 // rides the command line when the tool takes one, and is typed into the
 // pane when the tool's prompt mode is "send". Tools that accept a chosen
 // session id launch with one, so a later revive resumes this exact
 // conversation rather than the directory's most recent one; tools without
 // the flag mint their own id, captured after launch by the poller.
-func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed bool, coordination bool) Plan {
-	note := coordinationNote(toolName, tool, coordination)
+func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed, proactive bool) Plan {
+	note := coordinationNote(toolName, tool, proactive)
 	carried := DirectiveEmbeddable(rawPrompt)
 	prompt := Prompt(note, rawPrompt, autoNamed)
 	plan := Plan{Command: WithPrompt(tool, tool.Command, prompt)}

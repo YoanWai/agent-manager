@@ -494,6 +494,7 @@ type settingsState struct {
 	hideStats       bool
 	mouseDisabled   bool
 	worktreeDefault bool
+	proactive       bool
 	notifications   bool
 	notifyFinished  bool
 	themeAuto       bool
@@ -528,6 +529,7 @@ const (
 	settingsFieldArrowStep
 	settingsFieldMouse
 	settingsFieldWorktree
+	settingsFieldCoordination
 	settingsFieldNotify
 	settingsFieldNotifyFinish
 	settingsFieldKeybindings

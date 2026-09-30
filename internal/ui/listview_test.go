@@ -1397,15 +1397,21 @@ func TestRowLongPromptTruncates(t *testing.T) {
 // The launch notes are the manager's words, not a task: a decorated first
 // prompt sheds them, and a note delivered on its own records nothing.
 func TestTypedPromptStripsLaunchNotes(t *testing.T) {
-	decorated := launch.CoordinationNote + "\n\n" + launch.RenameDirective + "\n\nfix the login flow"
-	if got := typedPrompt(decorated); got != "fix the login flow" {
-		t.Fatalf("typedPrompt = %q, want the bare task", got)
+	for _, note := range []string{launch.ProactiveCoordinationNote, launch.OnRequestCoordinationNote} {
+		decorated := note + "\n\n" + launch.RenameDirective + "\n\nfix the login flow"
+		if got := typedPrompt(decorated); got != "fix the login flow" {
+			t.Fatalf("typedPrompt = %q, want the bare task", got)
+		}
+		if got := typedPrompt(note); got != "" {
+			t.Fatalf("a bare note should record nothing, got %q", got)
+		}
+		// Its echo in the pane is the manager's words too, never the prompt.
+		if !isManagerEcho(note) {
+			t.Fatalf("the note's echo would read as the user's prompt: %q", note)
+		}
 	}
 	if got := typedPrompt(launch.DeferredRenameDirective); got != "" {
 		t.Fatalf("a bare directive should record nothing, got %q", got)
-	}
-	if got := typedPrompt(launch.CoordinationNote); got != "" {
-		t.Fatalf("a bare note should record nothing, got %q", got)
 	}
 	if got := typedPrompt("plain prompt"); got != "plain prompt" {
 		t.Fatalf("an undecorated prompt should pass through, got %q", got)

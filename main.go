@@ -17,6 +17,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
 	"github.com/YoanWai/agent-manager/internal/notify"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -71,7 +72,11 @@ func main() {
 
 	if len(os.Args) > 1 {
 		if os.Args[1] == "help" || os.Args[1] == "--help" || os.Args[1] == "-h" {
-			if err := printHelp(os.Stdout); err != nil {
+			dir, err := config.Dir()
+			if err == nil {
+				err = printHelp(os.Stdout, dir)
+			}
+			if err != nil {
 				fmt.Fprintln(os.Stderr, "agent-manager:", err)
 				os.Exit(1)
 			}
@@ -100,8 +105,12 @@ func main() {
 	}
 }
 
-func printHelp(w io.Writer) error {
-	_, err := fmt.Fprintln(w, cli.Help(version))
+func printHelp(w io.Writer, configDir string) error {
+	proactive, err := sessioncmd.ProactiveCoordination(configDir)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(w, cli.Help(version, proactive))
 	return err
 }
 

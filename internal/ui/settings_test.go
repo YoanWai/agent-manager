@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -91,6 +92,41 @@ func TestSettingsWorktreeDefaultPersists(t *testing.T) {
 	}
 	if !m.defaultWorktree() {
 		t.Fatal("defaultWorktree should now report on")
+	}
+}
+
+func TestSettingsCoordinationBriefsTheNextSpawn(t *testing.T) {
+	m := buildModel(t)
+	m.openSettings()
+	if m.settings.proactive {
+		t.Fatal("coordination should open on request by default")
+	}
+	if !strings.Contains(ansi.Strip(m.viewSettings()), "coordination") || !strings.Contains(ansi.Strip(m.viewSettings()), "on request") {
+		t.Fatalf("settings do not show the coordination row:\n%s", ansi.Strip(m.viewSettings()))
+	}
+	for m.settings.field != settingsFieldCoordination {
+		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+	if !strings.Contains(ansi.Strip(m.viewSettings()), "proactive") {
+		t.Fatalf("the stepped row does not read proactive:\n%s", ansi.Strip(m.viewSettings()))
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if proactive, err := m.store.ProactiveCoordination(); err != nil || !proactive {
+		t.Fatalf("want proactive stored, got %v err %v", proactive, err)
+	}
+
+	// ready-tool has no MCP client, so the mode reaches it as the note its
+	// first prompt opens with.
+	if err := m.spawnSession("ready-tool", "api-build", t.TempDir(), "", "build the api", false, false); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	sess, err := m.store.Get(m.sessionRows()[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(sess.LaunchPrompt, launch.ProactiveCoordinationNote) {
+		t.Fatalf("a spawn after choosing proactive launched with %q", sess.LaunchPrompt)
 	}
 }
 

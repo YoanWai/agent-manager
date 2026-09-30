@@ -780,15 +780,17 @@ func TestServerTeachesDelegationWorkflow(t *testing.T) {
 // loses its tail there silently, so the length is part of the contract.
 func TestServerInstructionsSurviveTheClientLimit(t *testing.T) {
 	const claudeCodeLimit = 2048
-	session := connect(t, t.TempDir(), "abc123")
-	instructions := session.InitializeResult().Instructions
-	if len(instructions) >= claudeCodeLimit {
-		t.Fatalf("server instructions are %d characters; Claude Code truncates at %d, dropping the tail", len(instructions), claudeCodeLimit)
-	}
-	// The safety paragraph is the tail, and the one thing no tool
-	// description repeats.
-	if !strings.Contains(instructions, "acts on the user's machine") {
-		t.Fatalf("the instructions no longer say these tools act on the user's machine:\n%s", instructions)
+	for _, proactive := range []bool{true, false} {
+		session := connectServer(t, NewServer(t.TempDir(), "abc123", "test", proactive))
+		instructions := session.InitializeResult().Instructions
+		if len(instructions) >= claudeCodeLimit {
+			t.Fatalf("proactive %v: server instructions are %d characters; Claude Code truncates at %d, dropping the tail", proactive, len(instructions), claudeCodeLimit)
+		}
+		// The safety paragraph is the tail, and the one thing no tool
+		// description repeats.
+		if !strings.Contains(instructions, "acts on the user's machine") {
+			t.Fatalf("proactive %v: the instructions no longer say these tools act on the user's machine:\n%s", proactive, instructions)
+		}
 	}
 }
 
@@ -1211,46 +1213,50 @@ func TestServerTeachesWhenToOfferAReport(t *testing.T) {
 	}
 }
 
-// A user who wants one agent per task turns coordination off: the tools
-// that reach other sessions go away, the ones acting on this session stay.
-func TestCoordinationOffLeavesOnlyTheSessionsOwnTools(t *testing.T) {
-	session := connectServer(t, NewServer(t.TempDir(), "abc123", "test", false))
-	tools, err := session.ListTools(context.Background(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	names := map[string]bool{}
-	for _, tool := range tools.Tools {
-		names[tool.Name] = true
-	}
-	for _, gone := range crossSessionTools {
-		if names[gone] {
-			t.Fatalf("coordination off must not offer %q, got %v", gone, names)
-		}
-	}
-	for _, want := range []string{
-		"rename", "review", "review_comment", "report_issue",
-		"list_terminals", "create_terminal", "send_terminal", "read_terminal", "close_terminal",
-	} {
-		if !names[want] {
-			t.Fatalf("a solo session still needs %q, got %v", want, names)
-		}
-	}
-}
+// On request is the default: the session still gets every tool, so "spawn
+// an agent for this" works, but nothing it reads before the user asks
+// invites it to reach for the other sessions on its own.
+func TestOnRequestServerWaitsForTheUserBeforeReachingOtherSessions(t *testing.T) {
+	onRequest := connectServer(t, NewServer(t.TempDir(), "abc123", "test", false))
+	proactive := connect(t, t.TempDir(), "abc123")
 
-// The instructions are read before any tool call, so leaving the
-// delegation block in would invite the spawning the user turned off.
-func TestCoordinationOffNeverMentionsTheOtherSessions(t *testing.T) {
-	session := connectServer(t, NewServer(t.TempDir(), "abc123", "test", false))
-	instructions := session.InitializeResult().Instructions
-	for _, gone := range []string{"Delegating", "create_session", "list_sessions", "wait_for_session", "reserve_files"} {
-		if strings.Contains(instructions, gone) {
-			t.Fatalf("coordination off must not teach %q, got %q", gone, instructions)
+	instructions := onRequest.InitializeResult().Instructions
+	for _, want := range []string{"when the user asks", "never list, read, message, spawn or wait on another session", "create or claim tasks", "even where a tool description suggests it", "create_session", "report_issue", "create_terminal"} {
+		if !strings.Contains(instructions, want) {
+			t.Fatalf("on-request instructions do not say %q:\n%s", want, instructions)
 		}
 	}
-	for _, want := range []string{"create_terminal", "report_issue"} {
-		if !strings.Contains(instructions, want) {
-			t.Fatalf("a solo session keeps its own tools, missing %q in %q", want, instructions)
+	if strings.Contains(instructions, "without waiting to be asked") {
+		t.Fatalf("on-request instructions still invite unasked use:\n%s", instructions)
+	}
+
+	descriptions := func(session *mcp.ClientSession) map[string]string {
+		listed, err := session.ListTools(context.Background(), nil)
+		if err != nil {
+			t.Fatal(err)
 		}
+		byName := map[string]string{}
+		for _, tool := range listed.Tools {
+			byName[tool.Name] = tool.Description
+		}
+		return byName
+	}
+	waiting, eager := descriptions(onRequest), descriptions(proactive)
+	if len(waiting) != len(eager) {
+		t.Fatalf("on request offers %d tools, proactive %d; both need the full set", len(waiting), len(eager))
+	}
+	for tool, unasked := range map[string]string{
+		"create_session": "without waiting for the user",
+		"task":           "before starting work",
+	} {
+		if strings.Contains(waiting[tool], unasked) {
+			t.Errorf("on-request %s description still says %q: %s", tool, unasked, waiting[tool])
+		}
+		if !strings.Contains(eager[tool], unasked) {
+			t.Errorf("proactive %s description lost %q: %s", tool, unasked, eager[tool])
+		}
+	}
+	if !strings.Contains(waiting["create_session"], "only when the user asks") {
+		t.Errorf("on-request create_session does not say when to call it: %s", waiting["create_session"])
 	}
 }

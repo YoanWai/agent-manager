@@ -397,9 +397,9 @@ func TestOperandTextMayStartWithADash(t *testing.T) {
 // Help must not promise a flag a command refuses: an agent that believes a
 // blanket promise gets "flag provided but not defined" instead of a record.
 func TestJSONIsPromisedOnlyWhereTheCommandTakesIt(t *testing.T) {
-	preamble, _, found := strings.Cut(Help("dev"), "\n"+sessionSection().title)
+	preamble, _, found := strings.Cut(Help("dev", false), "\n"+sessionSection().title)
 	if !found {
-		t.Fatalf("help has no sections:\n%s", Help("dev"))
+		t.Fatalf("help has no sections:\n%s", Help("dev", false))
 	}
 	if strings.Contains(preamble, "--json") {
 		t.Fatalf("the preamble promises --json for every command, and several refuse it:\n%s", preamble)
@@ -497,10 +497,23 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 		t.Fatalf("the command table holds %d entries, not the %d named here: %v", len(table), len(registered), table)
 	}
 
-	help := Help("dev")
+	help := Help("dev", false)
 	for _, line := range []string{usageSessions, usageReserve, usageTerminalSend, usageRename, usageReviewComment, usageIssue, usageFeature, usageUpdate, "task <list|create|claim|finish|release|delete>"} {
 		if !strings.Contains(help, line) {
 			t.Fatalf("help is missing %q:\n%s", line, help)
 		}
+	}
+}
+
+// An agent without an MCP client learns the commands from help, so help
+// carries the user's coordination mode: on request asks it to wait for the
+// user, and proactive leaves the commands to be used on the agent's own.
+func TestHelpCarriesTheCoordinationMode(t *testing.T) {
+	const waitForTheUser = "only when the user asks"
+	if help := Help("dev", false); !strings.Contains(help, waitForTheUser) {
+		t.Fatalf("on-request help does not tell the agent to wait for the user:\n%s", help)
+	}
+	if help := Help("dev", true); strings.Contains(help, waitForTheUser) {
+		t.Fatalf("proactive help still holds the agent back:\n%s", help)
 	}
 }
