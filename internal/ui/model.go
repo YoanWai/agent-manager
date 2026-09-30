@@ -239,11 +239,8 @@ type Model struct {
 	quick             quickState
 	lastSpawnTool     string
 	lastSpawnWorktree bool
-	// catalogs is what each CLI said it offers, asked the first time a
-	// prompt needs it.
-	catalogs map[string]*catalogState
-	// cardTop, cardLeft and cardRight place the last card painted, which a
-	// click on a card resolves against.
+	catalogs          map[string]*catalogState
+	// cardTop, cardLeft and cardRight place the last card painted, for clicks.
 	cardTop, cardLeft, cardRight int
 	// composerSeq numbers the prompt boxes this run has opened.
 	composerSeq int
@@ -478,11 +475,9 @@ type quickState struct {
 	// hint and spawn follow the target group's default.
 	worktreeTouched bool
 	choice          choice
-	// picking is the list open above the prompt (pickModel, pickEffort),
-	// which takes the typing while it is up.
+	// picking is the list open above the prompt, which takes the typing.
 	picking int
-	// hits and the origin are where the last frame painted the bar's
-	// clickable stretches, relative to the bar's first line.
+	// hits are relative to the origin, the bar's first painted line.
 	hits             []quickHit
 	originX, originY int
 }

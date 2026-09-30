@@ -145,8 +145,7 @@ func maxLineWidth(lines []string) int {
 	return width
 }
 
-// formHit is what a line of the form's body does under a click: focus a
-// field, or pick an entry of the list that field has open.
+// formHit is a body line's field, and its list entry or -1.
 type formHit struct {
 	field int
 	entry int

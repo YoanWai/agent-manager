@@ -85,8 +85,7 @@ type form struct {
 	worktreeAuto bool
 	focus        int
 	choice       choice
-	// hits is what each line of the body the last frame painted does under
-	// a click.
+	// hits maps each painted body line to what a click there does.
 	hits []formHit
 }
 
@@ -309,7 +308,6 @@ func (m *Model) openForm() tea.Cmd {
 	return m.ensureCatalog(tools[toolIndex])
 }
 
-// formTool is the CLI the form would spawn.
 func (m *Model) formTool() string {
 	if len(m.form.toolNames) == 0 {
 		return ""
@@ -418,12 +416,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.form.focus == fieldTool {
 			return m, m.cycleTool(-1)
 		}
-		if m.form.focus == fieldProfile {
-			m.cycleChoiceProfile(m.formTool(), &m.form.choice, -1)
-			return m, nil
-		}
-		if m.form.focus == fieldEffort && !m.effortTyped(m.formTool(), &m.form.choice) {
-			m.cycleChoiceEffort(m.formTool(), &m.form.choice, -1)
+		if m.stepFormChoice(-1) {
 			return m, nil
 		}
 		if m.form.focus == fieldWorktree {
@@ -438,12 +431,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.form.focus == fieldTool {
 			return m, m.cycleTool(1)
 		}
-		if m.form.focus == fieldProfile {
-			m.cycleChoiceProfile(m.formTool(), &m.form.choice, 1)
-			return m, nil
-		}
-		if m.form.focus == fieldEffort && !m.effortTyped(m.formTool(), &m.form.choice) {
-			m.cycleChoiceEffort(m.formTool(), &m.form.choice, 1)
+		if m.stepFormChoice(1) {
 			return m, nil
 		}
 		if m.form.focus == fieldWorktree {
@@ -486,9 +474,7 @@ func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// handleFormModelKey runs the model row's own keys: typing narrows the
-// list, the arrows walk it, and tab or enter pick from it. Keys the list
-// does not take fall through to the form.
+// handleFormModelKey lets the keys the list does not take fall through.
 func (m *Model) handleFormModelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	toolName, ch := m.formTool(), &m.form.choice
 	list := m.modelSuggestions(toolName, ch, ch.query())
@@ -538,9 +524,6 @@ func (m *Model) handleFormModelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	return m, cmd, true
 }
 
-// handleFormClick does what a key would on the line a click lands on: it
-// focuses a row, advances a row that is already focused, and picks an
-// entry of an open list.
 func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {
 	// The body starts under the card's title row and the blank row after it.
 	line := y - m.cardTop - 2
@@ -567,20 +550,28 @@ func (m *Model) handleFormClick(x, y int) (tea.Model, tea.Cmd) {
 	switch hit.field {
 	case fieldTool:
 		return m, m.cycleTool(1)
-	case fieldProfile:
-		m.cycleChoiceProfile(toolName, ch, 1)
-	case fieldEffort:
-		if !m.effortTyped(toolName, ch) {
-			m.cycleChoiceEffort(toolName, ch, 1)
-		}
 	case fieldWorktree:
 		m.toggleFormWorktree()
+	default:
+		m.stepFormChoice(1)
 	}
 	return m, nil
 }
 
-// formFields is the rows the form's keys step through, in order: the choice
-// rows only where the chosen CLI has something to pick.
+func (m *Model) stepFormChoice(delta int) bool {
+	toolName, ch := m.formTool(), &m.form.choice
+	switch {
+	case m.form.focus == fieldProfile:
+		m.cycleChoiceProfile(toolName, ch, delta)
+	case m.form.focus == fieldEffort && !m.effortTyped(toolName, ch):
+		m.cycleChoiceEffort(toolName, ch, delta)
+	default:
+		return false
+	}
+	return true
+}
+
+// formFields holds a choice row only where the CLI has something to pick.
 func (m *Model) formFields() []int {
 	toolName, ch := m.formTool(), &m.form.choice
 	fields := []int{fieldName, fieldTool}
@@ -645,8 +636,7 @@ func (m *Model) focusFormField(field int) {
 	}
 }
 
-// cycleTool steps the CLI and starts its rows over on its own defaults,
-// asking it what it offers if nothing has yet.
+// cycleTool starts the choice rows over and asks the new CLI what it offers.
 func (m *Model) cycleTool(delta int) tea.Cmd {
 	if len(m.form.toolNames) == 0 {
 		return nil

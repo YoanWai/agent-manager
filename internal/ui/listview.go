@@ -194,8 +194,7 @@ func (m *Model) fullQuickLines(width, height int) []contentLine {
 		return out
 	}
 	lines := append([]contentLine{{rule: true}}, inset(splitLines(m.viewQuickBar(inner, height-quickBarChrome)))...)
-	// The bar's own lines start under the rule, less whatever the cap cuts
-	// off the top.
+	// Under the rule, less what the cap cuts off the top.
 	m.quick.originX, m.quick.originY = 1+contentGutter, 1
 	if len(lines) > height {
 		m.quick.originY -= len(lines) - height
@@ -1096,8 +1095,7 @@ func (m *Model) contentLines(width, height int) []contentLine {
 	if m.quick.active {
 		bar = append([]contentLine{{}}, ours(splitLines(m.viewQuickBar(inner, quickBarMaxRows)))...)
 		y0, _ := m.bodyYRange()
-		// The bar's lines follow the blank that parts it from the pane, less
-		// whatever a bar taller than the column gives up off its top.
+		// Under the blank row, less what a bar taller than the column loses.
 		m.quick.originX, m.quick.originY = m.pane.columnX+contentGutter, y0+height-len(bar)+1
 		if len(bar) > height {
 			bar = bar[len(bar)-height:]
@@ -1634,8 +1632,6 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 	return strings.Join(append(lines, m.quick.renderChips(textAreaView(m.quick.input))), "\n")
 }
 
-// quickHit is a stretch of a quick bar line a click acts on: a choice to
-// step, or an entry of the open list.
 type quickHit struct {
 	line, x0, x1 int
 	action       int
@@ -1651,9 +1647,6 @@ const (
 	quickClickEntry
 )
 
-// quickChoiceLine is what a spawn from the bar launches: the CLI, its
-// model, effort and profile where it has them, and the worktree toggle,
-// each a stretch a click steps the way its key does.
 func (m *Model) quickChoiceLine(width, line int) string {
 	toolName, ch := m.quickTool(), &m.quick.choice
 	type segment struct {
@@ -1710,8 +1703,6 @@ func (m *Model) quickChoiceLine(width, line int) string {
 	return ansi.Truncate(b.String(), width, "…")
 }
 
-// quickPickLines is the list open above the prompt: the models narrowed by
-// what was typed, or the typed effort of a CLI that lists no levels.
 func (m *Model) quickPickLines(width, first int) []string {
 	toolName, ch := m.quickTool(), &m.quick.choice
 	switch m.quick.picking {

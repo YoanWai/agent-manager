@@ -297,8 +297,7 @@ func (m *Model) quickCloseAfterSend() bool {
 	return chosen == "close"
 }
 
-// The open list above the prompt, if any: the model list, or the typed
-// effort of a CLI that lists no levels.
+// The list open above the prompt, if any.
 const (
 	pickNone = iota
 	pickModel
@@ -317,28 +316,22 @@ func (m *Model) cycleQuickTool(delta int) tea.Cmd {
 	return m.ensureCatalog(toolName)
 }
 
-// quickSpawning reports whether enter would spawn a new agent, which is
-// the only send the model, effort and profile apply to.
+// Choices apply to a spawn only, never to an answer.
 func (m *Model) quickSpawning() bool {
 	entry, ok := m.selectedRow()
 	return ok && entry.isGroup
 }
 
-// The spawn choices take control keys, which every terminal passes on where
-// alt often never arrives, picked from the ones the prompt's editor, the
-// manager and the common multiplexers leave free.
+// Control keys, since alt never arrives from many terminals, and ones the
+// prompt's editor, the manager and the common multiplexers leave free.
 const (
 	quickModelKey   = "ctrl+l"
 	quickEffortKey  = "ctrl+x"
 	quickProfileKey = "ctrl+y"
 )
 
-// quickChoiceHint is what a choice key says while the bar answers a
-// session instead of spawning one.
 const quickChoiceHint = "model, effort and profile apply to a new agent: select a group to spawn one"
 
-// requireQuickSpawn reports whether the bar would spawn, and says why a
-// choice key does nothing when it would answer a session instead.
 func (m *Model) requireQuickSpawn() bool {
 	if m.quickSpawning() {
 		return true
@@ -347,8 +340,6 @@ func (m *Model) requireQuickSpawn() bool {
 	return false
 }
 
-// openQuickPick opens the list a key asked for, or says why the CLI has
-// none.
 func (m *Model) openQuickPick(pick int) {
 	if !m.requireQuickSpawn() {
 		return
@@ -379,8 +370,7 @@ func (m *Model) closeQuickPick() {
 	m.quick.input.Focus()
 }
 
-// stepQuickEffort steps the effort through the model's levels, or opens
-// the typed field for a CLI that lists none.
+// stepQuickEffort opens the typed field for a CLI that lists no levels.
 func (m *Model) stepQuickEffort() {
 	if !m.requireQuickSpawn() {
 		return
@@ -414,9 +404,6 @@ func (m *Model) stepQuickProfile() {
 	m.cycleChoiceProfile(toolName, &m.quick.choice, 1)
 }
 
-// handleQuickPickKey runs the open list: typing narrows the models, the
-// arrows walk them, and enter or tab picks one; esc closes the list and
-// keeps the prompt.
 func (m *Model) handleQuickPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	toolName, ch := m.quickTool(), &m.quick.choice
 	if m.quick.picking == pickEffort {
@@ -455,7 +442,6 @@ func (m *Model) handleQuickPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// quickHitAt is the stretch of the open bar a click at (x, y) lands on.
 func (m *Model) quickHitAt(x, y int) (quickHit, bool) {
 	if !m.quick.active {
 		return quickHit{}, false
@@ -469,7 +455,6 @@ func (m *Model) quickHitAt(x, y int) (quickHit, bool) {
 	return quickHit{}, false
 }
 
-// handleQuickClick does what the key for a clicked stretch does.
 func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
 	switch hit.action {
 	case quickClickTool:
@@ -497,8 +482,6 @@ func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
 	return nil
 }
 
-// quickLegend names the bar's keys with what each is set to now, and the
-// open list's own keys while one is up.
 func (m *Model) quickLegend() [][2]string {
 	switch m.quick.picking {
 	case pickModel:
@@ -523,8 +506,6 @@ func (m *Model) quickLegend() [][2]string {
 	return append(pairs, [2]string{"ctrl+t", "worktree: " + m.quickWorktreeState()}, [2]string{"esc", "close"})
 }
 
-// quickWorktreeState is the worktree toggle's word on the bar and in the
-// footer.
 func (m *Model) quickWorktreeState() string {
 	switch {
 	case !m.worktreeCapable(m.quickTargetDir()):
