@@ -134,6 +134,23 @@ sleep 30
 	}
 }
 
+func TestInjectPickerKeysWaitsOutAPickerSlowToDraw(t *testing.T) {
+	h := newSessionHarness(t)
+	id := startPickerPane(t, h, `printf '> '
+IFS= read -r keys
+printf '> %s' "$keys"
+sleep 0.8
+printf '\npicker for %s\n' "$keys"
+IFS= read -r -t 3 picked && printf 'PICKED TOP ROW\n'
+printf 'picker still open\n'
+sleep 30
+`)
+	InjectPickerKeys(h.driver, id, config.Tool{ActivityCutoff: "(?m)^[>!]", ResumePickerKeys: "/resume"})
+	if pane := waitForPaneText(t, h.driver, id, "picker still open"); strings.Contains(pane, "PICKED TOP ROW") {
+		t.Fatalf("an extra Enter picked the top row of a picker that drew late:\n%s", pane)
+	}
+}
+
 func TestInjectPickerKeysConfirmsACompletionTheComposerKept(t *testing.T) {
 	h := newSessionHarness(t)
 	id := startPickerPane(t, h, `printf '> '

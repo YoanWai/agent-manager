@@ -61,16 +61,32 @@ func InjectPickerKeys(driver *tmux.Driver, sessID string, tool config.Tool) {
 			if err := driver.SendKeys(sessID, keys, "Enter"); err != nil {
 				return
 			}
-			time.Sleep(500 * time.Millisecond)
-			// A composer that took that Enter as accepting its completion
-			// still holds the keys; a picker that opened took the caret off
-			// them, and one more Enter would pick its top row for the user.
-			if row, ok := caretRow(driver, sessID); ok && strings.Contains(row, keys) {
+			if keysStayInComposer(driver, sessID, keys) {
 				_ = driver.SendKeys(sessID, "Enter")
 			}
 			return
 		}
 	}()
+}
+
+// completionSettle is how long the keys must stay on the caret row before
+// the first Enter counts as having accepted a completion rather than run it.
+const completionSettle = 1500 * time.Millisecond
+
+// keysStayInComposer tells a composer that took the first Enter as
+// accepting its completion, and still holds the keys, from a picker that
+// opened and took the caret off them, where one more Enter would pick its
+// top row for the user. A picker slow to draw leaves the keys up for a
+// moment, so they have to stay for the whole settle.
+func keysStayInComposer(driver *tmux.Driver, sessID, keys string) bool {
+	deadline := time.Now().Add(completionSettle)
+	for time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		if row, ok := caretRow(driver, sessID); !ok || !strings.Contains(row, keys) {
+			return false
+		}
+	}
+	return true
 }
 
 func caretRow(driver *tmux.Driver, sessID string) (string, bool) {
