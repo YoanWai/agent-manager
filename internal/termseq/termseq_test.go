@@ -47,9 +47,6 @@ func TestEmitWrapsOnlyUnderTmux(t *testing.T) {
 }
 
 func TestEnablePassthroughOnlyRunsUnderTmux(t *testing.T) {
-	origTmux := inTmux
-	t.Cleanup(func() { inTmux = origTmux })
-
 	binDir := t.TempDir()
 	argsFile := filepath.Join(t.TempDir(), "args")
 	t.Setenv("TERMSEQ_TMUX_ARGS", argsFile)
@@ -60,13 +57,13 @@ func TestEnablePassthroughOnlyRunsUnderTmux(t *testing.T) {
 		t.Fatalf("write fake tmux: %v", err)
 	}
 
-	inTmux = func() bool { return false }
+	t.Setenv("TMUX", "")
 	EnablePassthrough()
 	if _, err := os.Stat(argsFile); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("tmux ran outside tmux: %v", err)
 	}
 
-	inTmux = func() bool { return true }
+	t.Setenv("TMUX", "/tmp/fake,1,0")
 	EnablePassthrough()
 	args, err := os.ReadFile(argsFile)
 	if err != nil {
