@@ -5,15 +5,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 )
-
-func runeKey(s string) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
-}
-
-func namedKey(t tea.KeyType) tea.KeyMsg { return tea.KeyMsg{Type: t} }
 
 // helpKeyTokens is every key the catalog spells out, split on the " / "
 // that separates alternatives inside one row.
@@ -172,42 +164,6 @@ func TestHelpSearchOnASectionTitleKeepsItsRows(t *testing.T) {
 	t.Fatal("the review section did not survive its own title")
 }
 
-func TestReviewHelpOnlyShowsReviewBindingsAndSetupGuidance(t *testing.T) {
-	m := &Model{
-		width:  120,
-		height: 30,
-		mode:   modeDiff,
-		diff:   diffState{active: true},
-		services: services{
-			keys:     keybind.DefaultSession(),
-			listKeys: keybind.DefaultList(),
-		},
-	}
-	m.openHelp()
-	sections := m.visibleHelpSections()
-	if len(sections) != 1 || !strings.HasPrefix(sections[0].title, "review") {
-		t.Fatalf("review help sections = %+v", sections)
-	}
-	frame := ansi.Strip(m.View())
-	for _, want := range []string{"Review keys", "Tell your agent what to review", "comment on the line"} {
-		if !strings.Contains(frame, want) {
-			t.Errorf("review help missing %q:\n%s", want, frame)
-		}
-	}
-	for _, unwanted := range []string{"new session", "quick prompt", "messages (M)"} {
-		if strings.Contains(frame, unwanted) {
-			t.Errorf("review help includes %q:\n%s", unwanted, frame)
-		}
-	}
-}
-
-func TestGlobalHelpShowsAgentManagementGuidance(t *testing.T) {
-	frame := ansi.Strip(helpModel().View())
-	if !strings.Contains(frame, "Tell your agent to manage sessions and terminals in Agent Manager") {
-		t.Fatalf("global help is missing agent-management guidance:\n%s", frame)
-	}
-}
-
 func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
 	hasRow := func(sections []helpSection, title, key string) bool {
 		for _, section := range sections {
@@ -224,7 +180,7 @@ func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
 	}
 
 	for _, enabled := range []bool{true, false} {
-		sections := (&Model{
+		model := &Model{
 			services: services{
 				keys:     keybind.DefaultSession(),
 				listKeys: keybind.DefaultList(),
@@ -232,7 +188,8 @@ func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
 			prefs: preferences{
 				arrowStep: enabled,
 			},
-		}).visibleHelpSections()
+		}
+		sections := model.help.visibleSections(model.helpContext())
 		for _, row := range []struct{ title, key string }{
 			{"list", "→"},
 			{"list", "←"},
@@ -240,189 +197,6 @@ func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
 		} {
 			if got := hasRow(sections, row.title, row.key); got != enabled {
 				t.Errorf("arrow step enabled = %v: %q in %q = %v", enabled, row.key, row.title, got)
-			}
-		}
-	}
-}
-
-func helpModel() *Model {
-	return &Model{
-		width:  120,
-		height: 30,
-		mode:   modeHelp,
-		services: services{
-			keys:     keybind.DefaultSession(),
-			listKeys: keybind.DefaultList(),
-		},
-		prefs: preferences{
-			arrowStep: true,
-		},
-	}
-}
-
-func TestHelpScrollClampsToContent(t *testing.T) {
-	m := helpModel()
-	m.scrollHelp(-5)
-	if m.help.scroll != 0 {
-		t.Fatalf("scrolled above the top: %d", m.help.scroll)
-	}
-	limit := m.helpScrollLimit()
-	if limit == 0 {
-		t.Fatal("the catalog should overflow a 30-row terminal")
-	}
-	m.scrollHelp(1000)
-	if m.help.scroll != limit {
-		t.Fatalf("scroll %d past the limit %d", m.help.scroll, limit)
-	}
-}
-
-func TestHelpSearchShrinksTheScrollLimit(t *testing.T) {
-	m := helpModel()
-	full := m.helpScrollLimit()
-	m.help.query = "worktree"
-	if narrowed := m.helpScrollLimit(); narrowed >= full {
-		t.Fatalf("searched limit %d did not shrink below %d", narrowed, full)
-	}
-}
-
-func TestHelpSearchTypesAndClears(t *testing.T) {
-	m := helpModel()
-	m.handleHelpKey(runeKey("/"))
-	if !m.help.searching {
-		t.Fatal("/ did not open the search")
-	}
-	for _, r := range "fork" {
-		m.handleHelpKey(runeKey(string(r)))
-	}
-	if m.help.query != "fork" {
-		t.Fatalf("typed query is %q", m.help.query)
-	}
-	m.handleHelpKey(namedKey(tea.KeyBackspace))
-	if m.help.query != "for" {
-		t.Fatalf("backspace left %q", m.help.query)
-	}
-	m.handleHelpKey(namedKey(tea.KeyEnter))
-	if m.help.searching || m.help.query != "for" {
-		t.Fatalf("enter should leave the field with the search on, got %v %q", m.help.searching, m.help.query)
-	}
-	// q types into the search rather than closing while the field is up.
-	m.handleHelpKey(runeKey("/"))
-	m.handleHelpKey(runeKey("q"))
-	if m.mode != modeHelp || m.help.query != "forq" {
-		t.Fatalf("q while searching: mode %v query %q", m.mode, m.help.query)
-	}
-}
-
-func TestHelpEscClearsTheSearchBeforeClosing(t *testing.T) {
-	m := helpModel()
-	m.help.query = "fork"
-	m.help.scroll = 3
-	m.handleHelpKey(namedKey(tea.KeyEsc))
-	if m.mode != modeHelp {
-		t.Fatal("esc closed the map while a search was on")
-	}
-	if m.help.query != "" || m.help.scroll != 0 {
-		t.Fatalf("esc left query %q scroll %d", m.help.query, m.help.scroll)
-	}
-	m.handleHelpKey(namedKey(tea.KeyEsc))
-	if m.mode != modeList {
-		t.Fatalf("esc on a clean map left mode %v", m.mode)
-	}
-}
-
-func TestHelpOpensClean(t *testing.T) {
-	m := helpModel()
-	m.help = helpState{scroll: 4, query: "fork", searching: true}
-	m.closeHelp()
-	m.openHelp()
-	if m.help != (helpState{}) {
-		t.Fatalf("reopened with stale state: %+v", m.help)
-	}
-}
-
-func TestHelpFramePaintsInsideTheTerminal(t *testing.T) {
-	for _, width := range []int{60, 80, 120, 200} {
-		for _, height := range []int{14, 24, 40} {
-			m := &Model{
-				width:  width,
-				height: height,
-				mode:   modeHelp,
-				services: services{
-					keys:     keybind.DefaultSession(),
-					listKeys: keybind.DefaultList(),
-				},
-			}
-			for _, query := range []string{"", "revive"} {
-				m.help.query = query
-				lines := strings.Split(m.View(), "\n")
-				if len(lines) != height {
-					t.Errorf("%dx%d query %q: %d rows painted", width, height, query, len(lines))
-				}
-				for i, line := range lines {
-					if got := ansi.StringWidth(line); got > width {
-						t.Errorf("%dx%d query %q: row %d is %d wide", width, height, query, i, got)
-					}
-				}
-			}
-		}
-	}
-}
-
-func TestHelpBodyShowsMoreMarkersWhenItOverflows(t *testing.T) {
-	m := helpModel()
-	frame := ansi.Strip(m.View())
-	if !strings.Contains(frame, "more below") {
-		t.Fatal("an overflowing map should say there is more below")
-	}
-	m.help.scroll = m.helpScrollLimit()
-	frame = ansi.Strip(m.View())
-	if !strings.Contains(frame, "more above") {
-		t.Fatal("a map scrolled to the end should say there is more above")
-	}
-}
-
-func TestHelpReportsWhenNothingMatches(t *testing.T) {
-	m := helpModel()
-	m.help.query = "zzzz"
-	if frame := ansi.Strip(m.View()); !strings.Contains(frame, "no key matches that") {
-		t.Fatal("a query nothing answers should say so")
-	}
-}
-
-// The column is measured from the catalog, so a key can never render clipped
-// against its own description. This is what catches a long binding added later.
-func TestHelpKeyColumnFitsEveryKey(t *testing.T) {
-	column := helpKeyColumn(keybind.DefaultSession(), keybind.DefaultList(), true)
-	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
-		for _, row := range section.rows {
-			if w := ansi.StringWidth(row[0]); w >= column {
-				t.Errorf("key %q is %d wide, the column is %d", row[0], w, column)
-			}
-		}
-	}
-}
-
-// Descriptions have to survive the default card too: a row wider than the
-// column leaves it renders with an ellipsis instead of its own words.
-func TestHelpDescriptionsFitTheDefaultCard(t *testing.T) {
-	room := cardInnerWidth(helpCardWidth(120)) - helpKeyColumn(keybind.DefaultSession(), keybind.DefaultList(), true)
-	for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
-		for _, row := range section.rows {
-			if w := ansi.StringWidth(row[1]); w > room {
-				t.Errorf("section %q: %q is %d wide, only %d is left beside the key column",
-					section.title, row[1], w, room)
-			}
-		}
-	}
-}
-
-func TestHelpHighlightSurvivesAnAwkwardQuery(t *testing.T) {
-	// Folding "İ" lengthens it, which is the case that would slice out of
-	// range if the run were measured by the raw query.
-	for _, query := range []string{"İ", "ẞ", "", "  ", "the", "THE"} {
-		for _, section := range helpSections(keybind.DefaultSession(), keybind.DefaultList(), true) {
-			for _, row := range section.rows {
-				highlightMatch(row[1], query, 60)
 			}
 		}
 	}

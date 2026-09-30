@@ -32,6 +32,14 @@ An execution runner owns mutable polling state. It keeps the latest result unles
 
 Existing tmux subprocess calls have no context deadline. Cancellation therefore does not promise a fixed shutdown duration. Existing socket-based poller claims do not establish exclusive process authority.
 
+## Keep the UI taxonomy inside its existing package
+
+Concern families group root coordination, observations, rail, review, focus, dialogs, settings, notices, and shared presentation. The [UI concern map](ui-file-map.md) records their files and tests. Existing declarations move mechanically before feature policy changes.
+
+Feature subpackages were considered. They would need exported messages, shared render primitives, and root adapters before review and focus could move without import cycles or broad callback interfaces. The selected flat package preserves the existing API and message priority while those boundaries become explicit.
+
+Help is the first behavioral boundary. It consumes a value-only presentation context and returns a navigation result. The root owns mode transitions and command scheduling. A broad host exposing the store, driver, or all services would retain the coupling under a new name.
+
 ## Keep UI effects and rendering explicit
 
 The target remains the repository invariant that `Update` never blocks. I/O and subprocess work belong in `tea.Cmd`, with typed completion messages and request generations. Current synchronous lifecycle handlers are a documented conformance gap, even though their effects now use shared services.

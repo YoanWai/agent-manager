@@ -1,41 +1,22 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
-
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/charmbracelet/x/ansi"
 )
 
-// The key map is the one place every binding in the app is written down, so
-// it is grouped the way the keys are learned - by what is under the cursor
-// or which screen is up - rather than listed alphabetically. Long enough to
-// outgrow a terminal, it scrolls, and a search narrows it to the one line
-// the reader came for.
-
-type helpState struct {
-	scroll     int
-	query      string
-	searching  bool
-	returnMode mode
-}
-
-// helpSection is one context's bindings, titled for the thing the keys act
-// on.
+// The key map is grouped the way its bindings are learned: by what is under
+// the cursor or which screen is up, rather than listed alphabetically.
 type helpSection struct {
 	title string
 	rows  [][2]string
 }
 
 // helpKeyColumn is the width the key column is padded to: the widest key in
-// the whole catalog plus a gap. Measured rather than fixed, so a binding
-// added later cannot render clipped against its own description, and always
-// over the whole catalog rather than a search's hits, so narrowing the map
-// does not shift the column under the reader.
+// the whole catalog plus a gap. It always measures the whole catalog so a
+// search does not shift the column under the reader.
 func helpKeyColumn(session, list keybind.Table, arrowStep bool) int {
 	width := 0
 	for _, section := range helpSections(session, list, arrowStep) {
@@ -47,10 +28,6 @@ func helpKeyColumn(session, list keybind.Table, arrowStep bool) int {
 	}
 	return width + 2
 }
-
-// helpCardMaxWidth keeps the card readable on a wide terminal: past this the
-// eye has to travel too far from a key to its description.
-const helpCardMaxWidth = 92
 
 type helpRows struct {
 	list keybind.Table
@@ -268,17 +245,15 @@ func reviewHelpSection(list keybind.Table) helpSection {
 	}}
 }
 
-func (m *Model) visibleHelpSections() []helpSection {
-	if m.help.returnMode == modeDiff {
-		return []helpSection{reviewHelpSection(m.services.listKeys)}
+func (h helpState) visibleSections(ctx helpContext) []helpSection {
+	if h.scope == helpReview {
+		return []helpSection{reviewHelpSection(ctx.listKeys)}
 	}
-	return helpSections(m.services.keys, m.services.listKeys, m.prefs.arrowStep)
+	return helpSections(ctx.sessionKeys, ctx.listKeys, ctx.arrowStep)
 }
 
-// matchHelp narrows the catalog to the rows whose key or description
-// contains the query, dropping the sections left with nothing. A section
-// whose own title matches keeps all of its rows: "review" should answer
-// with the review screen, not with the two rows spelling the word.
+// matchHelp narrows the catalog to rows whose key or description contains
+// the query. A matching section title keeps all of that section's rows.
 func matchHelp(sections []helpSection, query string) []helpSection {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
@@ -314,233 +289,4 @@ func helpRowCount(sections []helpSection) int {
 		}
 	}
 	return count
-}
-
-// helpBodyLines lays the catalog out as one scrollable column: a titled rule
-// per section, then its bindings in two aligned columns.
-func helpBodyLines(sections []helpSection, session, list keybind.Table, arrowStep bool, width int, query string) []string {
-	keyColumn := helpKeyColumn(session, list, arrowStep)
-	if room := width / 3; keyColumn > room {
-		keyColumn = max(room, 4)
-	}
-	var lines []string
-	for i, section := range sections {
-		if i > 0 {
-			lines = append(lines, "")
-		}
-		lines = append(lines, divider(section.title, width))
-		for _, row := range section.rows {
-			// A row with no key is a note about the one above it, so it
-			// recedes into the description column instead of claiming a
-			// binding of its own.
-			if row[0] == "" {
-				lines = append(lines, strings.Repeat(" ", keyColumn)+
-					subtleStyle.Render(ansi.Truncate(row[1], max(width-keyColumn, 1), "…")))
-				continue
-			}
-			key := padRight(keyStyle.Render(row[0]), keyColumn)
-			lines = append(lines, key+highlightMatch(row[1], query, width-keyColumn))
-		}
-	}
-	return lines
-}
-
-// highlightMatch renders a description with the matched run picked out, so
-// a search lands the eye on the word it found instead of on the row.
-func highlightMatch(text, query string, width int) string {
-	text = ansi.Truncate(text, max(width, 1), "…")
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return mutedStyle.Render(text)
-	}
-	// Case folding can change a string's byte length, so the run to paint is
-	// as long as the folded query, and a fold that moved the offsets past the
-	// original drops the highlight instead of slicing out of range.
-	folded := strings.ToLower(query)
-	at := strings.Index(strings.ToLower(text), folded)
-	if at < 0 || at+len(folded) > len(text) {
-		return mutedStyle.Render(text)
-	}
-	hit := lipgloss.NewStyle().Foreground(colorBright).Bold(true)
-	return mutedStyle.Render(text[:at]) + hit.Render(text[at:at+len(folded)]) +
-		mutedStyle.Render(text[at+len(folded):])
-}
-
-func helpCardWidth(terminalWidth int) int {
-	width := helpCardMaxWidth
-	if terminalWidth >= 28 && width > terminalWidth-4 {
-		width = terminalWidth - 4
-	}
-	return width
-}
-
-// helpBodyRoom is the rows of catalog the card can show: the frame's own
-// chrome, the search line when one is up, and the error row come off the
-// terminal's height first.
-func (m *Model) helpBodyRoom() int {
-	inner := cardInnerWidth(helpCardWidth(m.width))
-	// Title, the blank under it, the blank above the rule, the rule itself,
-	// the hint - which wraps on a narrow card - and the bottom rule.
-	room := m.height - 5 - lipgloss.Height(legendInline(m.helpHint(), inner))
-	if m.helpSearchActive() {
-		room -= 2
-	}
-	if m.errBar.text != "" {
-		room -= 2
-	}
-	return max(room, 1)
-}
-
-func (m *Model) helpSearchActive() bool {
-	return m.help.searching || m.help.query != ""
-}
-
-func (m *Model) helpScrollLimit() int {
-	sections := matchHelp(m.visibleHelpSections(), m.help.query)
-	body := helpBodyLines(sections, m.services.keys, m.services.listKeys, m.prefs.arrowStep, cardInnerWidth(helpCardWidth(m.width)), m.help.query)
-	return max(0, len(body)-m.helpBodyRoom())
-}
-
-func (m *Model) viewHelp() string {
-	width := helpCardWidth(m.width)
-	inner := cardInnerWidth(width)
-	sections := matchHelp(m.visibleHelpSections(), m.help.query)
-
-	var head []string
-	if m.helpSearchActive() {
-		head = append(head, m.helpSearchLine(sections), "")
-	}
-
-	body := helpBodyLines(sections, m.services.keys, m.services.listKeys, m.prefs.arrowStep, inner, m.help.query)
-	if len(body) == 0 {
-		body = []string{subtleStyle.Render("no key matches that")}
-	}
-	lines := append(head, fitBody(body, m.helpBodyRoom(), m.help.scroll)...)
-
-	title := "? Keys"
-	if m.help.returnMode == modeDiff {
-		title = "? Review keys"
-	}
-	return m.cardSized(width, title, strings.Join(lines, "\n"), m.helpHint())
-}
-
-// helpSearchLine is the search's own row: what was typed, and how much of
-// the map still answers to it.
-func (m *Model) helpSearchLine(sections []helpSection) string {
-	line := keyStyle.Render("search ") + valueStyle.Render(m.help.query)
-	if m.help.searching {
-		line += cursorAnchorMarker + lipgloss.NewStyle().Foreground(colorAccent).Render("▏")
-	}
-	count := helpRowCount(sections)
-	label := " keys"
-	if count == 1 {
-		label = " key"
-	}
-	return line + subtleStyle.Render(fmt.Sprintf("   %d%s", count, label))
-}
-
-func (m *Model) helpHint() [][2]string {
-	if m.help.searching {
-		return [][2]string{{"type", "search"}, {"↵", "done"}, {"↑↓", "scroll"}, {"esc", "clear"}}
-	}
-	if m.help.query != "" {
-		return [][2]string{{"↑↓/jk", "scroll"}, {"/", "search"}, {"esc", "clear search"}, {"q", "close"}}
-	}
-	return [][2]string{
-		{"↑↓/jk", "scroll"}, {"pgup/pgdn", "page"}, {"g/G", "top/bottom"},
-		{"/", "search"}, {"esc/q", "close"},
-	}
-}
-
-func (m *Model) openHelp() {
-	m.help = helpState{returnMode: m.mode}
-	m.mode = modeHelp
-}
-
-func (m *Model) closeHelp() {
-	back := m.help.returnMode
-	m.help = helpState{}
-	m.mode = back
-}
-
-func (m *Model) scrollHelp(delta int) {
-	m.help.scroll = min(max(m.help.scroll+delta, 0), m.helpScrollLimit())
-}
-
-func (m *Model) helpPage() int {
-	return max(m.helpBodyRoom()-1, 1)
-}
-
-func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" {
-		return m, tea.Quit
-	}
-	if m.help.searching {
-		return m.handleHelpSearchKey(msg)
-	}
-	switch msg.String() {
-	case "esc":
-		if m.help.query != "" {
-			m.help.query = ""
-			m.help.scroll = 0
-			return m, nil
-		}
-		m.closeHelp()
-		return m, m.startStartupTick()
-	case "q", "?", "enter":
-		m.closeHelp()
-		return m, m.startStartupTick()
-	case "/":
-		m.help.searching = true
-	case "up", "k":
-		m.scrollHelp(-1)
-	case "down", "j":
-		m.scrollHelp(1)
-	case "pgup", "ctrl+u":
-		m.scrollHelp(-m.helpPage())
-	case "pgdown", "ctrl+d":
-		m.scrollHelp(m.helpPage())
-	case "g", "home":
-		m.help.scroll = 0
-	case "G", "end":
-		m.help.scroll = m.helpScrollLimit()
-	}
-	return m, nil
-}
-
-// handleHelpSearchKey types into the search. Scrolling stays live while it
-// is up, so a query with more hits than the card can show is still readable
-// without leaving the field.
-func (m *Model) handleHelpSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "enter":
-		m.help.searching = false
-	case "esc":
-		m.help.searching = false
-		m.help.query = ""
-		m.help.scroll = 0
-	case "backspace":
-		if runes := []rune(m.help.query); len(runes) > 0 {
-			m.help.query = string(runes[:len(runes)-1])
-			m.help.scroll = 0
-		}
-	case "up":
-		m.scrollHelp(-1)
-	case "down":
-		m.scrollHelp(1)
-	case "pgup":
-		m.scrollHelp(-m.helpPage())
-	case "pgdown":
-		m.scrollHelp(m.helpPage())
-	default:
-		switch msg.Type {
-		case tea.KeyRunes:
-			m.help.query += string(msg.Runes)
-			m.help.scroll = 0
-		case tea.KeySpace:
-			m.help.query += " "
-			m.help.scroll = 0
-		}
-	}
-	return m, nil
 }

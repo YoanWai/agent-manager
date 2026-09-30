@@ -34,7 +34,7 @@ flowchart TD
     Execution --> Infra
 ```
 
-This is an application-wide boundary refactor, not a claim that every feature handler has been extracted into a separate object. UI handlers still use `Model`, the root message router remains substantial, and painting still records geometry. Feature-owned behavior from [#646](https://github.com/YoanWai/agent-manager/issues/646) can be extracted incrementally against these boundaries.
+This is an application-wide boundary refactor, not a claim that every feature handler has been extracted into a separate object. Help now owns policy through a copied presentation context. Other UI handlers still use `Model`, the root message router remains substantial, and painting still records geometry. Feature-owned behavior from [#646](https://github.com/YoanWai/agent-manager/issues/646) can be extracted incrementally against these boundaries.
 
 ## Relationship to the earlier POC
 

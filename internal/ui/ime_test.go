@@ -190,7 +190,7 @@ func TestCustomSearchCursorsEmitMarkersOnlyWhileTyping(t *testing.T) {
 	if line := m.searchFieldLine(40); !strings.Contains(line, cursorAnchorMarker) {
 		t.Fatal("list search cursor has no marker")
 	}
-	if line := m.helpSearchLine(nil); !strings.Contains(line, cursorAnchorMarker) {
+	if line := m.help.searchLine(nil); !strings.Contains(line, cursorAnchorMarker) {
 		t.Fatal("help search cursor has no marker")
 	}
 
@@ -199,7 +199,7 @@ func TestCustomSearchCursorsEmitMarkersOnlyWhileTyping(t *testing.T) {
 	if line := m.searchFieldLine(40); strings.Contains(line, cursorAnchorMarker) {
 		t.Fatal("closed list search kept a cursor marker")
 	}
-	if line := m.helpSearchLine(nil); strings.Contains(line, cursorAnchorMarker) {
+	if line := m.help.searchLine(nil); strings.Contains(line, cursorAnchorMarker) {
 		t.Fatal("closed help search kept a cursor marker")
 	}
 }

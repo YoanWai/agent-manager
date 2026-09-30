@@ -40,7 +40,7 @@ These are future application rules. Current UI observations and PR #1 fixture wo
 
 Keep the flat package to preserve internal access and the exported UI API. Use consistent feature prefixes for state, input, view, and source-adjacent tests. Start with a small dialog before migrating review or focus.
 
-| Proposed concern | Proposed file family | Acceptance condition |
+| Concern | File family | Acceptance condition |
 | --- | --- | --- |
 | Root coordination | `model`, `refresh`, `preview`, `startup`, `updates`, `sizing`, `rows` | Root routes messages; feature policy lives with its feature |
 | Small dialogs | `help`, `fork`, `move`, `confirm` with keys and view files as needed | Each feature owns state and declares a narrow host |
@@ -48,7 +48,7 @@ Keep the flat package to preserve internal access and the exported UI API. Use c
 | Focus | Focus state, keys, selection, scroll, links, watches, and IME | Preserve keyboard, mouse, pane geometry, and attach behavior |
 | Observations and rail | Observation state and rail state, keys, view | Name UI observations distinctly from future controller workspace coordination |
 
-These are proposed moves, not claims that all listed files already exist. A file under 1,000 lines or a model with fewer fields can still hide broad dependencies. Size caps support review; they do not prove a boundary.
+The [UI concern map](ui-file-map.md) records implemented file families and adjacent tests. Help now owns its input policy through a copied value context; larger features still use root methods. A file under 1,000 lines or a model with fewer fields can still hide broad dependencies. Size caps support review; they do not prove a boundary.
 
 ## Split other packages without adding layers
 

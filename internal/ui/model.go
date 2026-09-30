@@ -59,16 +59,17 @@ type Model struct {
 	install *pendingInstall
 	// mouseReleased is true while the setup dialog has handed the mouse
 	// back to the terminal, so a drag selects its text.
-	mouseReleased bool
-	mouseHover    bool
-	rename        renameTarget
-	fork          forkState
-	quick         quickState
-	settings      settingsState
-	help          helpState
-	moveID        string
-	movePath      string
-	repoPick      repoPickState
+	mouseReleased  bool
+	mouseHover     bool
+	rename         renameTarget
+	fork           forkState
+	quick          quickState
+	settings       settingsState
+	help           helpState
+	helpReturnMode mode
+	moveID         string
+	movePath       string
+	repoPick       repoPickState
 	// editorReturnID is the session an editor request detached from, so the
 	// attach it cost can be resumed once the editor is up.
 	editorReturnID string
