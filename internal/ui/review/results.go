@@ -3,6 +3,7 @@ package review
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 )
@@ -48,6 +49,8 @@ func (m *Model) ApplyLoad(result LoadResult) ApplyResult {
 		previousPath = fd.File.Path
 	}
 	m.set = result.Set
+	stateChanged := m.clearStaleMarks()
+	stateChanged = m.markMissingCommentsOutdated() || stateChanged
 	m.fileLoading = make(map[int]bool)
 	m.reanchor = nil
 	if result.Refresh || restored {
@@ -70,7 +73,62 @@ func (m *Model) ApplyLoad(result LoadResult) ApplyResult {
 	} else if request, ok := m.requestHighlight(); ok {
 		accepted.Requests.Highlight = &request
 	}
+	if result.Refresh || restored {
+		stateful := make(map[string]bool)
+		for markKey, hash := range m.reviewed[m.reviewKey()] {
+			scope, path, _ := strings.Cut(markKey, "\x00")
+			if hash != 0 && scope == m.scope.String() {
+				stateful[path] = true
+			}
+		}
+		for _, note := range m.annotations[m.reviewKey()] {
+			stateful[note.file] = true
+		}
+		for i := range m.set.Files {
+			if stateful[m.set.Files[i].File.Path] {
+				if request, ok := m.requestFile(i); ok {
+					accepted.Requests.Files = append(accepted.Requests.Files, request)
+				}
+			}
+		}
+	}
+	if stateChanged {
+		accepted.Requests.Save = m.saveRequest()
+	}
 	accepted.Requests.StartupTick = true
+	return accepted
+}
+
+func (m *Model) ApplyFile(result FileResult) ApplyResult {
+	if !m.active || result.TargetID != m.target.ID || result.Scope != m.scope ||
+		result.Generation != m.gen || result.RepoRoot != m.set.Repo.Root {
+		return ApplyResult{}
+	}
+	if result.Index < 0 || result.Index >= len(m.set.Files) || m.set.Files[result.Index].File.Path != result.Path {
+		return ApplyResult{}
+	}
+	delete(m.fileLoading, result.Index)
+	m.set.Files[result.Index] = result.File
+	stateChanged := m.clearStaleMark(result.Path)
+	if m.reanchor[result.Path] {
+		stateChanged = m.reanchorAnnotations(result.Path) || stateChanged
+		delete(m.reanchor, result.Path)
+	}
+	accepted := ApplyResult{Accepted: true}
+	if stateChanged {
+		accepted.Requests.Save = m.saveRequest()
+	}
+	if result.Index != m.fileIdx {
+		return accepted
+	}
+	if target := m.nextShownFile(m.fileIdx, 1); target != m.fileIdx {
+		accepted.Requests = mergeRequests(accepted.Requests, m.SwitchFile(target-m.fileIdx))
+		return accepted
+	}
+	m.clampCursor()
+	if request, ok := m.requestHighlight(); ok {
+		accepted.Requests.Highlight = &request
+	}
 	return accepted
 }
 

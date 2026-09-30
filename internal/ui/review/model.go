@@ -267,3 +267,7 @@ func (m *Model) putHighlight(key HighlightKey, hl *Highlight) {
 	}
 	m.highlights[key] = hl
 }
+
+func zeroDiffSet() diff.Set { return diff.Set{} }
+
+func scopeBranch() git.Scope { return git.ScopeBranch }

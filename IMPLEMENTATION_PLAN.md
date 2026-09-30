@@ -2,13 +2,13 @@
 **Goal**: Add a private-state child model with feature-local request/result DTOs.
 **Success Criteria**: Child tests prove draft lifetime and independent stale-result fences without root/store/tmux fixtures.
 **Tests**: `go test ./internal/ui/review`
-**Status**: In Progress
+**Status**: Complete
 
 ## Stage 2: Root adapters and caller migration
 **Goal**: Route Review load, persistence, input, and navigation through the child model.
 **Success Criteria**: Root owns concrete I/O and return modes; Review owns result acceptance and policy.
 **Tests**: Focused `internal/ui` Review tests.
-**Status**: Not Started
+**Status**: In Progress
 
 ## Stage 3: Rendering boundary
 **Goal**: Render from immutable Review snapshots and remove render-time state mutation.

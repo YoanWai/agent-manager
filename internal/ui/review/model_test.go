@@ -90,3 +90,53 @@ func TestSaveFailureIsReportedOnlyForCurrentTarget(t *testing.T) {
 		t.Fatalf("unrelated save surfaced %q", other.Error)
 	}
 }
+
+func TestSwitchFileRestoresScrollByTargetRepoScopeAndPath(t *testing.T) {
+	var model review.Model
+	req := model.Open(review.Target{ID: "s1", Cwd: "/repo"}, git.ScopeUncommitted, "/repo")
+	set := diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{
+		diff.BuildFile(nil, []byte("one\ntwo\nthree\n"), git.ChangedFile{Path: "a.go"}, git.FileStat{}),
+		diff.BuildFile(nil, []byte("four\nfive\n"), git.ChangedFile{Path: "b.go"}, git.FileStat{}),
+	}}
+	model.ApplyLoad(review.LoadResult{TargetID: "s1", Scope: req.Scope, Generation: req.Generation, RepoRoot: "/repo", RepoRoots: []string{"/repo"}, Set: set})
+	model.MoveCursor(2, 1)
+	model.SwitchFile(1)
+	if got := model.Snapshot().FileIndex; got != 1 {
+		t.Fatalf("file index = %d, want 1", got)
+	}
+	model.SwitchFile(-1)
+	got := model.Snapshot()
+	if got.FileIndex != 0 || got.Scroll != 2 {
+		t.Fatalf("restored file/index = %d/%d, want 0/2", got.FileIndex, got.Scroll)
+	}
+}
+
+func TestToggleLayoutKeepsTheSameDiffLineSelected(t *testing.T) {
+	var model review.Model
+	req := model.Open(review.Target{ID: "s1", Cwd: "/repo"}, git.ScopeUncommitted, "/repo")
+	fd := diff.BuildFile([]byte("old\nkeep\n"), []byte("new\nkeep\n"), git.ChangedFile{Path: "a.go"}, git.FileStat{})
+	model.ApplyLoad(review.LoadResult{TargetID: "s1", Scope: req.Scope, Generation: req.Generation, RepoRoot: "/repo", RepoRoots: []string{"/repo"}, Set: diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{fd}}})
+	model.SetCursorDiffLine(1, 10)
+	want := model.CursorDiffLine()
+	model.ToggleSideBySide(10)
+	if got := model.CursorDiffLine(); got != want {
+		t.Fatalf("diff line after layout toggle = %d, want %d", got, want)
+	}
+}
+
+func TestApplyFileRejectsThePreviousGeneration(t *testing.T) {
+	var model review.Model
+	first := model.Open(review.Target{ID: "s1", Cwd: "/repo"}, git.ScopeUncommitted, "/repo")
+	unloaded := diff.Set{Repo: git.Repo{Root: "/repo"}, Files: []diff.FileDiff{{File: git.ChangedFile{Path: "a.go"}}}}
+	model.ApplyLoad(review.LoadResult{TargetID: "s1", Scope: first.Scope, Generation: first.Generation, RepoRoot: "/repo", RepoRoots: []string{"/repo"}, Set: unloaded})
+	second := model.Open(review.Target{ID: "s1", Cwd: "/repo"}, git.ScopeUncommitted, "/repo")
+	model.ApplyLoad(review.LoadResult{TargetID: "s1", Scope: second.Scope, Generation: second.Generation, RepoRoot: "/repo", RepoRoots: []string{"/repo"}, Set: unloaded})
+	loaded := diff.BuildFile(nil, []byte("new\n"), git.ChangedFile{Path: "a.go"}, git.FileStat{})
+	got := model.ApplyFile(review.FileResult{TargetID: "s1", Scope: first.Scope, Generation: first.Generation, RepoRoot: "/repo", Index: 0, Path: "a.go", File: loaded})
+	if got.Accepted {
+		t.Fatal("previous-generation file result was accepted")
+	}
+	if current, _ := model.CurrentFile(); current.Loaded() {
+		t.Fatal("stale result replaced the current file")
+	}
+}
