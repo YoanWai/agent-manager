@@ -3,6 +3,7 @@ package sessioncmd
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/agentsession"
@@ -29,12 +30,20 @@ func SnapshotRelaunch(st *store.Store, sess store.Session, tool config.Tool, age
 
 const pickerInjectionTimeout = 45 * time.Second
 
-// InjectPickerKeys opens a picker that exists only inside a running TUI.
-func InjectPickerKeys(driver *tmux.Driver, sessID, composerPattern, keys string) {
-	if composerPattern == "" || keys == "" {
+// InjectPickerKeys opens a picker that exists only inside a running TUI. The
+// keys wait for the caret to rest on the tool's composer row, since a tool
+// drawing inline (agy) leaves its last frame, composer and all, in the pane
+// it exited.
+func InjectPickerKeys(driver *tmux.Driver, sessID string, tool config.Tool) {
+	composer := tool.InputPrefix
+	if composer == "" {
+		composer = tool.ActivityCutoff
+	}
+	keys := tool.ResumePickerKeys
+	if composer == "" || keys == "" {
 		return
 	}
-	re, err := regexp.Compile(composerPattern)
+	re, err := regexp.Compile(composer)
 	if err != nil {
 		return
 	}
@@ -44,18 +53,56 @@ func InjectPickerKeys(driver *tmux.Driver, sessID, composerPattern, keys string)
 			if !driver.Exists(sessID) {
 				return
 			}
-			pane, err := driver.CapturePane(sessID)
-			if err == nil && re.MatchString(ansi.Strip(pane)) {
-				if err := driver.SendKeys(sessID, keys, "Enter"); err != nil {
-					return
-				}
-				time.Sleep(500 * time.Millisecond)
-				_ = driver.SendKeys(sessID, "Enter")
+			row, ok := caretRow(driver, sessID)
+			if loc := re.FindStringIndex(row); !ok || loc == nil || loc[0] != 0 {
+				time.Sleep(300 * time.Millisecond)
+				continue
+			}
+			if err := driver.SendKeys(sessID, keys, "Enter"); err != nil {
 				return
 			}
-			time.Sleep(300 * time.Millisecond)
+			if keysStayInComposer(driver, sessID, keys) {
+				_ = driver.SendKeys(sessID, "Enter")
+			}
+			return
 		}
 	}()
+}
+
+// completionSettle is how long the keys must stay on the caret row before
+// the first Enter counts as having accepted a completion rather than run it.
+const completionSettle = 1500 * time.Millisecond
+
+// keysStayInComposer tells a composer that took the first Enter as
+// accepting its completion, and still holds the keys, from a picker that
+// opened and took the caret off them, where one more Enter would pick its
+// top row for the user. A picker slow to draw leaves the keys up for a
+// moment, so they have to stay for the whole settle.
+func keysStayInComposer(driver *tmux.Driver, sessID, keys string) bool {
+	deadline := time.Now().Add(completionSettle)
+	for time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		if row, ok := caretRow(driver, sessID); !ok || !strings.Contains(row, keys) {
+			return false
+		}
+	}
+	return true
+}
+
+func caretRow(driver *tmux.Driver, sessID string) (string, bool) {
+	_, y, err := driver.Cursor(sessID)
+	if err != nil {
+		return "", false
+	}
+	pane, err := driver.CapturePane(sessID)
+	if err != nil {
+		return "", false
+	}
+	rows := strings.Split(ansi.Strip(pane), "\n")
+	if y < 0 || y >= len(rows) {
+		return "", false
+	}
+	return rows[y], true
 }
 
 // RelaunchInPane starts a session's tool again inside the shell its pane

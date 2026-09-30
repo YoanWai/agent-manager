@@ -211,7 +211,7 @@ func (l *Lifecycle) Revive(sess store.Session, pane PaneSize) (RelaunchResult, e
 			return RelaunchResult{}, err
 		}
 		if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-			InjectPickerKeys(l.runtime.Driver, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
+			InjectPickerKeys(l.runtime.Driver, sess.ID, tool)
 		}
 		sess.Status = status.Starting
 		sess.AgentLaunchedAt = launchedAt
@@ -291,7 +291,7 @@ func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCom
 		return RelaunchResult{}, err
 	}
 	if injectPicker && sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-		InjectPickerKeys(l.runtime.Driver, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
+		InjectPickerKeys(l.runtime.Driver, sess.ID, tool)
 	}
 	sess.Status = status.Starting
 	sess.AgentLaunchedAt = launchedAt

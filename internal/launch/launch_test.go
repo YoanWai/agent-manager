@@ -57,7 +57,7 @@ func TestWithPromptComposesPerToolStyle(t *testing.T) {
 
 func TestAssembleRoutesPromptAndDirective(t *testing.T) {
 	flagged := config.Tool{Command: "claude", PromptFlag: "-p", SessionIDFlag: "--session-id"}
-	plan := Assemble("claude", flagged, "build the api", true)
+	plan := Assemble("claude", flagged, "build the api", true, true)
 	if !strings.HasPrefix(plan.Command, "claude -p '"+RenameDirective) {
 		t.Fatalf("auto-named flagged command = %q", plan.Command)
 	}
@@ -68,13 +68,13 @@ func TestAssembleRoutesPromptAndDirective(t *testing.T) {
 		t.Fatalf("an embeddable directive needs no pending input, got %v", plan.PendingInputs)
 	}
 
-	deferred := Assemble("claude", flagged, "/compact the notes", true)
+	deferred := Assemble("claude", flagged, "/compact the notes", true, true)
 	if len(deferred.PendingInputs) != 1 || deferred.PendingInputs[0] != DeferredRenameDirective {
 		t.Fatalf("slash-command launch should defer the directive, got %v", deferred.PendingInputs)
 	}
 
 	sent := config.Tool{Command: "hermes", PromptMode: "send"}
-	typed := Assemble("hermes", sent, "build the api", false)
+	typed := Assemble("hermes", sent, "build the api", false, true)
 	if typed.Command != "hermes" {
 		t.Fatalf("send-mode command = %q", typed.Command)
 	}
@@ -87,40 +87,48 @@ func TestAssembleRoutesPromptAndDirective(t *testing.T) {
 }
 
 func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
-	noClient := config.Tool{Command: "pi", PromptFlag: "-p"}
-	carried := Assemble("pi", noClient, "build the api", false)
-	if !strings.Contains(carried.Command, CoordinationNote) {
-		t.Fatalf("a tool with no MCP client should be pointed at the subcommands, got %q", carried.Command)
-	}
-	if len(carried.PendingInputs) != 0 {
-		t.Fatalf("a note the prompt carried needs no pending input, got %v", carried.PendingInputs)
-	}
+	for _, mode := range []struct {
+		proactive bool
+		note      string
+	}{
+		{proactive: true, note: ProactiveCoordinationNote},
+		{proactive: false, note: OnRequestCoordinationNote},
+	} {
+		noClient := config.Tool{Command: "pi", PromptFlag: "-p"}
+		carried := Assemble("pi", noClient, "build the api", false, mode.proactive)
+		if !strings.Contains(carried.Command, mode.note) {
+			t.Fatalf("a tool with no MCP client should be pointed at the subcommands, got %q", carried.Command)
+		}
+		if len(carried.PendingInputs) != 0 {
+			t.Fatalf("a note the prompt carried needs no pending input, got %v", carried.PendingInputs)
+		}
 
-	withClient := config.Tool{Command: "claude", PromptFlag: "-p"}
-	if plan := Assemble("claude", withClient, "build the api", false); strings.Contains(plan.Command, CoordinationNote) {
-		t.Fatalf("a tool whose MCP tool descriptions say this already must not repeat it, got %q", plan.Command)
-	}
+		withClient := config.Tool{Command: "claude", PromptFlag: "-p"}
+		if plan := Assemble("claude", withClient, "build the api", false, mode.proactive); strings.Contains(plan.Command, mode.note) {
+			t.Fatalf("a tool whose MCP tool descriptions say this already must not repeat it, got %q", plan.Command)
+		}
 
-	commandCode := Assemble("command-code", config.Tool{Command: "cmd"}, "build the api", false)
-	if strings.Contains(commandCode.Command, CoordinationNote) {
-		t.Fatalf("command-code registers MCP on spawn, so it must not get the subcommand note, got %q", commandCode.Command)
-	}
+		commandCode := Assemble("command-code", config.Tool{Command: "cmd"}, "build the api", false, mode.proactive)
+		if strings.Contains(commandCode.Command, mode.note) {
+			t.Fatalf("command-code registers MCP on spawn, so it must not get the subcommand note, got %q", commandCode.Command)
+		}
 
-	// A slash command carries neither, so both queue, and the order is what
-	// the agent reads: the directive ends on "Then continue.", and the note
-	// is what it continues into.
-	deferred := Assemble("pi", noClient, "/compact the notes", true)
-	if len(deferred.PendingInputs) != 2 ||
-		deferred.PendingInputs[0] != DeferredRenameDirective || deferred.PendingInputs[1] != CoordinationNote {
-		t.Fatalf("a launch needing both should queue them in reading order, got %v", deferred.PendingInputs)
-	}
+		// A slash command carries neither, so both queue, and the order is what
+		// the agent reads: the directive ends on "Then continue.", and the note
+		// is what it continues into.
+		deferred := Assemble("pi", noClient, "/compact the notes", true, mode.proactive)
+		if len(deferred.PendingInputs) != 2 ||
+			deferred.PendingInputs[0] != DeferredRenameDirective || deferred.PendingInputs[1] != mode.note {
+			t.Fatalf("a launch needing both should queue them in reading order, got %v", deferred.PendingInputs)
+		}
 
-	promptless := Assemble("pi", noClient, "", false)
-	if promptless.Command != noClient.Command {
-		t.Fatalf("a promptless launch command should stay clean, got %q", promptless.Command)
-	}
-	if len(promptless.PendingInputs) != 1 || promptless.PendingInputs[0] != CoordinationNote {
-		t.Fatalf("a prompt that cannot carry the note should queue it, got %v", promptless.PendingInputs)
+		promptless := Assemble("pi", noClient, "", false, mode.proactive)
+		if promptless.Command != noClient.Command {
+			t.Fatalf("a promptless launch command should stay clean, got %q", promptless.Command)
+		}
+		if len(promptless.PendingInputs) != 1 || promptless.PendingInputs[0] != mode.note {
+			t.Fatalf("a prompt that cannot carry the note should queue it, got %v", promptless.PendingInputs)
+		}
 	}
 }
 
@@ -273,7 +281,7 @@ func TestEnvironmentSetsGrokTerminalTheme(t *testing.T) {
 func TestAssembleCarriesTheDirectiveOverAPastedImagePath(t *testing.T) {
 	flagged := config.Tool{Command: "claude", PromptFlag: "-p"}
 	prompt := "/var/folders/_b/T/agent-manager-pastes/paste-268.png why is this session working?"
-	plan := Assemble("claude", flagged, prompt, true)
+	plan := Assemble("claude", flagged, prompt, true, true)
 	if len(plan.PendingInputs) != 0 {
 		t.Fatalf("a prompt led by an image path is no slash command, got %v", plan.PendingInputs)
 	}
@@ -291,9 +299,9 @@ func TestMuseLaunchAndRevive(t *testing.T) {
 		t.Fatal(err)
 	}
 	tool := cfg.Tools["muse"]
-	plan := Assemble("muse", tool, "fix the bug", false)
+	plan := Assemble("muse", tool, "fix the bug", false, true)
 	// Muse carries the MCP tools, whose descriptions stand in for the note.
-	if !strings.HasPrefix(plan.Command, "muse '") || strings.Contains(plan.Command, CoordinationNote) || !strings.Contains(plan.Command, "fix the bug") {
+	if !strings.HasPrefix(plan.Command, "muse '") || strings.Contains(plan.Command, ProactiveCoordinationNote) || !strings.Contains(plan.Command, "fix the bug") {
 		t.Fatalf("launch = %+v", plan)
 	}
 	if plan.AgentSessionID != "" || len(plan.PendingInputs) != 0 {
@@ -303,6 +311,28 @@ func TestMuseLaunchAndRevive(t *testing.T) {
 		t.Fatal(got)
 	}
 	if got := ReviveCommand(tool, ""); got != "muse resume" {
+		t.Fatal(got)
+	}
+}
+
+func TestAntigravityLaunchAndRevive(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := cfg.Tools["antigravity"]
+	plan := Assemble("antigravity", tool, "fix the bug", false, true)
+	// agy carries the MCP tools, whose descriptions stand in for the note.
+	if !strings.HasPrefix(plan.Command, "agy -i '") || !strings.Contains(plan.Command, "fix the bug") || strings.Contains(plan.Command, ProactiveCoordinationNote) {
+		t.Fatalf("launch = %+v", plan)
+	}
+	if plan.AgentSessionID != "" || len(plan.PendingInputs) != 0 {
+		t.Fatalf("unexpected session flag or deferred prompt: %+v", plan)
+	}
+	if got := ReviveCommand(tool, "0ab14c4d-1cb2-454a-b992-b622e29c0825"); got != "agy --conversation '0ab14c4d-1cb2-454a-b992-b622e29c0825'" {
+		t.Fatal(got)
+	}
+	if got := ReviveCommand(tool, ""); got != "agy" {
 		t.Fatal(got)
 	}
 }

@@ -134,6 +134,17 @@ func (b *Backend) Lifecycle() (*Lifecycle, error) {
 	return NewLifecycle(runtime)
 }
 
+// ProactiveCoordination reads the coordination mode from this backend's
+// already-open store. Long-lived MCP owners must not open a second store to
+// decide which instructions they serve.
+func (b *Backend) ProactiveCoordination() (bool, error) {
+	runtime, err := b.resolve()
+	if err != nil {
+		return false, err
+	}
+	return runtime.Store.ProactiveCoordination()
+}
+
 func (b *Backend) commands(words Vocabulary) (*runtime, error) {
 	bound, err := b.resolve()
 	if err != nil {

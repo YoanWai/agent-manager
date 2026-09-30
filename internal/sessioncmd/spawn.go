@@ -76,6 +76,10 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	if err != nil {
 		return Session{}, err
 	}
+	proactive, err := runtime.store.ProactiveCoordination()
+	if err != nil {
+		return Session{}, err
+	}
 	dir, worktree, err := s.prepareWorktree(dir, name, wantWorktree, opts.Worktree != nil)
 	if err != nil {
 		return Session{}, err
@@ -92,7 +96,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		}
 	}
 
-	plan := launch.Assemble(toolName, tool, prompt, autoNamed)
+	plan := launch.Assemble(toolName, tool, prompt, autoNamed, proactive)
 	var lifecycleGit *git.Driver
 	if worktree.repo != "" {
 		lifecycleGit, err = s.newGit()

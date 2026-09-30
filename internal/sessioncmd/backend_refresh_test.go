@@ -76,3 +76,27 @@ func TestOwnedBackendCanOpenAfterConfigurationIsRepaired(t *testing.T) {
 		t.Fatalf("backend retained the repaired configuration error: %v", err)
 	}
 }
+
+func TestBorrowedBackendReadsCoordinationFromItsStore(t *testing.T) {
+	h := newSessionHarness(t)
+	cfg, err := config.LoadDir(h.sessions.configDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend, err := BorrowBackend(Runtime{
+		Config: cfg, Store: h.store, Driver: h.driver,
+		Hooks: hooks.NewManager(h.sessions.configDir), Snapshot: h.store.SetSnapshot,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proactive, err := backend.ProactiveCoordination(); err != nil || proactive {
+		t.Fatalf("default coordination = %v, %v; want on request", proactive, err)
+	}
+	if err := h.store.SetProactiveCoordination(true); err != nil {
+		t.Fatal(err)
+	}
+	if proactive, err := backend.ProactiveCoordination(); err != nil || !proactive {
+		t.Fatalf("stored coordination = %v, %v; want proactive", proactive, err)
+	}
+}

@@ -697,3 +697,26 @@ func TestRenameWaitsWhileItsClaimedRenameIsApplied(t *testing.T) {
 		t.Fatalf("Rename = %q, %v; want the claimed rename reported as applied", message, err)
 	}
 }
+
+func TestProactiveCoordinationReadsTheStoredMode(t *testing.T) {
+	configDir := t.TempDir()
+	if proactive, err := ProactiveCoordination(configDir); err != nil || proactive {
+		t.Fatalf("a config dir the manager never ran in is proactive = %v, err = %v; want on request", proactive, err)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "state.db")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("reading the mode created a store: %v", err)
+	}
+	st, err := store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetProactiveCoordination(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if proactive, err := ProactiveCoordination(configDir); err != nil || !proactive {
+		t.Fatalf("proactive = %v, err = %v; want the stored proactive mode", proactive, err)
+	}
+}
