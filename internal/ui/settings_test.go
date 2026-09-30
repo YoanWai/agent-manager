@@ -142,9 +142,9 @@ func TestSettingsMouseTogglePersists(t *testing.T) {
 
 func TestSettingsShowsVersion(t *testing.T) {
 	m := &Model{
-	update:   updateInfo{version: "v0.9.0"},
-	settings: settingsState{toolNames: []string{"claude"}},
-}
+		update:   updateInfo{version: "v0.9.0"},
+		settings: settingsState{toolNames: []string{"claude"}},
+	}
 	out := m.viewSettings()
 	if !strings.Contains(out, "version") || !strings.Contains(out, "v0.9.0") {
 		t.Errorf("settings missing version: %q", out)

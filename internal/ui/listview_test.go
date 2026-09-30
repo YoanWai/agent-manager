@@ -868,11 +868,11 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 16}, {100, 24}, {120, 30}, {160, 44}} {
 		for _, cursor := range []int{0, 1, len(rows) / 2, len(rows) - 2, len(rows) - 1} {
 			m := &Model{
-	width: size.w, height: size.h, mode: modeList,
+				width: size.w, height: size.h, mode: modeList,
 
-	split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: sessions}, rail: railState{rows: rows, cursor: cursor,
-		collapsed: map[string]bool{}},
-}
+				split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: sessions}, rail: railState{rows: rows, cursor: cursor,
+					collapsed: map[string]bool{}},
+			}
 			view := ansi.Strip(m.View())
 			if !strings.Contains(view, sessions[cursor].Name) {
 				t.Errorf("%dx%d cursor=%d: %q is selected but never painted:\n%s",
@@ -1021,8 +1021,8 @@ const blankCapture = "\n\n\n\n\n\n\n\n\n\n"
 
 func previewModel(sessionStatus, preview string) *Model {
 	return &Model{
-	width: 120, height: 40, mode: modeList, workspace: workspace{preview: preview}, rail: railState{rows: []treeRow{{sess: store.Session{ID: "boot", Name: "boot", Status: sessionStatus}}}},
-}
+		width: 120, height: 40, mode: modeList, workspace: workspace{preview: preview}, rail: railState{rows: []treeRow{{sess: store.Session{ID: "boot", Name: "boot", Status: sessionStatus}}}},
+	}
 }
 
 func previewText(m *Model) string {
@@ -1233,13 +1233,13 @@ func TestRowMarksSessionsOnAnotherServer(t *testing.T) {
 				CreatedAt: now, LastStatusAt: now, TmuxSocket: tc.socket,
 			}
 			m := &Model{
-	width: 120, height: 40, mode: modeList,
+				width: 120, height: 40, mode: modeList,
 
-	split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: []store.Session{sess},
+				split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: []store.Session{sess},
 
-		tmuxSocket: here, leadingManager: tc.leading}, rail: railState{rows: []treeRow{{sess: sess}},
-		collapsed: map[string]bool{}},
-}
+					tmuxSocket: here, leadingManager: tc.leading}, rail: railState{rows: []treeRow{{sess: sess}},
+					collapsed: map[string]bool{}},
+			}
 			view := ansi.Strip(m.View())
 			if strings.Contains(view, "elsewhere") != tc.elsewise {
 				t.Fatalf("elsewhere marker = %v, want %v:\n%s", !tc.elsewise, tc.elsewise, view)
@@ -1257,11 +1257,11 @@ func TestRowsAreUnmarkedBeforeTheFirstPoll(t *testing.T) {
 		CreatedAt: now, LastStatusAt: now, TmuxSocket: "/tmp/another-manager/agentmgr",
 	}
 	m := &Model{
-	width: 120, height: 40, mode: modeList,
+		width: 120, height: 40, mode: modeList,
 
-	split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: []store.Session{sess}}, rail: railState{rows: []treeRow{{sess: sess}},
-		collapsed: map[string]bool{}},
-}
+		split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: []store.Session{sess}}, rail: railState{rows: []treeRow{{sess: sess}},
+			collapsed: map[string]bool{}},
+	}
 	if view := ansi.Strip(m.View()); strings.Contains(view, "elsewhere") {
 		t.Fatalf("nothing to compare against should mark nothing:\n%s", view)
 	}

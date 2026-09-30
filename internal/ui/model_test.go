@@ -146,14 +146,14 @@ func TestStartupTickRunsWhileReviewLoads(t *testing.T) {
 
 func TestMoveCursorDebouncesPreview(t *testing.T) {
 	m := &Model{
-	mode:   modeList,
-	width:  120,
-	height: 40, rail: railState{rows: []treeRow{
-		{sess: store.Session{ID: "a", Name: "a"}},
-		{sess: store.Session{ID: "b", Name: "b"}},
-	},
-		cursor: 0},
-}
+		mode:   modeList,
+		width:  120,
+		height: 40, rail: railState{rows: []treeRow{
+			{sess: store.Session{ID: "a", Name: "a"}},
+			{sess: store.Session{ID: "b", Name: "b"}},
+		},
+			cursor: 0},
+	}
 	cmd := m.moveCursor(1)
 	if m.rail.cursor != 1 {
 		t.Fatalf("cursor = %d want 1", m.rail.cursor)

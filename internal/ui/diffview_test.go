@@ -263,14 +263,14 @@ func TestHandledCommentsStayVisibleWithAMutedColor(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
 	m := &Model{diff: diffState{
-	sessID: "abc123", repoSel: "/repo",
-	annotations: map[string][]annotation{
-		"abc123\x00/repo": {
-			{id: "0123456789abcdef", file: "main.go", line: 1, text: "still open", round: 2, point: 1},
-			{id: "fedcba9876543210", file: "main.go", line: 1, text: "already fixed", round: 1, point: 3, handled: true},
+		sessID: "abc123", repoSel: "/repo",
+		annotations: map[string][]annotation{
+			"abc123\x00/repo": {
+				{id: "0123456789abcdef", file: "main.go", line: 1, text: "still open", round: 2, point: 1},
+				{id: "fedcba9876543210", file: "main.go", line: 1, text: "already fixed", round: 1, point: 3, handled: true},
+			},
 		},
-	},
-}}
+	}}
 	fd := &diff.FileDiff{File: git.ChangedFile{Path: "main.go"}, Lines: []diff.Line{{NewNum: 1, Text: "line"}}}
 	rows := m.annotationRows(fd, 0, 80)
 	rendered := strings.Join(rows, "\n")
@@ -2824,15 +2824,15 @@ func TestSendAnnotationsRefusesAShell(t *testing.T) {
 
 func TestDiffSendConfirmIgnoresMotionKeys(t *testing.T) {
 	m := &Model{
-	mode: modeDiff,
-	diff: diffState{
-		active:      true,
-		sendConfirm: true,
-		annotations: map[string][]annotation{
-			"\x00": {{file: "main.go", line: 1, text: "keep me"}},
+		mode: modeDiff,
+		diff: diffState{
+			active:      true,
+			sendConfirm: true,
+			annotations: map[string][]annotation{
+				"\x00": {{file: "main.go", line: 1, text: "keep me"}},
+			},
 		},
-	},
-}
+	}
 	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	if !m.diff.sendConfirm {
 		t.Fatal("j should leave the send prompt up")
@@ -3075,13 +3075,13 @@ func TestReviewShowsLoaderWhileDiffLoads(t *testing.T) {
 
 func TestReviewShowsLoaderWhileFileLoads(t *testing.T) {
 	m := &Model{
-	width: 100, height: 30, mode: modeDiff,
-	diff: diffState{
-		active: true,
-		sessID: "s",
-		set:    diff.Set{Files: []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}},
-	},
-}
+		width: 100, height: 30, mode: modeDiff,
+		diff: diffState{
+			active: true,
+			sessID: "s",
+			set:    diff.Set{Files: []diff.FileDiff{{File: git.ChangedFile{Path: "main.go"}}}},
+		},
+	}
 	code := ansi.Strip(m.viewDiffCode(80, 20))
 	if !strings.Contains(code, "loading file") {
 		t.Fatalf("code pane should carry the file loader, got %q", code)

@@ -132,12 +132,12 @@ func TestArrowNudgeAndPipeCommits(t *testing.T) {
 
 	m := &Model{
 
-	mode:   modeList,
-	width:  100,
-	height: 40,
-	split:  splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList(),
-		store: st},
-}
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList(),
+			store: st},
+	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	before, _ := m.splitWidths()
@@ -180,12 +180,12 @@ func TestEnterCommitsResize(t *testing.T) {
 
 	m := &Model{
 
-	mode:   modeList,
-	width:  100,
-	height: 40,
-	split:  splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList(),
-		store: st},
-}
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList(),
+			store: st},
+	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.nudgeSplit(8)
@@ -228,12 +228,12 @@ func TestQuitFromResizePersistsRatio(t *testing.T) {
 
 	m := &Model{
 
-	mode:   modeList,
-	width:  100,
-	height: 40,
-	split:  splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList(),
-		store: st},
-}
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList(),
+			store: st},
+	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	m.nudgeSplit(8)
@@ -263,12 +263,12 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 
 	m := &Model{
 
-	mode:   modeList,
-	width:  100,
-	height: 40,
-	split:  splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList(),
-		store: st},
-}
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList(),
+			store: st},
+	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 
@@ -366,11 +366,11 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 
 func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 	m := &Model{
-	mode:   modeList,
-	width:  100,
-	height: 40,
-	split:  splitState{ratio: 0.34, resizeMode: true}, services: services{listKeys: keybind.DefaultList()},
-}
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: 0.34, resizeMode: true}, services: services{listKeys: keybind.DefaultList()},
+	}
 	div := m.dividerX()
 	updated, _ := m.handleMouse(tea.MouseMsg{
 		X: div, Y: 0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
@@ -429,11 +429,11 @@ func TestBodyYRangeMatchesListChrome(t *testing.T) {
 
 func TestDragCancelRestoresRatio(t *testing.T) {
 	m := &Model{
-	mode:   modeList,
-	width:  100,
-	height: 40,
-	split:  splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList()},
-}
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: 0.34}, services: services{listKeys: keybind.DefaultList()},
+	}
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	div := m.dividerX()
@@ -461,11 +461,11 @@ func TestDragCancelRestoresRatio(t *testing.T) {
 
 func TestPressOffDividerDoesNotDrag(t *testing.T) {
 	m := &Model{
-	mode:   modeList,
-	width:  100,
-	height: 40,
-	split:  splitState{ratio: 0.34, resizeMode: true}, services: services{listKeys: keybind.DefaultList()},
-}
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: 0.34, resizeMode: true}, services: services{listKeys: keybind.DefaultList()},
+	}
 	updated, _ := m.handleMouse(tea.MouseMsg{
 		X: 5, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
@@ -891,11 +891,11 @@ func TestClickInContentColumnDoesNotSelect(t *testing.T) {
 // keyboard's own gate — off, and it moves nothing until the pointer does.
 func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 	m := &Model{
-	mode:   modeList,
-	width:  100,
-	height: 40,
-	split:  splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()},
-}
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()},
+	}
 	if m.split.resizeMode {
 		t.Fatal("test setup: resize mode should start off")
 	}
@@ -942,12 +942,12 @@ func TestDividerClickWithoutMotionCommitsNothing(t *testing.T) {
 
 	m := &Model{
 
-	mode:   modeList,
-	width:  100,
-	height: 40,
-	split:  splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList(),
-		store: st},
-}
+		mode:   modeList,
+		width:  100,
+		height: 40,
+		split:  splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList(),
+			store: st},
+	}
 	div := m.dividerX()
 	y0, _ := m.bodyYRange()
 	for _, action := range []tea.MouseAction{tea.MouseActionPress, tea.MouseActionRelease} {
@@ -1271,12 +1271,12 @@ func TestNewLoadsPersistedSplitRatio(t *testing.T) {
 // way an arrow key would (#110).
 func TestWheelMovesListCursor(t *testing.T) {
 	m := &Model{
-	mode: modeList,
+		mode: modeList,
 
-	width:  80,
-	height: 24, services: services{listKeys: keybind.DefaultList()}, rail: railState{cursor: 0,
-		rows: []treeRow{{}, {}}},
-}
+		width:  80,
+		height: 24, services: services{listKeys: keybind.DefaultList()}, rail: railState{cursor: 0,
+			rows: []treeRow{{}, {}}},
+	}
 	updated, cmd := m.handleMouse(tea.MouseMsg{
 		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
 	})
@@ -1475,13 +1475,13 @@ func TestWheelClampsAtBothEnds(t *testing.T) {
 
 func TestWheelSwallowedInResizeMode(t *testing.T) {
 	m := &Model{
-	mode:  modeList,
-	split: splitState{resizeMode: true},
+		mode:  modeList,
+		split: splitState{resizeMode: true},
 
-	width:  80,
-	height: 24, services: services{listKeys: keybind.DefaultList()}, rail: railState{cursor: 0,
-		rows: []treeRow{{}, {}}},
-}
+		width:  80,
+		height: 24, services: services{listKeys: keybind.DefaultList()}, rail: railState{cursor: 0,
+			rows: []treeRow{{}, {}}},
+	}
 	updated, _ := m.handleMouse(tea.MouseMsg{
 		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
 	})
