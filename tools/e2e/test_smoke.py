@@ -1,3 +1,5 @@
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,15 +14,31 @@ class SandboxTests(unittest.TestCase):
         self.sandbox = Sandbox(Path(self.temp.name) / 'evidence')
 
     def tearDown(self):
-        with patch.object(self.sandbox, 'tmux'):
+        with patch.object(self.sandbox, 'tmux', return_value=subprocess.CompletedProcess([], 0, '', '')):
             self.sandbox.close()
         self.temp.cleanup()
 
-    def test_inherited_tmux_cannot_select_live_server(self):
-        self.assertNotIn('TMUX', self.sandbox.env)
-        self.assertLess(len(str(self.sandbox.socket_dir / 'tmux-99999/agentmgr')), 104)
-        self.assertTrue(self.sandbox.socket_dir.is_dir())
-        self.assertEqual(self.sandbox.env['HOME'], str(self.sandbox.home))
+    def test_inherited_tmux_and_git_cannot_select_live_resources(self):
+        with patch.dict(os.environ, {'TMUX': '/live/socket,1,0', 'GIT_DIR': '/live/repo',
+                                     'GIT_CONFIG_COUNT': '1', 'AGENT_MANAGER_SESSION_ID': 'live-session'}):
+            isolated = Sandbox(Path(self.temp.name) / 'inherited-evidence')
+        try:
+            self.assertNotIn('TMUX', isolated.env)
+            self.assertNotIn('GIT_DIR', isolated.env)
+            self.assertNotIn('GIT_CONFIG_COUNT', isolated.env)
+            self.assertNotIn('AGENT_MANAGER_SESSION_ID', isolated.env)
+            self.assertLess(len(str(isolated.socket_dir / 'tmux-99999/agentmgr')), 104)
+            self.assertTrue(isolated.socket_dir.is_dir())
+            self.assertEqual(isolated.env['HOME'], str(isolated.home))
+        finally:
+            with patch.object(isolated, 'tmux', return_value=subprocess.CompletedProcess([], 0, '', '')):
+                isolated.close()
+
+    def test_fixture_shell_delegates_command_execution(self):
+        result = subprocess.run([self.sandbox.env['SHELL'], '-c', 'printf command-ready'],
+                                env=self.sandbox.env, text=True, capture_output=True, timeout=2)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, 'command-ready')
 
     def test_timeout_retains_last_observation(self):
         with self.assertRaises(TimeoutError):
@@ -28,7 +46,7 @@ class SandboxTests(unittest.TestCase):
         self.assertEqual((self.sandbox.artifacts / 'readiness-failure.txt').read_text(), 'still starting')
 
     def test_cleanup_names_only_owned_servers(self):
-        with patch.object(self.sandbox, 'run') as run:
+        with patch.object(self.sandbox, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run:
             self.sandbox.close()
         self.assertEqual([call.args[0] for call in run.call_args_list], [
             ['tmux', '-L', 'e2e-outer', 'kill-server'],
@@ -37,6 +55,21 @@ class SandboxTests(unittest.TestCase):
         self.assertFalse(self.sandbox.socket_dir.exists())
         # tearDown is intentionally harmless after cleanup.
         self.sandbox.socket_dir.mkdir()
+
+    def test_cleanup_continues_after_first_server_failure(self):
+        with patch.object(self.sandbox, 'tmux', side_effect=[
+                TimeoutError('cleanup deadline'), subprocess.CompletedProcess([], 0, '', '')]) as tmux:
+            errors = self.sandbox.close()
+        self.assertEqual(tmux.call_count, 2)
+        self.assertIn('cleanup deadline', errors[0])
+        self.assertTrue(self.sandbox.socket_dir.exists())
+
+    def test_failure_capture_continues_without_raising(self):
+        with patch.object(self.sandbox, 'tmux', side_effect=[
+                TimeoutError('capture deadline'), subprocess.CompletedProcess([], 0, 'shell frame', '')]):
+            errors = self.sandbox.failure_frames()
+        self.assertEqual(len(errors), 1)
+        self.assertEqual((self.sandbox.artifacts / 'agentmgr-last-frame.txt').read_text(), 'shell frame')
 
     def test_unknown_socket_rejected_before_dispatch(self):
         with patch.object(self.sandbox, 'run') as run:
