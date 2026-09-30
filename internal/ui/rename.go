@@ -2,12 +2,23 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
-	"sort"
-	"strings"
-
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"sort"
+	"strings"
 )
+
+type renameTarget struct {
+	isGroup       bool
+	path          string
+	sessID        string
+	input         textinput.Model
+	dir           textinput.Model
+	worktreeIndex int
+	focus         int
+	toolNames     []string
+	toolIndex     int
+}
 
 func (m *Model) openRename() {
 	entry, ok := m.selectedRow()

@@ -1,0 +1,162 @@
+package ui
+
+import (
+	"errors"
+	"github.com/YoanWai/agent-manager/internal/status"
+	tea "github.com/charmbracelet/bubbletea"
+	"strings"
+)
+
+// warn carries a PrepareAttach failure: shown to the user, but the attach
+// still proceeds, unlike err which cancels it.
+type reattachPreparedMsg struct {
+	sessID  string
+	diffGen int
+	err     error
+	warn    string
+}
+
+// shellPromptHint refuses to write into a shell. SendText pastes and then
+// presses Enter, so a sentence meant for an agent would run as a command
+// on the user's machine. Entering the session is how text reaches a shell,
+// where what is typed is plainly a command.
+func shellPromptHint(name string) string {
+	return name + " is a shell, not an agent - enter it to type there"
+}
+
+func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
+	sess, ok := m.selected()
+	if !ok {
+		return m, nil
+	}
+	if !m.services.tmux.Exists(sess.ID) {
+		m.errBar.text = deadSessionHint
+		return m, nil
+	}
+	m.errBar.text = ""
+	if err := m.services.store.AcknowledgeFinished(sess.ID); err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
+	return m, m.attachCmd(sess.ID)
+}
+
+// acknowledgeSelected marks the selected finished session idle and acked
+// without entering it. Archived sessions keep their preserved status: the
+// poller never re-derives it for them, so an ack would stick forever.
+func (m *Model) acknowledgeSelected() (tea.Model, tea.Cmd) {
+	sess, ok := m.selected()
+	if !ok || sess.Archived || sess.Status != status.Finished {
+		return m, nil
+	}
+	m.errBar.text = ""
+	if err := m.services.store.AcknowledgeFinished(sess.ID); err != nil {
+		m.errBar.text = err.Error()
+		return m, nil
+	}
+	m.requestRefresh()
+	return m, nil
+}
+
+func (m *Model) attachCmd(id string) tea.Cmd {
+	// Flip the window back to auto-sizing so it fills the terminal on attach;
+	// attachDoneMsg re-pins it to the preview width on detach. Clearing the
+	// cached hash first keeps the poller from reading this reflow as
+	// streaming output, same as the detach-side resize (reflowSessions).
+	// A failure here still attaches: the worst outcome is a stale window
+	// size, which beats locking the session out (issue #114).
+	var prepErr error
+	m.poller.reflowSessions([]string{id}, func() {
+		prepErr = m.services.tmux.PrepareAttach(id)
+	})
+	if prepErr != nil {
+		m.errBar.text = prepErr.Error()
+	}
+	return execTerminalProcess(m.services.tmux.AttachCommand(id), func(err error) tea.Msg {
+		return attachDoneMsg{sessID: id, err: err}
+	})
+}
+
+func (m *Model) reattach(id string, diffGen int) tea.Cmd {
+	driver := m.services.tmux
+	stor := m.services.store
+	poller := m.poller
+	return func() tea.Msg {
+		if !driver.Exists(id) {
+			return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: errors.New(deadSessionHint)}
+		}
+		sess, err := stor.Get(id)
+		if err != nil {
+			return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
+		}
+		if sess.Status == status.Finished {
+			if err := stor.AcknowledgeFinished(sess.ID); err != nil {
+				return reattachPreparedMsg{sessID: id, diffGen: diffGen, err: err}
+			}
+		}
+		var prepErr error
+		poller.reflowSessions([]string{id}, func() {
+			prepErr = driver.PrepareAttach(id)
+		})
+		var warn string
+		if prepErr != nil {
+			warn = prepErr.Error()
+		}
+		return reattachPreparedMsg{sessID: id, diffGen: diffGen, warn: warn}
+	}
+}
+
+// copyReplySelected puts the selected session's newest reply on the system
+// clipboard without entering it.
+func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
+	entry, ok := m.selectedRow()
+	if !ok || entry.isGroup || m.services.engine == nil || m.services.tmux == nil {
+		return m, nil
+	}
+	sess := entry.sess
+	m.errBar.text = ""
+	// A shell has no reply, and its scrollback is the user's own commands
+	// and their output rather than anything an agent said.
+	if m.isShell(sess.Tool) {
+		m.errBar.text = shellPromptHint(sess.Name)
+		return m, nil
+	}
+	engine, driver := m.services.engine, m.services.tmux
+	return m, func() tea.Msg {
+		if !driver.Exists(sess.ID) {
+			return errMsg{errors.New(deadSessionHint)}
+		}
+		pane, err := driver.CapturePaneHistory(sess.ID, quoteHistoryLines)
+		if err != nil {
+			return errMsg{err}
+		}
+		text, bounded, ok := engine.FullTurnText(sess.Tool, engine.Plain(sess.Tool, pane))
+		if !ok {
+			return replyCopiedMsg{name: sess.Name, tool: sess.Tool, unreadable: true}
+		}
+		if strings.TrimSpace(text) == "" {
+			return replyCopiedMsg{name: sess.Name, tool: sess.Tool}
+		}
+		return copyTextCmd(text, func(chars int) tea.Msg {
+			return replyCopiedMsg{chars: chars, name: sess.Name, tool: sess.Tool, unbounded: !bounded}
+		})()
+	}
+}
+
+// replyCopiedMsg reports a finished copy. No chars means the turn held
+// nothing; unreadable means the tool draws no region a reply can be read
+// from, which no amount of retrying will change; unbounded means nothing
+// in the pane said where the turn began, so the copy is the whole screen
+// rather than one answer.
+type replyCopiedMsg struct {
+	chars      int
+	name       string
+	tool       string
+	unreadable bool
+	unbounded  bool
+}
+
+type attachDoneMsg struct {
+	sessID string
+	err    error
+}

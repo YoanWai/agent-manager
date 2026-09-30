@@ -1,0 +1,622 @@
+package ui
+
+import (
+	"fmt"
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "live-one", dir, "")
+	createSession(t, m, "old-one", dir, "")
+
+	m.selectSessionRow(t, "old-one")
+	m.archiveSelected()
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyCmd(t, cmd)
+
+	if names := sessionNames(m); len(names) != 1 || names[0] != "live-one" {
+		t.Fatalf("active view = %v want [live-one]", names)
+	}
+
+	m.rail.showArchived = true
+	m.applyCmd(t, m.refreshCmd())
+	if names := sessionNames(m); len(names) != 1 || names[0] != "old-one" {
+		t.Fatalf("archived view = %v want [old-one]", names)
+	}
+}
+
+func railText(t *testing.T, m *Model) []string {
+	t.Helper()
+	return railTextAt(m, 60)
+}
+
+func railTextAt(m *Model, width int) []string {
+	var out []string
+	for _, line := range m.entryLines(m.rail.rows, 0, width, 20) {
+		out = append(out, strings.TrimRight(ansi.Strip(line.text), " "))
+	}
+	return out
+}
+
+func lineWith(t *testing.T, lines []string, want string) int {
+	t.Helper()
+	for i, line := range lines {
+		if strings.Contains(line, want) {
+			return i
+		}
+	}
+	t.Fatalf("no rail line carrying %q:\n%s", want, strings.Join(lines, "\n"))
+	return -1
+}
+
+// Compact keeps a session on one line; comfortable moves its meta to a
+// second line under the name, and the choice persists.
+func TestSettingsTogglesListDensity(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+
+	lines := railText(t, m)
+	head := lineWith(t, lines, "alpha")
+	if !strings.Contains(lines[head], "claude") {
+		t.Fatalf("compact row should carry its meta inline: %q", lines[head])
+	}
+	if got := m.entryHeight(m.rail.rows[0]); got != 1 {
+		t.Fatalf("compact entry height = %d want 1", got)
+	}
+
+	m.openSettings()
+	if m.settings.comfortableRows {
+		t.Fatal("settings should open on compact by default")
+	}
+	for i := 0; i < settingsFieldDensity; i++ {
+		m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if m.settings.field != settingsFieldDensity {
+		t.Fatalf("stepping down should reach the density field, got %d", m.settings.field)
+	}
+	if card := ansi.Strip(m.viewSettings()); !strings.Contains(card, "list density") {
+		t.Fatalf("settings card has no density row:\n%s", card)
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyRight})
+	if card := ansi.Strip(m.viewSettings()); !strings.Contains(card, "comfortable") {
+		t.Fatalf("toggled card does not read comfortable:\n%s", card)
+	}
+	m.handleSettingsKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if !m.prefs.comfortableRows {
+		t.Fatal("model did not pick up the comfortable density")
+	}
+	if !storedComfortableRows(m.services.store) {
+		t.Fatal("comfortable density did not persist")
+	}
+	sessionRow := m.rail.rows[0]
+	for _, row := range m.rail.rows {
+		if !row.isGroup {
+			sessionRow = row
+			break
+		}
+	}
+	if got := m.entryHeight(sessionRow); got != 3 {
+		t.Fatalf("comfortable entry height = %d want 3", got)
+	}
+
+	lines = railText(t, m)
+	head = lineWith(t, lines, "alpha")
+	if !strings.Contains(lines[head], "claude") {
+		t.Fatalf("comfortable name line should carry the meta: %q", lines[head])
+	}
+	if head+2 >= len(lines) {
+		t.Fatalf("comfortable row has no prompt and reply lines:\n%s", strings.Join(lines, "\n"))
+	}
+	if prompt := strings.TrimSpace(lines[head+1]); prompt == "" {
+		t.Fatalf("comfortable row prompt line is blank:\n%s", strings.Join(lines, "\n"))
+	}
+	if reply := strings.TrimSpace(lines[head+2]); reply == "" {
+		t.Fatalf("comfortable row reply line is blank:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// A launch opens on a session, not on root's rollup.
+func TestCursorSkipsRootOnFirstBuild(t *testing.T) {
+	m := shotModel()
+	m.rail.cursor = 0
+	m.rebuildRows()
+	if len(m.rail.rows) < 2 {
+		t.Fatalf("want root and a row below it, got %d rows", len(m.rail.rows))
+	}
+	if m.rail.rows[m.rail.cursor].isRoot() {
+		t.Fatal("cursor parked on root with rows available below it")
+	}
+	// With nothing but root to land on, it is the selection.
+	bare := shotModel()
+	bare.workspace.sessions, bare.rail.rows, bare.rail.cursor = nil, nil, 0
+	bare.rebuildRows()
+	if len(bare.rail.rows) != 1 || !bare.rail.rows[0].isRoot() || bare.rail.cursor != 0 {
+		t.Fatalf("empty list should rest on root, got %d rows cursor %d", len(bare.rail.rows), bare.rail.cursor)
+	}
+}
+
+// Root pins a row at the top, which must not stand in for having sessions:
+// an empty list still says so.
+func TestEmptyListKeepsItsGuidance(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		setup    func(*Model)
+		wantText string
+	}{
+		{"no sessions", func(m *Model) {}, "no sessions yet"},
+		{"no matches", func(m *Model) { m.rail.search = "nothing-matches-this" }, "no matches"},
+		{"nothing archived", func(m *Model) { m.rail.showArchived = true }, "nothing archived"},
+		{"nothing needs attention", func(m *Model) { m.rail.statusFilter = statusFilterAttention }, "nothing needs attention"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := shotModel()
+			m.workspace.sessions, m.rail.rows = nil, nil
+			tc.setup(m)
+			m.rebuildRows()
+			rail := ansi.Strip(strings.Join(splitLines(joinContentText(m.railLines(40, 20))), "\n"))
+			if !strings.Contains(rail, tc.wantText) {
+				t.Fatalf("rail is missing %q:\n%s", tc.wantText, rail)
+			}
+			if !strings.Contains(rail, "root") {
+				t.Fatalf("root row should still lead the rail:\n%s", rail)
+			}
+		})
+	}
+}
+
+func joinContentText(lines []contentLine) string {
+	var out []string
+	for _, line := range lines {
+		out = append(out, line.text)
+	}
+	return strings.Join(out, "\n")
+}
+
+// Root is pinned first, so it can never be the sibling a top-level group
+// swaps with; parentGroup("") is "" too, which would otherwise match.
+func TestReorderSkipsRootAsSibling(t *testing.T) {
+	m := shotModel()
+	m.rebuildRows()
+	var groupRow, index = treeRow{}, -1
+	for i, row := range m.rail.rows {
+		if row.isGroup && !row.isRoot() && parentGroup(row.group) == "" {
+			groupRow, index = row, i
+			break
+		}
+	}
+	if index < 0 {
+		t.Fatal("no top-level group row to test with")
+	}
+	m.rail.cursor = index
+	if target, ok := m.visibleReorderTarget(groupRow, -1); ok && target.isRoot() {
+		t.Fatalf("root matched as a reorder sibling of %q", groupRow.group)
+	}
+}
+
+func forceANSI256(t *testing.T) {
+	t.Helper()
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+}
+
+// sgrOf returns the color sequence a style emits under the active profile,
+// so contrast assertions track the live theme instead of a hardcoded index.
+func sgrOf(rendered string) string {
+	_, seq, found := strings.Cut(rendered, "\x1b[")
+	if !found {
+		return ""
+	}
+	code, _, _ := strings.Cut(seq, "m")
+	return code
+}
+
+// A content separator stops at the pane's edge instead of crossing the seam.
+func TestContentRuleStopsAtSeam(t *testing.T) {
+	m := shotModel()
+	leftWidth, _ := m.splitWidths()
+	rows := strings.Split(m.View(), "\n")
+	start, end := m.bodyYRange()
+
+	crossings := 0
+	for i := start; i < end; i++ {
+		row := []rune(ansi.Strip(rows[i]))
+		contentRule := row[leftWidth+2] == '─'
+		railRule := row[leftWidth-2] == '─'
+		if contentRule && !railRule && row[leftWidth] == '─' {
+			t.Fatalf("row %d: content rule crosses the seam:\n%s", i, string(row))
+		}
+		if railRule && row[leftWidth] == '─' {
+			crossings++
+		}
+	}
+	// The rail's own rule still runs the width of its pane, seam included.
+	if crossings == 0 {
+		t.Fatal("no rail rule crossed the seam; the pane's own rules should")
+	}
+}
+
+// Whatever the cursor is on has to be on screen. A window that reserves
+// room for one overflow indicator but paints two loses a row at the bottom,
+// and the row it loses is the one the cursor just moved to.
+func TestRailCursorAlwaysPainted(t *testing.T) {
+	now := time.Now()
+	sessions := make([]store.Session, 40)
+	rows := make([]treeRow, len(sessions))
+	for i := range sessions {
+		name := fmt.Sprintf("session-%02d", i)
+		sessions[i] = store.Session{
+			ID: name, Name: name, Tool: "claude", Status: status.Idle,
+			CreatedAt: now, LastStatusAt: now,
+		}
+		rows[i] = treeRow{sess: sessions[i]}
+	}
+
+	for _, size := range []struct{ w, h int }{{80, 16}, {100, 24}, {120, 30}, {160, 44}} {
+		for _, cursor := range []int{0, 1, len(rows) / 2, len(rows) - 2, len(rows) - 1} {
+			m := &Model{
+				width: size.w, height: size.h, mode: modeList,
+
+				split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: sessions}, rail: railState{rows: rows, cursor: cursor,
+					collapsed: map[string]bool{}},
+			}
+			view := ansi.Strip(m.View())
+			if !strings.Contains(view, sessions[cursor].Name) {
+				t.Errorf("%dx%d cursor=%d: %q is selected but never painted:\n%s",
+					size.w, size.h, cursor, sessions[cursor].Name, view)
+			}
+		}
+	}
+}
+
+func TestFilterBadgesStackOverTheList(t *testing.T) {
+	m := shotModel()
+	m.width, m.height = 120, 40
+	m.rail.showArchived, m.rail.hideEmptyGroups = true, true
+	m.rail.statusFilter = statusFilterAttention
+	rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
+	var painted []string
+	for _, line := range strings.Split(rail, "\n") {
+		if strings.TrimSpace(line) != "" {
+			painted = append(painted, line)
+		}
+	}
+	want := [][2]string{
+		{"ARCHIVED", "t back to active"},
+		{"ATTENTION", "w show all"},
+	}
+	if len(painted) < len(want) {
+		t.Fatalf("rail painted %d lines, want the %d badges first:\n%s", len(painted), len(want), rail)
+	}
+	for i, badge := range want {
+		line := painted[i]
+		if !strings.Contains(line, badge[0]) || !strings.Contains(line, badge[1]) {
+			t.Errorf("rail line %d = %q, want %q beside %q", i, line, badge[0], badge[1])
+		}
+	}
+	header := ansi.Strip(strings.Join(m.viewHeaderRows(), "\n"))
+	if !strings.Contains(header, "· archived") {
+		t.Errorf("header should keep the plain scope word:\n%s", header)
+	}
+	for _, unwanted := range []string{"ARCHIVED", "ATTENTION", "HIDE EMPTY"} {
+		if strings.Contains(header, unwanted) {
+			t.Errorf("header still carries the %s badge:\n%s", unwanted, header)
+		}
+	}
+}
+
+func TestHideEmptyBadgeBelongsToTheActiveRail(t *testing.T) {
+	m := shotModel()
+	m.width, m.height = 120, 40
+	m.rail.hideEmptyGroups = true
+	for _, tc := range []struct {
+		archived bool
+		want     bool
+	}{{false, true}, {true, false}} {
+		m.rail.showArchived = tc.archived
+		rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
+		if got := strings.Contains(rail, "HIDE EMPTY"); got != tc.want {
+			t.Errorf("showArchived=%v: HIDE EMPTY painted = %v, want %v:\n%s", tc.archived, got, tc.want, rail)
+		}
+	}
+}
+
+// railTestHeights is a comfortable list: groups on one line, a shell on
+// two, sessions on three.
+var railTestHeights = []int{1, 3, 3, 3, 3, 1, 3, 3, 2, 3, 1, 3, 3, 3, 3, 3, 1, 3, 3}
+
+func railWalk(n int) []int {
+	var seq []int
+	for i := 0; i < n; i++ {
+		seq = append(seq, i)
+	}
+	for i := n - 2; i >= 0; i-- {
+		seq = append(seq, i)
+	}
+	return seq
+}
+
+func TestRailWindowHoldsStillWhileTheCursorIsOnScreen(t *testing.T) {
+	for _, budget := range []int{20, 30, 40} {
+		top, prevStart, prevEnd := 0, -1, -1
+		for _, cursor := range railWalk(len(railTestHeights)) {
+			start, end := railWindow(railTestHeights, cursor, budget, top)
+			if prevStart >= 0 && cursor >= prevStart && cursor < prevEnd && start != prevStart {
+				t.Fatalf("budget %d: cursor %d already sat in [%d,%d) and the list scrolled to %d",
+					budget, cursor, prevStart, prevEnd, start)
+			}
+			top, prevStart, prevEnd = start, start, end
+		}
+	}
+}
+
+func TestRailWindowKeepsTheCursorsEntryWhole(t *testing.T) {
+	for _, budget := range []int{6, 20, 30, 40} {
+		top := 0
+		for _, cursor := range railWalk(len(railTestHeights)) {
+			start, end := railWindow(railTestHeights, cursor, budget, top)
+			if cursor < start || cursor >= end {
+				t.Fatalf("budget %d: cursor %d fell outside [%d,%d)", budget, cursor, start, end)
+			}
+			top = start
+		}
+	}
+}
+
+func TestRailWindowScrollsNoFurtherThanItMust(t *testing.T) {
+	top := 0
+	for cursor := 0; cursor < len(railTestHeights); cursor++ {
+		start, _ := railWindow(railTestHeights, cursor, 20, top)
+		if start > top {
+			if end := windowEnd(railTestHeights, start-1, 20); end > cursor {
+				t.Fatalf("cursor %d scrolled to %d, but %d still held it through %d",
+					cursor, start, start-1, end)
+			}
+		}
+		top = start
+	}
+}
+
+func TestRailWindowFollowsTheCursorBackAboveTheTop(t *testing.T) {
+	start, end := railWindow(railTestHeights, 2, 20, 11)
+	if start != 2 {
+		t.Fatalf("window starts at %d, want the cursor's own entry", start)
+	}
+	if end <= 2 {
+		t.Fatalf("window [%d,%d) holds nothing", start, end)
+	}
+}
+
+func TestRailWindowShowsAListThatFits(t *testing.T) {
+	heights := []int{1, 3, 3}
+	start, end := railWindow(heights, 2, 20, 1)
+	if start != 0 || end != len(heights) {
+		t.Fatalf("window = [%d,%d), want the whole list", start, end)
+	}
+}
+
+func TestRailTopCarriesBetweenFrames(t *testing.T) {
+	m := shotModel()
+	m.prefs.comfortableRows = true
+	m.prefs.fullLayout = true
+	m.rail.rows = nil
+	for i := 0; i < 30; i++ {
+		name := fmt.Sprintf("session-%02d", i)
+		m.rail.rows = append(m.rail.rows, treeRow{sess: store.Session{ID: name, Name: name, Tool: "claude", Status: status.Idle}})
+	}
+
+	heights := make([]int, len(m.rail.rows))
+	for i := range m.rail.rows {
+		heights[i] = m.entryHeight(m.rail.rows[i])
+	}
+
+	const height = 20
+	tops := make([]int, len(m.rail.rows))
+	for i := range m.rail.rows {
+		prev, prevEnd := m.rail.railTop, windowEnd(heights, m.rail.railTop, height)
+		m.rail.cursor = i
+		m.entryLines(m.rail.rows, 0, m.width-1, height)
+		tops[i] = m.rail.railTop
+		if m.rail.railTop > i {
+			t.Fatalf("cursor %d: rail starts below it at %d", i, m.rail.railTop)
+		}
+		if i >= prev && i < prevEnd && m.rail.railTop != prev {
+			t.Fatalf("cursor %d already sat in [%d,%d) and the rail scrolled to %d", i, prev, prevEnd, m.rail.railTop)
+		}
+	}
+	if tops[0] != 0 || tops[1] != 0 {
+		t.Fatalf("the rail scrolled off the first entry immediately: %v", tops[:3])
+	}
+	if tops[len(tops)-1] == 0 {
+		t.Fatal("the rail never scrolled across 30 comfortable entries")
+	}
+
+	for i := len(m.rail.rows) - 1; i >= 0; i-- {
+		m.rail.cursor = i
+		m.entryLines(m.rail.rows, 0, m.width-1, height)
+		if m.rail.railTop > i {
+			t.Fatalf("cursor %d: rail starts below it at %d", i, m.rail.railTop)
+		}
+	}
+	if m.rail.railTop != 0 {
+		t.Fatalf("stepping back to the first entry left the rail at %d", m.rail.railTop)
+	}
+}
+
+func TestPlaceNoticeHitMapsTheFootRowsAndCardColumns(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 120, 34
+	frame := strings.Split(ansi.Strip(m.View()), "\n")
+	y0, _ := m.bodyYRange()
+	rail := m.railLines(m.dividerX()-1, m.listBodyHeight())
+	footIndex := len(rail)
+	for i, line := range rail {
+		if line.rule {
+			footIndex = i + 1
+		}
+	}
+	footLines := len(rail) - footIndex
+	if footLines == 0 {
+		t.Fatal("test setup: the rail painted no foot")
+	}
+	hit := m.notices.noticeHit
+	if !hit.ok || hit.y0 != y0+footIndex || hit.y1 != hit.y0+footLines {
+		t.Fatalf("hit rows %d..%d, want %d..%d: %+v", hit.y0, hit.y1, y0+footIndex, y0+footIndex+footLines, hit)
+	}
+	col := strings.Index(frame[hit.y0], "messages")
+	if col < hit.x0 || col >= hit.x1 || hit.x1 > m.dividerX() {
+		t.Fatalf("legend at column %d outside hit columns %d..%d (divider %d)", col, hit.x0, hit.x1, m.dividerX())
+	}
+	if meters := strings.Index(frame[hit.y0+1], "cpu"); meters >= hit.x0 {
+		t.Fatalf("meters at column %d fall inside the card's columns %d..%d", meters, hit.x0, hit.x1)
+	}
+}
+
+func TestPlaceNoticeHitClearsAStaleBox(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 120, 34
+	m.View()
+	if !m.notices.noticeHit.ok {
+		t.Fatal("test setup: the card painted no hit")
+	}
+	x, y := m.notices.noticeHit.x0, m.notices.noticeHit.y0
+
+	m.prefs.hideStats = true
+	for _, n := range m.activeNotices() {
+		m.notices.dismissed[n.id] = true
+	}
+	m.View()
+	if m.notices.noticeHit.ok {
+		t.Fatalf("a rail with no foot must drop the box, got %+v", m.notices.noticeHit)
+	}
+	if m = leftPress(m, x, y); m.mode != modeList {
+		t.Fatalf("a press where the card was should do nothing, mode = %v", m.mode)
+	}
+
+	m.prefs.hideStats = false
+	m.notices.dismissed = map[string]bool{}
+	m.View()
+	if !m.notices.noticeHit.ok {
+		t.Fatal("test setup: the card is back")
+	}
+	m.width = 40
+	m.View()
+	if m.notices.noticeHit.ok {
+		t.Fatalf("a rail too narrow for the card must drop the box, got %+v", m.notices.noticeHit)
+	}
+}
+
+// With the mouse off nothing on a row answers a click, so the rail paints
+// no handle and no menu button, and the name keeps their cells.
+func TestMouseOffPaintsNoHandleOrMenuButton(t *testing.T) {
+	m := shotModel()
+	m.prefs.mouseDisabled = true
+	for _, line := range m.entryLines(m.rail.rows, 0, 44, 20) {
+		text := ansi.Strip(line.text)
+		if strings.Contains(text, reorderGrip) || strings.Contains(text, rowMenuGlyph) {
+			t.Fatalf("mouse off should paint no handle or %s: %q", rowMenuGlyph, text)
+		}
+	}
+	m.prefs.mouseDisabled = false
+	painted := false
+	for _, line := range m.entryLines(m.rail.rows, 0, 44, 20) {
+		painted = painted || strings.Contains(ansi.Strip(line.text), reorderGrip)
+	}
+	if !painted {
+		t.Fatal("test setup: the mouse on should paint handles")
+	}
+}
+
+// The rail's banners (search, archived) cost the list rows, so a short
+// terminal has to keep painting entries under them — and keep painting at
+// all: claiming rows the list does not have used to slice past the end.
+func TestRailBannersSurviveShortTerminals(t *testing.T) {
+	for _, height := range []int{4, 6, 8, 10, 14} {
+		for _, width := range []int{30, 60, 120} {
+			for _, searching := range []bool{false, true} {
+				for _, archived := range []bool{false, true} {
+					m := shotModel()
+					m.width, m.height = width, height
+					m.rail.searching, m.rail.showArchived = searching, archived
+					m.errBar.text = "worktree kept (has work): /Users/someone/dev/api"
+					rows := strings.Split(m.View(), "\n")
+					if len(rows) != height {
+						t.Errorf("%dx%d search=%v archived=%v: frame is %d rows",
+							width, height, searching, archived, len(rows))
+					}
+				}
+			}
+		}
+	}
+}
+
+// A rail with room for its banners still lists entries under them.
+func TestRailBannersLeaveRoomForEntries(t *testing.T) {
+	m := shotModel()
+	m.width, m.height = 120, 34
+	m.rail.searching, m.rail.search = true, "rate"
+	rail := railLinesText(m.railLines(36, m.listBodyHeight()))
+	if !strings.Contains(rail, "⌕ rate") {
+		t.Fatalf("no search field in the rail:\n%s", rail)
+	}
+	if !strings.Contains(rail, "db-migrations") {
+		t.Fatalf("search banner crowded the entries out:\n%s", rail)
+	}
+}
+
+// A rail too short for the padded block keeps the badges themselves; only a
+// rail with no room for entries under them drops them altogether.
+func TestFilterBadgesSurviveShortRails(t *testing.T) {
+	for _, height := range []int{10, 14, 20} {
+		m := shotModel()
+		m.width, m.height = 120, height
+		m.rail.showArchived = true
+		rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
+		if !strings.Contains(rail, "ARCHIVED") {
+			t.Errorf("height %d dropped the archived badge:\n%s", height, rail)
+		}
+	}
+}
+
+func railLinesText(lines []contentLine) string {
+	var b strings.Builder
+	for _, line := range lines {
+		b.WriteString(line.text + "\n")
+	}
+	return b.String()
+}
+
+// The query is the field being typed into: a rail too tight for the padded
+// block keeps the bare field, and a query longer than the rail keeps its end,
+// where the caret is.
+func TestSearchFieldSurvivesTightRails(t *testing.T) {
+	for _, height := range []int{14, 20, 34} {
+		m := shotModel()
+		m.width, m.height = 120, height
+		m.rail.searching, m.rail.search = true, "add-rate-limiting-in-the-public-api-handler"
+		rail := railLinesText(m.railLines(36, m.listBodyHeight()))
+		if !strings.Contains(rail, "⌕") {
+			t.Errorf("height %d dropped the search field:\n%s", height, rail)
+		}
+		if !strings.Contains(rail, "api-handler") {
+			t.Errorf("height %d cut the end of the query away:\n%s", height, rail)
+		}
+		for _, line := range strings.Split(rail, "\n") {
+			if got := ansi.StringWidth(ansi.Strip(line)); got > 36 {
+				t.Errorf("height %d: rail line is %d wide: %q", height, got, ansi.Strip(line))
+			}
+		}
+	}
+}

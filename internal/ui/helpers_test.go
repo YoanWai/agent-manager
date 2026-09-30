@@ -1,14 +1,6 @@
 package ui
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"testing"
-	"time"
-
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -19,6 +11,13 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
 )
 
 func buildModel(t *testing.T) *Model {
@@ -491,3 +490,76 @@ func sessionRow(t *testing.T, m *Model, name string) treeRow {
 func resetExecution(m *Model) {
 	m.poller.runner = execution.New(m.poller.dependencies, m.poller.options)
 }
+
+func shotModel() *Model {
+	now := time.Now()
+	sess := func(name, group, tool, st string, age time.Duration) store.Session {
+		return store.Session{
+			ID: name, Name: name, Group: group, Tool: tool, Status: st,
+			Cwd: "/Users/someone/dev/api", CreatedAt: now.Add(-24 * time.Hour),
+			LastStatusAt: now.Add(-age),
+		}
+	}
+	sessions := []store.Session{
+		sess("db-migrations", "", "opencode", status.Waiting, 3*time.Minute),
+		sess("notes", "", "grok", status.Idle, 12*time.Minute),
+		sess("auth-refresh", "backend", "claude", status.Finished, 2*time.Minute),
+		sess("add-rate-limiting", "backend", "claude", status.Working, 41*time.Second),
+		sess("ui-polish", "backend/web", "codex", status.Working, 6*time.Minute),
+		sess("flaky-e2e", "backend/web", "claude", status.Errored, 22*time.Minute),
+	}
+	rows := []treeRow{
+		{sess: sessions[0]},
+		{sess: sessions[1]},
+		{isGroup: true, group: "backend"},
+		{depth: 1, sess: sessions[2]},
+		{depth: 1, sess: sessions[3]},
+		{isGroup: true, group: "backend/web", depth: 1},
+		{depth: 2, sess: sessions[4]},
+		{depth: 2, sess: sessions[5]},
+	}
+	m := &Model{
+		width:  120,
+		height: 34,
+		mode:   modeList,
+		split:  splitState{ratio: defaultSplitRatio},
+		services: services{
+			keys:     keybind.DefaultSession(),
+			listKeys: keybind.DefaultList(),
+		},
+		workspace: workspace{
+			sessions:   sessions,
+			groupPaths: map[string]string{"backend": "/Users/someone/dev/api"},
+			agents:     agentStats{count: 4, cpu: 12, ram: 9, rss: 1_530_000_000},
+			net:        netStats{rates: true, down: 9_400_000, up: 2_100_000},
+			snap: sysstat.Snapshot{
+				CPUOK: true, CPUPercent: 22,
+				MemOK: true, MemPercent: 75, MemUsed: 12_100_000_000, MemTotal: 16_000_000_000,
+				SwapOK: true, SwapPercent: 43, SwapUsed: 4_500_000_000, SwapTotal: 8_000_000_000,
+				DiskOK: true, DiskPercent: 88, DiskUsed: 400_000_000_000, DiskFree: 100_000_000_000, DiskTotal: 500_000_000_000,
+				CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55,
+			},
+			preview: previewSample,
+			proc:    sysstat.ProcStat{OK: true, CPUPercent: 4.2, RamPercent: 3.6, RSS: 612_000_000},
+			procFor: "add-rate-limiting",
+		},
+		rail: railState{
+			cursor:    4,
+			rows:      rows,
+			collapsed: map[string]bool{},
+		},
+	}
+	return m
+}
+
+const previewSample = "\x1b[38;5;110m◆\x1b[0m claude \x1b[38;5;240m·\x1b[0m add-rate-limiting\n" +
+	"\n" +
+	"\x1b[38;5;250m❯ Add a token bucket limiter to the public API\x1b[0m\n" +
+	"\n" +
+	"\x1b[38;5;240m●\x1b[0m Read(internal/api/router.go)\n" +
+	"  \x1b[38;5;240m└\x1b[0m 214 lines\n" +
+	"\n" +
+	"\x1b[38;5;240m●\x1b[0m Edit(internal/api/limiter.go)\n" +
+	"  \x1b[38;5;240m└\x1b[0m +48 −3\n" +
+	"\n" +
+	"\x1b[38;5;214m✳\x1b[0m Running tests… (14s · esc to interrupt)\n"
