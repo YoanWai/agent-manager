@@ -156,6 +156,7 @@ func TestInboxAsksForAReplyOnlyFromAnAgent(t *testing.T) {
 		t.Run(testCase.senderTool, func(t *testing.T) {
 			m := buildModel(t)
 			sess := spawnedSession(t, m, "claude-hooked")
+			waitForPaneChild(t, m, sess.ID, "cat")
 			if err := m.store.CreateSession(store.Session{
 				ID: "sender01", Name: "payments-fix", Tool: testCase.senderTool,
 				Cwd: t.TempDir(), Status: status.Idle,
