@@ -54,3 +54,28 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       - name: Build
         run: go build ./...
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+      - name: Harness contracts
+        run: python3 -m unittest discover -s tools/e2e -p 'test_*.py'
+      - name: Feature dependencies
+        run: go run ./tools/architecture/check-ui-boundaries
+      - name: Real terminal smoke
+        run: python3 tools/e2e/smoke.py --artifacts "$RUNNER_TEMP/am-e2e-evidence"
+      - name: Retain smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-evidence
+          path: ${{ runner.temp }}/am-e2e-evidence
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: ignore

@@ -41,5 +41,6 @@ baseline, asserting Help remains open at the exact keyboard-only scroll
 position. Poll waits require an observable condition; the 50ms cadence is never a transition delay.
 
 This is bounded local tmux evidence, not the supported terminal/platform/tool
-matrix. CLI, stdio MCP, headless/extension flows, hosted CI, historical released
+matrix. CI runs this smoke in its own job and retains evidence artifacts for
+seven days. CLI, stdio MCP, headless/extension flows, historical released
 clients, and real SSH remain separate acceptance work.

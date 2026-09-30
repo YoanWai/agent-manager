@@ -14,7 +14,7 @@ These documents retain the broader target. A requirement described here is not e
 | [Roadmap and evidence](roadmap-and-evidence.md) | Current conformance, source references, and bounded follow-ups |
 | [Production proposal](../architecture-proposal.md) | Summary of the implemented refactor and runnable examples |
 
-The [Help feature package](help-package.md) records the first enforced UI package boundary and root adapter responsibilities.
+The [Help feature package](help-package.md) records the first enforced UI package boundary and root adapter responsibilities. The [review data boundary](review-data.md) separates pure line models and Git values from concrete subprocess adapters. The [real-terminal harness](../../tools/e2e/README.md) makes the local smoke reproducible.
 
 The [session command file map](sessioncmd-file-map.md) records the command split. The [UI concern map](ui-file-map.md) records the UI taxonomy and separates file placement from feature ownership.
 
