@@ -1,11 +1,15 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/store"
-	"sort"
 	"strings"
+
+	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/store"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 )
 
+// treeRow is a root-side resolution of Rail's copied selection. It is not
+// retained UI state; lifecycle callers use it to recover concrete records.
 type treeRow struct {
 	isGroup bool
 	group   string
@@ -13,359 +17,134 @@ type treeRow struct {
 	sess    store.Session
 }
 
-// visibleSessions filters to the sessions the current view scope shows:
-// active ones normally, archived ones in the archived view. It also
-// covers the frames between a scope toggle and the next refresh, when
-// m.sessions still carries the other scope's list. Status filters apply
-// later via listedSessions.
-func (m *Model) visibleSessions() []store.Session {
-	visible := make([]store.Session, 0, len(m.workspace.sessions))
-	for _, sess := range m.workspace.sessions {
-		if sess.Archived == m.rail.showArchived {
-			visible = append(visible, sess)
-		}
+func (row treeRow) isRoot() bool { return row.isGroup && row.group == "" }
+
+func rowKey(row treeRow) string {
+	if row.isGroup {
+		return "g:" + row.group
 	}
-	return visible
+	return "s:" + row.sess.ID
 }
 
-// listedSessions is the archived scope narrowed by the status filter.
-// Header counts, group rollups, and the tree all share this set so the
-// numbers always match what the list can show.
-//
-// The selected session stays listed when its status leaves the filter
-// (finished → idle on enter/ack) so rebuild cannot eject the cursor mid-work.
+func (m *Model) railSnapshot() uirail.Snapshot {
+	snapshot := uirail.Snapshot{
+		Sessions:       make([]uirail.Session, 0, len(m.workspace.sessions)),
+		Groups:         append([]string(nil), m.workspace.groups...),
+		ArchivedGroups: make(map[string]bool, len(m.workspace.archivedGroups)),
+	}
+	for path, archived := range m.workspace.archivedGroups {
+		snapshot.ArchivedGroups[path] = archived
+	}
+	for _, session := range m.workspace.sessions {
+		prompt := m.workspace.panePrompts[session.ID]
+		if prompt == "" {
+			prompt = session.LastPrompt
+		}
+		if prompt == "" {
+			prompt = launch.DeliveredPrompt(session.LaunchPrompt)
+		}
+		snapshot.Sessions = append(snapshot.Sessions, uirail.Session{
+			ID:             session.ID,
+			Name:           session.Name,
+			DisplayName:    m.displayName(session),
+			Tool:           session.Tool,
+			Cwd:            session.Cwd,
+			Group:          session.Group,
+			Status:         session.Status,
+			Archived:       session.Archived,
+			Acked:          session.Acked,
+			CreatedAt:      session.CreatedAt,
+			LastStatusAt:   session.LastStatusAt,
+			LaunchAt:       session.LaunchTime(),
+			AgentSessionID: session.AgentSessionID,
+			ParentID:       session.ParentID,
+			Prompt:         prompt,
+			PaneLine:       m.workspace.paneLines[session.ID],
+			PanePrompt:     m.workspace.panePrompts[session.ID],
+			Queued:         m.workspace.queuedMessages[session.ID],
+			IsShell:        m.isShell(session.Tool),
+			Elsewhere:      m.elsewhereNote(session) != "",
+		})
+	}
+	return snapshot
+}
+
+func (m *Model) rebuildRows() uirail.SelectionChange {
+	return m.rail.Reconcile(m.railSnapshot())
+}
+
+func (m *Model) selected() (store.Session, bool) {
+	id, ok := m.rail.SelectedSession()
+	if !ok {
+		return store.Session{}, false
+	}
+	return m.sessionByID(id)
+}
+
+func (m *Model) selectedRow() (treeRow, bool) {
+	selection, ok := m.rail.Selected()
+	if !ok {
+		return treeRow{}, false
+	}
+	if selection.Kind == uirail.GroupRow {
+		return treeRow{isGroup: true, group: selection.Group}, true
+	}
+	session, ok := m.sessionByID(selection.SessionID)
+	if !ok {
+		return treeRow{}, false
+	}
+	return treeRow{group: session.Group, sess: session}, true
+}
+
+func (m *Model) selectedGroup() (string, bool) { return m.rail.SelectedGroup() }
+
+func (m *Model) focusSession(id string) bool { return m.rail.FocusSession(id) }
+
+func (m *Model) sessionByID(id string) (store.Session, bool) {
+	for _, session := range m.workspace.sessions {
+		if session.ID == id {
+			return session, true
+		}
+	}
+	return store.Session{}, false
+}
+
 func (m *Model) listedSessions() []store.Session {
-	visible := m.visibleSessions()
-	if !m.rail.statusFilter.active() {
-		return visible
-	}
-	heldID := ""
-	if sess, ok := m.selected(); ok {
-		heldID = sess.ID
-	}
-	listed := make([]store.Session, 0, len(visible))
-	for _, sess := range visible {
-		if m.rail.statusFilter.matches(sess.Status) || sess.ID == heldID {
-			listed = append(listed, sess)
+	ids := m.rail.ListedSessionIDs()
+	listed := make([]store.Session, 0, len(ids))
+	for _, id := range ids {
+		if session, ok := m.sessionByID(id); ok {
+			listed = append(listed, session)
 		}
 	}
 	return listed
 }
 
-// listedAgents is listedSessions without the shells, for the rollups that
-// describe what a group is working on.
 func (m *Model) listedAgents() []store.Session {
-	listed := m.listedSessions()
-	agents := make([]store.Session, 0, len(listed))
-	for _, sess := range listed {
-		if !m.isShell(sess.Tool) {
-			agents = append(agents, sess)
+	ids := m.rail.ListedAgentIDs()
+	agents := make([]store.Session, 0, len(ids))
+	for _, id := range ids {
+		if session, ok := m.sessionByID(id); ok {
+			agents = append(agents, session)
 		}
 	}
 	return agents
 }
 
-func (m *Model) selected() (store.Session, bool) {
-	if m.rail.cursor < 0 || m.rail.cursor >= len(m.rail.rows) || m.rail.rows[m.rail.cursor].isGroup {
-		return store.Session{}, false
-	}
-	return m.rail.rows[m.rail.cursor].sess, true
+func inGroupSubtree(sessionGroup, group string) bool {
+	return sessionGroup == group || strings.HasPrefix(sessionGroup, group+"/")
 }
 
-func (m *Model) selectedRow() (treeRow, bool) {
-	if m.rail.cursor < 0 || m.rail.cursor >= len(m.rail.rows) {
-		return treeRow{}, false
+func parentGroup(group string) string {
+	if index := strings.LastIndex(group, "/"); index >= 0 {
+		return group[:index]
 	}
-	return m.rail.rows[m.rail.cursor], true
-}
-
-// focusSession puts the cursor on a session's row, for the keys that make
-// one and leave the user on it, and reports whether it found the row. A
-// session filtered out of the current view has none, and the cursor stays
-// where it was.
-func (m *Model) focusSession(id string) bool {
-	for i, row := range m.rail.rows {
-		if !row.isGroup && row.sess.ID == id {
-			m.rail.cursor = i
-			return true
-		}
-	}
-	return false
-}
-
-// rootGroup is the path every ungrouped session already carries.
-const rootGroup = ""
-
-// isRoot marks the pinned top-level row, which is not a stored group.
-func (e treeRow) isRoot() bool { return e.isGroup && e.group == rootGroup }
-
-// rowsBelowRoot is the tree without its pinned row: empty means the rail
-// has nothing to list, however many rows it paints.
-func rowsBelowRoot(rows []treeRow) []treeRow {
-	if len(rows) > 0 && rows[0].isRoot() {
-		return rows[1:]
-	}
-	return rows
-}
-
-func rowKey(entry treeRow) string {
-	if entry.isGroup {
-		return "g:" + entry.group
-	}
-	return "s:" + entry.sess.ID
-}
-
-// rebuildRows walks the group tree depth-first and emits one row per
-// group node and per session, honoring collapse state, search, and the
-// status filter. The cursor follows the previously selected row's
-// identity, so list changes from the 2s poll never yank the selection.
-func (m *Model) rebuildRows() {
-	previousKey := ""
-	if entry, ok := m.selectedRow(); ok {
-		previousKey = rowKey(entry)
-	}
-	query := strings.ToLower(strings.TrimSpace(m.rail.search))
-	prunedView := query != "" || m.rail.statusFilter.active()
-
-	listed := m.listedSessions()
-	listedIDs := make(map[string]bool, len(listed))
-	for _, sess := range listed {
-		listedIDs[sess.ID] = true
-	}
-	byID := make(map[string]store.Session, len(m.workspace.sessions))
-	for _, sess := range m.workspace.sessions {
-		byID[sess.ID] = sess
-	}
-	// m.sessions arrives ordered by the store (group, sort_order), so
-	// per-group slices inherit the user's manual order.
-	matched := make(map[string]bool, len(listed))
-	for _, sess := range listed {
-		if query == "" || matchesSearch(sess, query) {
-			matched[sess.ID] = true
-		}
-	}
-	// A parent the search itself missed still comes along to carry its
-	// matching children, in the store's order rather than after them.
-	carried := map[string]bool{}
-	for _, sess := range listed {
-		if !matched[sess.ID] || sess.ParentID == "" || !listedIDs[sess.ParentID] {
-			continue
-		}
-		carried[sess.ParentID] = true
-	}
-	sessionsByGroup := map[string][]store.Session{}
-	childrenByParent := map[string][]store.Session{}
-	for _, sess := range listed {
-		if sess.ParentID != "" {
-			if _, ok := byID[sess.ParentID]; ok {
-				if matched[sess.ID] {
-					childrenByParent[sess.ParentID] = append(childrenByParent[sess.ParentID], sess)
-				}
-				continue
-			}
-		}
-		if matched[sess.ID] || carried[sess.ID] {
-			sessionsByGroup[sess.Group] = append(sessionsByGroup[sess.Group], sess)
-		}
-	}
-	walked := map[string]bool{}
-	for _, groupSessions := range sessionsByGroup {
-		for _, sess := range groupSessions {
-			walked[sess.ID] = true
-		}
-	}
-	orphaned := map[string]bool{}
-	// A child whose parent never made it into a group paints un-nested, in
-	// the store's order rather than the order the parent map happens to
-	// yield.
-	for _, sess := range listed {
-		if _, nested := childrenByParent[sess.ParentID]; !nested || walked[sess.ParentID] {
-			continue
-		}
-		if !matched[sess.ID] {
-			continue
-		}
-		sessionsByGroup[sess.Group] = append(sessionsByGroup[sess.Group], sess)
-		orphaned[sess.ParentID] = true
-	}
-	for parentID := range orphaned {
-		delete(childrenByParent, parentID)
-	}
-
-	paths := groupClosure(m.workspace.groups, m.workspace.sessions)
-	if m.rail.showArchived {
-		// The archived view keeps groups that hold archived sessions plus any
-		// group whose subtree was archived as a whole (even with no sessions),
-		// instead of the full tree skeleton.
-		kept := pathsWithSessions(paths, sessionsByGroup)
-		for path := range paths {
-			if m.groupEffectivelyArchived(path) {
-				addWithAncestors(kept, path)
-			}
-		}
-		paths = kept
-	} else {
-		// The active view hides any archived group and its whole subtree.
-		for path := range paths {
-			if m.groupEffectivelyArchived(path) {
-				delete(paths, path)
-			}
-		}
-		if prunedView {
-			paths = pathsWithSessions(paths, sessionsByGroup)
-		}
-	}
-	if m.rail.hideEmptyGroups && !m.rail.showArchived {
-		// This is a presentation filter only: stored groups remain available
-		// to forms and return to the tree as soon as the toggle is switched
-		// off. Ancestors of groups with visible sessions stay in the tree.
-		paths = pathsWithSessions(paths, sessionsByGroup)
-	}
-	children := childIndex(paths, m.workspace.groups)
-
-	// Folds are a browsing convenience for the active tree; the archived,
-	// search, and status-filter views already prune to matching groups, so
-	// honoring folds there would hide the very sessions the user came for.
-	honorFolds := !prunedView && !m.rail.showArchived
-
-	// Root is a standing move and spawn target; its sessions stay flat.
-	rows := make([]treeRow, 0, len(m.workspace.sessions)+len(paths)+1)
-	appendSession := func(sess store.Session, depth int) {
-		rows = append(rows, treeRow{sess: sess, depth: depth})
-		for _, child := range childrenByParent[sess.ID] {
-			rows = append(rows, treeRow{sess: child, depth: depth + 1})
-		}
-	}
-	rows = append(rows, treeRow{isGroup: true, group: rootGroup})
-	for _, sess := range sessionsByGroup[""] {
-		appendSession(sess, 0)
-	}
-	var walk func(path string, depth int)
-	walk = func(path string, depth int) {
-		rows = append(rows, treeRow{isGroup: true, group: path, depth: depth})
-		if honorFolds && m.rail.collapsed[path] {
-			return
-		}
-		for _, sess := range sessionsByGroup[path] {
-			appendSession(sess, depth+1)
-		}
-		for _, child := range children[path] {
-			walk(child, depth+1)
-		}
-	}
-	for _, root := range children[""] {
-		walk(root, 0)
-	}
-
-	m.rail.rows = rows
-	if previousKey != "" {
-		for i, entry := range rows {
-			if rowKey(entry) == previousKey {
-				m.rail.cursor = i
-				break
-			}
-		}
-	} else if m.rail.cursor == 0 && len(rows) > 1 && rows[0].isRoot() {
-		// A launch opens on a session, not on root's rollup.
-		m.rail.cursor = 1
-	}
-	if m.rail.cursor >= len(rows) {
-		m.rail.cursor = len(rows) - 1
-	}
-	if m.rail.cursor < 0 {
-		m.rail.cursor = 0
-	}
-}
-
-// groupClosure unions stored groups with groups referenced by sessions,
-// then adds every ancestor so partial paths always render.
-func groupClosure(groups []string, sessions []store.Session) map[string]bool {
-	paths := map[string]bool{}
-	add := func(path string) {
-		for path != "" {
-			paths[path] = true
-			idx := strings.LastIndex(path, "/")
-			if idx < 0 {
-				break
-			}
-			path = path[:idx]
-		}
-	}
-	for _, g := range groups {
-		add(g)
-	}
-	for _, sess := range sessions {
-		add(sess.Group)
-	}
-	return paths
-}
-
-func (m *Model) groupEffectivelyArchived(path string) bool {
-	return store.EffectivelyArchived(m.workspace.archivedGroups, path)
-}
-
-func addWithAncestors(set map[string]bool, path string) {
-	for path != "" {
-		set[path] = true
-		idx := strings.LastIndex(path, "/")
-		if idx < 0 {
-			break
-		}
-		path = path[:idx]
-	}
-}
-
-func pathsWithSessions(paths map[string]bool, sessionsByGroup map[string][]store.Session) map[string]bool {
-	kept := map[string]bool{}
-	for path := range paths {
-		for group := range sessionsByGroup {
-			if inGroupSubtree(group, path) {
-				kept[path] = true
-				break
-			}
-		}
-	}
-	return kept
-}
-
-// childIndex maps each group to its ordered children: stored groups in
-// the user's manual order, synthesized ancestors alphabetically after.
-func childIndex(paths map[string]bool, ordered []string) map[string][]string {
-	rank := make(map[string]int, len(ordered))
-	for i, name := range ordered {
-		rank[name] = i
-	}
-	children := map[string][]string{}
-	for path := range paths {
-		parent := parentGroup(path)
-		children[parent] = append(children[parent], path)
-	}
-	for _, siblings := range children {
-		sort.SliceStable(siblings, func(i, j int) bool {
-			ri, oki := rank[siblings[i]]
-			rj, okj := rank[siblings[j]]
-			if oki && okj {
-				return ri < rj
-			}
-			if oki != okj {
-				return oki
-			}
-			return siblings[i] < siblings[j]
-		})
-	}
-	return children
+	return ""
 }
 
 func baseName(path string) string {
-	if idx := strings.LastIndex(path, "/"); idx >= 0 {
-		return path[idx+1:]
+	if index := strings.LastIndex(path, "/"); index >= 0 {
+		return path[index+1:]
 	}
 	return path
-}
-
-func matchesSearch(sess store.Session, query string) bool {
-	return strings.Contains(strings.ToLower(sess.Name), query) ||
-		strings.Contains(strings.ToLower(sess.Tool), query) ||
-		strings.Contains(strings.ToLower(sess.Group), query) ||
-		strings.Contains(strings.ToLower(sess.Status), query)
 }

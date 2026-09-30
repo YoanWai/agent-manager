@@ -79,7 +79,7 @@ func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
 	}
 	// Starting sits outside the attention set, so the row the key just made
 	// would be filtered off screen.
-	m.rail.statusFilter = statusFilterAll
+	m.rail.ClearStatusFilter()
 	m.errBar.text = ""
 	m.focusSession(sess.ID)
 	return m, m.refreshCmd()

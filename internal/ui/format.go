@@ -10,6 +10,19 @@ import (
 	"time"
 )
 
+// centerLine pads a styled string so its visible text sits in the middle of
+// width columns. Rail has its own package-local counterpart for its frame.
+func centerLine(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	visible := ansi.StringWidth(text)
+	if visible >= width {
+		return ansi.Truncate(text, width, "…")
+	}
+	return strings.Repeat(" ", (width-visible)/2) + text
+}
+
 // rowColumns lays a list row out as a name column and a right-aligned meta
 // column, so status, tool and age line up down the list instead of ragging
 // off the end of each name. Rows too narrow to split keep meta inline and

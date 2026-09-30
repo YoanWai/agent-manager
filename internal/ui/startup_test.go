@@ -27,7 +27,7 @@ func TestStartupTickRunsWhileBooting(t *testing.T) {
 }
 
 func TestFirstRefreshClearsBootLoader(t *testing.T) {
-	m := &Model{rail: railState{collapsed: map[string]bool{}}, startup: startupState{booting: true}}
+	m := &Model{startup: startupState{booting: true}}
 	updated, _ := m.Update(refreshMsg{listedAt: time.Now()})
 	got := updated.(*Model)
 	if got.startup.booting {
@@ -40,14 +40,15 @@ func TestStartupTickRunsOnlyWhileAStartingRowIsVisible(t *testing.T) {
 	if cmd := m.startStartupTick(); cmd != nil {
 		t.Fatal("startup tick began without a starting row")
 	}
-	m.rail.rows = []treeRow{{sess: store.Session{Status: status.Starting}}}
+	m.workspace.sessions = []store.Session{{ID: "starting", Status: status.Starting}}
+	m.rebuildRows()
 	if cmd := m.startStartupTick(); cmd == nil || !m.startup.startupAnimating {
 		t.Fatal("starting row did not begin the startup tick")
 	}
 	if cmd := m.startStartupTick(); cmd != nil {
 		t.Fatal("an active startup tick was scheduled twice")
 	}
-	m.rail.rows[0].sess.Status = status.Idle
+	setRailSessionStatus(m, "starting", status.Idle)
 	_, cmd := m.Update(startupTickMsg{})
 	if cmd != nil || m.startup.startupAnimating {
 		t.Fatal("startup tick kept running after the starting row settled")

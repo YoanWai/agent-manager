@@ -133,7 +133,7 @@ func TestDotKeepsArchivedFinishedStatus(t *testing.T) {
 	}
 	m.workspace.sessions[0].Status = status.Finished
 	m.workspace.sessions[0].Archived = true
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.rebuildRows()
 	m.selectSessionRow(t, "kept")
 	if strings.Contains(m.viewFooter(), "mark idle") {

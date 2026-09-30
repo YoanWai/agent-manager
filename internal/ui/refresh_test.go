@@ -12,7 +12,7 @@ import (
 // refresh has to hand that socket to the model it renders from.
 func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 	for _, socket := range []string{"/tmp/first/agentmgr", "/tmp/second/agentmgr", ""} {
-		m := &Model{workspace: workspace{tmuxSocket: "/tmp/stale/agentmgr"}, rail: railState{collapsed: map[string]bool{}}}
+		m := &Model{workspace: workspace{tmuxSocket: "/tmp/stale/agentmgr"}, rail: railModelFromRows(nil, 0)}
 		m.Update(refreshMsg{tmuxSocket: socket, leadingManager: true, listedAt: time.Now()})
 		if m.workspace.tmuxSocket != socket {
 			t.Fatalf("model socket = %q, want the poll's %q", m.workspace.tmuxSocket, socket)

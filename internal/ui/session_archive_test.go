@@ -21,7 +21,7 @@ func TestArchiveSelectedNoopInArchivedView(t *testing.T) {
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "alpha")
 	m.archiveSelected()
@@ -32,14 +32,14 @@ func TestArchiveSelectedNoopInArchivedView(t *testing.T) {
 	if err := m.services.store.CreateGroup("zone", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
-	m.rail.showArchived = false
+	m.rail.SetArchived(false)
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "beta", dir, "zone")
 	if err := m.services.store.SetArchived(m.sessionRows()[0].ID, true); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "zone")
 	m.archiveSelected()
@@ -81,7 +81,7 @@ func TestRestoreGroupBringsBackOnlyItsArchivedSessions(t *testing.T) {
 	seedGroups(t, m, "zone")
 	live, sleeper, stash := seedRestoreScenario(t, m, "zone")
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "zone")
 	m.restoreSelected()
@@ -103,7 +103,7 @@ func TestRestoreGroupBringsBackOnlyItsArchivedSessions(t *testing.T) {
 	if got, err := m.services.store.Get(stash.ID); err != nil || got.Archived {
 		t.Fatalf("stash is still filed as archived: archived=%v err=%v", got.Archived, err)
 	}
-	m.rail.showArchived = false
+	m.rail.SetArchived(false)
 	m.applyCmd(t, m.refreshCmd())
 	if names := strings.Join(sessionNames(m), " "); names != "live sleeper stash" {
 		t.Fatalf("active view = %q, want all of zone back", names)
@@ -121,7 +121,7 @@ func TestArchiveAndRestoreRefuseTheRootRow(t *testing.T) {
 		t.Run(tc.action, func(t *testing.T) {
 			m := buildModel(t)
 			live, sleeper, stash := seedRestoreScenario(t, m, rootGroup)
-			m.rail.showArchived = tc.archived
+			m.rail.SetArchived(tc.archived)
 			m.applyCmd(t, m.refreshCmd())
 			m.selectGroupRow(t, rootGroup)
 
@@ -160,7 +160,7 @@ func TestArchiveRestoreClearStaleError(t *testing.T) {
 		t.Fatalf("archive should clear the stale error, err = %q", m.errBar.text)
 	}
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "alpha")
 	m.errBar.text = "stale failure from an earlier action"
@@ -186,7 +186,7 @@ func TestRestoreKeepsArchiveWhenReviveFails(t *testing.T) {
 		t.Fatalf("remove dir: %v", err)
 	}
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "homeless")
 	m.restoreSelected()
@@ -263,7 +263,7 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 		t.Fatalf("active view still shows sessions %v", names)
 	}
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	gotGroups := m.groupRowPaths()
 	if len(gotGroups) != 2 || gotGroups[0] != "proj" || gotGroups[1] != "proj/sub" {
@@ -295,7 +295,7 @@ func TestArchiveGroupMovesWholeSubtree(t *testing.T) {
 		}
 	}
 	m.applyCmd(t, cmd)
-	m.rail.showArchived = false
+	m.rail.SetArchived(false)
 	m.applyCmd(t, m.refreshCmd())
 	if paths := m.groupRowPaths(); len(paths) != 2 {
 		t.Fatalf("after restore, active groups = %v want 2", paths)
@@ -326,7 +326,7 @@ func TestArchiveGroupKeepsEmptyGroupInArchivedView(t *testing.T) {
 		t.Fatalf("archived empty group still in active view: %v", paths)
 	}
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	if paths := m.groupRowPaths(); len(paths) != 1 || paths[0] != "empty" {
 		t.Fatalf("archived view groups = %v want [empty]", paths)
@@ -371,7 +371,7 @@ func TestArchivedSessionKeepsPaneSnapshot(t *testing.T) {
 		t.Fatal("archive should kill the tmux session")
 	}
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, nil)
 	m.selectSessionRow(t, "frozen")
 	m.applyCmd(t, nil)
@@ -390,7 +390,7 @@ func TestArchivedSessionKeepsPaneSnapshot(t *testing.T) {
 
 	m.workspace.preview = ""
 	gen := m.focusPane.MovePreview()
-	m.applyCmd(t, m.previewCmd(m.rail.rows[m.rail.cursor].sess, gen))
+	m.applyCmd(t, m.previewCmd(railSelectedSession(m), gen))
 	if !strings.Contains(m.workspace.preview, "snapshot-marker") {
 		t.Fatalf("previewCmd should serve the snapshot for an archived session, preview = %q", m.workspace.preview)
 	}
@@ -431,7 +431,7 @@ func TestRestoreAgentUnarchivesEveryChild(t *testing.T) {
 	m.archiveSelected()
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.applyCmd(t, cmd)
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "coder")
 	m.restoreSelected()
@@ -463,7 +463,7 @@ func TestRestoreAgentBringsBackOnlyItsArchivedTerminals(t *testing.T) {
 	m.archiveSelected()
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.applyCmd(t, cmd)
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, shell.Name)
 	m.restoreSelected()
@@ -505,7 +505,7 @@ func TestConfirmedArchiveLeavesTheActiveViewAtOnce(t *testing.T) {
 	}
 
 	// The archived view still holds it once a fresh listing has run.
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	if len(m.sessionRows()) != 1 || !m.sessionRows()[0].Archived {
 		t.Fatalf("archived session should show in the archived view, rows = %v", sessionNames(m))
@@ -521,7 +521,7 @@ func TestConfirmedRestoreLeavesTheArchivedViewAtOnce(t *testing.T) {
 	m.archiveSelected()
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "returning")
 	m.restoreSelected()
@@ -537,7 +537,7 @@ func TestConfirmedRestoreLeavesTheArchivedViewAtOnce(t *testing.T) {
 	}
 
 	// The active view takes it back without waiting for a poll.
-	m.rail.showArchived = false
+	m.rail.SetArchived(false)
 	if got := m.visibleSessions(); len(got) != 1 || got[0].ID != sess.ID {
 		t.Fatalf("active view after restore = %v", got)
 	}
@@ -557,7 +557,7 @@ func TestConfirmedGroupRestoreShowsTheSubtreeAtOnce(t *testing.T) {
 	m.archiveSelected()
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "zone")
 	m.restoreSelected()
@@ -568,7 +568,7 @@ func TestConfirmedGroupRestoreShowsTheSubtreeAtOnce(t *testing.T) {
 			t.Fatalf("restored session stayed in the archived view before the next poll")
 		}
 	}
-	m.rail.showArchived = false
+	m.rail.SetArchived(false)
 	if m.groupEffectivelyArchived("zone") {
 		t.Fatal("restored group still reads as archived before the next poll")
 	}

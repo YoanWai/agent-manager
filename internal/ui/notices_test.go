@@ -1053,13 +1053,13 @@ func TestNewFeedWaitsForSearchToClose(t *testing.T) {
 	m := footModel(t)
 	m.width, m.height = 100, 34
 	m.mode = modeList
-	m.rail.searching = true
+	m.rail.SetSearch(m.rail.Search(), true)
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.mode != modeList || !m.rail.searching {
-		t.Fatalf("search should keep the modal closed, mode=%v searching=%v", m.mode, m.rail.searching)
+	if m.mode != modeList || !m.rail.Searching() {
+		t.Fatalf("search should keep the modal closed, mode=%v searching=%v", m.mode, m.rail.Searching())
 	}
 
-	m.rail.searching = false
+	m.rail.SetSearch(m.rail.Search(), false)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 34})
 	if m.mode != modeNotices {
 		t.Fatalf("closing search should open the new message, mode=%v", m.mode)
@@ -1743,17 +1743,24 @@ func TestFullLayoutBadgeWearsTheCardYellow(t *testing.T) {
 // A notice opening mid-drag would swallow the release and strand the
 // lifted row, and one over the row menu would bury it, so both wait.
 func TestNoticesWaitForADragOrTheRowMenu(t *testing.T) {
-	m := &Model{
-		mode: modeList,
-	}
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	m.View()
 	if !m.listReadyForNotice() {
 		t.Fatal("test setup: a plain list takes a notice")
 	}
-	m.rail.reorder.active = true
+	selection, _ := m.rail.Selected()
+	handle := m.displayedRail.Handles[selectionKeyForTest(selection)]
+	line := paintedRailLines(t, m, "alpha")[0]
+	y0, _ := m.bodyYRange()
+	m.handleMouse(tea.MouseMsg{X: handle, Y: y0 + line, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	if m.listReadyForNotice() {
 		t.Fatal("a lifted row should hold notices back")
 	}
-	m.rail.reorder.active, m.rail.menu.active = false, true
+	m.handleMouse(tea.MouseMsg{X: handle, Y: y0 + line, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
+	m.handleMouse(tea.MouseMsg{X: 2, Y: y0 + line, Button: tea.MouseButtonRight, Action: tea.MouseActionPress})
 	if m.listReadyForNotice() {
 		t.Fatal("an open row menu should hold notices back")
 	}

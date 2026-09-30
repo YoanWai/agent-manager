@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 // A bare Model must default to mouse reporting on: mouseDisabled is named
@@ -242,8 +241,8 @@ func paintedRailLines(t *testing.T, m *Model, name string) []int {
 	t.Helper()
 	m.View()
 	var lines []int
-	for i, row := range m.rail.railHits {
-		if row >= 0 && !m.rail.rows[row].isGroup && m.rail.rows[row].sess.Name == name {
+	for i, row := range railHitRows(m) {
+		if row >= 0 && !railRows(m)[row].isGroup && railRows(m)[row].sess.Name == name {
 			lines = append(lines, i)
 		}
 	}
@@ -257,8 +256,8 @@ func paintedGroupLines(t *testing.T, m *Model, path string) []int {
 	t.Helper()
 	m.View()
 	var lines []int
-	for i, row := range m.rail.railHits {
-		if row >= 0 && m.rail.rows[row].isGroup && m.rail.rows[row].group == path {
+	for i, row := range railHitRows(m) {
+		if row >= 0 && railRows(m)[row].isGroup && railRows(m)[row].group == path {
 			lines = append(lines, i)
 		}
 	}
@@ -417,17 +416,17 @@ func TestDoubleClickPairsAcrossARebuild(t *testing.T) {
 		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
-	before := m.rail.cursor
+	before := m.rail.Cursor()
 
 	// Folding the group above target drops every row under it an index.
-	m.rail.collapsed["aaa"] = true
+	m.rail.SetCollapsed("aaa", true)
 	m.rebuildRows()
 	line = paintedRailLines(t, m, "target")[0]
 	m.selectSessionRow(t, "target")
-	if m.rail.cursor == before {
+	if m.rail.Cursor() == before {
 		t.Fatal("test setup: folding should have renumbered target's row")
 	}
-	m.rail.cursor = before
+	setRailCursor(m, before)
 
 	updated, _ = m.handleMouse(tea.MouseMsg{
 		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
@@ -558,7 +557,9 @@ func TestSlowSecondClickDoesNotFocus(t *testing.T) {
 	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
 	updated, _ := m.handleMouse(press)
 	m = updated.(*Model)
-	m.rail.listClickAt = time.Now().Add(-multiClickWindow - time.Millisecond)
+	// A click outside the multi-click window is equivalent to an expired
+	// click history by the time the next press is handled.
+	m.rail.ResetClickHistory()
 	updated, _ = m.handleMouse(press)
 	m = updated.(*Model)
 	if m.mode != modeList {
@@ -575,7 +576,7 @@ func TestClickOnSelectedGroupTogglesCollapse(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "alpha", dir, "work")
 	m.selectGroupRow(t, "work")
-	if m.rail.collapsed["work"] {
+	if m.rail.IsCollapsed("work") {
 		t.Fatal("test setup: work should start open")
 	}
 
@@ -586,7 +587,7 @@ func TestClickOnSelectedGroupTogglesCollapse(t *testing.T) {
 	m = updated.(*Model)
 	updated, _ = m.handleMouse(press)
 	m = updated.(*Model)
-	if !m.rail.collapsed["work"] {
+	if !m.rail.IsCollapsed("work") {
 		t.Fatal("double click on the selected group should fold it")
 	}
 
@@ -597,7 +598,7 @@ func TestClickOnSelectedGroupTogglesCollapse(t *testing.T) {
 	m = updated.(*Model)
 	updated, _ = m.handleMouse(press)
 	m = updated.(*Model)
-	if m.rail.collapsed["work"] {
+	if m.rail.IsCollapsed("work") {
 		t.Fatal("a second double click should unfold it")
 	}
 }
@@ -632,7 +633,7 @@ func TestClickInContentColumnDoesNotSelect(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
 	m.selectSessionRow(t, "beta")
-	before := m.rail.cursor
+	before := m.rail.Cursor()
 
 	m.View()
 	y0, _ := m.bodyYRange()
@@ -640,7 +641,7 @@ func TestClickInContentColumnDoesNotSelect(t *testing.T) {
 		X: m.dividerX() + 5, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
-	if m.rail.cursor != before || cmd != nil {
+	if m.rail.Cursor() != before || cmd != nil {
 		t.Fatal("a click in the content column should not move the cursor")
 	}
 }
@@ -807,7 +808,7 @@ func TestPressOffDividerWhileArmedDoesNotSelectRow(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
 	m.selectSessionRow(t, "beta")
-	before := m.rail.cursor
+	before := m.rail.Cursor()
 
 	m.View()
 	updated, _ := m.enterResizeMode()
@@ -817,7 +818,7 @@ func TestPressOffDividerWhileArmedDoesNotSelectRow(t *testing.T) {
 		X: 2, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
-	if m.rail.cursor != before {
+	if m.rail.Cursor() != before {
 		t.Fatal("a miss while resize mode is armed should not select a row")
 	}
 	if !m.split.resizeMode {
@@ -919,7 +920,7 @@ func TestClickOnMoreCounterSelectsTheRowItHides(t *testing.T) {
 
 	y0, _ := m.bodyYRange()
 	counter, target := -1, -1
-	for i, row := range m.rail.railHits {
+	for i, row := range railHitRows(m) {
 		if row >= 0 && strings.Contains(frame[y0+i], "more") {
 			counter, target = i, row
 		}
@@ -927,7 +928,7 @@ func TestClickOnMoreCounterSelectsTheRowItHides(t *testing.T) {
 	if counter < 0 {
 		t.Fatal("test setup: a short rail should paint a counter")
 	}
-	for i, row := range m.rail.railHits {
+	for i, row := range railHitRows(m) {
 		if i != counter && row == target {
 			t.Fatalf("test setup: row %d is painted at line %d, so it is not hidden", target, i)
 		}
@@ -937,8 +938,8 @@ func TestClickOnMoreCounterSelectsTheRowItHides(t *testing.T) {
 		X: 2, Y: y0 + counter, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
-	if m.rail.cursor != target {
-		t.Fatalf("clicking the counter should select row %d, cursor = %d", target, m.rail.cursor)
+	if m.rail.Cursor() != target {
+		t.Fatalf("clicking the counter should select row %d, cursor = %d", target, m.rail.Cursor())
 	}
 	if cmd == nil {
 		t.Fatal("selecting a different row should schedule a preview")
@@ -954,15 +955,15 @@ func TestMoreCounterOnlyScrolls(t *testing.T) {
 	}
 	m.height = 12
 	m.View()
-	if m.rail.railWidth == 0 {
+	if m.displayedRail.Width == 0 {
 		t.Fatal("test setup: the frame should record the rail width")
 	}
-	for _, x := range []int{2, 4, m.rail.railWidth} {
+	for _, x := range []int{2, 4, m.displayedRail.Width} {
 		m.selectSessionRow(t, "one")
 		frame := splitLines(m.View())
 		y0, _ := m.bodyYRange()
 		counter := -1
-		for i, row := range m.rail.railHits {
+		for i, row := range railHitRows(m) {
 			if row >= 0 && strings.Contains(frame[y0+i], "more") {
 				counter = i
 			}
@@ -976,8 +977,8 @@ func TestMoreCounterOnlyScrolls(t *testing.T) {
 		at.Action = tea.MouseActionRelease
 		updated, _ = m.handleMouse(at)
 		m = updated.(*Model)
-		if m.mode != modeList || m.rail.menu.active || m.rail.reorder.active {
-			t.Fatalf("a click on the counter at x=%d should only scroll, mode = %v menu = %v lifted = %v", x, m.mode, m.rail.menu.active, m.rail.reorder.active)
+		if m.mode != modeList || m.rail.MenuOpen() || m.rail.Reordering() {
+			t.Fatalf("a click on the counter at x=%d should only scroll, mode = %v menu = %v lifted = %v", x, m.mode, m.rail.MenuOpen(), m.rail.Reordering())
 		}
 	}
 }
@@ -990,12 +991,12 @@ func TestClickOnRailChromeDoesNotSelect(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
 	m.selectSessionRow(t, "beta")
-	m.rail.searching = true
-	before := m.rail.cursor
+	m.rail.SetSearch(m.rail.Search(), true)
+	before := m.rail.Cursor()
 	m.View()
 
 	line := -1
-	for i, row := range m.rail.railHits {
+	for i, row := range railHitRows(m) {
 		if row < 0 {
 			line = i
 			break
@@ -1009,7 +1010,7 @@ func TestClickOnRailChromeDoesNotSelect(t *testing.T) {
 		X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 	})
 	m = updated.(*Model)
-	if m.rail.cursor != before || cmd != nil {
+	if m.rail.Cursor() != before || cmd != nil {
 		t.Fatal("clicking a chrome line should not move the cursor")
 	}
 }
@@ -1021,16 +1022,17 @@ func TestWheelMovesListCursor(t *testing.T) {
 	m := &Model{
 		mode: modeList,
 
-		width:  80,
-		height: 24, services: services{listKeys: keybind.DefaultList()}, rail: railState{cursor: 0,
-			rows: []treeRow{{}, {}}},
+		width: 80, height: 24,
+		services:  services{listKeys: keybind.DefaultList()},
+		workspace: workspace{sessions: []store.Session{{ID: "fixture-b", Name: "fixture"}}},
+		rail:      railModelCount(2, 0, false),
 	}
 	updated, cmd := m.handleMouse(tea.MouseMsg{
 		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
 	})
 	m = updated.(*Model)
-	if m.rail.cursor != 1 {
-		t.Fatalf("wheel down: cursor = %d want 1", m.rail.cursor)
+	if m.rail.Cursor() != 1 {
+		t.Fatalf("wheel down: cursor = %d want 1", m.rail.Cursor())
 	}
 	if cmd == nil {
 		t.Fatal("wheel down should schedule the preview settle like moveCursor")
@@ -1039,8 +1041,8 @@ func TestWheelMovesListCursor(t *testing.T) {
 		Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress,
 	})
 	m = updated.(*Model)
-	if m.rail.cursor != 0 {
-		t.Fatalf("wheel up: cursor = %d want 0", m.rail.cursor)
+	if m.rail.Cursor() != 0 {
+		t.Fatalf("wheel up: cursor = %d want 0", m.rail.Cursor())
 	}
 }
 
@@ -1050,16 +1052,16 @@ func TestWheelMovesListCursor(t *testing.T) {
 // the way its own footer advertises.
 func TestWheelMovesCursorWhileSearchingOrPrompting(t *testing.T) {
 	for name, m := range map[string]*Model{
-		"searching": {mode: modeList, width: 80, height: 24, rail: railState{searching: true, cursor: 0, rows: []treeRow{{}, {}}}},
-		"quick bar": {mode: modeList, quick: quickState{active: true}, width: 80, height: 24, rail: railState{cursor: 0, rows: []treeRow{{}, {}}}},
+		"searching": {mode: modeList, width: 80, height: 24, rail: railModelCount(2, 0, true)},
+		"quick bar": {mode: modeList, quick: quickState{active: true}, width: 80, height: 24, rail: railModelCount(2, 0, false)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			updated, _ := m.handleMouse(tea.MouseMsg{
 				Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
 			})
 			m := updated.(*Model)
-			if m.rail.cursor != 1 {
-				t.Fatalf("wheel should have moved the cursor to 1, got %d", m.rail.cursor)
+			if m.rail.Cursor() != 1 {
+				t.Fatalf("wheel should have moved the cursor to 1, got %d", m.rail.Cursor())
 			}
 		})
 	}
@@ -1071,7 +1073,7 @@ func TestClickSelectsRowWhileSearching(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
 	m.selectSessionRow(t, "beta")
-	m.rail.searching = true
+	m.rail.SetSearch(m.rail.Search(), true)
 
 	line := paintedRailLines(t, m, "alpha")[0]
 	y0, _ := m.bodyYRange()
@@ -1123,7 +1125,7 @@ func TestClickWhileSearchingOpensNoClickRun(t *testing.T) {
 	m.prefs.fullLayout = true
 	createSession(t, m, "alpha", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
-	m.rail.searching = true
+	m.rail.SetSearch(m.rail.Search(), true)
 
 	line := paintedRailLines(t, m, "alpha")[0]
 	y0, _ := m.bodyYRange()
@@ -1131,7 +1133,7 @@ func TestClickWhileSearchingOpensNoClickRun(t *testing.T) {
 	updated, _ := m.handleMouse(press)
 	m = updated.(*Model)
 
-	m.rail.searching = false
+	m.rail.SetSearch(m.rail.Search(), false)
 	updated, _ = m.handleMouse(press)
 	m = updated.(*Model)
 	if m.mode != modeList {
@@ -1148,7 +1150,7 @@ func TestClicksDoNotFocusWhileSearching(t *testing.T) {
 			m.prefs.fullLayout = full
 			createSession(t, m, "alpha", t.TempDir(), "")
 			m.selectSessionRow(t, "alpha")
-			m.rail.searching = true
+			m.rail.SetSearch(m.rail.Search(), true)
 
 			line := paintedRailLines(t, m, "alpha")[0]
 			y0, _ := m.bodyYRange()
@@ -1175,7 +1177,7 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 		m    *Model
 		drag bool
 	}{
-		"searching": {&Model{mode: modeList, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()}, rail: railState{searching: true}}, false},
+		"searching": {&Model{mode: modeList, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(0, 0, true)}, false},
 		"quick bar": {&Model{mode: modeList, quick: quickState{active: true}, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()}}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1194,30 +1196,30 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 // keyboard wraps: going off the end must not fling the selection to the
 // far one and aim every key after it somewhere the user never looked.
 func TestWheelClampsAtBothEnds(t *testing.T) {
-	m := &Model{mode: modeList, width: 80, height: 24, services: services{listKeys: keybind.DefaultList()}, rail: railState{cursor: 2, rows: []treeRow{{}, {}, {}}}}
+	m := &Model{mode: modeList, width: 80, height: 24, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(3, 2, false)}
 	for i := 0; i < 3; i++ {
 		updated, _ := m.handleMouse(tea.MouseMsg{
 			Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
 		})
 		m = updated.(*Model)
 	}
-	if m.rail.cursor != 2 {
-		t.Fatalf("wheel down off the bottom: cursor = %d want it held at 2", m.rail.cursor)
+	if m.rail.Cursor() != 2 {
+		t.Fatalf("wheel down off the bottom: cursor = %d want it held at 2", m.rail.Cursor())
 	}
-	m.rail.cursor = 0
+	setRailCursor(m, 0)
 	for i := 0; i < 3; i++ {
 		updated, _ := m.handleMouse(tea.MouseMsg{
 			Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress,
 		})
 		m = updated.(*Model)
 	}
-	if m.rail.cursor != 0 {
-		t.Fatalf("wheel up off the top: cursor = %d want it held at 0", m.rail.cursor)
+	if m.rail.Cursor() != 0 {
+		t.Fatalf("wheel up off the top: cursor = %d want it held at 0", m.rail.Cursor())
 	}
 	// The keyboard still wraps: clamping is the wheel's alone.
 	m.moveCursor(-1)
-	if m.rail.cursor != 2 {
-		t.Fatalf("arrow up should still wrap to 2, cursor = %d", m.rail.cursor)
+	if m.rail.Cursor() != 2 {
+		t.Fatalf("arrow up should still wrap to 2, cursor = %d", m.rail.Cursor())
 	}
 }
 
@@ -1227,15 +1229,14 @@ func TestWheelSwallowedInResizeMode(t *testing.T) {
 		split: splitState{resizeMode: true},
 
 		width:  80,
-		height: 24, services: services{listKeys: keybind.DefaultList()}, rail: railState{cursor: 0,
-			rows: []treeRow{{}, {}}},
+		height: 24, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(2, 0, false),
 	}
 	updated, _ := m.handleMouse(tea.MouseMsg{
 		Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress,
 	})
 	m = updated.(*Model)
-	if m.rail.cursor != 0 {
-		t.Fatalf("resize mode should swallow wheel, cursor = %d", m.rail.cursor)
+	if m.rail.Cursor() != 0 {
+		t.Fatalf("resize mode should swallow wheel, cursor = %d", m.rail.Cursor())
 	}
 }
 
@@ -1295,10 +1296,10 @@ func TestClickOnFullScreenBadgeOpensNotices(t *testing.T) {
 func TestClickOnMessagesCardWhileSearchingKeepsTheField(t *testing.T) {
 	m := buildModel(t)
 	m.width, m.height = 120, 34
-	m.rail.searching = true
+	m.rail.SetSearch(m.rail.Search(), true)
 	x, y := messagesCell(t, m)
-	if m = leftPress(m, x, y); m.mode != modeList || !m.rail.searching {
-		t.Fatalf("search owns the click, mode = %v searching = %v", m.mode, m.rail.searching)
+	if m = leftPress(m, x, y); m.mode != modeList || !m.rail.Searching() {
+		t.Fatalf("search owns the click, mode = %v searching = %v", m.mode, m.rail.Searching())
 	}
 }
 
@@ -1410,14 +1411,14 @@ func TestClicksWorkWhileTheQuickBarIsOpen(t *testing.T) {
 	y0, _ := m.bodyYRange()
 	beta := y0 + paintedRailLines(t, m, "beta")[0]
 
-	updated, _ := m.handleMouse(tea.MouseMsg{X: m.rail.railWidth, Y: beta, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	updated, _ := m.handleMouse(tea.MouseMsg{X: m.displayedRail.Width, Y: beta, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
-	if !m.rail.menu.active || !m.quick.active {
-		t.Fatalf("%s should open the menu over the open quick bar, menu = %v quick = %v", rowMenuGlyph, m.rail.menu.active, m.quick.active)
+	if !m.rail.MenuOpen() || !m.quick.active {
+		t.Fatalf("%s should open the menu over the open quick bar, menu = %v quick = %v", rowMenuGlyph, m.rail.MenuOpen(), m.quick.active)
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.rail.menu.active || !m.quick.active {
-		t.Fatalf("esc should close the menu first and leave the bar, menu = %v quick = %v", m.rail.menu.active, m.quick.active)
+	if m.rail.MenuOpen() || !m.quick.active {
+		t.Fatalf("esc should close the menu first and leave the bar, menu = %v quick = %v", m.rail.MenuOpen(), m.quick.active)
 	}
 
 	m = liftByHandle(t, m, "beta")

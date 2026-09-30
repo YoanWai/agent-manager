@@ -155,9 +155,7 @@ func TestHelpAdapterScopeUsesOnlyCopiedValues(t *testing.T) {
 
 func TestHelpModeOwnsKeysBeforeListOverlays(t *testing.T) {
 	m := helpModel()
-	m.rail.reorder.active = true
-	m.rail.menu.active = true
-	m.rail.searching = true
+	m.rail.SetSearch(m.rail.Search(), true)
 	m.quick.active = true
 
 	m.handleKey(runeKey("/"))

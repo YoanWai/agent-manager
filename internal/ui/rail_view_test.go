@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -28,7 +29,7 @@ func TestArchivedViewShowsOnlyArchivedSessions(t *testing.T) {
 		t.Fatalf("active view = %v want [live-one]", names)
 	}
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	if names := sessionNames(m); len(names) != 1 || names[0] != "old-one" {
 		t.Fatalf("archived view = %v want [old-one]", names)
@@ -42,7 +43,7 @@ func railText(t *testing.T, m *Model) []string {
 
 func railTextAt(m *Model, width int) []string {
 	var out []string
-	for _, line := range m.entryLines(m.rail.rows, 0, width, 20) {
+	for _, line := range m.entryLines(railRows(m), 0, width, 20) {
 		out = append(out, strings.TrimRight(ansi.Strip(line.text), " "))
 	}
 	return out
@@ -71,7 +72,7 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 	if !strings.Contains(lines[head], "claude") {
 		t.Fatalf("compact row should carry its meta inline: %q", lines[head])
 	}
-	if got := m.entryHeight(m.rail.rows[0]); got != 1 {
+	if got := m.entryHeight(railRows(m)[0]); got != 1 {
 		t.Fatalf("compact entry height = %d want 1", got)
 	}
 
@@ -100,8 +101,8 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 	if !storedComfortableRows(m.services.store) {
 		t.Fatal("comfortable density did not persist")
 	}
-	sessionRow := m.rail.rows[0]
-	for _, row := range m.rail.rows {
+	sessionRow := railRows(m)[0]
+	for _, row := range railRows(m) {
 		if !row.isGroup {
 			sessionRow = row
 			break
@@ -130,20 +131,19 @@ func TestSettingsTogglesListDensity(t *testing.T) {
 // A launch opens on a session, not on root's rollup.
 func TestCursorSkipsRootOnFirstBuild(t *testing.T) {
 	m := shotModel()
-	m.rail.cursor = 0
+	m.rail = uirail.New(nil)
 	m.rebuildRows()
-	if len(m.rail.rows) < 2 {
-		t.Fatalf("want root and a row below it, got %d rows", len(m.rail.rows))
+	if len(railRows(m)) < 2 {
+		t.Fatalf("want root and a row below it, got %d rows", len(railRows(m)))
 	}
-	if m.rail.rows[m.rail.cursor].isRoot() {
+	if railRows(m)[m.rail.Cursor()].isRoot() {
 		t.Fatal("cursor parked on root with rows available below it")
 	}
 	// With nothing but root to land on, it is the selection.
 	bare := shotModel()
-	bare.workspace.sessions, bare.rail.rows, bare.rail.cursor = nil, nil, 0
-	bare.rebuildRows()
-	if len(bare.rail.rows) != 1 || !bare.rail.rows[0].isRoot() || bare.rail.cursor != 0 {
-		t.Fatalf("empty list should rest on root, got %d rows cursor %d", len(bare.rail.rows), bare.rail.cursor)
+	clearRailInventory(bare)
+	if len(railRows(bare)) != 1 || !railRows(bare)[0].isRoot() || bare.rail.Cursor() != 0 {
+		t.Fatalf("empty list should rest on root, got %d rows cursor %d", len(railRows(bare)), bare.rail.Cursor())
 	}
 }
 
@@ -156,13 +156,13 @@ func TestEmptyListKeepsItsGuidance(t *testing.T) {
 		wantText string
 	}{
 		{"no sessions", func(m *Model) {}, "no sessions yet"},
-		{"no matches", func(m *Model) { m.rail.search = "nothing-matches-this" }, "no matches"},
-		{"nothing archived", func(m *Model) { m.rail.showArchived = true }, "nothing archived"},
-		{"nothing needs attention", func(m *Model) { m.rail.statusFilter = statusFilterAttention }, "nothing needs attention"},
+		{"no matches", func(m *Model) { m.rail.SetSearch("nothing-matches-this", false) }, "no matches"},
+		{"nothing archived", func(m *Model) { m.rail.SetArchived(true) }, "nothing archived"},
+		{"nothing needs attention", func(m *Model) { m.rail.SetFilteringAttention(true) }, "nothing needs attention"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := shotModel()
-			m.workspace.sessions, m.rail.rows = nil, nil
+			clearRailInventory(m)
 			tc.setup(m)
 			m.rebuildRows()
 			rail := ansi.Strip(strings.Join(splitLines(joinContentText(m.railLines(40, 20))), "\n"))
@@ -189,19 +189,22 @@ func joinContentText(lines []contentLine) string {
 func TestReorderSkipsRootAsSibling(t *testing.T) {
 	m := shotModel()
 	m.rebuildRows()
-	var groupRow, index = treeRow{}, -1
-	for i, row := range m.rail.rows {
+	index := -1
+	for i, row := range railRows(m) {
 		if row.isGroup && !row.isRoot() && parentGroup(row.group) == "" {
-			groupRow, index = row, i
+			index = i
 			break
 		}
 	}
 	if index < 0 {
 		t.Fatal("no top-level group row to test with")
 	}
-	m.rail.cursor = index
-	if target, ok := m.visibleReorderTarget(groupRow, -1); ok && target.isRoot() {
-		t.Fatalf("root matched as a reorder sibling of %q", groupRow.group)
+	setRailCursor(m, index)
+	before := strings.Join(m.groupRowPaths(), ",")
+	updated, _ := m.handleKey(runeKey("K"))
+	m = updated.(*Model)
+	if railRows(m)[0].isRoot() == false || strings.Join(m.groupRowPaths(), ",") != before {
+		t.Fatalf("root was treated as a reorder sibling, rows = %v", m.groupRowPaths())
 	}
 }
 
@@ -269,8 +272,7 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 			m := &Model{
 				width: size.w, height: size.h, mode: modeList,
 
-				split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: sessions}, rail: railState{rows: rows, cursor: cursor,
-					collapsed: map[string]bool{}},
+				split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: sessions}, rail: railModelFromRows(rows, cursor),
 			}
 			view := ansi.Strip(m.View())
 			if !strings.Contains(view, sessions[cursor].Name) {
@@ -284,8 +286,9 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 func TestFilterBadgesStackOverTheList(t *testing.T) {
 	m := shotModel()
 	m.width, m.height = 120, 40
-	m.rail.showArchived, m.rail.hideEmptyGroups = true, true
-	m.rail.statusFilter = statusFilterAttention
+	m.rail.SetArchived(true)
+	m.rail.SetHideEmptyGroups(true)
+	m.rail.SetFilteringAttention(true)
 	rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
 	var painted []string
 	for _, line := range strings.Split(rail, "\n") {
@@ -320,12 +323,12 @@ func TestFilterBadgesStackOverTheList(t *testing.T) {
 func TestHideEmptyBadgeBelongsToTheActiveRail(t *testing.T) {
 	m := shotModel()
 	m.width, m.height = 120, 40
-	m.rail.hideEmptyGroups = true
+	m.rail.SetHideEmptyGroups(true)
 	for _, tc := range []struct {
 		archived bool
 		want     bool
 	}{{false, true}, {true, false}} {
-		m.rail.showArchived = tc.archived
+		m.rail.SetArchived(tc.archived)
 		rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
 		if got := strings.Contains(rail, "HIDE EMPTY"); got != tc.want {
 			t.Errorf("showArchived=%v: HIDE EMPTY painted = %v, want %v:\n%s", tc.archived, got, tc.want, rail)
@@ -333,107 +336,35 @@ func TestHideEmptyBadgeBelongsToTheActiveRail(t *testing.T) {
 	}
 }
 
-// railTestHeights is a comfortable list: groups on one line, a shell on
-// two, sessions on three.
-var railTestHeights = []int{1, 3, 3, 3, 3, 1, 3, 3, 2, 3, 1, 3, 3, 3, 3, 3, 1, 3, 3}
-
-func railWalk(n int) []int {
-	var seq []int
-	for i := 0; i < n; i++ {
-		seq = append(seq, i)
-	}
-	for i := n - 2; i >= 0; i-- {
-		seq = append(seq, i)
-	}
-	return seq
-}
-
-func TestRailWindowHoldsStillWhileTheCursorIsOnScreen(t *testing.T) {
-	for _, budget := range []int{20, 30, 40} {
-		top, prevStart, prevEnd := 0, -1, -1
-		for _, cursor := range railWalk(len(railTestHeights)) {
-			start, end := railWindow(railTestHeights, cursor, budget, top)
-			if prevStart >= 0 && cursor >= prevStart && cursor < prevEnd && start != prevStart {
-				t.Fatalf("budget %d: cursor %d already sat in [%d,%d) and the list scrolled to %d",
-					budget, cursor, prevStart, prevEnd, start)
-			}
-			top, prevStart, prevEnd = start, start, end
-		}
-	}
-}
-
-func TestRailWindowKeepsTheCursorsEntryWhole(t *testing.T) {
-	for _, budget := range []int{6, 20, 30, 40} {
-		top := 0
-		for _, cursor := range railWalk(len(railTestHeights)) {
-			start, end := railWindow(railTestHeights, cursor, budget, top)
-			if cursor < start || cursor >= end {
-				t.Fatalf("budget %d: cursor %d fell outside [%d,%d)", budget, cursor, start, end)
-			}
-			top = start
-		}
-	}
-}
-
-func TestRailWindowScrollsNoFurtherThanItMust(t *testing.T) {
-	top := 0
-	for cursor := 0; cursor < len(railTestHeights); cursor++ {
-		start, _ := railWindow(railTestHeights, cursor, 20, top)
-		if start > top {
-			if end := windowEnd(railTestHeights, start-1, 20); end > cursor {
-				t.Fatalf("cursor %d scrolled to %d, but %d still held it through %d",
-					cursor, start, start-1, end)
-			}
-		}
-		top = start
-	}
-}
-
-func TestRailWindowFollowsTheCursorBackAboveTheTop(t *testing.T) {
-	start, end := railWindow(railTestHeights, 2, 20, 11)
-	if start != 2 {
-		t.Fatalf("window starts at %d, want the cursor's own entry", start)
-	}
-	if end <= 2 {
-		t.Fatalf("window [%d,%d) holds nothing", start, end)
-	}
-}
-
-func TestRailWindowShowsAListThatFits(t *testing.T) {
-	heights := []int{1, 3, 3}
-	start, end := railWindow(heights, 2, 20, 1)
-	if start != 0 || end != len(heights) {
-		t.Fatalf("window = [%d,%d), want the whole list", start, end)
-	}
-}
-
 func TestRailTopCarriesBetweenFrames(t *testing.T) {
 	m := shotModel()
 	m.prefs.comfortableRows = true
 	m.prefs.fullLayout = true
-	m.rail.rows = nil
+	m.workspace.sessions = nil
+	m.workspace.groups = nil
 	for i := 0; i < 30; i++ {
 		name := fmt.Sprintf("session-%02d", i)
-		m.rail.rows = append(m.rail.rows, treeRow{sess: store.Session{ID: name, Name: name, Tool: "claude", Status: status.Idle}})
+		m.workspace.sessions = append(m.workspace.sessions, store.Session{ID: name, Name: name, Tool: "claude", Status: status.Idle})
 	}
+	m.rebuildRows()
 
-	heights := make([]int, len(m.rail.rows))
-	for i := range m.rail.rows {
-		heights[i] = m.entryHeight(m.rail.rows[i])
+	heights := make([]int, len(railRows(m)))
+	for i := range railRows(m) {
+		heights[i] = m.entryHeight(railRows(m)[i])
 	}
 
 	const height = 20
-	tops := make([]int, len(m.rail.rows))
-	for i := range m.rail.rows {
-		prev, prevEnd := m.rail.railTop, windowEnd(heights, m.rail.railTop, height)
-		m.rail.cursor = i
-		m.entryLines(m.rail.rows, 0, m.width-1, height)
-		tops[i] = m.rail.railTop
-		if m.rail.railTop > i {
-			t.Fatalf("cursor %d: rail starts below it at %d", i, m.rail.railTop)
+	tops := make([]int, len(railRows(m)))
+	for i := range railRows(m) {
+		prev, prevEnd := m.displayedRail.Window.Start, m.displayedRail.Window.End
+		setRailCursor(m, i)
+		m.entryLines(railRows(m), 0, m.width-1, height)
+		tops[i] = m.displayedRail.Window.Start
+		if m.displayedRail.Window.Start > i {
+			t.Fatalf("cursor %d: rail starts below it at %d", i, m.displayedRail.Window.Start)
 		}
-		if i >= prev && i < prevEnd && m.rail.railTop != prev {
-			t.Fatalf("cursor %d already sat in [%d,%d) and the rail scrolled to %d", i, prev, prevEnd, m.rail.railTop)
+		if i >= prev && i < prevEnd && m.displayedRail.Window.Start != prev {
+			t.Fatalf("cursor %d already sat in [%d,%d) and the rail scrolled to %d", i, prev, prevEnd, m.displayedRail.Window.Start)
 		}
 	}
 	if tops[0] != 0 || tops[1] != 0 {
@@ -443,15 +374,15 @@ func TestRailTopCarriesBetweenFrames(t *testing.T) {
 		t.Fatal("the rail never scrolled across 30 comfortable entries")
 	}
 
-	for i := len(m.rail.rows) - 1; i >= 0; i-- {
-		m.rail.cursor = i
-		m.entryLines(m.rail.rows, 0, m.width-1, height)
-		if m.rail.railTop > i {
-			t.Fatalf("cursor %d: rail starts below it at %d", i, m.rail.railTop)
+	for i := len(railRows(m)) - 1; i >= 0; i-- {
+		setRailCursor(m, i)
+		m.entryLines(railRows(m), 0, m.width-1, height)
+		if m.displayedRail.Window.Start > i {
+			t.Fatalf("cursor %d: rail starts below it at %d", i, m.displayedRail.Window.Start)
 		}
 	}
-	if m.rail.railTop != 0 {
-		t.Fatalf("stepping back to the first entry left the rail at %d", m.rail.railTop)
+	if m.displayedRail.Window.Start != 0 {
+		t.Fatalf("stepping back to the first entry left the rail at %d", m.displayedRail.Window.Start)
 	}
 }
 
@@ -523,7 +454,7 @@ func TestPlaceNoticeHitClearsAStaleBox(t *testing.T) {
 func TestMouseOffPaintsNoHandleOrMenuButton(t *testing.T) {
 	m := shotModel()
 	m.prefs.mouseDisabled = true
-	for _, line := range m.entryLines(m.rail.rows, 0, 44, 20) {
+	for _, line := range m.entryLines(railRows(m), 0, 44, 20) {
 		text := ansi.Strip(line.text)
 		if strings.Contains(text, reorderGrip) || strings.Contains(text, rowMenuGlyph) {
 			t.Fatalf("mouse off should paint no handle or %s: %q", rowMenuGlyph, text)
@@ -531,7 +462,7 @@ func TestMouseOffPaintsNoHandleOrMenuButton(t *testing.T) {
 	}
 	m.prefs.mouseDisabled = false
 	painted := false
-	for _, line := range m.entryLines(m.rail.rows, 0, 44, 20) {
+	for _, line := range m.entryLines(railRows(m), 0, 44, 20) {
 		painted = painted || strings.Contains(ansi.Strip(line.text), reorderGrip)
 	}
 	if !painted {
@@ -549,7 +480,8 @@ func TestRailBannersSurviveShortTerminals(t *testing.T) {
 				for _, archived := range []bool{false, true} {
 					m := shotModel()
 					m.width, m.height = width, height
-					m.rail.searching, m.rail.showArchived = searching, archived
+					m.rail.SetSearch(m.rail.Search(), searching)
+					m.rail.SetArchived(archived)
 					m.errBar.text = "worktree kept (has work): /Users/someone/dev/api"
 					rows := strings.Split(m.View(), "\n")
 					if len(rows) != height {
@@ -566,12 +498,12 @@ func TestRailBannersSurviveShortTerminals(t *testing.T) {
 func TestRailBannersLeaveRoomForEntries(t *testing.T) {
 	m := shotModel()
 	m.width, m.height = 120, 34
-	m.rail.searching, m.rail.search = true, "rate"
+	m.rail.SetSearch("rate", true)
 	rail := railLinesText(m.railLines(36, m.listBodyHeight()))
 	if !strings.Contains(rail, "⌕ rate") {
 		t.Fatalf("no search field in the rail:\n%s", rail)
 	}
-	if !strings.Contains(rail, "db-migrations") {
+	if !strings.Contains(rail, "add-rate-limiting") {
 		t.Fatalf("search banner crowded the entries out:\n%s", rail)
 	}
 }
@@ -582,7 +514,7 @@ func TestFilterBadgesSurviveShortRails(t *testing.T) {
 	for _, height := range []int{10, 14, 20} {
 		m := shotModel()
 		m.width, m.height = 120, height
-		m.rail.showArchived = true
+		m.rail.SetArchived(true)
 		rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
 		if !strings.Contains(rail, "ARCHIVED") {
 			t.Errorf("height %d dropped the archived badge:\n%s", height, rail)
@@ -605,7 +537,7 @@ func TestSearchFieldSurvivesTightRails(t *testing.T) {
 	for _, height := range []int{14, 20, 34} {
 		m := shotModel()
 		m.width, m.height = 120, height
-		m.rail.searching, m.rail.search = true, "add-rate-limiting-in-the-public-api-handler"
+		m.rail.SetSearch("add-rate-limiting-in-the-public-api-handler", true)
 		rail := railLinesText(m.railLines(36, m.listBodyHeight()))
 		if !strings.Contains(rail, "⌕") {
 			t.Errorf("height %d dropped the search field:\n%s", height, rail)

@@ -651,8 +651,8 @@ func (m *Model) applyNotices(apply func()) {
 }
 
 func (m *Model) listReadyForNotice() bool {
-	return m.mode == modeList && !m.rail.searching && !m.quick.active && !m.split.resizeMode &&
-		!m.rail.reorder.active && !m.rail.menu.active
+	return m.mode == modeList && !m.rail.Searching() && !m.quick.active && !m.split.resizeMode &&
+		!m.rail.Reordering() && !m.rail.MenuOpen()
 }
 
 func (m *Model) flushPendingNotice() {

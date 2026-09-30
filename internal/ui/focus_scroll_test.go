@@ -33,7 +33,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	m := buildModel(t)
 	createSession(t, m, name, t.TempDir(), "")
 	m.selectSessionRow(t, name)
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 
 	// The watcher is normally created by StartPoller, which tests skip.
 	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
@@ -371,7 +371,7 @@ func TestRefreshGrowsPaneHeightButNeverShrinksIt(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sizer", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 
 	pinned := m.previewPaneHeight()
 	if got := windowHeight(t, sess.ID); got != pinned {
@@ -407,7 +407,7 @@ func TestTerminalShrinkLeavesPaneTall(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "shrunk", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	pinned := windowHeight(t, sess.ID)
 
 	m.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height - 6})
@@ -428,7 +428,7 @@ func TestAdoptedTallerPaneIsNotShrunk(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "adopted", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 
 	width := m.previewPaneWidth()
 	taller := m.previewPaneHeight() + 10
@@ -452,7 +452,7 @@ func TestAltScreenPaneShrinksWithTheBox(t *testing.T) {
 	createSessionOn(t, m, "fullscreen", "quietchat", t.TempDir())
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "fullscreen")
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	pinned := windowHeight(t, sess.ID)
 
 	// cat writes the enter sequence back to the pane, which tmux applies.
@@ -493,7 +493,7 @@ func TestFitsHeightToolShrinksWithTheBox(t *testing.T) {
 	createSessionOn(t, m, "inline", "quietchat", t.TempDir())
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "inline")
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	pinned := windowHeight(t, sess.ID)
 
 	m.height -= 4
@@ -528,7 +528,7 @@ func TestFocusKeepsPaneHeight(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "focused", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 
 	for _, width := range []int{100, 240} {
 		m.width = width
@@ -568,7 +568,7 @@ func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, name)
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 
 	msgs := make(chan tea.Msg, 64)
 	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(msg tea.Msg) { msgs <- msg })
@@ -712,7 +712,7 @@ func TestAppMouseClearsScrollback(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sticky", t.TempDir(), "")
 	m.selectSessionRow(t, "sticky")
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	m.mode = modeFocus
 	m.focusPane.Enter(uifocus.EnterContext{SessionID: sess.ID})
 	setFocusScrollOffset(t, m, sess.ID, 9, m.focusPaneRows())
@@ -743,7 +743,7 @@ func TestStaleMouseClaimDoesNotClearHistoryScroll(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "stale-hold", t.TempDir(), "")
 	m.selectSessionRow(t, "stale-hold")
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	m.mode = modeFocus
 	m.workspace.preview = "SCROLLED-FRAME\n"
 	m.focusPane.Enter(uifocus.EnterContext{SessionID: sess.ID})
@@ -771,7 +771,7 @@ func TestPolledFrameHoldsScrolledView(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "polled", t.TempDir(), "")
 	m.selectSessionRow(t, "polled")
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	m.mode = modeFocus
 	m.workspace.preview = "SCROLLED-FRAME\n"
 	m.focusPane.Enter(uifocus.EnterContext{SessionID: sess.ID})

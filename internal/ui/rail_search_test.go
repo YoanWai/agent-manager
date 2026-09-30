@@ -12,8 +12,9 @@ import (
 )
 
 func TestSearchFieldFillsOnlyWhileSearching(t *testing.T) {
+	forceANSI256(t)
 	m := shotModel()
-	m.rail.search = "note"
+	m.rail.SetSearch("note", m.rail.Searching())
 	fieldLine := func() contentLine {
 		for _, line := range m.railLines(40, 14) {
 			if strings.Contains(ansi.Strip(line.text), "⌕") {
@@ -24,7 +25,7 @@ func TestSearchFieldFillsOnlyWhileSearching(t *testing.T) {
 		return contentLine{}
 	}
 
-	m.rail.searching = true
+	m.rail.SetSearch(m.rail.Search(), true)
 	open := fieldLine()
 	if open.tone != searchFieldHex() {
 		t.Fatalf("open field tone = %q, want %q", open.tone, searchFieldHex())
@@ -33,7 +34,7 @@ func TestSearchFieldFillsOnlyWhileSearching(t *testing.T) {
 		t.Fatalf("open field line carries no fill:\n%q", open.text)
 	}
 
-	m.rail.searching = false
+	m.rail.SetSearch(m.rail.Search(), false)
 	closed := fieldLine()
 	if closed.tone != "" {
 		t.Fatalf("closed field with a query applied should keep the panel tone, got %q", closed.tone)
@@ -50,7 +51,7 @@ func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
 	}}
 	lit := searchMatchStyle.Render("bui")
 
-	m := &Model{rail: railState{search: "BUI"}}
+	m := &Model{rail: railModelSearching(nil, 0, "BUI")}
 	row := m.renderTreeRow(entry, false, 80, 0, panelHex())
 	if !strings.Contains(row, lit) {
 		t.Fatalf("query should light its span in the name's own case:\n%q", row)
@@ -65,13 +66,13 @@ func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
 		t.Fatalf("selected row should keep its bright name around the lit span:\n%q", selected)
 	}
 
-	m.rail.search = "grok"
+	m.rail.SetSearch("grok", m.rail.Searching())
 	row = m.renderTreeRow(entry, false, 80, 0, panelHex())
 	if strings.Contains(row, sgrOf(lit)) {
 		t.Fatalf("a match on the tool alone should leave the name plain:\n%q", row)
 	}
 
-	m.rail.search = ""
+	m.rail.SetSearch("", m.rail.Searching())
 	row = m.renderTreeRow(entry, false, 80, 0, panelHex())
 	if !strings.Contains(row, valueStyle.Render("alpha-build")) {
 		t.Fatalf("no query should render the plain name:\n%q", row)
@@ -80,7 +81,7 @@ func TestSearchLightsTheQueryInsideASessionName(t *testing.T) {
 
 func TestSearchLightsTheQueryInsideAGroupName(t *testing.T) {
 	forceANSI256(t)
-	m := &Model{rail: railState{search: "END"}}
+	m := &Model{rail: railModelSearching(nil, 0, "END")}
 	row := m.renderTreeRow(treeRow{isGroup: true, group: "work/backend"}, false, 80, 0, panelHex())
 	if !strings.Contains(row, searchMatchStyle.Render("end")) {
 		t.Fatalf("group name should light the query:\n%q", row)
@@ -94,9 +95,7 @@ func searchModel() *Model {
 	m := &Model{
 		width:  120,
 		height: 30,
-		rail: railState{
-			collapsed: map[string]bool{},
-		},
+		rail:   railModelFromRows(nil, 0),
 	}
 	m.workspace.sessions = []store.Session{
 		{ID: "1", Name: "api-server", Status: status.Idle},
@@ -119,12 +118,12 @@ func railHead(m *Model) string {
 // filtered-away sessions read as sessions that are gone.
 func TestSearchFieldOutlivesTheOpenField(t *testing.T) {
 	m := searchModel()
-	m.rail.searching, m.rail.search = true, "api"
+	m.rail.SetSearch("api", true)
 	m.rebuildRows()
 	if !strings.Contains(railHead(m), "⌕") {
 		t.Fatal("an open field should be in the rail")
 	}
-	m.rail.searching = false
+	m.rail.SetSearch(m.rail.Search(), false)
 	rail := railHead(m)
 	if !strings.Contains(rail, "⌕") {
 		t.Fatalf("a query still filtering should stay in the rail:\n%s", rail)
@@ -142,34 +141,34 @@ func TestSearchRailIsCleanWithNoQuery(t *testing.T) {
 
 func TestEnterKeepsTheQueryAndEscClearsIt(t *testing.T) {
 	m := searchModel()
-	m.rail.searching, m.rail.search = true, "api"
+	m.rail.SetSearch("api", true)
 	m.rebuildRows()
-	filtered := len(m.rail.rows)
+	filtered := len(railRows(m))
 
 	m.handleSearchKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if m.rail.searching || m.rail.search != "api" || len(m.rail.rows) != filtered {
+	if m.rail.Searching() || m.rail.Search() != "api" || len(railRows(m)) != filtered {
 		t.Fatalf("enter should close the field and keep the filter, got searching=%v query=%q rows=%d",
-			m.rail.searching, m.rail.search, len(m.rail.rows))
+			m.rail.Searching(), m.rail.Search(), len(railRows(m)))
 	}
 
 	// Through handleKey rather than clearSearch: the binding is half of what
 	// this covers, so a test that skips it would pass with esc unbound.
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.rail.search != "" {
-		t.Fatalf("esc should clear the query, got %q", m.rail.search)
+	if m.rail.Search() != "" {
+		t.Fatalf("esc should clear the query, got %q", m.rail.Search())
 	}
-	if len(m.rail.rows) <= filtered {
-		t.Fatalf("clearing should bring the sessions back, still %d rows", len(m.rail.rows))
+	if len(railRows(m)) <= filtered {
+		t.Fatalf("clearing should bring the sessions back, still %d rows", len(railRows(m)))
 	}
 }
 
 func TestEscInTheFieldClearsIt(t *testing.T) {
 	m := searchModel()
-	m.rail.searching, m.rail.search = true, "api"
+	m.rail.SetSearch("api", true)
 	m.rebuildRows()
 	m.handleSearchKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.rail.searching || m.rail.search != "" {
-		t.Fatalf("esc should close and clear, got searching=%v query=%q", m.rail.searching, m.rail.search)
+	if m.rail.Searching() || m.rail.Search() != "" {
+		t.Fatalf("esc should close and clear, got searching=%v query=%q", m.rail.Searching(), m.rail.Search())
 	}
 	if strings.Contains(railHead(m), "⌕") {
 		t.Fatal("a cleared search should leave no field behind")

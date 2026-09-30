@@ -215,9 +215,9 @@ func TestNewSessionPreselectsContextGroup(t *testing.T) {
 	m.mode = modeList
 
 	// cursor on a group row
-	for i, r := range m.rail.rows {
+	for i, r := range railRows(m) {
 		if r.isGroup && r.group == "alpha" {
-			m.rail.cursor = i
+			setRailCursor(m, i)
 		}
 	}
 	m.openForm()
@@ -257,22 +257,22 @@ func TestGroupFormCreatesUnderParent(t *testing.T) {
 
 func TestGroupFormShowsNewEmptyGroupWithWorktreeOff(t *testing.T) {
 	m := buildModel(t)
-	m.rail.hideEmptyGroups = true
-	m.rail.search = "does-not-match"
-	m.rail.showArchived = true
-	m.rail.statusFilter = statusFilterAttention
+	m.rail.SetHideEmptyGroups(true)
+	m.rail.SetSearch("does-not-match", m.rail.Searching())
+	m.rail.SetArchived(true)
+	m.rail.SetFilteringAttention(true)
 	m.openGroupForm()
 	m.groupForm.name.SetValue("manual")
 	m.groupForm.path.SetValue(t.TempDir())
 	m.groupForm.worktreeIndex = groupWorktreeIndex("off")
 
 	_, cmd := m.submitGroupForm()
-	if m.rail.hideEmptyGroups {
+	if m.rail.HideEmptyGroups() {
 		t.Fatal("creating a group should reveal it when empty groups were hidden")
 	}
-	if m.rail.search != "" || m.rail.showArchived || m.rail.statusFilter.active() {
+	if m.rail.Search() != "" || m.rail.ShowArchived() || m.rail.FilteringAttention() {
 		t.Fatalf("creation left list filters active: search=%q archived=%v statusFilter=%v",
-			m.rail.search, m.rail.showArchived, m.rail.statusFilter)
+			m.rail.Search(), m.rail.ShowArchived(), m.rail.FilteringAttention())
 	}
 	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"manual"}) {
 		t.Fatalf("group rows before refresh = %v, want [manual]", got)
@@ -297,12 +297,12 @@ func TestGroupFormExpandsParentToShowNewChild(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "projects")
-	m.rail.collapsed["projects"] = true
+	m.rail.SetCollapsed("projects", true)
 	m.openGroupForm()
 	m.groupForm.name.SetValue("api")
 
 	_, _ = m.submitGroupForm()
-	if m.rail.collapsed["projects"] {
+	if m.rail.IsCollapsed("projects") {
 		t.Fatal("parent remained collapsed after creating a child")
 	}
 	if got := m.groupRowPaths(); !reflect.DeepEqual(got, []string{"projects", "projects/api"}) {

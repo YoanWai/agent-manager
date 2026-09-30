@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
+	"slices"
 	"testing"
 )
 
@@ -21,9 +22,9 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
-	m.rail.collapsed["work"] = true
+	m.rail.SetCollapsed("work", true)
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	if len(m.sessionRows()) != 1 {
 		t.Fatalf("archived session inside a folded group should still show, got %d rows", len(m.sessionRows()))
@@ -45,22 +46,26 @@ func TestArchivedViewIgnoresFold(t *testing.T) {
 
 func TestCollapsedStatePersistsAcrossReload(t *testing.T) {
 	m := buildModel(t)
-	m.rail.collapsed["backend"] = true
-	m.rail.collapsed["backend/api"] = true
-	m.persistCollapsed()
+	m.rail.SetCollapsed("backend", true)
+	m.rail.SetCollapsed("backend/api", true)
+	if err := m.persistCollapsed(m.rail.Collapsed()); err != nil {
+		t.Fatalf("persist collapsed: %v", err)
+	}
 
 	restored := loadCollapsed(m.services.store)
-	if !restored["backend"] || !restored["backend/api"] {
+	if !slices.Contains(restored, "backend") || !slices.Contains(restored, "backend/api") {
 		t.Fatalf("collapsed groups not restored: %v", restored)
 	}
 
-	m.rail.collapsed["backend"] = false
-	m.persistCollapsed()
+	m.rail.SetCollapsed("backend", false)
+	if err := m.persistCollapsed(m.rail.Collapsed()); err != nil {
+		t.Fatalf("persist expanded state: %v", err)
+	}
 	restored = loadCollapsed(m.services.store)
-	if restored["backend"] {
+	if slices.Contains(restored, "backend") {
 		t.Fatalf("expanded group leaked back as collapsed: %v", restored)
 	}
-	if !restored["backend/api"] {
+	if !slices.Contains(restored, "backend/api") {
 		t.Fatalf("still-folded group dropped: %v", restored)
 	}
 }
@@ -68,11 +73,13 @@ func TestCollapsedStatePersistsAcrossReload(t *testing.T) {
 func TestToggleCollapseAllFlipsEveryGroup(t *testing.T) {
 	m := buildModel(t)
 	m.workspace.sessions = []store.Session{{ID: "a", Group: "backend/api"}, {ID: "b", Group: "frontend"}}
+	m.rebuildRows()
 	want := []string{"backend", "backend/api", "frontend"}
 
-	m.toggleCollapseAll()
+	updated, _ := m.handleKey(runeKey("F"))
+	m = updated.(*Model)
 	for _, group := range want {
-		if !m.rail.collapsed[group] {
+		if !m.rail.IsCollapsed(group) {
 			t.Fatalf("group %q not collapsed after fold-all", group)
 		}
 	}
@@ -80,9 +87,10 @@ func TestToggleCollapseAllFlipsEveryGroup(t *testing.T) {
 		t.Fatalf("fold-all not persisted: %v", restored)
 	}
 
-	m.toggleCollapseAll()
+	updated, _ = m.handleKey(runeKey("F"))
+	m = updated.(*Model)
 	for _, group := range want {
-		if m.rail.collapsed[group] {
+		if m.rail.IsCollapsed(group) {
 			t.Fatalf("group %q still collapsed after unfold-all", group)
 		}
 	}

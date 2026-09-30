@@ -20,7 +20,7 @@ func TestNewHandsTheKeyTableToTmux(t *testing.T) {
 	}
 	createSession(t, loaded, "tablebound", t.TempDir(), "")
 	loaded.selectSessionRow(t, "tablebound")
-	sess := loaded.rail.rows[loaded.rail.cursor].sess
+	sess := railSelectedSession(loaded)
 	t.Cleanup(func() { m.services.tmux.Kill(sess.ID) })
 	right, err := tmuxCmd("display-message", "-p", "-t", "am_"+sess.ID, "#{T:status-right}").CombinedOutput()
 	if err != nil {

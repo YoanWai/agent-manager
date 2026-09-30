@@ -207,7 +207,7 @@ func TestAStalePollCannotRestoreADeletedGroupHeader(t *testing.T) {
 	updated, _ := m.Update(stale)
 	*m = *updated.(*Model)
 
-	for _, r := range m.rail.rows {
+	for _, r := range railRows(m) {
 		if r.isGroup && r.group == "zone" {
 			t.Fatalf("a stale poll brought the deleted group header back")
 		}
@@ -239,7 +239,7 @@ func TestAStalePollCannotUndoARestore(t *testing.T) {
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	listedAt := time.Now()
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "returning")
 	m.restoreSelected()
@@ -255,7 +255,7 @@ func TestAStalePollCannotUndoARestore(t *testing.T) {
 			t.Fatalf("a stale poll put the restored session back in the archived view")
 		}
 	}
-	m.rail.showArchived = false
+	m.rail.SetArchived(false)
 	if got := m.visibleSessions(); len(got) != 1 || got[0].Archived {
 		t.Fatalf("restored session should read live after a stale listing, got %+v", got)
 	}

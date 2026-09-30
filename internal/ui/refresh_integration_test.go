@@ -59,7 +59,7 @@ func TestRefreshCarriesQueuedCountsToTheRows(t *testing.T) {
 	queueMessage(t, m, ids["stranded"], "rebase on main")
 	queueMessage(t, m, ids["stranded"], "then push")
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 
 	if got := m.workspace.queuedMessages[ids["stranded"]]; got != 2 {

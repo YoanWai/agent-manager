@@ -68,14 +68,14 @@ func TestHideEmptyGroupsDoesNotFilterTheArchivedView(t *testing.T) {
 	if err := m.services.store.CreateGroup("bare", ""); err != nil {
 		t.Fatalf("create group: %v", err)
 	}
-	m.rail.hideEmptyGroups = true
-	m.rail.showArchived = true
+	m.rail.SetHideEmptyGroups(true)
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	if got, want := m.groupRowPaths(), []string{"empty"}; !slices.Equal(got, want) {
 		t.Fatalf("archived view with hide-empty on should keep the archived empty group, got %v want %v", got, want)
 	}
 
-	m.rail.showArchived = false
+	m.rail.SetArchived(false)
 	m.applyCmd(t, m.refreshCmd())
 	if got := m.groupRowPaths(); len(got) != 0 {
 		t.Fatalf("active view with hide-empty on should still hide empty groups, got %v", got)
@@ -108,51 +108,13 @@ func TestEmptyGroupsKeyIsRefusedInTheArchivedView(t *testing.T) {
 
 	press("t")
 	press("e")
-	if !m.rail.hideEmptyGroups {
+	if !m.rail.HideEmptyGroups() {
 		t.Fatal("e in the archived view should leave the hide-empty setting alone")
 	}
 
 	press("t")
 	if got, want := m.groupRowPaths(), []string{"work"}; !slices.Equal(got, want) {
 		t.Fatalf("back on the active list, empty groups should still be hidden, got %v want %v", got, want)
-	}
-}
-
-func TestStatusFilterAttentionMatches(t *testing.T) {
-	want := map[string]bool{
-		status.Waiting:  true,
-		status.Finished: true,
-		status.Errored:  true,
-		status.Working:  false,
-		status.Idle:     false,
-		status.Dead:     false,
-		status.Starting: false,
-	}
-	for st, keep := range want {
-		if got := statusFilterAttention.matches(st); got != keep {
-			t.Fatalf("attention.matches(%q) = %v want %v", st, got, keep)
-		}
-	}
-	if !statusFilterAll.matches(status.Idle) {
-		t.Fatal("all filter should match every status")
-	}
-}
-
-func TestStatusFilterCycleStartsAtAttention(t *testing.T) {
-	if got := statusFilterAll.next(); got != statusFilterAttention {
-		t.Fatalf("first w press = %v want attention", got)
-	}
-	if got := statusFilterAttention.next(); got != statusFilterAll {
-		t.Fatalf("second w press = %v want all (only one mode for now)", got)
-	}
-	if statusFilterAll.active() {
-		t.Fatal("all should not report active")
-	}
-	if !statusFilterAttention.active() {
-		t.Fatal("attention should report active")
-	}
-	if statusFilterAttention.label() != "attention" {
-		t.Fatalf("label = %q", statusFilterAttention.label())
 	}
 }
 
@@ -177,8 +139,8 @@ func TestStatusFilterKeyKeepsAttentionSessions(t *testing.T) {
 	if cmd != nil {
 		m.applyCmd(t, cmd)
 	}
-	if m.rail.statusFilter != statusFilterAttention {
-		t.Fatalf("statusFilter = %v want attention", m.rail.statusFilter)
+	if !m.rail.FilteringAttention() {
+		t.Fatalf("statusFilter = %v want attention", m.rail.FilteringAttention())
 	}
 	got := sessionNames(m)
 	want := []string{"needs-you", "done-turn", "broke"}
@@ -210,8 +172,8 @@ func TestStatusFilterKeyKeepsAttentionSessions(t *testing.T) {
 	if cmd != nil {
 		m.applyCmd(t, cmd)
 	}
-	if m.rail.statusFilter != statusFilterAll {
-		t.Fatalf("second w should clear filter, got %v", m.rail.statusFilter)
+	if m.rail.FilteringAttention() {
+		t.Fatalf("second w should clear filter, got %v", m.rail.FilteringAttention())
 	}
 	if got := sessionNames(m); len(got) != 6 {
 		t.Fatalf("cleared filter should show all 6 sessions, got %v", got)
@@ -232,13 +194,13 @@ func TestStatusFilterIgnoresFolds(t *testing.T) {
 		}
 	}
 	loadStoredRows(t, m)
-	m.rail.collapsed["work"] = true
+	m.rail.SetCollapsed("work", true)
 	m.rebuildRows()
 	if len(m.sessionRows()) != 0 {
 		t.Fatalf("fold should hide sessions before filter, got %d", len(m.sessionRows()))
 	}
 
-	m.rail.statusFilter = statusFilterAttention
+	m.rail.SetFilteringAttention(true)
 	m.rebuildRows()
 	got := sessionNames(m)
 	if !slices.Equal(got, []string{"blocked"}) {
@@ -251,7 +213,7 @@ func TestStatusFilterEmptyState(t *testing.T) {
 	m.workspace.sessions = []store.Session{
 		{ID: "idle", Name: "quiet", Tool: "claude", Cwd: "/tmp", Status: status.Idle},
 	}
-	m.rail.statusFilter = statusFilterAttention
+	m.rail.SetFilteringAttention(true)
 	m.rebuildRows()
 	rail := ansi.Strip(strings.Join(splitLines(joinContentText(m.railLines(40, 20))), "\n"))
 	if !strings.Contains(rail, "nothing needs attention") {
@@ -274,7 +236,7 @@ func TestStatusFilterGroupRosterMatchesCount(t *testing.T) {
 		}
 	}
 	loadStoredRows(t, m)
-	m.rail.statusFilter = statusFilterAttention
+	m.rail.SetFilteringAttention(true)
 	m.rebuildRows()
 
 	if got := m.groupSessionCount("fleet"); got != 1 {
@@ -306,7 +268,7 @@ func TestBulkActionsRespectStatusFilter(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	m.rail.statusFilter = statusFilterAttention
+	m.rail.SetFilteringAttention(true)
 	m.rebuildRows()
 
 	updated, _ := m.killAllLive()
@@ -342,7 +304,7 @@ func TestReviveAllLeavesSessionsTheFilterHides(t *testing.T) {
 	loadStoredRows(t, m)
 	// The attention filter lists a dead session only while the cursor holds it.
 	m.selectSessionRow(t, "held-dead")
-	m.rail.statusFilter = statusFilterAttention
+	m.rail.SetFilteringAttention(true)
 	m.rebuildRows()
 	if got := sessionNames(m); !slices.Equal(got, []string{"held-dead"}) {
 		t.Fatalf("filtered list = %v, want only the selected dead session", got)
@@ -423,7 +385,7 @@ func attentionFilterAckFixture(t *testing.T) *Model {
 		}
 	}
 	loadStoredRows(t, m)
-	m.rail.statusFilter = statusFilterAttention
+	m.rail.SetFilteringAttention(true)
 	m.rebuildRows()
 	return m
 }
@@ -433,7 +395,7 @@ func TestForkClearsStatusFilter(t *testing.T) {
 	dir := t.TempDir()
 	createSession(t, m, "source", dir, "")
 	m.selectSessionRow(t, "source")
-	source := m.rail.rows[m.rail.cursor].sess
+	source := railSelectedSession(m)
 	if err := m.services.store.SetAgentSessionID(source.ID, "source-conversation"); err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +405,7 @@ func TestForkClearsStatusFilter(t *testing.T) {
 			m.workspace.sessions[i].Status = status.Waiting
 		}
 	}
-	m.rail.statusFilter = statusFilterAttention
+	m.rail.SetFilteringAttention(true)
 	m.rebuildRows()
 	m.selectSessionRow(t, "source")
 
@@ -457,8 +419,8 @@ func TestForkClearsStatusFilter(t *testing.T) {
 	m = updated.(*Model)
 	m.applyCmd(t, cmd)
 
-	if m.rail.statusFilter != statusFilterAll {
-		t.Fatalf("fork should clear the filter, got %v", m.rail.statusFilter)
+	if m.rail.FilteringAttention() {
+		t.Fatalf("fork should clear the filter, got %v", m.rail.FilteringAttention())
 	}
 	if entry, ok := m.selectedRow(); !ok || entry.isGroup || entry.sess.Name != "fork-under-filter" {
 		t.Fatalf("cursor should land on the forked row, got %+v", entry)

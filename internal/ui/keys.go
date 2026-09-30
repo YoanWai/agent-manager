@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -71,138 +72,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleHelpKey(msg)
 	}
 
-	// A lifted row and an open menu sit on top of the quick bar, so they
-	// take the keys first.
-	if m.rail.reorder.active {
-		return m.handleReorderKey(msg)
-	}
-	if m.rail.menu.active {
-		model, cmd := m.handleMenuKey(msg)
-		m.closeQuickOffTheList()
-		return model, cmd
-	}
-	if m.rail.searching {
-		return m.handleSearchKey(msg)
+	// Rail overlays sit above the quick bar and own their keys first.
+	if m.rail.InputMode() != uirail.BrowseMode {
+		return m.applyRailDecision(m.rail.Key(msg, m.displayedRail, m.railKeyContext()))
 	}
 	if m.quick.active {
 		return m.handleQuickKey(msg)
 	}
-
-	switch msg.String() {
-	case "ctrl+c":
-		return m, tea.Quit
-	case "esc":
-		return m, m.clearSearch()
-	}
-	action, _ := m.services.listKeys.ActionFor(keybind.Normalize(msg.String()))
-	return m.runListAction(action)
+	return m.applyRailDecision(m.rail.Key(msg, m.displayedRail, m.railKeyContext()))
 }
 
-// runListAction does what a list key bound to action does, so the row
-// menu runs exactly what the key would.
-func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
-	switch action {
-	case keybind.Quit:
-		return m, tea.Quit
-	case keybind.Up:
-		return m, m.moveCursor(-1)
-	case keybind.Down:
-		return m, m.moveCursor(1)
-	case keybind.ReorderUp:
-		return m.reorderSelected(-1)
-	case keybind.ReorderDown:
-		return m.reorderSelected(1)
-	case keybind.Open:
-		if entry, ok := m.selectedRow(); ok && entry.isGroup {
-			m.toggleCollapse()
-			return m, nil
-		}
-		if m.enterFocuses() {
-			return m.focusSelected()
-		}
-		return m.attachSelected()
-	case keybind.StepIn:
-		if !m.prefs.arrowStep {
-			return m, nil
-		}
-		if entry, ok := m.selectedRow(); ok && entry.isGroup {
-			if m.rail.collapsed[entry.group] {
-				m.toggleCollapse()
-			}
-			return m, nil
-		}
-		return m.focusSelected()
-	case keybind.StepOut:
-		if !m.prefs.arrowStep {
-			return m, nil
-		}
-		if entry, ok := m.selectedRow(); ok && entry.isGroup && !m.rail.collapsed[entry.group] {
-			m.toggleCollapse()
-		}
-		return m, nil
-	case keybind.Attach:
-		if m.enterFocuses() {
-			return m.attachSelected()
-		}
-		return m.focusSelected()
-	case keybind.NewSession:
-		m.openForm()
-	case keybind.NewGroup:
-		m.openGroupForm()
-	case keybind.Fork:
-		m.openFork()
-	case keybind.Revive:
-		return m.reviveSelected()
-	case keybind.MarkIdle:
-		return m.acknowledgeSelected()
-	case keybind.ReviveAll:
-		return m.reviveAllDead()
-	case keybind.Restart:
-		return m.restartSelected()
-	case keybind.Kill:
-		return m.killSelected()
-	case keybind.KillAll:
-		return m.killAllLive()
-	case keybind.Archive:
-		return m.archiveSelected()
-	case keybind.Restore:
-		return m.restoreSelected()
-	case keybind.Delete:
-		m.prepareDelete()
-	case keybind.Prompt:
-		m.openQuickMode()
-	case keybind.CopyReply:
-		return m.copyReplySelected()
-	case keybind.FoldAll:
-		m.toggleCollapseAll()
-	case keybind.Filter:
-		return m, m.cycleStatusFilter()
-	case keybind.Settings:
-		m.openSettings()
-	case keybind.Resize:
-		return m.enterResizeMode()
-	case keybind.Archived:
-		m.rail.showArchived = !m.rail.showArchived
-		m.requestRefresh()
-	case keybind.Terminal:
-		return m.terminalKey()
-	case keybind.Editor:
-		return m.openEditor()
-	case keybind.EmptyGroups:
-		return m, m.toggleEmptyGroups()
-	case keybind.Search:
-		m.rail.searching = true
-		m.errBar.text = ""
-	case keybind.Rename:
-		m.openRename()
-	case keybind.Move:
-		m.openMove()
-	case keybind.Messages:
-		m.openNotices("")
-	case keybind.Help:
-		m.openHelp()
-	case keybind.Review:
-		return m, m.openDiff()
-	}
-	return m, nil
+func (m *Model) railKeyContext() uirail.KeyContext {
+	return uirail.KeyContext{ListKeys: m.services.listKeys, ArrowStep: m.prefs.arrowStep, EnterFocuses: m.enterFocuses()}
 }

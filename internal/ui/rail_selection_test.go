@@ -11,21 +11,20 @@ func TestCursorWrapsAroundTheList(t *testing.T) {
 	createSession(t, m, "first", dir, "")
 	createSession(t, m, "second", dir, "")
 
-	m.rail.cursor = 0
+	setRailCursor(m, 0)
 	m.moveCursor(-1)
-	if m.rail.cursor != len(m.rail.rows)-1 {
-		t.Fatalf("up from the top should wrap to the bottom, cursor = %d", m.rail.cursor)
+	if m.rail.Cursor() != len(railRows(m))-1 {
+		t.Fatalf("up from the top should wrap to the bottom, cursor = %d", m.rail.Cursor())
 	}
 	m.moveCursor(1)
-	if m.rail.cursor != 0 {
-		t.Fatalf("down from the bottom should wrap to the top, cursor = %d", m.rail.cursor)
+	if m.rail.Cursor() != 0 {
+		t.Fatalf("down from the bottom should wrap to the top, cursor = %d", m.rail.Cursor())
 	}
 
-	m.rail.rows = nil
-	m.rail.cursor = 0
+	resetRailModel(m)
 	m.moveCursor(1)
-	if m.rail.cursor != 0 {
-		t.Fatalf("empty list should leave the cursor alone, cursor = %d", m.rail.cursor)
+	if m.rail.Cursor() != 0 {
+		t.Fatalf("empty list should leave the cursor alone, cursor = %d", m.rail.Cursor())
 	}
 }
 
@@ -42,17 +41,17 @@ func TestRightStepsIntoTheRow(t *testing.T) {
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	*m = *updated.(*Model)
-	if !m.rail.collapsed["grouped"] {
+	if !m.rail.IsCollapsed("grouped") {
 		t.Fatal("left did not close the group")
 	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	*m = *updated.(*Model)
-	if m.rail.collapsed["grouped"] {
+	if m.rail.IsCollapsed("grouped") {
 		t.Fatal("right did not open the group")
 	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRight})
 	*m = *updated.(*Model)
-	if m.rail.collapsed["grouped"] {
+	if m.rail.IsCollapsed("grouped") {
 		t.Fatal("a second right closed the group it had opened")
 	}
 

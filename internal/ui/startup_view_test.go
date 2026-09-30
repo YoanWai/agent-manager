@@ -12,11 +12,12 @@ import (
 func TestStartingSessionGlyphMovesOnTheStartupTick(t *testing.T) {
 	for _, tool := range []string{"agent", "shell"} {
 		m := previewModel(status.Starting, blankCapture)
-		m.rail.rows[0].sess.Tool = tool
+		selected := railSelectedSession(m)
+		setRailSessionTool(m, selected.ID, tool)
 		m.services.cfg.Tools = map[string]config.Tool{"shell": {Shell: true}}
-		first := ansi.Strip(m.sessionGlyph(m.rail.rows[0].sess))
+		first := ansi.Strip(m.sessionGlyph(railSelectedSession(m)))
 		m.Update(startupTickMsg{})
-		second := ansi.Strip(m.sessionGlyph(m.rail.rows[0].sess))
+		second := ansi.Strip(m.sessionGlyph(railSelectedSession(m)))
 		if first == second {
 			t.Fatalf("starting %s glyph stayed on %q", tool, first)
 		}

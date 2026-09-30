@@ -219,7 +219,7 @@ func (m *Model) startInstall() (tea.Model, tea.Cmd) {
 	}
 	m.launchFix = launchFix{}
 	m.mode = modeList
-	m.rail.statusFilter = statusFilterAll
+	m.rail.ClearStatusFilter()
 	m.focusSession(sess.ID)
 	m.reportDone("installing " + fix.binary)
 	return m, m.refreshCmd()
@@ -305,7 +305,7 @@ func (m *Model) settleInstall() {
 	}
 	// The launched prompt names the image paths, so the files stay for the
 	// agent to read; the stale-paste sweep retires them.
-	m.rail.statusFilter = statusFilterAll
+	m.rail.ClearStatusFilter()
 	m.rebuildRows()
 	m.requestRefresh()
 	m.reportDone(install.binary + " installed; the session it was holding up is launching")

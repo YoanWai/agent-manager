@@ -13,7 +13,7 @@ import (
 func TestFullQuickLinesKeepTheCaretRowOnScreen(t *testing.T) {
 	m := buildModel(t)
 	seedTwoGroups(t, m)
-	m.rail.cursor = 1
+	setRailCursor(m, 1)
 	m.prefs.fullLayout = true
 	m.width = 56
 	m.height = 9
@@ -79,7 +79,7 @@ func TestQuickBarKeepsPaneHeight(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "sizer", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	pinned := m.previewPaneHeight()
 
 	rows := make([]string, pinned+10)

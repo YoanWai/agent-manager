@@ -11,7 +11,7 @@ import (
 // on, then a quieter tier for the keys that always apply. A transient mode
 // (quick prompt, rename, resize) owns the legend alone while it is up.
 func (m *Model) viewFooter() string {
-	if m.rail.reorder.active {
+	if m.rail.Reordering() {
 		return m.reorderFooter()
 	}
 	if m.quick.active {
@@ -108,7 +108,7 @@ func (m *Model) rowLegend() legendSection {
 	}
 	if row.isGroup {
 		foldAction := "fold"
-		if m.rail.collapsed[row.group] {
+		if m.rail.IsCollapsed(row.group) {
 			foldAction = "unfold"
 		}
 		pairs := [][2]string{{k(keybind.Open), foldAction}}
@@ -159,7 +159,7 @@ func (m *Model) rowLegend() legendSection {
 
 // archiveRestoreLegend leaves out the key of the pair that no-ops in this view.
 func (m *Model) archiveRestoreLegend() [2]string {
-	if m.rail.showArchived {
+	if m.rail.ShowArchived() {
 		return [2]string{m.listGlyph(keybind.Restore), "restore"}
 	}
 	return [2]string{m.listGlyph(keybind.Archive), "archive"}
@@ -204,26 +204,26 @@ func (m *Model) listGlyph(actions ...string) string {
 // the list, filtering it, and leaving.
 func (m *Model) viewLegend() legendSection {
 	emptyGroupsAction := "hide empty"
-	if m.rail.hideEmptyGroups {
+	if m.rail.HideEmptyGroups() {
 		emptyGroupsAction = "show empty"
 	}
 	statusFilterAction := "attention"
-	if m.rail.statusFilter.active() {
+	if m.rail.FilteringAttention() {
 		statusFilterAction = "show all"
 	}
 	archivedAction := "archived"
-	if m.rail.showArchived {
+	if m.rail.ShowArchived() {
 		archivedAction = "back to active"
 	}
 	foldAllAction := "fold all"
-	if m.allGroupsCollapsed() {
+	if m.rail.AllGroupsCollapsed() {
 		foldAllAction = "unfold all"
 	}
 	// Ordered by what a narrow terminal must keep: moving around, making
 	// something, the filters, then the keys a user already knows to look for.
 	k := m.listGlyph
 	emptyGroupsKey := k(keybind.EmptyGroups)
-	if m.rail.showArchived {
+	if m.rail.ShowArchived() {
 		emptyGroupsKey = ""
 	}
 	pairs := [][2]string{{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"}}
@@ -234,4 +234,16 @@ func (m *Model) viewLegend() legendSection {
 		{k(keybind.ReorderUp, keybind.ReorderDown), "reorder"}, {k(keybind.FoldAll), foldAllAction}, {k(keybind.Resize), "resize"}, {k(keybind.Settings), "settings"},
 	}...)
 	return legendSection{title: "View", quiet: true, pairs: legendPairsBound(pairs)}
+}
+
+func (m *Model) reorderFooter() string {
+	info := m.rail.ReorderInfo()
+	if info.DropLabel != "" {
+		return m.transientFooter(legendSection{title: "Move", pairs: [][2]string{
+			{"release", "move " + info.DropLabel}, {"esc", "put back"},
+		}})
+	}
+	return m.transientFooter(legendSection{title: "Reorder", pairs: [][2]string{
+		{"drag / ↑↓ / wheel", "move"}, {"↵ / release", "drop"}, {"esc", "put back"},
+	}})
 }

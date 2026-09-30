@@ -197,7 +197,7 @@ func (m *Model) quickSpawn(group, prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// Spawned sessions start outside the attention set; clear so the new row shows.
-	m.rail.statusFilter = statusFilterAll
+	m.rail.ClearStatusFilter()
 	m.clearQuickAfterSend()
 	m.errBar.text = ""
 	return m, m.refreshCmd()

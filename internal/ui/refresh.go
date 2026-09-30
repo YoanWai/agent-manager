@@ -78,7 +78,7 @@ func (m *Model) syncPollInput() {
 			focusID = sess.ID
 		}
 	}
-	m.poller.setInput(m.rail.showArchived, selectedID)
+	m.poller.setInput(m.rail.ShowArchived(), selectedID)
 	// Only ever stop the watcher here. Opening a control client costs a
 	// process and a tmux attach, so holding j through twenty rows would
 	// pay that twenty times; the client is opened once the cursor settles

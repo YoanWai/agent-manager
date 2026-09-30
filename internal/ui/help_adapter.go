@@ -5,6 +5,7 @@ import (
 
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -48,8 +49,8 @@ func (m *Model) helpContext(width int) uihelp.Context {
 		ArrowStep:   m.prefs.arrowStep,
 		Width:       width,
 		Glyphs: uihelp.Glyphs{
-			RowMenu: rowMenuGlyph,
-			Reorder: reorderGrip,
+			RowMenu: uirail.MenuGlyph,
+			Reorder: uirail.ReorderGlyph,
 		},
 		CursorMarker: cursorAnchorMarker,
 		Styles: uihelp.Styles{

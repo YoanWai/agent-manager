@@ -20,11 +20,10 @@ func TestFocusCursorAnchorTracksMirroredCaret(t *testing.T) {
 	m := &Model{
 		mode: modeFocus,
 		workspace: workspace{
-			preview: "first\nsecond\nthird\n",
+			preview:  "first\nsecond\nthird\n",
+			sessions: []store.Session{{ID: "focused"}},
 		},
-		rail: railState{
-			rows: []treeRow{{sess: store.Session{ID: "focused"}}},
-		},
+		rail:         railModelFromRows([]treeRow{{sess: store.Session{ID: "focused"}}}, 0),
 		focusRuntime: focusRuntimeState{imeCursor: &cursorAnchor{}},
 	}
 	m.focusPane.Enter(uifocus.EnterContext{SessionID: "focused"})
@@ -47,13 +46,10 @@ func TestFocusCursorAnchorRemovesListSearchMarker(t *testing.T) {
 	m := &Model{
 		mode: modeFocus,
 		workspace: workspace{
-			preview: "first\nsecond\nthird\n",
+			preview:  "first\nsecond\nthird\n",
+			sessions: []store.Session{{ID: "focused"}},
 		},
-		rail: railState{
-			searching: true,
-			search:    "active",
-			rows:      []treeRow{{sess: store.Session{ID: "focused"}}},
-		},
+		rail:         railModelSearching([]treeRow{{sess: store.Session{ID: "focused", Name: "active"}}}, 0, "active"),
 		focusRuntime: focusRuntimeState{imeCursor: &cursorAnchor{}},
 	}
 	m.focusPane.Enter(uifocus.EnterContext{SessionID: "focused"})
@@ -73,11 +69,10 @@ func TestFocusCursorAnchorAccountsForDroppedCaptureRows(t *testing.T) {
 	m := &Model{
 		mode: modeFocus,
 		workspace: workspace{
-			preview: "one\ntwo\nthree\nfour\n",
+			preview:  "one\ntwo\nthree\nfour\n",
+			sessions: []store.Session{{ID: "focused"}},
 		},
-		rail: railState{
-			rows: []treeRow{{sess: store.Session{ID: "focused"}}},
-		},
+		rail:         railModelFromRows([]treeRow{{sess: store.Session{ID: "focused"}}}, 0),
 		focusRuntime: focusRuntimeState{imeCursor: &cursorAnchor{}},
 	}
 	m.focusPane.Enter(uifocus.EnterContext{SessionID: "focused"})
@@ -182,10 +177,7 @@ func TestCustomSearchCursorsEmitMarkersOnlyWhileTyping(t *testing.T) {
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),
 		},
-		rail: railState{
-			searching: true,
-			search:    "中文",
-		},
+		rail: railModelSearching(nil, 0, "中文"),
 	}
 	m.handleHelpKey(runeKey("/"))
 	for _, r := range "定位" {
@@ -198,7 +190,7 @@ func TestCustomSearchCursorsEmitMarkersOnlyWhileTyping(t *testing.T) {
 		t.Fatal("help search cursor has no marker")
 	}
 
-	m.rail.searching = false
+	m.rail.SetSearch(m.rail.Search(), false)
 	m.handleHelpKey(namedKey(tea.KeyEnter))
 	if line := m.searchFieldLine(40); strings.Contains(line, cursorAnchorMarker) {
 		t.Fatal("closed list search kept a cursor marker")

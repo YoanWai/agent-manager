@@ -188,7 +188,7 @@ func clearRequestOnCleanup(t *testing.T, m *Model) {
 
 func (m *Model) sessionRows() []store.Session {
 	var sessions []store.Session
-	for _, r := range m.rail.rows {
+	for _, r := range railRows(m) {
 		if !r.isGroup {
 			sessions = append(sessions, r.sess)
 		}
@@ -198,9 +198,9 @@ func (m *Model) sessionRows() []store.Session {
 
 func (m *Model) selectSessionRow(t *testing.T, name string) {
 	t.Helper()
-	for i, r := range m.rail.rows {
+	for i, r := range railRows(m) {
 		if !r.isGroup && r.sess.Name == name {
-			m.rail.cursor = i
+			setRailCursor(m, i)
 			return
 		}
 	}
@@ -209,9 +209,9 @@ func (m *Model) selectSessionRow(t *testing.T, name string) {
 
 func (m *Model) selectGroupRow(t *testing.T, path string) {
 	t.Helper()
-	for i, r := range m.rail.rows {
+	for i, r := range railRows(m) {
 		if r.isGroup && r.group == path {
-			m.rail.cursor = i
+			setRailCursor(m, i)
 			return
 		}
 	}
@@ -221,7 +221,7 @@ func (m *Model) selectGroupRow(t *testing.T, path string) {
 // groupRowPaths lists the stored groups the tree paints, skipping root.
 func (m *Model) groupRowPaths() []string {
 	var paths []string
-	for _, r := range m.rail.rows {
+	for _, r := range railRows(m) {
 		if r.isGroup && !r.isRoot() {
 			paths = append(paths, r.group)
 		}
@@ -478,7 +478,7 @@ func railMouse(t *testing.T, m *Model, name string, action tea.MouseAction, butt
 
 func sessionRow(t *testing.T, m *Model, name string) treeRow {
 	t.Helper()
-	for _, row := range m.rail.rows {
+	for _, row := range railRows(m) {
 		if !row.isGroup && row.sess.Name == name {
 			return row
 		}
@@ -543,11 +543,7 @@ func shotModel() *Model {
 			proc:    sysstat.ProcStat{OK: true, CPUPercent: 4.2, RamPercent: 3.6, RSS: 612_000_000},
 			procFor: "add-rate-limiting",
 		},
-		rail: railState{
-			cursor:    4,
-			rows:      rows,
-			collapsed: map[string]bool{},
-		},
+		rail: railModelFromRows(rows, 4),
 	}
 	return m
 }

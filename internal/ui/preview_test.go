@@ -31,13 +31,18 @@ func TestPreviewCadenceIsIndependentFromStartupAnimation(t *testing.T) {
 		rows []treeRow
 		want time.Duration
 	}{
-		{"selected starting", []treeRow{{sess: store.Session{Status: status.Starting}}}, previewIntervalLive},
-		{"selected working", []treeRow{{sess: store.Session{Status: status.Working}}, {sess: store.Session{Status: status.Starting}}}, previewIntervalLive},
-		{"selected idle", []treeRow{{sess: store.Session{Status: status.Idle}}, {sess: store.Session{Status: status.Starting}}}, previewIntervalCalm},
+		{"selected starting", []treeRow{{sess: store.Session{ID: "a", Status: status.Starting}}}, previewIntervalLive},
+		{"selected working", []treeRow{{sess: store.Session{ID: "a", Status: status.Working}}, {sess: store.Session{ID: "b", Status: status.Starting}}}, previewIntervalLive},
+		{"selected idle", []treeRow{{sess: store.Session{ID: "a", Status: status.Idle}}, {sess: store.Session{ID: "b", Status: status.Starting}}}, previewIntervalCalm},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &Model{rail: railState{rows: tt.rows}}
+			m := &Model{rail: railModelFromRows(tt.rows, 0)}
+			for _, row := range tt.rows {
+				if !row.isGroup {
+					m.workspace.sessions = append(m.workspace.sessions, row.sess)
+				}
+			}
 			if got := m.previewInterval(); got != tt.want {
 				t.Fatalf("preview interval = %v, want %v", got, tt.want)
 			}
@@ -49,15 +54,15 @@ func TestMoveCursorDebouncesPreview(t *testing.T) {
 	m := &Model{
 		mode:   modeList,
 		width:  120,
-		height: 40, rail: railState{rows: []treeRow{
+		height: 40, rail: railModelFromRows([]treeRow{
 			{sess: store.Session{ID: "a", Name: "a"}},
 			{sess: store.Session{ID: "b", Name: "b"}},
-		},
-			cursor: 0},
+		}, 0),
+		workspace: workspace{sessions: []store.Session{{ID: "a", Name: "a"}, {ID: "b", Name: "b"}}},
 	}
 	cmd := m.moveCursor(1)
-	if m.rail.cursor != 1 {
-		t.Fatalf("cursor = %d want 1", m.rail.cursor)
+	if selected, ok := m.rail.SelectedSession(); !ok || selected != "b" {
+		t.Fatalf("selected = %q, %v want b", selected, ok)
 	}
 	if got := m.focusPane.PreviewGeneration(); got != 1 {
 		t.Fatalf("previewGen = %d want 1", got)

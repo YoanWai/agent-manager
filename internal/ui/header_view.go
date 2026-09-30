@@ -63,7 +63,7 @@ func (m *Model) headerScope() string {
 		label = " agent"
 	}
 	scope := subtleStyle.Render(" · active")
-	if m.rail.showArchived {
+	if m.rail.ShowArchived() {
 		scope = subtleStyle.Render(" · archived")
 	}
 	return valueStyle.Render(fmt.Sprintf("%d", count)) + subtleStyle.Render(label) + scope

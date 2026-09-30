@@ -9,7 +9,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
-	"time"
 )
 
 // focusNamedKeys maps bubbletea key types to tmux send-keys key names.
@@ -252,7 +251,7 @@ func (m *Model) leaveFocusMode() tea.Cmd {
 	m.mode = modeList
 	// A run opened before the session was entered would pair with the very
 	// click that comes back here, focusing it again instead of leaving.
-	m.rail.listClickAt = time.Time{}
+	m.rail.ResetClickHistory()
 	m.flushPendingNotice()
 	return nil
 }

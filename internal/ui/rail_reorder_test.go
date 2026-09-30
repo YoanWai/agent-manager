@@ -20,7 +20,7 @@ func TestPortableReorderKeysSwapVisibleSessions(t *testing.T) {
 			t.Fatalf("create session %q: %v", sess.ID, err)
 		}
 	}
-	m.rail.search = "keep"
+	m.rail.SetSearch("keep", m.rail.Searching())
 	loadStoredRows(t, m)
 	m.selectSessionRow(t, "keep-charlie")
 
@@ -62,7 +62,7 @@ func TestReorderGroupSkipsFilteredSibling(t *testing.T) {
 			t.Fatalf("create session %q: %v", sess.ID, err)
 		}
 	}
-	m.rail.search = "keep"
+	m.rail.SetSearch("keep", m.rail.Searching())
 	loadStoredRows(t, m)
 	m.selectGroupRow(t, "gamma")
 
@@ -120,10 +120,10 @@ func TestReorderChildStaysWithItsSiblings(t *testing.T) {
 	m.selectSessionRow(t, "coder")
 	second := spawnTerminal(t, m)
 	m.selectSessionRow(t, first.Name)
-	_, cmd := m.reorderSelected(1)
-	m.applyCmd(t, cmd)
+	updated, _ := m.handleKey(runeKey("J"))
+	m = updated.(*Model)
 	var kids []string
-	for _, row := range m.rail.rows {
+	for _, row := range railRows(m) {
 		if !row.isGroup && row.sess.ParentID != "" {
 			kids = append(kids, row.sess.Name)
 		}
@@ -147,10 +147,10 @@ func TestReorderChildIgnoresAnotherParentsChild(t *testing.T) {
 	m.selectSessionRow(t, "other")
 	theirs := spawnTerminal(t, m)
 	m.selectSessionRow(t, mine.Name)
-	_, cmd := m.reorderSelected(1)
-	m.applyCmd(t, cmd)
+	updated, _ := m.handleKey(runeKey("J"))
+	m = updated.(*Model)
 	var names []string
-	for _, row := range m.rail.rows {
+	for _, row := range railRows(m) {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 		}
@@ -174,10 +174,10 @@ func TestReorderAgentSkipsChildren(t *testing.T) {
 	shell := spawnTerminal(t, m)
 	m.selectSessionRow(t, "coder")
 	agent := m.sessionRows()[0]
-	_, cmd := m.reorderSelected(1)
-	m.applyCmd(t, cmd)
+	updated, _ := m.handleKey(runeKey("J"))
+	m = updated.(*Model)
 	var names []string
-	for _, row := range m.rail.rows {
+	for _, row := range railRows(m) {
 		if !row.isGroup && row.sess.ParentID == "" {
 			names = append(names, row.sess.Name)
 		}
@@ -199,8 +199,8 @@ func TestHandleLiftsARowStraightFromFocus(t *testing.T) {
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	m = liftByHandle(t, m, "beta")
-	if m.mode != modeList || m.rail.reorder.key != "s:"+sessionRow(t, m, "beta").sess.ID {
-		t.Fatalf("one press on beta's handle should leave focus and lift beta, mode = %v reorder = %+v", m.mode, m.rail.reorder)
+	if selected, ok := m.selected(); m.mode != modeList || !m.rail.Reordering() || !ok || selected.Name != "beta" {
+		t.Fatalf("one press on beta's handle should leave focus and lift beta, mode = %v selected = %q", m.mode, selected.Name)
 	}
 }
 
@@ -208,17 +208,17 @@ func liftByHandle(t *testing.T, m *Model, name string) *Model {
 	t.Helper()
 	y0, _ := m.bodyYRange()
 	line := paintedRailLines(t, m, name)[0]
-	updated, _ := m.handleMouse(tea.MouseMsg{X: m.rail.handleX[rowKey(m.rail.rows[m.rail.railHits[line]])], Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	updated, _ := m.handleMouse(tea.MouseMsg{X: m.displayedRail.Handles[rowKey(railRows(m)[railHitRows(m)[line]])], Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
-	if !m.rail.reorder.active || !m.rail.reorder.dragging {
-		t.Fatalf("a press on the handle should lift %s, reorder = %+v", name, m.rail.reorder)
+	if !m.rail.Reordering() {
+		t.Fatalf("a press on the handle should lift %s", name)
 	}
 	return m
 }
 
 func sessionOrder(m *Model) []string {
 	var names []string
-	for _, row := range m.rail.rows {
+	for _, row := range railRows(m) {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 		}
@@ -252,8 +252,8 @@ func TestHandleDragReordersAndDrops(t *testing.T) {
 		t.Fatalf("dragging onto the last row should move %s there, got %v", before[0], got)
 	}
 	m = railMouse(t, m, before[0], tea.MouseActionRelease, tea.MouseButtonLeft)
-	if m.rail.reorder.active || m.mode != modeList {
-		t.Fatalf("release after a drag should drop the row, reorder = %+v mode = %v", m.rail.reorder, m.mode)
+	if m.rail.Reordering() || m.mode != modeList {
+		t.Fatalf("release after a drag should drop the row, reorder = %v mode = %v", m.rail.Reordering(), m.mode)
 	}
 }
 
@@ -265,8 +265,8 @@ func TestHandleThenKeysAndEscPutsItBack(t *testing.T) {
 	before := sessionOrder(m)
 	m = liftByHandle(t, m, before[0])
 	m = railMouse(t, m, before[0], tea.MouseActionRelease, tea.MouseButtonLeft)
-	if !m.rail.reorder.active || m.mode != modeList {
-		t.Fatalf("a release in place keeps the row lifted and unfocused, reorder = %+v mode = %v", m.rail.reorder, m.mode)
+	if !m.rail.Reordering() || m.mode != modeList {
+		t.Fatalf("a release in place keeps the row lifted and unfocused, reorder = %v mode = %v", m.rail.Reordering(), m.mode)
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyDown})
 	m.handleKey(tea.KeyMsg{Type: tea.KeyDown})
@@ -278,7 +278,7 @@ func TestHandleThenKeysAndEscPutsItBack(t *testing.T) {
 		t.Fatalf("footer should name the reorder mode:\n%s", ansi.Strip(m.viewFooter()))
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if got := sessionOrder(m); strings.Join(got, ",") != strings.Join(before, ",") || m.rail.reorder.active {
+	if got := sessionOrder(m); strings.Join(got, ",") != strings.Join(before, ",") || m.rail.Reordering() {
 		t.Fatalf("esc should put the row back, got %v want %v", got, before)
 	}
 }
@@ -289,12 +289,12 @@ func TestAnotherHandleTakesOverALiftedRowInOnePress(t *testing.T) {
 	createSession(t, m, "beta", t.TempDir(), "")
 	m = liftByHandle(t, m, "alpha")
 	m = railMouse(t, m, "alpha", tea.MouseActionRelease, tea.MouseButtonLeft)
-	if !m.rail.reorder.active || m.rail.reorder.dragging {
-		t.Fatalf("test setup: alpha should stay lifted for the keyboard, reorder = %+v", m.rail.reorder)
+	if !m.rail.Reordering() {
+		t.Fatal("test setup: alpha should stay lifted for the keyboard")
 	}
 	m = liftByHandle(t, m, "beta")
-	if m.rail.reorder.key != "s:"+sessionRow(t, m, "beta").sess.ID {
-		t.Fatalf("one press on beta's handle should lift beta, reorder = %+v", m.rail.reorder)
+	if selected, ok := m.selected(); !m.rail.Reordering() || !ok || selected.Name != "beta" {
+		t.Fatalf("one press on beta's handle should lift beta, selected = %q", selected.Name)
 	}
 }
 
@@ -304,15 +304,15 @@ func TestAPressOnALiftedRowsLabelPutsItDownAndClicks(t *testing.T) {
 	m = liftByHandle(t, m, "alpha")
 	m = railMouse(t, m, "alpha", tea.MouseActionRelease, tea.MouseButtonLeft)
 	y0, _ := m.bodyYRange()
-	at := tea.MouseMsg{X: m.rail.handleX["s:"+sessionRow(t, m, "alpha").sess.ID] + 4, Y: y0 + paintedRailLines(t, m, "alpha")[0], Button: tea.MouseButtonLeft}
+	at := tea.MouseMsg{X: m.displayedRail.Handles["s:"+sessionRow(t, m, "alpha").sess.ID] + 4, Y: y0 + paintedRailLines(t, m, "alpha")[0], Button: tea.MouseButtonLeft}
 	at.Action = tea.MouseActionPress
 	updated, _ := m.handleMouse(at)
 	m = updated.(*Model)
 	at.Action = tea.MouseActionRelease
 	updated, _ = m.handleMouse(at)
 	m = updated.(*Model)
-	if m.rail.reorder.active || m.mode != modeFocus {
-		t.Fatalf("a label click should drop the row and focus it, reorder = %+v mode = %v", m.rail.reorder, m.mode)
+	if m.rail.Reordering() || m.mode != modeFocus {
+		t.Fatalf("a label click should drop the row and focus it, reorder = %v mode = %v", m.rail.Reordering(), m.mode)
 	}
 }
 
@@ -326,9 +326,9 @@ func TestLiftingARowFetchesItsPreview(t *testing.T) {
 	m.View()
 	y0, _ := m.bodyYRange()
 	line := paintedRailLines(t, m, "beta")[0]
-	_, cmd := m.handleMouse(tea.MouseMsg{X: m.rail.handleX["s:"+sessionRow(t, m, "beta").sess.ID], Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
-	if !m.rail.reorder.active || cmd == nil {
-		t.Fatalf("lifting beta should schedule its preview, reorder = %v cmd = %v", m.rail.reorder.active, cmd != nil)
+	_, cmd := m.handleMouse(tea.MouseMsg{X: m.displayedRail.Handles["s:"+sessionRow(t, m, "beta").sess.ID], Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if !m.rail.Reordering() || cmd == nil {
+		t.Fatalf("lifting beta should schedule its preview, reorder = %v cmd = %v", m.rail.Reordering(), cmd != nil)
 	}
 }
 
@@ -344,10 +344,10 @@ func TestHandleColumnBelowTheFirstLineIsTheLabel(t *testing.T) {
 	if len(lines) < 2 {
 		t.Fatalf("test setup: a comfortable row paints more than one line, got %v", lines)
 	}
-	at := tea.MouseMsg{X: m.rail.handleX[rowKey(sessionRow(t, m, "alpha"))], Y: y0 + lines[1], Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+	at := tea.MouseMsg{X: m.displayedRail.Handles[rowKey(sessionRow(t, m, "alpha"))], Y: y0 + lines[1], Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	updated, _ := m.handleMouse(at)
 	m = updated.(*Model)
-	if m.rail.reorder.active {
+	if m.rail.Reordering() {
 		t.Fatal("a press below the first line should not lift the row")
 	}
 }

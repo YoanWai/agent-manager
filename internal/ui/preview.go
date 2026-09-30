@@ -60,12 +60,7 @@ func (m *Model) cursorBlink() tea.Cmd {
 type previewTickMsg struct{}
 
 func (m *Model) hasStartingRow() bool {
-	for _, row := range m.rail.rows {
-		if !row.isGroup && row.sess.Status == status.Starting {
-			return true
-		}
-	}
-	return false
+	return m.rail.HasStatus(status.Starting)
 }
 
 func (m *Model) previewInterval() time.Duration {
@@ -146,12 +141,7 @@ func (m *Model) commitTypedPrompt() {
 // hasWorkingLoaderRow reports whether a row is animating the working
 // loader: a working session with no quotable pane line yet.
 func (m *Model) hasWorkingLoaderRow() bool {
-	for _, row := range m.rail.rows {
-		if !row.isGroup && row.sess.Status == status.Working && m.workspace.paneLines[row.sess.ID] == "" {
-			return true
-		}
-	}
-	return false
+	return m.rail.HasWorkingLoader()
 }
 
 func (m *Model) reviewNeedsLoader() bool {

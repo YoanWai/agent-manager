@@ -44,7 +44,7 @@ func TestFooterInFocusMode(t *testing.T) {
 		t.Fatalf("the button still leaves a full screen session:\n%s", full)
 	}
 
-	setFocusPaneFacts(m, m.rail.rows[m.rail.cursor].sess.ID, true, false, false, 0, paneCursor{})
+	setFocusPaneFacts(m, railSelectedSession(m).ID, true, false, false, 0, paneCursor{})
 	if footer := ansi.Strip(m.viewFooter()); !strings.Contains(footer, "click / alt+drag") || !strings.Contains(footer, "agent UI") {
 		t.Fatalf("a mouse-tracking pane should advertise pass-through:\n%s", footer)
 	}
@@ -107,7 +107,7 @@ func TestTransientFootersKeepListHeight(t *testing.T) {
 // carries only the app-wide tier.
 func TestFooterWithoutASelectedRow(t *testing.T) {
 	m := buildModel(t)
-	m.rail.rows = nil
+	resetRailModel(m)
 	footer := ansi.Strip(m.viewFooter())
 	if strings.Contains(footer, "Session") || strings.Contains(footer, "Group") {
 		t.Fatalf("no row selected, no row tier:\n%s", footer)
@@ -122,9 +122,9 @@ func TestFooterTierFollowsTheCursor(t *testing.T) {
 	createSession(t, m, "legend", t.TempDir(), "")
 	m.applyCmd(t, m.refreshCmd())
 
-	for i, row := range m.rail.rows {
+	for i, row := range railRows(m) {
 		if !row.isGroup {
-			m.rail.cursor = i
+			setRailCursor(m, i)
 			break
 		}
 	}
@@ -132,9 +132,9 @@ func TestFooterTierFollowsTheCursor(t *testing.T) {
 		t.Fatalf("a session under the cursor should title the tier Session:\n%s", footer)
 	}
 
-	for i, row := range m.rail.rows {
+	for i, row := range railRows(m) {
 		if row.isGroup {
-			m.rail.cursor = i
+			setRailCursor(m, i)
 			break
 		}
 	}
@@ -164,13 +164,14 @@ func TestFooterTogglesNameTheNextAction(t *testing.T) {
 	if footer := m.viewFooter(); !strings.Contains(footer, keyCapQuiet("F", "fold all")) {
 		t.Fatalf("an open tree should offer folding:\n%s", ansi.Strip(footer))
 	}
-	m.toggleCollapseAll()
+	updated, _ := m.handleKey(runeKey("F"))
+	m = updated.(*Model)
 	if footer := m.viewFooter(); !strings.Contains(footer, keyCapQuiet("F", "unfold all")) {
 		t.Fatalf("a folded tree should offer unfolding:\n%s", ansi.Strip(footer))
 	}
 
 	group := -1
-	for i, row := range m.rail.rows {
+	for i, row := range railRows(m) {
 		if row.isGroup && !row.isRoot() {
 			group = i
 			break
@@ -179,12 +180,12 @@ func TestFooterTogglesNameTheNextAction(t *testing.T) {
 	if group < 0 {
 		t.Fatalf("the fixture should list a group to fold, rows: %v", m.groupRowPaths())
 	}
-	m.rail.cursor = group
+	setRailCursor(m, group)
 	if footer := m.viewFooter(); !strings.Contains(footer, keyCap("↵", "unfold")) {
 		t.Fatalf("a collapsed group should offer unfolding:\n%s", ansi.Strip(footer))
 	}
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	if footer := m.viewFooter(); !strings.Contains(footer, keyCapQuiet("t", "back to active")) {
 		t.Fatalf("the archived view should offer the way back:\n%s", ansi.Strip(footer))
 	}
@@ -203,11 +204,11 @@ func TestLegendOffersEmptyGroupsOnlyInTheActiveView(t *testing.T) {
 	if !offered() {
 		t.Fatal("the active view should offer hiding empty groups")
 	}
-	m.rail.hideEmptyGroups = true
+	m.rail.SetHideEmptyGroups(true)
 	if !offered() {
 		t.Fatal("the active view should offer showing empty groups again")
 	}
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	if offered() {
 		t.Fatal("the archived view should not offer the empty-groups key")
 	}
@@ -280,7 +281,7 @@ func TestRowLegendDropsArchiveInArchivedView(t *testing.T) {
 		t.Fatalf("archive: %v", err)
 	}
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 
 	m.selectSessionRow(t, "alpha")

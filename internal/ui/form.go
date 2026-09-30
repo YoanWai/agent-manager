@@ -564,7 +564,7 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 	}
 	// New sessions start as starting, which attention excludes; clear so
 	// the row the form just created is on screen.
-	m.rail.statusFilter = statusFilterAll
+	m.rail.ClearStatusFilter()
 	m.mode = modeList
 	return m, m.refreshCmd()
 }
@@ -783,23 +783,9 @@ func (m *Model) submitGroupForm() (tea.Model, tea.Cmd) {
 	} else {
 		m.workspace.groupWorktrees[full] = worktree
 	}
-	for group := parent; group != ""; group = parentGroup(group) {
-		delete(m.rail.collapsed, group)
-	}
-	m.persistCollapsed()
-	m.rail.search = ""
-	m.rail.searching = false
-	m.rail.showArchived = false
-	m.rail.hideEmptyGroups = false
-	m.rail.statusFilter = statusFilterAll
 	m.errBar.text = ""
 	m.mode = modeList
 	m.rebuildRows()
-	for i, row := range m.rail.rows {
-		if row.isGroup && row.group == full {
-			m.rail.cursor = i
-			break
-		}
-	}
+	m.applyRailStateDecision(m.rail.RevealGroup(full))
 	return m, m.refreshCmd()
 }

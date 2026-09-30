@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
@@ -41,25 +42,26 @@ const (
 )
 
 type Model struct {
-	services     services
-	workspace    workspace
-	rail         railState
-	focusPane    uifocus.Model
-	focusRuntime focusRuntimeState
-	prefs        preferences
-	ledger       launchLedger
-	startup      startupState
-	notices      noticesState
-	poller       *poller
-	mode         mode
-	review       uireview.Model
-	reviewFX     reviewAdapter
-	reviewReturn reviewReturn
-	form         form
-	groupForm    groupForm
-	pathSugg     pathComplete
-	confirm      confirmTarget
-	launchFix    launchFix
+	services      services
+	workspace     workspace
+	rail          uirail.Model
+	displayedRail uirail.Frame
+	focusPane     uifocus.Model
+	focusRuntime  focusRuntimeState
+	prefs         preferences
+	ledger        launchLedger
+	startup       startupState
+	notices       noticesState
+	poller        *poller
+	mode          mode
+	review        uireview.Model
+	reviewFX      reviewAdapter
+	reviewReturn  reviewReturn
+	form          form
+	groupForm     groupForm
+	pathSugg      pathComplete
+	confirm       confirmTarget
+	launchFix     launchFix
 	// install is the setup-dialog install still running in a shell tab,
 	// nil when none is.
 	install *pendingInstall
@@ -156,9 +158,7 @@ func newView(deps Dependencies, version string) *Model {
 			engine:      engine,
 			setSnapshot: st.SetSnapshot,
 		},
-		rail: railState{
-			collapsed: loadCollapsed(st),
-		},
+		rail: uirail.New(loadCollapsed(st)),
 		focusRuntime: focusRuntimeState{
 			imeCursor: &cursorAnchor{},
 		},

@@ -17,13 +17,13 @@ func TestDetailHeadsFitTheirColumn(t *testing.T) {
 	for _, width := range []int{28, 40, 60, 76, 120} {
 		session := shotModel()
 		session.workspace.sessions[3].WorktreeBranch = "am/add-rate-limiting"
-		session.rail.rows[4].sess.WorktreeBranch = "am/add-rate-limiting"
+		session.rebuildRows()
 		session.workspace.queuedMessages = map[string]int{"add-rate-limiting": 2}
 
 		group := shotModel()
-		for i, row := range group.rail.rows {
+		for i, row := range railRows(group) {
 			if row.isGroup && row.group == "backend" {
-				group.rail.cursor = i
+				setRailCursor(group, i)
 			}
 		}
 		heads := map[string]string{
@@ -56,7 +56,7 @@ func TestDetailHeadsFitTheirColumn(t *testing.T) {
 func TestDetailHeadShedsChipsBeforeFacts(t *testing.T) {
 	m := shotModel()
 	m.workspace.sessions[3].WorktreeBranch = "am/add-rate-limiting"
-	m.rail.rows[4].sess.WorktreeBranch = "am/add-rate-limiting"
+	m.rebuildRows()
 
 	wide := ansi.Strip(strings.Split(m.viewDetail(120), "\n")[0])
 	for _, want := range []string{"add-rate-limiting", "claude", "am/add-rate-limiting", "working"} {
@@ -113,9 +113,9 @@ func TestGroupRosterColumnsAlign(t *testing.T) {
 // is the reading on that row, so a column too tight for both keeps it.
 func TestGroupHeadNamesTheSpawnKey(t *testing.T) {
 	m := shotModel()
-	for i, row := range m.rail.rows {
+	for i, row := range railRows(m) {
 		if row.isGroup && row.group == "backend" {
-			m.rail.cursor = i
+			setRailCursor(m, i)
 		}
 	}
 	wide := ansi.Strip(m.viewDetail(76))
@@ -136,9 +136,8 @@ func TestGroupHeadNamesTheSpawnKey(t *testing.T) {
 const blankCapture = "\n\n\n\n\n\n\n\n\n\n"
 
 func previewModel(sessionStatus, preview string) *Model {
-	return &Model{
-		width: 120, height: 40, mode: modeList, workspace: workspace{preview: preview}, rail: railState{rows: []treeRow{{sess: store.Session{ID: "boot", Name: "boot", Status: sessionStatus}}}},
-	}
+	session := store.Session{ID: "boot", Name: "boot", Status: sessionStatus}
+	return &Model{width: 120, height: 40, mode: modeList, workspace: workspace{preview: preview, sessions: []store.Session{session}}, rail: railModelFromRows([]treeRow{{sess: session}}, 0)}
 }
 
 func previewText(m *Model) string {

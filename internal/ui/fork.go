@@ -134,7 +134,7 @@ func (m *Model) launchFork(source store.Session, tool config.Tool, name, agentID
 	}
 	// Forks start as starting, which attention excludes; clear so the row
 	// the fork just created is on screen.
-	m.rail.statusFilter = statusFilterAll
+	m.rail.ClearStatusFilter()
 	m.rebuildRows()
 	m.mode = modeList
 	m.errBar.text = ""

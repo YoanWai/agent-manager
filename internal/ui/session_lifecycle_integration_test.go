@@ -38,7 +38,7 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 		t.Fatal("archive should kill the tmux session")
 	}
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	if len(m.sessionRows()) != 1 || !m.sessionRows()[0].Archived {
 		t.Fatalf("archived session should show in archived view")
@@ -58,7 +58,7 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 		t.Fatal("restore should stamp a new launch time")
 	}
 	m.applyCmd(t, cmd)
-	m.rail.showArchived = false
+	m.rail.SetArchived(false)
 	m.applyCmd(t, m.refreshCmd())
 	if len(m.sessionRows()) != 1 {
 		t.Fatalf("after restore, active sessions = %d want 1", len(m.sessionRows()))

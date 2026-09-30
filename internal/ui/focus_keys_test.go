@@ -259,7 +259,7 @@ func TestFocusModeForwardsKeys(t *testing.T) {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	for _, msg := range []tea.KeyMsg{
 		{Type: tea.KeyRunes, Runes: []rune("ping-focus")},
 		{Type: tea.KeyEnter},
@@ -297,7 +297,7 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 	m := buildModel(t)
 	createSessionOn(t, m, "focus-arrows", "quietchat", t.TempDir())
 	m.selectSessionRow(t, "focus-arrows")
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	quitAgent(t, m, sess.ID)
 	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
 	t.Cleanup(m.focusRuntime.watch.Close)
@@ -367,7 +367,7 @@ func TestFocusModeExitsWhenSessionDies(t *testing.T) {
 		t.Fatalf("after enter, mode = %v", m.mode)
 	}
 
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	if err := m.services.store.Delete(sess.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
@@ -873,8 +873,8 @@ func TestFocusLeftUnfocusesAtPromptHead(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	sess := m.rail.rows[m.rail.cursor].sess
-	m.rail.rows[m.rail.cursor].sess.Tool = "claude-hooked"
+	sess := railSelectedSession(m)
+	setRailSessionTool(m, sess.ID, "claude-hooked")
 	setFocusPaneFacts(m, sess.ID, false, false, false, 0, paneCursor{x: 4, y: 0, ok: true})
 	m.workspace.preview = "❯ hi\n"
 
@@ -907,8 +907,8 @@ func TestFocusLeftUnfocusesTerminalAtPromptHead(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	sess := m.rail.rows[m.rail.cursor].sess
-	m.rail.rows[m.rail.cursor].sess.Tool = "terminal"
+	sess := railSelectedSession(m)
+	setRailSessionTool(m, sess.ID, "terminal")
 	setFocusPaneID(m, sess.ID)
 	m.workspace.preview = "$ make test\n"
 	setFocusCursor(m, paneCursor{x: 11, y: 0, ok: true})
@@ -969,8 +969,8 @@ func TestArrowStepSettingDisablesThePair(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("enter should still focus, mode = %v", m.mode)
 	}
-	sess := m.rail.rows[m.rail.cursor].sess
-	m.rail.rows[m.rail.cursor].sess.Tool = "claude-hooked"
+	sess := railSelectedSession(m)
+	setRailSessionTool(m, sess.ID, "claude-hooked")
 	setFocusPaneFacts(m, sess.ID, false, false, false, 0, paneCursor{x: 2, y: 0, ok: true})
 	m.workspace.preview = "❯ hi\n"
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyLeft})
@@ -988,8 +988,8 @@ func TestFocusAltLeftStaysWithTheAgent(t *testing.T) {
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
-	sess := m.rail.rows[m.rail.cursor].sess
-	m.rail.rows[m.rail.cursor].sess.Tool = "claude-hooked"
+	sess := railSelectedSession(m)
+	setRailSessionTool(m, sess.ID, "claude-hooked")
 	setFocusPaneFacts(m, sess.ID, false, false, false, 0, paneCursor{x: 2, y: 0, ok: true})
 	m.workspace.preview = "❯ hi\n"
 
@@ -1013,8 +1013,8 @@ func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	sess := m.rail.rows[m.rail.cursor].sess
-	m.rail.rows[m.rail.cursor].sess.Tool = "pi-tool"
+	sess := railSelectedSession(m)
+	setRailSessionTool(m, railSelectedSession(m).ID, "pi-tool")
 	setHiddenPane := func(x int, preview string) {
 		updated, _ := m.Update(focusPreviewMsg{
 			sessID: sess.ID, preview: preview,
@@ -1200,8 +1200,8 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	sess := m.rail.rows[m.rail.cursor].sess
-	m.rail.rows[m.rail.cursor].sess.Tool = "command-code"
+	sess := railSelectedSession(m)
+	setRailSessionTool(m, railSelectedSession(m).ID, "command-code")
 	hidden := focusPreviewMsg{
 		sessID:  sess.ID,
 		preview: "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ Ask your question...\n────────────\n  ? for shortcuts\n\n\n\n",
@@ -1268,7 +1268,7 @@ func TestFocusModeReadsTheSessionKeyTable(t *testing.T) {
 	useSessionKeys(t, m, []string{"f9"}, nil, []string{"f3"})
 	createSessionOn(t, m, "remapped", "control-echo", t.TempDir())
 	m.selectSessionRow(t, "remapped")
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	waitForPaneChild(t, m, sess.ID, "cat")
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1366,7 +1366,7 @@ func TestFocusKeyRetriesADeadWatcher(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 
 	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
 	t.Cleanup(m.focusRuntime.watch.Close)
@@ -1395,7 +1395,7 @@ func TestKillingTheFocusedSessionReportsNoLoss(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "doomed-focus", t.TempDir(), "")
 	m.selectSessionRow(t, "doomed-focus")
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 
 	msgs := make(chan tea.Msg, 64)
 	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(msg tea.Msg) { msgs <- msg })

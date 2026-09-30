@@ -34,10 +34,7 @@ func (m *Model) deleteConfirmed() (sessioncmd.DeleteResult, error) {
 		m.removeSessionLocally(sess.ID)
 	}
 	if len(result.RemovedGroups) > 0 {
-		for _, path := range result.RemovedGroups {
-			delete(m.rail.collapsed, path)
-		}
-		m.persistCollapsed()
+		m.applyRailStateDecision(m.rail.ForgetGroups(result.RemovedGroups))
 		m.pruneGroupsLocally(result.RemovedGroups)
 	}
 	if result.Notice != "" {
@@ -114,7 +111,7 @@ func (m *Model) prepareDelete() {
 		m.errBar.text = err.Error()
 		return
 	}
-	if m.rail.showArchived {
+	if m.rail.ShowArchived() {
 		m.confirm = archivedGroupDelete(entry.group, subtree)
 	} else {
 		m.confirm = m.wholeGroupDelete(entry.group, subtree)

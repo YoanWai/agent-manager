@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
@@ -17,7 +18,7 @@ func (m *Model) viewFullFocusFrame() string {
 	bodyHeight := m.listBodyHeight()
 	// This frame paints no rail, so a click lands on no row: the list
 	// frame's hits would otherwise select a row nobody pointed at.
-	m.recordRailHits(nil)
+	m.displayedRail = uirail.Frame{}
 	m.notices.noticeHit = noticeHit{}
 	frame := []string{}
 	for _, line := range m.viewHeaderRows() {

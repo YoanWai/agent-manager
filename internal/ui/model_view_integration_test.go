@@ -197,7 +197,7 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	want := [2]int{m.width, m.listBodyHeight()}
 	if got := m.focusRuntime.geom[sess.ID]; got != want {
 		t.Fatalf("focused pane pinned to %v, want %v", got, want)
@@ -249,9 +249,9 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	pinned := m.focusRuntime.geom[sess.ID]
-	m.rail.rows[m.rail.cursor].sess.Tool = "claude-hooked"
+	setRailSessionTool(m, sess.ID, "claude-hooked")
 	setFocusPaneID(m, sess.ID)
 	setFocusCursor(m, paneCursor{x: 4, y: 0, ok: true})
 	m.workspace.preview = "❯ hi\n"
@@ -301,7 +301,7 @@ func TestFullRowWorkingWithoutPaneLineAnimatesLoader(t *testing.T) {
 	m.prefs.fullLayout = true
 	m.prefs.comfortableRows = true
 	m.workspace.paneLines = nil
-	row := m.rail.rows[4]
+	row := sessionRow(t, m, "add-rate-limiting")
 	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
 	if len(lines) != 3 {
 		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
@@ -315,6 +315,7 @@ func TestFullRowWorkingWithoutPaneLineAnimatesLoader(t *testing.T) {
 		t.Fatal("a loader row should keep the startup tick alive")
 	}
 	m.workspace.paneLines = map[string]string{"add-rate-limiting": "Running tests…", "ui-polish": "Compiling…"}
+	m.rebuildRows()
 	if m.hasWorkingLoaderRow() {
 		t.Fatal("a quotable pane line should retire the loader")
 	}
@@ -482,12 +483,7 @@ func TestFocusFactsWriteHomeAsTilde(t *testing.T) {
 	m := shotModel()
 	m.prefs.fullLayout = true
 	m.mode = modeFocus
-	m.rail.rows[m.rail.cursor].sess.Cwd = filepath.Join(home, "dev", "api")
-	for i := range m.workspace.sessions {
-		if m.workspace.sessions[i].ID == m.rail.rows[m.rail.cursor].sess.ID {
-			m.workspace.sessions[i].Cwd = m.rail.rows[m.rail.cursor].sess.Cwd
-		}
-	}
+	setRailSessionCwd(m, railSelectedSession(m).ID, filepath.Join(home, "dev", "api"))
 	facts := ansi.Strip(m.focusFactsLine(200))
 	if !strings.Contains(facts, "~/dev/api") {
 		t.Fatalf("a path under home should read from ~:\n%s", facts)

@@ -22,9 +22,9 @@ func TestGroupRowRendersGroupPane(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "api-agent", dir, "backend")
-	for i, row := range m.rail.rows {
+	for i, row := range railRows(m) {
 		if row.isGroup && row.group == "backend" {
-			m.rail.cursor = i
+			setRailCursor(m, i)
 		}
 	}
 
@@ -78,7 +78,7 @@ func TestComfortableRowSurvivesShortRail(t *testing.T) {
 	}
 	m.selectSessionRow(t, "three")
 
-	lines := m.entryLines(m.rail.rows, 0, 60, 2)
+	lines := m.entryLines(railRows(m), 0, 60, 2)
 	if len(lines) != 2 {
 		t.Fatalf("entry lines = %d want 2", len(lines))
 	}
@@ -188,7 +188,7 @@ func TestInboxBadgeOutlivesTheRowMeta(t *testing.T) {
 		m := shotModel()
 		m.workspace.queuedMessages = map[string]int{"add-rate-limiting": 2}
 
-		for _, line := range m.entryLines(m.rail.rows, 0, width, 20) {
+		for _, line := range m.entryLines(railRows(m), 0, width, 20) {
 			if got := ansi.StringWidth(line.text); got > width {
 				t.Errorf("width %d: rail line is %d wide: %q", width, got, ansi.Strip(line.text))
 			}
@@ -216,14 +216,14 @@ func TestInboxBadgeOutlivesTheRowMeta(t *testing.T) {
 func TestRootRowLeadsTheList(t *testing.T) {
 	m := shotModel()
 	m.rebuildRows()
-	if len(m.rail.rows) == 0 {
+	if len(railRows(m)) == 0 {
 		t.Fatal("no rows, want root")
 	}
-	if !m.rail.rows[0].isRoot() {
-		t.Fatalf("first row is %+v, want root", m.rail.rows[0])
+	if !railRows(m)[0].isRoot() {
+		t.Fatalf("first row is %+v, want root", railRows(m)[0])
 	}
 	// Its sessions stay flat rather than nesting under it.
-	for _, row := range m.rail.rows[1:] {
+	for _, row := range railRows(m)[1:] {
 		if !row.isGroup && row.sess.Group == "" && row.depth != 0 {
 			t.Fatalf("ungrouped session %q nested at depth %d", row.sess.Name, row.depth)
 		}
@@ -247,7 +247,7 @@ func TestRootRowRefusesGroupEdits(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := shotModel()
 			m.rebuildRows()
-			m.rail.cursor = 0
+			setRailCursor(m, 0)
 			tc.run(m)
 			if m.errBar.text == "" {
 				t.Fatal("no message explaining the refusal")
@@ -290,10 +290,10 @@ func TestRootRowIsDimmerThanNamedGroups(t *testing.T) {
 
 	m := shotModel()
 	m.rebuildRows()
-	if len(m.rail.rows) == 0 {
+	if len(railRows(m)) == 0 {
 		t.Fatal("no rows, want root")
 	}
-	root := m.renderTreeRow(m.rail.rows[0], false, 40, 0, panelHex())
+	root := m.renderTreeRow(railRows(m)[0], false, 40, 0, panelHex())
 	dimmed := strings.TrimPrefix(fgSeq(mix(current.Accent2, current.Subtle, 0.5)), "\x1b[")
 	if !strings.Contains(root, dimmed) {
 		t.Fatalf("root is not painted in the dimmed tone: %q", root)
@@ -425,7 +425,7 @@ func TestSessionRowStandsInForAnAwaitedName(t *testing.T) {
 			if tc.want == namePlaceholder {
 				return
 			}
-			if strings.Contains(row, namePlaceholder) {
+			if strings.Contains(row, reorderGrip+" "+namePlaceholder) {
 				t.Fatalf("row still stands in for a name it has:\n%s", row)
 			}
 			if _, still := m.ledger.awaitedRenames[tc.sess.ID]; still {
@@ -482,7 +482,7 @@ func TestInboxBadgeOutlivesTheNameAndTheFocusBadge(t *testing.T) {
 		m.workspace.groupPaths = map[string]string{"a/b/c": "/tmp"}
 		m.workspace.sessions = []store.Session{{ID: "x", Name: "some-long-session-name", Tool: "claude", Group: "a/b/c"}}
 		m.rebuildRows()
-		m.rail.cursor = len(m.rail.rows) - 1
+		setRailCursor(m, len(railRows(m))-1)
 		m.mode = modeFocus
 		m.workspace.queuedMessages = map[string]int{"x": 2}
 
@@ -518,8 +518,7 @@ func TestRowMarksSessionsOnAnotherServer(t *testing.T) {
 
 				split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: []store.Session{sess},
 
-					tmuxSocket: here, leadingManager: tc.leading}, rail: railState{rows: []treeRow{{sess: sess}},
-					collapsed: map[string]bool{}},
+					tmuxSocket: here, leadingManager: tc.leading}, rail: railModelFromRows([]treeRow{{sess: sess}}, 0),
 			}
 			view := ansi.Strip(m.View())
 			if strings.Contains(view, "elsewhere") != tc.elsewise {
@@ -540,8 +539,7 @@ func TestRowsAreUnmarkedBeforeTheFirstPoll(t *testing.T) {
 	m := &Model{
 		width: 120, height: 40, mode: modeList,
 
-		split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: []store.Session{sess}}, rail: railState{rows: []treeRow{{sess: sess}},
-			collapsed: map[string]bool{}},
+		split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: []store.Session{sess}}, rail: railModelFromRows([]treeRow{{sess: sess}}, 0),
 	}
 	if view := ansi.Strip(m.View()); strings.Contains(view, "elsewhere") {
 		t.Fatalf("nothing to compare against should mark nothing:\n%s", view)
@@ -556,7 +554,7 @@ func TestRowHeightsFollowDensity(t *testing.T) {
 	m := shotModel()
 	m.prefs.fullLayout = true
 	m.workspace.paneLines = map[string]string{"add-rate-limiting": "Running tests… (14s · esc to interrupt)"}
-	row := m.rail.rows[4]
+	row := sessionRow(t, m, "add-rate-limiting")
 	row.sess.LastPrompt = "add a token bucket limiter to the public api"
 	if m.prefs.comfortableRows {
 		t.Fatal("this test starts at the compact density")
@@ -564,7 +562,7 @@ func TestRowHeightsFollowDensity(t *testing.T) {
 	if got := m.entryHeight(row); got != 1 {
 		t.Fatalf("compact session entry height = %d, want 1", got)
 	}
-	if got := m.entryHeight(m.rail.rows[2]); got != 1 {
+	if got := m.entryHeight(groupRow(t, m, "backend")); got != 1 {
 		t.Fatalf("group entry height = %d, want 1", got)
 	}
 	lines := splitLines(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
@@ -579,7 +577,7 @@ func TestRowHeightsFollowDensity(t *testing.T) {
 	}
 
 	m.prefs.comfortableRows = true
-	if got := m.entryHeight(m.rail.rows[2]); got != 1 {
+	if got := m.entryHeight(groupRow(t, m, "backend")); got != 1 {
 		t.Fatalf("comfortable group entry height = %d, want 1", got)
 	}
 	if got := m.entryHeight(row); got != 3 {
@@ -627,7 +625,7 @@ func TestRowWaitingReplyWearsTheStateColor(t *testing.T) {
 	m.prefs.comfortableRows = true
 	question := "Allow edits to router.go?"
 	m.workspace.paneLines = map[string]string{"db-migrations": question}
-	lines := splitLines(m.renderTreeRow(m.rail.rows[0], false, m.width-1, 0, panelHex()))
+	lines := splitLines(m.renderTreeRow(sessionRow(t, m, "db-migrations"), false, m.width-1, 0, panelHex()))
 	if len(lines) != 3 {
 		t.Fatalf("waiting row painted %d lines, want 3", len(lines))
 	}
@@ -643,12 +641,12 @@ func TestRowQuotesEveryStateAndDashesWhenSilent(t *testing.T) {
 	m.prefs.fullLayout = true
 	m.prefs.comfortableRows = true
 	m.workspace.paneLines = map[string]string{"notes": "All quiet, nothing queued."}
-	lines := splitLines(m.renderTreeRow(m.rail.rows[1], false, m.width-1, 1, panelHex()))
+	lines := splitLines(m.renderTreeRow(sessionRow(t, m, "notes"), false, m.width-1, 1, panelHex()))
 	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "↳ All quiet, nothing queued." {
 		t.Fatalf("idle reply line = %q, want the last message", reply)
 	}
 	m.workspace.paneLines = nil
-	lines = splitLines(m.renderTreeRow(m.rail.rows[1], false, m.width-1, 1, panelHex()))
+	lines = splitLines(m.renderTreeRow(sessionRow(t, m, "notes"), false, m.width-1, 1, panelHex()))
 	if reply := strings.TrimSpace(ansi.Strip(lines[2])); reply != "-" {
 		t.Fatalf("silent idle reply line = %q, want a dash", reply)
 	}
@@ -659,7 +657,7 @@ func TestRowLongPromptTruncates(t *testing.T) {
 	m.prefs.fullLayout = true
 	m.prefs.comfortableRows = true
 	width := 80
-	row := m.rail.rows[1]
+	row := sessionRow(t, m, "notes")
 	row.sess.LastPrompt = strings.Repeat("triage the flaky integration suite and report ", 10)
 	rendered := m.renderTreeRow(row, false, width, 1, panelHex())
 	for _, line := range splitLines(rendered) {
@@ -688,7 +686,7 @@ func TestCompactCellIsStatePicked(t *testing.T) {
 		"notes":         "All quiet, nothing queued.",
 		"db-migrations": "Allow edits to router.go?",
 	}
-	idle := m.rail.rows[1]
+	idle := sessionRow(t, m, "notes")
 	idle.sess.LastPrompt = "verify the staging deploy is healthy"
 	line := ansi.Strip(m.renderTreeRow(idle, false, m.width-1, 1, panelHex()))
 	if !strings.Contains(line, "↳ All quiet, nothing queued.") {
@@ -704,7 +702,7 @@ func TestCompactCellIsStatePicked(t *testing.T) {
 		t.Fatalf("a silent idle session should name its task:\n%s", line)
 	}
 
-	line = ansi.Strip(m.renderTreeRow(m.rail.rows[0], false, m.width-1, 0, panelHex()))
+	line = ansi.Strip(m.renderTreeRow(sessionRow(t, m, "db-migrations"), false, m.width-1, 0, panelHex()))
 	if !strings.Contains(line, "↳ Allow edits to router.go?") {
 		t.Fatalf("waiting compact row should quote its question:\n%s", line)
 	}
@@ -715,7 +713,7 @@ func TestCompactCellIsStatePicked(t *testing.T) {
 func TestArchivedRowReadsDead(t *testing.T) {
 	m := shotModel()
 	m.prefs.fullLayout = true
-	row := m.rail.rows[4]
+	row := sessionRow(t, m, "add-rate-limiting")
 	row.sess.Archived = true
 	line := ansi.Strip(m.renderTreeRow(row, false, m.width-1, 4, panelHex()))
 	if !strings.Contains(line, statusLabel(status.Dead)) {
@@ -730,7 +728,7 @@ func TestShellRowSkipsThePromptLine(t *testing.T) {
 	m := shotModel()
 	m.services.cfg = config.Config{Tools: map[string]config.Tool{"terminal": {Shell: true}, "claude": {}}}
 	m.prefs.comfortableRows = true
-	shell := m.rail.rows[4]
+	shell := sessionRow(t, m, "add-rate-limiting")
 	shell.sess.Tool = "terminal"
 	shell.sess.Status = status.Idle
 	shell.sess.LastPrompt = "this never rode a shell row"
@@ -751,7 +749,7 @@ func TestShellRowSkipsThePromptLine(t *testing.T) {
 	}
 
 	// An agent beside it keeps all three.
-	agent := m.rail.rows[4]
+	agent := sessionRow(t, m, "add-rate-limiting")
 	if got := m.entryHeight(agent); got != 3 {
 		t.Fatalf("comfortable agent entry height = %d, want 3", got)
 	}

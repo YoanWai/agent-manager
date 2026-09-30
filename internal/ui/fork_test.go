@@ -34,7 +34,7 @@ func TestForkSelectedSessionCreatesNamedSibling(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "source", dir, "work")
 	m.selectSessionRow(t, "source")
-	source := m.rail.rows[m.rail.cursor].sess
+	source := railSelectedSession(m)
 	if err := m.services.store.SetAgentSessionID(source.ID, "source-conversation"); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestOpenForkRequiresConfiguredCommandAndConversationID(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "source", t.TempDir(), "")
 	m.selectSessionRow(t, "source")
-	source := m.rail.rows[m.rail.cursor].sess
+	source := railSelectedSession(m)
 
 	tool := m.services.cfg.Tools[source.Tool]
 	tool.ForkCommand = ""

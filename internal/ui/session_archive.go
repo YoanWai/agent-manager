@@ -10,7 +10,7 @@ import (
 )
 
 func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
-	if m.rail.showArchived {
+	if m.rail.ShowArchived() {
 		return m, nil
 	}
 	entry, ok := m.selectedRow()
@@ -54,7 +54,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
-	if !m.rail.showArchived {
+	if !m.rail.ShowArchived() {
 		return m, nil
 	}
 	entry, ok := m.selectedRow()

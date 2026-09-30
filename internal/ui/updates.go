@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -532,8 +533,8 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
 
-	case autoscrollMsg:
-		return m.handleAutoscroll(msg)
+	case uirail.AutoScrollTick:
+		return m.applyRailDecision(m.rail.ApplyAutoScroll(msg, m.displayedRail, m.railMouseContext()))
 
 	case tea.KeyMsg:
 		model, cmd := m.handleKey(msg)

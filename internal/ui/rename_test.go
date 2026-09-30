@@ -37,12 +37,12 @@ func TestRenameGroupCascades(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	createSession(t, m, "kid", dir, "old/inner")
 
-	for i, r := range m.rail.rows {
+	for i, r := range railRows(m) {
 		if r.isGroup && r.group == "old" {
-			m.rail.cursor = i
+			setRailCursor(m, i)
 		}
 	}
-	m.rail.collapsed["old"] = true
+	m.rail.SetCollapsed("old", true)
 	m.rebuildRows()
 	m.openRename()
 	if !m.rename.isGroup || m.rename.path != "old" {
@@ -56,10 +56,10 @@ func TestRenameGroupCascades(t *testing.T) {
 	if len(kid) != 0 {
 		t.Fatalf("fresh should stay collapsed after rename, got %d sessions", len(kid))
 	}
-	if !m.rail.collapsed["fresh"] || m.rail.collapsed["old"] {
-		t.Fatalf("collapse state should follow rename: %v", m.rail.collapsed)
+	if !m.rail.IsCollapsed("fresh") || m.rail.IsCollapsed("old") {
+		t.Fatalf("collapse state should follow rename: %v", m.rail.Collapsed())
 	}
-	m.rail.collapsed["fresh"] = false
+	m.rail.SetCollapsed("fresh", false)
 	m.rebuildRows()
 	sessions := m.sessionRows()
 	if len(sessions) != 1 || sessions[0].Group != "fresh/inner" {
@@ -513,9 +513,9 @@ func TestEditGroupRenamesAndSetsPath(t *testing.T) {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	for i, row := range m.rail.rows {
+	for i, row := range railRows(m) {
 		if row.isGroup && row.group == "backend" {
-			m.rail.cursor = i
+			setRailCursor(m, i)
 		}
 	}
 
@@ -547,9 +547,9 @@ func TestEditGroupRejectsMissingPath(t *testing.T) {
 		t.Fatalf("create group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	for i, row := range m.rail.rows {
+	for i, row := range railRows(m) {
 		if row.isGroup && row.group == "backend" {
-			m.rail.cursor = i
+			setRailCursor(m, i)
 		}
 	}
 	m.openRename()
@@ -578,9 +578,9 @@ func TestGroupPathNeverEmpty(t *testing.T) {
 		t.Fatal("created group should get a resolved default path, not empty")
 	}
 
-	for i, row := range m.rail.rows {
+	for i, row := range railRows(m) {
 		if row.isGroup && row.group == "zone" {
-			m.rail.cursor = i
+			setRailCursor(m, i)
 		}
 	}
 	m.openRename()

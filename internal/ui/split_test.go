@@ -248,13 +248,13 @@ func TestQuitFromResizePersistsRatio(t *testing.T) {
 }
 
 func TestEnterResizeBlockedWhenSearchingOrQuick(t *testing.T) {
-	m := &Model{mode: modeList, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()}, rail: railState{searching: true}}
+	m := &Model{mode: modeList, width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}, services: services{listKeys: keybind.DefaultList()}, rail: railModelSearching(nil, 0, "")}
 	updated, cmd := m.enterResizeMode()
 	m = updated.(*Model)
 	if m.split.resizeMode || cmd != nil {
 		t.Fatal("searching should block resize mode")
 	}
-	m.rail.searching = false
+	m.rail.SetSearch(m.rail.Search(), false)
 	m.quick.active = true
 	updated, cmd = m.enterResizeMode()
 	m = updated.(*Model)

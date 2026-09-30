@@ -35,9 +35,9 @@ func TestDeleteGroupSubtree(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 
-	for i, r := range m.rail.rows {
+	for i, r := range railRows(m) {
 		if r.isGroup && r.group == "zone" {
-			m.rail.cursor = i
+			setRailCursor(m, i)
 		}
 	}
 	m.prepareDelete()
@@ -88,7 +88,7 @@ func TestDeleteGroupInArchivedViewSparesLiveSessions(t *testing.T) {
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "bugs")
 	m.prepareDelete()
@@ -99,7 +99,7 @@ func TestDeleteGroupInArchivedViewSparesLiveSessions(t *testing.T) {
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
-	m.rail.showArchived = false
+	m.rail.SetArchived(false)
 	m.applyCmd(t, m.refreshCmd())
 	if names := sessionNames(m); len(names) != 1 || names[0] != "live" {
 		t.Fatalf("active view sessions = %v want [live]", names)
@@ -128,7 +128,7 @@ func TestDeleteArchivedGroupInArchivedViewRemovesIt(t *testing.T) {
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyCmd(t, cmd)
 
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "empty")
 	m.prepareDelete()
@@ -300,7 +300,7 @@ func TestConfirmedGroupDeleteDropsTheGroupRowAtOnce(t *testing.T) {
 	m.prepareDelete()
 	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 
-	for _, r := range m.rail.rows {
+	for _, r := range railRows(m) {
 		if r.isGroup && r.group == "zone" {
 			t.Fatalf("deleted group still on screen before the next poll")
 		}

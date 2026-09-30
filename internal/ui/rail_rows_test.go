@@ -32,11 +32,11 @@ func TestNestedGroupsTree(t *testing.T) {
 		}
 	}
 
-	if !m.rail.rows[0].isRoot() {
-		t.Fatalf("root row should lead the list, rows[0] = %+v", m.rail.rows[0])
+	if !railRows(m)[0].isRoot() {
+		t.Fatalf("root row should lead the list, rows[0] = %+v", railRows(m)[0])
 	}
-	if m.rail.rows[1].isGroup || m.rail.rows[1].sess.Name != "top" {
-		t.Fatalf("the top-level session should follow root, rows[1] = %+v", m.rail.rows[1])
+	if railRows(m)[1].isGroup || railRows(m)[1].sess.Name != "top" {
+		t.Fatalf("the top-level session should follow root, rows[1] = %+v", railRows(m)[1])
 	}
 
 	deep := m.sessionRows()[1]
@@ -44,21 +44,21 @@ func TestNestedGroupsTree(t *testing.T) {
 		t.Fatalf("deep session group = %q", deep.Group)
 	}
 
-	m.rail.collapsed["backend"] = true
+	m.rail.SetCollapsed("backend", true)
 	m.rebuildRows()
 	if len(m.sessionRows()) != 1 {
 		t.Fatalf("collapsing backend should hide the deep session, got %d sessions", len(m.sessionRows()))
 	}
-	m.rail.collapsed["backend"] = false
+	m.rail.SetCollapsed("backend", false)
 	m.rebuildRows()
 
-	m.rail.search = "deep"
+	m.rail.SetSearch("deep", m.rail.Searching())
 	m.rebuildRows()
 	sessions := m.sessionRows()
 	if len(sessions) != 1 || sessions[0].Name != "deep" {
 		t.Fatalf("search should keep only deep, got %v", sessions)
 	}
-	m.rail.search = ""
+	m.rail.SetSearch("", m.rail.Searching())
 	m.rebuildRows()
 
 	if m.View() == "" {
@@ -86,7 +86,7 @@ func TestRebuildRowsNestsChildrenUnderParent(t *testing.T) {
 
 	var names []string
 	var depths []int
-	for _, row := range m.rail.rows {
+	for _, row := range railRows(m) {
 		if row.isGroup {
 			continue
 		}
@@ -117,10 +117,10 @@ func TestSearchMatchingChildKeepsParent(t *testing.T) {
 		t.Fatalf("child: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	m.rail.search = "ssh-prod"
+	m.rail.SetSearch("ssh-prod", m.rail.Searching())
 	m.rebuildRows()
 	names := []string{}
-	for _, row := range m.rail.rows {
+	for _, row := range railRows(m) {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 		}
@@ -147,10 +147,10 @@ func TestSearchCarriedParentKeepsStoreOrder(t *testing.T) {
 	}
 	createSession(t, m, "ssh-runner", dir, "backend")
 	m.applyCmd(t, m.refreshCmd())
-	m.rail.search = "ssh"
+	m.rail.SetSearch("ssh", m.rail.Searching())
 	m.rebuildRows()
 	names := []string{}
-	for _, row := range m.rail.rows {
+	for _, row := range railRows(m) {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 		}
@@ -183,12 +183,12 @@ func TestOrphanParentIDPaintsUnnested(t *testing.T) {
 		t.Fatalf("delete parent: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())
-	for _, row := range m.rail.rows {
+	for _, row := range railRows(m) {
 		if !row.isGroup && row.sess.Name == "loose" && row.depth == 1 {
 			return
 		}
 	}
-	t.Fatalf("orphan should sit un-nested in backend: %+v", m.rail.rows)
+	t.Fatalf("orphan should sit un-nested in backend: %+v", railRows(m))
 }
 
 func TestArchiveViewShowsNestedShellWhenParentLive(t *testing.T) {
@@ -209,10 +209,10 @@ func TestArchiveViewShowsNestedShellWhenParentLive(t *testing.T) {
 	if err := m.services.store.SetArchived("sh1", true); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
 	var names []string
-	for _, row := range m.rail.rows {
+	for _, row := range railRows(m) {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 		}
@@ -283,7 +283,7 @@ func TestUnlistedParentsLeaveChildrenInStoreOrder(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	var names []string
-	for _, row := range m.rail.rows {
+	for _, row := range railRows(m) {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 			if row.depth != 1 {
@@ -315,12 +315,12 @@ func TestSearchMatchingArchivedChildDoesNotHoistLiveParent(t *testing.T) {
 	if err := m.services.store.SetArchived("sh1", true); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
-	m.rail.showArchived = true
+	m.rail.SetArchived(true)
 	m.applyCmd(t, m.refreshCmd())
-	m.rail.search = "ssh-old"
+	m.rail.SetSearch("ssh-old", m.rail.Searching())
 	m.rebuildRows()
 	var names []string
-	for _, row := range m.rail.rows {
+	for _, row := range railRows(m) {
 		if !row.isGroup {
 			names = append(names, row.sess.Name)
 		}

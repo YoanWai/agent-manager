@@ -324,13 +324,7 @@ func (m *Model) renameGroupLocally(old, newPath, dir, worktree string) {
 		groupWorktrees[newPath] = worktree
 	}
 	m.workspace.groupWorktrees = groupWorktrees
-	for group, folded := range m.rail.collapsed {
-		if renamed, ok := moved(group); ok {
-			delete(m.rail.collapsed, group)
-			m.rail.collapsed[renamed] = folded
-		}
-	}
-	m.persistCollapsed()
+	m.applyRailStateDecision(m.rail.RenameGroup(old, newPath))
 }
 
 // relabelSession refreshes one session's tmux status-bar label from the db.

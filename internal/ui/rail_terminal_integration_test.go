@@ -41,11 +41,7 @@ func TestRestingShellUsesCaretGlyph(t *testing.T) {
 	m := buildModel(t)
 	m.applyCmd(t, m.refreshCmd())
 	shell := spawnTerminal(t, m)
-	for i := range m.rail.rows {
-		if m.rail.rows[i].sess.ID == shell.ID {
-			m.rail.rows[i].sess.Status = status.Idle
-		}
-	}
+	setRailSessionStatus(m, shell.ID, status.Idle)
 
 	if rail := m.railFrame(); !strings.Contains(rail, shellGlyph) {
 		t.Fatalf("a resting shell should carry the caret:\n%s", rail)
@@ -79,7 +75,7 @@ func TestUnnestedShellSitsInItsGroup(t *testing.T) {
 	shell := spawnTerminal(t, m)
 
 	var row treeRow
-	for _, entry := range m.rail.rows {
+	for _, entry := range railRows(m) {
 		if !entry.isGroup && entry.sess.ID == shell.ID {
 			row = entry
 		}
@@ -153,7 +149,7 @@ func TestRailReturnsItsBudget(t *testing.T) {
 	for _, height := range []int{3, 4, 6, 8, 10, 14, 34} {
 		for _, width := range []int{30, 60, 120} {
 			for _, searching := range []bool{false, true} {
-				m.rail.searching = searching
+				m.rail.SetSearch(m.rail.Search(), searching)
 				if got := len(m.railLines(width, height)); got != height {
 					t.Fatalf("%dx%d searching=%v returned %d rows, want %d", width, height, searching, got, height)
 				}

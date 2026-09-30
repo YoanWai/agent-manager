@@ -11,7 +11,7 @@ func TestFullFocusFrameRecordsNoRailHits(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
 	m.View()
-	if len(m.rail.railHits) == 0 {
+	if len(m.displayedRail.Hits()) == 0 {
 		t.Fatal("test setup: the list frame should record the rail's hits")
 	}
 
@@ -22,7 +22,7 @@ func TestFullFocusFrameRecordsNoRailHits(t *testing.T) {
 		t.Fatalf("test setup: focus alpha full screen, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	m.View()
-	if len(m.rail.railHits) != 0 {
-		t.Fatalf("full focus paints no rail, got %d hits", len(m.rail.railHits))
+	if len(m.displayedRail.Hits()) != 0 {
+		t.Fatalf("full focus paints no rail, got %d hits", len(m.displayedRail.Hits()))
 	}
 }

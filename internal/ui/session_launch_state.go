@@ -40,6 +40,14 @@ type launchLedger struct {
 	terminalKeyAt time.Time
 }
 
+// awaitedRename is the root-owned launch bookkeeping used to give a newly
+// spawned session a stable display name until its agent applies the rename
+// directive. Rail receives only the copied DisplayName value.
+type awaitedRename struct {
+	generated string
+	prompt    string
+}
+
 // repoAnswer is one directory's git-repo verdict and when it was taken.
 type repoAnswer struct {
 	capable bool

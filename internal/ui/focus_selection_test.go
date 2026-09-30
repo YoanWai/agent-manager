@@ -69,7 +69,7 @@ func TestPushedPreviewWinsOverStalePoll(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "typing", t.TempDir(), "")
 	m.selectSessionRow(t, "typing")
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 
 	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
 	m.focusRuntime.watch.setFocus(sess.ID)
@@ -101,7 +101,7 @@ func TestPollPreviewResumesAfterWatcherStops(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "released", t.TempDir(), "")
 	m.selectSessionRow(t, "released")
-	sess := m.rail.rows[m.rail.cursor].sess
+	sess := railSelectedSession(m)
 	m.focusRuntime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
 	m.focusRuntime.watch.setFocus(sess.ID)
 	m.focusRuntime.watch.Close()
@@ -117,7 +117,7 @@ func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "ccpark", t.TempDir(), "")
 	m.selectSessionRow(t, "ccpark")
-	m.rail.rows[m.rail.cursor].sess.Tool = "command-code"
+	setRailSessionTool(m, railSelectedSession(m).ID, "command-code")
 	rows := make([]string, 47)
 	rows[36] = " TODOS  [4 items · 2 done] Sending Tier 3 messages… (paused) [ctrl+x to expand]"
 	rows[38] = strings.Repeat("─", 60)
