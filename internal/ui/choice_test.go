@@ -574,3 +574,26 @@ func TestFormModelListOpensOnEveryModelWithThePickHighlighted(t *testing.T) {
 		t.Fatalf("down from the pick picked %q", m.form.choice.model)
 	}
 }
+
+// shift+tab steps the tool back, so the footer names it beside tab, ahead
+// of the choices the tool launches with.
+func TestQuickFooterKeepsShiftTabBesideTab(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	if err := m.store.CreateGroup("work", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	m.quick.toolIndex = slices.Index(m.quick.toolNames, "claude")
+	m.quick.choice = m.newChoice("claude")
+	var keys []string
+	for _, pair := range m.quickLegend() {
+		keys = append(keys, pair[0])
+	}
+	tab := slices.Index(keys, "tab")
+	if tab < 0 || tab+1 >= len(keys) || keys[tab+1] != "shift+tab" || slices.Index(keys, quickModelKey) < tab+1 {
+		t.Fatalf("footer keys = %v", keys)
+	}
+}

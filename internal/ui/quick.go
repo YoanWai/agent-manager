@@ -508,6 +508,9 @@ func (m *Model) quickLegend() [][2]string {
 	}
 	toolName, ch := m.quickTool(), &m.quick.choice
 	pairs := [][2]string{{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool: " + toolName}}
+	if len(m.quick.toolNames) > 1 {
+		pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
+	}
 	if _, listed := m.modelRowNote(toolName); listed && m.quickSpawning() {
 		pairs = append(pairs, [2]string{quickModelKey, "model: " + cmp.Or(ch.model, "default")})
 		if _, _, active := m.effortRow(toolName, ch); active {
@@ -516,9 +519,6 @@ func (m *Model) quickLegend() [][2]string {
 	}
 	if _, shown := m.profileRow(toolName, ch); shown && m.quickSpawning() {
 		pairs = append(pairs, [2]string{quickProfileKey, "profile: " + cmp.Or(m.choiceProfileName(toolName, ch), "default")})
-	}
-	if len(m.quick.toolNames) > 1 {
-		pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
 	}
 	return append(pairs, [2]string{"ctrl+t", "worktree: " + m.quickWorktreeState()}, [2]string{"esc", "close"})
 }
