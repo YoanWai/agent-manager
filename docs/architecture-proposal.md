@@ -1,8 +1,8 @@
 # Application architecture proposal
 
-The maintained [architecture contract](architecture/README.md) restores the broader rationale from PR #1. The [conformance audit](architecture/roadmap-and-evidence.md) separates implemented boundaries from outstanding requirements. PR #2 is partially conformant; synchronous UI effects, rendering mutations, feature ownership, and production compatibility remain gaps.
+The maintained [architecture contract](architecture/README.md) restores the broader rationale from PR #1. The [conformance audit](architecture/roadmap-and-evidence.md) separates implemented boundaries from outstanding requirements. PR #2 is partially conformant. Help, Review, Focus, and Rail own behavior in private packages, and View reads a prepared frame. Synchronous UI effects, partial lifecycle reconciliation, remaining dialog ownership, and production compatibility remain gaps.
 
-This branch refactors the running application against upstream `d3e9075a745f47e384ee7801681cdb1958dd4017` (2026-09-30). It changes existing production callers and moves their implementations. The earlier additive architecture POC and archive/inbox-only extraction are supporting evidence, not this deliverable.
+This branch refactors the running application against upstream `dc471a97f3ca4fdd06eb822a31e8e5119c39b997` (2026-09-30). It changes existing production callers and moves their implementations. The earlier additive architecture POC and archive/inbox-only extraction are supporting evidence, not this deliverable.
 
 ## Current application and resulting boundaries
 
@@ -11,8 +11,8 @@ This branch refactors the running application against upstream `d3e9075a745f47e3
 | Background execution | `ui/poller.go` performs delivery, mailbox processing, status writes, heartbeats, conversation capture and sampling | The actual implementation and algorithm tests live in UI-free `execution`; presentation receives typed snapshots |
 | Lifecycle effects | CLI/MCP use `sessioncmd`; TUI duplicates launch, kill, revive/restart and archive ordering | `sessioncmd.Lifecycle` owns shared launch, kill, revive, restart, archive, restore and human-delete effects used by CLI, MCP and TUI |
 | Resource lifetime | UI owns its open store; CLI/MCP command operations construct and close runtimes independently | `sessioncmd.Backend` explicitly opens or borrows one runtime; borrowed command operations do not close the shared store |
-| Presentation state | `Model` has a large flat set of unrelated fields | Eight named, non-embedded groups expose state dependencies; existing selectors, constructors and tests use those groups |
-| Composition | UI constructor assembles polling/tool runtime | `app` assembles local services; `main` supplies them to the UI and explicitly binds CLI/MCP backends |
+| Presentation state | `Model` has a large flat set of unrelated fields | Private Help, Review, Focus, and Rail models own feature state; named root groups hold remaining presentation and runtime dependencies |
+| Composition | UI constructor assembles polling/tool runtime | `app` assembles local services; `main` supplies them to the UI and explicitly binds CLI/MCP session, terminal, rename and review mutations to one backend |
 | Extensions | Additional consumers would need UI/store/tmux internals | A copied read projection supports observations; mutating extensions call existing canonical command ports |
 
 ```mermaid
@@ -34,7 +34,7 @@ flowchart TD
     Execution --> Infra
 ```
 
-This is an application-wide boundary refactor, not a claim that every feature handler has been extracted into a separate object. [Help](architecture/help-package.md) now owns policy and body content in a separate Go package through copied presentation values. Other UI handlers still use `Model`, the root message router remains substantial, and painting still records geometry. Feature-owned behavior from [#646](https://github.com/YoanWai/agent-manager/issues/646) can be extracted incrementally against these boundaries.
+This is an application-wide boundary refactor. [Help, Review, Focus, and Rail](architecture/ui-feature-packages.md) own policy behind private models, copied inputs and typed outcomes. Root composition prepares layout, geometry and the rendered frame after dispatch; View only returns the cached frame. Other dialogs remain root methods, the root message router remains substantial, and lifecycle and rail effects still block Update. The remaining ownership and effect requirements from [#646](https://github.com/YoanWai/agent-manager/issues/646) are tracked in the conformance audit.
 
 ## Relationship to the earlier POC
 
@@ -66,7 +66,7 @@ The useful domain boundaries are session lifecycle, execution/readiness, coordin
 
 The patterns used are explicit dependency composition, application services, frontend adapters and read projections. A `Backend` has one local resource binding. A `Lifecycle` borrows resources and owns ordered effects. An execution runner owns mutable polling state. Presentation groups own their visible state. Extensions receive value summaries or a narrow command interface, not a pointer to the root model.
 
-Human and session actors are deliberately different. Session archive preserves a live pane and refuses self-archive. Human selection archive snapshots before destructive effects and reconciles the visible selection. Shared machinery must not erase that policy distinction.
+Human and session actors are deliberately different. Session archive preserves a live pane and refuses self-archive. Human selection archive snapshots before destructive effects; immediate membership reconciliation after partial failure remains an explicit gap. Archive and delete restore watching of a surviving selected session before returning from failed work. Shared machinery must not erase that policy distinction.
 
 Launch label failure remains separately represented because the human UI reports it while session commands treat it as cosmetic. A label failure after relaunch now remains a warning while status and acknowledgement updates finish. Previously the TUI returned before those updates. Failed row creation also removes the hook file for every frontend, extending the cleanup previously used by the TUI to CLI and MCP launches. If pane rollback fails, the error retains the persistence failure and identifies the surviving pane. Restore reports label warnings after reconciling its completed effects.
 

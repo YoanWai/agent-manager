@@ -8,6 +8,8 @@ import (
 )
 
 func (m *Model) deleteConfirmed() (sessioncmd.DeleteResult, error) {
+	defer m.restoreSurvivingWatcher(m.watchedSession())
+
 	ids := make([]string, 0, len(m.confirm.sessions))
 	for _, sess := range m.confirm.sessions {
 		ids = append(ids, sess.ID)

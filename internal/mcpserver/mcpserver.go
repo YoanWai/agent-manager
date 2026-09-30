@@ -229,7 +229,7 @@ func NewServerWithBackend(configDir, sessionID, version string, proactive bool, 
 		panic("command backend is required")
 	}
 	words := sessioncmd.MCPVocabulary()
-	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminalsWithBackend(backend, words), sessioncmd.NewSessionsWithBackend(backend, words), report.New(configDir, version))
+	return newServerWithMailbox(sessionID, version, proactive, sessioncmd.NewTerminalsWithBackend(backend, words), sessioncmd.NewSessionsWithBackend(backend, words), report.New(configDir, version), backend)
 }
 
 func NewServerWithArchiveOwner(configDir, sessionID, version string, proactive bool, owner sessioncmd.ArchiveOwner) *mcp.Server {
@@ -237,7 +237,19 @@ func NewServerWithArchiveOwner(configDir, sessionID, version string, proactive b
 	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessionsWithArchiveOwner(configDir, words, owner), report.New(configDir, version))
 }
 
+type mailboxCommands interface {
+	Rename(context.Context, string, string) (string, error)
+	ReviewRepo(string, string) (string, error)
+	ReviewBase(string, string, string) (string, error)
+	ReviewScope(string, string) (string, error)
+	ReviewComment(string, string, bool) (string, error)
+}
+
 func newServer(configDir, sessionID, version string, proactive bool, terminals terminalCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
+	return newServerWithMailbox(sessionID, version, proactive, terminals, sessions, reporter, sessioncmd.NewMailbox(configDir))
+}
+
+func newServerWithMailbox(sessionID, version string, proactive bool, terminals terminalCommands, sessions sessionCommands, reporter issueReporter, mailbox mailboxCommands) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "agent-manager", Version: version},
 		&mcp.ServerOptions{Instructions: serverInstructions(proactive)},
@@ -257,7 +269,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			"Prefer a broad feature name over a single subtask. " +
 			"The result reports the name Agent Manager applied, or why the session keeps its current one.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args renameArgs) (*mcp.CallToolResult, any, error) {
-		return textResult(sessioncmd.Rename(ctx, configDir, sessionID, args.Name))
+		return textResult(mailbox.Rename(ctx, sessionID, args.Name))
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -269,7 +281,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewArgs) (*mcp.CallToolResult, any, error) {
 		var done []string
 		if args.Repo != "" {
-			message, err := sessioncmd.ReviewRepo(configDir, sessionID, args.Repo)
+			message, err := mailbox.ReviewRepo(sessionID, args.Repo)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -284,14 +296,14 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 			if ref == "auto" {
 				ref = ""
 			}
-			message, err := sessioncmd.ReviewBase(configDir, sessionID, cwd, ref)
+			message, err := mailbox.ReviewBase(sessionID, cwd, ref)
 			if err != nil {
 				return nil, nil, applyFailure(err, done)
 			}
 			done = append(done, message)
 		}
 		if args.Mode != "" {
-			message, err := sessioncmd.ReviewScope(configDir, sessionID, args.Mode)
+			message, err := mailbox.ReviewScope(sessionID, args.Mode)
 			if err != nil {
 				return nil, nil, applyFailure(err, done)
 			}
@@ -312,7 +324,7 @@ func newServer(configDir, sessionID, version string, proactive bool, terminals t
 		if args.Handled != nil {
 			handled = *args.Handled
 		}
-		return textResult(sessioncmd.ReviewComment(configDir, sessionID, args.CommentID, handled))
+		return textResult(mailbox.ReviewComment(sessionID, args.CommentID, handled))
 	})
 
 	mcp.AddTool(server, &mcp.Tool{

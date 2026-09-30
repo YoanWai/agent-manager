@@ -63,14 +63,14 @@ func Rename(ctx context.Context, configDir, sessionID, name string) (string, err
 	if err := validSession(sessionID); err != nil {
 		return "", err
 	}
-	// Whether anyone is home is read before the name is queued, so a
-	// manager that cannot be reached at all is reported instead of a name
-	// left pending behind an error.
 	awake, pollInterval, err := managerAwake(configDir)
 	if err != nil {
 		return "", err
 	}
-	mailbox := hooks.NewManager(configDir)
+	return renameMailbox(ctx, hooks.NewManager(configDir), sessionID, name, awake, pollInterval)
+}
+
+func renameMailbox(ctx context.Context, mailbox *hooks.Manager, sessionID, name string, awake bool, pollInterval time.Duration) (string, error) {
 	request, err := hooks.NewRequestID()
 	if err != nil {
 		return "", err
@@ -182,6 +182,10 @@ func ProactiveCoordination(configDir string) (bool, error) {
 // ReviewRepo records the repo a session is working in, so review opens
 // there instead of guessing from the working directory.
 func ReviewRepo(configDir, sessionID, target string) (string, error) {
+	return reviewRepo(hooks.NewManager(configDir), sessionID, target)
+}
+
+func reviewRepo(mailbox *hooks.Manager, sessionID, target string) (string, error) {
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return "", errors.New("path is empty")
@@ -210,7 +214,7 @@ func ReviewRepo(configDir, sessionID, target string) (string, error) {
 	if !pathWithin(abs, root) {
 		return "", fmt.Errorf("%s is not inside a git repository", target)
 	}
-	if err := writeMailbox(hooks.NewManager(configDir).ReviewRepoFile(sessionID), root); err != nil {
+	if err := writeMailbox(mailbox.ReviewRepoFile(sessionID), root); err != nil {
 		return "", err
 	}
 	return "review repo set to " + root, nil
@@ -219,6 +223,10 @@ func ReviewRepo(configDir, sessionID, target string) (string, error) {
 // ReviewBase records the base ref the session's branch scope diffs against,
 // resolved in the repo holding cwd. An empty ref clears the override.
 func ReviewBase(configDir, sessionID, cwd, ref string) (string, error) {
+	return reviewBase(hooks.NewManager(configDir), sessionID, cwd, ref)
+}
+
+func reviewBase(mailbox *hooks.Manager, sessionID, cwd, ref string) (string, error) {
 	if err := validSession(sessionID); err != nil {
 		return "", err
 	}
@@ -239,7 +247,7 @@ func ReviewBase(configDir, sessionID, cwd, ref string) (string, error) {
 			return "", err
 		}
 	}
-	if err := writeMailbox(hooks.NewManager(configDir).ReviewBaseFile(sessionID), repo.Root+"\n"+ref+"\n"); err != nil {
+	if err := writeMailbox(mailbox.ReviewBaseFile(sessionID), repo.Root+"\n"+ref+"\n"); err != nil {
 		return "", err
 	}
 	if ref == "" {
@@ -258,6 +266,10 @@ var validScopes = map[string]bool{
 // ReviewScope records the diff scope the review screen should open with
 // for this session: uncommitted, branch (vs target), last_commit, or staged.
 func ReviewScope(configDir, sessionID, scope string) (string, error) {
+	return reviewScope(hooks.NewManager(configDir), sessionID, scope)
+}
+
+func reviewScope(mailbox *hooks.Manager, sessionID, scope string) (string, error) {
 	scope = strings.TrimSpace(scope)
 	if !validScopes[scope] {
 		return "", fmt.Errorf("unknown scope %q (uncommitted, branch, last_commit, staged)", scope)
@@ -265,7 +277,7 @@ func ReviewScope(configDir, sessionID, scope string) (string, error) {
 	if err := validSession(sessionID); err != nil {
 		return "", err
 	}
-	if err := writeMailbox(hooks.NewManager(configDir).ReviewScopeFile(sessionID), scope); err != nil {
+	if err := writeMailbox(mailbox.ReviewScopeFile(sessionID), scope); err != nil {
 		return "", err
 	}
 	return "review scope set to " + scope, nil
@@ -283,13 +295,28 @@ func ReviewComment(configDir, sessionID, commentID string, handled bool) (string
 	if err != nil {
 		return "", err
 	}
-	found, err := st.SetReviewCommentHandled(sessionID, commentID, handled)
+	message, err := reviewComment(st, sessionID, commentID, handled)
 	closeErr := st.Close()
 	if err != nil {
 		return "", err
 	}
 	if closeErr != nil {
 		return "", closeErr
+	}
+	return message, nil
+}
+
+func reviewComment(st *store.Store, sessionID, commentID string, handled bool) (string, error) {
+	if err := validSession(sessionID); err != nil {
+		return "", err
+	}
+	commentID = strings.TrimSpace(commentID)
+	if !reviewCommentIDPattern.MatchString(commentID) {
+		return "", fmt.Errorf("invalid review comment id %q", commentID)
+	}
+	found, err := st.SetReviewCommentHandled(sessionID, commentID, handled)
+	if err != nil {
+		return "", err
 	}
 	if !found {
 		return "", fmt.Errorf("review comment %s was not found for this session", commentID)

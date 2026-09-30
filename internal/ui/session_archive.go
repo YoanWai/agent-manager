@@ -100,6 +100,8 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) archiveConfirmed() error {
+	defer m.restoreSurvivingWatcher(m.watchedSession())
+
 	ids := make([]string, 0, len(m.confirm.sessions))
 	for _, sess := range m.confirm.sessions {
 		ids = append(ids, sess.ID)

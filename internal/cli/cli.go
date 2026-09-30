@@ -79,7 +79,7 @@ func CommandsWithBackend(version string, backend *sessioncmd.Backend) map[string
 		groupSection("Shared task list", "task", "the work list every session in this manager claims from", taskVerbsWith(func(string) taskCommands { return sessions })),
 		fileSectionWith(func(string) fileCommands { return sessions }),
 		groupSection("Managed terminals", "terminal", "shells the user watches beside the agents, for work they should be able to watch, attach to or take over", terminalVerbsWith(func(string) terminalCommands { return terminals })),
-		reviewSection(), reportSection(version), updateSection(version),
+		reviewSectionWith(func(string) mailboxCommands { return backend }), reportSection(version), updateSection(version),
 	})
 }
 

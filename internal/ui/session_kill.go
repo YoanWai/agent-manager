@@ -134,3 +134,20 @@ func (m *Model) killSession(sess store.Session) error {
 	}
 	return nil
 }
+
+func (m *Model) watchedSession() string {
+	if m.focusRuntime.watch == nil {
+		return ""
+	}
+	return m.focusRuntime.watch.watching()
+}
+
+func (m *Model) restoreSurvivingWatcher(id string) {
+	if id == "" || m.focusRuntime.watch == nil {
+		return
+	}
+	sess, ok := m.selected()
+	if ok && sess.ID == id && !sess.Archived && m.services.tmux.Exists(id) {
+		m.watchSelection()
+	}
+}

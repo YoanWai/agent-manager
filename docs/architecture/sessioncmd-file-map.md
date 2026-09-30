@@ -26,7 +26,7 @@ The mechanical split is commit `3a9ffc5a3108352807b930922b0ae2d9182feba1`, again
 
 The comparison excludes file placement and import blocks. Build, vet, and the full isolated race suite provide the separate compilation and behavioral checks. No new behavioral test is needed for an exact move; existing tests retain their bodies and assertions.
 
-The file split does not fix synchronous UI lifecycle effects, rendering mutations, partial-result reconciliation, or production execution authority. Those gaps remain in the [conformance audit](roadmap-and-evidence.md).
+The mechanical file split did not establish feature ownership or resolve effect policy. Later increments made View read-only; synchronous UI lifecycle effects, partial-result reconciliation, and production execution authority remain tracked in the [conformance audit](roadmap-and-evidence.md).
 
 ## Reduce irrelevant fixture startup
 
@@ -45,3 +45,9 @@ env -u TMUX TMUX_TMPDIR=/tmp/am-fast-tests go test -race -count=1 ./internal/ses
 ```
 
 Use an isolated shell startup environment when host configuration prints into fixture panes. Preserve the full race suite as the integration gate. Use the focused selection for this test-fixture comparison, not as a substitute for the full suite.
+
+## Bind mailbox mutations to the command runtime
+
+A subsequent behavioral fix adds [backend_mailbox.go](../../internal/sessioncmd/backend_mailbox.go): explicitly bound CLI/MCP rename, review repo/base/scope, and review-comment mutations use the backend's hooks and store. A closed backend rejects these operations without falling back to a supplied directory. [mailbox_commands.go](../../internal/sessioncmd/mailbox_commands.go) preserves directory-based standalone callers. The shared validation and mailbox algorithms remain in mailbox.go.
+
+[CLI regressions](../../internal/cli/backend_review_test.go) and [MCP regressions](../../internal/mcpserver/backend_review_test.go) cover every mailbox mutation after backend closure and with a different adapter profile. The alternate profile remains empty; borrowed stores remain caller-owned. These local adapter checks do not establish remote authority or released-client compatibility.
