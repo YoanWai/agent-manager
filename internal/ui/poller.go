@@ -1289,7 +1289,8 @@ func (p *poller) reflowSessions(ids []string, reflow func()) {
 // capture carries ANSI escapes for the preview; rules match against the
 // stripped text. Streaming output often renders without any spinner, so
 // when no rule matches but the content region above the input box changed
-// since the previous poll, the session counts as working. The reverse
+// since the previous poll, its frame rows aside, the session counts as
+// working. The reverse
 // transition closes marker-less turns: a session that was mid-turn whose
 // region stopped changing has ended its turn even when the tool printed
 // no turn_end line, so the region's last content line decides finished
@@ -1307,7 +1308,7 @@ func (p *poller) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 	region, hasRegion := p.engine.ActivityRegion(sess.Tool, text)
 	var regionHash uint64
 	if hasRegion {
-		regionHash = hashString(region)
+		regionHash = hashString(p.engine.RegionContent(sess.Tool, region))
 		paneHashes[sess.ID] = regionHash
 	}
 	if p.statusSources[sess.Tool] == hooks.StatusSourceClaude {

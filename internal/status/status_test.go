@@ -2210,3 +2210,28 @@ func TestAntigravityReplyReading(t *testing.T) {
 		}
 	}
 }
+
+// agy draws its composer, then adds the account tier to its header a second
+// later; that redraw is frame, while a new transcript row is not.
+func TestRegionContentLeavesTheFrameOut(t *testing.T) {
+	engine := defaultEngine(t)
+	header := func(account string) string {
+		return "\n      ▄▀▀▄        Antigravity CLI 1.2.14\n     ▀▀▀▀▀▀       " + account + "\n    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)\n   ▄▀▀    ▀▀▄     /tmp/agy/proj6\n  ▄▀▀      ▀▀▄\n\n" + agyRule + "\n"
+	}
+	composer := ">\n" + agyRule + "\n" + agyFooter("? for shortcuts") + agyTail
+	content := func(pane string) string {
+		t.Helper()
+		region, ok := engine.ActivityRegion("antigravity", pane)
+		if !ok {
+			t.Fatalf("no activity region in %q", pane)
+		}
+		return engine.RegionContent("antigravity", region)
+	}
+	booting := content(header("dev@example.com") + composer)
+	if booted := content(header("dev@example.com (Google AI Plus)") + composer); booted != booting {
+		t.Errorf("the header filling in changed the content: %q to %q", booting, booted)
+	}
+	if replied := content(header("dev@example.com") + "> hi\n\n  Hello!\n\n" + agyRule + "\n" + composer); replied == booting {
+		t.Error("a new transcript row left the content unchanged")
+	}
+}

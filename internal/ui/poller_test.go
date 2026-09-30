@@ -637,7 +637,7 @@ func seedRegionHash(t *testing.T, m *Model, sess store.Session, pane string) {
 	if !ok {
 		t.Fatal("pane should have an activity region")
 	}
-	m.poller.paneHashes = map[string]uint64{sess.ID: hashString(region)}
+	m.poller.paneHashes = map[string]uint64{sess.ID: hashString(m.poller.engine.RegionContent(sess.Tool, region))}
 }
 
 func disableQuietEndGrace(t *testing.T) {
@@ -856,6 +856,25 @@ func TestChangedRegionStillDerivesWorking(t *testing.T) {
 	seedRegionHash(t, m, sess, "earlier streaming text\n❯ \n")
 	if got := deriveStatus(t, m, sess, "earlier streaming text plus more\n❯ \n", true); got != status.Working {
 		t.Fatalf("changed region should derive working, got %q", got)
+	}
+}
+
+// agy fills its header in after its composer is up. A resting session whose
+// only change is that redraw stays idle rather than passing through working
+// into a finished alert nobody asked for.
+func TestAFrameRedrawIsNotWork(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	sess := store.Session{ID: "agy-boot", Tool: "antigravity", Status: status.Idle}
+	rule := strings.Repeat("─", 120)
+	pane := func(account string) string {
+		return "\n      ▄▀▀▄        Antigravity CLI 1.2.14\n     ▀▀▀▀▀▀       " + account +
+			"\n    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)\n   ▄▀▀    ▀▀▄     /tmp/agy/proj6\n  ▄▀▀      ▀▀▄\n\n" +
+			rule + "\n>\n" + rule + "\n? for shortcuts                    Gemini 3.8 Flash · high\n\n\n"
+	}
+	seedRegionHash(t, m, sess, pane("dev@example.com"))
+	if got := deriveStatus(t, m, sess, pane("dev@example.com (Google AI Plus)"), true); got != status.Idle {
+		t.Fatalf("the header filling in read as %q", got)
 	}
 }
 

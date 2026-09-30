@@ -384,6 +384,24 @@ func (e *Engine) ActivityRegion(tool, pane string) (string, bool) {
 	return tr.activityRegion(pane)
 }
 
+// RegionContent is an activity region without the rows chrome_line marks as
+// the tool's own frame. A frame redrawing is not the agent at work: agy fills
+// its header in a second after its composer is already up.
+func (e *Engine) RegionContent(tool, region string) string {
+	tr, ok := e.tools[tool]
+	if !ok || tr.chromeLine == nil {
+		return region
+	}
+	lines := strings.Split(region, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if !tr.chromeLine.MatchString(strings.TrimRight(line, " \t")) {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
+}
+
 // LastMessage is the tool's newest message, flattened to one line: the
 // content lines above the input box, from the last message_start marker
 // on, joined in order — so a caller quoting the reply starts at its
