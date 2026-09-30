@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -65,7 +66,7 @@ type Model struct {
 	fork           forkState
 	quick          quickState
 	settings       settingsState
-	help           helpState
+	help           uihelp.State
 	helpReturnMode mode
 	moveID         string
 	movePath       string

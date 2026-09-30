@@ -20,6 +20,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/update"
 )
 
@@ -988,28 +989,7 @@ func appendStyledWrap(lines []string, text string, width int, style lipgloss.Sty
 // fitBody returns a scrollable window without letting a short terminal eat
 // the modal border or hints. Continuation rows make hidden content explicit.
 func fitBody(body []string, room, offset int) []string {
-	if room < 1 {
-		room = 1
-	}
-	if room >= len(body) {
-		return body
-	}
-	maxOffset := max(0, len(body)-room)
-	offset = min(max(offset, 0), maxOffset)
-	window := append([]string(nil), body[offset:min(offset+room, len(body))]...)
-	above := offset > 0
-	below := offset+room < len(body)
-	if len(window) == 1 && above && below {
-		window[0] = subtleStyle.Render("↕ more…")
-		return window
-	}
-	if above {
-		window[0] = subtleStyle.Render("↑ more above…")
-	}
-	if below {
-		window[len(window)-1] = subtleStyle.Render("↓ more below…")
-	}
-	return window
+	return presentation.Window(body, room, offset, subtleStyle)
 }
 
 // noticeModalInner is the modal content column's floor, sized for the

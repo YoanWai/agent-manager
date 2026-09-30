@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
 // Colors are resolved from the active Theme by applyTheme; nothing here
@@ -167,18 +167,7 @@ func statusLabel(s string) string {
 
 // padRight pads or clips a possibly-styled string to an exact display width.
 func padRight(s string, width int) string {
-	w := ansi.StringWidth(s)
-	if w > width {
-		s = ansi.Truncate(s, width, "…")
-		w = ansi.StringWidth(s)
-	}
-	if w < width {
-		s += strings.Repeat(" ", width-w)
-	}
-	if strings.ContainsRune(s, 0x1b) {
-		s += "\x1b[0m"
-	}
-	return s
+	return presentation.PadRight(s, width)
 }
 
 // gaugeGlyph is the meter's bar unit: a heavy rule reads as a slim

@@ -36,9 +36,9 @@ Keep cached offline observations visibly stale. Separate inventory and preview r
 
 These are future application rules. Current UI observations and PR #1 fixture workspace code do not constitute their production implementation.
 
-## Organize the UI by concern within package ui
+## Extract feature packages from concern families
 
-Keep the flat package to preserve internal access and the exported UI API. Use consistent feature prefixes for state, input, view, and source-adjacent tests. Start with a small dialog before migrating review or focus.
+Keep root composition and adapters in `ui`. Move a feature into a child package when its context and outcomes are narrow enough to enforce ownership. Help is the first extraction; its [package contract](help-package.md) separates feature content from root dialog chrome. Review and focus remain concern families in the root package until their dependencies meet the same conditions.
 
 | Concern | File family | Acceptance condition |
 | --- | --- | --- |

@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	"io"
 	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -181,25 +183,36 @@ func TestPreviewLineStripsCapturedCursorMarker(t *testing.T) {
 
 func TestCustomSearchCursorsEmitMarkersOnlyWhileTyping(t *testing.T) {
 	m := &Model{
-		help: helpState{searching: true, query: "定位"},
+		width:  100,
+		height: 28,
+		mode:   modeHelp,
+		help:   uihelp.New(uihelp.Global),
+		services: services{
+			keys:     keybind.DefaultSession(),
+			listKeys: keybind.DefaultList(),
+		},
 		rail: railState{
 			searching: true,
 			search:    "中文",
 		},
 	}
+	m.handleHelpKey(runeKey("/"))
+	for _, r := range "定位" {
+		m.handleHelpKey(runeKey(string(r)))
+	}
 	if line := m.searchFieldLine(40); !strings.Contains(line, cursorAnchorMarker) {
 		t.Fatal("list search cursor has no marker")
 	}
-	if line := m.help.searchLine(nil); !strings.Contains(line, cursorAnchorMarker) {
+	if frame := m.viewHelp(); !strings.Contains(frame, cursorAnchorMarker) {
 		t.Fatal("help search cursor has no marker")
 	}
 
 	m.rail.searching = false
-	m.help.searching = false
+	m.handleHelpKey(namedKey(tea.KeyEnter))
 	if line := m.searchFieldLine(40); strings.Contains(line, cursorAnchorMarker) {
 		t.Fatal("closed list search kept a cursor marker")
 	}
-	if line := m.help.searchLine(nil); strings.Contains(line, cursorAnchorMarker) {
+	if frame := m.viewHelp(); strings.Contains(frame, cursorAnchorMarker) {
 		t.Fatal("closed help search kept a cursor marker")
 	}
 }
@@ -224,7 +237,7 @@ func TestFinalHelpLayoutPublishesAndRemovesCursorMarker(t *testing.T) {
 		width:  100,
 		height: 28,
 		mode:   modeHelp,
-		help:   helpState{searching: true, query: "中文"},
+		help:   uihelp.New(uihelp.Global),
 		services: services{
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),
@@ -232,6 +245,10 @@ func TestFinalHelpLayoutPublishesAndRemovesCursorMarker(t *testing.T) {
 		focusPane: focusPaneState{
 			imeCursor: &cursorAnchor{},
 		},
+	}
+	m.handleHelpKey(runeKey("/"))
+	for _, r := range "中文" {
+		m.handleHelpKey(runeKey(string(r)))
 	}
 	frame := m.View()
 	if strings.Contains(frame, cursorAnchorMarker) {

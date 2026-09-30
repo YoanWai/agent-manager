@@ -1,155 +1,16 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
-
-func TestHelpScrollClampsToContent(t *testing.T) {
-	m := helpModel()
-	m.help.scrollBy(-5, m.helpContext())
-	if m.help.scroll != 0 {
-		t.Fatalf("scrolled above the top: %d", m.help.scroll)
-	}
-	limit := m.help.scrollLimit(m.helpContext())
-	if limit == 0 {
-		t.Fatal("the catalog should overflow a 30-row terminal")
-	}
-	m.help.scrollBy(1000, m.helpContext())
-	if m.help.scroll != limit {
-		t.Fatalf("scroll %d past the limit %d", m.help.scroll, limit)
-	}
-}
-
-func TestHelpSearchShrinksTheScrollLimit(t *testing.T) {
-	m := helpModel()
-	full := m.help.scrollLimit(m.helpContext())
-	m.help.query = "worktree"
-	if narrowed := m.help.scrollLimit(m.helpContext()); narrowed >= full {
-		t.Fatalf("searched limit %d did not shrink below %d", narrowed, full)
-	}
-}
-
-func TestHelpSearchTypesAndClears(t *testing.T) {
-	m := helpModel()
-	m.handleHelpKey(runeKey("/"))
-	if !m.help.searching {
-		t.Fatal("/ did not open the search")
-	}
-	for _, r := range "fork" {
-		m.handleHelpKey(runeKey(string(r)))
-	}
-	if m.help.query != "fork" {
-		t.Fatalf("typed query is %q", m.help.query)
-	}
-	m.handleHelpKey(namedKey(tea.KeyBackspace))
-	if m.help.query != "for" {
-		t.Fatalf("backspace left %q", m.help.query)
-	}
-	m.handleHelpKey(namedKey(tea.KeyEnter))
-	if m.help.searching || m.help.query != "for" {
-		t.Fatalf("enter should leave the field with the search on, got %v %q", m.help.searching, m.help.query)
-	}
-	// q types into the search rather than closing while the field is up.
-	m.handleHelpKey(runeKey("/"))
-	m.handleHelpKey(runeKey("q"))
-	if m.mode != modeHelp || m.help.query != "forq" {
-		t.Fatalf("q while searching: mode %v query %q", m.mode, m.help.query)
-	}
-}
-
-func TestHelpEscClearsTheSearchBeforeClosing(t *testing.T) {
-	m := helpModel()
-	m.help.query = "fork"
-	m.help.scroll = 3
-	m.handleHelpKey(namedKey(tea.KeyEsc))
-	if m.mode != modeHelp {
-		t.Fatal("esc closed the map while a search was on")
-	}
-	if m.help.query != "" || m.help.scroll != 0 {
-		t.Fatalf("esc left query %q scroll %d", m.help.query, m.help.scroll)
-	}
-	m.handleHelpKey(namedKey(tea.KeyEsc))
-	if m.mode != modeList {
-		t.Fatalf("esc on a clean map left mode %v", m.mode)
-	}
-}
-
-func TestHelpOpensClean(t *testing.T) {
-	m := helpModel()
-	m.help = helpState{scroll: 4, query: "fork", searching: true}
-	m.mode = modeList
-	m.openHelp()
-	if m.help != (helpState{}) {
-		t.Fatalf("reopened with stale state: %+v", m.help)
-	}
-}
-
-func TestHelpStateOwnsKeyboardSearchAndScroll(t *testing.T) {
-	ctx := featureHelpContext(120, 18)
-	h := helpState{scope: helpReview}
-
-	if transition := h.update(runeKey("/"), ctx); transition != helpStay || !h.searching {
-		t.Fatalf("open search: transition = %+v, state = %+v", transition, h)
-	}
-	for _, r := range "fork" {
-		h.update(runeKey(string(r)), ctx)
-	}
-	h.update(namedKey(tea.KeyBackspace), ctx)
-	if h.query != "for" || !h.searching {
-		t.Fatalf("search edit left query %q, searching = %v", h.query, h.searching)
-	}
-	h.update(namedKey(tea.KeyEnter), ctx)
-	if h.query != "for" || h.searching {
-		t.Fatalf("finish search left query %q, searching = %v", h.query, h.searching)
-	}
-
-	h.scroll = 3
-	if transition := h.update(namedKey(tea.KeyEsc), ctx); transition != helpStay {
-		t.Fatalf("clear search transition = %+v", transition)
-	}
-	if h.query != "" || h.scroll != 0 || h.scope != helpReview {
-		t.Fatalf("clear search state = %+v", h)
-	}
-	transition := h.update(namedKey(tea.KeyEsc), ctx)
-	if transition != helpClose {
-		t.Fatalf("close transition = %+v", transition)
-	}
-	if h != (helpState{}) {
-		t.Fatalf("closed help retained state: %+v", h)
-	}
-
-	h = helpState{scope: helpGlobal}
-	h.update(namedKey(tea.KeyDown), ctx)
-	oneRow := h.scroll
-	h.update(namedKey(tea.KeyPgDown), ctx)
-	if oneRow != 1 || h.scroll <= oneRow {
-		t.Fatalf("down/page down moved from 0 to %d to %d", oneRow, h.scroll)
-	}
-	h.update(runeKey("G"), ctx)
-	if h.scroll != h.scrollLimit(ctx) {
-		t.Fatalf("bottom left scroll %d, limit %d", h.scroll, h.scrollLimit(ctx))
-	}
-	h.update(namedKey(tea.KeyHome), ctx)
-	if h.scroll != 0 {
-		t.Fatalf("home left scroll %d", h.scroll)
-	}
-}
-
-func TestHelpStateOwnsQuitWithoutClosing(t *testing.T) {
-	ctx := featureHelpContext(120, 30)
-	h := helpState{scope: helpReview, query: "fork", searching: true, scroll: 2}
-	want := h
-
-	transition := h.update(tea.KeyMsg{Type: tea.KeyCtrlC}, ctx)
-	if transition != helpQuit {
-		t.Fatalf("ctrl+c transition = %+v", transition)
-	}
-	if h != want {
-		t.Fatalf("ctrl+c changed state from %+v to %+v", want, h)
-	}
-}
 
 func TestHelpAdapterPreservesQuitCommand(t *testing.T) {
 	m := helpModel()
@@ -164,10 +25,15 @@ func TestHelpAdapterPreservesQuitCommand(t *testing.T) {
 }
 
 func TestHelpAdapterRestoresReviewBeforeRestartingLoader(t *testing.T) {
-	m := &Model{mode: modeDiff, diff: diffState{active: true, loading: true}}
+	m := helpModel()
+	m.mode = modeDiff
+	m.diff = diffState{active: true, loading: true}
 	m.openHelp()
-	if m.helpReturnMode != modeDiff || m.help.scope != helpReview {
-		t.Fatalf("opened review help with return mode %v and scope %v", m.helpReturnMode, m.help.scope)
+	if m.helpReturnMode != modeDiff {
+		t.Fatalf("opened review help with return mode %v", m.helpReturnMode)
+	}
+	if title := m.help.Content(m.helpContext(84)).Title; title != "? Review keys" {
+		t.Fatalf("opened review help title = %q", title)
 	}
 
 	_, cmd := m.handleHelpKey(namedKey(tea.KeyEsc))
@@ -180,5 +46,160 @@ func TestHelpAdapterRestoresReviewBeforeRestartingLoader(t *testing.T) {
 	msg := cmd()
 	if _, ok := msg.(startupTickMsg); !ok {
 		t.Fatalf("restart command produced %T, want startupTickMsg", msg)
+	}
+}
+
+func TestHelpAdapterReopensWithCleanFeatureState(t *testing.T) {
+	m := helpModel()
+	m.handleHelpKey(runeKey("/"))
+	for _, r := range "fork" {
+		m.handleHelpKey(runeKey(string(r)))
+	}
+	if frame := ansi.Strip(m.viewHelp()); !strings.Contains(frame, "search fork") {
+		t.Fatalf("test setup did not type a search:\n%s", frame)
+	}
+	m.mode = modeList
+	m.openHelp()
+	if frame := ansi.Strip(m.viewHelp()); strings.Contains(frame, "search fork") {
+		t.Fatalf("reopened help retained stale search:\n%s", frame)
+	}
+}
+
+func TestHelpAdapterRecomputesRowsWithoutMutatingScroll(t *testing.T) {
+	m := helpModel()
+	m.height = 18
+	m.handleHelpKey(runeKey("G"))
+	clean := m.helpLayout()
+	if clean.content.Offset == 0 {
+		t.Fatal("test setup did not scroll the catalog")
+	}
+
+	m.handleHelpKey(runeKey("/"))
+	searching := m.helpLayout()
+	if len(searching.content.Head) != 2 || searching.rows >= clean.rows {
+		t.Fatalf("searching head/rows = %d/%d, clean rows = %d", len(searching.content.Head), searching.rows, clean.rows)
+	}
+	before := searching.content.Offset
+	first := m.viewHelp()
+	second := m.viewHelp()
+	if got := m.helpLayout().content.Offset; got != before {
+		t.Fatalf("render mutated scroll from %d to %d", before, got)
+	}
+	if first != second {
+		t.Fatal("same help state rendered different frames")
+	}
+
+	m.handleHelpKey(namedKey(tea.KeyEnter))
+	finished := m.helpLayout()
+	if len(finished.content.Head) != 0 || finished.rows != clean.rows || finished.content.Offset != before {
+		t.Fatalf("finished empty search = head %d rows %d offset %d; want 0/%d/%d",
+			len(finished.content.Head), finished.rows, finished.content.Offset, clean.rows, before)
+	}
+
+	m.handleHelpKey(runeKey("/"))
+	m.handleHelpKey(namedKey(tea.KeyEsc))
+	cleared := m.helpLayout()
+	if len(cleared.content.Head) != 0 || cleared.content.Offset != 0 {
+		t.Fatalf("escape from search left head %d offset %d", len(cleared.content.Head), cleared.content.Offset)
+	}
+}
+
+func TestHelpAdapterCountsRenderedNoMatchLine(t *testing.T) {
+	m := helpModel()
+	m.handleHelpKey(runeKey("/"))
+	for _, r := range "zzzz" {
+		m.handleHelpKey(runeKey(string(r)))
+	}
+	m.handleHelpKey(namedKey(tea.KeyEnter))
+	layout := m.helpLayout()
+	if got := len(layout.content.Lines); got != 1 {
+		t.Fatalf("no-match content has %d rendered lines, want 1", got)
+	}
+	m.handleHelpKey(runeKey("G"))
+	if offset := m.helpLayout().content.Offset; offset != 0 {
+		t.Fatalf("bottom on one rendered line moved to %d", offset)
+	}
+}
+
+func TestHelpAdapterUsesFreshThemeStyles(t *testing.T) {
+	previousProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previousProfile) })
+	previous := current
+	t.Cleanup(func() { applyTheme(previous) })
+	m := helpModel()
+
+	applyTheme(themes[themeIndex("classic")])
+	classic := m.help.Content(m.helpContext(84))
+	applyTheme(themes[themeIndex("solarized light")])
+	light := m.help.Content(m.helpContext(84))
+	if strings.Join(classic.Lines, "\n") == strings.Join(light.Lines, "\n") {
+		t.Fatal("theme switch left help styles unchanged")
+	}
+	if ansi.Strip(strings.Join(classic.Lines, "\n")) != ansi.Strip(strings.Join(light.Lines, "\n")) {
+		t.Fatal("theme switch changed help content")
+	}
+}
+
+func TestHelpAdapterScopeUsesOnlyCopiedValues(t *testing.T) {
+	m := helpModel()
+	m.help = uihelp.New(uihelp.Review)
+	content := m.help.Content(m.helpContext(84))
+	if content.Title != "? Review keys" || len(content.Lines) == 0 {
+		t.Fatalf("review content = %+v", content)
+	}
+}
+
+func TestHelpModeOwnsKeysBeforeListOverlays(t *testing.T) {
+	m := helpModel()
+	m.rail.reorder.active = true
+	m.rail.menu.active = true
+	m.rail.searching = true
+	m.quick.active = true
+
+	m.handleKey(runeKey("/"))
+	m.handleKey(runeKey("q"))
+	frame := ansi.Strip(m.View())
+	if m.mode != modeHelp || !strings.Contains(frame, "search q") {
+		t.Fatalf("list overlay intercepted Help input, mode = %v:\n%s", m.mode, frame)
+	}
+}
+
+func TestHelpContextForwardsCustomSessionAndListTablesThroughView(t *testing.T) {
+	m := helpModel()
+	m.height = 160
+	m.services.listKeys = m.services.listKeys.With(keybind.NewSession, bindingOf(t, "N"))
+	m.services.keys = sessionOf(t, []string{"f9"}, []string{"ctrl+g"}, []string{"alt+e"})
+	frame := ansi.Strip(m.View())
+	hasRow := func(key, description string) bool {
+		for _, line := range strings.Split(frame, "\n") {
+			line = strings.TrimSpace(line)
+			line = strings.TrimSpace(strings.TrimPrefix(line, "│"))
+			if strings.HasPrefix(line, key+" ") && strings.Contains(line, description) {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, want := range [][2]string{
+		{"N", "new session"},
+		{"f9", "back to the manager"},
+		{"ctrl+g", "review the session's diff"},
+		{"alt+e", "open its directory in an editor"},
+	} {
+		if !hasRow(want[0], want[1]) {
+			t.Errorf("custom Help frame missing row %q / %q:\n%s", want[0], want[1], frame)
+		}
+	}
+	for _, stale := range [][2]string{
+		{"n", "new session"},
+		{"ctrl+q", "back to the manager"},
+		{"ctrl+r", "review the session's diff"},
+		{"f3", "open its directory in an editor"},
+	} {
+		if hasRow(stale[0], stale[1]) {
+			t.Errorf("custom Help frame retained default row %q / %q:\n%s", stale[0], stale[1], frame)
+		}
 	}
 }

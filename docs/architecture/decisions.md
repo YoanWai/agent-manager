@@ -32,13 +32,13 @@ An execution runner owns mutable polling state. It keeps the latest result unles
 
 Existing tmux subprocess calls have no context deadline. Cancellation therefore does not promise a fixed shutdown duration. Existing socket-based poller claims do not establish exclusive process authority.
 
-## Keep the UI taxonomy inside its existing package
+## Separate file taxonomy from package ownership
 
 Concern families group root coordination, observations, rail, review, focus, dialogs, settings, notices, and shared presentation. The [UI concern map](ui-file-map.md) records their files and tests. Existing declarations move mechanically before feature policy changes.
 
-Feature subpackages were considered. They would need exported messages, shared render primitives, and root adapters before review and focus could move without import cycles or broad callback interfaces. The selected flat package preserves the existing API and message priority while those boundaries become explicit.
+Feature subpackages were considered. They would need exported messages, shared render primitives, and root adapters before review and focus could move without import cycles or broad callback interfaces. The mechanical move therefore kept the flat package. It preserved the existing API and message priority before extracting a real feature boundary.
 
-Help is the first behavioral boundary. It consumes a value-only presentation context and returns a navigation result. The root owns mode transitions and command scheduling. A broad host exposing the store, driver, or all services would retain the coupling under a new name.
+Help is now the first feature package. It consumes current presentation values and returns content and input outcomes. Root owns mode transitions, command scheduling, and generic dialog chrome. A small shared presentation package contains three reused pure text operations. Moving all dialog rendering, legends, and theme state was rejected for this increment because it would widen the cutover across unrelated features. A broad host exposing the store, driver, or all services would retain the coupling under a new name. See the [Help package contract](help-package.md).
 
 ## Keep UI effects and rendering explicit
 

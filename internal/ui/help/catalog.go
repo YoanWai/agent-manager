@@ -1,10 +1,9 @@
-package ui
+package help
 
 import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
-	"github.com/charmbracelet/x/ansi"
 )
 
 // The key map is grouped the way its bindings are learned: by what is under
@@ -12,21 +11,6 @@ import (
 type helpSection struct {
 	title string
 	rows  [][2]string
-}
-
-// helpKeyColumn is the width the key column is padded to: the widest key in
-// the whole catalog plus a gap. It always measures the whole catalog so a
-// search does not shift the column under the reader.
-func helpKeyColumn(session, list keybind.Table, arrowStep bool) int {
-	width := 0
-	for _, section := range helpSections(session, list, arrowStep) {
-		for _, row := range section.rows {
-			if w := ansi.StringWidth(row[0]); w > width {
-				width = w
-			}
-		}
-	}
-	return width + 2
 }
 
 type helpRows struct {
@@ -50,15 +34,15 @@ func (h *helpRows) fixed(key, does string) {
 	h.rows = append(h.rows, [2]string{key, does})
 }
 
-func listHelpRows(list keybind.Table, arrowStep bool) [][2]string {
+func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string {
 	h := helpRows{list: list}
 	h.fixed("", "Tell your agent to manage sessions and terminals in Agent Manager.")
 	h.action("move the cursor up", keybind.Up)
 	h.action("move the cursor down", keybind.Down)
 	h.fixed("click", "focus a session in the split, select any other row")
 	h.fixed("double click", "fold or unfold a group, focus a session full screen")
-	h.fixed(rowMenuGlyph, "the row's actions, or right click")
-	h.fixed("drag "+reorderGrip, "move the row, into another group too, or click it for ↑↓")
+	h.fixed(glyphs.RowMenu, "the row's actions, or right click")
+	h.fixed("drag "+glyphs.Reorder, "move the row, into another group too, or click it for ↑↓")
 	if arrowStep {
 		h.action("step in: focus the session, open the group", keybind.StepIn)
 		h.action("step out: close the group", keybind.StepOut)
@@ -135,9 +119,10 @@ func groupRowHelpRows(list keybind.Table) [][2]string {
 
 // helpSections is the catalog for one setting of the arrow-step pair: off,
 // the rows that pair would answer are left out rather than named as dead.
-func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
+func helpSections(ctx Context) []helpSection {
+	list := ctx.ListKeys
 	return []helpSection{
-		{title: "list", rows: listHelpRows(list, arrowStep)},
+		{title: "list", rows: listHelpRows(list, ctx.ArrowStep, ctx.Glyphs)},
 		{title: "session under the cursor", rows: sessionRowHelpRows(list)},
 		{title: "the mark on a session row", rows: markHelpRows(list)},
 		{title: "group under the cursor", rows: groupRowHelpRows(list)},
@@ -151,7 +136,7 @@ func helpSections(session, list keybind.Table, arrowStep bool) []helpSection {
 			{"←→", "step over a chip as one token"},
 			{"esc", "close"},
 		}},
-		{title: "inside a session (attached or focused)", rows: sessionHelpRows(session, arrowStep, [][2]string{
+		{title: "inside a session (attached or focused)", rows: sessionHelpRows(ctx.SessionKeys, ctx.ArrowStep, [][2]string{
 			{"wheel", "focused: scroll the pane's history, type to catch up"},
 			{"drag", "focused: select pane text and copy it"},
 			{"click the list", "focused: back to the manager (mouse back too)"},
@@ -245,11 +230,11 @@ func reviewHelpSection(list keybind.Table) helpSection {
 	}}
 }
 
-func (h helpState) visibleSections(ctx helpContext) []helpSection {
-	if h.scope == helpReview {
-		return []helpSection{reviewHelpSection(ctx.listKeys)}
+func (s State) visibleSections(ctx Context) []helpSection {
+	if s.scope == Review {
+		return []helpSection{reviewHelpSection(ctx.ListKeys)}
 	}
-	return helpSections(ctx.sessionKeys, ctx.listKeys, ctx.arrowStep)
+	return helpSections(ctx)
 }
 
 // matchHelp narrows the catalog to rows whose key or description contains

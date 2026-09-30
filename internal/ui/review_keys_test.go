@@ -64,7 +64,9 @@ func TestDiffHelpReturnsToReview(t *testing.T) {
 }
 
 func TestDiffHelpRestartsLoaderOnReturn(t *testing.T) {
-	m := &Model{mode: modeDiff, diff: diffState{active: true, loading: true}}
+	m := helpModel()
+	m.mode = modeDiff
+	m.diff = diffState{active: true, loading: true}
 	if cmd := m.startStartupTick(); cmd == nil {
 		t.Fatal("loading review should start the loader")
 	}

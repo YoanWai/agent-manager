@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -16,6 +17,7 @@ func helpModel() *Model {
 		width:  120,
 		height: 30,
 		mode:   modeHelp,
+		help:   uihelp.New(uihelp.Global),
 		services: services{
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),
@@ -23,15 +25,5 @@ func helpModel() *Model {
 		prefs: preferences{
 			arrowStep: true,
 		},
-	}
-}
-
-func featureHelpContext(width, height int) helpContext {
-	return helpContext{
-		sessionKeys: keybind.DefaultSession(),
-		listKeys:    keybind.DefaultList(),
-		arrowStep:   true,
-		width:       width,
-		height:      height,
 	}
 }

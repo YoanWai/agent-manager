@@ -10,8 +10,8 @@ The initial application-boundary audit used implementation commit `c7a7e8247190f
 | Explicit local composition and borrowed resource lifetime | Implemented in this slice | [app](../../internal/app), [backend](../../internal/sessioncmd/backend.go), [main](../../main.go) |
 | Shared lifecycle with explicit actor and failure policies | Implemented in this slice | [lifecycle](../../internal/sessioncmd/lifecycle.go), [contract tests](../../internal/sessioncmd/backend_lifecycle_test.go), [UI calls](../../internal/ui/session_archive.go) |
 | Immediate reconciliation of partial lifecycle effects | Partial | [UI archive](../../internal/ui/session_archive.go) and [restore](../../internal/ui/session_archive.go) return on error before membership reconciliation; completed durable changes become visible after a later poll. Delete reconciles partial removals |
-| Feature-owned UI behavior and narrow hosts | Partial | [Help](../../internal/ui/help_state.go) owns policy and receives copied presentation values. Other handlers remain root methods; [services](../../internal/ui/model_services.go) exposes broad dependencies |
-| UI feature packages and directory boundaries | Deferred | `internal/ui` remains one flat package. Concern filenames are an intermediate step; package extraction and dependency checks remain follow-up work |
+| Feature-owned UI behavior and narrow hosts | Partial | [Help](../../internal/ui/help/state.go) owns policy and receives copied presentation values. Other handlers remain root methods; [services](../../internal/ui/model_services.go) exposes broad dependencies |
+| UI feature packages and directory boundaries | Partial | [Help](help-package.md) and shared pure presentation have separate directories and Go packages. A transitive dependency check rejects root and runtime imports. Review, focus, and rail remain root concern families |
 | Repeatable process and TUI end-to-end coverage | Partial | Unit and integration tests are committed. Disposable-profile terminal captures and process checks remain session artifacts until a repository harness runs them in CI |
 | Nonblocking Update and read-only View | Not conformant yet | [confirm handler](../../internal/ui/confirm_keys.go) calls archive, restore, and delete synchronously; [list rendering](../../internal/ui/rail_view.go) records geometry during View |
 | Files organized by concern and source-adjacent tests throughout | Partial | Execution, sessioncmd, and UI concern families are implemented. Store, status, and tmux taxonomy remain future work; file moves do not establish feature ownership |
@@ -40,7 +40,7 @@ The [repository guidelines](../../AGENTS.md) retain the full product matrix. PR 
 | --- | --- | --- |
 | 1. Documentation | Reconcile historical rationale, current code, and future contracts | Source trace, local links, independent claim review; no behavior change |
 | 2. Mechanical file splits | Sessioncmd and UI now use concern families; store, status, and tmux remain future work | Sessioncmd preserves 318 declarations; UI preserves 2,371 declarations. The UI comparator checks comments, exported names, build constraints, and init function order; initializer-order notices require source review |
-| 3. Small UI feature | Help owns catalog, scope, search, scroll, rendering, and stay/close/quit policy; root retains navigation and commands | Deterministic input and message tests, keyboard parity, preserved mouse-event consumption, and real TUI frames |
+| 3. Small UI feature | Help owns catalog, scope, search, scroll, styled body content, and input outcomes in a child package; root retains navigation, commands, and generic dialog chrome | Deterministic input and message tests, keyboard parity, preserved mouse-event consumption, and real TUI frames |
 | 4. Async effects and layout | Move lifecycle I/O to commands and prepare geometry before View | Blocked-adapter tests prove Update returns; generation tests prove stale rejection; partial-failure tests prove completed archive and restore effects reconcile immediately; real geometry and focus checks |
 | 5. Workspace and authority rollout | Ship one saved connection/read use case, then one guarded canonical mutation and writer cutover | Supported historical binaries, real SSH, failure races, single maintenance proof, and explicit old-writer policy |
 
@@ -48,13 +48,13 @@ Each unit needs its own implementation plan. Split unit 4 by feature and unit 5 
 
 ## Extract UI feature packages incrementally
 
-The current single `internal/ui` folder is an intermediate arrangement. Concern filenames improve navigation, and Help has a narrower state boundary, but neither change enforces package dependencies. The remaining goal is feature directories with owned state, input policy, rendering, and source-adjacent tests.
+The original flat `internal/ui` arrangement was an intermediate step. Help now has a child package with private state and adjacent tests, backed by a dependency check. The remaining goal is equivalent feature ownership for review, focus, and rail.
 
-Start with `internal/ui/help`. Define its small public context and action API, then move its policy and tests behind that package boundary. Root `internal/ui` retains application composition, Bubble Tea dispatch, navigation, and command scheduling. Extract shared render values only where concrete consumers need them. Do not expose `Model`, all services, or a callback for every root method to make the move compile.
+The first extraction is `internal/ui/help`. Its small context, content, and input-outcome API keeps policy and tests behind the package boundary. Root `internal/ui` retains application composition, Bubble Tea dispatch, navigation, and command scheduling. Extract shared render values only where concrete consumers need them. Do not expose `Model`, all services, or a callback for every root method to make the move compile.
 
 Review, focus, and rail are later candidates, each in a separate increment. Their extraction must preserve request generations, drafts, input priority, geometry, and IME behavior. Order these increments with the asynchronous-effects and read-only-View work rather than moving tightly coupled methods into subfolders first.
 
-Acceptance requires a compiling acyclic dependency graph, feature tests that construct no root model or runtime, and root adapter tests that preserve dispatch behavior. Feature packages must not import the root UI package, store, or tmux directly. Document any required narrow effect port with its actual caller. Add a repository check for these import boundaries and update the file map after each extraction. Keep a feature in the root package until its boundary meets those conditions.
+Acceptance requires a compiling acyclic dependency graph, feature tests that construct no root model or runtime, and root adapter tests that preserve dispatch behavior. Feature packages must not import the root UI package, store, or tmux directly. Document any required narrow effect port with its actual caller. Extend the repository dependency check for each extracted feature and update the file map. Keep a feature in the root package until its boundary meets those conditions.
 
 ## Turn session checks into repeatable end-to-end tests
 
