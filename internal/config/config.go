@@ -54,11 +54,11 @@ type Tool struct {
 	ForkKeys string `toml:"fork_keys"`
 	// SessionStore names the built-in capturer that reads back the id a tool
 	// minted itself when it has no SessionIDFlag ("codex", "opencode",
-	// "gemini", "hermes", "command-code" or "muse").
+	// "gemini", "hermes", "command-code", "muse" or "antigravity").
 	SessionStore string `toml:"session_store"`
 	// MCP picks how the agent-manager MCP server is registered into this
 	// tool's sessions: "claude", "codex", "opencode", "grok", "gemini",
-	// "hermes", "command-code", "muse" or "none".
+	// "hermes", "command-code", "muse", "antigravity" or "none".
 	// Empty uses the tool's config key when it names a known style.
 	MCP            string `toml:"mcp"`
 	StatusSource   string `toml:"status_source"`
@@ -614,51 +614,42 @@ rules = [
   { state = "errored", pattern = "(?m)^✕ " },
 ]
 
-# Antigravity CLI (agy), Google's successor to Gemini CLI: near-identical
-# box-drawing chrome, but its own composer, footer wording and dialogs.
+# Antigravity CLI (agy), Google's successor to Gemini CLI
 [tools.antigravity]
 command = "agy"
-# agy has no positional prompt argument at all ("Prompts are read only from
-# -p/--print, -i/--prompt-interactive, or stdin" - confirmed by trying);
-# -i keeps the session interactive afterward, unlike -p which exits
+# agy reads a startup prompt only from -p, which exits after one turn, or -i
 prompt_flag = "-i"
-# no --session-id flag exists (checked agy --help), so ids can't be minted
-# at launch; revive falls back to the picker or "continue most recent".
-# --conversation *does* resume a specific id when one is known some other
-# way (a resume_by_id_command target, kept for that), but nothing here
-# captures agy's own minted id back the way session_store does for gemini
-# et al., so this path is not reachable yet through a plain spawn/revive -
-# that capture is the natural next step, not attempted in this change
+# agy mints its own conversation id; capture it after launch and resume it
+session_store = "antigravity"
 resume_by_id_command = "agy --conversation {id}"
-# /resume opens agy's own saved-conversation picker (confirmed live)
-resume_picker_command = "agy -i /resume"
+# agy -i /resume hands "/resume" to the model as a prompt; typed at the
+# composer it opens the conversation picker
+resume_picker_command = "agy"
+resume_picker_keys = "/resume"
 revive_command = "agy -c"
 default_status = "idle"
-# the composer's marker is "> " (gemini's shape), but an empty composer is
-# a bare ">" with no trailing space - a required trailing space here (as
-# gemini's cutoff has) leaves ActivityRegion never resolving on an empty
-# prompt, which silently wedges message delivery forever (TypingHold reads
-# "not ready" as permanently "working", so it never settles at rest).
-# Other-mode prefixes ("!" / "*") are unverified, borrowed from gemini's
-# shape; agy may not even have those modes.
-activity_cutoff = "(?m)^\\s*[>!*]\\s?"
-# plain "─" box borders, "▄▀" logo art, "? for shortcuts" footer
-chrome_line = "^\\s*[─▄▀█]*\\s*$|^\\s*\\? for shortcuts\\s*$"
-# unverified guess, never triggered a real rate-limit banner
-limit_line = "Usage limit reached"
-# agent replies open on a "▸ " glyph ("▸ Thought for 3s, ...")
-message_start = "^\\s*▸ "
-# turn-completion summary; the same line doubles as message_start
-turn_end = "^\\s*▸ .*tokens\\s*$"
-# a sent prompt echoes into the transcript on its own "> " line
-user_echo = "^\\s*> "
+# the composer row: ">" at rest, "!" in bash mode
+activity_cutoff = "(?m)^[>!]"
+# blanks, rules, and the logo rows with the account and model beside them
+chrome_line = "^\\s*─*\\s*$|^\\s*[▄▀]{2}"
+# a thinking summary and a queued message both open on ▸ and own the rows
+# drawn under them
+chrome_block = "^▸ "
+# accept-edits and plan modes name themselves inside the empty composer
+input_placeholder = "^\\S+ mode: .+ \\(shift\\+tab to cycle\\)$"
+# a submitted prompt echoes into the transcript on its own ">" row; replies
+# carry no marker of their own
+user_echo = "^> "
 rules = [
-  # tool-permission dialog ("Run this command? > 1. Yes, ..."); its footer
-  # also says "esc to cancel" like the busy state, so this must come first
-  { state = "waiting", pattern = "(?m)^Run this command\\?\\s*$" },
-  { state = "waiting", pattern = "(?m)^>\\s*\\d+\\.\\s" },
-  # busy footer reads "esc to cancel" (not gemini's "esc to interrupt")
-  { state = "working", pattern = "esc to cancel" },
+  # dialogs, the slash-command menu and the /resume picker draw this hint in
+  # their footer, which the resting composer never does; anchoring it to the
+  # pane's tail keeps a reply quoting it from reading as a dialog
+  { state = "waiting", pattern = "(?m)^[ \\t]*(?:Keyboard: )?↑/↓ Navigate\\b[^\\n]*(?:\\n[^\\n]*){0,3}(?:\\n[ \\t]*)*\\z" },
+  # the spinner row of a running turn ("⣻  Generating..."), which stays up
+  # while a queued message swaps the footer below for its own hint
+  { state = "working", pattern = "(?m)^[\\x{2800}-\\x{28FF}][ \\t]+\\S" },
+  # the footer of a running turn; bash mode's footer indents the same words
+  { state = "working", pattern = "(?m)^esc to cancel\\b" },
 ]
 
 [tools.hermes]

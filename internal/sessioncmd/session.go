@@ -756,7 +756,7 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 			return Session{}, err
 		}
 		if target.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-			InjectPickerKeys(runtime.driver, target.ID, tool.InputPrefix, tool.ResumePickerKeys)
+			InjectPickerKeys(runtime.driver, target.ID, tool)
 		}
 		target.Status = status.Starting
 		return runtime.sessionInfo(target, true, false), nil
@@ -792,7 +792,7 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 		return Session{}, err
 	}
 	if target.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-		InjectPickerKeys(runtime.driver, target.ID, tool.InputPrefix, tool.ResumePickerKeys)
+		InjectPickerKeys(runtime.driver, target.ID, tool)
 	}
 	target.Status = status.Starting
 	target.AgentLaunchedAt = launchedAt

@@ -314,3 +314,25 @@ func TestMuseLaunchAndRevive(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestAntigravityLaunchAndRevive(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := cfg.Tools["antigravity"]
+	plan := Assemble("antigravity", tool, "fix the bug", false, true)
+	// agy carries the MCP tools, whose descriptions stand in for the note.
+	if !strings.HasPrefix(plan.Command, "agy -i '") || !strings.Contains(plan.Command, "fix the bug") || strings.Contains(plan.Command, ProactiveCoordinationNote) {
+		t.Fatalf("launch = %+v", plan)
+	}
+	if plan.AgentSessionID != "" || len(plan.PendingInputs) != 0 {
+		t.Fatalf("unexpected session flag or deferred prompt: %+v", plan)
+	}
+	if got := ReviveCommand(tool, "0ab14c4d-1cb2-454a-b992-b622e29c0825"); got != "agy --conversation '0ab14c4d-1cb2-454a-b992-b622e29c0825'" {
+		t.Fatal(got)
+	}
+	if got := ReviveCommand(tool, ""); got != "agy" {
+		t.Fatal(got)
+	}
+}

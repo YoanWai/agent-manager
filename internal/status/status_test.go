@@ -2105,3 +2105,108 @@ func TestMusePromptAndReply(t *testing.T) {
 		t.Fatalf("picker TypingHold = %q", got)
 	}
 }
+
+// Antigravity CLI 1.2.14 frames, captured from a live agy in a 120x40 pane.
+// agy draws inline from the top, so every frame ends in blank rows.
+var (
+	agyRule     = strings.Repeat("─", 120)
+	agyTurnRule = strings.Repeat("─", 60)
+	agyLogo     = "\n      ▄▀▀▄        Antigravity CLI 1.2.14\n     ▀▀▀▀▀▀       dev@example.com (Google AI Plus)\n    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)\n   ▄▀▀    ▀▀▄     /tmp/agy/proj\n  ▄▀▀      ▀▀▄\n\n"
+	agyTail     = "\n\n\n\n"
+)
+
+func agyFooter(left string) string {
+	return left + "                                                                                    Gemini 3.8 Flash · high"
+}
+
+func agyPane(transcript, composer, footer string) string {
+	return agyLogo + agyTurnRule + "\n" + transcript + agyRule + "\n" + composer + "\n" + agyRule + "\n" + agyFooter(footer) + agyTail
+}
+
+func TestAntigravityPanes(t *testing.T) {
+	engine := defaultEngine(t)
+	sleepTurn := "> Run the shell command sleep 6 and then reply with one short sentence saying it finished.\n\n" +
+		"▸ Thought for 3s, 362 tokens\n  Considering available tools, the command execution tool seems appropriate for running `sleep 6`.\n\n" +
+		"● Bash(sleep 6) (ctrl+o to expand)\n\n"
+	cases := []struct {
+		name, pane, match, hold string
+	}{
+		{"fresh composer", agyLogo + agyRule + "\n>\n" + agyRule + "\n" + agyFooter("? for shortcuts") + agyTail, Idle, ""},
+		{"generating", agyPane("> Reply with exactly two short lines: alpha, then beta. No tools.\n⣻  Working...\n", ">", "esc to cancel"), Working, Working},
+		{"running a command", agyPane(sleepTurn+"⣾  Running command...\n", ">", "esc to cancel"), Working, Working},
+		{"queued message swaps the footer", agyPane("> Count slowly from 1 to 30, one number per line.\n⣷  Generating...\n▸ Then say done.\n", ">", "  Press up to edit queued messages"), Working, Working},
+		{"bash mode footer is no turn", agyPane("> hi\n\n  Hello! How can I help you today?\n\n", "!", " activated bash mode · esc to cancel"), Idle, ""},
+		{"finished reply", agyPane(sleepTurn+"  The sleep 6 command has finished executing.\n\n", ">", "? for shortcuts"), Idle, ""},
+		{"reply quoting the footers", agyPane("> what do the footers say?\n\n  ↑/↓ Navigate · enter Select\n  esc to cancel\n\n", ">", "? for shortcuts"), Idle, ""},
+		{"command permission", agyLogo + agyTurnRule + "\n" + sleepTurn + "Command\n" + agyRule + "\n\nRequesting permission for:\n   sleep 6\n\nRun this command?\n" +
+			"> 1. Yes, run command\n  2. Yes, and always allow in this conversation for commands that start with 'sleep'\n" +
+			"  3. Yes, and always allow for commands that start with 'sleep' (Persist to settings.json)\n  4. No, cancel\n\n" +
+			"  ↑/↓ Navigate · tab Amend · ctrl+g edit/expand command\n" + agyFooter("esc to cancel") + agyTail, Waiting, Waiting},
+		{"file access", agyLogo + agyTurnRule + "\n> /resume\n\n● Read(~/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md) (ctrl+o to expand)\n\nFile access\n" + agyRule +
+			"\n\nRead: /home/dev/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md\nReason: outside workspace\n\nAllow access to this file?\n" +
+			"> 1. Yes, allow access\n  2. Yes, and always allow non-workspace access\n  3. No, deny access\n\n  ↑/↓ Navigate\n" + agyFooter("esc to cancel") + agyTail, Waiting, Waiting},
+		{"trust prompt", "Accessing workspace:\n\n/tmp/agy/proj2\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n" +
+			"> Yes, I trust this folder\n  No, exit\n\n  ↑/↓ Navigate · enter Confirm\n" + agyFooter("") + agyTail, Waiting, Waiting},
+		{"slash menu", agyLogo + agyRule + "\n> /resume\n" + agyRule +
+			"\n> /resume  Browse and resume past conversations\n\n  ↑/↓ Navigate · enter Select · tab Complete\n" + agyFooter("esc to cancel") + agyTail, Waiting, Waiting},
+		{"resume picker", agyLogo + agyRule + "\n>\n" + agyRule + "\n   CLI    Other   (tab to cycle)\n\n  Conversations\n  Type to search conversations...\n" +
+			"> Working On My Resume                                                                  proj       3 steps        1m ago\n" +
+			"  Run Shell Command Sleep                                                               proj       6 steps        5m ago\n\n" +
+			"Keyboard: ↑/↓ Navigate  ←/→ Page  enter Select  f2 Rename  f4 Delete  tab Switch Tab  esc Go back / Clear search\n\n" + agyFooter("") + agyTail, Waiting, Waiting},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, _ := engine.Match("antigravity", tc.pane); got != tc.match {
+				t.Errorf("Match = %q, want %q", got, tc.match)
+			}
+			if got := engine.TypingHold("antigravity", tc.pane); got != tc.hold {
+				t.Errorf("TypingHold = %q, want %q", got, tc.hold)
+			}
+		})
+	}
+}
+
+func TestAntigravityReplyReading(t *testing.T) {
+	engine := defaultEngine(t)
+	fresh := agyLogo + agyRule + "\n>\n" + agyRule + "\n" + agyFooter("? for shortcuts") + agyTail
+	if got, _, ok := engine.LastMessage("antigravity", fresh); !ok || got != "" {
+		t.Errorf("a fresh session quoted %q, want nothing past the logo", got)
+	}
+
+	finished := agyPane("> Run the shell command sleep 6 and then reply with one short sentence saying it finished.\n\n"+
+		"▸ Thought for 3s, 362 tokens\n  Considering available tools, the command execution tool seems appropriate for running `sleep 6`.\n\n"+
+		"● Bash(sleep 6) (ctrl+o to expand)\n\n  The sleep 6 command has finished executing.\n\n", ">", "? for shortcuts")
+	if got, _, _ := engine.LastMessage("antigravity", finished); got != "The sleep 6 command has finished executing." {
+		t.Errorf("LastMessage = %q", got)
+	}
+	if got, ok := engine.LastUserEcho("antigravity", finished); !ok || got != "Run the shell command sleep 6 and then reply with one short sentence saying it finished." {
+		t.Errorf("LastUserEcho = %q, %v", got, ok)
+	}
+	if got, bounded, ok := engine.FullTurnText("antigravity", finished); !ok || !bounded || got != "● Bash(sleep 6) (ctrl+o to expand)\n\n  The sleep 6 command has finished executing." {
+		t.Errorf("FullTurnText = %q, %v, %v; the thinking summary is not the reply", got, bounded, ok)
+	}
+	region, _ := engine.ActivityRegion("antigravity", finished)
+	if got := engine.TurnEndedState("antigravity", region); got != Finished {
+		t.Errorf("TurnEndedState = %q", got)
+	}
+
+	running := agyPane("> Count slowly from 1 to 30, one number per line.\n⣷  Generating...\n▸ Then say done.\n", ">", "  Press up to edit queued messages")
+	if got, _, _ := engine.LastMessage("antigravity", running); got != "> Count slowly from 1 to 30, one number per line." {
+		t.Errorf("LastMessage = %q, want the prompt over the spinner and the queued message", got)
+	}
+
+	interrupted := agyPane("> Write a 40 line poem about tmux.\n\n  ⎿  Interrupted · What should Antigravity CLI do instead?\n", ">", "? for shortcuts")
+	region, _ = engine.ActivityRegion("antigravity", interrupted)
+	if got := engine.TurnEndedState("antigravity", region); got != Waiting {
+		t.Errorf("an interrupted turn settled as %q", got)
+	}
+
+	if got, ok := engine.InputDraft("antigravity", agyPane("", "> tidy the imports", "")); !ok || got != "tidy the imports" {
+		t.Errorf("InputDraft = %q, %v", got, ok)
+	}
+	for _, placeholder := range []string{"> Accept-edits mode: file edits auto-approved (shift+tab to cycle)", "> Plan mode: research & plan only (shift+tab to cycle)"} {
+		if got, ok := engine.InputDraft("antigravity", agyPane("", placeholder, "? for shortcuts")); ok {
+			t.Errorf("mode placeholder read as draft %q", got)
+		}
+	}
+}

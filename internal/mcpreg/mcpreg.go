@@ -50,6 +50,7 @@ var knownStyles = map[string]bool{
 	"hermes":       true,
 	"command-code": true,
 	"muse":         true,
+	"antigravity":  true,
 	StyleNone:      true,
 }
 
@@ -120,6 +121,11 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 		return command, nil
 	case "muse":
 		if err := ensureMuseRegistered(exe); err != nil {
+			return "", err
+		}
+		return command, nil
+	case "antigravity":
+		if err := ensureAntigravityRegistered(exe, hooksDir); err != nil {
 			return "", err
 		}
 		return command, nil
@@ -292,6 +298,13 @@ func ensureGeminiRegistered(exe, hooksDir string) error {
 		"-e", hooks.EnvSessionID+"=${"+hooks.EnvSessionID+"}",
 		serverName, exe, "mcp")
 	return ensureRegisteredOnce("gemini", exe, hooksDir, cmd)
+}
+
+// Antigravity passes a server its own environment and leaves ${VAR} in an
+// env entry unexpanded, so the session id reaches the server by inheritance.
+func ensureAntigravityRegistered(exe, hooksDir string) error {
+	cmd := exec.Command("agy", "mcp", "add", serverName, "--", exe, "mcp")
+	return ensureRegisteredOnce("antigravity", exe, hooksDir, cmd)
 }
 
 type hermesMCPEntry struct {

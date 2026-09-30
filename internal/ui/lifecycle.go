@@ -342,7 +342,7 @@ func (m *Model) reviveSession(sess store.Session) error {
 		return err
 	}
 	if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-		sessioncmd.InjectPickerKeys(m.tmux, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
+		sessioncmd.InjectPickerKeys(m.tmux, sess.ID, tool)
 	}
 	m.rebuildRows()
 	return nil
@@ -429,7 +429,7 @@ func (m *Model) relaunchInPane(sess store.Session) (tea.Cmd, error) {
 			return relaunchedMsg{sessID: sess.ID, err: err}
 		}
 		if sess.AgentSessionID == "" && tool.ResumePickerKeys != "" {
-			sessioncmd.InjectPickerKeys(driver, sess.ID, tool.InputPrefix, tool.ResumePickerKeys)
+			sessioncmd.InjectPickerKeys(driver, sess.ID, tool)
 		}
 		return relaunchedMsg{sessID: sess.ID, launchedAt: launchedAt}
 	}, nil

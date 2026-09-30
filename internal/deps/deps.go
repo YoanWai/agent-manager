@@ -44,6 +44,7 @@ var official = map[string]string{
 	"muse":     "curl -fsSL https://dev.meta.ai/install.sh | bash",
 	"grok":     "curl -fsSL https://x.ai/cli/install.sh | bash",
 	"gemini":   "npm install -g @google/gemini-cli",
+	"agy":      "curl -fsSL https://antigravity.google/cli/install.sh | bash",
 	"opencode": "curl -fsSL https://opencode.ai/install | bash",
 	"hermes":   "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
 	"pi":       "npm install -g @mariozechner/pi-coding-agent",
