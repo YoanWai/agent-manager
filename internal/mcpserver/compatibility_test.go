@@ -3,10 +3,15 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -15,7 +20,7 @@ func TestLegacyProtocolClientsKeepTextResultsAndMutationRefusals(t *testing.T) {
 		t.Run(version, func(t *testing.T) {
 			ctx := context.Background()
 			commands := &fakeSessionCommands{listed: []sessioncmd.Session{{ID: "beef", Name: "worker", Tool: "codex", Status: "finished"}}}
-			server := newServer(t.TempDir(), "cafe", "test", &fakeTerminalCommands{}, commands, &fakeReporter{})
+			server := newServer(t.TempDir(), "cafe", "test", true, &fakeTerminalCommands{}, commands, &fakeReporter{})
 			serverTransport, clientTransport := mcp.NewInMemoryTransports()
 			serverSession, err := server.Connect(ctx, serverTransport, nil)
 			if err != nil {
@@ -53,5 +58,84 @@ func TestLegacyProtocolClientsKeepTextResultsAndMutationRefusals(t *testing.T) {
 				t.Fatalf("refusal text = %+v", refused.Content)
 			}
 		})
+	}
+}
+
+type recordingArchiveOwner struct {
+	request sessioncmd.ArchiveRequest
+}
+
+func (o *recordingArchiveOwner) Archive(request sessioncmd.ArchiveRequest) (sessioncmd.Session, error) {
+	o.request = request
+	return sessioncmd.Session{ID: request.TargetID, Name: "worker", Archived: request.Archived}, nil
+}
+
+func TestArchiveOwnerServerKeepsTheExplicitDurableOwner(t *testing.T) {
+	owner := &recordingArchiveOwner{}
+	session := connectServer(t, NewServerWithArchiveOwner(t.TempDir(), "cafe", "test", false, owner))
+	text, isError := callText(t, session, "archive_session", map[string]any{"session_id": "beef"})
+	if isError || !strings.Contains(text, "archived") {
+		t.Fatalf("archive = %q, isError=%v", text, isError)
+	}
+	if owner.request.CallerID != "cafe" || owner.request.TargetID != "beef" || !owner.request.Archived {
+		t.Fatalf("owner request = %+v", owner.request)
+	}
+	if instructions := session.InitializeResult().Instructions; !strings.Contains(instructions, "when the user asks") {
+		t.Fatalf("archive-owner server lost on-request mode:\n%s", instructions)
+	}
+}
+
+func TestBackendServerKeepsTheExplicitCoordinationMode(t *testing.T) {
+	configDir := t.TempDir()
+	st, err := store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	backend, err := sessioncmd.BorrowBackend(sessioncmd.Runtime{
+		Store: st, Driver: new(tmux.Driver), Hooks: hooks.NewManager(configDir),
+		Snapshot: func(string, string) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := connectServer(t, NewServerWithBackend(configDir, "cafe", "test", false, backend))
+	if instructions := session.InitializeResult().Instructions; !strings.Contains(instructions, "when the user asks") {
+		t.Fatalf("backend server lost on-request mode:\n%s", instructions)
+	}
+}
+
+func TestServerRunnersReturnCoordinationModeReadErrors(t *testing.T) {
+	configDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(configDir, "state.db"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	owner := &recordingArchiveOwner{}
+	plainErr := Run(configDir, "cafe", "test")
+	ownerErr := RunWithArchiveOwner(configDir, "cafe", "test", owner)
+	if plainErr == nil || ownerErr == nil {
+		t.Fatalf("coordination errors: plain=%v archive-owner=%v", plainErr, ownerErr)
+	}
+	if plainErr.Error() != ownerErr.Error() {
+		t.Fatalf("coordination errors differ: plain=%q archive-owner=%q", plainErr, ownerErr)
+	}
+
+	backendDir := t.TempDir()
+	st, err := store.Open(filepath.Join(backendDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend, err := sessioncmd.BorrowBackend(sessioncmd.Runtime{
+		Store: st, Driver: new(tmux.Driver), Hooks: hooks.NewManager(backendDir),
+		Snapshot: func(string, string) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := RunWithBackend(backendDir, "cafe", "test", backend); err == nil {
+		t.Fatal("backend runner swallowed a coordination mode read error")
 	}
 }

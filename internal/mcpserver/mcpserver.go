@@ -190,47 +190,70 @@ type sessionCommands interface {
 	DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error)
 }
 
-// serverInstructions is the block a client shows its model before any tool
-// is called, and it is what makes an agent reach for these tools at all:
-// with it emptied, a model offered the same tools delegates to its own
+// The instructions are the block a client shows its model before any tool
+// is called, and they are what makes an agent reach for these tools at all:
+// with them emptied, a model offered the same tools delegates to its own
 // subagents instead. Claude Code truncates the block at 2048 characters, so
-// it stays under that; what individual tool descriptions already carry (the
-// review targets, the queueing rules) is left to them.
-const serverInstructions = `Agent Manager runs this conversation in one of the user's managed tmux sessions. The others are separate CLI processes with contexts of their own, running any CLI the user chose (Claude Code, Codex, Gemini), never subagents of this conversation. These tools operate that workspace. Use them whenever the conditions below apply, without waiting to be asked.
+// each mode stays under that; what individual tool descriptions already
+// carry (the review targets, the queueing rules) is left to them.
+const instructionsIntro = `Agent Manager runs this conversation in one of the user's managed tmux sessions. The others are separate CLI processes with contexts of their own, running any CLI the user chose (Claude Code, Codex, Gemini), never subagents of this conversation. These tools operate that workspace.`
 
-Delegating to other agents. When the work holds two or more deliverables that could be built at once, or the user asks for parallel work, a second opinion or another agent: call list_sessions, reuse a relevant idle session, otherwise create_session per part, each with a descriptive name and a prompt stating the whole task, as it cannot see this conversation. Repo work takes worktree: true so parallel agents never share a checkout; where they do, reserve_files before editing. Then read_session, send_session to answer or redirect an agent, and wait_for_session when your next step needs one finished. Put the plan on the shared task list with the task tool, which spawned agents claim from. Group related spawns with create_group, archive_session once done. Sessions spend the user's tokens: one per workstream, not per step.
-
-Shell work the user should see. Open a terminal when the user should watch, attach or take over, as with SSH into a host. Keep one-shot local commands in your normal tools. Call list_terminals first and reuse a running terminal when possible. create_terminal nests under this session unless nest is false, which another group needs. Use send_terminal and read_terminal, and close_terminal when that job is done unless it is left for the user.
+const instructionsTail = `Shell work the user should see. Open a terminal when the user should watch, attach or take over, as with SSH into a host. Keep one-shot local commands in your normal tools. Call list_terminals first and reuse a running terminal when possible. create_terminal nests under this session unless nest is false, which another group needs. Use send_terminal and read_terminal, and close_terminal when that job is done unless it is left for the user.
 
 Bugs and ideas. When the user hits a bug in the manager itself or asks for something it lacks, offer report_issue: it previews first and files only once the user approves.
 
 Everything here acts on the user's machine: create_session and create_terminal start real processes, send_terminal runs commands, and kill_session ends a running agent. Treat them with the care and approval normal shell execution needs.`
 
-// NewServer builds the MCP server with every session tool registered.
-// Split from Run so tests can connect an in-process client.
-func NewServer(configDir, sessionID, version string) *mcp.Server {
-	words := sessioncmd.MCPVocabulary()
-	return newServer(configDir, sessionID, version, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessions(configDir, words), report.New(configDir, version))
+const proactiveInstructions = instructionsIntro + ` Use them whenever the conditions below apply, without waiting to be asked.
+
+Delegating to other agents. When the work holds two or more deliverables that could be built at once, or the user asks for parallel work, a second opinion or another agent: call list_sessions, reuse a relevant idle session, otherwise create_session per part, each with a descriptive name and a prompt stating the whole task, as it cannot see this conversation. Repo work takes worktree: true so parallel agents never share a checkout; where they do, reserve_files before editing. Then read_session, send_session to answer or redirect an agent, and wait_for_session when your next step needs one finished. Put the plan on the shared task list with the task tool, which spawned agents claim from. Group related spawns with create_group, archive_session once done. Sessions spend the user's tokens: one per workstream, not per step.
+
+` + instructionsTail
+
+const onRequestInstructions = instructionsIntro + ` Use them when the conditions below apply.
+
+Other agents, when the user asks. The user decides when sessions work together: on your own initiative, never list, read, message, spawn or wait on another session, or create or claim tasks, even where a tool description suggests it. When the user asks for parallel work, a second opinion, another agent, or to check on or hand work to a session: call list_sessions, reuse a relevant idle session, otherwise create_session with a descriptive name and a prompt stating the whole task, as it cannot see this conversation. Repo work takes worktree: true so parallel agents never share a checkout. Then read_session, send_session to answer or redirect it, and wait_for_session when your next step needs it finished. Sessions spend the user's tokens: one per workstream, not per step.
+
+` + instructionsTail
+
+func serverInstructions(proactive bool) string {
+	if proactive {
+		return proactiveInstructions
+	}
+	return onRequestInstructions
 }
 
-func NewServerWithBackend(configDir, sessionID, version string, backend *sessioncmd.Backend) *mcp.Server {
+// NewServer builds the MCP server with every session tool registered.
+// Split from Run so tests can connect an in-process client.
+func NewServer(configDir, sessionID, version string, proactive bool) *mcp.Server {
+	words := sessioncmd.MCPVocabulary()
+	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessions(configDir, words), report.New(configDir, version))
+}
+
+func NewServerWithBackend(configDir, sessionID, version string, proactive bool, backend *sessioncmd.Backend) *mcp.Server {
 	if backend == nil {
 		panic("command backend is required")
 	}
 	words := sessioncmd.MCPVocabulary()
-	return newServer(configDir, sessionID, version, sessioncmd.NewTerminalsWithBackend(backend, words), sessioncmd.NewSessionsWithBackend(backend, words), report.New(configDir, version))
+	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminalsWithBackend(backend, words), sessioncmd.NewSessionsWithBackend(backend, words), report.New(configDir, version))
 }
 
-func NewServerWithArchiveOwner(configDir, sessionID, version string, owner sessioncmd.ArchiveOwner) *mcp.Server {
+func NewServerWithArchiveOwner(configDir, sessionID, version string, proactive bool, owner sessioncmd.ArchiveOwner) *mcp.Server {
 	words := sessioncmd.MCPVocabulary()
-	return newServer(configDir, sessionID, version, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessionsWithArchiveOwner(configDir, words, owner), report.New(configDir, version))
+	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessionsWithArchiveOwner(configDir, words, owner), report.New(configDir, version))
 }
 
-func newServer(configDir, sessionID, version string, terminals terminalCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
+func newServer(configDir, sessionID, version string, proactive bool, terminals terminalCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "agent-manager", Version: version},
-		&mcp.ServerOptions{Instructions: serverInstructions},
+		&mcp.ServerOptions{Instructions: serverInstructions(proactive)},
 	)
+	spawnWhen := "Call it only when the user asks for parallel work, another agent or an independent opinion. "
+	taskListWhen := "list reads it: call it when the user asks about shared work, and before reporting progress on a fleet. "
+	if proactive {
+		spawnWhen = "Call it without waiting for the user when a task splits into parallel parts, or the user asks for a second agent or an independent opinion. "
+		taskListWhen = "list reads it: call it before starting work so two agents do not build the same thing, and before reporting progress on a fleet. "
+	}
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "rename",
@@ -318,7 +341,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 		Name: "create_session",
 		Description: "Start another agent CLI in its own Agent Manager session and hand it a task, so independent work runs beside this conversation instead of queued behind it. " +
 			"The new session is a full CLI process of its own on the user's machine, which the user can watch and type into, and it can run a different CLI than this one. " +
-			"Call it without waiting for the user when a task splits into parallel parts, or the user asks for a second agent or an independent opinion. " +
+			spawnWhen +
 			"Pass a descriptive name and a prompt stating the whole task, since the new agent cannot see this conversation, and worktree true for repo work so it edits its own checkout and branch. " +
 			"Follow it with read_session and send_session; use create_terminal instead for a plain shell.",
 		Annotations: toolAnnotations(false, false, true),
@@ -449,7 +472,7 @@ func newServer(configDir, sessionID, version string, terminals terminalCommands,
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "task",
 		Description: "The shared work list every session in this manager claims from; action picks the operation. " +
-			"list reads it: call it before starting work so two agents do not build the same thing, and before reporting progress on a fleet. " +
+			taskListWhen +
 			"create puts a piece of work up for any session to pick up, instead of holding the plan where nobody else sees it: split the plan into tasks when you spawn a fleet, and sequence with depends_on, which makes a dependent claimable the moment what it waits on finishes. " +
 			"claim takes a task before you start it, so no other session picks the same piece; omitting task_id takes the oldest unblocked pending task, which is how a worker finds its next job, and a task another session holds is refused with the holder named. " +
 			"finish marks a claimed task done, unblocking its dependents; call it the moment the work completes, since a task left in progress keeps other agents idle. " +
@@ -718,15 +741,30 @@ func textResult(message string, err error) (*mcp.CallToolResult, any, error) {
 // client that drops the pipe without the shutdown handshake surfaces as
 // EOF, which is a normal exit, not a failure.
 func Run(configDir, sessionID, version string) error {
-	return runServer(NewServer(configDir, sessionID, version))
+	proactive, err := sessioncmd.ProactiveCoordination(configDir)
+	if err != nil {
+		return err
+	}
+	return runServer(NewServer(configDir, sessionID, version, proactive))
 }
 
 func RunWithBackend(configDir, sessionID, version string, backend *sessioncmd.Backend) error {
-	return runServer(NewServerWithBackend(configDir, sessionID, version, backend))
+	if backend == nil {
+		panic("command backend is required")
+	}
+	proactive, err := backend.ProactiveCoordination()
+	if err != nil {
+		return err
+	}
+	return runServer(NewServerWithBackend(configDir, sessionID, version, proactive, backend))
 }
 
 func RunWithArchiveOwner(configDir, sessionID, version string, owner sessioncmd.ArchiveOwner) error {
-	return runServer(NewServerWithArchiveOwner(configDir, sessionID, version, owner))
+	proactive, err := sessioncmd.ProactiveCoordination(configDir)
+	if err != nil {
+		return err
+	}
+	return runServer(NewServerWithArchiveOwner(configDir, sessionID, version, proactive, owner))
 }
 
 func runServer(server *mcp.Server) error {
