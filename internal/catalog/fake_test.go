@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
+	"time"
 )
 
 // TestMain turns the test binary into a stand-in CLI when CATALOG_FAKE names
@@ -83,7 +84,8 @@ func runFake(name string) error {
 	case "exit":
 		os.Exit(3)
 	case "silent":
-		select {}
+		// A bare select{} trips the runtime's deadlock check and exits.
+		time.Sleep(time.Hour)
 	case "claude":
 		parts := fixture("claude_initialize.json")
 		return serveLines(func(request fakeRequest) any {
