@@ -34,7 +34,7 @@ func TestOwnedBackendReloadsBindingsBeforeCreatingATerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	terminals := NewTerminalsWithBackend(backend, MCPVocabulary())
-	if _, err := terminals.Create(h.caller.ID, CreateTerminalOptions{Name: "updated"}); err != nil {
+	if _, err := terminals.Create(h.caller.ID, CreateTerminalOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	bound, err := exec.Command("tmux", "-L", h.driver.SocketName(), "list-keys", "-T", "root").CombinedOutput()
