@@ -1,0 +1,199 @@
+package review
+
+import (
+	"fmt"
+	"path/filepath"
+
+	"github.com/YoanWai/agent-manager/internal/diff"
+)
+
+// ApplyLoad is the only way a load can replace Review's target data. The
+// target, scope, and generation checks therefore cannot be skipped by root.
+func (m *Model) ApplyLoad(result LoadResult) ApplyResult {
+	if !m.active || result.TargetID != m.target.ID || result.Scope != m.scope || result.Generation != m.gen {
+		return ApplyResult{}
+	}
+	accepted := ApplyResult{Accepted: true}
+	if m.annotationOpen || m.sendConfirm {
+		m.loading = false
+		return accepted
+	}
+	m.loading = false
+	m.fingerprint = result.Fingerprint
+	if result.Err != nil {
+		m.errText = result.Err.Error()
+		m.set = diff.Set{}
+		m.worktrees = nil
+		if len(result.RepoRoots) > 0 {
+			m.repoRoots = append([]string(nil), result.RepoRoots...)
+			m.repoSel = result.RepoRoot
+		}
+		return accepted
+	}
+	m.errText = ""
+	m.repoRoots = append([]string(nil), result.RepoRoots...)
+	m.repoSel = result.RepoRoot
+	m.worktrees = append([]Worktree(nil), result.Worktrees...)
+	restored := false
+	if result.SavedErr != nil {
+		accepted.Error = "loading review state: " + result.SavedErr.Error()
+	} else if result.SavedLoaded {
+		restored = m.restore(result.Saved)
+	}
+	if result.MissingRepo != "" {
+		accepted.Error = fmt.Sprintf("picked or declared repo %s is no longer under the session directory", filepath.Base(result.MissingRepo))
+	}
+	previousPath := ""
+	if fd := m.currentFile(); fd != nil {
+		previousPath = fd.File.Path
+	}
+	m.set = result.Set
+	m.fileLoading = make(map[int]bool)
+	m.reanchor = nil
+	if result.Refresh || restored {
+		m.reanchor = make(map[string]bool)
+		for _, note := range m.annotations[m.reviewKey()] {
+			m.reanchor[note.file] = true
+		}
+	}
+	m.fileIdx = 0
+	for i := range m.set.Files {
+		if m.set.Files[i].File.Path == previousPath {
+			m.fileIdx = i
+			break
+		}
+	}
+	m.fileIdx = m.nextShownFile(m.fileIdx, 1)
+	m.clampCursor()
+	if request, ok := m.requestFile(m.fileIdx); ok {
+		accepted.Requests.Files = append(accepted.Requests.Files, request)
+	} else if request, ok := m.requestHighlight(); ok {
+		accepted.Requests.Highlight = &request
+	}
+	accepted.Requests.StartupTick = true
+	return accepted
+}
+
+func (m *Model) StatusRequest() (StatusRequest, bool) {
+	if !m.active || m.target.ID == "" || m.repoSel == "" {
+		return StatusRequest{}, false
+	}
+	m.statusGen++
+	return StatusRequest{TargetID: m.target.ID, RepoRoot: m.repoSel, Generation: m.statusGen}, true
+}
+
+func (m *Model) ApplyStatus(result StatusResult) ApplyResult {
+	if !m.active || result.TargetID != m.target.ID || result.RepoRoot != m.repoSel || result.Generation != m.statusGen {
+		return ApplyResult{}
+	}
+	accepted := ApplyResult{Accepted: true}
+	if result.Err != nil {
+		accepted.Error = "loading review statuses: " + result.Err.Error()
+		return accepted
+	}
+	key := m.reviewKey()
+	notes := m.annotations[key]
+	for i := range notes {
+		if handled, ok := result.Handled[notes[i].id]; ok {
+			notes[i].handled = handled
+		}
+	}
+	m.annotations[key] = notes
+	return accepted
+}
+
+func (m *Model) ApplySave(result SaveResult) ApplyResult {
+	accepted := ApplyResult{Accepted: true}
+	if result.Err != nil && result.TargetID == m.target.ID && result.RepoRoot == m.repoSel {
+		accepted.Error = "saving review state: " + result.Err.Error()
+	}
+	return accepted
+}
+
+func (m *Model) ApplyHighlight(result HighlightResult) bool {
+	m.putHighlight(result.Key, result.Highlight)
+	if m.highlightPending == result.Key {
+		m.highlightPending = HighlightKey{}
+	}
+	return result.Key.TargetID == m.target.ID && result.Key.Scope == m.scope
+}
+
+func (m *Model) requestHighlight() (HighlightRequest, bool) {
+	fd := m.currentFile()
+	if fd == nil || !fd.Loaded() || fd.Binary || fd.Err != nil || len(fd.Lines) == 0 {
+		return HighlightRequest{}, false
+	}
+	key := HighlightKey{TargetID: m.target.ID, Scope: m.scope, Path: fd.File.Path, Hash: ContentHash(fd)}
+	if m.highlights[key] != nil || m.highlightPending == key {
+		return HighlightRequest{}, false
+	}
+	m.highlightPending = key
+	return HighlightRequest{Key: key, File: *fd}, true
+}
+
+func (m *Model) requestFile(index int) (FileRequest, bool) {
+	if index < 0 || index >= len(m.set.Files) {
+		return FileRequest{}, false
+	}
+	fd := &m.set.Files[index]
+	if fd.Loaded() {
+		return FileRequest{}, false
+	}
+	if m.fileLoading == nil {
+		m.fileLoading = make(map[int]bool)
+	}
+	if m.fileLoading[index] {
+		return FileRequest{}, false
+	}
+	m.fileLoading[index] = true
+	snapshot := m.set
+	snapshot.Files = []diff.FileDiff{*fd}
+	return FileRequest{
+		TargetID: m.target.ID, Scope: m.scope, Generation: m.gen,
+		RepoRoot: m.set.Repo.Root, Index: index, Path: fd.File.Path, Set: snapshot,
+	}, true
+}
+
+func (m *Model) nextShownFile(index, dir int) int {
+	count := len(m.set.Files)
+	if count == 0 {
+		return index
+	}
+	for step := 0; step < count; step++ {
+		candidate := ((index+dir*step)%count + count) % count
+		if !m.fileHidden(&m.set.Files[candidate]) {
+			return candidate
+		}
+	}
+	return index
+}
+
+func (m *Model) fileHidden(fd *diff.FileDiff) bool {
+	return m.codeOnly && isNonCode(fd)
+}
+
+func (m *Model) clampCursor() {
+	total := 0
+	if fd := m.currentFile(); fd != nil {
+		total = m.rowCount(fd)
+	}
+	if m.cursorLine >= total {
+		m.cursorLine = total - 1
+	}
+	if m.cursorLine < 0 {
+		m.cursorLine = 0
+	}
+	if m.scroll >= total {
+		m.scroll = total - 1
+	}
+	if m.scroll < 0 {
+		m.scroll = 0
+	}
+}
+
+func (m Model) rowCount(fd *diff.FileDiff) int {
+	if m.sideBySide {
+		return len(fd.SideBySideRows())
+	}
+	return len(fd.Lines)
+}
