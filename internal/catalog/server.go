@@ -9,8 +9,7 @@ import (
 	"regexp"
 )
 
-// serverAddress waits for the line a server prints once it listens and
-// returns what announced's first group matched.
+// serverAddress returns announced's first group from the server's ready line.
 func serverAddress(ctx context.Context, proc *process, announced *regexp.Regexp) (string, error) {
 	for {
 		line, err := proc.next(ctx)
@@ -23,7 +22,6 @@ func serverAddress(ctx context.Context, proc *process, announced *regexp.Regexp)
 	}
 }
 
-// getJSON fetches url with the credential header set and decodes the body.
 func getJSON(ctx context.Context, url string, auth func(*http.Request), out any) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

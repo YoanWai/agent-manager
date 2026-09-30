@@ -23,8 +23,7 @@ type hermesOptions struct {
 	} `json:"providers"`
 }
 
-// models lists every logged-in provider's models. Hermes publishes whether a
-// model reasons but not the levels it takes, so those are typed.
+// Hermes says whether a model reasons, not which levels, so those are typed.
 func (o hermesOptions) models() []Model {
 	var models []Model
 	for _, row := range o.Rows {
@@ -41,9 +40,7 @@ func (o hermesOptions) models() []Model {
 	return models
 }
 
-// readHermes starts hermes serve behind a one-use session token, lists its
-// profiles, and reads the model options once for the active profile and
-// once scoped to each named one.
+// readHermes reads the model options for the active profile, then per profile.
 func readHermes(ctx context.Context, command, dir string) (Catalog, error) {
 	token := secret()
 	proc, err := start(command, dir, true, "HERMES_DASHBOARD_SESSION_TOKEN="+token)

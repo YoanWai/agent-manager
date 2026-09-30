@@ -131,26 +131,20 @@ type Tool struct {
 	// preview's height, not only grow it. A tool opts in once a height
 	// shrink is measured to keep its scrollback. Codex clears it (#369).
 	FitsHeight bool `toml:"fits_height"`
-	// Catalog names the built-in reader that asks the CLI, over the machine
-	// interface CatalogCommand starts, for the models, effort levels and
-	// profiles a session can launch with: "claude", "codex", "acp", "pi",
-	// "muse", "opencode" or "hermes". Empty leaves those choices to the CLI.
+	// Catalog names the reader that asks CatalogCommand for models, efforts
+	// and profiles; empty leaves those choices to the CLI.
 	Catalog        string `toml:"catalog"`
 	CatalogCommand string `toml:"catalog_command"`
-	// ModelArgs, EffortArgs and ProfileArgs are the flags a session's Choice
-	// launches with. {provider}, {model}, {effort} and {profile} take the
-	// values, and a launch line holding {choice} takes the flags there
-	// instead of at its end.
+	// ModelArgs, EffortArgs and ProfileArgs take {provider}, {model},
+	// {effort} and {profile}; a launch line holding {choice} takes them there.
 	ModelArgs   string `toml:"model_args"`
 	EffortArgs  string `toml:"effort_args"`
 	ProfileArgs string `toml:"profile_args"`
 }
 
-// Choice is the model, reasoning effort and profile a session launches its
-// CLI with. An empty field keeps the CLI's own default.
+// Choice is what a session launches its CLI on; empty keeps the CLI's default.
 type Choice struct {
-	// Provider routes Model for a CLI that picks a model per provider
-	// (hermes); it rides along with Model and is never chosen alone.
+	// Provider routes Model where the CLI picks per provider (hermes).
 	Provider string
 	Model    string
 	Effort   string
@@ -255,8 +249,7 @@ func (t Tool) WithChoice(choice Choice) Tool {
 	return t
 }
 
-// choicePlaceholder marks where a launch line takes the choice's flags when
-// they cannot go at its end, ahead of a subcommand that would refuse them.
+// choicePlaceholder puts the flags ahead of a subcommand that refuses them.
 const choicePlaceholder = "{choice}"
 
 func placeChoice(line, flags string) string {
@@ -441,8 +434,7 @@ resume_picker_command = "claude --resume"
 fork_command = "claude --resume {id} --fork-session --session-id {new_id} --name {name}"
 # fallback when a session predates id tracking: resumes the last conversation there
 revive_command = "claude --continue"
-# the Agent SDK's initialize request lists the models and the effort levels
-# each one takes; safe mode keeps hooks and MCP servers out of the probe
+# safe mode keeps hooks and MCP servers out of the probe
 catalog = "claude"
 catalog_command = "claude -p --input-format stream-json --output-format stream-json --verbose --safe-mode --no-session-persistence"
 model_args = "--model {model}"
@@ -509,8 +501,7 @@ fork_command = "opencode --session {id} --fork"
 resume_picker_command = "opencode"
 resume_picker_keys = "/sessions"
 revive_command = "opencode --continue"
-# the headless server lists every provider's models without opening a
-# session; its ACP server would leave one in the global session list
+# its ACP server would leave a session in the global session list
 catalog = "opencode"
 catalog_command = "opencode serve --port 0"
 model_args = "-m {model}"
@@ -561,7 +552,6 @@ resume_picker_command = "codex resume"
 fork_command = "codex fork {id}"
 # fallback: resumes the most recent session in the working directory
 revive_command = "codex resume --last"
-# the app server's model/list carries each model's effort levels and default
 catalog = "codex"
 catalog_command = "codex app-server"
 model_args = "-m {model}"
@@ -606,7 +596,6 @@ session_store = "muse"
 resume_by_id_command = "muse resume {id}"
 resume_picker_command = "muse resume"
 revive_command = "muse resume --last"
-# muse serve's model/list carries each model's effort variants
 catalog = "muse"
 catalog_command = "muse serve --no-session-log"
 model_args = "--model {model}"
@@ -642,7 +631,6 @@ fork_command = "grok --resume {id} --fork-session --session-id {new_id}"
 resume_picker_command = "grok"
 # fallback: resumes the most recent session for the working directory
 revive_command = "grok --continue"
-# an ACP session lists the models and, per model, its thought levels
 catalog = "acp"
 catalog_command = "grok agent stdio"
 model_args = "-m {model}"
@@ -687,7 +675,7 @@ resume_picker_command = "gemini -i /resume"
 # fallback when a session predates id tracking: resumes the project's most
 # recent session
 revive_command = "gemini --resume latest"
-# an ACP session lists the models; gemini takes no effort flag
+# gemini takes no effort flag
 catalog = "acp"
 catalog_command = "gemini --acp"
 model_args = "-m {model}"
@@ -765,9 +753,7 @@ resume_by_id_command = "hermes --cli --resume {id}"
 # flags given before the subcommand, which refuses them after it
 resume_picker_command = "hermes --cli {choice} sessions browse"
 revive_command = "hermes --cli --continue"
-# hermes serve lists the profiles and, per profile, every logged-in
-# provider's models with whether each reasons; it lists no effort levels,
-# so the effort is typed
+# hermes lists no effort levels, so the effort is typed
 catalog = "hermes"
 catalog_command = "hermes serve --skip-build --port 0"
 model_args = "--provider {provider} -m {model}"
@@ -818,7 +804,6 @@ resume_by_id_command = "pi --session {id}"
 fork_command = "pi --fork {id} --session-id {new_id}"
 resume_picker_command = "pi --resume"
 revive_command = "pi --continue"
-# RPC mode lists the models, and the thinking levels of each once it is set
 catalog = "pi"
 catalog_command = "pi --mode rpc --no-session"
 model_args = "--model {model}"

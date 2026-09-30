@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 )
 
-// readMuse asks muse serve for model/list, where each model carries its
-// complete effort set, or "unknown" when the provider does not say.
 func readMuse(ctx context.Context, command, dir string) (Catalog, error) {
 	proc, err := start(command, dir, false)
 	if err != nil {

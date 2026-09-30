@@ -71,8 +71,7 @@ type Session struct {
 	// only derives status for the sessions on its own server: a pane it
 	// cannot see belongs to another manager, not to a dead agent.
 	TmuxSocket string
-	// Choice is the model, effort and profile every launch of the session
-	// carries, so a restart, revive or fork stays on them.
+	// Choice rides every launch: restart, revive and fork.
 	Choice config.Choice
 }
 

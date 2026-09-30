@@ -6,8 +6,7 @@ import (
 	"errors"
 )
 
-// readClaude sends the Agent SDK's initialize control request, whose answer
-// lists the models with the effort levels each one takes.
+// readClaude reads the models off the Agent SDK's initialize response.
 func readClaude(ctx context.Context, command, dir string) (Catalog, error) {
 	proc, err := start(command, dir, false)
 	if err != nil {

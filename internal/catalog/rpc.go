@@ -8,15 +8,13 @@ import (
 	"strconv"
 )
 
-// rpcClient speaks JSON-RPC 2.0 over a process's stdin and stdout, one
-// message per line: codex's app server, muse serve and ACP agents.
+// rpcClient speaks line-delimited JSON-RPC 2.0 over stdin and stdout.
 type rpcClient struct {
 	proc   *process
 	lastID int
 }
 
-// clientInfo names this client to the servers that ask. Muse takes only a
-// name of lowercase letters, digits and underscores.
+// Muse takes only lowercase letters, digits and underscores in the name.
 var clientInfo = map[string]string{"name": "agent_manager", "version": "catalog"}
 
 type rpcError struct {
@@ -40,8 +38,6 @@ func (c *rpcClient) write(message map[string]any) error {
 	return c.proc.send(line)
 }
 
-// initialize opens the session codex's app server and muse serve both start
-// with.
 func (c *rpcClient) initialize(ctx context.Context) error {
 	var initialized struct{}
 	if err := c.call(ctx, "initialize", map[string]any{"clientInfo": clientInfo}, &initialized); err != nil {
@@ -50,8 +46,7 @@ func (c *rpcClient) initialize(ctx context.Context) error {
 	return c.write(map[string]any{"method": "initialized"})
 }
 
-// call sends a request and decodes its result into out. A request the
-// server makes meanwhile is refused, since a catalog client serves none.
+// call refuses any request the server makes meanwhile, having none to serve.
 func (c *rpcClient) call(ctx context.Context, method string, params, out any) error {
 	c.lastID++
 	id := strconv.Itoa(c.lastID)

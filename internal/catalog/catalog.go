@@ -1,7 +1,7 @@
-// Package catalog asks an agent CLI, through the machine interface it offers
-// programs, which models, reasoning efforts and profiles a session can
-// launch with. Nothing here names a model or a level: every value comes from
-// the CLI, so a model it ships next week shows up without a release.
+// Package catalog asks each agent CLI, through the interface it offers
+// programs, for the models, efforts and profiles a session can launch with.
+// Every value comes from the CLI, so a model it ships next week shows up
+// without a release.
 package catalog
 
 import (
@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-// Model is one model a CLI offers, with what its launch flags need.
+// Model is one model a CLI offers.
 type Model struct {
 	ID string `json:"id"`
 	// Provider routes ID for a CLI that picks models per provider.
@@ -28,15 +28,13 @@ type Model struct {
 	// Efforts are the reasoning levels the model takes, in the CLI's order.
 	Efforts       []string `json:"efforts,omitempty"`
 	DefaultEffort string   `json:"default_effort,omitempty"`
-	// EffortTyped marks a model that reasons while the CLI lists no levels
-	// for it, so the level is typed rather than picked.
+	// EffortTyped marks a model that reasons without listed levels.
 	EffortTyped bool `json:"effort_typed,omitempty"`
 	// Default is the model the CLI starts on when no model is given.
 	Default bool `json:"default,omitempty"`
 }
 
-// Key names the model the way a user writes it: the id, prefixed with its
-// provider where the CLI routes by provider.
+// Key is the id, prefixed with its provider where the CLI routes by one.
 func (m Model) Key() string {
 	if m.Provider == "" {
 		return m.ID
@@ -44,7 +42,7 @@ func (m Model) Key() string {
 	return m.Provider + ":" + m.ID
 }
 
-// Profile is a named setup a CLI can launch under, with the models it offers.
+// Profile is a named setup a CLI launches under, with the models it offers.
 type Profile struct {
 	Name   string  `json:"name"`
 	Detail string  `json:"detail,omitempty"`
@@ -57,8 +55,7 @@ type Catalog struct {
 	Profiles []Profile `json:"profiles,omitempty"`
 }
 
-// ModelsFor is the model list a launch under profile chooses from; the
-// empty profile is the CLI's own.
+// ModelsFor is profile's models, the CLI's own for the empty profile.
 func (c Catalog) ModelsFor(profile string) []Model {
 	for _, p := range c.Profiles {
 		if p.Name == profile {
@@ -68,8 +65,7 @@ func (c Catalog) ModelsFor(profile string) []Model {
 	return c.Models
 }
 
-// Match returns the models key names: the one whose Key it is, else every
-// model with that id, which is more than one where providers share an id.
+// Match returns the model whose Key is key, else every model with that id.
 func Match(models []Model, key string) []Model {
 	var byID []Model
 	for _, model := range models {
@@ -93,8 +89,7 @@ func Default(models []Model) (Model, bool) {
 	return Model{}, false
 }
 
-// fetchTimeout bounds one answer; opencode reading its provider catalogs is
-// the slowest measured, at about twenty seconds.
+// opencode reading its provider catalogs, the slowest, took about 20s.
 const fetchTimeout = 45 * time.Second
 
 var readers = map[string]func(ctx context.Context, command, dir string) (Catalog, error){
@@ -107,7 +102,7 @@ var readers = map[string]func(ctx context.Context, command, dir string) (Catalog
 	"hermes":   readHermes,
 }
 
-// Fetch starts command in dir and asks it over the interface kind names.
+// Fetch starts command in dir and asks it over the interface named kind.
 func Fetch(ctx context.Context, kind, command, dir string) (Catalog, error) {
 	read, ok := readers[kind]
 	if !ok {
@@ -122,8 +117,8 @@ func Fetch(ctx context.Context, kind, command, dir string) (Catalog, error) {
 	return cat, err
 }
 
-// process is a CLI serving one of the interfaces, in a process group of its
-// own so the servers and MCP children it starts leave with it.
+// process runs in a group of its own, so the servers and MCP children it
+// starts leave with it.
 type process struct {
 	cmd      *exec.Cmd
 	stdin    io.WriteCloser
@@ -134,8 +129,7 @@ type process struct {
 	stopOnce sync.Once
 }
 
-// running is every CLI still answering. Its own process group keeps a CLI
-// out of the terminal's signals, so a caller exiting mid-answer stops them.
+// running lets a caller exiting mid-answer stop CLIs its signals never reach.
 var running = struct {
 	sync.Mutex
 	procs map[*process]struct{}
@@ -154,9 +148,7 @@ func StopAll() {
 	}
 }
 
-// start runs command in dir with env added to the manager's own, reading
-// its output a line at a time: stdout, and for a server stderr too, since a
-// server may announce its address on either.
+// start reads a server's stderr too, since it may announce its address there.
 func start(command, dir string, server bool, env ...string) (*process, error) {
 	fields := strings.Fields(command)
 	if len(fields) == 0 {
@@ -206,7 +198,6 @@ func (p *process) readLines(out *bufio.Reader) {
 	}
 }
 
-// next returns the process's next output line.
 func (p *process) next(ctx context.Context) ([]byte, error) {
 	select {
 	case <-ctx.Done():
@@ -227,7 +218,6 @@ func (p *process) send(line []byte) error {
 	return err
 }
 
-// stop ends the whole group, asking first.
 func (p *process) stop() {
 	p.stopOnce.Do(func() {
 		close(p.quit)
@@ -245,8 +235,7 @@ func (p *process) stop() {
 	})
 }
 
-// secret is a one-use credential for a server this package starts, so no
-// other local process can talk to it while it runs.
+// secret keeps other local processes off a server this package starts.
 func secret() string {
 	return rand.Text()
 }

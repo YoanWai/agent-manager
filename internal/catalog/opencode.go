@@ -9,9 +9,8 @@ import (
 
 var opencodeListening = regexp.MustCompile(`listening on (http://\S+)`)
 
-// readOpencode starts opencode's headless server behind a one-use password
-// and reads every provider's models from it. Its ACP server lists them too,
-// but only inside a session, which opencode then keeps in its history.
+// opencode's ACP server lists models only inside a session, which then
+// stays in opencode's history, so the headless server is asked.
 func readOpencode(ctx context.Context, command, dir string) (Catalog, error) {
 	password := secret()
 	proc, err := start(command, dir, true, "OPENCODE_SERVER_PASSWORD="+password)

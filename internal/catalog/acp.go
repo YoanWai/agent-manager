@@ -2,8 +2,7 @@ package catalog
 
 import "context"
 
-// acpOption is a session config option. Its choices come flat or in named
-// groups; both are the protocol's shape.
+// acpOption's choices come flat or in named groups, and ACP allows both.
 type acpOption struct {
 	ID           string      `json:"id"`
 	Category     string      `json:"category"`
@@ -37,10 +36,8 @@ func optionIn(options []acpOption, category string) (acpOption, bool) {
 	return acpOption{}, false
 }
 
-// readACP opens an Agent Client Protocol session and reads its model
-// option; where the agent has a thought level option, each model is set in
-// turn to read the levels that model takes. Agents that predate config
-// options list their models under the session's models state instead.
+// readACP sets each model in turn to read its thought levels, and reads the
+// models state on agents that predate config options.
 func readACP(ctx context.Context, command, dir string) (Catalog, error) {
 	proc, err := start(command, dir, false)
 	if err != nil {
@@ -96,8 +93,7 @@ func readACP(ctx context.Context, command, dir string) (Catalog, error) {
 			if thought, ok := optionIn(set.ConfigOptions, "thought_level"); ok {
 				for _, level := range thought.choices() {
 					model.Efforts = append(model.Efforts, level.Value)
-					// grok keeps the session's level as current even for a
-					// model that does not offer it.
+					// grok keeps the session's level current even where a model lacks it.
 					if level.Value == thought.CurrentValue {
 						model.DefaultEffort = level.Value
 					}

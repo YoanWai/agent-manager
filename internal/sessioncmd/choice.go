@@ -13,17 +13,14 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 )
 
-// loadCatalog stops asking on ctrl+c or a hangup, so the CLI it asked
-// leaves with the command instead of outliving it.
+// loadCatalog stops asking on ctrl+c, so the CLI never outlives the command.
 func loadCatalog(configDir, toolName string, tool config.Tool) (catalog.Catalog, error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 	return catalog.Load(ctx, configDir, toolName, tool)
 }
 
-// choose checks a spawn's model, effort and profile against the ones the CLI
-// lists, the way the New Session form only offers listed ones, and fills in
-// the provider a listed model routes through.
+// choose refuses what the CLI does not list, as the form does.
 func (s *Sessions) choose(words Vocabulary, toolName string, tool config.Tool, opts CreateSessionOptions) (config.Choice, error) {
 	model, effort, profile := strings.TrimSpace(opts.Model), strings.TrimSpace(opts.Effort), strings.TrimSpace(opts.Profile)
 	if model == "" && effort == "" && profile == "" {
@@ -79,8 +76,7 @@ func (s *Sessions) choose(words Vocabulary, toolName string, tool config.Tool, o
 	return choice, nil
 }
 
-// listed names models the way they are passed back, capped so a CLI with
-// hundreds of them still gets a readable answer.
+// listed caps the names, since some CLIs list hundreds.
 func listed(models []catalog.Model) string {
 	const most = 20
 	var keys []string

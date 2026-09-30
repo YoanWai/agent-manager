@@ -62,8 +62,7 @@ type CreateSessionOptions struct {
 	// Nil inherits the group's spawn-in-worktree choice, then the global
 	// setting.
 	Worktree *bool
-	// Model, Effort and Profile launch the CLI on those instead of its own
-	// defaults, and every later launch of the session keeps them.
+	// Model, Effort and Profile ride every later launch of the session.
 	Model   string
 	Effort  string
 	Profile string
@@ -72,7 +71,7 @@ type CreateSessionOptions struct {
 type Sessions struct {
 	commands
 	newGit func() (*git.Driver, error)
-	// loadCatalog asks a CLI what it offers; the tests stand one in.
+	// loadCatalog is swapped in tests.
 	loadCatalog func(configDir, toolName string, tool config.Tool) (catalog.Catalog, error)
 }
 

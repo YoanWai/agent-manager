@@ -14,9 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 )
 
-// freshFor is how long an answer stands before it is asked again. A CLI
-// upgrade outdates it at once, since the answer records the binary it came
-// from.
+// An upgrade outdates an answer at once, since each records its binary.
 const freshFor = 6 * time.Hour
 
 type cached struct {
@@ -27,8 +25,7 @@ type cached struct {
 
 func cacheDir(configDir string) string { return filepath.Join(configDir, "catalogs") }
 
-// Cached returns the last answer tool gave, whether it is still fresh, and
-// whether there is one at all.
+// Cached returns the last answer, whether it is fresh, and whether there is one.
 func Cached(configDir, toolName string, tool config.Tool) (Catalog, bool, bool) {
 	raw, err := os.ReadFile(filepath.Join(cacheDir(configDir), toolName+".json"))
 	if err != nil {
@@ -42,10 +39,8 @@ func Cached(configDir, toolName string, tool config.Tool) (Catalog, bool, bool) 
 	return entry.Catalog, fresh, true
 }
 
-// Refresh asks tool again and keeps the answer for the next caller, the
-// manager and the spawn command alike. The CLI runs from a directory of
-// the manager's own, so a session an interface opens to answer never lands
-// in a directory a real session uses.
+// Refresh asks from the manager's own directory, so a session an interface
+// opens to answer never lands where a real session works.
 func Refresh(ctx context.Context, configDir, toolName string, tool config.Tool) (Catalog, error) {
 	if err := config.CheckInstalled(tool.CatalogCommand); err != nil {
 		return Catalog{}, err
@@ -61,7 +56,7 @@ func Refresh(ctx context.Context, configDir, toolName string, tool config.Tool) 
 	return cat, Keep(configDir, toolName, tool, cat)
 }
 
-// Keep stores cat as tool's answer as of now.
+// Keep stores cat as the tool's answer as of now.
 func Keep(configDir, toolName string, tool config.Tool, cat Catalog) error {
 	raw, err := json.Marshal(cached{ReadAt: time.Now(), Binary: binaryStamp(tool.CatalogCommand), Catalog: cat})
 	if err != nil {
@@ -78,8 +73,7 @@ func Load(ctx context.Context, configDir, toolName string, tool config.Tool) (Ca
 	return Refresh(ctx, configDir, toolName, tool)
 }
 
-// binaryStamp names the executable command runs and when it last changed,
-// so an upgrade in place reads as a different CLI.
+// binaryStamp changes with an upgrade in place, as the mtime does.
 func binaryStamp(command string) string {
 	name, _, _ := strings.Cut(command, " ")
 	path, err := exec.LookPath(name)

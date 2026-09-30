@@ -22,8 +22,6 @@ type piModel struct {
 	Provider string `json:"provider"`
 }
 
-// piClient speaks pi's RPC mode: a command per line, answered by a response
-// naming the command.
 type piClient struct {
 	proc   *process
 	lastID int
@@ -62,8 +60,7 @@ func (c *piClient) call(ctx context.Context, command map[string]any, out any) er
 	}
 }
 
-// readPi lists pi's models, then sets each in turn to read the thinking
-// levels it takes. Neither the session nor the user's settings keep them.
+// readPi sets each model in turn to read its thinking levels.
 func readPi(ctx context.Context, command, dir string) (Catalog, error) {
 	if err := checkPiVersion(ctx, command, dir); err != nil {
 		return Catalog{}, err

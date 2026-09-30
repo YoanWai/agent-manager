@@ -2,8 +2,6 @@ package catalog
 
 import "context"
 
-// readCodex asks codex's app server for model/list, where each model carries
-// its effort levels and the one it defaults to.
 func readCodex(ctx context.Context, command, dir string) (Catalog, error) {
 	proc, err := start(command, dir, false)
 	if err != nil {
