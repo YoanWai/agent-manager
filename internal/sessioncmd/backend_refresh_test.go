@@ -12,9 +12,9 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
-func TestOwnedBackendReloadsBindingsBeforeCreatingAnotherSession(t *testing.T) {
+func TestOwnedBackendReloadsBindingsBeforeCreatingATerminal(t *testing.T) {
 	h := newSessionHarness(t)
-	initial := "[tools.claude]\ncommand = \"sleep 60\"\n[keybindings.session]\nreview = \"ctrl+g\"\n"
+	initial := "[keybindings.session]\nreview = \"ctrl+g\"\n"
 	if err := os.WriteFile(filepath.Join(h.sessions.configDir, "config.toml"), []byte(initial), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,8 @@ func TestOwnedBackendReloadsBindingsBeforeCreatingAnotherSession(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h.sessions.configDir, "config.toml"), []byte(updated), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sessions.Create(h.caller.ID, CreateSessionOptions{Name: "updated", Tool: "claude"}); err != nil {
+	terminals := NewTerminalsWithBackend(backend, MCPVocabulary())
+	if _, err := terminals.Create(h.caller.ID, CreateTerminalOptions{Name: "updated"}); err != nil {
 		t.Fatal(err)
 	}
 	bound, err := exec.Command("tmux", "-L", h.driver.SocketName(), "list-keys", "-T", "root").CombinedOutput()
