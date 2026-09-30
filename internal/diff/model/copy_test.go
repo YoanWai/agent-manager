@@ -1,6 +1,7 @@
 package model_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/diff/model"
@@ -25,5 +26,21 @@ func TestCloneCopiesNestedSpansAndChangeIndices(t *testing.T) {
 	copied.Files[0].Changes[0] = 7
 	if got := set.Files[0]; got.Lines[0].Spans[0].Start != 1 || got.Changes[0] != 3 {
 		t.Fatalf("nested clone retained source storage: %+v", got)
+	}
+}
+
+func TestAdapterFlagsRemainOutsideSerializedDiff(t *testing.T) {
+	encoded, err := json.Marshal(model.FileDiff{HasStat: true, IsLoaded: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"HasStat", "IsLoaded"} {
+		if _, found := fields[name]; found {
+			t.Fatalf("adapter flag %s changed serialized diff shape", name)
+		}
 	}
 }

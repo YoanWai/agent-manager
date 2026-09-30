@@ -397,6 +397,7 @@ func TestGroupDefaultPathFillsSessionDir(t *testing.T) {
 func TestFormPromptComposesWithSettings(t *testing.T) {
 	m := buildModel(t)
 	tool := m.services.cfg.Tools["claude-hooked"]
+	tool.Command = "cat"
 
 	command, _, err := m.buildLaunch("claude", tool, launch.WithPrompt(tool, tool.Command, "fix the bug"), "prompt01")
 	if err != nil {

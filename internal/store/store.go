@@ -353,9 +353,6 @@ func (s *Store) PaneSize() (int, int, error) {
 	return width, height, nil
 }
 
-// coordinationSetting says how sessions treat each other. The manager, the
-// CLI and the MCP server each launch or brief sessions, so all of them read
-// it here.
 const coordinationSetting = "coordination"
 
 const coordinationProactive = "proactive"

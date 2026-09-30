@@ -786,8 +786,6 @@ func TestServerInstructionsSurviveTheClientLimit(t *testing.T) {
 		if len(instructions) >= claudeCodeLimit {
 			t.Fatalf("proactive %v: server instructions are %d characters; Claude Code truncates at %d, dropping the tail", proactive, len(instructions), claudeCodeLimit)
 		}
-		// The safety paragraph is the tail, and the one thing no tool
-		// description repeats.
 		if !strings.Contains(instructions, "acts on the user's machine") {
 			t.Fatalf("proactive %v: the instructions no longer say these tools act on the user's machine:\n%s", proactive, instructions)
 		}
@@ -1213,9 +1211,6 @@ func TestServerTeachesWhenToOfferAReport(t *testing.T) {
 	}
 }
 
-// On request is the default: the session still gets every tool, so "spawn
-// an agent for this" works, but nothing it reads before the user asks
-// invites it to reach for the other sessions on its own.
 func TestOnRequestServerWaitsForTheUserBeforeReachingOtherSessions(t *testing.T) {
 	onRequest := connectServer(t, NewServer(t.TempDir(), "abc123", "test", false))
 	proactive := connect(t, t.TempDir(), "abc123")

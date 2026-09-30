@@ -125,7 +125,7 @@ func TestPreviewFollowsPaneWithoutCursorMoves(t *testing.T) {
 	waitForPane("second-line")
 
 	// The frame has to carry it too, not just the model field.
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "second-line") {
+	if view := ansi.Strip(preparedView(m)); !strings.Contains(view, "second-line") {
 		t.Fatalf("frame missing the newest pane content:\n%s", view)
 	}
 }

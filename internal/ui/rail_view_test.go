@@ -230,7 +230,7 @@ func sgrOf(rendered string) string {
 func TestContentRuleStopsAtSeam(t *testing.T) {
 	m := shotModel()
 	leftWidth, _ := m.splitWidths()
-	rows := strings.Split(m.View(), "\n")
+	rows := strings.Split(preparedView(m), "\n")
 	start, end := m.bodyYRange()
 
 	crossings := 0
@@ -274,7 +274,7 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 
 				split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: sessions}, rail: railModelFromRows(rows, cursor),
 			}
-			view := ansi.Strip(m.View())
+			view := ansi.Strip(preparedView(m))
 			if !strings.Contains(view, sessions[cursor].Name) {
 				t.Errorf("%dx%d cursor=%d: %q is selected but never painted:\n%s",
 					size.w, size.h, cursor, sessions[cursor].Name, view)
@@ -389,7 +389,7 @@ func TestRailTopCarriesBetweenFrames(t *testing.T) {
 func TestPlaceNoticeHitMapsTheFootRowsAndCardColumns(t *testing.T) {
 	m := buildModel(t)
 	m.width, m.height = 120, 34
-	frame := strings.Split(ansi.Strip(m.View()), "\n")
+	frame := strings.Split(ansi.Strip(preparedView(m)), "\n")
 	y0, _ := m.bodyYRange()
 	rail := m.railLines(m.dividerX()-1, m.listBodyHeight())
 	footIndex := len(rail)
@@ -418,7 +418,7 @@ func TestPlaceNoticeHitMapsTheFootRowsAndCardColumns(t *testing.T) {
 func TestPlaceNoticeHitClearsAStaleBox(t *testing.T) {
 	m := buildModel(t)
 	m.width, m.height = 120, 34
-	m.View()
+	preparedView(m)
 	if !m.notices.noticeHit.ok {
 		t.Fatal("test setup: the card painted no hit")
 	}
@@ -428,7 +428,7 @@ func TestPlaceNoticeHitClearsAStaleBox(t *testing.T) {
 	for _, n := range m.activeNotices() {
 		m.notices.dismissed[n.id] = true
 	}
-	m.View()
+	preparedView(m)
 	if m.notices.noticeHit.ok {
 		t.Fatalf("a rail with no foot must drop the box, got %+v", m.notices.noticeHit)
 	}
@@ -438,12 +438,12 @@ func TestPlaceNoticeHitClearsAStaleBox(t *testing.T) {
 
 	m.prefs.hideStats = false
 	m.notices.dismissed = map[string]bool{}
-	m.View()
+	preparedView(m)
 	if !m.notices.noticeHit.ok {
 		t.Fatal("test setup: the card is back")
 	}
 	m.width = 40
-	m.View()
+	preparedView(m)
 	if m.notices.noticeHit.ok {
 		t.Fatalf("a rail too narrow for the card must drop the box, got %+v", m.notices.noticeHit)
 	}
@@ -483,7 +483,7 @@ func TestRailBannersSurviveShortTerminals(t *testing.T) {
 					m.rail.SetSearch(m.rail.Search(), searching)
 					m.rail.SetArchived(archived)
 					m.errBar.text = "worktree kept (has work): /Users/someone/dev/api"
-					rows := strings.Split(m.View(), "\n")
+					rows := strings.Split(preparedView(m), "\n")
 					if len(rows) != height {
 						t.Errorf("%dx%d search=%v archived=%v: frame is %d rows",
 							width, height, searching, archived, len(rows))

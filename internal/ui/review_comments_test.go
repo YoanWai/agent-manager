@@ -178,11 +178,11 @@ func TestDiffCommentVisibleInBothLayouts(t *testing.T) {
 	m.applyCmd(t, m.saveAnnotation())
 
 	setReviewSideBySide(m, false)
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
+	if view := ansi.Strip(preparedView(m)); !strings.Contains(view, "use fmt.Println here") {
 		t.Fatalf("comment missing in unified layout:\n%s", view)
 	}
 	setReviewSideBySide(m, true)
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "use fmt.Println here") {
+	if view := ansi.Strip(preparedView(m)); !strings.Contains(view, "use fmt.Println here") {
 		t.Fatalf("comment missing in split layout:\n%s", view)
 	}
 }
@@ -275,7 +275,7 @@ func TestReviewRoundTracksOutdatedAndHandledComments(t *testing.T) {
 	if !notes[0].Outdated {
 		t.Fatalf("changed comment should be outdated: %+v", notes[0])
 	}
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "Review round 1 · point 1 · open · outdated") {
+	if view := ansi.Strip(preparedView(m)); !strings.Contains(view, "Review round 1 · point 1 · open · outdated") {
 		t.Fatalf("outdated round comment is not visible:\n%s", view)
 	}
 

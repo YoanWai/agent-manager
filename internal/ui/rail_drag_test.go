@@ -20,7 +20,7 @@ func withGroups(t *testing.T, m *Model, dir string, paths ...string) {
 
 func dragOnto(t *testing.T, m *Model, from treeRow, line int) (*Model, tea.MouseMsg) {
 	t.Helper()
-	m.View()
+	preparedView(m)
 	y0, _ := m.bodyYRange()
 	start := -1
 	for index, row := range railHitRows(m) {

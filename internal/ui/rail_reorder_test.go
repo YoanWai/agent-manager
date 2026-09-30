@@ -230,7 +230,7 @@ func TestEveryMovableRowPaintsItsHandle(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
-	frame := strings.Split(ansi.Strip(m.View()), "\n")
+	frame := strings.Split(ansi.Strip(preparedView(m)), "\n")
 	for _, name := range []string{"alpha", "beta"} {
 		y0, _ := m.bodyYRange()
 		row := frame[y0+paintedRailLines(t, m, name)[0]]
@@ -273,7 +273,7 @@ func TestHandleThenKeysAndEscPutsItBack(t *testing.T) {
 	if got := sessionOrder(m); got[2] != before[0] {
 		t.Fatalf("down twice should move %s last, got %v", before[0], got)
 	}
-	m.View()
+	preparedView(m)
 	if !strings.Contains(ansi.Strip(m.viewFooter()), "Reorder") {
 		t.Fatalf("footer should name the reorder mode:\n%s", ansi.Strip(m.viewFooter()))
 	}
@@ -323,7 +323,7 @@ func TestLiftingARowFetchesItsPreview(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
-	m.View()
+	preparedView(m)
 	y0, _ := m.bodyYRange()
 	line := paintedRailLines(t, m, "beta")[0]
 	_, cmd := m.handleMouse(tea.MouseMsg{X: m.displayedRail.Handles["s:"+sessionRow(t, m, "beta").sess.ID], Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
@@ -338,7 +338,7 @@ func TestHandleColumnBelowTheFirstLineIsTheLabel(t *testing.T) {
 	m := buildModel(t)
 	m.prefs.comfortableRows = true
 	createSession(t, m, "alpha", t.TempDir(), "")
-	m.View()
+	preparedView(m)
 	y0, _ := m.bodyYRange()
 	lines := paintedRailLines(t, m, "alpha")
 	if len(lines) < 2 {

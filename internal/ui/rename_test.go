@@ -678,3 +678,19 @@ func assertPaneStayedOnSpawnPath(t *testing.T, m *Model, id, want string) {
 		t.Fatalf("pane cwd = %q, want spawn path %q", got, want)
 	}
 }
+
+func TestGroupedSessionRenameEditorIsVisible(t *testing.T) {
+	m := buildModel(t)
+	m.width, m.height = 100, 30
+	if err := m.services.store.CreateGroup("work/inner", ""); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "before", t.TempDir(), "work/inner")
+	m.selectSessionRow(t, "before")
+	m.openRename()
+	m.rename.input.SetValue("edited-name")
+	if frame := preparedView(m); !strings.Contains(frame, "edited-name") {
+		t.Fatalf("grouped session editor is absent from frame:\n%s", frame)
+	}
+}

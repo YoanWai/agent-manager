@@ -9,7 +9,7 @@ import (
 
 func menuEntry(t *testing.T, m *Model, label string) int {
 	t.Helper()
-	m.View()
+	preparedView(m)
 	for line := 1; line+1 < len(m.displayedRail.Menu); line++ {
 		if strings.Contains(ansi.Strip(m.displayedRail.Menu[line]), label) {
 			return line - 1
@@ -23,7 +23,7 @@ func TestMenuStaysOpenAfterTheDotsRelease(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
-	frame := strings.Split(ansi.Strip(m.View()), "\n")
+	frame := strings.Split(ansi.Strip(preparedView(m)), "\n")
 	y0, _ := m.bodyYRange()
 	y := y0 + paintedRailLines(t, m, "alpha")[0]
 	if !strings.Contains(frame[y], "[…]") {
@@ -53,7 +53,7 @@ func TestRightClickOpensTheRowMenuAndRunsAnEntry(t *testing.T) {
 	if sess, ok := m.selected(); !ok || sess.Name != "beta" {
 		t.Fatalf("right click should select its row, got %q", sess.Name)
 	}
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	for _, label := range []string{"Attach", "Rename", "Delete"} {
 		if !strings.Contains(frame, label) {
 			t.Fatalf("menu should list %s:\n%s", label, frame)
@@ -79,7 +79,7 @@ func TestRowMenuClosesOnEscAndOutsideClick(t *testing.T) {
 		t.Fatal("esc should close the menu")
 	}
 	m = railMouse(t, m, "alpha", tea.MouseActionPress, tea.MouseButtonRight)
-	m.View()
+	preparedView(m)
 	updated, _ := m.handleMouse(tea.MouseMsg{X: m.width - 1, Y: m.height - 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
 	if m.rail.MenuOpen() || m.mode != modeList {
@@ -111,7 +111,7 @@ func TestGroupMenuCreatesAndNeverAttaches(t *testing.T) {
 	createSession(t, m, "alpha", dir, "work")
 	m.selectGroupRow(t, "work")
 	m = railMouseAtLine(t, m, paintedGroupLines(t, m, "work")[0], tea.MouseActionPress, tea.MouseButtonRight)
-	m.View()
+	preparedView(m)
 	joined := ansi.Strip(strings.Join(m.displayedRail.Menu, "\n"))
 	if !strings.Contains(joined, "New session") {
 		t.Fatalf("group menu should offer creation:\n%s", joined)
@@ -165,7 +165,7 @@ func TestMenuPicksTheEntryAPressIsReleasedOn(t *testing.T) {
 	y := y0 + paintedRailLines(t, m, "alpha")[0]
 	updated, _ := m.handleMouse(tea.MouseMsg{X: m.displayedRail.Width, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
-	m.View()
+	preparedView(m)
 	rename := menuEntry(t, m, "Rename")
 	at := tea.MouseMsg{X: m.displayedRail.MenuRect.Left + 2, Y: m.displayedRail.MenuRect.Top + 1 + rename, Button: tea.MouseButtonLeft}
 	at.Action = tea.MouseActionMotion
@@ -194,7 +194,7 @@ func TestMenuHighlightsTheEntryUnderAHover(t *testing.T) {
 	if cmd := m.syncMouseCapture(); cmd == nil || !m.mouseHover {
 		t.Fatal("an open menu should ask the terminal for every motion")
 	}
-	m.View()
+	preparedView(m)
 	last := len(m.displayedRail.Menu) - 3
 	updated, _ = m.handleMouse(tea.MouseMsg{X: m.displayedRail.MenuRect.Left + 2, Y: m.displayedRail.MenuRect.Top + 1 + last, Action: tea.MouseActionMotion, Button: tea.MouseButtonNone})
 	m = updated.(*Model)

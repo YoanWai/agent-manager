@@ -30,7 +30,7 @@ Useful context when judging whether something is a vulnerability:
 - **tmux sessions.** The manager creates and drives sessions on its own tmux socket, and reads the visible text of each pane to derive status and render the preview. Pane content is treated as data, not commands.
 - **Process spawning.** Sessions launch the CLI command from your config (`[tools.<name>].command`) and its revive command. Anything you put in that config runs as you.
 - **Local state.** Config (`config.toml`) and state (`state.db`, SQLite) live in your OS user config directory. Session names, group paths, working directories, and review targets are stored there.
-- **Generated agent config.** Launching Claude Code, Codex, OpenCode, Grok, Gemini, Command Code, Muse Code, or an MCP-enabled Hermes tool writes or registers generated settings or MCP configuration so the agent gets the agent-manager MCP tools. Claude Code also gets generated hook settings that report its status.
+- **Generated agent config.** Launching Claude Code, Codex, OpenCode, Grok, Gemini, Antigravity, Command Code, Muse Code, or an MCP-enabled Hermes tool writes or registers generated settings or MCP configuration so the agent gets the agent-manager MCP tools. Claude Code also gets generated hook settings that report its status.
 - **MCP server.** `agent-manager mcp` speaks stdio to the agent in its own session and exposes session, group, task, reservation, terminal, messaging, and review operations. It identifies the calling session from its environment and scopes destructive terminal operations to the caller's own nested terminals.
 - **Git repositories.** Review mode runs read-only git commands against the repo a session declares or that ranking picks.
 - **Network.** One request a day to the GitHub Releases API to check for a newer version.
@@ -39,5 +39,5 @@ Findings that involve one of these crossing a trust boundary in a way the docs d
 
 ## Out of scope
 
-- Behavior of the AI agents themselves (Claude Code, Codex, OpenCode, Grok, Gemini, Pi, Command Code, Hermes, Muse Code). Report those to their maintainers.
+- Behavior of the AI agents themselves (Claude Code, Codex, OpenCode, Grok, Gemini, Antigravity, Pi, Command Code, Hermes, Muse Code). Report those to their maintainers.
 - Anything requiring an attacker to already have write access to your config file or your shell.

@@ -34,7 +34,7 @@
 
 ![five prompts to five fresh agents without moving the cursor, one per CLI, then the blocked one answered and its diff opened](docs/demo.gif)
 
-Claude Code, Codex, OpenCode, Grok, Gemini CLI, Pi, Command Code, Hermes Agent, and Muse Code run side by side. Each tool runs in its own persistent tmux session.
+Claude Code, Codex, OpenCode, Grok, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, and Muse Code run side by side. Each tool runs in its own persistent tmux session.
 
 agent-manager is a thin layer over the CLIs you already have. Each session launches your own installed tool as-is: your login, your subscription, your config files, your MCP servers, and every feature the tool ships all carry over, exactly as they behave in a plain terminal.
 
@@ -54,7 +54,7 @@ Not here yet: cost tracking.
 
 ## Supported tools
 
-Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Pi**, **Command Code**, **Hermes Agent**, and **Muse Code**. Each one's launch, revive, fork, and status rules ship in the binary (Hermes has no fork), so an upgrade brings the current version of all of them (see [Configuration](docs/configuration.md#agent-clis)). A CLI that is not on the list is a [feature request](https://github.com/YoanWai/agent-manager/issues/new/choose).
+Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Antigravity CLI**, **Pi**, **Command Code**, **Hermes Agent**, and **Muse Code**. Each one's launch, revive, fork, and status rules ship in the binary (Hermes and Antigravity have no fork), so an upgrade brings the current version of all of them (see [Configuration](docs/configuration.md#agent-clis)). A CLI that is not on the list is a [feature request](https://github.com/YoanWai/agent-manager/issues/new/choose).
 
 ## Install
 
@@ -106,7 +106,7 @@ The full reference, every key, the quick prompt, killing and reviving, diff revi
 | `s` | Settings (default tool, theme or follow the OS light/dark mode, list density, mouse, review layout, desktop notifications) |
 | `?` | The key map for the current screen; review shows only review bindings |
 
-A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch `am/<name>`), toggled on the `n` form, with `alt+w` in the quick prompt, or by default in Settings.
+A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch `am/<name>`), toggled on the `n` form, with `ctrl+t` in the quick prompt, or by default in Settings.
 
 ![the session tree, with a waiting agent's permission prompt in the preview](docs/screenshot-sessions.png)
 

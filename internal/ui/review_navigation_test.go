@@ -68,7 +68,7 @@ func TestDiffReviewReachesLastLine(t *testing.T) {
 			setReviewSideBySide(m, layout.split)
 
 			last := fmt.Sprintf("line-%03d", lines)
-			view := ansi.Strip(m.View())
+			view := ansi.Strip(preparedView(m))
 			if strings.Contains(view, last) {
 				t.Fatalf("the file's end should start off screen, got:\n%s", view)
 			}
@@ -77,7 +77,7 @@ func TestDiffReviewReachesLastLine(t *testing.T) {
 			// selected, and the cursor must sit on it.
 			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
 			m.prepareReviewLayout()
-			view = ansi.Strip(m.View())
+			view = ansi.Strip(preparedView(m))
 			if !strings.Contains(view, last) {
 				t.Fatalf("G should paint the last line %q, got:\n%s", last, view)
 			}
@@ -112,7 +112,7 @@ func TestDiffReviewStepsDownToTheEnd(t *testing.T) {
 	}
 	m.prepareReviewLayout()
 	last := fmt.Sprintf("line-%03d", lines)
-	if view := ansi.Strip(m.View()); !strings.Contains(view, last) {
+	if view := ansi.Strip(preparedView(m)); !strings.Contains(view, last) {
 		t.Fatalf("stepping down should reach the last line %q, got:\n%s", last, view)
 	}
 }
@@ -142,7 +142,7 @@ func TestDiffReviewReachesEndWithWrappedLines(t *testing.T) {
 			m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
 			m.prepareReviewLayout()
 			last := fmt.Sprintf("wide-%03d", lines)
-			if view := ansi.Strip(m.View()); !strings.Contains(view, last) {
+			if view := ansi.Strip(preparedView(m)); !strings.Contains(view, last) {
 				t.Fatalf("G should paint the last line %q, got:\n%s", last, view)
 			}
 
@@ -157,7 +157,7 @@ func TestDiffReviewReachesEndWithWrappedLines(t *testing.T) {
 					t.Fatal("cursor out of range")
 				}
 				marker := strings.Fields(fd.Lines[lineIdx].Text)[0]
-				if view := ansi.Strip(m.View()); !strings.Contains(view, marker) {
+				if view := ansi.Strip(preparedView(m)); !strings.Contains(view, marker) {
 					t.Fatalf("step %d: cursor on %q but the frame never paints it:\n%s", i, marker, view)
 				}
 			}
@@ -519,7 +519,7 @@ func TestNarrowReviewKeepsBothPanesMeasurable(t *testing.T) {
 		if fileWidth+codeWidth > width {
 			t.Fatalf("width %d gave panes wider than the screen: %d and %d", width, fileWidth, codeWidth)
 		}
-		if lines := splitLines(m.View()); len(lines) == 0 {
+		if lines := splitLines(preparedView(m)); len(lines) == 0 {
 			t.Fatalf("width %d rendered nothing", width)
 		}
 	}

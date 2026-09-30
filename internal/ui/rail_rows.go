@@ -8,8 +8,6 @@ import (
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 )
 
-// treeRow is a root-side resolution of Rail's copied selection. It is not
-// retained UI state; lifecycle callers use it to recover concrete records.
 type treeRow struct {
 	isGroup bool
 	group   string

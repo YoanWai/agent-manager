@@ -505,9 +505,6 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	}
 }
 
-// An agent without an MCP client learns the commands from help, so help
-// carries the user's coordination mode: on request asks it to wait for the
-// user, and proactive leaves the commands to be used on the agent's own.
 func TestHelpCarriesTheCoordinationMode(t *testing.T) {
 	const waitForTheUser = "only when the user asks"
 	if help := Help("dev", false); !strings.Contains(help, waitForTheUser) {

@@ -160,7 +160,7 @@ func TestHelpModeOwnsKeysBeforeListOverlays(t *testing.T) {
 
 	m.handleKey(runeKey("/"))
 	m.handleKey(runeKey("q"))
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	if m.mode != modeHelp || !strings.Contains(frame, "search q") {
 		t.Fatalf("list overlay intercepted Help input, mode = %v:\n%s", m.mode, frame)
 	}
@@ -171,7 +171,7 @@ func TestHelpContextForwardsCustomSessionAndListTablesThroughView(t *testing.T) 
 	m.height = 160
 	m.services.listKeys = m.services.listKeys.With(keybind.NewSession, bindingOf(t, "N"))
 	m.services.keys = sessionOf(t, []string{"f9"}, []string{"ctrl+g"}, []string{"alt+e"})
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	hasRow := func(key, description string) bool {
 		for _, line := range strings.Split(frame, "\n") {
 			line = strings.TrimSpace(line)

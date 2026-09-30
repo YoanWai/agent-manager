@@ -14,7 +14,7 @@ func BenchmarkListFrame(b *testing.B) {
 	m.width, m.height = 200, 50
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = m.View()
+		_ = preparedView(m)
 	}
 }
 

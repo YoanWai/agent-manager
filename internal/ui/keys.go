@@ -72,7 +72,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleHelpKey(msg)
 	}
 
-	// Rail overlays sit above the quick bar and own their keys first.
 	if m.rail.InputMode() != uirail.BrowseMode {
 		return m.applyRailDecision(m.rail.Key(msg, m.displayedRail, m.railKeyContext()))
 	}

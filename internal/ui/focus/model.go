@@ -67,7 +67,6 @@ type PaneState struct {
 	Cursor    Cursor
 }
 
-// Status is the Focus-owned status-line state.
 type Status struct {
 	ScrollOffset int
 	CopiedChars  int

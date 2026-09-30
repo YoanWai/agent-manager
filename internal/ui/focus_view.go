@@ -54,7 +54,7 @@ func (m *Model) focusFactsLine(width int) string {
 	// The facts give way one at a time as the terminal narrows, the least
 	// telling first, so a tight line still carries what it has room for
 	// rather than dropping the lot.
-	facts := []focusFact{{text: valueStyle.Render(truncateTail(shortHome(sess.Cwd), focusFactsDirCap)), spare: 3}}
+	facts := []focusFact{{text: valueStyle.Render(truncateTail(shortHome(m.sessionDir(sess)), focusFactsDirCap)), spare: 3}}
 	if sess.WorktreeBranch != "" {
 		facts = append(facts, focusFact{text: subtleStyle.Render("⑂ ") + valueStyle.Render(sess.WorktreeBranch), spare: 2})
 	}

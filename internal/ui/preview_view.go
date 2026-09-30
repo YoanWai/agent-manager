@@ -244,7 +244,7 @@ func (m *Model) viewDetail(width int) string {
 	}
 	started := subtleStyle.Render("started " + relSince(sess.CreatedAt))
 	group := lipgloss.NewStyle().Foreground(colorAccent2).Render(displayGroup(sess.Group))
-	dir := func(room int) string { return mutedStyle.Render(truncateTail(sess.Cwd, room)) }
+	dir := func(room int) string { return mutedStyle.Render(truncateTail(m.sessionDir(sess), room)) }
 	return fitColumns(heads, []string{state}, width) + "\n" +
 		factRow("group", plainValue(group), started, width) + "\n" +
 		factRow("dir", dir, usage, width)

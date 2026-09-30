@@ -267,6 +267,7 @@ func (m *Model) openSettings() {
 		hideStats:       m.prefs.hideStats,
 		mouseDisabled:   m.prefs.mouseDisabled,
 		worktreeDefault: m.defaultWorktree(),
+		proactive:       m.proactiveCoordination(),
 		notifications:   storedNotifications(m.services.store),
 		notifyFinished:  storedNotifyFinished(m.services.store),
 		themeAuto:       themeAutoEnabled(m.services.store),
@@ -416,6 +417,9 @@ func (m *Model) persistSettings() {
 		worktreeChoice = "on"
 	}
 	if err := m.services.store.SetSetting(worktreeSetting, worktreeChoice); err != nil {
+		m.errBar.text = err.Error()
+	}
+	if err := m.services.store.SetProactiveCoordination(m.settings.proactive); err != nil {
 		m.errBar.text = err.Error()
 	}
 	notifications := "off"
@@ -576,10 +580,20 @@ func (m *Model) cycleSetting(step int) tea.Cmd {
 		m.settings.mouseDisabled = !m.settings.mouseDisabled
 	case settingsFieldWorktree:
 		m.settings.worktreeDefault = !m.settings.worktreeDefault
+	case settingsFieldCoordination:
+		m.settings.proactive = !m.settings.proactive
 	case settingsFieldNotify:
 		m.settings.notifications = !m.settings.notifications
 	case settingsFieldNotifyFinish:
 		m.settings.notifyFinished = !m.settings.notifyFinished
 	}
 	return nil
+}
+
+func (m *Model) proactiveCoordination() bool {
+	proactive, err := m.services.store.ProactiveCoordination()
+	if err != nil {
+		m.errBar.text = "reading coordination setting: " + err.Error()
+	}
+	return proactive
 }

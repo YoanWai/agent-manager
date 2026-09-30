@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A bare Model must default to mouse reporting on: mouseDisabled is named
@@ -239,7 +240,7 @@ func TestPressOffDividerDoesNotDrag(t *testing.T) {
 // drift clickRow exists to rule out (#110).
 func paintedRailLines(t *testing.T, m *Model, name string) []int {
 	t.Helper()
-	m.View()
+	preparedView(m)
 	var lines []int
 	for i, row := range railHitRows(m) {
 		if row >= 0 && !railRows(m)[row].isGroup && railRows(m)[row].sess.Name == name {
@@ -254,7 +255,7 @@ func paintedRailLines(t *testing.T, m *Model, name string) []int {
 
 func paintedGroupLines(t *testing.T, m *Model, path string) []int {
 	t.Helper()
-	m.View()
+	preparedView(m)
 	var lines []int
 	for i, row := range railHitRows(m) {
 		if row >= 0 && railRows(m)[row].isGroup && railRows(m)[row].group == path {
@@ -355,7 +356,7 @@ func TestClickInFocusedPaneStaysFocused(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	m.View()
+	preparedView(m)
 	box := m.focusPane.FrameBox()
 	if !box.Valid {
 		t.Fatal("test setup: focused pane has no box")
@@ -461,7 +462,7 @@ func TestClickInTheFocusedColumnStaysFocused(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m.workspace.preview = tc.preview
-			m.View()
+			preparedView(m)
 			y0, _ := m.bodyYRange()
 			updated, _ := m.handleMouse(tea.MouseMsg{
 				X: m.focusPaneOriginX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
@@ -481,7 +482,7 @@ func TestClickInFullScreenFocusStaysFocused(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
 	m.selectSessionRow(t, "beta")
-	m.View()
+	preparedView(m)
 
 	m.prefs.fullLayout = true
 	m.selectSessionRow(t, "alpha")
@@ -490,7 +491,7 @@ func TestClickInFullScreenFocusStaysFocused(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	m.View()
+	preparedView(m)
 
 	y0, _ := m.bodyYRange()
 	updated, _ = m.handleMouse(tea.MouseMsg{
@@ -555,12 +556,10 @@ func TestSlowSecondClickDoesNotFocus(t *testing.T) {
 	line := paintedRailLines(t, m, "alpha")[0]
 	y0, _ := m.bodyYRange()
 	press := tea.MouseMsg{X: 2, Y: y0 + line, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+	ctx := m.railMouseContext()
+	ctx.Now = time.Now().Add(-time.Second)
+	m.applyRailDecision(m.rail.Mouse(press, m.displayedRail, ctx))
 	updated, _ := m.handleMouse(press)
-	m = updated.(*Model)
-	// A click outside the multi-click window is equivalent to an expired
-	// click history by the time the next press is handled.
-	m.rail.ResetClickHistory()
-	updated, _ = m.handleMouse(press)
 	m = updated.(*Model)
 	if m.mode != modeList {
 		t.Fatalf("a slow second click should not focus, mode = %v", m.mode)
@@ -635,7 +634,7 @@ func TestClickInContentColumnDoesNotSelect(t *testing.T) {
 	m.selectSessionRow(t, "beta")
 	before := m.rail.Cursor()
 
-	m.View()
+	preparedView(m)
 	y0, _ := m.bodyYRange()
 	updated, cmd := m.handleMouse(tea.MouseMsg{
 		X: m.dividerX() + 5, Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
@@ -761,7 +760,7 @@ func TestRowClickAfterALostReleaseLeavesTheDividerAlone(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
-	m.View()
+	preparedView(m)
 
 	y0, _ := m.bodyYRange()
 	updated, _ := m.handleMouse(tea.MouseMsg{
@@ -810,7 +809,7 @@ func TestPressOffDividerWhileArmedDoesNotSelectRow(t *testing.T) {
 	m.selectSessionRow(t, "beta")
 	before := m.rail.Cursor()
 
-	m.View()
+	preparedView(m)
 	updated, _ := m.enterResizeMode()
 	m = updated.(*Model)
 	y0, _ := m.bodyYRange()
@@ -916,7 +915,7 @@ func TestClickOnMoreCounterSelectsTheRowItHides(t *testing.T) {
 	// A rail too short for seven sessions, so the window has to keep a
 	// counter for the ones it is leaving out.
 	m.height = 12
-	frame := splitLines(m.View())
+	frame := splitLines(preparedView(m))
 
 	y0, _ := m.bodyYRange()
 	counter, target := -1, -1
@@ -954,13 +953,13 @@ func TestMoreCounterOnlyScrolls(t *testing.T) {
 		createSession(t, m, name, t.TempDir(), "")
 	}
 	m.height = 12
-	m.View()
+	preparedView(m)
 	if m.displayedRail.Width == 0 {
 		t.Fatal("test setup: the frame should record the rail width")
 	}
 	for _, x := range []int{2, 4, m.displayedRail.Width} {
 		m.selectSessionRow(t, "one")
-		frame := splitLines(m.View())
+		frame := splitLines(preparedView(m))
 		y0, _ := m.bodyYRange()
 		counter := -1
 		for i, row := range railHitRows(m) {
@@ -993,7 +992,7 @@ func TestClickOnRailChromeDoesNotSelect(t *testing.T) {
 	m.selectSessionRow(t, "beta")
 	m.rail.SetSearch(m.rail.Search(), true)
 	before := m.rail.Cursor()
-	m.View()
+	preparedView(m)
 
 	line := -1
 	for i, row := range railHitRows(m) {
@@ -1106,7 +1105,7 @@ func TestClickLeavingFocusDoesNotRefocus(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	m.View()
+	preparedView(m)
 
 	updated, _ = m.handleMouse(press)
 	m = updated.(*Model)
@@ -1245,7 +1244,7 @@ func TestWheelSwallowedInResizeMode(t *testing.T) {
 // in full screen.
 func messagesCell(t *testing.T, m *Model) (x, y int) {
 	t.Helper()
-	for row, line := range strings.Split(ansi.Strip(m.View()), "\n") {
+	for row, line := range strings.Split(ansi.Strip(preparedView(m)), "\n") {
 		if col := strings.Index(line, "messages"); col >= 0 {
 			return col, row
 		}
@@ -1314,7 +1313,7 @@ func TestClickOnMessagesCardWhileFocusedIsLeftToFocus(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
-	m.View()
+	preparedView(m)
 	if m = leftPress(m, x, y); m.mode == modeNotices {
 		t.Fatal("a click while focused must not open messages")
 	}

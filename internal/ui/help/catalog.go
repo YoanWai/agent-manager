@@ -129,8 +129,9 @@ func helpSections(ctx Context) []helpSection {
 		{title: titledWith("quick prompt", list, keybind.Prompt), rows: [][2]string{
 			{"↵", "send"},
 			{"↑↓", "switch the target session, or step the caret in a taller prompt"},
-			{"tab", "switch the tool a spawn uses (alt+m too)"},
-			{"shift+tab", "toggle worktree for the spawned agent (alt+w too)"},
+			{"tab", "step the tool a spawn uses forward (alt+m too)"},
+			{"shift+tab", "step the tool a spawn uses back one"},
+			{"ctrl+t", "toggle worktree for the spawned agent (alt+w too)"},
 			{"ctrl+v", "paste an image as a chip at the cursor"},
 			{"⌫", "next to a chip, delete the whole chip"},
 			{"←→", "step over a chip as one token"},

@@ -51,7 +51,7 @@ func TestRingLoaderWrapsThePhaseRoundTheRing(t *testing.T) {
 func TestBootShowsFullScreenRing(t *testing.T) {
 	m := shotModel()
 	m.startup.booting = true
-	body := ansi.Strip(m.View())
+	body := ansi.Strip(preparedView(m))
 	if strings.Contains(body, "add-rate-limiting") {
 		t.Fatalf("boot should hide the list:\n%s", body)
 	}
@@ -59,7 +59,7 @@ func TestBootShowsFullScreenRing(t *testing.T) {
 		t.Fatalf("boot should be the preview ring, got:\n%s", body)
 	}
 	m.startup.booting = false
-	body = ansi.Strip(m.View())
+	body = ansi.Strip(preparedView(m))
 	if !strings.Contains(body, "add-rate-limiting") {
 		t.Fatalf("after boot the list should show:\n%s", body)
 	}

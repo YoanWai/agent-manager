@@ -228,7 +228,7 @@ func TestRootRowLeadsTheList(t *testing.T) {
 			t.Fatalf("ungrouped session %q nested at depth %d", row.sess.Name, row.depth)
 		}
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "root") {
+	if !strings.Contains(ansi.Strip(preparedView(m)), "root") {
 		t.Fatal("root row is not painted")
 	}
 }
@@ -520,7 +520,7 @@ func TestRowMarksSessionsOnAnotherServer(t *testing.T) {
 
 					tmuxSocket: here, leadingManager: tc.leading}, rail: railModelFromRows([]treeRow{{sess: sess}}, 0),
 			}
-			view := ansi.Strip(m.View())
+			view := ansi.Strip(preparedView(m))
 			if strings.Contains(view, "elsewhere") != tc.elsewise {
 				t.Fatalf("elsewhere marker = %v, want %v:\n%s", !tc.elsewise, tc.elsewise, view)
 			}
@@ -541,7 +541,7 @@ func TestRowsAreUnmarkedBeforeTheFirstPoll(t *testing.T) {
 
 		split: splitState{ratio: defaultSplitRatio}, workspace: workspace{sessions: []store.Session{sess}}, rail: railModelFromRows([]treeRow{{sess: sess}}, 0),
 	}
-	if view := ansi.Strip(m.View()); strings.Contains(view, "elsewhere") {
+	if view := ansi.Strip(preparedView(m)); strings.Contains(view, "elsewhere") {
 		t.Fatalf("nothing to compare against should mark nothing:\n%s", view)
 	}
 }

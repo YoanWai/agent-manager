@@ -337,7 +337,7 @@ func TestDiffScopeCycleAndLayout(t *testing.T) {
 	}
 
 	setReviewSideBySide(m, true)
-	if view := ansi.Strip(m.View()); !strings.Contains(view, "split") {
+	if view := ansi.Strip(preparedView(m)); !strings.Contains(view, "split") {
 		t.Fatalf("split pill missing:\n%s", view)
 	}
 }

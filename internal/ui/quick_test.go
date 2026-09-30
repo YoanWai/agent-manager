@@ -540,6 +540,25 @@ func TestQuickSpawnUsesTabCycledTool(t *testing.T) {
 	}
 }
 
+func TestQuickShiftTabStepsToolBack(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	names := m.quick.toolNames
+	if len(names) < 2 {
+		t.Fatalf("need at least two tools, got %v", names)
+	}
+	m.quick.toolIndex = 1
+	if m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab}); m.quickTool() != names[0] {
+		t.Fatalf("shift+tab from the second tool = %q want %q", m.quickTool(), names[0])
+	}
+	if m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab}); m.quickTool() != names[len(names)-1] {
+		t.Fatalf("shift+tab from the first tool = %q want the last, %q", m.quickTool(), names[len(names)-1])
+	}
+	if m.quick.worktreeTouched {
+		t.Fatal("shift+tab must not touch the worktree toggle")
+	}
+}
+
 func closeQuick(m *Model) {
 	if m.quick.active {
 		m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
@@ -582,9 +601,9 @@ func TestQuickRemembersLastSpawnWorktree(t *testing.T) {
 	initGitRepo(t, repo)
 	m := quickGroupModel(t, repo)
 	m.openQuickMode()
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
 	if !m.quickWorktreeOn() {
-		t.Fatal("shift+tab should turn worktree on")
+		t.Fatal("ctrl+t should turn worktree on")
 	}
 	m.quick.input.SetValue("do a thing")
 	_, cmd := m.submitQuick()
@@ -608,9 +627,9 @@ func TestQuickHiddenLastToolFallsBackToSettings(t *testing.T) {
 	initGitRepo(t, repo)
 	m := quickGroupModel(t, repo)
 	m.openQuickMode()
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
 	if !m.quickWorktreeOn() {
-		t.Fatal("shift+tab should turn worktree on")
+		t.Fatal("ctrl+t should turn worktree on")
 	}
 	m.quick.input.SetValue("do a thing")
 	_, cmd := m.submitQuick()
@@ -649,7 +668,7 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 			m.quick.toolIndex = i
 		}
 	}
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
 	m.quick.input.SetValue("do a thing")
 	m.submitQuick()
 
@@ -741,9 +760,9 @@ func TestQuickWorktreeToggle(t *testing.T) {
 	if m.quick.worktree {
 		t.Fatal("worktree should default off")
 	}
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}, Alt: true})
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
 	if !m.quick.worktree {
-		t.Fatal("alt+w should toggle worktree on")
+		t.Fatal("ctrl+t should toggle worktree on")
 	}
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}, Alt: true})
 	if m.quick.worktree {
@@ -786,9 +805,9 @@ func TestQuickWorktreeGatedInNonRepoGroup(t *testing.T) {
 	if m.quickWorktreeOn() {
 		t.Fatal("a non-repo group dir cannot host a worktree, even with the group default on")
 	}
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
 	if m.quickWorktreeOn() {
-		t.Fatal("shift+tab must not turn worktree on for a non-repo dir")
+		t.Fatal("ctrl+t must not turn worktree on for a non-repo dir")
 	}
 	if !strings.Contains(m.errBar.text, "need a git repository") {
 		t.Fatalf("refused toggle should say why, got %q", m.errBar.text)
@@ -859,9 +878,9 @@ func TestQuickWorktreeToggleOverridesGroupDefault(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
-	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlT})
 	if m.quickWorktreeOn() {
-		t.Fatal("shift+tab should override the group default off")
+		t.Fatal("ctrl+t should override the group default off")
 	}
 	m.quick.input.SetValue("do a thing")
 	m.submitQuick()

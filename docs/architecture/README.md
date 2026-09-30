@@ -1,6 +1,6 @@
 # Application architecture
 
-PR #2 implements a local application boundary refactor. It is partially conformant to the broader architecture proposed in PR #1 and issue #646. Shared lifecycle and UI-free maintenance are implemented. Feature-owned UI behavior, read-only rendering, nonblocking lifecycle effects, remote workspace coordination, and exclusive execution authority remain incomplete.
+PR #2 implements a local application boundary refactor. It is partially conformant to the broader architecture proposed in PR #1 and issue #646. Shared lifecycle and UI-free maintenance are implemented. Help, Review, Focus, and Rail have feature-owned packages, and rendering reads a prepared frame. Nonblocking lifecycle effects, remote workspace coordination, and exclusive execution authority remain incomplete.
 
 These documents retain the broader target. A requirement described here is not evidence that its implementation exists.
 
@@ -14,7 +14,7 @@ These documents retain the broader target. A requirement described here is not e
 | [Roadmap and evidence](roadmap-and-evidence.md) | Current conformance, source references, and bounded follow-ups |
 | [Production proposal](../architecture-proposal.md) | Summary of the implemented refactor and runnable examples |
 
-The [Help feature package](help-package.md) records the first enforced UI package boundary and root adapter responsibilities. The [review data boundary](review-data.md) separates pure line models and Git values from concrete subprocess adapters. The [real-terminal harness](../../tools/e2e/README.md) makes the local smoke reproducible.
+The [UI feature package contracts](ui-feature-packages.md) record Help, Review, Focus, and Rail ownership and root adapter responsibilities. The [Help feature package](help-package.md) retains its detailed first-extraction contract. The [review data boundary](review-data.md) separates pure line models and Git values from concrete subprocess adapters. The [real-terminal harness](../../tools/e2e/README.md) makes the local smoke reproducible.
 
 The [session command file map](sessioncmd-file-map.md) records the command split. The [UI concern map](ui-file-map.md) records the UI taxonomy and separates file placement from feature ownership.
 

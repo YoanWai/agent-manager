@@ -29,7 +29,7 @@ func TestDiffReviewShowsWholeFile(t *testing.T) {
 		t.Fatalf("files = %+v", m.review.Snapshot().Set.Files)
 	}
 
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(preparedView(m))
 	if !strings.Contains(view, "review · coder") || !strings.Contains(view, "files") {
 		t.Fatalf("fullscreen review layout missing:\n%s", view)
 	}

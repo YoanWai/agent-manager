@@ -111,6 +111,9 @@ func (m *Model) prepareRailFrame(width, height int) {
 			rename.Target = uirail.Selection{Kind: uirail.GroupRow, Group: m.rename.path}
 		} else {
 			rename.Target = uirail.Selection{Kind: uirail.SessionRow, SessionID: m.rename.sessID}
+			if session, ok := m.sessionByID(m.rename.sessID); ok {
+				rename.Target.Group = session.Group
+			}
 		}
 		fieldWidth := width - 4
 		for _, row := range m.rail.Rows() {
@@ -176,8 +179,6 @@ func (m *Model) placeRailNoticeHit() {
 
 func (m *Model) overlayRowMenu(frame string) string { return m.displayedRail.Overlay(frame) }
 
-// railLines is retained as a root integration helper. The content and all
-// geometry come from the child frame prepared by one layout pass.
 func (m *Model) railLines(width, height int) []contentLine {
 	m.prepareRailFrame(width, height)
 	return railContentLines(m.displayedRail.Lines)

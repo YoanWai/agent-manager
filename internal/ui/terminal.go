@@ -103,3 +103,10 @@ func (m *Model) rowDir() (string, bool) {
 	}
 	return entry.sess.Cwd, isDir(entry.sess.Cwd)
 }
+
+func (m *Model) sessionDir(sess store.Session) string {
+	if path := m.workspace.panes[sess.ID].Path; path != "" {
+		return path
+	}
+	return sess.Cwd
+}

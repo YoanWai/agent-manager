@@ -17,6 +17,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/update"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -169,7 +170,7 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 	if len(n.releases) != 4 {
 		t.Fatalf("summary has %d releases, want 4", len(n.releases))
 	}
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{
 		"4 releases available · v0.6.0",
 		"v0.3.0 · 1 change",
@@ -206,7 +207,7 @@ func TestPostUpdateNoticeUsesPersistedStartingVersion(t *testing.T) {
 	if from, _ := st.Setting(whatsNewFromSetting); from != "v0.1.0" {
 		t.Fatalf("persisted starting version = %q", from)
 	}
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{
 		"Updated across 4 releases · v0.5.0",
 		"Updated from v0.1.0 to v0.5.0.",
@@ -354,7 +355,7 @@ func TestFeedUsesOneCanonicalTitleInCardAndModal(t *testing.T) {
 		t.Fatalf("card did not use canonical title:\n%s", card)
 	}
 	m.openNotices("feed-canonical")
-	modal := ansi.Strip(m.View())
+	modal := ansi.Strip(preparedView(m))
 	if !strings.Contains(modal, "One title everywhere") || strings.Contains(modal, "legacy compact copy") {
 		t.Fatalf("modal and card titles diverged:\n%s", modal)
 	}
@@ -527,7 +528,7 @@ func TestOpenNoticesFromList(t *testing.T) {
 
 func TestNoticesViewListsAndDetails(t *testing.T) {
 	m := modalModel(t)
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{"messages", "Welcome to agent-manager", "Settings (s)", "A bug or an idea?", "dismiss"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("modal missing %q:\n%s", want, frame)
@@ -536,7 +537,7 @@ func TestNoticesViewListsAndDetails(t *testing.T) {
 
 	for _, terminal := range []int{100, 40} {
 		m.width = terminal
-		frame := ansi.Strip(m.View())
+		frame := ansi.Strip(preparedView(m))
 		var widths []int
 		for _, line := range strings.Split(frame, "\n") {
 			trimmed := strings.TrimRight(line, " ")
@@ -566,7 +567,7 @@ func TestNoticesLongBodyWrapsFully(t *testing.T) {
 		},
 	}}
 	m.openNotices("feed-long")
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	for _, line := range strings.Split(frame, "\n") {
 		if !strings.Contains(line, "╭") {
 			continue
@@ -600,7 +601,7 @@ func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 		},
 	}}
 	m.openNotices("feed-long")
-	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	lines := strings.Split(ansi.Strip(preparedView(m)), "\n")
 	if len(lines) > m.height {
 		t.Fatalf("frame must fit %d rows, got %d", m.height, len(lines))
 	}
@@ -626,12 +627,12 @@ func TestNoticesBodyScrollIsBoundedAndVisible(t *testing.T) {
 	m.notices.feedMessages = []feed.Message{{ID: "feed-scroll", Banner: "scroll", Title: "Scrollable summary", Body: body}}
 	m.openNotices("feed-scroll")
 
-	before := ansi.Strip(m.View())
+	before := ansi.Strip(preparedView(m))
 	if !strings.Contains(before, "↓ more below…") {
 		t.Fatalf("clipped summary did not advertise more content:\n%s", before)
 	}
 	m.handleNoticesKey(key("pgdown"))
-	after := ansi.Strip(m.View())
+	after := ansi.Strip(preparedView(m))
 	if m.notices.noticeScroll == 0 || !strings.Contains(after, "↑ more above…") {
 		t.Fatalf("page down did not move the summary:\n%s", after)
 	}
@@ -1074,6 +1075,7 @@ func TestNewFeedWaitsForQuickBar(t *testing.T) {
 	m.width, m.height = 100, 34
 	m.mode = modeList
 	m.quick.active = true
+	m.quick.input = textarea.New()
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
 	if m.mode != modeList || !m.quick.active {
 		t.Fatalf("quick bar should keep the modal closed, mode=%v quick=%v", m.mode, m.quick.active)
@@ -1182,7 +1184,7 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 		Body:   []string{"Sessions may drop.", "Stay on v0.35 until the fix."},
 		URL:    "https://github.com/YoanWai/agent-manager/issues/1",
 	}}})
-	feedFrame := ansi.Strip(feedModel.View())
+	feedFrame := ansi.Strip(preparedView(feedModel))
 	for _, want := range []string{"messages", "Hold off on v0.36", "Sessions may drop", "Stay on v0.35", "esc"} {
 		if !strings.Contains(feedFrame, want) {
 			t.Fatalf("feed modal missing %q:\n%s", want, feedFrame)
@@ -1197,7 +1199,7 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 		url:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
 		releases: []update.Release{uiRelease("v0.3.0", "Notices: Open the modal on a new message")},
 	})
-	updFrame := ansi.Strip(upd.View())
+	updFrame := ansi.Strip(preparedView(upd))
 	for _, want := range []string{"messages", "v0.3.0 available", "You are on v0.2.0", "u update", "x dismiss"} {
 		if !strings.Contains(updFrame, want) {
 			t.Fatalf("update modal missing %q:\n%s", want, updFrame)
@@ -1367,7 +1369,7 @@ func TestNoticesTinyTerminalStaysInside(t *testing.T) {
 	m := modalModel(t)
 	for _, width := range []int{5, 12, 30} {
 		m.width, m.height = width, 10
-		for _, line := range strings.Split(ansi.Strip(m.View()), "\n") {
+		for _, line := range strings.Split(ansi.Strip(preparedView(m)), "\n") {
 			if got := lipgloss.Width(line); got > width {
 				t.Fatalf("width %d: line overflows at %d: %q", width, got, line)
 			}
@@ -1499,7 +1501,7 @@ func TestFullLayoutFootLineCountsMessages(t *testing.T) {
 	if !strings.Contains(foot, "messages") {
 		t.Fatalf("active notices should show a messages count:\n%s", foot)
 	}
-	full := ansi.Strip(m.View())
+	full := ansi.Strip(preparedView(m))
 	if !strings.Contains(full, "messages") {
 		t.Fatalf("full screen frame lost the messages count:\n%s", full)
 	}
@@ -1661,7 +1663,7 @@ func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	if m.mode != modeNotices {
 		t.Fatalf("M should open an empty panel, mode=%v", m.mode)
 	}
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{"nothing new", "r refresh"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("empty panel missing %q:\n%s", want, frame)
@@ -1671,8 +1673,8 @@ func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	if _, cmd := m.handleNoticesKey(key("r")); cmd == nil || !m.update.refreshing {
 		t.Fatalf("r unreachable on an empty panel: refreshing=%v", m.update.refreshing)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "refreshing releases and messages") {
-		t.Fatalf("empty panel hides the refresh it started:\n%s", ansi.Strip(m.View()))
+	if !strings.Contains(ansi.Strip(preparedView(m)), "refreshing releases and messages") {
+		t.Fatalf("empty panel hides the refresh it started:\n%s", ansi.Strip(preparedView(m)))
 	}
 }
 
@@ -1747,7 +1749,7 @@ func TestNoticesWaitForADragOrTheRowMenu(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
-	m.View()
+	preparedView(m)
 	if !m.listReadyForNotice() {
 		t.Fatal("test setup: a plain list takes a notice")
 	}

@@ -40,11 +40,13 @@ Feature subpackages were considered. They would need exported messages, shared r
 
 Help is now the first feature package. It consumes current presentation values and returns content and input outcomes. Root owns mode transitions, command scheduling, and generic dialog chrome. A small shared presentation package contains three reused pure text operations. Moving all dialog rendering, legends, and theme state was rejected for this increment because it would widen the cutover across unrelated features. A broad host exposing the store, driver, or all services would retain the coupling under a new name. See the [Help package contract](help-package.md).
 
+Review, Focus, and Rail now follow the same private-model boundary with feature-specific contexts, requests, and results. Root adapters execute concrete effects. A generic shared event/effect framework and callback-per-root-method facade were rejected because they would obscure ownership and retain the root coupling. Review uses pure diff and Git value packages rather than importing the concrete Git runner. Copied data boundaries are tested for aliasing; a value-shaped API alone does not establish private ownership. See the [feature contracts](ui-feature-packages.md).
+
 ## Keep UI effects and rendering explicit
 
 The target remains the repository invariant that `Update` never blocks. I/O and subprocess work belong in `tea.Cmd`, with typed completion messages and request generations. Current synchronous lifecycle handlers are a documented conformance gap, even though their effects now use shared services.
 
-Layout runs before painting. `View` reads prepared state and does not resize inputs, change scroll, or record geometry. The current implementation still performs some of these mutations while rendering. Moving geometry to a layout step must preserve mouse hit regions and frame identity.
+Layout runs before painting. `View` reads prepared state and does not resize inputs, change scroll, or record geometry. The root now prepares the final frame after message dispatch and returns its cached text from `View`. Child frame preparation records mouse hit regions and cursor geometry together with the displayed content. Directly constructed test fixtures prepare their frame explicitly.
 
 Reject stale presentation replies after retarget or cancellation. Report completed or uncertain effects against their captured dispatch target. Dropping a stale reply does not cancel an effect already accepted by the execution authority.
 

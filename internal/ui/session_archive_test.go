@@ -139,7 +139,7 @@ func TestArchiveAndRestoreRefuseTheRootRow(t *testing.T) {
 
 			m.selectSessionRow(t, tc.next)
 			m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tc.key)})
-			if card := ansi.Strip(m.View()); !strings.Contains(card, tc.action+" "+tc.next+"?") || strings.Contains(card, "root is the top level") {
+			if card := ansi.Strip(preparedView(m)); !strings.Contains(card, tc.action+" "+tc.next+"?") || strings.Contains(card, "root is the top level") {
 				t.Errorf("the %s card on %s should drop the root refusal:\n%s", tc.action, tc.next, card)
 			}
 		})

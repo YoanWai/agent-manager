@@ -48,7 +48,7 @@ func TestPaneBoxMatchesPaintedFrame(t *testing.T) {
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
-	frame := splitLines(m.View())
+	frame := splitLines(preparedView(m))
 	box := m.focusPane.FrameBox()
 	if !box.Valid {
 		t.Fatal("pane box never recorded")

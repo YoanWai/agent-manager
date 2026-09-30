@@ -39,3 +39,25 @@ func TestPureReviewDataRejectsConcreteGit(t *testing.T) {
 		t.Fatal("pure diff model accepted Git runtime")
 	}
 }
+
+func TestFeaturePackageGraphs(t *testing.T) {
+	for _, feature := range []boundary{reviewBoundary, focusBoundary, railBoundary} {
+		t.Run(feature.name, func(t *testing.T) {
+			if err := checkBoundary(feature); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestFeaturePackagesRejectRuntimeTransitively(t *testing.T) {
+	for _, feature := range []boundary{reviewBoundary, focusBoundary, railBoundary} {
+		t.Run(feature.name, func(t *testing.T) {
+			for _, path := range []string{"/internal/ui", "/internal/git", "/internal/store", "/internal/tmux", "/internal/execution", "/internal/app", "/internal/status"} {
+				if err := checkBoundaryDependencies(feature, []string{module + feature.path, module + path}); err == nil {
+					t.Fatalf("forbidden dependency %s was accepted", module+path)
+				}
+			}
+		})
+	}
+}

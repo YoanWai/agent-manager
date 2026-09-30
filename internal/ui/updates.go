@@ -12,10 +12,11 @@ import (
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.handleMsg(msg)
 	if mm, ok := model.(*Model); ok {
-		mm.prepareReviewLayout()
 		mm.flushPendingNotice()
+		mm.prepareFrame()
 		return mm, tea.Batch(cmd, mm.syncMouseCapture())
 	}
+	m.prepareFrame()
 	return model, tea.Batch(cmd, m.syncMouseCapture())
 }
 
@@ -412,17 +413,17 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; pin it back to the current layout's
 		// box so the capture is not clipped on the right.
-		if m.focusRuntime.geom != nil {
-			delete(m.focusRuntime.geom, msg.sessID)
+		if m.focusRuntime.lastPaneSizes != nil {
+			delete(m.focusRuntime.lastPaneSizes, msg.sessID)
 		}
 		width, height := m.paneTargetSize()
 		m.poller.reflowSessions([]string{msg.sessID}, func() {
 			_ = m.services.tmux.Resize(msg.sessID, width, height)
 		})
-		if m.focusRuntime.geom == nil {
-			m.focusRuntime.geom = map[string][2]int{}
+		if m.focusRuntime.lastPaneSizes == nil {
+			m.focusRuntime.lastPaneSizes = map[string][2]int{}
 		}
-		m.focusRuntime.geom[msg.sessID] = [2]int{width, height}
+		m.focusRuntime.lastPaneSizes[msg.sessID] = [2]int{width, height}
 		if msg.err != nil {
 			m.errBar.text = msg.err.Error()
 			m.requestRefresh()

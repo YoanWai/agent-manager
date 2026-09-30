@@ -42,8 +42,8 @@ type FileDiff struct {
 	Binary    bool
 	Truncated bool
 	Err       error
-	HasStat   bool
-	IsLoaded  bool
+	HasStat   bool `json:"-"`
+	IsLoaded  bool `json:"-"`
 	rows      []Row
 }
 

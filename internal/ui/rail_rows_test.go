@@ -61,7 +61,7 @@ func TestNestedGroupsTree(t *testing.T) {
 	m.rail.SetSearch("", m.rail.Searching())
 	m.rebuildRows()
 
-	if m.View() == "" {
+	if preparedView(m) == "" {
 		t.Fatal("View should render non-empty")
 	}
 }

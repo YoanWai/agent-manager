@@ -3,6 +3,7 @@ package execution
 import (
 	"errors"
 	"github.com/YoanWai/agent-manager/internal/launch"
+	"os"
 
 	"sync"
 	"sync/atomic"
@@ -142,6 +143,7 @@ var managerEchoOpenings = []string{
 // claudeTailCache keeps one transcript's extraction keyed to its file
 // stats, so an unchanged transcript is not re-read every tick.
 type claudeTailCache struct {
+	path    string
 	size    int64
 	modTime time.Time
 	prompt  string
@@ -302,6 +304,15 @@ func (p *Runner) Step() Result {
 	if err != nil {
 		return Result{Err: err}
 	}
+	for id, pane := range panes {
+		if pane.Path != "" {
+			info, err := os.Stat(pane.Path)
+			if err != nil || !info.IsDir() {
+				pane.Path = ""
+				panes[id] = pane
+			}
+		}
+	}
 	var livePIDs []int
 	for _, sess := range sessions {
 		if !sess.Archived && panes[sess.ID].PID > 0 {
@@ -402,7 +413,7 @@ func (p *Runner) Step() Result {
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
-				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(sess, pane)
+				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(sess, pane, panes[sess.ID].Path)
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
 				if err != nil {
 					return Result{Err: err}

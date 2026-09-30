@@ -81,6 +81,7 @@ type Model struct {
 	// editorReturnID is the session an editor request detached from, so the
 	// attach it cost can be resumed once the editor is up.
 	editorReturnID string
+	frame          string
 	width          int
 	height         int
 	errBar         errBar
@@ -190,6 +191,7 @@ func newView(deps Dependencies, version string) *Model {
 	model.openStartupNotice()
 	model.indexReleaseRanges()
 	model.review = uireview.New(model.defaultSplitLayout())
+	model.prepareFrame()
 	return model
 }
 

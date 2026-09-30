@@ -504,12 +504,12 @@ func TestRailShowsFocusBadge(t *testing.T) {
 	createSession(t, m, "badged", t.TempDir(), "")
 	m.selectSessionRow(t, "badged")
 
-	if strings.Contains(ansi.Strip(m.View()), "FOCUS") {
+	if strings.Contains(ansi.Strip(preparedView(m)), "FOCUS") {
 		t.Fatal("FOCUS badge shown before focusing")
 	}
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
-	if !strings.Contains(ansi.Strip(m.View()), "FOCUS") {
+	if !strings.Contains(ansi.Strip(preparedView(m)), "FOCUS") {
 		t.Fatal("focused rail row carries no FOCUS badge")
 	}
 }

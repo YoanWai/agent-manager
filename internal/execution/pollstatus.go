@@ -34,7 +34,7 @@ func (p *Runner) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 	region, hasRegion := p.engine.ActivityRegion(sess.Tool, text)
 	var regionHash uint64
 	if hasRegion {
-		regionHash = hashString(region)
+		regionHash = hashString(p.engine.RegionContent(sess.Tool, region))
 		paneHashes[sess.ID] = regionHash
 	}
 	if p.statusSources[sess.Tool] == hooks.StatusSourceClaude {

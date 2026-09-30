@@ -12,6 +12,7 @@
     ],
     "url": "https://github.com/YoanWai/agent-manager/blob/main/docs/usage.md#quick-prompt",
     "min_version": "0.16.0",
+    "max_version": "0.39.0",
     "expires_at": "2026-10-08T09:00:00Z"
   },
   {

@@ -2,7 +2,7 @@
 
 ## PR #2 is partially conformant
 
-The initial application-boundary audit used implementation commit `c7a7e8247190f99a4813e6ad92078180ae0fdd3b` against upstream base `d3e9075a745f47e384ee7801681cdb1958dd4017`. Subsequent [sessioncmd](sessioncmd-file-map.md) and [UI](ui-file-map.md) mechanical splits preserve declaration bodies while updating file placement. Help ownership is a separate behavioral-boundary increment. Source links below follow the proposal branch. The UI mechanical comparison uses the frozen refs recorded below.
+The initial application-boundary audit used implementation commit `c7a7e8247190f99a4813e6ad92078180ae0fdd3b` against upstream base `d3e9075a745f47e384ee7801681cdb1958dd4017`. Subsequent [sessioncmd](sessioncmd-file-map.md) and [UI](ui-file-map.md) mechanical splits preserve declaration bodies while updating file placement. Help, Review, Focus, and Rail ownership are separate behavioral-boundary increments. Source links below follow the proposal branch. The UI mechanical comparison uses the frozen refs recorded below.
 
 | Requirement | Status | Evidence or remaining gap |
 | --- | --- | --- |
@@ -10,17 +10,17 @@ The initial application-boundary audit used implementation commit `c7a7e8247190f
 | Explicit local composition and borrowed resource lifetime | Implemented in this slice | [app](../../internal/app), [backend](../../internal/sessioncmd/backend.go), [main](../../main.go) |
 | Shared lifecycle with explicit actor and failure policies | Implemented in this slice | [lifecycle](../../internal/sessioncmd/lifecycle.go), [contract tests](../../internal/sessioncmd/backend_lifecycle_test.go), [UI calls](../../internal/ui/session_archive.go) |
 | Immediate reconciliation of partial lifecycle effects | Partial | [UI archive](../../internal/ui/session_archive.go) and [restore](../../internal/ui/session_archive.go) return on error before membership reconciliation; completed durable changes become visible after a later poll. Delete reconciles partial removals |
-| Feature-owned UI behavior and narrow hosts | Partial | [Help](../../internal/ui/help/state.go) owns policy and receives copied presentation values. Other handlers remain root methods; [services](../../internal/ui/model_services.go) exposes broad dependencies |
-| UI feature packages and directory boundaries | Partial | [Help](help-package.md) and shared pure presentation have separate directories and Go packages. A transitive dependency check rejects root and runtime imports. Review, focus, and rail remain root concern families |
-| Repeatable process and TUI end-to-end coverage | Partial | Unit and integration tests are committed. Disposable-profile terminal captures and process checks remain session artifacts until a repository harness runs them in CI |
-| Nonblocking Update and read-only View | Not conformant yet | [confirm handler](../../internal/ui/confirm_keys.go) calls archive, restore, and delete synchronously; [list rendering](../../internal/ui/rail_view.go) records geometry during View |
+| Feature-owned UI behavior and narrow contracts | Partial across the whole UI | [Help, Review, Focus, and Rail](ui-feature-packages.md) own policy behind private models and typed value contracts. Other dialogs remain root methods; [services](../../internal/ui/model_services.go) stays in root composition |
+| UI feature packages and directory boundaries | Implemented for these four features | [Feature contracts](ui-feature-packages.md), [pure review data](review-data.md), and a [transitive production dependency check](../../tools/architecture/check-ui-boundaries) reject root and runtime imports |
+| Repeatable process and TUI end-to-end coverage | Partial | The [committed harness](../../tools/e2e/README.md) and CI exercise Help, Review, Focus, Rail, terminal creation, and clean exit. CLI/MCP/headless/extension flows and the full product matrix remain follow-ups |
+| Nonblocking Update and read-only View | Partial | [Frame preparation](../../internal/ui/model_view.go) runs after dispatch; View only reads the prepared string. The [confirm handler](../../internal/ui/confirm_keys.go) and rail persistence still perform synchronous effects |
 | Files organized by concern and source-adjacent tests throughout | Partial | Execution, sessioncmd, and UI concern families are implemented. Store, status, and tmux taxonomy remain future work; file moves do not establish feature ownership |
 | Production controller workspace and remote adapter | Deferred | Saved connections and SSH remain historical PR #1 experiments |
 | Exclusive authority and historical writer cutover | Deferred | [ClaimPoller](../../internal/execution/poller.go) retains socket-based coordination without process-instance fencing |
 | Released-client compatibility | Deferred | Current pinned SDK checks older MCP protocol modes; synthetic PR #1 revisions are not released-client evidence |
 | Extensions using canonical production commands | Implemented for representative examples | [extensions](../../examples/extensions) demonstrate observations and explicit archive, not a general plugin platform |
 
-Nonblocking Update and read-only View are existing requirements, not optional polish. Shared lifecycle extraction did not resolve them. The preserved synchronous UI paths must be converted without hiding I/O behind a differently named method.
+Nonblocking Update and read-only View are existing requirements, not optional polish. Prepared-frame rendering now resolves the View mutation requirement. Preserved synchronous UI paths still need conversion without hiding I/O behind a differently named method.
 
 ## Separate measured evidence from release acceptance
 
@@ -28,11 +28,19 @@ Nonblocking Update and read-only View are existing requirements, not optional po
 
 The local isolated full race suite passed. Disposable-profile TUI and headless process checks proved rendering, observations, and clean exits. Those checks do not demonstrate every lifecycle action through every supported tool, terminal, platform, SSH route, and input method.
 
-The UI taxonomy commit `7773665` preserves 2,371 declarations and 4,350 comment tokens against `560a463`. The subsequent Help increment preserves seven byte-identical captured terminal frames for opening, entering search, typing, committing, clearing, mouse consumption, and scrolling. A disposable profile also opens a real zsh terminal and exits cleanly. The full race suite uses an explicit `/bin/sh` environment and a private tmux socket; clean-zsh UI and tmux package runs pass separately. The unchanged tmux environment test exposed a shell-readiness race in two combined zsh runs. No test was disabled or timeout increased.
+The UI taxonomy commit `7773665` preserves 2,371 declarations and 4,350 comment tokens against `560a463`. The subsequent Help increment preserves seven byte-identical captured terminal frames for opening, entering search, typing, committing, clearing, mouse consumption, and scrolling. A disposable profile also opens a real zsh terminal and exits cleanly. The full race suite uses an explicit `/bin/sh` environment and a private tmux socket; clean-zsh UI and tmux package runs pass separately. Those historical runs exposed a shell-readiness race in the tmux environment test. The current proposal waits for the actual relaunched prompt before sending input; no test was disabled or timeout increased.
 
 The older MCP-mode tests use the current SDK. The PR #1 owner, workspace, SSH, and generation tests prove their bounded fixture contracts. Neither evidence class substitutes for the released-binary matrix or exclusive-owner cutover.
 
 The [repository guidelines](../../AGENTS.md) retain the full product matrix. PR #2 is a scoped draft proposal, not a declaration that every release acceptance condition is met.
+
+### Current four-feature integration evidence
+
+The current proposal incorporates upstream `dc471a9`. Local macOS verification on 2026-09-30 passed build, vet, formatting, the production dependency guard, all seven harness contract tests, and `go test -race -p 1 ./...` under a precreated disposable tmux directory with `TMUX` unset and a clean `/bin/sh` environment. The full UI package reported 275.771 seconds; execution reported 34.975 seconds and sessioncmd 132.124 seconds. These are measured package times from this run, not an overall speedup claim.
+
+The actual binary smoke passed in 5.76 seconds and covered Help, real Git Review, Focus input/detach, Rail filter/fold, shell command execution and clean exit. Focused UI/execution race gates passed in 4.631/3.615 seconds. Pure feature tests and import guards avoid root's tmux fixture; the compiled Rail race tests also passed with `PATH=/nonexistent`. The grouped-session rename regression found during independent review is covered by a retained render test.
+
+Hosted checks must be inspected for the published head separately. None of these local gates establishes the wider release matrix or safe live-profile cutover.
 
 ## Deliver follow-ups as independently verifiable units
 
@@ -40,21 +48,19 @@ The [repository guidelines](../../AGENTS.md) retain the full product matrix. PR 
 | --- | --- | --- |
 | 1. Documentation | Reconcile historical rationale, current code, and future contracts | Source trace, local links, independent claim review; no behavior change |
 | 2. Mechanical file splits | Sessioncmd and UI now use concern families; store, status, and tmux remain future work | Sessioncmd preserves 318 declarations; UI preserves 2,371 declarations. The UI comparator checks comments, exported names, build constraints, and init function order; initializer-order notices require source review |
-| 3. Small UI feature | Help owns catalog, scope, search, scroll, styled body content, and input outcomes in a child package; root retains navigation, commands, and generic dialog chrome | Deterministic input and message tests, keyboard parity, preserved mouse-event consumption, and real TUI frames |
-| 4. Async effects and layout | Move lifecycle I/O to commands and prepare geometry before View | Blocked-adapter tests prove Update returns; generation tests prove stale rejection; partial-failure tests prove completed archive and restore effects reconcile immediately; real geometry and focus checks |
+| 3. UI feature packages | Help, Review, Focus, and Rail own interaction policy in child packages; root retains concrete adapters, navigation, and final frame composition | Pure feature tests, copied-data alias tests, dependency checks, root dispatch contracts, and committed TUI smoke |
+| 4. Async effects and layout | Prepared geometry and read-only View are implemented; move remaining lifecycle and persistence I/O to commands | Blocked-adapter tests prove Update returns; generation tests prove stale rejection; partial-failure tests prove completed archive and restore effects reconcile immediately; prepared-frame and real geometry checks remain regression gates |
 | 5. Workspace and authority rollout | Ship one saved connection/read use case, then one guarded canonical mutation and writer cutover | Supported historical binaries, real SSH, failure races, single maintenance proof, and explicit old-writer policy |
 
 Each unit needs its own implementation plan. Split unit 4 by feature and unit 5 by contract rather than landing one large rewrite. Concern-based moves and behavior changes remain separately reviewable commits.
 
 ## Extract UI feature packages incrementally
 
-The original flat `internal/ui` arrangement was an intermediate step. Help now has a child package with private state and adjacent tests, backed by a dependency check. The remaining goal is equivalent feature ownership for review, focus, and rail.
+The original flat `internal/ui` arrangement was an intermediate step. Help, Review, Focus, and Rail now have child packages with private models and source-adjacent policy tests. Root `internal/ui` retains application composition, Bubble Tea dispatch, concrete effect adapters, cross-feature navigation, and final frame composition. The [feature contracts](ui-feature-packages.md) record the exact ownership cut.
 
-The first extraction is `internal/ui/help`. Its small context, content, and input-outcome API keeps policy and tests behind the package boundary. Root `internal/ui` retains application composition, Bubble Tea dispatch, navigation, and command scheduling. Extract shared render values only where concrete consumers need them. Do not expose `Model`, all services, or a callback for every root method to make the move compile.
+The production import checker rejects root UI and concrete runtime dependencies transitively. Review consumes pure line models and Git values. Data ownership tests reject aliases that would let a caller mutate private Review state through load results or copied read views. Focus and Rail derive displayed content and hit geometry together. Root prepares and publishes the complete frame after dispatch; View reads its cached text.
 
-Review, focus, and rail are later candidates, each in a separate increment. Their extraction must preserve request generations, drafts, input priority, geometry, and IME behavior. Order these increments with the asynchronous-effects and read-only-View work rather than moving tightly coupled methods into subfolders first.
-
-Acceptance requires a compiling acyclic dependency graph, feature tests that construct no root model or runtime, and root adapter tests that preserve dispatch behavior. Feature packages must not import the root UI package, store, or tmux directly. Document any required narrow effect port with its actual caller. Extend the repository dependency check for each extracted feature and update the file map. Keep a feature in the root package until its boundary meets those conditions.
+Other dialogs remain candidates for extraction when their context and outcomes form a narrow contract. Do not expose Model, all services, or a callback for every root method to make a move compile. Keep fast feature tests independent of root runtime fixtures, preserve dispatch and adapter contracts in root tests, extend the dependency check for each new package, and update the file map. Synchronous effect migration remains a separate behavioral increment with the acceptance conditions above.
 
 ## Turn session checks into repeatable end-to-end tests
 

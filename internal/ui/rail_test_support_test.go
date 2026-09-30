@@ -15,9 +15,6 @@ const (
 	rootGroup    = ""
 )
 
-// railRows resolves Rail's copied row diagnostics back to root inventory
-// values for integration assertions. Tests mutate the root inventory and
-// reconcile instead of reaching into child state.
 func railRows(m *Model) []treeRow {
 	rows := m.rail.Rows()
 	resolved := make([]treeRow, 0, len(rows))
@@ -184,18 +181,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, _ int, _ stri
 	snapshot := uirail.Snapshot{ArchivedGroups: map[string]bool{}}
 	if entry.isGroup {
 		selection = uirail.Selection{Kind: uirail.GroupRow, Group: entry.group}
-		if entry.group == "" {
-			snapshot.Sessions = []uirail.Session{{ID: "root-render-fixture", Name: "fixture", DisplayName: "fixture"}}
-		} else {
-			snapshot.Groups = []string{entry.group}
-			// Search prunes groups through matching sessions. This private
-			// fixture keeps the requested group present so the presentation
-			// assertion can render it in isolation.
-			snapshot.Sessions = []uirail.Session{{
-				ID: "group-fixture", Name: baseName(entry.group), DisplayName: baseName(entry.group),
-				Group: entry.group,
-			}}
-		}
+		snapshot = groupRenderSnapshot(entry.group)
 	} else {
 		session := entry.sess
 		prompt := m.workspace.panePrompts[session.ID]
@@ -318,4 +304,11 @@ func setRailSessionCwd(m *Model, id, cwd string) {
 		}
 	}
 	m.rebuildRows()
+}
+
+func groupRenderSnapshot(group string) uirail.Snapshot {
+	if group == "" {
+		return uirail.Snapshot{Sessions: []uirail.Session{{ID: "root-render-fixture", Name: "fixture", DisplayName: "fixture"}}}
+	}
+	return uirail.Snapshot{Groups: []string{group}, Sessions: []uirail.Session{{ID: "group-fixture", Name: baseName(group), DisplayName: baseName(group), Group: group}}}
 }

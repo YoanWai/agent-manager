@@ -39,7 +39,7 @@ func TestReviewHelpOnlyShowsReviewBindingsAndSetupGuidance(t *testing.T) {
 	}
 	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, true)
 	m.openHelp()
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{"Review keys", "Tell your agent what to review", "comment on the line"} {
 		if !strings.Contains(frame, want) {
 			t.Errorf("review help missing %q:\n%s", want, frame)
@@ -53,7 +53,7 @@ func TestReviewHelpOnlyShowsReviewBindingsAndSetupGuidance(t *testing.T) {
 }
 
 func TestGlobalHelpShowsAgentManagementGuidance(t *testing.T) {
-	frame := ansi.Strip(helpModel().View())
+	frame := ansi.Strip(preparedView(helpModel()))
 	if !strings.Contains(frame, "Tell your agent to manage sessions and terminals in Agent Manager") {
 		t.Fatalf("global help is missing agent-management guidance:\n%s", frame)
 	}
@@ -76,7 +76,7 @@ func TestHelpFramePaintsInsideTheTerminal(t *testing.T) {
 				if query != "" {
 					typeHelpSearch(m, query, true)
 				}
-				lines := strings.Split(m.View(), "\n")
+				lines := strings.Split(preparedView(m), "\n")
 				if len(lines) != height {
 					t.Errorf("%dx%d query %q: %d rows painted", width, height, query, len(lines))
 				}
@@ -92,12 +92,12 @@ func TestHelpFramePaintsInsideTheTerminal(t *testing.T) {
 
 func TestHelpBodyShowsMoreMarkersWhenItOverflows(t *testing.T) {
 	m := helpModel()
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	if !strings.Contains(frame, "more below") {
 		t.Fatal("an overflowing map should say there is more below")
 	}
 	m.handleHelpKey(runeKey("G"))
-	frame = ansi.Strip(m.View())
+	frame = ansi.Strip(preparedView(m))
 	if !strings.Contains(frame, "more above") {
 		t.Fatal("a map scrolled to the end should say there is more above")
 	}
@@ -106,7 +106,7 @@ func TestHelpBodyShowsMoreMarkersWhenItOverflows(t *testing.T) {
 func TestHelpReportsWhenNothingMatches(t *testing.T) {
 	m := helpModel()
 	typeHelpSearch(m, "zzzz", true)
-	if frame := ansi.Strip(m.View()); !strings.Contains(frame, "no key matches that") {
+	if frame := ansi.Strip(preparedView(m)); !strings.Contains(frame, "no key matches that") {
 		t.Fatal("a query nothing answers should say so")
 	}
 }
@@ -144,7 +144,7 @@ func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := readableHelpFrame(test.model.View())
+			got := readableHelpFrame(preparedView(test.model))
 			want := strings.TrimSuffix(string(golden), "\n")
 			if got != want {
 				t.Fatalf("help content and layout changed from 560a463:\nwant:\n%s\n\ngot:\n%s", want, got)

@@ -67,7 +67,9 @@ func (m *Model) openDiff() tea.Cmd {
 	m.reviewReturn = reviewReturn{kind: reviewReturnList}
 	m.mode = modeDiff
 	m.errBar.text = ""
-	request := m.review.Open(reviewTarget(sess), scope, preferred)
+	target := reviewTarget(sess)
+	target.Cwd = m.sessionDir(sess)
+	request := m.review.Open(target, scope, preferred)
 	return tea.Batch(m.reviewLoadCmd(request), m.startStartupTick())
 }
 

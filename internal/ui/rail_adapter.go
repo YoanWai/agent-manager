@@ -144,8 +144,6 @@ func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd)
 	return m, tea.Batch(commands...)
 }
 
-// moveCursor is root composition for the quick prompt, whose arrow keys
-// retarget Rail while the prompt widget remains active.
 func (m *Model) moveCursor(delta int) tea.Cmd {
 	_, command := m.applyRailDecision(m.rail.Move(delta, true))
 	return command
@@ -183,8 +181,6 @@ func (m *Model) runRailMutation(request uirail.Mutation) uirail.Decision {
 	return m.rail.ApplyMutation(request, err)
 }
 
-// applyRailStateDecision runs the synchronous persistence requests returned by
-// a Rail domain method used from a root-owned form or lifecycle flow.
 func (m *Model) applyRailStateDecision(decision uirail.Decision) {
 	queue := append([]uirail.Mutation(nil), decision.Mutations...)
 	for len(queue) > 0 {

@@ -139,7 +139,7 @@ func TestLayoutsCanHideHeader(t *testing.T) {
 			if got := m.listBodyHeight(); got != shownBody+1 {
 				t.Fatalf("hidden header body = %d rows, want %d", got, shownBody+1)
 			}
-			if rows := strings.Split(m.View(), "\n"); len(rows) != m.height {
+			if rows := strings.Split(preparedView(m), "\n"); len(rows) != m.height {
 				t.Fatalf("headerless frame = %d rows, terminal is %d", len(rows), m.height)
 			}
 		})
@@ -150,19 +150,19 @@ func TestLayoutsCanHideHeader(t *testing.T) {
 // captured pane and the detail head stay with the split layout.
 func TestFullLayoutFrameHasNoPreviewColumn(t *testing.T) {
 	m := shotModel()
-	split := ansi.Strip(m.View())
+	split := ansi.Strip(preparedView(m))
 	if !strings.Contains(split, "token bucket limiter") {
 		t.Fatalf("split frame lost its preview:\n%s", split)
 	}
 	m.prefs.fullLayout = true
-	full := ansi.Strip(m.View())
+	full := ansi.Strip(preparedView(m))
 	if strings.Contains(full, "token bucket limiter") {
 		t.Fatalf("full screen frame still paints the preview:\n%s", full)
 	}
 	if !strings.Contains(full, "add-rate-limiting") {
 		t.Fatalf("full screen frame lost the session tree:\n%s", full)
 	}
-	rows := strings.Split(m.View(), "\n")
+	rows := strings.Split(preparedView(m), "\n")
 	if len(rows) != m.height {
 		t.Fatalf("full screen frame is %d rows, terminal is %d", len(rows), m.height)
 	}
@@ -199,7 +199,7 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	}
 	sess := railSelectedSession(m)
 	want := [2]int{m.width, m.listBodyHeight()}
-	if got := m.focusRuntime.geom[sess.ID]; got != want {
+	if got := m.focusRuntime.lastPaneSizes[sess.ID]; got != want {
 		t.Fatalf("focused pane pinned to %v, want %v", got, want)
 	}
 	panes, err := m.services.tmux.Panes()
@@ -211,7 +211,7 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	}
 
 	m.workspace.preview = "❯ hello from the pane\n"
-	frame := ansi.Strip(m.View())
+	frame := ansi.Strip(preparedView(m))
 	if rule := ansi.Strip(m.focusFactsLine(m.width)); !strings.Contains(frame, rule) {
 		t.Fatalf("full width focus frame misses the focus rule %q:\n%s", rule, frame)
 	}
@@ -250,7 +250,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 		t.Fatalf("right did not focus, mode = %v, err = %q", m.mode, m.errBar.text)
 	}
 	sess := railSelectedSession(m)
-	pinned := m.focusRuntime.geom[sess.ID]
+	pinned := m.focusRuntime.lastPaneSizes[sess.ID]
 	setRailSessionTool(m, sess.ID, "claude-hooked")
 	setFocusPaneID(m, sess.ID)
 	setFocusCursor(m, paneCursor{x: 4, y: 0, ok: true})
@@ -271,7 +271,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	if !m.fullRows() {
 		t.Fatal("returning should land on the full screen list")
 	}
-	if got := m.focusRuntime.geom[sess.ID]; got != pinned {
+	if got := m.focusRuntime.lastPaneSizes[sess.ID]; got != pinned {
 		t.Fatalf("returning resized the pane to %v, want %v kept", got, pinned)
 	}
 }
@@ -352,7 +352,7 @@ func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
 
 	m.prefs.fullLayout = true
 	m.startup.sessionsSized = false
-	m.focusRuntime.geom = nil
+	m.focusRuntime.lastPaneSizes = nil
 	m.applyCmd(t, m.refreshCmd())
 	fullW, fullH := m.paneTargetSize()
 	if w, h := windowSize(t, id); w != fullW || h < fullH {
@@ -444,7 +444,7 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 		t.Fatalf("facts painted %d lines, want 1", got)
 	}
 
-	rows := splitLines(ansi.Strip(m.View()))
+	rows := splitLines(ansi.Strip(preparedView(m)))
 	head := m.headerRows()
 	isRule := func(row string) bool {
 		trimmed := strings.TrimSpace(row)

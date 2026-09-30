@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
@@ -596,7 +597,7 @@ func seedRegionHash(t *testing.T, m *harness, sess store.Session, pane string) {
 	if !ok {
 		t.Fatal("pane should have an activity region")
 	}
-	m.poller.paneHashes = map[string]uint64{sess.ID: hashString(region)}
+	m.poller.paneHashes = map[string]uint64{sess.ID: hashString(m.poller.engine.RegionContent(sess.Tool, region))}
 }
 
 func disableQuietEndGrace(t *testing.T) {
@@ -1887,5 +1888,65 @@ func TestLastMeaningfulPaneLineSkipsChrome(t *testing.T) {
 	}
 	if got := lastMeaningfulPaneLine("\n╭──╮\n│  │\n╰──╯\n"); got != "" {
 		t.Fatalf("a pane of borders should yield nothing, got %q", got)
+	}
+}
+
+func TestAFrameRedrawIsNotWork(t *testing.T) {
+	m := buildModel(t)
+	defaultEngine(t, m)
+	sess := store.Session{ID: "agy-boot", Tool: "antigravity", Status: status.Idle}
+	rule := strings.Repeat("─", 120)
+	pane := func(account string) string {
+		return "\n      ▄▀▀▄        Antigravity CLI 1.2.14\n     ▀▀▀▀▀▀       " + account +
+			"\n    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)\n   ▄▀▀    ▀▀▄     /tmp/agy/proj6\n  ▄▀▀      ▀▀▄\n\n" +
+			rule + "\n>\n" + rule + "\n? for shortcuts                    Gemini 3.8 Flash · high\n\n\n"
+	}
+	seedRegionHash(t, m, sess, pane("dev@example.com"))
+	if got := deriveStatus(t, m, sess, pane("dev@example.com (Google AI Plus)"), true); got != status.Idle {
+		t.Fatalf("the header filling in read as %q", got)
+	}
+}
+
+func TestClaudeTailFollowsTheLiveTranscript(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	launchDir, liveDir := t.TempDir(), t.TempDir()
+	stamp := time.Now().Add(-time.Hour)
+	write := func(cwd, reply string) string {
+		t.Helper()
+		path, err := agentsession.ClaudeTranscriptPath(cwd, "abc")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		line := `{"type":"assistant","message":{"content":[{"type":"text","text":"` + reply + `"}]}}` + "\n"
+		if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	sess := store.Session{ID: "s", Cwd: launchDir, AgentSessionID: "abc"}
+	p := &Runner{claudeTails: map[string]claudeTailCache{}}
+
+	write(launchDir, "launch reply")
+	if _, reply := p.claudeTail(sess, liveDir); reply != "launch reply" {
+		t.Fatalf("reply = %q, want the launch transcript while the live one is absent", reply)
+	}
+	livePath := write(liveDir, "moved reply!")
+	if _, reply := p.claudeTail(sess, liveDir); reply != "moved reply!" {
+		t.Fatalf("reply = %q, want the live transcript over a cached one of the same size and time", reply)
+	}
+
+	liveProject := filepath.Dir(livePath)
+	if err := os.Chmod(liveProject, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(liveProject, 0o755) })
+	if _, reply := p.claudeTail(sess, liveDir); reply != "" {
+		t.Fatalf("reply = %q, want nothing while the live transcript cannot be read", reply)
 	}
 }

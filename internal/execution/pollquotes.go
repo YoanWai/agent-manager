@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"errors"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"strings"
 
@@ -36,7 +37,7 @@ func isManagerEcho(line string) bool {
 // anchor scrolled off it, the recovery is the tool's own transcript for
 // Claude Code (which repaints in place, so tmux holds no history for
 // it), and a deeper pane capture for everything else.
-func (p *Runner) rowLines(sess store.Session, pane string) (quote, prompt string) {
+func (p *Runner) rowLines(sess store.Session, pane, dir string) (quote, prompt string) {
 	clean := p.engine.Plain(sess.Tool, pane)
 	quote, anchored, ok := p.engine.LastMessage(sess.Tool, clean)
 	if !ok {
@@ -49,7 +50,7 @@ func (p *Runner) rowLines(sess store.Session, pane string) (quote, prompt string
 	quoteAdrift := ok && !anchored && p.engine.HasMessageStart(sess.Tool)
 	promptAdrift := echoOK && prompt == ""
 	if (quoteAdrift || promptAdrift) && p.mcpStyles[sess.Tool] == "claude" && sess.AgentSessionID != "" {
-		tailPrompt, tailReply := p.claudeTail(sess)
+		tailPrompt, tailReply := p.claudeTail(sess, dir)
 		if quoteAdrift && tailReply != "" {
 			quote = tailReply
 		}
@@ -72,16 +73,13 @@ func (p *Runner) rowLines(sess store.Session, pane string) (quote, prompt string
 
 // claudeTail is the newest prompt and reply in a Claude Code session's
 // own transcript, flattened to single lines.
-func (p *Runner) claudeTail(sess store.Session) (prompt, reply string) {
-	path, err := agentsession.ClaudeTranscriptPath(sess.Cwd, sess.AgentSessionID)
+func (p *Runner) claudeTail(sess store.Session, dir string) (prompt, reply string) {
+	source, err := resolveClaudeTranscript(dir, sess.Cwd, sess.AgentSessionID)
 	if err != nil {
 		return "", ""
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", ""
-	}
-	if cached, ok := p.claudeTails[sess.ID]; ok && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
+	dir, path, info := source.directory, source.path, source.info
+	if cached, ok := p.claudeTails[sess.ID]; ok && cached.path == path && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
 		return cached.prompt, cached.reply
 	}
 	cleanUser := func(text string) string {
@@ -91,13 +89,13 @@ func (p *Runner) claudeTail(sess store.Session) (prompt, reply string) {
 		}
 		return cleaned
 	}
-	tailPrompt, tailReply, ok := agentsession.ClaudeTranscriptTail(sess.Cwd, sess.AgentSessionID, cleanUser)
+	tailPrompt, tailReply, ok := agentsession.ClaudeTranscriptTail(dir, sess.AgentSessionID, cleanUser)
 	if !ok {
 		return "", ""
 	}
 	prompt = oneLine(tailPrompt)
 	reply = oneLine(tailReply)
-	p.claudeTails[sess.ID] = claudeTailCache{size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
+	p.claudeTails[sess.ID] = claudeTailCache{path: path, size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
 	return prompt, reply
 }
 
@@ -123,4 +121,30 @@ func lastMeaningfulPaneLine(pane string) string {
 		}
 	}
 	return ""
+}
+
+type claudeTranscriptSource struct {
+	directory string
+	path      string
+	info      os.FileInfo
+}
+
+func resolveClaudeTranscript(liveDir, launchDir, sessionID string) (claudeTranscriptSource, error) {
+	for _, directory := range []string{liveDir, launchDir} {
+		if directory == "" {
+			continue
+		}
+		path, err := agentsession.ClaudeTranscriptPath(directory, sessionID)
+		if err != nil {
+			return claudeTranscriptSource{}, err
+		}
+		info, err := os.Stat(path)
+		if err == nil {
+			return claudeTranscriptSource{directory: directory, path: path, info: info}, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return claudeTranscriptSource{}, err
+		}
+	}
+	return claudeTranscriptSource{}, os.ErrNotExist
 }

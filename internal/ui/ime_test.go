@@ -229,7 +229,7 @@ func TestFinalHelpLayoutPublishesAndRemovesCursorMarker(t *testing.T) {
 	for _, r := range "中文" {
 		m.handleHelpKey(runeKey(string(r)))
 	}
-	frame := m.View()
+	frame := preparedView(m)
 	if strings.Contains(frame, cursorAnchorMarker) {
 		t.Fatal("private cursor marker leaked from the final frame")
 	}

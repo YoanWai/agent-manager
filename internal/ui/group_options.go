@@ -7,9 +7,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
-// groupClosure and childIndex build the group picker shown by the create and
-// move forms. Rail owns its own private row tree; the picker remains a root
-// form and derives choices from the root inventory.
 func groupClosure(groups []string, sessions []store.Session) map[string]bool {
 	paths := map[string]bool{}
 	add := func(path string) {

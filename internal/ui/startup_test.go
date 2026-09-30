@@ -88,7 +88,7 @@ func TestStartupErrorStaysVisibleUntilFirstRefresh(t *testing.T) {
 	if !m.startup.booting {
 		t.Fatal("an error before the first refresh must not finish boot")
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "startup poll failed") {
+	if !strings.Contains(ansi.Strip(preparedView(m)), "startup poll failed") {
 		t.Fatal("startup error is hidden behind the boot loader")
 	}
 	m.Update(refreshMsg{listedAt: time.Now()})

@@ -20,3 +20,5 @@ go run ./tools/architecture/check-ui-boundaries
 ```
 
 The pure model may depend on Git values; neither may import the concrete Git runtime, store, tmux, execution, application composition, or root UI. The check uses the transitive production graph. It does not claim to enforce test imports or historical-client compatibility.
+
+Review clones loaded sets/files on ingress and copies file data on egress. External-package tests mutate returned slices to check isolation. Loader bridge flags `HasStat` and `IsLoaded` are excluded from JSON, preserving the prior serialized shape; this is a shape test, not released-client compatibility evidence.

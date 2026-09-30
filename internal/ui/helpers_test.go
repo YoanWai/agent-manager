@@ -40,7 +40,7 @@ func buildModel(t *testing.T) *Model {
 				ComposerPlaceholder: "Ask your question...",
 			},
 			"claude-hooked": {
-				Command:        "cat",
+				Command:        `sh -c 'exec cat' --`,
 				StatusSource:   "claude-hooks",
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",

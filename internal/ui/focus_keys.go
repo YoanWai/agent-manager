@@ -281,12 +281,8 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.leaveFocusMode()
 	case uifocus.OpenEditor:
-		// A windowed editor leaves the focus where it is; one that draws in the
-		// terminal takes it back on exit.
 		return m.openEditor()
 	case uifocus.OpenReview:
-		// Closing the review focuses the session again rather than landing in
-		// the list.
 		cmd := m.openDiff()
 		if m.mode == modeDiff {
 			m.reviewReturn = reviewReturn{kind: reviewReturnFocus, sessionID: sess.ID}

@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-// centerLine pads a styled string so its visible text sits in the middle of
-// width columns. Rail has its own package-local counterpart for its frame.
 func centerLine(text string, width int) string {
 	if width <= 0 {
 		return text

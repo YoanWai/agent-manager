@@ -73,7 +73,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	m.View()
+	preparedView(m)
 	// Tests discard the watcher's pushes, so seed the live frame the same
 	// way the scroll path fetches one, and the history depth the wheel
 	// clamps against.
@@ -437,7 +437,7 @@ func TestAdoptedTallerPaneIsNotShrunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resize-window: %v: %s", err, out)
 	}
-	m.focusRuntime.geom = nil
+	m.focusRuntime.lastPaneSizes = nil
 	m.applyCmd(t, m.refreshCmd())
 	if got := windowHeight(t, sess.ID); got != taller {
 		t.Fatalf("adopted pane height = %d, want it kept at %d", got, taller)
@@ -576,7 +576,7 @@ func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 	m.focusRuntime.watch.setFocus(sess.ID)
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
-	m.View()
+	preparedView(m)
 
 	deadline := time.Now().Add(5 * time.Second)
 	for !m.focusRuntime.watch.serving(sess.ID) {
@@ -846,7 +846,7 @@ func TestFocusReentryKeepsPaneStateOnQuietPane(t *testing.T) {
 	if !m.focusPane.Pane().SGR {
 		t.Fatal("re-entering focus dropped the pane's SGR encoding")
 	}
-	m.View()
+	preparedView(m)
 
 	// The wheel still reaches the app, with no pushed capture in between.
 	box := m.focusPane.FrameBox()

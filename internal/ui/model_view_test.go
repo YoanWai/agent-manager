@@ -66,7 +66,7 @@ func TestZZShot(t *testing.T) {
 		}
 		m.startup.bannerPhase = n
 	}
-	if err := os.WriteFile(out, []byte(m.View()), 0o644); err != nil {
+	if err := os.WriteFile(out, []byte(preparedView(m)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -87,7 +87,7 @@ func TestFrameFitsTerminal(t *testing.T) {
 			if len(raw) != height {
 				t.Errorf("%dx%d: frame paints %d rows", width, height, len(raw))
 			}
-			lines := strings.Split(m.View(), "\n")
+			lines := strings.Split(preparedView(m), "\n")
 			for i, line := range lines {
 				if got := ansi.StringWidth(line); got > width {
 					t.Errorf("%dx%d: line %d is %d wide: %q", width, height, i, got, ansi.Strip(line))
@@ -107,7 +107,7 @@ func TestFrameFitsTerminal(t *testing.T) {
 // also a sextant, which is what keeps its edge level with the run beside it.
 func TestPaneSoftEdges(t *testing.T) {
 	m := shotModel()
-	rows := strings.Split(m.View(), "\n")
+	rows := strings.Split(preparedView(m), "\n")
 	leftWidth, _ := m.splitWidths()
 
 	top := []rune(ansi.Strip(rows[m.headerRows()]))

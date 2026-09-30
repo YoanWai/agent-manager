@@ -22,10 +22,14 @@ func (m *Model) viewFooter() string {
 		case m.quickWorktreeOn():
 			worktreeHint = "on"
 		}
-		return m.transientFooter(legendSection{title: "Prompt", pairs: [][2]string{
+		pairs := [][2]string{
 			{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool: " + m.quickTool()},
-			{"shift+tab", "worktree: " + worktreeHint}, {"esc", "close"},
-		}})
+		}
+		if len(m.quick.toolNames) > 1 {
+			pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
+		}
+		pairs = append(pairs, [2]string{"ctrl+t", "worktree: " + worktreeHint}, [2]string{"esc", "close"})
+		return m.transientFooter(legendSection{title: "Prompt", pairs: pairs})
 	}
 	if m.split.resizeMode || m.split.dragging {
 		return m.transientFooter(legendSection{title: "Resize", pairs: [][2]string{

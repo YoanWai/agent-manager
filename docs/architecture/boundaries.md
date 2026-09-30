@@ -26,7 +26,7 @@ Session identity is distinct from its display label. A read projection is distin
 
 Execution must not import UI or Bubble Tea. Frontend adapters must reuse canonical lifecycle behavior. Extensions consume copied observations or narrow command interfaces, never the root UI model. Wire and storage DTOs belong at their respective adapter boundaries.
 
-The existing UI service group is a composition convenience. It does not satisfy the future requirement for feature-owned, consumer-declared host interfaces. A feature host exposes only what that feature uses.
+The existing UI service group is a root composition convenience. Child features receive copied contexts and typed results rather than this service group. Root adapters execute their narrow requests. Introduce a consumer-declared effect interface only when a feature needs an actual runtime seam.
 
 ## Keep future workspace coordination separate
 
@@ -38,7 +38,7 @@ These are future application rules. Current UI observations and PR #1 fixture wo
 
 ## Extract feature packages from concern families
 
-Keep root composition and adapters in `ui`. Move a feature into a child package when its context and outcomes are narrow enough to enforce ownership. Help is the first extraction; its [package contract](help-package.md) separates feature content from root dialog chrome. Review and focus remain concern families in the root package until their dependencies meet the same conditions.
+Keep root composition and adapters in `ui`. Move a feature into a child package when its context and outcomes are narrow enough to enforce ownership. Help, Review, Focus, and Rail now have private child models and [explicit package contracts](ui-feature-packages.md). Root adapters retain concrete effects and cross-feature navigation. Other dialogs remain root concern families until their dependencies meet the same conditions.
 
 | Concern | File family | Acceptance condition |
 | --- | --- | --- |
@@ -48,7 +48,7 @@ Keep root composition and adapters in `ui`. Move a feature into a child package 
 | Focus | Focus state, keys, selection, scroll, links, watches, and IME | Preserve keyboard, mouse, pane geometry, and attach behavior |
 | Observations and rail | Observation state and rail state, keys, view | Name UI observations distinctly from future controller workspace coordination |
 
-The [UI concern map](ui-file-map.md) records implemented file families and adjacent tests. Help now owns its input policy through a copied value context; larger features still use root methods. A file under 1,000 lines or a model with fewer fields can still hide broad dependencies. Size caps support review; they do not prove a boundary.
+The [UI concern map](ui-file-map.md) records implemented file families and adjacent tests. The four child features own interaction policy through explicit value contracts. Root methods retain adapters, shared chrome, and unrelated dialogs. A file under 1,000 lines or a model with fewer fields can still hide broad dependencies. Size caps support review; they do not prove a boundary.
 
 ## Split other packages without adding layers
 

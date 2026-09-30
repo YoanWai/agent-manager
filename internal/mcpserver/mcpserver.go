@@ -190,12 +190,6 @@ type sessionCommands interface {
 	DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error)
 }
 
-// The instructions are the block a client shows its model before any tool
-// is called, and they are what makes an agent reach for these tools at all:
-// with them emptied, a model offered the same tools delegates to its own
-// subagents instead. Claude Code truncates the block at 2048 characters, so
-// each mode stays under that; what individual tool descriptions already
-// carry (the review targets, the queueing rules) is left to them.
 const instructionsIntro = `Agent Manager runs this conversation in one of the user's managed tmux sessions. The others are separate CLI processes with contexts of their own, running any CLI the user chose (Claude Code, Codex, Gemini), never subagents of this conversation. These tools operate that workspace.`
 
 const instructionsTail = `Shell work the user should see. Open a terminal when the user should watch, attach or take over, as with SSH into a host. Keep one-shot local commands in your normal tools. Call list_terminals first and reuse a running terminal when possible. create_terminal nests under this session unless nest is false, which another group needs. Use send_terminal and read_terminal, and close_terminal when that job is done unless it is left for the user.

@@ -5,6 +5,18 @@ import (
 )
 
 func (m *Model) View() string {
+	if m.frame == "" {
+		return "loading..."
+	}
+	return m.frame
+}
+
+func (m *Model) prepareFrame() {
+	m.prepareReviewLayout()
+	m.frame = m.renderFrame()
+}
+
+func (m *Model) renderFrame() string {
 	if m.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}

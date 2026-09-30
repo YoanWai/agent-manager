@@ -50,8 +50,6 @@ func TestSessionsCreateAutoNamesAndAsksForARename(t *testing.T) {
 	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "build the api")
 }
 
-// An agent spawning another hands on the user's coordination mode, so a
-// session it starts is briefed the way one started from the list would be.
 func TestSessionsCreateBriefsTheSpawnInTheStoredCoordinationMode(t *testing.T) {
 	h := newSessionHarness(t)
 	for _, mode := range []struct {
