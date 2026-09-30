@@ -1,6 +1,6 @@
 # UI concern map
 
-The UI keeps one Go package because Bubble Tea runs one root model and existing features share input priority and layout state. Files are grouped by the behavior they support. Subdirectories would create separate Go packages, so introducing them requires real feature boundaries rather than moving files alone.
+The UI currently keeps one Go package because Bubble Tea runs one root model and existing features share input priority and layout state. This is an intermediate taxonomy, not the completed feature-directory architecture. The [roadmap](roadmap-and-evidence.md#extract-ui-feature-packages-incrementally) records package extraction, starting with Help. Files are grouped by the behavior they support. Subdirectories would create separate Go packages, so introducing them requires real feature boundaries rather than moving files alone.
 
 The mechanical migration preserves 2,371 declarations, 4,350 comment tokens, 1,045 exported names (including tests), both init functions, build constraints, and compiler directives. It relocates 1,410 declarations across 174 source/destination pairs. The help ownership change is separate. A concern-based filename identifies where code lives; it does not establish that every feature is independent of `Model`.
 
@@ -35,7 +35,7 @@ Other feature handlers retain root methods in this migration. Their file familie
 
 Mechanical checks compare declaration bodies and comments independently of file placement. They do not establish semantic equivalence without reviewing initialization notices and running behavior checks. The full race suite checks existing behavior under a disposable tmux socket and explicit shell environment. One unchanged tmux environment test can submit input before the relaunched shell is ready; its full package passed on a fresh socket. This UI change does not repair that test race. Disposable-profile frames exercise opening help, search, clearing, scrolling, closing, and starting a real terminal. These checks do not establish parity across every supported platform, tool, terminal, or SSH route.
 
-Help goldens normalize ANSI, trailing whitespace, and outer blank rows to check readable content and layout. Separate real TUI captures check terminal frames. New help policy tests use copied bindings and values. Their fixtures do not open SQLite, create panes, or sleep. The existing package-wide `TestMain` still starts its shared tmux anchor. Real-pane tests remain integration tests. Timing claims identify the exact selection and include package harness overhead.
+Help goldens normalize ANSI, trailing whitespace, and outer blank rows to check readable content and layout. Separate real TUI captures check terminal frames. Those process checks remain session artifacts; the [end-to-end roadmap](roadmap-and-evidence.md#turn-session-checks-into-repeatable-end-to-end-tests) requires a committed harness and CI coverage. New help policy tests use copied bindings and values. Their fixtures do not open SQLite, create panes, or sleep. The existing package-wide `TestMain` still starts its shared tmux anchor. Real-pane tests remain integration tests. Timing claims identify the exact selection and include package harness overhead.
 
 ## Current source and test files
 
