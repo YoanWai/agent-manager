@@ -242,11 +242,9 @@ func LoadDir(dir string) (Config, error) {
 	return cfg, nil
 }
 
-// WithChoice returns the tool with the choice's flags on every line that
-// launches it, so a session keeps its model through the first launch,
-// restart, revive and fork. Everything else, the status rules above all, is
-// the tool's own. A line the tool leaves empty stays empty, so the
-// fallbacks that read emptiness still take the same path.
+// WithChoice puts the choice's flags on every line that launches the tool.
+// A line the tool leaves empty stays empty, so the fallbacks that read
+// emptiness still take the same path.
 func (t Tool) WithChoice(choice Choice) Tool {
 	flags := choice.flags(t)
 	t.Command = placeChoice(t.Command, flags)
@@ -271,8 +269,6 @@ func placeChoice(line, flags string) string {
 	return line + flags
 }
 
-// flags expands the tool's flag templates for the fields the choice sets,
-// each value quoted for the shell.
 func (c Choice) flags(t Tool) string {
 	values := strings.NewReplacer(
 		"{provider}", tmux.ShellQuote(c.Provider),

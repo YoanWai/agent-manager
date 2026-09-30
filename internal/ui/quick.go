@@ -324,8 +324,6 @@ func (m *Model) quickSpawning() bool {
 	return ok && entry.isGroup
 }
 
-// quickChoiceHint is what a choice key says while the bar answers a
-// session instead of spawning one.
 // The spawn choices take control keys, which every terminal passes on where
 // alt often never arrives, picked from the ones the prompt's editor, the
 // manager and the common multiplexers leave free.
@@ -335,6 +333,8 @@ const (
 	quickProfileKey = "ctrl+y"
 )
 
+// quickChoiceHint is what a choice key says while the bar answers a
+// session instead of spawning one.
 const quickChoiceHint = "model, effort and profile apply to a new agent: select a group to spawn one"
 
 // requireQuickSpawn reports whether the bar would spawn, and says why a
@@ -360,7 +360,6 @@ func (m *Model) openQuickPick(pick int) {
 	}
 	m.errBar.text = ""
 	m.quick.picking = pick
-	ch.sugg = modelSuggest{open: true}
 	switch pick {
 	case pickModel:
 		ch.filter.SetValue("")
