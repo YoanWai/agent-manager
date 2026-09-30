@@ -102,7 +102,7 @@ func TestDeleteGroupMovesItsSessionsToTheRoot(t *testing.T) {
 }
 
 func TestDeleteGroupTakesItsSubtreeAndKeepsNesting(t *testing.T) {
-	h := newSessionHarness(t)
+	h := newStoreSessionHarness(t)
 	if _, err := h.sessions.CreateGroup(h.caller.ID, "fleet", ""); err != nil {
 		t.Fatalf("CreateGroup: %v", err)
 	}
@@ -110,13 +110,13 @@ func TestDeleteGroupTakesItsSubtreeAndKeepsNesting(t *testing.T) {
 		t.Fatalf("CreateGroup nested: %v", err)
 	}
 	group := "fleet/backend"
-	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker", Group: &group})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
+	workerID := h.addSessionRow(t, "worker")
+	if err := h.store.MoveSession(workerID, group); err != nil {
+		t.Fatalf("move session row: %v", err)
 	}
 	shell := store.Session{
 		ID: "aaaa1111", Name: "sh-worker", Tool: "resting",
-		Group: "fleet/backend", Status: status.Idle, ParentID: worker.ID,
+		Group: "fleet/backend", Status: status.Idle, ParentID: workerID,
 	}
 	if err := h.store.CreateSession(shell); err != nil {
 		t.Fatalf("nest shell: %v", err)
@@ -139,7 +139,7 @@ func TestDeleteGroupTakesItsSubtreeAndKeepsNesting(t *testing.T) {
 	if after.Group != "" {
 		t.Fatalf("nested session sits in %q rather than the root", after.Group)
 	}
-	if after.ParentID != worker.ID {
+	if after.ParentID != workerID {
 		t.Fatalf("moving the subtree unhooked the terminal from its agent: parent %q", after.ParentID)
 	}
 }

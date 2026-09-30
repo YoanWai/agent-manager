@@ -39,3 +39,9 @@ The target remains the repository invariant that `Update` never blocks. I/O and 
 Layout runs before painting. `View` reads prepared state and does not resize inputs, change scroll, or record geometry. The current implementation still performs some of these mutations while rendering. Moving geometry to a layout step must preserve mouse hit regions and frame identity.
 
 Reject stale presentation replies after retarget or cancellation. Report completed or uncertain effects against their captured dispatch target. Dropping a stale reply does not cancel an effect already accepted by the execution authority.
+
+## Keep test setup proportional to the behavior
+
+Policy tests create the state their use case needs. SQLite-only task, reservation, and group policy tests use real rows and independent command connections without starting tmux panes. Group-to-spawn and pane-survival tests retain real panes, as do spawn, lifecycle, message, and terminal integration tests.
+
+Preserve transactional races and failure-path assertions when optimizing fixtures. Measure uncached before and after runs with the same test selection and race settings. A smaller fixture is useful when it removes irrelevant setup while retaining the behavior under test. Prefer explicit synchronization to arbitrary sleeps when a test needs to observe an asynchronous event.

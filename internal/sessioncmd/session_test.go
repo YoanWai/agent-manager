@@ -110,6 +110,68 @@ func testConfigLoader(t *testing.T, doc string) func(string) (config.Config, err
 	}
 }
 
+func newStoreSessionHarness(t *testing.T) *sessionHarness {
+	t.Helper()
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+	configDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(sessionConfig), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	driver, err := tmux.NewWithSocket("amsesstest-" + uuid.NewString()[:8])
+	if err != nil {
+		t.Fatalf("tmux driver: %v", err)
+	}
+	st, err := store.Open(filepath.Join(configDir, "state.db"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	callerDir := t.TempDir()
+	caller := store.Session{
+		ID:     uuid.NewString()[:8],
+		Name:   "calling-agent",
+		Tool:   "echoer",
+		Cwd:    callerDir,
+		Group:  "backend",
+		Status: status.Idle,
+	}
+	if err := st.CreateGroup("backend", callerDir); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := st.CreateSession(caller); err != nil {
+		t.Fatalf("create caller row: %v", err)
+	}
+	newDriver := func() (*tmux.Driver, error) { return driver, nil }
+	loadConfig := testConfigLoader(t, sessionConfig)
+	sessions := newSessions(configDir, MCPVocabulary(), newDriver, git.New)
+	sessions.loadConfig = loadConfig
+	h := &sessionHarness{
+		driver:   driver,
+		store:    st,
+		caller:   caller,
+		sessions: sessions,
+	}
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("close harness store: %v", err)
+		}
+	})
+	return h
+}
+
+// addSessionRow models a valid command caller without starting a pane.
+func (h *sessionHarness) addSessionRow(t *testing.T, name string) string {
+	t.Helper()
+	id := uuid.NewString()[:8]
+	if err := h.store.CreateSession(store.Session{
+		ID: id, Name: name, Tool: h.caller.Tool, Cwd: h.caller.Cwd, Status: status.Idle,
+	}); err != nil {
+		t.Fatalf("create session row: %v", err)
+	}
+	return id
+}
+
 func newSessionHarness(t *testing.T) *sessionHarness {
 	t.Helper()
 	if _, err := exec.LookPath("tmux"); err != nil {

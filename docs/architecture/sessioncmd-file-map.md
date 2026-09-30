@@ -22,8 +22,26 @@ Task, reservation, wait, relaunch, vocabulary, format, owner, backend, and canon
 
 ## Verify the mechanical scope
 
-The baseline is commit `dc43a4f3a4316e58c5cfb20f39a1006227ed9e3a`. Before and after the move, a Go AST inventory compared all 318 package declarations, including tests. Each declaration body and its attached documentation had the same SHA-256 fingerprint. Imports were recomputed for each destination file, then gofmt was applied.
+The mechanical split is commit `3a9ffc5a3108352807b930922b0ae2d9182feba1`, against baseline `dc43a4f3a4316e58c5cfb20f39a1006227ed9e3a`. Before and after the move, a Go AST inventory compared all 318 package declarations, including tests. Each declaration body and its attached documentation had the same SHA-256 fingerprint. Imports were recomputed for each destination file, then gofmt was applied.
 
 The comparison excludes file placement and import blocks. Build, vet, and the full isolated race suite provide the separate compilation and behavioral checks. No new behavioral test is needed for an exact move; existing tests retain their bodies and assertions.
 
 The file split does not fix synchronous UI lifecycle effects, rendering mutations, partial-result reconciliation, or production execution authority. Those gaps remain in the [conformance audit](roadmap-and-evidence.md).
+
+## Reduce irrelevant fixture startup
+
+A separate test-only follow-up gives 11 task and reservation tests, plus the group subtree test, a store-only session harness. It retains real config loading and independent SQLite command connections. The two group tests that verify spawning and live-pane survival still use real tmux, as do the other pane integration tests.
+
+The selected 14-test race run on the local macOS host took 14.660 seconds before the fixture change and 5.747 seconds after it. Both runs used the same worktree, socket directory, test selection, and race settings. They were uncached and passed. The real-pane harness remains byte-identical to the baseline. This is a measured sample, not a promised duration on every platform. The declaration equivalence check above applies to the mechanical split; the fixture follow-up intentionally changes test setup while keeping production declarations identical.
+
+Whole-package timing samples did not establish an overall speedup. The final full package race run passed all 109 top-level tests in 118.040 seconds; earlier baseline samples were 86.828 to 90.937 seconds. Those results remain an unresolved measurement limit. This commit claims faster SQLite-only fixture coverage, not faster whole-suite execution.
+
+To repeat the focused comparison on each revision, run:
+
+```sh
+mkdir -p /tmp/am-fast-tests
+env -u TMUX TMUX_TMPDIR=/tmp/am-fast-tests go test -race -count=1 ./internal/sessioncmd \
+	-run 'Test(Tasks|Dependencies|OnlyUnfinishedDependencies|ReleasedAndDeletedTasks|DeletingASession|Racing|Reservations|SharedLeases|ALapsedLease|ReleasingBlankPaths|SessionGroups|DeleteGroup)'
+```
+
+Use an isolated shell startup environment when host configuration prints into fixture panes. Preserve the full race suite as the integration gate. Use the focused selection for this test-fixture comparison, not as a substitute for the full suite.
